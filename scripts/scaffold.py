@@ -17,8 +17,30 @@ import re
 import sys
 import textwrap
 
-BASE = sys.argv[1] if len(sys.argv) > 1 else os.path.dirname(
-    os.path.dirname(os.path.abspath(__file__)))
+def _resolve_base(argv):
+    """Output dir = first positional arg, else the repo root (parent of scripts/).
+
+    Reject flag-like args: scaffold.py uses argv[1] as the target dir, so a stray
+    `scaffold.py --help` would otherwise silently scaffold into a `./--help/` dir."""
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if len(argv) <= 1:
+        return repo_root
+    arg = argv[1]
+    if arg in ("-h", "--help"):
+        sys.stderr.write(
+            "usage: scaffold.py [TARGET_DIR]\n"
+            "Regenerate the project skeleton into TARGET_DIR (default: the repo "
+            "root).\nTARGET_DIR must be a path, not a flag.\n")
+        raise SystemExit(0)
+    if arg.startswith("-"):
+        sys.stderr.write(
+            "scaffold.py: error: unexpected option %r; expected an optional "
+            "TARGET_DIR path (see --help)\n" % arg)
+        raise SystemExit(2)
+    return arg
+
+
+BASE = _resolve_base(sys.argv)
 
 # Corpus core: stamped onto every generated markdown doc so the company "one
 # brain" can ingest, dedup, age-out, and govern each file. Placeholders — real
