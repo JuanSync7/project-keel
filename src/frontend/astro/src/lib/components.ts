@@ -10,6 +10,7 @@ import { renderInline } from './md'
 const ICON: Record<string, string> = {
   check: '✓', tree: '⊞', boundary: '⊟', plug: '⌁',
   brain: '◐', layers: '≡', robot: '⌬', flow: '⎇', loop: '↻',
+  generic: '⊛',
 }
 
 // A text element whose inline markdown (`code`, **bold**, _em_) is rendered to

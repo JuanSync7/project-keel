@@ -7,7 +7,7 @@ owner: TBD
 summary: Global rules for any agent working in this repo.
 id: agent
 created: 2026-06-17
-updated: 2026-06-22
+updated: 2026-06-24
 visibility: internal
 canonical: true
 ---
@@ -65,6 +65,14 @@ of truth for labeling and the directory taxonomy. Each directory's own
   endpoint gets a `tests/e2e/` scenario that drives it through its public
   surface. (The loops above are disciplines for *you*; the playbook is
   `docs/guides/dev-loops.md`, the rule is CONVENTIONS §17.)
+- **Solve the class of inputs, not the example.** When a spec ships an eval, a
+  golden set, or one failing case, build the capability that *computes* the right
+  answer across the whole input space — name the general rule before you
+  special-case, and never hardcode the sample's expected value in `src/` to make
+  one check pass. If a change only makes the named case pass, it is a patch, not
+  a fix. Treat fixtures as illustrations; if a literal truly is data, it lives in
+  a `*_data.py` registry, not in logic. (Advisory only: `make advise` flags
+  hardcoded answer keys; the gate stays `make verify`. See CONVENTIONS §18.)
 - **Let the gate decide "done."** A step is finished when `make verify` (or
   the smallest sufficient `make` target) exits green — never on self-report.
 - **Keep docs by purpose**, not by source file (except `docs/reference/`).
@@ -73,6 +81,9 @@ of truth for labeling and the directory taxonomy. Each directory's own
 - Reach into another package's internals to "save an import".
 - Add business logic to `api/`, `mcp/`, `scripts/`, or `app/`.
 - Bake a vendor/provider name into a doer — that belongs in a thin adapter.
+- Fit the solution to the eval — hardcode, special-case, or paste a test's
+  expected value into `src/` logic instead of solving the general problem
+  (CONVENTIONS §18).
 - Report work complete (or advance a loop) on your own assessment instead of
   a green `make verify`.
 - Commit secrets to `config/` — only defaults and `*.example.*`.

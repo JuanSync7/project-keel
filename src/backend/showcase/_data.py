@@ -136,6 +136,21 @@ FEATURES: tuple[Feature, ...] = (
         icon="loop",
         links=(Link("Dev-loops playbook", "docs-guides-dev-loops"),),
     ),
+    Feature(
+        slug="generic-solution",
+        title="Generic by default",
+        summary="Any LLM here solves the class of inputs, not the example.",
+        detail=(
+            "The agent rules push every change toward the general rule: the "
+            "eval is a sample not the spec, derive outputs from inputs, fix the "
+            "generator not the golden — so a coding agent stops fitting the "
+            "solution to one test. An advisory check (make advise) flags "
+            "answer-key literals hardcoded in src/; it draws attention, never "
+            "fails the build."
+        ),
+        icon="generic",
+        links=(Link("Generic-solution playbook", "docs-guides-generic-solution"),),
+    ),
 )
 
 # Mirrors docs/guides/deterministic-checks.md. `present` is set at load time.
@@ -177,6 +192,15 @@ CHECKS: tuple[Check, ...] = (
         script="scripts/cdmon_sync.py", gate="error", interpreter="any",
         command="python3 scripts/cdmon_sync.py --check", when="Every commit (no-op until installed)",
         purpose="cdmon code↔doc drift monitor (a thin adapter; optional).",
+    ),
+    Check(
+        slug="generic", name="Generic-solution advisor",
+        script="scripts/check_generic.py", gate="report", interpreter="3.6-safe",
+        command="make advise", when="Anytime; advisory (never fails the build)",
+        purpose="Flags distinctive literals asserted as a test's expected value "
+                "AND hardcoded in src/ logic — a 'fit the solution to the eval' "
+                "smell. Advisory: draws attention, never gates. Suppress with "
+                "# generic-ok: <reason>.",
     ),
 )
 

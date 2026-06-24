@@ -709,6 +709,77 @@ def root_files():
         it exercises the code. The real gate is `make verify` (a red suite fails
         it); TDD itself is a behavioral discipline, not something a static check
         can certify.
+
+        ## 18. Generic solutions (solve the class, not the case)
+
+        Code here is meant to stay **generic**: this is a *template*, and
+        everything built from it should solve the broader problem, not the one
+        example in front of you. The recurring failure mode — for humans and for
+        an LLM alike — is **overfitting to the sample**: given an eval, a golden
+        file, or one failing test, you make *that* case pass by hardcoding its
+        expected answer, special-casing its specimen value, or pasting its datum
+        into the code, instead of deriving the result from the inputs. The
+        example is evidence of the rule; it is not the rule. This is the same
+        neutral-concept-first instinct the rest of these conventions take — a
+        provider behind `models/` (§7), a tool behind a thin adapter (§9), a wire
+        dialect behind the agent surface (§14), an engine behind a `Plan` (§16):
+        **name the general thing first; the concrete instance is one
+        interchangeable case of it.** It is the discipline sibling of the
+        development loops (§17): there the test is the pressure that keeps you
+        honest, here it is the rule the test only samples.
+
+        - **The eval is a sample, not the spec.** A golden set, a fixture, or a
+          failing case *illustrates* the behavior; it does not *define* it. Read a
+          row as "the rule must also produce this", never as "the rule is this
+          row". Generalize from the example to the property it demonstrates, then
+          satisfy the property.
+        - **Name the general rule before you special-case.** Before adding
+          `if x == "<specimen>"`, state the rule the specimen is an instance of
+          and implement *that*. A special-case branch is justified only when the
+          general rule genuinely has a discontinuity there — and then it is
+          documented as such, not as a way to turn one test green. An enum-style
+          dispatch over a fixed, documented set of kinds *is* the general rule; a
+          lone branch that exists only to pass one case is not.
+        - **Derive, don't hardcode the answer key.** Compute outputs from inputs.
+          A literal lifted verbatim from a test's expected value and embedded in
+          `src/` logic is an *answer key*: it makes the sample pass while teaching
+          the code nothing. A value that genuinely is content — a slug, a
+          catalogue row, a curated title — belongs in a declared registry
+          (`*_data.py`, fixtures, a `kind: config` module per §8), not in a
+          branch; logic reads data, it does not memorize it.
+        - **Name the constant, or annotate the literal.** A meaningful literal in
+          logic is either promoted to an `ALL_CAPS` named constant (naming *is*
+          the general move) or, when it is deliberately a fixed token, annotated
+          `# generic-ok: <reason>` so the next reader knows it was a choice.
+        - **When a golden test fails, fix the generator — not the golden.** If
+          output drifted from a committed golden, ask *which is right*: change the
+          producing logic if the golden is correct, or regenerate the golden (and
+          say why in the commit) if the behavior legitimately changed — never
+          tweak the code so it emits exactly the stored bytes for that one input.
+        - **A patch is not a fix.** If a change only makes the named failing case
+          pass — and a slightly different input of the same class would still fail
+          — you patched the symptom. The fix is the smallest change that makes the
+          *whole class* pass, with a test (§17) that samples more than the
+          original case.
+
+        A *backstop*, not a gate: `scripts/check_generic.py` (run via `make
+        advise`, gate `report`) flags the highest-confidence smell — a distinctive
+        literal that a test asserts as an expected value (an `==` operand or
+        `assertEqual` argument) **and** that also appears hardcoded in non-data
+        `src/` logic (an "answer key in source"). It excludes data/registry
+        modules (`*_data.py`, fixtures, `conftest`), literals named as `ALL_CAPS`
+        constants, and trivial literals, honours a `# generic-ok: <reason>`
+        pragma, and **always exits 0**. It is catalogued with gate `report` in
+        §6's suite.
+
+        This is a convention an agent follows, not gated by a structural check:
+        the advisory linter never fails the build, and a static check cannot
+        *prove* code is generic — genericity is a property of the input space, not
+        of the source text. So `check_generic.py` only points at one specific,
+        high-confidence smell (a memorized answer key) and stays silent on
+        legitimate data. The real pressure is behavioral: behavior-asserting tests
+        (§17) and review. Treat a flag as a question to answer, and the rule above
+        as the actual standard — never a green checkmark labelled "generic".
         """).strip() + "\n")
 
     w("AGENT.md", fm(
@@ -770,6 +841,15 @@ def root_files():
           endpoint gets a `tests/e2e/` scenario that drives it through its public
           surface. (The loops above are disciplines for *you*; the rule is
           CONVENTIONS §17.)
+        - **Solve the class of inputs, not the example.** When a spec ships an
+          eval, a golden set, or one failing case, build the capability that
+          *computes* the right answer across the whole input space — name the
+          general rule before you special-case, and never hardcode the sample's
+          expected value in `src/` to make one check pass. If a change only makes
+          the named case pass, it is a patch, not a fix. Treat fixtures as
+          illustrations; if a literal truly is data, it lives in a `*_data.py`
+          registry, not in logic. (Advisory only: `make advise` flags hardcoded
+          answer keys; the gate stays `make verify`. See CONVENTIONS §18.)
         - **Let the gate decide "done."** A step is finished when `make verify` (or
           the smallest sufficient `make` target) exits green — never on self-report.
         - **Keep docs by purpose**, not by source file (except `docs/reference/`).
@@ -778,6 +858,9 @@ def root_files():
         - Reach into another package's internals to "save an import".
         - Add business logic to `api/`, `mcp/`, `scripts/`, or `app/`.
         - Bake a vendor/provider name into a doer — that belongs in a thin adapter.
+        - Fit the solution to the eval — hardcode, special-case, or paste a test's
+          expected value into `src/` logic instead of solving the general problem
+          (CONVENTIONS §18).
         - Report work complete (or advance a loop) on your own assessment instead of
           a green `make verify`.
         - Commit secrets to `config/` — only defaults and `*.example.*`.
@@ -834,7 +917,7 @@ def root_files():
         # a no-op on backend-only repos.
         FE_APPS := $(dir $(wildcard src/frontend/*/package.json))
 
-        .PHONY: help scaffold check check-all check-corpus check-openapi check-aad scaffold-sync verify test unit integration e2e smoke \\
+        .PHONY: help scaffold check check-all check-corpus check-openapi check-aad scaffold-sync advise check-generic verify test unit integration e2e smoke \\
                 lint lint-py lint-fe fmt typecheck typecheck-py typecheck-fe \\
                 fe-install run run-api run-web site-data demo agent-surface-schema
 
@@ -858,6 +941,10 @@ def root_files():
         \t$(PY) scripts/agent_surface/generate_aad_schema.py --check
         scaffold-sync: ## scaffold.py embeds match the live scripts (3.6-safe)
         \t$(PY) scripts/check_scaffold_sync.py --check
+
+        advise: ## Advisory: flag overfitting / answer-key smells (CONVENTIONS §18; never fails the build)
+        \t-$(PY) scripts/check_generic.py
+        check-generic: advise ## Alias for `advise` (the generic-solution advisor)
 
         verify: check-all lint typecheck test ## Run all gates (all checks + lint + types + tests)
 
@@ -972,7 +1059,8 @@ def root_files():
         # Contributing
 
         Work in the repo's development loops (test-first, bounded convergence,
-        end-to-end coverage); the rule is CONVENTIONS §17. The steps below are
+        end-to-end coverage) **and solve the general case, not the specimen in
+        front of you**; the rules are CONVENTIONS §17–§18. The steps below are
         that discipline applied to one change:
 
         1. Read `CONVENTIONS.md`.
@@ -983,7 +1071,15 @@ def root_files():
            (red), then the code (green), then refactor with the suite green.
         5. New behavior across components → add a `tests/integration` or
            `tests/e2e` scenario and (if user-facing) a `test-docs/` plan entry.
-        6. Run `make verify` (the full gate) — or at least `make lint test` —
+        6. Making a failing eval/golden/case pass → fix the **general rule or
+           the generator**, not the instance: don't hardcode the expected output,
+           branch on the specimen, or paste a golden datum into `src/`. Run
+           `make advise` for an advisory pass that flags answer keys (distinctive
+           literals that are both a test's expected value and hardcoded in
+           `src/`); it never fails the build — the gate stays `make verify`.
+           Genuine data belongs in a `*_data.py` registry; an intentional literal
+           is annotated `# generic-ok: <reason>`. (CONVENTIONS §18.)
+        7. Run `make verify` (the full gate) — or at least `make lint test` —
            before pushing; treat green as the definition of done.
         """).strip() + "\n")
 
@@ -1071,6 +1167,12 @@ def src_tree():
         "public symbol, write/extend its `tests/unit/...` mirror so it fails "
         "first, then make it pass, then refactor with the suite green "
         "(CONVENTIONS §17).",
+        "**Solve the general case, not the test.** Compute outputs from inputs; "
+        "never hardcode a golden/expected value into logic to pass a case — if it "
+        "is genuinely data put it in a `*_data.py` registry, else annotate "
+        "`# generic-ok: <reason>`. When a golden test fails, fix the rule or the "
+        "generator, not the golden (CONVENTIONS §18; `make advise` flags it, "
+        "advisory only).",
         "Respect the dependency direction: `app → {frontend, backend} → shared`. "
         "No back-edges, no FE↔BE direct imports.",
         "`shared/` must stay framework-free and import nothing else in `src/`.",
@@ -1755,6 +1857,11 @@ def tests_tree():
         "A new user-facing flow (route, page, or transport endpoint) gets a "
         "`tests/e2e/` scenario that drives it through the public surface — author "
         "it alongside the change, not later (CONVENTIONS §17).",
+        "A fixture or golden value is an EXAMPLE of the contract, not the "
+        "contract itself — assert the general behavior across edge/empty/boundary "
+        "cases and keep golden values in the test or a fixture, so a hardcoded "
+        "answer in `src/` cannot pass the suite (an answer key in `src/` is the "
+        "overfit smell `scripts/check_generic.py` flags; CONVENTIONS §18).",
         "Do NOT mirror integration/e2e/smoke to source files — name them by the "
         "scenario under test.",
         "Unit tests touch no network/disk/process. If you need those, it's an "
@@ -2718,6 +2825,7 @@ def quality_tooling():
     w("scripts/check_structure.py", _CHECK_STRUCTURE_SRC)
     w("scripts/check_scaffold_sync.py", _CHECK_SCAFFOLD_SYNC_SRC)
     w("scripts/jobs/check_corpus.py", _CHECK_CORPUS_SRC)
+    w("scripts/check_generic.py", _CHECK_GENERIC_SRC)
     w("scripts/README_check_structure.md", fm(
         title="check_structure.py", kind="script", layer="n/a",
         status="template", owner="TBD",
@@ -4955,6 +5063,369 @@ def main(argv=None) -> int:
               % (len(first["nodes"]),
                  sum(len(n.get("links", [])) for n in first["nodes"])))
     return rc
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+'''
+
+
+_CHECK_GENERIC_SRC = r'''#!/usr/bin/env python3
+"""
+title: Generic-solution advisor
+kind: script
+layer: n/a
+summary: Read-only advisory. Flags "answer keys" - a distinctive literal a test asserts as its expected value AND hardcoded in src/ logic (the overfit-to-the-eval smell). Advisory only; never fails the build. Stdlib only; runs on Python 3.6+.
+"""
+import argparse
+import ast
+import io
+import json
+import os
+import re
+import sys
+import tokenize
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# Directories we never descend into.
+IGNORE_DIRS = set([
+    ".git", "node_modules", ".venv", "__pycache__", "dist", "build",
+    ".mypy_cache", ".ruff_cache", ".pytest_cache",
+])
+
+# Trivial strings are never "answer keys" - too common to be a memorized result.
+# Compared case-insensitively against value.strip().
+_TRIVIAL_STR = set([
+    "", "true", "false", "null", "none",
+    "id", "name", "path", "kind", "type", "title", "summary", "owner",
+    "status", "error", "ok",
+    "get", "post", "put", "patch", "delete", "head", "options",
+    "application/json", "text/plain", "utf-8", "localhost",
+    "__main__", "__name__", "/", ".", "-", "_",
+])
+# Numeric goldens (counts, limits, HTTP codes) are excluded by default; numbers
+# are only considered under --strict, and then only when they have >= 4 digits -
+# so no explicit small-int allowlist is needed.
+
+_ALLCAPS_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
+_PRAGMA_RE = re.compile(r"^#\s*generic-ok\b\s*:?\s*(.*)$")
+_SPECIAL = set(list("-_./:"))
+_ASSERT_EQ_FUNCS = set([
+    "assertEqual", "assertEquals",
+    "assertDictEqual", "assertListEqual",
+])
+
+_STR_THRESHOLD = 12
+_STR_THRESHOLD_STRICT = 8
+
+
+def _literal(node):
+    """str/int/float value of a literal node, else None. 3.6 (Str/Num) + 3.8 (Constant)."""
+    if isinstance(node, ast.Constant):           # 3.8+
+        v = node.value
+        if isinstance(v, bool):                  # bools are not answer keys
+            return None
+        return v if isinstance(v, (str, int, float)) else None
+    if isinstance(node, ast.Str):                # 3.6
+        return node.s
+    if isinstance(node, ast.Num):                # 3.6
+        return node.n
+    return None                                  # NameConstant (bool/None) -> not tracked
+
+
+def is_distinctive(value, strict):
+    """True when a value is specific enough to be a plausible memorized answer key."""
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, (int, float)):
+        if not strict or isinstance(value, float):
+            return False
+        return len(str(abs(int(value)))) >= 4
+    if not isinstance(value, str):
+        return False
+    s = value.strip()
+    if s.lower() in _TRIVIAL_STR:
+        return False
+    threshold = _STR_THRESHOLD_STRICT if strict else _STR_THRESHOLD
+    if len(s) < threshold:
+        return False
+    # Looks like an identifier / path / sentence, not a plain word.
+    if any(ch.isdigit() for ch in s):
+        return True
+    if any(ch in _SPECIAL for ch in s):
+        return True
+    return " " in s
+
+
+def _read(path):
+    try:
+        # utf-8-sig strips a leading BOM, so BOM-saved files still parse.
+        with io.open(path, encoding="utf-8-sig") as fh:
+            return fh.read()
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
+def _parse(text):
+    try:
+        return ast.parse(text)
+    except (SyntaxError, ValueError):
+        return None
+
+
+def _rel(path):
+    return os.path.relpath(path, ROOT).replace(os.sep, "/")
+
+
+def _py_files(base):
+    out = []
+    for dirpath, dirnames, filenames in os.walk(base):
+        dirnames[:] = [d for d in dirnames
+                       if d not in IGNORE_DIRS and not d.startswith(".")]
+        for fn in filenames:
+            if fn.endswith(".py"):
+                out.append(os.path.join(dirpath, fn))
+    return out
+
+
+def _is_data_module(path):
+    """A declared data/registry/value-object module - literals there are data, not logic."""
+    base = os.path.basename(path)
+    if base.endswith("_data.py") or base.endswith("_models.py"):
+        return True
+    if base in ("data.py", "conftest.py", "registry.py"):
+        return True
+    if base == "fixtures.py" or base.endswith("_fixtures.py"):
+        return True
+    parts = path.replace(os.sep, "/").split("/")
+    return "data" in parts or "fixtures" in parts
+
+
+def _pragma_lines(text):
+    """Map line number -> suppression reason for every `# generic-ok[: reason]` comment.
+
+    Uses tokenize, so a `#` inside a string literal is part of a STRING token,
+    never a COMMENT, and so cannot be mistaken for a pragma."""
+    out = {}
+    try:
+        for tok in tokenize.generate_tokens(io.StringIO(text).readline):
+            if tok.type == tokenize.COMMENT:
+                m = _PRAGMA_RE.match(tok.string.strip())
+                if m:
+                    out[tok.start[0]] = m.group(1).strip()
+    except (tokenize.TokenError, IndentationError, SyntaxError, ValueError):
+        pass
+    return out
+
+
+def _suppressed(node, value, pragma):
+    """True if a `# generic-ok` pragma sits anywhere on the literal's line span.
+
+    A multiline string's AST lineno differs by interpreter (3.6 reports the
+    closing line, 3.8+ the opening line), and the trailing pragma can only live
+    on the closing line — so match the whole span, not a single line."""
+    if not pragma:
+        return False
+    line = getattr(node, "lineno", 0)
+    end = getattr(node, "end_lineno", None)
+    if end is not None:                       # 3.8+: real end line
+        lo, hi = line, end
+    elif isinstance(value, str):              # 3.6: lineno is the closing line
+        lo, hi = line - value.count("\n"), line
+    else:
+        lo, hi = line, line
+    for ln in range(lo, hi + 1):
+        if ln in pragma:
+            return True
+    return False
+
+
+def _docstring_ids(tree):
+    """Node ids of module/class/function docstrings (a leading bare-string Expr)."""
+    ids = set()
+    for node in ast.walk(tree):
+        body = getattr(node, "body", None)
+        if not body:
+            continue
+        if not isinstance(node, (ast.Module, ast.FunctionDef,
+                                 ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        first = body[0]
+        if isinstance(first, ast.Expr) and isinstance(_literal(first.value), str):
+            ids.add(id(first.value))
+    return ids
+
+
+def _allcaps_value_ids(tree):
+    """Node ids of values assigned to an ALL_CAPS name - naming a constant IS the
+    generic move, so its literal must not be flagged."""
+    ids = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            targets = node.targets
+        elif isinstance(node, ast.AnnAssign):
+            targets = [node.target]
+        else:
+            continue
+        if not any(isinstance(t, ast.Name) and _ALLCAPS_RE.match(t.id) for t in targets):
+            continue
+        val = getattr(node, "value", None)
+        if val is None:
+            continue
+        # Everything inside a named constant is "named" data, at any depth.
+        for sub in ast.walk(val):
+            ids.add(id(sub))
+    return ids
+
+
+def _add_expected(node, bucket, rel):
+    """Record a literal (or the one-level leaves of a container) as a test-expected value."""
+    v = _literal(node)
+    if v is not None:
+        bucket.setdefault(v, set()).add("%s:%d" % (rel, getattr(node, "lineno", 0)))
+        return
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+        elts = node.elts
+    elif isinstance(node, ast.Dict):
+        elts = node.values
+    else:
+        return
+    for e in elts:
+        ev = _literal(e)
+        if ev is not None:
+            bucket.setdefault(ev, set()).add("%s:%d" % (rel, getattr(e, "lineno", 0)))
+
+
+def collect_expected(base):
+    """value -> {"testfile:line"} for literals a test asserts as the EXPECTED value.
+
+    Equality only: `==`/`assertEqual` operands. Membership (`in`) and identity
+    (`is`) compares are excluded - a header asserted with `in` is presentation,
+    not an answer key."""
+    expected = {}
+    for path in _py_files(base):
+        text = _read(path)
+        if text is None:
+            continue
+        tree = _parse(text)
+        if tree is None:
+            continue
+        rel = _rel(path)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assert):
+                for cmp in ast.walk(node.test):
+                    if isinstance(cmp, ast.Compare) and cmp.ops \
+                            and all(isinstance(op, ast.Eq) for op in cmp.ops):
+                        _add_expected(cmp.left, expected, rel)
+                        for c in cmp.comparators:
+                            _add_expected(c, expected, rel)
+            elif isinstance(node, ast.Call):
+                # assertEqual-family signature is (first, second, msg=None):
+                # only the two operands are expected values, never the message.
+                if getattr(node.func, "attr", None) in _ASSERT_EQ_FUNCS:
+                    for a in node.args[:2]:
+                        _add_expected(a, expected, rel)
+    return expected
+
+
+def collect_src(base):
+    """value -> [(rel, line, suppressed)] for literals in non-data src/ logic, plus
+    the locations of any reason-less `# generic-ok` pragmas (an accountability gap)."""
+    occ = {}
+    empty_pragmas = []
+    for path in _py_files(base):
+        if _is_data_module(path):
+            continue
+        text = _read(path)
+        if text is None:
+            continue
+        tree = _parse(text)
+        if tree is None:
+            continue
+        rel = _rel(path)
+        pragma = _pragma_lines(text)
+        for line, reason in pragma.items():
+            if reason == "":
+                empty_pragmas.append("%s:%d" % (rel, line))
+        skip_ids = _docstring_ids(tree)
+        skip_ids |= _allcaps_value_ids(tree)
+        for node in ast.walk(tree):
+            val = _literal(node)
+            if val is None:
+                continue
+            if id(node) in skip_ids:
+                continue
+            line = getattr(node, "lineno", 0)
+            occ.setdefault(val, []).append((rel, line, _suppressed(node, val, pragma)))
+    return occ, empty_pragmas
+
+
+def find(strict=False):
+    """Return (findings, suppressed_count, empty_pragmas).
+
+    A finding is a distinctive value present both as a test's expected value and
+    hardcoded (un-suppressed) in non-data src/ logic."""
+    expected = collect_expected(os.path.join(ROOT, "tests"))
+    occ, empty_pragmas = collect_src(os.path.join(ROOT, "src"))
+    findings = []
+    suppressed = 0
+    for value in expected:
+        if value not in occ or not is_distinctive(value, strict):
+            continue
+        active = [(r, ln) for (r, ln, supp) in occ[value] if not supp]
+        if not active:
+            suppressed += 1
+            continue
+        findings.append({
+            "value": value,
+            "tests": sorted(expected[value]),
+            "src": sorted("%s:%d" % (r, ln) for (r, ln) in active),
+        })
+    findings.sort(key=lambda f: str(f["value"]))
+    return findings, suppressed, empty_pragmas
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(
+        description="Advisory: flag answer-key literals (a value a test asserts as "
+                    "expected that is also hardcoded in src/ logic). Never fails the build.")
+    ap.add_argument("--json", action="store_true", help="emit findings as JSON")
+    ap.add_argument("--strict", action="store_true",
+                    help="experimental: lower the string threshold and include 4+ digit "
+                         "numbers (noisier; not wired into any make target)")
+    args = ap.parse_args(argv)
+    findings, suppressed, empty_pragmas = find(strict=args.strict)
+
+    if args.json:
+        json.dump(findings, sys.stdout, indent=2, sort_keys=True)
+        sys.stdout.write("\n")
+        return 0
+
+    for loc in empty_pragmas:
+        print("generic-solution: suppression with no reason at %s" % loc)
+
+    if not findings:
+        print("generic-solution: no hardcoded answer keys found.  (advisory)")
+        return 0
+
+    print("generic-solution: scanning for hardcoded answer keys "
+          "(advisory; never fails the build)")
+    files = set()
+    for f in findings:
+        value = f["value"]
+        disp = ('"%s"' % value[:60]) if isinstance(value, str) else str(value)
+        print("  %s" % disp)
+        print("      expected in  %s" % ", ".join(f["tests"]))
+        print("      hardcoded in %s" % ", ".join(f["src"]))
+        print("      fix: compute it, move the literal to a *_data.py registry, "
+              "or add `# generic-ok: <reason>`")
+        for s in f["src"]:
+            files.add(s.rsplit(":", 1)[0])
+    print("generic-solution: %d possible answer-key(s) across %d src file(s); "
+          "%d suppressed.  (advisory - a static check cannot prove code is generic; "
+          "review, don't obey)" % (len(findings), len(files), suppressed))
+    return 0
 
 
 if __name__ == "__main__":

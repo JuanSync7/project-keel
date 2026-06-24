@@ -7,7 +7,7 @@ owner: TBD
 summary: Local agent rules inside src/.
 id: src-agent
 created: 2026-06-17
-updated: 2026-06-22
+updated: 2026-06-24
 visibility: internal
 canonical: true
 ---
@@ -20,6 +20,7 @@ These rules are **local and authoritative** for this directory. They inherit fro
 
 - **Every export crosses an `__init__.py`.** Add public symbols to `__all__` and re-export them; keep implementation in `_*` modules.
 - **Drive new behavior with its test (TDD).** Before adding or changing a public symbol, write/extend its `tests/unit/...` mirror so it fails first, then make it pass, then refactor with the suite green (CONVENTIONS §17).
+- **Solve the general case, not the test.** Compute outputs from inputs; never hardcode a golden/expected value into logic to pass a case — if it is genuinely data put it in a `*_data.py` registry, else annotate `# generic-ok: <reason>`. When a golden test fails, fix the rule or the generator, not the golden (CONVENTIONS §18; `make advise` flags it, advisory only).
 - Respect the dependency direction: `app → {frontend, backend} → shared`. No back-edges, no FE↔BE direct imports.
 - `shared/` must stay framework-free and import nothing else in `src/`.
 - Each package needs a `shared/` only if it has domain-shared code, and a `util/` only if it has generic helpers — don't create empty ones.
