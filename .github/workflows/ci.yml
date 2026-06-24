@@ -10,6 +10,11 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: "22" }
       - run: pip install -e ".[dev]"
+      # Optional transport deps so the API + AAD tests actually run (not skip):
+      # the showcase REST/AAD tests need FastAPI + pydantic, which live in the
+      # transport's own requirements, not in the dependency-free base install.
+      # (The langgraph engine stays optional — its conformance test importorskips.)
+      - run: pip install -r api/rest_fastapi/requirements.txt
       # Install FE deps so the frontend lint/typecheck gates run; no-op
       # if there are no frontend apps.
       - run: make fe-install

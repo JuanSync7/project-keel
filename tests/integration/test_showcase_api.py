@@ -8,7 +8,10 @@ import sys
 from pathlib import Path
 
 import pytest
-from fastapi.testclient import TestClient
+
+pytest.importorskip("fastapi")  # optional transport dep — skip this module when absent
+
+from fastapi.testclient import TestClient  # noqa: E402
 
 _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT / "src"))
