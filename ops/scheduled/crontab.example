@@ -1,0 +1,12 @@
+# Example cron schedule — a thin trigger that only says WHEN.
+# Install with `crontab ops/scheduled/crontab.example` (edit paths/user first).
+# The doer is scripts/jobs/rebuild_index.py — this file holds no logic.
+#
+# ┌ minute ┌ hour ┌ day-of-month ┌ month ┌ day-of-week
+# │        │      │              │       │
+
+# Rebuild the doc index every day at 02:00.
+0 2 * * * cd /path/to/repo && python3 scripts/jobs/rebuild_index.py --out wiki/INDEX.md
+
+# systemd-timer equivalent (same doer): [Timer] OnCalendar=*-*-* 02:00:00
+# CI equivalent: a `on: schedule: - cron: '0 2 * * *'` workflow calling the same script.

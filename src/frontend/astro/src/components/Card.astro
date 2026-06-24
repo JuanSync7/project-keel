@@ -1,0 +1,13 @@
+---
+interface Props {
+  readonly title: string
+  readonly body: string
+}
+
+const { title, body } = Astro.props
+---
+
+<article class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+  <h2 class="text-xl font-semibold">{title}</h2>
+  <p class="mt-2 text-slate-600">{body}</p>
+</article>

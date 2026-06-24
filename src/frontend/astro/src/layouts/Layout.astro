@@ -1,0 +1,124 @@
+---
+import '../styles/global.css'
+import { withBase } from '../lib/links'
+
+interface Props {
+  readonly title: string
+  readonly active?: string
+  readonly wide?: boolean
+}
+
+const { title, active = '', wide = false } = Astro.props
+
+// Static (GitHub Pages) build has no backend; keep the footer honest about it.
+const isStatic = import.meta.env.PUBLIC_DATA_MODE === 'static'
+
+const nav = [
+  { href: '/', label: 'Overview', key: 'overview' },
+  { href: '/features', label: 'Features', key: 'features' },
+  { href: '/architecture', label: 'Architecture', key: 'architecture' },
+  { href: '/checks', label: 'Checks', key: 'checks' },
+  { href: '/wiki', label: 'Wiki', key: 'wiki' },
+  { href: '/setup', label: 'Use it', key: 'setup' },
+] as const
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href={withBase('/favicon.svg')} />
+    <meta name="description" content="project_keel — a polyglot-aware, agent-friendly project skeleton that stays honest." />
+    <title>{title}</title>
+  </head>
+  <body class="min-h-screen bg-slate-50 text-slate-900 antialiased [font-family:ui-sans-serif,system-ui,-apple-system,'Segoe_UI',Roboto,sans-serif]">
+    <header class="sticky top-0 z-20 border-b border-slate-200 bg-white/85 backdrop-blur">
+      <div class="mx-auto flex h-14 max-w-6xl items-center gap-6 px-4 sm:px-6">
+        <a href={withBase('/')} class="flex items-center gap-2 font-semibold tracking-tight">
+          <span class="grid h-6 w-6 place-items-center rounded-md bg-slate-900 text-xs font-bold text-white">pk</span>
+          <span>project_keel</span>
+          <span class="hidden rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-500 sm:inline">docs</span>
+        </a>
+        <nav class="ml-auto hidden items-center gap-1 sm:flex">
+          {nav.map((n) => (
+            <a
+              href={withBase(n.href)}
+              class:list={[
+                'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                active === n.key
+                  ? 'bg-slate-900 text-white'
+                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900',
+              ]}
+            >{n.label}</a>
+          ))}
+        </nav>
+        <span
+          id="sync-badge"
+          title="Backend connection"
+          class="flex items-center gap-1.5 rounded-full border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-500"
+        >
+          <span id="sync-dot" class="h-2 w-2 rounded-full bg-slate-300"></span>
+          <span id="sync-text">checking…</span>
+        </span>
+      </div>
+      <nav class="flex gap-1 overflow-x-auto border-t border-slate-100 px-4 py-1.5 sm:hidden">
+        {nav.map((n) => (
+          <a
+            href={withBase(n.href)}
+            class:list={[
+              'whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium',
+              active === n.key ? 'bg-slate-900 text-white' : 'text-slate-600',
+            ]}
+          >{n.label}</a>
+        ))}
+      </nav>
+    </header>
+
+    <main class:list={['mx-auto w-full px-4 py-10 sm:px-6', wide ? 'max-w-6xl' : 'max-w-4xl']}>
+      <slot />
+    </main>
+
+    <footer class="border-t border-slate-200 bg-white">
+      <div class="mx-auto flex max-w-6xl flex-col gap-1 px-4 py-6 text-sm text-slate-500 sm:px-6">
+        {isStatic ? (
+          <p>
+            A <strong class="font-medium text-slate-700">static snapshot</strong> of the
+            project_keel showcase — rebuilt from the repo and redeployed on every push.
+          </p>
+        ) : (
+          <p>
+            This site renders <strong class="font-medium text-slate-700">live</strong> from the
+            project_keel backend — edit a doc, rebuild the corpus, reload, and it updates.
+          </p>
+        )}
+        <p class="font-mono text-xs">{isStatic ? 'Data:' : 'API:'} <span id="api-base">—</span></p>
+      </div>
+    </footer>
+
+    <script>
+      import { ping, API_BASE } from '../lib/api'
+
+      const IS_STATIC = import.meta.env.PUBLIC_DATA_MODE === 'static'
+      const dot = document.getElementById('sync-dot')
+      const text = document.getElementById('sync-text')
+      const base = document.getElementById('api-base')
+
+      if (IS_STATIC) {
+        // No backend to reach: the snapshot is the data. Don't poll.
+        if (base) base.textContent = 'static snapshot (no backend)'
+        if (dot) dot.className = 'h-2 w-2 rounded-full bg-emerald-500'
+        if (text) text.textContent = 'static'
+      } else {
+        if (base) base.textContent = API_BASE || 'same origin (/api → backend via dev proxy)'
+        const refreshStatus = async (): Promise<void> => {
+          const ok = await ping()
+          if (dot) dot.className = `h-2 w-2 rounded-full ${ok ? 'bg-emerald-500' : 'bg-rose-500'}`
+          if (text) text.textContent = ok ? 'live' : 'offline'
+        }
+        void refreshStatus()
+        setInterval(() => void refreshStatus(), 10_000)
+      }
+    </script>
+  </body>
+</html>

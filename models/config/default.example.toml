@@ -1,0 +1,6 @@
+# Per-model defaults. Copy to default.local.toml. NO secrets here.
+default_model = "claude-code-headless"
+
+[claude-code-headless]
+model = "claude-opus-4-8"
+binary = "claude"

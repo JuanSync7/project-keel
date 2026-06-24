@@ -1,0 +1,15 @@
+# Example cdmon config. Copy to cdmon.yaml and register the docs cdmon
+# should manage. cdmon owns the `cdm:` frontmatter block and CDM:BEGIN/END
+# regions; this template owns the top-level keys (CONVENTIONS §9).
+# Keep each doc's `id` here equal to its frontmatter `id`.
+version: 1
+output:
+  dir: .cdmon            # generated; gitignored
+  html: false            # pick cdmon twins OR wiki/, not both
+documents:
+  - id: readme
+    path: README.md
+    audience: eng-guide
+  # - id: backend-readme
+  #   path: src/backend/README.md
+  #   audience: eng-guide

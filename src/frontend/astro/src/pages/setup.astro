@@ -1,0 +1,40 @@
+---
+import Layout from '../layouts/Layout.astro'
+---
+
+<Layout title="project_keel — Use it in your project" active="setup">
+  <header>
+    <h1 class="text-3xl font-bold tracking-tight">Use it in your own project</h1>
+    <p class="mt-2 text-slate-600">Five steps from clone to a self-checking project.</p>
+  </header>
+
+  <ol id="steps" class="mt-8 space-y-4">
+    <p class="text-sm text-slate-400">Loading…</p>
+  </ol>
+
+  <script>
+    import { getSetup } from '../lib/api'
+    import { h, mount, byId, showError } from '../lib/dom'
+    import { inlineEl } from '../lib/components'
+
+    async function render(): Promise<void> {
+      try {
+        const steps = await getSetup()
+        mount(byId('steps'),
+          ...steps.map((s, i) =>
+            h('li', { class: 'flex gap-4 rounded-xl border border-slate-200 bg-white p-5' },
+              h('span', { class: 'grid h-8 w-8 shrink-0 place-items-center rounded-full bg-slate-900 text-sm font-bold text-white' }, String(i + 1)),
+              h('div', { class: 'min-w-0 flex-1' },
+                h('h3', { class: 'font-semibold' }, s.title),
+                inlineEl('p', 'mt-1 text-sm text-slate-600 [&_code]:rounded [&_code]:bg-slate-100 [&_code]:px-1', s.body),
+                s.command
+                  ? h('pre', { class: 'mt-3 overflow-x-auto rounded-lg bg-slate-900 px-4 py-2.5 text-xs text-slate-100' },
+                      h('code', { class: 'font-mono' }, s.command))
+                  : null))))
+      } catch (err) {
+        showError(byId('steps'), err)
+      }
+    }
+    void render()
+  </script>
+</Layout>

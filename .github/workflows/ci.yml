@@ -1,0 +1,19 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+      - run: pip install -e ".[dev]"
+      # Install FE deps so the frontend lint/typecheck gates run; no-op
+      # if there are no frontend apps.
+      - run: make fe-install
+      - run: make check-all
+      - run: make lint
+      - run: make typecheck
+      - run: make test

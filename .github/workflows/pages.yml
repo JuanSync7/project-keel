@@ -1,0 +1,98 @@
+name: pages
+
+# Deploy the showcase frontend to GitHub Pages as a STATIC site (no backend).
+#
+# The showcase is normally served by FastAPI (api/rest_fastapi). Pages can't run
+# Python, so this workflow snapshots the same read model to static JSON
+# (scripts/jobs/export_showcase_static.py — one source of truth with the live
+# API) and builds Astro in static mode. The site base is derived from the repo
+# name, so a project page works at https://<owner>.github.io/<repo>/ with nothing
+# hardcoded; a user/org page (<name>.github.io) or a custom domain (public/CNAME)
+# deploys at the root instead.
+#
+# One-time setup: repo Settings → Pages → Build and deployment → Source =
+# "GitHub Actions". (Adjust the branch below if your default isn't `main`.)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deploy at a time. Do NOT cancel in progress: killing a run between
+# upload-pages-artifact and deploy-pages can leave the Pages deployment failed
+# or half-applied. Newer pushes queue behind the current deploy.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # Makes `backend.showcase` importable for the export/corpus jobs. The
+      # package declares no runtime deps, so this installs nothing extra.
+      - name: Install the package
+        run: pip install -e .
+
+      - name: Derive the site base from the repo
+        id: base
+        env:
+          # Via env (not inline ${{…}}) per workflow-injection hygiene, though a
+          # repo name is already restricted to [A-Za-z0-9._-].
+          REPO_NAME: ${{ github.event.repository.name }}
+        run: |
+          if [[ "$REPO_NAME" == *.github.io ]] || [[ -f src/frontend/astro/public/CNAME ]]; then
+            # user/org page or custom domain → served at the root
+            echo "path=/"           >> "$GITHUB_OUTPUT"
+            echo "url="             >> "$GITHUB_OUTPUT"
+          else
+            # project page → served under /<repo>/
+            echo "path=/$REPO_NAME" >> "$GITHUB_OUTPUT"
+            echo "url=/$REPO_NAME"  >> "$GITHUB_OUTPUT"
+          fi
+
+      # Build the corpus + snapshot the showcase API to static files (public/).
+      - name: Build corpus + static snapshot
+        env:
+          BASE_URL: ${{ steps.base.outputs.url }}
+        run: make site-static BASE_URL="$BASE_URL"
+
+      - name: Install frontend deps
+        working-directory: src/frontend/astro
+        run: npm ci
+
+      - name: Build the static site
+        working-directory: src/frontend/astro
+        env:
+          PUBLIC_DATA_MODE: static
+          PUBLIC_BASE_PATH: ${{ steps.base.outputs.path }}
+        run: npm run build
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: src/frontend/astro/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

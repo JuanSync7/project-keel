@@ -1,0 +1,40 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+node_modules/
+.astro/
+*.tsbuildinfo
+# generated gRPC stubs
+api/grpc/*_pb2.py
+api/grpc/*_pb2_grpc.py
+# code-doc-monitor (cdmon) generated state — review log, coverage cache
+.cdmon/
+# generated wiki corpus + agent front door (views over the repo, never sources of truth)
+wiki/corpus.json
+wiki/llms.txt
+wiki/llms-full.txt
+# generated static showcase snapshot (export_showcase_static.py → frontend reads on backendless/Pages builds)
+src/frontend/astro/public/api/
+src/frontend/astro/public/llms.txt
+src/frontend/astro/public/llms-full.txt
+# durable agent-runtime checkpoints (resume-after-crash snapshots; never a source of truth)
+wiki/.runtime/
+.coverage
+coverage.xml
+# local config / secrets
+config/*.local.*
+models/config/*.local.*
+.env
+.env.local
+.claude/settings.local.json
+# model artifacts (track via LFS or external store, not git)
+models/**/*.bin
+models/**/*.safetensors
+models/**/*.ckpt

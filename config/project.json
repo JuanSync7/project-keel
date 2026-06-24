@@ -1,0 +1,33 @@
+{
+  "_comment": "Authoritative project facts: hand-edited, enforced by scripts/check_structure.py (check_H, CONVENTIONS section 15). Choose one frontend stack; list shipped stacks/transports under 'available'.",
+  "name": "project_keel",
+  "layers": {
+    "frontend": {
+      "stack": null,
+      "language": "typescript",
+      "root": "src/frontend",
+      "available": ["react-vite", "astro"]
+    },
+    "backend": {
+      "language": "python",
+      "python": ">=3.10",
+      "path": "src/backend"
+    }
+  },
+  "transports": {
+    "enabled": ["rest", "mcp"],
+    "available": {
+      "rest": "api/rest_fastapi",
+      "grpc": "api/grpc",
+      "edge_nginx": "api/edge_nginx",
+      "mcp": "mcp"
+    }
+  },
+  "runtimes": {
+    "default": "inprocess",
+    "available": {
+      "inprocess": "runtimes",
+      "langgraph": "runtimes"
+    }
+  }
+}

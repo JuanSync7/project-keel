@@ -1,0 +1,425 @@
+{
+  "$comment": "GENERATED from api/rest_fastapi/aad (descriptor.py); AAD v1.0. Do not hand-edit \u2014 run scripts/agent_surface/generate_aad_schema.py.",
+  "$defs": {
+    "AadAgent": {
+      "description": "The card half of the descriptor \u2014 display metadata for the agents UI.",
+      "properties": {
+        "capabilities": {
+          "items": {
+            "$ref": "#/$defs/AadCapability"
+          },
+          "title": "Capabilities",
+          "type": "array"
+        },
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        },
+        "example_prompts": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Example Prompts",
+          "type": "array"
+        },
+        "icon": {
+          "$ref": "#/$defs/AadIcon"
+        },
+        "kind": {
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "owner": {
+          "default": "",
+          "title": "Owner",
+          "type": "string"
+        },
+        "slug": {
+          "pattern": "^[a-z0-9][a-z0-9-]{0,63}$",
+          "title": "Slug",
+          "type": "string"
+        },
+        "tagline": {
+          "default": "",
+          "title": "Tagline",
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Tags",
+          "type": "array"
+        }
+      },
+      "required": [
+        "slug",
+        "name",
+        "kind"
+      ],
+      "title": "AadAgent",
+      "type": "object"
+    },
+    "AadAuth": {
+      "description": "Declares *that* auth is needed; never the secret (that stays consumer-side).",
+      "properties": {
+        "header": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Header"
+        },
+        "kind": {
+          "$ref": "#/$defs/AadAuthKind",
+          "default": "none"
+        }
+      },
+      "title": "AadAuth",
+      "type": "object"
+    },
+    "AadAuthKind": {
+      "description": "How the consumer must authenticate. ``none`` is DEV-ONLY.",
+      "enum": [
+        "none",
+        "api_key",
+        "bearer"
+      ],
+      "title": "AadAuthKind",
+      "type": "string"
+    },
+    "AadCapability": {
+      "description": "A slash command the agent exposes (rendered on its card).",
+      "properties": {
+        "arg_hint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Arg Hint"
+        },
+        "command": {
+          "title": "Command",
+          "type": "string"
+        },
+        "maps_to": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maps To"
+        },
+        "passthrough": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Passthrough"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "command",
+        "title"
+      ],
+      "title": "AadCapability",
+      "type": "object"
+    },
+    "AadHealth": {
+      "description": "Liveness endpoint the consumer may poll.",
+      "properties": {
+        "method": {
+          "default": "GET",
+          "title": "Method",
+          "type": "string"
+        },
+        "path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Path"
+        }
+      },
+      "title": "AadHealth",
+      "type": "object"
+    },
+    "AadIcon": {
+      "description": "Presentation-only monogram/gradient for the agent card.",
+      "properties": {
+        "gradient": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Gradient",
+          "type": "array"
+        },
+        "kind": {
+          "default": "monogram",
+          "title": "Kind",
+          "type": "string"
+        },
+        "text": {
+          "default": "AI",
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "title": "AadIcon",
+      "type": "object"
+    },
+    "AadIo": {
+      "description": "Which response field carries which part of the answer \u2014 the semantics\nOpenAPI omits.",
+      "properties": {
+        "answer": {
+          "default": "answer",
+          "title": "Answer",
+          "type": "string"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Error"
+        },
+        "html": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Html"
+        },
+        "meta": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Meta"
+        },
+        "question": {
+          "default": "question",
+          "title": "Question",
+          "type": "string"
+        }
+      },
+      "title": "AadIo",
+      "type": "object"
+    },
+    "AadMcp": {
+      "description": "MCP transport binding (alternative to OpenAPI).",
+      "properties": {
+        "endpoint": {
+          "title": "Endpoint",
+          "type": "string"
+        },
+        "tool": {
+          "default": "ask",
+          "title": "Tool",
+          "type": "string"
+        }
+      },
+      "required": [
+        "endpoint"
+      ],
+      "title": "AadMcp",
+      "type": "object"
+    },
+    "AadOpenApi": {
+      "description": "OpenAPI transport binding: where the spec is and which ops to resolve.",
+      "properties": {
+        "operations": {
+          "additionalProperties": {
+            "$ref": "#/$defs/AadOperation"
+          },
+          "title": "Operations",
+          "type": "object"
+        },
+        "spec_url": {
+          "default": "/openapi.json",
+          "title": "Spec Url",
+          "type": "string"
+        }
+      },
+      "title": "AadOpenApi",
+      "type": "object"
+    },
+    "AadOperation": {
+      "description": "Binds a logical role (ask/stream) to an OpenAPI operation + its io map.",
+      "properties": {
+        "io": {
+          "$ref": "#/$defs/AadIo"
+        },
+        "method": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Method"
+        },
+        "operationId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Operationid"
+        },
+        "path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Path"
+        },
+        "sse": {
+          "default": false,
+          "title": "Sse",
+          "type": "boolean"
+        }
+      },
+      "title": "AadOperation",
+      "type": "object"
+    },
+    "AadProtocol": {
+      "description": "Wire protocols an external agent may declare (no ``function`` \u2014 that is\nan in-process transport, not something discovered over a URL).",
+      "enum": [
+        "openapi",
+        "mcp"
+      ],
+      "title": "AadProtocol",
+      "type": "string"
+    },
+    "AadTransport": {
+      "description": "How to call the agent: the protocol + its binding + auth declaration.",
+      "properties": {
+        "auth": {
+          "$ref": "#/$defs/AadAuth"
+        },
+        "mcp": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AadMcp"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "openapi": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AadOpenApi"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "protocol": {
+          "$ref": "#/$defs/AadProtocol"
+        }
+      },
+      "required": [
+        "protocol"
+      ],
+      "title": "AadTransport",
+      "type": "object"
+    }
+  },
+  "description": "The document an agent serves at ``/.well-known/aion-agent.json`` (AAD v1).\n\nThis is the AAD *dialect* of the neutral agent surface \u2014 the version\nenvelope, transport binding, and well-known path live here, never in the\nneutral ``AgentCard``. ``AadDescriptor.model_json_schema()`` is the single\nsource of truth the committed JSON Schema is generated from.",
+  "properties": {
+    "aad_version": {
+      "title": "Aad Version",
+      "type": "string"
+    },
+    "agent": {
+      "$ref": "#/$defs/AadAgent"
+    },
+    "health": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/AadHealth"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "transport": {
+      "$ref": "#/$defs/AadTransport"
+    }
+  },
+  "required": [
+    "aad_version",
+    "agent",
+    "transport"
+  ],
+  "title": "AadDescriptor",
+  "type": "object"
+}

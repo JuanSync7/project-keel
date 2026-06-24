@@ -1,0 +1,47 @@
+# Install once:  pip install pre-commit && pre-commit install
+# Each hook below is a thin TRIGGER (an adapter) that fires a doer;
+# the doer's logic lives in scripts/ or the tool, never inline here.
+repos:
+  - repo: local
+    hooks:
+      - id: structure
+        name: structure & frontmatter conventions
+        entry: python3 scripts/check_structure.py
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: eslint
+        name: eslint (frontend)
+        entry: make lint-fe
+        language: system
+        pass_filenames: false
+        files: \.(ts|tsx|js|jsx|astro)$
+      - id: cdmon
+        name: cdmon code-doc drift (no-op if cdmon not installed)
+        entry: python3 scripts/cdmon_sync.py --check
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: aad-schema
+        name: AAD schema in sync with the model (skips if pydantic absent)
+        entry: python3 scripts/agent_surface/generate_aad_schema.py --check
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: scaffold-sync
+        name: scaffold.py embeds match the live scripts
+        entry: python3 scripts/check_scaffold_sync.py --check
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: openapi
+        name: openapi.json in sync with the app (skips if FastAPI absent)
+        entry: python3 api/rest_fastapi/export_openapi.py --check
+        language: system
+        pass_filenames: false
+        always_run: true
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.4
+    hooks:
+      - id: ruff
+      - id: ruff-format

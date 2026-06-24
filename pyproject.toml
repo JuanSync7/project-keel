@@ -1,0 +1,37 @@
+# Python src-layout. Distribution metadata for Project Keel.
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "project_keel"
+version = "0.0.0"
+description = "TODO"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-cov", "ruff", "mypy"]
+# Optional agent-runtime engines. The default 'inprocess' runtime is pure
+# stdlib (no install); install an engine only if you select it by name, e.g.
+# get_runtime("langgraph"). Keeps the default install dependency-free.
+langgraph = ["langgraph>=0.2"]
+
+# src-layout: packages live under src/ (importable as their top name).
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+  "unit: fast isolated tests (mirror src/)",
+  "integration: 2+ real components",
+  "e2e: full-system journeys",
+  "smoke: liveness checks",
+]
+
+[tool.ruff]
+src = ["src", "tests"]
+
+[tool.mypy]
+files = ["src"]

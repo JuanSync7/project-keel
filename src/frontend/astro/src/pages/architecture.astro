@@ -1,0 +1,159 @@
+---
+import Layout from '../layouts/Layout.astro'
+import { withBase } from '../lib/links'
+---
+
+<Layout title="project_keel — Architecture" active="architecture" wide={true}>
+  <header>
+    <h1 class="text-3xl font-bold tracking-tight">Architecture</h1>
+    <p class="mt-2 max-w-2xl text-slate-600">
+      One source of truth — the repo — projected two ways: a rendered wiki for
+      humans and a structured surface for agents. Each layer is thin and depends
+      only inward.
+    </p>
+  </header>
+
+  <section class="mt-10">
+    <h2 class="text-lg font-semibold">One source, two audiences</h2>
+    <p class="mt-2 max-w-3xl text-sm text-slate-600">
+      Docs and code are verified by deterministic checks, compiled into a
+      knowledge graph (<code class="rounded bg-slate-100 px-1 font-mono text-[0.8em]">wiki/corpus.json</code>),
+      read by a pure domain model, and served over a thin API. The same API
+      feeds the human wiki and the agent surface.
+    </p>
+    <div class="mt-4 overflow-x-auto rounded-xl border border-slate-200 bg-white p-4">
+      <div id="diagram-flow" class="flex justify-center">
+        <p class="py-8 text-sm text-slate-400">Rendering diagram…</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="mt-12">
+    <h2 class="text-lg font-semibold">Layering &amp; dependency rules</h2>
+    <p class="mt-2 max-w-3xl text-sm text-slate-600">
+      Dependencies point one way: <code class="rounded bg-slate-100 px-1 font-mono text-[0.8em]">app → {'{frontend, backend}'} → shared</code>.
+      Transports and agents are thin adapters over the domain; providers hide
+      behind <code class="rounded bg-slate-100 px-1 font-mono text-[0.8em]">models/</code>.
+    </p>
+    <div class="mt-4 overflow-x-auto rounded-xl border border-slate-200 bg-white p-4">
+      <div id="diagram-layers" class="flex justify-center"></div>
+    </div>
+  </section>
+
+  <section class="mt-12">
+    <h2 class="text-lg font-semibold">Principles</h2>
+    <ul class="mt-4 grid gap-3 sm:grid-cols-2">
+      <li class="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600"><strong class="font-medium text-slate-800">Thin transports.</strong> <code class="font-mono">api/</code> and <code class="font-mono">mcp/</code> validate and call into <code class="font-mono">src/</code> — no domain logic in handlers.</li>
+      <li class="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600"><strong class="font-medium text-slate-800">__init__ is the API.</strong> Nothing leaves a package except through <code class="font-mono">__all__</code>; privates stay private.</li>
+      <li class="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600"><strong class="font-medium text-slate-800">Deterministic gate.</strong> The checks make the repo well-formed, which is what makes the corpus reproducible.</li>
+      <li class="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600"><strong class="font-medium text-slate-800">Live sync.</strong> The frontend fetches at runtime and the API re-reads files on change — no rebuild to reflect an edit.</li>
+      <li class="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600"><strong class="font-medium text-slate-800">Swappable runtime.</strong> An agent's control flow is a neutral <code class="font-mono">Plan</code> run by a <code class="font-mono">Runtime</code> — durable &amp; resumable; <code class="font-mono">langgraph</code> is one optional adapter behind <code class="font-mono">runtimes/</code>.</li>
+    </ul>
+  </section>
+
+  <section class="mt-12">
+    <div class="flex items-baseline justify-between">
+      <h2 class="text-lg font-semibold">Features</h2>
+      <a href={withBase('/features')} class="text-sm font-medium text-indigo-600 hover:underline">All features →</a>
+    </div>
+    <div id="arch-features" class="mt-4 grid gap-4 sm:grid-cols-2">
+      <p class="text-sm text-slate-400">Loading…</p>
+    </div>
+  </section>
+
+  <script>
+    import mermaid from 'mermaid'
+    import { getFeatures } from '../lib/api'
+    import { mount, byId, showError } from '../lib/dom'
+    import { featureCard } from '../lib/components'
+
+    mermaid.initialize({
+      startOnLoad: false,
+      securityLevel: 'strict',
+      theme: 'base',
+      themeVariables: {
+        fontFamily: "ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
+        fontSize: '13px',
+        lineColor: '#94a3b8',
+        primaryColor: '#ffffff',
+        primaryBorderColor: '#cbd5e1',
+        primaryTextColor: '#0f172a',
+        clusterBkg: '#f8fafc',
+        clusterBorder: '#e2e8f0',
+        edgeLabelBackground: '#ffffff',
+      },
+      flowchart: { useMaxWidth: true, htmlLabels: true, curve: 'basis', padding: 14 },
+    })
+
+    const FLOW = `flowchart TB
+  DOCS["docs + code<br/>*.md · *.py"]:::src
+  RULES["AGENT.md per dir<br/>+ frontmatter labels"]:::src
+  FACTS["config/project.json<br/>machine-checked facts"]:::src
+  CHECKS{{"deterministic checks<br/>structure · corpus · contracts"}}:::gate
+  BUILD["build_corpus → link_corpus<br/>(deterministic, model-free)"]:::pipe
+  CORPUS[("wiki/corpus.json<br/>nodes · tree · keyword links")]:::data
+  DOMAIN["src/backend/showcase<br/>pure read model"]:::be
+  REST["api/rest_fastapi<br/>/api/* · thin transport"]:::be
+  WEB["src/frontend/astro<br/>rendered wiki (human)"]:::human
+  AGENTV["agent front door<br/>llms.txt · /api JSON<br/>corpus.json · query_corpus"]:::agent
+  DOCS --> CHECKS
+  FACTS --> CHECKS
+  DOCS --> BUILD
+  BUILD --> CORPUS
+  CORPUS --> DOMAIN
+  FACTS --> DOMAIN
+  DOMAIN --> REST
+  REST -->|"renders"| WEB
+  REST -->|"JSON"| AGENTV
+  CORPUS -.->|"traverse"| AGENTV
+  RULES -.->|"rules"| AGENTV
+  classDef src fill:#f1f5f9,stroke:#94a3b8,color:#0f172a;
+  classDef gate fill:#fef2f2,stroke:#fb7185,color:#881337;
+  classDef pipe fill:#f8fafc,stroke:#cbd5e1,color:#334155;
+  classDef data fill:#ecfdf5,stroke:#34d399,color:#065f46;
+  classDef be fill:#eef2ff,stroke:#818cf8,color:#312e81;
+  classDef human fill:#eff6ff,stroke:#60a5fa,color:#1e3a8a;
+  classDef agent fill:#faf5ff,stroke:#c084fc,color:#581c87;`
+
+    const LAYERS = `flowchart TB
+  APP["app/<br/>composition root"]:::core
+  FE["frontend/<br/>UI"]:::core
+  BE["backend/<br/>domain + services"]:::core
+  SH["shared/<br/>FE↔BE contract"]:::core
+  TR["api/ · mcp/<br/>transports (thin)"]:::edge
+  AG["agents/<br/>LLM brains"]:::edge
+  MO["models/<br/>provider adapters"]:::edge
+  RT["runtimes/<br/>control-flow engines<br/>inprocess · langgraph"]:::edge
+  APP --> FE
+  APP --> BE
+  FE --> SH
+  BE --> SH
+  TR --> BE
+  AG --> BE
+  AG --> MO
+  AG --> RT
+  classDef core fill:#eef2ff,stroke:#818cf8,color:#312e81;
+  classDef edge fill:#f8fafc,stroke:#94a3b8,color:#334155;`
+
+    async function draw(id: string, def: string, targetId: string): Promise<void> {
+      const { svg } = await mermaid.render(id, def)
+      byId(targetId).innerHTML = svg
+    }
+
+    async function init(): Promise<void> {
+      try {
+        await draw('flow', FLOW, 'diagram-flow')
+        await draw('layers', LAYERS, 'diagram-layers')
+      } catch (err) {
+        showError(byId('diagram-flow'), err)
+      }
+      try {
+        const feats = await getFeatures()
+        mount(byId('arch-features'), ...feats.map(featureCard))
+      } catch (err) {
+        showError(byId('arch-features'), err)
+      }
+    }
+    void init()
+  </script>
+</Layout>

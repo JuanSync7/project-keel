@@ -1,0 +1,19 @@
+# RAG knobs — copy to rag.local.toml and tune. NO secrets here (use .env).
+[retrieval]
+top_k = 8
+reranker = "bge-reranker-v2-m3"   # adapter selected in models/config/
+max_context_tokens = 8192
+
+[embedding]
+model = "text-embedding-3-large"  # adapter selected in models/config/
+dimensions = 1024
+batch_size = 64
+
+[chunking]
+chunk_tokens = 512
+overlap_tokens = 64
+
+[service]
+host = "0.0.0.0"
+port = 8000                        # the container/app reads this, not a copy
+request_timeout_s = 30
