@@ -11,7 +11,7 @@ requires-python = ">=3.10"
 dependencies = []
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-cov", "ruff", "mypy"]
+dev = ["pytest", "pytest-cov", "ruff", "mypy", "httpx"]  # httpx backs FastAPI's TestClient (API/AAD tests)
 # Optional agent-runtime engines. The default 'inprocess' runtime is pure
 # stdlib (no install); install an engine only if you select it by name, e.g.
 # get_runtime("langgraph"). Keeps the default install dependency-free.

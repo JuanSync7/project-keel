@@ -19,6 +19,7 @@ from pathlib import Path
 import pytest
 
 pytest.importorskip("fastapi")  # optional transport dep — skip this module when absent
+pytest.importorskip("httpx")    # backs starlette/FastAPI TestClient
 
 from fastapi.testclient import TestClient  # noqa: E402
 

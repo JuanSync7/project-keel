@@ -798,7 +798,7 @@ def root_files():
         dependencies = []
 
         [project.optional-dependencies]
-        dev = ["pytest", "pytest-cov", "ruff", "mypy"]
+        dev = ["pytest", "pytest-cov", "ruff", "mypy", "httpx"]  # httpx backs FastAPI's TestClient
         # Optional agent-runtime engines. The default 'inprocess' runtime is pure
         # stdlib (no install); install an engine only if you select it by name,
         # e.g. get_runtime("langgraph"). Keeps the default install dependency-free.
@@ -8265,7 +8265,11 @@ import sys
 from pathlib import Path
 
 import pytest
-from fastapi.testclient import TestClient
+
+pytest.importorskip("fastapi")  # optional transport dep — skip this module when absent
+pytest.importorskip("httpx")    # backs starlette/FastAPI TestClient
+
+from fastapi.testclient import TestClient  # noqa: E402
 
 _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT))
