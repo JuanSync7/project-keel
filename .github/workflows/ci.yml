@@ -21,4 +21,8 @@ jobs:
       - run: make check-all
       - run: make lint
       - run: make typecheck
+      # The corpus (wiki/corpus.json) is a generated artifact (gitignored), so a
+      # fresh checkout doesn't have it; the showcase integration tests read it.
+      # Build it before the suite runs.
+      - run: make site-data
       - run: make test
