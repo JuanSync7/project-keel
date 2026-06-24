@@ -7,9 +7,9 @@ PY ?= python3
 # a no-op on backend-only repos.
 FE_APPS := $(dir $(wildcard src/frontend/*/package.json))
 
-.PHONY: help scaffold check check-all check-corpus check-openapi check-aad scaffold-sync verify test unit integration e2e smoke \
+.PHONY: help scaffold check check-all check-corpus check-openapi check-aad scaffold-sync advise check-generic verify test unit integration e2e smoke \
         lint lint-py lint-fe fmt typecheck typecheck-py typecheck-fe \
-        fe-install run run-api run-web site-data demo agent-surface-schema
+        fe-install run run-api run-web site-data site-static demo agent-surface-schema
 
 help: ## List tasks
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -31,6 +31,10 @@ check-aad: ## Committed AAD schema in sync with the model (skips if pydantic abs
 	$(PY) scripts/agent_surface/generate_aad_schema.py --check
 scaffold-sync: ## scaffold.py embeds match the live scripts (3.6-safe)
 	$(PY) scripts/check_scaffold_sync.py --check
+
+advise: ## Advisory: flag overfitting / answer-key smells (CONVENTIONS §18; never fails the build)
+	-$(PY) scripts/check_generic.py
+check-generic: advise ## Alias for `advise` (the generic-solution advisor)
 
 verify: check-all lint typecheck test ## Run all gates (all checks + lint + types + tests)
 

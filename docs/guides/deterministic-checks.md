@@ -8,7 +8,7 @@ tags: [checks, ci, linter, determinism, pre-commit, hooks, guide]
 summary: Catalogue of every deterministic check that keeps a project-template repo honest — purpose, when to run, and how to wire as a hook.
 id: docs-guides-deterministic-checks
 created: 2026-06-19
-updated: 2026-06-19
+updated: 2026-06-24
 visibility: internal
 canonical: true
 ---
@@ -69,6 +69,7 @@ everything and therefore expect the project interpreter.
 | AAD schema drift | `scripts/agent_surface/generate_aad_schema.py --check` | error | pydantic | Committed AAD JSON Schema matches the model |
 | Code-doc drift | `scripts/cdmon_sync.py --check` | error* | any | cdmon code↔doc drift (*no-op until cdmon is installed) |
 | Accountability | `scripts/accountability_report.py` | report | ≥3.7 | Lists corpus nodes that resolve to no owner (informational) |
+| Generic-solution advisor | `scripts/check_generic.py` | report | 3.6-safe | Distinctive literals asserted as golden in tests **and** hardcoded in `src/` logic (the "answer-key" overfit smell, §18). Advisory only — never fails the build |
 
 All gates exit **0 = clean, 1 = failure**. Warnings (e.g. a missing `owner`)
 print but never fail the build.
@@ -173,6 +174,22 @@ have drifted from the code they describe.
 (CONVENTIONS §12), so ownership gaps are visible. Does not fail the build.
 
 **Run.** `python scripts/accountability_report.py`
+
+### 8. Generic-solution advisor — `scripts/check_generic.py`
+
+**Purpose.** A *report*, not a gate: the advisory backstop for the "solve the
+general case" discipline (CONVENTIONS §18). It flags an **answer key in source** —
+a distinctive literal that a test asserts as its expected value (an `==` operand
+or `assertEqual` argument) **and** that is also hardcoded in non-data `src/`
+logic. It excludes data/registry modules (`*_data.py`, fixtures, `conftest.py`),
+literals named as `ALL_CAPS` constants, and trivial literals, honours a
+`# generic-ok: <reason>` pragma, and **always exits 0** — it draws attention, it
+never gates.
+
+**When to run.** Anytime, especially after making a failing eval/golden/case
+pass; advisory and outside `make verify`.
+
+**Run.** `make advise` · `python3 scripts/check_generic.py [--json] [--strict]`
 
 ---
 

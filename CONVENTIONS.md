@@ -8,7 +8,7 @@ tags: [conventions, frontmatter, taxonomy]
 summary: Single source of truth for labeling (frontmatter) and the directory taxonomy.
 id: conventions
 created: 2026-06-17
-updated: 2026-06-22
+updated: 2026-06-24
 visibility: internal
 canonical: true
 ---
@@ -519,3 +519,69 @@ These are conventions an agent follows, not gated by a structural check today: n
 check verifies the test mirror, that a test came first, or that it exercises the
 code. The real gate is `make verify` (a red suite fails it); TDD itself is a
 behavioral discipline, not something a static check can certify.
+
+## 18. Generic solutions (solve the class, not the case)
+
+Code here is meant to stay **generic**: this is a *template*, and everything
+built from it should solve the broader problem, not the one example in front of
+you. The recurring failure mode — for humans and for an LLM alike — is
+**overfitting to the sample**: given an eval, a golden file, or one failing test,
+you make *that* case pass by hardcoding its expected answer, special-casing its
+specimen value, or pasting its datum into the code, instead of deriving the
+result from the inputs. The example is evidence of the rule; it is not the rule.
+This is the same neutral-concept-first instinct the rest of these conventions
+take — a provider behind `models/` (§7), a tool behind a thin adapter (§9), a
+wire dialect behind the agent surface (§14), an engine behind a `Plan` (§16):
+**name the general thing first; the concrete instance is one interchangeable
+case of it.** It is the discipline sibling of the development loops (§17): there
+the test is the pressure that keeps you honest, here it is the rule the test only
+samples. The playbook with worked examples is `docs/guides/generic-solution.md`.
+
+- **The eval is a sample, not the spec.** A golden set, a fixture, or a failing
+  case *illustrates* the behavior; it does not *define* it. Read a row as "the
+  rule must also produce this", never as "the rule is this row". Generalize from
+  the example to the property it demonstrates, then satisfy the property.
+- **Name the general rule before you special-case.** Before adding
+  `if x == "<specimen>"`, state the rule the specimen is an instance of and
+  implement *that*. A special-case branch is justified only when the general rule
+  genuinely has a discontinuity there — and then it is documented as such, not as
+  a way to turn one test green. An enum-style dispatch over a fixed, documented
+  set of kinds *is* the general rule; a lone branch that exists only to pass one
+  case is not.
+- **Derive, don't hardcode the answer key.** Compute outputs from inputs. A
+  literal lifted verbatim from a test's expected value and embedded in `src/`
+  logic is an *answer key*: it makes the sample pass while teaching the code
+  nothing. A value that genuinely is content — a slug, a catalogue row, a curated
+  title — belongs in a declared registry (`*_data.py`, fixtures, a `kind: config`
+  module per §8), not in a branch; logic reads data, it does not memorize it.
+- **Name the constant, or annotate the literal.** A meaningful literal in logic
+  is either promoted to an `ALL_CAPS` named constant (naming *is* the general
+  move) or, when it is deliberately a fixed token, annotated
+  `# generic-ok: <reason>` so the next reader knows it was a choice.
+- **When a golden test fails, fix the generator — not the golden.** If output
+  drifted from a committed golden, ask *which is right*: change the producing
+  logic if the golden is correct, or regenerate the golden (and say why in the
+  commit) if the behavior legitimately changed — never tweak the code so it emits
+  exactly the stored bytes for that one input.
+- **A patch is not a fix.** If a change only makes the named failing case pass —
+  and a slightly different input of the same class would still fail — you patched
+  the symptom. The fix is the smallest change that makes the *whole class* pass,
+  with a test (§17) that samples more than the original case.
+
+A *backstop*, not a gate: `scripts/check_generic.py` (run via `make advise`,
+gate `report`) flags the highest-confidence smell — a distinctive literal that a
+test asserts as an expected value (an `==` operand or `assertEqual` argument)
+**and** that also appears hardcoded in non-data `src/` logic (an "answer key in
+source"). It excludes data/registry modules (`*_data.py`, fixtures, `conftest`),
+literals named as `ALL_CAPS` constants, and trivial literals, honours a
+`# generic-ok: <reason>` pragma, and **always exits 0**. It is catalogued with gate `report` in §6's suite and in
+`docs/guides/deterministic-checks.md`.
+
+This is a convention an agent follows, not gated by a structural check: the
+advisory linter never fails the build, and a static check cannot *prove* code is
+generic — genericity is a property of the input space, not of the source text. So
+`check_generic.py` only points at one specific, high-confidence smell (a memorized
+answer key) and stays silent on legitimate data. The real pressure is behavioral:
+behavior-asserting tests (§17) and review. Treat a flag as a question to answer,
+and the rule above as the actual standard — never a green checkmark labelled
+"generic".
