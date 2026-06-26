@@ -5,8 +5,11 @@ import { withBase } from '../lib/links'
 
 <Layout title="project_keel — Architecture" active="architecture" wide={true}>
   <header>
-    <h1 class="text-3xl font-bold tracking-tight">Architecture</h1>
-    <p class="mt-2 max-w-2xl text-slate-600">
+    <p class="font-mono text-[11px] font-medium uppercase tracking-[0.22em] text-muted">
+      <span class="text-teal">//</span> architecture · one source, two audiences
+    </p>
+    <h1 class="mt-2 text-3xl font-semibold text-ink">Architecture</h1>
+    <p class="mt-2 max-w-2xl text-ink2">
       One source of truth — the repo — projected two ways: a rendered wiki for
       humans and a structured surface for agents. Each layer is thin and depends
       only inward.
@@ -14,50 +17,50 @@ import { withBase } from '../lib/links'
   </header>
 
   <section class="mt-10">
-    <h2 class="text-lg font-semibold">One source, two audiences</h2>
-    <p class="mt-2 max-w-3xl text-sm text-slate-600">
+    <h2 class="text-lg font-semibold text-ink">One source, two audiences</h2>
+    <p class="mt-2 max-w-3xl text-sm text-ink2">
       Docs and code are verified by deterministic checks, compiled into a
-      knowledge graph (<code class="rounded bg-slate-100 px-1 font-mono text-[0.8em]">wiki/corpus.json</code>),
+      knowledge graph (<code class="rounded border border-line bg-panel2 px-1 font-mono text-[0.8em]">wiki/corpus.json</code>),
       read by a pure domain model, and served over a thin API. The same API
       feeds the human wiki and the agent surface.
     </p>
-    <div class="mt-4 overflow-x-auto rounded-xl border border-slate-200 bg-white p-4">
+    <div class="mt-4 overflow-x-auto rounded-xl border border-line bg-[#0e0f12] p-4">
       <div id="diagram-flow" class="flex justify-center">
-        <p class="py-8 text-sm text-slate-400">Rendering diagram…</p>
+        <p class="py-8 text-sm text-muted">Rendering diagram…</p>
       </div>
     </div>
   </section>
 
   <section class="mt-12">
-    <h2 class="text-lg font-semibold">Layering &amp; dependency rules</h2>
-    <p class="mt-2 max-w-3xl text-sm text-slate-600">
-      Dependencies point one way: <code class="rounded bg-slate-100 px-1 font-mono text-[0.8em]">app → {'{frontend, backend}'} → shared</code>.
+    <h2 class="text-lg font-semibold text-ink">Layering &amp; dependency rules</h2>
+    <p class="mt-2 max-w-3xl text-sm text-ink2">
+      Dependencies point one way: <code class="rounded border border-line bg-panel2 px-1 font-mono text-[0.8em]">app → {'{frontend, backend}'} → shared</code>.
       Transports and agents are thin adapters over the domain; providers hide
-      behind <code class="rounded bg-slate-100 px-1 font-mono text-[0.8em]">models/</code>.
+      behind <code class="rounded border border-line bg-panel2 px-1 font-mono text-[0.8em]">models/</code>.
     </p>
-    <div class="mt-4 overflow-x-auto rounded-xl border border-slate-200 bg-white p-4">
+    <div class="mt-4 overflow-x-auto rounded-xl border border-line bg-[#0e0f12] p-4">
       <div id="diagram-layers" class="flex justify-center"></div>
     </div>
   </section>
 
   <section class="mt-12">
-    <h2 class="text-lg font-semibold">Principles</h2>
+    <h2 class="text-lg font-semibold text-ink">Principles</h2>
     <ul class="mt-4 grid gap-3 sm:grid-cols-2">
-      <li class="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600"><strong class="font-medium text-slate-800">Thin transports.</strong> <code class="font-mono">api/</code> and <code class="font-mono">mcp/</code> validate and call into <code class="font-mono">src/</code> — no domain logic in handlers.</li>
-      <li class="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600"><strong class="font-medium text-slate-800">__init__ is the API.</strong> Nothing leaves a package except through <code class="font-mono">__all__</code>; privates stay private.</li>
-      <li class="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600"><strong class="font-medium text-slate-800">Deterministic gate.</strong> The checks make the repo well-formed, which is what makes the corpus reproducible.</li>
-      <li class="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600"><strong class="font-medium text-slate-800">Live sync.</strong> The frontend fetches at runtime and the API re-reads files on change — no rebuild to reflect an edit.</li>
-      <li class="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600"><strong class="font-medium text-slate-800">Swappable runtime.</strong> An agent's control flow is a neutral <code class="font-mono">Plan</code> run by a <code class="font-mono">Runtime</code> — durable &amp; resumable; <code class="font-mono">langgraph</code> is one optional adapter behind <code class="font-mono">runtimes/</code>.</li>
+      <li class="rounded-lg border border-line bg-panel p-4 text-sm text-ink2"><strong class="font-medium text-ink">Thin transports.</strong> <code class="font-mono">api/</code> and <code class="font-mono">mcp/</code> validate and call into <code class="font-mono">src/</code> — no domain logic in handlers.</li>
+      <li class="rounded-lg border border-line bg-panel p-4 text-sm text-ink2"><strong class="font-medium text-ink">__init__ is the API.</strong> Nothing leaves a package except through <code class="font-mono">__all__</code>; privates stay private.</li>
+      <li class="rounded-lg border border-line bg-panel p-4 text-sm text-ink2"><strong class="font-medium text-ink">Deterministic gate.</strong> The checks make the repo well-formed, which is what makes the corpus reproducible.</li>
+      <li class="rounded-lg border border-line bg-panel p-4 text-sm text-ink2"><strong class="font-medium text-ink">Live sync.</strong> The frontend fetches at runtime and the API re-reads files on change — no rebuild to reflect an edit.</li>
+      <li class="rounded-lg border border-line bg-panel p-4 text-sm text-ink2"><strong class="font-medium text-ink">Swappable runtime.</strong> An agent's control flow is a neutral <code class="font-mono">Plan</code> run by a <code class="font-mono">Runtime</code> — durable &amp; resumable; <code class="font-mono">langgraph</code> is one optional adapter behind <code class="font-mono">runtimes/</code>.</li>
     </ul>
   </section>
 
   <section class="mt-12">
     <div class="flex items-baseline justify-between">
-      <h2 class="text-lg font-semibold">Features</h2>
-      <a href={withBase('/features')} class="text-sm font-medium text-indigo-600 hover:underline">All features →</a>
+      <h2 class="text-lg font-semibold text-ink">Features</h2>
+      <a href={withBase('/features')} class="font-mono text-[11px] uppercase tracking-wider text-teal hover:underline">All features →</a>
     </div>
     <div id="arch-features" class="mt-4 grid gap-4 sm:grid-cols-2">
-      <p class="text-sm text-slate-400">Loading…</p>
+      <p class="text-sm text-muted">Loading…</p>
     </div>
   </section>
 
@@ -67,20 +70,22 @@ import { withBase } from '../lib/links'
     import { mount, byId, showError } from '../lib/dom'
     import { featureCard } from '../lib/components'
 
+    // Dark "field-guide" mermaid theme — concrete hex (mermaid can't read CSS
+    // vars). Diagrams sit on a fixed dark panel in both light/dark site themes.
     mermaid.initialize({
       startOnLoad: false,
       securityLevel: 'strict',
       theme: 'base',
       themeVariables: {
-        fontFamily: "ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
+        fontFamily: "'DM Sans', ui-sans-serif, system-ui, sans-serif",
         fontSize: '13px',
-        lineColor: '#94a3b8',
-        primaryColor: '#ffffff',
-        primaryBorderColor: '#cbd5e1',
-        primaryTextColor: '#0f172a',
-        clusterBkg: '#f8fafc',
-        clusterBorder: '#e2e8f0',
-        edgeLabelBackground: '#ffffff',
+        lineColor: '#888d96',
+        primaryColor: '#141519',
+        primaryBorderColor: '#23252b',
+        primaryTextColor: '#ededed',
+        clusterBkg: '#0b0c0f',
+        clusterBorder: '#23252b',
+        edgeLabelBackground: '#141519',
       },
       flowchart: { useMaxWidth: true, htmlLabels: true, curve: 'basis', padding: 14 },
     })
@@ -107,13 +112,13 @@ import { withBase } from '../lib/links'
   REST -->|"JSON"| AGENTV
   CORPUS -.->|"traverse"| AGENTV
   RULES -.->|"rules"| AGENTV
-  classDef src fill:#f1f5f9,stroke:#94a3b8,color:#0f172a;
-  classDef gate fill:#fef2f2,stroke:#fb7185,color:#881337;
-  classDef pipe fill:#f8fafc,stroke:#cbd5e1,color:#334155;
-  classDef data fill:#ecfdf5,stroke:#34d399,color:#065f46;
-  classDef be fill:#eef2ff,stroke:#818cf8,color:#312e81;
-  classDef human fill:#eff6ff,stroke:#60a5fa,color:#1e3a8a;
-  classDef agent fill:#faf5ff,stroke:#c084fc,color:#581c87;`
+  classDef src fill:#141519,stroke:#3a3f47,color:#ededed;
+  classDef gate fill:#211517,stroke:#d98c86,color:#f0d8d4;
+  classDef pipe fill:#0e0f12,stroke:#23252b,color:#c2c7d0;
+  classDef data fill:#0b2723,stroke:#2fd4bb,color:#d7f5ee;
+  classDef be fill:#141519,stroke:#2fd4bb,color:#ededed;
+  classDef human fill:#141519,stroke:#6b7280,color:#ededed;
+  classDef agent fill:#171327,stroke:#a98ed6,color:#e9e2f5;`
 
     const LAYERS = `flowchart TB
   APP["app/<br/>composition root"]:::core
@@ -132,8 +137,8 @@ import { withBase } from '../lib/links'
   AG --> BE
   AG --> MO
   AG --> RT
-  classDef core fill:#eef2ff,stroke:#818cf8,color:#312e81;
-  classDef edge fill:#f8fafc,stroke:#94a3b8,color:#334155;`
+  classDef core fill:#0b2723,stroke:#2fd4bb,color:#d7f5ee;
+  classDef edge fill:#141519,stroke:#3a3f47,color:#c2c7d0;`
 
     async function draw(id: string, def: string, targetId: string): Promise<void> {
       const { svg } = await mermaid.render(id, def)
