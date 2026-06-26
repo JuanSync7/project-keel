@@ -1,5 +1,9 @@
 ---
 import '../styles/global.css'
+import '@fontsource-variable/inter'
+import '@fontsource-variable/dm-sans'
+import '@fontsource/dm-mono/400.css'
+import '@fontsource/dm-mono/500.css'
 import { withBase } from '../lib/links'
 
 interface Props {
@@ -31,70 +35,104 @@ const nav = [
     <link rel="icon" type="image/svg+xml" href={withBase('/favicon.svg')} />
     <meta name="description" content="project_keel — a polyglot-aware, agent-friendly project skeleton that stays honest." />
     <title>{title}</title>
+    <!-- Set the theme before first paint (default: dark) to avoid a flash. -->
+    <script is:inline>
+      (function () {
+        try {
+          if (localStorage.getItem('theme') === 'light')
+            document.documentElement.setAttribute('data-theme', 'light')
+        } catch { /* no storage: stay on the dark default */ }
+      })()
+    </script>
   </head>
-  <body class="min-h-screen bg-slate-50 text-slate-900 antialiased [font-family:ui-sans-serif,system-ui,-apple-system,'Segoe_UI',Roboto,sans-serif]">
-    <header class="sticky top-0 z-20 border-b border-slate-200 bg-white/85 backdrop-blur">
+  <body class="min-h-screen antialiased">
+    <header class="sticky top-0 z-20 border-b border-line bg-bg/80 backdrop-blur">
       <div class="mx-auto flex h-14 max-w-6xl items-center gap-6 px-4 sm:px-6">
-        <a href={withBase('/')} class="flex items-center gap-2 font-semibold tracking-tight">
-          <span class="grid h-6 w-6 place-items-center rounded-md bg-slate-900 text-xs font-bold text-white">pk</span>
-          <span>project_keel</span>
-          <span class="hidden rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-500 sm:inline">docs</span>
+        <a href={withBase('/')} class="flex items-center gap-2.5">
+          <span class="grid h-6 w-6 place-items-center rounded border border-teal/50 font-mono text-[11px] font-medium text-teal">pk</span>
+          <span class="font-mono text-sm font-medium tracking-tight text-ink">project_keel</span>
+          <span class="hidden font-mono text-[10px] uppercase tracking-[0.2em] text-muted sm:inline">field guide</span>
         </a>
         <nav class="ml-auto hidden items-center gap-1 sm:flex">
           {nav.map((n) => (
             <a
               href={withBase(n.href)}
               class:list={[
-                'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                'rounded-md px-2.5 py-1.5 font-mono text-[11px] uppercase tracking-[0.1em] transition-colors',
                 active === n.key
-                  ? 'bg-slate-900 text-white'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900',
+                  ? 'border border-teal/40 text-teal'
+                  : 'text-muted hover:text-ink',
               ]}
             >{n.label}</a>
           ))}
         </nav>
+        <button
+          id="theme-toggle" type="button" title="Toggle light/dark theme" aria-label="Toggle light/dark theme"
+          class="grid h-7 w-7 place-items-center rounded-md border border-line text-muted transition-colors hover:text-ink"
+        >☾</button>
         <span
-          id="sync-badge"
-          title="Backend connection"
-          class="flex items-center gap-1.5 rounded-full border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-500"
+          id="sync-badge" title="Backend connection"
+          class="flex items-center gap-1.5 rounded-full border border-line px-2.5 py-1 font-mono text-[10px] uppercase tracking-wide text-muted"
         >
-          <span id="sync-dot" class="h-2 w-2 rounded-full bg-slate-300"></span>
+          <span id="sync-dot" class="h-1.5 w-1.5 rounded-full bg-muted"></span>
           <span id="sync-text">checking…</span>
         </span>
       </div>
-      <nav class="flex gap-1 overflow-x-auto border-t border-slate-100 px-4 py-1.5 sm:hidden">
+      <nav class="flex gap-1 overflow-x-auto border-t border-line px-4 py-1.5 sm:hidden">
         {nav.map((n) => (
           <a
             href={withBase(n.href)}
             class:list={[
-              'whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium',
-              active === n.key ? 'bg-slate-900 text-white' : 'text-slate-600',
+              'whitespace-nowrap rounded-md px-2.5 py-1 font-mono text-[11px] uppercase tracking-[0.1em]',
+              active === n.key ? 'border border-teal/40 text-teal' : 'text-muted',
             ]}
           >{n.label}</a>
         ))}
       </nav>
     </header>
 
-    <main class:list={['mx-auto w-full px-4 py-10 sm:px-6', wide ? 'max-w-6xl' : 'max-w-4xl']}>
+    <main class:list={['mx-auto w-full px-4 py-12 sm:px-6', wide ? 'max-w-6xl' : 'max-w-4xl']}>
       <slot />
     </main>
 
-    <footer class="border-t border-slate-200 bg-white">
-      <div class="mx-auto flex max-w-6xl flex-col gap-1 px-4 py-6 text-sm text-slate-500 sm:px-6">
-        {isStatic ? (
-          <p>
-            A <strong class="font-medium text-slate-700">static snapshot</strong> of the
-            project_keel showcase — rebuilt from the repo and redeployed on every push.
-          </p>
-        ) : (
-          <p>
-            This site renders <strong class="font-medium text-slate-700">live</strong> from the
-            project_keel backend — edit a doc, rebuild the corpus, reload, and it updates.
-          </p>
-        )}
-        <p class="font-mono text-xs">{isStatic ? 'Data:' : 'API:'} <span id="api-base">—</span></p>
+    <footer class="mt-8 border-t border-line">
+      <div class="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-8 sm:flex-row sm:items-end sm:justify-between sm:px-6">
+        <div class="max-w-xl">
+          <p class="font-mono text-[11px] uppercase tracking-[0.2em] text-muted">// data</p>
+          {isStatic ? (
+            <p class="mt-2 text-sm text-ink2">
+              A <strong class="font-medium text-ink">static snapshot</strong> of the project_keel
+              showcase — rebuilt from the repo and redeployed on every push.
+            </p>
+          ) : (
+            <p class="mt-2 text-sm text-ink2">
+              Rendered <strong class="font-medium text-ink">live</strong> from the project_keel
+              backend — edit a doc, rebuild the corpus, reload, and it updates.
+            </p>
+          )}
+          <p class="mt-1 font-mono text-xs text-muted">{isStatic ? 'data:' : 'api:'} <span id="api-base">—</span></p>
+        </div>
+        <div class="font-mono text-[11px] uppercase tracking-[0.2em] text-muted sm:text-right">
+          <p class="text-ink2">project · keel</p>
+          <p class="mt-1">rev. 2026 · ed. 02</p>
+        </div>
       </div>
     </footer>
+
+    <script is:inline>
+      // Theme toggle: dark is default (no attribute); light sets data-theme.
+      (function () {
+        const btn = document.getElementById('theme-toggle')
+        function isLight() { return document.documentElement.getAttribute('data-theme') === 'light' }
+        function paint() { if (btn) btn.textContent = isLight() ? '☼' : '☾' }
+        paint()
+        if (btn) btn.addEventListener('click', function () {
+          if (isLight()) { document.documentElement.removeAttribute('data-theme'); try { localStorage.setItem('theme', 'dark') } catch { /* ignore */ } }
+          else { document.documentElement.setAttribute('data-theme', 'light'); try { localStorage.setItem('theme', 'light') } catch { /* ignore */ } }
+          paint()
+        })
+      })()
+    </script>
 
     <script>
       import { ping, API_BASE } from '../lib/api'
@@ -105,15 +143,14 @@ const nav = [
       const base = document.getElementById('api-base')
 
       if (IS_STATIC) {
-        // No backend to reach: the snapshot is the data. Don't poll.
         if (base) base.textContent = 'static snapshot (no backend)'
-        if (dot) dot.className = 'h-2 w-2 rounded-full bg-emerald-500'
+        if (dot) dot.className = 'h-1.5 w-1.5 rounded-full bg-teal'
         if (text) text.textContent = 'static'
       } else {
         if (base) base.textContent = API_BASE || 'same origin (/api → backend via dev proxy)'
         const refreshStatus = async (): Promise<void> => {
           const ok = await ping()
-          if (dot) dot.className = `h-2 w-2 rounded-full ${ok ? 'bg-emerald-500' : 'bg-rose-500'}`
+          if (dot) dot.className = `h-1.5 w-1.5 rounded-full ${ok ? 'bg-teal' : 'bg-bad'}`
           if (text) text.textContent = ok ? 'live' : 'offline'
         }
         void refreshStatus()

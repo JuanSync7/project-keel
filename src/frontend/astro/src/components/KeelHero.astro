@@ -1,0 +1,101 @@
+---
+// title: Lines-plan hero
+// layer: frontend
+// summary: The overview signature — a naval-architecture "lines plan" of the
+//          project, with live metrics plotted as survey stations along the keel.
+//
+// Static markup only (keeps the page route thin). The six station numbers and
+// the sub-headline are placeholders the page's client island fills from
+// /api/overview via [data-stat] / #hero-tagline — so the drawing renders
+// instantly and then reads true from the backend.
+import { withBase } from '../lib/links'
+
+// Drawing geometry, in viewBox user units. Stations are spaced evenly across the
+// keel; each carries one live metric. glow marks the node drawn lit (the checks
+// heartbeat — verification is the point of the skeleton).
+const M = 70
+const VIEW_W = 1200
+const span = VIEW_W - M * 2
+const STATIONS = [
+  { key: 'docs', label: 'docs' },
+  { key: 'modules', label: 'modules' },
+  { key: 'sections', label: 'sections' },
+  { key: 'symbols', label: 'symbols' },
+  { key: 'directories', label: 'dirs' },
+  { key: 'checks', label: 'checks' },
+].map((s, i) => ({
+  ...s,
+  x: Math.round(M + (i + 0.5) * (span / 6)),
+  id: 'S' + i,
+  glow: s.key === 'checks',
+}))
+
+const KEEL_Y = 250
+const KEEL_X1 = 60
+const KEEL_X2 = 1140
+---
+
+<section class="pt-2">
+  <!-- The signature: the keel datum with six live survey stations, floating on
+       the page grid. A compact station table stands in on narrow screens. -->
+  <svg viewBox="0 42 1200 252" role="img"
+    aria-label="Lines plan: project metrics measured as survey stations along the keel."
+    class="hidden h-auto w-full select-none sm:block">
+    <path d="M 60 70 C 360 100, 840 100, 1140 70" fill="none"
+      class="stroke-muted/30" stroke-width="1" stroke-dasharray="2 6"></path>
+
+    {STATIONS.map((s, i) => (
+      <g class="keel-station" style={`--s:${i}`}>
+        <text x={s.x} y="106" text-anchor="middle"
+          class="fill-teal font-mono text-[11px] font-medium tracking-[0.15em]">{s.id}</text>
+        <line x1={s.x} y1="118" x2={s.x} y2={KEEL_Y} class="stroke-muted/30" stroke-width="1"></line>
+        {s.glow && <circle cx={s.x} cy="118" r="9" class="fill-teal/25"></circle>}
+        <circle cx={s.x} cy="118" r="3.5"
+          class={s.glow ? 'fill-teal' : 'fill-bg stroke-teal'} stroke-width="1.5"></circle>
+        <rect x={s.x - 46} y="142" width="92" height="40" class="fill-bg"></rect>
+        <text x={s.x} y="174" text-anchor="middle" data-stat={s.key}
+          class="fill-ink font-mono text-[34px] font-semibold tabular-nums">—</text>
+        <text x={s.x} y="202" text-anchor="middle"
+          class="fill-muted font-mono text-[12px] uppercase tracking-[0.18em]">{s.label}</text>
+      </g>
+    ))}
+
+    <line x1={KEEL_X1} y1={KEEL_Y} x2={KEEL_X2} y2={KEEL_Y}
+      class="keel-line stroke-teal" stroke-width="2.5" stroke-linecap="round"
+      style={`--keel-len:${KEEL_X2 - KEEL_X1}`}></line>
+    <line x1={KEEL_X1} y1={KEEL_Y - 7} x2={KEEL_X1} y2={KEEL_Y + 7} class="stroke-teal" stroke-width="2"></line>
+    <line x1={KEEL_X2} y1={KEEL_Y - 7} x2={KEEL_X2} y2={KEEL_Y + 7} class="stroke-teal" stroke-width="2"></line>
+    <text x={KEEL_X2} y="274" text-anchor="end"
+      class="fill-muted font-mono text-[11px] uppercase tracking-[0.2em]">keel · datum 0</text>
+  </svg>
+
+  <dl class="grid grid-cols-3 gap-px overflow-hidden rounded-lg border border-line bg-line sm:hidden">
+    {STATIONS.map((s) => (
+      <div class="flex flex-col bg-panel px-3 py-3">
+        <dd data-stat={s.key} class="font-mono text-2xl font-semibold tabular-nums text-ink">—</dd>
+        <dt class="font-mono text-[10px] uppercase tracking-[0.15em] text-muted">{s.label}</dt>
+      </div>
+    ))}
+  </dl>
+
+  <p class="mt-9 font-mono text-[11px] font-medium uppercase tracking-[0.22em] text-muted">
+    field guide <span class="text-teal">·</span> a project skeleton that stays honest
+  </p>
+  <h1 class="mt-3 max-w-2xl text-4xl font-semibold leading-[1.05] text-ink sm:text-5xl">
+    Lay the <span class="font-mono font-medium text-teal">keel</span>.
+  </h1>
+  <p id="hero-tagline" class="mt-4 max-w-xl text-pretty text-lg leading-relaxed text-ink2">
+    A polyglot-aware, agent-friendly project skeleton that stays honest.
+  </p>
+
+  <div class="mt-7 flex flex-wrap items-center gap-3">
+    <a href={withBase('/wiki')}
+      class="rounded-lg bg-teal px-4 py-2.5 text-sm font-medium text-bg transition-opacity hover:opacity-90">
+      Browse the corpus →
+    </a>
+    <a href={withBase('/setup')}
+      class="rounded-lg border border-line px-4 py-2.5 text-sm font-medium text-ink transition-colors hover:border-teal/40 hover:text-teal">
+      Lay it under your project →
+    </a>
+  </div>
+</section>

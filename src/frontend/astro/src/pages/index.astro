@@ -1,53 +1,89 @@
 ---
 import Layout from '../layouts/Layout.astro'
+import KeelHero from '../components/KeelHero.astro'
 import { withBase } from '../lib/links'
 ---
 
 <Layout title="project_keel — Overview" active="overview">
-  <section class="text-center">
-    <p class="text-sm font-medium uppercase tracking-widest text-indigo-600">Project template</p>
-    <h1 class="mt-3 text-balance text-4xl font-bold tracking-tight sm:text-5xl">
-      A skeleton that stays <span class="text-indigo-600">honest</span>.
-    </h1>
-    <p id="hero-tagline" class="mx-auto mt-4 max-w-2xl text-balance text-lg text-slate-600">…</p>
-    <div class="mt-6 flex flex-wrap justify-center gap-3">
-      <a href={withBase('/wiki')} class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700">Browse the wiki</a>
-      <a href={withBase('/setup')} class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-white">Use it in your project</a>
+  <KeelHero />
+
+  <!-- The three load-bearing conventions, framed as structural members. -->
+  <section class="mt-16">
+    <p class="font-mono text-[11px] font-medium uppercase tracking-[0.22em] text-muted">
+      <span class="text-teal">//</span> three load-bearing members
+    </p>
+    <h2 class="mt-2 text-2xl font-semibold text-ink">The conventions everything rests on</h2>
+    <ol id="conventions" class="mt-5 grid gap-4 sm:grid-cols-3">
+      <li class="text-sm text-muted">Loading…</li>
+    </ol>
+  </section>
+
+  <!-- Construction: what the hull is made of. -->
+  <section class="mt-16">
+    <p class="font-mono text-[11px] font-medium uppercase tracking-[0.22em] text-muted">
+      <span class="text-teal">//</span> construction · what it's made of
+    </p>
+    <h2 class="mt-2 text-2xl font-semibold text-ink">Layers &amp; transports</h2>
+    <div class="mt-5 grid gap-6 sm:grid-cols-2">
+      <div>
+        <h3 class="font-mono text-xs uppercase tracking-[0.18em] text-muted">Layers</h3>
+        <div id="layers" class="mt-3 space-y-2"></div>
+      </div>
+      <div>
+        <h3 class="font-mono text-xs uppercase tracking-[0.18em] text-muted">Transports</h3>
+        <div id="transports" class="mt-3 space-y-2"></div>
+      </div>
     </div>
   </section>
 
-  <section id="stats" class="mt-12 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6"></section>
-
-  <section class="mt-12">
-    <h2 class="text-lg font-semibold">The three load-bearing conventions</h2>
-    <ol id="conventions" class="mt-4 space-y-2"></ol>
+  <!-- Sections: what you get, linking through to the full features sheet. -->
+  <section class="mt-16">
+    <div class="flex items-end justify-between gap-4">
+      <div>
+        <p class="font-mono text-[11px] font-medium uppercase tracking-[0.22em] text-muted">
+          <span class="text-teal">//</span> sections · what you get
+        </p>
+        <h2 class="mt-2 text-2xl font-semibold text-ink">Built in by default</h2>
+      </div>
+      <a id="all-features" href={withBase('/features')}
+        class="shrink-0 font-mono text-[11px] uppercase tracking-wider text-teal hover:underline">All features →</a>
+    </div>
+    <div id="features-preview" class="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3"></div>
   </section>
 
-  <section class="mt-12 grid gap-6 sm:grid-cols-2">
-    <div>
-      <h2 class="text-lg font-semibold">Layers</h2>
-      <div id="layers" class="mt-4 space-y-2"></div>
-    </div>
-    <div>
-      <h2 class="text-lg font-semibold">Transports</h2>
-      <div id="transports" class="mt-4 space-y-2"></div>
-    </div>
-  </section>
-
-  <section class="mt-12">
-    <div class="flex items-baseline justify-between">
-      <h2 class="text-lg font-semibold">Highlights</h2>
-      <a href={withBase('/features')} class="text-sm font-medium text-indigo-600 hover:underline">All features →</a>
-    </div>
-    <div id="features-preview" class="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3"></div>
-  </section>
-
-  <p id="overview-summary" class="mt-12 border-t border-slate-200 pt-6 text-sm leading-relaxed text-slate-500"></p>
+  <div class="mt-16 border-t border-line pt-6">
+    <p class="font-mono text-[11px] font-medium uppercase tracking-[0.22em] text-muted">
+      <span class="text-teal">//</span> note
+    </p>
+    <p id="overview-summary" class="mt-2 max-w-3xl text-sm leading-relaxed text-ink2"></p>
+  </div>
 
   <script>
     import { getOverview, getFeatures } from '../lib/api'
     import { h, mount, byId, showError } from '../lib/dom'
-    import { statCard, featureCard, chip } from '../lib/components'
+    import { featureCard } from '../lib/components'
+
+    // Load-bearing frames, in sheet (reading) order — the keel vocabulary for
+    // "these are structural members," not generic step numbers.
+    const FRAME_TAGS = ['FR · 01', 'FR · 02', 'FR · 03']
+
+    const TAG: Record<string, string> = {
+      teal: 'border border-teal/40 bg-teal/10 text-teal',
+      muted: 'border border-line bg-chip text-muted',
+    }
+    function tag(text: string, tone: keyof typeof TAG = 'muted'): HTMLElement {
+      return h('span',
+        { class: `inline-flex items-center rounded border px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider ${TAG[tone]}` },
+        text)
+    }
+
+    // One metric may appear twice (the SVG drawing + the narrow-screen table);
+    // set every element that claims it.
+    function setStat(key: string, value: number): void {
+      document
+        .querySelectorAll(`[data-stat="${key}"]`)
+        .forEach((el) => { el.textContent = String(value) })
+    }
 
     async function render(): Promise<void> {
       try {
@@ -55,39 +91,35 @@ import { withBase } from '../lib/links'
         byId('hero-tagline').textContent = ov.tagline
         byId('overview-summary').textContent = ov.summary
 
-        mount(byId('stats'),
-          statCard(ov.stats.docs, 'docs'),
-          statCard(ov.stats.modules, 'modules'),
-          statCard(ov.stats.sections, 'sections'),
-          statCard(ov.stats.symbols, 'symbols'),
-          statCard(ov.stats.directories, 'dirs'),
-          statCard(ov.stats.checks, 'checks'))
+        for (const [key, value] of Object.entries(ov.stats)) setStat(key, value)
 
         mount(byId('conventions'),
           ...ov.conventions.map((c, i) =>
-            h('li', { class: 'flex gap-3 rounded-lg border border-slate-200 bg-white p-4' },
-              h('span', { class: 'grid h-6 w-6 shrink-0 place-items-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-700' }, String(i + 1)),
-              h('span', { class: 'text-sm text-slate-700' }, c))))
+            h('li', { class: 'rounded-xl border border-line bg-panel p-5' },
+              h('span', { class: 'font-mono text-[11px] font-medium uppercase tracking-[0.2em] text-teal' },
+                FRAME_TAGS[i] ?? `FR · 0${i + 1}`),
+              h('p', { class: 'mt-3 text-sm leading-relaxed text-ink2' }, c))))
 
         mount(byId('layers'),
           ...ov.layers.map((l) =>
-            h('div', { class: 'rounded-lg border border-slate-200 bg-white p-4' },
-              h('div', { class: 'flex items-center gap-2' },
-                h('span', { class: 'font-medium capitalize' }, l.name),
-                chip(l.language, 'indigo'),
-                l.stack ? chip(l.stack, 'green') : null),
-              h('div', { class: 'mt-1 font-mono text-xs text-slate-400' }, l.path || '—'))))
+            h('div', { class: 'rounded-lg border border-line bg-panel px-4 py-3' },
+              h('div', { class: 'flex flex-wrap items-center gap-2' },
+                h('span', { class: 'font-medium capitalize text-ink' }, l.name),
+                tag(l.language, 'muted'),
+                l.stack ? tag(l.stack, 'teal') : null),
+              h('div', { class: 'mt-1 font-mono text-xs text-muted' }, l.path || '—'))))
 
         mount(byId('transports'),
           ...ov.transports.map((t) =>
-            h('div', { class: 'flex items-center gap-2 rounded-lg border border-slate-200 bg-white p-4' },
-              h('span', { class: 'font-medium uppercase' }, t.name),
-              t.enabled ? chip('enabled', 'green') : chip('available', 'slate'),
-              h('span', { class: 'ml-auto font-mono text-xs text-slate-400' }, t.directory))))
+            h('div', { class: 'flex items-center gap-2 rounded-lg border border-line bg-panel px-4 py-3' },
+              h('span', { class: 'font-mono text-sm font-medium uppercase text-ink' }, t.name),
+              t.enabled ? tag('enabled', 'teal') : tag('available', 'muted'),
+              h('span', { class: 'ml-auto font-mono text-xs text-muted' }, t.directory))))
 
+        byId('all-features').textContent = `All ${feats.length} features →`
         mount(byId('features-preview'), ...feats.slice(0, 3).map(featureCard))
       } catch (err) {
-        showError(byId('stats'), err)
+        showError(byId('features-preview'), err)
       }
     }
     void render()

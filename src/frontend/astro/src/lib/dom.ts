@@ -53,11 +53,11 @@ export function showError(target: HTMLElement, err: unknown): void {
   const where = API_BASE ? `the API at ${API_BASE}` : 'the API (same origin, via /api)'
   mount(
     target,
-    h('div', { class: 'rounded-xl border border-rose-200 bg-rose-50 p-6 text-sm text-rose-700' },
+    h('div', { class: 'rounded-xl border border-bad/40 bg-bad/10 p-6 text-sm text-bad' },
       h('p', { class: 'font-medium' }, `Could not reach ${where}.`),
-      h('p', { class: 'mt-1' }, String(err instanceof Error ? err.message : err)),
-      h('p', { class: 'mt-3 text-rose-600' },
-        'Start the backend (', h('code', { class: 'font-mono' }, 'make run-api'),
+      h('p', { class: 'mt-1 text-ink2' }, String(err instanceof Error ? err.message : err)),
+      h('p', { class: 'mt-3 text-ink2' },
+        'Start the backend (', h('code', { class: 'font-mono text-ink' }, 'make run-api'),
         ') and confirm the dev-server proxy (API_PROXY_TARGET) or PUBLIC_API_BASE points at it.'),
     ),
   )
