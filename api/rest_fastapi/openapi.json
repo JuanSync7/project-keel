@@ -148,6 +148,22 @@
         "summary": "Overview"
       }
     },
+    "/api/principles": {
+      "get": {
+        "operationId": "principles_api_principles_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Principles"
+      }
+    },
     "/api/search": {
       "get": {
         "operationId": "search_api_search_get",
