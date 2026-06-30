@@ -8,15 +8,20 @@ from __future__ import annotations
 
 from .claude_code_headless import ClaudeCodeHeadless
 from .contracts import ModelBackend
+from .fake import FakeModel
+from .openai_compatible import OpenAICompatible
 
 __all__ = ["get_model", "list_models", "DEFAULT_MODEL"]
 
 DEFAULT_MODEL = "claude-code-headless"
 
-# name -> factory. To add a provider (Anthropic API client, local model),
-# write an adapter implementing ModelBackend and register it here.
+# name -> factory. To add a provider, write an adapter implementing
+# ModelBackend and register it here; callers select it by name via get_model,
+# never by importing a concrete class.
 _REGISTRY = {
-    "claude-code-headless": ClaudeCodeHeadless,
+    "claude-code-headless": ClaudeCodeHeadless,   # shells out to the Claude Code CLI
+    "openai-compatible": OpenAICompatible,        # any OpenAI-style HTTP endpoint
+    "fake": FakeModel,                            # deterministic, offline (tests/dev)
 }
 
 
