@@ -29,5 +29,14 @@
       "inprocess": "runtimes",
       "langgraph": "runtimes"
     }
+  },
+  "models": {
+    "_comment": "Model/provider adapters this project makes available (registered in models/registry.py). 'default' is the registry default; the showcase surfaces this list.",
+    "default": "claude-code-headless",
+    "available": {
+      "claude-code-headless": "models",
+      "openai-compatible": "models",
+      "fake": "models"
+    }
   }
 }

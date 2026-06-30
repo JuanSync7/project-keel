@@ -49,6 +49,10 @@ def build_showcase_router(root: str) -> APIRouter:
     def principles():
         return to_jsonable(list(current().principles()))
 
+    @router.get("/api/models")
+    def models():
+        return to_jsonable(list(current().model_adapters()))
+
     @router.get("/api/checks")
     def checks():
         return to_jsonable(list(current().checks()))

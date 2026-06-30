@@ -43,6 +43,12 @@ export interface Overview {
   readonly stats: Stats
 }
 
+export interface ModelAdapter {
+  readonly name: string
+  readonly directory: string
+  readonly default: boolean
+}
+
 export interface Link {
   readonly label: string
   readonly href: string
@@ -152,6 +158,8 @@ export const getFeatures = (): Promise<Feature[]> =>
   get<Feature[]>('/api/features', 'api/features.json')
 export const getPrinciples = (): Promise<Principle[]> =>
   get<Principle[]>('/api/principles', 'api/principles.json')
+export const getModels = (): Promise<ModelAdapter[]> =>
+  get<ModelAdapter[]>('/api/models', 'api/models.json')
 export const getChecks = (): Promise<Check[]> =>
   get<Check[]>('/api/checks', 'api/checks.json')
 export const getSetup = (): Promise<Step[]> =>

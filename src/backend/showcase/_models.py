@@ -38,6 +38,19 @@ class Transport:
 
 
 @dataclass(frozen=True)
+class ModelAdapter:
+    """One model/provider adapter the project makes available (config/project.json).
+
+    Projected from the manifest like ``Transport`` — so the read model never
+    imports the ``models/`` adapter layer. ``default`` marks the registry default.
+    """
+
+    name: str
+    directory: str
+    default: bool
+
+
+@dataclass(frozen=True)
 class Stats:
     """Headline counts the overview page renders."""
 
@@ -174,7 +187,7 @@ def to_jsonable(obj: object) -> object:
 
 
 __all__ = [
-    "Link", "Layer", "Transport", "Stats", "Overview", "Feature", "Principle",
-    "Check", "Step", "NodeRef", "DocGroup", "NodeDetail", "SearchHit",
-    "to_jsonable",
+    "Link", "Layer", "Transport", "ModelAdapter", "Stats", "Overview",
+    "Feature", "Principle", "Check", "Step", "NodeRef", "DocGroup",
+    "NodeDetail", "SearchHit", "to_jsonable",
 ]

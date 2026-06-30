@@ -15,6 +15,7 @@ from ._models import (
     DocGroup,
     Feature,
     Layer,
+    ModelAdapter,
     NodeDetail,
     Overview,
     Principle,
@@ -107,6 +108,21 @@ class Showcase:
         for name, directory in sorted((t.get("available") or {}).items()):
             out.append(Transport(name=name, directory=directory,
                                   enabled=name in enabled))
+        return tuple(out)
+
+    def model_adapters(self) -> tuple[ModelAdapter, ...]:
+        """The model/provider adapters this project makes available (from the manifest).
+
+        Projected from config/project.json's optional ``models`` block (default +
+        available) exactly like transports — so the read model stays pure and never
+        imports the ``models/`` adapter layer. Empty when the block is absent.
+        """
+        m = self._project.get("models") or {}
+        default = m.get("default")
+        out = []
+        for name, directory in sorted((m.get("available") or {}).items()):
+            out.append(ModelAdapter(name=name, directory=directory,
+                                    default=(name == default)))
         return tuple(out)
 
     # -- corpus navigation (delegates to pure _query) ------------------------

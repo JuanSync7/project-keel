@@ -99,6 +99,41 @@ def test_principles_cover_the_agent_rules_gap_and_link_out():
     assert len(set(slugs)) == len(slugs)
 
 
+def test_edge_adapters_feature_links_to_the_new_capabilities():
+    """The MCP/model/scheduled additions are surfaced as a curated feature that
+    points at their corpus docs (link integrity is asserted live in integration)."""
+    feats = {f.slug: f for f in _sc().features()}
+    assert "edge-adapters" in feats
+    hrefs = {ln.href for ln in feats["edge-adapters"].links}
+    assert {"mcp-readme", "models-readme"} <= hrefs
+
+
+def _project_with_models():
+    p = _project()
+    p["models"] = {
+        "default": "claude-code-headless",
+        "available": {"claude-code-headless": "models",
+                      "openai-compatible": "models", "fake": "models"},
+    }
+    return p
+
+
+def test_model_adapters_projected_from_the_manifest():
+    sc = Showcase(name="demoproj", project=_project_with_models(),
+                  corpus=_corpus(), present_scripts=frozenset())
+    adapters = sc.model_adapters()
+    names = [m.name for m in adapters]
+    assert names == sorted(names)                                   # stable order
+    assert set(names) == {"claude-code-headless", "openai-compatible", "fake"}
+    assert [m.name for m in adapters if m.default] == ["claude-code-headless"]
+    assert all(m.directory == "models" for m in adapters)
+
+
+def test_model_adapters_absent_block_is_graceful_empty():
+    # An older manifest with no 'models' block stays valid — empty, not an error.
+    assert _sc().model_adapters() == ()
+
+
 def test_doc_tree_groups_by_top_dir():
     groups = {g.directory: g for g in _sc().doc_tree()}
     assert set(groups) == {".", "docs"}
