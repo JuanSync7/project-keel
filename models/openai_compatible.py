@@ -53,7 +53,9 @@ class OpenAICompatible(ModelBackend):
         url = self.base_url + "/chat/completions"
         payload = {"model": self.model,
                    "messages": [{"role": "user", "content": prompt}]}
-        payload.update(opts)   # temperature, max_tokens, … pass straight through
+        # Trusted-caller pass-through (temperature, max_tokens, …); by design it
+        # can also override model/messages — the agent, not the world, calls this.
+        payload.update(opts)
         headers = {"Content-Type": "application/json"}
         key = os.environ.get(self.api_key_env)
         if key:

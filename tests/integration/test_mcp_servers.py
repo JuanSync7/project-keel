@@ -108,3 +108,17 @@ def test_action_tool_execute_true_writes_the_file(tmp_path):
     assert result["isError"] is False
     assert result["structuredContent"]["executed"] is True
     assert out.exists() and "Sample" in out.read_text()
+
+
+def test_action_tool_rejects_out_escaping_the_tree(tmp_path):
+    """Defence in depth: MCP args may come from an LLM on untrusted input, so an
+    'out' that resolves outside the indexed tree must be refused, not written."""
+    root = _repo_with_readme(tmp_path)
+    escape = tmp_path.parent / "escaped.md"          # one level above the tree
+    server = build_action_server(root=str(root))
+
+    result = server.call_tool("rebuild_index",
+                              {"out": "../escaped.md", "execute": True})
+
+    assert result["isError"] is True                 # refused at the boundary
+    assert not escape.exists()                        # and nothing was written

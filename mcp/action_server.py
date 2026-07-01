@@ -6,6 +6,7 @@ summary: State-changing MCP tools that delegate to scripts/jobs doers; defaults 
 """
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -39,6 +40,21 @@ def _run_doer(root: str, args: list) -> tuple:
     return proc.returncode, proc.stdout, proc.stderr
 
 
+def _safe_out(tree: str, out: str) -> str:
+    """Resolve ``out`` and refuse anything that escapes the indexed ``tree``.
+
+    Defence in depth: MCP tool arguments can originate from an LLM acting on
+    untrusted input, so an absolute path or a ``..`` escape (e.g. ``/etc/x``,
+    ``../../x``) must be rejected before any write — the action tool may only
+    write inside the tree it indexes.
+    """
+    base = os.path.realpath(tree)
+    target = os.path.realpath(out if os.path.isabs(out) else os.path.join(base, out))
+    if target != base and not target.startswith(base + os.sep):
+        raise ValueError("out path %r escapes the indexed tree" % out)
+    return target
+
+
 def build_action_server(root: str | None = None) -> ToolServer:
     """Build the state-changing action server.
 
@@ -60,7 +76,8 @@ def build_action_server(root: str | None = None) -> ToolServer:
         if not execute:
             return {"executed": False, "target": out, "bytes": n_bytes,
                     "preview": content[:200]}
-        rc, _, err = _run_doer(tree, ["--out", out])   # the doer does the write
+        dest = _safe_out(tree, out)                     # refuse escapes before writing
+        rc, _, err = _run_doer(tree, ["--out", dest])   # the doer does the write
         if rc != 0:
             raise RuntimeError("rebuild_index write failed: %s" % err.strip())
         return {"executed": True, "target": out, "bytes": n_bytes}
