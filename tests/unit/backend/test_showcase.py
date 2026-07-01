@@ -88,6 +88,17 @@ def test_features_are_nonempty_and_curated():
     assert all(f.title and f.summary for f in feats)
 
 
+def test_principles_cover_the_agent_rules_gap_and_link_out():
+    principles = _sc().principles()
+    slugs = [p.slug for p in principles]
+    # The biggest documented gap — the AGENT.md/CLAUDE.md mechanism — is covered.
+    assert "agent-rules" in slugs
+    # Every principle is well-formed and points at its source section to read.
+    assert all(p.title and p.essence and p.detail and p.links for p in principles)
+    # Slugs are unique (stable anchors the conventions page renders).
+    assert len(set(slugs)) == len(slugs)
+
+
 def test_doc_tree_groups_by_top_dir():
     groups = {g.directory: g for g in _sc().doc_tree()}
     assert set(groups) == {".", "docs"}

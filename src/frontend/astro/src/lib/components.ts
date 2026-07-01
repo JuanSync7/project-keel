@@ -2,7 +2,7 @@
 // layer: frontend
 // summary: Reusable client-side DOM builders for the showcase pages (uses dom.h).
 
-import type { Check, Feature, NodeRef } from './api'
+import type { Check, Feature, NodeRef, Principle } from './api'
 import { h } from './dom'
 import { withBase } from './links'
 import { renderInline } from './md'
@@ -46,12 +46,33 @@ export function featureCard(f: Feature): HTMLElement {
     ),
     inlineEl('p', 'mt-3 text-sm font-medium text-ink2 [&_code]:font-mono', f.summary),
     inlineEl('p', 'mt-1 text-sm leading-relaxed text-muted [&_code]:font-mono', f.detail),
-    f.links.length
-      ? h('div', { class: 'mt-4 flex flex-wrap gap-3' },
-          f.links.map((l) =>
-            h('a', { class: 'font-mono text-[11px] uppercase tracking-wider text-teal hover:underline', href: withBase(`/wiki?id=${encodeURIComponent(l.href)}`) },
-              l.label, ' →')))
-      : null,
+    linkRow(f.links),
+  )
+}
+
+// A reusable row of "read the rule →" links into the wiki corpus.
+function linkRow(links: readonly { label: string; href: string }[]): HTMLElement | null {
+  return links.length
+    ? h('div', { class: 'mt-4 flex flex-wrap gap-3' },
+        links.map((l) =>
+          h('a', { class: 'font-mono text-[11px] uppercase tracking-wider text-teal hover:underline', href: withBase(`/wiki?id=${encodeURIComponent(l.href)}`) },
+            l.label, ' →')))
+    : null
+}
+
+// One governing convention. A mono rule index (e.g. "01") stands in for the
+// feature icon — the field-guide "numbered rule" motif — then the rule in one
+// line and how it holds. `index` is the 0-based position on the page.
+export function principleCard(p: Principle, index: number): HTMLElement {
+  const tag = String(index + 1).padStart(2, '0')
+  return h('article', { class: 'rounded-xl border border-line bg-panel p-6 transition-colors hover:border-teal/30' },
+    h('div', { class: 'flex items-baseline gap-3' },
+      h('span', { class: 'font-mono text-[11px] font-medium tracking-[0.18em] text-teal' }, tag),
+      h('h3', { class: 'text-lg font-semibold text-ink' }, p.title),
+    ),
+    inlineEl('p', 'mt-3 text-sm font-medium text-ink2 [&_code]:font-mono', p.essence),
+    inlineEl('p', 'mt-1 text-sm leading-relaxed text-muted [&_code]:font-mono', p.detail),
+    linkRow(p.links),
   )
 }
 

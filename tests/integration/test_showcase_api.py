@@ -41,6 +41,13 @@ def test_features_and_checks_listed():
     assert all(c["present"] for c in checks)   # scripts exist in this repo
 
 
+def test_principles_listed():
+    principles = client.get("/api/principles").json()
+    assert principles, "principles should be served"
+    assert "agent-rules" in {p["slug"] for p in principles}
+    assert all(p["title"] and p["essence"] and p["detail"] for p in principles)
+
+
 def test_wiki_tree_node_and_404():
     tree = client.get("/api/wiki/tree").json()
     assert tree, "corpus should be built for this test"

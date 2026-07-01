@@ -17,6 +17,7 @@ from ._models import (
     Layer,
     NodeDetail,
     Overview,
+    Principle,
     SearchHit,
     Stats,
     Step,
@@ -46,6 +47,10 @@ class Showcase:
     def features(self) -> tuple[Feature, ...]:
         """The product features for the features page."""
         return _data.FEATURES
+
+    def principles(self) -> tuple[Principle, ...]:
+        """The governing conventions for the conventions page."""
+        return _data.PRINCIPLES
 
     def checks(self) -> tuple[Check, ...]:
         """The deterministic-check catalogue, each flagged present/absent on disk."""

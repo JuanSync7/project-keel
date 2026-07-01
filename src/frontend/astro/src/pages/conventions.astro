@@ -1,0 +1,37 @@
+---
+import Layout from '../layouts/Layout.astro'
+---
+
+<Layout title="project_keel — Conventions" active="conventions">
+  <header>
+    <p class="font-mono text-[11px] font-medium uppercase tracking-[0.22em] text-muted">
+      <span class="text-teal">//</span> conventions · the rules everything follows
+    </p>
+    <h1 class="mt-2 text-3xl font-semibold text-ink">Conventions</h1>
+    <p class="mt-2 max-w-2xl text-ink2">
+      The rules every file, package, and agent here obeys — the deeper cut behind
+      the three load-bearing conventions. Rendered live from the backend; each
+      card links to its rule in <code class="font-mono text-sm">CONVENTIONS.md</code>.
+    </p>
+  </header>
+
+  <div id="principles" class="mt-8 grid gap-4 sm:grid-cols-2">
+    <p class="text-sm text-muted">Loading…</p>
+  </div>
+
+  <script>
+    import { getPrinciples } from '../lib/api'
+    import { mount, byId, showError } from '../lib/dom'
+    import { principleCard } from '../lib/components'
+
+    async function render(): Promise<void> {
+      try {
+        const principles = await getPrinciples()
+        mount(byId('principles'), ...principles.map((p, i) => principleCard(p, i)))
+      } catch (err) {
+        showError(byId('principles'), err)
+      }
+    }
+    void render()
+  </script>
+</Layout>

@@ -57,6 +57,14 @@ export interface Feature {
   readonly links: readonly Link[]
 }
 
+export interface Principle {
+  readonly slug: string
+  readonly title: string
+  readonly essence: string
+  readonly detail: string
+  readonly links: readonly Link[]
+}
+
 export interface Check {
   readonly slug: string
   readonly name: string
@@ -142,6 +150,8 @@ export const getOverview = (): Promise<Overview> =>
   get<Overview>('/api/overview', 'api/overview.json')
 export const getFeatures = (): Promise<Feature[]> =>
   get<Feature[]>('/api/features', 'api/features.json')
+export const getPrinciples = (): Promise<Principle[]> =>
+  get<Principle[]>('/api/principles', 'api/principles.json')
 export const getChecks = (): Promise<Check[]> =>
   get<Check[]>('/api/checks', 'api/checks.json')
 export const getSetup = (): Promise<Step[]> =>

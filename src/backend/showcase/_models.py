@@ -76,6 +76,21 @@ class Feature:
 
 
 @dataclass(frozen=True)
+class Principle:
+    """One governing convention for the conventions page: the rule + how it holds.
+
+    Complements ``Feature`` (what you get) with the rule behind it (why/how),
+    each linking out to the exact CONVENTIONS section it summarises.
+    """
+
+    slug: str
+    title: str
+    essence: str   # the rule in one line
+    detail: str    # how it works / how it's enforced, 2-3 sentences
+    links: tuple[Link, ...] = ()
+
+
+@dataclass(frozen=True)
 class Check:
     """One deterministic check in the catalogue (mirrors the checks guide)."""
 
@@ -159,6 +174,7 @@ def to_jsonable(obj: object) -> object:
 
 
 __all__ = [
-    "Link", "Layer", "Transport", "Stats", "Overview", "Feature", "Check",
-    "Step", "NodeRef", "DocGroup", "NodeDetail", "SearchHit", "to_jsonable",
+    "Link", "Layer", "Transport", "Stats", "Overview", "Feature", "Principle",
+    "Check", "Step", "NodeRef", "DocGroup", "NodeDetail", "SearchHit",
+    "to_jsonable",
 ]

@@ -6,7 +6,7 @@ summary: The product narrative — features, deterministic-check catalogue, and 
 """
 from __future__ import annotations
 
-from ._models import Check, Feature, Link, Step
+from ._models import Check, Feature, Link, Principle, Step
 
 TAGLINE = "A polyglot-aware, agent-friendly project skeleton that stays honest."
 SUMMARY = (
@@ -153,6 +153,156 @@ FEATURES: tuple[Feature, ...] = (
     ),
 )
 
+# The governing conventions, deeper than the three headline ones above. Each
+# summarises one CONVENTIONS section and links to it (read the rule in full in
+# the wiki). Curated, not generated — kept in step with CONVENTIONS.md.
+PRINCIPLES: tuple[Principle, ...] = (
+    Principle(
+        slug="agent-rules",
+        title="One rule source, for humans and agents",
+        essence="`AGENT.md` is the canonical, vendor-neutral rules file; "
+                "`CLAUDE.md` is a symlink to it.",
+        detail=(
+            "Every directory's rules live in `AGENT.md`, and `CLAUDE.md` is just "
+            "a symlink to its sibling — so Claude Code and any other agent tool "
+            "read exactly the rules a human does. You edit `AGENT.md`, never the "
+            "symlink; rules cascade from the root and a more specific directory "
+            "overrides where it is stricter. The symlink is gate-checked, so the "
+            "two cannot drift."
+        ),
+        links=(Link("AGENT.md is canonical",
+                     "conventions#agent-rules-file-agent-md-is-canonical-claude-md-is-a-symlink"),),
+    ),
+    Principle(
+        slug="labels",
+        title="Every doc is labelled twice over",
+        essence="Frontmatter routes files for humans and feeds the company-wide "
+                "'one brain'.",
+        detail=(
+            "The human half (`kind`, `layer`, `status`, `owner`, `tags`, "
+            "`summary`) lets files sort and route without being read. The corpus "
+            "half (`id`, `created`/`updated`, `visibility`, `canonical`) lets one "
+            "retrieval layer ingest every doc without garbage — `id` survives "
+            "renames, `canonical` dedups mirrors, `visibility` keeps a "
+            "confidential doc from the wrong audience. Code files carry no YAML, "
+            "so the module docstring is the label and `__all__` is the public API."
+        ),
+        links=(Link("Frontmatter scheme", "conventions#1-frontmatter-labeling-for-sort-route"),
+               Link("Corpus-core fields", "conventions#corpus-core-fields-the-one-brain-reads-these")),
+    ),
+    Principle(
+        slug="taxonomy",
+        title="Every directory has a fixed job",
+        essence="A closed table gives each directory a kind and a "
+                "'what goes in, what does not'.",
+        detail=(
+            "`src/` is the only home for production code, split frontend / "
+            "backend / shared / app; transports live in `api/` and `mcp/`, "
+            "automation in `scripts/`, agent brains in `agents/` — each with an "
+            "explicit boundary on what it must not hold. A new directory is not "
+            "finished until it carries a `README.md` and an `AGENT.md` with valid "
+            "frontmatter, which is how the tree stays self-describing."
+        ),
+        links=(Link("Directory taxonomy", "conventions#2-directory-taxonomy"),),
+    ),
+    Principle(
+        slug="boundary",
+        title="`__init__.py` is the API; depend on contracts",
+        essence="Nothing leaves a package except through `__all__`; cross-package "
+                "wiring is a contract, not a class.",
+        detail=(
+            "Implementation lives in `_underscore` modules and is never imported "
+            "across a package boundary — callers go through the package's "
+            "`__init__.py`. Cross-package interfaces are ABCs or "
+            "`typing.Protocol` in `contracts.py`, so you depend on the contract, "
+            "not the concrete class. The same shape has polyglot analogs: a TS "
+            "`index.ts` barrel, Go's capitalised exports, Rust's `pub` in "
+            "`mod.rs`."
+        ),
+        links=(Link("The boundary rule", "conventions#3-the-init-py-boundary-rule-the-important-one"),),
+    ),
+    Principle(
+        slug="layering",
+        title="Dependencies point one way",
+        essence="`app → {frontend, backend} → shared`, and `shared/` depends on "
+                "nothing.",
+        detail=(
+            "Frontend and backend never import each other; they meet through "
+            "`shared/` — the framework-free FE↔BE contract — and are wired "
+            "together in `app/`, which holds no business logic. `shared/` is for "
+            "domain-meaningful types shared across a section; `util/` is for "
+            "generic, domain-agnostic helpers — if a helper knows about your "
+            "domain, it belongs in `shared/`."
+        ),
+        links=(Link("shared vs util", "conventions#4-shared-vs-util"),
+               Link("Architecture", "docs-architecture-readme")),
+    ),
+    Principle(
+        slug="triggers-doers",
+        title="A trigger says when; a doer says what",
+        essence="Automation splits in two: the doer holds the logic, the trigger "
+                "is a thin adapter.",
+        detail=(
+            "Deterministic doers live in `scripts/` and LLM doers in `agents/` "
+            "(model from `models/`); both are vendor-agnostic. The trigger — a "
+            "pre-commit hook, a CI workflow, a cron entry — only records when to "
+            "run and points at the doer, holding no logic. Swapping cron for "
+            "systemd, or one agent ecosystem for another, never touches the doer."
+        ),
+        links=(Link("Triggers vs doers", "conventions#7-triggers-vs-doers-hooks-scheduled-jobs"),),
+    ),
+    Principle(
+        slug="adapters",
+        title="Name the neutral concept; a vendor is one adapter",
+        essence="Providers and engines hide behind a neutral contract, selected "
+                "by name.",
+        detail=(
+            "A model provider lives behind `models/` (an agent gets its model "
+            "from a registry, never a provider name); an agent's control flow is "
+            "a neutral `Plan` run by a swappable `Runtime`, whose default engine "
+            "is pure stdlib and whose vendor engine (e.g. LangGraph) is one "
+            "lazily-loaded, optional adapter. Adapters change execution, never "
+            "semantics — an equivalence test holds every engine to the reference."
+        ),
+        links=(Link("runtimes/", "conventions#16-agent-control-flow-runtimes-a-neutral-plan-engines-are-adapters"),
+               Link("models/", "models-readme")),
+    ),
+    Principle(
+        slug="agents",
+        title="An agent is an in-process brain or a published surface",
+        essence="Compiled in-process → a function; across a process boundary → an "
+                "agent surface.",
+        detail=(
+            "An in-process agent lives in `agents/<name>/` — its `prompt.md`, a "
+            "private `_brain.py`, and a `tools.md` manifest — and defaults model "
+            "calls and writes to dry-run (`execute=False`). A service that "
+            "crosses a process boundary publishes a neutral `AgentSurface` "
+            "(`card` / `ask` / `health`) instead, with the wire dialect (the "
+            "shipped reference is AAD) a thin adapter whose schema is generated "
+            "and gate-checked for drift."
+        ),
+        links=(Link("Agent surface", "conventions#14-exposing-a-service-as-an-agent-the-agent-surface"),
+               Link("Agent-surface guide", "docs-guides-agent-surface")),
+    ),
+    Principle(
+        slug="manifest",
+        title="Project facts live in one checked file",
+        essence="`config/project.json` records the per-layer facts, and the "
+                "checker won't let them drift.",
+        detail=(
+            "Because the repo is polyglot, 'what is this made of' is a set of "
+            "per-layer facts — each layer's language and chosen stack, and which "
+            "transports are enabled — not one global language. "
+            "`check_structure.py` errors when a declared path, stack, or "
+            "transport directory is missing, when `enabled` is not a subset of "
+            "`available`, or when `backend.python` disagrees with "
+            "`pyproject.toml`. It is a committed decision read by the gate, not "
+            "the app."
+        ),
+        links=(Link("Project manifest", "conventions#15-project-facts-manifest-config-project-json"),),
+    ),
+)
+
 # Mirrors docs/guides/deterministic-checks.md. `present` is set at load time.
 CHECKS: tuple[Check, ...] = (
     Check(
@@ -227,4 +377,5 @@ SETUP_STEPS: tuple[Step, ...] = (
          command="pip install pre-commit && pre-commit install"),
 )
 
-__all__ = ["TAGLINE", "SUMMARY", "CONVENTIONS", "FEATURES", "CHECKS", "SETUP_STEPS"]
+__all__ = ["TAGLINE", "SUMMARY", "CONVENTIONS", "FEATURES", "PRINCIPLES",
+           "CHECKS", "SETUP_STEPS"]
