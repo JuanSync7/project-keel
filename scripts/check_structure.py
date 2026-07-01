@@ -517,6 +517,23 @@ def check_H():
                 err("config/project.json: runtime '%s' -> '%s' does not exist"
                     % (nm, d))
 
+    # Model adapters (optional block): the default must be an available adapter
+    # and each adapter's dir must exist. models/registry.py is the code source of
+    # truth; this manifest is the project's curated list, surfaced by the showcase.
+    models = manifest.get("models")
+    if models is not None:
+        models = _expect(models, dict, "models", {})
+        m_avail = _expect(models.get("available"), dict, "models.available", {})
+        m_default = models.get("default")
+        if m_default is not None and m_default not in m_avail:
+            err("config/project.json: models.default '%s' not in "
+                "models.available" % m_default)
+        for nm in sorted(m_avail):
+            d = m_avail[nm]
+            if isinstance(d, str) and not os.path.isdir(os.path.join(ROOT, d)):
+                err("config/project.json: model '%s' -> '%s' does not exist"
+                    % (nm, d))
+
 
 def check_I():
     """ERROR when CLAUDE.md is not a symlink to its sibling AGENT.md.

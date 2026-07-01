@@ -96,6 +96,22 @@ FEATURES: tuple[Feature, ...] = (
         links=(),
     ),
     Feature(
+        slug="edge-adapters",
+        title="Tools & providers at the edge",
+        summary="MCP tools, model providers, and scheduled jobs — each a thin adapter.",
+        detail=(
+            "The same capabilities reach the world through interchangeable "
+            "adapters: MCP servers expose agents as tools (read-only Q&A, actions "
+            "dry-run by default), any OpenAI-compatible endpoint or a local/fake "
+            "model plugs in behind models/, and a scheduled job runs the same doer "
+            "from cron, systemd, or CI. Pick one by name; nothing downstream changes."
+        ),
+        icon="plug",
+        links=(Link("MCP servers", "mcp-readme"),
+               Link("Model adapters", "models-readme"),
+               Link("Scheduled jobs", "ops-scheduled-readme")),
+    ),
+    Feature(
         slug="agent-surface",
         title="Agent surface",
         summary="A service can describe itself as a discoverable agent.",

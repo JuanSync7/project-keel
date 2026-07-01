@@ -4,3 +4,17 @@ default_model = "claude-code-headless"
 [claude-code-headless]
 model = "claude-opus-4-8"
 binary = "claude"
+
+# Any OpenAI-compatible HTTP endpoint (OpenAI, a local Ollama/vLLM/LM Studio
+# server, Together, Groq, an internal gateway). The provider is chosen by
+# base_url, not baked in. The API KEY is read from the named environment
+# variable — never put the secret here.
+[openai-compatible]
+base_url = "https://api.openai.com/v1"
+model = "gpt-4o-mini"
+api_key_env = "OPENAI_API_KEY"
+
+# Deterministic, offline backend for tests and disconnected dev. No config
+# needed; set `reply` to pin a fixed response.
+[fake]
+reply = ""

@@ -28,6 +28,7 @@ client = TestClient(app)
 PAGE_FEEDS = (
     "/api/features",     # Conventions/Features/Checks/Setup are list endpoints
     "/api/principles",
+    "/api/models",       # the Architecture page's live model-adapter list
     "/api/checks",
     "/api/setup",
     "/api/wiki/tree",

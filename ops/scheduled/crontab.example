@@ -9,4 +9,5 @@
 0 2 * * * cd /path/to/repo && python3 scripts/jobs/rebuild_index.py --out wiki/INDEX.md
 
 # systemd-timer equivalent (same doer): [Timer] OnCalendar=*-*-* 02:00:00
-# CI equivalent: a `on: schedule: - cron: '0 2 * * *'` workflow calling the same script.
+# CI equivalent (shipped): .github/workflows/scheduled.yml — a `schedule` trigger
+# calling the same script. Same doer, different cadence adapter (CONVENTIONS §7).

@@ -48,6 +48,25 @@ def test_principles_listed():
     assert all(p["title"] and p["essence"] and p["detail"] for p in principles)
 
 
+def test_models_listed_from_the_manifest():
+    models = client.get("/api/models").json()
+    by_name = {m["name"]: m for m in models}
+    assert {"claude-code-headless", "openai-compatible", "fake"} <= set(by_name)
+    assert by_name["claude-code-headless"]["default"] is True
+    assert [m["name"] for m in models if m["default"]] == ["claude-code-headless"]
+
+
+def test_every_feature_link_resolves_into_the_corpus():
+    """Click-through guarantee: each feature's 'read more' link is a real node,
+    so the new edge-adapters card (and every other) never strands the visitor."""
+    feats = client.get("/api/features").json()
+    hrefs = sorted({ln["href"] for f in feats for ln in f["links"]})
+    assert "mcp-readme" in hrefs and "models-readme" in hrefs   # the new card's links
+    dead = [h for h in hrefs
+            if client.get("/api/wiki/node", params={"id": h}).status_code != 200]
+    assert not dead, "dead feature links (no such corpus node): %s" % dead
+
+
 def test_wiki_tree_node_and_404():
     tree = client.get("/api/wiki/tree").json()
     assert tree, "corpus should be built for this test"

@@ -132,6 +132,22 @@
         "summary": "Features"
       }
     },
+    "/api/models": {
+      "get": {
+        "operationId": "models_api_models_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Models"
+      }
+    },
     "/api/overview": {
       "get": {
         "operationId": "overview_api_overview_get",
