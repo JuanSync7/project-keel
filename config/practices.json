@@ -2,19 +2,21 @@
   "_comment": "Vendor-neutral registry of the coding practices Project Keel promotes. This is DATA read BY PATH (json.load), never imported as a library — the 3.6-safe gate scripts/check_structure.py, the advisory scripts/check_practices.py, and the agents/practice_refactor/ doer all consume it the same way check_H reads project.json. No provider/vendor is baked into check LOGIC; every provider/tensor token lives here as data (CONVENTIONS section 18). Adding/retiring a practice is a data edit here plus its mechanism; enabling a domain profile is a flag in project.json practices.profiles (NOT here — defining a profile is not enabling it).",
   "schema_version": 1,
   "rulesets": {
-    "_comment": "The concrete lint/type rulesets that carry the 'gate' tier today (Slice 0). Mirrors, in data, what pyproject.toml enables — the future check_H parity check reads this to prove pyproject cannot silently loosen the declared policy.",
+    "_comment": "The concrete lint/type rulesets that carry the 'gate' tier. Mirrors, in DATA, what pyproject.toml enables — check_structure.py check_M reads this to prove pyproject cannot silently LOOSEN the declared policy (a declared extend_select family missing, a mypy flag off, or a 'deferred' family silently selected is an error). Slice 5 widened it: every extend_select family below was measured at zero current violations (pure future-protection), and mypy went full-strict (backlog was 3, now fixed).",
     "ruff": {
-      "extend_select": ["I", "B", "BLE", "C4", "G", "LOG", "RET", "SIM", "T20"],
+      "extend_select": ["I", "B", "BLE", "C4", "G", "LOG", "RET", "SIM", "T20",
+                        "A", "FA", "FURB", "ICN", "ISC", "PERF", "PGH", "PIE", "RSE", "SLOT", "NPY"],
       "deferred": {
-        "UP": "house style is %-formatting (UP031 would rewrite ~19 sites to f-strings)",
+        "_comment": "DELIBERATE house-style policy, NOT temporary debt: each fights a chosen convention, so it stays off permanently. check_M errs if any is silently selected in pyproject.",
+        "UP": "house style is %-formatting (UP031 would rewrite ~19 sites to f-strings); the 3.6-safe checks in scripts/ require %-formatting anyway",
         "RUF022": "__all__ is ordered semantically, not alphabetically",
-        "RUF100": "intentional `# noqa: S310` etc. read as unused until S is selected",
+        "RUF100": "intentional `# noqa: S310` etc. read as unused until the S (bandit) family is selected, which we don't",
         "E501": "docstring summaries deliberately exceed 88 cols"
       },
       "per_file_ignores": {"src/app/**": ["T201"]}
     },
     "mypy": {
-      "flags": ["no_implicit_optional", "warn_return_any", "disallow_any_generics", "warn_unused_ignores"]
+      "flags": ["strict", "warn_unreachable"]
     }
   },
   "practices": [
@@ -27,6 +29,12 @@
     {"id": "return-any", "row": 2, "scope": "universal", "tier": "gate", "status": "on",
      "title": "Don't return Any from a typed function",
      "mechanism": "mypy warn_return_any"},
+    {"id": "typed-everywhere", "row": 15, "scope": "universal", "tier": "gate", "status": "on",
+     "title": "Every function is fully typed (no untyped defs / calls / decorators)",
+     "mechanism": "mypy strict (disallow_untyped_defs + disallow_incomplete_defs + disallow_untyped_calls + disallow_untyped_decorators) — Slice 5"},
+    {"id": "no-blanket-suppressions", "row": 16, "scope": "universal", "tier": "gate", "status": "on",
+     "title": "No blanket # noqa / # type: ignore — every suppression names its code",
+     "mechanism": "ruff PGH003/PGH004 — Slice 5 (pairs with the # practice-ok discipline)"},
     {"id": "exception-chaining", "row": 6, "scope": "universal", "tier": "gate", "status": "on",
      "title": "Preserve the cause; never blind-except",
      "mechanism": "ruff B904 (raise ... from) + BLE001 (blind except)"},

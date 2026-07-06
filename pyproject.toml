@@ -48,14 +48,30 @@ extend-select = [
   "RET",  # explicit, consistent returns (no bare Optional-as-silent-failure smell)
   "SIM",  # simplify (e.g. merge isinstance chains)
   "T20",  # no print() in library code
+  # Slice-5 widening: families measured at ZERO current violations, so enabling
+  # them is pure future-protection (no churn). Several pair with a keel practice.
+  "A",    # don't shadow a builtin (name hygiene)
+  "FA",   # future-annotations hygiene
+  "FURB", # refurb: modernise dead idioms
+  "ICN",  # import conventions (e.g. `import numpy as np`)
+  "ISC",  # implicit string-concatenation bugs
+  "PERF", # perflint: performance anti-patterns
+  "PGH",  # pragma hygiene — no blanket `# noqa` / `# type: ignore` (pairs with practice-ok)
+  "PIE",  # misc anti-patterns (unnecessary pass, dupe dict keys)
+  "RSE",  # no redundant parentheses on `raise`
+  "SLOT", # __slots__ on str/tuple/NamedTuple subclasses (pairs with slots-hot-path)
+  "NPY",  # numpy legacy API (relevant to the tensor/cuda domain)
 ]
 
 [tool.ruff.lint.per-file-ignores]
 "src/app/**" = ["T201"]        # entrypoints may print; library code may not
 
+# Slice-5 widening: the strict backlog was 3 `no-untyped-def` sites (now fixed),
+# so mypy goes full-strict — every function typed, no untyped calls/decorators,
+# no Any-return, no implicit re-export, redundant-cast + unreachable warnings.
+# check_structure.py check_M proves this can't silently drift from the declared
+# policy in config/practices.json rulesets.mypy.
 [tool.mypy]
 files = ["src"]
-no_implicit_optional = true    # an implicit Optional is a silent-failure trap (practice #7)
-warn_return_any = true         # returning Any from a typed fn defeats the annotation
-disallow_any_generics = true   # bare dict/list/set must declare their element types
-warn_unused_ignores = true     # a stale `# type: ignore` is noise — keep them honest
+strict = true                  # the whole strict set (implies no_implicit_optional, disallow_any_generics, warn_return_any, warn_unused_ignores, disallow_untyped_defs, ...)
+warn_unreachable = true        # not in --strict: flag code mypy proves can never run

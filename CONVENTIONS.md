@@ -194,6 +194,7 @@ pre-commit hook) fails the build if the conventions above drift:
 | Owned-exception boundary (§18) | in library code (`src`/`models`/`runtimes`/`agents`), no `raise` of an exception **type** imported from a foreign (non-local, non-stdlib) module — wrap it in an owned error; `# practice-ok: <reason>` waives |
 | Frozen-config gate (§18) | a class carrying the declared marker (`config/practices.json` `tokens.config_marker`, `# practice: frozen-config`) must be provably immutable (frozen dataclass / `NamedTuple` / attrs-frozen); keyed on the marker, never a `*Config` name suffix; `# practice-ok` waives |
 | Naked-tensor domain (warn) | only when the `cuda` profile is enabled (`project.json` `practices.profiles`), a parameter annotated with a bare tensor base type (`tokens.tensor_base_types`) and no shape comment **warns** — an advisory heuristic, never an error |
+| Ruleset parity (§15) | `pyproject.toml` must not silently loosen the declared policy — every ruff `extend_select` family and mypy flag in `config/practices.json` `rulesets` is enforced, and no `deferred` (policy-off) family is selected |
 
 Missing `owner` is a warning, not a failure. If you change the scheme
 (KINDS / LAYERS / STATUSES / VISIBILITIES) or a check, update **both**

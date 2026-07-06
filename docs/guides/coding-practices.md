@@ -71,11 +71,21 @@ populating `select` + a few strict flags was the highest-leverage first move:
 | No `print()` in library code; no interpolation inside log calls | ruff `T20`, `G`, `LOG` |
 | Public API via `__init__`/`__all__`; no cross-package `_private` import | `check_structure.py` `check_C/D/E` + ruff `I` |
 | `assert_never` in the default branch of `Literal`/`Enum` routing | mypy Never-narrowing (convention) |
+| Every function is fully typed (no untyped defs / calls / decorators) | mypy `strict` (Slice 5) |
+| No blanket `# noqa` / `# type: ignore` — each names its code | ruff `PGH` (Slice 5) |
 
-Deliberately **deferred** (measured as high-churn or style-fighting): `UP`
+The **Slice-5 widen pass** measured every candidate rule first (Slice 0's
+discipline). It took mypy to full **`strict`** (the backlog was 3 `no-untyped-def`
+sites, now fixed) and added the ruff families that were measured at **zero**
+current violations — `A`, `FA`, `FURB`, `ICN`, `ISC`, `PERF`, `PGH`, `PIE`,
+`RSE`, `SLOT`, `NPY` — so enabling them is pure future-protection with no churn
+(several pair with a keel practice: `PGH` ↔ the suppression discipline, `SLOT` ↔
+slots-hot-path, `NPY` ↔ the tensor domain).
+
+Kept **off as deliberate house-style policy** (not deferred debt): `UP`
 (house style is `%`-formatting), `RUF022` (semantic `__all__` order), `RUF100`
-(intentional `# noqa` codes), `E501` (long docstring summaries). They belong in
-a later *widen* slice, fixed chunk-by-chunk.
+(intentional `# noqa` codes), `E501` (long docstring summaries). `check_M` errs
+if any is silently *selected* in `pyproject.toml`.
 
 ### Gates — custom AST checks
 
@@ -96,6 +106,18 @@ would be exactly the fit-to-specimen smell §18 warns against:
 (alias-resolving) and any residual construct it can't prove — a frozen base
 class, a functional `namedtuple()` — is a documented `# practice-ok` waiver, not
 a silent false error.
+
+### Ruleset parity — the config can't silently drift (`check_M`)
+
+The gate rulesets above live **twice**: as behaviour in `pyproject.toml` (what
+ruff/mypy actually enforce) and as DATA in `config/practices.json` `rulesets`
+(what the template *declares* it enforces). `check_M` proves the two agree —
+every declared ruff `extend_select` family is selected, every declared mypy flag
+is enforced, and no `deferred` (policy-off) family is silently selected. So a
+future edit that drops `strict` or removes a family from `pyproject.toml` fails
+the build instead of quietly weakening the policy. It reads `pyproject.toml` as
+text (no `tomllib` on the 3.6 pre-commit interpreter), understands multi-line
+arrays, dotted-key and header table forms, and honours `# practice-ok`.
 
 ### Advisories — smells, never block (`make advise`)
 

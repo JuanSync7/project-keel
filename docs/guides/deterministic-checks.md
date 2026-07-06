@@ -62,7 +62,7 @@ everything and therefore expect the project interpreter.
 
 | Check | Script | Gate? | Interpreter | What it guarantees |
 |-------|--------|:-----:|-------------|--------------------|
-| Structure & frontmatter | `scripts/check_structure.py` | error | 3.6-safe | Labels, taxonomy, package boundaries, tool/agent governance, project facts, agent-rules symlinks, owned-exception & frozen-config boundaries, naked-tensor domain warn (checks A–L) |
+| Structure & frontmatter | `scripts/check_structure.py` | error | 3.6-safe | Labels, taxonomy, package boundaries, tool/agent governance, project facts, agent-rules symlinks, owned-exception & frozen-config boundaries, naked-tensor domain warn, lint/type ruleset parity (checks A–M) |
 | Scaffold-embed sync | `scripts/check_scaffold_sync.py` | error | 3.6-safe | `scaffold.py`'s embedded scripts are byte-identical to the live files |
 | Corpus integrity | `scripts/jobs/check_corpus.py` | error | ≥3.7 | `wiki/corpus.json` is a valid, acyclic graph **and** the build is reproducible |
 | OpenAPI drift | `api/rest_fastapi/export_openapi.py --check` | error | FastAPI | Committed `openapi.json` matches the live routes |
@@ -79,7 +79,7 @@ print but never fail the build.
 
 ### 1. Structure & frontmatter — `scripts/check_structure.py`
 
-**Purpose.** The core enforcer of `CONVENTIONS.md`. Checks A–L:
+**Purpose.** The core enforcer of `CONVENTIONS.md`. Checks A–M:
 
 - **A. Frontmatter** — every `README.md` / `AGENT.md` / `CLAUDE.md`, `docs/**`,
   `test-docs/**` markdown, and `agents/**/*.tool.md` has the required keys with
@@ -108,6 +108,11 @@ print but never fail the build.
   (`config/project.json` `practices.profiles`), a parameter annotated with a bare
   tensor base type (`tokens.tensor_base_types`) and no shape comment **warns**.
   An advisory heuristic (a token may name a local class) — never an error.
+- **M. Ruleset parity** — `pyproject.toml` must not silently loosen the lint/type
+  policy declared in `config/practices.json` `rulesets`: every ruff
+  `extend_select` family is selected, every mypy flag is enforced, no `deferred`
+  (policy-off) family is selected. Reads `pyproject.toml` as text (no `tomllib`
+  on 3.6); multi-line arrays, dotted-key/header forms, `# practice-ok` all handled.
 
 **When to run.** Every commit (pre-commit) and in CI; any time you add a
 directory, package, doc, tool, or agent.

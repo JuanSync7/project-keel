@@ -4190,6 +4190,10 @@ Checks:
      (project.json practices.profiles), a function parameter annotated with a
      bare tensor base type (tokens.tensor_base_types) and no shape comment WARNs.
      Advisory heuristic (a token may name a local class) — never an error
+  M. Ruleset parity (ERR): pyproject.toml must not silently loosen the lint/type
+     policy declared in config/practices.json rulesets — every ruff extend_select
+     family is selected, every mypy flag is enforced, no 'deferred' family is
+     selected (config/practices.json rulesets; CONVENTIONS section 15)
 
 Exit 0 = clean, 1 = errors. Warnings never fail the build. Stdlib only; 3.6+.
 """
@@ -5305,6 +5309,268 @@ def check_L():
                          % (rel(full), line, arg, name))
 
 
+# --- check_M: ruleset parity (config/practices.json <-> pyproject.toml) --------
+#
+# Prove pyproject.toml cannot silently LOOSEN the policy declared as DATA in
+# practices.json rulesets: every declared ruff extend_select family must be
+# selected, every declared mypy flag must be enforced (= true), and no 'deferred'
+# family may be silently selected. Stdlib only, no tomllib (runs on 3.6), so it
+# ships a small quote/comment/multi-line-aware TOML scanner rather than parsing.
+
+_FLAG_RE = re.compile(r"^(true|false)\b")
+
+# Triple-quote delimiters. _TRI3 (three single-quote chars) is BUILT, not written
+# as a literal: scaffold.py embeds this file inside a raw triple-single-quoted
+# string, so a literal triple-single-quote here would terminate that embed
+# (check_scaffold_sync.py guards against it).
+_TRI_D = '"""'
+_TRI3 = "'" * 3
+
+
+def _toml_scan(text):
+    """Per line: (comment_col, instr). comment_col[ln] is the column where the
+    line's real comment starts (or None); instr[ln] is True when the whole line
+    lies inside a multi-line string. A single state machine tracks basic/literal
+    and triple-quoted strings across lines, so a '#' inside a string is never a
+    comment and a quote inside a comment never opens a string."""
+    lines = text.split("\n")
+    comment_col, instr = {}, {}
+    st = None
+    for i in range(len(lines)):
+        ln = i + 1
+        line = lines[i]
+        instr[ln] = st in (_TRI_D, _TRI3)
+        j, ccol, n = 0, None, len(line)
+        while j < n:
+            c = line[j]
+            three = line[j:j + 3]
+            if st in (_TRI_D, _TRI3):
+                if three == st:
+                    st = None
+                    j += 3
+                    continue
+                j += 1
+                continue
+            if st == '"':
+                if c == "\\":
+                    j += 2
+                    continue
+                if c == '"':
+                    st = None
+                j += 1
+                continue
+            if st == "'":
+                if c == "'":
+                    st = None
+                j += 1
+                continue
+            if three in (_TRI_D, _TRI3):
+                st = three
+                j += 3
+                continue
+            if c in ('"', "'"):
+                st = c
+                j += 1
+                continue
+            if c == "#":
+                ccol = j
+                break
+            j += 1
+        comment_col[ln] = ccol
+    return comment_col, instr
+
+
+def _toml_practice_ok_lines(text):
+    """Line numbers carrying a `# practice-ok` comment (dedicated TOML scanner —
+    the Python tokenizer bails on TOML; an in-string pragma never waives)."""
+    comment_col, instr = _toml_scan(text)
+    lines = text.split("\n")
+    out = set()
+    for ln in comment_col:
+        if instr.get(ln) or comment_col[ln] is None:
+            continue
+        body = lines[ln - 1][comment_col[ln]:].lstrip("#").strip()
+        if body.startswith("practice-ok"):
+            out.add(ln)
+    return out
+
+
+def _toml_targets(text):
+    """{fully-qualified dotted key: [(start_lineno, rhs_text, span_lines)]}. The
+    current table header is prepended to each key, so `[tool.ruff.lint]` + bare
+    `extend-select` and root `tool.ruff.lint.extend-select` normalise to the same
+    key. A bracketed array value that spans lines is accumulated whole (comments
+    stripped), so a multi-line `extend-select = [ ... ]` is one rhs_text."""
+    comment_col, instr = _toml_scan(text)
+    lines = text.split("\n")
+    cur_table = ""
+    assigns = {}
+    n = len(lines)
+    i = 0
+    while i < n:
+        ln = i + 1
+        if instr.get(ln):
+            i += 1
+            continue
+        raw = lines[i]
+        col = comment_col.get(ln)
+        if col is not None:
+            raw = raw[:col]
+        s = raw.strip()
+        if not s:
+            i += 1
+            continue
+        if s.startswith("[") and s.endswith("]") and "=" not in s:
+            cur_table = s[1:-1].strip().strip("[]").strip()   # [[x]] array-of-tables -> x
+            i += 1
+            continue
+        if "=" not in s:
+            i += 1
+            continue
+        key, rhs = s.split("=", 1)
+        key, rhs = key.strip(), rhs.strip()
+        full = (cur_table + "." + key) if cur_table else key
+        span = set([ln])
+        depth = rhs.count("[") - rhs.count("]")
+        j = i
+        while depth > 0 and j + 1 < n:
+            j += 1
+            ln2 = j + 1
+            if instr.get(ln2):
+                continue
+            raw2 = lines[j]
+            col2 = comment_col.get(ln2)
+            if col2 is not None:
+                raw2 = raw2[:col2]
+            rhs += " " + raw2.strip()
+            span.add(ln2)
+            depth += raw2.count("[") - raw2.count("]")
+        assigns.setdefault(full, []).append((ln, rhs, span))
+        i = j + 1
+    return assigns
+
+
+def _rhs_has_family(rhs_text, fam):
+    """True if `fam` appears as a QUOTED whole token, so "I" never matches inside
+    "SIM"."""
+    return ('"%s"' % fam) in rhs_text or ("'%s'" % fam) in rhs_text
+
+
+def _flag_state(entries):
+    """'on' | 'off' | 'absent' for a mypy flag, last-writer-wins (so `flag = true`
+    then `flag = false` reads as off — a real loosening)."""
+    if not entries:
+        return "absent"
+    rhs = entries[-1][1].strip()
+    m = _FLAG_RE.match(rhs)
+    if not m:
+        return "absent"
+    return "on" if m.group(1) == "true" else "off"
+
+
+def _line_waived(target_lines, pragma):
+    """A finding anchored to specific lines is waived by a `# practice-ok` on any
+    of those lines or the line directly above the first."""
+    for ln in target_lines:
+        if ln in pragma or (ln - 1) in pragma:
+            return True
+    return False
+
+
+def _span_lines(entries):
+    out = set()
+    for (_, _, span) in entries:
+        out |= span
+    return out
+
+
+def _ruleset_parity_findings(practices, text):
+    """(errors, warnings) proving pyproject `text` doesn't loosen the declared
+    policy in `practices`. Pure: no I/O, so it is unit-testable directly."""
+    errs, warns_ = [], []
+    rules = practices.get("rulesets")
+    if not isinstance(rules, dict):
+        return errs, warns_
+    ruff = rules.get("ruff") if isinstance(rules.get("ruff"), dict) else {}
+    mypy = rules.get("mypy") if isinstance(rules.get("mypy"), dict) else {}
+    extend = ruff.get("extend_select")
+    deferred = ruff.get("deferred")
+    flags = mypy.get("flags")
+    dkeys = []
+    if isinstance(deferred, dict):
+        dkeys = [k for k in deferred if not str(k).startswith("_")]
+    elif isinstance(deferred, list):
+        dkeys = [x for x in deferred if isinstance(x, str)]
+
+    assigns = _toml_targets(text)
+    pragma = _toml_practice_ok_lines(text)
+    file_waived = bool(pragma)
+
+    es = assigns.get("tool.ruff.lint.extend-select", [])
+    es_text = " ".join(r for (_, r, _) in es)
+    es_lines = _span_lines(es)
+
+    if isinstance(extend, list) and extend:
+        if not es:
+            if not file_waived:
+                errs.append("pyproject.toml: [tool.ruff.lint] extend-select is "
+                            "absent; declared ruff policy is unenforced "
+                            "(config/practices.json rulesets.ruff.extend_select). "
+                            "Add it or `# practice-ok`.")
+        else:
+            for fam in extend:
+                if isinstance(fam, str) and not _rhs_has_family(es_text, fam) \
+                        and not _line_waived(es_lines, pragma):
+                    errs.append("pyproject.toml: ruff family '%s' declared in "
+                                "practices.json is not in extend-select (silent "
+                                "loosening)" % fam)
+    for fam in dkeys:
+        if es and _rhs_has_family(es_text, fam) and not _line_waived(es_lines, pragma):
+            errs.append("pyproject.toml: ruff family '%s' is DEFERRED in "
+                        "practices.json but selected in extend-select" % fam)
+
+    if isinstance(flags, list):
+        for flag in flags:
+            if not isinstance(flag, str):
+                continue
+            entries = assigns.get("tool.mypy." + flag, [])
+            state = _flag_state(entries)
+            if state == "off" and not _line_waived(_span_lines(entries), pragma):
+                errs.append("pyproject.toml: mypy flag '%s' is set false (declared "
+                            "enforced in practices.json) - a silent loosening" % flag)
+            elif state == "absent" and not file_waived:
+                errs.append("pyproject.toml: mypy flag '%s' declared in "
+                            "practices.json is not enforced (absent). Add "
+                            "`%s = true` or `# practice-ok`." % (flag, flag))
+    return errs, warns_
+
+
+def check_M():
+    """Ruleset parity: pyproject.toml must not silently loosen the lint/type
+    policy declared as DATA in config/practices.json rulesets. Errs on a declared
+    ruff family missing from extend-select, a declared mypy flag off/absent, or a
+    'deferred' family silently selected. Degrades to a WARN if pyproject is
+    missing/unreadable (can't prove anything); waivable with `# practice-ok`."""
+    practices = _load_practices()
+    if not isinstance(practices.get("rulesets"), dict):
+        return
+    path = os.path.join(ROOT, "pyproject.toml")
+    if not os.path.isfile(path):
+        warn("pyproject.toml: not found; ruleset parity unenforced")
+        return
+    try:
+        with open(path, encoding="utf-8") as fh:
+            text = fh.read()
+    except Exception as e:
+        warn("pyproject.toml: could not read (%s)" % e)
+        return
+    errs, warns_ = _ruleset_parity_findings(practices, text)
+    for m in errs:
+        err(m)
+    for m in warns_:
+        warn(m)
+
+
 def main():
     check_A()
     check_B()
@@ -5318,6 +5584,7 @@ def main():
     check_J()
     check_K()
     check_L()
+    check_M()
     for w_ in warnings:
         print("WARN  " + w_)
     for e_ in errors:

@@ -23,7 +23,7 @@ def strip_frontmatter(text: str) -> str:
     return text  # unterminated block -> treat the whole thing as body
 
 
-def section_slice(body: str, lineno) -> str:
+def section_slice(body: str, lineno: int | None) -> str:
     """Return the markdown of one section: its heading down to the next heading
     of the same or higher level. ``lineno`` is 1-based within ``body`` (the
     post-frontmatter body), matching build_corpus's section lineno."""
