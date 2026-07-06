@@ -38,5 +38,13 @@
       "openai-compatible": "models",
       "fake": "models"
     }
+  },
+  "practices": {
+    "_comment": "Domain coding-practice profiles are DEFINED in config/practices.json (ai/cuda/langgraph) and ENABLED here — flip a flag to true to turn its domain checks on (e.g. cuda -> check_L naked-tensor, resource-context-manager advisory). All off keeps the template domain-neutral. Validated by check_structure.py (check_H); consumed by check_L and check_practices.py.",
+    "profiles": {
+      "ai": false,
+      "cuda": false,
+      "langgraph": false
+    }
   }
 }

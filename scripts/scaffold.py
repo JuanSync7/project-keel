@@ -4182,6 +4182,14 @@ Checks:
   J. No third-party exception leaks across a library boundary (ERR): a raise of
      an exception TYPE imported from a foreign (non-local, non-stdlib) module
      (coding-practices; owned-exception-boundary in config/practices.json)
+  K. Frozen-config gate (ERR): a class carrying the DECLARED marker
+     (tokens.config_marker, "# practice: frozen-config") must be provably
+     immutable (frozen dataclass / NamedTuple / attrs-frozen); else wrap or waive
+     with "# practice-ok". Keyed on the marker, never a *Config name suffix (§18)
+  L. Naked-tensor domain gate (WARN): only when the cuda profile is enabled
+     (project.json practices.profiles), a function parameter annotated with a
+     bare tensor base type (tokens.tensor_base_types) and no shape comment WARNs.
+     Advisory heuristic (a token may name a local class) — never an error
 
 Exit 0 = clean, 1 = errors. Warnings never fail the build. Stdlib only; 3.6+.
 """
@@ -4702,6 +4710,64 @@ def check_H():
                 err("config/project.json: model '%s' -> '%s' does not exist"
                     % (nm, d))
 
+    # Practice profiles (optional block): domain profiles are DEFINED in
+    # config/practices.json and ENABLED here (CONVENTIONS section 15). A
+    # non-boolean flag is a provable error; an enabled flag that names no
+    # defined profile is inert (activates nothing) -> WARN, not err.
+    practices_blk = manifest.get("practices")
+    if practices_blk is not None:
+        practices_blk = _expect(practices_blk, dict, "practices", {})
+        profiles = practices_blk.get("profiles")
+        if profiles is not None:
+            profiles = _expect(profiles, dict, "practices.profiles", {})
+            errs, warns_ = _profile_flag_findings(profiles, _defined_profile_names())
+            for m in errs:
+                err(m)
+            for m in warns_:
+                warn(m)
+
+
+def _defined_profile_names():
+    """The set of domain-profile names DEFINED in config/practices.json, or None
+    when it cannot be authoritatively determined (file absent/unreadable/not a
+    dict, 'profiles' missing or not a dict, or only '_'-prefixed keys). Returning
+    None suppresses the enabled-but-undefined WARN, so a registry-side typo never
+    breaks a consuming repo's build (mirrors _stdlib_exc_modules' safe degrade)."""
+    path = os.path.join(ROOT, "config", "practices.json")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except Exception:
+        return None
+    if not isinstance(data, dict):
+        return None
+    profs = data.get("profiles")
+    if not isinstance(profs, dict):
+        return None
+    names = set(k for k in profs if not str(k).startswith("_"))
+    return names or None
+
+
+def _profile_flag_findings(profiles, defined):
+    """(errors, warnings) for a practices.profiles dict. A non-boolean value is a
+    provable error; an enabled (True) flag whose name is not in `defined` (when
+    known) is inert and only warns. `defined` is a name set or None (unknown)."""
+    errs, warns_ = [], []
+    for name in sorted(profiles):
+        if str(name).startswith("_"):
+            continue
+        val = profiles[name]
+        if not isinstance(val, bool):
+            errs.append("config/project.json: practices.profiles.%s must be true "
+                        "or false (a boolean), not %s" % (name, type(val).__name__))
+            continue
+        if val is True and defined is not None and name not in defined:
+            warns_.append("config/project.json: practices.profiles.%s is enabled "
+                          "but names no profile defined in config/practices.json "
+                          "profiles %s; it will activate nothing"
+                          % (name, sorted(defined)))
+    return errs, warns_
+
 
 def check_I():
     """ERROR when CLAUDE.md is not a symlink to its sibling AGENT.md.
@@ -4876,6 +4942,369 @@ def check_J():
                         "(or add `# practice-ok: <reason>`)" % (rel(full), line, name))
 
 
+# --- shared registry readers (config/practices.json, config/project.json) -----
+
+def _load_practices():
+    """config/practices.json as a dict, or {} on any failure (degrade to silence).
+    Read BY PATH, never imported (it is DATA — CONVENTIONS section 18)."""
+    path = os.path.join(ROOT, "config", "practices.json")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+        if isinstance(data, dict):
+            return data
+    except Exception:
+        pass
+    return {}
+
+
+def _profiles_on():
+    """Domain profiles enabled in config/project.json practices.profiles. Mirrors
+    check_practices.profiles_on() exactly (value is True, '_'-keys stripped)."""
+    path = os.path.join(ROOT, "config", "project.json")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            proj = json.load(fh)
+        prof = ((proj.get("practices") or {}).get("profiles")) or {}
+        if not isinstance(prof, dict):
+            return set()
+        return set(k for k in prof
+                   if prof[k] is True and not str(k).startswith("_"))
+    except Exception:
+        return set()
+
+
+# --- check_K: frozen-config gate ----------------------------------------------
+#
+# A class carrying the DECLARED marker (tokens.config_marker) must be provably
+# immutable. Unlike check_J (which fires only on a proven leak, so recognizer
+# gaps are safe misses), check_K is INVERTED: a marked class the recognizer
+# cannot prove immutable is an ERROR. So recognition is broad and alias-resolving,
+# and any residual gap (a frozen base class, a functional namedtuple()) is a
+# documented WAIVER case (`# practice-ok: <reason>`), never a silent false error.
+
+def _class_kw_line(node):
+    """The visual `class` line, stable across interpreters. On 3.6 a decorated
+    class's ClassDef.lineno is the first DECORATOR line; on 3.8+ it is the `class`
+    line. Decorators sit above the keyword, so max(decorator lineno)+1 is the
+    `class` line in both; an undecorated class uses its own lineno."""
+    start = getattr(node, "lineno", 0)
+    decs = [getattr(d, "lineno", start) for d in getattr(node, "decorator_list", [])]
+    if decs:
+        return max(decs) + 1
+    return start
+
+
+def _exact_marker_lines(text, marker):
+    """{lineno: column} for every comment whose body EQUALS `marker` exactly (not
+    a substring — so `# NOTE: not practice: frozen-config` never marks a class).
+    The column lets the caller reject a marker indented inside an earlier body."""
+    out = {}
+    try:
+        for tok in tokenize.generate_tokens(io.StringIO(text).readline):
+            if tok.type == tokenize.COMMENT and tok.string.lstrip("#").strip() == marker:
+                out[tok.start[0]] = tok.start[1]
+    except (tokenize.TokenError, IndentationError, SyntaxError, ValueError):
+        pass
+    return out
+
+
+def _class_is_marked(node, marker_cols):
+    """True when a marker sits on this class's own header lines (decorators or the
+    `class` line, any column), or on the line DIRECTLY above it at the SAME indent
+    as the `class` keyword. The same-indent rule is what stops a marker written as
+    an indented note inside an earlier class body from bleeding onto the class
+    below it (its column would be deeper than this class's col_offset)."""
+    kw = _class_kw_line(node)
+    decs = [getattr(d, "lineno", kw) for d in getattr(node, "decorator_list", [])]
+    top = min([kw] + decs)                       # first physical line of the header
+    for ln in marker_cols:
+        if top <= ln <= kw:
+            return True
+    above = top - 1
+    return marker_cols.get(above) == getattr(node, "col_offset", 0)
+
+
+def _binding_map(tree):
+    """bound-name -> (module_top, original_attr) for absolute imports, so an alias
+    like `from dataclasses import dataclass as dc` resolves to ('dataclasses',
+    'dataclass'). Relative imports are local and intentionally omitted."""
+    out = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            top = node.module.split(".")[0]
+            for a in node.names:
+                out[a.asname or a.name] = (top, a.name)
+        elif isinstance(node, ast.Import):
+            for a in node.names:
+                top = a.name.split(".")[0]
+                out[a.asname or top] = (top, a.name.split(".")[-1])
+    return out
+
+
+def _dotted_tail(node):
+    """Last attribute/name segment of a decorator or base expression
+    (attrs.frozen -> 'frozen', a bare Name -> its id)."""
+    tgt = node.func if isinstance(node, ast.Call) else node
+    if isinstance(tgt, ast.Attribute):
+        return tgt.attr
+    if isinstance(tgt, ast.Name):
+        return tgt.id
+    return None
+
+
+def _resolves_to(name, binding, want_module, want_attrs):
+    b = binding.get(name)
+    if b is None:
+        return False
+    top, orig = b
+    return top == want_module and orig in want_attrs
+
+
+def _kw_true(node):
+    """3.6-safe `is True` test: 3.8+ ast.Constant(value=True), 3.6 NameConstant."""
+    cn = node.__class__.__name__
+    if cn in ("Constant", "NameConstant"):
+        return getattr(node, "value", None) is True
+    return False
+
+
+def _is_frozen_dataclass(node, binding):
+    for dec in getattr(node, "decorator_list", []):
+        base = dec.func if isinstance(dec, ast.Call) else dec
+        tail = _dotted_tail(dec)
+        is_dc = False
+        if isinstance(base, ast.Name):
+            is_dc = (tail == "dataclass") or _resolves_to(
+                base.id, binding, "dataclasses", ("dataclass",))
+        elif isinstance(base, ast.Attribute):
+            is_dc = (tail == "dataclass")
+        if is_dc and isinstance(dec, ast.Call):
+            for kw in dec.keywords:
+                if kw.arg == "frozen" and _kw_true(kw.value):
+                    return True
+    return False
+
+
+def _is_namedtuple(node, binding):
+    for b in getattr(node, "bases", []):
+        tail = _dotted_tail(b)
+        if isinstance(b, ast.Name):
+            if tail == "NamedTuple" or _resolves_to(
+                    b.id, binding, "typing", ("NamedTuple",)):
+                return True
+        elif isinstance(b, ast.Attribute) and tail == "NamedTuple":
+            return True
+    return False
+
+
+def _is_attrs_frozen(node, binding):
+    """@attr.frozen / @attrs.frozen / @frozen (always immutable), or
+    @attr.s(frozen=True) / @define(frozen=True) (immutable only with frozen=True)."""
+    for dec in getattr(node, "decorator_list", []):
+        tail = _dotted_tail(dec)
+        if tail == "frozen":
+            return True
+        if tail in ("s", "attrs", "define") and isinstance(dec, ast.Call):
+            for kw in dec.keywords:
+                if kw.arg == "frozen" and _kw_true(kw.value):
+                    return True
+    return False
+
+
+def _is_immutable_config(node, binding):
+    return (_is_frozen_dataclass(node, binding)
+            or _is_namedtuple(node, binding)
+            or _is_attrs_frozen(node, binding))
+
+
+def _span_pragma(lo, hi, pragma):
+    for ln in pragma:
+        if lo <= ln <= hi:
+            return True
+    return False
+
+
+def _frozen_config_violations(tree, text, marker, pragma):
+    """(class_kw_line, class_name) for every class DECLARED frozen-config by the
+    exact marker that is not provably immutable and not waived. Pure: no I/O."""
+    marker_cols = _exact_marker_lines(text, marker)
+    if not marker_cols:
+        return []
+    binding = _binding_map(tree)
+    out = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ClassDef):
+            continue
+        if not _class_is_marked(node, marker_cols):
+            continue
+        kw = _class_kw_line(node)
+        decs = [getattr(d, "lineno", kw) for d in getattr(node, "decorator_list", [])]
+        if _span_pragma(min([kw] + decs), kw, pragma):
+            continue
+        if _is_immutable_config(node, binding):
+            continue
+        out.append((kw, node.name))
+    return out
+
+
+def check_K():
+    """Frozen-config gate: a class carrying `# <config_marker>` must be provably
+    immutable (frozen dataclass / NamedTuple / attrs-frozen). Keyed on the
+    author-written marker (declared intent), never a *Config name suffix (§18).
+    A construct the recognizer can't prove (a frozen base class, a functional
+    namedtuple) is waived with `# practice-ok: <reason>`."""
+    practices = _load_practices()
+    marker = (practices.get("tokens") or {}).get("config_marker")
+    if not isinstance(marker, str) or not marker:
+        return                                    # no declared marker -> nothing to gate
+    for croot in J_ROOTS:
+        base = os.path.join(ROOT, croot)
+        if not os.path.isdir(base):
+            continue
+        for dirpath, _, filenames in walk(base):
+            for f in filenames:
+                if not f.endswith(".py"):
+                    continue
+                full = os.path.join(dirpath, f)
+                try:
+                    with open(full, encoding="utf-8") as fh:
+                        text = fh.read()
+                    tree = ast.parse(text, filename=full)
+                except Exception as e:
+                    warn("%s: could not parse (%s)" % (rel(full), e))
+                    continue
+                pragma = _practice_ok_lines(text)
+                for line, name in _frozen_config_violations(tree, text, marker, pragma):
+                    err("%s:%d: class '%s' declares `# %s` but is not provably "
+                        "immutable - use a frozen dataclass / NamedTuple / attrs "
+                        "frozen, or add `# practice-ok: <reason>`"
+                        % (rel(full), line, name, marker))
+
+
+# --- check_L: naked-tensor domain gate (WARN, cuda profile only) --------------
+
+# A shape comment: a bracket pair holding >= 2 comma-separated dim atoms
+# (identifiers / ints / '*' / '...' / dotted names). A single-atom paren like
+# `(deprecated)` or `TODO(x)` is NOT a shape, so it can never silently waive.
+_SHAPE_COMMENT_RE = re.compile(
+    r"[\(\[]\s*[\w.*]+(?:\s*,\s*(?:[\w.*]+|\.\.\.))+\s*[\)\]]")
+
+_STR_T = getattr(ast, "Str", ())
+
+
+def _shape_comment_lines(text):
+    """Line numbers carrying a shape comment (via tokenize, so a shape-looking
+    substring inside a string literal never waives)."""
+    out = set()
+    try:
+        for tok in tokenize.generate_tokens(io.StringIO(text).readline):
+            if tok.type == tokenize.COMMENT and _SHAPE_COMMENT_RE.search(tok.string):
+                out.add(tok.start[0])
+    except (tokenize.TokenError, IndentationError, SyntaxError, ValueError):
+        pass
+    return out
+
+
+def _func_header_span(fn):
+    """(first_header_line, last_header_line) for a function: from its first
+    decorator/def line down to the line before its first body statement, so a
+    shape/waiver comment anywhere in a multi-line signature is honoured."""
+    start = getattr(fn, "lineno", 0)
+    decs = [getattr(d, "lineno", start) for d in getattr(fn, "decorator_list", [])]
+    lo = min([start] + decs)
+    body = getattr(fn, "body", [])
+    hi = (getattr(body[0], "lineno", start) - 1) if body else start
+    if hi < start:
+        hi = start
+    return (lo, hi)
+
+
+def _annotation_base_name(ann, base_types):
+    """The bare tensor type name of an annotation that is EXACTLY a member of
+    base_types (a plain Name or a string annotation), else None. Exact membership,
+    never a suffix/substring match."""
+    if isinstance(ann, ast.Name) and ann.id in base_types:
+        return ann.id
+    if _STR_T and isinstance(ann, _STR_T):        # 3.6 string annotation: x: "Tensor"
+        v = getattr(ann, "s", None)
+        if isinstance(v, str) and v in base_types:
+            return v
+    if ann.__class__.__name__ == "Constant":      # 3.8+ string annotation
+        v = getattr(ann, "value", None)
+        if isinstance(v, str) and v in base_types:
+            return v
+    return None
+
+
+def _naked_tensor_params(tree, text, base_types):
+    """(lineno, param_name, type_name) for every parameter annotated with a bare
+    tensor type and not covered by a shape comment or `# practice-ok` anywhere in
+    its function's header span. Per-arg (so both of `a: Tensor, b: Tensor` show).
+    Pure: no I/O."""
+    if not base_types:
+        return []
+    shape_lines = _shape_comment_lines(text)
+    pragma = _practice_ok_lines(text)
+    out = []
+    for fn in ast.walk(tree):
+        if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        lo, hi = _func_header_span(fn)
+        lo -= 1                                   # also honour a leading comment line
+        waived = any(lo <= ln <= hi for ln in shape_lines) \
+            or any(lo <= ln <= hi for ln in pragma)
+        if waived:
+            continue
+        a = fn.args
+        allargs = (list(getattr(a, "posonlyargs", []))
+                   + list(a.args) + list(a.kwonlyargs))
+        for arg in allargs:
+            ann = getattr(arg, "annotation", None)
+            if ann is None:
+                continue
+            name = _annotation_base_name(ann, base_types)
+            if name is not None:
+                out.append((getattr(arg, "lineno", getattr(fn, "lineno", 0)),
+                            arg.arg, name))
+    return out
+
+
+def check_L():
+    """Naked-tensor domain gate (WARN): only when the cuda profile is enabled, a
+    parameter annotated with a bare tensor base type (tokens.tensor_base_types)
+    and no shape comment WARNs. Never errs: a token like `Array` may name a local
+    non-tensor class, so this is an advisory heuristic, off by default."""
+    if "cuda" not in _profiles_on():
+        return
+    practices = _load_practices()
+    bt = (practices.get("tokens") or {}).get("tensor_base_types")
+    base_types = set(bt) if isinstance(bt, list) and bt else set()
+    if not base_types:                            # no declared tokens -> silence (no fallback)
+        return
+    for croot in J_ROOTS:
+        base = os.path.join(ROOT, croot)
+        if not os.path.isdir(base):
+            continue
+        for dirpath, _, filenames in walk(base):
+            for f in filenames:
+                if not f.endswith(".py"):
+                    continue
+                full = os.path.join(dirpath, f)
+                try:
+                    with open(full, encoding="utf-8") as fh:
+                        text = fh.read()
+                    tree = ast.parse(text, filename=full)
+                except Exception as e:
+                    warn("%s: could not parse (%s)" % (rel(full), e))
+                    continue
+                for line, arg, name in _naked_tensor_params(tree, text, base_types):
+                    warn("%s:%d: parameter '%s' is a naked %s (bare tensor type, "
+                         "no shape); annotate a shape (jaxtyping/alias) or add "
+                         "`# practice-ok: <reason>` [cuda profile; advisory]"
+                         % (rel(full), line, arg, name))
+
+
 def main():
     check_A()
     check_B()
@@ -4887,6 +5316,8 @@ def main():
     check_H()
     check_I()
     check_J()
+    check_K()
+    check_L()
     for w_ in warnings:
         print("WARN  " + w_)
     for e_ in errors:
