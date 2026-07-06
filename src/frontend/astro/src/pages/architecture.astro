@@ -71,6 +71,21 @@ import { withBase } from '../lib/links'
   </section>
 
   <section class="mt-12">
+    <h2 class="text-lg font-semibold text-ink">Domain profiles</h2>
+    <p class="mt-2 max-w-3xl text-sm text-ink2">
+      The <span class="font-mono text-[10px] uppercase tracking-wide text-ink2">domain</span>
+      practices above ship <em>defined but off</em>. A consuming repo turns one on
+      in <code class="rounded border border-line bg-panel2 px-1 font-mono text-[0.8em]">config/project.json</code>
+      → <code class="rounded border border-line bg-panel2 px-1 font-mono text-[0.8em]">practices.profiles</code>;
+      until then the template stays domain-neutral. Live from
+      <code class="rounded border border-line bg-panel2 px-1 font-mono text-[0.8em]">config/practices.json</code>.
+    </p>
+    <div id="profile-list" class="mt-4 grid gap-2 sm:grid-cols-3">
+      <p class="text-sm text-muted">Loading…</p>
+    </div>
+  </section>
+
+  <section class="mt-12">
     <h2 class="text-lg font-semibold text-ink">Principles</h2>
     <ul class="mt-4 grid gap-3 sm:grid-cols-2">
       <li class="rounded-lg border border-line bg-panel p-4 text-sm text-ink2"><strong class="font-medium text-ink">Thin transports.</strong> <code class="font-mono">api/</code> and <code class="font-mono">mcp/</code> validate and call into <code class="font-mono">src/</code> — no domain logic in handlers.</li>
@@ -93,7 +108,7 @@ import { withBase } from '../lib/links'
 
   <script>
     import mermaid from 'mermaid'
-    import { getFeatures, getModels, getPractices, type ModelAdapter, type PracticeItem } from '../lib/api'
+    import { getFeatures, getModels, getPractices, getProfiles, type ModelAdapter, type PracticeItem, type ProfileState } from '../lib/api'
     import { mount, byId, showError, h } from '../lib/dom'
     import { featureCard } from '../lib/components'
 
@@ -120,6 +135,26 @@ import { withBase } from '../lib/links'
           h('span', { class: 'text-sm text-ink' }, p.title),
           h('div', { class: 'flex items-center gap-2' }, scope, badge)),
         h('span', { class: 'mt-1 block font-mono text-[11px] text-muted' }, p.mechanism))
+    }
+
+    function profileRow(p: ProfileState): HTMLElement {
+      const on = p.enabled
+      const state = h('span', {
+        class: on
+          ? 'rounded-full border border-teal/40 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-teal'
+          : 'rounded-full border border-line px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-muted',
+      }, on ? 'on' : 'off')
+      const activates = p.activates.length
+        ? h('span', { class: 'mt-1 block font-mono text-[11px] text-muted' }, `activates: ${p.activates.join(', ')}`)
+        : null
+      return h('div', { class: 'rounded-lg border border-line bg-panel px-4 py-2.5' },
+        h('div', { class: 'flex items-center justify-between gap-3' },
+          h('span', { class: 'font-mono text-sm text-ink' }, p.name),
+          state),
+        p.tags.length
+          ? h('span', { class: 'mt-1 block font-mono text-[11px] text-muted' }, p.tags.join(' · '))
+          : null,
+        activates)
     }
 
     // Dark "field-guide" mermaid theme — concrete hex (mermaid can't read CSS
@@ -215,6 +250,12 @@ import { withBase } from '../lib/links'
         mount(byId('practice-list'), ...practices.map(practiceRow))
       } catch (err) {
         showError(byId('practice-list'), err)
+      }
+      try {
+        const profiles = await getProfiles()
+        mount(byId('profile-list'), ...profiles.map(profileRow))
+      } catch (err) {
+        showError(byId('profile-list'), err)
       }
       try {
         const feats = await getFeatures()

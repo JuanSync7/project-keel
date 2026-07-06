@@ -21,6 +21,7 @@ from ._models import (
     Overview,
     PracticeItem,
     Principle,
+    ProfileState,
     SearchHit,
     Stats,
     Step,
@@ -150,6 +151,27 @@ class Showcase:
                 mechanism=p.get("mechanism", ""),
             ))
         return tuple(sorted(out, key=lambda x: (x.row, x.id)))
+
+    def domain_profiles(self) -> tuple[ProfileState, ...]:
+        """The domain coding-practice profiles this project defines, each flagged
+        on/off. Definitions (tags + the practices they activate) come from
+        config/practices.json ``profiles``; the on/off flags from
+        config/project.json ``practices.profiles``. All off keeps the template
+        domain-neutral; empty when the registry is absent. Sorted by name.
+        """
+        defs = self._practices.get("profiles") or {}
+        flags = ((self._project.get("practices") or {}).get("profiles")) or {}
+        out = []
+        for name, spec in defs.items():
+            if str(name).startswith("_") or not isinstance(spec, dict):
+                continue
+            out.append(ProfileState(
+                name=name,
+                tags=tuple(spec.get("tags", []) or ()),
+                activates=tuple(spec.get("activates", []) or ()),
+                enabled=flags.get(name) is True,
+            ))
+        return tuple(sorted(out, key=lambda x: x.name))
 
     # -- corpus navigation (delegates to pure _query) ------------------------
     def doc_tree(self) -> tuple[DocGroup, ...]:

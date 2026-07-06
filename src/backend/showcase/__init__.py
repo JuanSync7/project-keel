@@ -27,6 +27,7 @@ from ._models import (
     Overview,
     PracticeItem,
     Principle,
+    ProfileState,
     SearchHit,
     Stats,
     Step,
@@ -39,7 +40,8 @@ __all__ = [
     # facade + loader
     "Showcase", "load_showcase",
     # value objects
-    "Overview", "Layer", "Transport", "ModelAdapter", "PracticeItem", "Stats",
+    "Overview", "Layer", "Transport", "ModelAdapter", "PracticeItem",
+    "ProfileState", "Stats",
     "Feature", "Principle", "Check", "Step", "Link", "NodeRef", "DocGroup",
     "NodeDetail", "SearchHit", "to_jsonable",
     # curated constants (re-exported for direct use/tests)

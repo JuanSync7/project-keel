@@ -196,6 +196,22 @@
         "summary": "Principles"
       }
     },
+    "/api/profiles": {
+      "get": {
+        "operationId": "profiles_api_profiles_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Profiles"
+      }
+    },
     "/api/search": {
       "get": {
         "operationId": "search_api_search_get",

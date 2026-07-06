@@ -59,6 +59,7 @@ def main(argv=None) -> int:
     _write_json(os.path.join(api, "principles.json"), to_jsonable(list(sc.principles())))
     _write_json(os.path.join(api, "models.json"), to_jsonable(list(sc.model_adapters())))
     _write_json(os.path.join(api, "practices.json"), to_jsonable(list(sc.practice_items())))
+    _write_json(os.path.join(api, "profiles.json"), to_jsonable(list(sc.domain_profiles())))
     _write_json(os.path.join(api, "checks.json"), to_jsonable(list(sc.checks())))
     _write_json(os.path.join(api, "setup.json"), to_jsonable(list(sc.setup_steps())))
     _write_json(os.path.join(api, "wiki", "tree.json"), to_jsonable(list(sc.doc_tree())))
@@ -94,7 +95,7 @@ def main(argv=None) -> int:
             fh.write(text)
 
     rel = os.path.relpath(out, args.root)
-    print("wrote static showcase -> %s/ (overview/features/principles/models/practices/checks/setup/tree + "
+    print("wrote static showcase -> %s/ (overview/features/principles/models/practices/profiles/checks/setup/tree + "
           "%d nodes in wiki/nodes.json + llms.txt/llms-full.txt)" % (rel, len(nodes)))
     return 0
 

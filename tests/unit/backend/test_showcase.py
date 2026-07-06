@@ -177,6 +177,42 @@ def test_practice_items_absent_registry_is_graceful_empty():
     assert _sc().practice_items() == ()
 
 
+def _project_with_profiles():
+    p = _project()
+    p["practices"] = {"profiles": {"cuda": True, "ai": False, "langgraph": False}}
+    return p
+
+
+def _profiles_registry():
+    return {
+        "schema_version": 1,
+        "profiles": {
+            "_comment": "definitions only; enable flags live in project.json",
+            "ai": {"tags": ["ai", "llm"], "activates": ["dependency-injection"]},
+            "cuda": {"tags": ["cuda", "gpu"], "activates": ["shape-typed-tensors"]},
+            "langgraph": {"tags": ["langgraph"], "activates": ["typed-graph-state"]},
+        },
+    }
+
+
+def test_domain_profiles_join_definitions_with_enable_flags():
+    sc = Showcase(name="demoproj", project=_project_with_profiles(),
+                  corpus=_corpus(), practices=_profiles_registry(),
+                  present_scripts=frozenset())
+    profs = sc.domain_profiles()
+    assert [p.name for p in profs] == ["ai", "cuda", "langgraph"]  # sorted, _comment skipped
+    by = {p.name: p for p in profs}
+    assert by["cuda"].enabled is True                              # from project.json
+    assert by["ai"].enabled is False and by["langgraph"].enabled is False
+    assert by["cuda"].tags == ("cuda", "gpu")                      # from practices.json
+    assert by["cuda"].activates == ("shape-typed-tensors",)
+
+
+def test_domain_profiles_absent_registry_is_graceful_empty():
+    # No practices registry (and no practices.profiles block) -> empty, not error.
+    assert _sc().domain_profiles() == ()
+
+
 def test_doc_tree_groups_by_top_dir():
     groups = {g.directory: g for g in _sc().doc_tree()}
     assert set(groups) == {".", "docs"}
