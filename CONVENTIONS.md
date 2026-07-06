@@ -585,3 +585,12 @@ answer key) and stays silent on legitimate data. The real pressure is behavioral
 behavior-asserting tests (§17) and review. Treat a flag as a question to answer,
 and the rule above as the actual standard — never a green checkmark labelled
 "generic".
+
+A sibling advisory, `scripts/check_practices.py` (also `make advise`, gate
+`report`), applies the same *advisory, never gates* discipline to coding-practice
+smells — a provider constructed inline instead of injected, a long `isinstance`
+chain, a `# hot-path` class without `__slots__` — honouring a `# practice-ok:
+<reason>` pragma and always exiting 0. Which practices are *gates* (ride
+`make verify`) versus *advisories*, and the universal-vs-domain split, live in
+`docs/guides/coding-practices.md`, sourced from the `config/practices.json`
+registry.
