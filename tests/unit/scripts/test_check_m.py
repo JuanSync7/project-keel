@@ -124,3 +124,38 @@ def test_table_missing_is_waivable_file_level():
 def test_line_level_waiver_on_a_missing_family():
     toml = '[tool.ruff.lint]\nextend-select = ["I"]  # practice-ok: B lands next PR\n'
     assert _find(toml, extend=["I", "B"]) == []
+
+
+# --- string-blind bracket counting must not runaway-swallow the file ---------
+
+def test_bracket_inside_a_string_value_does_not_swallow_the_policy():
+    # A '[' inside a string value must NOT unbalance the array accumulator and
+    # gobble the [tool.ruff.lint]/[tool.mypy] tables that follow (regression).
+    toml = ('[project]\ndescription = "My project [beta"\n'
+            '[tool.ruff.lint]\nextend-select = ["I", "B"]\n'
+            '[tool.mypy]\nstrict = true\n')
+    assert _find(toml, extend=["I", "B"], flags=["strict"]) == []
+
+
+def test_closing_bracket_inside_an_array_element_string_does_not_truncate():
+    toml = ('[tool.ruff.lint]\nextend-select = [\n  "I",\n  "weird]tok",\n  "B",\n]\n')
+    assert _find(toml, extend=["I", "B"]) == []
+
+
+# --- a deferred family reached via a parent prefix / ALL is caught ------------
+
+def test_deferred_family_via_parent_prefix_errors():
+    toml = '[tool.ruff.lint]\nextend-select = ["I", "RUF"]\n'
+    assert any("RUF022" in e for e in
+               _find(toml, extend=["I"], deferred={"RUF022": "semantic order"}))
+
+
+def test_deferred_family_via_ALL_selector_errors():
+    toml = '[tool.ruff.lint]\nextend-select = ["ALL"]\n'
+    assert any("UP" in e for e in _find(toml, deferred={"UP": "house style"}))
+
+
+def test_sibling_prefix_does_not_falsely_flag_a_deferred_family():
+    # RSE/RET share a first letter with RUF022 but are NOT prefixes of it.
+    toml = '[tool.ruff.lint]\nextend-select = ["RSE", "RET"]\n'
+    assert _find(toml, extend=["RSE", "RET"], deferred={"RUF022": "semantic order"}) == []

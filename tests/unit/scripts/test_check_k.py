@@ -142,3 +142,31 @@ def test_no_marker_anywhere_is_silent():
     src = ("from dataclasses import dataclass\n@dataclass\n"
            "class Settings:\n    host: str\n")
     assert _viol(src) == []
+
+
+# --- MULTILINE DECORATORS (Black/ruff wrap long @dataclass(...) calls) --------
+
+def test_multiline_decorator_class_line_waiver_is_honoured():
+    # The waiver on the class line must be seen even though the decorator call
+    # spans several lines (regression: _class_kw_line must find the real `class`).
+    src = ("from dataclasses import dataclass\n# practice: frozen-config\n"
+           "@dataclass(\n    init=True,\n    repr=True,\n)\n"
+           "class LegacySettings:  # practice-ok: mutated by a plugin loader\n"
+           "    host = 'localhost'\n")
+    assert _viol(src) == []
+
+
+def test_multiline_decorator_class_line_marker_is_flagged():
+    # A marker trailing the class line of a MULTILINE-decorated mutable class must
+    # still be attributed to the class (regression: it was silently missed).
+    src = ("import attr\n@attr.s(\n    slots=True,\n)\n"
+           "class Settings:  # practice: frozen-config\n    host = attr.ib()\n")
+    viol = _viol(src)
+    assert [n for _, n in viol] == ["Settings"]
+    assert [ln for ln, _ in viol] == [5]        # the real `class` line, not the decorator
+
+
+def test_multiline_decorator_frozen_class_still_passes():
+    src = ("from dataclasses import dataclass\n# practice: frozen-config\n"
+           "@dataclass(\n    frozen=True,\n)\nclass Settings:\n    host: str\n")
+    assert _viol(src) == []

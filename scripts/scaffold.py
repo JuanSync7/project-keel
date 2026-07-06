@@ -4987,15 +4987,23 @@ def _profiles_on():
 # and any residual gap (a frozen base class, a functional namedtuple()) is a
 # documented WAIVER case (`# practice-ok: <reason>`), never a silent false error.
 
-def _class_kw_line(node):
-    """The visual `class` line, stable across interpreters. On 3.6 a decorated
-    class's ClassDef.lineno is the first DECORATOR line; on 3.8+ it is the `class`
-    line. Decorators sit above the keyword, so max(decorator lineno)+1 is the
-    `class` line in both; an undecorated class uses its own lineno."""
+def _class_kw_line(node, lines):
+    """The 1-based source line of the `class` keyword. On 3.8+ ClassDef.lineno is
+    already the `class` line; on 3.6 it is the first DECORATOR line. A decorator
+    call may span several physical lines (Black/ruff wrap long `@dataclass(...)`),
+    so max(decorator lineno)+1 is NOT reliable — it can land inside the call. Scan
+    the source forward from node.lineno for the first line whose text starts with
+    `class` instead; decorators immediately precede their class, so the first such
+    line is this class's keyword line on every interpreter."""
     start = getattr(node, "lineno", 0)
-    decs = [getattr(d, "lineno", start) for d in getattr(node, "decorator_list", [])]
-    if decs:
-        return max(decs) + 1
+    n = len(lines)
+    i = start
+    while i <= n:
+        if 1 <= i <= n:
+            s = lines[i - 1].lstrip()
+            if s.startswith("class ") or s.startswith("class\t"):
+                return i
+        i += 1
     return start
 
 
@@ -5013,13 +5021,13 @@ def _exact_marker_lines(text, marker):
     return out
 
 
-def _class_is_marked(node, marker_cols):
+def _class_is_marked(node, marker_cols, lines):
     """True when a marker sits on this class's own header lines (decorators or the
     `class` line, any column), or on the line DIRECTLY above it at the SAME indent
     as the `class` keyword. The same-indent rule is what stops a marker written as
     an indented note inside an earlier class body from bleeding onto the class
     below it (its column would be deeper than this class's col_offset)."""
-    kw = _class_kw_line(node)
+    kw = _class_kw_line(node, lines)
     decs = [getattr(d, "lineno", kw) for d in getattr(node, "decorator_list", [])]
     top = min([kw] + decs)                       # first physical line of the header
     for ln in marker_cols:
@@ -5135,14 +5143,15 @@ def _frozen_config_violations(tree, text, marker, pragma):
     marker_cols = _exact_marker_lines(text, marker)
     if not marker_cols:
         return []
+    lines = text.split("\n")
     binding = _binding_map(tree)
     out = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.ClassDef):
             continue
-        if not _class_is_marked(node, marker_cols):
+        if not _class_is_marked(node, marker_cols, lines):
             continue
-        kw = _class_kw_line(node)
+        kw = _class_kw_line(node, lines)
         decs = [getattr(d, "lineno", kw) for d in getattr(node, "decorator_list", [])]
         if _span_pragma(min([kw] + decs), kw, pragma):
             continue
@@ -5328,19 +5337,22 @@ _TRI3 = "'" * 3
 
 
 def _toml_scan(text):
-    """Per line: (comment_col, instr). comment_col[ln] is the column where the
-    line's real comment starts (or None); instr[ln] is True when the whole line
-    lies inside a multi-line string. A single state machine tracks basic/literal
-    and triple-quoted strings across lines, so a '#' inside a string is never a
-    comment and a quote inside a comment never opens a string."""
+    """Per line: (comment_col, instr, bdelta). comment_col[ln] is the column where
+    the line's real comment starts (or None); instr[ln] is True when the whole line
+    lies inside a multi-line string; bdelta[ln] is the net '['-minus-']' count that
+    lies OUTSIDE any string or comment — so a bracket inside a string value (e.g.
+    `description = "wip [beta"`) never unbalances a multi-line-array accumulation.
+    A single state machine tracks basic/literal and triple-quoted strings across
+    lines, so a '#' inside a string is never a comment and a quote inside a comment
+    never opens a string."""
     lines = text.split("\n")
-    comment_col, instr = {}, {}
+    comment_col, instr, bdelta = {}, {}, {}
     st = None
     for i in range(len(lines)):
         ln = i + 1
         line = lines[i]
         instr[ln] = st in (_TRI_D, _TRI3)
-        j, ccol, n = 0, None, len(line)
+        j, ccol, n, bd = 0, None, len(line), 0
         while j < n:
             c = line[j]
             three = line[j:j + 3]
@@ -5375,15 +5387,20 @@ def _toml_scan(text):
             if c == "#":
                 ccol = j
                 break
+            if c == "[":
+                bd += 1
+            elif c == "]":
+                bd -= 1
             j += 1
         comment_col[ln] = ccol
-    return comment_col, instr
+        bdelta[ln] = bd
+    return comment_col, instr, bdelta
 
 
 def _toml_practice_ok_lines(text):
     """Line numbers carrying a `# practice-ok` comment (dedicated TOML scanner —
     the Python tokenizer bails on TOML; an in-string pragma never waives)."""
-    comment_col, instr = _toml_scan(text)
+    comment_col, instr, _ = _toml_scan(text)
     lines = text.split("\n")
     out = set()
     for ln in comment_col:
@@ -5400,8 +5417,10 @@ def _toml_targets(text):
     current table header is prepended to each key, so `[tool.ruff.lint]` + bare
     `extend-select` and root `tool.ruff.lint.extend-select` normalise to the same
     key. A bracketed array value that spans lines is accumulated whole (comments
-    stripped), so a multi-line `extend-select = [ ... ]` is one rhs_text."""
-    comment_col, instr = _toml_scan(text)
+    stripped), so a multi-line `extend-select = [ ... ]` is one rhs_text. Array
+    depth is counted OUTSIDE strings (via bdelta), so a '[' inside a string value
+    cannot runaway-swallow the rest of the file."""
+    comment_col, instr, bdelta = _toml_scan(text)
     lines = text.split("\n")
     cur_table = ""
     assigns = {}
@@ -5431,7 +5450,7 @@ def _toml_targets(text):
         key, rhs = key.strip(), rhs.strip()
         full = (cur_table + "." + key) if cur_table else key
         span = set([ln])
-        depth = rhs.count("[") - rhs.count("]")
+        depth = bdelta.get(ln, 0)
         j = i
         while depth > 0 and j + 1 < n:
             j += 1
@@ -5444,7 +5463,7 @@ def _toml_targets(text):
                 raw2 = raw2[:col2]
             rhs += " " + raw2.strip()
             span.add(ln2)
-            depth += raw2.count("[") - raw2.count("]")
+            depth += bdelta.get(ln2, 0)
         assigns.setdefault(full, []).append((ln, rhs, span))
         i = j + 1
     return assigns
@@ -5454,6 +5473,26 @@ def _rhs_has_family(rhs_text, fam):
     """True if `fam` appears as a QUOTED whole token, so "I" never matches inside
     "SIM"."""
     return ('"%s"' % fam) in rhs_text or ("'%s'" % fam) in rhs_text
+
+
+def _deferred_active(rhs_text, fam):
+    """True if a DEFERRED family is effectively selected. ruff selects a rule via
+    ANY prefix of its code (`RUF` or `RUF0` selects `RUF022`) and `ALL` selects
+    everything, so check the family, each of its category-or-longer prefixes, and
+    `ALL` — not just the exact token (else `extend-select = ["RUF"]` would smuggle
+    a deferred `RUF022` past the gate)."""
+    if _rhs_has_family(rhs_text, "ALL"):
+        return True
+    cat = ""
+    for ch in fam:
+        if ch.isalpha():
+            cat += ch
+        else:
+            break
+    for k in range(len(cat), len(fam) + 1):
+        if _rhs_has_family(rhs_text, fam[:k]):
+            return True
+    return False
 
 
 def _flag_state(entries):
@@ -5525,9 +5564,10 @@ def _ruleset_parity_findings(practices, text):
                                 "practices.json is not in extend-select (silent "
                                 "loosening)" % fam)
     for fam in dkeys:
-        if es and _rhs_has_family(es_text, fam) and not _line_waived(es_lines, pragma):
+        if es and _deferred_active(es_text, fam) and not _line_waived(es_lines, pragma):
             errs.append("pyproject.toml: ruff family '%s' is DEFERRED in "
-                        "practices.json but selected in extend-select" % fam)
+                        "practices.json but selected in extend-select "
+                        "(directly or via a parent prefix / ALL)" % fam)
 
     if isinstance(flags, list):
         for flag in flags:
