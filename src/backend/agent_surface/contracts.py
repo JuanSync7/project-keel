@@ -6,7 +6,7 @@ summary: The vendor-neutral AgentSurface interface a wire adapter (AAD, A2A, ...
 """
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from ._models import AgentCard, AgentReply
 
@@ -32,6 +32,6 @@ class AgentSurface(Protocol):
         """Answer one question; return a neutral reply (answer + optional meta/html/error)."""
         ...
 
-    def health(self) -> dict:
+    def health(self) -> dict[str, Any]:
         """Return a liveness payload, e.g. ``{"status": "ok"}``."""
         ...

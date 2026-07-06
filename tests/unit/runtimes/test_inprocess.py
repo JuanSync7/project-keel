@@ -14,12 +14,12 @@ sys.path.insert(0, str(_ROOT))
 
 from runtimes import (  # noqa: E402
     COMPLETED,
+    DEFAULT_RUNTIME,
     END,
     MODEL_CALL,
     PAUSED,
     READ_ONLY,
     WRITES,
-    DEFAULT_RUNTIME,
     Edge,
     MemoryCheckpointer,
     Plan,

@@ -5,7 +5,8 @@ layer: backend
 summary: Mirrors src/backend/example_feature/. Tests via the public API.
 """
 import pytest
-from backend import do_thing, Thing  # public API, not _impl
+
+from backend import Thing, do_thing  # public API, not _impl
 
 pytestmark = pytest.mark.unit
 

@@ -7,14 +7,20 @@ summary: Pure, disk-free navigation and search over an in-memory corpus dict.
 from __future__ import annotations
 
 import re
+from typing import Any
 
 from ._models import DocGroup, NodeDetail, NodeRef, SearchHit
+
+# A corpus is {"schema_version": int, "nodes": [<node>, ...]}; a node is a flat
+# dict of string-keyed fields (heterogeneous values), so Any is honest here.
+_Corpus = dict[str, Any]
+_Node = dict[str, Any]
 
 _ACRONYM_RE = re.compile(r"\b([A-Z][A-Z0-9]{1,})\b")
 _WORD_RE = re.compile(r"[A-Za-z][A-Za-z0-9_]{1,}")
 
 
-def _ref(node: dict) -> NodeRef:
+def _ref(node: _Node) -> NodeRef:
     return NodeRef(
         node_id=node.get("node_id", ""),
         kind=node.get("kind", ""),
@@ -24,22 +30,22 @@ def _ref(node: dict) -> NodeRef:
     )
 
 
-def _index(corpus: dict) -> dict:
+def _index(corpus: _Corpus) -> dict[str, _Node]:
     """node_id -> node, for O(1) neighbour resolution."""
     return {n["node_id"]: n for n in corpus.get("nodes", [])}
 
 
-def count_kinds(corpus: dict) -> dict:
+def count_kinds(corpus: _Corpus) -> dict[str, int]:
     """Return {kind: count} across the corpus (doc/section/module/symbol)."""
-    out: dict = {}
+    out: dict[str, int] = {}
     for n in corpus.get("nodes", []):
         out[n.get("kind", "")] = out.get(n.get("kind", ""), 0) + 1
     return out
 
 
-def doc_tree(corpus: dict) -> tuple[DocGroup, ...]:
+def doc_tree(corpus: _Corpus) -> tuple[DocGroup, ...]:
     """Group `doc` nodes by their top-level directory, for the wiki sidebar."""
-    groups: dict = {}
+    groups: dict[str, list[NodeRef]] = {}
     for n in corpus.get("nodes", []):
         if n.get("kind") != "doc":
             continue
@@ -53,7 +59,7 @@ def doc_tree(corpus: dict) -> tuple[DocGroup, ...]:
     return tuple(out)
 
 
-def node_detail(corpus: dict, node_id: str) -> NodeDetail | None:
+def node_detail(corpus: _Corpus, node_id: str) -> NodeDetail | None:
     """Resolve a node plus its parent, children, and keyword-linked neighbours."""
     idx = _index(corpus)
     n = idx.get(node_id)
@@ -84,20 +90,20 @@ def node_detail(corpus: dict, node_id: str) -> NodeDetail | None:
     )
 
 
-def _tokens(text: str) -> set:
+def _tokens(text: str) -> set[str]:
     toks = set(_ACRONYM_RE.findall(text or ""))
     toks |= {w.lower() for w in _WORD_RE.findall((text or "").lower())}
     return toks
 
 
-def search(corpus: dict, query: str, limit: int = 10) -> tuple[SearchHit, ...]:
+def search(corpus: _Corpus, query: str, limit: int = 10) -> tuple[SearchHit, ...]:
     """Rank nodes by token overlap of the query against tags/title/summary."""
     q = _tokens(query)
     if not q:
         return ()
     hits = []
     for n in corpus.get("nodes", []):
-        hay = set(t.lower() for t in n.get("tags", []) or [])
+        hay = {t.lower() for t in n.get("tags", []) or []}
         hay |= _tokens(n.get("title", ""))
         hay |= _tokens(n.get("summary", ""))
         overlap = q & hay

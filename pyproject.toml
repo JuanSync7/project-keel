@@ -33,5 +33,29 @@ markers = [
 [tool.ruff]
 src = ["src", "tests"]
 
+# Practice gates that ride `make lint` into `make verify` (CONVENTIONS §6/§18).
+# `extend-select` ADDS to ruff's default (E4/E7/E9, F) — it deliberately does NOT
+# turn on E501/UP/RUF here: house style is %-formatting and semantic __all__
+# order, so those stay deferred. See docs/guides/coding-practices.md.
+[tool.ruff.lint]
+extend-select = [
+  "I",    # import sorting (isort) — keeps the __all__/import boundary tidy
+  "B",    # bugbear: mutable defaults (B006), ABC-without-@abstractmethod (B024), raise-without-from (B904)
+  "BLE",  # blind-except (BLE001) — don't swallow the exception type
+  "C4",   # comprehension hygiene
+  "G",    # logging: no f-string/%/+ interpolation inside log calls
+  "LOG",  # logging correctness
+  "RET",  # explicit, consistent returns (no bare Optional-as-silent-failure smell)
+  "SIM",  # simplify (e.g. merge isinstance chains)
+  "T20",  # no print() in library code
+]
+
+[tool.ruff.lint.per-file-ignores]
+"src/app/**" = ["T201"]        # entrypoints may print; library code may not
+
 [tool.mypy]
 files = ["src"]
+no_implicit_optional = true    # an implicit Optional is a silent-failure trap (practice #7)
+warn_return_any = true         # returning Any from a typed fn defeats the annotation
+disallow_any_generics = true   # bare dict/list/set must declare their element types
+warn_unused_ignores = true     # a stale `# type: ignore` is noise — keep them honest

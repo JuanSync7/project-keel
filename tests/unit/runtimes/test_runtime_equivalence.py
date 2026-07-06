@@ -119,7 +119,7 @@ def test_streaming_equivalence():
     for engine in ENGINES:
         seen = []
         get_runtime(engine).run(_branching([]), {"fix_gaps": True}, execute=True,
-                                on_event=lambda e: seen.append((e["step"], e["ran"])))
+                                on_event=lambda e, _seen=seen: _seen.append((e["step"], e["ran"])))
         out[engine] = seen
     assert out["inprocess"] == out["langgraph"]
 

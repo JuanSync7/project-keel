@@ -104,8 +104,8 @@ def test_malformed_slug_is_rejected_at_render():
     """An author-supplied slug that breaks the AAD pattern fails fast at render,
     rather than being served as a non-conformant descriptor."""
     import pydantic
-
     from aad import card_to_aad  # api/rest_fastapi is on sys.path via the demo import
+
     from backend.agent_surface import AgentCard
 
     with pytest.raises(pydantic.ValidationError):

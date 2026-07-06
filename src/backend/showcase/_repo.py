@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+from typing import Any
 
 from . import _content, _data, _llms, _query
 from ._models import (
@@ -35,8 +36,8 @@ class Showcase:
     frozen value objects (``_models``) the transport layer serialises as-is.
     """
 
-    def __init__(self, *, name: str, project: dict, corpus: dict,
-                 present_scripts: frozenset = frozenset(), root: str = "") -> None:
+    def __init__(self, *, name: str, project: dict[str, Any], corpus: dict[str, Any],
+                 present_scripts: frozenset[str] = frozenset(), root: str = "") -> None:
         self._name = name
         self._project = project or {}
         self._corpus = corpus or {"nodes": []}
@@ -156,7 +157,7 @@ class Showcase:
             with open(path, encoding="utf-8") as fh:
                 text = fh.read()
         except OSError:
-            return n.get("text_excerpt", "")
+            return str(n.get("text_excerpt", ""))
         kind = n.get("kind")
         if kind == "doc":
             return _content.strip_frontmatter(text)
@@ -169,7 +170,7 @@ class Showcase:
             return _content.module_docstring(text)
         if kind == "symbol":
             return _content.symbol_docstring(text, n.get("anchor") or n.get("title", ""))
-        return n.get("text_excerpt", "")
+        return str(n.get("text_excerpt", ""))
 
     # -- agent front door (llms.txt convention) ------------------------------
     def llms_index(self, base_url: str = "", tree_url: str = "/api/wiki/tree") -> str:
@@ -187,7 +188,7 @@ class Showcase:
         return _llms.render_full(self.overview(), docs)
 
 
-def _read_json(path: str) -> dict:
+def _read_json(path: str) -> dict[str, Any]:
     try:
         with open(path, encoding="utf-8") as fh:
             data = json.load(fh)
