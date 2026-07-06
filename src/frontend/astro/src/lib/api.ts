@@ -49,6 +49,16 @@ export interface ModelAdapter {
   readonly default: boolean
 }
 
+export interface PracticeItem {
+  readonly id: string
+  readonly row: number
+  readonly scope: string    // "universal" | "domain"
+  readonly tier: string     // "gate" | "advisory" | "doc"
+  readonly status: string   // "on" | "deferred:slice-N" | "off"
+  readonly title: string
+  readonly mechanism: string
+}
+
 export interface Link {
   readonly label: string
   readonly href: string
@@ -160,6 +170,8 @@ export const getPrinciples = (): Promise<Principle[]> =>
   get<Principle[]>('/api/principles', 'api/principles.json')
 export const getModels = (): Promise<ModelAdapter[]> =>
   get<ModelAdapter[]>('/api/models', 'api/models.json')
+export const getPractices = (): Promise<PracticeItem[]> =>
+  get<PracticeItem[]>('/api/practices', 'api/practices.json')
 export const getChecks = (): Promise<Check[]> =>
   get<Check[]>('/api/checks', 'api/checks.json')
 export const getSetup = (): Promise<Step[]> =>

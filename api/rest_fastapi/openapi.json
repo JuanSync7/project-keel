@@ -164,6 +164,22 @@
         "summary": "Overview"
       }
     },
+    "/api/practices": {
+      "get": {
+        "operationId": "practices_api_practices_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Practices"
+      }
+    },
     "/api/principles": {
       "get": {
         "operationId": "principles_api_principles_get",

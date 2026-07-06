@@ -112,6 +112,22 @@ FEATURES: tuple[Feature, ...] = (
                Link("Scheduled jobs", "ops-scheduled-readme")),
     ),
     Feature(
+        slug="coding-practices",
+        title="Coding practices, enforced or advised",
+        summary="Good-Python (and LLM/CUDA/LangGraph) habits sorted onto the gate/advise line.",
+        detail=(
+            "Precise container types, no implicit Optional, exception chaining, "
+            "ABC hygiene, structured logging and an owned-exception boundary are "
+            "gates that block make verify; injection, singledispatch and hot-path "
+            "__slots__ are non-blocking advisories. Each practice is a row in "
+            "config/practices.json; AI/CUDA/LangGraph rules ship off by default "
+            "behind a profile, so the core stays domain-neutral."
+        ),
+        icon="check",
+        links=(Link("Practices guide", "docs-guides-coding-practices"),
+               Link("Checks catalogue", "docs-guides-deterministic-checks")),
+    ),
+    Feature(
         slug="agent-surface",
         title="Agent surface",
         summary="A service can describe itself as a discoverable agent.",

@@ -108,6 +108,15 @@ def test_edge_adapters_feature_links_to_the_new_capabilities():
     assert {"mcp-readme", "models-readme"} <= hrefs
 
 
+def test_coding_practices_feature_links_to_the_guide():
+    """The coding-practices work is surfaced as a curated feature pointing at its
+    guide (link integrity is asserted live against the corpus in e2e)."""
+    feats = {f.slug: f for f in _sc().features()}
+    assert "coding-practices" in feats
+    hrefs = {ln.href for ln in feats["coding-practices"].links}
+    assert "docs-guides-coding-practices" in hrefs
+
+
 def _project_with_models():
     p = _project()
     p["models"] = {
@@ -132,6 +141,40 @@ def test_model_adapters_projected_from_the_manifest():
 def test_model_adapters_absent_block_is_graceful_empty():
     # An older manifest with no 'models' block stays valid — empty, not an error.
     assert _sc().model_adapters() == ()
+
+
+def _practices():
+    """A minimal practices registry matching config/practices.json's shape."""
+    return {
+        "schema_version": 1,
+        "practices": [
+            {"id": "narrow-optional", "row": 7, "scope": "universal", "tier": "gate",
+             "status": "on", "title": "No implicit Optional",
+             "mechanism": "mypy no_implicit_optional"},
+            {"id": "precise-container-types", "row": 2, "scope": "universal",
+             "tier": "gate", "status": "on", "title": "Declare element types",
+             "mechanism": "mypy disallow_any_generics"},
+            {"id": "shape-typed-tensors", "row": 1, "scope": "domain", "tier": "gate",
+             "status": "deferred:slice-4", "title": "Shape-typed tensors",
+             "mechanism": "check_L"},
+        ],
+    }
+
+
+def test_practice_items_projected_and_sorted_by_row():
+    sc = Showcase(name="demoproj", project=_project(), corpus=_corpus(),
+                  practices=_practices(), present_scripts=frozenset())
+    items = sc.practice_items()
+    assert [p.id for p in items] == [
+        "shape-typed-tensors", "precise-container-types", "narrow-optional"]  # by row
+    assert [p.row for p in items] == [1, 2, 7]
+    assert {p.tier for p in items} == {"gate"}
+    assert {p.scope for p in items} == {"universal", "domain"}   # both scopes surfaced
+
+
+def test_practice_items_absent_registry_is_graceful_empty():
+    # An older repo with no practices.json stays valid — empty, not an error.
+    assert _sc().practice_items() == ()
 
 
 def test_doc_tree_groups_by_top_dir():
