@@ -16,14 +16,19 @@ Checks:
      An optional 'runtimes' block is validated the same way (section 16)
   I. Agent-rules symlink (ERR): every CLAUDE.md is a symlink to its sibling
      AGENT.md, and every AGENT.md has that sibling (CONVENTIONS section 5)
+  J. No third-party exception leaks across a library boundary (ERR): a raise of
+     an exception TYPE imported from a foreign (non-local, non-stdlib) module
+     (coding-practices; owned-exception-boundary in config/practices.json)
 
 Exit 0 = clean, 1 = errors. Warnings never fail the build. Stdlib only; 3.6+.
 """
 import ast
+import io
 import json
 import os
 import re
 import sys
+import tokenize
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -560,6 +565,154 @@ def check_I():
                 "(CONVENTIONS section 5)" % rel(dirpath))
 
 
+# --- check_J: no third-party exception leaks across a library boundary --------
+
+# Library/doer code where wrapping a foreign exception matters. Transport
+# adapters (api/, mcp/) and tests/ are excluded: speaking a framework's own
+# exception dialect there (e.g. FastAPI's HTTPException) is correct, not a leak.
+J_ROOTS = ["src", "models", "runtimes", "agents"]
+
+_PRACTICE_OK_RE = re.compile(r"^#\s*practice-ok\b")
+
+# Fallback set of stdlib modules whose exceptions may be raised unwrapped. The
+# real list is DATA in config/practices.json (tokens.stdlib_exception_modules);
+# this is only used when that file is absent, so the gate degrades gracefully.
+_STDLIB_EXC_FALLBACK = [
+    "json", "urllib", "http", "socket", "ssl", "subprocess", "asyncio",
+    "sqlite3", "struct", "pickle", "xml", "configparser", "argparse",
+    "queue", "threading", "multiprocessing", "concurrent", "decimal",
+    "os", "io", "re", "hashlib", "csv", "zlib", "gzip", "tarfile", "zipfile",
+]
+
+
+def _practice_ok_lines(text):
+    """Line numbers carrying a `# practice-ok` suppression pragma (tokenize, so a
+    `#` inside a string literal is never mistaken for a comment)."""
+    out = set()
+    try:
+        for tok in tokenize.generate_tokens(io.StringIO(text).readline):
+            if tok.type == tokenize.COMMENT and _PRACTICE_OK_RE.match(tok.string.strip()):
+                out.add(tok.start[0])
+    except (tokenize.TokenError, IndentationError, SyntaxError, ValueError):
+        pass
+    return out
+
+
+def _local_top_names():
+    """Top-level import names that resolve to a local package (repo-root dirs +
+    src/ subdirs). A relative import is always local and never listed here."""
+    tops = set()
+    for name in os.listdir(ROOT):
+        if os.path.isdir(os.path.join(ROOT, name)):
+            tops.add(name)
+    srcdir = os.path.join(ROOT, "src")
+    if os.path.isdir(srcdir):
+        for name in os.listdir(srcdir):
+            if os.path.isdir(os.path.join(srcdir, name)):
+                tops.add(name)
+    return tops
+
+
+def _stdlib_exc_modules():
+    """Declared stdlib modules whose exceptions may be raised unwrapped
+    (config/practices.json tokens.stdlib_exception_modules), else the fallback."""
+    path = os.path.join(ROOT, "config", "practices.json")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+        mods = (data.get("tokens") or {}).get("stdlib_exception_modules")
+        if isinstance(mods, list) and mods:
+            return set(mods)
+    except Exception:
+        pass
+    return set(_STDLIB_EXC_FALLBACK)
+
+
+def _import_top_map(tree):
+    """bound name -> top-level module segment, for ABSOLUTE imports only
+    (relative imports are local, so their bound names are omitted by design)."""
+    out = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            top = node.module.split(".")[0]
+            for a in node.names:
+                out[a.asname or a.name] = top
+        elif isinstance(node, ast.Import):
+            for a in node.names:
+                top = a.name.split(".")[0]
+                out[a.asname or top] = top
+    return out
+
+
+def _raised_root_name(exc):
+    """Leftmost Name id of a raised exception (Name or attribute chain), or None
+    for a bare `raise` or a raised local-variable expression."""
+    if exc is None:
+        return None
+    target = exc.func if isinstance(exc, ast.Call) else exc
+    while isinstance(target, ast.Attribute):
+        target = target.value
+    if isinstance(target, ast.Name):
+        return target.id
+    return None
+
+
+def _foreign_exception_raises(tree, local_tops, stdlib_mods, pragma):
+    """(lineno, name) for every `raise X(...)` whose X is an exception TYPE
+    imported from a foreign module (neither a local package nor a declared
+    stdlib module). Builtins (never imported), bare re-raises, raised local
+    variables, and pragma-suppressed lines are all excluded — so the rule keys
+    on 'foreign import', not on a name suffix (CONVENTIONS §18)."""
+    imports = _import_top_map(tree)
+    out = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Raise):
+            continue
+        name = _raised_root_name(node.exc)
+        if name is None or name not in imports:
+            continue
+        top = imports[name]
+        if top in local_tops or top in stdlib_mods:
+            continue
+        line = getattr(node, "lineno", 0)
+        if line in pragma:
+            continue
+        out.append((line, name))
+    return out
+
+
+def check_J():
+    """No third-party exception leaks across a library boundary (coding-practices
+    gate; owned-exception-boundary in config/practices.json). Raising a foreign
+    exception TYPE forces callers to import that vendor to catch it; wrap it in an
+    owned error. Judgment-call smells (DI, isinstance chains) are advisory in
+    check_practices.py; this GATE fires only on the provable case."""
+    local_tops = _local_top_names()
+    stdlib_mods = _stdlib_exc_modules()
+    for croot in J_ROOTS:
+        base = os.path.join(ROOT, croot)
+        if not os.path.isdir(base):
+            continue
+        for dirpath, _, filenames in walk(base):
+            for f in filenames:
+                if not f.endswith(".py"):
+                    continue
+                full = os.path.join(dirpath, f)
+                try:
+                    with open(full, encoding="utf-8") as fh:
+                        text = fh.read()
+                    tree = ast.parse(text, filename=full)
+                except Exception as e:
+                    warn("%s: could not parse (%s)" % (rel(full), e))
+                    continue
+                pragma = _practice_ok_lines(text)
+                for line, name in _foreign_exception_raises(
+                        tree, local_tops, stdlib_mods, pragma):
+                    err("%s:%d: raises third-party exception '%s' across a package "
+                        "boundary - wrap it in an owned error "
+                        "(or add `# practice-ok: <reason>`)" % (rel(full), line, name))
+
+
 def main():
     check_A()
     check_B()
@@ -570,6 +723,7 @@ def main():
     check_G()
     check_H()
     check_I()
+    check_J()
     for w_ in warnings:
         print("WARN  " + w_)
     for e_ in errors:

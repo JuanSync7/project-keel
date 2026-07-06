@@ -62,7 +62,7 @@ everything and therefore expect the project interpreter.
 
 | Check | Script | Gate? | Interpreter | What it guarantees |
 |-------|--------|:-----:|-------------|--------------------|
-| Structure & frontmatter | `scripts/check_structure.py` | error | 3.6-safe | Labels, taxonomy, package boundaries, tool/agent governance, project facts, agent-rules symlinks (checks A–I) |
+| Structure & frontmatter | `scripts/check_structure.py` | error | 3.6-safe | Labels, taxonomy, package boundaries, tool/agent governance, project facts, agent-rules symlinks, owned-exception boundary (checks A–J) |
 | Scaffold-embed sync | `scripts/check_scaffold_sync.py` | error | 3.6-safe | `scaffold.py`'s embedded scripts are byte-identical to the live files |
 | Corpus integrity | `scripts/jobs/check_corpus.py` | error | ≥3.7 | `wiki/corpus.json` is a valid, acyclic graph **and** the build is reproducible |
 | OpenAPI drift | `api/rest_fastapi/export_openapi.py --check` | error | FastAPI | Committed `openapi.json` matches the live routes |
@@ -79,7 +79,7 @@ print but never fail the build.
 
 ### 1. Structure & frontmatter — `scripts/check_structure.py`
 
-**Purpose.** The core enforcer of `CONVENTIONS.md`. Checks A–I:
+**Purpose.** The core enforcer of `CONVENTIONS.md`. Checks A–J:
 
 - **A. Frontmatter** — every `README.md` / `AGENT.md` / `CLAUDE.md`, `docs/**`,
   `test-docs/**` markdown, and `agents/**/*.tool.md` has the required keys with
@@ -96,6 +96,9 @@ print but never fail the build.
 - **H. Project facts** — `config/project.json` agrees with the tree (§15).
 - **I. Agent-rules symlink** — every `CLAUDE.md` is a symlink to its sibling
   `AGENT.md`, and every `AGENT.md` has that sibling (§5).
+- **J. Owned-exception boundary** — in `src`/`models`/`runtimes`/`agents`, no
+  `raise` of an exception type imported from a foreign (non-local, non-stdlib)
+  module; wrap it in an owned error or waive with `# practice-ok: <reason>` (§18).
 
 **When to run.** Every commit (pre-commit) and in CI; any time you add a
 directory, package, doc, tool, or agent.

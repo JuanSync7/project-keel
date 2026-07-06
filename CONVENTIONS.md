@@ -191,6 +191,7 @@ pre-commit hook) fails the build if the conventions above drift:
 | Tool/agent binding (error) | each agent `tools.md` ↔ each spec's `## Used by` agree (both ways); `tool_command` invokes `public_api` |
 | Project facts (§15) | `config/project.json` agrees with the tree: declared `path`/`stack`/`enabled` transport dirs exist, `enabled` ⊆ `available`, `backend.python` matches `pyproject`; an **undeclared** leftover stack/transport dir warns |
 | Agent-rules symlink (§5) | every `CLAUDE.md` is a symlink to its sibling `AGENT.md`; every `AGENT.md` has that sibling |
+| Owned-exception boundary (§18) | in library code (`src`/`models`/`runtimes`/`agents`), no `raise` of an exception **type** imported from a foreign (non-local, non-stdlib) module — wrap it in an owned error; `# practice-ok: <reason>` waives |
 
 Missing `owner` is a warning, not a failure. If you change the scheme
 (KINDS / LAYERS / STATUSES / VISIBILITIES) or a check, update **both**

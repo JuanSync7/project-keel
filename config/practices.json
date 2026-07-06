@@ -42,9 +42,9 @@
     {"id": "exhaustive-routing", "row": 14, "scope": "universal", "tier": "doc", "status": "on",
      "title": "assert_never in the default branch of Literal/Enum routing",
      "mechanism": "typing.assert_never — enforced by existing mypy (Never-narrowing); convention, use it"},
-    {"id": "owned-exception-boundary", "row": 6, "scope": "universal", "tier": "gate", "status": "deferred:slice-3",
+    {"id": "owned-exception-boundary", "row": 6, "scope": "universal", "tier": "gate", "status": "on",
      "title": "Don't leak a third-party exception type across a package's public boundary",
-     "mechanism": "check_structure.py check_J — owned-Error set from a DECLARED base (tokens.owned_error_marker), not a name suffix"},
+     "mechanism": "check_structure.py check_J — flags raising an exception TYPE imported from a foreign (non-local, non-stdlib) module; builtins/relative/owned imports pass"},
     {"id": "frozen-config", "row": 8, "scope": "universal", "tier": "gate", "status": "deferred:slice-4",
      "title": "A declared config/settings class is frozen (immutable)",
      "mechanism": "check_structure.py check_K — keyed on a DECLARED marker (tokens.config_marker), not a *Config name suffix"},
@@ -78,6 +78,12 @@
     "acquire_apis": [
       "torch.cuda.stream", "torch.cuda.graph", "tempfile.NamedTemporaryFile",
       "open", "Session", "ClientSession", "connect", "acquire"
+    ],
+    "stdlib_exception_modules": [
+      "json", "urllib", "http", "socket", "ssl", "subprocess", "asyncio",
+      "sqlite3", "struct", "pickle", "xml", "configparser", "argparse",
+      "queue", "threading", "multiprocessing", "concurrent", "decimal",
+      "os", "io", "re", "hashlib", "csv", "zlib", "gzip", "tarfile", "zipfile"
     ],
     "config_marker": "practice: frozen-config",
     "owned_error_marker": "practice: owned-error-base"
