@@ -56,6 +56,11 @@ def plan_edits(spec: dict[str, object], root: str) -> list[tuple[str, str, str]]
         if not isinstance(e, dict) or "file" not in e:
             raise RefactorError("edit %d missing 'file'" % i)
         path = os.path.join(root, str(e["file"]))
+        # Never write outside the repo root — a spec path must not escape it.
+        real_root = os.path.realpath(root)
+        real_path = os.path.realpath(path)
+        if real_path != real_root and not real_path.startswith(real_root + os.sep):
+            raise RefactorError("edit %d: path escapes root: %s" % (i, e["file"]))
         if path not in working:
             if not os.path.isfile(path):
                 raise RefactorError("edit %d: file does not exist: %s" % (i, e["file"]))

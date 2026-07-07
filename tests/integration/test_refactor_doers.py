@@ -75,6 +75,19 @@ def test_plan_edits_rejects_a_missing_file_before_writing(tmp_path):
         ar.plan_edits({"edits": [{"file": "nope.py", "find": "a", "replace": "b"}]}, str(tmp_path))
 
 
+def test_plan_edits_rejects_a_path_that_escapes_the_root(tmp_path):
+    outside = tmp_path.parent / "escape.py"
+    outside.write_text("secret = 1\n", encoding="utf-8")
+    try:
+        with pytest.raises(ar.RefactorError):
+            ar.plan_edits(
+                {"edits": [{"file": "../escape.py", "find": "secret = 1", "replace": "x"}]},
+                str(tmp_path))
+        assert outside.read_text(encoding="utf-8") == "secret = 1\n"   # untouched
+    finally:
+        outside.unlink()
+
+
 def test_dry_run_writes_nothing(tmp_path):
     f = tmp_path / "m.py"
     f.write_text("keep = 1\n", encoding="utf-8")
