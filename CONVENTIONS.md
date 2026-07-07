@@ -191,6 +191,10 @@ pre-commit hook) fails the build if the conventions above drift:
 | Tool/agent binding (error) | each agent `tools.md` ↔ each spec's `## Used by` agree (both ways); `tool_command` invokes `public_api` |
 | Project facts (§15) | `config/project.json` agrees with the tree: declared `path`/`stack`/`enabled` transport dirs exist, `enabled` ⊆ `available`, `backend.python` matches `pyproject`; an **undeclared** leftover stack/transport dir warns |
 | Agent-rules symlink (§5) | every `CLAUDE.md` is a symlink to its sibling `AGENT.md`; every `AGENT.md` has that sibling |
+| Owned-exception boundary (§18) | in library code (`src`/`models`/`runtimes`/`agents`), no `raise` of an exception **type** imported from a foreign (non-local, non-stdlib) module — wrap it in an owned error; `# practice-ok: <reason>` waives |
+| Frozen-config gate (§18) | a class carrying the declared marker (`config/practices.json` `tokens.config_marker`, `# practice: frozen-config`) must be provably immutable (frozen dataclass / `NamedTuple` / attrs-frozen); keyed on the marker, never a `*Config` name suffix; `# practice-ok` waives |
+| Naked-tensor domain (warn) | only when the `cuda` profile is enabled (`project.json` `practices.profiles`), a parameter annotated with a bare tensor base type (`tokens.tensor_base_types`) and no shape comment **warns** — an advisory heuristic, never an error |
+| Ruleset parity (§15) | `pyproject.toml` must not silently loosen the declared policy — every ruff `extend_select` family and mypy flag in `config/practices.json` `rulesets` is enforced, and no `deferred` (policy-off) family is selected |
 
 Missing `owner` is a warning, not a failure. If you change the scheme
 (KINDS / LAYERS / STATUSES / VISIBILITIES) or a check, update **both**
@@ -420,6 +424,11 @@ It is keyed **by layer/concern, never one global `language`**:
   while the template still ships more than one — pick one, delete the rest).
 - `transports` — `enabled` ⊆ `available`, a name→dir map of the shipped
   transports (REST / gRPC / nginx-edge / MCP).
+- `practices.profiles` (optional) — the domain coding-practice profiles this repo
+  has **enabled** (`{ "cuda": true, ... }`). The profiles themselves are *defined*
+  in `config/practices.json`; this block only flips them on. `check_H` errs on a
+  non-boolean flag and **warns** (never errs) on an enabled flag naming no defined
+  profile — an inert flag activates nothing (see `docs/guides/coding-practices.md`).
 
 `check_H` **errors** on a hard contradiction (a declared `path`/`stack`/
 `enabled` transport dir that is missing; `enabled` not in `available`; a
@@ -585,3 +594,12 @@ answer key) and stays silent on legitimate data. The real pressure is behavioral
 behavior-asserting tests (§17) and review. Treat a flag as a question to answer,
 and the rule above as the actual standard — never a green checkmark labelled
 "generic".
+
+A sibling advisory, `scripts/check_practices.py` (also `make advise`, gate
+`report`), applies the same *advisory, never gates* discipline to coding-practice
+smells — a provider constructed inline instead of injected, a long `isinstance`
+chain, a `# hot-path` class without `__slots__` — honouring a `# practice-ok:
+<reason>` pragma and always exiting 0. Which practices are *gates* (ride
+`make verify`) versus *advisories*, and the universal-vs-domain split, live in
+`docs/guides/coding-practices.md`, sourced from the `config/practices.json`
+registry.

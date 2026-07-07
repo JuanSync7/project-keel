@@ -925,8 +925,22 @@ def root_files():
         [tool.ruff]
         src = ["src", "tests"]
 
+        # Coding-practice gates (see docs/guides/coding-practices.md); the set here
+        # mirrors config/practices.json rulesets and check_structure.py check_M
+        # errs if the two drift. Widen chunk-by-chunk; keep the two in lockstep.
+        [tool.ruff.lint]
+        extend-select = [
+          "I", "B", "BLE", "C4", "G", "LOG", "RET", "SIM", "T20",
+          "A", "FA", "FURB", "ICN", "ISC", "PERF", "PGH", "PIE", "RSE", "SLOT", "NPY",
+        ]
+
+        [tool.ruff.lint.per-file-ignores]
+        "src/app/**" = ["T201"]        # entrypoints may print; library code may not
+
         [tool.mypy]
         files = ["src"]
+        strict = true                  # every function typed; no untyped calls / Any-return
+        warn_unreachable = true
         """).strip() + "\n")
 
     w("Makefile", textwrap.dedent("""
@@ -964,9 +978,10 @@ def root_files():
         scaffold-sync: ## scaffold.py embeds match the live scripts (3.6-safe)
         \t$(PY) scripts/check_scaffold_sync.py --check
 
-        advise: ## Advisory: flag overfitting / answer-key smells (CONVENTIONS §18; never fails the build)
+        advise: ## Advisory: flag overfitting / answer-key + coding-practice smells (CONVENTIONS §18; never fails the build)
         \t-$(PY) scripts/check_generic.py
-        check-generic: advise ## Alias for `advise` (the generic-solution advisor)
+        \t-$(PY) scripts/check_practices.py
+        check-generic: advise ## Alias for `advise` (the generic-solution + practice advisor)
 
         verify: check-all lint typecheck test ## Run all gates (all checks + lint + types + tests)
 
@@ -1684,6 +1699,7 @@ def frontend_astro(base):
         summary: ABCs / Protocols that define cross-package interfaces.
         """
         from __future__ import annotations
+
         from abc import ABC, abstractmethod
         from typing import Protocol, runtime_checkable
 
@@ -1903,7 +1919,8 @@ def tests_tree():
         summary: Mirrors src/backend/example_feature/. Tests via the public API.
         """
         import pytest
-        from backend import do_thing, Thing  # public API, not _impl
+
+        from backend import Thing, do_thing  # public API, not _impl
 
         pytestmark = pytest.mark.unit
 
@@ -2362,6 +2379,14 @@ def peripheral_dirs():
     "available": {
       "inprocess": "runtimes",
       "langgraph": "runtimes"
+    }
+  },
+  "practices": {
+    "_comment": "Domain coding-practice profiles are DEFINED in config/practices.json and ENABLED here — flip a flag to true to turn its domain checks on. All off keeps the project domain-neutral. Validated by check_structure.py (check_H).",
+    "profiles": {
+      "ai": false,
+      "cuda": false,
+      "langgraph": false
     }
   }
 }
@@ -2848,6 +2873,8 @@ def quality_tooling():
     w("scripts/check_scaffold_sync.py", _CHECK_SCAFFOLD_SYNC_SRC)
     w("scripts/jobs/check_corpus.py", _CHECK_CORPUS_SRC)
     w("scripts/check_generic.py", _CHECK_GENERIC_SRC)
+    w("scripts/check_practices.py", _CHECK_PRACTICES_SRC)
+    w("config/practices.json", _PRACTICES_JSON_SRC)
     w("scripts/README_check_structure.md", fm(
         title="check_structure.py", kind="script", layer="n/a",
         status="template", owner="TBD",
@@ -3757,12 +3784,12 @@ sys.path.insert(0, str(_ROOT))
 
 from runtimes import (  # noqa: E402
     COMPLETED,
+    DEFAULT_RUNTIME,
     END,
     MODEL_CALL,
     PAUSED,
     READ_ONLY,
     WRITES,
-    DEFAULT_RUNTIME,
     Edge,
     MemoryCheckpointer,
     Plan,
@@ -4110,7 +4137,7 @@ def test_streaming_equivalence():
     for engine in ENGINES:
         seen = []
         get_runtime(engine).run(_branching([]), {"fix_gaps": True}, execute=True,
-                                on_event=lambda e: seen.append((e["step"], e["ran"])))
+                                on_event=lambda e, _seen=seen: _seen.append((e["step"], e["ran"])))
         out[engine] = seen
     assert out["inprocess"] == out["langgraph"]
 
@@ -4179,14 +4206,31 @@ Checks:
      An optional 'runtimes' block is validated the same way (section 16)
   I. Agent-rules symlink (ERR): every CLAUDE.md is a symlink to its sibling
      AGENT.md, and every AGENT.md has that sibling (CONVENTIONS section 5)
+  J. No third-party exception leaks across a library boundary (ERR): a raise of
+     an exception TYPE imported from a foreign (non-local, non-stdlib) module
+     (coding-practices; owned-exception-boundary in config/practices.json)
+  K. Frozen-config gate (ERR): a class carrying the DECLARED marker
+     (tokens.config_marker, "# practice: frozen-config") must be provably
+     immutable (frozen dataclass / NamedTuple / attrs-frozen); else wrap or waive
+     with "# practice-ok". Keyed on the marker, never a *Config name suffix (§18)
+  L. Naked-tensor domain gate (WARN): only when the cuda profile is enabled
+     (project.json practices.profiles), a function parameter annotated with a
+     bare tensor base type (tokens.tensor_base_types) and no shape comment WARNs.
+     Advisory heuristic (a token may name a local class) — never an error
+  M. Ruleset parity (ERR): pyproject.toml must not silently loosen the lint/type
+     policy declared in config/practices.json rulesets — every ruff extend_select
+     family is selected, every mypy flag is enforced, no 'deferred' family is
+     selected (config/practices.json rulesets; CONVENTIONS section 15)
 
 Exit 0 = clean, 1 = errors. Warnings never fail the build. Stdlib only; 3.6+.
 """
 import ast
+import io
 import json
 import os
 import re
 import sys
+import tokenize
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -4697,6 +4741,64 @@ def check_H():
                 err("config/project.json: model '%s' -> '%s' does not exist"
                     % (nm, d))
 
+    # Practice profiles (optional block): domain profiles are DEFINED in
+    # config/practices.json and ENABLED here (CONVENTIONS section 15). A
+    # non-boolean flag is a provable error; an enabled flag that names no
+    # defined profile is inert (activates nothing) -> WARN, not err.
+    practices_blk = manifest.get("practices")
+    if practices_blk is not None:
+        practices_blk = _expect(practices_blk, dict, "practices", {})
+        profiles = practices_blk.get("profiles")
+        if profiles is not None:
+            profiles = _expect(profiles, dict, "practices.profiles", {})
+            errs, warns_ = _profile_flag_findings(profiles, _defined_profile_names())
+            for m in errs:
+                err(m)
+            for m in warns_:
+                warn(m)
+
+
+def _defined_profile_names():
+    """The set of domain-profile names DEFINED in config/practices.json, or None
+    when it cannot be authoritatively determined (file absent/unreadable/not a
+    dict, 'profiles' missing or not a dict, or only '_'-prefixed keys). Returning
+    None suppresses the enabled-but-undefined WARN, so a registry-side typo never
+    breaks a consuming repo's build (mirrors _stdlib_exc_modules' safe degrade)."""
+    path = os.path.join(ROOT, "config", "practices.json")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except Exception:
+        return None
+    if not isinstance(data, dict):
+        return None
+    profs = data.get("profiles")
+    if not isinstance(profs, dict):
+        return None
+    names = set(k for k in profs if not str(k).startswith("_"))
+    return names or None
+
+
+def _profile_flag_findings(profiles, defined):
+    """(errors, warnings) for a practices.profiles dict. A non-boolean value is a
+    provable error; an enabled (True) flag whose name is not in `defined` (when
+    known) is inert and only warns. `defined` is a name set or None (unknown)."""
+    errs, warns_ = [], []
+    for name in sorted(profiles):
+        if str(name).startswith("_"):
+            continue
+        val = profiles[name]
+        if not isinstance(val, bool):
+            errs.append("config/project.json: practices.profiles.%s must be true "
+                        "or false (a boolean), not %s" % (name, type(val).__name__))
+            continue
+        if val is True and defined is not None and name not in defined:
+            warns_.append("config/project.json: practices.profiles.%s is enabled "
+                          "but names no profile defined in config/practices.json "
+                          "profiles %s; it will activate nothing"
+                          % (name, sorted(defined)))
+    return errs, warns_
+
 
 def check_I():
     """ERROR when CLAUDE.md is not a symlink to its sibling AGENT.md.
@@ -4723,6 +4825,819 @@ def check_I():
                 "(CONVENTIONS section 5)" % rel(dirpath))
 
 
+# --- check_J: no third-party exception leaks across a library boundary --------
+
+# Library/doer code where wrapping a foreign exception matters. Transport
+# adapters (api/, mcp/) and tests/ are excluded: speaking a framework's own
+# exception dialect there (e.g. FastAPI's HTTPException) is correct, not a leak.
+J_ROOTS = ["src", "models", "runtimes", "agents"]
+
+_PRACTICE_OK_RE = re.compile(r"^#\s*practice-ok\b")
+
+# Fallback set of stdlib modules whose exceptions may be raised unwrapped. The
+# real list is DATA in config/practices.json (tokens.stdlib_exception_modules);
+# this is only used when that file is absent, so the gate degrades gracefully.
+_STDLIB_EXC_FALLBACK = [
+    "json", "urllib", "http", "socket", "ssl", "subprocess", "asyncio",
+    "sqlite3", "struct", "pickle", "xml", "configparser", "argparse",
+    "queue", "threading", "multiprocessing", "concurrent", "decimal",
+    "os", "io", "re", "hashlib", "csv", "zlib", "gzip", "tarfile", "zipfile",
+]
+
+
+def _practice_ok_lines(text):
+    """Line numbers carrying a `# practice-ok` suppression pragma (tokenize, so a
+    `#` inside a string literal is never mistaken for a comment)."""
+    out = set()
+    try:
+        for tok in tokenize.generate_tokens(io.StringIO(text).readline):
+            if tok.type == tokenize.COMMENT and _PRACTICE_OK_RE.match(tok.string.strip()):
+                out.add(tok.start[0])
+    except (tokenize.TokenError, IndentationError, SyntaxError, ValueError):
+        pass
+    return out
+
+
+def _local_top_names():
+    """Top-level import names that resolve to a local package (repo-root dirs +
+    src/ subdirs). A relative import is always local and never listed here."""
+    tops = set()
+    for name in os.listdir(ROOT):
+        if os.path.isdir(os.path.join(ROOT, name)):
+            tops.add(name)
+    srcdir = os.path.join(ROOT, "src")
+    if os.path.isdir(srcdir):
+        for name in os.listdir(srcdir):
+            if os.path.isdir(os.path.join(srcdir, name)):
+                tops.add(name)
+    return tops
+
+
+def _stdlib_exc_modules():
+    """Declared stdlib modules whose exceptions may be raised unwrapped
+    (config/practices.json tokens.stdlib_exception_modules), else the fallback."""
+    path = os.path.join(ROOT, "config", "practices.json")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+        mods = (data.get("tokens") or {}).get("stdlib_exception_modules")
+        if isinstance(mods, list) and mods:
+            return set(mods)
+    except Exception:
+        pass
+    return set(_STDLIB_EXC_FALLBACK)
+
+
+def _import_top_map(tree):
+    """bound name -> top-level module segment, for ABSOLUTE imports only
+    (relative imports are local, so their bound names are omitted by design)."""
+    out = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            top = node.module.split(".")[0]
+            for a in node.names:
+                out[a.asname or a.name] = top
+        elif isinstance(node, ast.Import):
+            for a in node.names:
+                top = a.name.split(".")[0]
+                out[a.asname or top] = top
+    return out
+
+
+def _raised_root_name(exc):
+    """Leftmost Name id of a raised exception (Name or attribute chain), or None
+    for a bare `raise` or a raised local-variable expression."""
+    if exc is None:
+        return None
+    target = exc.func if isinstance(exc, ast.Call) else exc
+    while isinstance(target, ast.Attribute):
+        target = target.value
+    if isinstance(target, ast.Name):
+        return target.id
+    return None
+
+
+def _foreign_exception_raises(tree, local_tops, stdlib_mods, pragma):
+    """(lineno, name) for every `raise X(...)` whose X is an exception TYPE
+    imported from a foreign module (neither a local package nor a declared
+    stdlib module). Builtins (never imported), bare re-raises, raised local
+    variables, and pragma-suppressed lines are all excluded — so the rule keys
+    on 'foreign import', not on a name suffix (CONVENTIONS §18)."""
+    imports = _import_top_map(tree)
+    out = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Raise):
+            continue
+        name = _raised_root_name(node.exc)
+        if name is None or name not in imports:
+            continue
+        top = imports[name]
+        if top in local_tops or top in stdlib_mods:
+            continue
+        line = getattr(node, "lineno", 0)
+        if line in pragma:
+            continue
+        out.append((line, name))
+    return out
+
+
+def check_J():
+    """No third-party exception leaks across a library boundary (coding-practices
+    gate; owned-exception-boundary in config/practices.json). Raising a foreign
+    exception TYPE forces callers to import that vendor to catch it; wrap it in an
+    owned error. Judgment-call smells (DI, isinstance chains) are advisory in
+    check_practices.py; this GATE fires only on the provable case."""
+    local_tops = _local_top_names()
+    stdlib_mods = _stdlib_exc_modules()
+    for croot in J_ROOTS:
+        base = os.path.join(ROOT, croot)
+        if not os.path.isdir(base):
+            continue
+        for dirpath, _, filenames in walk(base):
+            for f in filenames:
+                if not f.endswith(".py"):
+                    continue
+                full = os.path.join(dirpath, f)
+                try:
+                    with open(full, encoding="utf-8") as fh:
+                        text = fh.read()
+                    tree = ast.parse(text, filename=full)
+                except Exception as e:
+                    warn("%s: could not parse (%s)" % (rel(full), e))
+                    continue
+                pragma = _practice_ok_lines(text)
+                for line, name in _foreign_exception_raises(
+                        tree, local_tops, stdlib_mods, pragma):
+                    err("%s:%d: raises third-party exception '%s' across a package "
+                        "boundary - wrap it in an owned error "
+                        "(or add `# practice-ok: <reason>`)" % (rel(full), line, name))
+
+
+# --- shared registry readers (config/practices.json, config/project.json) -----
+
+def _load_practices():
+    """config/practices.json as a dict, or {} on any failure (degrade to silence).
+    Read BY PATH, never imported (it is DATA — CONVENTIONS section 18)."""
+    path = os.path.join(ROOT, "config", "practices.json")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+        if isinstance(data, dict):
+            return data
+    except Exception:
+        pass
+    return {}
+
+
+def _profiles_on():
+    """Domain profiles enabled in config/project.json practices.profiles. Mirrors
+    check_practices.profiles_on() exactly (value is True, '_'-keys stripped)."""
+    path = os.path.join(ROOT, "config", "project.json")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            proj = json.load(fh)
+        prof = ((proj.get("practices") or {}).get("profiles")) or {}
+        if not isinstance(prof, dict):
+            return set()
+        return set(k for k in prof
+                   if prof[k] is True and not str(k).startswith("_"))
+    except Exception:
+        return set()
+
+
+# --- check_K: frozen-config gate ----------------------------------------------
+#
+# A class carrying the DECLARED marker (tokens.config_marker) must be provably
+# immutable. Unlike check_J (which fires only on a proven leak, so recognizer
+# gaps are safe misses), check_K is INVERTED: a marked class the recognizer
+# cannot prove immutable is an ERROR. So recognition is broad and alias-resolving,
+# and any residual gap (a frozen base class, a functional namedtuple()) is a
+# documented WAIVER case (`# practice-ok: <reason>`), never a silent false error.
+
+def _class_kw_line(node, lines):
+    """The 1-based source line of the `class` keyword. On 3.8+ ClassDef.lineno is
+    already the `class` line; on 3.6 it is the first DECORATOR line. A decorator
+    call may span several physical lines (Black/ruff wrap long `@dataclass(...)`),
+    so max(decorator lineno)+1 is NOT reliable — it can land inside the call. Scan
+    the source forward from node.lineno for the first line whose text starts with
+    `class` instead; decorators immediately precede their class, so the first such
+    line is this class's keyword line on every interpreter."""
+    start = getattr(node, "lineno", 0)
+    n = len(lines)
+    i = start
+    while i <= n:
+        if 1 <= i <= n:
+            s = lines[i - 1].lstrip()
+            if s.startswith("class ") or s.startswith("class\t"):
+                return i
+        i += 1
+    return start
+
+
+def _exact_marker_lines(text, marker):
+    """{lineno: column} for every comment whose body EQUALS `marker` exactly (not
+    a substring — so `# NOTE: not practice: frozen-config` never marks a class).
+    The column lets the caller reject a marker indented inside an earlier body."""
+    out = {}
+    try:
+        for tok in tokenize.generate_tokens(io.StringIO(text).readline):
+            if tok.type == tokenize.COMMENT and tok.string.lstrip("#").strip() == marker:
+                out[tok.start[0]] = tok.start[1]
+    except (tokenize.TokenError, IndentationError, SyntaxError, ValueError):
+        pass
+    return out
+
+
+def _class_is_marked(node, marker_cols, lines):
+    """True when a marker sits on this class's own header lines (decorators or the
+    `class` line, any column), or on the line DIRECTLY above it at the SAME indent
+    as the `class` keyword. The same-indent rule is what stops a marker written as
+    an indented note inside an earlier class body from bleeding onto the class
+    below it (its column would be deeper than this class's col_offset)."""
+    kw = _class_kw_line(node, lines)
+    decs = [getattr(d, "lineno", kw) for d in getattr(node, "decorator_list", [])]
+    top = min([kw] + decs)                       # first physical line of the header
+    for ln in marker_cols:
+        if top <= ln <= kw:
+            return True
+    above = top - 1
+    return marker_cols.get(above) == getattr(node, "col_offset", 0)
+
+
+def _binding_map(tree):
+    """bound-name -> (module_top, original_attr) for absolute imports, so an alias
+    like `from dataclasses import dataclass as dc` resolves to ('dataclasses',
+    'dataclass'). Relative imports are local and intentionally omitted."""
+    out = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            top = node.module.split(".")[0]
+            for a in node.names:
+                out[a.asname or a.name] = (top, a.name)
+        elif isinstance(node, ast.Import):
+            for a in node.names:
+                top = a.name.split(".")[0]
+                out[a.asname or top] = (top, a.name.split(".")[-1])
+    return out
+
+
+def _dotted_tail(node):
+    """Last attribute/name segment of a decorator or base expression
+    (attrs.frozen -> 'frozen', a bare Name -> its id)."""
+    tgt = node.func if isinstance(node, ast.Call) else node
+    if isinstance(tgt, ast.Attribute):
+        return tgt.attr
+    if isinstance(tgt, ast.Name):
+        return tgt.id
+    return None
+
+
+def _resolves_to(name, binding, want_module, want_attrs):
+    b = binding.get(name)
+    if b is None:
+        return False
+    top, orig = b
+    return top == want_module and orig in want_attrs
+
+
+def _kw_true(node):
+    """3.6-safe `is True` test: 3.8+ ast.Constant(value=True), 3.6 NameConstant."""
+    cn = node.__class__.__name__
+    if cn in ("Constant", "NameConstant"):
+        return getattr(node, "value", None) is True
+    return False
+
+
+def _is_frozen_dataclass(node, binding):
+    for dec in getattr(node, "decorator_list", []):
+        base = dec.func if isinstance(dec, ast.Call) else dec
+        tail = _dotted_tail(dec)
+        is_dc = False
+        if isinstance(base, ast.Name):
+            is_dc = (tail == "dataclass") or _resolves_to(
+                base.id, binding, "dataclasses", ("dataclass",))
+        elif isinstance(base, ast.Attribute):
+            is_dc = (tail == "dataclass")
+        if is_dc and isinstance(dec, ast.Call):
+            for kw in dec.keywords:
+                if kw.arg == "frozen" and _kw_true(kw.value):
+                    return True
+    return False
+
+
+def _is_namedtuple(node, binding):
+    for b in getattr(node, "bases", []):
+        tail = _dotted_tail(b)
+        if isinstance(b, ast.Name):
+            if tail == "NamedTuple" or _resolves_to(
+                    b.id, binding, "typing", ("NamedTuple",)):
+                return True
+        elif isinstance(b, ast.Attribute) and tail == "NamedTuple":
+            return True
+    return False
+
+
+def _is_attrs_frozen(node, binding):
+    """@attr.frozen / @attrs.frozen / @frozen (always immutable), or
+    @attr.s(frozen=True) / @define(frozen=True) (immutable only with frozen=True)."""
+    for dec in getattr(node, "decorator_list", []):
+        tail = _dotted_tail(dec)
+        if tail == "frozen":
+            return True
+        if tail in ("s", "attrs", "define") and isinstance(dec, ast.Call):
+            for kw in dec.keywords:
+                if kw.arg == "frozen" and _kw_true(kw.value):
+                    return True
+    return False
+
+
+def _is_immutable_config(node, binding):
+    return (_is_frozen_dataclass(node, binding)
+            or _is_namedtuple(node, binding)
+            or _is_attrs_frozen(node, binding))
+
+
+def _span_pragma(lo, hi, pragma):
+    for ln in pragma:
+        if lo <= ln <= hi:
+            return True
+    return False
+
+
+def _frozen_config_violations(tree, text, marker, pragma):
+    """(class_kw_line, class_name) for every class DECLARED frozen-config by the
+    exact marker that is not provably immutable and not waived. Pure: no I/O."""
+    marker_cols = _exact_marker_lines(text, marker)
+    if not marker_cols:
+        return []
+    lines = text.split("\n")
+    binding = _binding_map(tree)
+    out = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ClassDef):
+            continue
+        if not _class_is_marked(node, marker_cols, lines):
+            continue
+        kw = _class_kw_line(node, lines)
+        decs = [getattr(d, "lineno", kw) for d in getattr(node, "decorator_list", [])]
+        if _span_pragma(min([kw] + decs), kw, pragma):
+            continue
+        if _is_immutable_config(node, binding):
+            continue
+        out.append((kw, node.name))
+    return out
+
+
+def check_K():
+    """Frozen-config gate: a class carrying `# <config_marker>` must be provably
+    immutable (frozen dataclass / NamedTuple / attrs-frozen). Keyed on the
+    author-written marker (declared intent), never a *Config name suffix (§18).
+    A construct the recognizer can't prove (a frozen base class, a functional
+    namedtuple) is waived with `# practice-ok: <reason>`."""
+    practices = _load_practices()
+    marker = (practices.get("tokens") or {}).get("config_marker")
+    if not isinstance(marker, str) or not marker:
+        return                                    # no declared marker -> nothing to gate
+    for croot in J_ROOTS:
+        base = os.path.join(ROOT, croot)
+        if not os.path.isdir(base):
+            continue
+        for dirpath, _, filenames in walk(base):
+            for f in filenames:
+                if not f.endswith(".py"):
+                    continue
+                full = os.path.join(dirpath, f)
+                try:
+                    with open(full, encoding="utf-8") as fh:
+                        text = fh.read()
+                    tree = ast.parse(text, filename=full)
+                except Exception as e:
+                    warn("%s: could not parse (%s)" % (rel(full), e))
+                    continue
+                pragma = _practice_ok_lines(text)
+                for line, name in _frozen_config_violations(tree, text, marker, pragma):
+                    err("%s:%d: class '%s' declares `# %s` but is not provably "
+                        "immutable - use a frozen dataclass / NamedTuple / attrs "
+                        "frozen, or add `# practice-ok: <reason>`"
+                        % (rel(full), line, name, marker))
+
+
+# --- check_L: naked-tensor domain gate (WARN, cuda profile only) --------------
+
+# A shape comment: a bracket pair holding >= 2 comma-separated dim atoms
+# (identifiers / ints / '*' / '...' / dotted names). A single-atom paren like
+# `(deprecated)` or `TODO(x)` is NOT a shape, so it can never silently waive.
+_SHAPE_COMMENT_RE = re.compile(
+    r"[\(\[]\s*[\w.*]+(?:\s*,\s*(?:[\w.*]+|\.\.\.))+\s*[\)\]]")
+
+_STR_T = getattr(ast, "Str", ())
+
+
+def _shape_comment_lines(text):
+    """Line numbers carrying a shape comment (via tokenize, so a shape-looking
+    substring inside a string literal never waives)."""
+    out = set()
+    try:
+        for tok in tokenize.generate_tokens(io.StringIO(text).readline):
+            if tok.type == tokenize.COMMENT and _SHAPE_COMMENT_RE.search(tok.string):
+                out.add(tok.start[0])
+    except (tokenize.TokenError, IndentationError, SyntaxError, ValueError):
+        pass
+    return out
+
+
+def _func_header_span(fn):
+    """(first_header_line, last_header_line) for a function: from its first
+    decorator/def line down to the line before its first body statement, so a
+    shape/waiver comment anywhere in a multi-line signature is honoured."""
+    start = getattr(fn, "lineno", 0)
+    decs = [getattr(d, "lineno", start) for d in getattr(fn, "decorator_list", [])]
+    lo = min([start] + decs)
+    body = getattr(fn, "body", [])
+    hi = (getattr(body[0], "lineno", start) - 1) if body else start
+    if hi < start:
+        hi = start
+    return (lo, hi)
+
+
+def _annotation_base_name(ann, base_types):
+    """The bare tensor type name of an annotation that is EXACTLY a member of
+    base_types (a plain Name or a string annotation), else None. Exact membership,
+    never a suffix/substring match."""
+    if isinstance(ann, ast.Name) and ann.id in base_types:
+        return ann.id
+    if _STR_T and isinstance(ann, _STR_T):        # 3.6 string annotation: x: "Tensor"
+        v = getattr(ann, "s", None)
+        if isinstance(v, str) and v in base_types:
+            return v
+    if ann.__class__.__name__ == "Constant":      # 3.8+ string annotation
+        v = getattr(ann, "value", None)
+        if isinstance(v, str) and v in base_types:
+            return v
+    return None
+
+
+def _naked_tensor_params(tree, text, base_types):
+    """(lineno, param_name, type_name) for every parameter annotated with a bare
+    tensor type and not covered by a shape comment or `# practice-ok` anywhere in
+    its function's header span. Per-arg (so both of `a: Tensor, b: Tensor` show).
+    Pure: no I/O."""
+    if not base_types:
+        return []
+    shape_lines = _shape_comment_lines(text)
+    pragma = _practice_ok_lines(text)
+    out = []
+    for fn in ast.walk(tree):
+        if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        lo, hi = _func_header_span(fn)
+        lo -= 1                                   # also honour a leading comment line
+        waived = any(lo <= ln <= hi for ln in shape_lines) \
+            or any(lo <= ln <= hi for ln in pragma)
+        if waived:
+            continue
+        a = fn.args
+        allargs = (list(getattr(a, "posonlyargs", []))
+                   + list(a.args) + list(a.kwonlyargs))
+        for arg in allargs:
+            ann = getattr(arg, "annotation", None)
+            if ann is None:
+                continue
+            name = _annotation_base_name(ann, base_types)
+            if name is not None:
+                out.append((getattr(arg, "lineno", getattr(fn, "lineno", 0)),
+                            arg.arg, name))
+    return out
+
+
+def check_L():
+    """Naked-tensor domain gate (WARN): only when the cuda profile is enabled, a
+    parameter annotated with a bare tensor base type (tokens.tensor_base_types)
+    and no shape comment WARNs. Never errs: a token like `Array` may name a local
+    non-tensor class, so this is an advisory heuristic, off by default."""
+    if "cuda" not in _profiles_on():
+        return
+    practices = _load_practices()
+    bt = (practices.get("tokens") or {}).get("tensor_base_types")
+    base_types = set(bt) if isinstance(bt, list) and bt else set()
+    if not base_types:                            # no declared tokens -> silence (no fallback)
+        return
+    for croot in J_ROOTS:
+        base = os.path.join(ROOT, croot)
+        if not os.path.isdir(base):
+            continue
+        for dirpath, _, filenames in walk(base):
+            for f in filenames:
+                if not f.endswith(".py"):
+                    continue
+                full = os.path.join(dirpath, f)
+                try:
+                    with open(full, encoding="utf-8") as fh:
+                        text = fh.read()
+                    tree = ast.parse(text, filename=full)
+                except Exception as e:
+                    warn("%s: could not parse (%s)" % (rel(full), e))
+                    continue
+                for line, arg, name in _naked_tensor_params(tree, text, base_types):
+                    warn("%s:%d: parameter '%s' is a naked %s (bare tensor type, "
+                         "no shape); annotate a shape (jaxtyping/alias) or add "
+                         "`# practice-ok: <reason>` [cuda profile; advisory]"
+                         % (rel(full), line, arg, name))
+
+
+# --- check_M: ruleset parity (config/practices.json <-> pyproject.toml) --------
+#
+# Prove pyproject.toml cannot silently LOOSEN the policy declared as DATA in
+# practices.json rulesets: every declared ruff extend_select family must be
+# selected, every declared mypy flag must be enforced (= true), and no 'deferred'
+# family may be silently selected. Stdlib only, no tomllib (runs on 3.6), so it
+# ships a small quote/comment/multi-line-aware TOML scanner rather than parsing.
+
+_FLAG_RE = re.compile(r"^(true|false)\b")
+
+# Triple-quote delimiters. _TRI3 (three single-quote chars) is BUILT, not written
+# as a literal: scaffold.py embeds this file inside a raw triple-single-quoted
+# string, so a literal triple-single-quote here would terminate that embed
+# (check_scaffold_sync.py guards against it).
+_TRI_D = '"""'
+_TRI3 = "'" * 3
+
+
+def _toml_scan(text):
+    """Per line: (comment_col, instr, bdelta). comment_col[ln] is the column where
+    the line's real comment starts (or None); instr[ln] is True when the whole line
+    lies inside a multi-line string; bdelta[ln] is the net '['-minus-']' count that
+    lies OUTSIDE any string or comment — so a bracket inside a string value (e.g.
+    `description = "wip [beta"`) never unbalances a multi-line-array accumulation.
+    A single state machine tracks basic/literal and triple-quoted strings across
+    lines, so a '#' inside a string is never a comment and a quote inside a comment
+    never opens a string."""
+    lines = text.split("\n")
+    comment_col, instr, bdelta = {}, {}, {}
+    st = None
+    for i in range(len(lines)):
+        ln = i + 1
+        line = lines[i]
+        instr[ln] = st in (_TRI_D, _TRI3)
+        j, ccol, n, bd = 0, None, len(line), 0
+        while j < n:
+            c = line[j]
+            three = line[j:j + 3]
+            if st in (_TRI_D, _TRI3):
+                if three == st:
+                    st = None
+                    j += 3
+                    continue
+                j += 1
+                continue
+            if st == '"':
+                if c == "\\":
+                    j += 2
+                    continue
+                if c == '"':
+                    st = None
+                j += 1
+                continue
+            if st == "'":
+                if c == "'":
+                    st = None
+                j += 1
+                continue
+            if three in (_TRI_D, _TRI3):
+                st = three
+                j += 3
+                continue
+            if c in ('"', "'"):
+                st = c
+                j += 1
+                continue
+            if c == "#":
+                ccol = j
+                break
+            if c == "[":
+                bd += 1
+            elif c == "]":
+                bd -= 1
+            j += 1
+        comment_col[ln] = ccol
+        bdelta[ln] = bd
+    return comment_col, instr, bdelta
+
+
+def _toml_practice_ok_lines(text):
+    """Line numbers carrying a `# practice-ok` comment (dedicated TOML scanner —
+    the Python tokenizer bails on TOML; an in-string pragma never waives)."""
+    comment_col, instr, _ = _toml_scan(text)
+    lines = text.split("\n")
+    out = set()
+    for ln in comment_col:
+        if instr.get(ln) or comment_col[ln] is None:
+            continue
+        body = lines[ln - 1][comment_col[ln]:].lstrip("#").strip()
+        if body.startswith("practice-ok"):
+            out.add(ln)
+    return out
+
+
+def _toml_targets(text):
+    """{fully-qualified dotted key: [(start_lineno, rhs_text, span_lines)]}. The
+    current table header is prepended to each key, so `[tool.ruff.lint]` + bare
+    `extend-select` and root `tool.ruff.lint.extend-select` normalise to the same
+    key. A bracketed array value that spans lines is accumulated whole (comments
+    stripped), so a multi-line `extend-select = [ ... ]` is one rhs_text. Array
+    depth is counted OUTSIDE strings (via bdelta), so a '[' inside a string value
+    cannot runaway-swallow the rest of the file."""
+    comment_col, instr, bdelta = _toml_scan(text)
+    lines = text.split("\n")
+    cur_table = ""
+    assigns = {}
+    n = len(lines)
+    i = 0
+    while i < n:
+        ln = i + 1
+        if instr.get(ln):
+            i += 1
+            continue
+        raw = lines[i]
+        col = comment_col.get(ln)
+        if col is not None:
+            raw = raw[:col]
+        s = raw.strip()
+        if not s:
+            i += 1
+            continue
+        if s.startswith("[") and s.endswith("]") and "=" not in s:
+            cur_table = s[1:-1].strip().strip("[]").strip()   # [[x]] array-of-tables -> x
+            i += 1
+            continue
+        if "=" not in s:
+            i += 1
+            continue
+        key, rhs = s.split("=", 1)
+        key, rhs = key.strip(), rhs.strip()
+        full = (cur_table + "." + key) if cur_table else key
+        span = set([ln])
+        depth = bdelta.get(ln, 0)
+        j = i
+        while depth > 0 and j + 1 < n:
+            j += 1
+            ln2 = j + 1
+            if instr.get(ln2):
+                continue
+            raw2 = lines[j]
+            col2 = comment_col.get(ln2)
+            if col2 is not None:
+                raw2 = raw2[:col2]
+            rhs += " " + raw2.strip()
+            span.add(ln2)
+            depth += bdelta.get(ln2, 0)
+        assigns.setdefault(full, []).append((ln, rhs, span))
+        i = j + 1
+    return assigns
+
+
+def _rhs_has_family(rhs_text, fam):
+    """True if `fam` appears as a QUOTED whole token, so "I" never matches inside
+    "SIM"."""
+    return ('"%s"' % fam) in rhs_text or ("'%s'" % fam) in rhs_text
+
+
+def _deferred_active(rhs_text, fam):
+    """True if a DEFERRED family is effectively selected. ruff selects a rule via
+    ANY prefix of its code (`RUF` or `RUF0` selects `RUF022`) and `ALL` selects
+    everything, so check the family, each of its category-or-longer prefixes, and
+    `ALL` — not just the exact token (else `extend-select = ["RUF"]` would smuggle
+    a deferred `RUF022` past the gate)."""
+    if _rhs_has_family(rhs_text, "ALL"):
+        return True
+    cat = ""
+    for ch in fam:
+        if ch.isalpha():
+            cat += ch
+        else:
+            break
+    for k in range(len(cat), len(fam) + 1):
+        if _rhs_has_family(rhs_text, fam[:k]):
+            return True
+    return False
+
+
+def _flag_state(entries):
+    """'on' | 'off' | 'absent' for a mypy flag, last-writer-wins (so `flag = true`
+    then `flag = false` reads as off — a real loosening)."""
+    if not entries:
+        return "absent"
+    rhs = entries[-1][1].strip()
+    m = _FLAG_RE.match(rhs)
+    if not m:
+        return "absent"
+    return "on" if m.group(1) == "true" else "off"
+
+
+def _line_waived(target_lines, pragma):
+    """A finding anchored to specific lines is waived by a `# practice-ok` on any
+    of those lines or the line directly above the first."""
+    for ln in target_lines:
+        if ln in pragma or (ln - 1) in pragma:
+            return True
+    return False
+
+
+def _span_lines(entries):
+    out = set()
+    for (_, _, span) in entries:
+        out |= span
+    return out
+
+
+def _ruleset_parity_findings(practices, text):
+    """(errors, warnings) proving pyproject `text` doesn't loosen the declared
+    policy in `practices`. Pure: no I/O, so it is unit-testable directly."""
+    errs, warns_ = [], []
+    rules = practices.get("rulesets")
+    if not isinstance(rules, dict):
+        return errs, warns_
+    ruff = rules.get("ruff") if isinstance(rules.get("ruff"), dict) else {}
+    mypy = rules.get("mypy") if isinstance(rules.get("mypy"), dict) else {}
+    extend = ruff.get("extend_select")
+    deferred = ruff.get("deferred")
+    flags = mypy.get("flags")
+    dkeys = []
+    if isinstance(deferred, dict):
+        dkeys = [k for k in deferred if not str(k).startswith("_")]
+    elif isinstance(deferred, list):
+        dkeys = [x for x in deferred if isinstance(x, str)]
+
+    assigns = _toml_targets(text)
+    pragma = _toml_practice_ok_lines(text)
+    file_waived = bool(pragma)
+
+    es = assigns.get("tool.ruff.lint.extend-select", [])
+    es_text = " ".join(r for (_, r, _) in es)
+    es_lines = _span_lines(es)
+
+    if isinstance(extend, list) and extend:
+        if not es:
+            if not file_waived:
+                errs.append("pyproject.toml: [tool.ruff.lint] extend-select is "
+                            "absent; declared ruff policy is unenforced "
+                            "(config/practices.json rulesets.ruff.extend_select). "
+                            "Add it or `# practice-ok`.")
+        else:
+            for fam in extend:
+                if isinstance(fam, str) and not _rhs_has_family(es_text, fam) \
+                        and not _line_waived(es_lines, pragma):
+                    errs.append("pyproject.toml: ruff family '%s' declared in "
+                                "practices.json is not in extend-select (silent "
+                                "loosening)" % fam)
+    for fam in dkeys:
+        if es and _deferred_active(es_text, fam) and not _line_waived(es_lines, pragma):
+            errs.append("pyproject.toml: ruff family '%s' is DEFERRED in "
+                        "practices.json but selected in extend-select "
+                        "(directly or via a parent prefix / ALL)" % fam)
+
+    if isinstance(flags, list):
+        for flag in flags:
+            if not isinstance(flag, str):
+                continue
+            entries = assigns.get("tool.mypy." + flag, [])
+            state = _flag_state(entries)
+            if state == "off" and not _line_waived(_span_lines(entries), pragma):
+                errs.append("pyproject.toml: mypy flag '%s' is set false (declared "
+                            "enforced in practices.json) - a silent loosening" % flag)
+            elif state == "absent" and not file_waived:
+                errs.append("pyproject.toml: mypy flag '%s' declared in "
+                            "practices.json is not enforced (absent). Add "
+                            "`%s = true` or `# practice-ok`." % (flag, flag))
+    return errs, warns_
+
+
+def check_M():
+    """Ruleset parity: pyproject.toml must not silently loosen the lint/type
+    policy declared as DATA in config/practices.json rulesets. Errs on a declared
+    ruff family missing from extend-select, a declared mypy flag off/absent, or a
+    'deferred' family silently selected. Degrades to a WARN if pyproject is
+    missing/unreadable (can't prove anything); waivable with `# practice-ok`."""
+    practices = _load_practices()
+    if not isinstance(practices.get("rulesets"), dict):
+        return
+    path = os.path.join(ROOT, "pyproject.toml")
+    if not os.path.isfile(path):
+        warn("pyproject.toml: not found; ruleset parity unenforced")
+        return
+    try:
+        with open(path, encoding="utf-8") as fh:
+            text = fh.read()
+    except Exception as e:
+        warn("pyproject.toml: could not read (%s)" % e)
+        return
+    errs, warns_ = _ruleset_parity_findings(practices, text)
+    for m in errs:
+        err(m)
+    for m in warns_:
+        warn(m)
+
+
 def main():
     check_A()
     check_B()
@@ -4733,6 +5648,10 @@ def main():
     check_G()
     check_H()
     check_I()
+    check_J()
+    check_K()
+    check_L()
+    check_M()
     for w_ in warnings:
         print("WARN  " + w_)
     for e_ in errors:
@@ -5108,6 +6027,449 @@ if __name__ == "__main__":
     sys.exit(main())
 '''
 
+
+# Populated from the live files by `check_scaffold_sync.py --write` (byte-synced,
+# CONVENTIONS section 6) — do not hand-edit the body.
+_CHECK_PRACTICES_SRC = r'''#!/usr/bin/env python3
+"""
+title: Coding-practices advisor
+kind: script
+layer: n/a
+summary: Read-only advisory. Flags coding-practice SMELLS - a concrete backend constructed inline instead of injected, a long isinstance chain that wants singledispatch, a hot-path class without __slots__, a resource acquired outside a context manager. Judgment calls that over/under-flag, so advisory only; never fails the build. Stdlib only; runs on Python 3.6+.
+"""
+import argparse
+import ast
+import io
+import json
+import os
+import re
+import sys
+import tokenize
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# The doer/domain code an advisory should look at. Transport adapters (api/, mcp/)
+# and tests/ are intentionally excluded - speaking a framework's dialect there is
+# correct, and test code is not a boundary.
+SCAN_ROOTS = ["src", "agents"]
+
+IGNORE_DIRS = set([
+    ".git", "node_modules", ".venv", "__pycache__", "dist", "build",
+    ".mypy_cache", ".ruff_cache", ".pytest_cache",
+])
+
+_PRAGMA_RE = re.compile(r"^#\s*practice-ok\b\s*:?\s*(.*)$")
+_HOTPATH_MARKER = "hot-path"
+
+
+# --- io helpers (stdlib, 3.6-safe) --------------------------------------------
+
+def _read(path):
+    try:
+        with io.open(path, encoding="utf-8-sig") as fh:   # strips a BOM if present
+            return fh.read()
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
+def _read_json(path):
+    try:
+        with io.open(path, encoding="utf-8-sig") as fh:
+            data = json.load(fh)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _parse(text):
+    try:
+        return ast.parse(text)
+    except (SyntaxError, ValueError):
+        return None
+
+
+def _rel(path):
+    return os.path.relpath(path, ROOT).replace(os.sep, "/")
+
+
+def _py_files(base):
+    out = []
+    for dirpath, dirnames, filenames in os.walk(base):
+        dirnames[:] = [d for d in dirnames
+                       if d not in IGNORE_DIRS and not d.startswith(".")]
+        for fn in filenames:
+            if fn.endswith(".py"):
+                out.append(os.path.join(dirpath, fn))
+    return out
+
+
+def _comment_lines(text, needle):
+    """Line numbers of `# ...<needle>...` comments (tokenize, so a `#` inside a
+    string is never mistaken for a comment)."""
+    out = set()
+    try:
+        for tok in tokenize.generate_tokens(io.StringIO(text).readline):
+            if tok.type == tokenize.COMMENT and needle in tok.string:
+                out.add(tok.start[0])
+    except (tokenize.TokenError, IndentationError, SyntaxError, ValueError):
+        pass
+    return out
+
+
+def _pragma_lines(text):
+    """line number -> reason for every `# practice-ok[: reason]` comment."""
+    out = {}
+    try:
+        for tok in tokenize.generate_tokens(io.StringIO(text).readline):
+            if tok.type == tokenize.COMMENT:
+                m = _PRAGMA_RE.match(tok.string.strip())
+                if m:
+                    out[tok.start[0]] = m.group(1).strip()
+    except (tokenize.TokenError, IndentationError, SyntaxError, ValueError):
+        pass
+    return out
+
+
+def _suppressed(line, pragma):
+    return line in pragma
+
+
+# --- config -------------------------------------------------------------------
+
+def load_registry():
+    """The vendor-neutral practices registry (config/practices.json), or {}."""
+    return _read_json(os.path.join(ROOT, "config", "practices.json"))
+
+
+def profiles_on():
+    """Set of domain profiles a repo has enabled in config/project.json."""
+    proj = _read_json(os.path.join(ROOT, "config", "project.json"))
+    prof = (proj.get("practices") or {}).get("profiles") or {}
+    return set(k for k, v in prof.items()
+               if v is True and not k.startswith("_"))
+
+
+# --- smell detectors (pure: take an AST, return findings) ---------------------
+
+def _callee_name(func):
+    if isinstance(func, ast.Name):
+        return func.id
+    if isinstance(func, ast.Attribute):
+        return func.attr
+    return None
+
+
+def _is_true(node):
+    if isinstance(node, ast.Constant):                    # 3.8+
+        return node.value is True
+    return node.__class__.__name__ == "NameConstant" and getattr(node, "value", None) is True
+
+
+def find_di_inline(tree, provider_names):
+    """A registered provider constructor called anywhere (not passed in)."""
+    prov = set(provider_names or [])
+    out = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            name = _callee_name(node.func)
+            if name and name in prov:
+                out.append({"kind": "dependency-injection",
+                            "line": getattr(node, "lineno", 0),
+                            "message": "provider '%s' constructed inline; "
+                                       "inject it via a parameter instead" % name})
+    return out
+
+
+def _isinstance_subject(test):
+    """The dumped first-arg of an ``isinstance(x, ...)`` test, else None."""
+    if isinstance(test, ast.Call) and _callee_name(test.func) == "isinstance" and test.args:
+        return ast.dump(test.args[0])
+    return None
+
+
+def find_isinstance_chains(tree, min_branches=3):
+    """An if/elif chain with >= min_branches isinstance tests on ONE subject."""
+    out = []
+    consumed = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.If) or id(node) in consumed:
+            continue
+        subj = _isinstance_subject(node.test)
+        if subj is None:
+            continue
+        count, cur = 1, node
+        while len(cur.orelse) == 1 and isinstance(cur.orelse[0], ast.If) \
+                and _isinstance_subject(cur.orelse[0].test) == subj:
+            cur = cur.orelse[0]
+            consumed.add(id(cur))
+            count += 1
+        if count >= min_branches:
+            out.append({"kind": "singledispatch-over-isinstance",
+                        "line": getattr(node, "lineno", 0),
+                        "message": "%d isinstance branches on one value; "
+                                   "consider functools.singledispatch" % count})
+    return out
+
+
+def _has_slots(cls):
+    for stmt in cls.body:
+        if isinstance(stmt, ast.Assign):
+            targets = stmt.targets
+        elif isinstance(stmt, ast.AnnAssign):
+            targets = [stmt.target]
+        else:
+            continue
+        if any(isinstance(t, ast.Name) and t.id == "__slots__" for t in targets):
+            return True
+    return False
+
+
+def _dataclass_slots(cls):
+    for dec in cls.decorator_list:
+        if isinstance(dec, ast.Call) and _callee_name(dec.func) == "dataclass":
+            for kw in dec.keywords:
+                if kw.arg == "slots" and _is_true(kw.value):
+                    return True
+    return False
+
+
+def find_hotpath_no_slots(tree, marker_lines):
+    """A class tagged `# hot-path` that declares neither __slots__ nor
+    dataclass(slots=True)."""
+    out = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ClassDef):
+            continue
+        start = getattr(node, "lineno", 0)
+        dec_lines = [getattr(d, "lineno", start) for d in node.decorator_list]
+        top = min([start] + dec_lines)
+        marked = any(top - 2 <= ln <= start for ln in marker_lines)
+        if not marked or _has_slots(node) or _dataclass_slots(node):
+            continue
+        out.append({"kind": "slots-hot-path", "line": start,
+                    "message": "class '%s' is marked hot-path but has no "
+                               "__slots__ / dataclass(slots=True)" % node.name})
+    return out
+
+
+def find_acquire_no_cm(tree, acquire_names):
+    """A resource-acquiring call bound by a plain assignment (not a ``with``)."""
+    acq = set(n.split(".")[-1] for n in (acquire_names or []))
+    out = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call):
+            name = _callee_name(node.value.func)
+            if name and name in acq:
+                out.append({"kind": "resource-context-manager",
+                            "line": getattr(node, "lineno", 0),
+                            "message": "'%s' acquired outside a `with`; "
+                                       "use a context manager" % name})
+    return out
+
+
+# --- scan ---------------------------------------------------------------------
+
+def _enabled(registry):
+    """{practice_id: status_string} for the advisory practices in the registry."""
+    status = {}
+    for p in registry.get("practices") or []:
+        if isinstance(p, dict) and p.get("tier") == "advisory":
+            status[p.get("id")] = str(p.get("status", ""))
+    return status
+
+
+def scan(registry, on_profiles):
+    """Walk SCAN_ROOTS and return (findings, empty_pragmas).
+
+    A practice runs only when its registry status starts with 'on'; a domain
+    practice additionally requires its profile to be enabled."""
+    tokens = registry.get("tokens") or {}
+    providers = tokens.get("provider_constructors") or []
+    acquire = tokens.get("acquire_apis") or []
+    status = _enabled(registry)
+
+    def on(pid):
+        return status.get(pid, "").startswith("on")
+
+    cm = next((p for p in registry.get("practices") or []
+               if isinstance(p, dict) and p.get("id") == "resource-context-manager"), {})
+    cm_active = on("resource-context-manager") and cm.get("profile") in on_profiles
+
+    findings, empty_pragmas = [], []
+    for base_name in SCAN_ROOTS:
+        base = os.path.join(ROOT, base_name)
+        if not os.path.isdir(base):
+            continue
+        for path in _py_files(base):
+            text = _read(path)
+            if text is None:
+                continue
+            tree = _parse(text)
+            if tree is None:
+                continue
+            rel, pragma = _rel(path), _pragma_lines(text)
+            for ln, reason in pragma.items():
+                if reason == "":
+                    empty_pragmas.append("%s:%d" % (rel, ln))
+            raw = []
+            if on("dependency-injection"):
+                raw += find_di_inline(tree, providers)
+            if on("singledispatch-over-isinstance"):
+                raw += find_isinstance_chains(tree)
+            if on("slots-hot-path"):
+                raw += find_hotpath_no_slots(tree, _comment_lines(text, _HOTPATH_MARKER))
+            if cm_active:
+                raw += find_acquire_no_cm(tree, acquire)
+            for f in raw:
+                findings.append({"kind": f["kind"],
+                                 "loc": "%s:%d" % (rel, f["line"]),
+                                 "message": f["message"],
+                                 "suppressed": _suppressed(f["line"], pragma)})
+    return findings, empty_pragmas
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(
+        description="Advisory: flag coding-practice smells (DI-inline, isinstance "
+                    "chains, hot-path without __slots__, ...). Never fails the build.")
+    ap.add_argument("--json", action="store_true", help="emit active findings as JSON")
+    args = ap.parse_args(argv)
+
+    findings, empty_pragmas = scan(load_registry(), profiles_on())
+    active = [f for f in findings if not f["suppressed"]]
+
+    if args.json:
+        json.dump(active, sys.stdout, indent=2, sort_keys=True)
+        sys.stdout.write("\n")
+        return 0
+
+    for loc in empty_pragmas:
+        print("coding-practices: suppression with no reason at %s" % loc)
+
+    if not active:
+        print("coding-practices: no smells found.  (advisory)")
+        return 0
+
+    print("coding-practices: scanning for practice smells "
+          "(advisory; never fails the build)")
+    for f in sorted(active, key=lambda x: (x["kind"], x["loc"])):
+        print("  [%s] %s" % (f["kind"], f["loc"]))
+        print("      %s" % f["message"])
+        print("      fix: apply the practice, or add `# practice-ok: <reason>`")
+    print("coding-practices: %d smell(s); %d suppressed.  "
+          "(advisory - review, don't obey)" % (len(active), len(findings) - len(active)))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+'''
+_PRACTICES_JSON_SRC = r'''{
+  "_comment": "Vendor-neutral registry of the coding practices Project Keel promotes. This is DATA read BY PATH (json.load), never imported as a library — the 3.6-safe gate scripts/check_structure.py, the advisory scripts/check_practices.py, and the agents/practice_refactor/ doer all consume it the same way check_H reads project.json. No provider/vendor is baked into check LOGIC; every provider/tensor token lives here as data (CONVENTIONS section 18). Adding/retiring a practice is a data edit here plus its mechanism; enabling a domain profile is a flag in project.json practices.profiles (NOT here — defining a profile is not enabling it).",
+  "schema_version": 1,
+  "rulesets": {
+    "_comment": "The concrete lint/type rulesets that carry the 'gate' tier. Mirrors, in DATA, what pyproject.toml enables — check_structure.py check_M reads this to prove pyproject cannot silently LOOSEN the declared policy (a declared extend_select family missing, a mypy flag off, or a 'deferred' family silently selected is an error). Slice 5 widened it: every extend_select family below was measured at zero current violations (pure future-protection), and mypy went full-strict (backlog was 3, now fixed).",
+    "ruff": {
+      "extend_select": ["I", "B", "BLE", "C4", "G", "LOG", "RET", "SIM", "T20",
+                        "A", "FA", "FURB", "ICN", "ISC", "PERF", "PGH", "PIE", "RSE", "SLOT", "NPY"],
+      "deferred": {
+        "_comment": "DELIBERATE house-style policy, NOT temporary debt: each fights a chosen convention, so it stays off permanently. check_M errs if any is silently selected in pyproject.",
+        "UP": "house style is %-formatting (UP031 would rewrite ~19 sites to f-strings); the 3.6-safe checks in scripts/ require %-formatting anyway",
+        "RUF022": "__all__ is ordered semantically, not alphabetically",
+        "RUF100": "intentional `# noqa: S310` etc. read as unused until the S (bandit) family is selected, which we don't",
+        "E501": "docstring summaries deliberately exceed 88 cols"
+      },
+      "per_file_ignores": {"src/app/**": ["T201"]}
+    },
+    "mypy": {
+      "flags": ["strict", "warn_unreachable"]
+    }
+  },
+  "practices": [
+    {"id": "precise-container-types", "row": 2, "scope": "universal", "tier": "gate", "status": "on",
+     "title": "Declare element types on dict/list/set (no bare generics)",
+     "mechanism": "mypy disallow_any_generics"},
+    {"id": "narrow-optional", "row": 7, "scope": "universal", "tier": "gate", "status": "on",
+     "title": "No implicit Optional / no Optional-as-silent-failure",
+     "mechanism": "mypy no_implicit_optional + strict_optional; ruff RET"},
+    {"id": "return-any", "row": 2, "scope": "universal", "tier": "gate", "status": "on",
+     "title": "Don't return Any from a typed function",
+     "mechanism": "mypy warn_return_any"},
+    {"id": "typed-everywhere", "row": 15, "scope": "universal", "tier": "gate", "status": "on",
+     "title": "Every function is fully typed (no untyped defs / calls / decorators)",
+     "mechanism": "mypy strict (disallow_untyped_defs + disallow_incomplete_defs + disallow_untyped_calls + disallow_untyped_decorators) — Slice 5"},
+    {"id": "no-blanket-suppressions", "row": 16, "scope": "universal", "tier": "gate", "status": "on",
+     "title": "No blanket # noqa / # type: ignore — every suppression names its code",
+     "mechanism": "ruff PGH003/PGH004 — Slice 5 (pairs with the # practice-ok discipline)"},
+    {"id": "exception-chaining", "row": 6, "scope": "universal", "tier": "gate", "status": "on",
+     "title": "Preserve the cause; never blind-except",
+     "mechanism": "ruff B904 (raise ... from) + BLE001 (blind except)"},
+    {"id": "abc-has-abstractmethod", "row": 3, "scope": "universal", "tier": "gate", "status": "on",
+     "title": "An ABC declares at least one @abstractmethod",
+     "mechanism": "ruff B024 + mypy abstract-instantiation"},
+    {"id": "structured-logging-pressure", "row": 12, "scope": "universal", "tier": "gate", "status": "on",
+     "title": "No print() in library code; no f-string/%/+ interpolation inside log calls",
+     "mechanism": "ruff T20 + G + LOG (bans the anti-pattern; does NOT mandate a specific logging library)"},
+    {"id": "public-boundary", "row": 5, "scope": "universal", "tier": "gate", "status": "on",
+     "title": "Public API via __init__/__all__; no cross-package _private import",
+     "mechanism": "check_structure.py check_C/check_D/check_E + ruff I"},
+    {"id": "exhaustive-routing", "row": 14, "scope": "universal", "tier": "doc", "status": "on",
+     "title": "assert_never in the default branch of Literal/Enum routing",
+     "mechanism": "typing.assert_never — enforced by existing mypy (Never-narrowing); convention, use it"},
+    {"id": "owned-exception-boundary", "row": 6, "scope": "universal", "tier": "gate", "status": "on",
+     "title": "Don't leak a third-party exception type across a package's public boundary",
+     "mechanism": "check_structure.py check_J — flags raising an exception TYPE imported from a foreign (non-local, non-stdlib) module; builtins/relative/owned imports pass"},
+    {"id": "frozen-config", "row": 8, "scope": "universal", "tier": "gate", "status": "on",
+     "title": "A declared config/settings class is frozen (immutable)",
+     "mechanism": "check_structure.py check_K — keyed on a DECLARED marker (tokens.config_marker), not a *Config name suffix"},
+    {"id": "dependency-injection", "row": 4, "scope": "universal", "tier": "advisory", "status": "on",
+     "title": "Inject collaborators; don't construct a concrete backend inline in a doer",
+     "mechanism": "check_practices.py smell over tokens.provider_constructors (over/under-flags, so advisory)"},
+    {"id": "singledispatch-over-isinstance", "row": 13, "scope": "universal", "tier": "advisory", "status": "on",
+     "title": "Prefer functools.singledispatch to a long isinstance chain",
+     "mechanism": "check_practices.py smell: >=3 isinstance branches on one subject"},
+    {"id": "slots-hot-path", "row": 10, "scope": "universal", "tier": "advisory", "status": "on",
+     "title": "Give a marked hot-path class __slots__ / dataclass(slots=True)",
+     "mechanism": "check_practices.py smell, gated on a `# hot-path` marker"},
+    {"id": "shape-typed-tensors", "row": 1, "scope": "domain", "profile": "cuda", "tier": "gate", "status": "on",
+     "title": "Annotate tensor params with a shape (jaxtyping / alias), not a bare Tensor",
+     "mechanism": "check_structure.py check_L over tokens.tensor_base_types — WARN (not err): a heuristic that over/under-flags (fires only when the cuda profile is on)"},
+    {"id": "typed-graph-state", "row": 2, "scope": "domain", "profile": "langgraph", "tier": "doc", "status": "deferred",
+     "title": "Model graph state with TypedDict/Pydantic, not a loose dict",
+     "mechanism": "convention + mypy once the state type is declared"},
+    {"id": "resource-context-manager", "row": 9, "scope": "domain", "profile": "cuda", "tier": "advisory", "status": "on",
+     "title": "Wrap acquire-prone resources (CUDA memory, sessions) in a context manager",
+     "mechanism": "check_practices.py smell over tokens.acquire_apis (fires only when the cuda profile is on)"}
+  ],
+  "tokens": {
+    "_comment": "DATA the future AST checks/advisories match against. Listing a vendor's class name here is data, not a baked-in dependency — the checks stay vendor-neutral by reading this list (CONVENTIONS section 18). Extend per project.",
+    "provider_constructors": [
+      "OpenAI", "AsyncOpenAI", "Anthropic", "AsyncAnthropic", "Cohere",
+      "ChatOpenAI", "AzureChatOpenAI", "ChatAnthropic", "ChatBedrock", "ChatCohere",
+      "ChatGoogleGenerativeAI", "ChatVertexAI", "HuggingFaceEndpoint"
+    ],
+    "tensor_base_types": ["Tensor", "FloatTensor", "LongTensor", "ndarray", "Array", "DeviceArray"],
+    "acquire_apis": [
+      "torch.cuda.stream", "torch.cuda.graph", "tempfile.NamedTemporaryFile",
+      "open", "Session", "ClientSession", "connect", "acquire"
+    ],
+    "stdlib_exception_modules": [
+      "json", "urllib", "http", "socket", "ssl", "subprocess", "asyncio",
+      "sqlite3", "struct", "pickle", "xml", "configparser", "argparse",
+      "queue", "threading", "multiprocessing", "concurrent", "decimal",
+      "os", "io", "re", "hashlib", "csv", "zlib", "gzip", "tarfile", "zipfile"
+    ],
+    "config_marker": "practice: frozen-config",
+    "owned_error_marker": "practice: owned-error-base"
+  },
+  "profiles": {
+    "_comment": "Domain profiles ship DEFINED but OFF. A consuming repo turns one on in project.json practices.profiles (Slice 4); until then the domain checks above never fire, so the universal template stays domain-neutral. A profile's `tags` scope its checks to corpus nodes carrying those tags — the graph tells the checker where a domain rule is even relevant.",
+    "ai": {"tags": ["ai", "llm", "model", "prompt"], "activates": ["dependency-injection"]},
+    "cuda": {"tags": ["cuda", "gpu", "tensor", "torch"], "activates": ["shape-typed-tensors", "resource-context-manager"]},
+    "langgraph": {"tags": ["langgraph", "graph", "agent", "state"], "activates": ["typed-graph-state", "exhaustive-routing"]}
+  }
+}
+'''
 
 _CHECK_GENERIC_SRC = r'''#!/usr/bin/env python3
 """
@@ -7450,7 +8812,7 @@ summary: The vendor-neutral AgentSurface interface a wire adapter (AAD, A2A, ...
 """
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from ._models import AgentCard, AgentReply
 
@@ -7476,7 +8838,7 @@ class AgentSurface(Protocol):
         """Answer one question; return a neutral reply (answer + optional meta/html/error)."""
         ...
 
-    def health(self) -> dict:
+    def health(self) -> dict[str, Any]:
         """Return a liveness payload, e.g. ``{"status": "ok"}``."""
         ...
 '''
@@ -8862,8 +10224,8 @@ def test_malformed_slug_is_rejected_at_render():
     """An author-supplied slug that breaks the AAD pattern fails fast at render,
     rather than being served as a non-conformant descriptor."""
     import pydantic
-
     from aad import card_to_aad  # api/rest_fastapi is on sys.path via the demo import
+
     from backend.agent_surface import AgentCard
 
     with pytest.raises(pydantic.ValidationError):

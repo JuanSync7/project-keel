@@ -5,6 +5,7 @@ public_api: yes
 summary: ABCs / Protocols that define cross-package interfaces.
 """
 from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from typing import Protocol, runtime_checkable
 

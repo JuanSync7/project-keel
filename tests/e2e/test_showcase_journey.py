@@ -29,6 +29,8 @@ PAGE_FEEDS = (
     "/api/features",     # Conventions/Features/Checks/Setup are list endpoints
     "/api/principles",
     "/api/models",       # the Architecture page's live model-adapter list
+    "/api/practices",    # the Architecture page's live coding-practices list
+    "/api/profiles",     # the Architecture page's live domain-profiles list
     "/api/checks",
     "/api/setup",
     "/api/wiki/tree",

@@ -32,9 +32,10 @@ check-aad: ## Committed AAD schema in sync with the model (skips if pydantic abs
 scaffold-sync: ## scaffold.py embeds match the live scripts (3.6-safe)
 	$(PY) scripts/check_scaffold_sync.py --check
 
-advise: ## Advisory: flag overfitting / answer-key smells (CONVENTIONS §18; never fails the build)
+advise: ## Advisory: flag overfitting / answer-key + coding-practice smells (CONVENTIONS §18; never fails the build)
 	-$(PY) scripts/check_generic.py
-check-generic: advise ## Alias for `advise` (the generic-solution advisor)
+	-$(PY) scripts/check_practices.py
+check-generic: advise ## Alias for `advise` (the generic-solution + practice advisor)
 
 verify: check-all lint typecheck test ## Run all gates (all checks + lint + types + tests)
 

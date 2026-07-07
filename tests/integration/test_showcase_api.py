@@ -56,6 +56,31 @@ def test_models_listed_from_the_manifest():
     assert [m["name"] for m in models if m["default"]] == ["claude-code-headless"]
 
 
+def test_practices_listed_from_the_registry():
+    practices = client.get("/api/practices").json()
+    assert practices, "practices should be listed from config/practices.json"
+    assert {p["tier"] for p in practices} >= {"gate", "advisory"}   # both tiers present
+    assert all(p["tier"] in ("gate", "advisory", "doc") for p in practices)
+    assert all(p["scope"] in ("universal", "domain") for p in practices)
+    rows = [p["row"] for p in practices]
+    assert rows == sorted(rows), "practices are returned sorted by row"
+    # The owned-exception gate we shipped (check_J) is surfaced and enabled.
+    by_id = {p["id"]: p for p in practices}
+    assert by_id["owned-exception-boundary"]["status"] == "on"
+
+
+def test_domain_profiles_listed_all_off_by_default():
+    profiles = client.get("/api/profiles").json()
+    assert profiles, "domain profiles should be listed from config/practices.json"
+    names = [p["name"] for p in profiles]
+    assert names == sorted(names)                       # stable order
+    assert {"ai", "cuda", "langgraph"} <= set(names)
+    # The template ships domain-neutral: every profile is OFF by default.
+    assert all(p["enabled"] is False for p in profiles)
+    cuda = next(p for p in profiles if p["name"] == "cuda")
+    assert "shape-typed-tensors" in cuda["activates"]   # definition joined in
+
+
 def test_every_feature_link_resolves_into_the_corpus():
     """Click-through guarantee: each feature's 'read more' link is a real node,
     so the new edge-adapters card (and every other) never strands the visitor."""

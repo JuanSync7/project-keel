@@ -62,7 +62,7 @@ everything and therefore expect the project interpreter.
 
 | Check | Script | Gate? | Interpreter | What it guarantees |
 |-------|--------|:-----:|-------------|--------------------|
-| Structure & frontmatter | `scripts/check_structure.py` | error | 3.6-safe | Labels, taxonomy, package boundaries, tool/agent governance, project facts, agent-rules symlinks (checks A–I) |
+| Structure & frontmatter | `scripts/check_structure.py` | error | 3.6-safe | Labels, taxonomy, package boundaries, tool/agent governance, project facts, agent-rules symlinks, owned-exception & frozen-config boundaries, naked-tensor domain warn, lint/type ruleset parity (checks A–M) |
 | Scaffold-embed sync | `scripts/check_scaffold_sync.py` | error | 3.6-safe | `scaffold.py`'s embedded scripts are byte-identical to the live files |
 | Corpus integrity | `scripts/jobs/check_corpus.py` | error | ≥3.7 | `wiki/corpus.json` is a valid, acyclic graph **and** the build is reproducible |
 | OpenAPI drift | `api/rest_fastapi/export_openapi.py --check` | error | FastAPI | Committed `openapi.json` matches the live routes |
@@ -70,6 +70,7 @@ everything and therefore expect the project interpreter.
 | Code-doc drift | `scripts/cdmon_sync.py --check` | error* | any | cdmon code↔doc drift (*no-op until cdmon is installed) |
 | Accountability | `scripts/accountability_report.py` | report | ≥3.7 | Lists corpus nodes that resolve to no owner (informational) |
 | Generic-solution advisor | `scripts/check_generic.py` | report | 3.6-safe | Distinctive literals asserted as golden in tests **and** hardcoded in `src/` logic (the "answer-key" overfit smell, §18). Advisory only — never fails the build |
+| Coding-practices advisor | `scripts/check_practices.py` | report | 3.6-safe | Coding-practice smells (a provider constructed inline instead of injected, a ≥3-branch `isinstance` chain, a `# hot-path` class without `__slots__`, a resource acquired outside a `with`). Reads `config/practices.json`; advisory only — never fails the build (see [coding-practices](coding-practices.md)) |
 
 All gates exit **0 = clean, 1 = failure**. Warnings (e.g. a missing `owner`)
 print but never fail the build.
@@ -78,7 +79,7 @@ print but never fail the build.
 
 ### 1. Structure & frontmatter — `scripts/check_structure.py`
 
-**Purpose.** The core enforcer of `CONVENTIONS.md`. Checks A–I:
+**Purpose.** The core enforcer of `CONVENTIONS.md`. Checks A–M:
 
 - **A. Frontmatter** — every `README.md` / `AGENT.md` / `CLAUDE.md`, `docs/**`,
   `test-docs/**` markdown, and `agents/**/*.tool.md` has the required keys with
@@ -95,6 +96,23 @@ print but never fail the build.
 - **H. Project facts** — `config/project.json` agrees with the tree (§15).
 - **I. Agent-rules symlink** — every `CLAUDE.md` is a symlink to its sibling
   `AGENT.md`, and every `AGENT.md` has that sibling (§5).
+- **J. Owned-exception boundary** — in `src`/`models`/`runtimes`/`agents`, no
+  `raise` of an exception type imported from a foreign (non-local, non-stdlib)
+  module; wrap it in an owned error or waive with `# practice-ok: <reason>` (§18).
+- **K. Frozen-config gate** — a class carrying the declared marker
+  (`config/practices.json` `tokens.config_marker`, `# practice: frozen-config`)
+  must be provably immutable (frozen dataclass / `NamedTuple` / attrs-frozen).
+  Keyed on the author-written marker, never a `*Config` name suffix (§18); it
+  resolves aliased imports and honours the 3.6-vs-3.8 class-line model; waivable.
+- **L. Naked-tensor domain** (warn) — only when the `cuda` profile is enabled
+  (`config/project.json` `practices.profiles`), a parameter annotated with a bare
+  tensor base type (`tokens.tensor_base_types`) and no shape comment **warns**.
+  An advisory heuristic (a token may name a local class) — never an error.
+- **M. Ruleset parity** — `pyproject.toml` must not silently loosen the lint/type
+  policy declared in `config/practices.json` `rulesets`: every ruff
+  `extend_select` family is selected, every mypy flag is enforced, no `deferred`
+  (policy-off) family is selected. Reads `pyproject.toml` as text (no `tomllib`
+  on 3.6); multi-line arrays, dotted-key/header forms, `# practice-ok` all handled.
 
 **When to run.** Every commit (pre-commit) and in CI; any time you add a
 directory, package, doc, tool, or agent.
@@ -114,7 +132,11 @@ files — otherwise a freshly scaffolded project ships tooling that has silently
 diverged. This check discovers every embed and diffs it against its live file.
 
 **When to run.** Every commit; always after editing any embedded script
-(`check_structure.py`, `check_scaffold_sync.py`, `scripts/jobs/check_corpus.py`).
+(`check_structure.py`, `check_scaffold_sync.py`, `check_practices.py`,
+`scripts/jobs/check_corpus.py`). The scaffold ships the whole coding-practices
+system to new projects — `check_practices.py` and `config/practices.json` are
+byte-synced embeds, and the generated `pyproject.toml` mirrors the registry so a
+freshly-scaffolded project passes `check_M` parity out of the box.
 
 **Run.**
 - `python3 scripts/check_scaffold_sync.py` — fail on drift (default), print diffs.

@@ -13,7 +13,7 @@ import pytest
 _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT))
 
-from agents.index_enforcer import enforce      # noqa: E402
+from agents.index_enforcer import enforce  # noqa: E402
 
 pytestmark = pytest.mark.integration
 

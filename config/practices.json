@@ -1,0 +1,105 @@
+{
+  "_comment": "Vendor-neutral registry of the coding practices Project Keel promotes. This is DATA read BY PATH (json.load), never imported as a library — the 3.6-safe gate scripts/check_structure.py, the advisory scripts/check_practices.py, and the agents/practice_refactor/ doer all consume it the same way check_H reads project.json. No provider/vendor is baked into check LOGIC; every provider/tensor token lives here as data (CONVENTIONS section 18). Adding/retiring a practice is a data edit here plus its mechanism; enabling a domain profile is a flag in project.json practices.profiles (NOT here — defining a profile is not enabling it).",
+  "schema_version": 1,
+  "rulesets": {
+    "_comment": "The concrete lint/type rulesets that carry the 'gate' tier. Mirrors, in DATA, what pyproject.toml enables — check_structure.py check_M reads this to prove pyproject cannot silently LOOSEN the declared policy (a declared extend_select family missing, a mypy flag off, or a 'deferred' family silently selected is an error). Slice 5 widened it: every extend_select family below was measured at zero current violations (pure future-protection), and mypy went full-strict (backlog was 3, now fixed).",
+    "ruff": {
+      "extend_select": ["I", "B", "BLE", "C4", "G", "LOG", "RET", "SIM", "T20",
+                        "A", "FA", "FURB", "ICN", "ISC", "PERF", "PGH", "PIE", "RSE", "SLOT", "NPY"],
+      "deferred": {
+        "_comment": "DELIBERATE house-style policy, NOT temporary debt: each fights a chosen convention, so it stays off permanently. check_M errs if any is silently selected in pyproject.",
+        "UP": "house style is %-formatting (UP031 would rewrite ~19 sites to f-strings); the 3.6-safe checks in scripts/ require %-formatting anyway",
+        "RUF022": "__all__ is ordered semantically, not alphabetically",
+        "RUF100": "intentional `# noqa: S310` etc. read as unused until the S (bandit) family is selected, which we don't",
+        "E501": "docstring summaries deliberately exceed 88 cols"
+      },
+      "per_file_ignores": {"src/app/**": ["T201"]}
+    },
+    "mypy": {
+      "flags": ["strict", "warn_unreachable"]
+    }
+  },
+  "practices": [
+    {"id": "precise-container-types", "row": 2, "scope": "universal", "tier": "gate", "status": "on",
+     "title": "Declare element types on dict/list/set (no bare generics)",
+     "mechanism": "mypy disallow_any_generics"},
+    {"id": "narrow-optional", "row": 7, "scope": "universal", "tier": "gate", "status": "on",
+     "title": "No implicit Optional / no Optional-as-silent-failure",
+     "mechanism": "mypy no_implicit_optional + strict_optional; ruff RET"},
+    {"id": "return-any", "row": 2, "scope": "universal", "tier": "gate", "status": "on",
+     "title": "Don't return Any from a typed function",
+     "mechanism": "mypy warn_return_any"},
+    {"id": "typed-everywhere", "row": 15, "scope": "universal", "tier": "gate", "status": "on",
+     "title": "Every function is fully typed (no untyped defs / calls / decorators)",
+     "mechanism": "mypy strict (disallow_untyped_defs + disallow_incomplete_defs + disallow_untyped_calls + disallow_untyped_decorators) — Slice 5"},
+    {"id": "no-blanket-suppressions", "row": 16, "scope": "universal", "tier": "gate", "status": "on",
+     "title": "No blanket # noqa / # type: ignore — every suppression names its code",
+     "mechanism": "ruff PGH003/PGH004 — Slice 5 (pairs with the # practice-ok discipline)"},
+    {"id": "exception-chaining", "row": 6, "scope": "universal", "tier": "gate", "status": "on",
+     "title": "Preserve the cause; never blind-except",
+     "mechanism": "ruff B904 (raise ... from) + BLE001 (blind except)"},
+    {"id": "abc-has-abstractmethod", "row": 3, "scope": "universal", "tier": "gate", "status": "on",
+     "title": "An ABC declares at least one @abstractmethod",
+     "mechanism": "ruff B024 + mypy abstract-instantiation"},
+    {"id": "structured-logging-pressure", "row": 12, "scope": "universal", "tier": "gate", "status": "on",
+     "title": "No print() in library code; no f-string/%/+ interpolation inside log calls",
+     "mechanism": "ruff T20 + G + LOG (bans the anti-pattern; does NOT mandate a specific logging library)"},
+    {"id": "public-boundary", "row": 5, "scope": "universal", "tier": "gate", "status": "on",
+     "title": "Public API via __init__/__all__; no cross-package _private import",
+     "mechanism": "check_structure.py check_C/check_D/check_E + ruff I"},
+    {"id": "exhaustive-routing", "row": 14, "scope": "universal", "tier": "doc", "status": "on",
+     "title": "assert_never in the default branch of Literal/Enum routing",
+     "mechanism": "typing.assert_never — enforced by existing mypy (Never-narrowing); convention, use it"},
+    {"id": "owned-exception-boundary", "row": 6, "scope": "universal", "tier": "gate", "status": "on",
+     "title": "Don't leak a third-party exception type across a package's public boundary",
+     "mechanism": "check_structure.py check_J — flags raising an exception TYPE imported from a foreign (non-local, non-stdlib) module; builtins/relative/owned imports pass"},
+    {"id": "frozen-config", "row": 8, "scope": "universal", "tier": "gate", "status": "on",
+     "title": "A declared config/settings class is frozen (immutable)",
+     "mechanism": "check_structure.py check_K — keyed on a DECLARED marker (tokens.config_marker), not a *Config name suffix"},
+    {"id": "dependency-injection", "row": 4, "scope": "universal", "tier": "advisory", "status": "on",
+     "title": "Inject collaborators; don't construct a concrete backend inline in a doer",
+     "mechanism": "check_practices.py smell over tokens.provider_constructors (over/under-flags, so advisory)"},
+    {"id": "singledispatch-over-isinstance", "row": 13, "scope": "universal", "tier": "advisory", "status": "on",
+     "title": "Prefer functools.singledispatch to a long isinstance chain",
+     "mechanism": "check_practices.py smell: >=3 isinstance branches on one subject"},
+    {"id": "slots-hot-path", "row": 10, "scope": "universal", "tier": "advisory", "status": "on",
+     "title": "Give a marked hot-path class __slots__ / dataclass(slots=True)",
+     "mechanism": "check_practices.py smell, gated on a `# hot-path` marker"},
+    {"id": "shape-typed-tensors", "row": 1, "scope": "domain", "profile": "cuda", "tier": "gate", "status": "on",
+     "title": "Annotate tensor params with a shape (jaxtyping / alias), not a bare Tensor",
+     "mechanism": "check_structure.py check_L over tokens.tensor_base_types — WARN (not err): a heuristic that over/under-flags (fires only when the cuda profile is on)"},
+    {"id": "typed-graph-state", "row": 2, "scope": "domain", "profile": "langgraph", "tier": "doc", "status": "deferred",
+     "title": "Model graph state with TypedDict/Pydantic, not a loose dict",
+     "mechanism": "convention + mypy once the state type is declared"},
+    {"id": "resource-context-manager", "row": 9, "scope": "domain", "profile": "cuda", "tier": "advisory", "status": "on",
+     "title": "Wrap acquire-prone resources (CUDA memory, sessions) in a context manager",
+     "mechanism": "check_practices.py smell over tokens.acquire_apis (fires only when the cuda profile is on)"}
+  ],
+  "tokens": {
+    "_comment": "DATA the future AST checks/advisories match against. Listing a vendor's class name here is data, not a baked-in dependency — the checks stay vendor-neutral by reading this list (CONVENTIONS section 18). Extend per project.",
+    "provider_constructors": [
+      "OpenAI", "AsyncOpenAI", "Anthropic", "AsyncAnthropic", "Cohere",
+      "ChatOpenAI", "AzureChatOpenAI", "ChatAnthropic", "ChatBedrock", "ChatCohere",
+      "ChatGoogleGenerativeAI", "ChatVertexAI", "HuggingFaceEndpoint"
+    ],
+    "tensor_base_types": ["Tensor", "FloatTensor", "LongTensor", "ndarray", "Array", "DeviceArray"],
+    "acquire_apis": [
+      "torch.cuda.stream", "torch.cuda.graph", "tempfile.NamedTemporaryFile",
+      "open", "Session", "ClientSession", "connect", "acquire"
+    ],
+    "stdlib_exception_modules": [
+      "json", "urllib", "http", "socket", "ssl", "subprocess", "asyncio",
+      "sqlite3", "struct", "pickle", "xml", "configparser", "argparse",
+      "queue", "threading", "multiprocessing", "concurrent", "decimal",
+      "os", "io", "re", "hashlib", "csv", "zlib", "gzip", "tarfile", "zipfile"
+    ],
+    "config_marker": "practice: frozen-config",
+    "owned_error_marker": "practice: owned-error-base"
+  },
+  "profiles": {
+    "_comment": "Domain profiles ship DEFINED but OFF. A consuming repo turns one on in project.json practices.profiles (Slice 4); until then the domain checks above never fire, so the universal template stays domain-neutral. A profile's `tags` scope its checks to corpus nodes carrying those tags — the graph tells the checker where a domain rule is even relevant.",
+    "ai": {"tags": ["ai", "llm", "model", "prompt"], "activates": ["dependency-injection"]},
+    "cuda": {"tags": ["cuda", "gpu", "tensor", "torch"], "activates": ["shape-typed-tensors", "resource-context-manager"]},
+    "langgraph": {"tags": ["langgraph", "graph", "agent", "state"], "activates": ["typed-graph-state", "exhaustive-routing"]}
+  }
+}

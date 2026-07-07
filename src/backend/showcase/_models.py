@@ -51,6 +51,41 @@ class ModelAdapter:
 
 
 @dataclass(frozen=True)
+class PracticeItem:
+    """One coding practice from ``config/practices.json`` (a row in ``practices``).
+
+    Projected from the registry like ``ModelAdapter`` — so the read model never
+    imports the ``scripts/`` checks or the ``config/`` layer. ``tier``
+    (gate/advisory/doc), ``scope`` (universal/domain) and ``status`` drive display;
+    ``mechanism`` names the enforcing tool. Sorted by ``row``.
+    """
+
+    id: str
+    row: int
+    scope: str
+    tier: str
+    status: str
+    title: str
+    mechanism: str
+
+
+@dataclass(frozen=True)
+class ProfileState:
+    """One domain coding-practice profile and whether this project enabled it.
+
+    The definition (``tags`` + the practices it ``activates``) comes from
+    ``config/practices.json`` ``profiles``; ``enabled`` from
+    ``config/project.json`` ``practices.profiles``. Off by default — the template
+    stays domain-neutral until a consuming repo flips a flag.
+    """
+
+    name: str
+    tags: tuple[str, ...]
+    activates: tuple[str, ...]
+    enabled: bool
+
+
+@dataclass(frozen=True)
 class Stats:
     """Headline counts the overview page renders."""
 
@@ -187,7 +222,7 @@ def to_jsonable(obj: object) -> object:
 
 
 __all__ = [
-    "Link", "Layer", "Transport", "ModelAdapter", "Stats", "Overview",
-    "Feature", "Principle", "Check", "Step", "NodeRef", "DocGroup",
-    "NodeDetail", "SearchHit", "to_jsonable",
+    "Link", "Layer", "Transport", "ModelAdapter", "PracticeItem", "ProfileState",
+    "Stats", "Overview", "Feature", "Principle", "Check", "Step", "NodeRef",
+    "DocGroup", "NodeDetail", "SearchHit", "to_jsonable",
 ]

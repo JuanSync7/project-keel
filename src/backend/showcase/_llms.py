@@ -7,15 +7,16 @@ summary: Render the agent-facing llms.txt map and llms-full.txt from the corpus.
 from __future__ import annotations
 
 import urllib.parse
+from collections.abc import Iterable
 
-from ._models import Overview
+from ._models import DocGroup, NodeRef, Overview
 
 
 def _link(base_url: str, node_id: str) -> str:
     return "%s/wiki?id=%s" % (base_url.rstrip("/"), urllib.parse.quote(node_id, safe=""))
 
 
-def render_index(overview: Overview, groups, base_url: str = "",
+def render_index(overview: Overview, groups: Iterable[DocGroup], base_url: str = "",
                  tree_url: str = "/api/wiki/tree") -> str:
     """The llms.txt map: H1 + summary + per-directory link lists + an Optional tail.
 
@@ -43,7 +44,7 @@ def render_index(overview: Overview, groups, base_url: str = "",
     return "\n".join(out).rstrip() + "\n"
 
 
-def render_full(overview: Overview, docs) -> str:
+def render_full(overview: Overview, docs: Iterable[tuple[NodeRef, str]]) -> str:
     """llms-full.txt: every doc's body inlined, for one-shot agent ingestion.
 
     ``docs`` is an iterable of ``(NodeRef, markdown_body)`` pairs.

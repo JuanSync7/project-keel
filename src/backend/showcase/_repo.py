@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+from typing import Any
 
 from . import _content, _data, _llms, _query
 from ._models import (
@@ -18,7 +19,9 @@ from ._models import (
     ModelAdapter,
     NodeDetail,
     Overview,
+    PracticeItem,
     Principle,
+    ProfileState,
     SearchHit,
     Stats,
     Step,
@@ -35,11 +38,13 @@ class Showcase:
     frozen value objects (``_models``) the transport layer serialises as-is.
     """
 
-    def __init__(self, *, name: str, project: dict, corpus: dict,
-                 present_scripts: frozenset = frozenset(), root: str = "") -> None:
+    def __init__(self, *, name: str, project: dict[str, Any], corpus: dict[str, Any],
+                 practices: dict[str, Any] | None = None,
+                 present_scripts: frozenset[str] = frozenset(), root: str = "") -> None:
         self._name = name
         self._project = project or {}
         self._corpus = corpus or {"nodes": []}
+        self._practices = practices or {}
         self._present = present_scripts
         self._root = root
         self._by_id = {n["node_id"]: n for n in self._corpus.get("nodes", [])}
@@ -125,6 +130,49 @@ class Showcase:
                                     default=(name == default)))
         return tuple(out)
 
+    def practice_items(self) -> tuple[PracticeItem, ...]:
+        """The coding practices this project recognises (from config/practices.json).
+
+        Projected from the registry's ``practices`` array like ``model_adapters`` —
+        so the read model stays pure and never imports the ``scripts/`` checks or
+        the ``config/`` layer. Sorted by ``row``; empty when the registry is absent.
+        """
+        out = []
+        for p in self._practices.get("practices") or []:
+            if not isinstance(p, dict):
+                continue
+            out.append(PracticeItem(
+                id=p.get("id", ""),
+                row=int(p.get("row", 9999)),
+                scope=p.get("scope", ""),
+                tier=p.get("tier", ""),
+                status=p.get("status", ""),
+                title=p.get("title", ""),
+                mechanism=p.get("mechanism", ""),
+            ))
+        return tuple(sorted(out, key=lambda x: (x.row, x.id)))
+
+    def domain_profiles(self) -> tuple[ProfileState, ...]:
+        """The domain coding-practice profiles this project defines, each flagged
+        on/off. Definitions (tags + the practices they activate) come from
+        config/practices.json ``profiles``; the on/off flags from
+        config/project.json ``practices.profiles``. All off keeps the template
+        domain-neutral; empty when the registry is absent. Sorted by name.
+        """
+        defs = self._practices.get("profiles") or {}
+        flags = ((self._project.get("practices") or {}).get("profiles")) or {}
+        out = []
+        for name, spec in defs.items():
+            if str(name).startswith("_") or not isinstance(spec, dict):
+                continue
+            out.append(ProfileState(
+                name=name,
+                tags=tuple(spec.get("tags", []) or ()),
+                activates=tuple(spec.get("activates", []) or ()),
+                enabled=flags.get(name) is True,
+            ))
+        return tuple(sorted(out, key=lambda x: x.name))
+
     # -- corpus navigation (delegates to pure _query) ------------------------
     def doc_tree(self) -> tuple[DocGroup, ...]:
         """Docs grouped by top-level directory, for the wiki sidebar."""
@@ -156,7 +204,7 @@ class Showcase:
             with open(path, encoding="utf-8") as fh:
                 text = fh.read()
         except OSError:
-            return n.get("text_excerpt", "")
+            return str(n.get("text_excerpt", ""))
         kind = n.get("kind")
         if kind == "doc":
             return _content.strip_frontmatter(text)
@@ -169,7 +217,7 @@ class Showcase:
             return _content.module_docstring(text)
         if kind == "symbol":
             return _content.symbol_docstring(text, n.get("anchor") or n.get("title", ""))
-        return n.get("text_excerpt", "")
+        return str(n.get("text_excerpt", ""))
 
     # -- agent front door (llms.txt convention) ------------------------------
     def llms_index(self, base_url: str = "", tree_url: str = "/api/wiki/tree") -> str:
@@ -187,7 +235,7 @@ class Showcase:
         return _llms.render_full(self.overview(), docs)
 
 
-def _read_json(path: str) -> dict:
+def _read_json(path: str) -> dict[str, Any]:
     try:
         with open(path, encoding="utf-8") as fh:
             data = json.load(fh)
@@ -197,18 +245,20 @@ def _read_json(path: str) -> dict:
 
 
 def load_showcase(root: str) -> Showcase:
-    """Read config/project.json + wiki/corpus.json from ``root`` into a Showcase.
+    """Read config/project.json + wiki/corpus.json + config/practices.json into a Showcase.
 
     The corpus is a generated view; if it is missing, the Showcase is still
     usable (empty corpus) so the overview/features/checks pages render and the
     operator sees that the index needs rebuilding (scripts/jobs/build_corpus.py).
+    The practices registry is optional too (empty when absent).
     """
     project = _read_json(os.path.join(root, "config", "project.json"))
     corpus = _read_json(os.path.join(root, "wiki", "corpus.json"))
+    practices = _read_json(os.path.join(root, "config", "practices.json"))
     present = frozenset(c.script for c in _data.CHECKS
                         if os.path.isfile(os.path.join(root, c.script)))
     name = project.get("name") or "project_keel"
-    return Showcase(name=name, project=project, corpus=corpus,
+    return Showcase(name=name, project=project, corpus=corpus, practices=practices,
                     present_scripts=present, root=root)
 
 

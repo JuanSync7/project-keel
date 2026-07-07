@@ -19,8 +19,8 @@ pytestmark = pytest.mark.integration
 # compare against, so skip (the inprocess path is covered by the agents' own use).
 pytest.importorskip("langgraph")
 
-from agents.index_enforcer import enforce        # noqa: E402
-from agents.wiki_navigator import answer          # noqa: E402
+from agents.index_enforcer import enforce  # noqa: E402
+from agents.wiki_navigator import answer  # noqa: E402
 
 
 def test_index_enforcer_dry_run_identical_across_engines():

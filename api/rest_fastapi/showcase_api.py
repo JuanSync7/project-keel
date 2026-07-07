@@ -25,6 +25,7 @@ def build_showcase_router(root: str) -> APIRouter:
     """
     router = APIRouter()
     _watched = (os.path.join(root, "config", "project.json"),
+                os.path.join(root, "config", "practices.json"),
                 os.path.join(root, "wiki", "corpus.json"))
     _cache: dict = {}
 
@@ -52,6 +53,14 @@ def build_showcase_router(root: str) -> APIRouter:
     @router.get("/api/models")
     def models():
         return to_jsonable(list(current().model_adapters()))
+
+    @router.get("/api/practices")
+    def practices():
+        return to_jsonable(list(current().practice_items()))
+
+    @router.get("/api/profiles")
+    def profiles():
+        return to_jsonable(list(current().domain_profiles()))
 
     @router.get("/api/checks")
     def checks():
