@@ -148,6 +148,13 @@ from this catalogue, and gates every step on the same `make verify` — so it
 cannot mark a chunk done unless it satisfies the very rule the gate encodes.
 See [dev-loops](dev-loops.md) for the convergence discipline it follows.
 
+Its mechanical hands are two vendor-neutral `scripts/` doers (no model, no
+provider): **`run_make_target.py`** runs a make target and reports a structured
+pass/fail (the *gate*), and **`apply_refactor.py`** applies one bounded edit
+*atomically* and **rolls it back** unless the gate stays green (the *safety
+net*). The agent supplies the judgment (which chunk, which practice, what edit);
+the doers keep the tree green at every step.
+
 ## Extending the catalogue
 
 Add or retrank a practice by editing `config/practices.json` (a data change),
