@@ -5,6 +5,7 @@ layer: n/a
 summary: apply_and_gate writes the edit and keeps it when the (injected) gate passes, but reverts EVERY file when it fails — the safety net that keeps the tree green; run_make_target drives a real `make` subprocess and reports its pass/fail. Together they are the refactor loop's hands + gate.
 """
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -27,6 +28,11 @@ def _fail_gate(gate, cwd, timeout):
     return False, "gate FAILED\n1 error"
 
 
+def _timeout_gate(gate, cwd, timeout):
+    # A gate that never returns a verdict — the make subprocess hung and was killed.
+    raise subprocess.TimeoutExpired(["make", gate], timeout)
+
+
 def test_apply_keeps_the_edit_when_the_gate_passes(tmp_path):
     f = tmp_path / "m.py"
     f.write_text("class Hot:\n    pass\n", encoding="utf-8")
@@ -47,6 +53,19 @@ def test_apply_rolls_back_every_file_when_the_gate_fails(tmp_path):
     assert res["applied"] is False and res["rolled_back"] is True
     assert f.read_text(encoding="utf-8") == original      # reverted byte-for-byte
     assert "FAILED" in res["gate_output"]
+
+
+def test_apply_rolls_back_when_the_gate_raises_or_times_out(tmp_path):
+    # The transactional guarantee must hold even when the gate never returns a
+    # verdict (a hung/timed-out/killed `make`), not only when it returns red.
+    original = "class Hot:\n    pass\n"
+    f = tmp_path / "m.py"
+    f.write_text(original, encoding="utf-8")
+    spec = {"edits": [{"file": "m.py", "find": "    pass", "replace": "    __slots__ = ()"}]}
+    res = ar.apply_and_gate(spec, str(tmp_path), gate_runner=_timeout_gate)
+    assert res["applied"] is False and res["rolled_back"] is True
+    assert f.read_text(encoding="utf-8") == original      # reverted despite the hung gate
+    assert "did not complete" in res["gate_output"]
 
 
 def test_multiple_edits_to_one_file_compose(tmp_path):

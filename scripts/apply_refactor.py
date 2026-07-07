@@ -88,9 +88,14 @@ def apply_and_gate(spec: dict[str, object], root: str, gate: str | None = None,
     """Apply the planned edits, run the gate, and roll back ALL files if it fails.
 
     ``gate`` defaults to the spec's ``gate`` then ``"verify"``; ``"none"`` skips
-    the gate (apply only). ``gate_runner`` is injected for testing. Returns a
-    result dict describing what happened; the tree is left green either way
-    (accepted, or reverted to the originals).
+    the gate (apply only). ``gate_runner`` is injected for testing. A gate that
+    RAISES (a timeout, a hang, a killed ``make`` subprocess) is treated as red, so
+    the rollback still fires -- a non-returning gate must never leave an ungated
+    write behind. Returns a result dict describing what happened; the tree is left
+    green either way (accepted, or reverted to the originals). The one window it
+    cannot itself undo is a hard external kill (SIGKILL/OOM) of *this* process
+    mid-write -- that partial edit is surfaced by the next gate run, never
+    silently kept as done.
     """
     planned = plan_edits(spec, root)                          # may raise before any write
     gate = gate or str(spec.get("gate") or "verify")
@@ -102,7 +107,13 @@ def apply_and_gate(spec: dict[str, object], root: str, gate: str | None = None,
     if gate == "none":
         ok, output = True, "(no gate requested)"
     else:
-        ok, output = (gate_runner or _make_gate)(gate, root, timeout)
+        # A gate that times out / hangs / is killed never returns a verdict; treat
+        # any such failure as RED so the rollback below still fires. Preserve the
+        # cause in the reported output rather than swallowing it.
+        try:
+            ok, output = (gate_runner or _make_gate)(gate, root, timeout)
+        except (subprocess.SubprocessError, OSError) as exc:
+            ok, output = False, "gate did not complete: %r" % exc
 
     if not ok:
         for path, old, _new in planned:                      # ROLL BACK on failure
