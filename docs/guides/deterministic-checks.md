@@ -132,7 +132,11 @@ files — otherwise a freshly scaffolded project ships tooling that has silently
 diverged. This check discovers every embed and diffs it against its live file.
 
 **When to run.** Every commit; always after editing any embedded script
-(`check_structure.py`, `check_scaffold_sync.py`, `scripts/jobs/check_corpus.py`).
+(`check_structure.py`, `check_scaffold_sync.py`, `check_practices.py`,
+`scripts/jobs/check_corpus.py`). The scaffold ships the whole coding-practices
+system to new projects — `check_practices.py` and `config/practices.json` are
+byte-synced embeds, and the generated `pyproject.toml` mirrors the registry so a
+freshly-scaffolded project passes `check_M` parity out of the box.
 
 **Run.**
 - `python3 scripts/check_scaffold_sync.py` — fail on drift (default), print diffs.
