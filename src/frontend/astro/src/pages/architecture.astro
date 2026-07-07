@@ -68,6 +68,23 @@ import { withBase } from '../lib/links'
     <div id="practice-list" class="mt-4 space-y-2">
       <p class="text-sm text-muted">Loading…</p>
     </div>
+
+    <div class="mt-4 rounded-lg border border-line bg-panel p-4 text-sm text-ink2">
+      <p>
+        <strong class="font-medium text-ink">Applying them to existing code.</strong>
+        Enforcement keeps <em>new</em> code honest; the
+        <code class="rounded border border-line bg-panel2 px-1 font-mono text-[0.8em]">practice-refactor</code>
+        agent brings <em>existing</em> code toward one <span class="text-teal">named</span>
+        practice. It walks the corpus knowledge graph one bounded neighbourhood at
+        a time and gates every edit on
+        <code class="rounded border border-line bg-panel2 px-1 font-mono text-[0.8em]">make verify</code> —
+        an edit that turns the gate red is rolled back, so a chunk is
+        <em>done</em> only when the tree stays green.
+      </p>
+      <p class="mt-2 font-mono text-[0.8em] text-muted">
+        python3 scripts/refactor_practice.py &lt;practice-id&gt; --execute
+      </p>
+    </div>
   </section>
 
   <section class="mt-12">

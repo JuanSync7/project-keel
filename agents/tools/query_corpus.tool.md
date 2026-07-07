@@ -50,3 +50,4 @@ deterministic — the model step is the agent's, not this tool's).
 
 ## Used by
 - agents/wiki_navigator
+- agents/practice_refactor

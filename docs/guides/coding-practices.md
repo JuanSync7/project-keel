@@ -8,7 +8,7 @@ tags: [practices, gate, advisory, ruff, mypy, types, llm, cuda, langgraph, guide
 summary: The catalogue of good-Python practices Keel promotes for general and LLM/CUDA/LangGraph code — each sorted onto the gate/advisory/doc line, sourced from config/practices.json.
 id: docs-guides-coding-practices
 created: 2026-07-06
-updated: 2026-07-06
+updated: 2026-07-07
 visibility: internal
 canonical: true
 ---
@@ -141,19 +141,42 @@ applies them.
 
 ## Applying them to an existing codebase
 
-The companion to enforcement is `agents/practice_refactor/` (and its
-`practice-refactor` skill): a doer that walks the corpus knowledge graph one
-bounded neighbourhood at a time, refactors each chunk toward a *named* practice
-from this catalogue, and gates every step on the same `make verify` — so it
-cannot mark a chunk done unless it satisfies the very rule the gate encodes.
-See [dev-loops](dev-loops.md) for the convergence discipline it follows.
+Enforcement keeps *new* code honest; the companion `agents/practice_refactor/`
+agent brings *existing* code toward one **named** practice from this catalogue.
+It is an ordinary keel agent — a neutral `Plan` on a `Runtime`, model from
+`models/`, tools invoked as CLIs — with four steps:
+
+1. **walk** (read-only) — `query_corpus` retrieves one bounded neighbourhood of
+   the corpus knowledge graph where the practice is relevant (its tags scope
+   *where* the rule applies).
+2. **baseline** (read-only) — `run_make_target` gates the tree green *before*
+   touching anything; a red baseline stops the run (a dirty tree yields a dirty
+   refactor).
+3. **propose** (model-call) — draft ONE bounded edit for the chunk at the cursor.
+4. **apply** (writes) — `apply_refactor` applies it atomically and **rolls it
+   back** unless `make verify` stays green.
+
+So the agent **cannot mark a chunk done unless it satisfies the very rule the
+gate encodes** — the gate, not the model's judgment, is the definition of done
+(CONVENTIONS §17). It **defaults to dry-run** (walk + read-only baseline, propose
+and write nothing) and the per-chunk loop is **durable** (one chunk per step, so
+a crash mid-refactor resumes at the cursor without re-applying accepted chunks).
 
 Its mechanical hands are two vendor-neutral `scripts/` doers (no model, no
 provider): **`run_make_target.py`** runs a make target and reports a structured
 pass/fail (the *gate*), and **`apply_refactor.py`** applies one bounded edit
 *atomically* and **rolls it back** unless the gate stays green (the *safety
-net*). The agent supplies the judgment (which chunk, which practice, what edit);
-the doers keep the tree green at every step.
+net*) — each declared as a tool in `agents/tools/`. The agent supplies the
+judgment (which chunk, which practice, what edit); the doers keep the tree green
+at every step. See [dev-loops](dev-loops.md) for the convergence discipline.
+
+Run it through the thin CLI entrypoint (the vendor-agnostic doer) or its
+vendor-specific trigger, the `practice-refactor` skill:
+
+```
+python3 scripts/refactor_practice.py <practice-id> --json            # dry-run preview
+python3 scripts/refactor_practice.py <practice-id> --execute --json  # apply, gated
+```
 
 ## Extending the catalogue
 
