@@ -947,19 +947,25 @@ def root_files():
         # Task runner. `make help` lists targets.
         .DEFAULT_GOAL := help
         PY ?= python3
+        # Make src/ importable as top-level packages for ad-hoc runs (tests set their
+        # own sys.path too; this just means `PY -c 'import backend'` works from root).
+        PYTHONPATH ?= src:.
 
         # Frontend apps = any src/frontend/* that has a package.json. The FE
         # gates iterate over whatever exists, so they are framework-agnostic and
         # a no-op on backend-only repos.
         FE_APPS := $(dir $(wildcard src/frontend/*/package.json))
 
-        .PHONY: help scaffold check check-all check-corpus check-openapi check-aad scaffold-sync advise check-generic verify test unit integration e2e smoke \\
+        .PHONY: help scaffold check-python check check-all check-corpus check-openapi check-aad scaffold-sync advise check-generic verify test unit integration e2e smoke \\
                 lint lint-py lint-fe fmt typecheck typecheck-py typecheck-fe \\
                 fe-install run run-api run-web site-data demo agent-surface-schema
 
         help: ## List tasks
         \t@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \\
         \t\tawk 'BEGIN{FS=":.*?## "}{printf "  %-14s %s\\n",$$1,$$2}'
+
+        check-python: ## Fail early with a clear message if PY is older than pyproject requires
+        \t$(PY) scripts/check_python_version.py
 
         scaffold: ## (Re)generate the skeleton (README/CLAUDE/exemplars)
         \t$(PY) scripts/scaffold.py
@@ -969,7 +975,7 @@ def root_files():
         \t$(PY) scripts/check_scaffold_sync.py --check
 
         check-all: check check-corpus check-openapi check-aad ## All deterministic checks (project interpreter; see docs/guides/deterministic-checks.md)
-        check-corpus: ## Corpus integrity + build determinism (needs python >=3.7)
+        check-corpus: check-python ## Corpus integrity + build determinism (needs the project interpreter)
         \t$(PY) scripts/jobs/check_corpus.py
         check-openapi: ## Committed openapi.json in sync with the app (skips if FastAPI absent)
         \t$(PY) api/rest_fastapi/export_openapi.py --check
@@ -985,21 +991,21 @@ def root_files():
 
         verify: check-all lint typecheck test ## Run all gates (all checks + lint + types + tests)
 
-        test: ## Run the whole test suite
-        \t$(PY) -m pytest
+        test: check-python ## Run the whole test suite
+        \tPYTHONPATH=$(PYTHONPATH) $(PY) -m pytest
 
         unit: ## Run unit tests only
-        \t$(PY) -m pytest -m unit
+        \tPYTHONPATH=$(PYTHONPATH) $(PY) -m pytest -m unit
         integration: ## Run integration tests
-        \t$(PY) -m pytest -m integration
+        \tPYTHONPATH=$(PYTHONPATH) $(PY) -m pytest -m integration
         e2e: ## Run end-to-end tests
-        \t$(PY) -m pytest -m e2e
+        \tPYTHONPATH=$(PYTHONPATH) $(PY) -m pytest -m e2e
         smoke: ## Run smoke tests
-        \t$(PY) -m pytest -m smoke
+        \tPYTHONPATH=$(PYTHONPATH) $(PY) -m pytest -m smoke
 
         lint: lint-py lint-fe ## Lint everything (Python + frontend)
-        lint-py: ## Lint Python (ruff)
-        \truff check src tests
+        lint-py: ## Lint Python (ruff, via the selected interpreter)
+        \t$(PY) -m ruff check src tests
         lint-fe: ## Lint frontend apps (ESLint) — generic to any FE framework
         \t@command -v npm >/dev/null 2>&1 || { echo "npm not found; skipping frontend lint"; exit 0; }
         \t@for app in $(FE_APPS); do \\
@@ -1007,12 +1013,12 @@ def root_files():
         \t\telse echo "skip $$app (no node_modules — run 'make fe-install')"; fi; \\
         \tdone
 
-        fmt: ## Format Python (ruff)
-        \truff format src tests
+        fmt: ## Format Python (ruff, via the selected interpreter)
+        \t$(PY) -m ruff format src tests
 
         typecheck: typecheck-py typecheck-fe ## Type-check everything (Python + frontend)
-        typecheck-py: ## Type-check Python (mypy)
-        \tmypy src
+        typecheck-py: ## Type-check Python (mypy, via the selected interpreter)
+        \t$(PY) -m mypy src
         typecheck-fe: ## Type-check frontend apps (tsc / astro check)
         \t@command -v npm >/dev/null 2>&1 || { echo "npm not found; skipping frontend typecheck"; exit 0; }
         \t@for app in $(FE_APPS); do \\
@@ -2870,6 +2876,7 @@ def _api_edge_nginx(base):
 # --------------------------------------------------------------------------- #
 def quality_tooling():
     w("scripts/check_structure.py", _CHECK_STRUCTURE_SRC)
+    w("scripts/check_python_version.py", _CHECK_PYTHON_VERSION_SRC)
     w("scripts/check_scaffold_sync.py", _CHECK_SCAFFOLD_SYNC_SRC)
     w("scripts/jobs/check_corpus.py", _CHECK_CORPUS_SRC)
     w("scripts/check_generic.py", _CHECK_GENERIC_SRC)
@@ -4183,6 +4190,67 @@ def test_human_in_the_loop_equivalence():
     assert paused["inprocess"] == paused["langgraph"] == (PAUSED, {"q": "approve?", "gaps": ["g1", "g2"]})
     assert resumed["inprocess"] == resumed["langgraph"]
     assert resumed["inprocess"][1]["approved"] == "OK"
+'''
+
+
+# Source of scripts/check_python_version.py. Kept 3.6-compatible on purpose so an
+# old `python3` still reaches the clear message instead of a SyntaxError. Populated
+# byte-for-byte by `check_scaffold_sync.py --write` from the live script.
+_CHECK_PYTHON_VERSION_SRC = r'''#!/usr/bin/env python3
+"""
+check_python_version.py - fail early when the selected project interpreter is too old.
+
+The minimum Python is declared once, in pyproject.toml (`requires-python`); this
+reads it (3.6-safe, no tomllib) and fails with a clear message when the selected
+`python3` is older -- instead of letting pytest or application imports die later
+with cryptic SyntaxErrors. Kept Python 3.6-compatible on purpose (no f-strings, no
+annotations) so an old interpreter still reaches this message rather than crashing
+on the syntax of the very guard meant to help it.
+"""
+
+import os
+import re
+import sys
+
+_FALLBACK = (3, 10)
+
+
+def required_min(root):
+    """Return the (major, minor) floor from pyproject.toml requires-python.
+
+    Falls back to _FALLBACK when pyproject.toml is absent or declares no bound, so
+    the guard is best-effort and never itself the thing that breaks a build.
+    """
+    try:
+        with open(os.path.join(root, "pyproject.toml")) as fh:
+            text = fh.read()
+    except OSError:
+        return _FALLBACK
+    m = re.search(r'requires-python\s*=\s*["\'][^0-9]*([0-9]+)\.([0-9]+)', text)
+    if not m:
+        return _FALLBACK
+    return (int(m.group(1)), int(m.group(2)))
+
+
+def main():
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    minimum = required_min(root)
+    current = sys.version_info[:2]
+    if current < minimum:
+        sys.stderr.write(
+            "ERROR: this project requires Python >=%d.%d; %s is %d.%d.\n"
+            "Point PY at a newer interpreter, e.g. `make PY=python3.11 test` "
+            "(or activate the project venv).\n"
+            % (minimum[0], minimum[1], sys.executable, current[0], current[1]))
+        return 1
+    sys.stdout.write(
+        "check_python_version: %s (%d.%d) satisfies >=%d.%d\n"
+        % (sys.executable, current[0], current[1], minimum[0], minimum[1]))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
 '''
 
 
