@@ -1,19 +1,25 @@
 # Task runner. `make help` lists targets.
 .DEFAULT_GOAL := help
 PY ?= python3
+# Make src/ importable as top-level packages for ad-hoc runs (tests set their own
+# sys.path too; this just means `PY -c 'import backend'` works from the repo root).
+PYTHONPATH ?= src:.
 
 # Frontend apps = any src/frontend/* that has a package.json. The FE
 # gates iterate over whatever exists, so they are framework-agnostic and
 # a no-op on backend-only repos.
 FE_APPS := $(dir $(wildcard src/frontend/*/package.json))
 
-.PHONY: help scaffold check check-all check-corpus check-openapi check-aad scaffold-sync advise check-generic verify test unit integration e2e smoke \
+.PHONY: help scaffold check-python check check-all check-corpus check-openapi check-aad scaffold-sync advise check-generic verify test unit integration e2e smoke \
         lint lint-py lint-fe fmt typecheck typecheck-py typecheck-fe \
         fe-install run run-api run-web site-data site-static demo agent-surface-schema
 
 help: ## List tasks
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
 		awk 'BEGIN{FS=":.*?## "}{printf "  %-14s %s\n",$$1,$$2}'
+
+check-python: ## Fail early with a clear message if PY is older than pyproject requires
+	$(PY) scripts/check_python_version.py
 
 scaffold: ## (Re)generate the skeleton (README/CLAUDE/exemplars)
 	$(PY) scripts/scaffold.py
@@ -23,7 +29,7 @@ check: ## Validate structure + frontmatter + scaffold embeds (3.6-safe)
 	$(PY) scripts/check_scaffold_sync.py --check
 
 check-all: check check-corpus check-openapi check-aad ## All deterministic checks (project interpreter; see docs/guides/deterministic-checks.md)
-check-corpus: ## Corpus integrity + build determinism (needs python >=3.7)
+check-corpus: check-python ## Corpus integrity + build determinism (needs the project interpreter)
 	$(PY) scripts/jobs/check_corpus.py
 check-openapi: ## Committed openapi.json in sync with the app (skips if FastAPI absent)
 	$(PY) api/rest_fastapi/export_openapi.py --check
@@ -39,21 +45,21 @@ check-generic: advise ## Alias for `advise` (the generic-solution + practice adv
 
 verify: check-all lint typecheck test ## Run all gates (all checks + lint + types + tests)
 
-test: ## Run the whole test suite
-	$(PY) -m pytest
+test: check-python ## Run the whole test suite
+	PYTHONPATH=$(PYTHONPATH) $(PY) -m pytest
 
 unit: ## Run unit tests only
-	$(PY) -m pytest -m unit
+	PYTHONPATH=$(PYTHONPATH) $(PY) -m pytest -m unit
 integration: ## Run integration tests
-	$(PY) -m pytest -m integration
+	PYTHONPATH=$(PYTHONPATH) $(PY) -m pytest -m integration
 e2e: ## Run end-to-end tests
-	$(PY) -m pytest -m e2e
+	PYTHONPATH=$(PYTHONPATH) $(PY) -m pytest -m e2e
 smoke: ## Run smoke tests
-	$(PY) -m pytest -m smoke
+	PYTHONPATH=$(PYTHONPATH) $(PY) -m pytest -m smoke
 
 lint: lint-py lint-fe ## Lint everything (Python + frontend)
-lint-py: ## Lint Python (ruff)
-	ruff check src tests
+lint-py: ## Lint Python (ruff, via the selected interpreter)
+	$(PY) -m ruff check src tests
 lint-fe: ## Lint frontend apps (ESLint) — generic to any FE framework
 	@command -v npm >/dev/null 2>&1 || { echo "npm not found; skipping frontend lint"; exit 0; }
 	@for app in $(FE_APPS); do \
@@ -61,12 +67,12 @@ lint-fe: ## Lint frontend apps (ESLint) — generic to any FE framework
 		else echo "skip $$app (no node_modules — run 'make fe-install')"; fi; \
 	done
 
-fmt: ## Format Python (ruff)
-	ruff format src tests
+fmt: ## Format Python (ruff, via the selected interpreter)
+	$(PY) -m ruff format src tests
 
 typecheck: typecheck-py typecheck-fe ## Type-check everything (Python + frontend)
-typecheck-py: ## Type-check Python (mypy)
-	mypy src
+typecheck-py: ## Type-check Python (mypy, via the selected interpreter)
+	$(PY) -m mypy src
 typecheck-fe: ## Type-check frontend apps (tsc / astro check)
 	@command -v npm >/dev/null 2>&1 || { echo "npm not found; skipping frontend typecheck"; exit 0; }
 	@for app in $(FE_APPS); do \
