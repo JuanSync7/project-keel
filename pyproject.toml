@@ -16,6 +16,10 @@ dev = ["pytest", "pytest-cov", "ruff", "mypy", "httpx"]  # httpx backs FastAPI's
 # stdlib (no install); install an engine only if you select it by name, e.g.
 # get_runtime("langgraph"). Keeps the default install dependency-free.
 langgraph = ["langgraph>=0.2"]
+# Optional project generator. Keel's repo root is a `copier` template; install this
+# only to generate or refresh a downstream project (`make new` / `copier copy` /
+# `copier update`). The default install + CI/pre-commit stay dependency-free.
+template = ["copier>=9"]
 
 # src-layout: packages live under src/ (importable as their top name).
 [tool.setuptools.packages.find]

@@ -1,0 +1,52 @@
+{
+  "_comment": "Authoritative project facts: hand-edited, enforced by scripts/check_structure.py (check_H, CONVENTIONS section 15). Choose one frontend stack; list shipped stacks/transports under 'available'.",
+  "name": "{{ project_name }}",
+  "layers": {
+{%- if frontend_stack != "none" %}
+    "frontend": {
+      "stack": "{{ frontend_stack }}",
+      "language": "typescript",
+      "root": "src/frontend",
+      "available": ["{{ frontend_stack }}"]
+    },
+{%- endif %}
+    "backend": {
+      "language": "python",
+      "python": "{{ backend_python }}",
+      "path": "src/backend"
+    }
+  },
+  "transports": {
+    "enabled": [{% for t in transports %}"{{ t }}"{% if not loop.last %}, {% endif %}{% endfor %}],
+    "available": {
+      "rest": "api/rest_fastapi",
+      "grpc": "api/grpc",
+      "edge_nginx": "api/edge_nginx",
+      "mcp": "mcp"
+    }
+  },
+  "runtimes": {
+    "default": "inprocess",
+    "available": {
+      "inprocess": "runtimes",
+      "langgraph": "runtimes"
+    }
+  },
+  "models": {
+    "_comment": "Model/provider adapters this project makes available (registered in models/registry.py). 'default' is the registry default; the showcase surfaces this list.",
+    "default": "claude-code-headless",
+    "available": {
+      "claude-code-headless": "models",
+      "openai-compatible": "models",
+      "fake": "models"
+    }
+  },
+  "practices": {
+    "_comment": "Domain coding-practice profiles are DEFINED in config/practices.json (ai/cuda/langgraph) and ENABLED here — flip a flag to true to turn its domain checks on (e.g. cuda -> check_L naked-tensor, resource-context-manager advisory). All off keeps the template domain-neutral. Validated by check_structure.py (check_H); consumed by check_L and check_practices.py.",
+    "profiles": {
+      "ai": {{ "true" if "ai" in profiles else "false" }},
+      "cuda": {{ "true" if "cuda" in profiles else "false" }},
+      "langgraph": {{ "true" if "langgraph" in profiles else "false" }}
+    }
+  }
+}
