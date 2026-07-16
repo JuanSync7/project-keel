@@ -345,12 +345,6 @@ CHECKS: tuple[Check, ...] = (
                 "project facts and agent-rules symlinks (checks A–I).",
     ),
     Check(
-        slug="scaffold-sync", name="Scaffold-embed sync",
-        script="scripts/check_scaffold_sync.py", gate="error", interpreter="3.6-safe",
-        command="python3 scripts/check_scaffold_sync.py", when="Every commit",
-        purpose="scaffold.py's embedded scripts stay byte-identical to the live files.",
-    ),
-    Check(
         slug="corpus", name="Corpus integrity & determinism",
         script="scripts/jobs/check_corpus.py", gate="error", interpreter=">=3.7",
         command="python scripts/jobs/check_corpus.py", when="CI and after corpus changes",

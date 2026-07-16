@@ -76,4 +76,15 @@ separately-approved change).
   couple to the Python test suite, while `api/grpc` + `api/edge_nginx` are cleanly
   separable.
 
-See `docs/guides/` for the how-to and `scripts/scaffold_parity.py` for the gate.
+See `docs/guides/deterministic-checks.md` for the check suite and
+`docs/guides/` for the how-to.
+
+## Addendum (2026-07-16): retirement executed
+
+The parity gate ran green (`scaffold=246 files ⊆ copier=324`, **0 losses**), so the
+coexistence phase is complete: `scripts/scaffold.py`, its 28 byte-synced embeds,
+`scripts/check_scaffold_sync.py`, and the `scaffold_parity.py` harness (which had
+nothing left to compare against) were **removed**. copier is now the sole generator.
+The parity evidence lives in this repo's history (the harness and its green run are
+recoverable from git); the removal touched only generator/meta machinery — the
+generated project surface is unchanged.
