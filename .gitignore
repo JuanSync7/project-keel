@@ -26,6 +26,9 @@ src/frontend/astro/public/llms.txt
 src/frontend/astro/public/llms-full.txt
 # durable agent-runtime checkpoints (resume-after-crash snapshots; never a source of truth)
 wiki/.runtime/
+# copier writes this into GENERATED projects (records answers for `copier update`);
+# keel is the template, not a generated project, so it never commits one of its own.
+.copier-answers.yml
 .coverage
 coverage.xml
 # local config / secrets

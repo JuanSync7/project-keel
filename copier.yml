@@ -1,0 +1,86 @@
+# copier.yml — interactive generation of a Project Keel skeleton.
+#
+# Keel's repo root IS the template: copier copies the real files verbatim and only
+# renders files carrying the `.jinja` suffix, so keel stays a valid, self-gating
+# working repo. Run:  copier copy gh:JuanSync7/project-keel <dest>   (or `make new`).
+_subdirectory: "."
+_answers_file: ".copier-answers.yml"
+_templates_suffix: ".jinja"
+# Keel uses CLAUDE.md -> AGENT.md symlinks throughout (enforced by check_I); recreate
+# them as symlinks in the generated project instead of dereferencing to regular files.
+_preserve_symlinks: true
+
+# Keel's own instance/meta files that must NOT be copied verbatim into a new
+# project (their `.jinja` twins render the tailored versions; the generator's own
+# meta-scripts and generated views don't belong in a downstream project).
+_exclude:
+  # A custom _exclude REPLACES copier's built-in defaults, so re-list them here.
+  - "copier.yml"
+  - "copier.yaml"
+  - "~*"
+  - "*.py[co]"
+  - "__pycache__"
+  - ".git"
+  - ".DS_Store"
+  - ".svn"
+  # Keel instance/meta + generated views that must not ship into a new project.
+  # NOTE: config/project.json is NOT excluded — its .jinja twin renders to the same
+  # path and (processed after the plain file) overwrites it with the tailored manifest.
+  # NOTE: .copier-answers.yml is NOT excluded — copier WRITES it into the generated
+  # project (it records the answers so `copier update` works); keel gitignores its own.
+  - ".venv"
+  - "wiki/corpus.json"
+  - "wiki/llms.txt"
+  - "wiki/llms-full.txt"
+  - "wiki/.runtime"
+  # Answer-driven pruning: keep only the chosen frontend stack (the two reference
+  # apps are self-contained under src/frontend/<stack>/, so pruning one is clean).
+  # Transport dirs are NOT pruned here (mcp/rest couple to the Python test suite);
+  # `transports.enabled` records the choice and the rest are deleted by hand — a
+  # documented follow-up will prune the cleanly-separable api/grpc + api/edge_nginx.
+  - "{% if frontend_stack != 'react-vite' %}src/frontend/react-vite{% endif %}"
+  - "{% if frontend_stack != 'astro' %}src/frontend/astro{% endif %}"
+  - "{% if frontend_stack == 'none' %}src/frontend{% endif %}"
+
+# ---- Q&A (core facts; map 1:1 to config/project.json, enforced by check_H) -----
+project_name:
+  type: str
+  help: "Project name (config/project.json name; also used in docs/pyproject)"
+  default: "my_project"
+
+frontend_stack:
+  type: str
+  help: "Frontend stack to keep (or 'none' for a backend-only project)"
+  choices:
+    - react-vite
+    - astro
+    - none
+  default: react-vite
+
+backend_python:
+  type: str
+  help: "Minimum Python for the backend (must match pyproject requires-python)"
+  default: ">=3.10"
+
+transports:
+  type: str
+  multiselect: true
+  help: "API transports to enable"
+  choices:
+    - rest
+    - grpc
+    - edge_nginx
+    - mcp
+  default:
+    - rest
+    - mcp
+
+profiles:
+  type: str
+  multiselect: true
+  help: "Domain coding-practice profiles to enable (ai / cuda / langgraph)"
+  choices:
+    - ai
+    - cuda
+    - langgraph
+  default: []
