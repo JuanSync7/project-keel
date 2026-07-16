@@ -6,7 +6,7 @@ status: template
 owner: TBD
 public_api: none
 tags: []
-summary: Dev and CI automation, one-shots, and this scaffold.
+summary: Dev and CI automation, one-shots, and the deterministic checks.
 id: scripts-readme
 created: 2026-06-17
 updated: 2026-06-17
@@ -16,19 +16,18 @@ canonical: true
 
 # Scripts
 
-Dev and CI automation, one-shots, and this scaffold.
+Dev and CI automation, one-shots, and the deterministic checks.
 
-Executable helpers, not importable library code. `scaffold.py` here
-(re)generates the skeleton. Anything reused by the app belongs in
-`src/`, not here.
+Executable helpers, not importable library code. Anything reused by the app
+belongs in `src/`, not here. Project generation is `copier`-based (the repo root
+is the template; see [ADR 0004](../docs/adr/0004-project-templating-copier.md)).
 
 ## Deterministic checks (the template linter)
 
 These scripts keep the template structurally honest — labeling, package
 boundaries, the doc/code corpus, and the published contracts:
 
-- `check_structure.py` — conventions validator (checks A–I); `make check`.
-- `check_scaffold_sync.py` — `scaffold.py` embeds match the live scripts.
+- `check_structure.py` — conventions validator (checks A–M); `make check`.
 - `jobs/check_corpus.py` — `wiki/corpus.json` integrity + build reproducibility.
 - `agent_surface/generate_aad_schema.py --check` / `cdmon_sync.py --check` — contract drift.
 

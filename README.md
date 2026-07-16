@@ -37,7 +37,7 @@ it first.
 ├── mcp/            # Model Context Protocol servers (tool gateways)
 ├── api/            # transports: REST/OpenAPI (FastAPI), gRPC, nginx edge
 ├── wiki/           # (optional) browsable knowledge/index site
-├── scripts/        # dev + CI automation (incl. this scaffold.py)
+├── scripts/        # dev + CI automation (deterministic checks, corpus jobs)
 ├── config/         # configuration (committed defaults + examples)
 ├── demo/           # runnable demos / examples
 ├── containers/     # Dockerfiles, compose, image build context
@@ -80,9 +80,8 @@ make check         # fast structural gate (or: make verify)
 ```
 
 Delete any optional dirs you don't need (`wiki/`, `models/`, `evals/`, `containers/`)
-and rename `src/backend/example_feature/` to your first real package. (The legacy
-in-place generator, `make scaffold`, still works and is kept until the copier
-template has proven full parity — see [ADR 0004](docs/adr/0004-project-templating-copier.md).)
+and rename `src/backend/example_feature/` to your first real package. Project
+generation is `copier`-based (see [ADR 0004](docs/adr/0004-project-templating-copier.md)).
 
 ## Showcase demo (synced docs site)
 

@@ -37,7 +37,7 @@ def test_features_and_checks_listed():
     feats = client.get("/api/features").json()
     assert any(f["slug"] == "deterministic-checks" for f in feats)
     checks = client.get("/api/checks").json()
-    assert {c["slug"] for c in checks} >= {"structure", "scaffold-sync", "corpus"}
+    assert {c["slug"] for c in checks} >= {"structure", "corpus"}
     assert all(c["present"] for c in checks)   # scripts exist in this repo
 
 

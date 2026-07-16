@@ -1165,10 +1165,9 @@ def check_L():
 
 _FLAG_RE = re.compile(r"^(true|false)\b")
 
-# Triple-quote delimiters. _TRI3 (three single-quote chars) is BUILT, not written
-# as a literal: scaffold.py embeds this file inside a raw triple-single-quoted
-# string, so a literal triple-single-quote here would terminate that embed
-# (check_scaffold_sync.py guards against it).
+# Triple-quote delimiters used by the check_M TOML scan below. _TRI3 (three
+# single-quote chars) is BUILT rather than written as a literal so this file never
+# itself contains a triple-single-quote sequence.
 _TRI_D = '"""'
 _TRI3 = "'" * 3
 

@@ -47,8 +47,8 @@ The host's pre-commit `python3` may be **old** (this repo's is 3.6), so the
 checks split in two:
 
 - **3.6-safe, stdlib-only** — run on *every commit* via pre-commit and need no
-  dependencies: `check_structure.py`, `check_scaffold_sync.py`. These never
-  use f-strings/`from __future__ import annotations`, so they parse under 3.6.
+  dependencies: `check_structure.py`. It never uses
+  f-strings/`from __future__ import annotations`, so it parses under 3.6.
 - **Project-interpreter (≥3.10 / app deps)** — the corpus jobs (need ≥3.7) and
   the contract checks (need FastAPI/pydantic). They run in **CI** (Python 3.11)
   and locally under your venv. The contract checks **skip gracefully** (exit 0
@@ -63,7 +63,6 @@ everything and therefore expect the project interpreter.
 | Check | Script | Gate? | Interpreter | What it guarantees |
 |-------|--------|:-----:|-------------|--------------------|
 | Structure & frontmatter | `scripts/check_structure.py` | error | 3.6-safe | Labels, taxonomy, package boundaries, tool/agent governance, project facts, agent-rules symlinks, owned-exception & frozen-config boundaries, naked-tensor domain warn, lint/type ruleset parity (checks A–M) |
-| Scaffold-embed sync | `scripts/check_scaffold_sync.py` | error | 3.6-safe | `scaffold.py`'s embedded scripts are byte-identical to the live files |
 | Corpus integrity | `scripts/jobs/check_corpus.py` | error | ≥3.7 | `wiki/corpus.json` is a valid, acyclic graph **and** the build is reproducible |
 | OpenAPI drift | `api/rest_fastapi/export_openapi.py --check` | error | FastAPI | Committed `openapi.json` matches the live routes |
 | AAD schema drift | `scripts/agent_surface/generate_aad_schema.py --check` | error | pydantic | Committed AAD JSON Schema matches the model |
@@ -120,32 +119,9 @@ directory, package, doc, tool, or agent.
 **Run.** `make check` · `python3 scripts/check_structure.py`
 
 **Changing it.** If you change the scheme or a check, update **both** this
-script and `CONVENTIONS.md`, then `python3 scripts/check_scaffold_sync.py
---write` to resync the scaffold embed (check 2 enforces it).
+script and `CONVENTIONS.md`.
 
-### 2. Scaffold-embed sync — `scripts/check_scaffold_sync.py`
-
-**Purpose.** `scripts/scaffold.py` regenerates a project skeleton and ships
-several scripts embedded as raw-string constants (`w("path", _NAME_SRC)`).
-CONVENTIONS §6 requires those embeds to stay **byte-identical** to the live
-files — otherwise a freshly scaffolded project ships tooling that has silently
-diverged. This check discovers every embed and diffs it against its live file.
-
-**When to run.** Every commit; always after editing any embedded script
-(`check_structure.py`, `check_scaffold_sync.py`, `check_practices.py`,
-`scripts/jobs/check_corpus.py`). The scaffold ships the whole coding-practices
-system to new projects — `check_practices.py` and `config/practices.json` are
-byte-synced embeds, and the generated `pyproject.toml` mirrors the registry so a
-freshly-scaffolded project passes `check_M` parity out of the box.
-
-**Run.**
-- `python3 scripts/check_scaffold_sync.py` — fail on drift (default), print diffs.
-- `python3 scripts/check_scaffold_sync.py --write` — resync every embed (the fix).
-
-Gracefully no-ops (exit 0) when `scripts/scaffold.py` is absent (a derived
-project that dropped the generator has nothing to guard).
-
-### 3. Corpus integrity & reproducibility — `scripts/jobs/check_corpus.py`
+### 2. Corpus integrity & reproducibility — `scripts/jobs/check_corpus.py`
 
 **Purpose.** `wiki/corpus.json` is the generated "one-brain" index (CONVENTIONS
 §11). This check validates the graph — unique `node_id`s, resolvable
@@ -161,7 +137,7 @@ content that feeds the corpus.
 - `python scripts/jobs/check_corpus.py --corpus wiki/corpus.json` — validate the
   on-disk file (and warn if it is stale vs a fresh build; the file is gitignored).
 
-### 4. OpenAPI drift — `api/rest_fastapi/export_openapi.py --check`
+### 3. OpenAPI drift — `api/rest_fastapi/export_openapi.py --check`
 
 **Purpose.** The committed `api/rest_fastapi/openapi.json` is the published REST
 contract; keep it generated from the live FastAPI app so it cannot drift from
@@ -173,7 +149,7 @@ script (no `--check`).
 **Run.** `python api/rest_fastapi/export_openapi.py [--check]` · `make check-openapi`
 Skips gracefully (exit 0) when FastAPI is absent.
 
-### 5. AAD schema drift — `scripts/agent_surface/generate_aad_schema.py --check`
+### 4. AAD schema drift — `scripts/agent_surface/generate_aad_schema.py --check`
 
 **Purpose.** Keep the committed AAD wire schema
 (`config/agent_surface/aad-v1.0.schema.json`) generated from the `AadDescriptor`
@@ -182,7 +158,7 @@ model (CONVENTIONS §14), so the published contract can't drift from the code.
 **Run.** `python scripts/agent_surface/generate_aad_schema.py [--check]` ·
 `make check-aad` — skips gracefully when pydantic is absent.
 
-### 6. Code-doc drift — `scripts/cdmon_sync.py --check`
+### 5. Code-doc drift — `scripts/cdmon_sync.py --check`
 
 **Purpose.** Thin adapter over the optional cdmon code↔doc drift monitor
 (CONVENTIONS §9). A no-op until cdmon is installed, then it flags docs that
@@ -190,14 +166,14 @@ have drifted from the code they describe.
 
 **Run.** `python3 scripts/cdmon_sync.py --check`
 
-### 7. Accountability report — `scripts/accountability_report.py`
+### 6. Accountability report — `scripts/accountability_report.py`
 
 **Purpose.** A *report*, not a gate: lists corpus nodes that resolve to no owner
 (CONVENTIONS §12), so ownership gaps are visible. Does not fail the build.
 
 **Run.** `python scripts/accountability_report.py`
 
-### 8. Generic-solution advisor — `scripts/check_generic.py`
+### 7. Generic-solution advisor — `scripts/check_generic.py`
 
 **Purpose.** A *report*, not a gate: the advisory backstop for the "solve the
 general case" discipline (CONVENTIONS §18). It flags an **answer key in source** —
@@ -225,7 +201,6 @@ commit (each hook is a thin trigger that calls a `scripts/` doer):
 | Hook id | Calls |
 |---------|-------|
 | `structure` | `python3 scripts/check_structure.py` |
-| `scaffold-sync` | `python3 scripts/check_scaffold_sync.py --check` |
 | `openapi` | `python3 api/rest_fastapi/export_openapi.py --check` (skips if FastAPI absent) |
 | `aad-schema` | `python3 scripts/agent_surface/generate_aad_schema.py --check` (skips if pydantic absent) |
 | `cdmon` | `python3 scripts/cdmon_sync.py --check` (no-op until installed) |
@@ -238,7 +213,7 @@ Enable once: `pip install pre-commit && pre-commit install`.
 `.github/workflows/ci.yml` runs under Python 3.11 and Node 22:
 
 ```yaml
-- run: make check-all   # structure, scaffold-sync, corpus, openapi, aad
+- run: make check-all   # structure, corpus, openapi, aad
 - run: make lint
 - run: make typecheck
 - run: make test
@@ -258,8 +233,7 @@ A corpus rebuild + integrity check fits a nightly job: put the cadence in
    the project interpreter and **skip gracefully** when a dependency is absent.
 2. Give it `--help` and a `--check` mode if it guards a committed artifact.
 3. Add a `make` target and, if it should gate commits, a `.pre-commit-config.yaml`
-   hook and/or a CI step.
-4. If `scaffold.py` should ship it to new projects, embed it as a
-   `w("scripts/your_check.py", _YOUR_CHECK_SRC)` pair (no triple-single-quote in
-   the source) and run `check_scaffold_sync.py --write`.
-5. Document it in this file.
+   hook and/or a CI step. New projects generated with `copier` get the file
+   automatically (copier ships the real `scripts/` tree — see
+   [ADR 0004](../adr/0004-project-templating-copier.md)).
+4. Document it in this file.

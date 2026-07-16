@@ -28,12 +28,6 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
-      - id: scaffold-sync
-        name: scaffold.py embeds match the live scripts
-        entry: python3 scripts/check_scaffold_sync.py --check
-        language: system
-        pass_filenames: false
-        always_run: true
       - id: openapi
         name: openapi.json in sync with the app (skips if FastAPI absent)
         entry: python3 api/rest_fastapi/export_openapi.py --check

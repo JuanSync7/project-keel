@@ -64,8 +64,8 @@ failure mode:
 
 Related (set when applicable, not required): `superseded_by` — **required
 when `status: deprecated`** so the brain follows the chain to the live
-version. The scaffold stamps `id`/dates/`visibility`/`canonical` with
-safe defaults; **replace placeholder dates/owners**, and tighten
+version. A new doc must carry `id`/dates/`visibility`/`canonical` (check A
+validates them); set **real dates/owners** rather than placeholders, and tighten
 `visibility` on anything sensitive.
 
 ### Code files
@@ -198,15 +198,11 @@ pre-commit hook) fails the build if the conventions above drift:
 
 Missing `owner` is a warning, not a failure. If you change the scheme
 (KINDS / LAYERS / STATUSES / VISIBILITIES) or a check, update **both**
-this file AND `scripts/check_structure.py`, then run `python3
-scripts/check_scaffold_sync.py --write` to resync the embedded copy in
-`scripts/scaffold.py` (the `scaffold-sync` check enforces that the live
-checker and the embed stay byte-identical).
+this file AND `scripts/check_structure.py`.
 
 `check_structure.py` is the structural gate, but it is not the only
-deterministic check. The **full suite** — scaffold-embed sync
-(`check_scaffold_sync.py`), corpus integrity + reproducibility
-(`scripts/jobs/check_corpus.py`), and OpenAPI / AAD contract drift — is
+deterministic check. The **full suite** — corpus integrity + reproducibility
+(`scripts/jobs/check_corpus.py`) and OpenAPI / AAD contract drift — is
 catalogued in **[`docs/guides/deterministic-checks.md`](docs/guides/deterministic-checks.md)**
 (each check's purpose, when to run it, and how to wire it as a hook).
 
