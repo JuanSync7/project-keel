@@ -62,14 +62,27 @@ it first.
 
 ## Getting started
 
+Generate a **tailored** project in one command — an interactive Q&A (name, frontend
+stack, transports, domain profiles) writes only the parts you chose, fills in
+`config/project.json`, and records your answers so you can pull future template
+improvements with `copier update`:
+
 ```bash
-make help          # list tasks
-make scaffold      # (re)generate the skeleton from scripts/scaffold.py
+pipx install copier                                 # once
+copier copy gh:JuanSync7/project-keel my-project    # interactive Q&A -> tailored skeleton
 ```
 
-Delete the dirs you don't need (`wiki/`, `models/`, `evals/`,
-`containers/` are all optional) and rename `src/backend/example_feature/`
-to your first real package.
+In a checkout of this repo you can also run `make new DEST=../my-project`. Then:
+
+```bash
+make help          # list tasks
+make check         # fast structural gate (or: make verify)
+```
+
+Delete any optional dirs you don't need (`wiki/`, `models/`, `evals/`, `containers/`)
+and rename `src/backend/example_feature/` to your first real package. (The legacy
+in-place generator, `make scaffold`, still works and is kept until the copier
+template has proven full parity — see [ADR 0004](docs/adr/0004-project-templating-copier.md).)
 
 ## Showcase demo (synced docs site)
 

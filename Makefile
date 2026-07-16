@@ -10,7 +10,7 @@ PYTHONPATH ?= src:.
 # a no-op on backend-only repos.
 FE_APPS := $(dir $(wildcard src/frontend/*/package.json))
 
-.PHONY: help scaffold check-python check check-all check-corpus check-openapi check-aad scaffold-sync advise check-generic verify test unit integration e2e smoke \
+.PHONY: help new scaffold check-python check check-all check-corpus check-openapi check-aad scaffold-sync scaffold-parity advise check-generic verify test unit integration e2e smoke \
         lint lint-py lint-fe fmt typecheck typecheck-py typecheck-fe \
         fe-install run run-api run-web site-data site-static demo agent-surface-schema
 
@@ -21,7 +21,11 @@ help: ## List tasks
 check-python: ## Fail early with a clear message if PY is older than pyproject requires
 	$(PY) scripts/check_python_version.py
 
-scaffold: ## (Re)generate the skeleton (README/CLAUDE/exemplars)
+new: ## Generate a NEW project from this template into DEST (interactive Q&A). Needs the 'template' extra.
+	@test -n "$(DEST)" || { echo "usage: make new DEST=../my-new-project"; exit 2; }
+	$(PY) -m copier copy . "$(DEST)"
+
+scaffold: ## (Re)generate the skeleton in place (README/CLAUDE/exemplars) — legacy generator
 	$(PY) scripts/scaffold.py
 
 check: ## Validate structure + frontmatter + scaffold embeds (3.6-safe)
@@ -37,6 +41,8 @@ check-aad: ## Committed AAD schema in sync with the model (skips if pydantic abs
 	$(PY) scripts/agent_surface/generate_aad_schema.py --check
 scaffold-sync: ## scaffold.py embeds match the live scripts (3.6-safe)
 	$(PY) scripts/check_scaffold_sync.py --check
+scaffold-parity: ## Prove the copier template reproduces every scaffold.py artifact (needs the 'template' extra)
+	$(PY) scripts/scaffold_parity.py
 
 advise: ## Advisory: flag overfitting / answer-key + coding-practice smells (CONVENTIONS §18; never fails the build)
 	-$(PY) scripts/check_generic.py

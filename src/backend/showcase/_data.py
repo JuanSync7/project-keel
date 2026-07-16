@@ -387,26 +387,29 @@ CHECKS: tuple[Check, ...] = (
 )
 
 SETUP_STEPS: tuple[Step, ...] = (
-    Step(title="Get the template",
-         body="Copy or fork the repository to seed your own project.",
-         command="git clone <this-repo> project_keel && cd project_keel"),
+    Step(title="Generate your project",
+         body="One command runs an interactive Q&A (name, frontend stack, transports, "
+              "domain profiles) and writes a tailored skeleton: the chosen stack, a "
+              "filled-in config/project.json, and a .copier-answers.yml so you can pull "
+              "future template improvements later. Needs copier (pipx install copier, or "
+              "pip install '.[template]' in a checkout).",
+         command="copier copy gh:JuanSync7/project-keel my-project"),
     Step(title="Make it yours",
-         body="Rename src/backend/example_feature/ to your first real package and "
-              "delete the optional dirs you do not need (wiki/, models/, evals/, "
-              "containers/).",
-         command="make scaffold"),
-    Step(title="Pick one frontend stack",
-         body="Set layers.frontend.stack in config/project.json and delete the "
-              "stack dirs you are not using; the checks enforce the choice.",
+         body="Rename src/backend/example_feature/ to your first real package and delete "
+              "any optional dirs you don't need (wiki/, models/, evals/, containers/).",
          command=""),
     Step(title="Run the checks",
-         body="The fast structural gate runs anywhere; the full suite runs under "
-              "your project interpreter.",
-         command="make check   # or: make check-all"),
+         body="The fast structural gate runs anywhere; the full suite runs under your "
+              "project interpreter.",
+         command="make check   # or: make verify"),
     Step(title="Wire the hooks",
-         body="Install pre-commit so the deterministic checks run on every commit; "
-              "CI already runs `make check-all`.",
+         body="Install pre-commit so the deterministic checks run on every commit; CI "
+              "already runs `make check-all`.",
          command="pip install pre-commit && pre-commit install"),
+    Step(title="Pull template updates later",
+         body="When Project Keel improves, re-apply the changes to your project — copier "
+              "three-way merges them using your recorded answers.",
+         command="copier update"),
 )
 
 __all__ = ["TAGLINE", "SUMMARY", "CONVENTIONS", "FEATURES", "PRINCIPLES",
