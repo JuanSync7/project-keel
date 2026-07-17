@@ -61,3 +61,33 @@ def test_generated_manifest_reflects_enabled_transports(tmp_path):
     assert manifest["transports"]["enabled"] == ["rest", "mcp"]
     # all transport dirs still ship (dir-pruning is a later slice); enabled is the choice
     assert set(manifest["transports"]["available"]) == {"rest", "grpc", "edge_nginx", "mcp"}
+
+
+def test_nondefault_name_and_python_propagate_and_stay_valid(tmp_path):
+    """A free-text name + a non-default requires-python must reach *every* file that
+    declares them — else check_H fails (layers.backend.python != requires-python) or
+    the 'tailored' name is a lie. This is the case defaults masked: with backend_python
+    left at '>=3.10' the pyproject already matched by luck, so the twin was never
+    exercised. Guards the project_slug/project_title derivation and the pyproject twin."""
+    dest = tmp_path / "proj"
+    _generate(dest, project_name="Acme Widgets", frontend_stack="astro",
+              backend_python=">=3.11", transports=["rest"], profiles=["ai"])
+
+    manifest = json.loads((dest / "config" / "project.json").read_text())
+    pyproject = (dest / "pyproject.toml").read_text()
+    readme = (dest / "README.md").read_text()
+
+    # identifier form (PEP 508-valid slug) reaches both manifest and package metadata
+    assert manifest["name"] == "acme_widgets"
+    assert 'name = "acme_widgets"' in pyproject
+    # the non-default python reaches both, so check_H's equality holds (the gating bug)
+    assert manifest["layers"]["backend"]["python"] == ">=3.11"
+    assert 'requires-python = ">=3.11"' in pyproject
+    # display form (title-cased) reaches the README heading + frontmatter title
+    assert "\n# Acme Widgets\n" in readme
+    assert "\ntitle: Acme Widgets\n" in readme
+
+    # the real judge: the generated tree passes its own structural gate
+    r = subprocess.run([sys.executable, "scripts/check_structure.py"],
+                       cwd=str(dest), capture_output=True, text=True)
+    assert r.returncode == 0, r.stdout + r.stderr
