@@ -37,12 +37,15 @@ _exclude:
   - "wiki/.runtime"
   # Answer-driven pruning: keep only the chosen frontend stack (the two reference
   # apps are self-contained under src/frontend/<stack>/, so pruning one is clean).
-  # Transport dirs are NOT pruned here (mcp/rest couple to the Python test suite);
-  # `transports.enabled` records the choice and the rest are deleted by hand — a
-  # documented follow-up will prune the cleanly-separable api/grpc + api/edge_nginx.
   - "{% if frontend_stack != 'react-vite' %}src/frontend/react-vite{% endif %}"
   - "{% if frontend_stack != 'astro' %}src/frontend/astro{% endif %}"
   - "{% if frontend_stack == 'none' %}src/frontend{% endif %}"
+  # Transport pruning: api/grpc and api/edge_nginx are self-contained add-ons (no
+  # code/test imports them), so drop each unless it was selected. REST (api/rest_fastapi)
+  # and MCP (mcp/) are NOT pruned — the bundled showcase, AAD reference impl, frontend
+  # and CI run on them; removing them is a separate "no-showcase" mode, out of scope here.
+  - "{% if 'grpc' not in transports %}api/grpc{% endif %}"
+  - "{% if 'edge_nginx' not in transports %}api/edge_nginx{% endif %}"
 
 # ---- Q&A (core facts; map 1:1 to config/project.json, enforced by check_H) -----
 project_name:
@@ -81,15 +84,11 @@ backend_python:
 transports:
   type: str
   multiselect: true
-  help: "API transports to enable"
+  help: "Optional add-on transports to keep (REST + MCP always ship — they back the bundled showcase & AAD reference implementation, and their dirs/tests can't be cleanly removed)"
   choices:
-    - rest
     - grpc
     - edge_nginx
-    - mcp
-  default:
-    - rest
-    - mcp
+  default: []
 
 profiles:
   type: str

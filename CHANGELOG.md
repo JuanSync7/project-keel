@@ -13,7 +13,10 @@ All notable changes. Format: Keep a Changelog.
   one command runs an interactive Q&A into a tailored skeleton, and `copier
   update` pulls later template improvements. Replaced the hand-authored
   `scaffold.py` generator + its byte-synced embeds + `check_scaffold_sync`
-  (parity-proven first; ADR 0004).
+  (parity-proven first; ADR 0004). The Q&A tailors the project name (→ manifest,
+  `pyproject` slug, README title), minimum Python, frontend stack (un-chosen stacks
+  pruned), add-on transports (`grpc`/`edge_nginx` pruned unless selected; REST+MCP
+  are the always-shipped foundation), and domain practice profiles.
 - Showcase demo: `backend.showcase` read model + thin REST router
   (`api/rest_fastapi/showcase_api.py`) + a minimalist Astro docs/wiki site
   (`src/frontend/astro`) that renders the template live from the backend.

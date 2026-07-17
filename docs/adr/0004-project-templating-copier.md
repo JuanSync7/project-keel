@@ -47,8 +47,13 @@ template** (`_subdirectory: "."`).
   matches `*.md`/`*.py` exactly; `check_H` reads the real `project.json`; mypy/ruff
   scope by extension), so they live in the repo without breaking `make verify`.
 - **Core Q&A → the manifest.** `project_name`, `frontend_stack`, `backend_python`,
-  `transports`, `profiles` map 1:1 to `config/project.json` (CONVENTIONS §15). The
-  un-chosen frontend stack is pruned via answer-driven `_exclude`. `_preserve_symlinks`
+  `transports`, `profiles` map 1:1 to `config/project.json` (CONVENTIONS §15).
+  `project_name` also renders into `pyproject.toml.jinja` (`name` = PEP 508 slug,
+  `requires-python` = `backend_python`) and `README.md.jinja` (title) — both twins
+  reproduce keel's own files byte-for-byte under keel's answers (the self-parity
+  anchor). The un-chosen frontend stack and the un-selected **add-on** transports
+  (`api/grpc`, `api/edge_nginx`) are pruned via answer-driven `_exclude`; REST + MCP
+  always ship (they back the bundled showcase/AAD reference impl). `_preserve_symlinks`
   keeps keel's `CLAUDE.md → AGENT.md` links (else `check_I` fails).
 - **Optional dependency.** `template = ["copier>=9"]` — the default install, CI, and
   pre-commit stay dependency-free (same pattern as the `langgraph` runtime extra).
@@ -72,9 +77,11 @@ separately-approved change).
   simplification (a 10.3k-line generator + its sync gate removed).
 - A new dependency (copier) exists, but it is optional and only needed to *generate*
   or *update* a project, never to build or test one.
-- Transport-dir pruning (beyond the frontend stack) is a follow-up: `mcp`/`rest`
-  couple to the Python test suite, while `api/grpc` + `api/edge_nginx` are cleanly
-  separable.
+- Transport pruning honours the answer for the cleanly-separable add-ons
+  (`api/grpc`, `api/edge_nginx`): un-selected ones are dropped and left out of
+  `transports.available`. `rest`/`mcp` remain the always-shipped foundation because
+  they couple to the bundled showcase, AAD reference impl, frontend, and CI; removing
+  them is a distinct "no-showcase" template mode, not attempted here.
 
 See `docs/guides/deterministic-checks.md` for the check suite and
 `docs/guides/` for the how-to.
@@ -88,3 +95,20 @@ nothing left to compare against) were **removed**. copier is now the sole genera
 The parity evidence lives in this repo's history (the harness and its green run are
 recoverable from git); the removal touched only generator/meta machinery — the
 generated project surface is unchanged.
+
+## Addendum (2026-07-17): non-default answers honoured + add-on transport pruning
+
+Live generation with **non-default** answers exposed two gaps the defaults-only test
+had masked, now closed:
+
+1. **Name + Python propagation.** The Q&A asked `project_name`/`backend_python` but
+   only `project.json` had a twin, so a non-default `backend_python` produced a project
+   that failed its own `check_H` (`requires-python` stayed `>=3.10`). Added
+   `pyproject.toml.jinja` + `README.md.jinja` twins and derived `project_slug`
+   (PEP 508 identifier) / `project_title` (display); both twins reproduce keel's files
+   byte-for-byte under keel's answers.
+2. **Add-on transport pruning.** The `transports` question now offers only the
+   cleanly-separable add-ons (`grpc`, `edge_nginx`); each is pruned unless selected and
+   omitted from `transports.available`. `rest`/`mcp` stay as the always-shipped
+   foundation (see the Consequences note). Verified across all add-on combinations:
+   the tailored tree passes `check_structure` with 0 errors.

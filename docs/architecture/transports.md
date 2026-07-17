@@ -8,7 +8,7 @@ tags: [api, transport, architecture]
 summary: How clients reach the domain: the edge + transport layers in api/.
 id: docs-architecture-transports
 created: 2026-06-17
-updated: 2026-06-17
+updated: 2026-07-17
 visibility: internal
 canonical: true
 ---
@@ -36,6 +36,15 @@ client ──HTTP/HTTPS──> edge (nginx)  ──> transport ──> src/ (dom
 - **gRPC** — service-to-service, low latency, streaming, strict schemas.
 - **GraphQL / WebSockets / queues** — add a sibling `api/<style>/`
   following the same thin-over-`src/` rule.
+
+## At generation time
+`copier` (ADR 0004) tailors which transports a new project ships. **REST + MCP are
+the always-shipped foundation** — the bundled showcase and AAD reference
+implementation run on them. The **add-ons `grpc` and `edge_nginx`** are self-contained
+(no code/test imports them), so the `transports` question keeps each only when
+selected and drops it — along with its `transports.available` entry — otherwise.
+`config/project.json` `transports.enabled`/`available` are rendered to match, so
+`check_H` stays green with no undeclared `api/` dir.
 
 ## The contract is single-sourced
 HTTP DTOs (`schemas.py`) and proto messages (`thing.proto`) **mirror**
