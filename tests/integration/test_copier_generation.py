@@ -54,13 +54,35 @@ def test_generated_project_is_tailored_and_valid(stack, tmp_path):
     assert r.returncode == 0, r.stdout + r.stderr
 
 
-def test_generated_manifest_reflects_enabled_transports(tmp_path):
+def test_default_transports_prune_the_addon_dirs(tmp_path):
+    """No add-ons selected: REST+MCP are the always-shipped foundation, and the
+    self-contained add-on dirs (api/grpc, api/edge_nginx) are pruned — so `available`
+    lists only what actually ships and check_H sees no undeclared api/ dir."""
     dest = tmp_path / "proj"
-    _generate(dest, project_name="demo_proj")   # default transports = rest, mcp
+    _generate(dest, project_name="demo_proj")   # default transports = [] (no add-ons)
     manifest = json.loads((dest / "config" / "project.json").read_text())
     assert manifest["transports"]["enabled"] == ["rest", "mcp"]
-    # all transport dirs still ship (dir-pruning is a later slice); enabled is the choice
-    assert set(manifest["transports"]["available"]) == {"rest", "grpc", "edge_nginx", "mcp"}
+    assert set(manifest["transports"]["available"]) == {"rest", "mcp"}   # add-ons pruned
+    assert (dest / "api" / "rest_fastapi").is_dir()                      # foundation ships
+    assert (dest / "mcp").is_dir()
+    assert not (dest / "api" / "grpc").exists()                         # add-on pruned
+    assert not (dest / "api" / "edge_nginx").exists()
+
+
+def test_selected_addon_transport_ships_and_is_declared(tmp_path):
+    """Selecting an add-on keeps its dir and declares it; the un-selected one is still
+    pruned. This is the gap that used to leak every transport regardless of the answer."""
+    dest = tmp_path / "proj"
+    _generate(dest, project_name="demo_proj", transports=["grpc"])
+    manifest = json.loads((dest / "config" / "project.json").read_text())
+    assert manifest["transports"]["enabled"] == ["rest", "mcp", "grpc"]
+    assert set(manifest["transports"]["available"]) == {"rest", "mcp", "grpc"}
+    assert (dest / "api" / "grpc").is_dir()                             # selected -> ships
+    assert not (dest / "api" / "edge_nginx").exists()                  # un-selected -> pruned
+    # the tailored tree still passes its own structural gate
+    r = subprocess.run([sys.executable, "scripts/check_structure.py"],
+                       cwd=str(dest), capture_output=True, text=True)
+    assert r.returncode == 0, r.stdout + r.stderr
 
 
 def test_nondefault_name_and_python_propagate_and_stay_valid(tmp_path):
@@ -71,7 +93,7 @@ def test_nondefault_name_and_python_propagate_and_stay_valid(tmp_path):
     exercised. Guards the project_slug/project_title derivation and the pyproject twin."""
     dest = tmp_path / "proj"
     _generate(dest, project_name="Acme Widgets", frontend_stack="astro",
-              backend_python=">=3.11", transports=["rest"], profiles=["ai"])
+              backend_python=">=3.11", transports=["grpc"], profiles=["ai"])
 
     manifest = json.loads((dest / "config" / "project.json").read_text())
     pyproject = (dest / "pyproject.toml").read_text()

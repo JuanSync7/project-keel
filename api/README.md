@@ -34,3 +34,7 @@ For others not scaffolded — GraphQL, WebSockets, message queues —
 add a sibling subdir following the same thin-over-`src/` rule.
 `edge_nginx/` is edge **config**, not app code; in production it
 often lives in `ops/`.
+
+At generation time (`copier`, ADR 0004), `rest_fastapi/` always ships (the bundled
+showcase runs on it); `grpc/` and `edge_nginx/` are add-ons kept only when selected in
+the `transports` question, and pruned otherwise.

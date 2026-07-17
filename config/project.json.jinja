@@ -17,12 +17,12 @@
     }
   },
   "transports": {
-    "enabled": [{% for t in transports %}"{{ t }}"{% if not loop.last %}, {% endif %}{% endfor %}],
+    "enabled": ["rest", "mcp"{% for t in transports if t not in ["rest", "mcp"] %}, "{{ t }}"{% endfor %}],
     "available": {
       "rest": "api/rest_fastapi",
-      "grpc": "api/grpc",
-      "edge_nginx": "api/edge_nginx",
-      "mcp": "mcp"
+      "mcp": "mcp"{% if "grpc" in transports %},
+      "grpc": "api/grpc"{% endif %}{% if "edge_nginx" in transports %},
+      "edge_nginx": "api/edge_nginx"{% endif %}
     }
   },
   "runtimes": {
