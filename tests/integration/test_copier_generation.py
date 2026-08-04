@@ -16,11 +16,30 @@ copier = pytest.importorskip("copier")  # optional 'template' extra — skip whe
 _ROOT = Path(__file__).resolve().parents[2]
 pytestmark = pytest.mark.integration
 
+# The one licensed difference between .gitignore and its .jinja twin. Kept as
+# literals so a drift on EITHER side fails loudly instead of silently widening.
+_KEEL_ANSWERS_BLOCK = (
+    "# copier writes this into GENERATED projects (records answers for `copier update`);\n"
+    "# keel is the template, not a generated project, so it never commits one of its own.\n"
+    ".copier-answers.yml\n"
+)
+_TWIN_ANSWERS_BLOCK = (
+    "# NOTE: `.copier-answers.yml` is deliberately NOT ignored — it records the template\n"
+    "# answers and `copier update` needs it. A clone or CI checkout without it cannot\n"
+    "# update at all. (Keel's own .gitignore ignores its copy: keel is the template.)\n"
+)
+
 
 def _generate(dest, **data):
     """Render the keel template (from git HEAD) into dest with the given answers."""
     copier.run_copy(str(_ROOT), str(dest), data=data, defaults=True,
                     vcs_ref="HEAD", unsafe=False, quiet=True)
+
+
+def _gitignore_lines(path):
+    """Ignore-pattern lines only — comments and blanks stripped."""
+    return [ln.strip() for ln in Path(path).read_text().split("\n")
+            if ln.strip() and not ln.strip().startswith("#")]
 
 
 @pytest.mark.parametrize("stack", ["react-vite", "astro", "none"])
@@ -113,3 +132,55 @@ def test_nondefault_name_and_python_propagate_and_stay_valid(tmp_path):
     r = subprocess.run([sys.executable, "scripts/check_structure.py"],
                        cwd=str(dest), capture_output=True, text=True)
     assert r.returncode == 0, r.stdout + r.stderr
+
+
+# --- the upgrade channel (ADR-0004's whole justification) ------------------
+#
+# copier reads .copier-answers.yml from the WORKING TREE, so an ignored-but-
+# present file still updates in the directory copier created. The break happens
+# one step later: a teammate's `git clone`, a CI checkout or a fresh machine has
+# no answers file at all, and `copier update` fails outright with "Cannot update
+# because cannot obtain old template references from `.copier-answers.yml`".
+# So the assertion that matters is TRACKED-BY-GIT, not merely exists-on-disk.
+
+def test_generated_project_commits_its_copier_answers(tmp_path):
+    """A generated project must TRACK .copier-answers.yml, or every clone of it
+    loses the ability to `copier update` — the one capability ADR-0004 chose
+    copier for. Keel's own .gitignore ignores the file (keel is the template,
+    never a generated project); the .gitignore.jinja twin drops that line."""
+    dest = tmp_path / "proj"
+    _generate(dest, project_name="demo_proj", frontend_stack="none")
+
+    assert (dest / ".copier-answers.yml").exists()
+    assert ".copier-answers.yml" not in _gitignore_lines(dest / ".gitignore")
+
+    # the real judge: git itself, in a fresh repo made from the generated tree
+    for argv in (["git", "init", "-q"],
+                 ["git", "-c", "user.email=t@t", "-c", "user.name=t", "add", "-A"]):
+        r = subprocess.run(argv, cwd=str(dest), capture_output=True, text=True)
+        assert r.returncode == 0, r.stdout + r.stderr
+    tracked = subprocess.run(["git", "ls-files"], cwd=str(dest),
+                             capture_output=True, text=True).stdout.split("\n")
+    assert ".copier-answers.yml" in tracked
+
+
+def test_gitignore_twin_stays_pinned_to_keels_own(tmp_path):
+    """`.gitignore.jinja` is a DIVERGENCE twin: unlike the project.json/pyproject/
+    README twins it must NOT reproduce keel's file, because keel is the template
+    and a generated project is not. Its one licensed difference is the
+    copier-answers block. Nothing else may drift — and no gate knows the twins
+    exist yet (see docs/design/keel-hardening-plan.md, pass 5), so pin it here."""
+    keel_text = (_ROOT / ".gitignore").read_text()
+    twin_text = (_ROOT / ".gitignore.jinja").read_text()
+
+    assert ".copier-answers.yml" in _gitignore_lines(_ROOT / ".gitignore")
+    assert twin_text == keel_text.replace(_KEEL_ANSWERS_BLOCK, _TWIN_ANSWERS_BLOCK), (
+        "the twin drifted from .gitignore beyond the copier-answers block; "
+        "re-derive it rather than hand-patching one side"
+    )
+
+    # and the twin is what a generated project actually gets
+    dest = tmp_path / "proj"
+    _generate(dest, project_name="demo_proj", frontend_stack="none")
+    assert (dest / ".gitignore").read_text() == twin_text
+    assert not (dest / ".gitignore.jinja").exists()   # the suffix is consumed

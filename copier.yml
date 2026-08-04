@@ -6,6 +6,9 @@
 _subdirectory: "."
 _answers_file: ".copier-answers.yml"
 _templates_suffix: ".jinja"
+# Fail with copier's own clear message rather than a mystery render error on an old
+# copier. Generate a NAMED version, not a bare SHA:  copier copy --vcs-ref v0.1.0 ...
+_min_copier_version: "9"
 # Keel uses CLAUDE.md -> AGENT.md symlinks throughout (enforced by check_I); recreate
 # them as symlinks in the generated project instead of dereferencing to regular files.
 _preserve_symlinks: true
@@ -30,6 +33,11 @@ _exclude:
   # keel's own answers the twins reproduce keel's files byte-for-byte (self-parity).
   # NOTE: .copier-answers.yml is NOT excluded — copier WRITES it into the generated
   # project (it records the answers so `copier update` works); keel gitignores its own.
+  # .gitignore.jinja is the one DIVERGENCE twin: unlike the twins above it deliberately
+  # does NOT reproduce keel's file, because keel is the template and a generated project
+  # is not — it drops the `.copier-answers.yml` ignore line so the answers file is
+  # TRACKED downstream (without it, any clone/CI checkout loses `copier update`).
+  # Pinned by tests/integration/test_copier_generation.py; do not "restore parity".
   - ".venv"
   - "wiki/corpus.json"
   - "wiki/llms.txt"
