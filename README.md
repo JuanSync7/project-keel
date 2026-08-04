@@ -72,7 +72,10 @@ pipx install copier                                 # once
 copier copy gh:JuanSync7/project-keel my-project    # interactive Q&A -> tailored skeleton
 ```
 
-In a checkout of this repo you can also run `make new DEST=../my-project`. Then:
+In a checkout of this repo you can also run `make new DEST=../my-project` — but note
+that records the template's **absolute local path** as the update origin, so
+`copier update` then works on that machine only. Generate from `gh:JuanSync7/project-keel`
+(as above) for a project you intend to share. Then:
 
 ```bash
 make help          # list tasks

@@ -21,9 +21,21 @@ help: ## List tasks
 check-python: ## Fail early with a clear message if PY is older than pyproject requires
 	$(PY) scripts/check_python_version.py
 
+# `new` hands copier an ABSOLUTE template path on purpose: copier stores that
+# argument verbatim as `_src_path` in the generated project, and a relative one is
+# re-resolved against the *project* on `copier update` — copier then clones the
+# project as if it were the template and git dies on `pathspec ... did not match`.
+# The dirty-tree refusal is the same contract from the other end: from a dirty
+# template copier records a WIP commit that exists only in its throwaway clone, so
+# the generated project could never resolve `_commit` either. Both are pinned by
+# tests/integration/test_copier_generator_contract.py.
 new: ## Generate a NEW project from this template into DEST (interactive Q&A). Needs the 'template' extra.
 	@test -n "$(DEST)" || { echo "usage: make new DEST=../my-new-project"; exit 2; }
-	$(PY) -m copier copy . "$(DEST)"
+	@test -n "$(ALLOW_DIRTY)" || test -z "$$(git status --porcelain 2>/dev/null)" || { \
+		echo "refusing: keel's tree is dirty, so copier would record a WIP commit that"; \
+		echo "exists only in its throwaway clone and '$(DEST)' could never update from"; \
+		echo "it. Commit or stash first, or re-run with ALLOW_DIRTY=1."; exit 2; }
+	$(PY) -m copier copy "$(abspath .)" "$(DEST)"
 
 check: ## Validate structure + frontmatter (3.6-safe)
 	$(PY) scripts/check_structure.py

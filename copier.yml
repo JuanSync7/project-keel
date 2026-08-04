@@ -43,6 +43,13 @@ _exclude:
   - "wiki/llms.txt"
   - "wiki/llms-full.txt"
   - "wiki/.runtime"
+  # Keel's own template META-tests. They generate FROM this repo and assert on
+  # copier.yml and the .jinja twins — neither of which exists in a project generated
+  # BY it. `.github/workflows/ci.yml` ships verbatim and installs the `template`
+  # extra, so an un-pruned meta-test RUNS downstream and fails on keel-only files,
+  # turning every descendant's CI red. The glob covers every test_copier_*.py.
+  # Pinned by tests/integration/test_copier_generation.py.
+  - "tests/integration/test_copier_*.py"
   # Answer-driven pruning: keep only the chosen frontend stack (the two reference
   # apps are self-contained under src/frontend/<stack>/, so pruning one is clean).
   - "{% if frontend_stack != 'react-vite' %}src/frontend/react-vite{% endif %}"

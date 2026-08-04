@@ -39,7 +39,7 @@ are recorded with each pass.
 
 ## Passes
 
-### Pass 1 — restore the upgrade channel *(in progress)*
+### Pass 1 — restore the upgrade channel *(done)*
 
 `copier update` is the entire justification for choosing copier (ADR-0004), and
 it is advertised in six places and tested in none.
@@ -61,7 +61,14 @@ it is advertised in six places and tested in none.
 in a test); keel's own copy stays ignored; a drift test pins the twin to keel's
 `.gitignore`; `v0.1.0` exists with a matching CHANGELOG section.
 
-### Pass 2 — make `copier update` actually runnable, and test it
+**Landed** (`d0a25c4`): the `.gitignore.jinja` divergence twin, the twin drift
+test, `_min_copier_version: "9"`, and the `0.1.0` CHANGELOG section.
+**Outstanding:** the `v0.1.0` **git tag** itself does not exist yet
+(`git tag -l` is empty), so copier still prints *"No git tags found in
+template"* and records a bare SHA. Defect B is only half closed until the tag
+is pushed.
+
+### Pass 2 — make `copier update` actually runnable, and test it *(done)*
 
 - `Makefile:26` is `copier copy . "$(DEST)"`, which records the literal
   `_src_path: "."`. Running `copier update` from inside the generated project
@@ -79,7 +86,35 @@ in a test); keel's own copy stays ignored; a drift test pins the twin to keel's
 `tests/integration/test_copier_update.py` exercises generate → commit → evolve
 template → update; CI runs both without skipping.
 
-### Pass 3 — close the gate's blind spot
+**Landed.** `Makefile` now passes `$(abspath .)`, pinned by a `make -n` contract
+test that reads the expanded recipe and requires the argument to be absolute *and*
+to be a template (`copier.yml` present). `ci.yml` installs `.[dev,template]`,
+checks out full history (`fetch-depth: 0`, so a future `--vcs-ref v0.1.0` can
+resolve), and sets `KEEL_REQUIRE_TEMPLATE=1` on the suite step; both copier test
+modules hard-import under that flag and `importorskip` without it — measured:
+absent copier + flag → collection error, exit 2; absent copier, no flag → 1
+skipped, exit 0. `tests/integration/test_copier_update.py` runs the full
+generate → commit → evolve → update cycle against a throwaway clone of keel
+(7 tests, ~15s).
+
+Two findings from the pass that were not in the original bullet list:
+
+- **`ci.yml` and the copier tests ship verbatim downstream.** Installing the
+  `template` extra in the shared `ci.yml` would therefore run keel's *template
+  meta-tests* inside every generated project — where `copier.yml` and the
+  `.jinja` twins do not exist (measured: 6 of 8 fail). `copier.yml` now prunes
+  `tests/integration/test_copier_*.py` at generation, pinned by a test.
+- **A dirty template also breaks update**, independently of `_src_path`: copier
+  records a WIP commit that exists only in its throwaway clone, so `_commit` is
+  unresolvable. `make new` now refuses a dirty tree (`ALLOW_DIRTY=1` overrides).
+
+**Deliberately not fixed here:** the recorded origin is a machine-local absolute
+path, so a generated project handed to a colleague still cannot `copier update`
+(different unhandled traceback: *"Local template must be a directory"*). The
+answer is to generate from `gh:JuanSync7/project-keel`; `README.md` now says so
+instead of implying `make new` is equivalent.
+
+### Pass 3 — close the gate's blind spot *(next)*
 
 `make verify` is green while `ruff check agents models runtimes mcp api scripts`
 reports **99 errors** across **6,453 Python lines (59% of the repo)** — including
@@ -159,6 +194,21 @@ undeclared externals, and the completeness scan errors on a new undeclared
   verbatim), so this is release discipline, not an undeliverable migration: ship
   a new rule as WARN for one release, promote to ERROR in the next, and never
   release a rule keel itself fails. Adopt as a rule from pass 1's tag onward.
+- **The same silent-skip defect, one more instance.**
+  `tests/integration/test_aad_conformance.py:77` `importorskip`s `jsonschema`,
+  which is in neither `.[dev]` nor `api/rest_fastapi/requirements.txt` and is not
+  in the repo's own venv — so the "served AAD descriptor validates against the
+  committed schema" assertion has **never executed anywhere**. Same class as pass
+  2's finding, found while fixing it; left alone to keep pass 2 one slice. If a
+  second extra ever needs the CI treatment, generalise to one
+  `KEEL_REQUIRED_EXTRAS=template,...` variable rather than a variable per extra.
+- **Blanket `except Exception: return 0` in the two drift checks.**
+  `api/rest_fastapi/export_openapi.py:43-49` and
+  `scripts/agent_surface/generate_aad_schema.py:47-55` degrade *any* failure
+  under `--check` to exit 0 with a stderr note. Not active today (CI installs the
+  transport requirements, so both really run), but it means a future import or
+  route error would show up as a green gate. Fits pass 3's "silent-failure modes"
+  bullet.
 - **`query_corpus` token cost** (~4.4k tokens per call, no node bodies returned,
   no relevance floor — today strictly worse than `grep` + `Read` for most
   questions). Real, but it is an optimisation of a working thing, not a defect

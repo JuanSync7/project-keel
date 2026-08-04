@@ -9,6 +9,41 @@ version rather than a bare commit:
 
 ## [Unreleased]
 
+### Fixed
+- `make new` now hands copier an **absolute** template path. Copier records that
+  argument verbatim as `_src_path`, so the old literal `.` was re-resolved against
+  the *generated project* on `copier update` — copier cloned the project as if it
+  were the template and git died with `pathspec '<keel sha>' did not match any
+  file(s) known to git`, a raw traceback with no diagnostic.
+- `make new` also refuses a **dirty** keel tree (`ALLOW_DIRTY=1` overrides): from a
+  dirty template copier records a WIP commit that exists only in its throwaway
+  clone, so the generated project could never resolve `_commit` either.
+- CI installs the optional `template` extra (`.[dev,template]`) and declares it
+  required via `KEEL_REQUIRE_TEMPLATE=1`. The copier tests `importorskip`ped, so
+  keel's own generation gates had **never run in CI**; a missing copier is now a
+  hard collection error there, while a bare local clone still skips gracefully.
+  CI also checks out full history (`fetch-depth: 0`) so a `--vcs-ref v0.1.0` pin
+  can resolve — a depth-1 checkout carries no tags.
+- Generated projects no longer ship keel's template **meta-tests**
+  (`tests/integration/test_copier_*.py`). They assert on `copier.yml` and the
+  `.jinja` twins, which a generated project does not have, and `ci.yml` ships
+  verbatim — so with the extra now installed they would have turned every
+  descendant's CI red.
+
+### Added
+- `tests/integration/test_copier_update.py` — the upgrade channel ADR-0004 chose
+  copier for, tested for the first time: generate → commit downstream work →
+  evolve the template → `copier update`, asserting new files arrive, edits land,
+  downstream work survives, the `.gitignore` divergence twin holds, `_commit`
+  advances, no conflicts are left, and the upgraded tree still passes its own gate.
+- `tests/integration/test_copier_generator_contract.py` — pins the `make new`
+  recipe and the CI wiring above so neither can silently regress.
+
+### Known limitation
+- A project made with `make new` records the template's machine-local absolute
+  path, so `copier update` works on that machine only. Generate from
+  `gh:JuanSync7/project-keel` for a project you intend to share.
+
 ## [0.1.0] — 2026-08-04
 First named version. Everything below existed before this tag; the tag exists so
 a descendant can state which keel it came from and upgrade to a known-good ref
