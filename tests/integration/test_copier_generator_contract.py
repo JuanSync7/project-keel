@@ -131,3 +131,33 @@ def test_copier_test_modules_hard_fail_when_the_extra_is_required():
             "%s importorskips copier but ignores KEEL_REQUIRE_TEMPLATE, so it would "
             "still skip silently in CI" % path.name)
     assert guarded, "no test module importorskips copier — did the guard move?"
+
+
+# copier's `multiselect:` question type landed in 9.1.0. `_min_copier_version` exists
+# to convert "your copier is too old" into copier's own clear message; declaring a
+# floor BELOW the oldest release that can actually render this template turns the
+# gate into a lie — 9.0.1 passes it and then dies with the exact mystery error the
+# gate advertises preventing (`ValueError: Could not convert [] to string`).
+_FEATURE_FLOORS = [("9.1.0", "multiselect:", "multiselect questions")]
+
+
+def test_declared_copier_floor_covers_every_feature_the_template_uses():
+    """`_min_copier_version` must be >= the newest copier feature copier.yml relies
+    on. A floor that admits a copier which then crashes is worse than no floor: the
+    user is told the version was checked."""
+    text = (_ROOT / "copier.yml").read_text()
+    declared = None
+    for line in text.splitlines():
+        if line.startswith("_min_copier_version:"):
+            declared = line.split(":", 1)[1].strip().strip('"\'')
+    assert declared, "copier.yml declares no _min_copier_version"
+    as_tuple = tuple(int(p) for p in declared.split("."))
+
+    for floor, marker, why in _FEATURE_FLOORS:
+        if marker not in text:
+            continue
+        need = tuple(int(p) for p in floor.split("."))
+        assert as_tuple >= need, (
+            "copier.yml uses %s (needs copier >= %s) but declares "
+            "_min_copier_version: %r — that version passes the gate and then fails "
+            "to render" % (why, floor, declared))

@@ -10,6 +10,25 @@ version rather than a bare commit:
 ## [Unreleased]
 
 ### Fixed
+- `_min_copier_version` is `9.1.0`, not `9`. `multiselect:` questions landed in
+  copier 9.1.0, so 9.0.1 passed the declared gate and *then* died on
+  `Could not convert [] to string` — the mystery error the gate exists to
+  pre-empt. A floor that admits a copier which crashes is worse than no floor,
+  because the user is told the version was checked. Pinned to the features
+  `copier.yml` actually uses by a contract test.
+- A generated project starts **its own** `CHANGELOG.md` (new `.jinja` divergence
+  twin) instead of inheriting keel's release history — previously a new project
+  shipped with a dated `[0.1.0]` it never released, describing keel's internals
+  as if they were its changes. The twin keeps the attribution and the
+  `.copier-answers.yml` provenance note.
+- `test_generated_project_commits_its_copier_answers` is hermetic against the
+  developer's machine. `git add -A` honours global excludes, and git reads
+  `~/.config/git/ignore` with no config entry at all — so a single `*.yml` line
+  there failed the tracked-answers assertion on someone else's laptop.
+- `copier.yml`'s note on how twins render was wrong (and predates these passes):
+  the plain file is *not* copied-then-overwritten. For any path with a
+  `<name>.jinja` sibling copier's `_render_path` returns early, so the plain twin
+  is never copied and walk order is irrelevant.
 - `make new` now hands copier an **absolute** template path. Copier records that
   argument verbatim as `_src_path`, so the old literal `.` was re-resolved against
   the *generated project* on `copier update` — copier cloned the project as if it

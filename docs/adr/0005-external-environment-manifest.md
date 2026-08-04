@@ -5,7 +5,7 @@ layer: n/a
 status: proposed
 owner: TBD
 tags: [adr, environment, external-dependency, versioning, reproducibility, modules, container, provider]
-summary: Externals (binaries, env vars, licence servers, mounts, sibling repos, modules) become typed records in config/environment.json; a deterministic check_N proves the declaration is complete, a host prober measures the live machine against it, and a lockfile plus fingerprint make a result attributable to the environment that produced it. Containers stay the preferred answer where they reach; this covers the rest and treats `container` as one provider.
+summary: Externals (binaries, env vars, licence servers, mounts, sibling repos, modules) become typed records in config/environment.json; a deterministic check proves the declaration is complete, a prober measures the live host, and a lock plus fingerprint make a result attributable to the environment that produced it.
 id: docs-adr-0005-external-environment-manifest
 created: 2026-08-04
 updated: 2026-08-04
@@ -35,15 +35,18 @@ nowhere:
 |----------|---------|----------|
 | `KEEL_MCP_MODEL` | `mcp/qa_server.py` | no |
 | `OPENAI_API_KEY` | `models/openai_compatible.py` | no |
-| six `import.meta.env.*` vars | `src/frontend/**` | no |
+| 3 `import.meta.env.*` + 3 `process.env.*` vars | `src/frontend/**` | no |
 | `claude` binary | `models/claude_code_headless.py` | no |
 | `cdmon` binary | `scripts/cdmon_sync.py` | no |
 | `make` binary | `scripts/run_make_target.py` | no |
 | `npm` / `node` | `Makefile` (`lint-fe`, `typecheck-fe`, `fe-install`) | no |
 
 `.env.example` names two variables, neither of which is in that list. The one
-external that *is* declared — the Python floor — is a single hardcoded pair in
-`scripts/check_python_version.py`, with no data behind it.
+external that *is* declared — the Python floor — has real machinery behind it
+(`check_H` errors when `layers.backend.python` and `pyproject`'s `requires-python`
+disagree, and `scripts/check_python_version.py` fails early with a clear message),
+but it is hardcoded to that one pair: there is no way to declare a *second*
+external the same way.
 
 The motivating case is harder than a web stack. A silicon-design project pulls
 in Environment Modules (`module load synopsys/vcs/2024.09-SP2`), site licence
@@ -101,7 +104,7 @@ Say this plainly so nobody builds machinery they do not need:
   forces adoption — the same safe degradation `check_H` already applies to an
   absent `project.json`.
 - The part that pays for itself in *every* project regardless of exotica is
-  `check_N`'s completeness scan (below). The version-constraint machinery is
+  `check_O`'s completeness scan (below). The version-constraint machinery is
   opt-in on top of it.
 
 ## Decision
@@ -131,16 +134,34 @@ Profiles (`eda`, `web`, `cloud`) ship **defined but off** and are enabled from
 `config/project.json`, reusing the defined-vs-enabled split and the
 `_profile_flag_findings` helper that `practices.json` already established.
 
-**2. `check_N` in `check_structure.py` — deterministic, 3.6-safe, no probing.**
+**2. `check_O` in `check_structure.py` — deterministic, 3.6-safe, no probing.**
+(`check_N` is reserved for twin parity, which lands first — see the plan.)
 It validates the records' shape and closed vocabularies, and does the thing that
 stops a manifest rotting into paperwork: **it discovers undeclared externals.**
-An AST walk of `CODE_ROOTS` for `os.environ[...]` / `os.getenv` /
-`shutil.which` / `subprocess.run` with a literal `argv[0]`, plus a regex pass
-over `src/frontend/**` for `process.env.X` and `import.meta.env.X` — anything
-found with no matching record is an **error**, line-waivable with the existing
-`# practice-ok` pragma. This is the same species of meta-gate as `check_M`.
 Without it the manifest becomes the `owner:` field: elaborate, and unsatisfied on
-424 of 480 corpus nodes because nothing ever forced it.
+444 of 500 corpus nodes because nothing ever forced it. This is the same species
+of meta-gate as `check_M`.
+
+Discovery runs over **three** sources, not one — a single Python AST walk reaches
+only 3 of the 7 externals tabled above, and designing on that assumption would
+ship the same false confidence this ADR is written against:
+
+| Source | Finds | Misses |
+|---|---|---|
+| AST over `CODE_ROOTS` — literal `os.environ[…]`/`os.getenv`, `shutil.which`, `subprocess.run` with a literal `argv[0]` | `KEEL_MCP_MODEL`, `cdmon` | anything named indirectly |
+| Regex over `src/frontend/**` for `process.env.X` / `import.meta.env.X` | the 6 frontend vars | — |
+| **Text scan of `Makefile` + `.github/workflows/*.yml`** for `command -v X`, and recipe/`run:` argv heads | `npm`, `node` | — |
+
+Three call sites are **statically undecidable** and must not be pretended away:
+`models/openai_compatible.py:60` reads `os.environ.get(self.api_key_env)` (the
+name is an attribute), and `models/claude_code_headless.py:30` and
+`scripts/run_make_target.py:32` both call `subprocess.run(cmd, …)` on a variable.
+So discovery has a second half — a **dynamic-call-site census**: every
+`subprocess.run`/`os.environ.get` whose argument is not a literal is reported as
+*a site the scan cannot see*, and must carry either a `# practice-ok` waiver or a
+`needed_by` entry pointing at it from some record. That converts an invisible gap
+into a visible, reviewable one, which is the most an offline check can honestly
+claim. Both halves are errors; both are line-waivable with the existing pragma.
 
 **3. `scripts/check_environment.py` — the host prober (`make check-env`).**
 Stdlib-only and 3.6-safe on purpose: the hosts that most need it are the old
@@ -192,7 +213,7 @@ the gap neither tool sees alone.
 - `.env.example` stops being hand-written prose and becomes a generated,
   drift-checked view of the `kind: env-var` records — the same
   generate-and-byte-compare contract as the AAD schema and `openapi.json`.
-- `check_N`'s completeness scan will fail the repo on first run against the
+- `check_O`'s completeness scan will fail the repo on first run against the
   seven undeclared externals in the table above. That is the point; they are
   declared as part of landing it.
 - **Prerequisite:** no gate currently knows the `.jinja` twins exist. A fifth
@@ -210,4 +231,4 @@ the gap neither tool sees alone.
 - **conda `environment.yml`.** Language-scoped; says nothing about licence
   servers, mounts or modules.
 - **Document it in the README.** The status quo. It rots, and the repo already
-  measures how fast: `owner:` is unsatisfied on 424 of 480 corpus nodes.
+  measures how fast: `owner:` is unsatisfied on 444 of 500 corpus nodes.

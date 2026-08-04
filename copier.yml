@@ -7,8 +7,12 @@ _subdirectory: "."
 _answers_file: ".copier-answers.yml"
 _templates_suffix: ".jinja"
 # Fail with copier's own clear message rather than a mystery render error on an old
-# copier. Generate a NAMED version, not a bare SHA:  copier copy --vcs-ref v0.1.0 ...
-_min_copier_version: "9"
+# copier. 9.1.0, not 9: `multiselect:` (transports/profiles below) landed in 9.1.0, so
+# 9.0.1 would pass a "9" gate and then die on `Could not convert [] to string` — the
+# very error this line exists to pre-empt. Raise it whenever a newer feature is used;
+# tests/integration/test_copier_generator_contract.py pins the two together.
+# Generate a NAMED version, not a bare SHA:  copier copy --vcs-ref v0.1.0 ...
+_min_copier_version: "9.1.0"
 # Keel uses CLAUDE.md -> AGENT.md symlinks throughout (enforced by check_I); recreate
 # them as symlinks in the generated project instead of dereferencing to regular files.
 _preserve_symlinks: true
@@ -28,9 +32,12 @@ _exclude:
   - ".svn"
   # Keel instance/meta + generated views that must not ship into a new project.
   # NOTE: config/project.json, pyproject.toml and README.md are NOT excluded — each
-  # has a .jinja twin that renders to the same path and (processed after the plain
-  # file) overwrites it with the tailored version (name/requires-python/title). With
-  # keel's own answers the twins reproduce keel's files byte-for-byte (self-parity).
+  # has a .jinja twin that renders to the same path with the tailored version
+  # (name/requires-python/title). The plain file is NOT copied-then-overwritten: for
+  # any path with a `<name>.jinja` sibling copier's `_render_path` returns early, so
+  # the plain twin is never copied at all and the order files are walked in is
+  # irrelevant. With keel's own answers these twins reproduce keel's files
+  # byte-for-byte (self-parity).
   # NOTE: .copier-answers.yml is NOT excluded — copier WRITES it into the generated
   # project (it records the answers so `copier update` works); keel gitignores its own.
   # .gitignore.jinja is the one DIVERGENCE twin: unlike the twins above it deliberately

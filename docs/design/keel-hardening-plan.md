@@ -160,12 +160,22 @@ served response, and the optional-surface questions round-trip through
 
 ### Pass 5 — twin-parity, then the environment manifest (ADR-0005)
 
-`grep -rn 'jinja\|copier' scripts/*.py` returns nothing: **no gate knows the four
-`.jinja` twins exist.** The old parity harness died with `scaffold.py`
-(ADR-0004). Land `check_N`-style twin parity first — render each twin with
-keel's own answers and byte-compare — because ADR-0005 adds a fifth twin, and
-adding it first would manufacture a new instance of the drift class it claims to
-fix.
+`grep -rn 'jinja\|copier' scripts/*.py` still returns nothing: **no
+`check_structure.py` gate knows the five `.jinja` twins exist.** The old parity
+harness died with `scaffold.py` (ADR-0004). Passes 1-2 added *per-twin* pytest
+pins (`.gitignore.jinja` byte-pinned to `.gitignore`; the generator-contract
+tests), so the claim is no longer "nothing checks them" — it is that the checks
+are ad hoc, one twin at a time, live only where the `template` extra is
+installed, and say nothing about `pyproject.toml.jinja`,
+`config/project.json.jinja`, `README.md.jinja` or `CHANGELOG.md.jinja`.
+
+Land `check_N` — general twin parity, in `check_structure.py` in the style of
+`check_M`: render every twin with keel's own answers and byte-compare, with an
+explicit allow-list for the *divergence* twins (`.gitignore`, `CHANGELOG.md`)
+that are supposed to differ, and an assertion on exactly *how* they differ. It
+goes first because ADR-0005 adds a sixth twin, and adding it before parity is
+gated would manufacture a new instance of the drift class it claims to fix.
+(ADR-0005's own check is `check_O`, after this one.)
 
 Then ship ADR-0005 slice 1 only: `config/environment.json`, the deterministic
 declaration check (shape, vocabularies, and the undeclared-external completeness
@@ -189,9 +199,12 @@ undeclared externals, and the completeness scan errors on a new undeclared
 ## Deferred, with reasons
 
 - **Grace tiers for new checks.** Adding the nested-directory README+CLAUDE rule
-  that `AGENT.md:34` already claims to enforce produces 10 errors in keel
-  itself. `copier update` *can* carry the fixes downstream (plain files copy
-  verbatim), so this is release discipline, not an undeliverable migration: ship
+  that `AGENT.md:34` already claims to enforce reds keel itself — the exact
+  count depends on how the rule is scoped (keel ships 5 unlabeled nested
+  packages under `src/backend/`, each missing both `README.md` and `CLAUDE.md`),
+  so treat "10" as one plausible reading, not a measurement. `copier update`
+  *can* carry the fixes downstream (plain files copy verbatim), so this is
+  release discipline, not an undeliverable migration: ship
   a new rule as WARN for one release, promote to ERROR in the next, and never
   release a rule keel itself fails. Adopt as a rule from pass 1's tag onward.
 - **The same silent-skip defect, one more instance.**
@@ -209,7 +222,7 @@ undeclared externals, and the completeness scan errors on a new undeclared
   transport requirements, so both really run), but it means a future import or
   route error would show up as a green gate. Fits pass 3's "silent-failure modes"
   bullet.
-- **`query_corpus` token cost** (~4.4k tokens per call, no node bodies returned,
-  no relevance floor — today strictly worse than `grep` + `Read` for most
-  questions). Real, but it is an optimisation of a working thing, not a defect
-  in the template contract.
+- **`query_corpus` token cost** (~4.4k tokens per call, no relevance floor, and
+  only a ~400-char excerpt per node rather than the section body — so for most
+  questions it costs more than `grep` + `Read` and answers less). Real, but it is
+  an optimisation of a working thing, not a defect in the template contract.

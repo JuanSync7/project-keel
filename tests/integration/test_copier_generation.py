@@ -50,6 +50,27 @@ def _gitignore_lines(path):
             if ln.strip() and not ln.strip().startswith("#")]
 
 
+def _hermetic_git_env(tmp_path):
+    """A git environment that ignores the DEVELOPER's machine.
+
+    `git add -A` honours global excludes, and git reads `$XDG_CONFIG_HOME/git/ignore`
+    (i.e. ~/.config/git/ignore) with no config entry at all — so a single `*.yml`
+    line there, or a `core.excludesFile` naming `.copier-answers.yml`, silently
+    fails the tracked-answers assertion below on someone else's laptop. Neutralise
+    global + system config and point excludesFile at nothing.
+    (test_copier_update.py sets the equivalent via monkeypatch for copier's own
+    git subprocesses; keep the two in step.)
+    """
+    cfg = tmp_path / "gitconfig"
+    cfg.write_text("[user]\n\tname = Keel Test\n\temail = keel-test@example.invalid\n"
+                   "[core]\n\texcludesFile = %s\n\tfsmonitor = false\n"
+                   "[init]\n\tdefaultBranch = main\n" % os.devnull)
+    env = dict(os.environ)
+    env.update(GIT_CONFIG_GLOBAL=str(cfg), GIT_CONFIG_SYSTEM=os.devnull,
+               GIT_CONFIG_NOSYSTEM="1")
+    return env
+
+
 @pytest.mark.parametrize("stack", ["react-vite", "astro", "none"])
 def test_generated_project_is_tailored_and_valid(stack, tmp_path):
     dest = tmp_path / "proj"
@@ -163,13 +184,34 @@ def test_generated_project_commits_its_copier_answers(tmp_path):
     assert ".copier-answers.yml" not in _gitignore_lines(dest / ".gitignore")
 
     # the real judge: git itself, in a fresh repo made from the generated tree
-    for argv in (["git", "init", "-q"],
-                 ["git", "-c", "user.email=t@t", "-c", "user.name=t", "add", "-A"]):
-        r = subprocess.run(argv, cwd=str(dest), capture_output=True, text=True)
+    env = _hermetic_git_env(tmp_path)
+    for argv in (["git", "init", "-q"], ["git", "add", "-A"]):
+        r = subprocess.run(argv, cwd=str(dest), capture_output=True, text=True, env=env)
         assert r.returncode == 0, r.stdout + r.stderr
     tracked = subprocess.run(["git", "ls-files"], cwd=str(dest),
-                             capture_output=True, text=True).stdout.split("\n")
+                             capture_output=True, text=True, env=env).stdout.split("\n")
     assert ".copier-answers.yml" in tracked
+
+
+def test_generated_project_starts_its_own_changelog(tmp_path):
+    """CHANGELOG.md ships verbatim unless twinned, which hands the new project
+    KEEL's release history — a dated `[0.1.0]` it never released, describing keel's
+    `.gitignore.jinja` twin and `_min_copier_version` bump as if they were its own
+    changes. A descendant starts empty, and records where it came from instead."""
+    dest = tmp_path / "proj"
+    _generate(dest, project_name="Acme Widgets", frontend_stack="none")
+    text = (dest / "CHANGELOG.md").read_text()
+
+    # Naming keel as the ORIGIN is wanted (that is the provenance story). What must
+    # not leak is keel's release HISTORY and its internals-as-your-changes.
+    for leaked in ("project_keel", ".gitignore.jinja", "_min_copier_version"):
+        assert leaked not in text, (
+            "keel's own changelog content leaked into the generated project: %r" % leaked)
+    releases = [ln for ln in text.splitlines() if ln.startswith("## [")]
+    assert releases == ["## [Unreleased]"], (
+        "a generated project must start with no releases of its own, got: %r" % releases)
+    assert "# Acme Widgets" in text          # it is the PROJECT's changelog
+    assert "project-keel" in text            # ...that records where it came from
 
 
 def test_generated_project_does_not_ship_keels_template_meta_tests(tmp_path):
