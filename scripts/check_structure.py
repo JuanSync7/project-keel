@@ -97,11 +97,77 @@ def walk(root):
         yield dirpath, dirnames, filenames
 
 
+# --- reading the files the gate is KEYED ON -----------------------------------
+#
+# ABSENT and UNREADABLE are different facts and must not share a code path.
+# A file that is not there is a legitimate shape: copier prunes what a generated
+# project did not select, so "no config/practices.json" must degrade in silence.
+# A file that IS there but cannot be decoded/parsed is a gate defect: every check
+# keyed on it stops gating while the run still exits 0 (the silent-green gate).
+# These two helpers make that split once, so no caller has to catch blind.
+
+_CONFIG_READ = {}      # relpath -> parsed JSON or _NO_DATA (parsed once)
+_READ_REPORTED = set()  # absolute paths already reported unreadable (report once)
+
+# "The gate got no data" — distinct from the JSON literal `null`, which parses
+# fine and is a SHAPE error the caller must still get to report.
+_NO_DATA = object()
+
+# The ways a file on disk can fail to become the thing the gate needs. Named so
+# every reader states the SAME closed set: anything outside it is a bug in the
+# gate, and a gate must fail loudly on its own bugs rather than warn and skip.
+UNREADABLE = (OSError, ValueError)          # ValueError covers UnicodeDecodeError
+UNPARSEABLE = UNREADABLE + (SyntaxError,)   # ...plus ast.parse (NUL -> ValueError)
+
+
+def _read_text(path, report):
+    """A UTF-8 file's text, or None: absent is silent, unreadable is reported.
+
+    Still degrades to None after reporting, so one bad file never aborts the run.
+    `report` is the caller's tier (err for a file whose loss disables a check,
+    warn for one whose loss only costs an advisory). Reported at most once per
+    path — several checks read the same registry.
+    """
+    if not os.path.isfile(path):
+        return None
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return fh.read()
+    except UNREADABLE as e:
+        if path not in _READ_REPORTED:
+            _READ_REPORTED.add(path)
+            report("%s: unreadable (%s)" % (rel(path), e))
+        return None
+
+
+def _read_json_config(relpath):
+    """A JSON config under ROOT as parsed data, else _NO_DATA.
+
+    Same split as _read_text plus invalid JSON — a file the gate can see but
+    cannot use, which is the case that silently disabled check_K/L/M. Memoised
+    per path so one broken registry yields one error, not one per consumer.
+    Returns _NO_DATA (not None) when there is nothing to hand back, so a JSON
+    literal `null` stays a caller-visible shape error instead of masquerading
+    as a failed read.
+    """
+    if relpath in _CONFIG_READ:
+        return _CONFIG_READ[relpath]
+    data = _NO_DATA
+    text = _read_text(os.path.join(ROOT, relpath), err)
+    if text is not None:
+        try:
+            data = json.loads(text)
+        except ValueError as e:
+            err("%s: unreadable (invalid JSON: %s)" % (relpath, e))
+    _CONFIG_READ[relpath] = data
+    return data
+
+
 def parse_frontmatter(path):
     try:
         with open(path, encoding="utf-8") as fh:
             text = fh.read()
-    except Exception as e:
+    except UNREADABLE as e:
         err("%s: cannot read (%s)" % (rel(path), e))
         return {}
     if not text.startswith("---"):
@@ -143,10 +209,10 @@ def check_frontmatter(path, seen_ids):
             seen_ids[fid] = rel(path)
     # Corpus: a path-like canonical pointer must resolve to a real file.
     can = fm.get("canonical")
-    if can and can not in ("true", "false", "self"):
-        if ("/" in can or can.endswith(".md")) and \
-                not os.path.exists(os.path.join(ROOT, can)):
-            err("%s: canonical target '%s' does not exist" % (rel(path), can))
+    if can and can not in ("true", "false", "self") \
+            and ("/" in can or can.endswith(".md")) \
+            and not os.path.exists(os.path.join(ROOT, can)):
+        err("%s: canonical target '%s' does not exist" % (rel(path), can))
     # Corpus: deprecated content must point at its successor.
     if fm.get("status") == "deprecated" and not fm.get("superseded_by"):
         err("%s: status is 'deprecated' but no 'superseded_by' is set" % rel(path))
@@ -204,7 +270,7 @@ def check_C():
                 if "__all__" not in fh.read():
                     err("%s: __init__.py defines no __all__ (public API surface)"
                         % rel(init))
-        except Exception as e:
+        except UNREADABLE as e:
             err("%s: cannot read (%s)" % (rel(init), e))
 
 
@@ -230,7 +296,7 @@ def check_D():
                 try:
                     with open(full, encoding="utf-8") as fh:
                         tree = ast.parse(fh.read(), filename=full)
-                except Exception as e:
+                except UNPARSEABLE as e:
                     warn("%s: could not parse (%s)" % (rel(full), e))
                     continue
                 for node in ast.walk(tree):
@@ -280,8 +346,8 @@ def check_E():
                 try:
                     with open(full, encoding="utf-8") as fh:
                         tree = ast.parse(fh.read(), filename=full)
-                except Exception:
-                    continue  # check_D already warns on parse failure
+                except UNPARSEABLE:
+                    continue  # check_D already warns on parse failure (same roots)
                 exported = _exported_names(tree)
                 if not exported:
                     continue
@@ -338,29 +404,26 @@ def _tool_used_by(path):
     """Agent dirs (agents/<name>) listed under a tool spec's '## Used by'."""
     out = []
     in_section = False
-    try:
-        with open(path, encoding="utf-8") as fh:
-            for line in fh:
-                s = line.strip()
-                if s.startswith("## "):
-                    in_section = s.lower() == "## used by"
-                    continue
-                if in_section and s.startswith("- "):
-                    ref = s[2:].strip().rstrip("/")
-                    if ref.startswith("agents/"):
-                        out.append(ref)
-    except Exception:
-        pass
+    text = _read_text(path, err)   # unreadable -> the cross-check below goes
+    if text is None:               # vacuous, or names the OTHER side wrongly
+        return out
+    for line in text.splitlines():
+        s = line.strip()
+        if s.startswith("## "):
+            in_section = s.lower() == "## used by"
+            continue
+        if in_section and s.startswith("- "):
+            ref = s[2:].strip().rstrip("/")
+            if ref.startswith("agents/"):
+                out.append(ref)
     return out
 
 
 def _manifest_specs(path):
     """Tool-spec basenames referenced in an agent's tools.md (../tools/X.tool.md)."""
     out = []
-    try:
-        with open(path, encoding="utf-8") as fh:
-            text = fh.read()
-    except Exception:
+    text = _read_text(path, err)   # unreadable -> see _tool_used_by
+    if text is None:
         return out
     marker, end = "../tools/", ".tool.md"
     i = 0
@@ -413,10 +476,8 @@ def check_G():
 
 def _requires_python():
     """Return pyproject.toml's requires-python value, or None if absent."""
-    try:
-        with open(os.path.join(ROOT, "pyproject.toml"), encoding="utf-8") as fh:
-            text = fh.read()
-    except Exception:
+    text = _read_text(os.path.join(ROOT, "pyproject.toml"), err)
+    if text is None:
         return None
     m = re.search(r'requires-python\s*=\s*(["\'])([^"\']+)\1', text)
     return m.group(2).strip() if m else None
@@ -425,12 +486,10 @@ def _requires_python():
 def _subdirs(relpath):
     """Immediate sub-directory names under ROOT/relpath, minus IGNORE_DIRS."""
     base = os.path.join(ROOT, relpath)
-    out = []
-    if os.path.isdir(base):
-        for name in sorted(os.listdir(base)):
-            if name not in IGNORE_DIRS and os.path.isdir(os.path.join(base, name)):
-                out.append(name)
-    return out
+    if not os.path.isdir(base):
+        return []
+    return [name for name in sorted(os.listdir(base))
+            if name not in IGNORE_DIRS and os.path.isdir(os.path.join(base, name))]
 
 
 def _expect(val, typ, label, default):
@@ -460,13 +519,10 @@ def check_H():
     if not os.path.isfile(path):
         warn("config/project.json: not found; project facts are unenforced")
         return
-    try:
-        with open(path, encoding="utf-8") as fh:
-            manifest = json.load(fh)
-    except Exception as e:
-        err("config/project.json: invalid JSON (%s)" % e)
-        return
-    if not isinstance(manifest, dict):
+    manifest = _read_json_config(os.path.join("config", "project.json"))
+    if manifest is _NO_DATA:
+        return                        # _read_json_config already reported it
+    if not isinstance(manifest, dict):   # incl. a literal `null` — a shape error
         err("config/project.json: top level must be a JSON object")
         return
     layers = _expect(manifest.get("layers"), dict, "layers", {})
@@ -512,7 +568,7 @@ def check_H():
                 and not os.path.isdir(os.path.join(ROOT, avail[t])):
             err("config/project.json: enabled transport '%s' -> '%s' does not "
                 "exist" % (t, avail[t]))
-    declared = set(v for v in avail.values() if isinstance(v, str))
+    declared = {v for v in avail.values() if isinstance(v, str)}
     for d in _subdirs("api"):
         if os.path.join("api", d) not in declared:
             warn("api/%s: present but not in config/project.json "
@@ -570,22 +626,19 @@ def check_H():
 
 def _defined_profile_names():
     """The set of domain-profile names DEFINED in config/practices.json, or None
-    when it cannot be authoritatively determined (file absent/unreadable/not a
-    dict, 'profiles' missing or not a dict, or only '_'-prefixed keys). Returning
-    None suppresses the enabled-but-undefined WARN, so a registry-side typo never
-    breaks a consuming repo's build (mirrors _stdlib_exc_modules' safe degrade)."""
-    path = os.path.join(ROOT, "config", "practices.json")
-    try:
-        with open(path, encoding="utf-8") as fh:
-            data = json.load(fh)
-    except Exception:
-        return None
+    when it cannot be authoritatively determined (file absent or not a dict,
+    'profiles' missing or not a dict, or only '_'-prefixed keys). Returning None
+    suppresses the enabled-but-undefined WARN, so a registry-side SHAPE typo never
+    breaks a consuming repo's build (mirrors _stdlib_exc_modules' safe degrade).
+    A present-but-unreadable registry is NOT such a typo — _read_json_config
+    reports it — because it silently disables check_K/L/M as well as this WARN."""
+    data = _read_json_config(os.path.join("config", "practices.json"))
     if not isinstance(data, dict):
         return None
     profs = data.get("profiles")
     if not isinstance(profs, dict):
         return None
-    names = set(k for k in profs if not str(k).startswith("_"))
+    names = {k for k in profs if not str(k).startswith("_")}
     return names or None
 
 
@@ -686,15 +739,12 @@ def _local_top_names():
 def _stdlib_exc_modules():
     """Declared stdlib modules whose exceptions may be raised unwrapped
     (config/practices.json tokens.stdlib_exception_modules), else the fallback."""
-    path = os.path.join(ROOT, "config", "practices.json")
-    try:
-        with open(path, encoding="utf-8") as fh:
-            data = json.load(fh)
-        mods = (data.get("tokens") or {}).get("stdlib_exception_modules")
+    data = _read_json_config(os.path.join("config", "practices.json"))
+    tokens = data.get("tokens") if isinstance(data, dict) else None
+    if isinstance(tokens, dict):
+        mods = tokens.get("stdlib_exception_modules")
         if isinstance(mods, list) and mods:
             return set(mods)
-    except Exception:
-        pass
     return set(_STDLIB_EXC_FALLBACK)
 
 
@@ -772,7 +822,7 @@ def check_J():
                     with open(full, encoding="utf-8") as fh:
                         text = fh.read()
                     tree = ast.parse(text, filename=full)
-                except Exception as e:
+                except UNPARSEABLE as e:
                     warn("%s: could not parse (%s)" % (rel(full), e))
                     continue
                 pragma = _practice_ok_lines(text)
@@ -786,33 +836,25 @@ def check_J():
 # --- shared registry readers (config/practices.json, config/project.json) -----
 
 def _load_practices():
-    """config/practices.json as a dict, or {} on any failure (degrade to silence).
+    """config/practices.json as a dict, else {} — absent degrades to silence, a
+    present-but-unreadable registry is reported (it disables check_K/L/M).
     Read BY PATH, never imported (it is DATA — CONVENTIONS section 18)."""
-    path = os.path.join(ROOT, "config", "practices.json")
-    try:
-        with open(path, encoding="utf-8") as fh:
-            data = json.load(fh)
-        if isinstance(data, dict):
-            return data
-    except Exception:
-        pass
-    return {}
+    data = _read_json_config(os.path.join("config", "practices.json"))
+    return data if isinstance(data, dict) else {}
 
 
 def _profiles_on():
     """Domain profiles enabled in config/project.json practices.profiles. Mirrors
-    check_practices.profiles_on() exactly (value is True, '_'-keys stripped)."""
-    path = os.path.join(ROOT, "config", "project.json")
-    try:
-        with open(path, encoding="utf-8") as fh:
-            proj = json.load(fh)
-        prof = ((proj.get("practices") or {}).get("profiles")) or {}
-        if not isinstance(prof, dict):
-            return set()
-        return set(k for k in prof
-                   if prof[k] is True and not str(k).startswith("_"))
-    except Exception:
+    check_practices.profiles_on() exactly (value is True, '_'-keys stripped).
+    An unreadable manifest is reported by _read_json_config, never swallowed:
+    it would otherwise silently return check_L before it does any work."""
+    proj = _read_json_config(os.path.join("config", "project.json"))
+    practices = proj.get("practices") if isinstance(proj, dict) else None
+    prof = practices.get("profiles") if isinstance(practices, dict) else None
+    if not isinstance(prof, dict):
         return set()
+    return {k for k in prof
+            if prof[k] is True and not str(k).startswith("_")}
 
 
 # --- check_K: frozen-config gate ----------------------------------------------
@@ -838,7 +880,7 @@ def _class_kw_line(node, lines):
     while i <= n:
         if 1 <= i <= n:
             s = lines[i - 1].lstrip()
-            if s.startswith("class ") or s.startswith("class\t"):
+            if s.startswith(("class ", "class\t")):
                 return i
         i += 1
     return start
@@ -968,10 +1010,7 @@ def _is_immutable_config(node, binding):
 
 
 def _span_pragma(lo, hi, pragma):
-    for ln in pragma:
-        if lo <= ln <= hi:
-            return True
-    return False
+    return any(lo <= ln <= hi for ln in pragma)
 
 
 def _frozen_config_violations(tree, text, marker, pragma):
@@ -1021,7 +1060,7 @@ def check_K():
                     with open(full, encoding="utf-8") as fh:
                         text = fh.read()
                     tree = ast.parse(text, filename=full)
-                except Exception as e:
+                except UNPARSEABLE as e:
                     warn("%s: could not parse (%s)" % (rel(full), e))
                     continue
                 pragma = _practice_ok_lines(text)
@@ -1145,7 +1184,7 @@ def check_L():
                     with open(full, encoding="utf-8") as fh:
                         text = fh.read()
                     tree = ast.parse(text, filename=full)
-                except Exception as e:
+                except UNPARSEABLE as e:
                     warn("%s: could not parse (%s)" % (rel(full), e))
                     continue
                 for line, arg, name in _naked_tensor_params(tree, text, base_types):
@@ -1285,7 +1324,7 @@ def _toml_targets(text):
         key, rhs = s.split("=", 1)
         key, rhs = key.strip(), rhs.strip()
         full = (cur_table + "." + key) if cur_table else key
-        span = set([ln])
+        span = {ln}
         depth = bdelta.get(ln, 0)
         j = i
         while depth > 0 and j + 1 < n:
@@ -1346,10 +1385,7 @@ def _flag_state(entries):
 def _line_waived(target_lines, pragma):
     """A finding anchored to specific lines is waived by a `# practice-ok` on any
     of those lines or the line directly above the first."""
-    for ln in target_lines:
-        if ln in pragma or (ln - 1) in pragma:
-            return True
-    return False
+    return any(ln in pragma or (ln - 1) in pragma for ln in target_lines)
 
 
 def _span_lines(entries):
@@ -1393,17 +1429,25 @@ def _ruleset_parity_findings(practices, text):
                             "(config/practices.json rulesets.ruff.extend_select). "
                             "Add it or `# practice-ok`.")
         else:
+            # The two `errs.append` calls below are PERF401-suppressed. This is
+            # check_M's own body, the gate proving pyproject cannot silently
+            # loosen the declared policy. Each guard is a backslash-continued
+            # multi-term `and`; folding it into an extend+genexp risks a
+            # transcription slip that makes check_M UNDER-report — precisely the
+            # failure it exists to prevent. A ~20-family loop has nothing to win.
             for fam in extend:
                 if isinstance(fam, str) and not _rhs_has_family(es_text, fam) \
                         and not _line_waived(es_lines, pragma):
-                    errs.append("pyproject.toml: ruff family '%s' declared in "
-                                "practices.json is not in extend-select (silent "
-                                "loosening)" % fam)
+                    errs.append(  # noqa: PERF401 — check_M's body; see above
+                        "pyproject.toml: ruff family '%s' declared in "
+                        "practices.json is not in extend-select (silent "
+                        "loosening)" % fam)
     for fam in dkeys:
         if es and _deferred_active(es_text, fam) and not _line_waived(es_lines, pragma):
-            errs.append("pyproject.toml: ruff family '%s' is DEFERRED in "
-                        "practices.json but selected in extend-select "
-                        "(directly or via a parent prefix / ALL)" % fam)
+            errs.append(  # noqa: PERF401 — check_M's body; see above
+                "pyproject.toml: ruff family '%s' is DEFERRED in "
+                "practices.json but selected in extend-select "
+                "(directly or via a parent prefix / ALL)" % fam)
 
     if isinstance(flags, list):
         for flag in flags:
@@ -1426,7 +1470,9 @@ def check_M():
     policy declared as DATA in config/practices.json rulesets. Errs on a declared
     ruff family missing from extend-select, a declared mypy flag off/absent, or a
     'deferred' family silently selected. Degrades to a WARN if pyproject is
-    missing/unreadable (can't prove anything); waivable with `# practice-ok`."""
+    MISSING (a generated project may not carry one); a pyproject that is present
+    but unreadable ERRs, because that is this gate going dark on a file that is
+    right there. Waivable with `# practice-ok`."""
     practices = _load_practices()
     if not isinstance(practices.get("rulesets"), dict):
         return
@@ -1434,11 +1480,8 @@ def check_M():
     if not os.path.isfile(path):
         warn("pyproject.toml: not found; ruleset parity unenforced")
         return
-    try:
-        with open(path, encoding="utf-8") as fh:
-            text = fh.read()
-    except Exception as e:
-        warn("pyproject.toml: could not read (%s)" % e)
+    text = _read_text(path, err)   # present but unreadable -> parity unprovable
+    if text is None:
         return
     errs, warns_ = _ruleset_parity_findings(practices, text)
     for m in errs:
@@ -1465,7 +1508,7 @@ def main():
         print("WARN  " + w_)
     for e_ in errors:
         print("ERROR " + e_)
-    print("")
+    print()
     print("check_structure: %d error(s), %d warning(s)"
           % (len(errors), len(warnings)))
     return 1 if errors else 0

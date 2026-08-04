@@ -75,13 +75,16 @@ def build_showcase_router(root: str) -> APIRouter:
         return to_jsonable(list(current().doc_tree()))
 
     @router.get("/api/wiki/node")
-    def wiki_node(id: str = Query(..., description="corpus node_id")):
+    # `alias="id"` keeps the PUBLISHED query parameter name while the Python
+    # parameter stops shadowing the builtin -- openapi.json is unchanged, so no
+    # client breaks (pinned by `make check-openapi`).
+    def wiki_node(node_id: str = Query(..., alias="id", description="corpus node_id")):
         sc = current()
-        detail = sc.node(id)
+        detail = sc.node(node_id)
         if detail is None:
-            raise HTTPException(status_code=404, detail="unknown node %r" % id)
+            raise HTTPException(status_code=404, detail="unknown node %r" % node_id)
         payload = to_jsonable(detail)
-        payload["markdown"] = sc.markdown(id)   # renderable body, live from the file
+        payload["markdown"] = sc.markdown(node_id)   # renderable body, live from the file
         return payload
 
     @router.get("/api/search")

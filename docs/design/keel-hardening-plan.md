@@ -114,18 +114,22 @@ path, so a generated project handed to a colleague still cannot `copier update`
 answer is to generate from `gh:JuanSync7/project-keel`; `README.md` now says so
 instead of implying `make new` is equivalent.
 
-### Pass 3 — close the gate's blind spot *(next)*
+### Pass 3 — close the gate's blind spot *(done)*
 
-`make verify` is green while `ruff check agents models runtimes mcp api scripts`
-reports **99 errors** across **6,453 Python lines (59% of the repo)** — including
-a `B904` at `runtimes/langgraph_adapter.py:158` that violates keel's own
-*gate-tier* `exception-chaining` practice. `Makefile:60` lints only `src tests`;
-`pyproject.toml:79` types only `src`. An agent told *"let the gate decide done"*
-is being lied to across most of the repo.
+`make verify` is green while `ruff check agents models runtimes mcp api demo
+scripts` reports **101 errors** across **6,571 Python lines (58% of the repo's
+Python)** — including a `B904` at `runtimes/langgraph_adapter.py:158` that
+violates keel's own *gate-tier* `exception-chaining` practice. `Makefile:72`
+lints only `src tests`; `pyproject.toml:79` types only `src`. An agent told
+*"let the gate decide done"* is being lied to across most of the repo.
+*(Re-measured at `fca1ae5` for this pass by extracting the commit and linting
+it: 101 errors — scripts 83, api 7, agents 3, runtimes 3, demo 2, models 2,
+mcp 1 — over 6,571 lines. The draft's 99 / 6,453 / 59% did not reproduce and
+have been corrected; the shape of the finding is unchanged.)*
 
 Reuse the existing `CODE_ROOTS` list (`check_structure.py:74`) as the lint and
 type scope, then ratchet with per-module mypy overrides rather than in one jump.
-Also fix the two confirmed silent-failure modes: `Makefile:62,75` (`command -v
+Also fix the two confirmed silent-failure modes: `Makefile:74,87` (`command -v
 npm || exit 0` exits only its own sub-shell, so the loop still runs and hard-fails)
 and `scripts/cdmon_sync.py:8,20` (3.6-illegal `from __future__ import
 annotations` + `list[str] | None` make the flagship §9 external-tool adapter
@@ -134,7 +138,112 @@ unparseable under the very pre-commit interpreter the repo documents).
 **Done when:** `ruff check $(CODE_ROOTS)` is clean, mypy's scope is widened with
 recorded overrides, and `/usr/bin/python3 scripts/cdmon_sync.py --check` exits 0.
 
-### Pass 4 — make the generated project the user's, not keel's
+**Landed.** All three done-conditions met, and `make verify
+PY=.venv/bin/python` exits 0 (300 passed, 1 skipped — the skip is the
+pre-existing `jsonschema` `importorskip` below, identical at `fca1ae5`). A bare
+`make verify` still exits 2 at `check-python`, because `PY ?= python3` is this
+host's 3.6.8; that is pre-existing and deliberate, and `check-python` is
+untouched by this pass.
+
+- **The three scope lists are one list.** `Makefile` declares
+  `CODE_ROOTS := src tests api models mcp agents demo scripts runtimes` — the
+  same nine as `check_structure.py:74` — and `lint-py`/`fmt` use
+  `$(wildcard $(CODE_ROOTS))`; the wildcard is load-bearing, because ruff exits
+  1 with `E902 No such file or directory` on a root copier pruned downstream.
+  `typecheck-py` now passes mypy **no paths**: an explicit path argument
+  overrides `[tool.mypy] files`, so widening the config alone would have been
+  silently inert. CI already runs `make lint` and `make typecheck`, so the
+  widening reaches CI without a workflow change.
+- **ruff is clean over all nine roots** (`All checks passed!`, re-measured
+  today). Disposition of the 101: 41 T201 entrypoint prints became declared
+  per-file ignores (`scripts/**` as a glob because every print there is inside a
+  `main()`; `api/` and `demo/` named file-by-file so a genuine library print is
+  still caught), 55 were fixed in code, and 5 carry a reasoned inline `# noqa`
+  (3 PERF401 inside check_M's own body, 1 SIM102, 1 BLE001 that degrades into a
+  visible `owner_source == "none"` signal). The carve-outs are mirrored as data
+  in `config/practices.json` `rulesets.ruff.per_file_ignores` — but see the
+  check_M blind spot below: that mirror is reviewed data, not an enforced gate.
+- **mypy 19 → 36 files checked.** `files = ["src"]` →
+  `["src", "models", "demo", "agents"]`, plus `explicit_package_bases` and
+  `mypy_path = ["src"]` (without the first mypy does not start: *Source file
+  found twice under different module names*), and four `[[tool.mypy.overrides]]`
+  blocks that relax only measured flags and never `strict = false`. Full strict
+  over all nine roots is **1,411 errors in 71 files** today, so the rest is a
+  declared ratchet in `config/practices.json` `rulesets.mypy.ratchet`, one rung
+  per root with an error count and a removal condition, and
+  `test_gate_scope.py` fails if a code root is in neither `files` nor the
+  ratchet. **Deliberate deviation from the plan's "widen the scope":** the roots
+  that are not clean were *not* forced in. Doing so would have needed either the
+  **173** errors that survive even with the whole `typed-everywhere` flag set
+  relaxed (re-measured today; 161 when the deviation was taken, before this
+  pass's own new tests) or a blanket `ignore_errors` — a fake gate. The
+  one `ignore_errors` used is `runtimes.*`, which `agents/` drags in
+  transitively; it is a declared rung with its cost and exit recorded.
+- **The FE guards skip instead of failing.** Reproduced on the old Makefile with
+  an empty PATH: *"npm not found; skipping frontend lint"* followed by
+  `npm: command not found` and `make: *** [Makefile:75: lint-fe] Error 1`, exit
+  2. Guard and loop are now one logical line, `FE_APPS` is tested first so a
+  `frontend_stack: none` project says nothing about npm, and all four cells ×
+  two targets are pinned — including the non-regression half (npm present, the
+  app's script failing, target must still fail), which really ran here.
+- **`cdmon_sync.py` parses at the documented floor.**
+  `/usr/bin/python3 scripts/cdmon_sync.py --check` exits 0 and prints the
+  graceful skip; at `fca1ae5` the same command was `SyntaxError: future feature
+  annotations is not defined`, exit 1. Both hazards were fixed, not just line 8:
+  with the future import gone, `list[str] | None` raises `TypeError` at def
+  time.
+- **Two silent-failure modes beyond the plan's two.** (a) The gate's config
+  readers could not tell *absent* from *unreadable*: with a malformed
+  `config/practices.json`, `fca1ae5`'s `check_structure.py` prints
+  `0 error(s), 5 warning(s)` and exits 0 with check_K, check_L and check_M
+  reduced to no-ops; it now prints one `ERROR config/practices.json:
+  unreadable (...)` and exits 1, while an *absent* file stays silent because
+  copier legitimately prunes files. All 16 blind `except Exception:` clauses in
+  `check_structure.py` are gone (8 deleted, 8 narrowed to two named tuples).
+  (b) `generate_aad_schema.py --check` returned 0 on a broken model; only
+  `ImportError`/`SyntaxError` skip now. This closes half of the "blanket
+  `except Exception: return 0`" item under *Deferred* — `export_openapi.py:44`
+  is the surviving half.
+- **The pass regressed every descendant, and the repair is pinned.** `Makefile`
+  ships verbatim but `pyproject.toml` does not — a generated project's pyproject
+  comes entirely from `pyproject.toml.jinja`. Mid-pass the twin still carried
+  `files = ["src"]` and no T201 carve-outs, so a generated project got the
+  9-root lint scope against a pyproject without them: measured, **40 T201
+  errors, exit 1 on arrival**, plus a mypy scope of 19 files against keel's 36 —
+  silently green, which is worse. The twin was regenerated *from*
+  `pyproject.toml` and is now pinned as text; a second test lints a freshly
+  generated project over the roots its own `Makefile` declares. Both were
+  confirmed to bite by reverting the twin in a scratch copy.
+
+**Not closed by this pass** (each verified, not assumed; the durable ones are
+also filed under *Deferred, with reasons*):
+
+- **check_M cannot see the two mechanisms this pass leaned on.** Adding a
+  blanket `per-file-ignores = {"**/*.py" = ["B904", "BLE001"]}` *and* a
+  `[[tool.mypy.overrides]] strict = false` to `pyproject.toml` still yields
+  `check_structure: 0 error(s)`, exit 0 (measured in a scratch copy). `grep -rn
+  per_file_ignores scripts/` returns nothing, and `overrides` appears nowhere in
+  `check_structure.py`. So the entire mypy ratchet this pass introduced parks its
+  declared debt inside the parity gate's blind spot. Highest-value follow-up;
+  it needs `check_structure.py` + `pyproject.toml` + `config/practices.json` in
+  one commit, which no single writer in this pass was allowed to make.
+- **The two large ratchet rungs are already stale.** Re-measured today (full
+  strict, own-file errors): tests **702**, scripts **482**, runtimes 87, api 43,
+  mcp 16 — against the declared 622 / 464 / 87 / 43 / 16. The four small rungs
+  reproduce exactly; the two big ones grew with the test files this pass added.
+  `test_every_mypy_ratchet_entry_states_its_cost_and_its_exit` asserts only that
+  an `errors` int and a `removed_when` exist — it does **not** re-measure, so
+  these numbers are documentation, not a gate.
+- **`make fmt` is widened but has never been run**: `ruff format --check` over
+  the nine roots reports 104 of 111 files as *would reformat*. It is not in
+  `make verify`, so nothing is red — but the first run reformats the corpus,
+  including the five 3.6-constrained `scripts/`.
+- **mypy still does not cover 5 of 9 roots**, by decision (above).
+  `api/grpc/` additionally cannot enter scope without a choice: its
+  `thing_pb2`/`thing_pb2_grpc` are `make gen` output that is not committed (the
+  file genuinely does not exist here), and grpc ships no stubs.
+
+### Pass 4 — make the generated project the user's, not keel's *(next)*
 
 - `src/backend/showcase` is **1,205 of 1,433** Python lines (84%) in a generated
   project, against a 30-line `example_feature`, with no question to decline it.
@@ -215,13 +324,45 @@ undeclared externals, and the completeness scan errors on a new undeclared
   2's finding, found while fixing it; left alone to keep pass 2 one slice. If a
   second extra ever needs the CI treatment, generalise to one
   `KEEL_REQUIRED_EXTRAS=template,...` variable rather than a variable per extra.
-- **Blanket `except Exception: return 0` in the two drift checks.**
-  `api/rest_fastapi/export_openapi.py:43-49` and
-  `scripts/agent_surface/generate_aad_schema.py:47-55` degrade *any* failure
-  under `--check` to exit 0 with a stderr note. Not active today (CI installs the
-  transport requirements, so both really run), but it means a future import or
-  route error would show up as a green gate. Fits pass 3's "silent-failure modes"
-  bullet.
+- **Blanket `except Exception: return 0` in the two drift checks.** *(Half
+  closed in pass 3.)* `scripts/agent_surface/generate_aad_schema.py` now skips
+  only on `ImportError`/`SyntaxError` and fails on anything else.
+  `api/rest_fastapi/export_openapi.py:44` still degrades *any* failure under
+  `--check` to exit 0 with a stderr note — same class, same fix shape, left
+  alone because `api/` was a different writer's slice in that pass. Not active
+  today (CI installs the transport requirements, so it really runs), but a
+  future import or route error would show up as a green gate.
+- **check_M's two proven blind spots** (pass 3's highest-value follow-up). It
+  reads `tool.ruff.lint.extend-select`, `deferred` and `tool.mypy.<flag>` only,
+  so (a) `config/practices.json` `rulesets.ruff.per_file_ignores` has **no
+  consumer at all** (`grep -rn per_file_ignores scripts/` is empty), and (b)
+  `_toml_targets` normalises `[[tool.mypy.overrides]]` to the single dotted key
+  `tool.mypy.overrides.<flag>`, so every override block aliases onto one entry
+  and `_flag_state` is last-writer-wins. Measured: a blanket
+  `per-file-ignores = {"**/*.py" = ["B904", "BLE001"]}` and a per-module
+  `strict = false` each yield zero findings and exit 0 — i.e. the meta-gate can
+  be silently switched off through exactly the two mechanisms pass 3's carve-outs
+  and ratchet use. Needs `check_structure.py`, `pyproject.toml` and
+  `config/practices.json` changed in **one** commit, so it could not be done by
+  a single writer under pass 3's write discipline. Write the two failing unit
+  tests first; both return `([], [])` today.
+- **The corpus-wide enforcement path is opt-in.** `.pre-commit-config.yaml` runs
+  ruff repo-wide over staged files and would have caught the `B904` years
+  earlier, but it requires a manual `pre-commit install`, and
+  `.github/workflows/ci.yml` runs `make check-all/lint/typecheck/test` and never
+  `pre-commit run`. Adding `pre-commit run --all-files` to CI is the natural
+  fix — but the config pins `ruff-pre-commit` at `v0.8.4` while the venv and CI
+  run ruff `0.15.18`, and the newly clean corpus is only clean under the latter.
+  Bump the pin in the same change, and re-run at the new pin first.
+- **`mcp/protocol.py:105` passes `params.get("name")` into `call_tool(self,
+  name: str, ...)`** (`mcp/protocol.py:57`), so a malformed JSON-RPC
+  `tools/call` reaches a non-Optional parameter. It does not crash today —
+  `self._by_name.get(None)` returns None and the caller gets
+  `isError: "unknown tool: None"` — and it is a mypy finding in a root that is a
+  declared ratchet rung, so nothing gates it. The class-correct fix is a
+  `-32602 invalid params` at the transport boundary, which is an observable
+  protocol change and needs its own failing test first. Sequence it with the
+  `mcp` rung.
 - **`query_corpus` token cost** (~4.4k tokens per call, no relevance floor, and
   only a ~400-char excerpt per node rather than the section body — so for most
   questions it costs more than `grep` + `Read` and answers less). Real, but it is

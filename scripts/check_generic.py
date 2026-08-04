@@ -17,32 +17,32 @@ import tokenize
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Directories we never descend into.
-IGNORE_DIRS = set([
+IGNORE_DIRS = {
     ".git", "node_modules", ".venv", "__pycache__", "dist", "build",
     ".mypy_cache", ".ruff_cache", ".pytest_cache",
-])
+}
 
 # Trivial strings are never "answer keys" - too common to be a memorized result.
 # Compared case-insensitively against value.strip().
-_TRIVIAL_STR = set([
+_TRIVIAL_STR = {
     "", "true", "false", "null", "none",
     "id", "name", "path", "kind", "type", "title", "summary", "owner",
     "status", "error", "ok",
     "get", "post", "put", "patch", "delete", "head", "options",
     "application/json", "text/plain", "utf-8", "localhost",
     "__main__", "__name__", "/", ".", "-", "_",
-])
+}
 # Numeric goldens (counts, limits, HTTP codes) are excluded by default; numbers
 # are only considered under --strict, and then only when they have >= 4 digits -
 # so no explicit small-int allowlist is needed.
 
 _ALLCAPS_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
 _PRAGMA_RE = re.compile(r"^#\s*generic-ok\b\s*:?\s*(.*)$")
-_SPECIAL = set(list("-_./:"))
-_ASSERT_EQ_FUNCS = set([
+_SPECIAL = set("-_./:")          # a str is already an iterable of its chars
+_ASSERT_EQ_FUNCS = {
     "assertEqual", "assertEquals",
     "assertDictEqual", "assertListEqual",
-])
+}
 
 _STR_THRESHOLD = 12
 _STR_THRESHOLD_STRICT = 8
@@ -111,16 +111,16 @@ def _py_files(base):
     for dirpath, dirnames, filenames in os.walk(base):
         dirnames[:] = [d for d in dirnames
                        if d not in IGNORE_DIRS and not d.startswith(".")]
-        for fn in filenames:
-            if fn.endswith(".py"):
-                out.append(os.path.join(dirpath, fn))
+        # Stays INSIDE the walk loop: hoisting it out would drop the prune above.
+        out.extend(os.path.join(dirpath, fn)
+                   for fn in filenames if fn.endswith(".py"))
     return out
 
 
 def _is_data_module(path):
     """A declared data/registry/value-object module - literals there are data, not logic."""
     base = os.path.basename(path)
-    if base.endswith("_data.py") or base.endswith("_models.py"):
+    if base.endswith(("_data.py", "_models.py")):
         return True
     if base in ("data.py", "conftest.py", "registry.py"):
         return True
@@ -163,10 +163,7 @@ def _suppressed(node, value, pragma):
         lo, hi = line - value.count("\n"), line
     else:
         lo, hi = line, line
-    for ln in range(lo, hi + 1):
-        if ln in pragma:
-            return True
-    return False
+    return any(ln in pragma for ln in range(lo, hi + 1))
 
 
 def _docstring_ids(tree):
@@ -248,7 +245,10 @@ def collect_expected(base):
                         _add_expected(cmp.left, expected, rel)
                         for c in cmp.comparators:
                             _add_expected(c, expected, rel)
-            elif isinstance(node, ast.Call):
+            # Not collapsed into one condition: that would orphan the comment
+            # explaining the args[:2] slice, and `elif A and B` silently
+            # reroutes non-matching calls the day an else joins this chain.
+            elif isinstance(node, ast.Call):  # noqa: SIM102 — see comment above
                 # assertEqual-family signature is (first, second, msg=None):
                 # only the two operands are expected values, never the message.
                 if getattr(node.func, "attr", None) in _ASSERT_EQ_FUNCS:

@@ -20,7 +20,7 @@ def _spec() -> dict:
     """Return the live OpenAPI document from the FastAPI app."""
     if _HERE not in sys.path:
         sys.path.insert(0, _HERE)
-    from app import app   # imported here so --help / old python need no FastAPI
+    from app import app  # imported here so --help / old python need no FastAPI
     return app.openapi()
 
 

@@ -152,8 +152,8 @@ def _doc_and_sections(path: str, root: str, nodes: list):
     try:
         with open(path, encoding="utf-8") as fh:
             text = fh.read()
-    except Exception:
-        return
+    except (OSError, ValueError):   # ValueError covers UnicodeDecodeError
+        return                      # not decodable -> not a corpus doc
     fm, body = _parse_frontmatter(text)
     if fm is None:
         return  # only frontmatter-bearing markdown is a corpus doc
@@ -255,7 +255,11 @@ def _nearest_readme(dirpath: str, root: str):
             try:
                 with open(readme, encoding="utf-8") as fh:
                     fm, _ = _parse_frontmatter(fh.read())
-            except Exception:
+            except Exception:  # noqa: BLE001 — degrades into a VISIBLE signal
+                # An unreadable README just means no owner is discoverable here,
+                # which surfaces as owner_source == "none" for every node below
+                # it — exactly what scripts/accountability_report.py reports on.
+                # The walk must continue to the parent either way.
                 fm = None
             fm = fm or {}
             owner = _real_owner(fm.get("owner"))
@@ -275,8 +279,8 @@ def _module_and_symbols(path: str, root: str, nodes: list):
         with open(path, encoding="utf-8") as fh:
             src = fh.read()
         tree = ast.parse(src, filename=path)
-    except Exception:
-        return
+    except (OSError, ValueError, SyntaxError):  # unreadable / NUL byte / bad syntax
+        return                                  # not parseable -> not a corpus module
     doc = ast.get_docstring(tree)
     if not doc:
         return  # only documented modules are corpus nodes

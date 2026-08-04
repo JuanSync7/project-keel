@@ -10,6 +10,19 @@ PYTHONPATH ?= src:.
 # a no-op on backend-only repos.
 FE_APPS := $(dir $(wildcard src/frontend/*/package.json))
 
+# Every Python root the gate must see. MUST equal CODE_ROOTS in
+# scripts/check_structure.py — that list is the repo's single declaration of
+# "where Python lives", and the structural checks already walk it. Keeping the
+# lint/format scope narrower than it is how `make verify` came to report green
+# over most of the repo; tests/integration/test_gate_scope.py imports the list
+# from check_structure.py and fails if these two drift apart.
+CODE_ROOTS := src tests api models mcp agents demo scripts runtimes
+# ...filtered to what actually exists: ruff exits 1 with `E902 No such file or
+# directory` on a missing path, and copier prunes directories from a generated
+# project (frontend stack, add-on transports), so a literal list would hard-fail
+# downstream instead of linting what shipped.
+PY_ROOTS := $(wildcard $(CODE_ROOTS))
+
 .PHONY: help new check-python check check-all check-corpus check-openapi check-aad advise check-generic verify test unit integration e2e smoke \
         lint lint-py lint-fe fmt typecheck typecheck-py typecheck-fe \
         fe-install run run-api run-web site-data site-static demo agent-surface-schema
@@ -69,23 +82,36 @@ smoke: ## Run smoke tests
 
 lint: lint-py lint-fe ## Lint everything (Python + frontend)
 lint-py: ## Lint Python (ruff, via the selected interpreter)
-	$(PY) -m ruff check src tests
+	$(PY) -m ruff check $(PY_ROOTS)
+# Each recipe LINE is its own shell, so a bare `... || exit 0` guard on its own line
+# ends only that shell and make happily runs the loop below it — the guard printed
+# "skipping" and the target then died on `npm: command not found`. Guard and loop are
+# therefore ONE logical line. FE_APPS is tested first so a backend-only project (copier
+# prunes src/frontend for `frontend_stack: none`) is silent rather than told about npm.
+# tests/integration/test_gate_scope.py pins all four cells, including that a genuinely
+# failing FE script still fails the target.
 lint-fe: ## Lint frontend apps (ESLint) — generic to any FE framework
-	@command -v npm >/dev/null 2>&1 || { echo "npm not found; skipping frontend lint"; exit 0; }
-	@for app in $(FE_APPS); do \
+	@test -n "$(strip $(FE_APPS))" || exit 0; \
+	command -v npm >/dev/null 2>&1 || { echo "npm not found; skipping frontend lint"; exit 0; }; \
+	for app in $(FE_APPS); do \
 		if [ -d "$$app/node_modules" ]; then echo "eslint: $$app"; (cd $$app && npm run --silent lint) || exit 1; \
 		else echo "skip $$app (no node_modules — run 'make fe-install')"; fi; \
 	done
 
 fmt: ## Format Python (ruff, via the selected interpreter)
-	$(PY) -m ruff format src tests
+	$(PY) -m ruff format $(PY_ROOTS)
 
 typecheck: typecheck-py typecheck-fe ## Type-check everything (Python + frontend)
-typecheck-py: ## Type-check Python (mypy, via the selected interpreter)
-	$(PY) -m mypy src
+# No paths on the command line ON PURPOSE: an explicit path argument OVERRIDES
+# `[tool.mypy] files`, so passing `src` here would silently re-narrow the gate to
+# `src` no matter how wide the config's scope (and its ratchet) got.
+typecheck-py: ## Type-check Python (mypy, scope from pyproject [tool.mypy] files)
+	$(PY) -m mypy
+# Same one-logical-line guard as lint-fe above; see the comment there.
 typecheck-fe: ## Type-check frontend apps (tsc / astro check)
-	@command -v npm >/dev/null 2>&1 || { echo "npm not found; skipping frontend typecheck"; exit 0; }
-	@for app in $(FE_APPS); do \
+	@test -n "$(strip $(FE_APPS))" || exit 0; \
+	command -v npm >/dev/null 2>&1 || { echo "npm not found; skipping frontend typecheck"; exit 0; }; \
+	for app in $(FE_APPS); do \
 		if [ -d "$$app/node_modules" ]; then echo "typecheck: $$app"; (cd $$app && npm run --silent typecheck) || exit 1; \
 		else echo "skip $$app (no node_modules — run 'make fe-install')"; fi; \
 	done

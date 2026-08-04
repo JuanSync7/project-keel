@@ -17,7 +17,6 @@ sys.path.insert(0, str(_ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from agents.wiki_navigator import answer  # noqa: E402
-
 from protocol import Tool, ToolServer, serve_stdio  # noqa: E402
 
 __all__ = ["build_qa_server"]

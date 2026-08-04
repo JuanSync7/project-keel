@@ -21,10 +21,10 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # correct, and test code is not a boundary.
 SCAN_ROOTS = ["src", "agents"]
 
-IGNORE_DIRS = set([
+IGNORE_DIRS = {
     ".git", "node_modules", ".venv", "__pycache__", "dist", "build",
     ".mypy_cache", ".ruff_cache", ".pytest_cache",
-])
+}
 
 _PRAGMA_RE = re.compile(r"^#\s*practice-ok\b\s*:?\s*(.*)$")
 _HOTPATH_MARKER = "hot-path"
@@ -65,9 +65,9 @@ def _py_files(base):
     for dirpath, dirnames, filenames in os.walk(base):
         dirnames[:] = [d for d in dirnames
                        if d not in IGNORE_DIRS and not d.startswith(".")]
-        for fn in filenames:
-            if fn.endswith(".py"):
-                out.append(os.path.join(dirpath, fn))
+        # Stays INSIDE the walk loop: hoisting it out would drop the prune above.
+        out.extend(os.path.join(dirpath, fn)
+                   for fn in filenames if fn.endswith(".py"))
     return out
 
 
@@ -113,8 +113,8 @@ def profiles_on():
     """Set of domain profiles a repo has enabled in config/project.json."""
     proj = _read_json(os.path.join(ROOT, "config", "project.json"))
     prof = (proj.get("practices") or {}).get("profiles") or {}
-    return set(k for k, v in prof.items()
-               if v is True and not k.startswith("_"))
+    return {k for k, v in prof.items()
+            if v is True and not k.startswith("_")}
 
 
 # --- smell detectors (pure: take an AST, return findings) ---------------------
@@ -222,7 +222,7 @@ def find_hotpath_no_slots(tree, marker_lines):
 
 def find_acquire_no_cm(tree, acquire_names):
     """A resource-acquiring call bound by a plain assignment (not a ``with``)."""
-    acq = set(n.split(".")[-1] for n in (acquire_names or []))
+    acq = {n.split(".")[-1] for n in (acquire_names or [])}
     out = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call):
@@ -289,7 +289,9 @@ def scan(registry, on_profiles):
             if cm_active:
                 raw += find_acquire_no_cm(tree, acquire)
             for f in raw:
-                findings.append({"kind": f["kind"],
+                # PERF401 suppressed: an extend+genexp of a 4-key dict literal
+                # built from `f` reads worse, and this list is single-digit.
+                findings.append({"kind": f["kind"],  # noqa: PERF401
                                  "loc": "%s:%d" % (rel, f["line"]),
                                  "message": f["message"],
                                  "suppressed": _suppressed(f["line"], pragma)})

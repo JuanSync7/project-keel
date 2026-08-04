@@ -18,10 +18,10 @@ from fastapi.middleware.cors import CORSMiddleware
 _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from backend import do_thing  # noqa: E402
-
 from schemas import ThingIn, ThingOut  # noqa: E402
 from showcase_api import build_showcase_router  # noqa: E402
+
+from backend import do_thing  # noqa: E402
 
 app = FastAPI(title="Project Keel API", version="0.0.0")
 

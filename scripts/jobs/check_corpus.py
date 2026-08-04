@@ -17,8 +17,8 @@ ROOT = os.path.dirname(os.path.dirname(_HERE))
 if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 
-from build_corpus import build_corpus            # noqa: E402
-from link_corpus import link_corpus              # noqa: E402
+from build_corpus import build_corpus  # noqa: E402
+from link_corpus import link_corpus  # noqa: E402
 
 # Allowed enum values for the corpus contract (CONVENTIONS section 11/12).
 KINDS = {"doc", "section", "module", "symbol"}

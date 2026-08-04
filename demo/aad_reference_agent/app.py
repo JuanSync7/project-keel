@@ -17,9 +17,9 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__
 sys.path.insert(0, os.path.join(_ROOT, "src"))
 sys.path.insert(0, os.path.join(_ROOT, "api", "rest_fastapi"))
 
+from aad import build_aad_router, card_to_aad  # noqa: E402
 from fastapi import FastAPI  # noqa: E402
 
-from aad import build_aad_router, card_to_aad  # noqa: E402
 from backend.agent_surface import (  # noqa: E402
     AgentCard,
     AgentKind,

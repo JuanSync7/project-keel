@@ -13,10 +13,32 @@
         "RUF100": "intentional `# noqa: S310` etc. read as unused until the S (bandit) family is selected, which we don't",
         "E501": "docstring summaries deliberately exceed 88 cols"
       },
-      "per_file_ignores": {"src/app/**": ["T201"]}
+      "per_file_ignores": {
+        "_comment": "Declared mirror of [tool.ruff.lint.per-file-ignores]. Pass 3 widened `make lint-py` from `src tests` to every CODE_ROOT, which surfaced 41 T201 print() sites — all of them process entrypoints writing to stdout, the same carve-out src/app/** already had. Named per file wherever the root also holds library code; scripts/ takes a glob because every print() there is inside a main() and nothing in src/ imports it. check_M does not yet READ this key (see rulesets.mypy._comment), so it is reviewed data, not an enforced gate — keep it in lockstep with pyproject by hand until it is.",
+        "src/app/**": ["T201"],
+        "scripts/**": ["T201"],
+        "api/grpc/server.py": ["T201"],
+        "api/rest_fastapi/export_openapi.py": ["T201"],
+        "demo/run_demo.py": ["T201"]
+      }
     },
     "mypy": {
-      "flags": ["strict", "warn_unreachable"]
+      "_comment": "`flags` is what check_M enforces at the [tool.mypy] level and is unchanged: strict stays ON for the whole scope. `scope` and `ratchet` are pass-3 additions declaring WHERE that policy is applied — the blind spot pass 3 exists to close was that a gate-tier ruleset was proven SELECTED but never proven APPLIED. Together they must partition CODE_ROOTS (scripts/check_structure.py): a code root is either type-checked or an explicit, costed rung. tests/integration/test_gate_scope.py enforces the partition and the pyproject/scope parity today; teaching check_M to read these keys (and to see [[tool.mypy.overrides]] at all — it normalises them to `tool.mypy.overrides.<flag>` and finds nothing) is the natural next rung, and belongs to whoever owns check_structure.py.",
+      "flags": ["strict", "warn_unreachable"],
+      "scope": ["src", "models", "demo", "agents"],
+      "ratchet": {
+        "_comment": "Code roots NOT yet in [tool.mypy] files. `errors` is the measured full-strict backlog with the scope prerequisites applied (explicit_package_bases + mypy_path=src) — a number that may only go down. A root at zero belongs in `scope`, not here.",
+        "tests": {"errors": 622,
+                  "removed_when": "the test suite is annotated; blocked first on the roots it imports (disallow_untyped_calls fires in the CALLER), so this is the LAST rung, not the first"},
+        "scripts": {"errors": 464,
+                    "removed_when": "the gate scripts are annotated — constrained by the 3.6-safe five (check_structure/check_generic/check_practices/check_python_version/generate_aad_schema), which cannot use PEP 585/604 or `from __future__ import annotations` and so need typing.List/Optional forms"},
+        "runtimes": {"errors": 87,
+                     "removed_when": "the engine internals are annotated and runtimes/contracts.py parameterises the step state/update dicts (that one contract change also unblocks the agents.* disallow_any_generics rung)"},
+        "api": {"errors": 43,
+                "removed_when": "the FastAPI adapters are annotated AND api/grpc becomes checkable — its thing_pb2/thing_pb2_grpc are `make gen` output that does not exist in a fresh checkout, and grpc ships no stubs"},
+        "mcp": {"errors": 16,
+                "removed_when": "agents/wiki_navigator is annotated (mcp's untyped-call errors are REPORTED in mcp but CAUSED there) and mcp/protocol.py stops passing `params.get('name')` into a `str` parameter — a real contract defect, not an annotation"}
+      }
     }
   },
   "practices": [

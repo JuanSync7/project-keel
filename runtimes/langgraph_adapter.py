@@ -155,7 +155,7 @@ class LangGraphRuntime(Runtime):
             except Pause as p:
                 holder.update(paused=True, payload=p.payload, cursor=step.name,
                               state=_public(bag), trace=trace)
-                raise _PauseSignal()
+                raise _PauseSignal from p
             new = dict(update)
             new["_trace"] = trace + [[step.name, step.effect, True, ""]]
             _emit(on_event, step.name, step.effect, True, "")
@@ -241,7 +241,7 @@ def _wire(builder, plan):
     """
     from langgraph.graph import END as LG_END
 
-    fan_names = set(s.name for s in plan.steps if s.fan_out is not None)
+    fan_names = {s.name for s in plan.steps if s.fan_out is not None}
     by_src = OrderedDict()
     for edge in plan.edges:
         src = edge.src + "__gather" if edge.src in fan_names else edge.src

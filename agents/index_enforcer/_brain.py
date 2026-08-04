@@ -99,13 +99,13 @@ def _gate(state):
 def _build(state):
     """Writes: (re)build the wiki corpus tree."""
     _run(["scripts/jobs/build_corpus.py", "--out", _CORPUS])
-    return None
+    return {}   # no state update -- same empty-update form as _fill_one
 
 
 def _link(state):
     """Writes: add deterministic entity/keyword link edges to the corpus."""
     _run(["scripts/jobs/link_corpus.py", "--corpus", _CORPUS])
-    return None
+    return {}   # no state update -- same empty-update form as _fill_one
 
 
 def _report(state):
@@ -148,7 +148,7 @@ def _commit(state):
     with open(os.path.join(state["root"], _CORPUS), "w", encoding="utf-8") as fh:
         json.dump(state["corpus"], fh, indent=2, sort_keys=True)
         fh.write("\n")
-    return None
+    return {}   # no state update -- same empty-update form as _fill_one
 
 
 # --- the plan: control flow as data, with a durable fill loop ------------------

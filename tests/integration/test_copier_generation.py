@@ -37,6 +37,16 @@ _TWIN_ANSWERS_BLOCK = (
     "# update at all. (Keel's own .gitignore ignores its copy: keel is the template.)\n"
 )
 
+# The ONLY licensed differences between pyproject.toml and its .jinja twin: the three
+# fields that are answers rather than policy. Everything else in that file shapes the
+# gate and must be identical, so it is pinned as text below.
+_PYPROJECT_ANSWER_FIELDS = (
+    ("# Python src-layout. Distribution metadata for Project Keel.",
+     "# Python src-layout. Distribution metadata for {{ project_title }}."),
+    ('name = "project_keel"', 'name = "{{ project_slug }}"'),
+    ('requires-python = ">=3.10"', 'requires-python = "{{ backend_python }}"'),
+)
+
 
 def _generate(dest, **data):
     """Render the keel template (from git HEAD) into dest with the given answers."""
@@ -253,3 +263,80 @@ def test_gitignore_twin_stays_pinned_to_keels_own(tmp_path):
     _generate(dest, project_name="demo_proj", frontend_stack="none")
     assert (dest / ".gitignore").read_text() == twin_text
     assert not (dest / ".gitignore.jinja").exists()   # the suffix is consumed
+
+
+# --- the gate a DESCENDANT gets -------------------------------------------------
+# `Makefile` has no `.jinja` twin, so it ships VERBATIM: pass 3's widened
+# `CODE_ROOTS` lint scope lands in every generated project. `pyproject.toml` does
+# NOT ship verbatim — copier's `_render_path` returns early for any path with a
+# `.jinja` sibling, so a descendant's pyproject comes ENTIRELY from
+# `pyproject.toml.jinja`. Widening one side and not the other hands every
+# descendant a gate that is red on arrival. The tests below judge the generated
+# project by ITS OWN shipped config, so they fail whichever side drifts.
+
+def _code_roots_from_makefile(makefile_text):
+    """The lint scope the generated Makefile actually ships, derived not re-typed.
+
+    Mirrors `PY_ROOTS := $(wildcard $(CODE_ROOTS))`: the declared roots filtered to
+    the ones copier left in place.
+    """
+    for line in makefile_text.splitlines():
+        if line.startswith("CODE_ROOTS"):
+            _, _, rhs = line.partition(":=")
+            return rhs.split()
+    raise AssertionError("the generated Makefile declares no CODE_ROOTS")
+
+
+def test_a_generated_project_is_lint_clean_on_arrival(tmp_path):
+    """`make lint` must be GREEN in a freshly generated project.
+
+    A descendant's first act is to run the gate; if it is red on arrival the user
+    cannot tell keel's debt from their own, and pass 3's whole point — that a green
+    gate means something — is inverted downstream.
+    """
+    dest = tmp_path / "proj"
+    _generate(dest, project_name="demo_proj", frontend_stack="none")
+
+    roots = [r for r in _code_roots_from_makefile((dest / "Makefile").read_text())
+             if (dest / r).exists()]
+    assert "scripts" in roots and "src" in roots, roots   # not a vacuous empty scope
+
+    # run from the generated tree so ruff reads the GENERATED pyproject.toml
+    r = subprocess.run([sys.executable, "-m", "ruff", "check", *roots],
+                       cwd=str(dest), capture_output=True, text=True)
+    assert r.returncode == 0, (
+        "a freshly generated project fails its own `make lint-py` over the roots its "
+        "own Makefile ships (%s) — pyproject.toml.jinja has drifted from the Makefile:\n%s"
+        % (" ".join(roots), r.stdout + r.stderr))
+
+
+def test_pyproject_twin_stays_pinned_to_keels_own():
+    """`pyproject.toml.jinja` is a PARITY twin: it must reproduce keel's own
+    `pyproject.toml` except for the per-answer fields.
+
+    Unlike `.gitignore.jinja` (a DIVERGENCE twin) there is nothing a descendant
+    should have differently here — every gate-shaping key (ruff carve-outs, mypy
+    `files`, the mypy ratchet) is exactly what keel gates itself with. Left to
+    drift, the twin re-opens in every descendant the blind spot pass 3 closed
+    here, and silently: a narrower mypy still exits 0.
+
+    Asserted as text, not key-by-key, so a drift in ANY key fails — a key-by-key
+    check only ever pins the keys someone already thought of. (General twin
+    parity for all five twins is check_N, pass 5 of the hardening plan; this
+    pins the one twin whose drift is load-bearing today.)
+    """
+    keel_text = (_ROOT / "pyproject.toml").read_text()
+    twin_text = (_ROOT / "pyproject.toml.jinja").read_text()
+
+    expected = keel_text
+    for keel_literal, rendered in _PYPROJECT_ANSWER_FIELDS:
+        assert keel_text.count(keel_literal) == 1, (
+            "%r is no longer a unique line in pyproject.toml — re-derive the "
+            "substitution list rather than letting the twin check go vacuous"
+            % keel_literal)
+        expected = expected.replace(keel_literal, rendered)
+
+    assert twin_text == expected, (
+        "pyproject.toml.jinja drifted from pyproject.toml beyond the per-answer "
+        "fields; re-derive it from pyproject.toml rather than hand-patching one side"
+    )

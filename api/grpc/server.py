@@ -13,11 +13,11 @@ from pathlib import Path
 import grpc
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
-from backend import do_thing  # noqa: E402
-
 # Generated from proto/thing.proto via `make gen`.
 import thing_pb2  # noqa: E402
 import thing_pb2_grpc  # noqa: E402
+
+from backend import do_thing  # noqa: E402
 
 
 class ThingService(thing_pb2_grpc.ThingServiceServicer):

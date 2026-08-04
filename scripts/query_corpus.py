@@ -40,7 +40,7 @@ def query(corpus: dict, question: str, max_nodes: int = 8) -> list:
         return []
     scored = []
     for nid, n in nodes.items():
-        hay = set(t.lower() for t in n.get("tags", [])) | _tokens(n.get("title", "")) \
+        hay = {t.lower() for t in n.get("tags", [])} | _tokens(n.get("title", "")) \
             | _tokens(n.get("summary", ""))
         overlap = len(q & hay)
         if overlap:

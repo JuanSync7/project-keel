@@ -15,6 +15,15 @@ import sys
 _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 _OUT = os.path.join("config", "agent_surface", "aad-v1.0.schema.json")
 
+# The ONLY reasons this check may no-op: the host interpreter cannot parse the
+# adapter (SyntaxError — the documented old pre-commit `python3`), or pydantic /
+# the adapter is not installed (ImportError, which ModuleNotFoundError extends).
+# Both mean nothing is KNOWN about the schema, so a hook on an arbitrary host
+# stays out of the way. Anything else means the check RAN and the model is
+# broken — `make agent-surface-schema` would fail too — and must not be laundered
+# into a green --check. See docs/guides/deterministic-checks.md (adding a check).
+_ENVIRONMENT_CANNOT_RUN = (ImportError, SyntaxError)
+
 
 def _schema() -> dict:
     """Build the JSON Schema from the pydantic AadDescriptor model."""
@@ -44,15 +53,24 @@ def main(argv=None) -> int:
 
     try:
         text = json.dumps(_schema(), indent=2, sort_keys=True) + "\n"
-    except Exception as exc:  # noqa: BLE001 — best-effort drift guard
-        # Old interpreter (can't parse the adapter) or pydantic absent. For
-        # --check this is a no-op (like cdmon when not installed); a real
-        # `make agent-surface-schema` runs under the project interpreter.
+    except _ENVIRONMENT_CANNOT_RUN as exc:
+        # This host cannot run the check at all (old interpreter / pydantic
+        # absent). For --check that is a no-op, like cdmon when not installed;
+        # a real `make agent-surface-schema` runs under the project interpreter.
         detail = "%s: %s" % (type(exc).__name__, exc)
         if opts.check:
             sys.stderr.write("AAD schema check skipped (%s)\n" % detail)
             return 0
         sys.stderr.write("AAD schema cannot be generated (%s)\n" % detail)
+        return 1
+    except Exception as exc:  # noqa: BLE001 — the model itself is broken
+        # The environment DID run it and building the schema failed, so the
+        # committed contract is unverifiable. Reporting 0 here would make the
+        # drift guard green while checking nothing; report the failure in BOTH
+        # modes instead. Deliberately broad: any new pydantic/model failure mode
+        # must land in this branch, never in the skip above.
+        sys.stderr.write("AAD schema cannot be built from the model (%s: %s)\n"
+                         % (type(exc).__name__, exc))
         return 1
     path = os.path.join(_ROOT, opts.out)
     if opts.check:
