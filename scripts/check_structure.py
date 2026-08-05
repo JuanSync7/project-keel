@@ -30,7 +30,14 @@ Checks:
   M. Ruleset parity (ERR): pyproject.toml must not silently loosen the lint/type
      policy declared in config/practices.json rulesets — every ruff extend_select
      family is selected, every mypy flag is enforced, no 'deferred' family is
-     selected (config/practices.json rulesets; CONVENTIONS section 15)
+     selected, no ruff per-file-ignore or per-module mypy relaxation is
+     undeclared (config/practices.json rulesets; CONVENTIONS section 15)
+  N. Template twin parity (ERR): every `*.jinja` twin is declared in
+     config/project.json template.twins and matches its declared kind — a parity
+     twin carries no stale non-templated line, a divergence twin still diverges,
+     a generated one has no committed plain file. Render-free (no jinja2 here),
+     so it bounds what it proves; the byte-exact rendered comparison lives in
+     tests/integration. Silent in a generated project, which has no twins.
 
 Exit 0 = clean, 1 = errors. Warnings never fail the build. Stdlib only; 3.6+.
 """
@@ -1395,6 +1402,89 @@ def _span_lines(entries):
     return out
 
 
+_QUOTED_RE = re.compile(r'"([^"]*)"' + r"|'([^']*)'")
+
+
+def _quoted_tokens(rhs_text):
+    """Every quoted string in a TOML rhs, in order: `["A", "B"]` -> ['A', 'B']."""
+    out = []
+    for dq, sq in _QUOTED_RE.findall(rhs_text or ""):
+        out.append(dq or sq)
+    return out
+
+
+def _toml_unquote(key):
+    """`"src/app/**"` -> `src/app/**`; a bare key is returned unchanged."""
+    k = key.strip()
+    if len(k) >= 2 and k[0] == k[-1] and k[0] in ('"', "'"):
+        return k[1:-1]
+    return k
+
+
+def _toml_table_blocks(text, name):
+    """One dict per `[[name]]` array-of-tables block: {key: (lineno, rhs, span)}.
+
+    _toml_targets deliberately flattens these — it prepends the table header, so
+    every `[[tool.mypy.overrides]]` block collapses onto the single dotted key
+    `tool.mypy.overrides.<flag>` and the blocks alias onto one another (the last
+    one wins). That is exactly why per-module mypy relaxations were invisible to
+    check_M. Here the block boundaries are kept, so each is judged on its own.
+
+    Single-line values only, which is all a per-module override block uses; a
+    bracketed value is captured whole via the same bdelta accounting as
+    _toml_targets so a multi-line `module = [...]` list still reads correctly.
+    """
+    comment_col, instr, bdelta = _toml_scan(text)
+    lines = text.split("\n")
+    header = "[[" + name + "]]"
+    blocks = []
+    cur = None
+    n = len(lines)
+    i = 0
+    while i < n:
+        ln = i + 1
+        if instr.get(ln):
+            i += 1
+            continue
+        raw = lines[i]
+        col = comment_col.get(ln)
+        if col is not None:
+            raw = raw[:col]
+        s = raw.strip()
+        if not s:
+            i += 1
+            continue
+        if s.startswith("["):
+            # Any table header closes the current block; only ours opens one.
+            cur = {} if s == header else None
+            if cur is not None:
+                blocks.append(cur)
+            i += 1
+            continue
+        if cur is None or "=" not in s:
+            i += 1
+            continue
+        key, rhs = s.split("=", 1)
+        span = {ln}
+        depth = bdelta.get(ln, 0)
+        j = i
+        while depth > 0 and j + 1 < n:
+            j += 1
+            ln2 = j + 1
+            if instr.get(ln2):
+                continue
+            raw2 = lines[j]
+            col2 = comment_col.get(ln2)
+            if col2 is not None:
+                raw2 = raw2[:col2]
+            rhs += " " + raw2.strip()
+            span.add(ln2)
+            depth += bdelta.get(ln2, 0)
+        cur[_toml_unquote(key)] = (ln, rhs.strip(), span)
+        i = j + 1
+    return blocks
+
+
 def _ruleset_parity_findings(practices, text):
     """(errors, warnings) proving pyproject `text` doesn't loosen the declared
     policy in `practices`. Pure: no I/O, so it is unit-testable directly."""
@@ -1462,7 +1552,237 @@ def _ruleset_parity_findings(practices, text):
                 errs.append("pyproject.toml: mypy flag '%s' declared in "
                             "practices.json is not enforced (absent). Add "
                             "`%s = true` or `# practice-ok`." % (flag, flag))
+
+    errs.extend(_per_file_ignore_findings(ruff, assigns, pragma))
+    errs.extend(_mypy_override_findings(mypy, flags, text, pragma))
     return errs, warns_
+
+
+_PFI_PREFIX = "tool.ruff.lint.per-file-ignores."
+
+
+def _declared_map(value):
+    """A practices.json mapping with the `_comment` documentation keys dropped."""
+    if not isinstance(value, dict):
+        return None
+    return {k: v for k, v in value.items() if not str(k).startswith("_")}
+
+
+def _per_file_ignore_findings(ruff, assigns, pragma):
+    """Every ruff per-file-ignore must be declared in practices.json.
+
+    This closes the widest hole check_M had: `per_file_ignores` was declared as
+    data and read by NOTHING (`grep -rn per_file_ignores scripts/` was empty), so
+    a single `"**/*.py" = ["B904", "BLE001"]` line switched a family off across
+    the whole corpus and the parity gate reported success. A carve-out is policy,
+    so it lives in the same declaration as the rest of the policy; pyproject may
+    only mirror it. Widening an EXISTING pattern's code list is the same
+    loosening as inventing a pattern, so both are errors.
+    """
+    declared = _declared_map(ruff.get("per_file_ignores"))
+    if declared is None:
+        return []          # not declared at all -> nothing claimed, nothing proven
+    out = []
+    for full, entries in sorted(assigns.items()):
+        if not full.startswith(_PFI_PREFIX):
+            continue
+        pattern = _toml_unquote(full[len(_PFI_PREFIX):])
+        for (_, rhs, span) in entries:
+            if _line_waived(span, pragma):
+                continue
+            if pattern not in declared:
+                out.append("pyproject.toml: per-file-ignore '%s' is not declared in "
+                           "config/practices.json rulesets.ruff.per_file_ignores — an "
+                           "undeclared carve-out silences the gate. Declare it or "
+                           "`# practice-ok`." % pattern)
+                continue
+            allowed = set(declared[pattern] or [])
+            extra = sorted(c for c in _quoted_tokens(rhs) if c not in allowed)
+            if extra:
+                out.append("pyproject.toml: per-file-ignore '%s' ignores %s, which "
+                           "config/practices.json does not declare for it (declared: "
+                           "%s)" % (pattern, extra, sorted(allowed)))
+    return out
+
+
+# `ignore_errors` is not one of the declared `flags` but is stronger than any of
+# them — it drops the module from type-checking entirely — so an override that
+# turns it ON is judged with the same rule as one that turns a declared flag off.
+_OVERRIDE_KILL_SWITCH = "ignore_errors"
+
+# Declaring `strict` and then relaxing its COMPONENTS per module is the same
+# loosening by another name: mypy's --strict is exactly this set, and a block that
+# switches these off has un-stricted the module without ever writing
+# `strict = false`. Named here because it is a fixed property of mypy, in the same
+# spirit as KINDS/LAYERS above — a vocabulary, not a policy. Source: mypy's
+# `--strict` flag list.
+_MYPY_STRICT_COMPONENTS = (
+    "disallow_untyped_defs", "disallow_incomplete_defs", "disallow_untyped_calls",
+    "disallow_untyped_decorators", "disallow_any_generics", "disallow_subclassing_any",
+    "check_untyped_defs", "no_implicit_reexport", "warn_redundant_casts",
+    "warn_unused_ignores", "warn_return_any", "strict_equality",
+)
+
+
+def _mypy_override_findings(mypy, flags, text, pragma):
+    """Per-module `[[tool.mypy.overrides]]` relaxations must be declared too.
+
+    The second hole: check_M only ever read `tool.mypy.<flag>`, while
+    `_toml_targets` normalises every override block to `tool.mypy.overrides.<flag>`
+    — so a per-module `strict = false`, or an `ignore_errors = true`, was invisible
+    AND the blocks aliased onto one dotted key so only the last would have been
+    seen anyway. Relaxations are legitimate (the type ratchet is built on them),
+    which is the point: legitimate means *declared*, per module, in
+    config/practices.json rulesets.mypy.overrides.
+    """
+    declared = _declared_map(mypy.get("overrides"))
+    if declared is None:
+        return []
+    relaxable = {f for f in (flags or []) if isinstance(f, str)}
+    relaxable.add(_OVERRIDE_KILL_SWITCH)
+    if "strict" in relaxable:
+        relaxable.update(_MYPY_STRICT_COMPONENTS)
+    out = []
+    for block in _toml_table_blocks(text, "tool.mypy.overrides"):
+        modules = _quoted_tokens(block.get("module", (0, "", set()))[1]) or ["<unscoped>"]
+        for key in sorted(block):
+            if key == "module" or key not in relaxable:
+                continue
+            (ln, rhs, span) = block[key]
+            state = _flag_state([(ln, rhs, span)])
+            loosens = (state == "on") if key == _OVERRIDE_KILL_SWITCH else (state == "off")
+            if not loosens or _line_waived(span, pragma):
+                continue
+            out.extend(
+                "pyproject.toml: [[tool.mypy.overrides]] for '%s' relaxes '%s', "
+                "which config/practices.json rulesets.mypy.overrides does not "
+                "declare for it — a per-module loosening the gate cannot see. "
+                "Declare it (with its removal condition) or `# practice-ok`."
+                % (mod, key)
+                for mod in modules if key not in set(declared.get(mod) or []))
+    return out
+
+
+_TWIN_SUFFIX = ".jinja"
+_TWIN_KINDS = ("parity", "divergence", "generated")
+
+
+def _is_templated(line):
+    """A line the twin is licensed to differ on — an expression or control flow."""
+    return "{{" in line or "{%" in line
+
+
+def _twin_parity_findings(files, declared):
+    """Errors proving keel's `*.jinja` twins have not silently drifted.
+
+    `files` maps relpath -> text for the whole tree; `declared` is
+    config/project.json `template.twins` (plain path -> kind). Pure, so it is
+    unit-testable without a tree on disk.
+
+    RENDER-FREE ON PURPOSE, and this bounds what it can claim. check_structure.py
+    is stdlib-only and 3.6-safe because it runs in pre-commit on old hosts, so it
+    cannot import jinja2 and cannot render a twin to byte-compare it. What it CAN
+    prove, and does:
+
+      * every twin is declared, so a sixth one cannot appear unnoticed — the drift
+        class re-opening is the thing ADR-0005 was told to wait for;
+      * the declaration matches reality (a parity/divergence twin has its plain
+        sibling; a `generated` one must NOT, because keel is the template);
+      * a `parity` twin carries no NON-TEMPLATED line the plain file has lost.
+        That is the direction that actually bit: pass 3 widened the lint/type
+        scope in `pyproject.toml` and the twin kept `files = ["src"]`, so every
+        descendant inherited a weaker gate — silently, since a narrower mypy still
+        exits 0;
+      * a `divergence` twin actually diverges, so "restoring parity" to
+        `.gitignore.jinja` (which would re-ignore `.copier-answers.yml` and kill
+        every descendant's upgrade channel) fails loudly.
+
+    The byte-exact rendered comparison stays in tests/integration, where jinja2
+    exists. This is the half that runs everywhere, over every twin.
+    """
+    out = []
+    twins = sorted(p for p in files if p.endswith(_TWIN_SUFFIX))
+    if not twins:
+        return out          # a generated project has none; it inherits the data only
+    seen = set()
+    for twin in twins:
+        plain = twin[:-len(_TWIN_SUFFIX)]
+        seen.add(plain)
+        kind = declared.get(plain)
+        if kind is None:
+            out.append("%s: undeclared template twin — add it to config/project.json "
+                       "template.twins as one of %s, so it cannot drift unnoticed"
+                       % (twin, list(_TWIN_KINDS)))
+            continue
+        if kind not in _TWIN_KINDS:
+            out.append("%s: unknown twin kind %r in config/project.json "
+                       "template.twins (expected one of %s)"
+                       % (plain, kind, list(_TWIN_KINDS)))
+            continue
+        has_plain = plain in files
+        if kind == "generated":
+            if has_plain:
+                out.append("%s: declared `generated` (copier writes it into a NEW "
+                           "project) but keel commits one of its own — keel is the "
+                           "template, not a generated project" % plain)
+            continue
+        if not has_plain:
+            out.append("%s: declared `%s` but the plain file is missing, so the twin "
+                       "has nothing to be a twin OF" % (plain, kind))
+            continue
+        plain_lines = set(files[plain].split("\n"))
+        if kind == "divergence":
+            if files[plain] == files[twin]:
+                out.append("%s: declared a DIVERGENCE twin but %s reproduces it "
+                           "exactly. The divergence is deliberate; restoring parity "
+                           "silently removes what the twin exists to change."
+                           % (plain, twin))
+            continue
+        stale = [ln for ln in files[twin].split("\n")
+                 if ln.strip() and not _is_templated(ln) and ln not in plain_lines]
+        out.extend("%s: line is in the twin but not in %s, so a generated "
+                   "project would get a stale copy: %s" % (twin, plain, ln.strip())
+                   for ln in stale[:5])
+    for plain in sorted(declared):
+        if str(plain).startswith("_") or plain in seen:
+            continue
+        out.append("config/project.json template.twins declares '%s' but no '%s%s' "
+                   "exists — delete the declaration or restore the twin"
+                   % (plain, plain, _TWIN_SUFFIX))
+    return out
+
+
+def check_N():
+    """Template twin parity — see _twin_parity_findings for what this can and
+    cannot prove without a jinja renderer. Silent in a generated project (no
+    twins). Waivable with `# practice-ok`? No: a twin has no line to hang a
+    pragma on that copier would not then render."""
+    declared = _declared_twins()
+    files = {}
+    for dirpath, dirnames, filenames in walk(ROOT):
+        del dirnames
+        for name in filenames:
+            full = os.path.join(dirpath, name)
+            relp = rel(full).replace(os.sep, "/")
+            # Only the twins and the plain files they are twins OF — the rest of
+            # the tree is other checks' business and reading it all would be waste.
+            if not (name.endswith(_TWIN_SUFFIX) or relp in declared):
+                continue
+            text = _read_text(full, err)
+            if text is not None:
+                files[relp] = text
+    for m in _twin_parity_findings(files, declared):
+        err(m)
+
+
+def _declared_twins():
+    """config/project.json `template.twins` (plain path -> kind), `_`-keys dropped."""
+    manifest = _read_json_config(os.path.join("config", "project.json"))
+    template = manifest.get("template") if isinstance(manifest, dict) else None
+    twins = template.get("twins") if isinstance(template, dict) else None
+    if not isinstance(twins, dict):
+        return {}
+    return {k: v for k, v in twins.items() if not str(k).startswith("_")}
 
 
 def check_M():
@@ -1504,6 +1824,7 @@ def main():
     check_K()
     check_L()
     check_M()
+    check_N()
     for w_ in warnings:
         print("WARN  " + w_)
     for e_ in errors:

@@ -14,7 +14,7 @@
         "E501": "docstring summaries deliberately exceed 88 cols"
       },
       "per_file_ignores": {
-        "_comment": "Declared mirror of [tool.ruff.lint.per-file-ignores]. Pass 3 widened `make lint-py` from `src tests` to every CODE_ROOT, which surfaced 41 T201 print() sites — all of them process entrypoints writing to stdout, the same carve-out src/app/** already had. Named per file wherever the root also holds library code; scripts/ takes a glob because every print() there is inside a main() and nothing in src/ imports it. check_M does not yet READ this key (see rulesets.mypy._comment), so it is reviewed data, not an enforced gate — keep it in lockstep with pyproject by hand until it is.",
+        "_comment": "Declared mirror of [tool.ruff.lint.per-file-ignores]. Pass 3 widened `make lint-py` from `src tests` to every CODE_ROOT, which surfaced 41 T201 print() sites — all of them process entrypoints writing to stdout, the same carve-out src/app/** already had. Named per file wherever the root also holds library code; scripts/ takes a glob because every print() there is inside a main() and nothing in src/ imports it. check_M ENFORCES this key: a per-file-ignore in pyproject.toml that is not declared here, or that ignores a code this does not list for it, is an error (the previously unread declaration was the widest hole in the parity gate — one `\"**/*.py\"` line could silence a family corpus-wide).",
         "src/app/**": ["T201"],
         "scripts/**": ["T201"],
         "api/grpc/server.py": ["T201"],
@@ -23,9 +23,16 @@
       }
     },
     "mypy": {
-      "_comment": "`flags` is what check_M enforces at the [tool.mypy] level and is unchanged: strict stays ON for the whole scope. `scope` and `ratchet` are pass-3 additions declaring WHERE that policy is applied — the blind spot pass 3 exists to close was that a gate-tier ruleset was proven SELECTED but never proven APPLIED. Together they must partition CODE_ROOTS (scripts/check_structure.py): a code root is either type-checked or an explicit, costed rung. tests/integration/test_gate_scope.py enforces the partition and the pyproject/scope parity today; teaching check_M to read these keys (and to see [[tool.mypy.overrides]] at all — it normalises them to `tool.mypy.overrides.<flag>` and finds nothing) is the natural next rung, and belongs to whoever owns check_structure.py.",
+      "_comment": "`flags` is what check_M enforces at the [tool.mypy] level and is unchanged: strict stays ON for the whole scope. `scope`, `ratchet` and `overrides` declare WHERE that policy is applied and where it is relaxed — the blind spot pass 3 exists to close was that a gate-tier ruleset was proven SELECTED but never proven APPLIED. Together they must partition CODE_ROOTS (scripts/check_structure.py): a code root is either type-checked or an explicit, costed rung. tests/integration/test_gate_scope.py enforces the partition and the pyproject/scope parity today; teaching check_M to read these keys (and to see [[tool.mypy.overrides]] at all — it normalises them to `tool.mypy.overrides.<flag>` and finds nothing) is the natural next rung, and belongs to whoever owns check_structure.py.",
       "flags": ["strict", "warn_unreachable"],
       "scope": ["src", "models", "demo", "agents"],
+      "overrides": {
+        "_comment": "Declared mirror of every [[tool.mypy.overrides]] block in pyproject.toml: which module pattern may relax which flags. Until pass 3.6 check_M read only `tool.mypy.<flag>`, while _toml_targets normalises override blocks to `tool.mypy.overrides.<flag>` — so a per-module `strict = false`, an `ignore_errors = true`, or (the real case here) switching off strict's COMPONENTS was a loosening the parity gate could not see, and the blocks aliased onto one dotted key so only the last would have been read anyway. Now enforced: an undeclared per-module relaxation errors. The removal condition for each lives beside the block in pyproject.toml — deleting a flag from both files is the ratchet step.",
+        "models.*": ["disallow_untyped_defs", "disallow_incomplete_defs", "disallow_untyped_calls", "disallow_untyped_decorators", "disallow_any_generics", "warn_return_any"],
+        "demo.*": ["disallow_untyped_defs", "disallow_incomplete_defs", "disallow_untyped_calls", "disallow_untyped_decorators", "disallow_any_generics"],
+        "agents.*": ["disallow_untyped_defs", "disallow_incomplete_defs", "disallow_untyped_calls", "disallow_untyped_decorators", "disallow_any_generics"],
+        "runtimes.*": ["ignore_errors"]
+      },
       "ratchet": {
         "_comment": "Code roots NOT yet in [tool.mypy] files. `errors` is the measured full-strict backlog with the scope prerequisites applied (explicit_package_bases + mypy_path=src) — a number that may only go down. A root at zero belongs in `scope`, not here.",
         "tests": {"errors": 622,

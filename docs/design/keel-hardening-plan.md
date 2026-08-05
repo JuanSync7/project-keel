@@ -317,33 +317,37 @@ exists to close, so the migration is part of the done-condition.
 served response, and the optional-surface questions round-trip through
 `copier update`.
 
-### Pass 5 — twin-parity, then the environment manifest (ADR-0005)
+### Pass 5 — twin parity + the meta-gate's own holes *(first half done)*
 
-`grep -rn 'jinja\|copier' scripts/*.py` still returns nothing: **no
-`check_structure.py` gate knows the five `.jinja` twins exist.** The old parity
-harness died with `scaffold.py` (ADR-0004). Passes 1-2 added *per-twin* pytest
-pins (`.gitignore.jinja` byte-pinned to `.gitignore`; the generator-contract
-tests), so the claim is no longer "nothing checks them" — it is that the checks
-are ad hoc, one twin at a time, live only where the `template` extra is
-installed, and say nothing about `pyproject.toml.jinja`,
-`config/project.json.jinja`, `README.md.jinja` or `CHANGELOG.md.jinja`.
+**Landed: `check_N` and check_M's two blind spots.**
 
-Land `check_N` — general twin parity, in `check_structure.py` in the style of
-`check_M`: render every twin with keel's own answers and byte-compare, with an
-explicit allow-list for the *divergence* twins (`.gitignore`, `CHANGELOG.md`)
-that are supposed to differ, and an assertion on exactly *how* they differ. It
-goes first because ADR-0005 adds a sixth twin, and adding it before parity is
-gated would manufacture a new instance of the drift class it claims to fix.
-(ADR-0005's own check is `check_O`, after this one.)
+`check_M` — the meta-gate whose whole job is proving `pyproject.toml` cannot
+silently loosen the declared lint/type policy — could itself be switched off
+through exactly the two mechanisms pass 3's carve-outs and ratchet use:
+`rulesets.ruff.per_file_ignores` had no consumer at all, and
+`[[tool.mypy.overrides]]` blocks were invisible (and aliased onto one dotted key,
+so only the last would have been read anyway). Both measured at zero findings,
+exit 0. Both now error unless declared per module — including a relaxation of a
+*component* of `strict` rather than `strict` itself.
 
-Then ship ADR-0005 slice 1 only: `config/environment.json`, the deterministic
+`check_N` replaces the one-off pytest pins passes 1–3 kept adding: all six
+`.jinja` twins are declared in `config/project.json` `template.twins` with a kind
+(`parity` / `divergence` / `generated`), and the check is **render-free** because
+`check_structure.py` is stdlib-only and 3.6-safe. That bounds it honestly — it
+cannot byte-compare a rendered twin, so it proves instead that no twin is
+undeclared, no parity twin carries a non-templated line the plain file has lost,
+no divergence twin has stopped diverging, and no `generated` twin has a committed
+plain file. The byte-exact rendered comparison stays in `tests/integration`.
+Mutation-verified on all three failure modes; each was silent before.
+
+**Gate:** `make verify` -> 334 passed, 1 skipped, exit 0.
+
+**Still to do: ADR-0005 slice 1.** `config/environment.json`, the deterministic
 declaration check (shape, vocabularies, and the undeclared-external completeness
-scan), and the generated `.env.example`. The lock, the fingerprint and the
-provider adapters are slice 2, outside this plan's cap.
-
-**Done when:** twin parity is gated, the manifest declares the seven currently
-undeclared externals, and the completeness scan errors on a new undeclared
-`os.environ` read.
+scan — `check_O`), and the generated `.env.example`. The lock, the fingerprint and
+the provider adapters are slice 2, outside this plan. Its stated prerequisite is
+now met: twin parity is gated, so adding a seventh twin can no longer manufacture
+a new instance of the drift class it claims to fix.
 
 ## Explicit non-goals
 
@@ -382,7 +386,8 @@ undeclared externals, and the completeness scan errors on a new undeclared
   alone because `api/` was a different writer's slice in that pass. Not active
   today (CI installs the transport requirements, so it really runs), but a
   future import or route error would show up as a green gate.
-- **check_M's two proven blind spots** (pass 3's highest-value follow-up). It
+- ~~**check_M's two proven blind spots**~~ *(closed in pass 5.)* Kept here for
+  the record, because the measurement is the point: It
   reads `tool.ruff.lint.extend-select`, `deferred` and `tool.mypy.<flag>` only,
   so (a) `config/practices.json` `rulesets.ruff.per_file_ignores` has **no
   consumer at all** (`grep -rn per_file_ignores scripts/` is empty), and (b)

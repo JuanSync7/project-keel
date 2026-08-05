@@ -159,3 +159,153 @@ def test_sibling_prefix_does_not_falsely_flag_a_deferred_family():
     # RSE/RET share a first letter with RUF022 but are NOT prefixes of it.
     toml = '[tool.ruff.lint]\nextend-select = ["RSE", "RET"]\n'
     assert _find(toml, extend=["RSE", "RET"], deferred={"RUF022": "semantic order"}) == []
+
+
+# --- blind spot 1: per-file-ignores had NO consumer at all -------------------
+# `grep -rn per_file_ignores scripts/` was empty: practices.json declared the
+# carve-outs and nothing read them, so ruff's per-file-ignores could disable any
+# rule anywhere and check_M — the gate whose whole job is proving pyproject cannot
+# silently loosen the declared policy — reported nothing.
+
+def _find_pfi(text, declared):
+    rules = {"ruff": {"extend_select": ["B"], "per_file_ignores": declared},
+             "mypy": {}}
+    errs, _ = cs._ruleset_parity_findings({"rulesets": rules}, text)
+    return errs
+
+
+def test_blanket_per_file_ignore_errors():
+    """The whole-corpus off switch: one line silences a family everywhere."""
+    toml = ('[tool.ruff.lint]\nextend-select = ["B"]\n'
+            '[tool.ruff.lint.per-file-ignores]\n'
+            '"**/*.py" = ["B904", "BLE001"]\n')
+    errs = _find_pfi(toml, {"src/app/**": ["T201"]})
+    assert any("**/*.py" in e for e in errs), errs
+
+
+def test_undeclared_per_file_ignore_pattern_errors():
+    toml = ('[tool.ruff.lint]\nextend-select = ["B"]\n'
+            '[tool.ruff.lint.per-file-ignores]\n'
+            '"src/app/**" = ["T201"]\n"secret/**" = ["B904"]\n')
+    errs = _find_pfi(toml, {"src/app/**": ["T201"]})
+    assert any("secret/**" in e for e in errs), errs
+
+
+def test_undeclared_code_on_a_declared_pattern_errors():
+    """Widening an existing carve-out is the same loosening as inventing one."""
+    toml = ('[tool.ruff.lint]\nextend-select = ["B"]\n'
+            '[tool.ruff.lint.per-file-ignores]\n'
+            '"src/app/**" = ["T201", "B904"]\n')
+    errs = _find_pfi(toml, {"src/app/**": ["T201"]})
+    assert any("B904" in e for e in errs), errs
+
+
+def test_declared_per_file_ignores_pass():
+    toml = ('[tool.ruff.lint]\nextend-select = ["B"]\n'
+            '[tool.ruff.lint.per-file-ignores]\n'
+            '"src/app/**" = ["T201"]\n"scripts/**" = ["T201"]\n')
+    assert _find_pfi(toml, {"src/app/**": ["T201"], "scripts/**": ["T201"]}) == []
+
+
+def test_per_file_ignores_comment_key_is_not_a_pattern():
+    """practices.json uses `_comment` keys; they are documentation, not policy."""
+    toml = ('[tool.ruff.lint]\nextend-select = ["B"]\n'
+            '[tool.ruff.lint.per-file-ignores]\n"src/app/**" = ["T201"]\n')
+    assert _find_pfi(toml, {"_comment": "why", "src/app/**": ["T201"]}) == []
+
+
+def test_per_file_ignores_undeclared_is_waivable():
+    toml = ('[tool.ruff.lint]\nextend-select = ["B"]\n'
+            '[tool.ruff.lint.per-file-ignores]\n'
+            '"secret/**" = ["B904"]   # practice-ok\n')
+    assert _find_pfi(toml, {}) == []
+
+
+# --- blind spot 2: [[tool.mypy.overrides]] was invisible ---------------------
+# _toml_targets normalises every array-of-tables block to the single dotted key
+# `tool.mypy.overrides.<flag>`, so all blocks aliased onto one entry and
+# _flag_state read it last-writer-wins — while check_M only ever looked at
+# `tool.mypy.<flag>`. A per-module `strict = false`, or `ignore_errors = true`,
+# was therefore a silent, unreported off switch.
+
+def _find_ovr(text, declared_overrides=None, flags=("strict",)):
+    mypy = {"flags": list(flags)}
+    if declared_overrides is not None:
+        mypy["overrides"] = declared_overrides
+    errs, _ = cs._ruleset_parity_findings(
+        {"rulesets": {"ruff": {}, "mypy": mypy}}, text)
+    return errs
+
+
+_STRICT = "[tool.mypy]\nstrict = true\n"
+
+
+def test_undeclared_per_module_flag_off_errors():
+    toml = _STRICT + '[[tool.mypy.overrides]]\nmodule = ["x.*"]\nstrict = false\n'
+    errs = _find_ovr(toml, {})
+    assert any("x.*" in e and "strict" in e for e in errs), errs
+
+
+def test_undeclared_ignore_errors_errors():
+    """`ignore_errors` is stronger than `strict = false` — it disables the module."""
+    toml = _STRICT + '[[tool.mypy.overrides]]\nmodule = ["y.*"]\nignore_errors = true\n'
+    errs = _find_ovr(toml, {})
+    assert any("y.*" in e and "ignore_errors" in e for e in errs), errs
+
+
+def test_declared_per_module_relaxation_passes():
+    toml = _STRICT + '[[tool.mypy.overrides]]\nmodule = ["x.*"]\nstrict = false\n'
+    assert _find_ovr(toml, {"x.*": ["strict"]}) == []
+
+
+def test_second_block_is_not_masked_by_the_first():
+    """Every block is judged; they must not alias onto one dotted key."""
+    toml = (_STRICT
+            + '[[tool.mypy.overrides]]\nmodule = ["a.*"]\nstrict = false\n'
+            + '[[tool.mypy.overrides]]\nmodule = ["b.*"]\nstrict = false\n')
+    errs = _find_ovr(toml, {"a.*": ["strict"]})
+    assert any("b.*" in e for e in errs), errs
+    assert not any("a.*" in e for e in errs), errs
+
+
+def test_override_relaxation_is_waivable():
+    toml = _STRICT + ('[[tool.mypy.overrides]]\nmodule = ["z.*"]\n'
+                      'strict = false   # practice-ok\n')
+    assert _find_ovr(toml, {}) == []
+
+
+def test_override_that_relaxes_nothing_declared_is_silent():
+    """A block tuning an UNdeclared flag is not a loosening of declared policy."""
+    toml = _STRICT + ('[[tool.mypy.overrides]]\nmodule = ["q.*"]\n'
+                      'ignore_missing_imports = true\n')
+    assert _find_ovr(toml, {}) == []
+
+
+def test_relaxing_a_strict_component_per_module_errors():
+    """`strict` declared, then its components switched off per module, is the same
+    loosening spelled differently — mypy's --strict IS that set of flags."""
+    toml = _STRICT + ('[[tool.mypy.overrides]]\nmodule = ["m.*"]\n'
+                      'disallow_untyped_defs = false\n')
+    errs = _find_ovr(toml, {})
+    assert any("m.*" in e and "disallow_untyped_defs" in e for e in errs), errs
+
+
+def test_declared_strict_component_relaxation_passes():
+    toml = _STRICT + ('[[tool.mypy.overrides]]\nmodule = ["m.*"]\n'
+                      'disallow_untyped_defs = false\nwarn_return_any = false\n')
+    assert _find_ovr(toml, {"m.*": ["disallow_untyped_defs", "warn_return_any"]}) == []
+
+
+def test_partially_declared_relaxation_still_errors_on_the_rest():
+    toml = _STRICT + ('[[tool.mypy.overrides]]\nmodule = ["m.*"]\n'
+                      'disallow_untyped_defs = false\nwarn_return_any = false\n')
+    errs = _find_ovr(toml, {"m.*": ["disallow_untyped_defs"]})
+    assert any("warn_return_any" in e for e in errs), errs
+    assert not any("disallow_untyped_defs" in e for e in errs), errs
+
+
+def test_component_relaxation_is_silent_when_strict_is_not_declared():
+    """No `strict` in the declared flags means no claim about its components."""
+    toml = ("[tool.mypy]\nwarn_unreachable = true\n"
+            '[[tool.mypy.overrides]]\nmodule = ["m.*"]\ndisallow_untyped_defs = false\n')
+    assert _find_ovr(toml, {}, flags=("warn_unreachable",)) == []

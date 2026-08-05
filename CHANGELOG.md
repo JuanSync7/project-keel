@@ -177,7 +177,42 @@ version rather than a bare commit:
   modules left it green (`1 passed`); it now skips its own file and names the modules it
   requires (same mutation: `1 failed`).
 
+- **check_M could be switched off through exactly the two mechanisms pass 3's
+  carve-outs and ratchet use.** It read `tool.ruff.lint.extend-select` and
+  `tool.mypy.<flag>` and nothing else, so (a) `config/practices.json`
+  `rulesets.ruff.per_file_ignores` had **no consumer at all** — a single
+  `"**/*.py" = ["B904", "BLE001"]` line silenced a family corpus-wide and the
+  parity gate reported success — and (b) `[[tool.mypy.overrides]]` was invisible,
+  because `_toml_targets` normalises every block to the one dotted key
+  `tool.mypy.overrides.<flag>`, so the blocks aliased onto each other and only the
+  last would have been read anyway. Both measured at zero findings, exit 0, before
+  the fix; both now error. Per-module relaxations are legitimate — the type ratchet
+  is built on them — so the rule is that they must be *declared*, per module, in
+  `rulesets.mypy.overrides`. Relaxing a **component** of `strict`
+  (`disallow_untyped_defs`, `warn_return_any`, …) rather than `strict` itself
+  counts: mypy's `--strict` is exactly that set, and switching the pieces off is
+  the same loosening spelled differently.
+
 ### Added
+- **`check_N` — template twin parity**, the general gate that passes 1–3 kept
+  adding one-off pytest pins in place of. `grep -rn 'jinja\|copier' scripts/*.py`
+  used to return nothing: no structural check knew the six `.jinja` twins existed.
+  Each is now declared in `config/project.json` `template.twins` with its kind —
+  `parity`, `divergence` (`.gitignore.jinja` deliberately does NOT reproduce
+  keel's file; it drops the `.copier-answers.yml` ignore so a descendant keeps its
+  upgrade channel) or `generated`.
+  **Render-free by necessity, which bounds the claim honestly:**
+  `check_structure.py` is stdlib-only and 3.6-safe because it runs in pre-commit
+  on old hosts, so it cannot import jinja2 and cannot byte-compare a rendered
+  twin. What it does prove: no twin is undeclared (a seventh cannot appear
+  unnoticed — the precondition ADR-0005 was told to wait for), no `parity` twin
+  carries a non-templated line the plain file has lost, no `divergence` twin has
+  quietly stopped diverging, and no `generated` twin has a committed plain file.
+  The byte-exact rendered comparison stays in `tests/integration`, where jinja2
+  exists. Verified by mutation: re-narrowing the twin's mypy scope (the exact
+  pass-3 regression), copying `.gitignore` over its twin, and adding a seventh
+  twin each produce an error, and all three were silent before.
+
 - `tests/integration/test_copier_update.py` — the upgrade channel ADR-0004 chose
   copier for, tested for the first time: generate → commit downstream work →
   evolve the template → `copier update`, asserting new files arrive, edits land,

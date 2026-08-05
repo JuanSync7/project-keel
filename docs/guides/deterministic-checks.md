@@ -62,7 +62,7 @@ everything and therefore expect the project interpreter.
 
 | Check | Script | Gate? | Interpreter | What it guarantees |
 |-------|--------|:-----:|-------------|--------------------|
-| Structure & frontmatter | `scripts/check_structure.py` | error | 3.6-safe | Labels, taxonomy, package boundaries, tool/agent governance, project facts, agent-rules symlinks, owned-exception & frozen-config boundaries, naked-tensor domain warn, lint/type ruleset parity (checks A–M) |
+| Structure & frontmatter | `scripts/check_structure.py` | error | 3.6-safe | Labels, taxonomy, package boundaries, tool/agent governance, project facts, agent-rules symlinks, owned-exception & frozen-config boundaries, naked-tensor domain warn, lint/type ruleset parity, template twin parity (checks A–N) |
 | Corpus integrity | `scripts/jobs/check_corpus.py` | error | ≥3.7 | `wiki/corpus.json` is a valid, acyclic graph **and** the build is reproducible |
 | OpenAPI drift | `api/rest_fastapi/export_openapi.py --check` | error | FastAPI | Committed `openapi.json` matches the live routes |
 | AAD schema drift | `scripts/agent_surface/generate_aad_schema.py --check` | error | pydantic | Committed AAD JSON Schema matches the model |
@@ -78,7 +78,7 @@ print but never fail the build.
 
 ### 1. Structure & frontmatter — `scripts/check_structure.py`
 
-**Purpose.** The core enforcer of `CONVENTIONS.md`. Checks A–M:
+**Purpose.** The core enforcer of `CONVENTIONS.md`. Checks A–N:
 
 - **A. Frontmatter** — every `README.md` / `AGENT.md` / `CLAUDE.md`, `docs/**`,
   `test-docs/**` markdown, and `agents/**/*.tool.md` has the required keys with
@@ -112,6 +112,25 @@ print but never fail the build.
   `extend_select` family is selected, every mypy flag is enforced, no `deferred`
   (policy-off) family is selected. Reads `pyproject.toml` as text (no `tomllib`
   on 3.6); multi-line arrays, dotted-key/header forms, `# practice-ok` all handled.
+  Also enforces the two declarations that used to have no consumer: every ruff
+  `per-file-ignores` pattern must be declared in `rulesets.ruff.per_file_ignores`
+  (one `"**/*.py"` line could otherwise silence a family corpus-wide), and every
+  `[[tool.mypy.overrides]]` relaxation — including switching off a *component* of
+  `strict` rather than `strict` itself — must be declared in
+  `rulesets.mypy.overrides` for that module.
+- **N. Template twin parity** — keel is a copier template, and every `*.jinja`
+  twin must be declared in `config/project.json` `template.twins` with its kind:
+  `parity` (reproduces keel's own file except where templated), `divergence`
+  (deliberately does not — `.gitignore.jinja` drops the `.copier-answers.yml`
+  ignore so a generated project keeps its upgrade channel), or `generated`
+  (copier writes it; keel commits none of its own). Render-free by necessity —
+  this script is stdlib-only and 3.6-safe, so it cannot import jinja2 — which
+  bounds the claim: it proves no twin is undeclared, no parity twin carries a
+  non-templated line the plain file has lost (the drift that shipped a weaker
+  gate to every descendant), and no divergence twin has quietly stopped
+  diverging. The byte-exact rendered comparison stays in
+  `tests/integration/test_copier_generation.py`, where jinja2 exists. Silent in a
+  generated project, which has no twins.
 
 **When to run.** Every commit (pre-commit) and in CI; any time you add a
 directory, package, doc, tool, or agent.

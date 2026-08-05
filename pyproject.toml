@@ -108,11 +108,12 @@ warn_unreachable = true        # not in --strict: flag code mypy proves can neve
 
 # --- ratchet rung 1: the leaf roots enter the gate with named, minimal relaxations ---
 # Each block below relaxes ONLY the flags measured to be needed for that root, never
-# `strict = false` and never `ignore_errors`. Deleting a line is the ratchet step; the
-# annotations it demands are the work. NOTE these per-module blocks are invisible to
-# check_M (it reads `tool.mypy.<flag>`, and [[tool.mypy.overrides]] normalises to
-# `tool.mypy.overrides.<flag>`), so they are load-bearing only as reviewed data —
-# teaching check_M to read them is filed as pass-3 follow-up work.
+# `strict = false`. (`runtimes.*` below is the one `ignore_errors`, and it is declared
+# as such.) Deleting a line is the ratchet step; the annotations it demands are the
+# work. Every relaxation here is MIRRORED in config/practices.json
+# rulesets.mypy.overrides and enforced by check_M: an undeclared per-module relaxation
+# — including switching off a COMPONENT of strict rather than strict itself — is an
+# error. Change one file and the gate fails until you change the other.
 
 [[tool.mypy.overrides]]
 # models/: pluggable model backends. `typed-everywhere` relaxed (5 untyped defs) and
