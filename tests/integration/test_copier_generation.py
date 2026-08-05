@@ -19,11 +19,15 @@ import hermetic_git
 # The optional 'template' extra. CI installs it and sets KEEL_REQUIRE_TEMPLATE=1, so a
 # missing copier is a HARD collection error there — these tests silently skipping in CI
 # is the hole pass 2 closes. A bare local clone leaves the flag unset and still skips
-# gracefully. (Same guard in test_copier_update.py; they must not drift.)
+# gracefully. (Same guard in test_copier_update.py; they must not drift.) Keep the
+# two imports in one branch: `yaml` is copier's own dependency, never a new one, so
+# it is present exactly when copier is.
 if os.environ.get("KEEL_REQUIRE_TEMPLATE") == "1":
     import copier
+    import yaml
 else:
     copier = pytest.importorskip("copier")
+    yaml = pytest.importorskip("yaml")
 
 _ROOT = Path(__file__).resolve().parents[2]
 
@@ -347,6 +351,56 @@ def test_pyproject_twin_stays_pinned_to_keels_own():
         "pyproject.toml.jinja drifted from pyproject.toml beyond the per-answer "
         "fields; re-derive it from pyproject.toml rather than hand-patching one side"
     )
+
+
+# An `_exclude` entry is ANSWER-DRIVEN when it is wrapped in a jinja condition;
+# stripping the tags leaves the path it prunes. Derived from copier.yml rather than
+# listed here, so a prune added later is covered without anyone remembering to.
+_JINJA_TAG = re.compile(r"\{%.*?%\}")
+
+
+def _answer_driven_prunes():
+    """(copier.yml config, [(entry, path)] for each conditional `_exclude` entry)."""
+    cfg = yaml.safe_load((_ROOT / "copier.yml").read_text())
+    prunes = [(entry, _JINJA_TAG.sub("", entry).strip())
+              for entry in cfg.get("_exclude", []) if "{%" in entry]
+    return cfg, [(entry, path) for entry, path in prunes if path]
+
+
+def test_every_answer_driven_prune_has_a_retirement_migration():
+    """`_exclude` prunes at GENERATION; only `_migrations` RETIRES on update.
+
+    A project that answered `react-vite` and later re-answers `astro` does not get
+    the react-vite tree removed by the exclude — copier renders the old template
+    copy with the UNION of old and new excludes, on purpose, so update never
+    deletes. Without a mirroring migration the declined stack stays on disk, the
+    answers file disagrees with the tree, and the project's own gate goes red.
+
+    So the two halves are a contract, and this asserts the contract for the whole
+    CLASS: every conditional exclude, including ones added after this was written,
+    must name its path in some migration command. Adding a prune without its
+    retirement fails here rather than surfacing later as a mystery in someone
+    else's project. (That the retirement actually WORKS is
+    tests/integration/test_copier_update.py's restack tests; this only pins that
+    it exists.)
+    """
+    cfg, prunes = _answer_driven_prunes()
+    assert prunes, (
+        "no conditional _exclude entries found — either copier.yml stopped pruning "
+        "by answer or the syntax moved; re-derive this check rather than leaving it "
+        "vacuously green")
+
+    commands = " ".join(
+        m["command"] if isinstance(m, dict) else str(m)
+        for m in cfg.get("_migrations", []))
+    # Word-boundary, not substring: plain `in` would let the `src/frontend/react-vite`
+    # migration vouch for the separate `src/frontend` prune and pass vacuously.
+    missing = [(entry, path) for entry, path in prunes
+               if not re.search(r"(?<![\w./-])%s(?![\w./-])" % re.escape(path), commands)]
+    assert not missing, (
+        "these _exclude entries prune a path at generation but no _migrations entry "
+        "retires it on update, so a project that re-answers keeps it forever:\n"
+        + "\n".join("  %s   (path: %s)" % (entry, path) for entry, path in missing))
 
 
 # Shipped-verbatim surfaces that name paths. Each ships into every generated

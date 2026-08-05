@@ -22,9 +22,11 @@ import hermetic_git
 # is present exactly when copier is.
 if os.environ.get("KEEL_REQUIRE_TEMPLATE") == "1":
     import copier
+    import copier.errors
     import yaml
 else:
     copier = pytest.importorskip("copier")
+    pytest.importorskip("copier.errors")
     yaml = pytest.importorskip("yaml")
 
 _ROOT = Path(__file__).resolve().parents[2]
@@ -67,6 +69,39 @@ def _answers(project):
     return yaml.safe_load((project / ".copier-answers.yml").read_text())
 
 
+def _clone_template(dest, work):
+    """Clone keel into `dest` INCLUDING the uncommitted working tree.
+
+    `git clone` carries only HEAD, so an edit you have not committed yet is
+    invisible to the template these tests actually exercise. That is not
+    hypothetical: a whole `_migrations` block sat in the working tree while this
+    module ran against a clone that had none, so the migrations "silently did
+    nothing" — they did not exist. The symptom (a feature that no-ops) looks
+    nothing like the cause (the harness tests a different tree), which is what
+    made it expensive.
+
+    So replay the working-tree diff as a real commit in the clone: what you are
+    editing is what gets tested. On a clean tree — CI, and any run after you
+    commit — the patch is empty and this is exactly a plain clone.
+
+    `git diff HEAD` covers modifications, deletions and files already `git add`ed;
+    a brand-new file that has never been staged is still invisible, so `git add`
+    it before expecting these tests to see it.
+    """
+    _git("clone", "--quiet", "--no-hardlinks", str(_ROOT), str(dest), cwd=work)
+    patch = subprocess.run(("git", "diff", "HEAD", "--binary"), cwd=str(_ROOT),
+                           capture_output=True)
+    assert patch.returncode == 0, patch.stderr.decode("utf-8", "replace")
+    if patch.stdout.strip():
+        applied = subprocess.run(("git", "apply", "--index", "-"), cwd=str(dest),
+                                 input=patch.stdout, capture_output=True)
+        assert applied.returncode == 0, (
+            "could not replay keel's working tree onto its clone:\n"
+            + applied.stderr.decode("utf-8", "replace"))
+        _git("commit", "--quiet", "-m", "uncommitted working tree under test", cwd=dest)
+    return dest
+
+
 @pytest.fixture(scope="module")
 def upgraded(tmp_path_factory):
     """generate -> commit -> evolve the template -> `copier update`.
@@ -74,10 +109,9 @@ def upgraded(tmp_path_factory):
     Module-scoped because the whole cycle costs ~15s and every assertion below reads
     the same resulting tree. Yields (template, project, commit_before).
 
-    The template is a clone of keel at HEAD, so keel itself is never written to — and
-    so UNCOMMITTED template edits are deliberately not exercised here (unlike the
-    sibling generation tests, where copier's own clone auto-commits them). Commit a
-    `copier.yml` change before expecting this test to reflect it.
+    The template is a clone of keel, so keel itself is never written to. The clone
+    carries the uncommitted working tree too (see `_clone_template`), so an edit you
+    are still working on is the edit under test.
     """
     mp = pytest.MonkeyPatch()
     work = tmp_path_factory.mktemp("copier_update")
@@ -87,8 +121,7 @@ def upgraded(tmp_path_factory):
     try:
         # A throwaway clone is the template: real history, real copier.yml, and a repo
         # we may commit to.
-        template = work / "template"
-        _git("clone", "--quiet", "--no-hardlinks", str(_ROOT), str(template), cwd=work)
+        template = _clone_template(work / "template", work)
 
         # 1. a project generated from it, exactly as `make new` does
         project = work / "proj"
@@ -125,8 +158,11 @@ def upgraded(tmp_path_factory):
         #    delivered, 4 of 7 assertions below then fail). defaults=True is mandatory
         #    — copier refuses a non-interactive update without it ("Interactive session
         #    required"). overwrite=True is what the `copier update` CLI itself passes.
+        #    unsafe=True is what `copier update --trust` passes, and keel's `_migrations`
+        #    make it mandatory: copier classes a template carrying them as unsafe and
+        #    refuses to update without trust (pinned by the restack tests below).
         copier.run_update(str(project), defaults=True, overwrite=True,
-                          vcs_ref="HEAD", unsafe=False, quiet=True)
+                          vcs_ref="HEAD", unsafe=True, quiet=True)
         yield template, project, commit_before
     finally:
         mp.undo()
@@ -198,3 +234,91 @@ def test_updated_project_still_passes_its_own_gate(upgraded):
     r = subprocess.run([sys.executable, "scripts/check_structure.py"],
                        cwd=str(project), capture_output=True, text=True)
     assert r.returncode == 0, r.stdout + r.stderr
+
+
+# --- retirement: what an update must REMOVE when an answer changes -------------
+#
+# `_exclude` is a GENERATION-time filter and nothing more. On update copier renders
+# the old template copy with the UNION of the old and new excludes — deliberately,
+# "to prevent deletion" (copier/_main.py) — so an excluded path is never retired,
+# only never created. Retirement needs `_migrations`, which is a separate mechanism
+# with a separate trust requirement; both halves are pinned here.
+
+
+@pytest.fixture(scope="module")
+def restacked(tmp_path_factory):
+    """generate with one frontend stack -> commit -> `copier update` to the other.
+
+    The ordinary reason anyone re-answers a question, and the case `_exclude`
+    structurally cannot handle. Yields (project, refusal), where `refusal` is the
+    error from the deliberate no-trust attempt made first: `_check_unsafe` is the
+    very first statement of `run_update`, so that attempt cannot have mutated
+    anything, and folding it in here buys the trust assertion without a second
+    ~15s generate/commit cycle.
+    """
+    mp = pytest.MonkeyPatch()
+    work = tmp_path_factory.mktemp("copier_restack")
+    for var, value in hermetic_git.git_env_vars(work).items():
+        mp.setenv(var, value)
+    mp.setenv("COPIER_CACHE_DIR", str(work / "copier-cache"))
+    try:
+        template = _clone_template(work / "template", work)
+        project = work / "proj"
+        copier.run_copy(str(template), str(project),
+                        data={"project_name": "demo_proj",
+                              "frontend_stack": "react-vite"},
+                        defaults=True, vcs_ref="HEAD", unsafe=False, quiet=True)
+        _git("init", "--quiet", "-b", "main", cwd=project)
+        _git("add", "-A", cwd=project)
+        _git("commit", "--quiet", "-m", "generated from keel", cwd=project)
+
+        with pytest.raises(copier.errors.UnsafeTemplateError) as refusal:
+            copier.run_update(str(project), defaults=True, overwrite=True,
+                              data={"frontend_stack": "astro"},
+                              vcs_ref="HEAD", unsafe=False, quiet=True)
+
+        copier.run_update(str(project), defaults=True, overwrite=True,
+                          data={"frontend_stack": "astro"},
+                          vcs_ref="HEAD", unsafe=True, quiet=True)
+        yield project, refusal.value
+    finally:
+        mp.undo()
+
+
+def test_update_retires_the_frontend_stack_the_new_answer_declined(restacked):
+    """The declined stack must be GONE, not merely un-recreated."""
+    project, _ = restacked
+    assert (project / "src" / "frontend" / "astro").is_dir()
+    assert not (project / "src" / "frontend" / "react-vite").exists(), (
+        "`copier update` left the previously-chosen frontend on disk while "
+        ".copier-answers.yml says the project uses the other one — _exclude cannot "
+        "retire a path, so this needs a mirroring _migrations entry")
+
+
+def test_restacked_project_records_only_the_new_answer(restacked):
+    """Disk and answers must agree; a stale tree with a fresh answers file is the
+    same defect wearing a disguise."""
+    project, _ = restacked
+    assert _answers(project)["frontend_stack"] == "astro"
+
+
+def test_restacked_project_still_passes_its_own_gate(restacked):
+    """The real judge, and why this matters beyond tidiness: a stale stack leaves
+    dangling CLAUDE.md -> AGENT.md symlinks and a stack config/project.json does not
+    declare, which check_structure reports as errors. The project's own gate goes red
+    through no act of its own."""
+    project, _ = restacked
+    r = subprocess.run([sys.executable, "scripts/check_structure.py"],
+                       cwd=str(project), capture_output=True, text=True)
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
+def test_update_without_trust_refuses_a_template_carrying_migrations(restacked):
+    """Retirement is not free: `_migrations` run arbitrary commands, so copier classes
+    the template as unsafe and `copier update` now REFUSES without `--trust` instead of
+    silently skipping them. That makes `--trust` part of the documented update command
+    rather than a nicety — pinned here so the docs and the behaviour cannot drift.
+    Generation is unaffected: `_check_unsafe` only counts migrations on `update`, which
+    is why `make new` still needs no trust flag (the run_copy above uses unsafe=False)."""
+    _, refusal = restacked
+    assert "migrations" in str(refusal)

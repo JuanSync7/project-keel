@@ -65,12 +65,25 @@ it first.
 Generate a **tailored** project in one command — an interactive Q&A (name, frontend
 stack, transports, domain profiles) writes only the parts you chose, fills in
 `config/project.json`, and records your answers so you can pull future template
-improvements with `copier update`:
+improvements with `copier update --trust`:
 
 ```bash
 pipx install copier                                 # once
 copier copy gh:JuanSync7/project-keel my-project    # interactive Q&A -> tailored skeleton
 ```
+
+Later, from inside the generated project, pull template improvements:
+
+```bash
+copier update --trust    # re-runs the Q&A with your recorded answers as defaults
+```
+
+`--trust` is required, not optional politeness: re-answering a question has to
+*remove* what you declined (the frontend stack you switched away from, a transport
+you turned off), and copier can only delete through `_migrations`, which run
+commands — so it refuses to update an unattended template without it. Generation
+never needs the flag. Changing an answer deletes that directory, so commit your work
+first; `git checkout -- <path>` brings it back.
 
 In a checkout of this repo you can also run `make new DEST=../my-project` — but note
 that records the template's **absolute local path** as the update origin, so

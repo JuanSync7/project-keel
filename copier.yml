@@ -129,3 +129,62 @@ profiles:
     - cuda
     - langgraph
   default: []
+
+# ---- Retirement: what `copier update` must REMOVE ----------------------------
+# `_exclude` above is a GENERATION-time filter and nothing more. On update copier
+# renders the OLD template copy with the UNION of the old and new excludes — on
+# purpose, "to prevent deletion" (copier/_main.py) — so an excluded path is never
+# retired, only never created. Re-answering `frontend_stack` therefore left the
+# declined stack on disk while `.copier-answers.yml` said otherwise, and the
+# project's own gate then went red through no act of its own: dangling
+# CLAUDE.md -> AGENT.md symlinks plus a stack config/project.json does not declare.
+#
+# So every ANSWER-DRIVEN prune in `_exclude` needs a mirror here. The pair is the
+# contract — `_exclude` for a project that never had the path, `_migrations` for one
+# that did — and adding a prune without its mirror silently re-opens the defect,
+# which is why tests/integration/test_copier_generation.py asserts the pairing
+# rather than trusting this comment.
+#
+# THE COST, stated plainly: migrations run arbitrary commands, so copier now classes
+# keel as an unsafe template and `copier update` REFUSES without `--trust`. That is
+# why every documented update command carries the flag. Generation is unaffected —
+# copier only counts migrations on update — so `make new` still needs no trust.
+#
+# THE RISK, stated plainly: `src/frontend/<stack>` is a real app directory that a
+# project is expected to have edited, so these commands can delete work. That is the
+# honest meaning of changing the answer, and it is bounded by copier's own
+# preconditions: update refuses a dirty subproject and requires git, so the deleted
+# tree is always recoverable with `git checkout -- <path>`. Do not extend this list
+# to a path a project could have authored FROM SCRATCH, where no such history exists.
+#
+# `_stage == 'after'` on every entry: they must see the NEW answers, which are only
+# on disk in the `after` stage. The conditions re-read the answer rather than
+# comparing old to new, so a project that never had the path just runs a harmless
+# no-op `rm`.
+_migrations:
+  # Mirrors the frontend-stack prunes.
+  - command: "rm -rf src/frontend/react-vite"
+    when: "{{ _stage == 'after' and frontend_stack != 'react-vite' }}"
+  - command: "rm -rf src/frontend/astro"
+    when: "{{ _stage == 'after' and frontend_stack != 'astro' }}"
+  - command: "rm -rf src/frontend"
+    when: "{{ _stage == 'after' and frontend_stack == 'none' }}"
+  # ...and the workflow that BUILDS the astro stack, whose build job would `npm ci`
+  # in the directory the entry above just removed.
+  - command: "rm -f .github/workflows/pages.yml"
+    when: "{{ _stage == 'after' and frontend_stack != 'astro' }}"
+  # Mirrors the transport prunes.
+  - command: "rm -rf api/grpc"
+    when: "{{ _stage == 'after' and 'grpc' not in transports }}"
+  - command: "rm -rf api/edge_nginx"
+    when: "{{ _stage == 'after' and 'edge_nginx' not in transports }}"
+  # Not answer-driven, but the same defect: keel's meta-tests are pruned at
+  # generation, so no CURRENT project has them — but a project generated BEFORE that
+  # prune existed still carries them, and `copier update` is precisely what hands it
+  # the newer `ci.yml` that installs the `template` extra and runs them. They then
+  # fail on copier.yml and the `.jinja` twins, neither of which exists downstream.
+  # Named exactly, not globbed, so a project's own `test_copier_*.py` is never hit.
+  - command: "rm -f tests/integration/test_copier_generation.py
+              tests/integration/test_copier_generator_contract.py
+              tests/integration/test_copier_update.py"
+    when: "{{ _stage == 'after' }}"

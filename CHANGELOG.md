@@ -192,8 +192,45 @@ version rather than a bare commit:
   (`disallow_untyped_defs`, `warn_return_any`, …) rather than `strict` itself
   counts: mypy's `--strict` is exactly that set, and switching the pieces off is
   the same loosening spelled differently.
+- **`copier update` could never retire what an answer declined, so re-answering a
+  question broke the project's own gate.** `_exclude` is a *generation-time* filter:
+  on update copier renders the old template copy with the **union** of the old and
+  new excludes, on purpose ("to prevent deletion", `copier/_main.py`), so an excluded
+  path is never removed — only never created. A project generated with `react-vite`
+  that re-answered `astro` therefore kept the react-vite tree while
+  `.copier-answers.yml` said otherwise, and its own `check_structure` reported
+  **13 errors** (dangling `CLAUDE.md -> AGENT.md` symlinks plus an undeclared stack) —
+  red through no act of its own, caused by the update we advertise. Every
+  answer-driven prune now has a mirroring `_migrations` entry, and the *pairing* is
+  asserted for the whole class, so a prune added later without its retirement fails
+  here rather than downstream. See ADR-0006.
+- **The template meta-tests are now retired on update, not just pruned at
+  generation.** Pruning never helped a project generated *before* the prune existed;
+  `copier update` was precisely what handed it the newer `ci.yml` that runs them. The
+  self-neutralising skip stays as the belt to this braces, for a project that never
+  updates.
+- **`tests/integration/test_copier_update.py` tested a different tree than the one
+  being edited.** Its fixtures cloned keel with `git clone`, which carries only HEAD,
+  so an uncommitted `copier.yml` change was invisible to the template under test — a
+  new `_migrations` block appeared to "silently do nothing" when it simply was not
+  there. The clone now replays the working-tree diff as a real commit, so what you
+  edit is what gets tested; on a clean tree it is exactly a plain clone.
+
+### Changed
+- **`copier update` now requires `--trust`** (`copier update --trust`). Retirement
+  needs `_migrations`, migrations run commands, and copier refuses an unattended
+  unsafe template rather than skipping them silently. Generation is unaffected —
+  copier only counts migrations on update — so `make new` and `copier copy` still
+  need no flag. Pinned by a test, not by prose. Note that changing an answer now
+  **deletes** the directory it declined: commit first, and `git checkout -- <path>`
+  recovers it (copier already refuses to update a dirty project, so the history
+  always exists).
 
 ### Added
+- ADR-0006 (accepted): retire declined answers with `_migrations`, amending
+  ADR-0004's update consequences — including the `--trust` requirement and the
+  rule that a migration must never name a path a project could have authored
+  from scratch.
 - **`check_N` — template twin parity**, the general gate that passes 1–3 kept
   adding one-off pytest pins in place of. `grep -rn 'jinja\|copier' scripts/*.py`
   used to return nothing: no structural check knew the six `.jinja` twins existed.

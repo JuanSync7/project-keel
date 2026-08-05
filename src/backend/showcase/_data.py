@@ -402,8 +402,10 @@ SETUP_STEPS: tuple[Step, ...] = (
          command="pip install pre-commit && pre-commit install"),
     Step(title="Pull template updates later",
          body="When Project Keel improves, re-apply the changes to your project — copier "
-              "three-way merges them using your recorded answers.",
-         command="copier update"),
+              "three-way merges them using your recorded answers. `--trust` is required: "
+              "re-answering a question has to remove what you declined, and copier only "
+              "deletes through migrations, which run commands.",
+         command="copier update --trust"),
 )
 
 __all__ = ["TAGLINE", "SUMMARY", "CONVENTIONS", "FEATURES", "PRINCIPLES",

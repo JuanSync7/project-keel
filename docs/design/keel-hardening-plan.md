@@ -278,7 +278,7 @@ that pass without proving anything*.
 **Deliberately not fixed here:** the answer-change half of the `_exclude` finding.
 It needs `_migrations`, and belongs to pass 4's redesign.
 
-### Pass 4 — make the generated project the user's, not keel's *(next)*
+### Pass 4 — make the generated project the user's, not keel's *(retirement done; questions next)*
 
 - `src/backend/showcase` is **1,205 of 1,433** Python lines (84%) in a generated
   project, against a 30-line `example_feature`, with no question to decline it.
@@ -312,6 +312,29 @@ case. Each optional surface needs two things, not one: the answer that stops it
 being generated, and the migration that removes it from a project that already
 has it. A surface added without its migration is the same defect class this pass
 exists to close, so the migration is part of the done-condition.
+
+**The retirement half has landed** (ADR-0006). Every answer-driven `_exclude` entry
+now has a mirroring `_migrations` entry; the *pairing* is asserted for the whole
+class by `test_copier_generation.py`, so the questions added below inherit the rule
+automatically rather than each having to remember it. Retirement is tested live by
+a restack fixture (generate `react-vite` → commit → update to `astro`), which
+requires the declined tree to be gone *and* the project's gate to pass. Cost
+accepted: `copier update` now requires `--trust`; generation still does not.
+
+> **Why this took a wasted pass, recorded so it is not repeated.** The first
+> attempt concluded that `_migrations` "do not run against keel's clone" — an
+> instrumented migration left no marker. That conclusion was wrong. The update
+> fixtures cloned keel with `git clone`, which carries only HEAD, so the
+> uncommitted `_migrations` block was absent from the template actually under
+> test; the task list was empty because the migrations did not exist. Instrumenting
+> `migration_tasks` showed `raw_entries=0` immediately. The fixture now replays the
+> working-tree diff into the clone, so this class of "my change appears to do
+> nothing" cannot recur. General lesson: when a mechanism appears inert, first
+> verify the harness is exercising the artefact you edited.
+
+**Remaining (the questions themselves):** a `showcase: bool` question and the
+optional-surface questions, plus removing keel branding from
+`src/backend/showcase/_repo.py:86` and `api/rest_fastapi/app.py:26`.
 
 **Done when:** `showcase=false` generates a project with no keel branding in any
 served response, and the optional-surface questions round-trip through
