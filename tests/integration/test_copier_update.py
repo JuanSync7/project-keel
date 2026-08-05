@@ -2,9 +2,8 @@
 title: Integration — `copier update` carries template improvements downstream
 kind: tests
 layer: n/a
-summary: The upgrade channel ADR-0004 chose copier for, exercised end to end against the REAL template — clone keel into a scratch dir, generate a project, commit it, evolve the clone, then `copier update`. Proves new template files arrive, template edits land, the project's own edits survive, the `.gitignore` divergence twin holds, `_commit` advances and `_src_path` stays resolvable. Skipped on a bare local clone without the optional `template` extra; CI installs `.[dev,template]` and sets KEEL_REQUIRE_TEMPLATE=1, so there a missing copier is a hard failure instead of a silent skip.
+summary: The upgrade channel ADR-0004 chose copier for, exercised end to end against the REAL template — clone keel into a scratch dir, generate a project, commit it, evolve the clone, then `copier update`. Proves new template files arrive, template edits land, the project's own edits survive, the `.gitignore` divergence twin holds, `_commit` advances and `_src_path` stays resolvable. Skipped on a bare local clone without the optional `template` extra; CI installs `.[dev,template]` and declares the surface required (KEEL_REQUIRED_EXTRAS), so there a missing copier is a hard failure instead of a silent skip.
 """
-import os
 import shutil
 import subprocess
 import sys
@@ -13,21 +12,17 @@ from pathlib import Path
 import pytest
 
 import hermetic_git
+import optional_deps
 
-# The optional 'template' extra. CI installs it and sets KEEL_REQUIRE_TEMPLATE=1, so a
-# missing copier is a HARD collection error there — these tests silently skipping in CI
-# is the hole pass 2 closes. A bare local clone leaves the flag unset and still skips
-# gracefully. (Same guard in test_copier_generation.py; they must not drift.) Keep the
-# two imports in one branch: `yaml` is copier's own dependency, never a new one, so it
-# is present exactly when copier is.
-if os.environ.get("KEEL_REQUIRE_TEMPLATE") == "1":
-    import copier
-    import copier.errors
-    import yaml
-else:
-    copier = pytest.importorskip("copier")
-    pytest.importorskip("copier.errors")
-    yaml = pytest.importorskip("yaml")
+# The optional 'template' extra. CI installs it and declares it required, so a missing
+# copier is a HARD collection error there — these tests silently skipping in CI is the
+# hole pass 2 closes. A bare local clone leaves the declaration unset and still skips
+# gracefully. `yaml` is copier's own dependency, never a new one, so it belongs to the
+# same surface. (The skip/fail decision itself lives in tests/optional_deps.py, which
+# is also what stops a fourth copy of this guard from drifting.)
+copier = optional_deps.importorskip("copier", extra="template")
+optional_deps.importorskip("copier.errors", extra="template")
+yaml = optional_deps.importorskip("yaml", extra="template")
 
 _ROOT = Path(__file__).resolve().parents[2]
 pytestmark = [

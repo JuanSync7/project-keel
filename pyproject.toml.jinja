@@ -11,7 +11,10 @@ requires-python = "{{ backend_python }}"
 dependencies = []
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-cov", "ruff", "mypy", "httpx"]  # httpx backs FastAPI's TestClient (API/AAD tests)
+# httpx backs FastAPI's TestClient (API/AAD tests); jsonschema validates the served
+# AAD descriptor against the committed schema — it was in no extra at all, so that
+# assertion had never executed anywhere while the suite reported success.
+dev = ["pytest", "pytest-cov", "ruff", "mypy", "httpx", "jsonschema"]
 # Optional agent-runtime engines. The default 'inprocess' runtime is pure
 # stdlib (no install); install an engine only if you select it by name, e.g.
 # get_runtime("langgraph"). Keeps the default install dependency-free.

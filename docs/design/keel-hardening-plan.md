@@ -289,10 +289,13 @@ It needs `_migrations`, and belongs to pass 4's redesign.
   adjacent to the correctly-tailored `name`, and `api/rest_fastapi/app.py:26`
   is `FastAPI(title="Project Keel API")` — kept green downstream by
   `make check-openapi`.
-- `README.md.jinja:82-83` tells the user to delete `wiki/`, `models/`, `evals/`
-  and `containers/`; doing exactly that produces 3 errors and exit 1, because
-  `config/project.json` still declares the model adapters. Deleted dirs also
-  return on any `copier update` that adds a file beneath them.
+- ~~`README.md.jinja` tells the user to delete `wiki/`, `models/`, `evals/` and
+  `containers/`; doing exactly that produces 3 errors and exit 1, because
+  `config/project.json` still declares the model adapters.~~ *(closed in pass 6:
+  the advice drops `models/` and documents the manifest change; both halves are
+  pinned by tests that read the sentence out of the generated README.)* Deleted
+  dirs still return on any `copier update` that adds a file beneath them — that
+  half needs the optional-surface questions below.
 
 **Redesigned after the pass-2 review — `_exclude` cannot deliver this.** The
 original plan was "multiselect questions for the optional surfaces driving
@@ -393,14 +396,18 @@ a new instance of the drift class it claims to fix.
   release discipline, not an undeliverable migration: ship
   a new rule as WARN for one release, promote to ERROR in the next, and never
   release a rule keel itself fails. Adopt as a rule from pass 1's tag onward.
-- **The same silent-skip defect, one more instance.**
-  `tests/integration/test_aad_conformance.py:77` `importorskip`s `jsonschema`,
-  which is in neither `.[dev]` nor `api/rest_fastapi/requirements.txt` and is not
-  in the repo's own venv — so the "served AAD descriptor validates against the
-  committed schema" assertion has **never executed anywhere**. Same class as pass
-  2's finding, found while fixing it; left alone to keep pass 2 one slice. If a
-  second extra ever needs the CI treatment, generalise to one
-  `KEEL_REQUIRED_EXTRAS=template,...` variable rather than a variable per extra.
+- ~~**The same silent-skip defect, one more instance.**~~ *(closed in pass 6.)*
+  Kept for the record, because the measurement is the point:
+  `tests/integration/test_aad_conformance.py` `importorskip`ped `jsonschema`,
+  which was in neither `.[dev]` nor `api/rest_fastapi/requirements.txt` nor the
+  repo's own venv — so the "served AAD descriptor validates against the committed
+  schema" assertion had **never executed anywhere**, while the suite reported
+  success on every run. Closed as predicted here, by generalising to one
+  `KEEL_REQUIRED_EXTRAS` declaration rather than a variable per extra — and
+  applied to the whole class (`fastapi`/`httpx`/`copier` were unguarded the same
+  way), with a scan that fails any module reaching for a raw `importorskip`
+  outside the declared opt-in set. The assertion passes and was mutation-checked
+  to bite.
 - **Blanket `except Exception: return 0` in the two drift checks.** *(Half
   closed in pass 3.)* `scripts/agent_surface/generate_aad_schema.py` now skips
   only on `ImportError`/`SyntaxError` and fails on anything else.

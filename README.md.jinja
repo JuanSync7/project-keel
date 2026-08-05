@@ -95,8 +95,13 @@ make help          # list tasks
 make check         # fast structural gate (or: make verify)
 ```
 
-Delete any optional dirs you don't need (`wiki/`, `models/`, `evals/`, `containers/`)
-and rename `src/backend/example_feature/` to your first real package. Project
+Delete any optional dirs you don't need (`wiki/`, `evals/`, `containers/`) and
+rename `src/backend/example_feature/` to your first real package.
+
+`models/` is the exception: `config/project.json` **declares** the adapters that live
+there, so deleting the directory alone leaves the manifest claiming three adapters that
+no longer exist and `make check` correctly reports 3 errors. To drop it, clear
+`models.available` to `{}` and set `models.default` to `null` in the same commit. Project
 generation is `copier`-based (see [ADR 0004](docs/adr/0004-project-templating-copier.md)).
 
 ## Showcase demo (synced docs site)

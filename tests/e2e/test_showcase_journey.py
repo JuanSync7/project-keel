@@ -9,8 +9,10 @@ from pathlib import Path
 
 import pytest
 
-pytest.importorskip("fastapi")  # optional transport dep — skip when absent
-pytest.importorskip("httpx")    # backs the FastAPI TestClient
+import optional_deps
+
+optional_deps.importorskip("fastapi", extra="transport")  # optional transport dep
+optional_deps.importorskip("httpx", extra="dev")          # backs FastAPI's TestClient
 
 from fastapi.testclient import TestClient  # noqa: E402
 

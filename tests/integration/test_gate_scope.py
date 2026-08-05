@@ -348,3 +348,89 @@ def test_precommit_python3_entries_actually_execute_on_an_old_interpreter():
              entry],
             cwd=str(_ROOT), capture_output=True, text=True)
         assert r.returncode == 0, "%s does not parse under %s:\n%s" % (entry, old, r.stderr)
+
+
+# --- scope: a dependency CI installs must never degrade into a silent skip ----
+#
+# The same shape as every scope pin above, applied to the test suite's own
+# preconditions. `pytest.importorskip` turns a broken install into a green run
+# with the assertions never executed — invisible, because a skip in a 300-test
+# run reads as "that optional thing again". Measured instance: `jsonschema` was
+# in no extra, so the AAD schema-validation assertion had never run anywhere.
+
+sys.path.insert(0, str(_ROOT / "tests"))
+
+import optional_deps  # noqa: E402
+
+_RAW_SKIP = "pytest.importorskip("
+
+
+def _test_modules():
+    return sorted(p for p in (_ROOT / "tests").rglob("test_*.py"))
+
+
+def test_no_test_module_silently_skips_a_dependency_ci_installs():
+    """Every guarded import goes through `optional_deps`, or is declared opt-in.
+
+    A raw `pytest.importorskip` is only honest for a surface nobody promised to
+    install. For anything CI installs on purpose it is a hole: the module skips,
+    the run stays green, and the gate the import guards never executes.
+    """
+    offenders = []
+    for path in _test_modules():
+        # This module names the searched-for literal as its own filter string, so
+        # without the self-exclusion it would always match itself and the scan
+        # would never be able to find a real offender. (Exactly the trap that made
+        # an earlier meta-test unfireable — see test_copier_generator_contract.py.)
+        if path.resolve() == Path(__file__).resolve():
+            continue
+        for i, line in enumerate(path.read_text().splitlines(), 1):
+            if _RAW_SKIP not in line or line.lstrip().startswith("#"):
+                continue
+            if any(name in line for name in optional_deps.DELIBERATELY_OPTIONAL):
+                continue
+            offenders.append("%s:%d: %s" % (path.relative_to(_ROOT), i, line.strip()))
+    assert not offenders, (
+        "these guarded imports skip silently instead of failing when CI declares "
+        "the surface required, so the assertions behind them can stop running "
+        "without anything going red:\n" + "\n".join(offenders)
+        + "\n\nRoute them through tests/optional_deps.importorskip(module, extra=...), "
+          "or add the dependency to optional_deps.DELIBERATELY_OPTIONAL with a reason.")
+
+
+def test_the_silent_skip_scan_actually_reaches_the_suite():
+    """Backstop for the pin above: a scan that collects nothing passes vacuously.
+
+    Both halves must be non-empty — real modules walked, and at least one real
+    guarded import found — or a rename could quietly empty the scan.
+    """
+    modules = [p for p in _test_modules() if p.resolve() != Path(__file__).resolve()]
+    assert len(modules) > 10, "the test-module scan found almost nothing: %s" % modules
+    guarded = [p.name for p in modules
+               if "optional_deps.importorskip(" in p.read_text()
+               or _RAW_SKIP in p.read_text()]
+    assert guarded, "no module guards an optional import — has the pattern moved?"
+
+
+def test_every_required_surface_is_installed_by_a_ci_step():
+    """A surface CI declares required but never installs would fail every run;
+    one it installs but never declares is the silent skip again. Read off the real
+    workflow, so the two cannot drift."""
+    ci = (_ROOT / ".github" / "workflows" / "ci.yml")
+    if not ci.is_file():
+        pytest.skip("no CI workflow in this project")
+    text = ci.read_text()
+    declared = [ln for ln in text.splitlines() if optional_deps.ENV_VAR in ln]
+    assert declared, (
+        "no CI step declares %s, so every optional surface degrades to a skip and "
+        "the suite can go green with whole gates unexecuted" % optional_deps.ENV_VAR)
+    names = re.findall(r"[\w-]+", declared[0].split(":", 1)[1])
+    assert names, "%s is declared empty in CI" % optional_deps.ENV_VAR
+    for name in names:
+        assert name in optional_deps.SURFACES, (
+            "CI declares unknown surface %r (known: %s) — a typo here silently "
+            "disables the guard" % (name, sorted(optional_deps.SURFACES)))
+        assert optional_deps.SURFACES[name] in text, (
+            "CI declares surface %r required but no step runs %r, so every run "
+            "would fail on a missing import"
+            % (name, optional_deps.SURFACES[name]))

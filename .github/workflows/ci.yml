@@ -32,9 +32,11 @@ jobs:
       # fresh checkout doesn't have it; the showcase integration tests read it.
       # Build it before the suite runs.
       - run: make site-data
-      # Declare the template extra REQUIRED: a missing copier is then a hard collection
-      # error here instead of silently skipping every generation/update test. A bare
-      # local clone leaves this unset and still skips gracefully.
+      # Declare the surfaces installed above REQUIRED: a missing import is then a hard
+      # collection error here instead of a silent skip that leaves whole gates
+      # unexecuted while the run stays green. A bare local clone leaves this unset and
+      # still skips gracefully. The vocabulary (and what installs each) is
+      # tests/optional_deps.py SURFACES; an unknown name here is an error, not a no-op.
       - run: make test
         env:
-          KEEL_REQUIRE_TEMPLATE: "1"
+          KEEL_REQUIRED_EXTRAS: "template,dev,transport"

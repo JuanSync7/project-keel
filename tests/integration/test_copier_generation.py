@@ -2,7 +2,7 @@
 title: Integration — copier generates a structurally valid, tailored project
 kind: tests
 layer: n/a
-summary: `copier` renders keel's root template into a new project — the manifest is tailored to the answers, the un-chosen frontend stack is pruned, CLAUDE.md->AGENT.md symlinks are preserved, keel's own template meta-tests are pruned, and check_structure passes. Skipped on a bare local clone without the optional `template` extra; CI installs `.[dev,template]` and sets KEEL_REQUIRE_TEMPLATE=1, so there a missing copier is a hard failure instead of a silent skip.
+summary: `copier` renders keel's root template into a new project — the manifest is tailored to the answers, the un-chosen frontend stack is pruned, CLAUDE.md->AGENT.md symlinks are preserved, keel's own template meta-tests are pruned, and check_structure passes. Skipped on a bare local clone without the optional `template` extra; CI installs `.[dev,template]` and declares the surface required (KEEL_REQUIRED_EXTRAS), so there a missing copier is a hard failure instead of a silent skip.
 """
 import json
 import os
@@ -15,19 +15,16 @@ from pathlib import Path
 import pytest
 
 import hermetic_git
+import optional_deps
 
-# The optional 'template' extra. CI installs it and sets KEEL_REQUIRE_TEMPLATE=1, so a
-# missing copier is a HARD collection error there — these tests silently skipping in CI
-# is the hole pass 2 closes. A bare local clone leaves the flag unset and still skips
-# gracefully. (Same guard in test_copier_update.py; they must not drift.) Keep the
-# two imports in one branch: `yaml` is copier's own dependency, never a new one, so
-# it is present exactly when copier is.
-if os.environ.get("KEEL_REQUIRE_TEMPLATE") == "1":
-    import copier
-    import yaml
-else:
-    copier = pytest.importorskip("copier")
-    yaml = pytest.importorskip("yaml")
+# The optional 'template' extra. CI installs it and declares it required, so a missing
+# copier is a HARD collection error there — these tests silently skipping in CI is the
+# hole pass 2 closes. A bare local clone leaves the declaration unset and still skips
+# gracefully. `yaml` is copier's own dependency, never a new one, so it belongs to the
+# same surface. (The skip/fail decision itself lives in tests/optional_deps.py, which
+# is also what stops a fourth copy of this guard from drifting.)
+copier = optional_deps.importorskip("copier", extra="template")
+yaml = optional_deps.importorskip("yaml", extra="template")
 
 _ROOT = Path(__file__).resolve().parents[2]
 
@@ -36,7 +33,7 @@ _ROOT = Path(__file__).resolve().parents[2]
 # template copy with the UNION of the old and new excludes precisely so nothing is
 # deleted (copier/_main.py). So a project generated BEFORE the prune landed still ships
 # them, and `copier update` hands it the newer ci.yml that installs the `template`
-# extra and sets KEEL_REQUIRE_TEMPLATE=1 — turning its CI red via the very update meant
+# extra and declares it required — turning its CI red via the very update meant
 # to fix CI (measured: 6 of 8 failed). A meta-test only means anything where a
 # `copier.yml` exists, so say so here rather than relying on pruning alone.
 pytestmark = [
@@ -353,6 +350,83 @@ def test_pyproject_twin_stays_pinned_to_keels_own():
     )
 
 
+# The README's "delete what you don't need" advice, read out of the GENERATED
+# project's own README rather than restated here — so adding a directory to that
+# sentence is covered by this test instead of quietly widening a false promise.
+_DELETE_ADVICE = re.compile(r"Delete any optional dirs you don't need \(([^)]*)\)")
+_BACKTICKED = re.compile(r"`([^`]+)`")
+
+
+def _readme_deletable_dirs(project):
+    text = (project / "README.md").read_text()
+    hit = _DELETE_ADVICE.search(text)
+    assert hit, (
+        "the generated README no longer carries the 'delete any optional dirs' "
+        "sentence this test verifies; re-derive it rather than deleting the pin")
+    return [name.rstrip("/") for name in _BACKTICKED.findall(hit.group(1))]
+
+
+def test_the_readmes_delete_advice_leaves_a_green_gate(tmp_path):
+    """Doing exactly what the generated README says must not break the project.
+
+    It used to: the README named `models/` among the dirs you may delete, but
+    `config/project.json` declares the model adapters and their directory, so
+    following the advice produced `3 error(s)` and exit 1 on a project whose owner
+    had done nothing wrong. Advice that reddens the gate is worse than no advice —
+    the first thing a new user does is exactly what the README told them to.
+    """
+    dest = tmp_path / "proj"
+    _generate(dest, project_name="demo_proj", frontend_stack="none")
+    deletable = _readme_deletable_dirs(dest)
+    assert deletable, "the delete-advice sentence lists no directories"
+
+    for name in deletable:
+        assert (dest / name).exists(), (
+            "the README offers to delete %r, which a generated project does not "
+            "even have" % name)
+        shutil.rmtree(str(dest / name))
+
+    r = subprocess.run([sys.executable, "scripts/check_structure.py"],
+                       cwd=str(dest), capture_output=True, text=True)
+    assert r.returncode == 0, (
+        "following the README's own delete advice breaks the generated project's "
+        "gate:\n" + r.stdout + r.stderr)
+
+
+def test_deleting_a_manifest_declared_dir_is_caught_and_the_documented_fix_works(tmp_path):
+    """The other half: `models/` is NOT free to delete, and the README says so.
+
+    Two claims, both load-bearing. (1) The caveat is real — deleting `models/`
+    alone must fail, or the README would be warning about nothing. (2) The remedy
+    the README gives actually works, so a user who follows it lands green rather
+    than stuck.
+    """
+    dest = tmp_path / "proj"
+    _generate(dest, project_name="demo_proj", frontend_stack="none")
+    assert "models" not in _readme_deletable_dirs(dest), (
+        "the README lists `models/` as free to delete, but the manifest declares "
+        "the adapters that live there — that advice reddens the gate")
+
+    shutil.rmtree(str(dest / "models"))
+    r = subprocess.run([sys.executable, "scripts/check_structure.py"],
+                       cwd=str(dest), capture_output=True, text=True)
+    assert r.returncode != 0, (
+        "deleting `models/` no longer fails the gate, so the README's caveat about "
+        "clearing the manifest is now warning about nothing — re-derive it")
+
+    manifest = dest / "config" / "project.json"
+    data = json.loads(manifest.read_text())
+    data["models"]["available"] = {}
+    data["models"]["default"] = None
+    manifest.write_text(json.dumps(data, indent=2) + "\n")
+
+    r = subprocess.run([sys.executable, "scripts/check_structure.py"],
+                       cwd=str(dest), capture_output=True, text=True)
+    assert r.returncode == 0, (
+        "the fix the README documents for a deleted `models/` does not produce a "
+        "green gate:\n" + r.stdout + r.stderr)
+
+
 # An `_exclude` entry is ANSWER-DRIVEN when it is wrapped in a jinja condition;
 # stripping the tags leaves the path it prunes. Derived from copier.yml rather than
 # listed here, so a prune added later is covered without anyone remembering to.
@@ -460,7 +534,7 @@ def test_meta_tests_neutralise_themselves_in_a_project_that_still_has_them(tmp_p
     existed: copier renders the old template copy with the UNION of old and new
     excludes precisely so update never deletes anything, so those projects keep
     keel's meta-tests forever — and `copier update` hands them the newer `ci.yml`
-    that installs the `template` extra and sets KEEL_REQUIRE_TEMPLATE=1. Their CI
+    that installs the `template` extra and declares it required. Their CI
     then goes red because of the update meant to fix CI.
 
     Simulates exactly that: a real generated project, with the meta-tests copied
@@ -478,7 +552,7 @@ def test_meta_tests_neutralise_themselves_in_a_project_that_still_has_them(tmp_p
         shutil.copy2(str(meta), str(dest / "tests" / "integration" / meta.name))
 
     env = dict(os.environ)
-    env["KEEL_REQUIRE_TEMPLATE"] = "1"        # as CI sets it
+    env[optional_deps.ENV_VAR] = "template,dev,transport"   # as CI declares it
     env["PYTHONPATH"] = "src:."
     # Only the meta-modules. The generated project's OTHER integration tests read a
     # corpus that `make site-data` builds, so collecting the whole directory here

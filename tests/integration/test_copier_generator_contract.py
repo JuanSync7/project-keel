@@ -19,7 +19,7 @@ _CI = _ROOT / ".github" / "workflows" / "ci.yml"
 # template copy with the UNION of the old and new excludes precisely so nothing is
 # deleted (copier/_main.py). So a project generated BEFORE the prune landed still ships
 # them, and `copier update` hands it the newer ci.yml that installs the `template`
-# extra and sets KEEL_REQUIRE_TEMPLATE=1 — turning its CI red via the very update meant
+# extra and declares it required — turning its CI red via the very update meant
 # to fix CI (measured: 6 of 8 failed). A meta-test only means anything where a
 # `copier.yml` exists, so say so here rather than relying on pruning alone.
 pytestmark = [
@@ -171,25 +171,35 @@ def test_ci_installs_the_optional_template_extra():
         "tests/integration/test_copier_*.py silently skips:\n" + "\n".join(installs))
 
 
-def test_ci_declares_the_template_extra_required_for_the_suite():
+def test_ci_declares_the_template_surface_required_for_the_suite():
     """Installing the extra is not enough: a broken install would degrade back to a
-    silent skip. The suite step must declare KEEL_REQUIRE_TEMPLATE so a missing
-    copier is a hard collection error in CI (a bare local clone leaves it unset and
-    still skips gracefully)."""
+    silent skip. The suite step must declare the `template` surface required so a
+    missing copier is a hard collection error in CI (a bare local clone leaves the
+    declaration unset and still skips gracefully).
+
+    Named surface, not just "the variable is present": declaring `dev,transport` and
+    quietly dropping `template` would satisfy a mere-presence check while putting the
+    generation and update gates straight back to sleep."""
     lines = _CI.read_text().splitlines()
     starts = [i for i, ln in enumerate(lines) if ln.strip() == "- run: make test"]
     assert len(starts) == 1, "expected exactly one `- run: make test` step in CI"
     step = "\n".join(lines[starts[0]:starts[0] + 4])
-    assert "KEEL_REQUIRE_TEMPLATE" in step, (
-        "the CI step that runs the suite does not declare KEEL_REQUIRE_TEMPLATE, so "
-        "a missing `template` extra would skip the copier tests instead of failing:\n"
-        + step)
+    assert "KEEL_REQUIRED_EXTRAS" in step, (
+        "the CI step that runs the suite declares no required surfaces, so a missing "
+        "`template` extra would skip the copier tests instead of failing:\n" + step)
+    assert "template" in step.split("KEEL_REQUIRED_EXTRAS", 1)[1], (
+        "the suite step declares required surfaces but not `template`, so the copier "
+        "generation/update gates can silently skip in CI again:\n" + step)
 
 
-def test_copier_test_modules_hard_fail_when_the_extra_is_required():
-    """Both halves of the guard live in the test modules themselves: whatever
-    importorskips `copier` must also honour KEEL_REQUIRE_TEMPLATE, or CI's flag
-    reaches a module that ignores it and the skip comes back."""
+def test_copier_test_modules_hard_fail_when_the_surface_is_required():
+    """Both halves of the guard live in the test modules themselves: whatever guards
+    the `copier` import must route through `optional_deps`, or CI's declaration
+    reaches a module that ignores it and the skip comes back.
+
+    (The general "no module may silently skip a dependency CI installs" scan is in
+    test_gate_scope.py, which ships downstream; this pins the two modules whose skip
+    would specifically decommission the template's own gates.)"""
     guarded = []
     for path in sorted((_ROOT / "tests").rglob("test_*.py")):
         # Skip THIS file. It contains the searched-for literal as its own filter
@@ -199,19 +209,20 @@ def test_copier_test_modules_hard_fail_when_the_extra_is_required():
         if path.resolve() == Path(__file__).resolve():
             continue
         text = path.read_text()
-        if 'importorskip("copier")' not in text:
+        if '"copier"' not in text:
             continue
         guarded.append(path.name)
-        assert "KEEL_REQUIRE_TEMPLATE" in text, (
-            "%s importorskips copier but ignores KEEL_REQUIRE_TEMPLATE, so it would "
-            "still skip silently in CI" % path.name)
+        assert 'optional_deps.importorskip("copier", extra="template")' in text, (
+            "%s guards the copier import without routing through optional_deps, so "
+            "CI's required-surface declaration cannot reach it and it would still "
+            "skip silently" % path.name)
     # Named explicitly, not just "something was found": a rename or a rewrite that
     # drops the guard must be a failure, not a quietly smaller set.
     missing = {"test_copier_generation.py", "test_copier_update.py"} - set(guarded)
     assert not missing, (
-        "these copier test modules no longer importorskip copier under a "
-        "KEEL_REQUIRE_TEMPLATE guard, so they can silently skip in CI again: %s "
-        "(found: %s)" % (sorted(missing), guarded))
+        "these copier test modules no longer guard copier through optional_deps, so "
+        "they can silently skip in CI again: %s (found: %s)"
+        % (sorted(missing), guarded))
 
 
 # copier's `multiselect:` question type landed in 9.1.0. `_min_copier_version` exists

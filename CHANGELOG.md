@@ -216,6 +216,36 @@ version rather than a bare commit:
   there. The clone now replays the working-tree diff as a real commit, so what you
   edit is what gets tested; on a clean tree it is exactly a plain clone.
 
+- **The AAD schema-validation assertion had never executed anywhere.**
+  `jsonschema` was in no extra and in no requirements file, so
+  `test_descriptor_validates_against_committed_schema` `importorskip`ped on every
+  machine and in CI — for its whole life — while the suite reported success. Its
+  only visible trace was a `1 skipped` that read like the deliberate langgraph
+  skip. `jsonschema` is now in the `dev` extra, and the assertion passes (checked
+  by mutation that it also *bites*: a dropped `aad_version`, a non-string slug and
+  a bogus transport protocol are each caught).
+- **The same silent-skip hole, closed for the whole class.** `fastapi`, `httpx`
+  and `copier` were all `importorskip`ped too — CI installs them, but nothing
+  made a broken install *fail* rather than skip. The skip-or-fail decision now
+  lives in one place (`tests/optional_deps.py`): CI declares the surfaces it
+  installed via `KEEL_REQUIRED_EXTRAS`, a declared surface is a real import whose
+  `ImportError` fails collection, and an undeclared one still skips so a bare
+  local clone works. A `test_gate_scope.py` scan fails any test module that
+  reaches for a raw `pytest.importorskip` outside the declared opt-in set
+  (langgraph, which stays deliberately optional). Verified both directions with
+  `jsonschema` blocked at import: undeclared → skip, declared → hard failure. A
+  typo in the CI declaration (`tempalte`) is an error, not a silent no-op —
+  otherwise the guard could be switched off by a slip in the one file that arms
+  it. This replaces the per-extra `KEEL_REQUIRE_TEMPLATE` flag.
+- **The README's own "delete what you don't need" advice reddened the gate.** It
+  listed `models/` among the optional dirs, but `config/project.json` declares
+  the adapters that live there, so following the instruction produced 3 errors
+  and exit 1 on a project whose owner had done nothing wrong — the first thing a
+  new user does is exactly what the README told them to. The advice now excludes
+  `models/` and documents the manifest change that makes dropping it clean. Both
+  halves are pinned by tests that read the sentence out of the *generated*
+  project's README, so adding a directory to it is covered rather than trusted.
+
 ### Changed
 - **`copier update` now requires `--trust`** (`copier update --trust`). Retirement
   needs `_migrations`, migrations run commands, and copier refuses an unattended
