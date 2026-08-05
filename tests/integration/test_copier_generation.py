@@ -6,11 +6,15 @@ summary: `copier` renders keel's root template into a new project — the manife
 """
 import json
 import os
+import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
+
+import hermetic_git
 
 # The optional 'template' extra. CI installs it and sets KEEL_REQUIRE_TEMPLATE=1, so a
 # missing copier is a HARD collection error there — these tests silently skipping in CI
@@ -22,7 +26,20 @@ else:
     copier = pytest.importorskip("copier")
 
 _ROOT = Path(__file__).resolve().parents[2]
-pytestmark = pytest.mark.integration
+
+# Self-neutralising downstream. `_exclude` prunes these modules at GENERATION, but
+# copier's `_exclude` can never retire a file on `copier update` — it renders the old
+# template copy with the UNION of the old and new excludes precisely so nothing is
+# deleted (copier/_main.py). So a project generated BEFORE the prune landed still ships
+# them, and `copier update` hands it the newer ci.yml that installs the `template`
+# extra and sets KEEL_REQUIRE_TEMPLATE=1 — turning its CI red via the very update meant
+# to fix CI (measured: 6 of 8 failed). A meta-test only means anything where a
+# `copier.yml` exists, so say so here rather than relying on pruning alone.
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.skipif(not (_ROOT / "copier.yml").is_file(),
+                       reason="not a copier template — this is a generated project"),
+]
 
 # The one licensed difference between .gitignore and its .jinja twin. Kept as
 # literals so a drift on EITHER side fails loudly instead of silently widening.
@@ -61,24 +78,14 @@ def _gitignore_lines(path):
 
 
 def _hermetic_git_env(tmp_path):
-    """A git environment that ignores the DEVELOPER's machine.
+    """A git environment that ignores the DEVELOPER's machine — see hermetic_git.
 
-    `git add -A` honours global excludes, and git reads `$XDG_CONFIG_HOME/git/ignore`
-    (i.e. ~/.config/git/ignore) with no config entry at all — so a single `*.yml`
-    line there, or a `core.excludesFile` naming `.copier-answers.yml`, silently
-    fails the tracked-answers assertion below on someone else's laptop. Neutralise
-    global + system config and point excludesFile at nothing.
-    (test_copier_update.py sets the equivalent via monkeypatch for copier's own
-    git subprocesses; keep the two in step.)
+    Delegates rather than restating the config: this module and
+    test_copier_update.py each used to carry their own copy, and the copies
+    drifted (the sibling's omitted `core.excludesFile`), which is exactly the
+    failure the shared module documents.
     """
-    cfg = tmp_path / "gitconfig"
-    cfg.write_text("[user]\n\tname = Keel Test\n\temail = keel-test@example.invalid\n"
-                   "[core]\n\texcludesFile = %s\n\tfsmonitor = false\n"
-                   "[init]\n\tdefaultBranch = main\n" % os.devnull)
-    env = dict(os.environ)
-    env.update(GIT_CONFIG_GLOBAL=str(cfg), GIT_CONFIG_SYSTEM=os.devnull,
-               GIT_CONFIG_NOSYSTEM="1")
-    return env
+    return hermetic_git.git_env(tmp_path)
 
 
 @pytest.mark.parametrize("stack", ["react-vite", "astro", "none"])
@@ -340,3 +347,97 @@ def test_pyproject_twin_stays_pinned_to_keels_own():
         "pyproject.toml.jinja drifted from pyproject.toml beyond the per-answer "
         "fields; re-derive it from pyproject.toml rather than hand-patching one side"
     )
+
+
+# Shipped-verbatim surfaces that name paths. Each ships into every generated
+# project unrendered, so any directory they hardcode must survive the answers.
+_VERBATIM_PATH_SURFACES = ("Makefile", ".github/workflows", "scripts")
+_FRONTEND_REF = re.compile(r"src/frontend/([A-Za-z0-9][A-Za-z0-9._-]*)")
+
+
+@pytest.mark.parametrize("stack", ["react-vite", "astro", "none"])
+def test_no_shipped_file_points_at_a_frontend_the_answers_pruned(stack, tmp_path):
+    """The generalisation of the meta-test prune, and of pass 2's `ci.yml` fix.
+
+    `copier.yml` prunes the un-chosen `src/frontend/<stack>` directories, but the
+    files that USE them ship verbatim and are not answer-aware. Measured before
+    this pin, on a project generated with the DEFAULT answers:
+    `.github/workflows/pages.yml` ran `npm ci` in `src/frontend/astro` (red on the
+    first push to main), `make run-web` died with ENOENT, and
+    `scripts/jobs/export_showcase_static.py` wrote its default output INTO the
+    pruned directory — resurrecting a stack the user declined.
+
+    Scans the generated tree rather than keel's, and derives the referenced
+    directories from the text, so a new hardcode in any shipped recipe is caught
+    without anyone remembering to extend a list.
+
+    Comment-only lines are dropped first: this rule governs what the file DOES,
+    not what it explains, and the fixes here are documented by comments that name
+    the very path they removed. The deliberate consequence is leniency toward a
+    path buried in a Python string literal — a false negative, never a false
+    positive, which is the right way round for a rule that fails a build.
+    """
+    dest = tmp_path / "proj"
+    _generate(dest, project_name="demo_proj", frontend_stack=stack)
+
+    offenders = []
+    for surface in _VERBATIM_PATH_SURFACES:
+        root = dest / surface
+        paths = [root] if root.is_file() else sorted(
+            p for p in root.rglob("*") if p.is_file() and p.suffix in (".yml", ".yaml", ".py"))
+        for path in paths:
+            code = "\n".join(ln for ln in path.read_text().splitlines()
+                             if not ln.lstrip().startswith("#"))
+            offenders.extend(
+                "%s -> src/frontend/%s" % (path.relative_to(dest), referenced)
+                for referenced in sorted(set(_FRONTEND_REF.findall(code)))
+                if not (dest / "src" / "frontend" / referenced).is_dir())
+
+    assert offenders == [], (
+        "with frontend_stack=%r these shipped-verbatim files still point at a "
+        "frontend directory copier pruned, so the generated project fails the "
+        "moment that recipe runs:\n  %s" % (stack, "\n  ".join(sorted(offenders))))
+
+
+def test_meta_tests_neutralise_themselves_in_a_project_that_still_has_them(tmp_path):
+    """The stopgap for the defect `_exclude` structurally cannot fix.
+
+    Pruning at generation does not help a project generated BEFORE the prune
+    existed: copier renders the old template copy with the UNION of old and new
+    excludes precisely so update never deletes anything, so those projects keep
+    keel's meta-tests forever — and `copier update` hands them the newer `ci.yml`
+    that installs the `template` extra and sets KEEL_REQUIRE_TEMPLATE=1. Their CI
+    then goes red because of the update meant to fix CI.
+
+    Simulates exactly that: a real generated project, with the meta-tests copied
+    back in, run the way CI runs them. They must SKIP, not fail — and not by
+    accident of a missing copier, so the required-extra flag is set.
+    """
+    dest = tmp_path / "proj"
+    _generate(dest, project_name="demo_proj", frontend_stack="none")
+
+    metas = sorted((_ROOT / "tests" / "integration").glob("test_copier_*.py"))
+    assert metas, "no meta-test modules found — has the naming convention moved?"
+    for meta in metas:
+        assert not (dest / "tests" / "integration" / meta.name).exists(), (
+            "%s was not pruned at generation" % meta.name)
+        shutil.copy2(str(meta), str(dest / "tests" / "integration" / meta.name))
+
+    env = dict(os.environ)
+    env["KEEL_REQUIRE_TEMPLATE"] = "1"        # as CI sets it
+    env["PYTHONPATH"] = "src:."
+    # Only the meta-modules. The generated project's OTHER integration tests read a
+    # corpus that `make site-data` builds, so collecting the whole directory here
+    # would fail for a reason that has nothing to do with what this test asserts.
+    r = subprocess.run(
+        [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider"]
+        + ["tests/integration/%s" % m.name for m in metas],
+        cwd=str(dest), capture_output=True, text=True, env=env)
+
+    assert r.returncode == 0, (
+        "keel's template meta-tests FAIL inside a generated project that still "
+        "carries them, so any descendant predating the prune goes red on its next "
+        "`copier update`:\n" + r.stdout[-4000:] + r.stderr[-2000:])
+    assert "skipped" in r.stdout, (
+        "expected the meta-tests to skip themselves in a non-template tree:\n"
+        + r.stdout[-2000:])

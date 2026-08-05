@@ -119,6 +119,64 @@ version rather than a bare commit:
   --check` still says *openapi.json up to date* and the committed contract is
   byte-identical.
 
+- **`copier update` can never retire a file, so `_exclude` is a generation-time
+  filter only.** copier renders the old template copy with the UNION of the old and
+  new excludes, deliberately, "to prevent deletion" (`copier/_main.py`). Two
+  consequences were measured. A project generated before the meta-test prune keeps
+  those tests forever, while `copier update` *does* deliver the newer `ci.yml` that
+  installs the `template` extra and sets `KEEL_REQUIRE_TEMPLATE=1` — so the update
+  meant to fix CI is what turns an older descendant red (6 of 8 failed). And changing
+  an answer (`--data frontend_stack=astro` on a react-vite project) leaves the old
+  stack on disk while the answers file says otherwise: that project's own gate then
+  reports 13 errors. The meta-tests now neutralise themselves wherever no `copier.yml`
+  exists, pinned end to end by generating a project, copying them back in, and running
+  them the way CI does. The answer-change half needs `_migrations` and is the
+  redesign of pass 4 (see the plan); `_exclude` cannot fix it.
+- `.github/workflows/pages.yml` shipped verbatim while hardcoding
+  `src/frontend/astro` — the stack `_exclude` prunes under the **default** answer. The
+  first push to `main` of a default-generated project failed its `pages` build on
+  `npm ci` (`EUSAGE ... can only install with an existing package-lock.json`). Exactly
+  the class pass 2 fixed for `ci.yml`, left standing in the sibling workflow; it is now
+  answer-pruned too. Two more shipped surfaces named the same directory: `make run-web`
+  (advertised in the generated README's quickstart) died with ENOENT, and
+  `scripts/jobs/export_showcase_static.py` defaulted its output there — **creating** it,
+  so `make site-static` silently resurrected a stack the user had declined. Both now
+  discover the frontend instead of naming it. A new test scans every shipped
+  Makefile/workflow/script of a generated project for a pruned frontend path, so the
+  next hardcode fails at the source rather than in someone's CI.
+- `make new` passed copier no `--vcs-ref`, and copier resolves `self.ref or
+  get_latest_tag(...)` — the newest **tag**, not HEAD. Harmless only while keel has no
+  tags: the moment `v0.1.0` is cut, `make new` silently generates from the tag, so a
+  maintainer smoke-testing a template change gets a project without it (reproduced on a
+  minimal tagged template: the generated file held the tag's content, and the post-tag
+  commit was absent). `VCS_REF ?= HEAD` is now explicit and overridable. This also makes
+  the dirty-tree refusal's stated reason true again rather than merely reworded —
+  copier's dirty-include branch is gated on `ref == "HEAD"` (verified both ways).
+- `make new` read a **non-git** template as clean: `git status --porcelain 2>/dev/null`
+  prints nothing and discards rc=128 outside a repository, so a ZIP download or an
+  `rsync --exclude=.git` copy generated happily and copier recorded no `_commit` at
+  all — a project that looks fine and can never update. Now refused by its own check;
+  `ALLOW_DIRTY` deliberately does not override it, because no amount of it makes a
+  non-repo resolvable.
+- `test_copier_update.py`'s hermetic git config omitted `core.excludesFile`, which git
+  reads from `$XDG_CONFIG_HOME/git/ignore` as that key's DEFAULT — so the three
+  `GIT_CONFIG_*` vars never reached it. A single `*.yml` line in a developer's global
+  ignore produced a **false red** on a correct tree (measured: 1 failed, 6 passed, with
+  the assertions about the feature under test all passing). Fixing it exposed a larger
+  half: copier drives git through `plumbum`, which snapshots `os.environ` at import, so
+  `monkeypatch.setenv` is inert for every git subprocess copier spawns. When keel's own
+  tree is dirty copier stages the working tree with `git add -A`, and under that same
+  ignore line the throwaway clone lost `copier.yml` itself — every `_exclude` and every
+  answer silently stopped applying, and the generated project shipped keel's meta-tests
+  (measured: control 0 shipped, hostile 3 shipped). Both modules now share one
+  `tests/hermetic_git.py`, applied session-wide from `tests/conftest.py` before plumbum
+  is imported. Verified under two hostile ignore patterns: 19 passed each.
+- `test_copier_test_modules_hard_fail_when_the_extra_is_required` matched **itself** —
+  it scanned for the literal `importorskip("copier")`, which is its own filter string —
+  so its "did the guard move?" backstop could never fire. Deleting both real copier test
+  modules left it green (`1 passed`); it now skips its own file and names the modules it
+  requires (same mutation: `1 failed`).
+
 ### Added
 - `tests/integration/test_copier_update.py` — the upgrade channel ADR-0004 chose
   copier for, tested for the first time: generate → commit downstream work →

@@ -62,6 +62,14 @@ _exclude:
   - "{% if frontend_stack != 'react-vite' %}src/frontend/react-vite{% endif %}"
   - "{% if frontend_stack != 'astro' %}src/frontend/astro{% endif %}"
   - "{% if frontend_stack == 'none' %}src/frontend{% endif %}"
+  # ...and the workflow that BUILDS that stack. `pages.yml` names `src/frontend/astro`
+  # literally (npm ci / npm run build / upload dist), and it ships verbatim like
+  # `ci.yml` does — so under any other answer, including the DEFAULT one, its build job
+  # ran `npm ci` in a directory the line above just pruned and reddened the first push
+  # to main. Same class as the meta-tests: a shipped-verbatim file that only makes
+  # sense for one answer. Pinned by tests/integration/test_copier_generation.py, which
+  # scans every shipped Makefile/workflow/script for a pruned frontend path.
+  - "{% if frontend_stack != 'astro' %}.github/workflows/pages.yml{% endif %}"
   # Transport pruning: api/grpc and api/edge_nginx are self-contained add-ons (no
   # code/test imports them), so drop each unless it was selected. REST (api/rest_fastapi)
   # and MCP (mcp/) are NOT pruned — the bundled showcase, AAD reference impl, frontend

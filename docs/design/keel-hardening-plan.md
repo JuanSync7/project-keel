@@ -8,7 +8,7 @@ tags: [plan, template, copier, upgrade, gate, environment, convergence]
 summary: Five bounded passes that fix the template-as-product defects found by the 2026-08-04 audit and then land the external-environment manifest of ADR-0005. Each pass is one vertical slice with an explicit done-condition, gated on `make verify`.
 id: docs-design-keel-hardening-plan
 created: 2026-08-04
-updated: 2026-08-04
+updated: 2026-08-05
 visibility: internal
 canonical: true
 ---
@@ -243,6 +243,41 @@ also filed under *Deferred, with reasons*):
   `thing_pb2`/`thing_pb2_grpc` are `make gen` output that is not committed (the
   file genuinely does not exist here), and grpc ships no stubs.
 
+### Pass 3.5 — close the pass-2 review findings *(done)*
+
+Not a planned pass: an adversarial review of pass 2, run in an isolated worktree
+pinned at `fca1ae5`, produced six defects that all reproduced. Landed as one slice
+because each is small and they share a theme — *shipped-verbatim files, and tests
+that pass without proving anything*.
+
+- **`pages.yml` hardcoded `src/frontend/astro`**, which `_exclude` prunes under the
+  DEFAULT answer, so a default-generated project's first push to `main` failed on
+  `npm ci`. Same hardcode in `make run-web` and in `export_showcase_static.py`'s
+  default output dir — and because the exporter *creates* its output, that one
+  silently resurrected a declined stack. All three now discover the frontend; a new
+  test scans every shipped Makefile/workflow/script of a generated project for a
+  pruned path, so the next hardcode fails at the source.
+- **`make new` passed no `--vcs-ref`**, so copier resolves the newest TAG, not HEAD.
+  Latent only until `v0.1.0` is cut — the outstanding pass-1 item is what arms it.
+  Now `VCS_REF ?= HEAD`, overridable for a release smoke-test.
+- **`make new` read a non-git template as clean** (`git status --porcelain
+  2>/dev/null` discards rc=128), generating a project with no `_commit` at all.
+- **The update test's hermetic gitconfig omitted `core.excludesFile`** — a false red
+  on a correct tree. Fixing it uncovered the larger half: `plumbum` snapshots the
+  environment at import, so no fixture can reach copier's own git subprocesses. The
+  neutralisation moved to `tests/conftest.py`, and one shared `tests/hermetic_git.py`
+  replaced the two copies that had drifted.
+- **The `KEEL_REQUIRE_TEMPLATE` backstop matched its own source**, so it could never
+  fire; deleting both real copier test modules left it green.
+- **`_exclude` cannot retire files on update** (see pass 4). Mitigated here by making
+  the meta-tests self-neutralising wherever no `copier.yml` exists, pinned by
+  generating a project, copying them back in, and running them the way CI does.
+
+**Gate:** `make verify` -> 306 passed, 1 skipped, exit 0.
+
+**Deliberately not fixed here:** the answer-change half of the `_exclude` finding.
+It needs `_migrations`, and belongs to pass 4's redesign.
+
 ### Pass 4 — make the generated project the user's, not keel's *(next)*
 
 - `src/backend/showcase` is **1,205 of 1,433** Python lines (84%) in a generated
@@ -259,9 +294,24 @@ also filed under *Deferred, with reasons*):
   `config/project.json` still declares the model adapters. Deleted dirs also
   return on any `copier update` that adds a file beneath them.
 
-Replace "delete dirs by hand" with answers: multiselect questions for the
-optional surfaces driving `_exclude`, so a declined surface stays declined
-across every future update.
+**Redesigned after the pass-2 review — `_exclude` cannot deliver this.** The
+original plan was "multiselect questions for the optional surfaces driving
+`_exclude`, so a declined surface stays declined across every future update."
+That is false as designed, and structurally rather than by bug: `_exclude` is a
+**generation-time filter**. On `copier update` copier renders the old template
+copy with the UNION of the old and new excludes, deliberately, "to prevent
+deletion" (`copier/_main.py`). An excluded path is therefore never *retired* —
+only never *created*. Both halves measured: a project generated before an exclude
+landed keeps the file forever, and re-answering (`--data frontend_stack=astro` on
+a react-vite project) leaves the old stack on disk while `.copier-answers.yml`
+says otherwise — 13 errors from that project's own gate.
+
+So pass 4 is built on **`_migrations`**, the hook copier provides for exactly
+"this version retires something", with `_exclude` kept only for the never-created
+case. Each optional surface needs two things, not one: the answer that stops it
+being generated, and the migration that removes it from a project that already
+has it. A surface added without its migration is the same defect class this pass
+exists to close, so the migration is part of the done-condition.
 
 **Done when:** `showcase=false` generates a project with no keel branding in any
 served response, and the optional-surface questions round-trip through

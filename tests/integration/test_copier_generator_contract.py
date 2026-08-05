@@ -14,7 +14,19 @@ import pytest
 _ROOT = Path(__file__).resolve().parents[2]
 _CI = _ROOT / ".github" / "workflows" / "ci.yml"
 
-pytestmark = pytest.mark.integration
+# Self-neutralising downstream. `_exclude` prunes these modules at GENERATION, but
+# copier's `_exclude` can never retire a file on `copier update` — it renders the old
+# template copy with the UNION of the old and new excludes precisely so nothing is
+# deleted (copier/_main.py). So a project generated BEFORE the prune landed still ships
+# them, and `copier update` hands it the newer ci.yml that installs the `template`
+# extra and sets KEEL_REQUIRE_TEMPLATE=1 — turning its CI red via the very update meant
+# to fix CI (measured: 6 of 8 failed). A meta-test only means anything where a
+# `copier.yml` exists, so say so here rather than relying on pruning alone.
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.skipif(not (_ROOT / "copier.yml").is_file(),
+                       reason="not a copier template — this is a generated project"),
+]
 
 
 def _make_n_new(**overrides):
@@ -49,7 +61,11 @@ def test_make_new_hands_copier_a_resolvable_template_path():
     plumbum traceback, no diagnostic. So the argument must be absolute and must
     actually be this template (`copier.yml` present)."""
     argv = shlex.split(_recipe_line(_make_n_new(), "copier copy"))
-    src = Path(argv[argv.index("copy") + 1])
+    # `copier copy [options] SRC DEST` — take SRC positionally from the end rather
+    # than as "the word after `copy`", which broke the moment --vcs-ref was added.
+    assert argv[-1] == "probe-dest-never-created", (
+        "DEST is not the last argument of the copy recipe: %r" % argv)
+    src = Path(argv[-2])
 
     assert src.is_absolute(), (
         "`make new` passes copier the relative template path %r; copier records it "
@@ -58,6 +74,59 @@ def test_make_new_hands_copier_a_resolvable_template_path():
     assert src.resolve() == _ROOT.resolve()
     assert (src / "copier.yml").is_file(), (
         "%s is not a copier template root (no copier.yml)" % src)
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
+def test_make_new_pins_the_template_revision_it_generates_from():
+    """With no `--vcs-ref`, copier does not use HEAD — `Template.ref` is None and it
+    resolves `self.ref or get_latest_tag(...)` (copier/_template.py), i.e. the newest
+    TAG. Harmless only while keel has no tags; the moment `v0.1.0` is cut (the
+    outstanding pass-1 item) `make new` starts generating from the tag, so a
+    maintainer smoke-testing a template change gets a project that silently does not
+    contain it. Every automated copier test already pins `vcs_ref="HEAD"`; the shipped
+    recipe must be explicit too, and overridable for a release smoke-test."""
+    line = _recipe_line(_make_n_new(), "copier copy")
+    argv = shlex.split(line)
+
+    assert "--vcs-ref" in argv, (
+        "`make new` passes copier no --vcs-ref, so once keel is tagged it generates "
+        "from the newest tag instead of the working checkout:\n" + line)
+    assert argv[argv.index("--vcs-ref") + 1] == "HEAD", (
+        "the default template revision must be HEAD (the checkout the user is "
+        "looking at), not %r" % argv[argv.index("--vcs-ref") + 1])
+
+    # ...and overridable, so cutting a release can smoke-test the tag itself.
+    pinned = shlex.split(_recipe_line(_make_n_new(VCS_REF="v9.9.9"), "copier copy"))
+    assert pinned[pinned.index("--vcs-ref") + 1] == "v9.9.9", (
+        "VCS_REF= does not override the default revision")
+
+
+@pytest.mark.skipif(shutil.which("make") is None or shutil.which("git") is None,
+                    reason="needs make and git")
+def test_make_new_refuses_a_template_that_is_not_a_git_checkout(tmp_path):
+    """`git status --porcelain 2>/dev/null` prints nothing AND discards rc=128 outside
+    a repository, so the dirty-tree guard read a ZIP download or an
+    `rsync --exclude=.git` copy as *clean* and generated happily. copier then records
+    no `_commit` at all and the project can never `copier update` — the exact harm the
+    guard exists to prevent, waved through by the guard itself. Being repo-less is not
+    a dirtiness question, so ALLOW_DIRTY must NOT override it."""
+    plain = tmp_path / "not-a-repo"
+    plain.mkdir()
+    guard = _recipe_line(_make_n_new(), "rev-parse")
+
+    r = subprocess.run(["sh", "-c", guard], cwd=str(plain),
+                       capture_output=True, text=True)
+    assert r.returncode == 2, (
+        "`make new` does not refuse a non-git template, so it hands the user a "
+        "project with no recorded `_commit` and no way to update:\n" + r.stdout + r.stderr)
+    assert "git" in r.stdout.lower(), "the refusal must say what is wrong"
+
+    forced = subprocess.run(["sh", "-c", _recipe_line(_make_n_new(ALLOW_DIRTY="1"),
+                                                      "rev-parse")],
+                            cwd=str(plain), capture_output=True, text=True)
+    assert forced.returncode == 2, (
+        "ALLOW_DIRTY=1 overrode the not-a-git-checkout refusal; it is an escape hatch "
+        "for uncommitted work, and no amount of it can produce a `_commit`")
 
 
 @pytest.mark.skipif(shutil.which("make") is None or shutil.which("git") is None,
@@ -123,6 +192,12 @@ def test_copier_test_modules_hard_fail_when_the_extra_is_required():
     reaches a module that ignores it and the skip comes back."""
     guarded = []
     for path in sorted((_ROOT / "tests").rglob("test_*.py")):
+        # Skip THIS file. It contains the searched-for literal as its own filter
+        # string, so it always matched itself — which made `guarded` permanently
+        # non-empty and the backstop below unfireable. Deleting every real copier
+        # test module left this test green (measured: `1 passed`).
+        if path.resolve() == Path(__file__).resolve():
+            continue
         text = path.read_text()
         if 'importorskip("copier")' not in text:
             continue
@@ -130,7 +205,13 @@ def test_copier_test_modules_hard_fail_when_the_extra_is_required():
         assert "KEEL_REQUIRE_TEMPLATE" in text, (
             "%s importorskips copier but ignores KEEL_REQUIRE_TEMPLATE, so it would "
             "still skip silently in CI" % path.name)
-    assert guarded, "no test module importorskips copier — did the guard move?"
+    # Named explicitly, not just "something was found": a rename or a rewrite that
+    # drops the guard must be a failure, not a quietly smaller set.
+    missing = {"test_copier_generation.py", "test_copier_update.py"} - set(guarded)
+    assert not missing, (
+        "these copier test modules no longer importorskip copier under a "
+        "KEEL_REQUIRE_TEMPLATE guard, so they can silently skip in CI again: %s "
+        "(found: %s)" % (sorted(missing), guarded))
 
 
 # copier's `multiselect:` question type landed in 9.1.0. `_min_copier_version` exists

@@ -34,21 +34,36 @@ help: ## List tasks
 check-python: ## Fail early with a clear message if PY is older than pyproject requires
 	$(PY) scripts/check_python_version.py
 
-# `new` hands copier an ABSOLUTE template path on purpose: copier stores that
-# argument verbatim as `_src_path` in the generated project, and a relative one is
-# re-resolved against the *project* on `copier update` — copier then clones the
-# project as if it were the template and git dies on `pathspec ... did not match`.
-# The dirty-tree refusal is the same contract from the other end: from a dirty
-# template copier records a WIP commit that exists only in its throwaway clone, so
-# the generated project could never resolve `_commit` either. Both are pinned by
-# tests/integration/test_copier_generator_contract.py.
+# Which template revision `make new` generates from. Explicit ON PURPOSE: given no
+# --vcs-ref copier resolves `self.ref or get_latest_tag(...)`, i.e. the newest TAG —
+# so the day keel is tagged, `make new` would silently stop generating from the
+# checkout the user is looking at. Override to smoke-test a release: VCS_REF=v0.1.0.
+VCS_REF ?= HEAD
+
+# Three ways `make new` can hand back a project that can never `copier update`, all
+# refused below and all pinned by tests/integration/test_copier_generator_contract.py:
+#   1. a RELATIVE template path — copier stores the argument verbatim as `_src_path`,
+#      and a relative one is re-resolved against the *project* on update: copier
+#      clones the project as if it were the template and git dies on
+#      `pathspec ... did not match`. Hence $(abspath .).
+#   2. NOT A GIT CHECKOUT (a ZIP download, an `rsync --exclude=.git` copy) — copier
+#      records no `_commit` at all. ALLOW_DIRTY deliberately does not override this:
+#      it is an escape hatch for uncommitted work, and no amount of it makes a
+#      non-repo resolvable.
+#   3. a DIRTY tree — with ref=HEAD copier stages the working tree into its throwaway
+#      clone and commits it (copier/_vcs.py), so `_commit` names a sha no clone of
+#      keel has ever seen. ALLOW_DIRTY=1 overrides, for template authors iterating.
 new: ## Generate a NEW project from this template into DEST (interactive Q&A). Needs the 'template' extra.
 	@test -n "$(DEST)" || { echo "usage: make new DEST=../my-new-project"; exit 2; }
-	@test -n "$(ALLOW_DIRTY)" || test -z "$$(git status --porcelain 2>/dev/null)" || { \
+	@git rev-parse --git-dir >/dev/null 2>&1 || { \
+		echo "refusing: this keel is not a git checkout, so copier records no _commit"; \
+		echo "and '$(DEST)' could never run 'copier update'. Clone the repo instead of"; \
+		echo "downloading/copying it without .git."; exit 2; }
+	@test -n "$(ALLOW_DIRTY)" || test -z "$$(git status --porcelain)" || { \
 		echo "refusing: keel's tree is dirty, so copier would record a WIP commit that"; \
 		echo "exists only in its throwaway clone and '$(DEST)' could never update from"; \
 		echo "it. Commit or stash first, or re-run with ALLOW_DIRTY=1."; exit 2; }
-	$(PY) -m copier copy "$(abspath .)" "$(DEST)"
+	$(PY) -m copier copy --vcs-ref "$(VCS_REF)" "$(abspath .)" "$(DEST)"
 
 check: ## Validate structure + frontmatter (3.6-safe)
 	$(PY) scripts/check_structure.py
@@ -125,12 +140,24 @@ site-data: ## Rebuild the corpus + agent llms.txt the showcase reads
 	$(PY) scripts/jobs/build_corpus.py
 	$(PY) scripts/jobs/link_corpus.py
 	$(PY) scripts/jobs/build_llms_txt.py
+# --out-dir comes from the SAME discovery as run-web/lint-fe (FE_APPS), so the
+# snapshot lands in whichever frontend actually shipped. Keel declares no single
+# `layers.frontend.stack` (it carries both reference stacks for the showcase), so the
+# script's own manifest-derived default cannot resolve here — supplying it from the
+# wildcard keeps one discovery rule for the whole Makefile. Empty FE_APPS (a
+# backend-only project) passes no flag at all and the script skips itself.
 site-static: site-data ## Snapshot the showcase to static files (no backend) for a static/GitHub Pages build
-	$(PY) scripts/jobs/export_showcase_static.py --base-url "$(BASE_URL)"
+	$(PY) scripts/jobs/export_showcase_static.py --base-url "$(BASE_URL)" \
+		$(if $(strip $(FE_APPS)),--out-dir "$(firstword $(FE_APPS))public")
 run-api: ## Serve the showcase REST API (uvicorn :8000; needs the project interpreter)
 	$(PY) -m uvicorn app:app --app-dir api/rest_fastapi --reload --port 8000
-run-web: ## Serve the showcase frontend (Astro); proxies /api to the backend
-	cd src/frontend/astro && API_PROXY_TARGET=$${API_PROXY_TARGET:-http://localhost:8000} npm run dev
+# The frontend directory is DISCOVERED (FE_APPS), never named: copier prunes the
+# un-chosen stack, so a literal `src/frontend/astro` here was ENOENT in every
+# project that did not answer "astro" — including the default one. Pinned by
+# tests/integration/test_copier_generation.py.
+run-web: ## Serve the showcase frontend (dev server); proxies /api to the backend
+	@test -n "$(strip $(FE_APPS))" || { echo "no frontend app under src/frontend (backend-only project)"; exit 2; }
+	cd $(firstword $(FE_APPS)) && API_PROXY_TARGET=$${API_PROXY_TARGET:-http://localhost:8000} npm run dev
 demo: ## Run the demo
 	$(PY) demo/run_demo.py
 agent-surface-schema: ## Regenerate the committed AAD JSON Schema from the model

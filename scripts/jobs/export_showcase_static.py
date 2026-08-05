@@ -20,6 +20,27 @@ ROOT = os.path.dirname(os.path.dirname(_HERE))
 sys.path.insert(0, os.path.join(ROOT, "src"))
 
 
+def _declared_frontend_public(root: str) -> str | None:
+    """`<layers.frontend.root>/<stack>/public`, or None if no frontend is declared.
+
+    Derived, never hardcoded: copier prunes the un-chosen stack, so the single
+    stack directory this used to name literally did not exist in most generated
+    projects — and because the exporter CREATES its output dir, running it there
+    silently resurrected a stack the user had declined (check_structure then
+    reports it as an undeclared stack).
+    """
+    manifest = os.path.join(root, "config", "project.json")
+    try:
+        with open(manifest, encoding="utf-8") as fh:
+            frontend = (json.load(fh).get("layers") or {}).get("frontend")
+    except (OSError, ValueError):
+        return None
+    if not frontend or not frontend.get("stack"):
+        return None
+    base = frontend.get("root") or os.path.join("src", "frontend")
+    return os.path.join(base, frontend["stack"], "public")
+
+
 def _write_json(path: str, obj: object) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as fh:
@@ -33,10 +54,10 @@ def main(argv=None) -> int:
                     "frontend can run with no backend (static hosting, e.g. GitHub "
                     "Pages). Run after build_corpus + link_corpus.")
     ap.add_argument("--root", default=ROOT, help="repo root (default: this repo)")
-    ap.add_argument("--out-dir",
-                    default=os.path.join("src", "frontend", "astro", "public"),
-                    help="output dir = the frontend's static assets "
-                         "(default: src/frontend/astro/public)")
+    ap.add_argument("--out-dir", default=None,
+                    help="output dir = the frontend's static assets (default: the "
+                         "public/ dir of the frontend declared in "
+                         "config/project.json layers.frontend)")
     ap.add_argument("--base-url", default="",
                     help="site base for llms.txt links (e.g. /project_keel); default: relative")
     args = ap.parse_args(argv)
@@ -49,8 +70,16 @@ def main(argv=None) -> int:
         sys.stderr.write("export_showcase_static skipped (backend.showcase unavailable: %s)\n" % exc)
         return 0
 
+    out_dir = args.out_dir or _declared_frontend_public(args.root)
+    if out_dir is None:
+        # Backend-only project (frontend_stack: none). Nothing to snapshot FOR;
+        # skip like the absent-showcase branch above rather than inventing a path.
+        sys.stderr.write("export_showcase_static skipped "
+                         "(no frontend declared in config/project.json)\n")
+        return 0
+
     sc = load_showcase(args.root)
-    out = args.out_dir if os.path.isabs(args.out_dir) else os.path.join(args.root, args.out_dir)
+    out = out_dir if os.path.isabs(out_dir) else os.path.join(args.root, out_dir)
     api = os.path.join(out, "api")
 
     # 1) Single object/list endpoints — mirror showcase_api.py exactly.

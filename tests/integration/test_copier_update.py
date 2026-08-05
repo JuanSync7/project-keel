@@ -12,6 +12,8 @@ from pathlib import Path
 
 import pytest
 
+import hermetic_git
+
 # The optional 'template' extra. CI installs it and sets KEEL_REQUIRE_TEMPLATE=1, so a
 # missing copier is a HARD collection error there — these tests silently skipping in CI
 # is the hole pass 2 closes. A bare local clone leaves the flag unset and still skips
@@ -31,20 +33,16 @@ pytestmark = [
     pytest.mark.skipif(shutil.which("git") is None, reason="copier update needs git"),
     pytest.mark.skipif(not (_ROOT / ".git").exists(),
                        reason="update needs a git checkout of the template, not a tarball"),
+    pytest.mark.skipif(not (_ROOT / "copier.yml").is_file(),
+                       reason="not a copier template — this is a generated project"),
 ]
 
-# The template's own git config must not be the developer's: `init.defaultBranch`,
-# `commit.gpgsign` and `core.hooksPath` each break this test on a real machine, and
-# copier shells out to git itself — so the neutralisation has to be environment, not
-# `git -c`. GIT_CONFIG_GLOBAL/SYSTEM replace ~/.gitconfig and /etc/gitconfig.
-_HERMETIC_GITCONFIG = (
-    "[user]\n\tname = Keel Test\n\temail = keel-test@example.invalid\n"
-    "[init]\n\tdefaultBranch = main\n"
-    "[commit]\n\tgpgsign = false\n"
-    "[tag]\n\tgpgSign = false\n"
-    "[core]\n\tfsmonitor = false\n"
-    "[gc]\n\tauto = 0\n"
-)
+# The template's own git config must not be the developer's, and copier shells out to
+# git itself — so the neutralisation has to be environment, not `git -c`. The config
+# text and the vars that select it live in ONE place (hermetic_git) because this module
+# and test_copier_generation.py each grew their own copy and they drifted: this one
+# omitted `core.excludesFile`, so a `*.yml` line in the developer's
+# ~/.config/git/ignore failed a CORRECT tree here while the sibling passed.
 
 # What "upstream" gains after the project was generated (the update must deliver it).
 _NEW_FILE = "docs/upstream-only.txt"
@@ -83,11 +81,8 @@ def upgraded(tmp_path_factory):
     """
     mp = pytest.MonkeyPatch()
     work = tmp_path_factory.mktemp("copier_update")
-    gitconfig = work / "gitconfig"
-    gitconfig.write_text(_HERMETIC_GITCONFIG)
-    mp.setenv("GIT_CONFIG_GLOBAL", str(gitconfig))
-    mp.setenv("GIT_CONFIG_SYSTEM", os.devnull)
-    mp.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    for var, value in hermetic_git.git_env_vars(work).items():
+        mp.setenv(var, value)
     mp.setenv("COPIER_CACHE_DIR", str(work / "copier-cache"))
     try:
         # A throwaway clone is the template: real history, real copier.yml, and a repo
