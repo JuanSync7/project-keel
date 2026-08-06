@@ -317,3 +317,82 @@ def test_update_without_trust_refuses_a_template_carrying_migrations(restacked):
     is why `make new` still needs no trust flag (the run_copy above uses unsafe=False)."""
     _, refusal = restacked
     assert "migrations" in str(refusal)
+
+@pytest.fixture(scope="module")
+def unshowcased(tmp_path_factory):
+    """generate WITH the showcase -> commit -> `copier update` declining it.
+
+    The other reason anyone re-answers: a project that took the bundled demo to see
+    how the thing works, then wants it gone. `_exclude` cannot deliver that — the
+    tree already has the files — so this is the live proof for the showcase
+    migrations, in the same shape as `restacked`. Kept as a separate module-scoped
+    fixture rather than folded into that one because a project cannot restack its
+    frontend and drop the showcase in a single update without conflating which
+    answer removed what.
+    """
+    mp = pytest.MonkeyPatch()
+    work = tmp_path_factory.mktemp("copier_unshowcase")
+    for var, value in hermetic_git.git_env_vars(work).items():
+        mp.setenv(var, value)
+    mp.setenv("COPIER_CACHE_DIR", str(work / "copier-cache"))
+    try:
+        template = _clone_template(work / "template", work)
+        project = work / "proj"
+        copier.run_copy(str(template), str(project),
+                        data={"project_name": "demo_proj",
+                              "frontend_stack": "react-vite", "showcase": True},
+                        defaults=True, vcs_ref="HEAD", unsafe=False, quiet=True)
+        assert (project / "src" / "backend" / "showcase").is_dir(), (
+            "the fixture must start FROM a project that has the showcase, or the "
+            "retirement below proves nothing")
+        _git("init", "--quiet", "-b", "main", cwd=project)
+        _git("add", "-A", cwd=project)
+        _git("commit", "--quiet", "-m", "generated from keel", cwd=project)
+
+        copier.run_update(str(project), defaults=True, overwrite=True,
+                          data={"showcase": False},
+                          vcs_ref="HEAD", unsafe=True, quiet=True)
+        yield project
+    finally:
+        mp.undo()
+
+
+def test_update_retires_the_showcase_the_new_answer_declined(unshowcased):
+    """Every part of it, not just the package: a half-retired showcase leaves a REST
+    app importing a router that is gone, or a `site-static` target calling a deleted
+    exporter. Both are silent until someone runs them."""
+    survivors = [p for p in (
+        "src/backend/showcase",
+        "api/rest_fastapi/showcase_api.py",
+        "scripts/jobs/export_showcase_static.py",
+        "scripts/jobs/build_llms_txt.py",
+        "tests/unit/backend/test_showcase.py",
+        "tests/integration/test_showcase_repo.py",
+        "tests/integration/test_showcase_api.py",
+        "docs/guides/showcase-site.md",
+    ) if (unshowcased / p).exists()]
+    assert not survivors, (
+        "`copier update` recorded showcase=false but left these on disk: %s" % survivors)
+
+
+def test_retiring_the_showcase_keeps_what_never_depended_on_it(unshowcased):
+    """The migrations must not over-reach. The corpus outlives the showcase — mcp/,
+    the agents and scripts/query_corpus.py all read wiki/corpus.json — so deleting
+    its producers along with the demo would break working surfaces to tidy up an
+    unrelated one. (`wiki/corpus.json` itself is not asserted here: it is a generated
+    view no project ships, built by `make site-data`. That no migration deletes it is
+    pinned in test_copier_generation.py, where copier.yml is already parsed.)"""
+    for kept in ("mcp", "agents", "api/rest_fastapi/aad",
+                 "scripts/query_corpus.py", "scripts/jobs/build_corpus.py",
+                 "scripts/jobs/link_corpus.py", "scripts/jobs/check_corpus.py",
+                 "src/backend/example_feature", "src/frontend/react-vite"):
+        assert (unshowcased / kept).exists(), (
+            "%s does not depend on the showcase but the retirement removed it" % kept)
+
+
+def test_unshowcased_project_records_the_new_answer_and_passes_its_own_gate(unshowcased):
+    """Disk and answers agree, and the project's own gate is the judge of that."""
+    assert _answers(unshowcased)["showcase"] is False
+    r = subprocess.run([sys.executable, "scripts/check_structure.py"],
+                       cwd=str(unshowcased), capture_output=True, text=True)
+    assert r.returncode == 0, r.stdout + r.stderr

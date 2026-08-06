@@ -54,7 +54,18 @@ def main(argv=None) -> int:
             with open(opts.out, encoding="utf-8") as fh:
                 current = fh.read()
         except FileNotFoundError:
-            current = ""
+            # No contract committed yet — a real state, not a drift. `openapi.json`
+            # is a GENERATED VIEW of the live app, so keel does not ship its own
+            # into a new project: keel's names keel and lists the showcase routes,
+            # which is stale in any project with a different name or without the
+            # showcase, and `make check-all` would be red on arrival through no act
+            # of the user's. Distinguishing "none yet" from "drifted" is what lets
+            # the check be honest in both projects. Say so loudly; do not create it
+            # here, because a check that writes is not a check.
+            sys.stderr.write(
+                "no committed openapi.json yet — publish this project's REST "
+                "contract with `python %s`\n" % os.path.relpath(__file__))
+            return 0
         if current != text:
             sys.stderr.write("openapi.json is stale; regenerate with "
                              "`python api/rest_fastapi/export_openapi.py`\n")

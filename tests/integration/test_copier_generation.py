@@ -569,3 +569,283 @@ def test_meta_tests_neutralise_themselves_in_a_project_that_still_has_them(tmp_p
     assert "skipped" in r.stdout, (
         "expected the meta-tests to skip themselves in a non-template tree:\n"
         + r.stdout[-2000:])
+
+
+# ---- the `showcase` question -------------------------------------------------
+# The bundled showcase is 1,205 of a generated project's 1,433 Python lines, so it
+# is the highest-value thing to be able to decline. Declining it must take the whole
+# surface with it — the read model, its REST router, its static exporter, its tests
+# and its Astro UI — and must leave a project whose own gate is green.
+_SHOWCASE_PATHS = (
+    "src/backend/showcase",
+    "api/rest_fastapi/showcase_api.py",
+    "scripts/jobs/export_showcase_static.py",
+    "tests/unit/backend/test_showcase.py",
+    "tests/integration/test_showcase_repo.py",
+    "tests/integration/test_showcase_api.py",
+    "docs/guides/showcase-site.md",
+    "src/frontend/astro",
+)
+
+# An UNCONDITIONAL reach into the pruned package: column 0, so it runs at import.
+# Indentation is the discriminator on purpose — `app.py` mounts the showcase router
+# from inside a presence check, which is exactly the shape that must stay legal,
+# while a module-level import of a pruned package is an ImportError at startup.
+_SHOWCASE_IMPORT = re.compile(
+    r"^(?:from\s+backend\.showcase\b|import\s+backend\.showcase\b"
+    r"|from\s+showcase_api\b|import\s+showcase_api\b)", re.MULTILINE)
+
+
+def _structure_gate(project):
+    """Run the generated project's OWN deterministic gate; return the CompletedProcess."""
+    return subprocess.run([sys.executable, "scripts/check_structure.py"],
+                          cwd=str(project), capture_output=True, text=True)
+
+
+def test_the_showcase_ships_when_it_is_kept(tmp_path):
+    """The default answer is unchanged: keeping the showcase keeps every part of it.
+
+    Paired with the decline test below so a prune that fires unconditionally — the
+    easy way to make the decline test pass — is caught here instead of shipping a
+    template that can no longer deliver its own demo."""
+    dest = tmp_path / "proj"
+    _generate(dest, project_name="demo_proj", frontend_stack="astro", showcase=True)
+    missing = [p for p in _SHOWCASE_PATHS if not (dest / p).exists()]
+    assert not missing, "kept the showcase but these are absent: %s" % missing
+
+
+def test_declining_the_showcase_prunes_the_whole_surface_and_leaves_a_green_gate(tmp_path):
+    """`showcase=false` must remove the read model AND everything that only exists
+    to serve it, then still pass the project's own structural gate.
+
+    A half-prune is the failure that matters: leaving `showcase_api.py` behind gives
+    a project whose REST app raises ImportError at startup, and leaving the Astro UI
+    behind gives one whose `pages.yml` builds a site fetching endpoints that no
+    longer exist. Both are green at generation and red the first time anyone runs
+    the thing, which is why the gate is asserted here rather than trusted."""
+    dest = tmp_path / "proj"
+    _generate(dest, project_name="demo_proj", frontend_stack="react-vite",
+              showcase=False)
+
+    survivors = [p for p in _SHOWCASE_PATHS if (dest / p).exists()]
+    assert not survivors, "declined the showcase but these survived: %s" % survivors
+
+    # The surfaces that do NOT depend on it must be untouched — measured, not assumed:
+    # nothing under aad/, mcp/, agents/ or the corpus scripts imports backend.showcase.
+    # They read wiki/corpus.json, which the showcase reads too but does not own.
+    for kept in ("api/rest_fastapi/aad", "mcp", "agents", "scripts/query_corpus.py",
+                 "scripts/jobs/build_corpus.py", "src/backend/example_feature",
+                 "src/frontend/react-vite"):
+        assert (dest / kept).exists(), (
+            "%s does not depend on the showcase but was pruned with it" % kept)
+
+    r = _structure_gate(dest)
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
+def test_declining_the_showcase_leaves_nothing_importing_it(tmp_path):
+    """The dangling-import half, asserted over the whole shipped tree.
+
+    `api/rest_fastapi/app.py` mounts the showcase router at import time, and the two
+    corpus jobs import the read model. Pruning the package without making every one
+    of those conditional yields a project whose API will not start — the exact
+    silent-at-generation, loud-at-runtime shape this pass exists to remove. Scanning
+    for the import rather than checking the three known files means a fourth one
+    added later fails here."""
+    dest = tmp_path / "proj"
+    _generate(dest, project_name="demo_proj", frontend_stack="none", showcase=False)
+
+    offenders = []
+    for path in sorted(dest.rglob("*.py")):
+        if "node_modules" in path.parts or "__pycache__" in path.parts:
+            continue
+        if _SHOWCASE_IMPORT.search(path.read_text(encoding="utf-8", errors="replace")):
+            offenders.append(str(path.relative_to(dest)))
+    assert not offenders, (
+        "the showcase was declined but these still import it, so they raise "
+        "ImportError in the generated project: %s" % offenders)
+
+
+def test_declining_the_showcase_while_keeping_its_own_ui_is_refused(tmp_path):
+    """`astro` IS the showcase UI — seven pages, every one fetching `/api/*`, built
+    by `pages.yml` and snapshotted by the exporter this answer prunes. So the pair
+    (`showcase=false`, `frontend_stack=astro`) has no coherent meaning.
+
+    It is REFUSED with a message naming the fix, not silently coerced to `react-vite`
+    or quietly left broken. Silent coercion is the class of defect the preceding
+    passes have been closing; an answer the template cannot honour should say so."""
+    dest = tmp_path / "proj"
+    with pytest.raises(ValueError) as refusal:
+        _generate(dest, project_name="demo_proj", frontend_stack="astro",
+                  showcase=False)
+    message = str(refusal.value)
+    assert "showcase" in message and "astro" in message, message
+    assert "react-vite" in message or "none" in message, (
+        "the refusal should name a frontend answer that works: %s" % message)
+
+
+# ---- keel's own name must not reach the user's project -----------------------
+# The template's name is legitimate in prose that talks ABOUT the template (the
+# generated CHANGELOG says where the project came from, and `.copier-answers.yml`
+# records `_src_path`). It is never legitimate in code the project RUNS, which is
+# where it was being served from: `FastAPI(title="Project Keel API")` and the
+# showcase overview's hardcoded `title="project_keel"`.
+_KEEL_NAME = re.compile(r"project[ _-]keel", re.IGNORECASE)
+_CODE_ROOTS_FOR_BRANDING = ("src", "api", "mcp", "scripts", "agents", "config",
+                            "models", "runtimes", "evals")
+
+
+def test_no_code_the_generated_project_runs_carries_the_templates_name(tmp_path):
+    """Scanned as a class, not as the two known lines.
+
+    Two hardcodes were found by reading; a scan is what stops the third. Restricted
+    to the roots holding code the project executes — prose that cites the template
+    it came from is honest, a running service that answers to the template's name
+    is not."""
+    dest = tmp_path / "proj"
+    _generate(dest, project_name="Acme Widgets", frontend_stack="react-vite")
+
+    offenders = []
+    for root in _CODE_ROOTS_FOR_BRANDING:
+        base = dest / root
+        if not base.is_dir():
+            continue
+        for path in sorted(base.rglob("*")):
+            if not path.is_file() or path.is_symlink():
+                continue
+            if {"node_modules", "__pycache__", "dist", ".astro"} & set(path.parts):
+                continue
+            if path.suffix in (".md", ".png", ".svg", ".ico", ".lock"):
+                continue        # docs/READMEs may name the template they describe
+            try:
+                text = path.read_text(encoding="utf-8")
+            except (UnicodeDecodeError, OSError):
+                continue
+            for lineno, line in enumerate(text.split("\n"), 1):
+                if _KEEL_NAME.search(line):
+                    offenders.append("%s:%d: %s"
+                                     % (path.relative_to(dest), lineno, line.strip()))
+    assert not offenders, (
+        "a project generated as 'Acme Widgets' still carries the template's own "
+        "name in code it runs:\n" + "\n".join(offenders))
+
+
+def test_the_rest_api_is_titled_after_the_project_not_the_template(tmp_path):
+    """The observable end of the branding fix: the served OpenAPI document.
+
+    Asserted by BUILDING the generated app and reading `info.title`, not by grepping
+    app.py — the point is what a caller receives. The title comes from
+    `config/project.json`, the manifest the project already keeps true, so it stays
+    correct after a rename instead of being frozen at generation time."""
+    optional_deps.importorskip("fastapi", extra="transport")
+    dest = tmp_path / "proj"
+    _generate(dest, project_name="Acme Widgets", frontend_stack="react-vite")
+
+    out = tmp_path / "spec.json"
+    r = subprocess.run(
+        [sys.executable, "api/rest_fastapi/export_openapi.py", "--out", str(out)],
+        cwd=str(dest), capture_output=True, text=True)
+    assert r.returncode == 0, r.stdout + r.stderr
+    spec = json.loads(out.read_text())
+    assert spec["info"]["title"] == "Acme Widgets API", spec["info"]
+
+
+def test_the_generated_project_has_a_green_openapi_check_on_arrival(tmp_path):
+    """`make check-all` runs `check-openapi`, so whatever ships must already agree
+    with the app the project actually has.
+
+    Keel's committed `openapi.json` cannot: it names keel's title and lists the
+    showcase routes, so it is stale in any project with a different name or without
+    the showcase — a red gate on a freshly generated tree, through no act of the
+    user's. It is therefore a GENERATED VIEW that does not ship (the rule
+    `wiki/corpus.json` already follows), and the check must distinguish 'no contract
+    committed yet' from 'the committed contract has drifted'."""
+    optional_deps.importorskip("fastapi", extra="transport")
+    dest = tmp_path / "proj"
+    _generate(dest, project_name="Acme Widgets", frontend_stack="react-vite")
+
+    assert not (dest / "api" / "rest_fastapi" / "openapi.json").exists(), (
+        "keel's own openapi.json shipped verbatim; it names keel and cannot match "
+        "the generated app")
+    r = subprocess.run(
+        [sys.executable, "api/rest_fastapi/export_openapi.py", "--check"],
+        cwd=str(dest), capture_output=True, text=True)
+    assert r.returncode == 0, (
+        "check-openapi is red on a freshly generated project:\n" + r.stdout + r.stderr)
+
+    # ...and once the project exports one, drift is caught again — the check must not
+    # have been made green by giving up.
+    export = subprocess.run(
+        [sys.executable, "api/rest_fastapi/export_openapi.py"],
+        cwd=str(dest), capture_output=True, text=True)
+    assert export.returncode == 0, export.stdout + export.stderr
+    spec_path = dest / "api" / "rest_fastapi" / "openapi.json"
+    spec = json.loads(spec_path.read_text())
+    spec["info"]["title"] = "drifted"
+    spec_path.write_text(json.dumps(spec, indent=2, sort_keys=True) + "\n")
+    stale = subprocess.run(
+        [sys.executable, "api/rest_fastapi/export_openapi.py", "--check"],
+        cwd=str(dest), capture_output=True, text=True)
+    assert stale.returncode == 1, (
+        "a drifted openapi.json passed --check:\n" + stale.stdout + stale.stderr)
+
+
+def test_the_rest_app_still_starts_and_drops_its_routes_when_the_showcase_is_declined(tmp_path):
+    """The behavioural half of the dangling-import check, and the stronger one.
+
+    A scan proves no module-level import survives; this proves the app the project
+    actually runs still builds, and that what it stopped serving is exactly the
+    showcase. Asserting the skeleton routes remain is what stops 'it imports' being
+    satisfied by an app that mounts nothing at all."""
+    optional_deps.importorskip("fastapi", extra="transport")
+    dest = tmp_path / "proj"
+    _generate(dest, project_name="demo_proj", frontend_stack="react-vite",
+              showcase=False)
+
+    out = tmp_path / "spec.json"
+    r = subprocess.run(
+        [sys.executable, "api/rest_fastapi/export_openapi.py", "--out", str(out)],
+        cwd=str(dest), capture_output=True, text=True)
+    assert r.returncode == 0, (
+        "the REST app does not build without the showcase:\n" + r.stdout + r.stderr)
+
+    paths = set(json.loads(out.read_text())["paths"])
+    assert {"/health", "/things"} <= paths, paths      # the skeleton is intact
+    showcase_routes = sorted(p for p in paths if p.startswith("/api/"))
+    assert not showcase_routes, (
+        "declined the showcase but its routes are still served: %s" % showcase_routes)
+
+
+# Paths every project needs regardless of any answer. A migration that names one of
+# these is over-reach: `_migrations` run `rm` in a real project's working tree, so a
+# careless entry deletes something the project still depends on. Kept as a static
+# assertion because the alternative — generating a project, building the corpus, and
+# updating it — costs minutes to prove a property that is decidable from the config.
+_MUST_SURVIVE_ANY_ANSWER = (
+    "wiki/corpus.json",          # read by mcp/, 3 of 4 agents, scripts/query_corpus.py
+    "config/project.json",       # the manifest every check reads
+    "scripts/check_structure.py",
+    "src/backend/example_feature",
+    "Makefile",
+    ".github/workflows/ci.yml",
+)
+
+
+def test_no_retirement_migration_deletes_something_every_project_needs():
+    """The over-reach half of the retirement contract.
+
+    `test_every_answer_driven_prune_has_a_retirement_migration` asks whether enough
+    is deleted; this asks whether too much is. The showcase migrations were the case
+    that made it worth pinning: the showcase READS `wiki/corpus.json`, so sweeping it
+    up with the demo looks tidy and silently breaks `mcp/`, three of the four agents
+    and `scripts/query_corpus.py`, none of which depend on the showcase at all."""
+    cfg, _ = _answer_driven_prunes()
+    commands = " ".join(
+        m["command"] if isinstance(m, dict) else str(m)
+        for m in cfg.get("_migrations", []))
+    assert commands, "no _migrations found — re-derive this check rather than passing vacuously"
+    doomed = [p for p in _MUST_SURVIVE_ANY_ANSWER
+              if re.search(r"(?<![\w./-])%s(?![\w./-])" % re.escape(p), commands)]
+    assert not doomed, (
+        "these paths are needed whatever the answers, but a _migrations command "
+        "deletes them from a real project's working tree: %s" % doomed)

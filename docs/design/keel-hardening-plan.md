@@ -343,6 +343,70 @@ optional-surface questions, plus removing keel branding from
 served response, and the optional-surface questions round-trip through
 `copier update`.
 
+### Pass 7 — the `showcase` question, and keel's name out of the user's API *(done)*
+
+One vertical slice: **decline the showcase**. The branding belongs to the same
+slice rather than a later one, because it is only *observable* once someone
+declines — a `showcase=false` project that still answers `Project Keel API` is
+the defect, not a cosmetic leftover.
+
+**The coupling, measured rather than assumed.** ADR-0004 and `copier.yml` both
+assert that the showcase is inseparable from the AAD reference implementation and
+the corpus/wiki tooling. That is false, and the grep is the whole argument:
+nothing under `api/rest_fastapi/aad/`, `mcp/`, `agents/` or `scripts/query_corpus.py`
+imports `backend.showcase`. They read `wiki/corpus.json`, which the showcase reads
+*too* but does not own. So the surfaces that actually depend on it are:
+
+| Surface | Depends on `backend.showcase`? | Fate under `showcase=false` |
+|---|---|---|
+| `api/rest_fastapi/showcase_api.py` | imports it | pruned |
+| `scripts/jobs/export_showcase_static.py` | imports it | pruned |
+| `src/frontend/astro` | 7 pages, all fetching `/api/*` | pruned |
+| `src/frontend/react-vite` | **no** `api/` reference at all | kept |
+| `api/rest_fastapi/aad/`, `mcp/`, `agents/`, corpus scripts | no | kept |
+
+`astro` is the showcase UI, so `frontend_stack=astro` + `showcase=false` is an
+incoherent answer pair: `pages.yml` would `npm ci` a pruned tree and `make
+site-static` would call a pruned exporter. Rejected by a `validator` on
+`frontend_stack` with a message naming the fix — **not** silently coerced, which
+is the failure class the last four passes have been closing.
+
+**Branding is manifest-driven, not answer-driven.** `config/project.json` is
+already the machine-checked source of project facts and `_repo.py` already reads
+`name` from it, so the display title derives from that one place:
+`api/rest_fastapi/app.py` reads it at import, and `check-openapi` keeps working as
+a real drift gate with no exception carved for it. A copier *answer* would be
+fixed at generation time and rot the first time the project renamed itself.
+
+**Done when:** `make verify` is green; a `showcase=false` project has no
+`backend.showcase`, no dangling import, and a green gate of its own; a project
+generated under any name serves that name; and re-answering `showcase` retires
+the tree through `copier update` (the pairing gate landed in pass 4 forces the
+migration to exist, so this is inherited rather than re-argued).
+
+**Gate:** `make verify` -> 364 passed, 0 skipped, exit 0 (from 345). ADR-0007.
+
+**Two things the pass found that were not in the plan.**
+
+*The branding was eight lines, not two.* Reading found `app.py` and `_repo.py`;
+scanning the generated tree as a class found six more — the showcase SUMMARY and
+two setup steps, the exporter's `--base-url` example, `config/default.example.toml`
+and `config/practices.json`. The scan is now the gate, so the ninth fails at the
+source rather than being read for.
+
+*`openapi.json` made `make check-all` red on arrival.* Not from the showcase — from
+the rename alone. Keel's committed contract names keel, so the moment the app
+titled itself after the project, every generated project's `check-openapi` was
+stale on the first run. It is a generated view and no longer ships;
+`export_openapi.py --check` now separates "none published yet" (exit 0, loudly)
+from "drifted" (exit 1). That is a deliberate new exit-0 path, so both branches
+are tested: publish a contract, drift it, and the check must go red again.
+
+**Deliberately not done here:** the remaining optional-surface questions
+(wiki/evals/containers). They are the same shape as `showcase` and now inherit
+both gates — the prune/migration pairing and the over-reach check — so they are a
+mechanical repetition rather than a design question.
+
 ### Pass 5 — twin parity + the meta-gate's own holes *(first half done)*
 
 **Landed: `check_N` and check_M's two blind spots.**

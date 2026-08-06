@@ -62,8 +62,9 @@ it first.
 
 ## Getting started
 
-Generate a **tailored** project in one command — an interactive Q&A (name, frontend
-stack, transports, domain profiles) writes only the parts you chose, fills in
+Generate a **tailored** project in one command — an interactive Q&A (name, whether
+to keep the bundled showcase demo, frontend stack, transports, domain profiles)
+writes only the parts you chose, fills in
 `config/project.json`, and records your answers so you can pull future template
 improvements with `copier update --trust`:
 
@@ -79,8 +80,9 @@ copier update --trust    # re-runs the Q&A with your recorded answers as default
 ```
 
 `--trust` is required, not optional politeness: re-answering a question has to
-*remove* what you declined (the frontend stack you switched away from, a transport
-you turned off), and copier can only delete through `_migrations`, which run
+*remove* what you declined (the showcase demo, the frontend stack you switched away
+from, a transport you turned off), and copier can only delete through
+`_migrations`, which run
 commands — so it refuses to update an unattended template without it. Generation
 never needs the flag. Changing an answer deletes that directory, so commit your work
 first; `git checkout -- <path>` brings it back.

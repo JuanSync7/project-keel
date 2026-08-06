@@ -2,7 +2,7 @@
 title: Showcase
 layer: backend
 public_api: yes
-summary: Read model that presents project_keel as a product (overview, features, checks, corpus).
+summary: Read model that presents THIS project as a product (overview, features, checks, corpus).
 """
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from ._data import (
     FEATURES,
     PRINCIPLES,
     SETUP_STEPS,
-    SUMMARY,
+    SUMMARY_TEMPLATE,
     TAGLINE,
 )
 from ._models import (
@@ -46,5 +46,5 @@ __all__ = [
     "NodeDetail", "SearchHit", "to_jsonable",
     # curated constants (re-exported for direct use/tests)
     "FEATURES", "PRINCIPLES", "CHECKS", "SETUP_STEPS", "CONVENTIONS", "TAGLINE",
-    "SUMMARY",
+    "SUMMARY_TEMPLATE",
 ]

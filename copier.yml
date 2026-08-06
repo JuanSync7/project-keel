@@ -50,6 +50,13 @@ _exclude:
   - "wiki/llms.txt"
   - "wiki/llms-full.txt"
   - "wiki/.runtime"
+  # Same rule, one more generated view: openapi.json is exported FROM the live app.
+  # Keel's copy names keel and lists the showcase routes, so shipping it verbatim
+  # makes `make check-openapi` stale — red on arrival — in any project with a
+  # different name or without the showcase. `export_openapi.py --check` treats a
+  # missing file as "no contract published yet" and tells the user how to publish
+  # one. Pinned by tests/integration/test_copier_generation.py.
+  - "api/rest_fastapi/openapi.json"
   # Keel's own template META-tests. They generate FROM this repo and assert on
   # copier.yml and the .jinja twins — neither of which exists in a project generated
   # BY it. `.github/workflows/ci.yml` ships verbatim and installs the `template`
@@ -72,10 +79,32 @@ _exclude:
   - "{% if frontend_stack != 'astro' %}.github/workflows/pages.yml{% endif %}"
   # Transport pruning: api/grpc and api/edge_nginx are self-contained add-ons (no
   # code/test imports them), so drop each unless it was selected. REST (api/rest_fastapi)
-  # and MCP (mcp/) are NOT pruned — the bundled showcase, AAD reference impl, frontend
-  # and CI run on them; removing them is a separate "no-showcase" mode, out of scope here.
+  # and MCP (mcp/) are NOT pruned: they are the always-shipped transport foundation —
+  # the skeleton's own /things route, the AAD reference impl and the MCP servers all
+  # live on them, and none of that depends on the showcase (see the `showcase` prunes
+  # below and ADR-0007, which supersedes ADR-0004's claim that they are inseparable).
   - "{% if 'grpc' not in transports %}api/grpc{% endif %}"
   - "{% if 'edge_nginx' not in transports %}api/edge_nginx{% endif %}"
+  # Showcase pruning. The bundled demo is 1,205 of a generated project's 1,433
+  # Python lines against a 30-line example_feature, so declining it is the largest
+  # single thing this template can do for a user who wants a skeleton rather than a
+  # product tour. Everything here exists ONLY to serve that demo: the read model,
+  # its REST router, its static exporter, the llms.txt renderer that reads it, its
+  # tests and its guide. `src/frontend/astro` goes too, but through the
+  # frontend_stack prune above — the validator on that question forbids the
+  # incoherent pair rather than pruning it twice from here.
+  # NOT pruned, because they do not depend on it — measured, not assumed: nothing
+  # under api/rest_fastapi/aad/, mcp/, agents/ or scripts/query_corpus.py imports
+  # backend.showcase. They read wiki/corpus.json, which the showcase reads too but
+  # does not own, and which mcp/ and three of the four agents need.
+  - "{% if not showcase %}src/backend/showcase{% endif %}"
+  - "{% if not showcase %}api/rest_fastapi/showcase_api.py{% endif %}"
+  - "{% if not showcase %}scripts/jobs/export_showcase_static.py{% endif %}"
+  - "{% if not showcase %}scripts/jobs/build_llms_txt.py{% endif %}"
+  - "{% if not showcase %}tests/unit/backend/test_showcase.py{% endif %}"
+  - "{% if not showcase %}tests/integration/test_showcase_repo.py{% endif %}"
+  - "{% if not showcase %}tests/integration/test_showcase_api.py{% endif %}"
+  - "{% if not showcase %}docs/guides/showcase-site.md{% endif %}"
 
 # ---- Q&A (core facts; map 1:1 to config/project.json, enforced by check_H) -----
 project_name:
@@ -97,6 +126,14 @@ project_title:
   when: false
   default: "{{ project_name | replace('_', ' ') | replace('-', ' ') | title }}"
 
+# Asked BEFORE frontend_stack on purpose: copier renders a question's `validator`
+# with the answers gathered SO FAR, so the astro/showcase coherence check below can
+# only see this answer if it is already given.
+showcase:
+  type: bool
+  help: "Keep the bundled showcase demo (product tour: read model + /api/* + docs site)? 'no' gives a plain skeleton"
+  default: true
+
 frontend_stack:
   type: str
   help: "Frontend stack to keep (or 'none' for a backend-only project)"
@@ -105,6 +142,19 @@ frontend_stack:
     - astro
     - none
   default: react-vite
+  # The astro app IS the showcase UI — all seven pages fetch /api/*, `pages.yml`
+  # builds it, and `make site-static` snapshots it through the exporter that
+  # `showcase=false` prunes. So this pair has no coherent meaning, and it is
+  # REFUSED with the fix named rather than silently coerced to react-vite. Silent
+  # coercion is the defect class the preceding passes exist to close: the user
+  # would get a project that does not match the answers they gave, and find out
+  # later. react-vite is unaffected — it makes no API call at all.
+  validator: >-
+    {% if frontend_stack == 'astro' and not showcase %}
+    'astro' is the showcase UI (every page fetches /api/*), so it cannot be kept
+    with showcase=false. Answer 'react-vite' or 'none' for a skeleton frontend,
+    or keep the showcase.
+    {% endif %}
 
 backend_python:
   type: str
@@ -114,7 +164,7 @@ backend_python:
 transports:
   type: str
   multiselect: true
-  help: "Optional add-on transports to keep (REST + MCP always ship — they back the bundled showcase & AAD reference implementation, and their dirs/tests can't be cleanly removed)"
+  help: "Optional add-on transports to keep (REST + MCP always ship — they are the transport foundation the skeleton, the AAD reference implementation and the MCP servers all run on)"
   choices:
     - grpc
     - edge_nginx
@@ -178,6 +228,25 @@ _migrations:
     when: "{{ _stage == 'after' and 'grpc' not in transports }}"
   - command: "rm -rf api/edge_nginx"
     when: "{{ _stage == 'after' and 'edge_nginx' not in transports }}"
+  # Mirrors the showcase prunes. Safe under the rule stated above — every path here
+  # is keel-authored and arrives only by generation, so nothing a project could have
+  # written from scratch is in reach.
+  - command: "rm -rf src/backend/showcase"
+    when: "{{ _stage == 'after' and not showcase }}"
+  - command: "rm -f api/rest_fastapi/showcase_api.py
+              scripts/jobs/export_showcase_static.py
+              scripts/jobs/build_llms_txt.py
+              tests/unit/backend/test_showcase.py
+              tests/integration/test_showcase_repo.py
+              tests/integration/test_showcase_api.py
+              docs/guides/showcase-site.md"
+    when: "{{ _stage == 'after' and not showcase }}"
+  # The generated views the showcase renders. Unlike the code above these are
+  # rebuildable outputs, so leaving them would present a demo the project can no
+  # longer serve — `wiki/corpus.json` is NOT here, because mcp/ and the agents read
+  # it and it outlives the showcase.
+  - command: "rm -f wiki/llms.txt wiki/llms-full.txt"
+    when: "{{ _stage == 'after' and not showcase }}"
   # Not answer-driven, but the same defect: keel's meta-tests are pruned at
   # generation, so no CURRENT project has them — but a project generated BEFORE that
   # prune existed still carries them, and `copier update` is precisely what hands it

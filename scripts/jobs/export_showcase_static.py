@@ -59,7 +59,7 @@ def main(argv=None) -> int:
                          "public/ dir of the frontend declared in "
                          "config/project.json layers.frontend)")
     ap.add_argument("--base-url", default="",
-                    help="site base for llms.txt links (e.g. /project_keel); default: relative")
+                    help="site base for llms.txt links (e.g. /my-project); default: relative")
     args = ap.parse_args(argv)
 
     try:
@@ -114,7 +114,7 @@ def main(argv=None) -> int:
     _write_json(os.path.join(api, "wiki", "nodes.json"), nodes)
 
     # 3) Agent front door, colocated with the deployed site so it resolves under
-    #    the static base (e.g. /project_keel/llms.txt).
+    #    the static base (e.g. /my-project/llms.txt).
     # The corpus-graph link must point at the snapshot file, not the live route.
     for name, text in (("llms.txt", sc.llms_index(args.base_url, tree_url="/api/wiki/tree.json")),
                        ("llms-full.txt", sc.llms_full())):

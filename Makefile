@@ -136,10 +136,15 @@ fe-install: ## Install frontend deps for all FE apps
 
 run: ## Run the app composition root
 	$(PY) -m app
-site-data: ## Rebuild the corpus + agent llms.txt the showcase reads
+# The corpus is NOT showcase-owned — mcp/qa_server.py, scripts/query_corpus.py and
+# three of the four agents read it — so it is built in every project. llms.txt renders
+# the showcase READ MODEL, so its renderer is pruned along with the showcase
+# (copier.yml `showcase`), and this says so instead of dying on a missing script.
+site-data: ## Rebuild the corpus (+ agent llms.txt where the showcase ships)
 	$(PY) scripts/jobs/build_corpus.py
 	$(PY) scripts/jobs/link_corpus.py
-	$(PY) scripts/jobs/build_llms_txt.py
+	@if [ -f scripts/jobs/build_llms_txt.py ]; then $(PY) scripts/jobs/build_llms_txt.py; \
+	else echo "skip llms.txt (this project declined the showcase)"; fi
 # --out-dir comes from the SAME discovery as run-web/lint-fe (FE_APPS), so the
 # snapshot lands in whichever frontend actually shipped. Keel declares no single
 # `layers.frontend.stack` (it carries both reference stacks for the showcase), so the
@@ -147,8 +152,10 @@ site-data: ## Rebuild the corpus + agent llms.txt the showcase reads
 # wildcard keeps one discovery rule for the whole Makefile. Empty FE_APPS (a
 # backend-only project) passes no flag at all and the script skips itself.
 site-static: site-data ## Snapshot the showcase to static files (no backend) for a static/GitHub Pages build
-	$(PY) scripts/jobs/export_showcase_static.py --base-url "$(BASE_URL)" \
-		$(if $(strip $(FE_APPS)),--out-dir "$(firstword $(FE_APPS))public")
+	@if [ -f scripts/jobs/export_showcase_static.py ]; then \
+		$(PY) scripts/jobs/export_showcase_static.py --base-url "$(BASE_URL)" \
+			$(if $(strip $(FE_APPS)),--out-dir "$(firstword $(FE_APPS))public"); \
+	else echo "skip static snapshot (this project declined the showcase)"; fi
 run-api: ## Serve the showcase REST API (uvicorn :8000; needs the project interpreter)
 	$(PY) -m uvicorn app:app --app-dir api/rest_fastapi --reload --port 8000
 # The frontend directory is DISCOVERED (FE_APPS), never named: copier prunes the

@@ -246,7 +246,58 @@ version rather than a bare commit:
   halves are pinned by tests that read the sentence out of the *generated*
   project's README, so adding a directory to it is covered rather than trusted.
 
+### Added
+- **A `showcase` question.** The bundled demo — `src/backend/showcase`, its
+  `/api/*` router, the static exporter, the `llms.txt` renderer, its tests and its
+  guide — is **1,205 of a generated project's 1,433 Python lines (84%)** against a
+  30-line `example_feature`, and until now there was no way to decline it.
+  `showcase: false` prunes the whole surface at generation and retires it on
+  `copier update --trust` (the pairing gate added with ADR-0006 forced the
+  migration to exist). ADR-0007.
+- What it does **not** take with it, measured rather than assumed: nothing under
+  `api/rest_fastapi/aad/`, `mcp/`, `agents/` or `scripts/query_corpus.py` imports
+  `backend.showcase` — they read `wiki/corpus.json`, which the showcase reads too
+  but does not own, and which `mcp/qa_server.py` and three of the four bundled
+  agents need. ADR-0004's claim that they were inseparable is superseded. A new
+  gate fails any migration naming a path every project needs, so the tidy-looking
+  over-reach cannot land later.
+- `showcase: false` with `frontend_stack: astro` is **refused** with a message
+  naming the working answers, not silently coerced. The astro app *is* the
+  showcase UI (all seven pages fetch `/api/*`, `pages.yml` builds it, and
+  `make site-static` snapshots it through the exporter that answer prunes).
+  react-vite is unaffected — it makes no API call at all.
+- ADR-0007 (accepted): an optional showcase, and project identity from the
+  manifest. Supersedes ADR-0004's "no-showcase mode is out of scope".
+
+### Fixed
+- **A generated project no longer serves the template's name.**
+  `api/rest_fastapi/app.py` was `FastAPI(title="Project Keel API")` and the
+  showcase overview hardcoded `title="project_keel"` — one line below a `name`
+  field that was correctly tailored, which is why neither was noticed, and
+  `make check-openapi` kept the wrong title *green* downstream. Both now derive
+  from `config/project.json` via `backend.shared.display_title`, so a rename stays
+  correct where a copier answer would have frozen at generation. Scanned as a
+  class, not as the two known lines: the scan found six more (the showcase
+  summary and setup steps, the exporter's `--base-url` example,
+  `config/default.example.toml`, `config/practices.json`).
+- **`api/rest_fastapi/openapi.json` no longer ships verbatim.** It names keel and
+  lists the showcase routes, so `make check-all` was **red on arrival** in any
+  project with a different name or without the showcase — through no act of the
+  user's. It is now treated as the generated view it is (the rule
+  `wiki/corpus.json` already followed), and `export_openapi.py --check`
+  distinguishes *no contract published yet* (exit 0, printing how to publish one)
+  from *the committed contract has drifted* (exit 1). Both branches are tested;
+  keel's own title is unchanged, so self-parity holds.
+- `make site-data` / `site-static` test for the showcase scripts before calling
+  them. They ship verbatim and cannot be answer-aware any other way — the same
+  shipped-verbatim class as the `pages.yml` hardcode fixed in pass 3.5.
+
 ### Changed
+- `backend.showcase.SUMMARY` is now `SUMMARY_TEMPLATE` and carries a
+  `{title}` placeholder the read model fills from the manifest. A deliberate
+  public-API break: a constant that must be formatted should not be named as
+  if it were finished text, and the old one hardcoded keel's name into every
+  generated project's own overview page.
 - **`copier update` now requires `--trust`** (`copier update --trust`). Retirement
   needs `_migrations`, migrations run commands, and copier refuses an unattended
   unsafe template rather than skipping them silently. Generation is unaffected —

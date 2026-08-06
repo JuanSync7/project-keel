@@ -10,6 +10,8 @@ import json
 import os
 from typing import Any
 
+from backend.shared import display_title
+
 from . import _content, _data, _llms, _query
 from ._models import (
     Check,
@@ -83,9 +85,13 @@ class Showcase:
         )
         return Overview(
             name=self._name,
-            title="project_keel",
+            # Derived from the manifest name, never a literal: a generated project
+            # that answers to the TEMPLATE's name in its own overview page is the
+            # defect, and a hardcode here is invisible because the adjacent `name`
+            # field was always correct.
+            title=display_title(self._name),
             tagline=_data.TAGLINE,
-            summary=_data.SUMMARY,
+            summary=_data.SUMMARY_TEMPLATE.format(title=display_title(self._name)),
             conventions=_data.CONVENTIONS,
             layers=self._layers(),
             transports=self._transports(),
@@ -257,7 +263,9 @@ def load_showcase(root: str) -> Showcase:
     practices = _read_json(os.path.join(root, "config", "practices.json"))
     present = frozenset(c.script for c in _data.CHECKS
                         if os.path.isfile(os.path.join(root, c.script)))
-    name = project.get("name") or "project_keel"
+    # An unnamed manifest falls back to the project directory's own name — real
+    # information about THIS project — not to the template's name.
+    name = project.get("name") or os.path.basename(os.path.abspath(root))
     return Showcase(name=name, project=project, corpus=corpus, practices=practices,
                     present_scripts=present, root=root)
 

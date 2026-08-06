@@ -9,8 +9,11 @@ from __future__ import annotations
 from ._models import Check, Feature, Link, Principle, Step
 
 TAGLINE = "A polyglot-aware, agent-friendly project skeleton that stays honest."
-SUMMARY = (
-    "project_keel is a generic project skeleton with a strict, documented "
+# `{title}`, not a literal: this is the copy a GENERATED project shows on its own
+# overview page, so a hardcoded name there presents that project as the template it
+# came from. `_repo.py` fills it from the manifest name.
+SUMMARY_TEMPLATE = (
+    "{title} is a generic project skeleton with a strict, documented "
     "structure that both humans and coding agents can navigate. Every directory "
     "is labelled, every package has a public-API boundary, and a suite of "
     "deterministic checks keeps any project built from it structurally honest."
@@ -385,9 +388,10 @@ SETUP_STEPS: tuple[Step, ...] = (
          body="One command runs an interactive Q&A (name, frontend stack, transports, "
               "domain profiles) and writes a tailored skeleton: the chosen stack, a "
               "filled-in config/project.json, and a .copier-answers.yml so you can pull "
-              "future template improvements later. Needs copier (pipx install copier, or "
-              "pip install '.[template]' in a checkout).",
-         command="copier copy gh:JuanSync7/project-keel my-project"),
+              "future template improvements later. The template URL is whatever this "
+              "project recorded as `_src_path` in .copier-answers.yml. Needs copier "
+              "(pipx install copier, or pip install '.[template]' in a checkout).",
+         command="copier copy <template-url> my-project"),
     Step(title="Make it yours",
          body="Rename src/backend/example_feature/ to your first real package and delete "
               "any optional dirs you don't need (wiki/, models/, evals/, containers/).",
@@ -401,12 +405,12 @@ SETUP_STEPS: tuple[Step, ...] = (
               "already runs `make check-all`.",
          command="pip install pre-commit && pre-commit install"),
     Step(title="Pull template updates later",
-         body="When Project Keel improves, re-apply the changes to your project — copier "
+         body="When the template this project came from improves, re-apply the changes — copier "
               "three-way merges them using your recorded answers. `--trust` is required: "
               "re-answering a question has to remove what you declined, and copier only "
               "deletes through migrations, which run commands.",
          command="copier update --trust"),
 )
 
-__all__ = ["TAGLINE", "SUMMARY", "CONVENTIONS", "FEATURES", "PRINCIPLES",
+__all__ = ["TAGLINE", "SUMMARY_TEMPLATE", "CONVENTIONS", "FEATURES", "PRINCIPLES",
            "CHECKS", "SETUP_STEPS"]
