@@ -46,6 +46,10 @@ _exclude:
   # TRACKED downstream (without it, any clone/CI checkout loses `copier update`).
   # Pinned by tests/integration/test_copier_generation.py; do not "restore parity".
   - ".venv"
+  # Keel's own in-flight scratch (handoff notes for a branch in progress). It is
+  # about THIS repo's unfinished work and would be meaningless — and misleading —
+  # in a project generated from it.
+  - "tmp"
   - "wiki/corpus.json"
   - "wiki/llms.txt"
   - "wiki/llms-full.txt"
