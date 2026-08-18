@@ -55,6 +55,28 @@ def _dumps(corpus: dict) -> str:
     return json.dumps(corpus, indent=2, sort_keys=True) + "\n"
 
 
+def _deterministic_projection(corpus: dict) -> dict:
+    """The corpus with LLM enrichment stripped back to its deterministic base:
+    links keep only source 'deterministic', and a summary filled as 'generated'
+    resets to the empty not-yet-authored state. Staleness (ADR-0008) is judged
+    on THIS projection, so index_enforcer's legitimate fills — which only ever
+    target empty summaries and append semantic links — never read as rot, while
+    any drift in what the tree deterministically yields still does."""
+    proj = json.loads(_dumps(corpus))
+    for n in proj.get("nodes", []) or []:
+        if not isinstance(n, dict):
+            continue
+        if n.get("summary_source") == "generated":
+            n["summary"] = ""
+            n["summary_source"] = ""
+        n["links"] = [
+            ln
+            for ln in n.get("links", []) or []
+            if isinstance(ln, dict) and ln.get("source") == "deterministic"
+        ]
+    return proj
+
+
 def validate(corpus: dict) -> list:
     """Return a list of human-readable integrity errors ([] when the graph is valid)."""
     errs = []
@@ -201,7 +223,8 @@ def main(argv=None) -> int:
         for m in errs:
             sys.stderr.write("ERROR check_corpus: %s\n" % m)
         rc = 1 if errs else 0
-        # The file is a generated view (gitignored); staleness is a warning.
+        # Manual-inspection mode keeps staleness a warning; the DEFAULT mode
+        # (the gate) errors on it — see the local-corpus block in main().
         if _dumps(corpus) != _dumps(_fresh(args.root, args.max_links)):
             print(
                 "WARN check_corpus: %s is stale vs a fresh build "
@@ -227,6 +250,44 @@ def main(argv=None) -> int:
             "ERROR check_corpus: build is NOT deterministic (two builds differ)\n"
         )
         rc = 1
+
+    # The LOCAL corpus is what the agents actually query (wiki/corpus.json, a
+    # gitignored generated view) — and until ADR-0008 nothing here ever read it,
+    # so it could rot silently while this check rebuilt fresh copies (measured:
+    # 33 nodes behind the tree at a green gate). Absent is a real state, not a
+    # drift — a fresh clone, CI, and a day-one generated project have none — so
+    # say it loudly and stay green (the ADR-0007 absent-vs-drifted split).
+    # Present-but-stale is an ERROR naming the repair; a check that writes is
+    # not a check, so nothing here regenerates anything.
+    local = os.path.join(args.root, "wiki", "corpus.json")
+    if not os.path.exists(local):
+        print(
+            "check_corpus: no local wiki/corpus.json yet (generated view) -- "
+            "agents build one with `make site-data`"
+        )
+    else:
+        try:
+            with open(local, encoding="utf-8") as fh:
+                committed = json.load(fh)
+        except ValueError:
+            sys.stderr.write(
+                "ERROR check_corpus: wiki/corpus.json is not valid JSON -- "
+                "regenerate with `make site-data`\n"
+            )
+            committed = None
+            rc = 1
+        if committed is not None:
+            for m in validate(committed):
+                sys.stderr.write("ERROR check_corpus: wiki/corpus.json: %s\n" % m)
+                rc = 1
+            if _dumps(_deterministic_projection(committed)) != _dumps(first):
+                sys.stderr.write(
+                    "ERROR check_corpus: wiki/corpus.json is stale vs the tree "
+                    "-- the corpus the agents query is not the project they "
+                    "are in; regenerate with `make site-data`\n"
+                )
+                rc = 1
+
     if rc == 0:
         print(
             "check_corpus: fresh build valid + deterministic (%d nodes, %d edges)"

@@ -74,6 +74,7 @@ populating `select` + a few strict flags was the highest-leverage first move:
 | Every function is fully typed (no untyped defs / calls / decorators) | mypy `strict` (Slice 5) |
 | No blanket `# noqa` / `# type: ignore` — each names its code | ruff `PGH` (Slice 5) |
 | One machine-decided layout (no hand-formatting in review) | `ruff format --check` via `make fmt-check` |
+| Machine-readable module header (`title:`/`summary:`) + exported-symbol docstrings | `check_O` + `check_E` (ADR-0008); the local corpus gated fresh via `check_corpus` |
 
 The **Slice-5 widen pass** measured every candidate rule first (Slice 0's
 discipline). It took mypy to full **`strict`** (the backlog was 3 `no-untyped-def`

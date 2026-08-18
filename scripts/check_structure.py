@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 """
+title: check_structure — the deterministic conventions gate
+summary: Stdlib-only, 3.6-safe enforcement of CONVENTIONS.md — labeling, taxonomy, package boundaries, tool/agent governance, manifest and ruleset parity, twin parity, and the machine-readable module contract (checks A-O). Exit 1 on any error; warnings never fail the build.
+
 check_structure.py - enforce the project conventions (see CONVENTIONS.md).
 
 Checks:
@@ -8,7 +11,8 @@ Checks:
   B. Each taxonomy directory that exists has README.md + CLAUDE.md
   C. Each src/ directory containing *.py is a package: __init__.py with __all__
   D. The __init__ boundary: no absolute import of another package's _private module
-  E. Authored coverage (WARN): every __all__-exported symbol has a docstring
+  E. Authored coverage (ERR): every __all__-exported symbol defined in-file
+     has a docstring — the corpus's symbol summaries (WARN until ADR-0008)
   F. Tool specs governed (ERR) + accountability (WARN): tool/agent docs are owned
   G. Tool<->agent binding (ERR): tools.md <-> '## Used by' agree; tool_command invokes public_api
   H. Project facts in config/project.json agree with the tree (ERR); an
@@ -38,6 +42,11 @@ Checks:
      a generated one has no committed plain file. Render-free (no jinja2 here),
      so it bounds what it proves; the byte-exact rendered comparison lives in
      tests/integration. Silent in a generated project, which has no twins.
+  O. Module header contract (ERR): every CODE_ROOTS module docstring carries
+     explicit, non-empty title:/summary: lines — the grammar build_corpus
+     reads. Without them the corpus falls back to filename/first-prose-line
+     and labels the result 'authored'; an undocumented module is silently
+     DROPPED from the corpus entirely (ADR-0008)
 
 Exit 0 = clean, 1 = errors. Warnings never fail the build. Stdlib only; 3.6+.
 """
@@ -404,25 +413,36 @@ def _exported_names(tree):
     """Return the string elements of a top-level __all__ literal, or []."""
     out = []
     for node in tree.body:
+        # An annotated `__all__: list[str] = [...]` is an AnnAssign, not an
+        # Assign — matching only Assign made annotated exports invisible to
+        # this reader (and identically to its twin), found by a mutation check
+        # in the ADR-0008 pass. Both readers changed together; the parity is
+        # what tests/unit/scripts/test_check_o.py pins.
+        targets = []
         if isinstance(node, ast.Assign):
-            for t in node.targets:
-                if (
-                    isinstance(t, ast.Name)
-                    and t.id == "__all__"
-                    and isinstance(node.value, (ast.List, ast.Tuple))
-                ):
-                    for elt in node.value.elts:
-                        val = getattr(elt, "s", None)  # 3.6 ast.Str
-                        if val is None and isinstance(elt, ast.Constant):
-                            val = elt.value  # 3.8+ ast.Constant
-                        if isinstance(val, str):
-                            out.append(val)
+            targets = node.targets
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+            targets = [node.target]
+        for t in targets:
+            if (
+                isinstance(t, ast.Name)
+                and t.id == "__all__"
+                and isinstance(node.value, (ast.List, ast.Tuple))
+            ):
+                for elt in node.value.elts:
+                    val = getattr(elt, "s", None)  # 3.6 ast.Str
+                    if val is None and isinstance(elt, ast.Constant):
+                        val = elt.value  # 3.8+ ast.Constant
+                    if isinstance(val, str):
+                        out.append(val)
     return out
 
 
 def check_E():
-    """WARN when an __all__-exported symbol defined in-file has no docstring.
-    Authored docstrings are the canonical corpus summaries; flag the gaps."""
+    """ERROR when an __all__-exported symbol defined in-file has no docstring.
+    Authored docstrings are the canonical corpus summaries — a gap is a symbol
+    an agent can name but not explain. WARN until ADR-0008 promoted it (the
+    tree measured zero findings, so promotion cost nothing)."""
     for croot in CODE_ROOTS:
         base = os.path.join(ROOT, croot)
         if not os.path.isdir(base):
@@ -449,9 +469,9 @@ def check_E():
                 for name in sorted(exported):
                     nd = defs.get(name)  # only names DEFINED here (skip re-exports)
                     if nd is not None and not ast.get_docstring(nd):
-                        warn(
+                        err(
                             "%s: exported symbol '%s' has no docstring "
-                            "(authored summary missing)" % (rel(full), name)
+                            "(authored summary missing; ADR-0008)" % (rel(full), name)
                         )
 
 
@@ -2038,6 +2058,89 @@ def check_M():
         warn(m)
 
 
+def _module_meta(doc):
+    """title:/summary: (etc.) lines of a module docstring, extracted with EXACTLY
+    build_corpus._docstring_meta's grammar: strip the line, match a known key
+    before the first colon, strip the value, last occurrence wins. Duplicated,
+    not imported — scripts/jobs/build_corpus.py is $(PY)-only and this file runs
+    under the 3.6 pre-commit interpreter, so a shared import would couple the
+    interpreter floors. The two grammars are pinned to each other by
+    tests/unit/scripts/test_check_o.py::test_grammar_matches_the_corpus_reader_exactly."""
+    meta = {}
+    for line in doc.splitlines():
+        s = line.strip()
+        if ":" in s and s.split(":", 1)[0] in (
+            "title",
+            "summary",
+            "layer",
+            "public_api",
+            "owner",
+            "visibility",
+        ):
+            k, _, v = s.partition(":")
+            meta[k.strip()] = v.strip()
+    return meta
+
+
+def _module_header_findings(files):
+    """files: {relpath: source text} -> error strings. Pure; the walk is check_O's.
+
+    Unparseable sources are skipped: check_D already warns on them over the same
+    roots, and a second report here would be noise. (Corollary: on an OLD host
+    interpreter a module using newer syntax parses as SyntaxError and is skipped
+    — the project interpreter's run, in CI and `make check`, is the enforcing one.)
+    """
+    errs = []
+    for relpath in sorted(files):
+        try:
+            tree = ast.parse(files[relpath], filename=relpath)
+        except UNPARSEABLE:
+            continue
+        doc = ast.get_docstring(tree)
+        if not doc:
+            errs.append(
+                "%s: module has no docstring -- build_corpus cannot index it, "
+                "so it is invisible to every corpus query (ADR-0008; see "
+                "docs/guides/python-style.md)" % relpath
+            )
+            continue
+        missing = [k for k in ("title", "summary") if not _module_meta(doc).get(k)]
+        if missing:
+            errs.append(
+                "%s: module docstring lacks explicit %s -- the corpus falls "
+                "back to the filename / first prose line and labels the result "
+                "authored (ADR-0008; see docs/guides/python-style.md)"
+                % (relpath, " and ".join(m + ":" for m in missing))
+            )
+    return errs
+
+
+def check_O():
+    """ERROR when a CODE_ROOTS module lacks the machine-readable header the
+    corpus reads (ADR-0008). A docstring that merely EXISTS is the trap this
+    closes: build_corpus falls back to the filename and the first prose line
+    and labels the result 'authored', and a module with no docstring at all is
+    silently dropped from the corpus — an agent's map of the project is then
+    confidently incomplete, at exit 0."""
+    files = {}
+    for croot in CODE_ROOTS:
+        base = os.path.join(ROOT, croot)
+        if not os.path.isdir(base):
+            continue
+        for dirpath, _, filenames in walk(base):
+            for f in filenames:
+                if not f.endswith(".py"):
+                    continue
+                full = os.path.join(dirpath, f)
+                try:
+                    with open(full, encoding="utf-8") as fh:
+                        files[rel(full)] = fh.read()
+                except UNREADABLE:
+                    continue  # unreadable is reported by the checks keyed on it
+    for e_ in _module_header_findings(files):
+        err(e_)
+
+
 def main():
     check_A()
     check_B()
@@ -2053,6 +2156,7 @@ def main():
     check_L()
     check_M()
     check_N()
+    check_O()
     for w_ in warnings:
         print("WARN  " + w_)
     for e_ in errors:

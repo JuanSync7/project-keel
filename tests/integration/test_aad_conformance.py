@@ -1,4 +1,8 @@
-"""Integration: the AAD reference agent is conformant and self-consistent.
+"""
+title: Integration — AAD reference agent conformance
+summary: Runs the reference agent in-process and proves the served descriptor validates against the committed schema, its ask operationId resolves against the agent's own OpenAPI, and the resolved endpoint answers with the declared field names.
+
+Integration: the AAD reference agent is conformant and self-consistent.
 
 Runs the reference agent in-process (TestClient), then proves three things
 WITHOUT importing any consumer's discovery stack (a template only *serves* a

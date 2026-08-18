@@ -1,4 +1,8 @@
-"""Shared pytest fixtures live here.
+"""
+title: Shared pytest fixtures + the hermetic git environment
+summary: Repo-wide fixtures, and the one place the suite's git environment is neutralised (see tests/hermetic_git.py for what is neutralised and why).
+
+Shared pytest fixtures live here.
 
 Also the one place the suite's git environment is neutralised — see the comment
 below, and tests/hermetic_git.py for what is neutralised and why.

@@ -8,7 +8,7 @@ tags: [plan, template, copier, upgrade, gate, environment, convergence]
 summary: Five bounded passes that fix the template-as-product defects found by the 2026-08-04 audit and then land the external-environment manifest of ADR-0005. Each pass is one vertical slice with an explicit done-condition, gated on `make verify`.
 id: docs-design-keel-hardening-plan
 created: 2026-08-04
-updated: 2026-08-05
+updated: 2026-08-18
 visibility: internal
 canonical: true
 ---
@@ -407,6 +407,59 @@ are tested: publish a contract, drift it, and the check must go red again.
 both gates — the prune/migration pairing and the over-reach check — so they are a
 mechanical repetition rather than a design question.
 
+### Pass 8 — the machine-readable module contract, gated end to end
+
+The audit behind this pass is the user's question, made precise: *what
+guarantees that an agent (or a new human) can interpret this code?* The answer
+must be "the gate", because an agent can only rely on what the gate proves —
+a convention that merely happens to hold is worse than none, since the agent
+trusts it. Three holes, all measured on this tree:
+
+| Hole | Measurement |
+|---|---|
+| The module header (`title:`/`summary:`) is 100% followed and 0% enforced | 109/109 modules have a docstring; **5** lack the explicit keys and silently fall back (filename as title, first line as summary — then labeled `authored`); `build_corpus.py:343` silently *drops* an undocumented module (`if not doc: return`, exit 0) |
+| The corpus walks a private copy of the scope | `build_corpus.py:34` re-types `CODE_ROOTS` and omits `runtimes` (drifted since `906a42b`, when pass 3's root landed in `check_structure` only) — **6 modules invisible** to every corpus-driven agent |
+| Nothing gates the corpus agents actually read | `wiki/corpus.json` is a gitignored generated view; `make check-corpus` builds *fresh* and never looks at it; staleness is a WARN behind an opt-in `--corpus` flag. Measured: the on-disk corpus is 3 modules (33 nodes) behind the tree while `make verify` is green |
+
+One vertical slice — the contract, its scope, and its currency:
+
+1. **`check_O` (ERR):** every `.py` under `CODE_ROOTS` carries a module
+   docstring with explicit, non-empty `title:` and `summary:` lines — the same
+   grammar `build_corpus._docstring_meta` reads, pinned by a parity test rather
+   than a shared import (`check_structure` must stay 3.6-safe and cannot import
+   a `$(PY)`-only module). Unparseable files skip, as in check_E — check_D
+   already warns there.
+2. **`check_E` WARN → ERR.** Authored symbol coverage is the other half of the
+   same contract, and keel measures at zero findings, so promotion is free.
+   (The grace-tier rule — WARN one release, then ERR — binds from `v0.1.0`
+   onward; there has been no release yet.)
+3. **`build_corpus` single-sources its scope** (`CODE_ROOTS`, `IGNORE_DIRS`)
+   from `check_structure`, killing the drifted private copy. `runtimes` becomes
+   visible; a future tenth root cannot be forgotten twice.
+4. **`make check-corpus` gates the local corpus:** absent → say so loudly, exit
+   0 (a fresh clone and CI have none — the ADR-0007 absent-vs-drifted pattern);
+   present-but-stale → ERROR naming `make site-data`. Staleness is judged on the
+   **deterministic projection** (generated summaries/links stripped), so
+   `index_enforcer`'s legitimate `"generated"` enrichment is never read as rot.
+5. Fix the five non-compliant modules (three test helpers, two `scripts/` —
+   including `check_structure.py` itself, which must satisfy its own check).
+
+**Done when:** a module missing its header, an exported symbol missing its
+docstring, and a stale local corpus each fail `make verify` (mutation-checked);
+a fresh clone and a generated project are green on arrival; every on-disk
+`CODE_ROOTS` module appears in a fresh corpus with an authored title+summary
+(integration-tested). ADR-0008. **Note:** this pass takes the letter `O`;
+ADR-0005's proposed completeness scan (status: proposed, never implemented)
+moves to `check_P` — letters belong to landed checks.
+
+**Slice 2 of the same pass:** the judgment half that cannot be a gate —
+`docs/guides/python-style.md`, the canonical "how Python is written here"
+(readability and loud failure modes outrank speed; comment and docstring
+discipline; how a code agent works in this repo), linked from `AGENT.md` and
+sorted into the practices registry as doc-tier. Guides ship verbatim, so it
+governs every generated project: EDA scripts, checklist tools, agents, and
+full products alike.
+
 ### Pass 5 — twin parity + the meta-gate's own holes *(first half done)*
 
 **Landed: `check_N` and check_M's two blind spots.**
@@ -434,7 +487,7 @@ Mutation-verified on all three failure modes; each was silent before.
 
 **Still to do: ADR-0005 slice 1.** `config/environment.json`, the deterministic
 declaration check (shape, vocabularies, and the undeclared-external completeness
-scan — `check_O`), and the generated `.env.example`. The lock, the fingerprint and
+scan — `check_P`, shifted from `check_O` by ADR-0008), and the generated `.env.example`. The lock, the fingerprint and
 the provider adapters are slice 2, outside this plan. Its stated prerequisite is
 now met: twin parity is gated, so adding a seventh twin can no longer manufacture
 a new instance of the drift class it claims to fix.

@@ -10,6 +10,19 @@ version rather than a bare commit:
 ## [Unreleased]
 
 ### Added
+- **The machine-readable module contract is gated** (ADR-0008). Every code-root
+  module must carry explicit `title:`/`summary:` docstring lines — the corpus's
+  input grammar, pinned to `build_corpus` by a parity test (new `check_O`);
+  `check_E` (exported symbols have docstrings) is promoted WARN → ERROR at zero
+  findings. `build_corpus` now imports its walk scope from `check_structure`
+  instead of re-typing it — the private copy had omitted `runtimes/`, leaving
+  six modules invisible to every corpus query. And `make check-corpus` now gates
+  the **local** `wiki/corpus.json` agents actually query: absent is a loud pass,
+  stale is an error naming `make site-data`, with staleness judged on the
+  deterministic projection so `index_enforcer`'s `"generated"` enrichment never
+  reads as rot (measured before the fix: 33 nodes behind the tree at a green
+  gate). Five modules gained explicit headers, including `check_structure.py`
+  itself.
 - **Formatting is now gated.** `make lint` runs a new `make fmt-check`
   (`ruff format --check`) over the same `CODE_ROOTS` the linter and `make fmt`
   use, so CI reports layout drift instead of leaving it to review. Declared as

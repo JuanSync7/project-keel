@@ -1,4 +1,8 @@
-"""Whether a missing optional dependency SKIPS the test or FAILS the run.
+"""
+title: Optional-dependency policy — skip vs fail
+summary: Turns pytest.importorskip into a hard import for any surface declared in KEEL_REQUIRED_EXTRAS (CI installs those on purpose), so a broken install fails the run instead of degrading into a green suite with the assertions never executed; an undeclared surface still skips.
+
+Whether a missing optional dependency SKIPS the test or FAILS the run.
 
 `pytest.importorskip` is the right default for a genuinely optional surface — the
 langgraph engine is opt-in, and its conformance tests should not fail a machine

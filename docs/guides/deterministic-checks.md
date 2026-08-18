@@ -62,8 +62,8 @@ everything and therefore expect the project interpreter.
 
 | Check | Script | Gate? | Interpreter | What it guarantees |
 |-------|--------|:-----:|-------------|--------------------|
-| Structure & frontmatter | `scripts/check_structure.py` | error | 3.6-safe | Labels, taxonomy, package boundaries, tool/agent governance, project facts, agent-rules symlinks, owned-exception & frozen-config boundaries, naked-tensor domain warn, lint/type ruleset parity, template twin parity (checks A–N) |
-| Corpus integrity | `scripts/jobs/check_corpus.py` | error | ≥3.7 | `wiki/corpus.json` is a valid, acyclic graph **and** the build is reproducible |
+| Structure & frontmatter | `scripts/check_structure.py` | error | 3.6-safe | Labels, taxonomy, package boundaries, tool/agent governance, project facts, agent-rules symlinks, owned-exception & frozen-config boundaries, naked-tensor domain warn, lint/type ruleset parity, template twin parity (checks A–O) |
+| Corpus integrity | `scripts/jobs/check_corpus.py` | error | ≥3.7 | the fresh build is a valid, acyclic, reproducible graph **and** the local `wiki/corpus.json` (what agents query) is current when present — absent is a loud pass, stale is an error naming `make site-data` (ADR-0008) |
 | OpenAPI drift | `api/rest_fastapi/export_openapi.py --check` | error | FastAPI | Committed `openapi.json` matches the live routes |
 | AAD schema drift | `scripts/agent_surface/generate_aad_schema.py --check` | error | pydantic | Committed AAD JSON Schema matches the model |
 | Code-doc drift | `scripts/cdmon_sync.py --check` | error* | any | cdmon code↔doc drift (*no-op until cdmon is installed) |
@@ -89,7 +89,8 @@ print but never fail the build.
   defining `__all__`.
 - **D. `__init__` is the API** — no absolute import of another package's
   `_private` module.
-- **E. Authored coverage** (warn) — every `__all__`-exported symbol has a docstring.
+- **E. Authored coverage** — every `__all__`-exported symbol defined in-file has
+  a docstring: the corpus's symbol summaries (warn until ADR-0008).
 - **F. Tool specs governed** (error) + **accountability** (warn).
 - **G. Tool↔agent binding** — `tools.md` ↔ each spec's `## Used by` agree.
 - **H. Project facts** — `config/project.json` agrees with the tree (§15).
@@ -135,6 +136,13 @@ print but never fail the build.
 **When to run.** Every commit (pre-commit) and in CI; any time you add a
 directory, package, doc, tool, or agent.
 
+- **O. Module header contract** — every code-root module docstring carries
+  explicit, non-empty `title:` and `summary:` lines, in exactly the grammar
+  `build_corpus` reads (pinned by a parity test, not a shared import — this
+  script stays 3.6-safe). Without them the corpus falls back to
+  filename/first-prose-line and labels the result `authored`, and an
+  undocumented module is silently dropped from the index (ADR-0008).
+
 **Run.** `make check` · `python3 scripts/check_structure.py`
 
 **Changing it.** If you change the scheme or a check, update **both** this
@@ -146,7 +154,12 @@ script and `CONVENTIONS.md`.
 §11). This check validates the graph — unique `node_id`s, resolvable
 `parent`/`children`/`links`, valid `kind`/`owner_source`/`visibility`, owner
 coherence, sorted tags, **acyclic** parent chains — and proves the build is
-**deterministic** (builds twice, asserts byte-identical output).
+**deterministic** (builds twice, asserts byte-identical output). It also gates
+the **local** corpus — the file the agents actually query: absent is a loud
+pass (a fresh clone, CI, and a day-one generated project have none), while
+present-but-stale is an **error** naming `make site-data`. Staleness is judged
+on the *deterministic projection* — `index_enforcer`'s `"generated"` summary
+fills and semantic links are enrichment, not rot (ADR-0008).
 
 **When to run.** In CI, and after any change to the corpus builders or to
 content that feeds the corpus.

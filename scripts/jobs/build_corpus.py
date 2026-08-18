@@ -18,20 +18,15 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SCHEMA_VERSION = 1
 
-IGNORE_DIRS = {
-    ".git",
-    "__pycache__",
-    "node_modules",
-    ".venv",
-    "venv",
-    "dist",
-    "build",
-    ".astro",
-    ".mypy_cache",
-    ".pytest_cache",
-    ".ruff_cache",
-}
-CODE_ROOTS = ["src", "tests", "api", "models", "mcp", "agents", "demo", "scripts"]
+# The walk scope is check_structure's, IMPORTED, never re-typed: a private copy
+# here omitted `runtimes` from the moment that root landed in the gate, so six
+# modules were invisible to every corpus query while `make verify` stayed green
+# (ADR-0008). check_structure is 3.6-safe stdlib by contract, so importing it is
+# free under any interpreter this job runs on; the reverse import would not be.
+_SCRIPTS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _SCRIPTS not in sys.path:
+    sys.path.insert(0, _SCRIPTS)
+from check_structure import CODE_ROOTS, IGNORE_DIRS  # noqa: E402
 
 # Owner markers use the same token + grammar in both worlds, but a STRUCTURED
 # form so prose mentioning "owner:" is never mistaken for a marker: a section
@@ -427,19 +422,28 @@ def _module_and_symbols(path: str, root: str, nodes: list):
 def _exported_names(tree) -> list:
     out = []
     for node in tree.body:
+        # An annotated `__all__: list[str] = [...]` is an AnnAssign, not an
+        # Assign — matching only Assign made annotated exports invisible to
+        # this reader (and identically to its twin), found by a mutation check
+        # in the ADR-0008 pass. Both readers changed together; the parity is
+        # what tests/unit/scripts/test_check_o.py pins.
+        targets = []
         if isinstance(node, ast.Assign):
-            for t in node.targets:
-                if (
-                    isinstance(t, ast.Name)
-                    and t.id == "__all__"
-                    and isinstance(node.value, (ast.List, ast.Tuple))
-                ):
-                    for elt in node.value.elts:
-                        val = getattr(elt, "s", None)
-                        if val is None and isinstance(elt, ast.Constant):
-                            val = elt.value
-                        if isinstance(val, str):
-                            out.append(val)
+            targets = node.targets
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+            targets = [node.target]
+        for t in targets:
+            if (
+                isinstance(t, ast.Name)
+                and t.id == "__all__"
+                and isinstance(node.value, (ast.List, ast.Tuple))
+            ):
+                for elt in node.value.elts:
+                    val = getattr(elt, "s", None)
+                    if val is None and isinstance(elt, ast.Constant):
+                        val = elt.value
+                    if isinstance(val, str):
+                        out.append(val)
     return out
 
 
