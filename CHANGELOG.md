@@ -9,7 +9,28 @@ version rather than a bare commit:
 
 ## [Unreleased]
 
+### Added
+- **Formatting is now gated.** `make lint` runs a new `make fmt-check`
+  (`ruff format --check`) over the same `CODE_ROOTS` the linter and `make fmt`
+  use, so CI reports layout drift instead of leaving it to review. Declared as
+  the `consistent-formatting` practice in `config/practices.json`; the scope is
+  imported from `check_structure.CODE_ROOTS` by
+  `tests/integration/test_gate_scope.py` rather than re-typed, and a companion
+  test proves the corpus is clean, not merely that the recipe exists.
+
+### Changed
+- The whole Python corpus is `ruff format`-clean (109 files reformatted in one
+  behaviour-neutral commit). `make fmt` had shipped from the start but nothing
+  required it to have been run, so the tree had drifted while the gate stayed
+  green. The formatter keeps its **defaults**: the point of this tier is that
+  layout stops being a judgment call. It reflows code only, so the deliberate
+  `E501` deferral for long docstring summaries is untouched.
+
 ### Fixed
+- `scripts/check_practices.py` had a `# noqa: PERF401` that reformatting moved
+  onto an inner line, where it no longer suppressed the diagnostic ruff reports
+  at the call. Re-anchored to the reported line. Worth knowing generally:
+  `RUF100` is deferred here, so an orphaned pragma is not flagged by itself.
 - `_min_copier_version` is `9.1.0`, not `9`. `multiselect:` questions landed in
   copier 9.1.0, so 9.0.1 passed the declared gate and *then* died on
   `Could not convert [] to string` — the mystery error the gate exists to

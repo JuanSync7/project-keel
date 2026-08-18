@@ -24,7 +24,7 @@ CODE_ROOTS := src tests api models mcp agents demo scripts runtimes
 PY_ROOTS := $(wildcard $(CODE_ROOTS))
 
 .PHONY: help new check-python check check-all check-corpus check-openapi check-aad advise check-generic verify test unit integration e2e smoke \
-        lint lint-py lint-fe fmt typecheck typecheck-py typecheck-fe \
+        lint lint-py lint-fe fmt fmt-check typecheck typecheck-py typecheck-fe \
         fe-install run run-api run-web site-data site-static demo agent-surface-schema
 
 help: ## List tasks
@@ -95,7 +95,7 @@ e2e: ## Run end-to-end tests
 smoke: ## Run smoke tests
 	PYTHONPATH=$(PYTHONPATH) $(PY) -m pytest -m smoke
 
-lint: lint-py lint-fe ## Lint everything (Python + frontend)
+lint: lint-py fmt-check lint-fe ## Lint everything (Python + frontend + formatting)
 lint-py: ## Lint Python (ruff, via the selected interpreter)
 	$(PY) -m ruff check $(PY_ROOTS)
 # Each recipe LINE is its own shell, so a bare `... || exit 0` guard on its own line
@@ -115,6 +115,13 @@ lint-fe: ## Lint frontend apps (ESLint) — generic to any FE framework
 
 fmt: ## Format Python (ruff, via the selected interpreter)
 	$(PY) -m ruff format $(PY_ROOTS)
+# The gate half of `fmt`. Formatting is the one readability rule a machine can
+# decide with no judgment at all, so it belongs in `lint` rather than in review;
+# a fix-it command nobody is required to run is decorative (measured: 109 files
+# had drifted while `make verify` stayed green). Read-only ON PURPOSE — a check
+# that writes is not a check, and CI must report drift, not silently repair it.
+fmt-check: ## Check Python formatting without writing (rides `make lint`)
+	$(PY) -m ruff format --check $(PY_ROOTS)
 
 typecheck: typecheck-py typecheck-fe ## Type-check everything (Python + frontend)
 # No paths on the command line ON PURPOSE: an explicit path argument OVERRIDES

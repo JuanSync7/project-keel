@@ -73,6 +73,7 @@ populating `select` + a few strict flags was the highest-leverage first move:
 | `assert_never` in the default branch of `Literal`/`Enum` routing | mypy Never-narrowing (convention) |
 | Every function is fully typed (no untyped defs / calls / decorators) | mypy `strict` (Slice 5) |
 | No blanket `# noqa` / `# type: ignore` — each names its code | ruff `PGH` (Slice 5) |
+| One machine-decided layout (no hand-formatting in review) | `ruff format --check` via `make fmt-check` |
 
 The **Slice-5 widen pass** measured every candidate rule first (Slice 0's
 discipline). It took mypy to full **`strict`** (the backlog was 3 `no-untyped-def`
@@ -81,6 +82,20 @@ current violations — `A`, `FA`, `FURB`, `ICN`, `ISC`, `PERF`, `PGH`, `PIE`,
 `RSE`, `SLOT`, `NPY` — so enabling them is pure future-protection with no churn
 (several pair with a keel practice: `PGH` ↔ the suppression discipline, `SLOT` ↔
 slots-hot-path, `NPY` ↔ the tensor domain).
+
+**Formatting is a gate, not a review topic.** `make fmt` had existed all along,
+but nothing required it to have been *run* — so the tree drifted to 109
+unformatted files while `make verify` stayed green. `make lint` now also runs
+`make fmt-check` (`ruff format --check`) over the same `CODE_ROOTS`, read-only:
+a check that repairs its own subject reports success instead of drift. The
+formatter is left at its **defaults** deliberately — the value of this tier is
+that no one re-litigates layout, and a tuned formatter reopens exactly that
+argument. It reflows *code* only, so the `E501` deferral below still holds.
+
+One thing to know if you suppress a rule: `ruff format` can move a `# noqa` off
+the line whose diagnostic it silenced (it did, in `check_practices.py`). Anchor
+a pragma to the line ruff *reports*, and re-run `make lint` after reformatting —
+`RUF100` is deferred here, so an orphaned pragma is not flagged on its own.
 
 Kept **off as deliberate house-style policy** (not deferred debt): `UP`
 (house style is `%`-formatting), `RUF022` (semantic `__all__` order), `RUF100`

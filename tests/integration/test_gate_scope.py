@@ -101,6 +101,33 @@ def test_ruff_is_clean_over_every_code_root():
     assert r.returncode == 0, r.stdout + r.stderr
 
 
+def test_lint_gates_formatting_over_every_code_root():
+    """`make fmt` REWRITES; nothing ever proved it had been run. A formatter that only
+    exists as a fix-it command is decorative — the tree drifts and the gate stays green
+    (measured: 109 files were unformatted while `make verify` passed). So `lint` must
+    carry the read-only half over the SAME roots, imported from check_structure rather
+    than re-typed, or this becomes a fourth scope list that can drift on its own."""
+    scope = set(_tool_paths(_make_n("lint"), "ruff format"))
+    missing = [r for r in cs.CODE_ROOTS if r not in scope]
+    assert not missing, "`make lint` does not check formatting for %s (scope=%s)" % (
+        missing,
+        sorted(scope),
+    )
+
+
+def test_the_corpus_is_actually_formatted():
+    """Wiring the check proves the recipe; this proves the CORPUS. Same split as
+    test_ruff_is_clean_over_every_code_root — pass 3's lesson was that a ruleset can be
+    provably SELECTED and never provably APPLIED."""
+    r = subprocess.run(
+        [sys.executable, "-m", "ruff", "format", "--check"] + list(cs.CODE_ROOTS),
+        cwd=str(_ROOT),
+        capture_output=True,
+        text=True,
+    )
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
 # --- scope: mypy ------------------------------------------------------------
 
 
