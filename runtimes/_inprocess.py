@@ -4,6 +4,7 @@ layer: backend
 public_api: no
 summary: The default zero-dependency Plan executor; reference semantics for the dry-run guard, durability, HIL, fan-out, and streaming.
 """
+
 from __future__ import annotations
 
 from .contracts import (
@@ -23,7 +24,7 @@ __all__ = ["InProcessRuntime"]
 _GATED = (WRITES, MODEL_CALL)
 _MAX_STEPS = 10000
 _UNSET = object()
-_INTERNAL = ("_interrupt",)   # engine-injected keys never returned to the caller
+_INTERNAL = ("_interrupt",)  # engine-injected keys never returned to the caller
 
 
 def _public(state):
@@ -67,8 +68,17 @@ class InProcessRuntime(Runtime):
 
     name = "inprocess"
 
-    def run(self, plan, state=None, *, execute=False, checkpointer=None,
-            run_key="run", resume=_UNSET, on_event=None):
+    def run(
+        self,
+        plan,
+        state=None,
+        *,
+        execute=False,
+        checkpointer=None,
+        run_key="run",
+        resume=_UNSET,
+        on_event=None,
+    ):
         """Execute (or resume) the plan; return final state, trace, and status."""
         resume_box = {"has": resume is not _UNSET, "value": resume}
         if resume is not _UNSET:
@@ -90,6 +100,7 @@ class InProcessRuntime(Runtime):
                 resume_box["has"] = False
                 return resume_box["value"]
             raise Pause(payload)
+
         st["_interrupt"] = _interrupt
 
         steps = 0
@@ -103,11 +114,20 @@ class InProcessRuntime(Runtime):
                     update = _run_step(step, st)
                 except Pause as p:
                     if checkpointer is not None:
-                        checkpointer.save(run_key, {"cursor": current,
-                                                    "state": _public(st),
-                                                    "trace": _rows(trace)})
-                    return RunResult(state=_public(st), trace=tuple(trace),
-                                     status=PAUSED, interrupt=p.payload)
+                        checkpointer.save(
+                            run_key,
+                            {
+                                "cursor": current,
+                                "state": _public(st),
+                                "trace": _rows(trace),
+                            },
+                        )
+                    return RunResult(
+                        state=_public(st),
+                        trace=tuple(trace),
+                        status=PAUSED,
+                        interrupt=p.payload,
+                    )
                 if update:
                     st.update(update)
                 trace.append(TraceEntry(step.name, step.effect, True, ""))
@@ -118,14 +138,16 @@ class InProcessRuntime(Runtime):
             # steps; snapshotting after read-only steps too is a harmless, simpler
             # over-approximation (a resume just skips re-running cheap steps).
             if checkpointer is not None and current != END:
-                checkpointer.save(run_key, {"cursor": current,
-                                            "state": _public(st),
-                                            "trace": _rows(trace)})
+                checkpointer.save(
+                    run_key,
+                    {"cursor": current, "state": _public(st), "trace": _rows(trace)},
+                )
             steps += 1
             if steps > _MAX_STEPS:
                 raise RuntimeError(
                     "plan %r exceeded %d steps (cyclic plan with no exit?)"
-                    % (plan.name, _MAX_STEPS))
+                    % (plan.name, _MAX_STEPS)
+                )
         if checkpointer is not None:
             checkpointer.clear(run_key)
         return RunResult(state=_public(st), trace=tuple(trace), status=COMPLETED)
@@ -133,5 +155,6 @@ class InProcessRuntime(Runtime):
     @staticmethod
     def _emit(on_event, name, effect, ran, reason):
         if on_event is not None:
-            on_event({"step": name, "effect": effect, "ran": ran,
-                      "skipped_reason": reason})
+            on_event(
+                {"step": name, "effect": effect, "ran": ran, "skipped_reason": reason}
+            )

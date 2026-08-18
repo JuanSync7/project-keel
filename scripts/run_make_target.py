@@ -5,6 +5,7 @@ kind: script
 layer: n/a
 summary: Deterministic doer — run a make target and report a structured pass/fail. The refactor loop (agents/practice_refactor) calls it to GATE every step on `make verify` (or the smallest sufficient target) before accepting a change, so a chunk is only "done" when the gate is green. Vendor-neutral, stdlib, safe to run twice.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -28,16 +29,27 @@ def is_safe_target(name: str) -> bool:
     return bool(_TARGET_RE.match(name or ""))
 
 
-def _default_runner(cmd: Sequence[str], cwd: str | None, timeout: int) -> tuple[int, str]:
+def _default_runner(
+    cmd: Sequence[str], cwd: str | None, timeout: int
+) -> tuple[int, str]:
     proc = subprocess.run(  # noqa: S603 — argv list, never a shell string
-        list(cmd), cwd=cwd, timeout=timeout,
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
+        list(cmd),
+        cwd=cwd,
+        timeout=timeout,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        universal_newlines=True,
+    )
     return proc.returncode, proc.stdout
 
 
-def run_target(target: str, cwd: str | None = None, timeout: int = 1800,
-               extra: Sequence[str] | None = None,
-               runner: Runner | None = None) -> dict[str, object]:
+def run_target(
+    target: str,
+    cwd: str | None = None,
+    timeout: int = 1800,
+    extra: Sequence[str] | None = None,
+    runner: Runner | None = None,
+) -> dict[str, object]:
     """Run ``make <target>`` and return a structured result.
 
     ``extra`` are additional make args/variables (e.g. ``["PY=.venv/bin/python"]``).
@@ -54,33 +66,54 @@ def run_target(target: str, cwd: str | None = None, timeout: int = 1800,
 
 def main(argv: Sequence[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
-        description="Run a make target and report pass/fail — the refactor loop's gate.")
-    ap.add_argument("target", help="make target (e.g. verify, check, lint, typecheck, test)")
+        description="Run a make target and report pass/fail — the refactor loop's gate."
+    )
+    ap.add_argument(
+        "target", help="make target (e.g. verify, check, lint, typecheck, test)"
+    )
     ap.add_argument("--json", action="store_true", help="emit the result as JSON")
     ap.add_argument("--dir", default=None, help="run in this directory (default: cwd)")
-    ap.add_argument("--timeout", type=int, default=1800, help="seconds before giving up")
-    ap.add_argument("--make-arg", action="append", default=[], dest="make_args",
-                    metavar="ARG", help="extra make arg/var, repeatable (e.g. PY=.venv/bin/python)")
+    ap.add_argument(
+        "--timeout", type=int, default=1800, help="seconds before giving up"
+    )
+    ap.add_argument(
+        "--make-arg",
+        action="append",
+        default=[],
+        dest="make_args",
+        metavar="ARG",
+        help="extra make arg/var, repeatable (e.g. PY=.venv/bin/python)",
+    )
     args = ap.parse_args(argv)
 
     if not is_safe_target(args.target):
         sys.stderr.write("run_make_target: unsafe target %r\n" % args.target)
         return 2
     try:
-        result = run_target(args.target, cwd=args.dir, timeout=args.timeout,
-                            extra=args.make_args)
+        result = run_target(
+            args.target, cwd=args.dir, timeout=args.timeout, extra=args.make_args
+        )
     except subprocess.TimeoutExpired:
-        result = {"target": args.target, "ok": False, "returncode": None,
-                  "output": "timed out after %ss" % args.timeout}
+        result = {
+            "target": args.target,
+            "ok": False,
+            "returncode": None,
+            "output": "timed out after %ss" % args.timeout,
+        }
 
     if args.json:
         json.dump(result, sys.stdout, indent=2, sort_keys=True)
         sys.stdout.write("\n")
     else:
         sys.stdout.write(str(result["output"]))
-        sys.stdout.write("\nrun_make_target: `make %s` -> %s (rc=%s)\n"
-                         % (result["target"], "PASS" if result["ok"] else "FAIL",
-                            result["returncode"]))
+        sys.stdout.write(
+            "\nrun_make_target: `make %s` -> %s (rc=%s)\n"
+            % (
+                result["target"],
+                "PASS" if result["ok"] else "FAIL",
+                result["returncode"],
+            )
+        )
     return 0 if result["ok"] else 1
 
 

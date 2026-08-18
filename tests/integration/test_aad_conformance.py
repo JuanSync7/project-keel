@@ -11,6 +11,7 @@ descriptor — it does not fetch others'):
   3. the resolved endpoint actually answers, with the field names the
      descriptor's `io` map declared.
 """
+
 import json
 import re
 import sys
@@ -21,7 +22,7 @@ import pytest
 import optional_deps
 
 optional_deps.importorskip("fastapi", extra="transport")  # optional transport dep
-optional_deps.importorskip("httpx", extra="dev")          # backs FastAPI's TestClient
+optional_deps.importorskip("httpx", extra="dev")  # backs FastAPI's TestClient
 
 from fastapi.testclient import TestClient  # noqa: E402
 

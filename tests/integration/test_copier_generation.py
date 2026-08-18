@@ -4,6 +4,7 @@ kind: tests
 layer: n/a
 summary: `copier` renders keel's root template into a new project — the manifest is tailored to the answers, the un-chosen frontend stack is pruned, CLAUDE.md->AGENT.md symlinks are preserved, keel's own template meta-tests are pruned, and check_structure passes. Skipped on a bare local clone without the optional `template` extra; CI installs `.[dev,template]` and declares the surface required (KEEL_REQUIRED_EXTRAS), so there a missing copier is a hard failure instead of a silent skip.
 """
+
 import json
 import os
 import re
@@ -38,8 +39,10 @@ _ROOT = Path(__file__).resolve().parents[2]
 # `copier.yml` exists, so say so here rather than relying on pruning alone.
 pytestmark = [
     pytest.mark.integration,
-    pytest.mark.skipif(not (_ROOT / "copier.yml").is_file(),
-                       reason="not a copier template — this is a generated project"),
+    pytest.mark.skipif(
+        not (_ROOT / "copier.yml").is_file(),
+        reason="not a copier template — this is a generated project",
+    ),
 ]
 
 # The one licensed difference between .gitignore and its .jinja twin. Kept as
@@ -59,8 +62,10 @@ _TWIN_ANSWERS_BLOCK = (
 # fields that are answers rather than policy. Everything else in that file shapes the
 # gate and must be identical, so it is pinned as text below.
 _PYPROJECT_ANSWER_FIELDS = (
-    ("# Python src-layout. Distribution metadata for Project Keel.",
-     "# Python src-layout. Distribution metadata for {{ project_title }}."),
+    (
+        "# Python src-layout. Distribution metadata for Project Keel.",
+        "# Python src-layout. Distribution metadata for {{ project_title }}.",
+    ),
     ('name = "project_keel"', 'name = "{{ project_slug }}"'),
     ('requires-python = ">=3.10"', 'requires-python = "{{ backend_python }}"'),
 )
@@ -68,14 +73,24 @@ _PYPROJECT_ANSWER_FIELDS = (
 
 def _generate(dest, **data):
     """Render the keel template (from git HEAD) into dest with the given answers."""
-    copier.run_copy(str(_ROOT), str(dest), data=data, defaults=True,
-                    vcs_ref="HEAD", unsafe=False, quiet=True)
+    copier.run_copy(
+        str(_ROOT),
+        str(dest),
+        data=data,
+        defaults=True,
+        vcs_ref="HEAD",
+        unsafe=False,
+        quiet=True,
+    )
 
 
 def _gitignore_lines(path):
     """Ignore-pattern lines only — comments and blanks stripped."""
-    return [ln.strip() for ln in Path(path).read_text().split("\n")
-            if ln.strip() and not ln.strip().startswith("#")]
+    return [
+        ln.strip()
+        for ln in Path(path).read_text().split("\n")
+        if ln.strip() and not ln.strip().startswith("#")
+    ]
 
 
 def _hermetic_git_env(tmp_path):
@@ -100,10 +115,10 @@ def test_generated_project_is_tailored_and_valid(stack, tmp_path):
     frontend = manifest["layers"].get("frontend")
     if stack == "none":
         assert frontend is None
-        assert not (dest / "src" / "frontend").exists()      # pruned entirely
+        assert not (dest / "src" / "frontend").exists()  # pruned entirely
     else:
         assert frontend["stack"] == stack
-        assert frontend["available"] == [stack]              # only the chosen one
+        assert frontend["available"] == [stack]  # only the chosen one
         assert (dest / "src" / "frontend" / stack).is_dir()
         other = "astro" if stack == "react-vite" else "react-vite"
         assert not (dest / "src" / "frontend" / other).exists()  # un-chosen pruned
@@ -115,8 +130,12 @@ def test_generated_project_is_tailored_and_valid(stack, tmp_path):
     assert (dest / ".copier-answers.yml").exists()
 
     # 4. the structural gate passes on the generated tree (the real judge of "valid")
-    r = subprocess.run([sys.executable, "scripts/check_structure.py"],
-                       cwd=str(dest), capture_output=True, text=True)
+    r = subprocess.run(
+        [sys.executable, "scripts/check_structure.py"],
+        cwd=str(dest),
+        capture_output=True,
+        text=True,
+    )
     assert r.returncode == 0, r.stdout + r.stderr
 
 
@@ -125,13 +144,13 @@ def test_default_transports_prune_the_addon_dirs(tmp_path):
     self-contained add-on dirs (api/grpc, api/edge_nginx) are pruned — so `available`
     lists only what actually ships and check_H sees no undeclared api/ dir."""
     dest = tmp_path / "proj"
-    _generate(dest, project_name="demo_proj")   # default transports = [] (no add-ons)
+    _generate(dest, project_name="demo_proj")  # default transports = [] (no add-ons)
     manifest = json.loads((dest / "config" / "project.json").read_text())
     assert manifest["transports"]["enabled"] == ["rest", "mcp"]
-    assert set(manifest["transports"]["available"]) == {"rest", "mcp"}   # add-ons pruned
-    assert (dest / "api" / "rest_fastapi").is_dir()                      # foundation ships
+    assert set(manifest["transports"]["available"]) == {"rest", "mcp"}  # add-ons pruned
+    assert (dest / "api" / "rest_fastapi").is_dir()  # foundation ships
     assert (dest / "mcp").is_dir()
-    assert not (dest / "api" / "grpc").exists()                         # add-on pruned
+    assert not (dest / "api" / "grpc").exists()  # add-on pruned
     assert not (dest / "api" / "edge_nginx").exists()
 
 
@@ -143,11 +162,15 @@ def test_selected_addon_transport_ships_and_is_declared(tmp_path):
     manifest = json.loads((dest / "config" / "project.json").read_text())
     assert manifest["transports"]["enabled"] == ["rest", "mcp", "grpc"]
     assert set(manifest["transports"]["available"]) == {"rest", "mcp", "grpc"}
-    assert (dest / "api" / "grpc").is_dir()                             # selected -> ships
-    assert not (dest / "api" / "edge_nginx").exists()                  # un-selected -> pruned
+    assert (dest / "api" / "grpc").is_dir()  # selected -> ships
+    assert not (dest / "api" / "edge_nginx").exists()  # un-selected -> pruned
     # the tailored tree still passes its own structural gate
-    r = subprocess.run([sys.executable, "scripts/check_structure.py"],
-                       cwd=str(dest), capture_output=True, text=True)
+    r = subprocess.run(
+        [sys.executable, "scripts/check_structure.py"],
+        cwd=str(dest),
+        capture_output=True,
+        text=True,
+    )
     assert r.returncode == 0, r.stdout + r.stderr
 
 
@@ -158,8 +181,14 @@ def test_nondefault_name_and_python_propagate_and_stay_valid(tmp_path):
     left at '>=3.10' the pyproject already matched by luck, so the twin was never
     exercised. Guards the project_slug/project_title derivation and the pyproject twin."""
     dest = tmp_path / "proj"
-    _generate(dest, project_name="Acme Widgets", frontend_stack="astro",
-              backend_python=">=3.11", transports=["grpc"], profiles=["ai"])
+    _generate(
+        dest,
+        project_name="Acme Widgets",
+        frontend_stack="astro",
+        backend_python=">=3.11",
+        transports=["grpc"],
+        profiles=["ai"],
+    )
 
     manifest = json.loads((dest / "config" / "project.json").read_text())
     pyproject = (dest / "pyproject.toml").read_text()
@@ -176,8 +205,12 @@ def test_nondefault_name_and_python_propagate_and_stay_valid(tmp_path):
     assert "\ntitle: Acme Widgets\n" in readme
 
     # the real judge: the generated tree passes its own structural gate
-    r = subprocess.run([sys.executable, "scripts/check_structure.py"],
-                       cwd=str(dest), capture_output=True, text=True)
+    r = subprocess.run(
+        [sys.executable, "scripts/check_structure.py"],
+        cwd=str(dest),
+        capture_output=True,
+        text=True,
+    )
     assert r.returncode == 0, r.stdout + r.stderr
 
 
@@ -189,6 +222,7 @@ def test_nondefault_name_and_python_propagate_and_stay_valid(tmp_path):
 # no answers file at all, and `copier update` fails outright with "Cannot update
 # because cannot obtain old template references from `.copier-answers.yml`".
 # So the assertion that matters is TRACKED-BY-GIT, not merely exists-on-disk.
+
 
 def test_generated_project_commits_its_copier_answers(tmp_path):
     """A generated project must TRACK .copier-answers.yml, or every clone of it
@@ -206,8 +240,9 @@ def test_generated_project_commits_its_copier_answers(tmp_path):
     for argv in (["git", "init", "-q"], ["git", "add", "-A"]):
         r = subprocess.run(argv, cwd=str(dest), capture_output=True, text=True, env=env)
         assert r.returncode == 0, r.stdout + r.stderr
-    tracked = subprocess.run(["git", "ls-files"], cwd=str(dest),
-                             capture_output=True, text=True, env=env).stdout.split("\n")
+    tracked = subprocess.run(
+        ["git", "ls-files"], cwd=str(dest), capture_output=True, text=True, env=env
+    ).stdout.split("\n")
     assert ".copier-answers.yml" in tracked
 
 
@@ -224,12 +259,15 @@ def test_generated_project_starts_its_own_changelog(tmp_path):
     # not leak is keel's release HISTORY and its internals-as-your-changes.
     for leaked in ("project_keel", ".gitignore.jinja", "_min_copier_version"):
         assert leaked not in text, (
-            "keel's own changelog content leaked into the generated project: %r" % leaked)
+            "keel's own changelog content leaked into the generated project: %r"
+            % leaked
+        )
     releases = [ln for ln in text.splitlines() if ln.startswith("## [")]
     assert releases == ["## [Unreleased]"], (
-        "a generated project must start with no releases of its own, got: %r" % releases)
-    assert "# Acme Widgets" in text          # it is the PROJECT's changelog
-    assert "project-keel" in text            # ...that records where it came from
+        "a generated project must start with no releases of its own, got: %r" % releases
+    )
+    assert "# Acme Widgets" in text  # it is the PROJECT's changelog
+    assert "project-keel" in text  # ...that records where it came from
 
 
 def test_generated_project_does_not_ship_keels_template_meta_tests(tmp_path):
@@ -241,10 +279,14 @@ def test_generated_project_does_not_ship_keels_template_meta_tests(tmp_path):
     dest = tmp_path / "proj"
     _generate(dest, project_name="demo_proj", frontend_stack="none")
 
-    leaked = sorted(p.name for p in (dest / "tests" / "integration").glob("test_copier_*.py"))
+    leaked = sorted(
+        p.name for p in (dest / "tests" / "integration").glob("test_copier_*.py")
+    )
     assert leaked == [], (
         "keel's own template meta-tests shipped into the generated project: %s — they "
-        "assert on copier.yml/.jinja twins that a generated project does not have" % leaked)
+        "assert on copier.yml/.jinja twins that a generated project does not have"
+        % leaked
+    )
     # ...and the rest of the suite is still there (the prune is surgical, not a
     # `tests/integration` wipe).
     assert (dest / "tests" / "integration" / "test_showcase_api.py").is_file()
@@ -270,7 +312,7 @@ def test_gitignore_twin_stays_pinned_to_keels_own(tmp_path):
     dest = tmp_path / "proj"
     _generate(dest, project_name="demo_proj", frontend_stack="none")
     assert (dest / ".gitignore").read_text() == twin_text
-    assert not (dest / ".gitignore.jinja").exists()   # the suffix is consumed
+    assert not (dest / ".gitignore.jinja").exists()  # the suffix is consumed
 
 
 # --- the gate a DESCENDANT gets -------------------------------------------------
@@ -281,6 +323,7 @@ def test_gitignore_twin_stays_pinned_to_keels_own(tmp_path):
 # `pyproject.toml.jinja`. Widening one side and not the other hands every
 # descendant a gate that is red on arrival. The tests below judge the generated
 # project by ITS OWN shipped config, so they fail whichever side drifts.
+
 
 def _code_roots_from_makefile(makefile_text):
     """The lint scope the generated Makefile actually ships, derived not re-typed.
@@ -305,17 +348,25 @@ def test_a_generated_project_is_lint_clean_on_arrival(tmp_path):
     dest = tmp_path / "proj"
     _generate(dest, project_name="demo_proj", frontend_stack="none")
 
-    roots = [r for r in _code_roots_from_makefile((dest / "Makefile").read_text())
-             if (dest / r).exists()]
-    assert "scripts" in roots and "src" in roots, roots   # not a vacuous empty scope
+    roots = [
+        r
+        for r in _code_roots_from_makefile((dest / "Makefile").read_text())
+        if (dest / r).exists()
+    ]
+    assert "scripts" in roots and "src" in roots, roots  # not a vacuous empty scope
 
     # run from the generated tree so ruff reads the GENERATED pyproject.toml
-    r = subprocess.run([sys.executable, "-m", "ruff", "check", *roots],
-                       cwd=str(dest), capture_output=True, text=True)
+    r = subprocess.run(
+        [sys.executable, "-m", "ruff", "check", *roots],
+        cwd=str(dest),
+        capture_output=True,
+        text=True,
+    )
     assert r.returncode == 0, (
         "a freshly generated project fails its own `make lint-py` over the roots its "
         "own Makefile ships (%s) — pyproject.toml.jinja has drifted from the Makefile:\n%s"
-        % (" ".join(roots), r.stdout + r.stderr))
+        % (" ".join(roots), r.stdout + r.stderr)
+    )
 
 
 def test_pyproject_twin_stays_pinned_to_keels_own():
@@ -341,7 +392,8 @@ def test_pyproject_twin_stays_pinned_to_keels_own():
         assert keel_text.count(keel_literal) == 1, (
             "%r is no longer a unique line in pyproject.toml — re-derive the "
             "substitution list rather than letting the twin check go vacuous"
-            % keel_literal)
+            % keel_literal
+        )
         expected = expected.replace(keel_literal, rendered)
 
     assert twin_text == expected, (
@@ -362,7 +414,8 @@ def _readme_deletable_dirs(project):
     hit = _DELETE_ADVICE.search(text)
     assert hit, (
         "the generated README no longer carries the 'delete any optional dirs' "
-        "sentence this test verifies; re-derive it rather than deleting the pin")
+        "sentence this test verifies; re-derive it rather than deleting the pin"
+    )
     return [name.rstrip("/") for name in _BACKTICKED.findall(hit.group(1))]
 
 
@@ -383,17 +436,25 @@ def test_the_readmes_delete_advice_leaves_a_green_gate(tmp_path):
     for name in deletable:
         assert (dest / name).exists(), (
             "the README offers to delete %r, which a generated project does not "
-            "even have" % name)
+            "even have" % name
+        )
         shutil.rmtree(str(dest / name))
 
-    r = subprocess.run([sys.executable, "scripts/check_structure.py"],
-                       cwd=str(dest), capture_output=True, text=True)
+    r = subprocess.run(
+        [sys.executable, "scripts/check_structure.py"],
+        cwd=str(dest),
+        capture_output=True,
+        text=True,
+    )
     assert r.returncode == 0, (
         "following the README's own delete advice breaks the generated project's "
-        "gate:\n" + r.stdout + r.stderr)
+        "gate:\n" + r.stdout + r.stderr
+    )
 
 
-def test_deleting_a_manifest_declared_dir_is_caught_and_the_documented_fix_works(tmp_path):
+def test_deleting_a_manifest_declared_dir_is_caught_and_the_documented_fix_works(
+    tmp_path,
+):
     """The other half: `models/` is NOT free to delete, and the README says so.
 
     Two claims, both load-bearing. (1) The caveat is real — deleting `models/`
@@ -405,14 +466,20 @@ def test_deleting_a_manifest_declared_dir_is_caught_and_the_documented_fix_works
     _generate(dest, project_name="demo_proj", frontend_stack="none")
     assert "models" not in _readme_deletable_dirs(dest), (
         "the README lists `models/` as free to delete, but the manifest declares "
-        "the adapters that live there — that advice reddens the gate")
+        "the adapters that live there — that advice reddens the gate"
+    )
 
     shutil.rmtree(str(dest / "models"))
-    r = subprocess.run([sys.executable, "scripts/check_structure.py"],
-                       cwd=str(dest), capture_output=True, text=True)
+    r = subprocess.run(
+        [sys.executable, "scripts/check_structure.py"],
+        cwd=str(dest),
+        capture_output=True,
+        text=True,
+    )
     assert r.returncode != 0, (
         "deleting `models/` no longer fails the gate, so the README's caveat about "
-        "clearing the manifest is now warning about nothing — re-derive it")
+        "clearing the manifest is now warning about nothing — re-derive it"
+    )
 
     manifest = dest / "config" / "project.json"
     data = json.loads(manifest.read_text())
@@ -420,11 +487,16 @@ def test_deleting_a_manifest_declared_dir_is_caught_and_the_documented_fix_works
     data["models"]["default"] = None
     manifest.write_text(json.dumps(data, indent=2) + "\n")
 
-    r = subprocess.run([sys.executable, "scripts/check_structure.py"],
-                       cwd=str(dest), capture_output=True, text=True)
+    r = subprocess.run(
+        [sys.executable, "scripts/check_structure.py"],
+        cwd=str(dest),
+        capture_output=True,
+        text=True,
+    )
     assert r.returncode == 0, (
         "the fix the README documents for a deleted `models/` does not produce a "
-        "green gate:\n" + r.stdout + r.stderr)
+        "green gate:\n" + r.stdout + r.stderr
+    )
 
 
 # An `_exclude` entry is ANSWER-DRIVEN when it is wrapped in a jinja condition;
@@ -436,8 +508,11 @@ _JINJA_TAG = re.compile(r"\{%.*?%\}")
 def _answer_driven_prunes():
     """(copier.yml config, [(entry, path)] for each conditional `_exclude` entry)."""
     cfg = yaml.safe_load((_ROOT / "copier.yml").read_text())
-    prunes = [(entry, _JINJA_TAG.sub("", entry).strip())
-              for entry in cfg.get("_exclude", []) if "{%" in entry]
+    prunes = [
+        (entry, _JINJA_TAG.sub("", entry).strip())
+        for entry in cfg.get("_exclude", [])
+        if "{%" in entry
+    ]
     return cfg, [(entry, path) for entry, path in prunes if path]
 
 
@@ -462,19 +537,25 @@ def test_every_answer_driven_prune_has_a_retirement_migration():
     assert prunes, (
         "no conditional _exclude entries found — either copier.yml stopped pruning "
         "by answer or the syntax moved; re-derive this check rather than leaving it "
-        "vacuously green")
+        "vacuously green"
+    )
 
     commands = " ".join(
         m["command"] if isinstance(m, dict) else str(m)
-        for m in cfg.get("_migrations", []))
+        for m in cfg.get("_migrations", [])
+    )
     # Word-boundary, not substring: plain `in` would let the `src/frontend/react-vite`
     # migration vouch for the separate `src/frontend` prune and pass vacuously.
-    missing = [(entry, path) for entry, path in prunes
-               if not re.search(r"(?<![\w./-])%s(?![\w./-])" % re.escape(path), commands)]
+    missing = [
+        (entry, path)
+        for entry, path in prunes
+        if not re.search(r"(?<![\w./-])%s(?![\w./-])" % re.escape(path), commands)
+    ]
     assert not missing, (
         "these _exclude entries prune a path at generation but no _migrations entry "
         "retires it on update, so a project that re-answers keeps it forever:\n"
-        + "\n".join("  %s   (path: %s)" % (entry, path) for entry, path in missing))
+        + "\n".join("  %s   (path: %s)" % (entry, path) for entry, path in missing)
+    )
 
 
 # Shipped-verbatim surfaces that name paths. Each ships into every generated
@@ -511,20 +592,32 @@ def test_no_shipped_file_points_at_a_frontend_the_answers_pruned(stack, tmp_path
     offenders = []
     for surface in _VERBATIM_PATH_SURFACES:
         root = dest / surface
-        paths = [root] if root.is_file() else sorted(
-            p for p in root.rglob("*") if p.is_file() and p.suffix in (".yml", ".yaml", ".py"))
+        paths = (
+            [root]
+            if root.is_file()
+            else sorted(
+                p
+                for p in root.rglob("*")
+                if p.is_file() and p.suffix in (".yml", ".yaml", ".py")
+            )
+        )
         for path in paths:
-            code = "\n".join(ln for ln in path.read_text().splitlines()
-                             if not ln.lstrip().startswith("#"))
+            code = "\n".join(
+                ln
+                for ln in path.read_text().splitlines()
+                if not ln.lstrip().startswith("#")
+            )
             offenders.extend(
                 "%s -> src/frontend/%s" % (path.relative_to(dest), referenced)
                 for referenced in sorted(set(_FRONTEND_REF.findall(code)))
-                if not (dest / "src" / "frontend" / referenced).is_dir())
+                if not (dest / "src" / "frontend" / referenced).is_dir()
+            )
 
     assert offenders == [], (
         "with frontend_stack=%r these shipped-verbatim files still point at a "
         "frontend directory copier pruned, so the generated project fails the "
-        "moment that recipe runs:\n  %s" % (stack, "\n  ".join(sorted(offenders))))
+        "moment that recipe runs:\n  %s" % (stack, "\n  ".join(sorted(offenders)))
+    )
 
 
 def test_meta_tests_neutralise_themselves_in_a_project_that_still_has_them(tmp_path):
@@ -548,11 +641,12 @@ def test_meta_tests_neutralise_themselves_in_a_project_that_still_has_them(tmp_p
     assert metas, "no meta-test modules found — has the naming convention moved?"
     for meta in metas:
         assert not (dest / "tests" / "integration" / meta.name).exists(), (
-            "%s was not pruned at generation" % meta.name)
+            "%s was not pruned at generation" % meta.name
+        )
         shutil.copy2(str(meta), str(dest / "tests" / "integration" / meta.name))
 
     env = dict(os.environ)
-    env[optional_deps.ENV_VAR] = "template,dev,transport"   # as CI declares it
+    env[optional_deps.ENV_VAR] = "template,dev,transport"  # as CI declares it
     env["PYTHONPATH"] = "src:."
     # Only the meta-modules. The generated project's OTHER integration tests read a
     # corpus that `make site-data` builds, so collecting the whole directory here
@@ -560,15 +654,21 @@ def test_meta_tests_neutralise_themselves_in_a_project_that_still_has_them(tmp_p
     r = subprocess.run(
         [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider"]
         + ["tests/integration/%s" % m.name for m in metas],
-        cwd=str(dest), capture_output=True, text=True, env=env)
+        cwd=str(dest),
+        capture_output=True,
+        text=True,
+        env=env,
+    )
 
     assert r.returncode == 0, (
         "keel's template meta-tests FAIL inside a generated project that still "
         "carries them, so any descendant predating the prune goes red on its next "
-        "`copier update`:\n" + r.stdout[-4000:] + r.stderr[-2000:])
+        "`copier update`:\n" + r.stdout[-4000:] + r.stderr[-2000:]
+    )
     assert "skipped" in r.stdout, (
         "expected the meta-tests to skip themselves in a non-template tree:\n"
-        + r.stdout[-2000:])
+        + r.stdout[-2000:]
+    )
 
 
 # ---- the `showcase` question -------------------------------------------------
@@ -593,13 +693,19 @@ _SHOWCASE_PATHS = (
 # while a module-level import of a pruned package is an ImportError at startup.
 _SHOWCASE_IMPORT = re.compile(
     r"^(?:from\s+backend\.showcase\b|import\s+backend\.showcase\b"
-    r"|from\s+showcase_api\b|import\s+showcase_api\b)", re.MULTILINE)
+    r"|from\s+showcase_api\b|import\s+showcase_api\b)",
+    re.MULTILINE,
+)
 
 
 def _structure_gate(project):
     """Run the generated project's OWN deterministic gate; return the CompletedProcess."""
-    return subprocess.run([sys.executable, "scripts/check_structure.py"],
-                          cwd=str(project), capture_output=True, text=True)
+    return subprocess.run(
+        [sys.executable, "scripts/check_structure.py"],
+        cwd=str(project),
+        capture_output=True,
+        text=True,
+    )
 
 
 def test_the_showcase_ships_when_it_is_kept(tmp_path):
@@ -614,7 +720,9 @@ def test_the_showcase_ships_when_it_is_kept(tmp_path):
     assert not missing, "kept the showcase but these are absent: %s" % missing
 
 
-def test_declining_the_showcase_prunes_the_whole_surface_and_leaves_a_green_gate(tmp_path):
+def test_declining_the_showcase_prunes_the_whole_surface_and_leaves_a_green_gate(
+    tmp_path,
+):
     """`showcase=false` must remove the read model AND everything that only exists
     to serve it, then still pass the project's own structural gate.
 
@@ -624,8 +732,9 @@ def test_declining_the_showcase_prunes_the_whole_surface_and_leaves_a_green_gate
     longer exist. Both are green at generation and red the first time anyone runs
     the thing, which is why the gate is asserted here rather than trusted."""
     dest = tmp_path / "proj"
-    _generate(dest, project_name="demo_proj", frontend_stack="react-vite",
-              showcase=False)
+    _generate(
+        dest, project_name="demo_proj", frontend_stack="react-vite", showcase=False
+    )
 
     survivors = [p for p in _SHOWCASE_PATHS if (dest / p).exists()]
     assert not survivors, "declined the showcase but these survived: %s" % survivors
@@ -633,11 +742,18 @@ def test_declining_the_showcase_prunes_the_whole_surface_and_leaves_a_green_gate
     # The surfaces that do NOT depend on it must be untouched — measured, not assumed:
     # nothing under aad/, mcp/, agents/ or the corpus scripts imports backend.showcase.
     # They read wiki/corpus.json, which the showcase reads too but does not own.
-    for kept in ("api/rest_fastapi/aad", "mcp", "agents", "scripts/query_corpus.py",
-                 "scripts/jobs/build_corpus.py", "src/backend/example_feature",
-                 "src/frontend/react-vite"):
+    for kept in (
+        "api/rest_fastapi/aad",
+        "mcp",
+        "agents",
+        "scripts/query_corpus.py",
+        "scripts/jobs/build_corpus.py",
+        "src/backend/example_feature",
+        "src/frontend/react-vite",
+    ):
         assert (dest / kept).exists(), (
-            "%s does not depend on the showcase but was pruned with it" % kept)
+            "%s does not depend on the showcase but was pruned with it" % kept
+        )
 
     r = _structure_gate(dest)
     assert r.returncode == 0, r.stdout + r.stderr
@@ -663,7 +779,8 @@ def test_declining_the_showcase_leaves_nothing_importing_it(tmp_path):
             offenders.append(str(path.relative_to(dest)))
     assert not offenders, (
         "the showcase was declined but these still import it, so they raise "
-        "ImportError in the generated project: %s" % offenders)
+        "ImportError in the generated project: %s" % offenders
+    )
 
 
 def test_declining_the_showcase_while_keeping_its_own_ui_is_refused(tmp_path):
@@ -676,12 +793,14 @@ def test_declining_the_showcase_while_keeping_its_own_ui_is_refused(tmp_path):
     passes have been closing; an answer the template cannot honour should say so."""
     dest = tmp_path / "proj"
     with pytest.raises(ValueError) as refusal:
-        _generate(dest, project_name="demo_proj", frontend_stack="astro",
-                  showcase=False)
+        _generate(
+            dest, project_name="demo_proj", frontend_stack="astro", showcase=False
+        )
     message = str(refusal.value)
     assert "showcase" in message and "astro" in message, message
     assert "react-vite" in message or "none" in message, (
-        "the refusal should name a frontend answer that works: %s" % message)
+        "the refusal should name a frontend answer that works: %s" % message
+    )
 
 
 # ---- keel's own name must not reach the user's project -----------------------
@@ -691,8 +810,17 @@ def test_declining_the_showcase_while_keeping_its_own_ui_is_refused(tmp_path):
 # where it was being served from: `FastAPI(title="Project Keel API")` and the
 # showcase overview's hardcoded `title="project_keel"`.
 _KEEL_NAME = re.compile(r"project[ _-]keel", re.IGNORECASE)
-_CODE_ROOTS_FOR_BRANDING = ("src", "api", "mcp", "scripts", "agents", "config",
-                            "models", "runtimes", "evals")
+_CODE_ROOTS_FOR_BRANDING = (
+    "src",
+    "api",
+    "mcp",
+    "scripts",
+    "agents",
+    "config",
+    "models",
+    "runtimes",
+    "evals",
+)
 
 
 def test_no_code_the_generated_project_runs_carries_the_templates_name(tmp_path):
@@ -716,18 +844,20 @@ def test_no_code_the_generated_project_runs_carries_the_templates_name(tmp_path)
             if {"node_modules", "__pycache__", "dist", ".astro"} & set(path.parts):
                 continue
             if path.suffix in (".md", ".png", ".svg", ".ico", ".lock"):
-                continue        # docs/READMEs may name the template they describe
+                continue  # docs/READMEs may name the template they describe
             try:
                 text = path.read_text(encoding="utf-8")
             except (UnicodeDecodeError, OSError):
                 continue
             for lineno, line in enumerate(text.split("\n"), 1):
                 if _KEEL_NAME.search(line):
-                    offenders.append("%s:%d: %s"
-                                     % (path.relative_to(dest), lineno, line.strip()))
+                    offenders.append(
+                        "%s:%d: %s" % (path.relative_to(dest), lineno, line.strip())
+                    )
     assert not offenders, (
         "a project generated as 'Acme Widgets' still carries the template's own "
-        "name in code it runs:\n" + "\n".join(offenders))
+        "name in code it runs:\n" + "\n".join(offenders)
+    )
 
 
 def test_the_rest_api_is_titled_after_the_project_not_the_template(tmp_path):
@@ -744,7 +874,10 @@ def test_the_rest_api_is_titled_after_the_project_not_the_template(tmp_path):
     out = tmp_path / "spec.json"
     r = subprocess.run(
         [sys.executable, "api/rest_fastapi/export_openapi.py", "--out", str(out)],
-        cwd=str(dest), capture_output=True, text=True)
+        cwd=str(dest),
+        capture_output=True,
+        text=True,
+    )
     assert r.returncode == 0, r.stdout + r.stderr
     spec = json.loads(out.read_text())
     assert spec["info"]["title"] == "Acme Widgets API", spec["info"]
@@ -766,18 +899,26 @@ def test_the_generated_project_has_a_green_openapi_check_on_arrival(tmp_path):
 
     assert not (dest / "api" / "rest_fastapi" / "openapi.json").exists(), (
         "keel's own openapi.json shipped verbatim; it names keel and cannot match "
-        "the generated app")
+        "the generated app"
+    )
     r = subprocess.run(
         [sys.executable, "api/rest_fastapi/export_openapi.py", "--check"],
-        cwd=str(dest), capture_output=True, text=True)
+        cwd=str(dest),
+        capture_output=True,
+        text=True,
+    )
     assert r.returncode == 0, (
-        "check-openapi is red on a freshly generated project:\n" + r.stdout + r.stderr)
+        "check-openapi is red on a freshly generated project:\n" + r.stdout + r.stderr
+    )
 
     # ...and once the project exports one, drift is caught again — the check must not
     # have been made green by giving up.
     export = subprocess.run(
         [sys.executable, "api/rest_fastapi/export_openapi.py"],
-        cwd=str(dest), capture_output=True, text=True)
+        cwd=str(dest),
+        capture_output=True,
+        text=True,
+    )
     assert export.returncode == 0, export.stdout + export.stderr
     spec_path = dest / "api" / "rest_fastapi" / "openapi.json"
     spec = json.loads(spec_path.read_text())
@@ -785,12 +926,18 @@ def test_the_generated_project_has_a_green_openapi_check_on_arrival(tmp_path):
     spec_path.write_text(json.dumps(spec, indent=2, sort_keys=True) + "\n")
     stale = subprocess.run(
         [sys.executable, "api/rest_fastapi/export_openapi.py", "--check"],
-        cwd=str(dest), capture_output=True, text=True)
+        cwd=str(dest),
+        capture_output=True,
+        text=True,
+    )
     assert stale.returncode == 1, (
-        "a drifted openapi.json passed --check:\n" + stale.stdout + stale.stderr)
+        "a drifted openapi.json passed --check:\n" + stale.stdout + stale.stderr
+    )
 
 
-def test_the_rest_app_still_starts_and_drops_its_routes_when_the_showcase_is_declined(tmp_path):
+def test_the_rest_app_still_starts_and_drops_its_routes_when_the_showcase_is_declined(
+    tmp_path,
+):
     """The behavioural half of the dangling-import check, and the stronger one.
 
     A scan proves no module-level import survives; this proves the app the project
@@ -799,21 +946,27 @@ def test_the_rest_app_still_starts_and_drops_its_routes_when_the_showcase_is_dec
     satisfied by an app that mounts nothing at all."""
     optional_deps.importorskip("fastapi", extra="transport")
     dest = tmp_path / "proj"
-    _generate(dest, project_name="demo_proj", frontend_stack="react-vite",
-              showcase=False)
+    _generate(
+        dest, project_name="demo_proj", frontend_stack="react-vite", showcase=False
+    )
 
     out = tmp_path / "spec.json"
     r = subprocess.run(
         [sys.executable, "api/rest_fastapi/export_openapi.py", "--out", str(out)],
-        cwd=str(dest), capture_output=True, text=True)
+        cwd=str(dest),
+        capture_output=True,
+        text=True,
+    )
     assert r.returncode == 0, (
-        "the REST app does not build without the showcase:\n" + r.stdout + r.stderr)
+        "the REST app does not build without the showcase:\n" + r.stdout + r.stderr
+    )
 
     paths = set(json.loads(out.read_text())["paths"])
-    assert {"/health", "/things"} <= paths, paths      # the skeleton is intact
+    assert {"/health", "/things"} <= paths, paths  # the skeleton is intact
     showcase_routes = sorted(p for p in paths if p.startswith("/api/"))
     assert not showcase_routes, (
-        "declined the showcase but its routes are still served: %s" % showcase_routes)
+        "declined the showcase but its routes are still served: %s" % showcase_routes
+    )
 
 
 # Paths every project needs regardless of any answer. A migration that names one of
@@ -822,8 +975,8 @@ def test_the_rest_app_still_starts_and_drops_its_routes_when_the_showcase_is_dec
 # assertion because the alternative — generating a project, building the corpus, and
 # updating it — costs minutes to prove a property that is decidable from the config.
 _MUST_SURVIVE_ANY_ANSWER = (
-    "wiki/corpus.json",          # read by mcp/, 3 of 4 agents, scripts/query_corpus.py
-    "config/project.json",       # the manifest every check reads
+    "wiki/corpus.json",  # read by mcp/, 3 of 4 agents, scripts/query_corpus.py
+    "config/project.json",  # the manifest every check reads
     "scripts/check_structure.py",
     "src/backend/example_feature",
     "Makefile",
@@ -842,10 +995,17 @@ def test_no_retirement_migration_deletes_something_every_project_needs():
     cfg, _ = _answer_driven_prunes()
     commands = " ".join(
         m["command"] if isinstance(m, dict) else str(m)
-        for m in cfg.get("_migrations", []))
-    assert commands, "no _migrations found — re-derive this check rather than passing vacuously"
-    doomed = [p for p in _MUST_SURVIVE_ANY_ANSWER
-              if re.search(r"(?<![\w./-])%s(?![\w./-])" % re.escape(p), commands)]
+        for m in cfg.get("_migrations", [])
+    )
+    assert commands, (
+        "no _migrations found — re-derive this check rather than passing vacuously"
+    )
+    doomed = [
+        p
+        for p in _MUST_SURVIVE_ANY_ANSWER
+        if re.search(r"(?<![\w./-])%s(?![\w./-])" % re.escape(p), commands)
+    ]
     assert not doomed, (
         "these paths are needed whatever the answers, but a _migrations command "
-        "deletes them from a real project's working tree: %s" % doomed)
+        "deletes them from a real project's working tree: %s" % doomed
+    )

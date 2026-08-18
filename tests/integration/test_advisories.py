@@ -4,6 +4,7 @@ kind: tests
 layer: n/a
 summary: check_practices scans the real tree (config + src/agents) and always exits 0 — an advisory reports, it never gates (CONVENTIONS §18).
 """
+
 import sys
 from pathlib import Path
 

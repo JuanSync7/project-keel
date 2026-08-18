@@ -4,6 +4,7 @@ layer: backend
 public_api: no
 summary: Thin FastAPI router exposing backend.showcase as JSON + the agent llms.txt files.
 """
+
 from __future__ import annotations
 
 import os
@@ -24,14 +25,15 @@ def build_showcase_router(root: str) -> APIRouter:
     wiki (/api/*) and the agent front door (/llms.txt) stay in sync with the repo.
     """
     router = APIRouter()
-    _watched = (os.path.join(root, "config", "project.json"),
-                os.path.join(root, "config", "practices.json"),
-                os.path.join(root, "wiki", "corpus.json"))
+    _watched = (
+        os.path.join(root, "config", "project.json"),
+        os.path.join(root, "config", "practices.json"),
+        os.path.join(root, "wiki", "corpus.json"),
+    )
     _cache: dict = {}
 
     def current():
-        sig = tuple(os.path.getmtime(f) if os.path.exists(f) else 0.0
-                    for f in _watched)
+        sig = tuple(os.path.getmtime(f) if os.path.exists(f) else 0.0 for f in _watched)
         if _cache.get("sig") != sig:
             _cache["sig"] = sig
             _cache["showcase"] = load_showcase(root)
@@ -84,12 +86,16 @@ def build_showcase_router(root: str) -> APIRouter:
         if detail is None:
             raise HTTPException(status_code=404, detail="unknown node %r" % node_id)
         payload = to_jsonable(detail)
-        payload["markdown"] = sc.markdown(node_id)   # renderable body, live from the file
+        payload["markdown"] = sc.markdown(
+            node_id
+        )  # renderable body, live from the file
         return payload
 
     @router.get("/api/search")
-    def search(q: str = Query("", description="free-text query"),
-               limit: int = Query(10, ge=1, le=50)):
+    def search(
+        q: str = Query("", description="free-text query"),
+        limit: int = Query(10, ge=1, le=50),
+    ):
         return to_jsonable(list(current().search(q, limit)))
 
     # -- agent front door (llms.txt convention), served at the site root -----

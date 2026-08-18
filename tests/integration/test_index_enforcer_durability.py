@@ -4,6 +4,7 @@ kind: tests
 layer: backend
 summary: A crash mid-fill resumes via the checkpointer; already-filled gaps are not re-filled and authored summaries are untouched.
 """
+
 import json
 import sys
 from pathlib import Path
@@ -23,18 +24,27 @@ _BRAIN = "agents.index_enforcer._brain"
 
 
 def _corpus():
-    return {"nodes": [
-        {"node_id": "n1", "title": "a", "path": "p", "text_excerpt": "x"},
-        {"node_id": "n2", "title": "b", "path": "p", "text_excerpt": "x"},
-        {"node_id": "n3", "title": "c", "path": "p", "text_excerpt": "x"},
-        {"node_id": "keep", "title": "k", "path": "p",
-         "summary": "AUTHORED", "summary_source": "authored"},
-    ]}
+    return {
+        "nodes": [
+            {"node_id": "n1", "title": "a", "path": "p", "text_excerpt": "x"},
+            {"node_id": "n2", "title": "b", "path": "p", "text_excerpt": "x"},
+            {"node_id": "n3", "title": "c", "path": "p", "text_excerpt": "x"},
+            {
+                "node_id": "keep",
+                "title": "k",
+                "path": "p",
+                "summary": "AUTHORED",
+                "summary_source": "authored",
+            },
+        ]
+    }
 
 
 def _fake_run(args):
     # clean gate + no-op build/link; accountability returns no owner gaps
-    return (0, "[]", "") if "accountability_report.py" in " ".join(args) else (0, "", "")
+    return (
+        (0, "[]", "") if "accountability_report.py" in " ".join(args) else (0, "", "")
+    )
 
 
 @pytest.mark.parametrize("engine", ["inprocess", "langgraph"])
@@ -49,7 +59,7 @@ def test_crash_mid_fill_resumes_without_refilling(engine, tmp_path, monkeypatch)
     class FakeModel:
         def run(self, prompt):
             calls["n"] += 1
-            if calls["n"] == 2:          # SIGKILL-ish on the 2nd fill
+            if calls["n"] == 2:  # SIGKILL-ish on the 2nd fill
                 raise RuntimeError("crash mid-fill")
             return "GEN-%d" % calls["n"]
 
@@ -58,13 +68,19 @@ def test_crash_mid_fill_resumes_without_refilling(engine, tmp_path, monkeypatch)
 
     # First attempt crashes after filling exactly one gap.
     with pytest.raises(RuntimeError):
-        enforce(execute=True, fix_gaps=True, root=str(tmp_path),
-                runtime=engine, run_key="job")
-    assert calls["n"] == 2               # n1 filled, n2 in flight when it crashed
+        enforce(
+            execute=True,
+            fix_gaps=True,
+            root=str(tmp_path),
+            runtime=engine,
+            run_key="job",
+        )
+    assert calls["n"] == 2  # n1 filled, n2 in flight when it crashed
 
     # Re-running auto-resumes from the checkpoint and finishes.
-    rep = enforce(execute=True, fix_gaps=True, root=str(tmp_path),
-                  runtime=engine, run_key="job")
+    rep = enforce(
+        execute=True, fix_gaps=True, root=str(tmp_path), runtime=engine, run_key="job"
+    )
     assert rep.gaps_filled == 3
 
     final = json.loads((tmp_path / "wiki" / "corpus.json").read_text())

@@ -4,6 +4,7 @@ kind: tests
 layer: n/a
 summary: Pass 3's contract, read off the REAL Makefile recipes, the REAL pyproject and the REAL .pre-commit-config.yaml. (1) `lint-py` and `fmt` must cover every entry of `CODE_ROOTS` — imported from scripts/check_structure.py, never re-typed here, so the three scope lists cannot drift. (2) mypy's scope must ACCOUNT for every code root: each is either inside `[tool.mypy] files` or a declared, reasoned entry in config/practices.json rulesets.mypy.ratchet — a root may not simply be unmentioned. (3) ruff must actually be clean over that scope. (4) The FE gates must SKIP, not hard-fail, when npm is absent (`command -v npm || exit 0` exits only its own recipe sub-shell). (5) Every bare-`python3` pre-commit entry must be legal under the documented old interpreter, since pre-commit `language: system` hooks exec the ambient python3. Imports nothing optional: this pin must never itself skip.
 """
+
 import ast
 import json
 import os
@@ -55,7 +56,7 @@ def _tool_paths(stdout, needle):
     assert len(hits) == 1, "expected exactly one %r line in:\n%s" % (needle, stdout)
     argv = shlex.split(hits[0])
     i = argv.index(needle.split()[-1])
-    return [a for a in argv[i + 1:] if not a.startswith("-")]
+    return [a for a in argv[i + 1 :] if not a.startswith("-")]
 
 
 # --- scope: ruff ------------------------------------------------------------
@@ -72,7 +73,8 @@ def test_lint_py_covers_every_code_root():
     missing = [r for r in cs.CODE_ROOTS if r not in scope]
     assert not missing, (
         "`make lint-py` does not lint %s — those roots are outside the gate while "
-        "`make verify` still reports green (scope=%s)" % (missing, sorted(scope)))
+        "`make verify` still reports green (scope=%s)" % (missing, sorted(scope))
+    )
 
 
 @pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
@@ -81,8 +83,10 @@ def test_fmt_covers_every_code_root():
     `make lint-py` reports. Same source of truth."""
     scope = set(_tool_paths(_make_n("fmt"), "ruff format"))
     missing = [r for r in cs.CODE_ROOTS if r not in scope]
-    assert not missing, (
-        "`make fmt` does not format %s (scope=%s)" % (missing, sorted(scope)))
+    assert not missing, "`make fmt` does not format %s (scope=%s)" % (
+        missing,
+        sorted(scope),
+    )
 
 
 def test_ruff_is_clean_over_every_code_root():
@@ -90,7 +94,10 @@ def test_ruff_is_clean_over_every_code_root():
     real linter over the real roots rather than trusting the recipe."""
     r = subprocess.run(
         [sys.executable, "-m", "ruff", "check"] + list(cs.CODE_ROOTS),
-        cwd=str(_ROOT), capture_output=True, text=True)
+        cwd=str(_ROOT),
+        capture_output=True,
+        text=True,
+    )
     assert r.returncode == 0, r.stdout + r.stderr
 
 
@@ -125,11 +132,13 @@ def test_mypy_scope_accounts_for_every_code_root():
     pending = {k for k in mypy.get("ratchet", {}) if not k.startswith("_")}
 
     assert not (checked & pending), (
-        "%s is both type-checked and declared pending" % sorted(checked & pending))
+        "%s is both type-checked and declared pending" % sorted(checked & pending)
+    )
     unaccounted = [r for r in cs.CODE_ROOTS if r not in checked and r not in pending]
     assert not unaccounted, (
         "code roots outside mypy's scope AND undeclared in "
-        "config/practices.json rulesets.mypy.ratchet: %s" % unaccounted)
+        "config/practices.json rulesets.mypy.ratchet: %s" % unaccounted
+    )
     strays = sorted((checked | pending) - set(cs.CODE_ROOTS))
     assert not strays, "mypy scope/ratchet names non-code-roots: %s" % strays
 
@@ -141,7 +150,8 @@ def test_declared_mypy_scope_matches_pyproject():
     declared = set(_practices()["rulesets"]["mypy"]["scope"])
     assert _mypy_files() == declared, (
         "pyproject [tool.mypy] files=%s but config/practices.json declares "
-        "rulesets.mypy.scope=%s" % (sorted(_mypy_files()), sorted(declared)))
+        "rulesets.mypy.scope=%s" % (sorted(_mypy_files()), sorted(declared))
+    )
 
 
 def test_every_mypy_ratchet_entry_states_its_cost_and_its_exit():
@@ -155,9 +165,11 @@ def test_every_mypy_ratchet_entry_states_its_cost_and_its_exit():
         assert isinstance(entry, dict), "%s: ratchet entry must be an object" % root
         assert isinstance(entry.get("errors"), int) and entry["errors"] >= 1, (
             "%s: needs a measured `errors` count >= 1 (a root at zero belongs in "
-            "mypy `files`, not the ratchet)" % root)
+            "mypy `files`, not the ratchet)" % root
+        )
         assert entry.get("removed_when", "").strip(), (
-            "%s: needs `removed_when` — what makes this rung deletable" % root)
+            "%s: needs `removed_when` — what makes this rung deletable" % root
+        )
 
 
 @pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
@@ -167,7 +179,8 @@ def test_typecheck_py_takes_its_scope_from_the_config():
     paths = _tool_paths(_make_n("typecheck-py"), "-m mypy")
     assert paths == [], (
         "`make typecheck-py` passes mypy explicit paths %s, which override "
-        "[tool.mypy] files and re-narrow the gate" % paths)
+        "[tool.mypy] files and re-narrow the gate" % paths
+    )
 
 
 # --- the FE gates skip, not fail, without npm -------------------------------
@@ -177,17 +190,28 @@ def _fe_app(tmp_path):
     """A minimal FE app the Makefile's FE_APPS shape can point at."""
     app = tmp_path / "fe" / "webapp"
     (app / "node_modules").mkdir(parents=True)
-    (app / "package.json").write_text(json.dumps(
-        {"name": "probe", "private": True,
-         "scripts": {"lint": "true", "typecheck": "true"}}))
+    (app / "package.json").write_text(
+        json.dumps(
+            {
+                "name": "probe",
+                "private": True,
+                "scripts": {"lint": "true", "typecheck": "true"},
+            }
+        )
+    )
     return str(app) + "/"
 
 
 def _run_make(target, fe_apps, path_env):
     make = shutil.which("make")
     env = {"PATH": path_env, "HOME": os.environ.get("HOME", "/tmp")}
-    return subprocess.run([make, target, "FE_APPS=%s" % fe_apps],
-                          cwd=str(_ROOT), capture_output=True, text=True, env=env)
+    return subprocess.run(
+        [make, target, "FE_APPS=%s" % fe_apps],
+        cwd=str(_ROOT),
+        capture_output=True,
+        text=True,
+        env=env,
+    )
 
 
 @pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
@@ -207,7 +231,8 @@ def test_fe_gate_skips_when_npm_is_absent(tmp_path, target):
     r = _run_make(target, _fe_app(tmp_path), str(emptybin))
     assert r.returncode == 0, (
         "`make %s` hard-failed with npm absent instead of skipping:\n%s"
-        % (target, r.stdout + r.stderr))
+        % (target, r.stdout + r.stderr)
+    )
     assert "npm not found" in r.stdout
 
 
@@ -222,12 +247,17 @@ def test_fe_gate_is_silent_on_a_repo_with_no_frontend(tmp_path, target):
     r = _run_make(target, "", str(emptybin))
     assert r.returncode == 0, r.stdout + r.stderr
     assert "npm not found" not in r.stdout, (
-        "a repo with no frontend is told npm is missing:\n%s" % r.stdout)
+        "a repo with no frontend is told npm is missing:\n%s" % r.stdout
+    )
 
 
-@pytest.mark.skipif(shutil.which("make") is None or shutil.which("npm") is None,
-                    reason="needs make and npm")
-@pytest.mark.parametrize("target,script", [("lint-fe", "lint"), ("typecheck-fe", "typecheck")])
+@pytest.mark.skipif(
+    shutil.which("make") is None or shutil.which("npm") is None,
+    reason="needs make and npm",
+)
+@pytest.mark.parametrize(
+    "target,script", [("lint-fe", "lint"), ("typecheck-fe", "typecheck")]
+)
 def test_fe_gate_still_fails_on_a_real_frontend_failure(tmp_path, target, script):
     """The non-regression half: making the guard skip must not make the gate toothless.
     With npm present and the app's script exiting non-zero, the target must fail."""
@@ -239,7 +269,8 @@ def test_fe_gate_still_fails_on_a_real_frontend_failure(tmp_path, target, script
     r = _run_make(target, str(app) + "/", npm_dir + ":/usr/bin:/bin")
     assert r.returncode != 0, (
         "`make %s` passed despite the app's %s script failing:\n%s"
-        % (target, script, r.stdout + r.stderr))
+        % (target, script, r.stdout + r.stderr)
+    )
 
 
 # --- pre-commit entry points parse under the documented interpreter ---------
@@ -269,10 +300,15 @@ def _too_new_syntax(path):
     tree = ast.parse(path.read_text(), str(path))
     bad = []
     for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom) and node.module == "__future__" \
-                and any(a.name == "annotations" for a in node.names):
-            bad.append("%s:%d: `from __future__ import annotations` (3.7+)"
-                       % (path.name, node.lineno))
+        if (
+            isinstance(node, ast.ImportFrom)
+            and node.module == "__future__"
+            and any(a.name == "annotations" for a in node.names)
+        ):
+            bad.append(
+                "%s:%d: `from __future__ import annotations` (3.7+)"
+                % (path.name, node.lineno)
+            )
         if isinstance(node, ast.NamedExpr):
             bad.append("%s:%d: walrus operator (3.8+)" % (path.name, node.lineno))
 
@@ -286,13 +322,20 @@ def _too_new_syntax(path):
             annotations.append(node.annotation)
     for ann in annotations:
         for node in ast.walk(ann):
-            if isinstance(node, ast.Subscript) and isinstance(node.value, ast.Name) \
-                    and node.value.id in _PEP585_BUILTINS:
-                bad.append("%s:%d: evaluated `%s[...]` annotation (PEP 585, 3.9+)"
-                           % (path.name, node.lineno, node.value.id))
+            if (
+                isinstance(node, ast.Subscript)
+                and isinstance(node.value, ast.Name)
+                and node.value.id in _PEP585_BUILTINS
+            ):
+                bad.append(
+                    "%s:%d: evaluated `%s[...]` annotation (PEP 585, 3.9+)"
+                    % (path.name, node.lineno, node.value.id)
+                )
             if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
-                bad.append("%s:%d: evaluated `X | Y` annotation (PEP 604, 3.10+)"
-                           % (path.name, node.lineno))
+                bad.append(
+                    "%s:%d: evaluated `X | Y` annotation (PEP 604, 3.10+)"
+                    % (path.name, node.lineno)
+                )
     return bad
 
 
@@ -319,7 +362,8 @@ def test_precommit_python3_entries_run_on_the_documented_old_interpreter():
     assert not offenders, (
         "pre-commit `python3` entry points must be legal at Python %d.%d "
         "(docs/guides/deterministic-checks.md): \n  %s"
-        % (PRECOMMIT_PYTHON_FLOOR + (("\n  ").join(offenders),)))
+        % (PRECOMMIT_PYTHON_FLOOR + (("\n  ").join(offenders),))
+    )
 
 
 def test_precommit_python3_entries_actually_execute_on_an_old_interpreter():
@@ -331,8 +375,11 @@ def test_precommit_python3_entries_actually_execute_on_an_old_interpreter():
     for cand in ("/usr/bin/python3", "/usr/bin/python3.6"):
         if not os.path.exists(cand):
             continue
-        r = subprocess.run([cand, "-c", "import sys; print('%d %d' % sys.version_info[:2])"],
-                           capture_output=True, text=True)
+        r = subprocess.run(
+            [cand, "-c", "import sys; print('%d %d' % sys.version_info[:2])"],
+            capture_output=True,
+            text=True,
+        )
         if r.returncode != 0:
             continue
         ver = tuple(int(x) for x in r.stdout.split())
@@ -344,10 +391,21 @@ def test_precommit_python3_entries_actually_execute_on_an_old_interpreter():
 
     for entry in _precommit_python3_entries():
         r = subprocess.run(
-            [old, "-c", "import sys; compile(open(sys.argv[1]).read(), sys.argv[1], 'exec')",
-             entry],
-            cwd=str(_ROOT), capture_output=True, text=True)
-        assert r.returncode == 0, "%s does not parse under %s:\n%s" % (entry, old, r.stderr)
+            [
+                old,
+                "-c",
+                "import sys; compile(open(sys.argv[1]).read(), sys.argv[1], 'exec')",
+                entry,
+            ],
+            cwd=str(_ROOT),
+            capture_output=True,
+            text=True,
+        )
+        assert r.returncode == 0, "%s does not parse under %s:\n%s" % (
+            entry,
+            old,
+            r.stderr,
+        )
 
 
 # --- scope: a dependency CI installs must never degrade into a silent skip ----
@@ -393,9 +451,11 @@ def test_no_test_module_silently_skips_a_dependency_ci_installs():
     assert not offenders, (
         "these guarded imports skip silently instead of failing when CI declares "
         "the surface required, so the assertions behind them can stop running "
-        "without anything going red:\n" + "\n".join(offenders)
+        "without anything going red:\n"
+        + "\n".join(offenders)
         + "\n\nRoute them through tests/optional_deps.importorskip(module, extra=...), "
-          "or add the dependency to optional_deps.DELIBERATELY_OPTIONAL with a reason.")
+        "or add the dependency to optional_deps.DELIBERATELY_OPTIONAL with a reason."
+    )
 
 
 def test_the_silent_skip_scan_actually_reaches_the_suite():
@@ -406,9 +466,11 @@ def test_the_silent_skip_scan_actually_reaches_the_suite():
     """
     modules = [p for p in _test_modules() if p.resolve() != Path(__file__).resolve()]
     assert len(modules) > 10, "the test-module scan found almost nothing: %s" % modules
-    guarded = [p.name for p in modules
-               if "optional_deps.importorskip(" in p.read_text()
-               or _RAW_SKIP in p.read_text()]
+    guarded = [
+        p.name
+        for p in modules
+        if "optional_deps.importorskip(" in p.read_text() or _RAW_SKIP in p.read_text()
+    ]
     assert guarded, "no module guards an optional import — has the pattern moved?"
 
 
@@ -416,21 +478,23 @@ def test_every_required_surface_is_installed_by_a_ci_step():
     """A surface CI declares required but never installs would fail every run;
     one it installs but never declares is the silent skip again. Read off the real
     workflow, so the two cannot drift."""
-    ci = (_ROOT / ".github" / "workflows" / "ci.yml")
+    ci = _ROOT / ".github" / "workflows" / "ci.yml"
     if not ci.is_file():
         pytest.skip("no CI workflow in this project")
     text = ci.read_text()
     declared = [ln for ln in text.splitlines() if optional_deps.ENV_VAR in ln]
     assert declared, (
         "no CI step declares %s, so every optional surface degrades to a skip and "
-        "the suite can go green with whole gates unexecuted" % optional_deps.ENV_VAR)
+        "the suite can go green with whole gates unexecuted" % optional_deps.ENV_VAR
+    )
     names = re.findall(r"[\w-]+", declared[0].split(":", 1)[1])
     assert names, "%s is declared empty in CI" % optional_deps.ENV_VAR
     for name in names:
         assert name in optional_deps.SURFACES, (
             "CI declares unknown surface %r (known: %s) — a typo here silently "
-            "disables the guard" % (name, sorted(optional_deps.SURFACES)))
+            "disables the guard" % (name, sorted(optional_deps.SURFACES))
+        )
         assert optional_deps.SURFACES[name] in text, (
             "CI declares surface %r required but no step runs %r, so every run "
-            "would fail on a missing import"
-            % (name, optional_deps.SURFACES[name]))
+            "would fail on a missing import" % (name, optional_deps.SURFACES[name])
+        )

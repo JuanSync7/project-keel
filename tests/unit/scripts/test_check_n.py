@@ -4,6 +4,7 @@ kind: tests
 layer: n/a
 summary: check_N is the render-free half of twin parity — it runs in the 3.6 pre-commit gate with no jinja2, over ALL twins rather than one. It proves every `*.jinja` is declared with a kind in config/project.json template.twins, that the declaration matches reality (a parity/divergence twin has a plain sibling, a generated one does not), that a parity twin carries no non-templated line the plain file has lost, and that a divergence twin actually diverges.
 """
+
 import sys
 from pathlib import Path
 
@@ -27,8 +28,13 @@ _TWIN = 'name = "{{ project_slug }}"\nstrict = true\nfiles = ["src", "api"]\n'
 
 
 def test_matching_parity_twin_passes():
-    assert _find({"pyproject.toml": _PLAIN, "pyproject.toml.jinja": _TWIN},
-                 {"pyproject.toml": "parity"}) == []
+    assert (
+        _find(
+            {"pyproject.toml": _PLAIN, "pyproject.toml.jinja": _TWIN},
+            {"pyproject.toml": "parity"},
+        )
+        == []
+    )
 
 
 def test_parity_twin_carrying_a_stale_policy_line_errors():
@@ -36,8 +42,10 @@ def test_parity_twin_carrying_a_stale_policy_line_errors():
     the twin kept the old narrow one, so every generated project inherited a gate
     weaker than keel's — and silently, because a narrower mypy still exits 0."""
     stale = 'name = "{{ project_slug }}"\nstrict = true\nfiles = ["src"]\n'
-    errs = _find({"pyproject.toml": _PLAIN, "pyproject.toml.jinja": stale},
-                 {"pyproject.toml": "parity"})
+    errs = _find(
+        {"pyproject.toml": _PLAIN, "pyproject.toml.jinja": stale},
+        {"pyproject.toml": "parity"},
+    )
     assert any('files = ["src"]' in e for e in errs), errs
 
 
@@ -56,9 +64,10 @@ def test_declared_twin_whose_jinja_vanished_errors():
     """A stale declaration is as misleading as a missing one — it reads as
     "this is covered". Needs another twin present, because a tree with NO twins
     at all is a generated project, not a template with a deleted one."""
-    errs = _find({"pyproject.toml": _PLAIN, "README.md": "a\n",
-                  "README.md.jinja": "a\n"},
-                 {"pyproject.toml": "parity", "README.md": "parity"})
+    errs = _find(
+        {"pyproject.toml": _PLAIN, "README.md": "a\n", "README.md.jinja": "a\n"},
+        {"pyproject.toml": "parity", "README.md": "parity"},
+    )
     assert any("pyproject.toml" in e for e in errs), errs
     assert not any("README.md" in e for e in errs), errs
 
@@ -68,27 +77,40 @@ def test_divergence_twin_that_stopped_diverging_errors():
     `.copier-answers.yml` ignore so the answers file is TRACKED downstream. If a
     well-meaning edit restores parity, every generated project loses its upgrade
     channel again and nothing else would notice."""
-    errs = _find({".gitignore": "a\nb\n", ".gitignore.jinja": "a\nb\n"},
-                 {".gitignore": "divergence"})
+    errs = _find(
+        {".gitignore": "a\nb\n", ".gitignore.jinja": "a\nb\n"},
+        {".gitignore": "divergence"},
+    )
     assert any(".gitignore" in e for e in errs), errs
 
 
 def test_divergence_twin_that_diverges_passes():
-    assert _find({".gitignore": "a\nb\n", ".gitignore.jinja": "a\n"},
-                 {".gitignore": "divergence"}) == []
+    assert (
+        _find(
+            {".gitignore": "a\nb\n", ".gitignore.jinja": "a\n"},
+            {".gitignore": "divergence"},
+        )
+        == []
+    )
 
 
 def test_generated_twin_must_not_have_a_committed_plain_file():
     """copier WRITES .copier-answers.yml into the project; keel committing one of
     its own would make it a generated project, which it is not."""
-    errs = _find({".copier-answers.yml": "x\n", ".copier-answers.yml.jinja": "x\n"},
-                 {".copier-answers.yml": "generated"})
+    errs = _find(
+        {".copier-answers.yml": "x\n", ".copier-answers.yml.jinja": "x\n"},
+        {".copier-answers.yml": "generated"},
+    )
     assert any(".copier-answers.yml" in e for e in errs), errs
 
 
 def test_generated_twin_without_a_plain_file_passes():
-    assert _find({".copier-answers.yml.jinja": "x\n"},
-                 {".copier-answers.yml": "generated"}) == []
+    assert (
+        _find(
+            {".copier-answers.yml.jinja": "x\n"}, {".copier-answers.yml": "generated"}
+        )
+        == []
+    )
 
 
 def test_unknown_kind_errors():

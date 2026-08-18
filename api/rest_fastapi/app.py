@@ -4,6 +4,7 @@ layer: backend
 public_api: no
 summary: Thin FastAPI transport over the backend domain; auto OpenAPI.
 """
+
 from __future__ import annotations
 
 import sys

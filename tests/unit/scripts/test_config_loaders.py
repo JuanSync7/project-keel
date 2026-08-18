@@ -4,6 +4,7 @@ kind: tests
 layer: n/a
 summary: Every file the gate reads to decide WHETHER to gate must distinguish two cases — absent (a legitimate downstream shape, degrade in silence) from present-but-unreadable (a gate defect: the checks keyed on that file stop gating while the run still exits 0). Pins the class over both JSON registries (config/practices.json, config/project.json), pyproject.toml and check_G's markdown readers, and pins that one broken file yields exactly one finding, not one per consumer.
 """
+
 import json
 import sys
 from pathlib import Path
@@ -57,21 +58,29 @@ def _read_failure(findings, name):
     by' names agents/a but its tools.md omits 'x'"), which would satisfy a
     name-only assertion while the real cause went unreported.
     """
-    return [f for f in _mentions(findings, name)
-            if "unreadable" in f or "cannot read" in f or "could not read" in f]
+    return [
+        f
+        for f in _mentions(findings, name)
+        if "unreadable" in f or "cannot read" in f or "could not read" in f
+    ]
 
 
 # --- MUST-REPORT: the file is there but the gate cannot read it --------------
 
-@pytest.mark.parametrize("payload", [BAD_JSON, BAD_BYTES], ids=["bad-json", "bad-bytes"])
+
+@pytest.mark.parametrize(
+    "payload", [BAD_JSON, BAD_BYTES], ids=["bad-json", "bad-bytes"]
+)
 def test_unreadable_practices_json_is_reported(repo, payload):
     """A malformed practices.json turns check_K/L/M off; that must not be silent."""
     _write(repo / "config" / "practices.json", payload)
-    assert cs._load_practices() == {}          # still degrades, so no traceback
+    assert cs._load_practices() == {}  # still degrades, so no traceback
     assert _mentions(cs.errors, "config/practices.json"), cs.errors
 
 
-@pytest.mark.parametrize("payload", [BAD_JSON, BAD_BYTES], ids=["bad-json", "bad-bytes"])
+@pytest.mark.parametrize(
+    "payload", [BAD_JSON, BAD_BYTES], ids=["bad-json", "bad-bytes"]
+)
 def test_unreadable_project_json_is_reported_by_profiles_on(repo, payload):
     """_profiles_on() gates check_L; an unreadable manifest must not disable it
     silently, and check_H already errs on this same file (one file, one voice)."""
@@ -80,8 +89,12 @@ def test_unreadable_project_json_is_reported_by_profiles_on(repo, payload):
     assert _mentions(cs.errors, "config/project.json"), cs.errors
 
 
-@pytest.mark.parametrize("payload", [BAD_JSON, BAD_BYTES], ids=["bad-json", "bad-bytes"])
-def test_check_M_is_not_silently_disabled_by_an_unreadable_practices_json(repo, payload):
+@pytest.mark.parametrize(
+    "payload", [BAD_JSON, BAD_BYTES], ids=["bad-json", "bad-bytes"]
+)
+def test_check_M_is_not_silently_disabled_by_an_unreadable_practices_json(
+    repo, payload
+):
     """The end-to-end shape of the defect: check_M is the meta-gate proving
     pyproject cannot loosen the declared policy. Today an unreadable registry
     makes it return at its first line with no finding at all."""
@@ -95,8 +108,10 @@ def test_check_L_is_not_silently_disabled_by_an_unreadable_project_json(repo):
     """check_L is keyed on a profile flag read from project.json: unreadable ->
     'cuda' is absent -> the whole check returns before doing any work."""
     _write(repo / "config" / "project.json", BAD_JSON)
-    _write(repo / "config" / "practices.json",
-           json.dumps({"tokens": {"tensor_base_types": ["Tensor"]}}))
+    _write(
+        repo / "config" / "practices.json",
+        json.dumps({"tokens": {"tensor_base_types": ["Tensor"]}}),
+    )
     _write(repo / "src" / "m.py", "def step(x: Tensor):\n    return x\n")
     cs.check_L()
     assert _mentions(cs.errors, "config/project.json"), cs.errors
@@ -132,6 +147,7 @@ def test_unreadable_agent_manifest_is_reported(repo):
 # copier prunes files a generated project did not select, so "not there" must
 # never fail. This is the boundary the fix must not break.
 
+
 def test_absent_practices_json_degrades_quietly(repo):
     assert cs._load_practices() == {}
     assert cs.errors == [] and cs.warnings == []
@@ -164,14 +180,17 @@ def test_a_json_null_manifest_is_still_a_shape_error_not_a_read_error(repo):
 
 def test_valid_registries_produce_no_read_findings(repo):
     _write(repo / "config" / "practices.json", json.dumps({"tokens": {}}))
-    _write(repo / "config" / "project.json",
-           json.dumps({"practices": {"profiles": {"cuda": True, "_note": True}}}))
+    _write(
+        repo / "config" / "project.json",
+        json.dumps({"practices": {"profiles": {"cuda": True, "_note": True}}}),
+    )
     assert cs._load_practices() == {"tokens": {}}
     assert cs._profiles_on() == {"cuda"}
     assert cs.errors == [] and cs.warnings == []
 
 
 # --- ONE broken file, ONE finding -------------------------------------------
+
 
 def test_one_unreadable_registry_is_reported_once_not_once_per_consumer(repo):
     """practices.json has four readers (_load_practices, _defined_profile_names,

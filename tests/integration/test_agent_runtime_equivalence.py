@@ -4,6 +4,7 @@ kind: tests
 layer: backend
 summary: index_enforcer / wiki_navigator produce identical dry-run results on inprocess and langgraph.
 """
+
 import os
 import sys
 from pathlib import Path

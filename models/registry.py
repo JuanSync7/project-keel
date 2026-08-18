@@ -4,6 +4,7 @@ layer: backend
 public_api: yes
 summary: name -> backend, plus the default. Add a provider here.
 """
+
 from __future__ import annotations
 
 from .claude_code_headless import ClaudeCodeHeadless
@@ -19,9 +20,9 @@ DEFAULT_MODEL = "claude-code-headless"
 # ModelBackend and register it here; callers select it by name via get_model,
 # never by importing a concrete class.
 _REGISTRY = {
-    "claude-code-headless": ClaudeCodeHeadless,   # shells out to the Claude Code CLI
-    "openai-compatible": OpenAICompatible,        # any OpenAI-style HTTP endpoint
-    "fake": FakeModel,                            # deterministic, offline (tests/dev)
+    "claude-code-headless": ClaudeCodeHeadless,  # shells out to the Claude Code CLI
+    "openai-compatible": OpenAICompatible,  # any OpenAI-style HTTP endpoint
+    "fake": FakeModel,  # deterministic, offline (tests/dev)
 }
 
 

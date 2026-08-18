@@ -4,6 +4,7 @@ kind: tests
 layer: backend
 summary: The adapter builds a correct chat-completions request and parses the reply, with no network.
 """
+
 import sys
 from pathlib import Path
 
@@ -19,12 +20,14 @@ pytestmark = pytest.mark.unit
 
 def _captured_transport(captured, reply="hi there"):
     """A fake HTTP transport: record the call, return a canned chat response."""
+
     def transport(url, payload, headers, timeout):
         captured["url"] = url
         captured["payload"] = payload
         captured["headers"] = headers
         captured["timeout"] = timeout
         return {"choices": [{"message": {"role": "assistant", "content": reply}}]}
+
     return transport
 
 
@@ -40,7 +43,7 @@ def test_run_posts_chat_completions_and_returns_the_message(monkeypatch):
 
     out = backend.run("What is the cake?")
 
-    assert out == "the cake is a lie"                       # parsed from choices[0]
+    assert out == "the cake is a lie"  # parsed from choices[0]
     assert captured["url"] == "https://llm.example/v1/chat/completions"
     assert captured["payload"]["model"] == "some-model"
     assert captured["payload"]["messages"] == [
@@ -53,10 +56,15 @@ def test_run_posts_chat_completions_and_returns_the_message(monkeypatch):
 def test_base_url_trailing_slash_is_normalised(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-x")
     captured: dict = {}
-    backend = get_model("openai-compatible", base_url="https://llm.example/v1/",
-                        transport=_captured_transport(captured))
+    backend = get_model(
+        "openai-compatible",
+        base_url="https://llm.example/v1/",
+        transport=_captured_transport(captured),
+    )
     backend.run("ping")
-    assert captured["url"] == "https://llm.example/v1/chat/completions"  # no doubled slash
+    assert (
+        captured["url"] == "https://llm.example/v1/chat/completions"
+    )  # no doubled slash
 
 
 def test_missing_api_key_means_no_auth_header(monkeypatch):
@@ -82,7 +90,7 @@ def test_unexpected_response_shape_raises(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-x")
 
     def bad_transport(url, payload, headers, timeout):
-        return {"error": {"message": "nope"}}   # no 'choices'
+        return {"error": {"message": "nope"}}  # no 'choices'
 
     backend = get_model("openai-compatible", transport=bad_transport)
     with pytest.raises(RuntimeError):

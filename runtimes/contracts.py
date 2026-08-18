@@ -4,6 +4,7 @@ layer: backend
 public_api: yes
 summary: The neutral Plan/Step/Edge flowchart IR, the Runtime ABC, and the durability/HIL/fan-out capabilities every engine implements.
 """
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -11,10 +12,22 @@ from dataclasses import dataclass
 from typing import Callable, Optional, Tuple
 
 __all__ = [
-    "READ_ONLY", "WRITES", "MODEL_CALL", "EFFECTS", "END",
-    "COMPLETED", "PAUSED",
-    "Step", "Edge", "Plan", "TraceEntry", "RunResult", "Runtime",
-    "Checkpointer", "Pause", "interrupt",
+    "READ_ONLY",
+    "WRITES",
+    "MODEL_CALL",
+    "EFFECTS",
+    "END",
+    "COMPLETED",
+    "PAUSED",
+    "Step",
+    "Edge",
+    "Plan",
+    "TraceEntry",
+    "RunResult",
+    "Runtime",
+    "Checkpointer",
+    "Pause",
+    "interrupt",
 ]
 
 # Effect vocabulary -- identical to the `tool_effect` set in CONVENTIONS section
@@ -115,13 +128,18 @@ class Plan:
         dashed. Useful for docs/review and as the neutral analogue of LangGraph
         Studio -- no engine or vendor needed to visualise the flow.
         """
-        shape = {READ_ONLY: ('["', '"]'), WRITES: ('[/"', '"/]'),
-                 MODEL_CALL: ('{{"', '"}}')}
+        shape = {
+            READ_ONLY: ('["', '"]'),
+            WRITES: ('[/"', '"/]'),
+            MODEL_CALL: ('{{"', '"}}'),
+        }
         lines = ["flowchart TD"]
         for s in self.steps:
             lo, hi = shape.get(s.effect, ('["', '"]'))
             tag = " &laquo;map&raquo;" if s.fan_out else ""
-            lines.append("    %s%s%s (%s)%s%s" % (s.name, lo, s.name, s.effect, tag, hi))
+            lines.append(
+                "    %s%s%s (%s)%s%s" % (s.name, lo, s.name, s.effect, tag, hi)
+            )
         lines.append('    %s(("END"))' % "_END")
         for e in self.edges:
             dst = "_END" if e.dst == END else e.dst
@@ -136,8 +154,8 @@ class TraceEntry:
 
     step: str
     effect: str
-    ran: bool             # False => skipped (gated step in a dry run)
-    skipped_reason: str   # "" when ran; else "dry-run"
+    ran: bool  # False => skipped (gated step in a dry run)
+    skipped_reason: str  # "" when ran; else "dry-run"
 
 
 @dataclass(frozen=True)
@@ -168,9 +186,17 @@ class Runtime(ABC):
     name: str
 
     @abstractmethod
-    def run(self, plan: Plan, state: Optional[dict] = None, *,
-            execute: bool = False, checkpointer: "Optional[Checkpointer]" = None,
-            run_key: str = "run", resume: object = ..., on_event=None) -> RunResult:
+    def run(
+        self,
+        plan: Plan,
+        state: Optional[dict] = None,
+        *,
+        execute: bool = False,
+        checkpointer: "Optional[Checkpointer]" = None,
+        run_key: str = "run",
+        resume: object = ...,
+        on_event=None,
+    ) -> RunResult:
         """Execute ``plan`` from its entry node (or resume) and return a RunResult.
 
         ``execute`` authorises side-effecting (``writes``/``model-call``) steps.

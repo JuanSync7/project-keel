@@ -43,11 +43,13 @@ def main():
             "ERROR: this project requires Python >=%d.%d; %s is %d.%d.\n"
             "Point PY at a newer interpreter, e.g. `make PY=python3.11 test` "
             "(or activate the project venv).\n"
-            % (minimum[0], minimum[1], sys.executable, current[0], current[1]))
+            % (minimum[0], minimum[1], sys.executable, current[0], current[1])
+        )
         return 1
     sys.stdout.write(
         "check_python_version: %s (%d.%d) satisfies >=%d.%d\n"
-        % (sys.executable, current[0], current[1], minimum[0], minimum[1]))
+        % (sys.executable, current[0], current[1], minimum[0], minimum[1])
+    )
     return 0
 
 

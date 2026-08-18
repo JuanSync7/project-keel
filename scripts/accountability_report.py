@@ -5,6 +5,7 @@ kind: script
 layer: n/a
 summary: Read-only: list corpus nodes with no resolved owner (the accountability gaps).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -22,11 +23,19 @@ def unowned(corpus: dict) -> list:
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description="Report corpus nodes with no resolved owner.")
-    ap.add_argument("--corpus", default=DEFAULT_CORPUS, help="corpus path (default: wiki/corpus.json)")
+    ap = argparse.ArgumentParser(
+        description="Report corpus nodes with no resolved owner."
+    )
+    ap.add_argument(
+        "--corpus",
+        default=DEFAULT_CORPUS,
+        help="corpus path (default: wiki/corpus.json)",
+    )
     ap.add_argument("--json", action="store_true", help="emit JSON instead of text")
     args = ap.parse_args(argv)
-    path = args.corpus if os.path.isabs(args.corpus) else os.path.join(ROOT, args.corpus)
+    path = (
+        args.corpus if os.path.isabs(args.corpus) else os.path.join(ROOT, args.corpus)
+    )
     if not os.path.exists(path):
         print("no corpus at %s; run build_corpus.py first." % args.corpus)
         return 0
@@ -34,8 +43,15 @@ def main(argv=None) -> int:
         corpus = json.load(fh)
     gaps = unowned(corpus)
     if args.json:
-        json.dump([{"node_id": n["node_id"], "kind": n["kind"], "path": n["path"]}
-                   for n in gaps], sys.stdout, indent=2, sort_keys=True)
+        json.dump(
+            [
+                {"node_id": n["node_id"], "kind": n["kind"], "path": n["path"]}
+                for n in gaps
+            ],
+            sys.stdout,
+            indent=2,
+            sort_keys=True,
+        )
         sys.stdout.write("\n")
         return 0
     total = len(corpus.get("nodes", []))

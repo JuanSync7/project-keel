@@ -4,6 +4,7 @@ layer: backend
 public_api: yes
 summary: name -> runtime engine, plus the default. Add an engine adapter here.
 """
+
 from __future__ import annotations
 
 from ._inprocess import InProcessRuntime
@@ -17,6 +18,7 @@ DEFAULT_RUNTIME = "inprocess"
 def _load_langgraph():
     """Resolve the LangGraph engine lazily (import only when it is selected)."""
     from .langgraph_adapter import LangGraphRuntime
+
     return LangGraphRuntime
 
 

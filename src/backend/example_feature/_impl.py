@@ -4,6 +4,7 @@ layer: backend
 public_api: no
 summary: Private impl. Never imported across the package boundary.
 """
+
 from dataclasses import dataclass
 
 __all__ = ["Thing", "do_thing"]
@@ -12,6 +13,7 @@ __all__ = ["Thing", "do_thing"]
 @dataclass(frozen=True)
 class Thing:
     """An example domain value object. Replace with your real type."""
+
     name: str
     value: int = 0
 

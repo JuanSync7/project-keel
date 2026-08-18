@@ -4,6 +4,7 @@ layer: backend
 public_api: no
 summary: A dependency-free Tool/ToolServer model and a JSON-RPC-over-stdio loop for MCP servers.
 """
+
 from __future__ import annotations
 
 import json
@@ -51,8 +52,14 @@ class ToolServer:
 
     def tools_list(self) -> list:
         """The MCP ``tools/list`` payload: name + description + inputSchema each."""
-        return [{"name": t.name, "description": t.description,
-                 "inputSchema": t.input_schema} for t in self.tools]
+        return [
+            {
+                "name": t.name,
+                "description": t.description,
+                "inputSchema": t.input_schema,
+            }
+            for t in self.tools
+        ]
 
     def call_tool(self, name: str, arguments: Optional[dict] = None) -> dict:
         """Run a tool and return an MCP ``tools/call`` result.
@@ -67,10 +74,13 @@ class ToolServer:
             return _error_result("unknown tool: %s" % name)
         try:
             result = tool.handler(arguments or {})
-        except Exception as exc:   # noqa: BLE001 — surface as a protocol error, not a crash
+        except Exception as exc:  # noqa: BLE001 — surface as a protocol error, not a crash
             return _error_result("%s: %s" % (type(exc).__name__, exc))
-        text = result if isinstance(result, str) else json.dumps(
-            result, sort_keys=True, default=str)
+        text = (
+            result
+            if isinstance(result, str)
+            else json.dumps(result, sort_keys=True, default=str)
+        )
         out = {"content": [{"type": "text", "text": text}], "isError": False}
         if not isinstance(result, str):
             out["structuredContent"] = result
@@ -90,23 +100,32 @@ def handle_message(server: ToolServer, msg: dict) -> Optional[dict]:
     """
     msg_id = msg.get("id")
     method = msg.get("method", "")
-    if msg_id is None:                      # a notification — acknowledge nothing
+    if msg_id is None:  # a notification — acknowledge nothing
         return None
     if method == "initialize":
-        return _ok(msg_id, {
-            "protocolVersion": PROTOCOL_VERSION,
-            "capabilities": {"tools": {}},
-            "serverInfo": {"name": server.name, "version": SERVER_VERSION},
-        })
+        return _ok(
+            msg_id,
+            {
+                "protocolVersion": PROTOCOL_VERSION,
+                "capabilities": {"tools": {}},
+                "serverInfo": {"name": server.name, "version": SERVER_VERSION},
+            },
+        )
     if method == "tools/list":
         return _ok(msg_id, {"tools": server.tools_list()})
     if method == "tools/call":
         params = msg.get("params") or {}
-        return _ok(msg_id, server.call_tool(params.get("name"),
-                                            params.get("arguments")))
-    return {"jsonrpc": "2.0", "id": msg_id,
-            "error": {"code": _METHOD_NOT_FOUND,
-                      "message": "method not found: %s" % method}}
+        return _ok(
+            msg_id, server.call_tool(params.get("name"), params.get("arguments"))
+        )
+    return {
+        "jsonrpc": "2.0",
+        "id": msg_id,
+        "error": {
+            "code": _METHOD_NOT_FOUND,
+            "message": "method not found: %s" % method,
+        },
+    }
 
 
 def _ok(msg_id: Any, result: dict) -> dict:

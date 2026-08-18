@@ -4,6 +4,7 @@ layer: backend
 public_api: no
 summary: Runs a prompt via the Claude Code CLI in headless mode.
 """
+
 from __future__ import annotations
 
 import subprocess

@@ -4,6 +4,7 @@ layer: backend
 public_api: yes
 summary: Domain-meaningful types/models shared across backend features — incl. the project's own identity (name/title) read from the manifest.
 """
+
 from __future__ import annotations
 
 import json

@@ -4,6 +4,7 @@ kind: tests
 layer: n/a
 summary: The AAD-schema pre-commit hook may legitimately no-op — the ambient python3 can be too old to parse the adapter, or pydantic can be absent — but it must no-op ONLY for those environment reasons. A genuine breakage in the descriptor model raises too, and today every exception collapses into the same `return 0`, so the drift guard reports success while checking nothing. Pins the environment/defect split in both --check and write modes.
 """
+
 import sys
 from pathlib import Path
 
@@ -39,6 +40,7 @@ DEFECT = [
 def _raise(exc):
     def _boom():
         raise exc
+
     return _boom
 
 
@@ -47,6 +49,7 @@ def _ids(excs):
 
 
 # --- MUST-FAIL: the check ran and found the model broken ---------------------
+
 
 @pytest.mark.parametrize("exc", DEFECT, ids=_ids(DEFECT))
 def test_check_fails_when_the_model_itself_is_broken(monkeypatch, capsys, exc):
@@ -65,6 +68,7 @@ def test_write_mode_fails_when_the_model_is_broken(monkeypatch, tmp_path, exc):
 
 
 # --- MUST-SKIP: the environment cannot run the check at all ------------------
+
 
 @pytest.mark.parametrize("exc", ENVIRONMENT, ids=_ids(ENVIRONMENT))
 def test_check_skips_when_the_environment_cannot_run_it(monkeypatch, capsys, exc):
@@ -86,6 +90,7 @@ def test_write_mode_still_fails_when_deps_are_absent(monkeypatch, tmp_path, exc)
 
 
 # --- the happy paths stay exactly as they were -------------------------------
+
 
 def test_check_reports_a_stale_committed_schema(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(gas, "_schema", lambda: {"title": "fresh"})

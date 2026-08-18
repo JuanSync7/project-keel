@@ -4,6 +4,7 @@ kind: tests
 layer: n/a
 summary: check_L's detector flags a parameter annotated with a bare tensor base type (exact membership over tokens.tensor_base_types) and no shape comment, accepts a shape comment anywhere in the function header span (multi-line signatures, line above, inline), rejects non-shape parens as a shape, is per-arg and waivable — an advisory heuristic that only ever WARNs.
 """
+
 import ast
 import sys
 from pathlib import Path
@@ -31,13 +32,16 @@ def _params(src, base=None):
 
 # --- MUST-FLAG (a bare tensor param with no shape) ---------------------------
 
+
 def test_bare_tensor_param_is_flagged():
     assert _params("def step(x: Tensor):\n    return x\n") == ["x"]
 
 
 def test_todo_paren_is_not_a_shape():
     # `# TODO(jkok): ...` has a single-atom paren — not a shape, must still flag.
-    assert _params("def step(x: Tensor):  # TODO(jkok): shape later\n    return x\n") == ["x"]
+    assert _params(
+        "def step(x: Tensor):  # TODO(jkok): shape later\n    return x\n"
+    ) == ["x"]
 
 
 def test_single_token_paren_is_not_a_shape():
@@ -58,14 +62,20 @@ def test_local_class_named_like_a_token_still_only_warns():
     # findings; check_L emits them exclusively via warn(). Locks "never err".
     src = "class Array:\n    pass\n\ndef build(a: Array):\n    return a\n"
     assert _params(src) == ["a"]
-    assert "err" not in cs.check_L.__doc__.lower() or "never errs" in cs.check_L.__doc__.lower()
+    assert (
+        "err" not in cs.check_L.__doc__.lower()
+        or "never errs" in cs.check_L.__doc__.lower()
+    )
 
 
 # --- MUST-PASS (a shape is documented, or a waiver, or not a bare token) ------
 
+
 def test_shape_on_closing_paren_line_of_multiline_signature_passes():
-    src = ("def forward(\n    self,\n    hidden: Tensor,\n):  # hidden: (B, T, H)\n"
-           "    return hidden\n")
+    src = (
+        "def forward(\n    self,\n    hidden: Tensor,\n):  # hidden: (B, T, H)\n"
+        "    return hidden\n"
+    )
     assert _naked(src) == []
 
 

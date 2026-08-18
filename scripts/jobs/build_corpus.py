@@ -5,6 +5,7 @@ kind: script
 layer: n/a
 summary: Deterministic: walk the repo into wiki/corpus.json (the one-brain index).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -18,8 +19,17 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 SCHEMA_VERSION = 1
 
 IGNORE_DIRS = {
-    ".git", "__pycache__", "node_modules", ".venv", "venv", "dist", "build",
-    ".astro", ".mypy_cache", ".pytest_cache", ".ruff_cache",
+    ".git",
+    "__pycache__",
+    "node_modules",
+    ".venv",
+    "venv",
+    "dist",
+    "build",
+    ".astro",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
 }
 CODE_ROOTS = ["src", "tests", "api", "models", "mcp", "agents", "demo", "scripts"]
 
@@ -29,13 +39,48 @@ CODE_ROOTS = ["src", "tests", "api", "models", "mcp", "agents", "demo", "scripts
 _SECTION_OWNER_RE = re.compile(r"<!--\s*owner:\s*([A-Za-z0-9._@-]+)\s*-->")
 _SYMBOL_OWNER_RE = re.compile(r"(?m)^\s*owner:\s*([A-Za-z0-9._@-]+)\s*$")
 _HEADING_RE = re.compile(r"^(#{2,3})\s+(.+?)\s*$")
-_ACRONYM_RE = re.compile(r"\b([A-Z][A-Z0-9]{1,})\b")        # AXI, DMA, RAG, ...
+_ACRONYM_RE = re.compile(r"\b([A-Z][A-Z0-9]{1,})\b")  # AXI, DMA, RAG, ...
 _WORD_RE = re.compile(r"[A-Za-z][A-Za-z0-9_]{2,}")
 _STOP = {
-    "the", "and", "for", "with", "that", "this", "from", "into", "are", "was",
-    "not", "but", "you", "your", "use", "used", "uses", "via", "per", "its",
-    "all", "any", "one", "two", "how", "what", "when", "where", "which", "who",
-    "doc", "docs", "file", "files", "code", "line", "lines", "see", "etc",
+    "the",
+    "and",
+    "for",
+    "with",
+    "that",
+    "this",
+    "from",
+    "into",
+    "are",
+    "was",
+    "not",
+    "but",
+    "you",
+    "your",
+    "use",
+    "used",
+    "uses",
+    "via",
+    "per",
+    "its",
+    "all",
+    "any",
+    "one",
+    "two",
+    "how",
+    "what",
+    "when",
+    "where",
+    "which",
+    "who",
+    "doc",
+    "docs",
+    "file",
+    "files",
+    "code",
+    "line",
+    "lines",
+    "see",
+    "etc",
 }
 
 
@@ -136,7 +181,13 @@ def _docstring_meta(doc: str):
         if not s:
             continue
         if ":" in s and s.split(":", 1)[0] in (
-                "title", "summary", "layer", "public_api", "owner", "visibility"):
+            "title",
+            "summary",
+            "layer",
+            "public_api",
+            "owner",
+            "visibility",
+        ):
             k, _, v = s.partition(":")
             meta[k.strip()] = v.strip()
         elif not first:
@@ -152,8 +203,8 @@ def _doc_and_sections(path: str, root: str, nodes: list):
     try:
         with open(path, encoding="utf-8") as fh:
             text = fh.read()
-    except (OSError, ValueError):   # ValueError covers UnicodeDecodeError
-        return                      # not decodable -> not a corpus doc
+    except (OSError, ValueError):  # ValueError covers UnicodeDecodeError
+        return  # not decodable -> not a corpus doc
     fm, body = _parse_frontmatter(text)
     if fm is None:
         return  # only frontmatter-bearing markdown is a corpus doc
@@ -163,26 +214,28 @@ def _doc_and_sections(path: str, root: str, nodes: list):
     title = fm.get("title") or rel
     summary = fm.get("summary") or ""
     tags = _parse_tags(fm.get("tags")) + _keywords(title, summary)
-    nodes.append({
-        "node_id": doc_id,
-        "kind": "doc",
-        "title": title,
-        "path": rel,
-        "anchor": None,
-        "lineno": None,
-        "summary": summary,
-        "summary_source": "authored" if summary else "",
-        "text_excerpt": " ".join(body.split())[:400],
-        "owner": doc_owner or "",
-        "owner_source": "frontmatter" if doc_owner else "none",
-        "owner_origin": rel if doc_owner else None,
-        "tags": sorted(set(tags)),
-        "visibility": visibility,
-        "updated": fm.get("updated") or "",
-        "parent": None,
-        "children": [],
-        "links": [],
-    })
+    nodes.append(
+        {
+            "node_id": doc_id,
+            "kind": "doc",
+            "title": title,
+            "path": rel,
+            "anchor": None,
+            "lineno": None,
+            "summary": summary,
+            "summary_source": "authored" if summary else "",
+            "text_excerpt": " ".join(body.split())[:400],
+            "owner": doc_owner or "",
+            "owner_source": "frontmatter" if doc_owner else "none",
+            "owner_origin": rel if doc_owner else None,
+            "tags": sorted(set(tags)),
+            "visibility": visibility,
+            "updated": fm.get("updated") or "",
+            "parent": None,
+            "children": [],
+            "links": [],
+        }
+    )
     _sections(body, doc_id, rel, doc_owner, visibility, nodes)
 
 
@@ -195,8 +248,12 @@ def _sections(body, doc_id, rel, doc_owner, doc_visibility, nodes):
         if m:
             if cur:
                 blocks.append(cur)
-            cur = {"level": len(m.group(1)), "title": m.group(2),
-                   "lineno": i + 1, "body": []}
+            cur = {
+                "level": len(m.group(1)),
+                "title": m.group(2),
+                "lineno": i + 1,
+                "body": [],
+            }
         elif cur is not None:
             cur["body"].append(line)
     if cur:
@@ -224,26 +281,28 @@ def _sections(body, doc_id, rel, doc_owner, doc_visibility, nodes):
         if b["level"] == 2:
             last_h2 = sec_id
         summ = _first_sentence(btext)
-        nodes.append({
-            "node_id": sec_id,
-            "kind": "section",
-            "title": b["title"],
-            "path": rel,
-            "anchor": anchor,
-            "lineno": b["lineno"],
-            "summary": summ,
-            "summary_source": "authored" if summ else "",
-            "text_excerpt": " ".join(btext.split())[:400],
-            "owner": owner,
-            "owner_source": osrc,
-            "owner_origin": oorigin,
-            "tags": sorted(set(_keywords(b["title"], btext))),
-            "visibility": doc_visibility,   # inherit the doc's visibility (no leaks)
-            "updated": "",
-            "parent": parent,
-            "children": [],
-            "links": [],
-        })
+        nodes.append(
+            {
+                "node_id": sec_id,
+                "kind": "section",
+                "title": b["title"],
+                "path": rel,
+                "anchor": anchor,
+                "lineno": b["lineno"],
+                "summary": summ,
+                "summary_source": "authored" if summ else "",
+                "text_excerpt": " ".join(btext.split())[:400],
+                "owner": owner,
+                "owner_source": osrc,
+                "owner_origin": oorigin,
+                "tags": sorted(set(_keywords(b["title"], btext))),
+                "visibility": doc_visibility,  # inherit the doc's visibility (no leaks)
+                "updated": "",
+                "parent": parent,
+                "children": [],
+                "links": [],
+            }
+        )
 
 
 def _nearest_readme(dirpath: str, root: str):
@@ -280,7 +339,7 @@ def _module_and_symbols(path: str, root: str, nodes: list):
             src = fh.read()
         tree = ast.parse(src, filename=path)
     except (OSError, ValueError, SyntaxError):  # unreadable / NUL byte / bad syntax
-        return                                  # not parseable -> not a corpus module
+        return  # not parseable -> not a corpus module
     doc = ast.get_docstring(tree)
     if not doc:
         return  # only documented modules are corpus nodes
@@ -299,29 +358,34 @@ def _module_and_symbols(path: str, root: str, nodes: list):
     else:
         osrc, oorigin = "none", None
     visibility = meta.get("visibility") or nr_vis or "internal"
-    nodes.append({
-        "node_id": mod_id,
-        "kind": "module",
-        "title": title,
-        "path": rel,
-        "anchor": None,
-        "lineno": 1,
-        "summary": summary,
-        "summary_source": "authored" if summary else "",
-        "text_excerpt": " ".join(doc.split())[:400],
-        "owner": mod_owner or "",
-        "owner_source": osrc,
-        "owner_origin": oorigin,
-        "tags": sorted(set(_keywords(title, summary))),
-        "visibility": visibility,
-        "updated": "",
-        "parent": None,
-        "children": [],
-        "links": [],
-    })
+    nodes.append(
+        {
+            "node_id": mod_id,
+            "kind": "module",
+            "title": title,
+            "path": rel,
+            "anchor": None,
+            "lineno": 1,
+            "summary": summary,
+            "summary_source": "authored" if summary else "",
+            "text_excerpt": " ".join(doc.split())[:400],
+            "owner": mod_owner or "",
+            "owner_source": osrc,
+            "owner_origin": oorigin,
+            "tags": sorted(set(_keywords(title, summary))),
+            "visibility": visibility,
+            "updated": "",
+            "parent": None,
+            "children": [],
+            "links": [],
+        }
+    )
     exported = _exported_names(tree)
-    defs = {n.name: n for n in tree.body
-            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))}
+    defs = {
+        n.name: n
+        for n in tree.body
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+    }
     for name in sorted(exported):
         nd = defs.get(name)
         if nd is None:
@@ -336,26 +400,28 @@ def _module_and_symbols(path: str, root: str, nodes: list):
         else:
             owner, so, oo = "", "none", None
         summ = _first_sentence(sdoc)
-        nodes.append({
-            "node_id": "%s::%s" % (mod_id, name),
-            "kind": "symbol",
-            "title": name,
-            "path": rel,
-            "anchor": name,
-            "lineno": getattr(nd, "lineno", None),
-            "summary": summ,
-            "summary_source": "authored" if summ else "",
-            "text_excerpt": " ".join(sdoc.split())[:400],
-            "owner": owner,
-            "owner_source": so,
-            "owner_origin": oo,
-            "tags": sorted(set(_keywords(name, summ))),
-            "visibility": visibility,       # symbols inherit the module's visibility
-            "updated": "",
-            "parent": mod_id,
-            "children": [],
-            "links": [],
-        })
+        nodes.append(
+            {
+                "node_id": "%s::%s" % (mod_id, name),
+                "kind": "symbol",
+                "title": name,
+                "path": rel,
+                "anchor": name,
+                "lineno": getattr(nd, "lineno", None),
+                "summary": summ,
+                "summary_source": "authored" if summ else "",
+                "text_excerpt": " ".join(sdoc.split())[:400],
+                "owner": owner,
+                "owner_source": so,
+                "owner_origin": oo,
+                "tags": sorted(set(_keywords(name, summ))),
+                "visibility": visibility,  # symbols inherit the module's visibility
+                "updated": "",
+                "parent": mod_id,
+                "children": [],
+                "links": [],
+            }
+        )
 
 
 def _exported_names(tree) -> list:
@@ -363,8 +429,11 @@ def _exported_names(tree) -> list:
     for node in tree.body:
         if isinstance(node, ast.Assign):
             for t in node.targets:
-                if isinstance(t, ast.Name) and t.id == "__all__" \
-                        and isinstance(node.value, (ast.List, ast.Tuple)):
+                if (
+                    isinstance(t, ast.Name)
+                    and t.id == "__all__"
+                    and isinstance(node.value, (ast.List, ast.Tuple))
+                ):
                     for elt in node.value.elts:
                         val = getattr(elt, "s", None)
                         if val is None and isinstance(elt, ast.Constant):
@@ -422,14 +491,19 @@ def _duplicate_ids(nodes):
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description="Build wiki/corpus.json from the repo (deterministic).")
+    ap = argparse.ArgumentParser(
+        description="Build wiki/corpus.json from the repo (deterministic)."
+    )
     ap.add_argument("--root", default=ROOT, help="tree to index (default: repo root)")
-    ap.add_argument("--out", default=os.path.join("wiki", "corpus.json"),
-                    help="output path (default: wiki/corpus.json)")
+    ap.add_argument(
+        "--out",
+        default=os.path.join("wiki", "corpus.json"),
+        help="output path (default: wiki/corpus.json)",
+    )
     args = ap.parse_args(argv)
     corpus = build_corpus(args.root)
     dups = _duplicate_ids(corpus["nodes"])
-    if dups:   # node_id is the corpus primary key — fail loudly, never silently collapse
+    if dups:  # node_id is the corpus primary key — fail loudly, never silently collapse
         sys.stderr.write("ERROR build_corpus: duplicate node_id(s): %s\n" % dups)
         return 1
     out = args.out if os.path.isabs(args.out) else os.path.join(args.root, args.out)
@@ -439,8 +513,10 @@ def main(argv=None) -> int:
         fh.write("\n")
     gaps = sum(1 for n in corpus["nodes"] if not n["summary_source"])
     unowned = sum(1 for n in corpus["nodes"] if n["owner_source"] == "none")
-    print("wrote %s: %d nodes (%d summary gaps, %d unowned)"
-          % (_rel(out, args.root), len(corpus["nodes"]), gaps, unowned))
+    print(
+        "wrote %s: %d nodes (%d summary gaps, %d unowned)"
+        % (_rel(out, args.root), len(corpus["nodes"]), gaps, unowned)
+    )
     return 0
 
 

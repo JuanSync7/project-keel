@@ -4,6 +4,7 @@ layer: backend
 public_api: no
 summary: The product narrative — features, deterministic-check catalogue, and setup steps.
 """
+
 from __future__ import annotations
 
 from ._models import Check, Feature, Link, Principle, Step
@@ -110,9 +111,11 @@ FEATURES: tuple[Feature, ...] = (
             "from cron, systemd, or CI. Pick one by name; nothing downstream changes."
         ),
         icon="plug",
-        links=(Link("MCP servers", "mcp-readme"),
-               Link("Model adapters", "models-readme"),
-               Link("Scheduled jobs", "ops-scheduled-readme")),
+        links=(
+            Link("MCP servers", "mcp-readme"),
+            Link("Model adapters", "models-readme"),
+            Link("Scheduled jobs", "ops-scheduled-readme"),
+        ),
     ),
     Feature(
         slug="coding-practices",
@@ -127,8 +130,10 @@ FEATURES: tuple[Feature, ...] = (
             "behind a profile, so the core stays domain-neutral."
         ),
         icon="check",
-        links=(Link("Practices guide", "docs-guides-coding-practices"),
-               Link("Checks catalogue", "docs-guides-deterministic-checks")),
+        links=(
+            Link("Practices guide", "docs-guides-coding-practices"),
+            Link("Checks catalogue", "docs-guides-deterministic-checks"),
+        ),
     ),
     Feature(
         slug="agent-surface",
@@ -154,8 +159,10 @@ FEATURES: tuple[Feature, ...] = (
             "re-running model calls."
         ),
         icon="flow",
-        links=(Link("Agent-runtimes guide", "docs-guides-agent-runtimes"),
-               Link("ADR-0003", "docs-adr-0003-agent-control-flow-runtime")),
+        links=(
+            Link("Agent-runtimes guide", "docs-guides-agent-runtimes"),
+            Link("ADR-0003", "docs-adr-0003-agent-control-flow-runtime"),
+        ),
     ),
     Feature(
         slug="dev-loops",
@@ -196,7 +203,7 @@ PRINCIPLES: tuple[Principle, ...] = (
         slug="agent-rules",
         title="One rule source, for humans and agents",
         essence="`AGENT.md` is the canonical, vendor-neutral rules file; "
-                "`CLAUDE.md` is a symlink to it.",
+        "`CLAUDE.md` is a symlink to it.",
         detail=(
             "Every directory's rules live in `AGENT.md`, and `CLAUDE.md` is just "
             "a symlink to its sibling — so Claude Code and any other agent tool "
@@ -205,14 +212,18 @@ PRINCIPLES: tuple[Principle, ...] = (
             "overrides where it is stricter. The symlink is gate-checked, so the "
             "two cannot drift."
         ),
-        links=(Link("AGENT.md is canonical",
-                     "conventions#agent-rules-file-agent-md-is-canonical-claude-md-is-a-symlink"),),
+        links=(
+            Link(
+                "AGENT.md is canonical",
+                "conventions#agent-rules-file-agent-md-is-canonical-claude-md-is-a-symlink",
+            ),
+        ),
     ),
     Principle(
         slug="labels",
         title="Every doc is labelled twice over",
         essence="Frontmatter routes files for humans and feeds the company-wide "
-                "'one brain'.",
+        "'one brain'.",
         detail=(
             "The human half (`kind`, `layer`, `status`, `owner`, `tags`, "
             "`summary`) lets files sort and route without being read. The corpus "
@@ -222,14 +233,22 @@ PRINCIPLES: tuple[Principle, ...] = (
             "confidential doc from the wrong audience. Code files carry no YAML, "
             "so the module docstring is the label and `__all__` is the public API."
         ),
-        links=(Link("Frontmatter scheme", "conventions#1-frontmatter-labeling-for-sort-route"),
-               Link("Corpus-core fields", "conventions#corpus-core-fields-the-one-brain-reads-these")),
+        links=(
+            Link(
+                "Frontmatter scheme",
+                "conventions#1-frontmatter-labeling-for-sort-route",
+            ),
+            Link(
+                "Corpus-core fields",
+                "conventions#corpus-core-fields-the-one-brain-reads-these",
+            ),
+        ),
     ),
     Principle(
         slug="taxonomy",
         title="Every directory has a fixed job",
         essence="A closed table gives each directory a kind and a "
-                "'what goes in, what does not'.",
+        "'what goes in, what does not'.",
         detail=(
             "`src/` is the only home for production code, split frontend / "
             "backend / shared / app; transports live in `api/` and `mcp/`, "
@@ -244,7 +263,7 @@ PRINCIPLES: tuple[Principle, ...] = (
         slug="boundary",
         title="`__init__.py` is the API; depend on contracts",
         essence="Nothing leaves a package except through `__all__`; cross-package "
-                "wiring is a contract, not a class.",
+        "wiring is a contract, not a class.",
         detail=(
             "Implementation lives in `_underscore` modules and is never imported "
             "across a package boundary — callers go through the package's "
@@ -254,13 +273,18 @@ PRINCIPLES: tuple[Principle, ...] = (
             "`index.ts` barrel, Go's capitalised exports, Rust's `pub` in "
             "`mod.rs`."
         ),
-        links=(Link("The boundary rule", "conventions#3-the-init-py-boundary-rule-the-important-one"),),
+        links=(
+            Link(
+                "The boundary rule",
+                "conventions#3-the-init-py-boundary-rule-the-important-one",
+            ),
+        ),
     ),
     Principle(
         slug="layering",
         title="Dependencies point one way",
         essence="`app → {frontend, backend} → shared`, and `shared/` depends on "
-                "nothing.",
+        "nothing.",
         detail=(
             "Frontend and backend never import each other; they meet through "
             "`shared/` — the framework-free FE↔BE contract — and are wired "
@@ -269,14 +293,16 @@ PRINCIPLES: tuple[Principle, ...] = (
             "generic, domain-agnostic helpers — if a helper knows about your "
             "domain, it belongs in `shared/`."
         ),
-        links=(Link("shared vs util", "conventions#4-shared-vs-util"),
-               Link("Architecture", "docs-architecture-readme")),
+        links=(
+            Link("shared vs util", "conventions#4-shared-vs-util"),
+            Link("Architecture", "docs-architecture-readme"),
+        ),
     ),
     Principle(
         slug="triggers-doers",
         title="A trigger says when; a doer says what",
         essence="Automation splits in two: the doer holds the logic, the trigger "
-                "is a thin adapter.",
+        "is a thin adapter.",
         detail=(
             "Deterministic doers live in `scripts/` and LLM doers in `agents/` "
             "(model from `models/`); both are vendor-agnostic. The trigger — a "
@@ -284,13 +310,18 @@ PRINCIPLES: tuple[Principle, ...] = (
             "run and points at the doer, holding no logic. Swapping cron for "
             "systemd, or one agent ecosystem for another, never touches the doer."
         ),
-        links=(Link("Triggers vs doers", "conventions#7-triggers-vs-doers-hooks-scheduled-jobs"),),
+        links=(
+            Link(
+                "Triggers vs doers",
+                "conventions#7-triggers-vs-doers-hooks-scheduled-jobs",
+            ),
+        ),
     ),
     Principle(
         slug="adapters",
         title="Name the neutral concept; a vendor is one adapter",
         essence="Providers and engines hide behind a neutral contract, selected "
-                "by name.",
+        "by name.",
         detail=(
             "A model provider lives behind `models/` (an agent gets its model "
             "from a registry, never a provider name); an agent's control flow is "
@@ -299,14 +330,19 @@ PRINCIPLES: tuple[Principle, ...] = (
             "lazily-loaded, optional adapter. Adapters change execution, never "
             "semantics — an equivalence test holds every engine to the reference."
         ),
-        links=(Link("runtimes/", "conventions#16-agent-control-flow-runtimes-a-neutral-plan-engines-are-adapters"),
-               Link("models/", "models-readme")),
+        links=(
+            Link(
+                "runtimes/",
+                "conventions#16-agent-control-flow-runtimes-a-neutral-plan-engines-are-adapters",
+            ),
+            Link("models/", "models-readme"),
+        ),
     ),
     Principle(
         slug="agents",
         title="An agent is an in-process brain or a published surface",
         essence="Compiled in-process → a function; across a process boundary → an "
-                "agent surface.",
+        "agent surface.",
         detail=(
             "An in-process agent lives in `agents/<name>/` — its `prompt.md`, a "
             "private `_brain.py`, and a `tools.md` manifest — and defaults model "
@@ -316,14 +352,19 @@ PRINCIPLES: tuple[Principle, ...] = (
             "shipped reference is AAD) a thin adapter whose schema is generated "
             "and gate-checked for drift."
         ),
-        links=(Link("Agent surface", "conventions#14-exposing-a-service-as-an-agent-the-agent-surface"),
-               Link("Agent-surface guide", "docs-guides-agent-surface")),
+        links=(
+            Link(
+                "Agent surface",
+                "conventions#14-exposing-a-service-as-an-agent-the-agent-surface",
+            ),
+            Link("Agent-surface guide", "docs-guides-agent-surface"),
+        ),
     ),
     Principle(
         slug="manifest",
         title="Project facts live in one checked file",
         essence="`config/project.json` records the per-layer facts, and the "
-                "checker won't let them drift.",
+        "checker won't let them drift.",
         detail=(
             "Because the repo is polyglot, 'what is this made of' is a set of "
             "per-layer facts — each layer's language and chosen stack, and which "
@@ -334,83 +375,128 @@ PRINCIPLES: tuple[Principle, ...] = (
             "`pyproject.toml`. It is a committed decision read by the gate, not "
             "the app."
         ),
-        links=(Link("Project manifest", "conventions#15-project-facts-manifest-config-project-json"),),
+        links=(
+            Link(
+                "Project manifest",
+                "conventions#15-project-facts-manifest-config-project-json",
+            ),
+        ),
     ),
 )
 
 # Mirrors docs/guides/deterministic-checks.md. `present` is set at load time.
 CHECKS: tuple[Check, ...] = (
     Check(
-        slug="structure", name="Structure & frontmatter",
-        script="scripts/check_structure.py", gate="error", interpreter="3.6-safe",
-        command="make check", when="Every commit and in CI",
+        slug="structure",
+        name="Structure & frontmatter",
+        script="scripts/check_structure.py",
+        gate="error",
+        interpreter="3.6-safe",
+        command="make check",
+        when="Every commit and in CI",
         purpose="Labels, taxonomy, package boundaries, tool/agent governance, "
-                "project facts and agent-rules symlinks (checks A–I).",
+        "project facts and agent-rules symlinks (checks A–I).",
     ),
     Check(
-        slug="corpus", name="Corpus integrity & determinism",
-        script="scripts/jobs/check_corpus.py", gate="error", interpreter=">=3.7",
-        command="python scripts/jobs/check_corpus.py", when="CI and after corpus changes",
+        slug="corpus",
+        name="Corpus integrity & determinism",
+        script="scripts/jobs/check_corpus.py",
+        gate="error",
+        interpreter=">=3.7",
+        command="python scripts/jobs/check_corpus.py",
+        when="CI and after corpus changes",
         purpose="wiki/corpus.json is a valid, acyclic graph and the build is reproducible.",
     ),
     Check(
-        slug="openapi", name="OpenAPI drift",
-        script="api/rest_fastapi/export_openapi.py", gate="error", interpreter="FastAPI",
-        command="make check-openapi", when="When routes change; in CI",
+        slug="openapi",
+        name="OpenAPI drift",
+        script="api/rest_fastapi/export_openapi.py",
+        gate="error",
+        interpreter="FastAPI",
+        command="make check-openapi",
+        when="When routes change; in CI",
         purpose="The committed openapi.json matches the live FastAPI routes.",
     ),
     Check(
-        slug="aad-schema", name="AAD schema drift",
-        script="scripts/agent_surface/generate_aad_schema.py", gate="error",
-        interpreter="pydantic", command="make check-aad",
+        slug="aad-schema",
+        name="AAD schema drift",
+        script="scripts/agent_surface/generate_aad_schema.py",
+        gate="error",
+        interpreter="pydantic",
+        command="make check-aad",
         when="When the AAD model changes; in CI",
         purpose="The committed AAD JSON Schema matches the AadDescriptor model.",
     ),
     Check(
-        slug="cdmon", name="Code-doc drift",
-        script="scripts/cdmon_sync.py", gate="error", interpreter="any",
-        command="python3 scripts/cdmon_sync.py --check", when="Every commit (no-op until installed)",
+        slug="cdmon",
+        name="Code-doc drift",
+        script="scripts/cdmon_sync.py",
+        gate="error",
+        interpreter="any",
+        command="python3 scripts/cdmon_sync.py --check",
+        when="Every commit (no-op until installed)",
         purpose="cdmon code↔doc drift monitor (a thin adapter; optional).",
     ),
     Check(
-        slug="generic", name="Generic-solution advisor",
-        script="scripts/check_generic.py", gate="report", interpreter="3.6-safe",
-        command="make advise", when="Anytime; advisory (never fails the build)",
+        slug="generic",
+        name="Generic-solution advisor",
+        script="scripts/check_generic.py",
+        gate="report",
+        interpreter="3.6-safe",
+        command="make advise",
+        when="Anytime; advisory (never fails the build)",
         purpose="Flags distinctive literals asserted as a test's expected value "
-                "AND hardcoded in src/ logic — a 'fit the solution to the eval' "
-                "smell. Advisory: draws attention, never gates. Suppress with "
-                "# generic-ok: <reason>.",
+        "AND hardcoded in src/ logic — a 'fit the solution to the eval' "
+        "smell. Advisory: draws attention, never gates. Suppress with "
+        "# generic-ok: <reason>.",
     ),
 )
 
 SETUP_STEPS: tuple[Step, ...] = (
-    Step(title="Generate your project",
-         body="One command runs an interactive Q&A (name, frontend stack, transports, "
-              "domain profiles) and writes a tailored skeleton: the chosen stack, a "
-              "filled-in config/project.json, and a .copier-answers.yml so you can pull "
-              "future template improvements later. The template URL is whatever this "
-              "project recorded as `_src_path` in .copier-answers.yml. Needs copier "
-              "(pipx install copier, or pip install '.[template]' in a checkout).",
-         command="copier copy <template-url> my-project"),
-    Step(title="Make it yours",
-         body="Rename src/backend/example_feature/ to your first real package and delete "
-              "any optional dirs you don't need (wiki/, models/, evals/, containers/).",
-         command=""),
-    Step(title="Run the checks",
-         body="The fast structural gate runs anywhere; the full suite runs under your "
-              "project interpreter.",
-         command="make check   # or: make verify"),
-    Step(title="Wire the hooks",
-         body="Install pre-commit so the deterministic checks run on every commit; CI "
-              "already runs `make check-all`.",
-         command="pip install pre-commit && pre-commit install"),
-    Step(title="Pull template updates later",
-         body="When the template this project came from improves, re-apply the changes — copier "
-              "three-way merges them using your recorded answers. `--trust` is required: "
-              "re-answering a question has to remove what you declined, and copier only "
-              "deletes through migrations, which run commands.",
-         command="copier update --trust"),
+    Step(
+        title="Generate your project",
+        body="One command runs an interactive Q&A (name, frontend stack, transports, "
+        "domain profiles) and writes a tailored skeleton: the chosen stack, a "
+        "filled-in config/project.json, and a .copier-answers.yml so you can pull "
+        "future template improvements later. The template URL is whatever this "
+        "project recorded as `_src_path` in .copier-answers.yml. Needs copier "
+        "(pipx install copier, or pip install '.[template]' in a checkout).",
+        command="copier copy <template-url> my-project",
+    ),
+    Step(
+        title="Make it yours",
+        body="Rename src/backend/example_feature/ to your first real package and delete "
+        "any optional dirs you don't need (wiki/, models/, evals/, containers/).",
+        command="",
+    ),
+    Step(
+        title="Run the checks",
+        body="The fast structural gate runs anywhere; the full suite runs under your "
+        "project interpreter.",
+        command="make check   # or: make verify",
+    ),
+    Step(
+        title="Wire the hooks",
+        body="Install pre-commit so the deterministic checks run on every commit; CI "
+        "already runs `make check-all`.",
+        command="pip install pre-commit && pre-commit install",
+    ),
+    Step(
+        title="Pull template updates later",
+        body="When the template this project came from improves, re-apply the changes — copier "
+        "three-way merges them using your recorded answers. `--trust` is required: "
+        "re-answering a question has to remove what you declined, and copier only "
+        "deletes through migrations, which run commands.",
+        command="copier update --trust",
+    ),
 )
 
-__all__ = ["TAGLINE", "SUMMARY_TEMPLATE", "CONVENTIONS", "FEATURES", "PRINCIPLES",
-           "CHECKS", "SETUP_STEPS"]
+__all__ = [
+    "TAGLINE",
+    "SUMMARY_TEMPLATE",
+    "CONVENTIONS",
+    "FEATURES",
+    "PRINCIPLES",
+    "CHECKS",
+    "SETUP_STEPS",
+]

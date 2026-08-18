@@ -4,6 +4,7 @@ kind: demo
 layer: backend
 summary: Minimal runnable service that implements AgentSurface and is AAD-discoverable.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -48,17 +49,23 @@ class EchoSurface(AgentSurface):
             description="Template showing the agent-surface + AAD adapter; echoes the question.",
             owner="you@example.com",
             tags=("template", "reference"),
-            capabilities=(Capability(command="/ask", title="Ask a question",
-                                     arg_hint="<question>"),),
+            capabilities=(
+                Capability(
+                    command="/ask", title="Ask a question", arg_hint="<question>"
+                ),
+            ),
             example_prompts=("ping", "what can you do?"),
         )
 
     def ask(self, question: str) -> AgentReply:
         """Answer one question. Replace this body with your real logic."""
-        answer = ("You asked: %s\n\n(This is the reference agent — replace "
-                  "`ask` with real logic.)" % question)
-        return AgentReply(answer=answer, meta="turns: 1 · reference",
-                          html="<p>%s</p>" % answer)
+        answer = (
+            "You asked: %s\n\n(This is the reference agent — replace "
+            "`ask` with real logic.)" % question
+        )
+        return AgentReply(
+            answer=answer, meta="turns: 1 · reference", html="<p>%s</p>" % answer
+        )
 
     def health(self) -> dict:
         """Liveness."""

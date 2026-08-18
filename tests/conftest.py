@@ -3,6 +3,7 @@
 Also the one place the suite's git environment is neutralised — see the comment
 below, and tests/hermetic_git.py for what is neutralised and why.
 """
+
 import atexit
 import os
 import shutil

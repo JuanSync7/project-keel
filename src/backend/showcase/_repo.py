@@ -4,6 +4,7 @@ layer: backend
 public_api: yes
 summary: Loads the live repo (project facts + corpus) into a Showcase the API renders.
 """
+
 from __future__ import annotations
 
 import json
@@ -40,9 +41,16 @@ class Showcase:
     frozen value objects (``_models``) the transport layer serialises as-is.
     """
 
-    def __init__(self, *, name: str, project: dict[str, Any], corpus: dict[str, Any],
-                 practices: dict[str, Any] | None = None,
-                 present_scripts: frozenset[str] = frozenset(), root: str = "") -> None:
+    def __init__(
+        self,
+        *,
+        name: str,
+        project: dict[str, Any],
+        corpus: dict[str, Any],
+        practices: dict[str, Any] | None = None,
+        present_scripts: frozenset[str] = frozenset(),
+        root: str = "",
+    ) -> None:
         self._name = name
         self._project = project or {}
         self._corpus = corpus or {"nodes": []}
@@ -63,8 +71,10 @@ class Showcase:
     def checks(self) -> tuple[Check, ...]:
         """The deterministic-check catalogue, each flagged present/absent on disk."""
         from dataclasses import replace
-        return tuple(replace(c, present=(c.script in self._present))
-                     for c in _data.CHECKS)
+
+        return tuple(
+            replace(c, present=(c.script in self._present)) for c in _data.CHECKS
+        )
 
     def setup_steps(self) -> tuple[Step, ...]:
         """The 'use it in your own project' guide."""
@@ -103,13 +113,15 @@ class Showcase:
         for name, spec in (self._project.get("layers") or {}).items():
             if not isinstance(spec, dict):
                 continue
-            out.append(Layer(
-                name=name,
-                language=spec.get("language", ""),
-                path=spec.get("path") or spec.get("root") or "",
-                stack=spec.get("stack") or "",
-                available=tuple(spec.get("available", []) or ()),
-            ))
+            out.append(
+                Layer(
+                    name=name,
+                    language=spec.get("language", ""),
+                    path=spec.get("path") or spec.get("root") or "",
+                    stack=spec.get("stack") or "",
+                    available=tuple(spec.get("available", []) or ()),
+                )
+            )
         return tuple(out)
 
     def _transports(self) -> tuple[Transport, ...]:
@@ -117,8 +129,9 @@ class Showcase:
         enabled = set(t.get("enabled", []) or [])
         out = []
         for name, directory in sorted((t.get("available") or {}).items()):
-            out.append(Transport(name=name, directory=directory,
-                                  enabled=name in enabled))
+            out.append(
+                Transport(name=name, directory=directory, enabled=name in enabled)
+            )
         return tuple(out)
 
     def model_adapters(self) -> tuple[ModelAdapter, ...]:
@@ -132,8 +145,9 @@ class Showcase:
         default = m.get("default")
         out = []
         for name, directory in sorted((m.get("available") or {}).items()):
-            out.append(ModelAdapter(name=name, directory=directory,
-                                    default=(name == default)))
+            out.append(
+                ModelAdapter(name=name, directory=directory, default=(name == default))
+            )
         return tuple(out)
 
     def practice_items(self) -> tuple[PracticeItem, ...]:
@@ -147,15 +161,17 @@ class Showcase:
         for p in self._practices.get("practices") or []:
             if not isinstance(p, dict):
                 continue
-            out.append(PracticeItem(
-                id=p.get("id", ""),
-                row=int(p.get("row", 9999)),
-                scope=p.get("scope", ""),
-                tier=p.get("tier", ""),
-                status=p.get("status", ""),
-                title=p.get("title", ""),
-                mechanism=p.get("mechanism", ""),
-            ))
+            out.append(
+                PracticeItem(
+                    id=p.get("id", ""),
+                    row=int(p.get("row", 9999)),
+                    scope=p.get("scope", ""),
+                    tier=p.get("tier", ""),
+                    status=p.get("status", ""),
+                    title=p.get("title", ""),
+                    mechanism=p.get("mechanism", ""),
+                )
+            )
         return tuple(sorted(out, key=lambda x: (x.row, x.id)))
 
     def domain_profiles(self) -> tuple[ProfileState, ...]:
@@ -171,12 +187,14 @@ class Showcase:
         for name, spec in defs.items():
             if str(name).startswith("_") or not isinstance(spec, dict):
                 continue
-            out.append(ProfileState(
-                name=name,
-                tags=tuple(spec.get("tags", []) or ()),
-                activates=tuple(spec.get("activates", []) or ()),
-                enabled=flags.get(name) is True,
-            ))
+            out.append(
+                ProfileState(
+                    name=name,
+                    tags=tuple(spec.get("tags", []) or ()),
+                    activates=tuple(spec.get("activates", []) or ()),
+                    enabled=flags.get(name) is True,
+                )
+            )
         return tuple(sorted(out, key=lambda x: x.name))
 
     # -- corpus navigation (delegates to pure _query) ------------------------
@@ -222,7 +240,9 @@ class Showcase:
             # not a verbatim fenced block that would show the backticks literally.
             return _content.module_docstring(text)
         if kind == "symbol":
-            return _content.symbol_docstring(text, n.get("anchor") or n.get("title", ""))
+            return _content.symbol_docstring(
+                text, n.get("anchor") or n.get("title", "")
+            )
         return str(n.get("text_excerpt", ""))
 
     # -- agent front door (llms.txt convention) ------------------------------
@@ -236,8 +256,9 @@ class Showcase:
 
     def llms_full(self) -> str:
         """Render llms-full.txt: every doc body inlined for one-shot ingestion."""
-        docs = [(ref, self.markdown(ref.node_id))
-                for g in self.doc_tree() for ref in g.docs]
+        docs = [
+            (ref, self.markdown(ref.node_id)) for g in self.doc_tree() for ref in g.docs
+        ]
         return _llms.render_full(self.overview(), docs)
 
 
@@ -261,13 +282,20 @@ def load_showcase(root: str) -> Showcase:
     project = _read_json(os.path.join(root, "config", "project.json"))
     corpus = _read_json(os.path.join(root, "wiki", "corpus.json"))
     practices = _read_json(os.path.join(root, "config", "practices.json"))
-    present = frozenset(c.script for c in _data.CHECKS
-                        if os.path.isfile(os.path.join(root, c.script)))
+    present = frozenset(
+        c.script for c in _data.CHECKS if os.path.isfile(os.path.join(root, c.script))
+    )
     # An unnamed manifest falls back to the project directory's own name — real
     # information about THIS project — not to the template's name.
     name = project.get("name") or os.path.basename(os.path.abspath(root))
-    return Showcase(name=name, project=project, corpus=corpus, practices=practices,
-                    present_scripts=present, root=root)
+    return Showcase(
+        name=name,
+        project=project,
+        corpus=corpus,
+        practices=practices,
+        present_scripts=present,
+        root=root,
+    )
 
 
 __all__ = ["Showcase", "load_showcase"]

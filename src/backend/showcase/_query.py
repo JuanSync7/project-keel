@@ -4,6 +4,7 @@ layer: backend
 public_api: no
 summary: Pure, disk-free navigation and search over an in-memory corpus dict.
 """
+
 from __future__ import annotations
 
 import re
@@ -50,7 +51,7 @@ def doc_tree(corpus: _Corpus) -> tuple[DocGroup, ...]:
         if n.get("kind") != "doc":
             continue
         path = n.get("path", "") or ""
-        top = path.split("/")[0] if "/" in path else "."   # root-level docs -> "."
+        top = path.split("/")[0] if "/" in path else "."  # root-level docs -> "."
         groups.setdefault(top, []).append(_ref(n))
     out = []
     for directory in sorted(groups):

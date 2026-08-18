@@ -4,6 +4,7 @@ kind: tests
 layer: backend
 summary: Pins the gate-tier `exception-chaining` practice where the adapter converts a caller's Pause into its private abort signal — the cause must survive.
 """
+
 import sys
 from pathlib import Path
 
@@ -32,10 +33,12 @@ def _fire_pause_node():
     so the wrapper is driven directly — via the *public* runtime object.
     """
     holder = {}
-    step = Step(name="ask", effect=READ_ONLY,
-                run=lambda state: interrupt(state, _PAYLOAD))
+    step = Step(
+        name="ask", effect=READ_ONLY, run=lambda state: interrupt(state, _PAYLOAD)
+    )
     node = get_runtime("langgraph")._node(
-        None, step, None, "run", None, {"has": False, "value": None}, holder)
+        None, step, None, "run", None, {"has": False, "value": None}, holder
+    )
     with pytest.raises(Exception) as excinfo:  # noqa: PT011 - signal type is private
         node({"bag": {"_execute": True}})
     return excinfo.value, holder
@@ -52,7 +55,8 @@ def test_the_pause_signal_keeps_the_pause_as_its_explicit_cause():
     assert isinstance(raised.__cause__, Pause), (
         "the adapter's pause signal dropped its cause: __cause__=%r "
         "(exception-chaining is a gate-tier practice; use `raise ... from p`)"
-        % (raised.__cause__,))
+        % (raised.__cause__,)
+    )
     assert raised.__cause__.payload == _PAYLOAD
 
 

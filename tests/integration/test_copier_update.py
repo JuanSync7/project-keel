@@ -4,6 +4,7 @@ kind: tests
 layer: n/a
 summary: The upgrade channel ADR-0004 chose copier for, exercised end to end against the REAL template — clone keel into a scratch dir, generate a project, commit it, evolve the clone, then `copier update`. Proves new template files arrive, template edits land, the project's own edits survive, the `.gitignore` divergence twin holds, `_commit` advances and `_src_path` stays resolvable. Skipped on a bare local clone without the optional `template` extra; CI installs `.[dev,template]` and declares the surface required (KEEL_REQUIRED_EXTRAS), so there a missing copier is a hard failure instead of a silent skip.
 """
+
 import shutil
 import subprocess
 import sys
@@ -28,10 +29,14 @@ _ROOT = Path(__file__).resolve().parents[2]
 pytestmark = [
     pytest.mark.integration,
     pytest.mark.skipif(shutil.which("git") is None, reason="copier update needs git"),
-    pytest.mark.skipif(not (_ROOT / ".git").exists(),
-                       reason="update needs a git checkout of the template, not a tarball"),
-    pytest.mark.skipif(not (_ROOT / "copier.yml").is_file(),
-                       reason="not a copier template — this is a generated project"),
+    pytest.mark.skipif(
+        not (_ROOT / ".git").exists(),
+        reason="update needs a git checkout of the template, not a tarball",
+    ),
+    pytest.mark.skipif(
+        not (_ROOT / "copier.yml").is_file(),
+        reason="not a copier template — this is a generated project",
+    ),
 ]
 
 # The template's own git config must not be the developer's, and copier shells out to
@@ -56,7 +61,11 @@ _LOCAL_EDIT = "\nA paragraph the downstream project wrote itself.\n"
 
 def _git(*argv, cwd):
     r = subprocess.run(("git",) + argv, cwd=str(cwd), capture_output=True, text=True)
-    assert r.returncode == 0, "git %s failed:\n%s%s" % (" ".join(argv), r.stdout, r.stderr)
+    assert r.returncode == 0, "git %s failed:\n%s%s" % (
+        " ".join(argv),
+        r.stdout,
+        r.stderr,
+    )
     return r.stdout
 
 
@@ -84,15 +93,21 @@ def _clone_template(dest, work):
     it before expecting these tests to see it.
     """
     _git("clone", "--quiet", "--no-hardlinks", str(_ROOT), str(dest), cwd=work)
-    patch = subprocess.run(("git", "diff", "HEAD", "--binary"), cwd=str(_ROOT),
-                           capture_output=True)
+    patch = subprocess.run(
+        ("git", "diff", "HEAD", "--binary"), cwd=str(_ROOT), capture_output=True
+    )
     assert patch.returncode == 0, patch.stderr.decode("utf-8", "replace")
     if patch.stdout.strip():
-        applied = subprocess.run(("git", "apply", "--index", "-"), cwd=str(dest),
-                                 input=patch.stdout, capture_output=True)
+        applied = subprocess.run(
+            ("git", "apply", "--index", "-"),
+            cwd=str(dest),
+            input=patch.stdout,
+            capture_output=True,
+        )
         assert applied.returncode == 0, (
             "could not replay keel's working tree onto its clone:\n"
-            + applied.stderr.decode("utf-8", "replace"))
+            + applied.stderr.decode("utf-8", "replace")
+        )
         _git("commit", "--quiet", "-m", "uncommitted working tree under test", cwd=dest)
     return dest
 
@@ -120,9 +135,15 @@ def upgraded(tmp_path_factory):
 
         # 1. a project generated from it, exactly as `make new` does
         project = work / "proj"
-        copier.run_copy(str(template), str(project),
-                        data={"project_name": "demo_proj", "frontend_stack": "none"},
-                        defaults=True, vcs_ref="HEAD", unsafe=False, quiet=True)
+        copier.run_copy(
+            str(template),
+            str(project),
+            data={"project_name": "demo_proj", "frontend_stack": "none"},
+            defaults=True,
+            vcs_ref="HEAD",
+            unsafe=False,
+            quiet=True,
+        )
         _git("init", "--quiet", "-b", "main", cwd=project)
         _git("add", "-A", cwd=project)
         _git("commit", "--quiet", "-m", "generated from keel", cwd=project)
@@ -141,8 +162,11 @@ def upgraded(tmp_path_factory):
         (template / _NEW_FILE).write_text(_NEW_FILE_TEXT)
         for name in (".editorconfig", ".gitignore", ".gitignore.jinja"):
             p = template / name
-            extra = _UPSTREAM_EDIT if name == ".editorconfig" else (
-                "\n# upstream new ignore rule\n%s\n" % _UPSTREAM_IGNORE)
+            extra = (
+                _UPSTREAM_EDIT
+                if name == ".editorconfig"
+                else ("\n# upstream new ignore rule\n%s\n" % _UPSTREAM_IGNORE)
+            )
             p.write_text(p.read_text() + extra)
         _git("add", "-A", cwd=template)
         _git("commit", "--quiet", "-m", "template improves", cwd=template)
@@ -156,8 +180,14 @@ def upgraded(tmp_path_factory):
         #    unsafe=True is what `copier update --trust` passes, and keel's `_migrations`
         #    make it mandatory: copier classes a template carrying them as unsafe and
         #    refuses to update without trust (pinned by the restack tests below).
-        copier.run_update(str(project), defaults=True, overwrite=True,
-                          vcs_ref="HEAD", unsafe=True, quiet=True)
+        copier.run_update(
+            str(project),
+            defaults=True,
+            overwrite=True,
+            vcs_ref="HEAD",
+            unsafe=True,
+            quiet=True,
+        )
         yield template, project, commit_before
     finally:
         mp.undo()
@@ -205,8 +235,8 @@ def test_update_keeps_the_gitignore_divergence_twin(upgraded):
     line from keel's plain `.gitignore`, or every future update of every clone dies."""
     _, project, _ = upgraded
     lines = [ln.strip() for ln in (project / ".gitignore").read_text().splitlines()]
-    assert _UPSTREAM_IGNORE in lines            # the upstream's new rule arrived
-    assert ".copier-answers.yml" not in lines   # ...and the twin still diverges
+    assert _UPSTREAM_IGNORE in lines  # the upstream's new rule arrived
+    assert ".copier-answers.yml" not in lines  # ...and the twin still diverges
     assert ".copier-answers.yml" in _git("ls-files", cwd=project).split()
 
 
@@ -217,17 +247,26 @@ def test_update_leaves_no_conflicts(upgraded):
     _, project, _ = upgraded
     assert not list(project.rglob("*.rej"))
     assert not _git("diff", "--name-only", "--diff-filter=U", cwd=project).split()
-    marked = [str(p.relative_to(project)) for p in project.rglob("*")
-              if p.is_file() and not p.is_symlink() and ".git/" not in str(p)
-              and b"<<<<<<<" in p.read_bytes()]
+    marked = [
+        str(p.relative_to(project))
+        for p in project.rglob("*")
+        if p.is_file()
+        and not p.is_symlink()
+        and ".git/" not in str(p)
+        and b"<<<<<<<" in p.read_bytes()
+    ]
     assert marked == []
 
 
 def test_updated_project_still_passes_its_own_gate(upgraded):
     """The real judge: the upgraded tree is still a structurally valid project."""
     _, project, _ = upgraded
-    r = subprocess.run([sys.executable, "scripts/check_structure.py"],
-                       cwd=str(project), capture_output=True, text=True)
+    r = subprocess.run(
+        [sys.executable, "scripts/check_structure.py"],
+        cwd=str(project),
+        capture_output=True,
+        text=True,
+    )
     assert r.returncode == 0, r.stdout + r.stderr
 
 
@@ -259,22 +298,39 @@ def restacked(tmp_path_factory):
     try:
         template = _clone_template(work / "template", work)
         project = work / "proj"
-        copier.run_copy(str(template), str(project),
-                        data={"project_name": "demo_proj",
-                              "frontend_stack": "react-vite"},
-                        defaults=True, vcs_ref="HEAD", unsafe=False, quiet=True)
+        copier.run_copy(
+            str(template),
+            str(project),
+            data={"project_name": "demo_proj", "frontend_stack": "react-vite"},
+            defaults=True,
+            vcs_ref="HEAD",
+            unsafe=False,
+            quiet=True,
+        )
         _git("init", "--quiet", "-b", "main", cwd=project)
         _git("add", "-A", cwd=project)
         _git("commit", "--quiet", "-m", "generated from keel", cwd=project)
 
         with pytest.raises(copier.errors.UnsafeTemplateError) as refusal:
-            copier.run_update(str(project), defaults=True, overwrite=True,
-                              data={"frontend_stack": "astro"},
-                              vcs_ref="HEAD", unsafe=False, quiet=True)
+            copier.run_update(
+                str(project),
+                defaults=True,
+                overwrite=True,
+                data={"frontend_stack": "astro"},
+                vcs_ref="HEAD",
+                unsafe=False,
+                quiet=True,
+            )
 
-        copier.run_update(str(project), defaults=True, overwrite=True,
-                          data={"frontend_stack": "astro"},
-                          vcs_ref="HEAD", unsafe=True, quiet=True)
+        copier.run_update(
+            str(project),
+            defaults=True,
+            overwrite=True,
+            data={"frontend_stack": "astro"},
+            vcs_ref="HEAD",
+            unsafe=True,
+            quiet=True,
+        )
         yield project, refusal.value
     finally:
         mp.undo()
@@ -287,7 +343,8 @@ def test_update_retires_the_frontend_stack_the_new_answer_declined(restacked):
     assert not (project / "src" / "frontend" / "react-vite").exists(), (
         "`copier update` left the previously-chosen frontend on disk while "
         ".copier-answers.yml says the project uses the other one — _exclude cannot "
-        "retire a path, so this needs a mirroring _migrations entry")
+        "retire a path, so this needs a mirroring _migrations entry"
+    )
 
 
 def test_restacked_project_records_only_the_new_answer(restacked):
@@ -303,8 +360,12 @@ def test_restacked_project_still_passes_its_own_gate(restacked):
     declare, which check_structure reports as errors. The project's own gate goes red
     through no act of its own."""
     project, _ = restacked
-    r = subprocess.run([sys.executable, "scripts/check_structure.py"],
-                       cwd=str(project), capture_output=True, text=True)
+    r = subprocess.run(
+        [sys.executable, "scripts/check_structure.py"],
+        cwd=str(project),
+        capture_output=True,
+        text=True,
+    )
     assert r.returncode == 0, r.stdout + r.stderr
 
 
@@ -317,6 +378,7 @@ def test_update_without_trust_refuses_a_template_carrying_migrations(restacked):
     is why `make new` still needs no trust flag (the run_copy above uses unsafe=False)."""
     _, refusal = restacked
     assert "migrations" in str(refusal)
+
 
 @pytest.fixture(scope="module")
 def unshowcased(tmp_path_factory):
@@ -338,20 +400,36 @@ def unshowcased(tmp_path_factory):
     try:
         template = _clone_template(work / "template", work)
         project = work / "proj"
-        copier.run_copy(str(template), str(project),
-                        data={"project_name": "demo_proj",
-                              "frontend_stack": "react-vite", "showcase": True},
-                        defaults=True, vcs_ref="HEAD", unsafe=False, quiet=True)
+        copier.run_copy(
+            str(template),
+            str(project),
+            data={
+                "project_name": "demo_proj",
+                "frontend_stack": "react-vite",
+                "showcase": True,
+            },
+            defaults=True,
+            vcs_ref="HEAD",
+            unsafe=False,
+            quiet=True,
+        )
         assert (project / "src" / "backend" / "showcase").is_dir(), (
             "the fixture must start FROM a project that has the showcase, or the "
-            "retirement below proves nothing")
+            "retirement below proves nothing"
+        )
         _git("init", "--quiet", "-b", "main", cwd=project)
         _git("add", "-A", cwd=project)
         _git("commit", "--quiet", "-m", "generated from keel", cwd=project)
 
-        copier.run_update(str(project), defaults=True, overwrite=True,
-                          data={"showcase": False},
-                          vcs_ref="HEAD", unsafe=True, quiet=True)
+        copier.run_update(
+            str(project),
+            defaults=True,
+            overwrite=True,
+            data={"showcase": False},
+            vcs_ref="HEAD",
+            unsafe=True,
+            quiet=True,
+        )
         yield project
     finally:
         mp.undo()
@@ -361,18 +439,23 @@ def test_update_retires_the_showcase_the_new_answer_declined(unshowcased):
     """Every part of it, not just the package: a half-retired showcase leaves a REST
     app importing a router that is gone, or a `site-static` target calling a deleted
     exporter. Both are silent until someone runs them."""
-    survivors = [p for p in (
-        "src/backend/showcase",
-        "api/rest_fastapi/showcase_api.py",
-        "scripts/jobs/export_showcase_static.py",
-        "scripts/jobs/build_llms_txt.py",
-        "tests/unit/backend/test_showcase.py",
-        "tests/integration/test_showcase_repo.py",
-        "tests/integration/test_showcase_api.py",
-        "docs/guides/showcase-site.md",
-    ) if (unshowcased / p).exists()]
+    survivors = [
+        p
+        for p in (
+            "src/backend/showcase",
+            "api/rest_fastapi/showcase_api.py",
+            "scripts/jobs/export_showcase_static.py",
+            "scripts/jobs/build_llms_txt.py",
+            "tests/unit/backend/test_showcase.py",
+            "tests/integration/test_showcase_repo.py",
+            "tests/integration/test_showcase_api.py",
+            "docs/guides/showcase-site.md",
+        )
+        if (unshowcased / p).exists()
+    ]
     assert not survivors, (
-        "`copier update` recorded showcase=false but left these on disk: %s" % survivors)
+        "`copier update` recorded showcase=false but left these on disk: %s" % survivors
+    )
 
 
 def test_retiring_the_showcase_keeps_what_never_depended_on_it(unshowcased):
@@ -382,17 +465,31 @@ def test_retiring_the_showcase_keeps_what_never_depended_on_it(unshowcased):
     unrelated one. (`wiki/corpus.json` itself is not asserted here: it is a generated
     view no project ships, built by `make site-data`. That no migration deletes it is
     pinned in test_copier_generation.py, where copier.yml is already parsed.)"""
-    for kept in ("mcp", "agents", "api/rest_fastapi/aad",
-                 "scripts/query_corpus.py", "scripts/jobs/build_corpus.py",
-                 "scripts/jobs/link_corpus.py", "scripts/jobs/check_corpus.py",
-                 "src/backend/example_feature", "src/frontend/react-vite"):
+    for kept in (
+        "mcp",
+        "agents",
+        "api/rest_fastapi/aad",
+        "scripts/query_corpus.py",
+        "scripts/jobs/build_corpus.py",
+        "scripts/jobs/link_corpus.py",
+        "scripts/jobs/check_corpus.py",
+        "src/backend/example_feature",
+        "src/frontend/react-vite",
+    ):
         assert (unshowcased / kept).exists(), (
-            "%s does not depend on the showcase but the retirement removed it" % kept)
+            "%s does not depend on the showcase but the retirement removed it" % kept
+        )
 
 
-def test_unshowcased_project_records_the_new_answer_and_passes_its_own_gate(unshowcased):
+def test_unshowcased_project_records_the_new_answer_and_passes_its_own_gate(
+    unshowcased,
+):
     """Disk and answers agree, and the project's own gate is the judge of that."""
     assert _answers(unshowcased)["showcase"] is False
-    r = subprocess.run([sys.executable, "scripts/check_structure.py"],
-                       cwd=str(unshowcased), capture_output=True, text=True)
+    r = subprocess.run(
+        [sys.executable, "scripts/check_structure.py"],
+        cwd=str(unshowcased),
+        capture_output=True,
+        text=True,
+    )
     assert r.returncode == 0, r.stdout + r.stderr

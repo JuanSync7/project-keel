@@ -4,6 +4,7 @@ kind: tests
 layer: n/a
 summary: One canonical hermetic git config for every test that shells out to git or lets copier do it. Neutralises global + system config AND `core.excludesFile`, whose default value git reads from $XDG_CONFIG_HOME/git/ignore with no config entry at all — so GIT_CONFIG_GLOBAL/SYSTEM alone do not reach it and a single `*.yml` line on someone's laptop fails a correct tree.
 """
+
 import os
 
 # Every knob below broke a real run, or would have:
@@ -39,9 +40,11 @@ def git_env_vars(work_dir):
     cfg = os.path.join(str(work_dir), "gitconfig")
     with open(cfg, "w", encoding="utf-8") as fh:
         fh.write(HERMETIC_GITCONFIG)
-    return {"GIT_CONFIG_GLOBAL": cfg,
-            "GIT_CONFIG_SYSTEM": os.devnull,
-            "GIT_CONFIG_NOSYSTEM": "1"}
+    return {
+        "GIT_CONFIG_GLOBAL": cfg,
+        "GIT_CONFIG_SYSTEM": os.devnull,
+        "GIT_CONFIG_NOSYSTEM": "1",
+    }
 
 
 def git_env(work_dir):

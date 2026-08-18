@@ -5,6 +5,7 @@ kind: script
 layer: n/a
 summary: Deterministic: snapshot the showcase API + agent front door to static files so the frontend runs with no backend (static hosting, e.g. GitHub Pages).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -51,15 +52,22 @@ def _write_json(path: str, obj: object) -> None:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(
         description="Snapshot the showcase read model to static JSON + llms.txt so the "
-                    "frontend can run with no backend (static hosting, e.g. GitHub "
-                    "Pages). Run after build_corpus + link_corpus.")
+        "frontend can run with no backend (static hosting, e.g. GitHub "
+        "Pages). Run after build_corpus + link_corpus."
+    )
     ap.add_argument("--root", default=ROOT, help="repo root (default: this repo)")
-    ap.add_argument("--out-dir", default=None,
-                    help="output dir = the frontend's static assets (default: the "
-                         "public/ dir of the frontend declared in "
-                         "config/project.json layers.frontend)")
-    ap.add_argument("--base-url", default="",
-                    help="site base for llms.txt links (e.g. /my-project); default: relative")
+    ap.add_argument(
+        "--out-dir",
+        default=None,
+        help="output dir = the frontend's static assets (default: the "
+        "public/ dir of the frontend declared in "
+        "config/project.json layers.frontend)",
+    )
+    ap.add_argument(
+        "--base-url",
+        default="",
+        help="site base for llms.txt links (e.g. /my-project); default: relative",
+    )
     args = ap.parse_args(argv)
 
     try:
@@ -67,15 +75,19 @@ def main(argv=None) -> int:
     except ImportError as exc:
         # The showcase domain is product-specific; without it there is nothing to
         # snapshot. Skip gracefully (like the optional contract checks) rather than fail.
-        sys.stderr.write("export_showcase_static skipped (backend.showcase unavailable: %s)\n" % exc)
+        sys.stderr.write(
+            "export_showcase_static skipped (backend.showcase unavailable: %s)\n" % exc
+        )
         return 0
 
     out_dir = args.out_dir or _declared_frontend_public(args.root)
     if out_dir is None:
         # Backend-only project (frontend_stack: none). Nothing to snapshot FOR;
         # skip like the absent-showcase branch above rather than inventing a path.
-        sys.stderr.write("export_showcase_static skipped "
-                         "(no frontend declared in config/project.json)\n")
+        sys.stderr.write(
+            "export_showcase_static skipped "
+            "(no frontend declared in config/project.json)\n"
+        )
         return 0
 
     sc = load_showcase(args.root)
@@ -85,13 +97,23 @@ def main(argv=None) -> int:
     # 1) Single object/list endpoints — mirror showcase_api.py exactly.
     _write_json(os.path.join(api, "overview.json"), to_jsonable(sc.overview()))
     _write_json(os.path.join(api, "features.json"), to_jsonable(list(sc.features())))
-    _write_json(os.path.join(api, "principles.json"), to_jsonable(list(sc.principles())))
-    _write_json(os.path.join(api, "models.json"), to_jsonable(list(sc.model_adapters())))
-    _write_json(os.path.join(api, "practices.json"), to_jsonable(list(sc.practice_items())))
-    _write_json(os.path.join(api, "profiles.json"), to_jsonable(list(sc.domain_profiles())))
+    _write_json(
+        os.path.join(api, "principles.json"), to_jsonable(list(sc.principles()))
+    )
+    _write_json(
+        os.path.join(api, "models.json"), to_jsonable(list(sc.model_adapters()))
+    )
+    _write_json(
+        os.path.join(api, "practices.json"), to_jsonable(list(sc.practice_items()))
+    )
+    _write_json(
+        os.path.join(api, "profiles.json"), to_jsonable(list(sc.domain_profiles()))
+    )
     _write_json(os.path.join(api, "checks.json"), to_jsonable(list(sc.checks())))
     _write_json(os.path.join(api, "setup.json"), to_jsonable(list(sc.setup_steps())))
-    _write_json(os.path.join(api, "wiki", "tree.json"), to_jsonable(list(sc.doc_tree())))
+    _write_json(
+        os.path.join(api, "wiki", "tree.json"), to_jsonable(list(sc.doc_tree()))
+    )
 
     # 2) Per-node detail (incl. rendered markdown) for every corpus node, as one
     #    map the client fetches once. This replaces the dynamic /api/wiki/node?id=
@@ -109,23 +131,27 @@ def main(argv=None) -> int:
         if detail is None:
             continue
         payload = to_jsonable(detail)
-        payload["markdown"] = sc.markdown(nid)   # renderable body, baked in
+        payload["markdown"] = sc.markdown(nid)  # renderable body, baked in
         nodes[nid] = payload
     _write_json(os.path.join(api, "wiki", "nodes.json"), nodes)
 
     # 3) Agent front door, colocated with the deployed site so it resolves under
     #    the static base (e.g. /my-project/llms.txt).
     # The corpus-graph link must point at the snapshot file, not the live route.
-    for name, text in (("llms.txt", sc.llms_index(args.base_url, tree_url="/api/wiki/tree.json")),
-                       ("llms-full.txt", sc.llms_full())):
+    for name, text in (
+        ("llms.txt", sc.llms_index(args.base_url, tree_url="/api/wiki/tree.json")),
+        ("llms-full.txt", sc.llms_full()),
+    ):
         p = os.path.join(out, name)
         os.makedirs(os.path.dirname(p), exist_ok=True)
         with open(p, "w", encoding="utf-8") as fh:
             fh.write(text)
 
     rel = os.path.relpath(out, args.root)
-    print("wrote static showcase -> %s/ (overview/features/principles/models/practices/profiles/checks/setup/tree + "
-          "%d nodes in wiki/nodes.json + llms.txt/llms-full.txt)" % (rel, len(nodes)))
+    print(
+        "wrote static showcase -> %s/ (overview/features/principles/models/practices/profiles/checks/setup/tree + "
+        "%d nodes in wiki/nodes.json + llms.txt/llms-full.txt)" % (rel, len(nodes))
+    )
     return 0
 
 

@@ -4,6 +4,7 @@ kind: script
 layer: backend
 summary: Emit config/agent_surface/aad-v1.0.schema.json from the AadDescriptor model (one source of truth).
 """
+
 # NB: no `from __future__ import annotations` here on purpose — the pre-commit
 # --check hook may run under an old `python3`, and this file must still parse
 # so the graceful skip below can fire. Keep annotations 3.x-safe.
@@ -33,7 +34,8 @@ def _schema() -> dict:
     schema = AadDescriptor.model_json_schema()
     schema["$comment"] = (
         "GENERATED from api/rest_fastapi/aad (descriptor.py); AAD v%s. "
-        "Do not hand-edit — run scripts/agent_surface/generate_aad_schema.py." % AAD_VERSION
+        "Do not hand-edit — run scripts/agent_surface/generate_aad_schema.py."
+        % AAD_VERSION
     )
     return schema
 
@@ -45,10 +47,15 @@ def main(argv=None) -> int:
     committed schema is the contract the conformance test validates against —
     keep it generated, never hand-maintained.
     """
-    ap = argparse.ArgumentParser(description="Generate the AAD JSON Schema from the model")
+    ap = argparse.ArgumentParser(
+        description="Generate the AAD JSON Schema from the model"
+    )
     ap.add_argument("--out", default=_OUT, help="output path (default: %s)" % _OUT)
-    ap.add_argument("--check", action="store_true",
-                    help="exit 1 if the committed schema is stale (CI / pre-commit)")
+    ap.add_argument(
+        "--check",
+        action="store_true",
+        help="exit 1 if the committed schema is stale (CI / pre-commit)",
+    )
     opts = ap.parse_args(argv)
 
     try:
@@ -69,8 +76,10 @@ def main(argv=None) -> int:
         # drift guard green while checking nothing; report the failure in BOTH
         # modes instead. Deliberately broad: any new pydantic/model failure mode
         # must land in this branch, never in the skip above.
-        sys.stderr.write("AAD schema cannot be built from the model (%s: %s)\n"
-                         % (type(exc).__name__, exc))
+        sys.stderr.write(
+            "AAD schema cannot be built from the model (%s: %s)\n"
+            % (type(exc).__name__, exc)
+        )
         return 1
     path = os.path.join(_ROOT, opts.out)
     if opts.check:
@@ -82,7 +91,8 @@ def main(argv=None) -> int:
         if current != text:
             sys.stderr.write(
                 "AAD schema is stale; regenerate with "
-                "`python scripts/agent_surface/generate_aad_schema.py`\n")
+                "`python scripts/agent_surface/generate_aad_schema.py`\n"
+            )
             return 1
         print("AAD schema up to date")
         return 0

@@ -4,6 +4,7 @@ layer: backend
 public_api: no
 summary: Plan: gate -> build -> link -> report -> (durable fill loop) -> commit; run on a neutral Runtime.
 """
+
 from __future__ import annotations
 
 import json
@@ -29,12 +30,13 @@ __all__ = ["enforce", "EnforceReport"]
 
 _REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 _CORPUS = os.path.join("wiki", "corpus.json")
-_CKPT_DIR = os.path.join("wiki", ".runtime")   # gitignored; durable fill snapshots
+_CKPT_DIR = os.path.join("wiki", ".runtime")  # gitignored; durable fill snapshots
 
 
 @dataclass(frozen=True)
 class EnforceReport:
     """Convention + coverage + accountability gaps found while indexing."""
+
     structure_errors: tuple
     structure_warnings: tuple
     corpus_path: str
@@ -51,8 +53,9 @@ def _run(args):
     Uses the SAME interpreter running this agent (sys.executable), so the tools
     run under a compatible Python rather than a hardcoded 'python3' on PATH.
     """
-    proc = subprocess.run([sys.executable] + args, cwd=_REPO,
-                          capture_output=True, text=True)
+    proc = subprocess.run(
+        [sys.executable] + args, cwd=_REPO, capture_output=True, text=True
+    )
     return proc.returncode, proc.stdout, proc.stderr
 
 
@@ -65,16 +68,20 @@ def _load_corpus(root):
 
 
 def _system_prompt():
-    with open(os.path.join(os.path.dirname(__file__), "prompt.md"), encoding="utf-8") as fh:
+    with open(
+        os.path.join(os.path.dirname(__file__), "prompt.md"), encoding="utf-8"
+    ) as fh:
         return fh.read()
 
 
 def _gap_prompt(node):
-    return (_system_prompt()
-            + "\n\n# Task\nWrite ONE plain sentence summarizing the node below, "
-            "using only its own text. Output the sentence and nothing else.\n\n"
-            "title: %s\npath: %s\n---\n%s\n"
-            % (node.get("title", ""), node.get("path", ""), node.get("text_excerpt", "")))
+    return (
+        _system_prompt()
+        + "\n\n# Task\nWrite ONE plain sentence summarizing the node below, "
+        "using only its own text. Output the sentence and nothing else.\n\n"
+        "title: %s\npath: %s\n---\n%s\n"
+        % (node.get("title", ""), node.get("path", ""), node.get("text_excerpt", ""))
+    )
 
 
 def _ungapped(corpus):
@@ -87,25 +94,28 @@ def _ungapped(corpus):
 # steps orchestrate them. The model is reached only in the one MODEL_CALL step,
 # so the runtime skips it (and the WRITES steps) unless execute=True.
 
+
 def _gate(state):
     """Read-only: run check_structure and capture its errors/warnings."""
     _, out, _ = _run(["scripts/check_structure.py"])
     return {
         "s_errors": tuple(ln[6:] for ln in out.splitlines() if ln.startswith("ERROR ")),
-        "s_warnings": tuple(ln[6:].strip() for ln in out.splitlines() if ln.startswith("WARN  ")),
+        "s_warnings": tuple(
+            ln[6:].strip() for ln in out.splitlines() if ln.startswith("WARN  ")
+        ),
     }
 
 
 def _build(state):
     """Writes: (re)build the wiki corpus tree."""
     _run(["scripts/jobs/build_corpus.py", "--out", _CORPUS])
-    return {}   # no state update -- same empty-update form as _fill_one
+    return {}  # no state update -- same empty-update form as _fill_one
 
 
 def _link(state):
     """Writes: add deterministic entity/keyword link edges to the corpus."""
     _run(["scripts/jobs/link_corpus.py", "--corpus", _CORPUS])
-    return {}   # no state update -- same empty-update form as _fill_one
+    return {}  # no state update -- same empty-update form as _fill_one
 
 
 def _report(state):
@@ -115,13 +125,22 @@ def _report(state):
     summary_gaps = tuple(n["node_id"] for n in _ungapped(corpus))
     # Owner gaps come from the declared accountability_report tool (its CLI),
     # not a re-implemented predicate here -- read-only, so safe in dry-run too.
-    _, ar_out, _ = _run(["scripts/accountability_report.py", "--corpus", _CORPUS, "--json"])
+    _, ar_out, _ = _run(
+        ["scripts/accountability_report.py", "--corpus", _CORPUS, "--json"]
+    )
     try:
-        owner_gaps = tuple(n["node_id"] for n in json.loads(ar_out)) if ar_out.strip() else ()
+        owner_gaps = (
+            tuple(n["node_id"] for n in json.loads(ar_out)) if ar_out.strip() else ()
+        )
     except ValueError:
-        owner_gaps = ()   # no corpus yet (tool prints a notice, not JSON)
-    return {"corpus": corpus, "nodes": nodes,
-            "summary_gaps": summary_gaps, "owner_gaps": owner_gaps, "gaps_filled": 0}
+        owner_gaps = ()  # no corpus yet (tool prints a notice, not JSON)
+    return {
+        "corpus": corpus,
+        "nodes": nodes,
+        "summary_gaps": summary_gaps,
+        "owner_gaps": owner_gaps,
+        "gaps_filled": 0,
+    }
 
 
 def _fill_one(state):
@@ -139,7 +158,7 @@ def _fill_one(state):
         return {}
     node = todo[0]
     node["summary"] = get_model(state.get("model")).run(_gap_prompt(node)).strip()
-    node["summary_source"] = "generated"   # never "authored"
+    node["summary_source"] = "generated"  # never "authored"
     return {"corpus": corpus, "gaps_filled": state.get("gaps_filled", 0) + 1}
 
 
@@ -148,7 +167,7 @@ def _commit(state):
     with open(os.path.join(state["root"], _CORPUS), "w", encoding="utf-8") as fh:
         json.dump(state["corpus"], fh, indent=2, sort_keys=True)
         fh.write("\n")
-    return {}   # no state update -- same empty-update form as _fill_one
+    return {}  # no state update -- same empty-update form as _fill_one
 
 
 # --- the plan: control flow as data, with a durable fill loop ------------------
@@ -157,6 +176,7 @@ def _commit(state):
 # AND a domain-state key so the loop predicate is engine-neutral (the runtime's
 # internal flag isn't visible to edge predicates).
 
+
 def _clean(state):
     """True when the structure gate found no errors."""
     return not state.get("s_errors")
@@ -164,8 +184,11 @@ def _clean(state):
 
 def _wants_fill(state):
     """True when gap-fill is requested and there is a clean tree with gaps."""
-    return bool(state.get("fix_gaps")) and bool(_ungapped(state.get("corpus", {}))) \
+    return (
+        bool(state.get("fix_gaps"))
+        and bool(_ungapped(state.get("corpus", {})))
         and not state.get("s_errors")
+    )
 
 
 def _more_to_fill(state):
@@ -185,21 +208,29 @@ _PLAN = Plan(
         Step("commit", WRITES, _commit),
     ),
     edges=(
-        Edge("gate", "build", when=_clean),    # clean tree -> rebuild
-        Edge("gate", "report"),                # dirty tree -> straight to report
+        Edge("gate", "build", when=_clean),  # clean tree -> rebuild
+        Edge("gate", "report"),  # dirty tree -> straight to report
         Edge("build", "link"),
         Edge("link", "report"),
         Edge("report", "fill", when=_wants_fill),
         Edge("report", END),
-        Edge("fill", "fill", when=_more_to_fill),   # durable loop: one gap per step
+        Edge("fill", "fill", when=_more_to_fill),  # durable loop: one gap per step
         Edge("fill", "commit"),
         Edge("commit", END),
     ),
 )
 
 
-def enforce(*, execute=False, fix_gaps=False, model=None, root=None, runtime=None,
-            checkpointer=None, run_key="index_enforce"):
+def enforce(
+    *,
+    execute=False,
+    fix_gaps=False,
+    model=None,
+    root=None,
+    runtime=None,
+    checkpointer=None,
+    run_key="index_enforce",
+):
     """Gate -> build_corpus -> link_corpus -> report -> durable fill loop -> commit.
 
     The pipeline is a neutral ``Plan`` executed by a ``Runtime`` (default the
@@ -222,7 +253,7 @@ def enforce(*, execute=False, fix_gaps=False, model=None, root=None, runtime=Non
     if checkpointer is not None:
         kwargs["checkpointer"] = checkpointer
         kwargs["run_key"] = run_key
-        if checkpointer.load(run_key) is not None:   # a prior run crashed -> resume
+        if checkpointer.load(run_key) is not None:  # a prior run crashed -> resume
             kwargs["resume"] = None
     st = get_runtime(runtime).run(_PLAN, init, **kwargs).state
     return EnforceReport(

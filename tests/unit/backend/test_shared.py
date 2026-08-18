@@ -4,6 +4,7 @@ kind: tests
 layer: backend
 summary: Mirrors src/backend/shared/. Exercises the project-identity derivation via the public API, no disk.
 """
+
 import pytest
 
 from backend.shared import display_title
@@ -11,14 +12,17 @@ from backend.shared import display_title
 pytestmark = pytest.mark.unit
 
 
-@pytest.mark.parametrize(("name", "expected"), [
-    ("acme_widgets", "Acme Widgets"),      # the generated case: slug -> title
-    ("acme-widgets", "Acme Widgets"),      # hyphens are separators too
-    ("project_keel", "Project Keel"),      # keel's own answer round-trips
-    ("widgets", "Widgets"),                # single word
-    ("acme  widgets", "Acme  Widgets"),    # already spaced, left alone
-    ("", ""),                              # nothing in, nothing out (caller decides)
-])
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("acme_widgets", "Acme Widgets"),  # the generated case: slug -> title
+        ("acme-widgets", "Acme Widgets"),  # hyphens are separators too
+        ("project_keel", "Project Keel"),  # keel's own answer round-trips
+        ("widgets", "Widgets"),  # single word
+        ("acme  widgets", "Acme  Widgets"),  # already spaced, left alone
+        ("", ""),  # nothing in, nothing out (caller decides)
+    ],
+)
 def test_display_title_is_the_slug_to_title_derivation(name, expected):
     """The whole input class, not the one name that prompted this.
 

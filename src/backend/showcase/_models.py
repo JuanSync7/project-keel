@@ -4,6 +4,7 @@ layer: backend
 public_api: no
 summary: Frozen, framework-free value objects describing the template as a product.
 """
+
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
@@ -133,8 +134,8 @@ class Principle:
 
     slug: str
     title: str
-    essence: str   # the rule in one line
-    detail: str    # how it works / how it's enforced, 2-3 sentences
+    essence: str  # the rule in one line
+    detail: str  # how it works / how it's enforced, 2-3 sentences
     links: tuple[Link, ...] = ()
 
 
@@ -146,11 +147,11 @@ class Check:
     name: str
     script: str
     purpose: str
-    gate: str          # error | warn | report
-    interpreter: str   # "3.6-safe" | ">=3.7" | "FastAPI" | "pydantic" | "any"
+    gate: str  # error | warn | report
+    interpreter: str  # "3.6-safe" | ">=3.7" | "FastAPI" | "pydantic" | "any"
     command: str
     when: str
-    present: bool = True   # script exists on disk (honesty flag, set at load)
+    present: bool = True  # script exists on disk (honesty flag, set at load)
 
 
 @dataclass(frozen=True)
@@ -222,7 +223,21 @@ def to_jsonable(obj: object) -> object:
 
 
 __all__ = [
-    "Link", "Layer", "Transport", "ModelAdapter", "PracticeItem", "ProfileState",
-    "Stats", "Overview", "Feature", "Principle", "Check", "Step", "NodeRef",
-    "DocGroup", "NodeDetail", "SearchHit", "to_jsonable",
+    "Link",
+    "Layer",
+    "Transport",
+    "ModelAdapter",
+    "PracticeItem",
+    "ProfileState",
+    "Stats",
+    "Overview",
+    "Feature",
+    "Principle",
+    "Check",
+    "Step",
+    "NodeRef",
+    "DocGroup",
+    "NodeDetail",
+    "SearchHit",
+    "to_jsonable",
 ]

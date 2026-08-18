@@ -22,6 +22,7 @@ So the decision lives here rather than in each module:
 Keep `DELIBERATELY_OPTIONAL` honest: an entry there is a promise that the surface
 is opt-in, not a place to silence an install problem.
 """
+
 import importlib
 import os
 
@@ -35,8 +36,8 @@ ENV_VAR = "KEEL_REQUIRED_EXTRAS"
 #: instead of silently disabling the very guard it was meant to switch on — which
 #: is the failure mode this whole module exists to remove.
 SURFACES = {
-    "template": 'pip install -e ".[dev,template]"',   # copier + its yaml
-    "dev": 'pip install -e ".[dev,template]"',        # pytest, jsonschema, httpx
+    "template": 'pip install -e ".[dev,template]"',  # copier + its yaml
+    "dev": 'pip install -e ".[dev,template]"',  # pytest, jsonschema, httpx
     "transport": "pip install -r api/rest_fastapi/requirements.txt",
 }
 
@@ -57,7 +58,8 @@ def required_extras():
         raise RuntimeError(
             "%s names unknown surface(s) %s; known: %s. A typo here silently "
             "disables the hard-failure guard, so it is an error rather than a "
-            "no-op." % (ENV_VAR, unknown, sorted(SURFACES)))
+            "no-op." % (ENV_VAR, unknown, sorted(SURFACES))
+        )
     return declared
 
 
@@ -71,7 +73,8 @@ def importorskip(module, extra):
         raise ValueError(
             "unknown surface %r for module %r; add it to SURFACES with the CI step "
             "that installs it, or use pytest.importorskip if it is genuinely "
-            "optional" % (extra, module))
+            "optional" % (extra, module)
+        )
     if extra in required_extras():
         # A real import: ImportError propagates and collection fails loudly.
         return importlib.import_module(module)

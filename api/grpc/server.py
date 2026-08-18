@@ -4,6 +4,7 @@ layer: backend
 public_api: no
 summary: Thin gRPC transport over the backend domain.
 """
+
 from __future__ import annotations
 
 import sys
