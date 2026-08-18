@@ -18,8 +18,8 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SCHEMA_VERSION = 1
 
-# The walk scope is check_structure's, IMPORTED, never re-typed: a private copy
-# here omitted `runtimes` from the moment that root landed in the gate, so six
+# The walk scope is check_structure's, IMPORTED, never re-typed: the private
+# copy here never carried `runtimes` (from the initial commit onward), so six
 # modules were invisible to every corpus query while `make verify` stayed green
 # (ADR-0008). check_structure is 3.6-safe stdlib by contract, so importing it is
 # free under any interpreter this job runs on; the reverse import would not be.
@@ -330,7 +330,9 @@ def _nearest_readme(dirpath: str, root: str):
 def _module_and_symbols(path: str, root: str, nodes: list):
     rel = _rel(path, root)
     try:
-        with open(path, encoding="utf-8") as fh:
+        # utf-8-sig: keep BOM'd (valid, importable) modules indexable — the
+        # twin read in check_structure does the same (ADR-0008 review).
+        with open(path, encoding="utf-8-sig") as fh:
             src = fh.read()
         tree = ast.parse(src, filename=path)
     except (OSError, ValueError, SyntaxError):  # unreadable / NUL byte / bad syntax
@@ -426,7 +428,11 @@ def _exported_names(tree) -> list:
         # Assign — matching only Assign made annotated exports invisible to
         # this reader (and identically to its twin), found by a mutation check
         # in the ADR-0008 pass. Both readers changed together; the parity is
-        # what tests/unit/scripts/test_check_o.py pins.
+        # pinned by tests/unit/scripts/test_check_corpus.py::
+        # test_exported_names_parity_with_the_corpus_reader. Deliberately a
+        # top-level LITERAL reader: `__all__ +=` / .extend / conditional forms
+        # are invisible (zero occurrences in-tree; recorded as deferred in the
+        # hardening plan).
         targets = []
         if isinstance(node, ast.Assign):
             targets = node.targets

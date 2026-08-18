@@ -49,10 +49,15 @@ Every `.py` file begins with a docstring carrying explicit `title:` and
 ```python
 """
 title: Pinmux checklist — verify pad-ring assignments against the spec
-summary: Reads the pad CSV and the pinmux spec, reports every mismatch with
-  its spec row, and exits non-zero if any pad is unassigned or double-driven.
+summary: Reads the pad CSV and the pinmux spec, reports every mismatch with its spec row, and exits non-zero if any pad is unassigned or double-driven.
 """
 ```
+
+**The whole summary lives on its one line.** The grammar is line-based: a
+wrapped continuation line is silently dropped from what the corpus stores, so
+a wrapped summary reads fine to a human and truncates mid-sentence for every
+agent. Let the line run long — `E501` is deferred here for exactly these
+header lines.
 
 This is not paperwork. The corpus — the knowledge graph every agent queries —
 is built **from these lines**. A module without them is either invisible to
@@ -68,8 +73,10 @@ two lines *true*:
 
 ## 2. Docstrings say WHAT; comments say WHY
 
-**Docstrings** (gated for exported symbols — `check_E`): every name in
-`__all__` has one. The first line is the summary an agent retrieves, so make
+**Docstrings**: every name in `__all__` has one. The gate (`check_E`) proves
+this for symbols *defined in the exporting module*; a re-exported name is held
+to the same rule at its definition site by convention — the gate does not yet
+follow it there. The first line is the summary an agent retrieves, so make
 it a sentence about behavior, not a restatement of the signature:
 
 ```python
@@ -129,9 +136,9 @@ failure so the reader can rerun it by hand.
 ## 4. Plain over clever
 
 - **Small, flat functions.** Prefer early returns to nesting; prefer a second
-  function to a second responsibility. (Advisory, not gated — a length gate
-  would reject correct code; the reviewer's question is "can I hold this whole
-  function in my head?")
+  function to a second responsibility. (Judgment, deliberately unmeasured — a
+  length gate would reject correct code; the reviewer's question is "can I
+  hold this whole function in my head?")
 - **stdlib first.** Every dependency is a thing the next machine must have.
   A one-off script that needs only `json`, `csv`, `pathlib`, and `argparse`
   should import exactly those.
@@ -140,9 +147,22 @@ failure so the reader can rerun it by hand.
   where anything comes from.
 - **Names carry the domain.** `unassigned_pads`, not `res2`; the reader may
   know pad rings far better than Python — meet them in their vocabulary.
-- **Types are documentation that cannot rot.** mypy runs `strict` here (gated);
-  annotate as you write, not after. A precise signature is the cheapest
-  docstring there is.
+- **Library code logs; entrypoints print.** `print()` is banned outside
+  process entrypoints (ruff `T20`; the carve-outs are declared per file). The
+  substitute is stdlib `logging` — and the gate has opinions there too: no
+  f-string/`%`/`+` interpolation *inside* the call (ruff `G`/`LOG`). Pass lazy
+  arguments instead:
+
+  ```python
+  logger = logging.getLogger(__name__)
+  logger.info("resolved %s to %s", name, version)   # yes
+  logger.info(f"resolved {name} to {version}")      # fails the gate (G004)
+  ```
+- **Types are documentation that cannot rot.** mypy runs `strict` over the
+  ratcheted scope (gated): `src/` fully, leaf roots under declared, costed
+  relaxations listed in `config/practices.json` `rulesets.mypy` — every one
+  with its exit condition. Annotate as you write, not after; a precise
+  signature is the cheapest docstring there is.
 
 ## 5. How a code agent works here
 
@@ -179,11 +199,12 @@ that quietly becomes load-bearing is precisely the file nobody re-reads.
 |---|---|---|
 | Formatting, import order | gate | `ruff format --check`, `ruff I` |
 | Module header, symbol docstrings | gate | `check_O`, `check_E` |
-| Types (strict), no `Any` returns | gate | mypy `strict` |
+| Types — `strict` over the ratcheted scope | gate | mypy (`rulesets.mypy` declares every relaxation) |
 | Exception hygiene (no blind except, chaining) | gate | ruff `BLE`, `B904` |
 | No `print()` in library code | gate | ruff `T20` |
-| Function size, complexity, DI, `__slots__` | advisory | `make advise` |
-| Comment quality, naming, absent-vs-broken splits | judgment | this guide + review |
+| Inline-constructed backends (DI), `isinstance` chains, hot-path `__slots__`, resources outside `with` | advisory | `make advise` |
+| Function size, complexity, naming | judgment | this guide + review |
+| Comment quality, absent-vs-broken splits | judgment | this guide + review |
 
 The line between the tiers is principled (see
 [coding-practices](coding-practices.md)): *can a rule decide it

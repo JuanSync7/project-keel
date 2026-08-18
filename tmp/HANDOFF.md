@@ -8,7 +8,7 @@ tags: [handoff, scratch, hardening, resume]
 summary: Working state and the remaining worklist for the project-keel hardening branch, written so a fresh agent session on a different machine can pick up without re-deriving context.
 id: tmp-handoff
 created: 2026-08-06
-updated: 2026-08-06
+updated: 2026-08-18
 visibility: internal
 canonical: false
 ---
@@ -29,7 +29,7 @@ corrected, not trusted. Delete `tmp/` entirely once the branch merges.
 git checkout feat/keel-hardening-pass-1
 python3 -m venv .venv && .venv/bin/pip install -e ".[dev,template]"
 .venv/bin/pip install -r api/rest_fastapi/requirements.txt
-make PY=.venv/bin/python verify        # expect: 364 passed, 0 skipped, exit 0
+make PY=.venv/bin/python verify        # expect: 387 passed, 0 skipped, exit 0
 ```
 
 **`make verify` on its own will fail** at `check-python` on any host whose
@@ -50,16 +50,21 @@ collection error instead of a skip:
 KEEL_REQUIRED_EXTRAS="template,dev,transport" PYTHONPATH=src:tests:. .venv/bin/python -m pytest -q
 ```
 
-Both must be 364 passed / 0 skipped. A run reporting skips means a surface is not
+Both must be 387 passed / 0 skipped. A run reporting skips means a surface is not
 installed — find out which before doing anything else, because the whole point of
 `tests/optional_deps.py` is that a skip is now a signal rather than noise.
 
 ## 2. Where the branch is
 
-`feat/keel-hardening-pass-1`, **9 commits ahead of `main`**, newest first:
+`feat/keel-hardening-pass-1`, **14 commits ahead of `main`**, newest first:
 
 | Commit | What |
 |---|---|
+| `2f9f2af` | `docs/guides/python-style.md` — the canonical Python pattern (doc-tier) |
+| `2d0e696` | the machine-readable module contract gated end to end (check_O, check_E ERR, corpus scope + local-freshness gates; ADR-0008) |
+| `897a0e4` | formatting is a gate (`fmt-check` rides `make lint`) |
+| `f56463a` | mechanical `ruff format` of the whole corpus (109 files, behaviour-neutral) |
+| `68bff92` | this handoff |
 | `55048fb` | the `showcase` question + manifest-driven identity (ADR-0007) |
 | `c1383ef` | the silent-skip class (`KEEL_REQUIRED_EXTRAS`) + the README delete-advice bug |
 | `9dd4164` | answer retirement via `_migrations` (ADR-0006) |
@@ -70,7 +75,8 @@ installed — find out which before doing anything else, because the whole point
 | `b98a0b0` | make `copier update` runnable and gated in CI |
 | `d0a25c4` | track `.copier-answers.yml` downstream; plan + ADR-0005 |
 
-Gate at the tip: **364 passed, 0 skipped, exit 0**; `make advise` clean.
+Gate at the tip: **387 passed, 0 skipped, exit 0**; `make advise` clean.
+(The `expect:` in section 1 predates this — update it when you re-verify.)
 
 ## 3. Remaining work, in the order I would take it
 
@@ -132,7 +138,7 @@ and is tested in both directions. Do not collapse the two while fixing the
 The only remaining item that is still a **design** question rather than execution.
 ADR-0005 is `status: proposed`, not accepted. Slice 1 is `config/environment.json`,
 the deterministic declaration check (shape, vocabularies, and the
-undeclared-external completeness scan — `check_O`), and the generated
+undeclared-external completeness scan — `check_P`; ADR-0008 took `O`), and the generated
 `.env.example`. The lock, the fingerprint and the provider adapters are slice 2
 and are **outside** this plan.
 
@@ -204,6 +210,23 @@ container cannot swallow at this site). Do not pitch it as a container replaceme
 - **Never run an unscoped `find /`.** ~28 NFS exports (`/home` on qumulo, a farm of
   `/vols/*` under autofs) mean a bare `find /` triggers automounts and blocks for
   hours in `D` state. Scope the path, or add `-xdev`.
+
+### Landed since this file was first written (2026-08-14/18)
+
+- **Formatting is gated** (`897a0e4`): `make lint` runs `fmt-check`; a reformat
+  can silently move a `# noqa` off its diagnostic line — re-run lint after any
+  reformat (RUF100 is deferred, an orphaned pragma is not self-flagging).
+- **The module contract is gated** (`2d0e696`, ADR-0008): every module needs
+  explicit `title:`/`summary:` (check_O); exported symbols need docstrings
+  (check_E is ERR now); `wiki/corpus.json` — gitignored, local — is gated
+  fresh-when-present, so **run `make site-data` after any change that touches
+  code or docs the corpus indexes**, or check-corpus goes red.
+- **Annotated `__all__: list[str] = [...]` trap:** ast.AnnAssign is not
+  ast.Assign — both `check_structure._exported_names` and build_corpus's reader
+  had the hole; widened together. If you write a new `__all__` reader, handle
+  both (and note `__all__ +=` is STILL invisible everywhere — deferred).
+- **The Python pattern is canonical** (`2f9f2af`): `docs/guides/python-style.md`,
+  linked from AGENT.md's Always rules; readability/robustness over speed.
 
 ## 7. Working agreements this branch has been held to
 

@@ -355,7 +355,7 @@ def check_C():
             continue
         init = os.path.join(dirpath, "__init__.py")
         try:
-            with open(init, encoding="utf-8") as fh:
+            with open(init, encoding="utf-8-sig") as fh:
                 if "__all__" not in fh.read():
                     err(
                         "%s: __init__.py defines no __all__ (public API surface)"
@@ -385,7 +385,7 @@ def check_D():
                     continue
                 full = os.path.join(dirpath, f)
                 try:
-                    with open(full, encoding="utf-8") as fh:
+                    with open(full, encoding="utf-8-sig") as fh:
                         tree = ast.parse(fh.read(), filename=full)
                 except UNPARSEABLE as e:
                     warn("%s: could not parse (%s)" % (rel(full), e))
@@ -417,7 +417,11 @@ def _exported_names(tree):
         # Assign — matching only Assign made annotated exports invisible to
         # this reader (and identically to its twin), found by a mutation check
         # in the ADR-0008 pass. Both readers changed together; the parity is
-        # what tests/unit/scripts/test_check_o.py pins.
+        # pinned by tests/unit/scripts/test_check_corpus.py::
+        # test_exported_names_parity_with_the_corpus_reader. Deliberately a
+        # top-level LITERAL reader: `__all__ +=` / .extend / conditional forms
+        # are invisible (zero occurrences in-tree; recorded as deferred in the
+        # hardening plan).
         targets = []
         if isinstance(node, ast.Assign):
             targets = node.targets
@@ -453,7 +457,7 @@ def check_E():
                     continue
                 full = os.path.join(dirpath, f)
                 try:
-                    with open(full, encoding="utf-8") as fh:
+                    with open(full, encoding="utf-8-sig") as fh:
                         tree = ast.parse(fh.read(), filename=full)
                 except UNPARSEABLE:
                     continue  # check_D already warns on parse failure (same roots)
@@ -1009,7 +1013,7 @@ def check_J():
                     continue
                 full = os.path.join(dirpath, f)
                 try:
-                    with open(full, encoding="utf-8") as fh:
+                    with open(full, encoding="utf-8-sig") as fh:
                         text = fh.read()
                     tree = ast.parse(text, filename=full)
                 except UNPARSEABLE as e:
@@ -1258,7 +1262,7 @@ def check_K():
                     continue
                 full = os.path.join(dirpath, f)
                 try:
-                    with open(full, encoding="utf-8") as fh:
+                    with open(full, encoding="utf-8-sig") as fh:
                         text = fh.read()
                     tree = ast.parse(text, filename=full)
                 except UNPARSEABLE as e:
@@ -1388,7 +1392,7 @@ def check_L():
                     continue
                 full = os.path.join(dirpath, f)
                 try:
-                    with open(full, encoding="utf-8") as fh:
+                    with open(full, encoding="utf-8-sig") as fh:
                         text = fh.read()
                     tree = ast.parse(text, filename=full)
                 except UNPARSEABLE as e:
@@ -2133,7 +2137,13 @@ def check_O():
                     continue
                 full = os.path.join(dirpath, f)
                 try:
-                    with open(full, encoding="utf-8") as fh:
+                    # utf-8-sig, here and at every .py read that feeds ast (in
+                    # build_corpus too): a BOM file is valid importable Python
+                    # (the runtime strips the BOM), but read as plain utf-8 the
+                    # U+FEFF makes ast.parse raise and the except-swallow turned
+                    # exactly those files back into silent drops (ADR-0008
+                    # review). utf-8-sig on a BOM-less file is byte-identical.
+                    with open(full, encoding="utf-8-sig") as fh:
                         files[rel(full)] = fh.read()
                 except UNREADABLE:
                     continue  # unreadable is reported by the checks keyed on it

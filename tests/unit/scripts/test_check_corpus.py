@@ -5,15 +5,18 @@ layer: n/a
 summary: wiki/corpus.json is the gitignored world-model the corpus agents actually query, and until ADR-0008 nothing gated it — the default check built FRESH and never looked at the on-disk file, so it could rot silently (measured 33 nodes behind the tree at a green gate). Now absent is a loud exit 0 (a fresh clone, CI, and a day-one generated project have none — the ADR-0007 absent-vs-drifted split), present-but-stale is exit 1 naming make site-data, and staleness is judged on the DETERMINISTIC PROJECTION so index_enforcer's "generated" summaries and links are enrichment, not rot. A structurally invalid local corpus fails regardless.
 """
 
+import ast
 import sys
 from pathlib import Path
 
 import pytest
 
 _ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(_ROOT / "scripts"))
 sys.path.insert(0, str(_ROOT / "scripts" / "jobs"))
 
 import check_corpus as cc  # noqa: E402
+import check_structure as cs  # noqa: E402
 
 pytestmark = pytest.mark.unit
 
@@ -116,3 +119,57 @@ def test_rotten_local_corpus_fails_even_if_fresh(repo, capsys):
     _write_local(repo, corpus)
     assert cc.main(["--root", str(repo)]) == 1
     assert "ERROR check_corpus" in capsys.readouterr().err
+
+
+def test_local_corpus_of_json_null_fails(repo, capsys):
+    """`null` parses fine and is not a dict; it must be reported as rot, not
+    slip past a `is not None` guard at exit 0 — found by the ADR-0008 review."""
+    (repo / "wiki").mkdir()
+    (repo / "wiki" / "corpus.json").write_text("null\n", encoding="utf-8")
+    assert cc.main(["--root", str(repo)]) == 1
+    assert "ERROR check_corpus" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "payload", ["[]", "5", '{"nodes": 5, "schema_version": 1, "root": "."}']
+)
+def test_wrong_shaped_local_corpus_fails_without_a_traceback(repo, payload, capsys):
+    """Structural rot must take the designed ERROR path; running the staleness
+    projection over a non-graph crashed with a traceback instead."""
+    (repo / "wiki").mkdir()
+    (repo / "wiki" / "corpus.json").write_text(payload, encoding="utf-8")
+    assert cc.main(["--root", str(repo)]) == 1
+    assert "ERROR check_corpus" in capsys.readouterr().err
+
+
+def test_bom_module_is_still_indexed(repo):
+    """A UTF-8-BOM file is valid, importable Python (the runtime strips the
+    BOM); reading it as plain utf-8 left U+FEFF in the source and the module
+    silently vanished from the corpus — the drop class ADR-0008 exists to
+    close, re-opened for exactly BOM files. Both twins read utf-8-sig now."""
+    mod = _MOD.replace("Thing", "Bom").replace("thing", "bom")
+    (repo / "src" / "bom.py").write_bytes(b"\xef\xbb\xbf" + mod.encode("utf-8"))
+    fresh = cc._fresh(str(repo), 8)
+    assert any(
+        n["path"] == "src/bom.py" and n["kind"] == "module" for n in fresh["nodes"]
+    )
+
+
+def test_exported_names_parity_with_the_corpus_reader(repo):
+    """check_structure._exported_names and build_corpus's inline __all__ reader
+    are the same duplicated logic on either side of the 3.6 boundary; this pins
+    them to each other over the forms both claim to read (plain and annotated
+    literal assignments)."""
+    src = (
+        '"""\ntitle: t\nsummary: s\n"""\n'
+        '__all__: list[str] = ["a", "b"]\n\n\n'
+        'def a():\n    """A."""\n\n\ndef b():\n    """B."""\n'
+    )
+    (repo / "src" / "ann.py").write_text(src, encoding="utf-8")
+    fresh = cc._fresh(str(repo), 8)
+    corpus_names = {
+        n["node_id"].split("::", 1)[1]
+        for n in fresh["nodes"]
+        if n["kind"] == "symbol" and n["path"] == "src/ann.py"
+    }
+    assert corpus_names == set(cs._exported_names(ast.parse(src)))

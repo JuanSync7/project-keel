@@ -154,6 +154,19 @@ def test_annotated_dunder_all_is_read_too(gate):
     assert any("'f'" in e for e in cs.errors), cs.errors
 
 
+def test_bom_module_is_read_not_skipped(gate):
+    """A UTF-8-BOM module is valid Python at import time, but read as plain
+    utf-8 the BOM survives into the str, ast.parse raises, and the
+    except-UNPARSEABLE swallow re-opened the silent-drop class for exactly
+    those files — found by the ADR-0008 review pass. Every .py read that feeds
+    ast is utf-8-sig now, in check_structure and build_corpus together."""
+    (gate / "src" / "bom_ok.py").write_bytes(b"\xef\xbb\xbf" + _OK.encode("utf-8"))
+    (gate / "src" / "bom_bad.py").write_bytes(b"\xef\xbb\xbfX = 1\n")
+    cs.check_O()
+    assert any("bom_bad.py" in e for e in cs.errors), cs.errors
+    assert not any("bom_ok.py" in e for e in cs.errors), cs.errors
+
+
 def test_documented_exported_symbol_stays_clean(gate):
     (gate / "src" / "mod.py").write_text(
         '"""\ntitle: m\nsummary: s\n"""\n__all__ = ["f"]\n\n\n'

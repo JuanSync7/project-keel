@@ -78,7 +78,7 @@ print but never fail the build.
 
 ### 1. Structure & frontmatter — `scripts/check_structure.py`
 
-**Purpose.** The core enforcer of `CONVENTIONS.md`. Checks A–N:
+**Purpose.** The core enforcer of `CONVENTIONS.md`. Checks A–O:
 
 - **A. Frontmatter** — every `README.md` / `AGENT.md` / `CLAUDE.md`, `docs/**`,
   `test-docs/**` markdown, and `agents/**/*.tool.md` has the required keys with
@@ -133,15 +133,15 @@ print but never fail the build.
   `tests/integration/test_copier_generation.py`, where jinja2 exists. Silent in a
   generated project, which has no twins.
 
-**When to run.** Every commit (pre-commit) and in CI; any time you add a
-directory, package, doc, tool, or agent.
-
 - **O. Module header contract** — every code-root module docstring carries
   explicit, non-empty `title:` and `summary:` lines, in exactly the grammar
   `build_corpus` reads (pinned by a parity test, not a shared import — this
   script stays 3.6-safe). Without them the corpus falls back to
   filename/first-prose-line and labels the result `authored`, and an
   undocumented module is silently dropped from the index (ADR-0008).
+
+**When to run.** Every commit (pre-commit) and in CI; any time you add a
+directory, package, doc, tool, or agent.
 
 **Run.** `make check` · `python3 scripts/check_structure.py`
 

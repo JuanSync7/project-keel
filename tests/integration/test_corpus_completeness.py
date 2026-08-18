@@ -2,7 +2,7 @@
 title: Integration — every CODE_ROOTS module is corpus-visible with an authored header
 kind: tests
 layer: n/a
-summary: The completeness theorem check_O and the single-sourced walk buy together, proved over the REAL tree: a fresh corpus build indexes EVERY .py under check_structure.CODE_ROOTS as a module node whose title and summary are explicit and authored — no silently dropped modules (build_corpus skips undocumented ones), no filename-fallback titles mislabeled authored, and no second scope list to drift (runtimes/ was invisible to every agent for exactly that reason, from 906a42b until ADR-0008).
+summary: The completeness theorem check_O and the single-sourced walk buy together, proved over the REAL tree: a fresh corpus build indexes EVERY .py under check_structure.CODE_ROOTS as a module node whose title and summary are explicit and authored — no silently dropped modules (build_corpus skips undocumented ones), no filename-fallback titles mislabeled authored, and no second scope list to drift (runtimes/ was invisible to every agent for exactly that reason, from the initial commit until ADR-0008).
 """
 
 import os
@@ -45,7 +45,8 @@ def _disk_modules():
 def test_the_corpus_scope_is_the_gates_scope():
     """build_corpus must not keep a private copy of the walk: its re-typed
     CODE_ROOTS omitted runtimes/ and six modules vanished from every corpus
-    query while make verify stayed green. One list, imported."""
+    query while make verify stayed green — from the initial commit onward.
+    One list, imported."""
     assert list(bc.CODE_ROOTS) == list(cs.CODE_ROOTS)
     assert set(bc.IGNORE_DIRS) == set(cs.IGNORE_DIRS)
 

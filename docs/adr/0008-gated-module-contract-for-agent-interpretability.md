@@ -44,8 +44,8 @@ guarantee had three holes:
    (`build_corpus.py`: `if not doc: return`), so an agent's "what does this
    project contain?" would be confidently incomplete, at exit 0.
 2. **The corpus walked a private copy of the scope.** `build_corpus.py`
-   re-typed `CODE_ROOTS` and omitted `runtimes` — six modules invisible to
-   every corpus query since the root landed in `check_structure` only.
+   re-typed `CODE_ROOTS` and never carried `runtimes` (from the initial commit
+   onward) — six modules invisible to every corpus query the whole time.
 3. **Nothing gated the corpus agents actually read.** `wiki/corpus.json` is a
    gitignored generated view; `make check-corpus` builds *fresh* and never
    compares the on-disk file, so it was three modules (33 nodes) behind the

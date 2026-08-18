@@ -59,8 +59,9 @@ def _deterministic_projection(corpus: dict) -> dict:
     """The corpus with LLM enrichment stripped back to its deterministic base:
     links keep only source 'deterministic', and a summary filled as 'generated'
     resets to the empty not-yet-authored state. Staleness (ADR-0008) is judged
-    on THIS projection, so index_enforcer's legitimate fills — which only ever
-    target empty summaries and append semantic links — never read as rot, while
+    on THIS projection, so index_enforcer's legitimate fills (it only ever
+    targets EMPTY summaries) — and any future enricher appending 'generated'
+    links, which LINK_SOURCES already anticipates — never read as rot, while
     any drift in what the tree deterministically yields still does."""
     proj = json.loads(_dumps(corpus))
     for n in proj.get("nodes", []) or []:
@@ -224,11 +225,15 @@ def main(argv=None) -> int:
             sys.stderr.write("ERROR check_corpus: %s\n" % m)
         rc = 1 if errs else 0
         # Manual-inspection mode keeps staleness a warning; the DEFAULT mode
-        # (the gate) errors on it — see the local-corpus block in main().
-        if _dumps(corpus) != _dumps(_fresh(args.root, args.max_links)):
+        # (the gate) errors on it — see the local-corpus block in main(). Same
+        # projection as the gate, or every legitimately enriched corpus would
+        # WARN forever and tell its owner to discard the enrichment.
+        if _dumps(_deterministic_projection(corpus)) != _dumps(
+            _fresh(args.root, args.max_links)
+        ):
             print(
                 "WARN check_corpus: %s is stale vs a fresh build "
-                "(regenerate via rebuild_index.py)" % args.corpus
+                "(regenerate with `make site-data`)" % args.corpus
             )
         if rc == 0:
             print(
@@ -266,21 +271,31 @@ def main(argv=None) -> int:
             "agents build one with `make site-data`"
         )
     else:
+        # Parse -> validate -> only THEN compare staleness: a corpus that is
+        # `null`, a list, or {"nodes": 5} is ROT and must take the designed
+        # ERROR path — running the projection over a non-graph would crash
+        # with a traceback (and `null` slipped a `is not None` guard entirely,
+        # exit 0 — found by the ADR-0008 review pass).
+        committed = None
+        parse_ok = False
         try:
             with open(local, encoding="utf-8") as fh:
                 committed = json.load(fh)
+            parse_ok = True
         except ValueError:
             sys.stderr.write(
                 "ERROR check_corpus: wiki/corpus.json is not valid JSON -- "
                 "regenerate with `make site-data`\n"
             )
-            committed = None
             rc = 1
-        if committed is not None:
-            for m in validate(committed):
+        if parse_ok:
+            shape_errs = validate(committed)
+            for m in shape_errs:
                 sys.stderr.write("ERROR check_corpus: wiki/corpus.json: %s\n" % m)
                 rc = 1
-            if _dumps(_deterministic_projection(committed)) != _dumps(first):
+            if not shape_errs and _dumps(
+                _deterministic_projection(committed)
+            ) != _dumps(first):
                 sys.stderr.write(
                     "ERROR check_corpus: wiki/corpus.json is stale vs the tree "
                     "-- the corpus the agents query is not the project they "

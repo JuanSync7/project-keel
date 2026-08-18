@@ -418,7 +418,7 @@ trusts it. Three holes, all measured on this tree:
 | Hole | Measurement |
 |---|---|
 | The module header (`title:`/`summary:`) is 100% followed and 0% enforced | 109/109 modules have a docstring; **5** lack the explicit keys and silently fall back (filename as title, first line as summary — then labeled `authored`); `build_corpus.py:343` silently *drops* an undocumented module (`if not doc: return`, exit 0) |
-| The corpus walks a private copy of the scope | `build_corpus.py:34` re-types `CODE_ROOTS` and omits `runtimes` (drifted since `906a42b`, when pass 3's root landed in `check_structure` only) — **6 modules invisible** to every corpus-driven agent |
+| The corpus walks a private copy of the scope | `build_corpus.py:34` re-types `CODE_ROOTS` and never carried `runtimes` — the drift existed from the initial commit — **6 modules invisible** to every corpus-driven agent |
 | Nothing gates the corpus agents actually read | `wiki/corpus.json` is a gitignored generated view; `make check-corpus` builds *fresh* and never looks at it; staleness is a WARN behind an opt-in `--corpus` flag. Measured: the on-disk corpus is 3 modules (33 nodes) behind the tree while `make verify` is green |
 
 One vertical slice — the contract, its scope, and its currency:
@@ -513,6 +513,16 @@ a new instance of the drift class it claims to fix.
 
 ## Deferred, with reasons
 
+- **`__all__` augmentation (`+=` / `.extend`) is invisible to both `__all__`
+  readers.** ast.AugAssign is handled by neither `check_structure._exported_names`
+  nor build_corpus's twin — the same hole class as the AnnAssign one pass 8
+  closed, but measured at **zero occurrences** in the tree, and the readers are
+  deliberately literal-only (a computed `__all__` cannot be read statically at
+  all). Defer until a real augmented `__all__` appears; when it does, widen both
+  readers together and extend the parity pin, as pass 8 did for AnnAssign.
+  Same class, same deferral: sequential `__all__` REBINDS union in both readers
+  (runtime keeps only the last), so a deliberately-unexported undocumented
+  symbol could fail check_E — a latent false positive, also at zero occurrences.
 - **Grace tiers for new checks.** Adding the nested-directory README+CLAUDE rule
   that `AGENT.md:34` already claims to enforce reds keel itself — the exact
   count depends on how the rule is scoped (keel ships 5 unlabeled nested
