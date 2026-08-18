@@ -10,6 +10,14 @@ version rather than a bare commit:
 ## [Unreleased]
 
 ### Added
+- **`docs/guides/python-style.md`** — the canonical "how Python is written
+  here": readability and loud failure modes outrank speed; docstrings say what,
+  comments say why (a reason or a measurement, never a restatement); the
+  absent-vs-broken split; how a code agent works in this repo; and the same
+  contract scaled from a one-off EDA script to a full product. Linked from
+  `AGENT.md`'s Always rules and registered doc-tier in `config/practices.json`
+  (`readability-over-speed`, `absent-vs-broken`). Ships verbatim, so every
+  generated project inherits it.
 - **The machine-readable module contract is gated** (ADR-0008). Every code-root
   module must carry explicit `title:`/`summary:` docstring lines — the corpus's
   input grammar, pinned to `build_corpus` by a parity test (new `check_O`);

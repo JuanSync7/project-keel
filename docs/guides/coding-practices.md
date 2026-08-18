@@ -25,6 +25,10 @@ The single source of truth is **`config/practices.json`** — a vendor-neutral
 data registry read by path (never imported) by the gate, the advisory, and the
 refactor agent alike. This document is its human-readable face.
 
+The **judgment half** — what no rule can decide: comment quality, failure-mode
+design, plain-over-clever — is [python-style](python-style.md), the canonical
+statement of how Python is written here.
+
 ## The one rule that sorts every practice
 
 A practice lands in one of three tiers by a single test — **can a rule decide

@@ -407,7 +407,7 @@ are tested: publish a contract, drift it, and the check must go red again.
 both gates — the prune/migration pairing and the over-reach check — so they are a
 mechanical repetition rather than a design question.
 
-### Pass 8 — the machine-readable module contract, gated end to end
+### Pass 8 — the machine-readable module contract, gated end to end *(done)*
 
 The audit behind this pass is the user's question, made precise: *what
 guarantees that an agent (or a new human) can interpret this code?* The answer
@@ -459,6 +459,15 @@ discipline; how a code agent works in this repo), linked from `AGENT.md` and
 sorted into the practices registry as doc-tier. Guides ship verbatim, so it
 governs every generated project: EDA scripts, checklist tools, agents, and
 full products alike.
+
+**Landed.** Both slices. **Gate:** `make verify` -> 387 passed, 0 skipped, exit
+0 (from 366); `make advise` clean; generated project green on arrival (check_O
+0 errors; check-corpus loud exit 0 with no local corpus). Corpus: 505 stale ->
+569 nodes with `runtimes` visible. Not in the plan but found by the mutation
+pass: annotated `__all__: list[str] = [...]` (ast.AnnAssign) was invisible to
+BOTH check_E and build_corpus's reader — widened together, regression-tested.
+ADR-0008; the pattern half is `docs/guides/python-style.md`, doc-tier entries
+`readability-over-speed` and `absent-vs-broken`.
 
 ### Pass 5 — twin parity + the meta-gate's own holes *(first half done)*
 

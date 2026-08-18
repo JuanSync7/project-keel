@@ -28,6 +28,12 @@ of truth for labeling and the directory taxonomy. Each directory's own
   `models/`, and confine vendor-specific wiring to thin adapters
   (see CONVENTIONS §7). Name the neutral concept first; a vendor is one
   interchangeable option.
+- **Write Python to the house pattern.** `docs/guides/python-style.md` is
+  canonical: readability and loud failure modes outrank speed; every module
+  carries the gated `title:`/`summary:` header the corpus reads (check_O);
+  docstrings say what, comments say why — a comment carries a reason or a
+  measurement, never a restatement. The mechanical floor is gated (ruff, mypy
+  strict, check_O/E); the rest is what review holds you to.
 - **Respect the `__init__.py` boundary.** Import a package's public
   symbols from the package, never from its private (`_*`) submodules.
   When you add a public symbol, add it to `__all__` and re-export it.
