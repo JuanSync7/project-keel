@@ -173,3 +173,37 @@ def test_exported_names_parity_with_the_corpus_reader(repo):
         if n["kind"] == "symbol" and n["path"] == "src/ann.py"
     }
     assert corpus_names == set(cs._exported_names(ast.parse(src)))
+
+
+def test_unreadable_local_corpus_fails_loudly(repo, capsys):
+    """Present-but-unreadable (permissions, a directory, a dangling symlink) is
+    'broken', not 'absent': catching only ValueError let an OSError escape as a
+    traceback from `make verify` instead of the designed ERROR — the same
+    absent-vs-broken split this file exists to hold (ADR-0007)."""
+    (repo / "wiki").mkdir()
+    (repo / "wiki" / "corpus.json").mkdir()  # a directory is unreadable as JSON
+    assert cc.main(["--root", str(repo)]) == 1
+    assert "ERROR check_corpus" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("payload", ["null", "[]", '{"nodes": 5}'])
+def test_corpus_mode_reports_rot_without_a_traceback(repo, payload, capsys):
+    """--corpus is the manual-inspection twin of the gate and must take the same
+    parse -> validate -> only-then-compare path: the staleness projection over a
+    non-graph crashed with AttributeError while the correct ERROR was already on
+    stderr."""
+    (repo / "wiki").mkdir()
+    (repo / "wiki" / "corpus.json").write_text(payload, encoding="utf-8")
+    assert cc.main(["--root", str(repo), "--corpus", "wiki/corpus.json"]) == 1
+    assert "ERROR check_corpus" in capsys.readouterr().err
+
+
+def test_bom_markdown_doc_is_still_indexed(repo):
+    """The .py twins moved to utf-8-sig; markdown did not, so a BOM'd doc kept
+    its \\ufeff prefix, the frontmatter never matched a leading '---', and the doc
+    was silently dropped — the ADR-0008 drop class re-opened for the node kind
+    that dominates the corpus."""
+    doc = _DOC.replace("id: guide", "id: bomguide")
+    (repo / "docs" / "bom.md").write_bytes(b"\xef\xbb\xbf" + doc.encode("utf-8"))
+    fresh = cc._fresh(str(repo), 8)
+    assert any(n["node_id"] == "bomguide" for n in fresh["nodes"])

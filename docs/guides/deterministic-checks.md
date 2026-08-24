@@ -90,7 +90,7 @@ print but never fail the build.
 - **D. `__init__` is the API** — no absolute import of another package's
   `_private` module.
 - **E. Authored coverage** — every `__all__`-exported symbol defined in-file has
-  a docstring: the corpus's symbol summaries (warn until ADR-0008).
+  a docstring: the corpus's symbol summaries (error since ADR-0008).
 - **F. Tool specs governed** (error) + **accountability** (warn).
 - **G. Tool↔agent binding** — `tools.md` ↔ each spec's `## Used by` agree.
 - **H. Project facts** — `config/project.json` agrees with the tree (§15).

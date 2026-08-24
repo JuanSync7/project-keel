@@ -101,6 +101,7 @@ def test_ruff_is_clean_over_every_code_root():
     assert r.returncode == 0, r.stdout + r.stderr
 
 
+@pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
 def test_lint_gates_formatting_over_every_code_root():
     """`make fmt` REWRITES; nothing ever proved it had been run. A formatter that only
     exists as a fix-it command is decorative — the tree drifts and the gate stays green

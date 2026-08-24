@@ -48,10 +48,36 @@ version rather than a bare commit:
   `E501` deferral for long docstring summaries is untouched.
 
 ### Fixed
-- `scripts/check_practices.py` had a `# noqa: PERF401` that reformatting moved
-  onto an inner line, where it no longer suppressed the diagnostic ruff reports
-  at the call. Re-anchored to the reported line. Worth knowing generally:
-  `RUF100` is deferred here, so an orphaned pragma is not flagged by itself.
+- Reformatting orphaned three suppression pragmas — one `# noqa: PERF401` in
+  `scripts/check_practices.py` and two `# type: ignore[arg-type]` in
+  `scripts/apply_refactor.py` — by moving them off the lines whose diagnostics
+  they silenced. All re-anchored (the `apply_refactor` pair by joining once into
+  a named local, so the pragma cannot drift off its expression again). Worth
+  knowing generally: `RUF100` is deferred here and `scripts/` is outside
+  `[tool.mypy] files`, so an orphaned pragma is not flagged by itself — the
+  ignores were dead and the real errors unsuppressed, waiting for the day the
+  declared mypy ratchet pulls `scripts` in.
+- A `wiki/corpus.json` that exists but **cannot be read** — bad permissions, a
+  directory, a dangling symlink — escaped `make check-corpus` as a raw
+  `OSError` traceback, because only `ValueError` was caught. That is the
+  absent-vs-broken split this check exists to hold, so both reads now go
+  through one `_load_corpus` helper that reports present-but-broken on the
+  designed ERROR path. Its twin: `--corpus` mode ran the staleness projection
+  without the shape guard the gate branch got, so a `null`, a list, or
+  `{"nodes": 5}` printed the correct error and *then* died with an
+  `AttributeError`.
+- A UTF-8-BOM markdown file was silently dropped from the corpus: read as plain
+  utf-8 the BOM survives into the string, `_parse_frontmatter` never sees a
+  leading `---`, and the doc simply is not there. The `.py` readers moved to
+  `utf-8-sig` in the ADR-0008 pass; the markdown ones had not, re-opening the
+  drop class for the node kind that dominates the graph. (`utf-8-sig` is
+  byte-identical for BOM-less files; the corpus **writer** stays `utf-8`.)
+- `test_lint_gates_formatting_over_every_code_root` was the one `make`-invoking
+  test in `tests/integration/test_gate_scope.py` without the
+  `skipif(shutil.which("make") is None)` guard its siblings carry, so on a host
+  without `make` it raised `FileNotFoundError` instead of skipping.
+- `docs/guides/deterministic-checks.md` still described check E as "warn until
+  ADR-0008", which reads as *currently* warn. It is an error.
 - `_min_copier_version` is `9.1.0`, not `9`. `multiselect:` questions landed in
   copier 9.1.0, so 9.0.1 passed the declared gate and *then* died on
   `Could not convert [] to string` — the mystery error the gate exists to

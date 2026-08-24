@@ -29,7 +29,7 @@ corrected, not trusted. Delete `tmp/` entirely once the branch merges.
 git checkout feat/keel-hardening-pass-1
 python3 -m venv .venv && .venv/bin/pip install -e ".[dev,template]"
 .venv/bin/pip install -r api/rest_fastapi/requirements.txt
-make PY=.venv/bin/python verify        # expect: 387 passed, 0 skipped, exit 0
+make PY=.venv/bin/python verify        # expect: 399 passed, 0 skipped, exit 0
 ```
 
 **`make verify` on its own will fail** at `check-python` on any host whose
@@ -60,6 +60,7 @@ installed — find out which before doing anything else, because the whole point
 
 | Commit | What |
 |---|---|
+| `7a90744` | the 20 confirmed findings of the ADR-0008 six-lens review |
 | `2f9f2af` | `docs/guides/python-style.md` — the canonical Python pattern (doc-tier) |
 | `2d0e696` | the machine-readable module contract gated end to end (check_O, check_E ERR, corpus scope + local-freshness gates; ADR-0008) |
 | `897a0e4` | formatting is a gate (`fmt-check` rides `make lint`) |
@@ -75,8 +76,7 @@ installed — find out which before doing anything else, because the whole point
 | `b98a0b0` | make `copier update` runnable and gated in CI |
 | `d0a25c4` | track `.copier-answers.yml` downstream; plan + ADR-0005 |
 
-Gate at the tip: **387 passed, 0 skipped, exit 0**; `make advise` clean.
-(The `expect:` in section 1 predates this — update it when you re-verify.)
+Gate at the tip: **399 passed, 0 skipped, exit 0**; `make advise` clean.
 
 ## 3. Remaining work, in the order I would take it
 
@@ -227,6 +227,13 @@ container cannot swallow at this site). Do not pitch it as a container replaceme
   both (and note `__all__ +=` is STILL invisible everywhere — deferred).
 - **The Python pattern is canonical** (`2f9f2af`): `docs/guides/python-style.md`,
   linked from AGENT.md's Always rules; readability/robustness over speed.
+- **Fix a file-kind bug in every reader of that file kind.** The ADR-0008 review
+  moved the `.py` reads to `utf-8-sig`; a second review round found the markdown
+  reads still on plain `utf-8`, so BOM'd docs kept dropping out of the corpus —
+  the same defect, one file kind over. Same shape as the two `--corpus` /
+  gate branches of `check_corpus`, which must be changed in step (the shape
+  guard landed on one of them only). Grep for the pattern, do not fix the
+  instance.
 
 ## 7. Working agreements this branch has been held to
 

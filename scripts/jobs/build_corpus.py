@@ -196,7 +196,11 @@ def _docstring_meta(doc: str):
 def _doc_and_sections(path: str, root: str, nodes: list):
     rel = _rel(path, root)
     try:
-        with open(path, encoding="utf-8") as fh:
+        # utf-8-sig, like every .py read here: read as plain utf-8 a BOM'd file
+        # keeps its U+FEFF, so _parse_frontmatter never sees a leading `---` and
+        # the doc drops out of the corpus silently — the ADR-0008 drop class,
+        # for the node kind that dominates the graph. Byte-identical otherwise.
+        with open(path, encoding="utf-8-sig") as fh:
             text = fh.read()
     except (OSError, ValueError):  # ValueError covers UnicodeDecodeError
         return  # not decodable -> not a corpus doc
@@ -307,7 +311,7 @@ def _nearest_readme(dirpath: str, root: str):
         readme = os.path.join(d, "README.md")
         if os.path.isfile(readme):
             try:
-                with open(readme, encoding="utf-8") as fh:
+                with open(readme, encoding="utf-8-sig") as fh:
                     fm, _ = _parse_frontmatter(fh.read())
             except Exception:  # noqa: BLE001 — degrades into a VISIBLE signal
                 # An unreadable README just means no owner is discoverable here,

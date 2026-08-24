@@ -55,6 +55,19 @@ def _dumps(corpus: dict) -> str:
     return json.dumps(corpus, indent=2, sort_keys=True) + "\n"
 
 
+def _load_corpus(path: str) -> tuple:
+    """Read the JSON corpus at *path*; return (corpus, reason) with reason "" on
+    success. Callers own the ABSENT case (it means different things to the gate
+    and to --corpus); this owns present-but-broken — bad permissions, a
+    directory, a dangling symlink, malformed JSON — because every one of those
+    escaped as a traceback from `make verify` when only ValueError was caught."""
+    try:
+        with open(path, encoding="utf-8-sig") as fh:
+            return json.load(fh), ""
+    except (OSError, ValueError) as exc:
+        return None, str(exc)
+
+
 def _deterministic_projection(corpus: dict) -> dict:
     """The corpus with LLM enrichment stripped back to its deterministic base:
     links keep only source 'deterministic', and a summary filled as 'generated'
@@ -218,8 +231,12 @@ def main(argv=None) -> int:
         if not os.path.exists(path):
             sys.stderr.write("ERROR check_corpus: no corpus at %s\n" % args.corpus)
             return 1
-        with open(path, encoding="utf-8") as fh:
-            corpus = json.load(fh)
+        corpus, why = _load_corpus(path)
+        if why:
+            sys.stderr.write(
+                "ERROR check_corpus: %s could not be read (%s)\n" % (args.corpus, why)
+            )
+            return 1
         errs = validate(corpus)
         for m in errs:
             sys.stderr.write("ERROR check_corpus: %s\n" % m)
@@ -227,8 +244,10 @@ def main(argv=None) -> int:
         # Manual-inspection mode keeps staleness a warning; the DEFAULT mode
         # (the gate) errors on it — see the local-corpus block in main(). Same
         # projection as the gate, or every legitimately enriched corpus would
-        # WARN forever and tell its owner to discard the enrichment.
-        if _dumps(_deterministic_projection(corpus)) != _dumps(
+        # WARN forever and tell its owner to discard the enrichment — and same
+        # `not errs` guard, because projecting a non-graph raises where the
+        # designed ERROR was already printed.
+        if not errs and _dumps(_deterministic_projection(corpus)) != _dumps(
             _fresh(args.root, args.max_links)
         ):
             print(
@@ -276,19 +295,14 @@ def main(argv=None) -> int:
         # ERROR path — running the projection over a non-graph would crash
         # with a traceback (and `null` slipped a `is not None` guard entirely,
         # exit 0 — found by the ADR-0008 review pass).
-        committed = None
-        parse_ok = False
-        try:
-            with open(local, encoding="utf-8") as fh:
-                committed = json.load(fh)
-            parse_ok = True
-        except ValueError:
+        committed, why = _load_corpus(local)
+        if why:
             sys.stderr.write(
-                "ERROR check_corpus: wiki/corpus.json is not valid JSON -- "
-                "regenerate with `make site-data`\n"
+                "ERROR check_corpus: wiki/corpus.json could not be read (%s) -- "
+                "regenerate with `make site-data`\n" % why
             )
             rc = 1
-        if parse_ok:
+        else:
             shape_errs = validate(committed)
             for m in shape_errs:
                 sys.stderr.write("ERROR check_corpus: wiki/corpus.json: %s\n" % m)

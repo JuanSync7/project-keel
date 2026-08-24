@@ -199,20 +199,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         json.dump(result, sys.stdout, indent=2, sort_keys=True)
         sys.stdout.write("\n")
     else:
+        # Joined once so the pragma sits ON the line it silences: `ruff format`
+        # carried both of these off their expressions during the corpus
+        # reformat, and RUF100 is deferred, so nothing reported the orphans.
+        files = ", ".join(result["files"])  # type: ignore[arg-type]
         if result.get("dry_run"):
-            sys.stdout.write(
-                "apply_refactor: would edit %s\n" % ", ".join(result["files"])
-            )  # type: ignore[arg-type]
+            sys.stdout.write("apply_refactor: would edit %s\n" % files)
         else:
             verb = "applied" if result["applied"] else "ROLLED BACK (gate failed)"
             sys.stdout.write(
                 "apply_refactor: %s [%s] gate=%s -> %s\n"
-                % (
-                    ", ".join(result["files"]),
-                    result["practice"],  # type: ignore[arg-type]
-                    result["gate"],
-                    verb,
-                )
+                % (files, result["practice"], result["gate"], verb)
             )
     if result.get("dry_run"):
         return 0
