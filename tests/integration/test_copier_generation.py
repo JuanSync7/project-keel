@@ -293,6 +293,28 @@ def test_generated_project_does_not_ship_keels_template_meta_tests(tmp_path):
     assert (dest / "tests" / "integration" / "README.md").is_file()
 
 
+def test_generated_project_does_not_ship_keels_own_hardening_plan(tmp_path):
+    """Same rule as the meta-tests, for prose: `docs/design/keel-hardening-plan.md`
+    is keel's in-flight worklist — passes, measurements and deferrals about THIS
+    repo, `status: draft`, `owner: TBD`. Shipped verbatim it arrives as a new
+    project's design document, describing work its authors never did and citing
+    files that exist only here.
+
+    The prune is the single FILE, never `docs/design` — the directory's labeled
+    `README.md` is the placeholder a project writes its own design notes into, and
+    removing it would red the project's own check_B."""
+    dest = tmp_path / "proj"
+    _generate(dest, project_name="demo_proj", frontend_stack="none")
+
+    assert not (dest / "docs" / "design" / "keel-hardening-plan.md").exists(), (
+        "keel's own hardening plan shipped into the generated project"
+    )
+    assert (dest / "docs" / "design" / "README.md").is_file(), (
+        "the design directory's labeled placeholder was pruned with it — a project "
+        "still needs somewhere to put its own design notes"
+    )
+
+
 def test_gitignore_twin_stays_pinned_to_keels_own(tmp_path):
     """`.gitignore.jinja` is a DIVERGENCE twin: unlike the project.json/pyproject/
     README twins it must NOT reproduce keel's file, because keel is the template
@@ -516,6 +538,10 @@ def _answer_driven_prunes():
     return cfg, [(entry, path) for entry, path in prunes if path]
 
 
+# `{% if not showcase %}path{% endif %}` -> the condition, for the pairing test below.
+_EXCLUDE_CONDITION = re.compile(r"\{%\s*if\s+(.+?)\s*%\}")
+
+
 def test_every_answer_driven_prune_has_a_retirement_migration():
     """`_exclude` prunes at GENERATION; only `_migrations` RETIRES on update.
 
@@ -540,20 +566,33 @@ def test_every_answer_driven_prune_has_a_retirement_migration():
         "vacuously green"
     )
 
-    commands = " ".join(
-        m["command"] if isinstance(m, dict) else str(m)
+    migrations = [
+        (
+            m["command"] if isinstance(m, dict) else str(m),
+            str(m.get("when", "")) if isinstance(m, dict) else "",
+        )
         for m in cfg.get("_migrations", [])
-    )
-    # Word-boundary, not substring: plain `in` would let the `src/frontend/react-vite`
-    # migration vouch for the separate `src/frontend` prune and pass vacuously.
+    ]
+
+    def retired_by(path, cond):
+        """A migration retires this prune only if it removes the SAME path under the
+        SAME condition. Word-boundary, not substring, or the
+        `src/frontend/react-vite` migration would vouch for the separate
+        `src/frontend` prune and pass vacuously. The condition half matters too: a
+        path retired under a DIFFERENT answer is retired at the wrong time, which
+        reads as a pairing while behaving as none."""
+        pattern = r"(?<![\w./-])%s(?![\w./-])" % re.escape(path)
+        return any(re.search(pattern, cmd) and cond in when for cmd, when in migrations)
+
     missing = [
         (entry, path)
         for entry, path in prunes
-        if not re.search(r"(?<![\w./-])%s(?![\w./-])" % re.escape(path), commands)
+        if not retired_by(path, _EXCLUDE_CONDITION.search(entry).group(1).strip())
     ]
     assert not missing, (
         "these _exclude entries prune a path at generation but no _migrations entry "
-        "retires it on update, so a project that re-answers keeps it forever:\n"
+        "retires it on update under the same condition, so a project that re-answers "
+        "keeps it forever:\n"
         + "\n".join("  %s   (path: %s)" % (entry, path) for entry, path in missing)
     )
 
@@ -683,6 +722,7 @@ _SHOWCASE_PATHS = (
     "tests/unit/backend/test_showcase.py",
     "tests/integration/test_showcase_repo.py",
     "tests/integration/test_showcase_api.py",
+    "tests/e2e/test_showcase_journey.py",
     "docs/guides/showcase-site.md",
     "src/frontend/astro",
 )
@@ -703,6 +743,24 @@ def _structure_gate(project):
     return subprocess.run(
         [sys.executable, "scripts/check_structure.py"],
         cwd=str(project),
+        capture_output=True,
+        text=True,
+    )
+
+
+def _test_gate(project):
+    """Run the generated project's OWN test suite, exactly as its shipped `make
+    test` recipe does (PYTHONPATH=src:.); return the CompletedProcess.
+
+    check_structure is only the STRUCTURAL half of a project's gate — it never
+    executes a test, so "the generated project is green" asserted through it
+    alone is a claim about layout, not behaviour. Measured cost of the real
+    thing: the full suite of a freshly generated project runs in ~4s, which is
+    cheaper than the class of defect it catches."""
+    return subprocess.run(
+        [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider"],
+        cwd=str(project),
+        env=dict(os.environ, PYTHONPATH="src:."),
         capture_output=True,
         text=True,
     )
@@ -757,6 +815,15 @@ def test_declining_the_showcase_prunes_the_whole_surface_and_leaves_a_green_gate
 
     r = _structure_gate(dest)
     assert r.returncode == 0, r.stdout + r.stderr
+
+    # "...AND LEAVES A GREEN GATE" — asserted by running the gate, not by proxy.
+    # This test used to stop at check_structure, which reads layout and never
+    # executes anything, so tests/e2e/test_showcase_journey.py could survive the
+    # prune and walk the /api/* surface the same answer had just deleted: green
+    # here, two hard failures on the user's first CI run. A prune list is only as
+    # honest as the suite that runs after it.
+    r = _test_gate(dest)
+    assert r.returncode == 0, r.stdout[-4000:] + r.stderr[-2000:]
 
 
 def test_declining_the_showcase_leaves_nothing_importing_it(tmp_path):

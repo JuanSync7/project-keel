@@ -262,7 +262,16 @@ def test_copier_test_modules_hard_fail_when_the_surface_is_required():
 # floor BELOW the oldest release that can actually render this template turns the
 # gate into a lie — 9.0.1 passes it and then dies with the exact mystery error the
 # gate advertises preventing (`ValueError: Could not convert [] to string`).
-_FEATURE_FLOORS = [("9.1.0", "multiselect:", "multiselect questions")]
+_FEATURE_FLOORS = [
+    ("9.1.0", "multiselect:", "multiselect questions"),
+    # The `command:`/`when:` migration form landed in copier 9.3.0 ("add simpler
+    # migrations configuration syntax", #1510). Measured in 9.2.0's source rather
+    # than assumed: `migration_tasks` does `parse(migration["version"])` with no
+    # guard, so an entry that carries `command:` instead of `version:` is a raw
+    # KeyError mid-update — the unhandled-traceback shape this floor converts into
+    # copier's own clear message. 9.3.0 branches on the format instead.
+    ("9.3.0", "_stage ==", "new-format _migrations (command:/when:)"),
+]
 
 
 def test_declared_copier_floor_covers_every_feature_the_template_uses():

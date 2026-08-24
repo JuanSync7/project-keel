@@ -7,12 +7,16 @@ _subdirectory: "."
 _answers_file: ".copier-answers.yml"
 _templates_suffix: ".jinja"
 # Fail with copier's own clear message rather than a mystery render error on an old
-# copier. 9.1.0, not 9: `multiselect:` (transports/profiles below) landed in 9.1.0, so
-# 9.0.1 would pass a "9" gate and then die on `Could not convert [] to string` — the
-# very error this line exists to pre-empt. Raise it whenever a newer feature is used;
+# copier. This is the floor of the NEWEST feature used below, and it has moved twice
+# for the same reason — a floor that admits a copier which then crashes is worse than
+# no floor, because the user is told the version was checked:
+#   9.1.0  `multiselect:` (transports/profiles); 9.0.1 dies on `Could not convert [] to string`
+#   9.3.0  the `command:`/`when:` `_migrations` form; 9.2.0 dies on KeyError: 'version',
+#          because its migration_tasks reads migration["version"] with no guard
+# Raise it whenever a newer feature is used;
 # tests/integration/test_copier_generator_contract.py pins the two together.
 # Generate a NAMED version, not a bare SHA:  copier copy --vcs-ref v0.1.0 ...
-_min_copier_version: "9.1.0"
+_min_copier_version: "9.3.0"
 # Keel uses CLAUDE.md -> AGENT.md symlinks throughout (enforced by check_I); recreate
 # them as symlinks in the generated project instead of dereferencing to regular files.
 _preserve_symlinks: true
@@ -50,6 +54,12 @@ _exclude:
   # about THIS repo's unfinished work and would be meaningless — and misleading —
   # in a project generated from it.
   - "tmp"
+  # Same rule, for prose that is not scratch: the hardening plan is keel's worklist
+  # — passes, measurements and deferrals about THIS repo, `status: draft`. Shipped
+  # verbatim it lands as a new project's design document. The FILE only: the
+  # directory's labeled README.md is the placeholder a project writes into, and
+  # pruning it would red the project's own check_B.
+  - "docs/design/keel-hardening-plan.md"
   - "wiki/corpus.json"
   - "wiki/llms.txt"
   - "wiki/llms-full.txt"
@@ -108,6 +118,12 @@ _exclude:
   - "{% if not showcase %}tests/unit/backend/test_showcase.py{% endif %}"
   - "{% if not showcase %}tests/integration/test_showcase_repo.py{% endif %}"
   - "{% if not showcase %}tests/integration/test_showcase_api.py{% endif %}"
+  # The e2e journey walks the /api/* surface the prune above deletes, so shipping
+  # it to a project that declined the showcase is two hard failures on that
+  # project's first CI run. It was missed here because the decline test asserted
+  # the gate through check_structure, which never executes a test; that test now
+  # runs the generated project's whole suite.
+  - "{% if not showcase %}tests/e2e/test_showcase_journey.py{% endif %}"
   - "{% if not showcase %}docs/guides/showcase-site.md{% endif %}"
 
 # ---- Q&A (core facts; map 1:1 to config/project.json, enforced by check_H) -----
@@ -243,6 +259,7 @@ _migrations:
               tests/unit/backend/test_showcase.py
               tests/integration/test_showcase_repo.py
               tests/integration/test_showcase_api.py
+              tests/e2e/test_showcase_journey.py
               docs/guides/showcase-site.md"
     when: "{{ _stage == 'after' and not showcase }}"
   # The generated views the showcase renders. Unlike the code above these are
@@ -260,4 +277,9 @@ _migrations:
   - command: "rm -f tests/integration/test_copier_generation.py
               tests/integration/test_copier_generator_contract.py
               tests/integration/test_copier_update.py"
+    when: "{{ _stage == 'after' }}"
+  # Same shape for keel's hardening plan: projects generated before that prune
+  # landed still carry it, and only a migration can retire what `_exclude` can
+  # merely stop shipping. Named exactly — `docs/design/` itself must survive.
+  - command: "rm -f docs/design/keel-hardening-plan.md"
     when: "{{ _stage == 'after' }}"

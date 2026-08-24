@@ -48,6 +48,33 @@ version rather than a bare commit:
   `E501` deferral for long docstring summaries is untouched.
 
 ### Fixed
+- **Declining the showcase shipped a test that asserted on the routes it had just
+  deleted.** `tests/e2e/test_showcase_journey.py` was in neither prune list, so a
+  project generated with `showcase=false` carried it and failed its own CI on day
+  one (measured: 2 failed — the walk hits `/api/overview`, `/api/features`, …,
+  which no longer exist). It survived because the guard test —
+  `test_declining_the_showcase_prunes_the_whole_surface_and_leaves_a_green_gate` —
+  asserted "green gate" through `check_structure` alone, which reads layout and
+  never executes anything. It now runs the generated project's **whole suite**
+  (~4s, measured), so a prune list is only as honest as the run that follows it.
+  The retirement-pairing test was tightened in the same pass: it checked that some
+  migration names the pruned path, not that it does so under the *same condition* —
+  a path retired on the wrong answer reads as a pairing and behaves as none.
+- **`_min_copier_version` is `9.3.0`, not `9.1.0`.** The `command:`/`when:`
+  `_migrations` form this release adds landed in copier 9.3.0 ("add simpler
+  migrations configuration syntax", #1510). Measured in 9.2.0's own source rather
+  than assumed: its `migration_tasks` does `parse(migration["version"])` with no
+  guard, so an entry carrying `command:` instead of `version:` is a bare
+  `KeyError` mid-update — exactly the unhandled traceback this floor exists to
+  turn into copier's own clear message. Second time this line has been wrong for
+  the same reason, so `_FEATURE_FLOORS` now carries both features and the floor
+  each one needs.
+- Keel's own hardening plan (`docs/design/keel-hardening-plan.md`) no longer ships
+  into generated projects. It is this repo's in-flight worklist — passes,
+  measurements, deferrals, `status: draft` — and verbatim it arrived as a new
+  project's design document describing work its authors never did. Pruned as a
+  single file, with a mirroring migration; `docs/design/README.md` stays, because
+  it is the labeled placeholder a project writes its own design notes into.
 - Reformatting orphaned three suppression pragmas — one `# noqa: PERF401` in
   `scripts/check_practices.py` and two `# type: ignore[arg-type]` in
   `scripts/apply_refactor.py` — by moving them off the lines whose diagnostics
@@ -259,7 +286,11 @@ version rather than a bare commit:
   `rulesets.mypy.overrides`. Relaxing a **component** of `strict`
   (`disallow_untyped_defs`, `warn_return_any`, …) rather than `strict` itself
   counts: mypy's `--strict` is exactly that set, and switching the pieces off is
-  the same loosening spelled differently.
+  the same loosening spelled differently. What check_M reads is bounded, and the
+  bound is stated where it is declared: the flags this ruleset declares, plus
+  `strict`'s components, plus `ignore_errors`. `ignore_missing_imports`,
+  `disable_error_code` and `follow_imports` are outside it — import and diagnostic
+  scoping rather than strictness — and stay a review matter.
 - **`copier update` could never retire what an answer declined, so re-answering a
   question broke the project's own gate.** `_exclude` is a *generation-time* filter:
   on update copier renders the old template copy with the **union** of the old and
@@ -432,10 +463,6 @@ version rather than a bare commit:
 - A project made with `make new` records the template's machine-local absolute
   path, so `copier update` works on that machine only. Generate from
   `gh:JuanSync7/project-keel` for a project you intend to share.
-- `make fmt` now covers all nine code roots, but it is not part of `make verify`
-  and has evidently never been run: `ruff format --check` reports 104 of 111
-  files as *would reformat*. The first person to run it reformats the whole
-  corpus, including the five `scripts/` files constrained to 3.6-legal syntax.
 
 ## [0.1.0] — 2026-08-04
 First named version. Everything below existed before this tag; the tag exists so

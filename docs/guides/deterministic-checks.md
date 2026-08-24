@@ -116,9 +116,12 @@ print but never fail the build.
   Also enforces the two declarations that used to have no consumer: every ruff
   `per-file-ignores` pattern must be declared in `rulesets.ruff.per_file_ignores`
   (one `"**/*.py"` line could otherwise silence a family corpus-wide), and every
-  `[[tool.mypy.overrides]]` relaxation — including switching off a *component* of
-  `strict` rather than `strict` itself — must be declared in
-  `rulesets.mypy.overrides` for that module.
+  `[[tool.mypy.overrides]]` relaxation of a flag the ruleset declares — `strict`,
+  the twelve components `--strict` expands to, `warn_unreachable` — or of
+  `ignore_errors` must be declared in `rulesets.mypy.overrides` for that module.
+  The bound is deliberate and worth knowing: keys outside that set
+  (`ignore_missing_imports`, `disable_error_code`, `follow_imports`) scope
+  imports or diagnostics rather than strictness, and check_M does not read them.
 - **N. Template twin parity** — keel is a copier template, and every `*.jinja`
   twin must be declared in `config/project.json` `template.twins` with its kind:
   `parity` (reproduces keel's own file except where templated), `divergence`
