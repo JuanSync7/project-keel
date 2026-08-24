@@ -14,7 +14,22 @@ dependencies = []
 # httpx backs FastAPI's TestClient (API/AAD tests); jsonschema validates the served
 # AAD descriptor against the committed schema — it was in no extra at all, so that
 # assertion had never executed anywhere while the suite reported success.
-dev = ["pytest", "pytest-cov", "ruff", "mypy", "httpx", "jsonschema"]
+# ruff and mypy are pinned EXACTLY, unlike the rest: their output is not a
+# dependency of the gate, it IS the gate's verdict. Unpinned, CI resolved ruff
+# 0.16.4 against the venv's 0.15.18 — and because `extend-select` ADDS to ruff's
+# defaults, 0.16's wider default set reported 464 findings from families this repo
+# deliberately defers (UP031, E402, RUF100). Same tree, green locally and red in
+# CI, with no commit in between. Bump these on purpose, in their own commit, with
+# the corpus re-linted at the new version — and move .pre-commit-config.yaml's rev
+# in the same change (tests/integration/test_gate_scope.py pins the two together).
+dev = [
+  "pytest",
+  "pytest-cov",
+  "ruff==0.15.18",
+  "mypy==2.1.0",
+  "httpx",
+  "jsonschema",
+]
 # Optional agent-runtime engines. The default 'inprocess' runtime is pure
 # stdlib (no install); install an engine only if you select it by name, e.g.
 # get_runtime("langgraph"). Keeps the default install dependency-free.
@@ -22,7 +37,9 @@ langgraph = ["langgraph>=0.2"]
 # Optional project generator. Keel's repo root is a `copier` template; install this
 # only to generate or refresh a downstream project (`make new` / `copier copy` /
 # `copier update`). The default install + CI/pre-commit stay dependency-free.
-template = ["copier>=9"]
+# `>=9.3` mirrors copier.yml `_min_copier_version` — the new-format `_migrations`
+# this template uses are a KeyError on anything older (see that file for the measurement).
+template = ["copier>=9.3"]
 
 # src-layout: packages live under src/ (importable as their top name).
 [tool.setuptools.packages.find]

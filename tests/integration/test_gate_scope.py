@@ -2,7 +2,7 @@
 title: Integration — the gate's scope is the whole corpus, not a hand-written subset
 kind: tests
 layer: n/a
-summary: Pass 3's contract, read off the REAL Makefile recipes, the REAL pyproject and the REAL .pre-commit-config.yaml. (1) `lint-py` and `fmt` must cover every entry of `CODE_ROOTS` — imported from scripts/check_structure.py, never re-typed here, so the three scope lists cannot drift. (2) mypy's scope must ACCOUNT for every code root: each is either inside `[tool.mypy] files` or a declared, reasoned entry in config/practices.json rulesets.mypy.ratchet — a root may not simply be unmentioned. (3) ruff must actually be clean over that scope. (4) The FE gates must SKIP, not hard-fail, when npm is absent (`command -v npm || exit 0` exits only its own recipe sub-shell). (5) Every bare-`python3` pre-commit entry must be legal under the documented old interpreter, since pre-commit `language: system` hooks exec the ambient python3. Imports nothing optional: this pin must never itself skip.
+summary: Pass 3's contract, read off the REAL Makefile recipes, the REAL pyproject and the REAL .pre-commit-config.yaml. (1) `lint-py` and `fmt` must cover every entry of `CODE_ROOTS` — imported from scripts/check_structure.py, never re-typed here, so the three scope lists cannot drift. (2) mypy's scope must ACCOUNT for every code root: each is either inside `[tool.mypy] files` or a declared, reasoned entry in config/practices.json rulesets.mypy.ratchet — a root may not simply be unmentioned. (3) ruff must actually be clean over that scope. (4) The FE gates must SKIP, not hard-fail, when npm is absent (`command -v npm || exit 0` exits only its own recipe sub-shell). (5) Every bare-`python3` pre-commit entry must be legal under the documented old interpreter, since pre-commit `language: system` hooks exec the ambient python3. (6) The tools whose output IS the gate's verdict — ruff, mypy — must be pinned exactly in the `dev` extra, and pre-commit must run the SAME ruff, or the same tree gets different verdicts in different places. Imports nothing optional: this pin must never itself skip.
 """
 
 import ast
@@ -526,3 +526,60 @@ def test_every_required_surface_is_installed_by_a_ci_step():
             "CI declares surface %r required but no step runs %r, so every run "
             "would fail on a missing import" % (name, optional_deps.SURFACES[name])
         )
+
+
+# ---- scope: the toolchain itself ---------------------------------------------
+# A linter is not a dependency like any other: its output IS the gate's verdict.
+# Measured the hard way — `dev = [..., "ruff", "mypy", ...]` let CI resolve ruff
+# 0.16.4 against the venv's 0.15.18, and because `extend-select` ADDS to ruff's
+# defaults, 0.16's wider default set produced 464 findings from families this repo
+# deliberately defers (UP031, E402, RUF100). Green locally, red in CI, with no code
+# change between the two runs.
+_GATE_TOOLS = ("ruff", "mypy")
+_DEV_EXTRA = re.compile(r"^dev\s*=\s*\[(?P<items>[^\]]*)\]", re.MULTILINE)
+_EXACT_PIN = re.compile(r'"(?P<name>[A-Za-z0-9_.-]+)==(?P<version>[0-9][^"]*)"')
+# Bounded and non-greedy: `rev:` is the FIRST one after the repo line, but comment
+# lines may sit between them, so this cannot demand the very next line.
+_PRECOMMIT_RUFF = re.compile(
+    r"ruff-pre-commit[\s\S]{0,400}?\n\s*rev:\s*v?(?P<rev>[0-9][^\s]*)"
+)
+
+
+def _dev_pins():
+    """{name: version} for every EXACTLY pinned entry of the `dev` extra."""
+    text = (_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    m = _DEV_EXTRA.search(text)
+    assert m, "pyproject.toml has no `dev = [...]` extra — re-derive this check"
+    return {
+        p.group("name"): p.group("version")
+        for p in _EXACT_PIN.finditer(m.group("items"))
+    }
+
+
+def test_the_tools_that_decide_the_gate_are_pinned_exactly():
+    """`make lint` and `make typecheck` are what "done" means here, so their verdict
+    must not depend on which day CI resolved them. A floating linter turns a green
+    branch red on a release nobody in the repo chose — and worse, could turn a red
+    one green. Bumping is fine; bumping DELIBERATELY, in a commit, is the point."""
+    pins = _dev_pins()
+    floating = [t for t in _GATE_TOOLS if t not in pins]
+    assert not floating, (
+        "these tools decide the gate's verdict but the `dev` extra does not pin them "
+        "exactly: %s — pin with `==` and bump in its own commit" % floating
+    )
+
+
+def test_pre_commit_runs_the_same_ruff_as_the_gate():
+    """A third ruff version is a third opinion. The hook ran v0.8.4 while the gate
+    ran 0.15.18, and 0.8.4 REFORMATS two files 0.15.18 considers correct — so a
+    developer with the hook installed and CI would have fought each other, each
+    reporting the other's output as a defect."""
+    pins = _dev_pins()
+    assert "ruff" in pins, "pin ruff in the `dev` extra first"
+    text = (_ROOT / ".pre-commit-config.yaml").read_text(encoding="utf-8")
+    m = _PRECOMMIT_RUFF.search(text)
+    assert m, ".pre-commit-config.yaml no longer pins ruff-pre-commit by rev"
+    assert m.group("rev") == pins["ruff"], (
+        "pre-commit runs ruff %s while the gate runs %s — the same file can be "
+        "clean for one and dirty for the other" % (m.group("rev"), pins["ruff"])
+    )

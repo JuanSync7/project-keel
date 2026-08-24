@@ -48,6 +48,20 @@ version rather than a bare commit:
   `E501` deferral for long docstring summaries is untouched.
 
 ### Fixed
+- **The gate's own toolchain was unpinned, so CI and the venv disagreed about what
+  "clean" means.** `dev` listed bare `"ruff"` and `"mypy"`, so CI resolved ruff
+  **0.16.4** against the venv's **0.15.18**; because `extend-select` *adds* to
+  ruff's defaults, 0.16's wider default set reported **464 findings** from families
+  this repo deliberately defers (UP031 ×290, E402 ×237, RUF100 ×66). Same tree,
+  green locally and red in CI, with no commit in between — and it could as easily
+  have gone the other way, turning a red branch green. A linter is not a dependency
+  like any other: its output *is* the gate's verdict, so `ruff` and `mypy` are now
+  pinned exactly, and bumping them is a deliberate commit with the corpus re-linted
+  at the new version. `.pre-commit-config.yaml` was a **third** opinion at `v0.8.4`
+  — which reformats two files 0.15.18 considers correct, so the hook and the gate
+  would have reported each other's output as a defect — and now tracks the same
+  pin, asserted by `tests/integration/test_gate_scope.py`. `template` likewise
+  moves to `copier>=9.3` so the extra and `_min_copier_version` agree.
 - **Declining the showcase shipped a test that asserted on the routes it had just
   deleted.** `tests/e2e/test_showcase_journey.py` was in neither prune list, so a
   project generated with `showcase=false` carried it and failed its own CI on day
