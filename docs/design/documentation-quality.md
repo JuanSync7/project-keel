@@ -33,7 +33,7 @@ produced live where a project can read them: `CONVENTIONS.md` §2, §6, §10 and
 | 3 | The seam: rosters (`check_S`, six `## What ships here` tables) and the tool-spec body contract (`check_F`) | done (this commit) |
 | 4 | Freshness: `updated:` versus the git history (`scripts/review_docs.py`, `tests/integration/test_doc_freshness.py`) | done — `updated:` means *touched*; 91 of 117 stamps normalised in the landing commit |
 | 5 | Make the knowledge graph authored: reference edges in `build_corpus`, edge-kind vocabulary in `check_corpus`, retrieval repair in `query_corpus` | done — the builder imports `check_Q`'s grammar, so graph and gate share one definition of a reference |
-| 6 | The model-absent path in `models/claude_code_headless.py` (absent says so and exits 0; present-but-failing fails) | **not started** — prerequisite for anything automatic |
+| 6 | The model-absent path: `models.ModelUnavailable`, raised by both adapters, caught as a stated skip by the two model-calling doers | done |
 | 7 | The deterministic doer (`scripts/review_docs.py`), a `subject` field in `config/practices.json`, `docs/guides/doc-style.md`, the `make check` tail nudge | **not started** |
 | 8 | `agents/doc_reviewer/` and its three thin adapters (skill, stop-hook, pre-commit); the scheduled job repointed | **not started** |
 

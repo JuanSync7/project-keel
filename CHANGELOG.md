@@ -44,6 +44,16 @@ version rather than a bare commit:
   READMEs whose members are pruned with the showcase (`docs/guides/`,
   `scripts/jobs/`) are `.jinja` twins, so a `showcase=false` project's roster
   matches its tree.
+- **`ModelUnavailable` — absent versus broken, for models.** A `claude` binary
+  not on PATH, or an OpenAI-compatible endpoint that cannot be reached, now
+  raises the owned `models.ModelUnavailable` instead of a raw `FileNotFoundError`
+  or `URLError`; a run that happens and fails still raises `RuntimeError` (or
+  the HTTP error it got). The two doers that call a model —
+  `scripts/hooks/on_stop_triage.py` and `scripts/refactor_practice.py` — catch
+  it, say `model unavailable (...); skipping`, and exit 0: a hook that fires on a
+  machine without a model must not fail the event it was attached to. This is
+  the prerequisite for anything that runs an agent automatically.
+  `models/README.md` is now a roster.
 - **The knowledge graph has authored edges.** `build_corpus` now turns every
   relative link, `§N` citation and backticked repository path a document writes
   into an edge (`kind` link / citation / mention, `source` deterministic) from

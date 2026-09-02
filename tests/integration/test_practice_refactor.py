@@ -272,3 +272,18 @@ def test_cli_entrypoint_dry_run_reports_candidates_as_json(monkeypatch, capsys):
     assert out["practice"] == "precise-container-types"
     assert out["candidates"] == ["n1", "n2"] and out["dry_run"] is True
     assert out["refactored"] == [] and out["baseline_green"] is True
+
+
+def test_cli_entrypoint_reports_an_unavailable_model_as_a_skip(monkeypatch, capsys):
+    """The model-absent path (documentation-quality plan, phase 6): a doer that
+    cannot run its model says so and exits 0, writing nothing."""
+    sys.path.insert(0, str(_ROOT / "scripts"))
+    import refactor_practice as rp  # noqa: E402
+    from models import ModelUnavailable
+
+    def no_model(*args, **kwargs):
+        raise ModelUnavailable("claude binary 'claude' is not on PATH")
+
+    monkeypatch.setattr(rp, "refactor", no_model)
+    assert rp.main(["precise-container-types", "--execute"]) == 0
+    assert "skipping" in capsys.readouterr().out

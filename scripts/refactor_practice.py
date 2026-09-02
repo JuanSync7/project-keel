@@ -20,6 +20,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)  # make top-level `agents`/`models`/`runtimes` importable
 
 from agents.practice_refactor import refactor  # noqa: E402  (after sys.path setup)
+from models import ModelUnavailable  # noqa: E402
 
 
 def _as_dict(report):
@@ -67,16 +68,22 @@ def main(argv=None):
     ap.add_argument("--json", action="store_true", help="emit the report as JSON")
     args = ap.parse_args(argv)
 
-    report = refactor(
-        args.practice,
-        execute=args.execute,
-        model=args.model,
-        gate=args.gate,
-        max_nodes=args.max_nodes,
-        corpus=args.corpus,
-        root=args.root,
-        runtime=args.runtime,
-    )
+    try:
+        report = refactor(
+            args.practice,
+            execute=args.execute,
+            model=args.model,
+            gate=args.gate,
+            max_nodes=args.max_nodes,
+            corpus=args.corpus,
+            root=args.root,
+            runtime=args.runtime,
+        )
+    except ModelUnavailable as exc:
+        # Absent, not broken: say so, write nothing, exit 0. A present model
+        # that fails still raises -- that is a defect, not a missing tool.
+        sys.stdout.write("refactor_practice: model unavailable (%s); skipping\n" % exc)
+        return 0
 
     if args.json:
         json.dump(_as_dict(report), sys.stdout, indent=2, sort_keys=True)

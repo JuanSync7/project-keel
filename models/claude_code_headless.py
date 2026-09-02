@@ -2,14 +2,14 @@
 title: Claude Code headless backend
 layer: backend
 public_api: no
-summary: Runs a prompt via the Claude Code CLI in headless mode.
+summary: Runs a prompt via the Claude Code CLI in headless mode. A missing binary is ModelUnavailable (absent); a non-zero exit is RuntimeError (broken).
 """
 
 from __future__ import annotations
 
 import subprocess
 
-from .contracts import ModelBackend
+from .contracts import ModelBackend, ModelUnavailable
 
 __all__ = ["ClaudeCodeHeadless"]
 
@@ -29,7 +29,18 @@ class ClaudeCodeHeadless(ModelBackend):
 
     def run(self, prompt: str, **opts) -> str:
         cmd = [self.binary, "-p", prompt, "--model", self.model]
-        proc = subprocess.run(cmd, capture_output=True, text=True)
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True)
+        except FileNotFoundError as exc:
+            # Absent, not broken: nothing to run here. A doer that catches this
+            # says so and exits 0; a traceback would read as a failed run.
+            raise ModelUnavailable(
+                f"claude binary {self.binary!r} is not on PATH -- install Claude "
+                "Code, or select another backend (`models/`, e.g. `fake`)"
+            ) from exc
+        except OSError as exc:
+            raise ModelUnavailable(f"cannot start {self.binary!r}: {exc}") from exc
         if proc.returncode != 0:
+            # Present but failing: the run itself is the defect. Not swallowed.
             raise RuntimeError(f"claude headless failed: {proc.stderr.strip()}")
         return proc.stdout.strip()

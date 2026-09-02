@@ -9,10 +9,11 @@ from __future__ import annotations
 
 import json
 import os
+import urllib.error
 import urllib.request
 from typing import Callable, Optional
 
-from .contracts import ModelBackend
+from .contracts import ModelBackend, ModelUnavailable
 
 __all__ = ["OpenAICompatible"]
 
@@ -25,8 +26,14 @@ def _post_json(url: str, payload: dict, headers: dict, timeout: float) -> dict:
     """POST ``payload`` as JSON and return the decoded JSON response (stdlib)."""
     body = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(url, data=body, headers=headers, method="POST")
-    with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 (own URL)
-        return json.loads(resp.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 (own URL)
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError:
+        raise  # the endpoint answered: present, and failing -- not absent
+    except urllib.error.URLError as exc:
+        # No route, refused, unknown host: the endpoint is not here to run.
+        raise ModelUnavailable(f"cannot reach {url}: {exc.reason}") from exc
 
 
 class OpenAICompatible(ModelBackend):

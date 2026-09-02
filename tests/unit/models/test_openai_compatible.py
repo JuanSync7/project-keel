@@ -95,3 +95,39 @@ def test_unexpected_response_shape_raises(monkeypatch):
     backend = get_model("openai-compatible", transport=bad_transport)
     with pytest.raises(RuntimeError):
         backend.run("ping")
+
+
+# --- absent vs broken over the default (urllib) transport ------------------------
+
+
+def test_an_unreachable_endpoint_is_unavailable(monkeypatch):
+    import urllib.error
+
+    from models import ModelUnavailable
+    from models import openai_compatible as mod
+
+    def refuse(req, timeout):
+        raise urllib.error.URLError("connection refused")
+
+    monkeypatch.setattr(mod.urllib.request, "urlopen", refuse)
+    with pytest.raises(ModelUnavailable) as caught:
+        mod._post_json("http://localhost:1/v1/chat/completions", {}, {}, 1.0)
+    assert "connection refused" in str(caught.value)
+
+
+def test_an_endpoint_that_answers_with_an_error_is_broken_not_absent(monkeypatch):
+    """HTTP 500 means the server is there and failing; skipping would hide a defect."""
+    import urllib.error
+
+    from models import ModelUnavailable
+    from models import openai_compatible as mod
+
+    def fail(req, timeout):
+        raise urllib.error.HTTPError(req.full_url, 500, "boom", {}, None)
+
+    monkeypatch.setattr(mod.urllib.request, "urlopen", fail)
+    with pytest.raises(urllib.error.HTTPError):
+        mod._post_json("http://h/v1/chat/completions", {}, {}, 1.0)
+    with pytest.raises(Exception) as caught:
+        mod._post_json("http://h/v1/chat/completions", {}, {}, 1.0)
+    assert not isinstance(caught.value, ModelUnavailable)
