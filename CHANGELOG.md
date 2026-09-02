@@ -44,6 +44,22 @@ version rather than a bare commit:
   READMEs whose members are pruned with the showcase (`docs/guides/`,
   `scripts/jobs/`) are `.jinja` twins, so a `showcase=false` project's roster
   matches its tree.
+- **`agents/doc_reviewer/` — the judgment half of the documentation system.**
+  A neutral `Plan` on a `Runtime`, twin of `practice_refactor`: `review_docs`
+  supplies the deterministic facts (stale stamps, unresolved mentions, every
+  roster row), `query_corpus` the style guide's rules, `run_make_target` a green
+  `check-docs` baseline; then, per chunk, the model proposes one bounded edit that
+  `apply_refactor` applies gated on `make check-docs` and rolls back if red.
+  Dry-run by default: no model call, nothing written. Three thin adapters:
+  `make doc-review` / `make doc-review-apply` over `scripts/doc_review.py`, a
+  `Stop` hook in `.claude/settings.json` over `scripts/hooks/on_stop_doc_review.py`
+  (the first hook that file has ever declared), and the `doc-review` skill. A
+  `doc-review` pre-commit hook runs the strict deterministic review.
+- **The nightly schedule reviews the docs** (`.github/workflows/scheduled.yml`,
+  `ops/scheduled/crontab.example`) instead of rebuilding `wiki/INDEX.md`, which
+  nothing reads; `rebuild_index.py` stays as the MCP action server's worked
+  example. `review_docs.py` moved to `scripts/jobs/`, where time-triggered doers
+  live.
 - **Documentation practices are registered, and every practice names a
   mechanism that exists.** `config/practices.json` entries carry `subject`
   (`code` | `docs`) and `enforced_by`, a list in a closed grammar
@@ -58,7 +74,7 @@ version rather than a bare commit:
   BCP 14, idempotency stated and proven, and the table of what is enforced,
   advised and judged.
 - **`make advise` lists unresolved mentions** — backticked repository paths that
-  resolve to nothing (`scripts/review_docs.py`; advisory, because most are bare
+  resolve to nothing (`scripts/jobs/review_docs.py`; advisory, because most are bare
   basenames used as nouns). **`make check` ends with a nudge** naming what its
   gate does not fail on and the one command that reports it.
 - **`ModelUnavailable` — absent versus broken, for models.** A `claude` binary
@@ -84,7 +100,7 @@ version rather than a bare commit:
   `idempotent` found eight nodes, because tokens were compared verbatim and only
   tags, title and summary were read. Tokens are lightly stemmed on both sides and
   the body excerpt counts, below the title and summary.
-- **Doc freshness is gated.** `scripts/review_docs.py` (new; rides `make advise`
+- **Doc freshness is gated.** `scripts/jobs/review_docs.py` (new; rides `make advise`
   as a report) states the rule — a governed document's `updated:` is never
   earlier than its last commit, and a document modified in the working tree
   carries today's date — and `tests/integration/test_doc_freshness.py` gates it.

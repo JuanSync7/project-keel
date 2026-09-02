@@ -34,6 +34,12 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
+      - id: doc-review
+        name: doc review (stale stamps fail; unresolved mentions are advisory; no git is a stated skip)
+        entry: python3 scripts/jobs/review_docs.py --strict
+        language: system
+        pass_filenames: false
+        always_run: true
   - repo: https://github.com/astral-sh/ruff-pre-commit
     # Must equal the `ruff==` pin in pyproject.toml's `dev` extra: a hook that
     # runs a different ruff than the gate reports the gate's output as a defect.

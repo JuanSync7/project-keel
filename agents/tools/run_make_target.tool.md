@@ -9,7 +9,7 @@ tags: [tool, gate, make, verify]
 summary: Run one make target and report a structured pass/fail — the refactor loop's gate.
 id: tool-run-make-target
 created: 2026-07-07
-updated: 2026-07-07
+updated: 2026-09-02
 visibility: internal
 canonical: true
 tool_command: python3 scripts/run_make_target.py verify --json
@@ -55,3 +55,4 @@ artifacts (test caches, build output) — never a source of truth. No model call
 
 ## Used by
 - agents/practice_refactor
+- agents/doc_reviewer

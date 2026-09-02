@@ -31,11 +31,11 @@ produced live where a project can read them: `CONVENTIONS.md` §2, §6, §10 and
 | 2 | Honesty about the check inventory: catalogue parity (`check_R`), the cdmon decision | done (`003c471`) |
 | — | Adversarial review of P/Q/R — 59 raised, the modelled/unmodelled boundary made explicit | done (`b8d0226`) |
 | 3 | The seam: rosters (`check_S`, six `## What ships here` tables) and the tool-spec body contract (`check_F`) | done (this commit) |
-| 4 | Freshness: `updated:` versus the git history (`scripts/review_docs.py`, `tests/integration/test_doc_freshness.py`) | done — `updated:` means *touched*; 91 of 117 stamps normalised in the landing commit |
+| 4 | Freshness: `updated:` versus the git history (`scripts/jobs/review_docs.py`, `tests/integration/test_doc_freshness.py`) | done — `updated:` means *touched*; 91 of 117 stamps normalised in the landing commit |
 | 5 | Make the knowledge graph authored: reference edges in `build_corpus`, edge-kind vocabulary in `check_corpus`, retrieval repair in `query_corpus` | done — the builder imports `check_Q`'s grammar, so graph and gate share one definition of a reference |
 | 6 | The model-absent path: `models.ModelUnavailable`, raised by both adapters, caught as a stated skip by the two model-calling doers | done |
-| 7 | The deterministic doer (`scripts/review_docs.py`, with the unresolved-mentions advisory), `subject` + `enforced_by` in `config/practices.json` with twelve doc practices, `check_T`, `docs/guides/doc-style.md`, the `make check` tail nudge | done |
-| 8 | `agents/doc_reviewer/` and its three thin adapters (skill, stop-hook, pre-commit); the scheduled job repointed | **not started** |
+| 7 | The deterministic doer (`scripts/jobs/review_docs.py`, with the unresolved-mentions advisory), `subject` + `enforced_by` in `config/practices.json` with twelve doc practices, `check_T`, `docs/guides/doc-style.md`, the `make check` tail nudge | done |
+| 8 | `agents/doc_reviewer/` and its three thin adapters (skill, stop hook, pre-commit); the scheduled job repointed at the deterministic review | done |
 
 Every phase lands as one bounded pass: red test, smallest change, `make verify`
 green, one commit. Letters belong to landed checks (ADR-0008): the next free
@@ -211,10 +211,11 @@ LLM-backed jobs call agents, and none does.
   -0009 each gained a one-clause edit (a citation made explicit, a link turned
   into a plain citation, a note that a letter moved). The decision text is
   untouched; ADR-0004 and -0008 already carried this kind of edit.
-- **`rebuild_index.py` stays.** It is the MCP action server's one tool and the
-  scheduled job's artifact; nothing reads `wiki/INDEX.md`, and the roster now
-  says exactly that. Whether to retire it or repoint the schedule is Phase 8's
-  question, taken when the scheduled job has a real doer to point at.
+- **`rebuild_index.py` stays; the schedule does not point at it.** It is the
+  MCP action server's one tool — the worked example of a state-changing tool —
+  and nothing reads `wiki/INDEX.md`. Phase 8 repointed the nightly schedule at
+  the deterministic documentation review, which produces a report someone will
+  read; the roster says exactly that.
 - **A `§N` inside code is a citation; a link inside code is not.** A quoted
   help string cites the same section a sentence does; a link written in a
   fence is how one illustrates link syntax. The asymmetry is stated in the

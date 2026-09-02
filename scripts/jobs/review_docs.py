@@ -3,7 +3,7 @@
 title: review_docs — the deterministic documentation review
 kind: script
 layer: n/a
-summary: Reports documentation facts a rule can decide but check_structure does not gate. Freshness (gated elsewhere): a governed document's `updated:` is never earlier than the date of its last commit, and a document modified in the working tree carries today's date or later. Report tier (always exit 0) under `make advise`; `--strict` exits 1 on any finding, which is how tests/integration/test_doc_freshness.py turns the same rule into a gate. Also the advisory that stays advisory: a backticked repository path that resolves to nothing (most are bare basenames used as nouns, hence never a gate). No model, no network; git is the only tool it shells to, and no git is a stated skip.
+summary: The deterministic documentation review, the doc reviewer's first tool. Reports documentation facts a rule can decide but check_structure does not gate. Freshness (gated elsewhere): a governed document's `updated:` is never earlier than the date of its last commit, and a document modified in the working tree carries today's date or later. Report tier (always exit 0) under `make advise`; `--strict` exits 1 on any finding, which is how tests/integration/test_doc_freshness.py turns the same rule into a gate. Also the advisory that stays advisory: a backticked repository path that resolves to nothing (most are bare basenames used as nouns, hence never a gate). And, with --json, every roster row, for the agent to judge. No model, no network; git is the only tool it shells to, and no git is a stated skip.
 """
 
 # 3.6-safe on purpose: `make advise` runs this under $(PY), but the rule it
@@ -17,7 +17,7 @@ import shutil
 import subprocess
 import sys
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 _UPDATED = re.compile(r"^updated:\s*(\S+)", re.MULTILINE)
 _ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
@@ -180,6 +180,61 @@ def unresolved_mentions(root):
     return out
 
 
+_ROSTER_HEADING = "## What ships here"
+
+
+def roster_rows(root):
+    """[{path, member, line, not_for}] for every row of every `## What ships here`
+    table: the facts the doc reviewer judges (is the `Not for` cell true?). The
+    table is the first pipe table under the heading, before the next `## `."""
+    out = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(
+            d for d in dirnames if d not in _SKIP_DIRS and not d.startswith(".")
+        )
+        if "README.md" not in filenames:
+            continue
+        full = os.path.join(dirpath, "README.md")
+        try:
+            with open(full, encoding="utf-8") as fh:
+                lines = fh.read().split("\n")
+        except (OSError, ValueError):
+            continue
+        relpath = os.path.relpath(full, root).replace(os.sep, "/")
+        try:
+            start = lines.index(_ROSTER_HEADING)
+        except ValueError:
+            continue
+        header, not_for = None, None
+        for i in range(start + 1, len(lines)):
+            line = lines[i]
+            if line.startswith("## "):
+                break
+            if not line.startswith("|"):
+                if header is not None and line.strip() == "":
+                    break
+                continue
+            cells = [c.strip() for c in line.strip().strip("|").split("|")]
+            if header is None:
+                header = [c.lower() for c in cells]
+                not_for = header.index("not for") if "not for" in header else None
+                continue
+            if set(line.replace("|", "").strip()) <= set("-: "):
+                continue  # the rule line
+            member = cells[0].strip("`").rstrip("/") if cells else ""
+            out.append(
+                {
+                    "path": relpath,
+                    "member": member,
+                    "line": i + 1,
+                    "not_for": cells[not_for]
+                    if not_for is not None and len(cells) > not_for
+                    else "",
+                }
+            )
+    return out
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.strip().splitlines()[-1])
     ap.add_argument(
@@ -213,6 +268,7 @@ def main(argv=None):
                     "unresolved_mentions": [
                         {"path": p, "line": n, "mention": m} for p, n, m in mentions
                     ],
+                    "rosters": roster_rows(args.root),
                 },
                 indent=2,
             )

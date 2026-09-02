@@ -453,7 +453,7 @@ CHECKS: tuple[Check, ...] = (
     Check(
         slug="doc-freshness",
         name="Doc freshness",
-        script="scripts/review_docs.py",
+        script="scripts/jobs/review_docs.py",
         gate="report",
         interpreter="any (git)",
         command="make advise",

@@ -9,7 +9,7 @@ tags: [tool, refactor, gate, apply, rollback]
 summary: Apply one bounded edit spec atomically, run a make gate, and roll back every file unless it stays green.
 id: tool-apply-refactor
 created: 2026-07-07
-updated: 2026-07-07
+updated: 2026-09-02
 visibility: internal
 canonical: true
 tool_command: python3 scripts/apply_refactor.py --spec - --root . --gate verify --json
@@ -61,3 +61,4 @@ mid-write — that partial edit is surfaced by the next gate run, never kept as 
 
 ## Used by
 - agents/practice_refactor
+- agents/doc_reviewer

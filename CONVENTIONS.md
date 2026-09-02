@@ -58,7 +58,7 @@ failure mode:
 | Field | Values | Why the brain needs it |
 |-------|--------|------------------------|
 | `id` | stable slug, unique | cite/track a doc across renames & moves (path is not stable) |
-| `created` / `updated` | ISO dates | rank by recency; flag stale content. `updated` means *touched*: never earlier than the file's last commit, and today's date when the file is modified — gated by `tests/integration/test_doc_freshness.py` (`scripts/review_docs.py`) |
+| `created` / `updated` | ISO dates | rank by recency; flag stale content. `updated` means *touched*: never earlier than the file's last commit, and today's date when the file is modified — gated by `tests/integration/test_doc_freshness.py` (`scripts/jobs/review_docs.py`) |
 | `visibility` | `public`/`internal`/`confidential`/`restricted` | never surface a confidential doc to the wrong audience |
 | `canonical` | `true` or a path/id | dedup: when the same fact lives in N places, point mirrors at the one source of truth |
 

@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 _ROOT = Path(__file__).resolve().parents[3]
-sys.path.insert(0, str(_ROOT / "scripts"))
+sys.path.insert(0, str(_ROOT / "scripts" / "jobs"))
 
 import review_docs  # noqa: E402
 
@@ -91,3 +91,27 @@ def test_mentions_never_make_strict_fail(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(review_docs, "collect", lambda root: [])
     assert review_docs.main(["--root", str(tmp_path), "--strict"]) == 0
     assert "unresolved mention" in capsys.readouterr().out
+
+
+# --- roster rows: the facts the doc reviewer judges -----------------------------
+
+
+def test_every_roster_row_is_reported_with_its_not_for_cell(tmp_path):
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "README.md").write_text(
+        "# S\n\n## What ships here\n\n| Member | Purpose | Not for |\n|---|---|---|\n"
+        "| `a.py` | does a | b (that is `b.py`) |\n| `b.py` | does b | n/a |\n\n## Later\n\n| Member | Not for |\n|---|---|\n| `z` | no |\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "plain.md").write_text("# no roster\n", encoding="utf-8")
+    rows = review_docs.roster_rows(str(tmp_path))
+    assert rows == [
+        {
+            "path": "scripts/README.md",
+            "member": "a.py",
+            "line": 7,
+            "not_for": "b (that is `b.py`)",
+        },
+        {"path": "scripts/README.md", "member": "b.py", "line": 8, "not_for": "n/a"},
+    ]

@@ -21,7 +21,7 @@ prove about the docs — every link and `§N` resolves (`check_Q`), every roster
 matches its directory (`check_S`), every tool spec has its seven sections and
 its `- NOT` line (`check_F`), every `##`-annotated target is in `make help`
 (`check_P`), the check catalogue tells the truth (`check_R`) — and
-`scripts/review_docs.py` proves that `updated:` is not a lie. Everything else
+`scripts/jobs/review_docs.py` proves that `updated:` is not a lie. Everything else
 on this page is what those checks cannot decide and a reviewer, human or
 agent, holds you to. Where a rule below is gated, the gate is named; where
 it is not, that is deliberate, and the reason is given.
@@ -183,17 +183,19 @@ edit that leaves the decision untouched, and that edit restamps `updated:`.
 | The check catalogue and the triggers agree | `check_R` | gate |
 | A roster names every member, nothing else, with a `Not for` cell | `check_S` | gate |
 | A tool spec's seven sections, effect word, `- NOT` line | `check_F` | gate |
-| `updated:` no earlier than the last commit; today when modified | `scripts/review_docs.py`, `tests/integration/test_doc_freshness.py` | gate |
+| `updated:` no earlier than the last commit; today when modified | `scripts/jobs/review_docs.py`, `tests/integration/test_doc_freshness.py` | gate |
 | Every practice's `enforced_by` names a mechanism that exists | `check_T` | gate |
-| A backticked path that resolves to nothing | `scripts/review_docs.py` under `make advise` | advisory |
-| A `Not for` cell that is true; a `- NOT` line that names the right sibling | this guide, a reviewer, the doc-review agent | judgment |
+| A backticked path that resolves to nothing | `scripts/jobs/review_docs.py` under `make advise` | advisory |
+| A `Not for` cell that is true; a `- NOT` line that names the right sibling | this guide, a reviewer, `agents/doc_reviewer` (`make doc-review`) | judgment |
 | One claim per sentence; the mechanism named; measurements dated | this guide | judgment |
 | The normative register used deliberately | this guide | judgment |
 
 ## 10. The review loop
 
 `make check` runs the gate on every commit; `make advise` reports what the
-gate does not fail on; the doc-review agent, when it ships, reads this guide
-and the corpus and proposes the edits a rule cannot. Each is a tier of the same
+gate does not fail on; `make doc-review` runs the doc reviewer's dry-run (and
+the stop hook runs it when a turn ends); `make doc-review-apply` lets the agent
+propose one gated edit per finding, with this guide's rules retrieved from the
+corpus as its context. Each is a tier of the same
 rule: decidable, suspected, judged. None of them replaces the sentence you
 write with the reader in mind.

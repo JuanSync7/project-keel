@@ -69,7 +69,7 @@ everything and therefore expect the project interpreter.
 | AAD schema drift | `scripts/agent_surface/generate_aad_schema.py --check` | error | pydantic | Committed AAD JSON Schema matches the model |
 | Code-doc drift | `scripts/cdmon_sync.py --check` | error* | any | cdmon code↔doc drift — the CONVENTIONS §9 worked example of a thin adapter over an external tool (*a stated skip, exit 0, until `cdmon` is on PATH **and** `config/cdmon/cdmon.yaml` exists; cdmon is not on PyPI). Reached from `check-all` via `make check-cdmon` |
 | Accountability | `scripts/accountability_report.py` | report | ≥3.7 | Lists corpus nodes that resolve to no owner (informational; rides `make advise`) |
-| Doc review | `scripts/review_docs.py` | report | any (git) | Freshness — every governed document's `updated:` is no earlier than its last commit, and a document modified in the working tree carries today's date (gated by `tests/integration/test_doc_freshness.py`, `--strict`) — and the advisory that stays advisory: backticked repository paths that resolve to nothing. No git is a stated skip |
+| Doc review | `scripts/jobs/review_docs.py` | report | any (git) | Freshness — every governed document's `updated:` is no earlier than its last commit, and a document modified in the working tree carries today's date (gated by `tests/integration/test_doc_freshness.py`, `--strict`) — and the advisory that stays advisory: backticked repository paths that resolve to nothing. No git is a stated skip |
 | Generic-solution advisor | `scripts/check_generic.py` | report | 3.6-safe | Distinctive literals asserted as golden in tests **and** hardcoded in `src/` logic (the "answer-key" overfit smell, §18). Advisory only — never fails the build |
 | Coding-practices advisor | `scripts/check_practices.py` | report | 3.6-safe | Coding-practice smells (a provider constructed inline instead of injected, a ≥3-branch `isinstance` chain, a `# hot-path` class without `__slots__`, a resource acquired outside a `with`). Reads `config/practices.json`; advisory only — never fails the build (see [coding-practices](coding-practices.md)) |
 
@@ -313,7 +313,7 @@ have drifted from the code they describe.
 
 **Run.** `python scripts/accountability_report.py`
 
-### 7. Doc freshness — `scripts/review_docs.py`
+### 7. Doc review — `scripts/jobs/review_docs.py`
 
 **Purpose.** The deterministic documentation review: what a rule can decide
 about the docs but `check_structure.py` cannot reach without git. Today that is
@@ -330,7 +330,7 @@ and for the same reason (ADR-0009): a check that shells to git does not belong
 in the 3.6 pre-commit hook. Landed with every stale stamp normalised in the same
 commit — 91 of 117 governed documents — so the tree complied on arrival.
 
-**Run.** `python scripts/review_docs.py [--json] [--strict] [--today YYYY-MM-DD]`
+**Run.** `python scripts/jobs/review_docs.py [--json] [--strict] [--today YYYY-MM-DD]`
 · `make advise`
 
 ### 8. Generic-solution advisor — `scripts/check_generic.py`
@@ -364,6 +364,7 @@ commit (each hook is a thin trigger that calls a `scripts/` doer):
 | `openapi` | `python3 api/rest_fastapi/export_openapi.py --check` (skips if FastAPI absent) |
 | `aad-schema` | `python3 scripts/agent_surface/generate_aad_schema.py --check` (skips if pydantic absent) |
 | `cdmon` | `python3 scripts/cdmon_sync.py --check` (a stated skip until cdmon and its config exist) |
+| `doc-review` | `python3 scripts/jobs/review_docs.py --strict` (stale stamps fail; mentions advisory; no git is a stated skip) |
 | `eslint` / `ruff` / `ruff-format` | frontend lint + Python lint + Python formatting |
 
 Enable once: `pip install pre-commit && pre-commit install`.
@@ -381,10 +382,13 @@ Enable once: `pip install pre-commit && pre-commit install`.
 
 ### Scheduled (time trigger)
 
-A corpus rebuild + integrity check fits a nightly job: put the cadence in
-`ops/scheduled/` (cron/systemd/CI) and have it call
-`scripts/jobs/rebuild_index.py` then `scripts/jobs/check_corpus.py` — keep the
-*doer* in `scripts/`, the *schedule* in `ops/` (CONVENTIONS §7).
+The nightly job is the deterministic documentation review: the cadence lives
+in `ops/scheduled/` (cron/systemd) and `.github/workflows/scheduled.yml` (CI),
+each calling `scripts/jobs/review_docs.py --json` and keeping the report — the
+*doer* in `scripts/jobs/`, the *schedule* in `ops/` (CONVENTIONS §7). A
+schedule runs the doer, never the doc-review agent: a nightly judgment has no
+one to read it, while a nightly list of stale stamps and dangling mentions
+does.
 
 ## Adding a new deterministic check
 

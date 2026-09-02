@@ -25,7 +25,7 @@ PY_ROOTS := $(wildcard $(CODE_ROOTS))
 
 .PHONY: help new check-python check check-all check-corpus check-openapi check-aad check-cdmon advise check-generic verify test unit integration e2e smoke \
         lint lint-py lint-fe fmt fmt-check typecheck typecheck-py typecheck-fe \
-        fe-install run run-api run-web site-data site-static demo agent-surface-schema
+        fe-install run run-api run-web site-data site-static demo agent-surface-schema check-docs doc-review doc-review-apply
 
 help: ## List tasks
 	@grep -hE '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -77,12 +77,18 @@ check-aad: ## Committed AAD schema in sync with the model (skips if pydantic abs
 	$(PY) scripts/agent_surface/generate_aad_schema.py --check
 check-cdmon: ## cdmon code-doc drift (a stated skip until cdmon and config/cdmon/cdmon.yaml exist)
 	$(PY) scripts/cdmon_sync.py --check
+check-docs: check ## The structure gate + strict doc freshness: what every doc-review edit is gated on
+	$(PY) scripts/jobs/review_docs.py --strict
 
+doc-review: ## Review the docs (dry-run: findings, rules, baseline; no model, writes nothing)
+	$(PY) scripts/doc_review.py
+doc-review-apply: ## Review the docs and APPLY one gated edit per finding (model from models/; rolled back if check-docs goes red)
+	$(PY) scripts/doc_review.py --execute
 advise: ## Advisory: overfitting / answer-key + coding-practice smells, unowned corpus nodes, stale doc stamps (CONVENTIONS §18; never fails the build)
 	-$(PY) scripts/check_generic.py
 	-$(PY) scripts/check_practices.py
 	-$(PY) scripts/accountability_report.py
-	-$(PY) scripts/review_docs.py
+	-$(PY) scripts/jobs/review_docs.py
 check-generic: advise ## Alias for `advise` (the generic-solution + practice advisor)
 
 verify: check-all lint typecheck test ## Run all gates (all checks + lint + types + tests)

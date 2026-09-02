@@ -1,37 +1,40 @@
 name: scheduled
 # A thin SCHEDULE TRIGGER (the cadence) over a doer that lives in scripts/jobs/.
 # This is the "CI equivalent" named in ops/scheduled/crontab.example: the SAME
-# doer (scripts/jobs/rebuild_index.py) runs from cron, systemd, or here —
-# swapping the scheduler never touches the job (CONVENTIONS §7).
+# doer (scripts/jobs/review_docs.py) runs from cron, systemd, or here --
+# swapping the scheduler never touches the job (CONVENTIONS §7). It runs the
+# deterministic review, never the doc-review agent: a nightly judgment has no one
+# to read it; a nightly list of stale stamps and dangling mentions does.
 on:
   schedule:
-    - cron: "0 2 * * *"        # daily at 02:00 UTC — matches the crontab example
+    - cron: "0 2 * * *"        # daily at 02:00 UTC -- matches the crontab example
   workflow_dispatch: {}         # also runnable on demand from the Actions tab
 
 permissions:
   contents: read
 
 concurrency:
-  group: scheduled-rebuild-index
+  group: scheduled-doc-review
   cancel-in-progress: false
 
 jobs:
-  rebuild-index:
+  doc-review:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        # Full history: the review compares each document's `updated:` with the
+        # date of its last commit, which a depth-1 checkout does not have.
+        with: { fetch-depth: 0 }
       - uses: actions/setup-python@v6
         with: { python-version: "3.11" }
       # The doer is pure-stdlib; the editable install just makes `make`/imports
       # available and keeps this identical to the other workflows.
       - run: pip install -e ".[dev]"
-      # Same invocation the cron/systemd adapters use — the cadence changed, the
-      # doer did not.
-      - run: python3 scripts/jobs/rebuild_index.py --out wiki/INDEX.md
+      # Same invocation the cron/systemd adapters use -- the cadence changed, the
+      # doer did not. Exit 0 here even with findings: this run REPORTS (the gate
+      # is tests/integration/test_doc_freshness.py, under `make test`).
+      - run: python3 scripts/jobs/review_docs.py --json > doc-review.json
       - uses: actions/upload-artifact@v4
         with:
-          name: doc-index
-          path: wiki/INDEX.md
-      # To commit the refreshed index back instead of uploading it, grant
-      # `contents: write` above and add a commit/push step here — kept out of the
-      # template so a fork doesn't get surprise write-back.
+          name: doc-review
+          path: doc-review.json

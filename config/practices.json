@@ -509,10 +509,10 @@
       "tier": "gate",
       "status": "on",
       "title": "`updated:` means touched: never earlier than the last commit, today when modified",
-      "mechanism": "scripts/review_docs.py, gated by tests/integration/test_doc_freshness.py",
+      "mechanism": "scripts/jobs/review_docs.py, gated by tests/integration/test_doc_freshness.py",
       "subject": "docs",
       "enforced_by": [
-        "script:scripts/review_docs.py",
+        "script:scripts/jobs/review_docs.py",
         "test:tests/integration/test_doc_freshness.py"
       ]
     },
@@ -536,10 +536,10 @@
       "tier": "advisory",
       "status": "on",
       "title": "A backticked repository path that resolves to nothing",
-      "mechanism": "scripts/review_docs.py under `make advise` — advisory because most are bare basenames used as nouns",
+      "mechanism": "scripts/jobs/review_docs.py under `make advise` — advisory because most are bare basenames used as nouns",
       "subject": "docs",
       "enforced_by": [
-        "script:scripts/review_docs.py"
+        "script:scripts/jobs/review_docs.py"
       ]
     },
     {

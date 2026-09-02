@@ -1,13 +1,14 @@
-# Example cron schedule — a thin trigger that only says WHEN.
+# Example cron schedule -- a thin trigger that only says WHEN.
 # Install with `crontab ops/scheduled/crontab.example` (edit paths/user first).
-# The doer is scripts/jobs/rebuild_index.py — this file holds no logic.
+# The doer is scripts/jobs/review_docs.py -- this file holds no logic.
 #
 # ┌ minute ┌ hour ┌ day-of-month ┌ month ┌ day-of-week
 # │        │      │              │       │
 
-# Rebuild the doc index every day at 02:00.
-0 2 * * * cd /path/to/repo && python3 scripts/jobs/rebuild_index.py --out wiki/INDEX.md
+# Review the documentation every day at 02:00: stale `updated:` stamps and
+# backticked paths that resolve to nothing, as JSON, for whoever reads the log.
+0 2 * * * cd /path/to/repo && python3 scripts/jobs/review_docs.py --json > /var/log/keel/doc-review.json
 
 # systemd-timer equivalent (same doer): [Timer] OnCalendar=*-*-* 02:00:00
-# CI equivalent (shipped): .github/workflows/scheduled.yml — a `schedule` trigger
+# CI equivalent (shipped): .github/workflows/scheduled.yml -- a `schedule` trigger
 # calling the same script. Same doer, different cadence adapter (CONVENTIONS §7).

@@ -24,4 +24,7 @@ vendor-specific adapter (`.pre-commit-config.yaml`, `.github/`,
 `.claude/settings.json`, …) that only says "on event → call this
 script" and holds no logic. Deterministic hooks are self-contained
 here; LLM-backed hooks call an agent in `agents/` (which gets its
-model from `models/`). `on_stop_triage.py` is the LLM example.
+model from `models/`). `on_stop_triage.py` is the LLM example;
+`on_stop_doc_review.py` is the one a trigger actually fires: `.claude/settings.json`
+runs it when a turn ends, dry-run (deterministic, no model), and it prints the
+doc reviewer's one-line report. Both treat an unavailable model as a stated skip.

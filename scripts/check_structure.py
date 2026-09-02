@@ -3348,7 +3348,8 @@ def main():
     # The nudge, on the line everyone already reads: what this gate does not fail
     # on has its own doers, and they are one command away.
     print(
-        "next: `make advise` reports what this gate does not fail on (stale stamps, unresolved mentions, unowned nodes, answer keys)"
+        "next: `make advise` reports what this gate does not fail on; "
+        "`make doc-review` runs the doc reviewer (dry-run)"
     )
     return 1 if errors else 0
 
