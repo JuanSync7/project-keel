@@ -8,7 +8,7 @@ tags: [conventions, frontmatter, taxonomy]
 summary: Single source of truth for labeling (frontmatter) and the directory taxonomy.
 id: conventions
 created: 2026-06-17
-updated: 2026-06-24
+updated: 2026-09-02
 visibility: internal
 canonical: true
 ---
@@ -203,6 +203,7 @@ pre-commit hook) fails the build if the conventions above drift:
 | Ruleset parity (§15) | `pyproject.toml` must not silently loosen the declared policy — every ruff `extend_select` family and mypy flag in `config/practices.json` `rulesets` is enforced, no `deferred` (policy-off) family is selected, every `per-file-ignores` pattern is declared, and a `[[tool.mypy.overrides]]` relaxing a declared flag (or `ignore_errors`) is declared per module |
 | Template twin parity (§15) | every `*.jinja` twin is declared in `config/project.json` `template.twins` as `parity`, `divergence` or `generated`, and matches that declaration — a `parity` twin carries no non-templated line the plain file has lost, a `divergence` twin actually differs, a `generated` twin has no plain sibling. Render-free, so it runs in the 3.6 gate; silent in a generated project, which has no twins |
 | Module contract (§16) | every `.py` under the code roots opens with a docstring carrying explicit, non-empty `title:` and `summary:` lines — the grammar the corpus reads — and every `__all__`-exported symbol defined in-file has a docstring |
+| Help parity | every `## `-annotated Makefile target is one the `help` recipe's own grep pattern lists (read from the recipe, never restated), so no target is documented-but-invisible to `make help`; a recipe the check cannot read is a stated WARN |
 
 Missing `owner` is a warning, not a failure. If you change the scheme
 (KINDS / LAYERS / STATUSES / VISIBILITIES) or a check, update **both**

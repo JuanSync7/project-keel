@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 title: check_structure — the deterministic conventions gate
-summary: Stdlib-only, 3.6-safe enforcement of CONVENTIONS.md — labeling, taxonomy, package boundaries, tool/agent governance, manifest and ruleset parity, twin parity, and the machine-readable module contract (checks A-O). Exit 1 on any error; warnings never fail the build.
+summary: Stdlib-only, 3.6-safe enforcement of CONVENTIONS.md — labeling, taxonomy, package boundaries, tool/agent governance, manifest and ruleset parity, twin parity, the machine-readable module contract, and Makefile help parity (checks A-P). Exit 1 on any error; warnings never fail the build.
 
 check_structure.py - enforce the project conventions (see CONVENTIONS.md).
 
@@ -47,6 +47,10 @@ Checks:
      reads. Without them the corpus falls back to filename/first-prose-line
      and labels the result 'authored'; an undocumented module is silently
      DROPPED from the corpus entirely (ADR-0008)
+  P. Makefile help parity (ERR): every `## `-annotated target is one the
+     `help` recipe's own grep pattern lists. The pattern is read out of the
+     recipe, not restated here, so the check cannot agree with a wrong one;
+     a recipe it cannot read is a stated WARN ('unverified'), never a pass
 
 Exit 0 = clean, 1 = errors. Warnings never fail the build. Stdlib only; 3.6+.
 """
@@ -2151,6 +2155,140 @@ def check_O():
         err(e_)
 
 
+# --- check_P: Makefile help parity --------------------------------------------
+#
+# A `## ` annotation on a target line is a promise that `make help` lists it.
+# The help recipe keeps that promise with a grep pattern, and the pattern is
+# the only place the promise can quietly break: `e2e` was annotated from the
+# day it existed and never once listed, because `[a-zA-Z_-]` has no digits.
+# So this check does not restate what a listable target looks like — it reads
+# the recipe's own pattern out of the Makefile and applies it, which is the one
+# design under which the check cannot agree with a wrong pattern.
+
+# A target line as the ANNOTATION convention defines it: a name, a colon that
+# is not part of `:=`, anything, then `## `. Deliberately wider than any help
+# recipe's pattern — the gap between the two IS the finding. Excludes what no
+# help output could list by name: a `$(VAR)`-named target and the dotted
+# special targets (`.PHONY`, `.SUFFIXES`, ...).
+_ANNOTATED_TARGET = re.compile(r"^(?!\.[A-Z_]+\s*:)([^\s:#=$]+)\s*:(?!=)[^#\n]*##\s")
+_INCLUDE_LINE = re.compile(r"^-?include\s+(.+?)\s*$", re.MULTILINE)
+_HELP_TARGET = re.compile(r"^help\s*:", re.MULTILINE)
+# The pattern grep is given, single- or double-quoted, with any flags before it.
+_RECIPE_GREP = re.compile(r"""grep\s+(?:-[A-Za-z]+\s+)*(?:'([^']*)'|"([^"]*)")""")
+# POSIX bracket classes grep -E accepts and Python's re does not — translated so
+# the widening a user is most likely to write does not turn the check dark.
+_POSIX_CLASSES = (
+    ("[:alnum:]", "A-Za-z0-9"),
+    ("[:alpha:]", "A-Za-z"),
+    ("[:digit:]", "0-9"),
+    ("[:lower:]", "a-z"),
+    ("[:upper:]", "A-Z"),
+    ("[:space:]", r"\s"),
+)
+
+
+def _help_recipe(text):
+    """The `help` target's recipe lines joined (continuations unfolded), or None."""
+    m = _HELP_TARGET.search(text)
+    if not m:
+        return None
+    lines = text[m.end() :].split("\n")[1:]
+    recipe = []
+    for line in lines:
+        if not line.startswith("\t"):
+            break
+        recipe.append(line.rstrip("\\").strip())
+    return " ".join(recipe)
+
+
+def _help_pattern(recipe):
+    """The first quoted pattern handed to grep in the recipe, or None."""
+    m = _RECIPE_GREP.search(recipe)
+    if not m:
+        return None
+    return m.group(1) if m.group(1) is not None else m.group(2)
+
+
+def _help_parity_findings(makefiles):
+    """makefiles: ordered [(relpath, text)] — the root Makefile then its includes,
+    i.e. what `$(MAKEFILE_LIST)` would hold. Returns (errs, warns). Pure; the
+    walk and include resolution are check_P's.
+
+    Silent when no makefile declares a `help` target (nothing lists the
+    annotations, so nothing can hide one). WARNs, never errs, when the help
+    recipe exists but this check cannot read a pattern out of it — parity is
+    then unverified and says so, rather than reporting a green it did not earn.
+    """
+    errs, warns = [], []
+    if not makefiles:
+        return errs, warns
+    recipe = None
+    for relpath, text in makefiles:
+        recipe = _help_recipe(text)
+        if recipe is not None:
+            help_in = relpath
+            break
+    if recipe is None:
+        return errs, warns
+    raw = _help_pattern(recipe)
+    if raw is None:
+        warns.append(
+            "%s: help parity unverified -- the 'help' recipe hands grep no quoted "
+            "pattern this check can read, so an annotated target may be hidden "
+            "from 'make help' without anything noticing" % help_in
+        )
+        return errs, warns
+    pattern = raw
+    for posix, python in _POSIX_CLASSES:
+        pattern = pattern.replace(posix, python)
+    try:
+        listed = re.compile(pattern)
+    except re.error as e:
+        warns.append(
+            "%s: help parity unverified -- the help recipe's pattern '%s' is not "
+            "one this check can apply (%s)" % (help_in, raw, e)
+        )
+        return errs, warns
+    for relpath, text in makefiles:
+        for line in text.split("\n"):
+            m = _ANNOTATED_TARGET.match(line)
+            if m and not listed.search(line):
+                errs.append(
+                    "%s: target '%s' carries a '## ' help annotation but the help "
+                    "recipe's pattern '%s' does not match it, so 'make help' hides "
+                    "it -- widen the pattern (or drop the annotation)"
+                    % (relpath, m.group(1), raw)
+                )
+    return errs, warns
+
+
+def check_P():
+    """ERROR when a `## `-annotated target is one the `help` recipe's own grep
+    pattern cannot list. Reads `Makefile` and, in order, every file an
+    `include`/`-include` line names (what `$(MAKEFILE_LIST)` holds), so an
+    annotation in an included makefile is held to the same promise. Silent
+    when there is no Makefile or no `help` target; a recipe it cannot read is
+    a WARN that says 'unverified'."""
+    root_path = os.path.join(ROOT, "Makefile")
+    if not os.path.isfile(root_path):
+        return
+    text = _read_text(root_path, err)
+    if text is None:
+        return
+    makefiles = [("Makefile", text)]
+    for inc in _INCLUDE_LINE.findall(text):
+        for name in inc.split():
+            inc_path = os.path.join(ROOT, name)
+            inc_text = _read_text(inc_path, err)  # absent: make itself would fail
+            if inc_text is not None:
+                makefiles.append((name.replace(os.sep, "/"), inc_text))
+    errs, warns_ = _help_parity_findings(makefiles)
+    for m in errs:
+        err(m)
+    for m in warns_:
+        warn(m)
+
+
 def main():
     check_A()
     check_B()
@@ -2167,6 +2305,7 @@ def main():
     check_M()
     check_N()
     check_O()
+    check_P()
     for w_ in warnings:
         print("WARN  " + w_)
     for e_ in errors:

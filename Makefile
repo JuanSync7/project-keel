@@ -28,8 +28,8 @@ PY_ROOTS := $(wildcard $(CODE_ROOTS))
         fe-install run run-api run-web site-data site-static demo agent-surface-schema
 
 help: ## List tasks
-	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
-		awk 'BEGIN{FS=":.*?## "}{printf "  %-14s %s\n",$$1,$$2}'
+	@grep -hE '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | \
+		awk 'BEGIN{FS=":.*?## "}{printf "  %-22s %s\n",$$1,$$2}'
 
 check-python: ## Fail early with a clear message if PY is older than pyproject requires
 	$(PY) scripts/check_python_version.py

@@ -8,7 +8,7 @@ tags: [checks, ci, linter, determinism, pre-commit, hooks, guide]
 summary: Catalogue of every deterministic check that keeps a project-template repo honest — purpose, when to run, and how to wire as a hook.
 id: docs-guides-deterministic-checks
 created: 2026-06-19
-updated: 2026-06-24
+updated: 2026-09-02
 visibility: internal
 canonical: true
 ---
@@ -62,7 +62,7 @@ everything and therefore expect the project interpreter.
 
 | Check | Script | Gate? | Interpreter | What it guarantees |
 |-------|--------|:-----:|-------------|--------------------|
-| Structure & frontmatter | `scripts/check_structure.py` | error | 3.6-safe | Labels, taxonomy, package boundaries, tool/agent governance, project facts, agent-rules symlinks, owned-exception & frozen-config boundaries, naked-tensor domain warn, lint/type ruleset parity, template twin parity (checks A–O) |
+| Structure & frontmatter | `scripts/check_structure.py` | error | 3.6-safe | Labels, taxonomy, package boundaries, tool/agent governance, project facts, agent-rules symlinks, owned-exception & frozen-config boundaries, naked-tensor domain warn, lint/type ruleset parity, template twin parity, Makefile help parity (checks A–P) |
 | Corpus integrity | `scripts/jobs/check_corpus.py` | error | ≥3.7 | the fresh build is a valid, acyclic, reproducible graph **and** the local `wiki/corpus.json` (what agents query) is current when present — absent is a loud pass, stale is an error naming `make site-data` (ADR-0008) |
 | OpenAPI drift | `api/rest_fastapi/export_openapi.py --check` | error | FastAPI | Committed `openapi.json` matches the live routes |
 | AAD schema drift | `scripts/agent_surface/generate_aad_schema.py --check` | error | pydantic | Committed AAD JSON Schema matches the model |
@@ -78,7 +78,7 @@ print but never fail the build.
 
 ### 1. Structure & frontmatter — `scripts/check_structure.py`
 
-**Purpose.** The core enforcer of `CONVENTIONS.md`. Checks A–O:
+**Purpose.** The core enforcer of `CONVENTIONS.md`. Checks A–P:
 
 - **A. Frontmatter** — every `README.md` / `AGENT.md` / `CLAUDE.md`, `docs/**`,
   `test-docs/**` markdown, and `agents/**/*.tool.md` has the required keys with
@@ -142,6 +142,16 @@ print but never fail the build.
   script stays 3.6-safe). Without them the corpus falls back to
   filename/first-prose-line and labels the result `authored`, and an
   undocumented module is silently dropped from the index (ADR-0008).
+- **P. Makefile help parity** — every target line carrying a `## ` annotation
+  is one the `help` recipe's own grep pattern lists. The pattern is read out of
+  the recipe (`grep -hE '<pattern>' $(MAKEFILE_LIST)`), not restated in the
+  check, so the two cannot agree on a wrong answer; `include`d makefiles are
+  read too, as `$(MAKEFILE_LIST)` would. The live instance: `e2e` was annotated
+  from the day it existed and never listed, because `[a-zA-Z_-]` has no digits.
+  Silent without a `help` target; a recipe the check cannot read a pattern from
+  is a WARN that says *unverified*, never a pass. Lands as an error, not a
+  release-long warning (the ADR-0008 grace rule), because the tree complied the
+  moment the recipe was widened — there was nothing to give anyone time for.
 
 **When to run.** Every commit (pre-commit) and in CI; any time you add a
 directory, package, doc, tool, or agent.

@@ -9,7 +9,18 @@ version rather than a bare commit:
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+- **`check_P` — Makefile help parity.** Every `## `-annotated target must be one
+  the `help` recipe's own grep pattern lists; the pattern is read out of the
+  recipe rather than restated, so the check cannot agree with a wrong one, and a
+  recipe it cannot read is a WARN that says *unverified*. First slice of the
+  documentation-quality work: a regression barrier that also fixed a live bug.
+
+### Fixed
+- **`make help` hid `e2e`.** The recipe's character class `[a-zA-Z_-]` had no
+  digits, so the one digit-named target was annotated and never listed, for as
+  long as it existed. Widened to `[a-zA-Z0-9_-]`; the name column widened from
+  14 to 22 so `agent-surface-schema` no longer overruns it.
 
 ## [0.1.0] — 2026-09-02
 
