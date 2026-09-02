@@ -5,15 +5,56 @@ layer: n/a
 status: draft
 owner: TBD
 tags: [plan, template, copier, upgrade, gate, environment, convergence]
-summary: Five bounded passes that fix the template-as-product defects found by the 2026-08-04 audit and then land the external-environment manifest of ADR-0005. Each pass is one vertical slice with an explicit done-condition, gated on `make verify`.
+summary: The bounded-convergence record for keel's template-as-product hardening: eight numbered passes plus four unnumbered units, all merged to main as 956b7da, with the still-open release blockers for v0.1.0 and every deferral's measurement and trigger. The status table and the release-readiness section are authoritative; the per-pass narratives below them are historical and carry inline corrections where they went stale.
 id: docs-design-keel-hardening-plan
 created: 2026-08-04
-updated: 2026-08-18
+updated: 2026-09-02
 visibility: internal
 canonical: true
 ---
 
 # Keel hardening — bounded convergence plan
+
+## Where this stands (verified 2026-09-02)
+
+**Merged.** Everything below landed on `main` as **`956b7da`** (PR #13), as a
+merge commit rather than a squash so the nineteen revisions stay separately
+blameable — the 109-file `ruff format` sweep above all, which would otherwise
+own the blame for every line it touched. `main` is the only branch, local and
+remote; 13 PRs merged, none open.
+
+**Gate at that commit:** `make PY=.venv/bin/python verify` → **402 passed, 0
+skipped, exit 0**; `make advise` clean; `check_structure` 0 errors and 5
+`owner: TBD` warnings; CI green with ruff 0.15.18 and mypy 2.1.0, now pinned
+exactly (`0ab1bbf`).
+
+**Not released.** `git tag --list` is still empty. The *Release readiness*
+section near the end of this file — not the pass narratives — is the current
+worklist.
+
+| Pass | Subject | Status |
+|---|---|---|
+| 1 | Restore the upgrade channel (`.copier-answers.yml`, version identity) | done **except the `v0.1.0` tag** |
+| 2 | Make `copier update` runnable, and test it | done |
+| 3 | Close the gate's blind spot (lint/type scope → `CODE_ROOTS`) | done |
+| 3.5 | Pass-2 review findings | done |
+| 4 | Answer retirement via `_migrations` (ADR-0006) | done |
+| 5 | Twin parity + the meta-gate's own holes (check_M, check_N) | first half done |
+| 6 | The silent-skip class → `KEEL_REQUIRED_EXTRAS` (`c1383ef`) | done |
+| 7 | The `showcase` question, keel's name out of the user's API (ADR-0007) | done |
+| 8 | The gated module contract (check_O, check_E, corpus currency; ADR-0008) | done |
+| — | Formatting as a gate (`f56463a` sweep, `897a0e4` gate) | done |
+| — | ADR-0008 review rounds — 25 confirmed findings (`7a90744`, `1f7176e`) | done |
+| — | Merge-readiness audit — 1 blocker + 4 should-fixes (`efd8b3b`) | done |
+| — | Exact pins for the gate's own toolchain (`0ab1bbf`) | done |
+| — | The optional-surface questions (`wiki` / `evals` / `containers`) | **not started** |
+| — | ADR-0005 slice 1: `config/environment.json` + `check_P` | **not started** |
+
+**The pass narratives below are historical.** They were written before the work
+landed, and several of their "remaining" and "not closed" notes went stale as it
+did. Where a narrative and this table disagree, **the table wins**; the known
+divergences are corrected inline and listed under *Corrections* below.
+
 
 ## Why
 
@@ -39,7 +80,7 @@ are recorded with each pass.
 
 ## Passes
 
-### Pass 1 — restore the upgrade channel *(done)*
+### Pass 1 — restore the upgrade channel *(done except the `v0.1.0` tag)*
 
 `copier update` is the entire justification for choosing copier (ADR-0004), and
 it is advertised in six places and tested in none.
@@ -335,13 +376,30 @@ accepted: `copier update` now requires `--trust`; generation still does not.
 > nothing" cannot recur. General lesson: when a mechanism appears inert, first
 > verify the harness is exercising the artefact you edited.
 
-**Remaining (the questions themselves):** a `showcase: bool` question and the
-optional-surface questions, plus removing keel branding from
-`src/backend/showcase/_repo.py:86` and `api/rest_fastapi/app.py:26`.
+**Remaining (the questions themselves):** ~~a `showcase: bool` question and~~ the
+optional-surface questions ~~, plus removing keel branding from
+`src/backend/showcase/_repo.py:86` and `api/rest_fastapi/app.py:26`~~.
+*Corrected 2026-09-02:* the `showcase` question landed in `55048fb` (pass 7,
+`copier.yml:152`) and so did both branding removals (`app.py:32`,
+`_repo.py:102`). Only the optional-surface questions are still open.
 
 **Done when:** `showcase=false` generates a project with no keel branding in any
 served response, and the optional-surface questions round-trip through
 `copier update`.
+
+### Pass 6 — the silent-skip class, generalised *(done)*
+
+`c1383ef`. Pass 3.5 closed one `importorskip` that masked a never-run assertion;
+this pass closed the **class**. `tests/optional_deps.py` turns `importorskip` into
+a HARD import for any surface named in `KEEL_REQUIRED_EXTRAS`, which CI declares
+(`template,dev,transport`) because CI installs those on purpose — so a broken
+install fails the run instead of degrading into a green suite whose assertions
+never executed. A bare local clone still skips gracefully, and a scan fails any
+module reaching for a raw `pytest.importorskip` outside the declared opt-in set.
+
+> *Correction for readers of pass 2:* that narrative describes
+> `KEEL_REQUIRE_TEMPLATE`, a single-extra flag **this pass replaced**. The
+> mechanism pass 2 names is no longer in the tree.
 
 ### Pass 7 — the `showcase` question, and keel's name out of the user's API *(done)*
 
@@ -501,6 +559,125 @@ the provider adapters are slice 2, outside this plan. Its stated prerequisite is
 now met: twin parity is gated, so adding a seventh twin can no longer manufacture
 a new instance of the drift class it claims to fix.
 
+## Release readiness — what blocks `v0.1.0`
+
+Re-derived from the repo on 2026-09-02 by a six-lens verification pass, after the
+merge. Every item below was **reproduced**, not inferred. This is the worklist.
+
+**1. Decide what `0.1.0` is, and tag it at the merge — not at `d0a25c4`.**
+`CHANGELOG.md` has a `## [0.1.0] — 2026-08-04` heading that describes `d0a25c4`
+and says "everything below existed before this tag". Honouring that date is
+actively harmful: copier refuses downgrades (`copier/_main.py:1341-1345`), a
+project generated from `main` today records `_commit: 956b7da`, and `git
+describe` renders that `0.1.0.post37.dev0` — which compares **greater** than
+`0.1.0`, so the README's own `copier update --trust` would hard-error. Re-scope
+`[0.1.0]` to this merge and tag `956b7da`.
+
+**2. Rotate `[Unreleased]` into the dated heading before tagging.** ~470 lines of
+passes 2–8 sit undated under `[Unreleased]`; tagging now would publish a release
+note describing two August fixes. The `[0.1.0]` section also still says
+`_min_copier_version: "9"` while `copier.yml:19` says `"9.3.0"`. Nothing gates
+this — no test reads keel's own CHANGELOG.
+
+**3. Five shipped references advertise a tag that does not resolve.**
+`CHANGELOG.md:8` and `:153`, `copier.yml:18`, `.github/workflows/ci.yml:9`, plus
+`README.md:73` and `README.md.jinja:73` (which pass no `--vcs-ref` at all, so
+copier resolves `self.ref or get_latest_tag`). Cutting **and pushing** the tag
+makes all five true at once; a local-only tag fixes nothing.
+
+**4. A generated project with DEFAULT answers is red on arrival.** Measured:
+`9 failed, 341 passed` (`test_showcase_journey` ×2, `test_showcase_api` ×5,
+`test_showcase_repo` ×2). `wiki/corpus.json` is correctly excluded as a generated
+view, but the showcase tests hard-require a populated corpus and the generated
+`Makefile`'s `verify: check-all lint typecheck test` has **no `site-data`
+prerequisite** — while the generated `README:97` tells the newcomer to run
+`make verify`. CI is green only because `ci.yml` happens to run `make site-data`
+first. Building the corpus by hand turns the same tree to `351 passed`.
+*This is a worse instance of the class `efd8b3b` fixed for `showcase=false`: the
+default path, not a declined answer.*
+
+**5. Answering the `profiles` question at all ships a permanently red suite.**
+`tests/integration/test_advisories.py:34` asserts `profiles_on() == set()` and
+`tests/integration/test_showcase_api.py:82` asserts every profile is disabled —
+both literal. Generating with any non-empty `profiles` gives `2 failed, 349
+passed`, and `check_structure` stays at 0 errors so the structural gate never
+sees it. The template reddens a project for answering a question the template
+itself asks (a CONVENTIONS §18 violation, shipped downstream).
+
+**6. `config/project.json.jinja` ships keel's whole `template.twins` block
+downstream.** The block and its keel-explaining `_comment` are untemplated
+(`:5-6`). check_N is silent while a project has no `.jinja` of its own, but its
+first one yields **7 errors, 6 of them about keel's twins**. `_migrations` can
+only `rm`, so a descendant that inherits this cannot be repaired by a later
+update — which is precisely why it must be fixed *before* anyone generates from a
+tag.
+
+**7. `api/rest_fastapi/export_openapi.py --check` launders any failure into exit
+0.** Line 51, `except Exception` around `from app import app` + `app.openapi()`.
+It is inside the release gate and is **not** excluded by `copier.yml`, so every
+generated project inherits a drift guard that can report success while checking
+nothing. The correct shape exists one directory away
+(`generate_aad_schema.py:26`, `_ENVIRONMENT_CANNOT_RUN`).
+
+**8. `mcp/protocol.py`: one malformed JSON-RPC line kills the server loop.**
+`handle_message:119` passes `params.get("name")` straight into
+`call_tool(name: str)`; a `name` that is a JSON array or object raises TypeError,
+and any non-object top-level JSON line raises AttributeError at `:101`.
+`serve_stdio` catches only `ValueError` from `json.loads`, so either ends the
+session. **Reproduced end to end.**
+
+**9. Three shipped documents misdescribe the gate they explain.**
+`scripts/README.md:30` says "checks A–M"; `src/backend/showcase/_data.py:398`
+says "checks A–I" and lists 6 of 8 catalogued checks; `CONVENTIONS.md` contains
+**no occurrence** of `check_N` or `template.twins`, though its own lines 206–207
+order you to update it whenever a check changes. The real range is A–O.
+(`docs/guides/deterministic-checks.md` is fully current — it is the only accurate
+description of the check set in the repo.)
+
+**10. The live showcase tells newcomers to delete `models/`.**
+`_data.py:469` `SETUP_STEPS` lists `models/` among the optional dirs, served at
+`/api/setup.json`; `README.md` deliberately omits it and explains that deleting
+it leaves `config/project.json` claiming three adapters that no longer exist, so
+`make check` correctly reports 3 errors. Two shipped surfaces give opposite
+advice and the product page's version breaks the newcomer's first `make check`.
+
+**11. The mypy ratchet declares measured facts that are false.** Re-measured
+under the pinned mypy 2.1.0: `runtimes=87`, `api=43`, `mcp=16` reproduce exactly
+(validating the method), but `tests` measures **920** against 622 declared and
+`scripts` **529** against 464 — two rungs have gone **up**, under a `_comment`
+calling it "a number that may only go down". `config/practices.json` ships to
+every descendant.
+
+**12. Nothing tells a newcomer how to install the environment the gate needs.**
+There is no `make setup`/`make install`, and no README line for
+`pip install -e ".[dev]"` — yet pytest, ruff and mypy live in that extra and
+`make new` needs `.[template]`. The first thing a `v0.1.0` user does is fail.
+
+## Corrections to this document (2026-09-02)
+
+Recorded rather than silently edited, because the drift is the lesson: a plan
+that describes work is a claim, and claims go stale as the work lands.
+
+- **`_migrations` is NOT inert without a tag** — believed and stated twice during
+  the merge work. `Template.version` falls back to dunamai, which synthesises
+  `0.0.0.post37.dev0+956b7da` from `git describe --always` with zero tags, so
+  answer retirement already runs and `--trust` is already required. Verified
+  against this repo.
+- **`mcp/protocol.py` "does not crash today" is wrong** — it crashes the session,
+  reproduced end to end (see release blocker 8). The line refs recorded here
+  (`:105`/`:57`) are also stale; the real ones are `:119` and `:64`.
+- **Pass 3's "not closed by this pass" list is half stale.** check_M's blind
+  spots closed in `3337c1d` and the never-run `make fmt` closed in `f56463a` +
+  `897a0e4`. The Deferred copy is struck through; the pass-3 copy was not, so the
+  document contradicted itself.
+- **The langgraph CI-skip figure is 14 test functions, not ~10** — 12 dropped at
+  collection plus 2 in-body skips a collection diff cannot see.
+- **The pre-commit deferral's stated blocker is discharged.** The
+  `ruff-pre-commit` rev was matched to the gate's ruff in `0ab1bbf`. The hole (CI
+  never runs `pre-commit`) is still real; only the excuse was stale.
+- **`config/practices.json`'s ratchet is not a floor.** Two of five rungs have
+  risen with nothing going red (see release blocker 11).
+
 ## Explicit non-goals
 
 - Rewriting the conventions. `check_structure.py` A–M, `check_M`'s meta-gate and
@@ -547,11 +724,15 @@ a new instance of the drift class it claims to fix.
 - **Blanket `except Exception: return 0` in the two drift checks.** *(Half
   closed in pass 3.)* `scripts/agent_surface/generate_aad_schema.py` now skips
   only on `ImportError`/`SyntaxError` and fails on anything else.
-  `api/rest_fastapi/export_openapi.py:44` still degrades *any* failure under
+  `api/rest_fastapi/export_openapi.py` still degrades *any* failure under
   `--check` to exit 0 with a stderr note — same class, same fix shape, left
-  alone because `api/` was a different writer's slice in that pass. Not active
-  today (CI installs the transport requirements, so it really runs), but a
-  future import or route error would show up as a green gate.
+  alone because `api/` was a different writer's slice in that pass.
+  **Promoted to a release blocker on 2026-09-02** (see release blocker 7): the
+  line is `:51`, not `:44`; it wraps `from app import app` + `app.openapi()`, so
+  a duplicate operation id or a NameError anywhere in the import graph reads as a
+  pass; it sits inside the release gate; and `copier.yml` does **not** exclude it,
+  so every generated project inherits a drift guard that can report success while
+  checking nothing.
 - ~~**check_M's two proven blind spots**~~ *(closed in pass 5.)* Kept here for
   the record, because the measurement is the point: It
   reads `tool.ruff.lint.extend-select`, `deferred` and `tool.mypy.<flag>` only,
@@ -572,18 +753,31 @@ a new instance of the drift class it claims to fix.
   earlier, but it requires a manual `pre-commit install`, and
   `.github/workflows/ci.yml` runs `make check-all/lint/typecheck/test` and never
   `pre-commit run`. Adding `pre-commit run --all-files` to CI is the natural
-  fix — but the config pins `ruff-pre-commit` at `v0.8.4` while the venv and CI
+  fix. **The stated blocker is discharged** (2026-09-02): `0ab1bbf` matched the
+  hook's rev to the gate's ruff and added a test keeping them equal, so only the
+  hole remains, not the excuse — do the `export_openapi` fix first, or the
+  newly-run `openapi` hook reports green under whatever ambient `python3` the
+  runner has. Historical note: the config pinned `ruff-pre-commit` at `v0.8.4` while the venv and CI
   run ruff `0.15.18`, and the newly clean corpus is only clean under the latter.
   Bump the pin in the same change, and re-run at the new pin first.
-- **`mcp/protocol.py:105` passes `params.get("name")` into `call_tool(self,
-  name: str, ...)`** (`mcp/protocol.py:57`), so a malformed JSON-RPC
-  `tools/call` reaches a non-Optional parameter. It does not crash today —
-  `self._by_name.get(None)` returns None and the caller gets
-  `isError: "unknown tool: None"` — and it is a mypy finding in a root that is a
-  declared ratchet rung, so nothing gates it. The class-correct fix is a
-  `-32602 invalid params` at the transport boundary, which is an observable
-  protocol change and needs its own failing test first. Sequence it with the
-  `mcp` rung.
+- **`mcp/protocol.py:119` passes `params.get("name")` into `call_tool(self,
+  name: str, ...)`** (`mcp/protocol.py:64`), so a malformed JSON-RPC
+  `tools/call` reaches a non-Optional parameter.
+
+  **Corrected 2026-09-02 — "it does not crash today" was wrong.** That held only
+  for an ABSENT name (`self._by_name.get(None)` → `isError: "unknown tool:
+  None"`). Reproduced against this tree:
+
+  | input | result |
+  |---|---|
+  | `params.name` = `["x"]` or `{"a": 1}` | `TypeError: unhashable type` |
+  | a non-object JSON line (`5`, `[1,2]`, `"hi"`) | `AttributeError: 'int' object has no attribute 'get'` |
+
+  and `serve_stdio` (`:152`) calls `handle_message` **unguarded** — only
+  `json.loads` is wrapped (`:148-151`) — so either exception ends the session.
+  One malformed line from any client kills the server. Promoted to a release
+  blocker (8). The class-correct fix is still `-32600`/`-32602` at the transport
+  boundary, written test-first; sequence it with the `mcp` ratchet rung.
 - **`query_corpus` token cost** (~4.4k tokens per call, no relevance floor, and
   only a ~400-char excerpt per node rather than the section body — so for most
   questions it costs more than `grep` + `Read` and answers less). Real, but it is

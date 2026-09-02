@@ -483,6 +483,16 @@ First named version. Everything below existed before this tag; the tag exists so
 a descendant can state which keel it came from and upgrade to a known-good ref
 instead of a bare SHA (`docs/design/keel-hardening-plan.md`, pass 1).
 
+> **This heading has never corresponded to a tag.** `git tag --list` is empty:
+> the section was written in `d0a25c4` in anticipation and no tag was ever cut,
+> so every reference to `--vcs-ref v0.1.0` in this repo currently fails to
+> resolve. Resolving it is a release decision, not an edit — and the obvious
+> reading is wrong: tagging `v0.1.0` at `d0a25c4` would *break* the documented
+> upgrade path, because a project generated from `main` today records
+> `_commit: 956b7da`, which `git describe` renders `0.1.0.post37.dev0` —
+> greater than `0.1.0` — and copier refuses downgrades. See "Release readiness"
+> in `docs/design/keel-hardening-plan.md` for the measurements.
+
 ### Fixed
 - Generated projects now **track** their own `.copier-answers.yml`. Keel's
   `.gitignore` shipped verbatim and ignored it, so while `copier update` worked
