@@ -23,7 +23,10 @@ def link_corpus(corpus: dict, max_links: int = 8, min_score: float = 0.12) -> di
     Two nodes link when they share tags/entities (e.g. both mention "AXI").
     Edges carry the shared token in `via` and a Jaccard `score`, with
     source="deterministic" so an LLM-added semantic edge stays distinguishable.
-    Idempotent: existing edges are recomputed from scratch each run.
+    Idempotent: the KEYWORD edges are recomputed from scratch each run; the
+    authored reference edges build_corpus wrote (kind link / citation /
+    mention) are kept as they are — this job owns one kind of edge, not the
+    list.
     """
     nodes = corpus.get("nodes", [])
     tagsets = {n["node_id"]: set(n.get("tags", [])) for n in nodes}
@@ -34,9 +37,10 @@ def link_corpus(corpus: dict, max_links: int = 8, min_score: float = 0.12) -> di
             by_tag.setdefault(t, set()).add(nid)
     for n in nodes:
         nid = n["node_id"]
+        kept = [e for e in n.get("links", []) or [] if e.get("kind") != "keyword"]
         mine = tagsets[nid]
         if not mine:
-            n["links"] = []
+            n["links"] = kept
             continue
         candidates = set()
         for t in mine:
@@ -55,7 +59,7 @@ def link_corpus(corpus: dict, max_links: int = 8, min_score: float = 0.12) -> di
             scored.append((round(score, 4), via, other))
         # strongest first, then stable by (via, node_id)
         scored.sort(key=lambda s: (-s[0], s[1], s[2]))
-        n["links"] = [
+        n["links"] = kept + [
             {
                 "to": other,
                 "via": via,

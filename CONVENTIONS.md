@@ -347,6 +347,16 @@ at the specs. An agent's reasoning prose lives only in its `prompt.md`
 
 ## 11. The wiki corpus (the one-brain index)
 
+Its edges are of two origins, and the corpus says which: **keyword** edges
+(`scripts/jobs/link_corpus.py`, a shared tag) and the **authored** edges
+`scripts/jobs/build_corpus.py` derives from what a document itself wrote —
+every relative link (`kind: link`), every `§N` (`kind: citation`) and every
+backticked repository path (`kind: mention`), each pointing from the section
+that wrote it to the node it names, computed with the same reference grammar
+`check_structure.py` gates (§6). A model-added edge is `kind: semantic`,
+`source: generated`. The kind vocabulary is closed and validated
+(`scripts/jobs/check_corpus.py`).
+
 The repo is the *structured source* for a company wiki: source →
 summarize → split into sections → summarize → link by entity/keyword
 into a tree an agent traverses to answer. `scripts/jobs/build_corpus.py`

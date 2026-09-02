@@ -27,6 +27,11 @@ OWNER_SOURCES = {"frontmatter", "marker", "inherited", "none"}
 SUMMARY_SOURCES = {"authored", "generated", ""}
 VISIBILITIES = {"public", "internal", "confidential", "restricted"}
 LINK_SOURCES = {"deterministic", "generated"}
+# The closed set of edge kinds: keyword (link_corpus) and the three authored
+# kinds build_corpus derives from a document's own text, plus `semantic` for an
+# LLM-added edge (source `generated`; nothing emits one yet, index_enforcer may).
+# An unknown kind is a producer nobody agreed on.
+LINK_KINDS = {"keyword", "link", "citation", "mention", "semantic"}
 REQUIRED_FIELDS = (
     "node_id",
     "kind",
@@ -184,6 +189,11 @@ def validate(corpus: dict) -> list:
                 e("node %r: link target %r does not resolve" % (nid, ln.get("to")))
             if ln.get("source") not in LINK_SOURCES:
                 e("node %r: link source %r invalid" % (nid, ln.get("source")))
+            if ln.get("kind") not in LINK_KINDS:
+                e(
+                    "node %r: link kind %r invalid (expected one of %s)"
+                    % (nid, ln.get("kind"), sorted(LINK_KINDS))
+                )
             sc = ln.get("score")
             if not isinstance(sc, (int, float)) or not (0.0 <= sc <= 1.0):
                 e("node %r: link score %r out of [0,1]" % (nid, sc))

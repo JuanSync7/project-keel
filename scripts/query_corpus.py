@@ -19,10 +19,40 @@ DEFAULT_CORPUS = os.path.join("wiki", "corpus.json")
 _WORD_RE = re.compile(r"[A-Za-z][A-Za-z0-9_]{1,}")
 
 
+# Light stemming, longest suffix first: enough that `idempotency` and
+# `idempotent`, `sections` and `section`, `linking` and `links` compare equal.
+# Deliberately crude (no Porter): the corpus is small, ranking is by overlap
+# count, and a false merge costs one extra candidate, not a wrong answer.
+_SUFFIXES = (
+    "ization",
+    "isation",
+    "ency",
+    "ence",
+    "ancy",
+    "ance",
+    "ent",
+    "ant",
+    "ies",
+    "ing",
+    "ed",
+    "es",
+    "s",
+)
+
+
+def _stem(word: str) -> str:
+    for suffix in _SUFFIXES:
+        if word.endswith(suffix) and len(word) - len(suffix) >= 3:
+            if suffix == "s" and word.endswith("ss"):
+                continue
+            return word[: -len(suffix)]
+    return word
+
+
 def _tokens(text: str) -> set:
     out = set()
     for w in _WORD_RE.findall(text or ""):
-        out.add(w.lower())
+        out.add(_stem(w.lower()))
         if w.isupper():
             out.add(w)  # keep acronyms (AXI) matchable verbatim
     return out
@@ -31,9 +61,11 @@ def _tokens(text: str) -> set:
 def query(corpus: dict, question: str, max_nodes: int = 8) -> list:
     """Return up to max_nodes candidate nodes for the question, best first.
 
-    Deterministic retrieval: score each node by query-token overlap with its
-    tags/title/summary, then pull in each hit's parent and linked nodes so the
-    caller gets a connected neighbourhood (tree + links) to reason over.
+    Deterministic retrieval: score each node by stemmed query-token overlap
+    with its tags/title/summary (weight 2) and with its body excerpt (weight 1,
+    so a body-only match never outranks a summary match), then pull in each
+    hit's parent and linked nodes so the caller gets a connected neighbourhood
+    (tree + links) to reason over.
     """
     nodes = {n["node_id"]: n for n in corpus.get("nodes", [])}
     q = _tokens(question)
@@ -41,12 +73,13 @@ def query(corpus: dict, question: str, max_nodes: int = 8) -> list:
         return []
     scored = []
     for nid, n in nodes.items():
-        hay = (
-            {t.lower() for t in n.get("tags", [])}
+        core = (
+            {_stem(t.lower()) for t in n.get("tags", [])}
             | _tokens(n.get("title", ""))
             | _tokens(n.get("summary", ""))
         )
-        overlap = len(q & hay)
+        body = _tokens(n.get("text_excerpt", "")) - core
+        overlap = 2 * len(q & core) + len(q & body)
         if overlap:
             scored.append((overlap, nid))
     scored.sort(key=lambda s: (-s[0], s[1]))

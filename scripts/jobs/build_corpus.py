@@ -26,7 +26,25 @@ SCHEMA_VERSION = 1
 _SCRIPTS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _SCRIPTS not in sys.path:
     sys.path.insert(0, _SCRIPTS)
-from check_structure import CODE_ROOTS, IGNORE_DIRS  # noqa: E402
+from urllib.parse import unquote  # noqa: E402
+
+from check_structure import (  # noqa: E402
+    _INLINE_CODE,
+    _MD_LINK,
+    _SECTION_CITE,
+    _URL_SCHEME,
+    CODE_ROOTS,
+    IGNORE_DIRS,
+    _heading_slug,
+    _prose_lines,
+    _resolve_link,
+    _unfenced_lines,
+)
+
+# A backticked span that is a repository path, not a phrase: slashes or a code
+# or doc suffix, no spaces. `docs/guides/x.md`, `scripts/`, `src/thing.py`.
+_MENTION_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_./-]*$")
+_NUMBERED_TITLE = re.compile(r"^(\d+)\.\s")
 
 # Owner markers use the same token + grammar in both worlds, but a STRUCTURED
 # form so prose mentioning "owner:" is never mistaken for a marker: a section
@@ -193,7 +211,104 @@ def _docstring_meta(doc: str):
 # --------------------------------------------------------------------------- #
 # node builders
 # --------------------------------------------------------------------------- #
-def _doc_and_sections(path: str, root: str, nodes: list):
+def _raw_references(text: str, rel: str) -> list:
+    """Every reference `text` (written at `rel`) makes, unresolved: a list of
+    (kind, via, spec). Computed with check_Q's own grammar, imported, so the
+    graph and the gate can never disagree about what a reference is:
+      link      — a relative Markdown link in prose; spec = (doc path, fragment)
+      citation  — a `§N`; spec = (named doc or CONVENTIONS.md, base dir, N)
+      mention   — a backticked repository path; spec = the path
+    Fenced and inline code hide links (illustrations); a mention IS the inline
+    code; a citation is read everywhere, as the gate reads it."""
+    refs = []
+    base = os.path.dirname(rel).replace(os.sep, "/")
+    for line in _prose_lines(text):
+        for m in _MD_LINK.finditer(line):
+            target = m.group(1) if m.group(1) is not None else m.group(2)
+            if _URL_SCHEME.match(target):
+                continue
+            path, _, fragment = target.partition("#")
+            doc = _resolve_link(base, unquote(path)) if path else rel
+            if doc is None:
+                continue
+            refs.append(("link", target, (doc or rel, fragment)))
+    refs.extend(
+        (
+            "citation",
+            " ".join(m.group(0).split()),
+            (m.group(1) or "CONVENTIONS.md", base, int(m.group(2))),
+        )
+        for m in _SECTION_CITE.finditer(text)
+    )
+    for line in _unfenced_lines(text):
+        for m in _INLINE_CODE.finditer(line):
+            span = m.group(2).strip()
+            looks_like_path = "/" in span or span.endswith((".py", ".md"))
+            if looks_like_path and _MENTION_RE.match(span):
+                refs.append(("mention", span, span.rstrip("/")))
+    return refs
+
+
+def _attach_reference_edges(nodes: list, refs: list) -> None:
+    """Resolve raw references to node ids and append them as edges: `to`, the
+    text as written in `via`, score 1.0, `kind` link/citation/mention, source
+    deterministic. What does not resolve leaves no edge (a dead link is check_Q's
+    finding, not the corpus's); a reference to the writing node itself is not an
+    edge; one edge per (kind, target); deterministic order."""
+    by_path = {}
+    by_anchor, by_rendered, numbered = {}, {}, {}
+    for n in nodes:
+        if n["kind"] in ("doc", "module"):
+            by_path[n["path"]] = n["node_id"]
+        elif n["kind"] == "section":
+            by_anchor[(n["path"], n["anchor"])] = n["node_id"]
+            by_rendered[(n["path"], _heading_slug(n["title"]))] = n["node_id"]
+            m = _NUMBERED_TITLE.match(n["title"])
+            if m:
+                numbered.setdefault((n["path"], int(m.group(1))), n["node_id"])
+
+    def node_at(path):
+        return by_path.get(path) or by_path.get(path + "/README.md")
+
+    edges = {}
+    for source_id, kind, via, spec in refs:
+        target = None
+        if kind == "link":
+            doc, fragment = spec
+            target = node_at(doc)
+            if target and fragment:
+                target = (
+                    by_anchor.get((doc, fragment))
+                    or by_rendered.get((doc, fragment))
+                    or target
+                )
+        elif kind == "citation":
+            named, base, number = spec
+            doc = (
+                named
+                if named in by_path
+                else os.path.normpath(os.path.join(base, named)).replace(os.sep, "/")
+            )
+            target = numbered.get((doc, number))
+        else:
+            target = node_at(spec)
+        if target and target != source_id:
+            edges.setdefault(source_id, {})[(kind, target)] = via
+    by_id = {n["node_id"]: n for n in nodes}
+    for source_id, found in edges.items():
+        by_id[source_id]["links"] = [
+            {
+                "to": to,
+                "via": found[(kind, to)],
+                "score": 1.0,
+                "kind": kind,
+                "source": "deterministic",
+            }
+            for kind, to in sorted(found)
+        ]
+
+
+def _doc_and_sections(path: str, root: str, nodes: list, refs: list):
     rel = _rel(path, root)
     try:
         # utf-8-sig, like every .py read here: read as plain utf-8 a BOM'd file
@@ -235,13 +350,14 @@ def _doc_and_sections(path: str, root: str, nodes: list):
             "links": [],
         }
     )
-    _sections(body, doc_id, rel, doc_owner, visibility, nodes)
+    _sections(body, doc_id, rel, doc_owner, visibility, nodes, refs)
 
 
-def _sections(body, doc_id, rel, doc_owner, doc_visibility, nodes):
+def _sections(body, doc_id, rel, doc_owner, doc_visibility, nodes, refs):
     lines = body.splitlines()
     blocks = []
     cur = None
+    preamble = []  # the doc's own prose before its first section
     for i, line in enumerate(lines):
         m = _HEADING_RE.match(line)
         if m:
@@ -255,8 +371,12 @@ def _sections(body, doc_id, rel, doc_owner, doc_visibility, nodes):
             }
         elif cur is not None:
             cur["body"].append(line)
+        else:
+            preamble.append(line)
     if cur:
         blocks.append(cur)
+    for kind, via, spec in _raw_references("\n".join(preamble), rel):
+        refs.append((doc_id, kind, via, spec))
 
     last_h2 = None
     seen_anchors = {}
@@ -280,6 +400,8 @@ def _sections(body, doc_id, rel, doc_owner, doc_visibility, nodes):
         if b["level"] == 2:
             last_h2 = sec_id
         summ = _first_sentence(btext)
+        for kind, via, spec in _raw_references(btext, rel):
+            refs.append((sec_id, kind, via, spec))
         nodes.append(
             {
                 "node_id": sec_id,
@@ -458,13 +580,16 @@ def _exported_names(tree) -> list:
 
 
 def build_corpus(root: str) -> dict:
-    """Walk the repo and return the corpus dict (nodes + tree edges, no links).
+    """Walk the repo and return the corpus dict: nodes, tree edges, and the
+    AUTHORED reference edges (link / citation / mention) each document's text
+    makes. Keyword edges are link_corpus's.
 
     Pure + deterministic: authored docstrings/frontmatter become canonical
     summaries; nodes with none are emitted with summary_source == "" (a gap the
     index_enforcer fills later, marking it "generated"). No model is ever called.
     """
     nodes = []
+    refs = []  # (writing node, kind, via, spec) — resolved once every node exists
     seen_real = set()
     for dirpath, _, filenames in _walk(root):
         top = _rel(dirpath, root).split(os.sep)[0]
@@ -478,7 +603,7 @@ def build_corpus(root: str) -> dict:
                 if real in seen_real:
                     continue
                 seen_real.add(real)
-                _doc_and_sections(full, root, nodes)
+                _doc_and_sections(full, root, nodes, refs)
             elif f.endswith(".py") and top in CODE_ROOTS:
                 _module_and_symbols(full, root, nodes)
 
@@ -490,6 +615,7 @@ def build_corpus(root: str) -> dict:
             by_id[p]["children"].append(n["node_id"])
     for n in nodes:
         n["children"].sort()
+    _attach_reference_edges(nodes, refs)
     nodes.sort(key=lambda n: n["node_id"])
     return {"schema_version": SCHEMA_VERSION, "root": ".", "nodes": nodes}
 

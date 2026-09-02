@@ -31,7 +31,9 @@ carrying the shared token (`via`) and a Jaccard `score`, with
 
 ## When to use
 - Right after `build_corpus`, before the navigator answers.
-- NOT to create the nodes (that is `build_corpus`).
+- NOT to create the nodes, nor the authored reference edges (both are
+  `build_corpus`); this recomputes only its own `keyword` edges and keeps the
+  rest.
 
 ## Args
 | Flag | Required | Default | Meaning |

@@ -44,6 +44,19 @@ version rather than a bare commit:
   READMEs whose members are pruned with the showcase (`docs/guides/`,
   `scripts/jobs/`) are `.jinja` twins, so a `showcase=false` project's roster
   matches its tree.
+- **The knowledge graph has authored edges.** `build_corpus` now turns every
+  relative link, `§N` citation and backticked repository path a document writes
+  into an edge (`kind` link / citation / mention, `source` deterministic) from
+  the section that wrote it to the node it names — computed with the very
+  grammar `check_Q` gates, imported, so the graph and the gate cannot disagree.
+  `link_corpus` recomputes only its own `keyword` edges and keeps these;
+  `check_corpus` validates the edge kind against the closed set. Before this
+  the corpus had 2,790 edges and not one was something an author wrote:
+  CONVENTIONS.md, cited 132 times, was an island.
+- **`query_corpus` stems and reads excerpts.** `idempotency` found nothing while
+  `idempotent` found eight nodes, because tokens were compared verbatim and only
+  tags, title and summary were read. Tokens are lightly stemmed on both sides and
+  the body excerpt counts, below the title and summary.
 - **Doc freshness is gated.** `scripts/review_docs.py` (new; rides `make advise`
   as a report) states the rule — a governed document's `updated:` is never
   earlier than its last commit, and a document modified in the working tree

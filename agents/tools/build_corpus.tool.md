@@ -31,6 +31,9 @@ owner, and provenance. Nodes lacking an authored summary are emitted as gaps
 
 ## When to use
 - To (re)build the corpus after `structure_check` passes.
+- NOT for keyword edges (that is `link_corpus`; this writes the AUTHORED
+  edges — every link, `§N` citation and backticked path a document makes, as
+  `kind` link / citation / mention).
 - NOT for retrieval (that is `query_corpus`) and NOT to fill gaps (that is the
   agent's model step).
 

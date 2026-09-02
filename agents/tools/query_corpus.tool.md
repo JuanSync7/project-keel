@@ -31,7 +31,9 @@ provenance and accountability.
 
 ## When to use
 - To gather candidate context before synthesizing an answer.
-- NOT to build or mutate the corpus.
+- NOT to build or mutate the corpus. Tokens are lightly stemmed on both
+  sides (`idempotency` finds `idempotent`) and the body excerpt counts below
+  the title and summary.
 
 ## Args
 | Flag | Required | Default | Meaning |

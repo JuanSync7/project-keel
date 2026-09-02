@@ -207,3 +207,49 @@ def test_bom_markdown_doc_is_still_indexed(repo):
     (repo / "docs" / "bom.md").write_bytes(b"\xef\xbb\xbf" + doc.encode("utf-8"))
     fresh = cc._fresh(str(repo), 8)
     assert any(n["node_id"] == "bomguide" for n in fresh["nodes"])
+
+
+# --- edge kinds: a closed vocabulary (the authored edges landed with it) --------
+
+
+def _one_edge(kind):
+    n = {
+        "node_id": "a",
+        "kind": "doc",
+        "title": "A",
+        "path": "a.md",
+        "anchor": None,
+        "lineno": None,
+        "summary": "s",
+        "summary_source": "authored",
+        "text_excerpt": "",
+        "owner": "",
+        "owner_source": "none",
+        "owner_origin": None,
+        "tags": [],
+        "visibility": "internal",
+        "updated": "",
+        "parent": None,
+        "children": [],
+        "links": [
+            {
+                "to": "b",
+                "via": "x",
+                "score": 1.0,
+                "kind": kind,
+                "source": "deterministic",
+            }
+        ],
+    }
+    b = dict(n, node_id="b", path="b.md", links=[])
+    return {"schema_version": 1, "root": ".", "nodes": [n, b]}
+
+
+@pytest.mark.parametrize("kind", sorted(cc.LINK_KINDS))
+def test_every_known_edge_kind_validates(kind):
+    assert cc.validate(_one_edge(kind)) == []
+
+
+def test_an_unknown_edge_kind_is_an_error_naming_the_vocabulary():
+    errs = cc.validate(_one_edge("vibes"))
+    assert len(errs) == 1 and "vibes" in errs[0] and "kind" in errs[0], errs
