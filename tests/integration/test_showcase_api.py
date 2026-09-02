@@ -4,13 +4,16 @@ kind: tests
 layer: backend
 summary: The FastAPI showcase router serves overview/features/checks/wiki/search over the live repo.
 """
+
 import sys
 from pathlib import Path
 
 import pytest
 
-pytest.importorskip("fastapi")  # optional transport dep — skip this module when absent
-pytest.importorskip("httpx")    # backs starlette/FastAPI TestClient
+import optional_deps
+
+optional_deps.importorskip("fastapi", extra="transport")  # optional transport dep
+optional_deps.importorskip("httpx", extra="dev")  # backs FastAPI's TestClient
 
 from fastapi.testclient import TestClient  # noqa: E402
 
@@ -38,7 +41,7 @@ def test_features_and_checks_listed():
     assert any(f["slug"] == "deterministic-checks" for f in feats)
     checks = client.get("/api/checks").json()
     assert {c["slug"] for c in checks} >= {"structure", "corpus"}
-    assert all(c["present"] for c in checks)   # scripts exist in this repo
+    assert all(c["present"] for c in checks)  # scripts exist in this repo
 
 
 def test_principles_listed():
@@ -59,7 +62,7 @@ def test_models_listed_from_the_manifest():
 def test_practices_listed_from_the_registry():
     practices = client.get("/api/practices").json()
     assert practices, "practices should be listed from config/practices.json"
-    assert {p["tier"] for p in practices} >= {"gate", "advisory"}   # both tiers present
+    assert {p["tier"] for p in practices} >= {"gate", "advisory"}  # both tiers present
     assert all(p["tier"] in ("gate", "advisory", "doc") for p in practices)
     assert all(p["scope"] in ("universal", "domain") for p in practices)
     rows = [p["row"] for p in practices]
@@ -73,12 +76,12 @@ def test_domain_profiles_listed_all_off_by_default():
     profiles = client.get("/api/profiles").json()
     assert profiles, "domain profiles should be listed from config/practices.json"
     names = [p["name"] for p in profiles]
-    assert names == sorted(names)                       # stable order
+    assert names == sorted(names)  # stable order
     assert {"ai", "cuda", "langgraph"} <= set(names)
     # The template ships domain-neutral: every profile is OFF by default.
     assert all(p["enabled"] is False for p in profiles)
     cuda = next(p for p in profiles if p["name"] == "cuda")
-    assert "shape-typed-tensors" in cuda["activates"]   # definition joined in
+    assert "shape-typed-tensors" in cuda["activates"]  # definition joined in
 
 
 def test_every_feature_link_resolves_into_the_corpus():
@@ -86,9 +89,12 @@ def test_every_feature_link_resolves_into_the_corpus():
     so the new edge-adapters card (and every other) never strands the visitor."""
     feats = client.get("/api/features").json()
     hrefs = sorted({ln["href"] for f in feats for ln in f["links"]})
-    assert "mcp-readme" in hrefs and "models-readme" in hrefs   # the new card's links
-    dead = [h for h in hrefs
-            if client.get("/api/wiki/node", params={"id": h}).status_code != 200]
+    assert "mcp-readme" in hrefs and "models-readme" in hrefs  # the new card's links
+    dead = [
+        h
+        for h in hrefs
+        if client.get("/api/wiki/node", params={"id": h}).status_code != 200
+    ]
     assert not dead, "dead feature links (no such corpus node): %s" % dead
 
 
@@ -98,8 +104,10 @@ def test_wiki_tree_node_and_404():
     node_id = tree[0]["docs"][0]["node_id"]
     detail = client.get("/api/wiki/node", params={"id": node_id})
     assert detail.status_code == 200 and detail.json()["node_id"] == node_id
-    assert isinstance(detail.json()["markdown"], str)   # renderable body included
-    assert client.get("/api/wiki/node", params={"id": "no-such-node"}).status_code == 404
+    assert isinstance(detail.json()["markdown"], str)  # renderable body included
+    assert (
+        client.get("/api/wiki/node", params={"id": "no-such-node"}).status_code == 404
+    )
 
 
 def test_search_finds_conventions():
@@ -117,7 +125,7 @@ def test_llms_txt_is_served_at_root():
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("text/markdown")
     body = r.text
-    assert body.startswith("# ")                 # H1
+    assert body.startswith("# ")  # H1
     assert "## Optional" in body and "/llms-full.txt" in body
 
 

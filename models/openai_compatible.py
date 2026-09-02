@@ -4,6 +4,7 @@ layer: backend
 public_api: no
 summary: Adapter for any HTTP endpoint speaking the OpenAI chat-completions API.
 """
+
 from __future__ import annotations
 
 import json
@@ -24,7 +25,7 @@ def _post_json(url: str, payload: dict, headers: dict, timeout: float) -> dict:
     """POST ``payload`` as JSON and return the decoded JSON response (stdlib)."""
     body = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(url, data=body, headers=headers, method="POST")
-    with urllib.request.urlopen(req, timeout=timeout) as resp:   # noqa: S310 (own URL)
+    with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 (own URL)
         return json.loads(resp.read().decode("utf-8"))
 
 
@@ -40,9 +41,14 @@ class OpenAICompatible(ModelBackend):
 
     name = "openai-compatible"
 
-    def __init__(self, base_url: str = "https://api.openai.com/v1",
-                 model: str = "gpt-4o-mini", api_key_env: str = "OPENAI_API_KEY",
-                 timeout: float = 60.0, transport: Optional[Transport] = None):
+    def __init__(
+        self,
+        base_url: str = "https://api.openai.com/v1",
+        model: str = "gpt-4o-mini",
+        api_key_env: str = "OPENAI_API_KEY",
+        timeout: float = 60.0,
+        transport: Optional[Transport] = None,
+    ):
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.api_key_env = api_key_env
@@ -51,8 +57,10 @@ class OpenAICompatible(ModelBackend):
 
     def run(self, prompt: str, **opts) -> str:
         url = self.base_url + "/chat/completions"
-        payload = {"model": self.model,
-                   "messages": [{"role": "user", "content": prompt}]}
+        payload = {
+            "model": self.model,
+            "messages": [{"role": "user", "content": prompt}],
+        }
         # Trusted-caller pass-through (temperature, max_tokens, …); by design it
         # can also override model/messages — the agent, not the world, calls this.
         payload.update(opts)
@@ -64,5 +72,4 @@ class OpenAICompatible(ModelBackend):
         try:
             return data["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError) as exc:
-            raise RuntimeError(
-                "unexpected response from %s: %r" % (url, data)) from exc
+            raise RuntimeError("unexpected response from %s: %r" % (url, data)) from exc

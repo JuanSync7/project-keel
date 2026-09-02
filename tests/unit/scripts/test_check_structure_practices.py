@@ -4,6 +4,7 @@ kind: tests
 layer: n/a
 summary: check_J flags a third-party exception raised across a library boundary (a foreign-imported exception type), and leaves builtins, stdlib, owned (local/relative) errors, bare re-raises, and pragma-suppressed raises alone — a general rule, not a name-suffix heuristic.
 """
+
 import ast
 import sys
 from pathlib import Path
@@ -48,7 +49,9 @@ def test_stdlib_imported_exception_is_not_flagged():
 
 
 def test_owned_error_from_a_local_package_is_not_flagged():
-    src = "from backend.errors import DomainError\ndef f():\n    raise DomainError('x')\n"
+    src = (
+        "from backend.errors import DomainError\ndef f():\n    raise DomainError('x')\n"
+    )
     assert _foreign(src) == []
 
 
@@ -58,15 +61,19 @@ def test_relative_import_is_local_and_not_flagged():
 
 
 def test_bare_reraise_is_not_flagged():
-    src = ("from vendorsdk import VendorError\ndef f():\n    try:\n"
-           "        pass\n    except VendorError:\n        raise\n")
+    src = (
+        "from vendorsdk import VendorError\ndef f():\n    try:\n"
+        "        pass\n    except VendorError:\n        raise\n"
+    )
     assert _foreign(src) == []
 
 
 def test_reraising_the_caught_instance_is_not_flagged():
     # `raise e` re-raises a local variable, not a foreign TYPE — allowed.
-    src = ("from vendorsdk import VendorError\ndef f():\n    try:\n"
-           "        pass\n    except VendorError as e:\n        raise e\n")
+    src = (
+        "from vendorsdk import VendorError\ndef f():\n    try:\n"
+        "        pass\n    except VendorError as e:\n        raise e\n"
+    )
     assert _foreign(src) == []
 
 

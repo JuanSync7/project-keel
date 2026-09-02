@@ -82,6 +82,11 @@ summary: Does the one thing this feature does.
 __all__ = ["do_thing", "Thing"]
 ```
 
+`title:` and `summary:` are **required and gated** (`check_O`, ADR-0008): they
+are what the corpus — and therefore every agent — reads. A module without them
+either vanishes from the index or is filed under its filename with an
+accidental first line as its summary, labeled as if someone wrote it.
+
 ## 2. Directory taxonomy
 
 | Dir | kind | What goes in | What does NOT |
@@ -185,7 +190,8 @@ pre-commit hook) fails the build if the conventions above drift:
 | Documented dirs (§2) | every taxonomy directory that exists has both `README.md` and `CLAUDE.md` |
 | Package boundary (§3) | every `src/` dir with `.py` has an `__init__.py` that defines `__all__` |
 | `__init__` is the API (§3) | no absolute import of another package's `_private` module |
-| Authored coverage (warn) | every `__all__`-exported symbol defined in-file has a one-line docstring |
+| Authored coverage (error) | every `__all__`-exported symbol defined in-file has a one-line docstring (warn until ADR-0008) |
+| Module header (error) | every code-root module docstring carries explicit `title:` + `summary:` — the corpus's input contract (ADR-0008) |
 | Tool specs governed (error) | `agents/**/*.tool.md` carry valid `kind: tool` frontmatter + a resolvable `public_api` + a valid `tool_effect` |
 | Accountability (warn) | tool/agent docs name a real `owner` (not missing or `TBD`) |
 | Tool/agent binding (error) | each agent `tools.md` ↔ each spec's `## Used by` agree (both ways); `tool_command` invokes `public_api` |

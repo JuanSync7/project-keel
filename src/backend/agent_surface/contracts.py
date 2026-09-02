@@ -4,6 +4,7 @@ layer: backend
 public_api: yes
 summary: The vendor-neutral AgentSurface interface a wire adapter (AAD, A2A, ...) renders.
 """
+
 from __future__ import annotations
 
 from typing import Any, Protocol, runtime_checkable

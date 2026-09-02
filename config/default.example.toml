@@ -1,4 +1,4 @@
 # Committed example config. Copy to default.local.toml and edit.
 [app]
-name = "project_keel"
+name = "my_project"
 log_level = "info"

@@ -4,6 +4,7 @@ layer: backend
 public_api: no
 summary: A deterministic, offline ModelBackend for tests and disconnected dev.
 """
+
 from __future__ import annotations
 
 from .contracts import ModelBackend

@@ -4,6 +4,7 @@ layer: backend
 public_api: yes
 summary: AAD-specific wire model + renderer that serializes a neutral AgentCard to an AAD descriptor.
 """
+
 from __future__ import annotations
 
 from enum import Enum
@@ -155,9 +156,14 @@ class AadDescriptor(_Aad):
     health: AadHealth | None = None
 
 
-def card_to_aad(card: AgentCard, *, ask_operation_id: str = "ask",
-                spec_url: str = "/openapi.json", health_path: str = "/health",
-                auth_kind: str = "none") -> dict:
+def card_to_aad(
+    card: AgentCard,
+    *,
+    ask_operation_id: str = "ask",
+    spec_url: str = "/openapi.json",
+    health_path: str = "/health",
+    auth_kind: str = "none",
+) -> dict:
     """Render a neutral ``AgentCard`` into an AAD v1 descriptor dict.
 
     Every AAD-specific shape — the ``aad_version`` envelope, the OpenAPI
@@ -168,8 +174,12 @@ def card_to_aad(card: AgentCard, *, ask_operation_id: str = "ask",
     """
     capabilities = []
     for c in card.capabilities:
-        cap = {"command": c.command, "title": c.title,
-               "maps_to": "ask", "passthrough": "rawArgs"}
+        cap = {
+            "command": c.command,
+            "title": c.title,
+            "maps_to": "ask",
+            "passthrough": "rawArgs",
+        }
         if c.arg_hint:
             cap["arg_hint"] = c.arg_hint
         capabilities.append(cap)
@@ -194,8 +204,13 @@ def card_to_aad(card: AgentCard, *, ask_operation_id: str = "ask",
                 "operations": {
                     "ask": {
                         "operationId": ask_operation_id,
-                        "io": {"question": "question", "answer": "answer",
-                               "meta": "meta", "html": "html", "error": "error"},
+                        "io": {
+                            "question": "question",
+                            "answer": "answer",
+                            "meta": "meta",
+                            "html": "html",
+                            "error": "error",
+                        },
                     },
                 },
             },

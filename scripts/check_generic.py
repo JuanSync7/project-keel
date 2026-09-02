@@ -5,6 +5,7 @@ kind: script
 layer: n/a
 summary: Read-only advisory. Flags "answer keys" - a distinctive literal a test asserts as its expected value AND hardcoded in src/ logic (the overfit-to-the-eval smell). Advisory only; never fails the build. Stdlib only; runs on Python 3.6+.
 """
+
 import argparse
 import ast
 import io
@@ -17,32 +18,68 @@ import tokenize
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Directories we never descend into.
-IGNORE_DIRS = set([
-    ".git", "node_modules", ".venv", "__pycache__", "dist", "build",
-    ".mypy_cache", ".ruff_cache", ".pytest_cache",
-])
+IGNORE_DIRS = {
+    ".git",
+    "node_modules",
+    ".venv",
+    "__pycache__",
+    "dist",
+    "build",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".pytest_cache",
+}
 
 # Trivial strings are never "answer keys" - too common to be a memorized result.
 # Compared case-insensitively against value.strip().
-_TRIVIAL_STR = set([
-    "", "true", "false", "null", "none",
-    "id", "name", "path", "kind", "type", "title", "summary", "owner",
-    "status", "error", "ok",
-    "get", "post", "put", "patch", "delete", "head", "options",
-    "application/json", "text/plain", "utf-8", "localhost",
-    "__main__", "__name__", "/", ".", "-", "_",
-])
+_TRIVIAL_STR = {
+    "",
+    "true",
+    "false",
+    "null",
+    "none",
+    "id",
+    "name",
+    "path",
+    "kind",
+    "type",
+    "title",
+    "summary",
+    "owner",
+    "status",
+    "error",
+    "ok",
+    "get",
+    "post",
+    "put",
+    "patch",
+    "delete",
+    "head",
+    "options",
+    "application/json",
+    "text/plain",
+    "utf-8",
+    "localhost",
+    "__main__",
+    "__name__",
+    "/",
+    ".",
+    "-",
+    "_",
+}
 # Numeric goldens (counts, limits, HTTP codes) are excluded by default; numbers
 # are only considered under --strict, and then only when they have >= 4 digits -
 # so no explicit small-int allowlist is needed.
 
 _ALLCAPS_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
 _PRAGMA_RE = re.compile(r"^#\s*generic-ok\b\s*:?\s*(.*)$")
-_SPECIAL = set(list("-_./:"))
-_ASSERT_EQ_FUNCS = set([
-    "assertEqual", "assertEquals",
-    "assertDictEqual", "assertListEqual",
-])
+_SPECIAL = set("-_./:")  # a str is already an iterable of its chars
+_ASSERT_EQ_FUNCS = {
+    "assertEqual",
+    "assertEquals",
+    "assertDictEqual",
+    "assertListEqual",
+}
 
 _STR_THRESHOLD = 12
 _STR_THRESHOLD_STRICT = 8
@@ -50,16 +87,16 @@ _STR_THRESHOLD_STRICT = 8
 
 def _literal(node):
     """str/int/float value of a literal node, else None. 3.6 (Str/Num) + 3.8 (Constant)."""
-    if isinstance(node, ast.Constant):           # 3.8+
+    if isinstance(node, ast.Constant):  # 3.8+
         v = node.value
-        if isinstance(v, bool):                  # bools are not answer keys
+        if isinstance(v, bool):  # bools are not answer keys
             return None
         return v if isinstance(v, (str, int, float)) else None
-    if isinstance(node, ast.Str):                # 3.6
+    if isinstance(node, ast.Str):  # 3.6
         return node.s
-    if isinstance(node, ast.Num):                # 3.6
+    if isinstance(node, ast.Num):  # 3.6
         return node.n
-    return None                                  # NameConstant (bool/None) -> not tracked
+    return None  # NameConstant (bool/None) -> not tracked
 
 
 def is_distinctive(value, strict):
@@ -109,18 +146,18 @@ def _rel(path):
 def _py_files(base):
     out = []
     for dirpath, dirnames, filenames in os.walk(base):
-        dirnames[:] = [d for d in dirnames
-                       if d not in IGNORE_DIRS and not d.startswith(".")]
-        for fn in filenames:
-            if fn.endswith(".py"):
-                out.append(os.path.join(dirpath, fn))
+        dirnames[:] = [
+            d for d in dirnames if d not in IGNORE_DIRS and not d.startswith(".")
+        ]
+        # Stays INSIDE the walk loop: hoisting it out would drop the prune above.
+        out.extend(os.path.join(dirpath, fn) for fn in filenames if fn.endswith(".py"))
     return out
 
 
 def _is_data_module(path):
     """A declared data/registry/value-object module - literals there are data, not logic."""
     base = os.path.basename(path)
-    if base.endswith("_data.py") or base.endswith("_models.py"):
+    if base.endswith(("_data.py", "_models.py")):
         return True
     if base in ("data.py", "conftest.py", "registry.py"):
         return True
@@ -157,16 +194,13 @@ def _suppressed(node, value, pragma):
         return False
     line = getattr(node, "lineno", 0)
     end = getattr(node, "end_lineno", None)
-    if end is not None:                       # 3.8+: real end line
+    if end is not None:  # 3.8+: real end line
         lo, hi = line, end
-    elif isinstance(value, str):              # 3.6: lineno is the closing line
+    elif isinstance(value, str):  # 3.6: lineno is the closing line
         lo, hi = line - value.count("\n"), line
     else:
         lo, hi = line, line
-    for ln in range(lo, hi + 1):
-        if ln in pragma:
-            return True
-    return False
+    return any(ln in pragma for ln in range(lo, hi + 1))
 
 
 def _docstring_ids(tree):
@@ -176,8 +210,9 @@ def _docstring_ids(tree):
         body = getattr(node, "body", None)
         if not body:
             continue
-        if not isinstance(node, (ast.Module, ast.FunctionDef,
-                                 ast.AsyncFunctionDef, ast.ClassDef)):
+        if not isinstance(
+            node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+        ):
             continue
         first = body[0]
         if isinstance(first, ast.Expr) and isinstance(_literal(first.value), str):
@@ -196,7 +231,9 @@ def _allcaps_value_ids(tree):
             targets = [node.target]
         else:
             continue
-        if not any(isinstance(t, ast.Name) and _ALLCAPS_RE.match(t.id) for t in targets):
+        if not any(
+            isinstance(t, ast.Name) and _ALLCAPS_RE.match(t.id) for t in targets
+        ):
             continue
         val = getattr(node, "value", None)
         if val is None:
@@ -243,12 +280,18 @@ def collect_expected(base):
         for node in ast.walk(tree):
             if isinstance(node, ast.Assert):
                 for cmp in ast.walk(node.test):
-                    if isinstance(cmp, ast.Compare) and cmp.ops \
-                            and all(isinstance(op, ast.Eq) for op in cmp.ops):
+                    if (
+                        isinstance(cmp, ast.Compare)
+                        and cmp.ops
+                        and all(isinstance(op, ast.Eq) for op in cmp.ops)
+                    ):
                         _add_expected(cmp.left, expected, rel)
                         for c in cmp.comparators:
                             _add_expected(c, expected, rel)
-            elif isinstance(node, ast.Call):
+            # Not collapsed into one condition: that would orphan the comment
+            # explaining the args[:2] slice, and `elif A and B` silently
+            # reroutes non-matching calls the day an else joins this chain.
+            elif isinstance(node, ast.Call):  # noqa: SIM102 — see comment above
                 # assertEqual-family signature is (first, second, msg=None):
                 # only the two operands are expected values, never the message.
                 if getattr(node.func, "attr", None) in _ASSERT_EQ_FUNCS:
@@ -305,11 +348,13 @@ def find(strict=False):
         if not active:
             suppressed += 1
             continue
-        findings.append({
-            "value": value,
-            "tests": sorted(expected[value]),
-            "src": sorted("%s:%d" % (r, ln) for (r, ln) in active),
-        })
+        findings.append(
+            {
+                "value": value,
+                "tests": sorted(expected[value]),
+                "src": sorted("%s:%d" % (r, ln) for (r, ln) in active),
+            }
+        )
     findings.sort(key=lambda f: str(f["value"]))
     return findings, suppressed, empty_pragmas
 
@@ -317,11 +362,15 @@ def find(strict=False):
 def main(argv=None):
     ap = argparse.ArgumentParser(
         description="Advisory: flag answer-key literals (a value a test asserts as "
-                    "expected that is also hardcoded in src/ logic). Never fails the build.")
+        "expected that is also hardcoded in src/ logic). Never fails the build."
+    )
     ap.add_argument("--json", action="store_true", help="emit findings as JSON")
-    ap.add_argument("--strict", action="store_true",
-                    help="experimental: lower the string threshold and include 4+ digit "
-                         "numbers (noisier; not wired into any make target)")
+    ap.add_argument(
+        "--strict",
+        action="store_true",
+        help="experimental: lower the string threshold and include 4+ digit "
+        "numbers (noisier; not wired into any make target)",
+    )
     args = ap.parse_args(argv)
     findings, suppressed, empty_pragmas = find(strict=args.strict)
 
@@ -337,8 +386,10 @@ def main(argv=None):
         print("generic-solution: no hardcoded answer keys found.  (advisory)")
         return 0
 
-    print("generic-solution: scanning for hardcoded answer keys "
-          "(advisory; never fails the build)")
+    print(
+        "generic-solution: scanning for hardcoded answer keys "
+        "(advisory; never fails the build)"
+    )
     files = set()
     for f in findings:
         value = f["value"]
@@ -346,13 +397,17 @@ def main(argv=None):
         print("  %s" % disp)
         print("      expected in  %s" % ", ".join(f["tests"]))
         print("      hardcoded in %s" % ", ".join(f["src"]))
-        print("      fix: compute it, move the literal to a *_data.py registry, "
-              "or add `# generic-ok: <reason>`")
+        print(
+            "      fix: compute it, move the literal to a *_data.py registry, "
+            "or add `# generic-ok: <reason>`"
+        )
         for s in f["src"]:
             files.add(s.rsplit(":", 1)[0])
-    print("generic-solution: %d possible answer-key(s) across %d src file(s); "
-          "%d suppressed.  (advisory - a static check cannot prove code is generic; "
-          "review, don't obey)" % (len(findings), len(files), suppressed))
+    print(
+        "generic-solution: %d possible answer-key(s) across %d src file(s); "
+        "%d suppressed.  (advisory - a static check cannot prove code is generic; "
+        "review, don't obey)" % (len(findings), len(files), suppressed)
+    )
     return 0
 
 

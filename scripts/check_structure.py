@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 """
+title: check_structure — the deterministic conventions gate
+summary: Stdlib-only, 3.6-safe enforcement of CONVENTIONS.md — labeling, taxonomy, package boundaries, tool/agent governance, manifest and ruleset parity, twin parity, and the machine-readable module contract (checks A-O). Exit 1 on any error; warnings never fail the build.
+
 check_structure.py - enforce the project conventions (see CONVENTIONS.md).
 
 Checks:
@@ -8,7 +11,8 @@ Checks:
   B. Each taxonomy directory that exists has README.md + CLAUDE.md
   C. Each src/ directory containing *.py is a package: __init__.py with __all__
   D. The __init__ boundary: no absolute import of another package's _private module
-  E. Authored coverage (WARN): every __all__-exported symbol has a docstring
+  E. Authored coverage (ERR): every __all__-exported symbol defined in-file
+     has a docstring — the corpus's symbol summaries (WARN until ADR-0008)
   F. Tool specs governed (ERR) + accountability (WARN): tool/agent docs are owned
   G. Tool<->agent binding (ERR): tools.md <-> '## Used by' agree; tool_command invokes public_api
   H. Project facts in config/project.json agree with the tree (ERR); an
@@ -30,10 +34,23 @@ Checks:
   M. Ruleset parity (ERR): pyproject.toml must not silently loosen the lint/type
      policy declared in config/practices.json rulesets — every ruff extend_select
      family is selected, every mypy flag is enforced, no 'deferred' family is
-     selected (config/practices.json rulesets; CONVENTIONS section 15)
+     selected, no ruff per-file-ignore or per-module mypy relaxation is
+     undeclared (config/practices.json rulesets; CONVENTIONS section 15)
+  N. Template twin parity (ERR): every `*.jinja` twin is declared in
+     config/project.json template.twins and matches its declared kind — a parity
+     twin carries no stale non-templated line, a divergence twin still diverges,
+     a generated one has no committed plain file. Render-free (no jinja2 here),
+     so it bounds what it proves; the byte-exact rendered comparison lives in
+     tests/integration. Silent in a generated project, which has no twins.
+  O. Module header contract (ERR): every CODE_ROOTS module docstring carries
+     explicit, non-empty title:/summary: lines — the grammar build_corpus
+     reads. Without them the corpus falls back to filename/first-prose-line
+     and labels the result 'authored'; an undocumented module is silently
+     DROPPED from the corpus entirely (ADR-0008)
 
 Exit 0 = clean, 1 = errors. Warnings never fail the build. Stdlib only; 3.6+.
 """
+
 import ast
 import io
 import json
@@ -45,34 +62,98 @@ import tokenize
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 IGNORE_DIRS = {
-    ".git", "__pycache__", "node_modules", ".venv", "venv", "dist", "build",
-    ".astro", ".mypy_cache", ".pytest_cache", ".ruff_cache",
+    ".git",
+    "__pycache__",
+    "node_modules",
+    ".venv",
+    "venv",
+    "dist",
+    "build",
+    ".astro",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
 }
 
 KINDS = {
-    "readme", "rules", "package", "module", "tests", "test-doc", "doc", "spec",
-    "design", "adr", "config", "script", "agent", "mcp", "api", "wiki", "demo",
-    "model", "eval", "container", "ops",
-    "tool",                      # agents/tools/*.tool.md adapters
+    "readme",
+    "rules",
+    "package",
+    "module",
+    "tests",
+    "test-doc",
+    "doc",
+    "spec",
+    "design",
+    "adr",
+    "config",
+    "script",
+    "agent",
+    "mcp",
+    "api",
+    "wiki",
+    "demo",
+    "model",
+    "eval",
+    "container",
+    "ops",
+    "tool",  # agents/tools/*.tool.md adapters
 }
 TOOL_EFFECTS = {"read-only", "writes", "model-call"}
 LAYERS = {"frontend", "backend", "shared", "app", "cross-cutting", "n/a"}
 STATUSES = {
-    "draft", "stable", "deprecated", "template",   # general lifecycle
-    "proposed", "accepted", "superseded",          # ADR lifecycle
+    "draft",
+    "stable",
+    "deprecated",
+    "template",  # general lifecycle
+    "proposed",
+    "accepted",
+    "superseded",  # ADR lifecycle
 }
 VISIBILITIES = {"public", "internal", "confidential", "restricted"}
-REQUIRED_KEYS = ("title", "kind", "layer", "status", "summary",
-                 "id", "created", "updated", "visibility", "canonical")
+REQUIRED_KEYS = (
+    "title",
+    "kind",
+    "layer",
+    "status",
+    "summary",
+    "id",
+    "created",
+    "updated",
+    "visibility",
+    "canonical",
+)
 
 TAXONOMY = [
-    "src", "tests", "test-docs", "docs", "agents", "mcp", "api", "wiki",
-    "scripts", "config", "demo", "containers", "evals", "ops", "models",
+    "src",
+    "tests",
+    "test-docs",
+    "docs",
+    "agents",
+    "mcp",
+    "api",
+    "wiki",
+    "scripts",
+    "config",
+    "demo",
+    "containers",
+    "evals",
+    "ops",
+    "models",
     "runtimes",
 ]
 REQUIRED_TOPLEVEL = ["src", "tests", "docs"]
-CODE_ROOTS = ["src", "tests", "api", "models", "mcp", "agents", "demo",
-              "scripts", "runtimes"]
+CODE_ROOTS = [
+    "src",
+    "tests",
+    "api",
+    "models",
+    "mcp",
+    "agents",
+    "demo",
+    "scripts",
+    "runtimes",
+]
 
 errors = []
 warnings = []
@@ -97,11 +178,77 @@ def walk(root):
         yield dirpath, dirnames, filenames
 
 
+# --- reading the files the gate is KEYED ON -----------------------------------
+#
+# ABSENT and UNREADABLE are different facts and must not share a code path.
+# A file that is not there is a legitimate shape: copier prunes what a generated
+# project did not select, so "no config/practices.json" must degrade in silence.
+# A file that IS there but cannot be decoded/parsed is a gate defect: every check
+# keyed on it stops gating while the run still exits 0 (the silent-green gate).
+# These two helpers make that split once, so no caller has to catch blind.
+
+_CONFIG_READ = {}  # relpath -> parsed JSON or _NO_DATA (parsed once)
+_READ_REPORTED = set()  # absolute paths already reported unreadable (report once)
+
+# "The gate got no data" — distinct from the JSON literal `null`, which parses
+# fine and is a SHAPE error the caller must still get to report.
+_NO_DATA = object()
+
+# The ways a file on disk can fail to become the thing the gate needs. Named so
+# every reader states the SAME closed set: anything outside it is a bug in the
+# gate, and a gate must fail loudly on its own bugs rather than warn and skip.
+UNREADABLE = (OSError, ValueError)  # ValueError covers UnicodeDecodeError
+UNPARSEABLE = UNREADABLE + (SyntaxError,)  # ...plus ast.parse (NUL -> ValueError)
+
+
+def _read_text(path, report):
+    """A UTF-8 file's text, or None: absent is silent, unreadable is reported.
+
+    Still degrades to None after reporting, so one bad file never aborts the run.
+    `report` is the caller's tier (err for a file whose loss disables a check,
+    warn for one whose loss only costs an advisory). Reported at most once per
+    path — several checks read the same registry.
+    """
+    if not os.path.isfile(path):
+        return None
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return fh.read()
+    except UNREADABLE as e:
+        if path not in _READ_REPORTED:
+            _READ_REPORTED.add(path)
+            report("%s: unreadable (%s)" % (rel(path), e))
+        return None
+
+
+def _read_json_config(relpath):
+    """A JSON config under ROOT as parsed data, else _NO_DATA.
+
+    Same split as _read_text plus invalid JSON — a file the gate can see but
+    cannot use, which is the case that silently disabled check_K/L/M. Memoised
+    per path so one broken registry yields one error, not one per consumer.
+    Returns _NO_DATA (not None) when there is nothing to hand back, so a JSON
+    literal `null` stays a caller-visible shape error instead of masquerading
+    as a failed read.
+    """
+    if relpath in _CONFIG_READ:
+        return _CONFIG_READ[relpath]
+    data = _NO_DATA
+    text = _read_text(os.path.join(ROOT, relpath), err)
+    if text is not None:
+        try:
+            data = json.loads(text)
+        except ValueError as e:
+            err("%s: unreadable (invalid JSON: %s)" % (relpath, e))
+    _CONFIG_READ[relpath] = data
+    return data
+
+
 def parse_frontmatter(path):
     try:
         with open(path, encoding="utf-8") as fh:
             text = fh.read()
-    except Exception as e:
+    except UNREADABLE as e:
         err("%s: cannot read (%s)" % (rel(path), e))
         return {}
     if not text.startswith("---"):
@@ -143,10 +290,13 @@ def check_frontmatter(path, seen_ids):
             seen_ids[fid] = rel(path)
     # Corpus: a path-like canonical pointer must resolve to a real file.
     can = fm.get("canonical")
-    if can and can not in ("true", "false", "self"):
-        if ("/" in can or can.endswith(".md")) and \
-                not os.path.exists(os.path.join(ROOT, can)):
-            err("%s: canonical target '%s' does not exist" % (rel(path), can))
+    if (
+        can
+        and can not in ("true", "false", "self")
+        and ("/" in can or can.endswith(".md"))
+        and not os.path.exists(os.path.join(ROOT, can))
+    ):
+        err("%s: canonical target '%s' does not exist" % (rel(path), can))
     # Corpus: deprecated content must point at its successor.
     if fm.get("status") == "deprecated" and not fm.get("superseded_by"):
         err("%s: status is 'deprecated' but no 'superseded_by' is set" % rel(path))
@@ -162,15 +312,18 @@ def check_A():
         in_docs = top in ("docs", "test-docs")
         for f in filenames:
             is_tool = f.endswith(".tool.md") and top == "agents"
-            if f in ("README.md", "AGENT.md", "CLAUDE.md") \
-                    or (in_docs and f.endswith(".md")) or is_tool:
+            if (
+                f in ("README.md", "AGENT.md", "CLAUDE.md")
+                or (in_docs and f.endswith(".md"))
+                or is_tool
+            ):
                 full = os.path.join(dirpath, f)
                 real = os.path.realpath(full)
                 if real in seen_real:
                     continue
                 seen_real.add(real)
                 check_frontmatter(full, seen_ids)
-                fm = parse_frontmatter(full)   # cheap re-parse for the roll-up
+                fm = parse_frontmatter(full)  # cheap re-parse for the roll-up
                 if fm:
                     GOVERNED.append((rel(full), fm.get("kind"), fm.get("owner")))
 
@@ -195,16 +348,20 @@ def check_C():
         if not any(f.endswith(".py") for f in filenames):
             continue
         if "__init__.py" not in filenames:
-            err("%s/: has .py files but no __init__.py (package boundary)"
-                % rel(dirpath))
+            err(
+                "%s/: has .py files but no __init__.py (package boundary)"
+                % rel(dirpath)
+            )
             continue
         init = os.path.join(dirpath, "__init__.py")
         try:
-            with open(init, encoding="utf-8") as fh:
+            with open(init, encoding="utf-8-sig") as fh:
                 if "__all__" not in fh.read():
-                    err("%s: __init__.py defines no __all__ (public API surface)"
-                        % rel(init))
-        except Exception as e:
+                    err(
+                        "%s: __init__.py defines no __all__ (public API surface)"
+                        % rel(init)
+                    )
+        except UNREADABLE as e:
             err("%s: cannot read (%s)" % (rel(init), e))
 
 
@@ -228,46 +385,68 @@ def check_D():
                     continue
                 full = os.path.join(dirpath, f)
                 try:
-                    with open(full, encoding="utf-8") as fh:
+                    with open(full, encoding="utf-8-sig") as fh:
                         tree = ast.parse(fh.read(), filename=full)
-                except Exception as e:
+                except UNPARSEABLE as e:
                     warn("%s: could not parse (%s)" % (rel(full), e))
                     continue
                 for node in ast.walk(tree):
                     if isinstance(node, ast.ImportFrom):
                         if node.level == 0 and _private_segment(node.module):
-                            err("%s:%d: absolute import of private module '%s' "
+                            err(
+                                "%s:%d: absolute import of private module '%s' "
                                 "crosses a package boundary - import from the "
                                 "package public API instead"
-                                % (rel(full), node.lineno, node.module))
+                                % (rel(full), node.lineno, node.module)
+                            )
                     elif isinstance(node, ast.Import):
                         for alias in node.names:
                             if _private_segment(alias.name):
-                                err("%s:%d: import of private module '%s' "
+                                err(
+                                    "%s:%d: import of private module '%s' "
                                     "crosses a package boundary"
-                                    % (rel(full), node.lineno, alias.name))
+                                    % (rel(full), node.lineno, alias.name)
+                                )
 
 
 def _exported_names(tree):
     """Return the string elements of a top-level __all__ literal, or []."""
     out = []
     for node in tree.body:
+        # An annotated `__all__: list[str] = [...]` is an AnnAssign, not an
+        # Assign — matching only Assign made annotated exports invisible to
+        # this reader (and identically to its twin), found by a mutation check
+        # in the ADR-0008 pass. Both readers changed together; the parity is
+        # pinned by tests/unit/scripts/test_check_corpus.py::
+        # test_exported_names_parity_with_the_corpus_reader. Deliberately a
+        # top-level LITERAL reader: `__all__ +=` / .extend / conditional forms
+        # are invisible (zero occurrences in-tree; recorded as deferred in the
+        # hardening plan).
+        targets = []
         if isinstance(node, ast.Assign):
-            for t in node.targets:
-                if isinstance(t, ast.Name) and t.id == "__all__" \
-                        and isinstance(node.value, (ast.List, ast.Tuple)):
-                    for elt in node.value.elts:
-                        val = getattr(elt, "s", None)          # 3.6 ast.Str
-                        if val is None and isinstance(elt, ast.Constant):
-                            val = elt.value                     # 3.8+ ast.Constant
-                        if isinstance(val, str):
-                            out.append(val)
+            targets = node.targets
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+            targets = [node.target]
+        for t in targets:
+            if (
+                isinstance(t, ast.Name)
+                and t.id == "__all__"
+                and isinstance(node.value, (ast.List, ast.Tuple))
+            ):
+                for elt in node.value.elts:
+                    val = getattr(elt, "s", None)  # 3.6 ast.Str
+                    if val is None and isinstance(elt, ast.Constant):
+                        val = elt.value  # 3.8+ ast.Constant
+                    if isinstance(val, str):
+                        out.append(val)
     return out
 
 
 def check_E():
-    """WARN when an __all__-exported symbol defined in-file has no docstring.
-    Authored docstrings are the canonical corpus summaries; flag the gaps."""
+    """ERROR when an __all__-exported symbol defined in-file has no docstring.
+    Authored docstrings are the canonical corpus summaries — a gap is a symbol
+    an agent can name but not explain. WARN until ADR-0008 promoted it (the
+    tree measured zero findings, so promotion cost nothing)."""
     for croot in CODE_ROOTS:
         base = os.path.join(ROOT, croot)
         if not os.path.isdir(base):
@@ -278,23 +457,26 @@ def check_E():
                     continue
                 full = os.path.join(dirpath, f)
                 try:
-                    with open(full, encoding="utf-8") as fh:
+                    with open(full, encoding="utf-8-sig") as fh:
                         tree = ast.parse(fh.read(), filename=full)
-                except Exception:
-                    continue  # check_D already warns on parse failure
+                except UNPARSEABLE:
+                    continue  # check_D already warns on parse failure (same roots)
                 exported = _exported_names(tree)
                 if not exported:
                     continue
                 defs = {}
                 for node in tree.body:
-                    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef,
-                                         ast.ClassDef)):
+                    if isinstance(
+                        node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+                    ):
                         defs[node.name] = node
                 for name in sorted(exported):
-                    nd = defs.get(name)   # only names DEFINED here (skip re-exports)
+                    nd = defs.get(name)  # only names DEFINED here (skip re-exports)
                     if nd is not None and not ast.get_docstring(nd):
-                        warn("%s: exported symbol '%s' has no docstring "
-                             "(authored summary missing)" % (rel(full), name))
+                        err(
+                            "%s: exported symbol '%s' has no docstring "
+                            "(authored summary missing; ADR-0008)" % (rel(full), name)
+                        )
 
 
 def check_F():
@@ -315,52 +497,57 @@ def check_F():
                     err("%s: tool spec must have kind 'tool'" % rel(full))
                 inv = fm.get("public_api")
                 if not inv or inv == "none":
-                    err("%s: tool spec missing 'public_api' (the wrapped script)"
-                        % rel(full))
+                    err(
+                        "%s: tool spec missing 'public_api' (the wrapped script)"
+                        % rel(full)
+                    )
                 elif not os.path.exists(os.path.join(ROOT, inv)):
                     err("%s: public_api target '%s' does not exist" % (rel(full), inv))
                 eff = fm.get("tool_effect")
                 if eff not in TOOL_EFFECTS:
-                    err("%s: tool_effect must be one of %s"
-                        % (rel(full), sorted(TOOL_EFFECTS)))
+                    err(
+                        "%s: tool_effect must be one of %s"
+                        % (rel(full), sorted(TOOL_EFFECTS))
+                    )
                 cmd = fm.get("tool_command") or ""
                 if inv and inv != "none" and inv not in cmd:
-                    err("%s: tool_command does not invoke public_api '%s'"
-                        % (rel(full), inv))
+                    err(
+                        "%s: tool_command does not invoke public_api '%s'"
+                        % (rel(full), inv)
+                    )
     # accountability roll-up (warning): tools/agents must name a real owner
     for path, kind, owner in GOVERNED:
         if kind in ("tool", "agent") and (not owner or owner == "TBD"):
-            warn("accountability: %s (%s) has no real owner (missing or 'TBD')"
-                 % (path, kind))
+            warn(
+                "accountability: %s (%s) has no real owner (missing or 'TBD')"
+                % (path, kind)
+            )
 
 
 def _tool_used_by(path):
     """Agent dirs (agents/<name>) listed under a tool spec's '## Used by'."""
     out = []
     in_section = False
-    try:
-        with open(path, encoding="utf-8") as fh:
-            for line in fh:
-                s = line.strip()
-                if s.startswith("## "):
-                    in_section = s.lower() == "## used by"
-                    continue
-                if in_section and s.startswith("- "):
-                    ref = s[2:].strip().rstrip("/")
-                    if ref.startswith("agents/"):
-                        out.append(ref)
-    except Exception:
-        pass
+    text = _read_text(path, err)  # unreadable -> the cross-check below goes
+    if text is None:  # vacuous, or names the OTHER side wrongly
+        return out
+    for line in text.splitlines():
+        s = line.strip()
+        if s.startswith("## "):
+            in_section = s.lower() == "## used by"
+            continue
+        if in_section and s.startswith("- "):
+            ref = s[2:].strip().rstrip("/")
+            if ref.startswith("agents/"):
+                out.append(ref)
     return out
 
 
 def _manifest_specs(path):
     """Tool-spec basenames referenced in an agent's tools.md (../tools/X.tool.md)."""
     out = []
-    try:
-        with open(path, encoding="utf-8") as fh:
-            text = fh.read()
-    except Exception:
+    text = _read_text(path, err)  # unreadable -> see _tool_used_by
+    if text is None:
         return out
     marker, end = "../tools/", ".tool.md"
     i = 0
@@ -371,7 +558,7 @@ def _manifest_specs(path):
         k = text.find(end, j)
         if k < 0:
             break
-        out.append(text[j + len(marker):k])
+        out.append(text[j + len(marker) : k])
         i = k + 1
     return out
 
@@ -386,7 +573,7 @@ def check_G():
     if os.path.isdir(tools_dir):
         for f in os.listdir(tools_dir):
             if f.endswith(".tool.md"):
-                existing.add(f[:-len(".tool.md")])
+                existing.add(f[: -len(".tool.md")])
     spec_to_agents = {}
     for s in existing:
         spec_to_agents[s] = set(_tool_used_by(os.path.join(tools_dir, s + ".tool.md")))
@@ -399,24 +586,28 @@ def check_G():
     for agent, specs in agent_to_specs.items():
         for s in specs:
             if s not in existing:
-                err("%s/tools.md: references unknown tool spec "
-                    "'../tools/%s.tool.md'" % (agent, s))
+                err(
+                    "%s/tools.md: references unknown tool spec "
+                    "'../tools/%s.tool.md'" % (agent, s)
+                )
             elif agent not in spec_to_agents.get(s, set()):
-                err("%s/tools.md: uses '%s' but agents/tools/%s.tool.md "
-                    "'## Used by' omits %s" % (agent, s, s, agent))
+                err(
+                    "%s/tools.md: uses '%s' but agents/tools/%s.tool.md "
+                    "'## Used by' omits %s" % (agent, s, s, agent)
+                )
     for s in sorted(spec_to_agents):
         for agent in spec_to_agents[s]:
             if s not in agent_to_specs.get(agent, set()):
-                err("agents/tools/%s.tool.md: '## Used by' names %s but its "
-                    "tools.md omits '%s'" % (s, agent, s))
+                err(
+                    "agents/tools/%s.tool.md: '## Used by' names %s but its "
+                    "tools.md omits '%s'" % (s, agent, s)
+                )
 
 
 def _requires_python():
     """Return pyproject.toml's requires-python value, or None if absent."""
-    try:
-        with open(os.path.join(ROOT, "pyproject.toml"), encoding="utf-8") as fh:
-            text = fh.read()
-    except Exception:
+    text = _read_text(os.path.join(ROOT, "pyproject.toml"), err)
+    if text is None:
         return None
     m = re.search(r'requires-python\s*=\s*(["\'])([^"\']+)\1', text)
     return m.group(2).strip() if m else None
@@ -425,12 +616,13 @@ def _requires_python():
 def _subdirs(relpath):
     """Immediate sub-directory names under ROOT/relpath, minus IGNORE_DIRS."""
     base = os.path.join(ROOT, relpath)
-    out = []
-    if os.path.isdir(base):
-        for name in sorted(os.listdir(base)):
-            if name not in IGNORE_DIRS and os.path.isdir(os.path.join(base, name)):
-                out.append(name)
-    return out
+    if not os.path.isdir(base):
+        return []
+    return [
+        name
+        for name in sorted(os.listdir(base))
+        if name not in IGNORE_DIRS and os.path.isdir(os.path.join(base, name))
+    ]
 
 
 def _expect(val, typ, label, default):
@@ -460,63 +652,83 @@ def check_H():
     if not os.path.isfile(path):
         warn("config/project.json: not found; project facts are unenforced")
         return
-    try:
-        with open(path, encoding="utf-8") as fh:
-            manifest = json.load(fh)
-    except Exception as e:
-        err("config/project.json: invalid JSON (%s)" % e)
-        return
-    if not isinstance(manifest, dict):
+    manifest = _read_json_config(os.path.join("config", "project.json"))
+    if manifest is _NO_DATA:
+        return  # _read_json_config already reported it
+    if not isinstance(manifest, dict):  # incl. a literal `null` — a shape error
         err("config/project.json: top level must be a JSON object")
         return
     layers = _expect(manifest.get("layers"), dict, "layers", {})
 
     backend = _expect(layers.get("backend"), dict, "layers.backend", {})
     bpath = backend.get("path")
-    if isinstance(bpath, str) and bpath and not os.path.isdir(os.path.join(ROOT, bpath)):
+    if (
+        isinstance(bpath, str)
+        and bpath
+        and not os.path.isdir(os.path.join(ROOT, bpath))
+    ):
         err("config/project.json: layers.backend.path '%s' does not exist" % bpath)
     bpy = backend.get("python")
     if isinstance(bpy, str) and bpy:
         have = _requires_python()
         if have is not None and have != bpy:
-            err("config/project.json: layers.backend.python '%s' != pyproject "
-                "requires-python '%s'" % (bpy, have))
+            err(
+                "config/project.json: layers.backend.python '%s' != pyproject "
+                "requires-python '%s'" % (bpy, have)
+            )
 
     frontend = _expect(layers.get("frontend"), dict, "layers.frontend", {})
     froot = frontend.get("root")
     if isinstance(froot, str) and froot:
-        available = _expect(frontend.get("available"), list,
-                            "layers.frontend.available", [])
+        available = _expect(
+            frontend.get("available"), list, "layers.frontend.available", []
+        )
         stack = frontend.get("stack")
-        if isinstance(stack, str) and stack \
-                and not os.path.isdir(os.path.join(ROOT, froot, stack)):
-            err("config/project.json: layers.frontend.stack '%s' has no dir "
-                "under %s/" % (stack, froot))
+        if (
+            isinstance(stack, str)
+            and stack
+            and not os.path.isdir(os.path.join(ROOT, froot, stack))
+        ):
+            err(
+                "config/project.json: layers.frontend.stack '%s' has no dir "
+                "under %s/" % (stack, froot)
+            )
         for a in available:
             if isinstance(a, str) and not os.path.isdir(os.path.join(ROOT, froot, a)):
-                warn("config/project.json: declared frontend stack '%s' is "
-                     "missing (%s/%s)" % (a, froot, a))
+                warn(
+                    "config/project.json: declared frontend stack '%s' is "
+                    "missing (%s/%s)" % (a, froot, a)
+                )
         for d in _subdirs(froot):
             if d not in available:
-                warn("%s/%s: present but not in config/project.json "
-                     "layers.frontend.available (undeclared stack)" % (froot, d))
+                warn(
+                    "%s/%s: present but not in config/project.json "
+                    "layers.frontend.available (undeclared stack)" % (froot, d)
+                )
 
     transports = _expect(manifest.get("transports"), dict, "transports", {})
     enabled = _expect(transports.get("enabled"), list, "transports.enabled", [])
     avail = _expect(transports.get("available"), dict, "transports.available", {})
     for t in enabled:
         if t not in avail:
-            err("config/project.json: transports.enabled '%s' not in "
-                "transports.available" % t)
-        elif isinstance(avail[t], str) \
-                and not os.path.isdir(os.path.join(ROOT, avail[t])):
-            err("config/project.json: enabled transport '%s' -> '%s' does not "
-                "exist" % (t, avail[t]))
-    declared = set(v for v in avail.values() if isinstance(v, str))
+            err(
+                "config/project.json: transports.enabled '%s' not in "
+                "transports.available" % t
+            )
+        elif isinstance(avail[t], str) and not os.path.isdir(
+            os.path.join(ROOT, avail[t])
+        ):
+            err(
+                "config/project.json: enabled transport '%s' -> '%s' does not "
+                "exist" % (t, avail[t])
+            )
+    declared = {v for v in avail.values() if isinstance(v, str)}
     for d in _subdirs("api"):
         if os.path.join("api", d) not in declared:
-            warn("api/%s: present but not in config/project.json "
-                 "transports.available (undeclared transport)" % d)
+            warn(
+                "api/%s: present but not in config/project.json "
+                "transports.available (undeclared transport)" % d
+            )
 
     # Agent runtimes (optional block): the default must be an available engine
     # and each engine's dir must exist (CONVENTIONS section 16).
@@ -526,13 +738,16 @@ def check_H():
         r_avail = _expect(runtimes.get("available"), dict, "runtimes.available", {})
         r_default = runtimes.get("default")
         if r_default is not None and r_default not in r_avail:
-            err("config/project.json: runtimes.default '%s' not in "
-                "runtimes.available" % r_default)
+            err(
+                "config/project.json: runtimes.default '%s' not in "
+                "runtimes.available" % r_default
+            )
         for nm in sorted(r_avail):
             d = r_avail[nm]
             if isinstance(d, str) and not os.path.isdir(os.path.join(ROOT, d)):
-                err("config/project.json: runtime '%s' -> '%s' does not exist"
-                    % (nm, d))
+                err(
+                    "config/project.json: runtime '%s' -> '%s' does not exist" % (nm, d)
+                )
 
     # Model adapters (optional block): the default must be an available adapter
     # and each adapter's dir must exist. models/registry.py is the code source of
@@ -543,13 +758,14 @@ def check_H():
         m_avail = _expect(models.get("available"), dict, "models.available", {})
         m_default = models.get("default")
         if m_default is not None and m_default not in m_avail:
-            err("config/project.json: models.default '%s' not in "
-                "models.available" % m_default)
+            err(
+                "config/project.json: models.default '%s' not in "
+                "models.available" % m_default
+            )
         for nm in sorted(m_avail):
             d = m_avail[nm]
             if isinstance(d, str) and not os.path.isdir(os.path.join(ROOT, d)):
-                err("config/project.json: model '%s' -> '%s' does not exist"
-                    % (nm, d))
+                err("config/project.json: model '%s' -> '%s' does not exist" % (nm, d))
 
     # Practice profiles (optional block): domain profiles are DEFINED in
     # config/practices.json and ENABLED here (CONVENTIONS section 15). A
@@ -570,22 +786,19 @@ def check_H():
 
 def _defined_profile_names():
     """The set of domain-profile names DEFINED in config/practices.json, or None
-    when it cannot be authoritatively determined (file absent/unreadable/not a
-    dict, 'profiles' missing or not a dict, or only '_'-prefixed keys). Returning
-    None suppresses the enabled-but-undefined WARN, so a registry-side typo never
-    breaks a consuming repo's build (mirrors _stdlib_exc_modules' safe degrade)."""
-    path = os.path.join(ROOT, "config", "practices.json")
-    try:
-        with open(path, encoding="utf-8") as fh:
-            data = json.load(fh)
-    except Exception:
-        return None
+    when it cannot be authoritatively determined (file absent or not a dict,
+    'profiles' missing or not a dict, or only '_'-prefixed keys). Returning None
+    suppresses the enabled-but-undefined WARN, so a registry-side SHAPE typo never
+    breaks a consuming repo's build (mirrors _stdlib_exc_modules' safe degrade).
+    A present-but-unreadable registry is NOT such a typo — _read_json_config
+    reports it — because it silently disables check_K/L/M as well as this WARN."""
+    data = _read_json_config(os.path.join("config", "practices.json"))
     if not isinstance(data, dict):
         return None
     profs = data.get("profiles")
     if not isinstance(profs, dict):
         return None
-    names = set(k for k in profs if not str(k).startswith("_"))
+    names = {k for k in profs if not str(k).startswith("_")}
     return names or None
 
 
@@ -599,14 +812,17 @@ def _profile_flag_findings(profiles, defined):
             continue
         val = profiles[name]
         if not isinstance(val, bool):
-            errs.append("config/project.json: practices.profiles.%s must be true "
-                        "or false (a boolean), not %s" % (name, type(val).__name__))
+            errs.append(
+                "config/project.json: practices.profiles.%s must be true "
+                "or false (a boolean), not %s" % (name, type(val).__name__)
+            )
             continue
         if val is True and defined is not None and name not in defined:
-            warns_.append("config/project.json: practices.profiles.%s is enabled "
-                          "but names no profile defined in config/practices.json "
-                          "profiles %s; it will activate nothing"
-                          % (name, sorted(defined)))
+            warns_.append(
+                "config/project.json: practices.profiles.%s is enabled "
+                "but names no profile defined in config/practices.json "
+                "profiles %s; it will activate nothing" % (name, sorted(defined))
+            )
     return errs, warns_
 
 
@@ -623,16 +839,22 @@ def check_I():
         if "CLAUDE.md" in filenames:
             claude = os.path.join(dirpath, "CLAUDE.md")
             if not os.path.islink(claude):
-                err("%s: must be a symlink to the sibling AGENT.md, not a "
-                    "regular file (CONVENTIONS section 5)" % rel(claude))
+                err(
+                    "%s: must be a symlink to the sibling AGENT.md, not a "
+                    "regular file (CONVENTIONS section 5)" % rel(claude)
+                )
             elif os.readlink(claude) != "AGENT.md":
-                err("%s: symlink target '%s' must be exactly 'AGENT.md' "
-                    "(a relative sibling link)" % (rel(claude), os.readlink(claude)))
+                err(
+                    "%s: symlink target '%s' must be exactly 'AGENT.md' "
+                    "(a relative sibling link)" % (rel(claude), os.readlink(claude))
+                )
             elif not os.path.isfile(os.path.join(dirpath, "AGENT.md")):
                 err("%s: symlink target AGENT.md does not exist" % rel(claude))
         elif has_agent:
-            err("%s/AGENT.md: has no sibling CLAUDE.md symlink "
-                "(CONVENTIONS section 5)" % rel(dirpath))
+            err(
+                "%s/AGENT.md: has no sibling CLAUDE.md symlink "
+                "(CONVENTIONS section 5)" % rel(dirpath)
+            )
 
 
 # --- check_J: no third-party exception leaks across a library boundary --------
@@ -648,10 +870,33 @@ _PRACTICE_OK_RE = re.compile(r"^#\s*practice-ok\b")
 # real list is DATA in config/practices.json (tokens.stdlib_exception_modules);
 # this is only used when that file is absent, so the gate degrades gracefully.
 _STDLIB_EXC_FALLBACK = [
-    "json", "urllib", "http", "socket", "ssl", "subprocess", "asyncio",
-    "sqlite3", "struct", "pickle", "xml", "configparser", "argparse",
-    "queue", "threading", "multiprocessing", "concurrent", "decimal",
-    "os", "io", "re", "hashlib", "csv", "zlib", "gzip", "tarfile", "zipfile",
+    "json",
+    "urllib",
+    "http",
+    "socket",
+    "ssl",
+    "subprocess",
+    "asyncio",
+    "sqlite3",
+    "struct",
+    "pickle",
+    "xml",
+    "configparser",
+    "argparse",
+    "queue",
+    "threading",
+    "multiprocessing",
+    "concurrent",
+    "decimal",
+    "os",
+    "io",
+    "re",
+    "hashlib",
+    "csv",
+    "zlib",
+    "gzip",
+    "tarfile",
+    "zipfile",
 ]
 
 
@@ -661,7 +906,9 @@ def _practice_ok_lines(text):
     out = set()
     try:
         for tok in tokenize.generate_tokens(io.StringIO(text).readline):
-            if tok.type == tokenize.COMMENT and _PRACTICE_OK_RE.match(tok.string.strip()):
+            if tok.type == tokenize.COMMENT and _PRACTICE_OK_RE.match(
+                tok.string.strip()
+            ):
                 out.add(tok.start[0])
     except (tokenize.TokenError, IndentationError, SyntaxError, ValueError):
         pass
@@ -686,15 +933,12 @@ def _local_top_names():
 def _stdlib_exc_modules():
     """Declared stdlib modules whose exceptions may be raised unwrapped
     (config/practices.json tokens.stdlib_exception_modules), else the fallback."""
-    path = os.path.join(ROOT, "config", "practices.json")
-    try:
-        with open(path, encoding="utf-8") as fh:
-            data = json.load(fh)
-        mods = (data.get("tokens") or {}).get("stdlib_exception_modules")
+    data = _read_json_config(os.path.join("config", "practices.json"))
+    tokens = data.get("tokens") if isinstance(data, dict) else None
+    if isinstance(tokens, dict):
+        mods = tokens.get("stdlib_exception_modules")
         if isinstance(mods, list) and mods:
             return set(mods)
-    except Exception:
-        pass
     return set(_STDLIB_EXC_FALLBACK)
 
 
@@ -769,50 +1013,45 @@ def check_J():
                     continue
                 full = os.path.join(dirpath, f)
                 try:
-                    with open(full, encoding="utf-8") as fh:
+                    with open(full, encoding="utf-8-sig") as fh:
                         text = fh.read()
                     tree = ast.parse(text, filename=full)
-                except Exception as e:
+                except UNPARSEABLE as e:
                     warn("%s: could not parse (%s)" % (rel(full), e))
                     continue
                 pragma = _practice_ok_lines(text)
                 for line, name in _foreign_exception_raises(
-                        tree, local_tops, stdlib_mods, pragma):
-                    err("%s:%d: raises third-party exception '%s' across a package "
+                    tree, local_tops, stdlib_mods, pragma
+                ):
+                    err(
+                        "%s:%d: raises third-party exception '%s' across a package "
                         "boundary - wrap it in an owned error "
-                        "(or add `# practice-ok: <reason>`)" % (rel(full), line, name))
+                        "(or add `# practice-ok: <reason>`)" % (rel(full), line, name)
+                    )
 
 
 # --- shared registry readers (config/practices.json, config/project.json) -----
 
+
 def _load_practices():
-    """config/practices.json as a dict, or {} on any failure (degrade to silence).
+    """config/practices.json as a dict, else {} — absent degrades to silence, a
+    present-but-unreadable registry is reported (it disables check_K/L/M).
     Read BY PATH, never imported (it is DATA — CONVENTIONS section 18)."""
-    path = os.path.join(ROOT, "config", "practices.json")
-    try:
-        with open(path, encoding="utf-8") as fh:
-            data = json.load(fh)
-        if isinstance(data, dict):
-            return data
-    except Exception:
-        pass
-    return {}
+    data = _read_json_config(os.path.join("config", "practices.json"))
+    return data if isinstance(data, dict) else {}
 
 
 def _profiles_on():
     """Domain profiles enabled in config/project.json practices.profiles. Mirrors
-    check_practices.profiles_on() exactly (value is True, '_'-keys stripped)."""
-    path = os.path.join(ROOT, "config", "project.json")
-    try:
-        with open(path, encoding="utf-8") as fh:
-            proj = json.load(fh)
-        prof = ((proj.get("practices") or {}).get("profiles")) or {}
-        if not isinstance(prof, dict):
-            return set()
-        return set(k for k in prof
-                   if prof[k] is True and not str(k).startswith("_"))
-    except Exception:
+    check_practices.profiles_on() exactly (value is True, '_'-keys stripped).
+    An unreadable manifest is reported by _read_json_config, never swallowed:
+    it would otherwise silently return check_L before it does any work."""
+    proj = _read_json_config(os.path.join("config", "project.json"))
+    practices = proj.get("practices") if isinstance(proj, dict) else None
+    prof = practices.get("profiles") if isinstance(practices, dict) else None
+    if not isinstance(prof, dict):
         return set()
+    return {k for k in prof if prof[k] is True and not str(k).startswith("_")}
 
 
 # --- check_K: frozen-config gate ----------------------------------------------
@@ -823,6 +1062,7 @@ def _profiles_on():
 # cannot prove immutable is an ERROR. So recognition is broad and alias-resolving,
 # and any residual gap (a frozen base class, a functional namedtuple()) is a
 # documented WAIVER case (`# practice-ok: <reason>`), never a silent false error.
+
 
 def _class_kw_line(node, lines):
     """The 1-based source line of the `class` keyword. On 3.8+ ClassDef.lineno is
@@ -838,7 +1078,7 @@ def _class_kw_line(node, lines):
     while i <= n:
         if 1 <= i <= n:
             s = lines[i - 1].lstrip()
-            if s.startswith("class ") or s.startswith("class\t"):
+            if s.startswith(("class ", "class\t")):
                 return i
         i += 1
     return start
@@ -851,7 +1091,10 @@ def _exact_marker_lines(text, marker):
     out = {}
     try:
         for tok in tokenize.generate_tokens(io.StringIO(text).readline):
-            if tok.type == tokenize.COMMENT and tok.string.lstrip("#").strip() == marker:
+            if (
+                tok.type == tokenize.COMMENT
+                and tok.string.lstrip("#").strip() == marker
+            ):
                 out[tok.start[0]] = tok.start[1]
     except (tokenize.TokenError, IndentationError, SyntaxError, ValueError):
         pass
@@ -866,7 +1109,7 @@ def _class_is_marked(node, marker_cols, lines):
     below it (its column would be deeper than this class's col_offset)."""
     kw = _class_kw_line(node, lines)
     decs = [getattr(d, "lineno", kw) for d in getattr(node, "decorator_list", [])]
-    top = min([kw] + decs)                       # first physical line of the header
+    top = min([kw] + decs)  # first physical line of the header
     for ln in marker_cols:
         if top <= ln <= kw:
             return True
@@ -925,9 +1168,10 @@ def _is_frozen_dataclass(node, binding):
         is_dc = False
         if isinstance(base, ast.Name):
             is_dc = (tail == "dataclass") or _resolves_to(
-                base.id, binding, "dataclasses", ("dataclass",))
+                base.id, binding, "dataclasses", ("dataclass",)
+            )
         elif isinstance(base, ast.Attribute):
-            is_dc = (tail == "dataclass")
+            is_dc = tail == "dataclass"
         if is_dc and isinstance(dec, ast.Call):
             for kw in dec.keywords:
                 if kw.arg == "frozen" and _kw_true(kw.value):
@@ -940,7 +1184,8 @@ def _is_namedtuple(node, binding):
         tail = _dotted_tail(b)
         if isinstance(b, ast.Name):
             if tail == "NamedTuple" or _resolves_to(
-                    b.id, binding, "typing", ("NamedTuple",)):
+                b.id, binding, "typing", ("NamedTuple",)
+            ):
                 return True
         elif isinstance(b, ast.Attribute) and tail == "NamedTuple":
             return True
@@ -962,16 +1207,15 @@ def _is_attrs_frozen(node, binding):
 
 
 def _is_immutable_config(node, binding):
-    return (_is_frozen_dataclass(node, binding)
-            or _is_namedtuple(node, binding)
-            or _is_attrs_frozen(node, binding))
+    return (
+        _is_frozen_dataclass(node, binding)
+        or _is_namedtuple(node, binding)
+        or _is_attrs_frozen(node, binding)
+    )
 
 
 def _span_pragma(lo, hi, pragma):
-    for ln in pragma:
-        if lo <= ln <= hi:
-            return True
-    return False
+    return any(lo <= ln <= hi for ln in pragma)
 
 
 def _frozen_config_violations(tree, text, marker, pragma):
@@ -1007,7 +1251,7 @@ def check_K():
     practices = _load_practices()
     marker = (practices.get("tokens") or {}).get("config_marker")
     if not isinstance(marker, str) or not marker:
-        return                                    # no declared marker -> nothing to gate
+        return  # no declared marker -> nothing to gate
     for croot in J_ROOTS:
         base = os.path.join(ROOT, croot)
         if not os.path.isdir(base):
@@ -1018,18 +1262,20 @@ def check_K():
                     continue
                 full = os.path.join(dirpath, f)
                 try:
-                    with open(full, encoding="utf-8") as fh:
+                    with open(full, encoding="utf-8-sig") as fh:
                         text = fh.read()
                     tree = ast.parse(text, filename=full)
-                except Exception as e:
+                except UNPARSEABLE as e:
                     warn("%s: could not parse (%s)" % (rel(full), e))
                     continue
                 pragma = _practice_ok_lines(text)
                 for line, name in _frozen_config_violations(tree, text, marker, pragma):
-                    err("%s:%d: class '%s' declares `# %s` but is not provably "
+                    err(
+                        "%s:%d: class '%s' declares `# %s` but is not provably "
                         "immutable - use a frozen dataclass / NamedTuple / attrs "
                         "frozen, or add `# practice-ok: <reason>`"
-                        % (rel(full), line, name, marker))
+                        % (rel(full), line, name, marker)
+                    )
 
 
 # --- check_L: naked-tensor domain gate (WARN, cuda profile only) --------------
@@ -1038,7 +1284,8 @@ def check_K():
 # (identifiers / ints / '*' / '...' / dotted names). A single-atom paren like
 # `(deprecated)` or `TODO(x)` is NOT a shape, so it can never silently waive.
 _SHAPE_COMMENT_RE = re.compile(
-    r"[\(\[]\s*[\w.*]+(?:\s*,\s*(?:[\w.*]+|\.\.\.))+\s*[\)\]]")
+    r"[\(\[]\s*[\w.*]+(?:\s*,\s*(?:[\w.*]+|\.\.\.))+\s*[\)\]]"
+)
 
 _STR_T = getattr(ast, "Str", ())
 
@@ -1076,11 +1323,11 @@ def _annotation_base_name(ann, base_types):
     never a suffix/substring match."""
     if isinstance(ann, ast.Name) and ann.id in base_types:
         return ann.id
-    if _STR_T and isinstance(ann, _STR_T):        # 3.6 string annotation: x: "Tensor"
+    if _STR_T and isinstance(ann, _STR_T):  # 3.6 string annotation: x: "Tensor"
         v = getattr(ann, "s", None)
         if isinstance(v, str) and v in base_types:
             return v
-    if ann.__class__.__name__ == "Constant":      # 3.8+ string annotation
+    if ann.__class__.__name__ == "Constant":  # 3.8+ string annotation
         v = getattr(ann, "value", None)
         if isinstance(v, str) and v in base_types:
             return v
@@ -1101,22 +1348,25 @@ def _naked_tensor_params(tree, text, base_types):
         if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
         lo, hi = _func_header_span(fn)
-        lo -= 1                                   # also honour a leading comment line
-        waived = any(lo <= ln <= hi for ln in shape_lines) \
-            or any(lo <= ln <= hi for ln in pragma)
+        lo -= 1  # also honour a leading comment line
+        waived = any(lo <= ln <= hi for ln in shape_lines) or any(
+            lo <= ln <= hi for ln in pragma
+        )
         if waived:
             continue
         a = fn.args
-        allargs = (list(getattr(a, "posonlyargs", []))
-                   + list(a.args) + list(a.kwonlyargs))
+        allargs = (
+            list(getattr(a, "posonlyargs", [])) + list(a.args) + list(a.kwonlyargs)
+        )
         for arg in allargs:
             ann = getattr(arg, "annotation", None)
             if ann is None:
                 continue
             name = _annotation_base_name(ann, base_types)
             if name is not None:
-                out.append((getattr(arg, "lineno", getattr(fn, "lineno", 0)),
-                            arg.arg, name))
+                out.append(
+                    (getattr(arg, "lineno", getattr(fn, "lineno", 0)), arg.arg, name)
+                )
     return out
 
 
@@ -1130,7 +1380,7 @@ def check_L():
     practices = _load_practices()
     bt = (practices.get("tokens") or {}).get("tensor_base_types")
     base_types = set(bt) if isinstance(bt, list) and bt else set()
-    if not base_types:                            # no declared tokens -> silence (no fallback)
+    if not base_types:  # no declared tokens -> silence (no fallback)
         return
     for croot in J_ROOTS:
         base = os.path.join(ROOT, croot)
@@ -1142,17 +1392,19 @@ def check_L():
                     continue
                 full = os.path.join(dirpath, f)
                 try:
-                    with open(full, encoding="utf-8") as fh:
+                    with open(full, encoding="utf-8-sig") as fh:
                         text = fh.read()
                     tree = ast.parse(text, filename=full)
-                except Exception as e:
+                except UNPARSEABLE as e:
                     warn("%s: could not parse (%s)" % (rel(full), e))
                     continue
                 for line, arg, name in _naked_tensor_params(tree, text, base_types):
-                    warn("%s:%d: parameter '%s' is a naked %s (bare tensor type, "
-                         "no shape); annotate a shape (jaxtyping/alias) or add "
-                         "`# practice-ok: <reason>` [cuda profile; advisory]"
-                         % (rel(full), line, arg, name))
+                    warn(
+                        "%s:%d: parameter '%s' is a naked %s (bare tensor type, "
+                        "no shape); annotate a shape (jaxtyping/alias) or add "
+                        "`# practice-ok: <reason>` [cuda profile; advisory]"
+                        % (rel(full), line, arg, name)
+                    )
 
 
 # --- check_M: ruleset parity (config/practices.json <-> pyproject.toml) --------
@@ -1191,7 +1443,7 @@ def _toml_scan(text):
         j, ccol, n, bd = 0, None, len(line), 0
         while j < n:
             c = line[j]
-            three = line[j:j + 3]
+            three = line[j : j + 3]
             if st in (_TRI_D, _TRI3):
                 if three == st:
                     st = None
@@ -1242,7 +1494,7 @@ def _toml_practice_ok_lines(text):
     for ln in comment_col:
         if instr.get(ln) or comment_col[ln] is None:
             continue
-        body = lines[ln - 1][comment_col[ln]:].lstrip("#").strip()
+        body = lines[ln - 1][comment_col[ln] :].lstrip("#").strip()
         if body.startswith("practice-ok"):
             out.add(ln)
     return out
@@ -1276,7 +1528,9 @@ def _toml_targets(text):
             i += 1
             continue
         if s.startswith("[") and s.endswith("]") and "=" not in s:
-            cur_table = s[1:-1].strip().strip("[]").strip()   # [[x]] array-of-tables -> x
+            cur_table = (
+                s[1:-1].strip().strip("[]").strip()
+            )  # [[x]] array-of-tables -> x
             i += 1
             continue
         if "=" not in s:
@@ -1285,7 +1539,7 @@ def _toml_targets(text):
         key, rhs = s.split("=", 1)
         key, rhs = key.strip(), rhs.strip()
         full = (cur_table + "." + key) if cur_table else key
-        span = set([ln])
+        span = {ln}
         depth = bdelta.get(ln, 0)
         j = i
         while depth > 0 and j + 1 < n:
@@ -1346,17 +1600,97 @@ def _flag_state(entries):
 def _line_waived(target_lines, pragma):
     """A finding anchored to specific lines is waived by a `# practice-ok` on any
     of those lines or the line directly above the first."""
-    for ln in target_lines:
-        if ln in pragma or (ln - 1) in pragma:
-            return True
-    return False
+    return any(ln in pragma or (ln - 1) in pragma for ln in target_lines)
 
 
 def _span_lines(entries):
     out = set()
-    for (_, _, span) in entries:
+    for _, _, span in entries:
         out |= span
     return out
+
+
+_QUOTED_RE = re.compile(r'"([^"]*)"' + r"|'([^']*)'")
+
+
+def _quoted_tokens(rhs_text):
+    """Every quoted string in a TOML rhs, in order: `["A", "B"]` -> ['A', 'B']."""
+    out = []
+    for dq, sq in _QUOTED_RE.findall(rhs_text or ""):
+        out.append(dq or sq)
+    return out
+
+
+def _toml_unquote(key):
+    """`"src/app/**"` -> `src/app/**`; a bare key is returned unchanged."""
+    k = key.strip()
+    if len(k) >= 2 and k[0] == k[-1] and k[0] in ('"', "'"):
+        return k[1:-1]
+    return k
+
+
+def _toml_table_blocks(text, name):
+    """One dict per `[[name]]` array-of-tables block: {key: (lineno, rhs, span)}.
+
+    _toml_targets deliberately flattens these — it prepends the table header, so
+    every `[[tool.mypy.overrides]]` block collapses onto the single dotted key
+    `tool.mypy.overrides.<flag>` and the blocks alias onto one another (the last
+    one wins). That is exactly why per-module mypy relaxations were invisible to
+    check_M. Here the block boundaries are kept, so each is judged on its own.
+
+    Single-line values only, which is all a per-module override block uses; a
+    bracketed value is captured whole via the same bdelta accounting as
+    _toml_targets so a multi-line `module = [...]` list still reads correctly.
+    """
+    comment_col, instr, bdelta = _toml_scan(text)
+    lines = text.split("\n")
+    header = "[[" + name + "]]"
+    blocks = []
+    cur = None
+    n = len(lines)
+    i = 0
+    while i < n:
+        ln = i + 1
+        if instr.get(ln):
+            i += 1
+            continue
+        raw = lines[i]
+        col = comment_col.get(ln)
+        if col is not None:
+            raw = raw[:col]
+        s = raw.strip()
+        if not s:
+            i += 1
+            continue
+        if s.startswith("["):
+            # Any table header closes the current block; only ours opens one.
+            cur = {} if s == header else None
+            if cur is not None:
+                blocks.append(cur)
+            i += 1
+            continue
+        if cur is None or "=" not in s:
+            i += 1
+            continue
+        key, rhs = s.split("=", 1)
+        span = {ln}
+        depth = bdelta.get(ln, 0)
+        j = i
+        while depth > 0 and j + 1 < n:
+            j += 1
+            ln2 = j + 1
+            if instr.get(ln2):
+                continue
+            raw2 = lines[j]
+            col2 = comment_col.get(ln2)
+            if col2 is not None:
+                raw2 = raw2[:col2]
+            rhs += " " + raw2.strip()
+            span.add(ln2)
+            depth += bdelta.get(ln2, 0)
+        cur[_toml_unquote(key)] = (ln, rhs.strip(), span)
+        i = j + 1
+    return blocks
 
 
 def _ruleset_parity_findings(practices, text):
@@ -1388,22 +1722,37 @@ def _ruleset_parity_findings(practices, text):
     if isinstance(extend, list) and extend:
         if not es:
             if not file_waived:
-                errs.append("pyproject.toml: [tool.ruff.lint] extend-select is "
-                            "absent; declared ruff policy is unenforced "
-                            "(config/practices.json rulesets.ruff.extend_select). "
-                            "Add it or `# practice-ok`.")
+                errs.append(
+                    "pyproject.toml: [tool.ruff.lint] extend-select is "
+                    "absent; declared ruff policy is unenforced "
+                    "(config/practices.json rulesets.ruff.extend_select). "
+                    "Add it or `# practice-ok`."
+                )
         else:
+            # The two `errs.append` calls below are PERF401-suppressed. This is
+            # check_M's own body, the gate proving pyproject cannot silently
+            # loosen the declared policy. Each guard is a backslash-continued
+            # multi-term `and`; folding it into an extend+genexp risks a
+            # transcription slip that makes check_M UNDER-report — precisely the
+            # failure it exists to prevent. A ~20-family loop has nothing to win.
             for fam in extend:
-                if isinstance(fam, str) and not _rhs_has_family(es_text, fam) \
-                        and not _line_waived(es_lines, pragma):
-                    errs.append("pyproject.toml: ruff family '%s' declared in "
-                                "practices.json is not in extend-select (silent "
-                                "loosening)" % fam)
+                if (
+                    isinstance(fam, str)
+                    and not _rhs_has_family(es_text, fam)
+                    and not _line_waived(es_lines, pragma)
+                ):
+                    errs.append(  # noqa: PERF401 — check_M's body; see above
+                        "pyproject.toml: ruff family '%s' declared in "
+                        "practices.json is not in extend-select (silent "
+                        "loosening)" % fam
+                    )
     for fam in dkeys:
         if es and _deferred_active(es_text, fam) and not _line_waived(es_lines, pragma):
-            errs.append("pyproject.toml: ruff family '%s' is DEFERRED in "
-                        "practices.json but selected in extend-select "
-                        "(directly or via a parent prefix / ALL)" % fam)
+            errs.append(  # noqa: PERF401 — check_M's body; see above
+                "pyproject.toml: ruff family '%s' is DEFERRED in "
+                "practices.json but selected in extend-select "
+                "(directly or via a parent prefix / ALL)" % fam
+            )
 
     if isinstance(flags, list):
         for flag in flags:
@@ -1412,13 +1761,280 @@ def _ruleset_parity_findings(practices, text):
             entries = assigns.get("tool.mypy." + flag, [])
             state = _flag_state(entries)
             if state == "off" and not _line_waived(_span_lines(entries), pragma):
-                errs.append("pyproject.toml: mypy flag '%s' is set false (declared "
-                            "enforced in practices.json) - a silent loosening" % flag)
+                errs.append(
+                    "pyproject.toml: mypy flag '%s' is set false (declared "
+                    "enforced in practices.json) - a silent loosening" % flag
+                )
             elif state == "absent" and not file_waived:
-                errs.append("pyproject.toml: mypy flag '%s' declared in "
-                            "practices.json is not enforced (absent). Add "
-                            "`%s = true` or `# practice-ok`." % (flag, flag))
+                errs.append(
+                    "pyproject.toml: mypy flag '%s' declared in "
+                    "practices.json is not enforced (absent). Add "
+                    "`%s = true` or `# practice-ok`." % (flag, flag)
+                )
+
+    errs.extend(_per_file_ignore_findings(ruff, assigns, pragma))
+    errs.extend(_mypy_override_findings(mypy, flags, text, pragma))
     return errs, warns_
+
+
+_PFI_PREFIX = "tool.ruff.lint.per-file-ignores."
+
+
+def _declared_map(value):
+    """A practices.json mapping with the `_comment` documentation keys dropped."""
+    if not isinstance(value, dict):
+        return None
+    return {k: v for k, v in value.items() if not str(k).startswith("_")}
+
+
+def _per_file_ignore_findings(ruff, assigns, pragma):
+    """Every ruff per-file-ignore must be declared in practices.json.
+
+    This closes the widest hole check_M had: `per_file_ignores` was declared as
+    data and read by NOTHING (`grep -rn per_file_ignores scripts/` was empty), so
+    a single `"**/*.py" = ["B904", "BLE001"]` line switched a family off across
+    the whole corpus and the parity gate reported success. A carve-out is policy,
+    so it lives in the same declaration as the rest of the policy; pyproject may
+    only mirror it. Widening an EXISTING pattern's code list is the same
+    loosening as inventing a pattern, so both are errors.
+    """
+    declared = _declared_map(ruff.get("per_file_ignores"))
+    if declared is None:
+        return []  # not declared at all -> nothing claimed, nothing proven
+    out = []
+    for full, entries in sorted(assigns.items()):
+        if not full.startswith(_PFI_PREFIX):
+            continue
+        pattern = _toml_unquote(full[len(_PFI_PREFIX) :])
+        for _, rhs, span in entries:
+            if _line_waived(span, pragma):
+                continue
+            if pattern not in declared:
+                out.append(
+                    "pyproject.toml: per-file-ignore '%s' is not declared in "
+                    "config/practices.json rulesets.ruff.per_file_ignores — an "
+                    "undeclared carve-out silences the gate. Declare it or "
+                    "`# practice-ok`." % pattern
+                )
+                continue
+            allowed = set(declared[pattern] or [])
+            extra = sorted(c for c in _quoted_tokens(rhs) if c not in allowed)
+            if extra:
+                out.append(
+                    "pyproject.toml: per-file-ignore '%s' ignores %s, which "
+                    "config/practices.json does not declare for it (declared: "
+                    "%s)" % (pattern, extra, sorted(allowed))
+                )
+    return out
+
+
+# `ignore_errors` is not one of the declared `flags` but is stronger than any of
+# them — it drops the module from type-checking entirely — so an override that
+# turns it ON is judged with the same rule as one that turns a declared flag off.
+_OVERRIDE_KILL_SWITCH = "ignore_errors"
+
+# Declaring `strict` and then relaxing its COMPONENTS per module is the same
+# loosening by another name: mypy's --strict is exactly this set, and a block that
+# switches these off has un-stricted the module without ever writing
+# `strict = false`. Named here because it is a fixed property of mypy, in the same
+# spirit as KINDS/LAYERS above — a vocabulary, not a policy. Source: mypy's
+# `--strict` flag list.
+_MYPY_STRICT_COMPONENTS = (
+    "disallow_untyped_defs",
+    "disallow_incomplete_defs",
+    "disallow_untyped_calls",
+    "disallow_untyped_decorators",
+    "disallow_any_generics",
+    "disallow_subclassing_any",
+    "check_untyped_defs",
+    "no_implicit_reexport",
+    "warn_redundant_casts",
+    "warn_unused_ignores",
+    "warn_return_any",
+    "strict_equality",
+)
+
+
+def _mypy_override_findings(mypy, flags, text, pragma):
+    """Per-module `[[tool.mypy.overrides]]` relaxations must be declared too.
+
+    The second hole: check_M only ever read `tool.mypy.<flag>`, while
+    `_toml_targets` normalises every override block to `tool.mypy.overrides.<flag>`
+    — so a per-module `strict = false`, or an `ignore_errors = true`, was invisible
+    AND the blocks aliased onto one dotted key so only the last would have been
+    seen anyway. Relaxations are legitimate (the type ratchet is built on them),
+    which is the point: legitimate means *declared*, per module, in
+    config/practices.json rulesets.mypy.overrides.
+    """
+    declared = _declared_map(mypy.get("overrides"))
+    if declared is None:
+        return []
+    relaxable = {f for f in (flags or []) if isinstance(f, str)}
+    relaxable.add(_OVERRIDE_KILL_SWITCH)
+    if "strict" in relaxable:
+        relaxable.update(_MYPY_STRICT_COMPONENTS)
+    out = []
+    for block in _toml_table_blocks(text, "tool.mypy.overrides"):
+        modules = _quoted_tokens(block.get("module", (0, "", set()))[1]) or [
+            "<unscoped>"
+        ]
+        for key in sorted(block):
+            if key == "module" or key not in relaxable:
+                continue
+            (ln, rhs, span) = block[key]
+            state = _flag_state([(ln, rhs, span)])
+            loosens = (
+                (state == "on") if key == _OVERRIDE_KILL_SWITCH else (state == "off")
+            )
+            if not loosens or _line_waived(span, pragma):
+                continue
+            out.extend(
+                "pyproject.toml: [[tool.mypy.overrides]] for '%s' relaxes '%s', "
+                "which config/practices.json rulesets.mypy.overrides does not "
+                "declare for it — a per-module loosening the gate cannot see. "
+                "Declare it (with its removal condition) or `# practice-ok`."
+                % (mod, key)
+                for mod in modules
+                if key not in set(declared.get(mod) or [])
+            )
+    return out
+
+
+_TWIN_SUFFIX = ".jinja"
+_TWIN_KINDS = ("parity", "divergence", "generated")
+
+
+def _is_templated(line):
+    """A line the twin is licensed to differ on — an expression or control flow."""
+    return "{{" in line or "{%" in line
+
+
+def _twin_parity_findings(files, declared):
+    """Errors proving keel's `*.jinja` twins have not silently drifted.
+
+    `files` maps relpath -> text for the whole tree; `declared` is
+    config/project.json `template.twins` (plain path -> kind). Pure, so it is
+    unit-testable without a tree on disk.
+
+    RENDER-FREE ON PURPOSE, and this bounds what it can claim. check_structure.py
+    is stdlib-only and 3.6-safe because it runs in pre-commit on old hosts, so it
+    cannot import jinja2 and cannot render a twin to byte-compare it. What it CAN
+    prove, and does:
+
+      * every twin is declared, so a sixth one cannot appear unnoticed — the drift
+        class re-opening is the thing ADR-0005 was told to wait for;
+      * the declaration matches reality (a parity/divergence twin has its plain
+        sibling; a `generated` one must NOT, because keel is the template);
+      * a `parity` twin carries no NON-TEMPLATED line the plain file has lost.
+        That is the direction that actually bit: pass 3 widened the lint/type
+        scope in `pyproject.toml` and the twin kept `files = ["src"]`, so every
+        descendant inherited a weaker gate — silently, since a narrower mypy still
+        exits 0;
+      * a `divergence` twin actually diverges, so "restoring parity" to
+        `.gitignore.jinja` (which would re-ignore `.copier-answers.yml` and kill
+        every descendant's upgrade channel) fails loudly.
+
+    The byte-exact rendered comparison stays in tests/integration, where jinja2
+    exists. This is the half that runs everywhere, over every twin.
+    """
+    out = []
+    twins = sorted(p for p in files if p.endswith(_TWIN_SUFFIX))
+    if not twins:
+        return out  # a generated project has none; it inherits the data only
+    seen = set()
+    for twin in twins:
+        plain = twin[: -len(_TWIN_SUFFIX)]
+        seen.add(plain)
+        kind = declared.get(plain)
+        if kind is None:
+            out.append(
+                "%s: undeclared template twin — add it to config/project.json "
+                "template.twins as one of %s, so it cannot drift unnoticed"
+                % (twin, list(_TWIN_KINDS))
+            )
+            continue
+        if kind not in _TWIN_KINDS:
+            out.append(
+                "%s: unknown twin kind %r in config/project.json "
+                "template.twins (expected one of %s)" % (plain, kind, list(_TWIN_KINDS))
+            )
+            continue
+        has_plain = plain in files
+        if kind == "generated":
+            if has_plain:
+                out.append(
+                    "%s: declared `generated` (copier writes it into a NEW "
+                    "project) but keel commits one of its own — keel is the "
+                    "template, not a generated project" % plain
+                )
+            continue
+        if not has_plain:
+            out.append(
+                "%s: declared `%s` but the plain file is missing, so the twin "
+                "has nothing to be a twin OF" % (plain, kind)
+            )
+            continue
+        plain_lines = set(files[plain].split("\n"))
+        if kind == "divergence":
+            if files[plain] == files[twin]:
+                out.append(
+                    "%s: declared a DIVERGENCE twin but %s reproduces it "
+                    "exactly. The divergence is deliberate; restoring parity "
+                    "silently removes what the twin exists to change." % (plain, twin)
+                )
+            continue
+        stale = [
+            ln
+            for ln in files[twin].split("\n")
+            if ln.strip() and not _is_templated(ln) and ln not in plain_lines
+        ]
+        out.extend(
+            "%s: line is in the twin but not in %s, so a generated "
+            "project would get a stale copy: %s" % (twin, plain, ln.strip())
+            for ln in stale[:5]
+        )
+    for plain in sorted(declared):
+        if str(plain).startswith("_") or plain in seen:
+            continue
+        out.append(
+            "config/project.json template.twins declares '%s' but no '%s%s' "
+            "exists — delete the declaration or restore the twin"
+            % (plain, plain, _TWIN_SUFFIX)
+        )
+    return out
+
+
+def check_N():
+    """Template twin parity — see _twin_parity_findings for what this can and
+    cannot prove without a jinja renderer. Silent in a generated project (no
+    twins). Waivable with `# practice-ok`? No: a twin has no line to hang a
+    pragma on that copier would not then render."""
+    declared = _declared_twins()
+    files = {}
+    for dirpath, dirnames, filenames in walk(ROOT):
+        del dirnames
+        for name in filenames:
+            full = os.path.join(dirpath, name)
+            relp = rel(full).replace(os.sep, "/")
+            # Only the twins and the plain files they are twins OF — the rest of
+            # the tree is other checks' business and reading it all would be waste.
+            if not (name.endswith(_TWIN_SUFFIX) or relp in declared):
+                continue
+            text = _read_text(full, err)
+            if text is not None:
+                files[relp] = text
+    for m in _twin_parity_findings(files, declared):
+        err(m)
+
+
+def _declared_twins():
+    """config/project.json `template.twins` (plain path -> kind), `_`-keys dropped."""
+    manifest = _read_json_config(os.path.join("config", "project.json"))
+    template = manifest.get("template") if isinstance(manifest, dict) else None
+    twins = template.get("twins") if isinstance(template, dict) else None
+    if not isinstance(twins, dict):
+        return {}
+    return {k: v for k, v in twins.items() if not str(k).startswith("_")}
 
 
 def check_M():
@@ -1426,7 +2042,9 @@ def check_M():
     policy declared as DATA in config/practices.json rulesets. Errs on a declared
     ruff family missing from extend-select, a declared mypy flag off/absent, or a
     'deferred' family silently selected. Degrades to a WARN if pyproject is
-    missing/unreadable (can't prove anything); waivable with `# practice-ok`."""
+    MISSING (a generated project may not carry one); a pyproject that is present
+    but unreadable ERRs, because that is this gate going dark on a file that is
+    right there. Waivable with `# practice-ok`."""
     practices = _load_practices()
     if not isinstance(practices.get("rulesets"), dict):
         return
@@ -1434,17 +2052,103 @@ def check_M():
     if not os.path.isfile(path):
         warn("pyproject.toml: not found; ruleset parity unenforced")
         return
-    try:
-        with open(path, encoding="utf-8") as fh:
-            text = fh.read()
-    except Exception as e:
-        warn("pyproject.toml: could not read (%s)" % e)
+    text = _read_text(path, err)  # present but unreadable -> parity unprovable
+    if text is None:
         return
     errs, warns_ = _ruleset_parity_findings(practices, text)
     for m in errs:
         err(m)
     for m in warns_:
         warn(m)
+
+
+def _module_meta(doc):
+    """title:/summary: (etc.) lines of a module docstring, extracted with EXACTLY
+    build_corpus._docstring_meta's grammar: strip the line, match a known key
+    before the first colon, strip the value, last occurrence wins. Duplicated,
+    not imported — scripts/jobs/build_corpus.py is $(PY)-only and this file runs
+    under the 3.6 pre-commit interpreter, so a shared import would couple the
+    interpreter floors. The two grammars are pinned to each other by
+    tests/unit/scripts/test_check_o.py::test_grammar_matches_the_corpus_reader_exactly."""
+    meta = {}
+    for line in doc.splitlines():
+        s = line.strip()
+        if ":" in s and s.split(":", 1)[0] in (
+            "title",
+            "summary",
+            "layer",
+            "public_api",
+            "owner",
+            "visibility",
+        ):
+            k, _, v = s.partition(":")
+            meta[k.strip()] = v.strip()
+    return meta
+
+
+def _module_header_findings(files):
+    """files: {relpath: source text} -> error strings. Pure; the walk is check_O's.
+
+    Unparseable sources are skipped: check_D already warns on them over the same
+    roots, and a second report here would be noise. (Corollary: on an OLD host
+    interpreter a module using newer syntax parses as SyntaxError and is skipped
+    — the project interpreter's run, in CI and `make check`, is the enforcing one.)
+    """
+    errs = []
+    for relpath in sorted(files):
+        try:
+            tree = ast.parse(files[relpath], filename=relpath)
+        except UNPARSEABLE:
+            continue
+        doc = ast.get_docstring(tree)
+        if not doc:
+            errs.append(
+                "%s: module has no docstring -- build_corpus cannot index it, "
+                "so it is invisible to every corpus query (ADR-0008; see "
+                "docs/guides/python-style.md)" % relpath
+            )
+            continue
+        missing = [k for k in ("title", "summary") if not _module_meta(doc).get(k)]
+        if missing:
+            errs.append(
+                "%s: module docstring lacks explicit %s -- the corpus falls "
+                "back to the filename / first prose line and labels the result "
+                "authored (ADR-0008; see docs/guides/python-style.md)"
+                % (relpath, " and ".join(m + ":" for m in missing))
+            )
+    return errs
+
+
+def check_O():
+    """ERROR when a CODE_ROOTS module lacks the machine-readable header the
+    corpus reads (ADR-0008). A docstring that merely EXISTS is the trap this
+    closes: build_corpus falls back to the filename and the first prose line
+    and labels the result 'authored', and a module with no docstring at all is
+    silently dropped from the corpus — an agent's map of the project is then
+    confidently incomplete, at exit 0."""
+    files = {}
+    for croot in CODE_ROOTS:
+        base = os.path.join(ROOT, croot)
+        if not os.path.isdir(base):
+            continue
+        for dirpath, _, filenames in walk(base):
+            for f in filenames:
+                if not f.endswith(".py"):
+                    continue
+                full = os.path.join(dirpath, f)
+                try:
+                    # utf-8-sig, here and at every .py read that feeds ast (in
+                    # build_corpus too): a BOM file is valid importable Python
+                    # (the runtime strips the BOM), but read as plain utf-8 the
+                    # U+FEFF makes ast.parse raise and the except-swallow turned
+                    # exactly those files back into silent drops (ADR-0008
+                    # review). utf-8-sig on a BOM-less file is byte-identical.
+                    with open(full, encoding="utf-8-sig") as fh:
+                        files[rel(full)] = fh.read()
+                except UNREADABLE:
+                    continue  # unreadable is reported by the checks keyed on it
+    for e_ in _module_header_findings(files):
+        err(e_)
 
 
 def main():
@@ -1461,13 +2165,14 @@ def main():
     check_K()
     check_L()
     check_M()
+    check_N()
+    check_O()
     for w_ in warnings:
         print("WARN  " + w_)
     for e_ in errors:
         print("ERROR " + e_)
-    print("")
-    print("check_structure: %d error(s), %d warning(s)"
-          % (len(errors), len(warnings)))
+    print()
+    print("check_structure: %d error(s), %d warning(s)" % (len(errors), len(warnings)))
     return 1 if errors else 0
 
 

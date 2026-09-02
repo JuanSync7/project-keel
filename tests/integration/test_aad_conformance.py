@@ -1,4 +1,8 @@
-"""Integration: the AAD reference agent is conformant and self-consistent.
+"""
+title: Integration — AAD reference agent conformance
+summary: Runs the reference agent in-process and proves the served descriptor validates against the committed schema, its ask operationId resolves against the agent's own OpenAPI, and the resolved endpoint answers with the declared field names.
+
+Integration: the AAD reference agent is conformant and self-consistent.
 
 Runs the reference agent in-process (TestClient), then proves three things
 WITHOUT importing any consumer's discovery stack (a template only *serves* a
@@ -11,6 +15,7 @@ descriptor — it does not fetch others'):
   3. the resolved endpoint actually answers, with the field names the
      descriptor's `io` map declared.
 """
+
 import json
 import re
 import sys
@@ -18,8 +23,10 @@ from pathlib import Path
 
 import pytest
 
-pytest.importorskip("fastapi")  # optional transport dep — skip this module when absent
-pytest.importorskip("httpx")    # backs starlette/FastAPI TestClient
+import optional_deps
+
+optional_deps.importorskip("fastapi", extra="transport")  # optional transport dep
+optional_deps.importorskip("httpx", extra="dev")  # backs FastAPI's TestClient
 
 from fastapi.testclient import TestClient  # noqa: E402
 
@@ -73,8 +80,13 @@ def test_descriptor_structural(served_descriptor: dict):
 
 
 def test_descriptor_validates_against_committed_schema(served_descriptor: dict):
-    """The descriptor conforms to the committed, generated JSON Schema."""
-    jsonschema = pytest.importorskip("jsonschema")
+    """The descriptor conforms to the committed, generated JSON Schema.
+
+    This is the assertion the `optional_deps` mechanism exists for: `jsonschema`
+    was in no extra, so it skipped on every machine and in CI, and the conformance
+    claim in this module's docstring was never once checked.
+    """
+    jsonschema = optional_deps.importorskip("jsonschema", extra="dev")
     schema = json.loads(_SCHEMA_PATH.read_text(encoding="utf-8"))
     jsonschema.validate(served_descriptor, schema)
 

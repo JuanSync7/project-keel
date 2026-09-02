@@ -39,8 +39,12 @@ client ──HTTP/HTTPS──> edge (nginx)  ──> transport ──> src/ (dom
 
 ## At generation time
 `copier` (ADR 0004) tailors which transports a new project ships. **REST + MCP are
-the always-shipped foundation** — the bundled showcase and AAD reference
-implementation run on them. The **add-ons `grpc` and `edge_nginx`** are self-contained
+the always-shipped foundation** — the skeleton's own `/things` route, the AAD
+reference implementation and the MCP servers all run on them. The bundled showcase
+also mounts a router here, but it is a *tenant*, not a reason: the `showcase`
+question (ADR 0007) prunes that router and its read model while REST stays, and
+`api/rest_fastapi/app.py` mounts it only when the file is present. The
+**add-ons `grpc` and `edge_nginx`** are self-contained
 (no code/test imports them), so the `transports` question keeps each only when
 selected and drops it — along with its `transports.available` entry — otherwise.
 `config/project.json` `transports.enabled`/`available` are rendered to match, so

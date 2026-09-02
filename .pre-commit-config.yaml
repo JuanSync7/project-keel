@@ -35,7 +35,9 @@ repos:
         pass_filenames: false
         always_run: true
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.8.4
+    # Must equal the `ruff==` pin in pyproject.toml's `dev` extra: a hook that
+    # runs a different ruff than the gate reports the gate's output as a defect.
+    rev: v0.15.18
     hooks:
       - id: ruff
       - id: ruff-format

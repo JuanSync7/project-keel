@@ -5,6 +5,7 @@ kind: script
 layer: n/a
 summary: Read-only retrieval over wiki/corpus.json — the wiki_navigator's tool.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -23,7 +24,7 @@ def _tokens(text: str) -> set:
     for w in _WORD_RE.findall(text or ""):
         out.add(w.lower())
         if w.isupper():
-            out.add(w)        # keep acronyms (AXI) matchable verbatim
+            out.add(w)  # keep acronyms (AXI) matchable verbatim
     return out
 
 
@@ -40,8 +41,11 @@ def query(corpus: dict, question: str, max_nodes: int = 8) -> list:
         return []
     scored = []
     for nid, n in nodes.items():
-        hay = set(t.lower() for t in n.get("tags", [])) | _tokens(n.get("title", "")) \
+        hay = (
+            {t.lower() for t in n.get("tags", [])}
+            | _tokens(n.get("title", ""))
             | _tokens(n.get("summary", ""))
+        )
         overlap = len(q & hay)
         if overlap:
             scored.append((overlap, nid))
@@ -59,8 +63,9 @@ def query(corpus: dict, question: str, max_nodes: int = 8) -> list:
     for _, nid in scored:
         if len(order) >= max_nodes:
             break
-        for related in [nodes[nid].get("parent")] + \
-                [e["to"] for e in nodes[nid].get("links", [])]:
+        for related in [nodes[nid].get("parent")] + [
+            e["to"] for e in nodes[nid].get("links", [])
+        ]:
             if related and related in nodes and related not in chosen:
                 chosen.add(related)
                 order.append(related)
@@ -70,12 +75,20 @@ def query(corpus: dict, question: str, max_nodes: int = 8) -> list:
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description="Read-only retrieval over wiki/corpus.json.")
+    ap = argparse.ArgumentParser(
+        description="Read-only retrieval over wiki/corpus.json."
+    )
     ap.add_argument("question", help="the question / keywords to retrieve for")
-    ap.add_argument("--corpus", default=DEFAULT_CORPUS, help="corpus path (default: wiki/corpus.json)")
+    ap.add_argument(
+        "--corpus",
+        default=DEFAULT_CORPUS,
+        help="corpus path (default: wiki/corpus.json)",
+    )
     ap.add_argument("--max-nodes", type=int, default=8, help="max candidate nodes")
     args = ap.parse_args(argv)
-    path = args.corpus if os.path.isabs(args.corpus) else os.path.join(ROOT, args.corpus)
+    path = (
+        args.corpus if os.path.isabs(args.corpus) else os.path.join(ROOT, args.corpus)
+    )
     if not os.path.exists(path):
         print("[]")  # graceful: empty retrieval when no corpus yet
         return 0

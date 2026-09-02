@@ -5,6 +5,7 @@ kind: script
 layer: n/a
 summary: Read-only advisory. Flags coding-practice SMELLS - a concrete backend constructed inline instead of injected, a long isinstance chain that wants singledispatch, a hot-path class without __slots__, a resource acquired outside a context manager. Judgment calls that over/under-flag, so advisory only; never fails the build. Stdlib only; runs on Python 3.6+.
 """
+
 import argparse
 import ast
 import io
@@ -21,10 +22,17 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # correct, and test code is not a boundary.
 SCAN_ROOTS = ["src", "agents"]
 
-IGNORE_DIRS = set([
-    ".git", "node_modules", ".venv", "__pycache__", "dist", "build",
-    ".mypy_cache", ".ruff_cache", ".pytest_cache",
-])
+IGNORE_DIRS = {
+    ".git",
+    "node_modules",
+    ".venv",
+    "__pycache__",
+    "dist",
+    "build",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".pytest_cache",
+}
 
 _PRAGMA_RE = re.compile(r"^#\s*practice-ok\b\s*:?\s*(.*)$")
 _HOTPATH_MARKER = "hot-path"
@@ -32,9 +40,10 @@ _HOTPATH_MARKER = "hot-path"
 
 # --- io helpers (stdlib, 3.6-safe) --------------------------------------------
 
+
 def _read(path):
     try:
-        with io.open(path, encoding="utf-8-sig") as fh:   # strips a BOM if present
+        with io.open(path, encoding="utf-8-sig") as fh:  # strips a BOM if present
             return fh.read()
     except (OSError, UnicodeDecodeError):
         return None
@@ -63,11 +72,11 @@ def _rel(path):
 def _py_files(base):
     out = []
     for dirpath, dirnames, filenames in os.walk(base):
-        dirnames[:] = [d for d in dirnames
-                       if d not in IGNORE_DIRS and not d.startswith(".")]
-        for fn in filenames:
-            if fn.endswith(".py"):
-                out.append(os.path.join(dirpath, fn))
+        dirnames[:] = [
+            d for d in dirnames if d not in IGNORE_DIRS and not d.startswith(".")
+        ]
+        # Stays INSIDE the walk loop: hoisting it out would drop the prune above.
+        out.extend(os.path.join(dirpath, fn) for fn in filenames if fn.endswith(".py"))
     return out
 
 
@@ -104,6 +113,7 @@ def _suppressed(line, pragma):
 
 # --- config -------------------------------------------------------------------
 
+
 def load_registry():
     """The vendor-neutral practices registry (config/practices.json), or {}."""
     return _read_json(os.path.join(ROOT, "config", "practices.json"))
@@ -113,11 +123,11 @@ def profiles_on():
     """Set of domain profiles a repo has enabled in config/project.json."""
     proj = _read_json(os.path.join(ROOT, "config", "project.json"))
     prof = (proj.get("practices") or {}).get("profiles") or {}
-    return set(k for k, v in prof.items()
-               if v is True and not k.startswith("_"))
+    return {k for k, v in prof.items() if v is True and not k.startswith("_")}
 
 
 # --- smell detectors (pure: take an AST, return findings) ---------------------
+
 
 def _callee_name(func):
     if isinstance(func, ast.Name):
@@ -128,9 +138,12 @@ def _callee_name(func):
 
 
 def _is_true(node):
-    if isinstance(node, ast.Constant):                    # 3.8+
+    if isinstance(node, ast.Constant):  # 3.8+
         return node.value is True
-    return node.__class__.__name__ == "NameConstant" and getattr(node, "value", None) is True
+    return (
+        node.__class__.__name__ == "NameConstant"
+        and getattr(node, "value", None) is True
+    )
 
 
 def find_di_inline(tree, provider_names):
@@ -141,16 +154,24 @@ def find_di_inline(tree, provider_names):
         if isinstance(node, ast.Call):
             name = _callee_name(node.func)
             if name and name in prov:
-                out.append({"kind": "dependency-injection",
-                            "line": getattr(node, "lineno", 0),
-                            "message": "provider '%s' constructed inline; "
-                                       "inject it via a parameter instead" % name})
+                out.append(
+                    {
+                        "kind": "dependency-injection",
+                        "line": getattr(node, "lineno", 0),
+                        "message": "provider '%s' constructed inline; "
+                        "inject it via a parameter instead" % name,
+                    }
+                )
     return out
 
 
 def _isinstance_subject(test):
     """The dumped first-arg of an ``isinstance(x, ...)`` test, else None."""
-    if isinstance(test, ast.Call) and _callee_name(test.func) == "isinstance" and test.args:
+    if (
+        isinstance(test, ast.Call)
+        and _callee_name(test.func) == "isinstance"
+        and test.args
+    ):
         return ast.dump(test.args[0])
     return None
 
@@ -166,16 +187,23 @@ def find_isinstance_chains(tree, min_branches=3):
         if subj is None:
             continue
         count, cur = 1, node
-        while len(cur.orelse) == 1 and isinstance(cur.orelse[0], ast.If) \
-                and _isinstance_subject(cur.orelse[0].test) == subj:
+        while (
+            len(cur.orelse) == 1
+            and isinstance(cur.orelse[0], ast.If)
+            and _isinstance_subject(cur.orelse[0].test) == subj
+        ):
             cur = cur.orelse[0]
             consumed.add(id(cur))
             count += 1
         if count >= min_branches:
-            out.append({"kind": "singledispatch-over-isinstance",
-                        "line": getattr(node, "lineno", 0),
-                        "message": "%d isinstance branches on one value; "
-                                   "consider functools.singledispatch" % count})
+            out.append(
+                {
+                    "kind": "singledispatch-over-isinstance",
+                    "line": getattr(node, "lineno", 0),
+                    "message": "%d isinstance branches on one value; "
+                    "consider functools.singledispatch" % count,
+                }
+            )
     return out
 
 
@@ -214,28 +242,38 @@ def find_hotpath_no_slots(tree, marker_lines):
         marked = any(top - 2 <= ln <= start for ln in marker_lines)
         if not marked or _has_slots(node) or _dataclass_slots(node):
             continue
-        out.append({"kind": "slots-hot-path", "line": start,
-                    "message": "class '%s' is marked hot-path but has no "
-                               "__slots__ / dataclass(slots=True)" % node.name})
+        out.append(
+            {
+                "kind": "slots-hot-path",
+                "line": start,
+                "message": "class '%s' is marked hot-path but has no "
+                "__slots__ / dataclass(slots=True)" % node.name,
+            }
+        )
     return out
 
 
 def find_acquire_no_cm(tree, acquire_names):
     """A resource-acquiring call bound by a plain assignment (not a ``with``)."""
-    acq = set(n.split(".")[-1] for n in (acquire_names or []))
+    acq = {n.split(".")[-1] for n in (acquire_names or [])}
     out = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call):
             name = _callee_name(node.value.func)
             if name and name in acq:
-                out.append({"kind": "resource-context-manager",
-                            "line": getattr(node, "lineno", 0),
-                            "message": "'%s' acquired outside a `with`; "
-                                       "use a context manager" % name})
+                out.append(
+                    {
+                        "kind": "resource-context-manager",
+                        "line": getattr(node, "lineno", 0),
+                        "message": "'%s' acquired outside a `with`; "
+                        "use a context manager" % name,
+                    }
+                )
     return out
 
 
 # --- scan ---------------------------------------------------------------------
+
 
 def _enabled(registry):
     """{practice_id: status_string} for the advisory practices in the registry."""
@@ -259,8 +297,14 @@ def scan(registry, on_profiles):
     def on(pid):
         return status.get(pid, "").startswith("on")
 
-    cm = next((p for p in registry.get("practices") or []
-               if isinstance(p, dict) and p.get("id") == "resource-context-manager"), {})
+    cm = next(
+        (
+            p
+            for p in registry.get("practices") or []
+            if isinstance(p, dict) and p.get("id") == "resource-context-manager"
+        ),
+        {},
+    )
     cm_active = on("resource-context-manager") and cm.get("profile") in on_profiles
 
     findings, empty_pragmas = [], []
@@ -285,21 +329,33 @@ def scan(registry, on_profiles):
             if on("singledispatch-over-isinstance"):
                 raw += find_isinstance_chains(tree)
             if on("slots-hot-path"):
-                raw += find_hotpath_no_slots(tree, _comment_lines(text, _HOTPATH_MARKER))
+                raw += find_hotpath_no_slots(
+                    tree, _comment_lines(text, _HOTPATH_MARKER)
+                )
             if cm_active:
                 raw += find_acquire_no_cm(tree, acquire)
             for f in raw:
-                findings.append({"kind": f["kind"],
-                                 "loc": "%s:%d" % (rel, f["line"]),
-                                 "message": f["message"],
-                                 "suppressed": _suppressed(f["line"], pragma)})
+                # PERF401 suppressed: an extend+genexp of a 4-key dict literal
+                # built from `f` reads worse, and this list is single-digit.
+                # The suppression rides the CALL, not the dict literal: ruff reports
+                # PERF401 at the append, and `ruff format` exploding the argument
+                # onto its own line silently carried the pragma off that line.
+                findings.append(  # noqa: PERF401
+                    {
+                        "kind": f["kind"],
+                        "loc": "%s:%d" % (rel, f["line"]),
+                        "message": f["message"],
+                        "suppressed": _suppressed(f["line"], pragma),
+                    }
+                )
     return findings, empty_pragmas
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(
         description="Advisory: flag coding-practice smells (DI-inline, isinstance "
-                    "chains, hot-path without __slots__, ...). Never fails the build.")
+        "chains, hot-path without __slots__, ...). Never fails the build."
+    )
     ap.add_argument("--json", action="store_true", help="emit active findings as JSON")
     args = ap.parse_args(argv)
 
@@ -318,14 +374,18 @@ def main(argv=None):
         print("coding-practices: no smells found.  (advisory)")
         return 0
 
-    print("coding-practices: scanning for practice smells "
-          "(advisory; never fails the build)")
+    print(
+        "coding-practices: scanning for practice smells "
+        "(advisory; never fails the build)"
+    )
     for f in sorted(active, key=lambda x: (x["kind"], x["loc"])):
         print("  [%s] %s" % (f["kind"], f["loc"]))
         print("      %s" % f["message"])
         print("      fix: apply the practice, or add `# practice-ok: <reason>`")
-    print("coding-practices: %d smell(s); %d suppressed.  "
-          "(advisory - review, don't obey)" % (len(active), len(findings) - len(active)))
+    print(
+        "coding-practices: %d smell(s); %d suppressed.  "
+        "(advisory - review, don't obey)" % (len(active), len(findings) - len(active))
+    )
     return 0
 
 

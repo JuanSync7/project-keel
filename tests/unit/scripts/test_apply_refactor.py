@@ -4,6 +4,7 @@ kind: tests
 layer: n/a
 summary: apply_one applies a search/replace only when the target text occurs EXACTLY once, so a refactor edit is unambiguous — zero or multiple matches raise before anything is written.
 """
+
 import sys
 from pathlib import Path
 

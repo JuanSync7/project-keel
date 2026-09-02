@@ -4,6 +4,7 @@ kind: tests
 layer: backend
 summary: Every registered ModelBackend conforms to the contract; the fake backend is deterministic.
 """
+
 import sys
 from pathlib import Path
 
@@ -20,8 +21,8 @@ pytestmark = pytest.mark.unit
 def test_registry_lists_the_default_and_more():
     names = list_models()
     assert names == sorted(names), "list_models() must be sorted/stable"
-    assert "claude-code-headless" in names   # the shipped reference adapter
-    assert "fake" in names                    # the deterministic test/dev backend
+    assert "claude-code-headless" in names  # the shipped reference adapter
+    assert "fake" in names  # the deterministic test/dev backend
 
 
 def test_every_registered_backend_satisfies_the_contract():

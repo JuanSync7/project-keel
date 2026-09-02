@@ -5,6 +5,7 @@ kind: script
 layer: n/a
 summary: Deterministic doer — apply a proposed set of file edits ATOMICALLY, run a gate (a make target), and ROLL BACK every file if the gate fails. The refactor loop (agents/practice_refactor) proposes one bounded, named-practice edit at a time; this doer is the safety net that keeps the tree green — a chunk is accepted only if the gate stays green, else the change is reverted. Vendor-neutral, stdlib.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -66,7 +67,7 @@ def plan_edits(spec: dict[str, object], root: str) -> list[tuple[str, str, str]]
                 raise RefactorError("edit %d: file does not exist: %s" % (i, e["file"]))
             originals[path] = working[path] = _read(path)
             order.append(path)
-        if "content" in e:                                   # full-file replacement
+        if "content" in e:  # full-file replacement
             working[path] = str(e["content"])
         elif "find" in e and "replace" in e:
             working[path] = apply_one(working[path], str(e["find"]), str(e["replace"]))
@@ -77,14 +78,23 @@ def plan_edits(spec: dict[str, object], root: str) -> list[tuple[str, str, str]]
 
 def _make_gate(gate: str, cwd: str, timeout: int) -> tuple[bool, str]:
     proc = subprocess.run(  # noqa: S603 — argv list, never a shell string
-        ["make", gate], cwd=cwd, timeout=timeout,
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
+        ["make", gate],
+        cwd=cwd,
+        timeout=timeout,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        universal_newlines=True,
+    )
     return proc.returncode == 0, proc.stdout
 
 
-def apply_and_gate(spec: dict[str, object], root: str, gate: str | None = None,
-                   timeout: int = 1800,
-                   gate_runner: GateRunner | None = None) -> dict[str, object]:
+def apply_and_gate(
+    spec: dict[str, object],
+    root: str,
+    gate: str | None = None,
+    timeout: int = 1800,
+    gate_runner: GateRunner | None = None,
+) -> dict[str, object]:
     """Apply the planned edits, run the gate, and roll back ALL files if it fails.
 
     ``gate`` defaults to the spec's ``gate`` then ``"verify"``; ``"none"`` skips
@@ -97,10 +107,10 @@ def apply_and_gate(spec: dict[str, object], root: str, gate: str | None = None,
     mid-write -- that partial edit is surfaced by the next gate run, never
     silently kept as done.
     """
-    planned = plan_edits(spec, root)                          # may raise before any write
+    planned = plan_edits(spec, root)  # may raise before any write
     gate = gate or str(spec.get("gate") or "verify")
 
-    for path, _old, new in planned:                          # apply
+    for path, _old, new in planned:  # apply
         with open(path, "w", encoding="utf-8") as fh:
             fh.write(new)
 
@@ -116,7 +126,7 @@ def apply_and_gate(spec: dict[str, object], root: str, gate: str | None = None,
             ok, output = False, "gate did not complete: %r" % exc
 
     if not ok:
-        for path, old, _new in planned:                      # ROLL BACK on failure
+        for path, old, _new in planned:  # ROLL BACK on failure
             with open(path, "w", encoding="utf-8") as fh:
                 fh.write(old)
 
@@ -140,15 +150,27 @@ def _load_spec(path: str | None) -> dict[str, object]:
 
 def main(argv: Sequence[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
-        description="Apply a proposed refactor and roll it back unless a make gate stays green.")
-    ap.add_argument("--spec", default="-",
-                    help="path to the JSON edit spec, or '-' for stdin (default)")
-    ap.add_argument("--root", default=".", help="repo root the edit paths are relative to")
-    ap.add_argument("--gate", default=None,
-                    help="make target to gate on (default: spec.gate or 'verify'; 'none' to skip)")
+        description="Apply a proposed refactor and roll it back unless a make gate stays green."
+    )
+    ap.add_argument(
+        "--spec",
+        default="-",
+        help="path to the JSON edit spec, or '-' for stdin (default)",
+    )
+    ap.add_argument(
+        "--root", default=".", help="repo root the edit paths are relative to"
+    )
+    ap.add_argument(
+        "--gate",
+        default=None,
+        help="make target to gate on (default: spec.gate or 'verify'; 'none' to skip)",
+    )
     ap.add_argument("--timeout", type=int, default=1800, help="gate timeout in seconds")
-    ap.add_argument("--dry-run", action="store_true",
-                    help="validate + show the planned files, write nothing")
+    ap.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="validate + show the planned files, write nothing",
+    )
     ap.add_argument("--json", action="store_true", help="emit the result as JSON")
     args = ap.parse_args(argv)
 
@@ -162,7 +184,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "files": [os.path.relpath(p, args.root) for p, _o, _n in planned],
             }
         else:
-            result = apply_and_gate(spec, args.root, gate=args.gate, timeout=args.timeout)
+            result = apply_and_gate(
+                spec, args.root, gate=args.gate, timeout=args.timeout
+            )
     except (RefactorError, ValueError, OSError, json.JSONDecodeError) as exc:
         if args.json:
             json.dump({"error": str(exc)}, sys.stdout, indent=2, sort_keys=True)
@@ -175,13 +199,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         json.dump(result, sys.stdout, indent=2, sort_keys=True)
         sys.stdout.write("\n")
     else:
+        # Joined once so the pragma sits ON the line it silences: `ruff format`
+        # carried both of these off their expressions during the corpus
+        # reformat, and RUF100 is deferred, so nothing reported the orphans.
+        files = ", ".join(result["files"])  # type: ignore[arg-type]
         if result.get("dry_run"):
-            sys.stdout.write("apply_refactor: would edit %s\n" % ", ".join(result["files"]))  # type: ignore[arg-type]
+            sys.stdout.write("apply_refactor: would edit %s\n" % files)
         else:
             verb = "applied" if result["applied"] else "ROLLED BACK (gate failed)"
-            sys.stdout.write("apply_refactor: %s [%s] gate=%s -> %s\n"
-                             % (", ".join(result["files"]), result["practice"],  # type: ignore[arg-type]
-                                result["gate"], verb))
+            sys.stdout.write(
+                "apply_refactor: %s [%s] gate=%s -> %s\n"
+                % (files, result["practice"], result["gate"], verb)
+            )
     if result.get("dry_run"):
         return 0
     return 0 if result["applied"] else 1

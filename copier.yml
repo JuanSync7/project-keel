@@ -6,6 +6,17 @@
 _subdirectory: "."
 _answers_file: ".copier-answers.yml"
 _templates_suffix: ".jinja"
+# Fail with copier's own clear message rather than a mystery render error on an old
+# copier. This is the floor of the NEWEST feature used below, and it has moved twice
+# for the same reason — a floor that admits a copier which then crashes is worse than
+# no floor, because the user is told the version was checked:
+#   9.1.0  `multiselect:` (transports/profiles); 9.0.1 dies on `Could not convert [] to string`
+#   9.3.0  the `command:`/`when:` `_migrations` form; 9.2.0 dies on KeyError: 'version',
+#          because its migration_tasks reads migration["version"] with no guard
+# Raise it whenever a newer feature is used;
+# tests/integration/test_copier_generator_contract.py pins the two together.
+# Generate a NAMED version, not a bare SHA:  copier copy --vcs-ref v0.1.0 ...
+_min_copier_version: "9.3.0"
 # Keel uses CLAUDE.md -> AGENT.md symlinks throughout (enforced by check_I); recreate
 # them as symlinks in the generated project instead of dereferencing to regular files.
 _preserve_symlinks: true
@@ -25,27 +36,95 @@ _exclude:
   - ".svn"
   # Keel instance/meta + generated views that must not ship into a new project.
   # NOTE: config/project.json, pyproject.toml and README.md are NOT excluded — each
-  # has a .jinja twin that renders to the same path and (processed after the plain
-  # file) overwrites it with the tailored version (name/requires-python/title). With
-  # keel's own answers the twins reproduce keel's files byte-for-byte (self-parity).
+  # has a .jinja twin that renders to the same path with the tailored version
+  # (name/requires-python/title). The plain file is NOT copied-then-overwritten: for
+  # any path with a `<name>.jinja` sibling copier's `_render_path` returns early, so
+  # the plain twin is never copied at all and the order files are walked in is
+  # irrelevant. With keel's own answers these twins reproduce keel's files
+  # byte-for-byte (self-parity).
   # NOTE: .copier-answers.yml is NOT excluded — copier WRITES it into the generated
   # project (it records the answers so `copier update` works); keel gitignores its own.
+  # .gitignore.jinja is the one DIVERGENCE twin: unlike the twins above it deliberately
+  # does NOT reproduce keel's file, because keel is the template and a generated project
+  # is not — it drops the `.copier-answers.yml` ignore line so the answers file is
+  # TRACKED downstream (without it, any clone/CI checkout loses `copier update`).
+  # Pinned by tests/integration/test_copier_generation.py; do not "restore parity".
   - ".venv"
+  # Keel's own in-flight scratch (handoff notes for a branch in progress). It is
+  # about THIS repo's unfinished work and would be meaningless — and misleading —
+  # in a project generated from it.
+  - "tmp"
+  # Same rule, for prose that is not scratch: the hardening plan is keel's worklist
+  # — passes, measurements and deferrals about THIS repo, `status: draft`. Shipped
+  # verbatim it lands as a new project's design document. The FILE only: the
+  # directory's labeled README.md is the placeholder a project writes into, and
+  # pruning it would red the project's own check_B.
+  - "docs/design/keel-hardening-plan.md"
   - "wiki/corpus.json"
   - "wiki/llms.txt"
   - "wiki/llms-full.txt"
   - "wiki/.runtime"
+  # Same rule, one more generated view: openapi.json is exported FROM the live app.
+  # Keel's copy names keel and lists the showcase routes, so shipping it verbatim
+  # makes `make check-openapi` stale — red on arrival — in any project with a
+  # different name or without the showcase. `export_openapi.py --check` treats a
+  # missing file as "no contract published yet" and tells the user how to publish
+  # one. Pinned by tests/integration/test_copier_generation.py.
+  - "api/rest_fastapi/openapi.json"
+  # Keel's own template META-tests. They generate FROM this repo and assert on
+  # copier.yml and the .jinja twins — neither of which exists in a project generated
+  # BY it. `.github/workflows/ci.yml` ships verbatim and installs the `template`
+  # extra, so an un-pruned meta-test RUNS downstream and fails on keel-only files,
+  # turning every descendant's CI red. The glob covers every test_copier_*.py.
+  # Pinned by tests/integration/test_copier_generation.py.
+  - "tests/integration/test_copier_*.py"
   # Answer-driven pruning: keep only the chosen frontend stack (the two reference
   # apps are self-contained under src/frontend/<stack>/, so pruning one is clean).
   - "{% if frontend_stack != 'react-vite' %}src/frontend/react-vite{% endif %}"
   - "{% if frontend_stack != 'astro' %}src/frontend/astro{% endif %}"
   - "{% if frontend_stack == 'none' %}src/frontend{% endif %}"
+  # ...and the workflow that BUILDS that stack. `pages.yml` names `src/frontend/astro`
+  # literally (npm ci / npm run build / upload dist), and it ships verbatim like
+  # `ci.yml` does — so under any other answer, including the DEFAULT one, its build job
+  # ran `npm ci` in a directory the line above just pruned and reddened the first push
+  # to main. Same class as the meta-tests: a shipped-verbatim file that only makes
+  # sense for one answer. Pinned by tests/integration/test_copier_generation.py, which
+  # scans every shipped Makefile/workflow/script for a pruned frontend path.
+  - "{% if frontend_stack != 'astro' %}.github/workflows/pages.yml{% endif %}"
   # Transport pruning: api/grpc and api/edge_nginx are self-contained add-ons (no
   # code/test imports them), so drop each unless it was selected. REST (api/rest_fastapi)
-  # and MCP (mcp/) are NOT pruned — the bundled showcase, AAD reference impl, frontend
-  # and CI run on them; removing them is a separate "no-showcase" mode, out of scope here.
+  # and MCP (mcp/) are NOT pruned: they are the always-shipped transport foundation —
+  # the skeleton's own /things route, the AAD reference impl and the MCP servers all
+  # live on them, and none of that depends on the showcase (see the `showcase` prunes
+  # below and ADR-0007, which supersedes ADR-0004's claim that they are inseparable).
   - "{% if 'grpc' not in transports %}api/grpc{% endif %}"
   - "{% if 'edge_nginx' not in transports %}api/edge_nginx{% endif %}"
+  # Showcase pruning. The bundled demo is 1,205 of a generated project's 1,433
+  # Python lines against a 30-line example_feature, so declining it is the largest
+  # single thing this template can do for a user who wants a skeleton rather than a
+  # product tour. Everything here exists ONLY to serve that demo: the read model,
+  # its REST router, its static exporter, the llms.txt renderer that reads it, its
+  # tests and its guide. `src/frontend/astro` goes too, but through the
+  # frontend_stack prune above — the validator on that question forbids the
+  # incoherent pair rather than pruning it twice from here.
+  # NOT pruned, because they do not depend on it — measured, not assumed: nothing
+  # under api/rest_fastapi/aad/, mcp/, agents/ or scripts/query_corpus.py imports
+  # backend.showcase. They read wiki/corpus.json, which the showcase reads too but
+  # does not own, and which mcp/ and three of the four agents need.
+  - "{% if not showcase %}src/backend/showcase{% endif %}"
+  - "{% if not showcase %}api/rest_fastapi/showcase_api.py{% endif %}"
+  - "{% if not showcase %}scripts/jobs/export_showcase_static.py{% endif %}"
+  - "{% if not showcase %}scripts/jobs/build_llms_txt.py{% endif %}"
+  - "{% if not showcase %}tests/unit/backend/test_showcase.py{% endif %}"
+  - "{% if not showcase %}tests/integration/test_showcase_repo.py{% endif %}"
+  - "{% if not showcase %}tests/integration/test_showcase_api.py{% endif %}"
+  # The e2e journey walks the /api/* surface the prune above deletes, so shipping
+  # it to a project that declined the showcase is two hard failures on that
+  # project's first CI run. It was missed here because the decline test asserted
+  # the gate through check_structure, which never executes a test; that test now
+  # runs the generated project's whole suite.
+  - "{% if not showcase %}tests/e2e/test_showcase_journey.py{% endif %}"
+  - "{% if not showcase %}docs/guides/showcase-site.md{% endif %}"
 
 # ---- Q&A (core facts; map 1:1 to config/project.json, enforced by check_H) -----
 project_name:
@@ -67,6 +146,14 @@ project_title:
   when: false
   default: "{{ project_name | replace('_', ' ') | replace('-', ' ') | title }}"
 
+# Asked BEFORE frontend_stack on purpose: copier renders a question's `validator`
+# with the answers gathered SO FAR, so the astro/showcase coherence check below can
+# only see this answer if it is already given.
+showcase:
+  type: bool
+  help: "Keep the bundled showcase demo (product tour: read model + /api/* + docs site)? 'no' gives a plain skeleton"
+  default: true
+
 frontend_stack:
   type: str
   help: "Frontend stack to keep (or 'none' for a backend-only project)"
@@ -75,6 +162,19 @@ frontend_stack:
     - astro
     - none
   default: react-vite
+  # The astro app IS the showcase UI — all seven pages fetch /api/*, `pages.yml`
+  # builds it, and `make site-static` snapshots it through the exporter that
+  # `showcase=false` prunes. So this pair has no coherent meaning, and it is
+  # REFUSED with the fix named rather than silently coerced to react-vite. Silent
+  # coercion is the defect class the preceding passes exist to close: the user
+  # would get a project that does not match the answers they gave, and find out
+  # later. react-vite is unaffected — it makes no API call at all.
+  validator: >-
+    {% if frontend_stack == 'astro' and not showcase %}
+    'astro' is the showcase UI (every page fetches /api/*), so it cannot be kept
+    with showcase=false. Answer 'react-vite' or 'none' for a skeleton frontend,
+    or keep the showcase.
+    {% endif %}
 
 backend_python:
   type: str
@@ -84,7 +184,7 @@ backend_python:
 transports:
   type: str
   multiselect: true
-  help: "Optional add-on transports to keep (REST + MCP always ship — they back the bundled showcase & AAD reference implementation, and their dirs/tests can't be cleanly removed)"
+  help: "Optional add-on transports to keep (REST + MCP always ship — they are the transport foundation the skeleton, the AAD reference implementation and the MCP servers all run on)"
   choices:
     - grpc
     - edge_nginx
@@ -99,3 +199,87 @@ profiles:
     - cuda
     - langgraph
   default: []
+
+# ---- Retirement: what `copier update` must REMOVE ----------------------------
+# `_exclude` above is a GENERATION-time filter and nothing more. On update copier
+# renders the OLD template copy with the UNION of the old and new excludes — on
+# purpose, "to prevent deletion" (copier/_main.py) — so an excluded path is never
+# retired, only never created. Re-answering `frontend_stack` therefore left the
+# declined stack on disk while `.copier-answers.yml` said otherwise, and the
+# project's own gate then went red through no act of its own: dangling
+# CLAUDE.md -> AGENT.md symlinks plus a stack config/project.json does not declare.
+#
+# So every ANSWER-DRIVEN prune in `_exclude` needs a mirror here. The pair is the
+# contract — `_exclude` for a project that never had the path, `_migrations` for one
+# that did — and adding a prune without its mirror silently re-opens the defect,
+# which is why tests/integration/test_copier_generation.py asserts the pairing
+# rather than trusting this comment.
+#
+# THE COST, stated plainly: migrations run arbitrary commands, so copier now classes
+# keel as an unsafe template and `copier update` REFUSES without `--trust`. That is
+# why every documented update command carries the flag. Generation is unaffected —
+# copier only counts migrations on update — so `make new` still needs no trust.
+#
+# THE RISK, stated plainly: `src/frontend/<stack>` is a real app directory that a
+# project is expected to have edited, so these commands can delete work. That is the
+# honest meaning of changing the answer, and it is bounded by copier's own
+# preconditions: update refuses a dirty subproject and requires git, so the deleted
+# tree is always recoverable with `git checkout -- <path>`. Do not extend this list
+# to a path a project could have authored FROM SCRATCH, where no such history exists.
+#
+# `_stage == 'after'` on every entry: they must see the NEW answers, which are only
+# on disk in the `after` stage. The conditions re-read the answer rather than
+# comparing old to new, so a project that never had the path just runs a harmless
+# no-op `rm`.
+_migrations:
+  # Mirrors the frontend-stack prunes.
+  - command: "rm -rf src/frontend/react-vite"
+    when: "{{ _stage == 'after' and frontend_stack != 'react-vite' }}"
+  - command: "rm -rf src/frontend/astro"
+    when: "{{ _stage == 'after' and frontend_stack != 'astro' }}"
+  - command: "rm -rf src/frontend"
+    when: "{{ _stage == 'after' and frontend_stack == 'none' }}"
+  # ...and the workflow that BUILDS the astro stack, whose build job would `npm ci`
+  # in the directory the entry above just removed.
+  - command: "rm -f .github/workflows/pages.yml"
+    when: "{{ _stage == 'after' and frontend_stack != 'astro' }}"
+  # Mirrors the transport prunes.
+  - command: "rm -rf api/grpc"
+    when: "{{ _stage == 'after' and 'grpc' not in transports }}"
+  - command: "rm -rf api/edge_nginx"
+    when: "{{ _stage == 'after' and 'edge_nginx' not in transports }}"
+  # Mirrors the showcase prunes. Safe under the rule stated above — every path here
+  # is keel-authored and arrives only by generation, so nothing a project could have
+  # written from scratch is in reach.
+  - command: "rm -rf src/backend/showcase"
+    when: "{{ _stage == 'after' and not showcase }}"
+  - command: "rm -f api/rest_fastapi/showcase_api.py
+              scripts/jobs/export_showcase_static.py
+              scripts/jobs/build_llms_txt.py
+              tests/unit/backend/test_showcase.py
+              tests/integration/test_showcase_repo.py
+              tests/integration/test_showcase_api.py
+              tests/e2e/test_showcase_journey.py
+              docs/guides/showcase-site.md"
+    when: "{{ _stage == 'after' and not showcase }}"
+  # The generated views the showcase renders. Unlike the code above these are
+  # rebuildable outputs, so leaving them would present a demo the project can no
+  # longer serve — `wiki/corpus.json` is NOT here, because mcp/ and the agents read
+  # it and it outlives the showcase.
+  - command: "rm -f wiki/llms.txt wiki/llms-full.txt"
+    when: "{{ _stage == 'after' and not showcase }}"
+  # Not answer-driven, but the same defect: keel's meta-tests are pruned at
+  # generation, so no CURRENT project has them — but a project generated BEFORE that
+  # prune existed still carries them, and `copier update` is precisely what hands it
+  # the newer `ci.yml` that installs the `template` extra and runs them. They then
+  # fail on copier.yml and the `.jinja` twins, neither of which exists downstream.
+  # Named exactly, not globbed, so a project's own `test_copier_*.py` is never hit.
+  - command: "rm -f tests/integration/test_copier_generation.py
+              tests/integration/test_copier_generator_contract.py
+              tests/integration/test_copier_update.py"
+    when: "{{ _stage == 'after' }}"
+  # Same shape for keel's hardening plan: projects generated before that prune
+  # landed still carry it, and only a migration can retire what `_exclude` can
+  # merely stop shipping. Named exactly — `docs/design/` itself must survive.
+  - command: "rm -f docs/design/keel-hardening-plan.md"
+    when: "{{ _stage == 'after' }}"

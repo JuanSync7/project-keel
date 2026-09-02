@@ -5,6 +5,7 @@ kind: script
 layer: n/a
 summary: Deterministic scheduled job — regenerates a doc index. No LLM.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -31,13 +32,19 @@ def build_index(root: str) -> str:
     """Markdown index of every README.md under `root`. Pure + idempotent."""
     rows = []
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames
-                       if not d.startswith(".") and d != "__pycache__"]
+        dirnames[:] = [
+            d for d in dirnames if not d.startswith(".") and d != "__pycache__"
+        ]
         if "README.md" in filenames:
             p = os.path.join(dirpath, "README.md")
-            rows.append("- [%s](%s) — %s" % (
-                os.path.relpath(dirpath, root) or ".",
-                os.path.relpath(p, root), _title_of(p)))
+            rows.append(
+                "- [%s](%s) — %s"
+                % (
+                    os.path.relpath(dirpath, root) or ".",
+                    os.path.relpath(p, root),
+                    _title_of(p),
+                )
+            )
     rows.sort()
     return "# Doc index\n\n" + "\n".join(rows) + "\n"
 

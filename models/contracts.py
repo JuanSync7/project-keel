@@ -4,7 +4,9 @@ layer: backend
 public_api: yes
 summary: The ABC every model adapter implements.
 """
+
 from __future__ import annotations
+
 from abc import ABC, abstractmethod
 
 __all__ = ["ModelBackend"]

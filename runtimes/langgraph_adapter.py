@@ -4,6 +4,7 @@ layer: backend
 public_api: no
 summary: One engine adapter -- compiles a neutral Plan into a LangGraph StateGraph (durability, HIL, fan-out via Send, streaming).
 """
+
 from __future__ import annotations
 
 from collections import OrderedDict
@@ -80,8 +81,17 @@ class LangGraphRuntime(Runtime):
 
     name = "langgraph"
 
-    def run(self, plan, state=None, *, execute=False, checkpointer=None,
-            run_key="run", resume=_UNSET, on_event=None):
+    def run(
+        self,
+        plan,
+        state=None,
+        *,
+        execute=False,
+        checkpointer=None,
+        run_key="run",
+        resume=_UNSET,
+        on_event=None,
+    ):
         """Compile ``plan`` to a StateGraph, invoke (or resume) it, return a RunResult."""
         from langgraph.graph import StateGraph
 
@@ -105,8 +115,12 @@ class LangGraphRuntime(Runtime):
         builder = StateGraph(_PlanState)
         for step in plan.steps:
             if step.fan_out is None:
-                builder.add_node(step.name, self._node(
-                    plan, step, checkpointer, run_key, on_event, resume_box, holder))
+                builder.add_node(
+                    step.name,
+                    self._node(
+                        plan, step, checkpointer, run_key, on_event, resume_box, holder
+                    ),
+                )
             else:
                 self._add_fan_out(builder, plan, step, checkpointer, run_key, on_event)
         builder.set_entry_point(entry)
@@ -119,22 +133,33 @@ class LangGraphRuntime(Runtime):
             if not holder.get("paused"):
                 raise
             if checkpointer is not None:
-                checkpointer.save(run_key, {"cursor": holder["cursor"],
-                                            "state": holder["state"],
-                                            "trace": holder["trace"]})
-            return RunResult(state=holder["state"],
-                             trace=tuple(TraceEntry(*r) for r in holder["trace"]),
-                             status=PAUSED, interrupt=holder["payload"])
+                checkpointer.save(
+                    run_key,
+                    {
+                        "cursor": holder["cursor"],
+                        "state": holder["state"],
+                        "trace": holder["trace"],
+                    },
+                )
+            return RunResult(
+                state=holder["state"],
+                trace=tuple(TraceEntry(*r) for r in holder["trace"]),
+                status=PAUSED,
+                interrupt=holder["payload"],
+            )
 
         bag = final["bag"]
         if checkpointer is not None:
             checkpointer.clear(run_key)
-        return RunResult(state=_public(bag),
-                         trace=tuple(TraceEntry(*r) for r in bag.get("_trace", [])),
-                         status=COMPLETED)
+        return RunResult(
+            state=_public(bag),
+            trace=tuple(TraceEntry(*r) for r in bag.get("_trace", [])),
+            status=COMPLETED,
+        )
 
     def _node(self, plan, step, checkpointer, run_key, on_event, resume_box, holder):
         """Wrap a normal Step as a LangGraph node (dry-run guard, HIL, checkpoint)."""
+
         def _interrupt(payload):
             if resume_box["has"]:
                 resume_box["has"] = False
@@ -147,20 +172,32 @@ class LangGraphRuntime(Runtime):
             trace = list(bag.get("_trace", []))
             if step.effect in _GATED and not execute:
                 _emit(on_event, step.name, step.effect, False, "dry-run")
-                return {"bag": {"_trace": trace + [[step.name, step.effect, False, "dry-run"]]}}
+                return {
+                    "bag": {
+                        "_trace": trace + [[step.name, step.effect, False, "dry-run"]]
+                    }
+                }
             local = dict(bag)
             local["_interrupt"] = _interrupt
             try:
                 update = step.run(local) or {}
             except Pause as p:
-                holder.update(paused=True, payload=p.payload, cursor=step.name,
-                              state=_public(bag), trace=trace)
-                raise _PauseSignal()
+                holder.update(
+                    paused=True,
+                    payload=p.payload,
+                    cursor=step.name,
+                    state=_public(bag),
+                    trace=trace,
+                )
+                raise _PauseSignal from p
             new = dict(update)
             new["_trace"] = trace + [[step.name, step.effect, True, ""]]
             _emit(on_event, step.name, step.effect, True, "")
-            _checkpoint_after(checkpointer, run_key, plan, step.name, bag, update, new["_trace"])
+            _checkpoint_after(
+                checkpointer, run_key, plan, step.name, bag, update, new["_trace"]
+            )
             return {"bag": new}
+
         return node
 
     @staticmethod
@@ -172,12 +209,12 @@ class LangGraphRuntime(Runtime):
         gather_name = step.name + "__gather"
 
         def dispatch(state):
-            return {}   # routing happens on the conditional edge below
+            return {}  # routing happens on the conditional edge below
 
         def route(state):
             bag = state["bag"]
             if step.effect in _GATED and not bag.get("_execute", False):
-                return gather_name   # skipped: gather emits the skipped trace
+                return gather_name  # skipped: gather emits the skipped trace
             items = list(step.fan_out(bag))
             if not items:
                 return gather_name
@@ -200,22 +237,32 @@ class LangGraphRuntime(Runtime):
             trace = list(bag.get("_trace", []))
             if step.effect in _GATED and not execute:
                 _emit(on_event, step.name, step.effect, False, "dry-run")
-                return {"bag": {"_trace": trace + [[step.name, step.effect, False, "dry-run"]]}}
-            mine = [(idx, res) for (nm, idx, res) in state.get("collect", [])
-                    if nm == step.name]
+                return {
+                    "bag": {
+                        "_trace": trace + [[step.name, step.effect, False, "dry-run"]]
+                    }
+                }
+            mine = [
+                (idx, res)
+                for (nm, idx, res) in state.get("collect", [])
+                if nm == step.name
+            ]
             mine.sort(key=lambda pair: pair[0])
             update = {step.name: [res for _, res in mine]}
             new = dict(update)
             new["_trace"] = trace + [[step.name, step.effect, True, ""]]
             _emit(on_event, step.name, step.effect, True, "")
-            _checkpoint_after(checkpointer, run_key, plan, step.name, bag, update, new["_trace"])
+            _checkpoint_after(
+                checkpointer, run_key, plan, step.name, bag, update, new["_trace"]
+            )
             return {"bag": new}
 
         builder.add_node(step.name, dispatch)
         builder.add_node(worker_name, worker)
         builder.add_node(gather_name, gather)
         builder.add_conditional_edges(
-            step.name, route, {gather_name: gather_name, worker_name: worker_name})
+            step.name, route, {gather_name: gather_name, worker_name: worker_name}
+        )
         builder.add_edge(worker_name, gather_name)
         # gather_name -> the step's normal successors is wired by _wire (it
         # re-homes the plan edges whose src == step.name onto the gather node).
@@ -229,8 +276,9 @@ def _checkpoint_after(checkpointer, run_key, plan, name, bag, update, new_trace)
     post.update(update or {})
     nxt = plan.next_from(name, post)
     if nxt != END:
-        checkpointer.save(run_key, {"cursor": nxt, "state": _public(post),
-                                    "trace": new_trace})
+        checkpointer.save(
+            run_key, {"cursor": nxt, "state": _public(post), "trace": new_trace}
+        )
 
 
 def _wire(builder, plan):
@@ -241,7 +289,7 @@ def _wire(builder, plan):
     """
     from langgraph.graph import END as LG_END
 
-    fan_names = set(s.name for s in plan.steps if s.fan_out is not None)
+    fan_names = {s.name for s in plan.steps if s.fan_out is not None}
     by_src = OrderedDict()
     for edge in plan.edges:
         src = edge.src + "__gather" if edge.src in fan_names else edge.src
@@ -256,12 +304,14 @@ def _wire(builder, plan):
 
 def _router(edges):
     """Return a path function mirroring 'first matching outgoing edge' order."""
+
     def route(state):
         bag = state["bag"]
         for edge in edges:
             if edge.when is None or edge.when(bag):
                 return edge.dst
         return END
+
     return route
 
 
@@ -270,5 +320,5 @@ def _dest_map(edges, lg_end):
     dest = {}
     for edge in edges:
         dest[edge.dst] = lg_end if edge.dst == END else edge.dst
-    dest[END] = lg_end   # fallback when no edge matched
+    dest[END] = lg_end  # fallback when no edge matched
     return dest

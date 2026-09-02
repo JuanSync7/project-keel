@@ -4,6 +4,7 @@ kind: tests
 layer: n/a
 summary: run_target shapes a structured pass/fail from an injected runner (no real subprocess), rejects unsafe target names, and forwards extra make args — so the refactor loop can gate a step deterministically.
 """
+
 import sys
 from pathlib import Path
 
@@ -17,7 +18,9 @@ import run_make_target as rmt  # noqa: E402
 pytestmark = pytest.mark.unit
 
 
-@pytest.mark.parametrize("name", ["verify", "check", "typecheck-py", "site.data", "a1_b-c"])
+@pytest.mark.parametrize(
+    "name", ["verify", "check", "typecheck-py", "site.data", "a1_b-c"]
+)
 def test_safe_targets_accepted(name):
     assert rmt.is_safe_target(name)
 
@@ -41,8 +44,13 @@ def _fake(returncode, out="out"):
 def test_run_target_shapes_a_passing_result():
     runner = _fake(0, "all green\n")
     res = rmt.run_target("verify", runner=runner)
-    assert res == {"target": "verify", "ok": True, "returncode": 0, "output": "all green\n"}
-    assert runner.calls[0][0] == ["make", "verify"]      # argv list, not a shell string
+    assert res == {
+        "target": "verify",
+        "ok": True,
+        "returncode": 0,
+        "output": "all green\n",
+    }
+    assert runner.calls[0][0] == ["make", "verify"]  # argv list, not a shell string
 
 
 def test_run_target_shapes_a_failing_result():
@@ -52,7 +60,9 @@ def test_run_target_shapes_a_failing_result():
 
 def test_run_target_forwards_dir_and_extra_make_args():
     runner = _fake(0)
-    rmt.run_target("verify", cwd="/somewhere", extra=["PY=.venv/bin/python"], runner=runner)
+    rmt.run_target(
+        "verify", cwd="/somewhere", extra=["PY=.venv/bin/python"], runner=runner
+    )
     cmd, cwd, _ = runner.calls[0]
     assert cmd == ["make", "verify", "PY=.venv/bin/python"]
     assert cwd == "/somewhere"

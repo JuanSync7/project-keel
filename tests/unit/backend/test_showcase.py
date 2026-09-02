@@ -4,6 +4,7 @@ kind: tests
 layer: backend
 summary: Mirrors src/backend/showcase/. Exercises the read model via the public API, no disk.
 """
+
 import pytest
 
 from backend.showcase import Showcase, to_jsonable
@@ -16,28 +17,81 @@ def _corpus():
     return {
         "schema_version": 1,
         "nodes": [
-            {"node_id": "readme", "kind": "doc", "title": "Readme",
-             "path": "README.md", "summary": "the root readme",
-             "text_excerpt": "body", "owner": "alice", "tags": ["template", "axi"],
-             "anchor": None, "lineno": None, "parent": None,
-             "children": ["readme#setup"], "links": [{"to": "guide"}]},
-            {"node_id": "readme#setup", "kind": "section", "title": "Setup",
-             "path": "README.md", "summary": "how to set up", "text_excerpt": "",
-             "owner": "alice", "tags": ["setup"], "anchor": "setup", "lineno": 5,
-             "parent": "readme", "children": [], "links": []},
-            {"node_id": "guide", "kind": "doc", "title": "Guide",
-             "path": "docs/guide.md", "summary": "a guide about AXI",
-             "text_excerpt": "", "owner": "", "tags": ["axi", "guide"],
-             "anchor": None, "lineno": None, "parent": None, "children": [],
-             "links": [{"to": "readme"}]},
-            {"node_id": "mod-py", "kind": "module", "title": "mod.py",
-             "path": "src/mod.py", "summary": "a module", "text_excerpt": "",
-             "owner": "bob", "tags": ["mod"], "anchor": None, "lineno": 1,
-             "parent": None, "children": ["mod-py::fn"], "links": []},
-            {"node_id": "mod-py::fn", "kind": "symbol", "title": "fn",
-             "path": "src/mod.py", "summary": "a function", "text_excerpt": "",
-             "owner": "bob", "tags": ["fn"], "anchor": "fn", "lineno": 3,
-             "parent": "mod-py", "children": [], "links": []},
+            {
+                "node_id": "readme",
+                "kind": "doc",
+                "title": "Readme",
+                "path": "README.md",
+                "summary": "the root readme",
+                "text_excerpt": "body",
+                "owner": "alice",
+                "tags": ["template", "axi"],
+                "anchor": None,
+                "lineno": None,
+                "parent": None,
+                "children": ["readme#setup"],
+                "links": [{"to": "guide"}],
+            },
+            {
+                "node_id": "readme#setup",
+                "kind": "section",
+                "title": "Setup",
+                "path": "README.md",
+                "summary": "how to set up",
+                "text_excerpt": "",
+                "owner": "alice",
+                "tags": ["setup"],
+                "anchor": "setup",
+                "lineno": 5,
+                "parent": "readme",
+                "children": [],
+                "links": [],
+            },
+            {
+                "node_id": "guide",
+                "kind": "doc",
+                "title": "Guide",
+                "path": "docs/guide.md",
+                "summary": "a guide about AXI",
+                "text_excerpt": "",
+                "owner": "",
+                "tags": ["axi", "guide"],
+                "anchor": None,
+                "lineno": None,
+                "parent": None,
+                "children": [],
+                "links": [{"to": "readme"}],
+            },
+            {
+                "node_id": "mod-py",
+                "kind": "module",
+                "title": "mod.py",
+                "path": "src/mod.py",
+                "summary": "a module",
+                "text_excerpt": "",
+                "owner": "bob",
+                "tags": ["mod"],
+                "anchor": None,
+                "lineno": 1,
+                "parent": None,
+                "children": ["mod-py::fn"],
+                "links": [],
+            },
+            {
+                "node_id": "mod-py::fn",
+                "kind": "symbol",
+                "title": "fn",
+                "path": "src/mod.py",
+                "summary": "a function",
+                "text_excerpt": "",
+                "owner": "bob",
+                "tags": ["fn"],
+                "anchor": "fn",
+                "lineno": 3,
+                "parent": "mod-py",
+                "children": [],
+                "links": [],
+            },
         ],
     }
 
@@ -46,18 +100,25 @@ def _project():
     return {
         "name": "demoproj",
         "layers": {
-            "frontend": {"language": "typescript", "root": "src/frontend",
-                         "stack": "astro", "available": ["react-vite", "astro"]},
+            "frontend": {
+                "language": "typescript",
+                "root": "src/frontend",
+                "stack": "astro",
+                "available": ["react-vite", "astro"],
+            },
             "backend": {"language": "python", "path": "src/backend"},
         },
-        "transports": {"enabled": ["rest"],
-                       "available": {"rest": "api/rest_fastapi", "mcp": "mcp"}},
+        "transports": {
+            "enabled": ["rest"],
+            "available": {"rest": "api/rest_fastapi", "mcp": "mcp"},
+        },
     }
 
 
 def _sc(present=frozenset()):
-    return Showcase(name="demoproj", project=_project(), corpus=_corpus(),
-                    present_scripts=present)
+    return Showcase(
+        name="demoproj", project=_project(), corpus=_corpus(), present_scripts=present
+    )
 
 
 def test_overview_counts_and_layers():
@@ -65,7 +126,7 @@ def test_overview_counts_and_layers():
     assert ov.name == "demoproj"
     assert ov.stats.docs == 2 and ov.stats.sections == 1
     assert ov.stats.modules == 1 and ov.stats.symbols == 1
-    assert ov.stats.directories == 2          # README.md -> ".", docs/guide.md -> "docs"
+    assert ov.stats.directories == 2  # README.md -> ".", docs/guide.md -> "docs"
     assert ov.stats.checks >= 5
     names = {layer.name for layer in ov.layers}
     assert names == {"frontend", "backend"}
@@ -121,18 +182,25 @@ def _project_with_models():
     p = _project()
     p["models"] = {
         "default": "claude-code-headless",
-        "available": {"claude-code-headless": "models",
-                      "openai-compatible": "models", "fake": "models"},
+        "available": {
+            "claude-code-headless": "models",
+            "openai-compatible": "models",
+            "fake": "models",
+        },
     }
     return p
 
 
 def test_model_adapters_projected_from_the_manifest():
-    sc = Showcase(name="demoproj", project=_project_with_models(),
-                  corpus=_corpus(), present_scripts=frozenset())
+    sc = Showcase(
+        name="demoproj",
+        project=_project_with_models(),
+        corpus=_corpus(),
+        present_scripts=frozenset(),
+    )
     adapters = sc.model_adapters()
     names = [m.name for m in adapters]
-    assert names == sorted(names)                                   # stable order
+    assert names == sorted(names)  # stable order
     assert set(names) == {"claude-code-headless", "openai-compatible", "fake"}
     assert [m.name for m in adapters if m.default] == ["claude-code-headless"]
     assert all(m.directory == "models" for m in adapters)
@@ -148,28 +216,54 @@ def _practices():
     return {
         "schema_version": 1,
         "practices": [
-            {"id": "narrow-optional", "row": 7, "scope": "universal", "tier": "gate",
-             "status": "on", "title": "No implicit Optional",
-             "mechanism": "mypy no_implicit_optional"},
-            {"id": "precise-container-types", "row": 2, "scope": "universal",
-             "tier": "gate", "status": "on", "title": "Declare element types",
-             "mechanism": "mypy disallow_any_generics"},
-            {"id": "shape-typed-tensors", "row": 1, "scope": "domain", "tier": "gate",
-             "status": "deferred:slice-4", "title": "Shape-typed tensors",
-             "mechanism": "check_L"},
+            {
+                "id": "narrow-optional",
+                "row": 7,
+                "scope": "universal",
+                "tier": "gate",
+                "status": "on",
+                "title": "No implicit Optional",
+                "mechanism": "mypy no_implicit_optional",
+            },
+            {
+                "id": "precise-container-types",
+                "row": 2,
+                "scope": "universal",
+                "tier": "gate",
+                "status": "on",
+                "title": "Declare element types",
+                "mechanism": "mypy disallow_any_generics",
+            },
+            {
+                "id": "shape-typed-tensors",
+                "row": 1,
+                "scope": "domain",
+                "tier": "gate",
+                "status": "deferred:slice-4",
+                "title": "Shape-typed tensors",
+                "mechanism": "check_L",
+            },
         ],
     }
 
 
 def test_practice_items_projected_and_sorted_by_row():
-    sc = Showcase(name="demoproj", project=_project(), corpus=_corpus(),
-                  practices=_practices(), present_scripts=frozenset())
+    sc = Showcase(
+        name="demoproj",
+        project=_project(),
+        corpus=_corpus(),
+        practices=_practices(),
+        present_scripts=frozenset(),
+    )
     items = sc.practice_items()
     assert [p.id for p in items] == [
-        "shape-typed-tensors", "precise-container-types", "narrow-optional"]  # by row
+        "shape-typed-tensors",
+        "precise-container-types",
+        "narrow-optional",
+    ]  # by row
     assert [p.row for p in items] == [1, 2, 7]
     assert {p.tier for p in items} == {"gate"}
-    assert {p.scope for p in items} == {"universal", "domain"}   # both scopes surfaced
+    assert {p.scope for p in items} == {"universal", "domain"}  # both scopes surfaced
 
 
 def test_practice_items_absent_registry_is_graceful_empty():
@@ -196,15 +290,23 @@ def _profiles_registry():
 
 
 def test_domain_profiles_join_definitions_with_enable_flags():
-    sc = Showcase(name="demoproj", project=_project_with_profiles(),
-                  corpus=_corpus(), practices=_profiles_registry(),
-                  present_scripts=frozenset())
+    sc = Showcase(
+        name="demoproj",
+        project=_project_with_profiles(),
+        corpus=_corpus(),
+        practices=_profiles_registry(),
+        present_scripts=frozenset(),
+    )
     profs = sc.domain_profiles()
-    assert [p.name for p in profs] == ["ai", "cuda", "langgraph"]  # sorted, _comment skipped
+    assert [p.name for p in profs] == [
+        "ai",
+        "cuda",
+        "langgraph",
+    ]  # sorted, _comment skipped
     by = {p.name: p for p in profs}
-    assert by["cuda"].enabled is True                              # from project.json
+    assert by["cuda"].enabled is True  # from project.json
     assert by["ai"].enabled is False and by["langgraph"].enabled is False
-    assert by["cuda"].tags == ("cuda", "gpu")                      # from practices.json
+    assert by["cuda"].tags == ("cuda", "gpu")  # from practices.json
     assert by["cuda"].activates == ("shape-typed-tensors",)
 
 
@@ -224,7 +326,7 @@ def test_node_resolves_neighbours():
     assert detail is not None
     assert detail.parent is None
     assert [c.node_id for c in detail.children] == ["readme#setup"]
-    assert [r.node_id for r in detail.related] == ["guide"]   # link resolved
+    assert [r.node_id for r in detail.related] == ["guide"]  # link resolved
     assert _sc().node("missing") is None
 
 
@@ -239,9 +341,9 @@ def test_search_ranks_by_overlap():
 def test_llms_index_follows_the_convention():
     txt = _sc().llms_index("https://example.test")
     lines = txt.splitlines()
-    assert lines[0].startswith("# ")              # single H1
+    assert lines[0].startswith("# ")  # single H1
     assert any(ln.startswith("> ") for ln in lines)  # blockquote summary
-    assert "## Root" in txt and "## docs" in txt   # per-directory sections
+    assert "## Root" in txt and "## docs" in txt  # per-directory sections
     # link list items point at the wiki with the node id
     assert "- [Readme](https://example.test/wiki?id=readme): the root readme" in txt
     assert "## Optional" in txt
@@ -256,4 +358,5 @@ def test_to_jsonable_roundtrips_overview():
     assert payload["stats"]["docs"] == 2
     assert isinstance(payload["layers"], list)
     import json
-    json.dumps(payload)   # must be JSON-serialisable
+
+    json.dumps(payload)  # must be JSON-serialisable

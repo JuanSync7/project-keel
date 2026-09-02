@@ -4,6 +4,7 @@ layer: backend
 public_api: no
 summary: Pure helpers that pull a node's renderable markdown body out of source text.
 """
+
 from __future__ import annotations
 
 import ast
@@ -19,7 +20,7 @@ def strip_frontmatter(text: str) -> str:
     lines = text.splitlines()
     for i in range(1, len(lines)):
         if lines[i].strip() == "---":
-            return "\n".join(lines[i + 1:])
+            return "\n".join(lines[i + 1 :])
     return text  # unterminated block -> treat the whole thing as body
 
 
@@ -34,7 +35,7 @@ def section_slice(body: str, lineno: int | None) -> str:
     m = _HEADING.match(lines[start])
     level = len(m.group(1)) if m else 6
     out = [lines[start]]
-    for ln in lines[start + 1:]:
+    for ln in lines[start + 1 :]:
         hm = _HEADING.match(ln)
         if hm and len(hm.group(1)) <= level:
             break
@@ -57,12 +58,17 @@ def symbol_docstring(text: str, name: str) -> str:
     except (SyntaxError, ValueError):
         return ""
     for node in tree.body:
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) \
-                and node.name == name:
+        if (
+            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+            and node.name == name
+        ):
             return ast.get_docstring(node) or ""
     return ""
 
 
 __all__ = [
-    "strip_frontmatter", "section_slice", "module_docstring", "symbol_docstring",
+    "strip_frontmatter",
+    "section_slice",
+    "module_docstring",
+    "symbol_docstring",
 ]

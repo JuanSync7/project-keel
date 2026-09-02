@@ -4,6 +4,7 @@ layer: backend
 public_api: no
 summary: Vendor-neutral value objects an agent surface speaks: card, reply, capability.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -25,9 +26,9 @@ class AgentKind(str, Enum):
 class Capability:
     """One named action a surface advertises (rendered on its card)."""
 
-    command: str          # e.g. "/ask"
-    title: str            # human label
-    arg_hint: str = ""    # e.g. "<question>"
+    command: str  # e.g. "/ask"
+    title: str  # human label
+    arg_hint: str = ""  # e.g. "<question>"
     description: str = ""
 
 

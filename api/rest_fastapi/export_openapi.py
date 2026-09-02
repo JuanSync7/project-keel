@@ -4,6 +4,7 @@ kind: script
 layer: backend
 summary: Emit api/rest_fastapi/openapi.json from the live FastAPI app (one source of truth).
 """
+
 # No `from __future__ import annotations`: the --check hook may run under an old
 # python3 that lacks FastAPI; this file must still parse so the graceful skip
 # below can fire (mirrors scripts/agent_surface/generate_aad_schema.py).
@@ -20,7 +21,8 @@ def _spec() -> dict:
     """Return the live OpenAPI document from the FastAPI app."""
     if _HERE not in sys.path:
         sys.path.insert(0, _HERE)
-    from app import app   # imported here so --help / old python need no FastAPI
+    from app import app  # imported here so --help / old python need no FastAPI
+
     return app.openapi()
 
 
@@ -32,11 +34,16 @@ def main(argv=None) -> int:
     Requires FastAPI (the project interpreter); --check is a no-op when absent.
     """
     ap = argparse.ArgumentParser(
-        description="Export the FastAPI OpenAPI schema to openapi.json")
-    ap.add_argument("--out", default=_OUT,
-                    help="output path (default: openapi.json next to app.py)")
-    ap.add_argument("--check", action="store_true",
-                    help="exit 1 if the committed openapi.json is stale (CI / pre-commit)")
+        description="Export the FastAPI OpenAPI schema to openapi.json"
+    )
+    ap.add_argument(
+        "--out", default=_OUT, help="output path (default: openapi.json next to app.py)"
+    )
+    ap.add_argument(
+        "--check",
+        action="store_true",
+        help="exit 1 if the committed openapi.json is stale (CI / pre-commit)",
+    )
     opts = ap.parse_args(argv)
 
     try:
@@ -54,10 +61,24 @@ def main(argv=None) -> int:
             with open(opts.out, encoding="utf-8") as fh:
                 current = fh.read()
         except FileNotFoundError:
-            current = ""
+            # No contract committed yet — a real state, not a drift. `openapi.json`
+            # is a GENERATED VIEW of the live app, so keel does not ship its own
+            # into a new project: keel's names keel and lists the showcase routes,
+            # which is stale in any project with a different name or without the
+            # showcase, and `make check-all` would be red on arrival through no act
+            # of the user's. Distinguishing "none yet" from "drifted" is what lets
+            # the check be honest in both projects. Say so loudly; do not create it
+            # here, because a check that writes is not a check.
+            sys.stderr.write(
+                "no committed openapi.json yet — publish this project's REST "
+                "contract with `python %s`\n" % os.path.relpath(__file__)
+            )
+            return 0
         if current != text:
-            sys.stderr.write("openapi.json is stale; regenerate with "
-                             "`python api/rest_fastapi/export_openapi.py`\n")
+            sys.stderr.write(
+                "openapi.json is stale; regenerate with "
+                "`python api/rest_fastapi/export_openapi.py`\n"
+            )
             return 1
         print("openapi.json up to date")
         return 0

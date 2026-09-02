@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 """
+title: check_python_version — fail early on a too-old interpreter
+summary: Reads requires-python from pyproject.toml (3.6-safe, no tomllib) and fails with a clear message when the selected python3 is older, instead of letting pytest or application imports die later on cryptic SyntaxErrors.
+
 check_python_version.py - fail early when the selected project interpreter is too old.
 
 The minimum Python is declared once, in pyproject.toml (`requires-python`); this
@@ -43,11 +46,13 @@ def main():
             "ERROR: this project requires Python >=%d.%d; %s is %d.%d.\n"
             "Point PY at a newer interpreter, e.g. `make PY=python3.11 test` "
             "(or activate the project venv).\n"
-            % (minimum[0], minimum[1], sys.executable, current[0], current[1]))
+            % (minimum[0], minimum[1], sys.executable, current[0], current[1])
+        )
         return 1
     sys.stdout.write(
         "check_python_version: %s (%d.%d) satisfies >=%d.%d\n"
-        % (sys.executable, current[0], current[1], minimum[0], minimum[1]))
+        % (sys.executable, current[0], current[1], minimum[0], minimum[1])
+    )
     return 0
 
 

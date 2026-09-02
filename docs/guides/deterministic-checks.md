@@ -62,8 +62,8 @@ everything and therefore expect the project interpreter.
 
 | Check | Script | Gate? | Interpreter | What it guarantees |
 |-------|--------|:-----:|-------------|--------------------|
-| Structure & frontmatter | `scripts/check_structure.py` | error | 3.6-safe | Labels, taxonomy, package boundaries, tool/agent governance, project facts, agent-rules symlinks, owned-exception & frozen-config boundaries, naked-tensor domain warn, lint/type ruleset parity (checks A–M) |
-| Corpus integrity | `scripts/jobs/check_corpus.py` | error | ≥3.7 | `wiki/corpus.json` is a valid, acyclic graph **and** the build is reproducible |
+| Structure & frontmatter | `scripts/check_structure.py` | error | 3.6-safe | Labels, taxonomy, package boundaries, tool/agent governance, project facts, agent-rules symlinks, owned-exception & frozen-config boundaries, naked-tensor domain warn, lint/type ruleset parity, template twin parity (checks A–O) |
+| Corpus integrity | `scripts/jobs/check_corpus.py` | error | ≥3.7 | the fresh build is a valid, acyclic, reproducible graph **and** the local `wiki/corpus.json` (what agents query) is current when present — absent is a loud pass, stale is an error naming `make site-data` (ADR-0008) |
 | OpenAPI drift | `api/rest_fastapi/export_openapi.py --check` | error | FastAPI | Committed `openapi.json` matches the live routes |
 | AAD schema drift | `scripts/agent_surface/generate_aad_schema.py --check` | error | pydantic | Committed AAD JSON Schema matches the model |
 | Code-doc drift | `scripts/cdmon_sync.py --check` | error* | any | cdmon code↔doc drift (*no-op until cdmon is installed) |
@@ -78,7 +78,7 @@ print but never fail the build.
 
 ### 1. Structure & frontmatter — `scripts/check_structure.py`
 
-**Purpose.** The core enforcer of `CONVENTIONS.md`. Checks A–M:
+**Purpose.** The core enforcer of `CONVENTIONS.md`. Checks A–O:
 
 - **A. Frontmatter** — every `README.md` / `AGENT.md` / `CLAUDE.md`, `docs/**`,
   `test-docs/**` markdown, and `agents/**/*.tool.md` has the required keys with
@@ -89,7 +89,8 @@ print but never fail the build.
   defining `__all__`.
 - **D. `__init__` is the API** — no absolute import of another package's
   `_private` module.
-- **E. Authored coverage** (warn) — every `__all__`-exported symbol has a docstring.
+- **E. Authored coverage** — every `__all__`-exported symbol defined in-file has
+  a docstring: the corpus's symbol summaries (error since ADR-0008).
 - **F. Tool specs governed** (error) + **accountability** (warn).
 - **G. Tool↔agent binding** — `tools.md` ↔ each spec's `## Used by` agree.
 - **H. Project facts** — `config/project.json` agrees with the tree (§15).
@@ -112,6 +113,35 @@ print but never fail the build.
   `extend_select` family is selected, every mypy flag is enforced, no `deferred`
   (policy-off) family is selected. Reads `pyproject.toml` as text (no `tomllib`
   on 3.6); multi-line arrays, dotted-key/header forms, `# practice-ok` all handled.
+  Also enforces the two declarations that used to have no consumer: every ruff
+  `per-file-ignores` pattern must be declared in `rulesets.ruff.per_file_ignores`
+  (one `"**/*.py"` line could otherwise silence a family corpus-wide), and every
+  `[[tool.mypy.overrides]]` relaxation of a flag the ruleset declares — `strict`,
+  the twelve components `--strict` expands to, `warn_unreachable` — or of
+  `ignore_errors` must be declared in `rulesets.mypy.overrides` for that module.
+  The bound is deliberate and worth knowing: keys outside that set
+  (`ignore_missing_imports`, `disable_error_code`, `follow_imports`) scope
+  imports or diagnostics rather than strictness, and check_M does not read them.
+- **N. Template twin parity** — keel is a copier template, and every `*.jinja`
+  twin must be declared in `config/project.json` `template.twins` with its kind:
+  `parity` (reproduces keel's own file except where templated), `divergence`
+  (deliberately does not — `.gitignore.jinja` drops the `.copier-answers.yml`
+  ignore so a generated project keeps its upgrade channel), or `generated`
+  (copier writes it; keel commits none of its own). Render-free by necessity —
+  this script is stdlib-only and 3.6-safe, so it cannot import jinja2 — which
+  bounds the claim: it proves no twin is undeclared, no parity twin carries a
+  non-templated line the plain file has lost (the drift that shipped a weaker
+  gate to every descendant), and no divergence twin has quietly stopped
+  diverging. The byte-exact rendered comparison stays in
+  `tests/integration/test_copier_generation.py`, where jinja2 exists. Silent in a
+  generated project, which has no twins.
+
+- **O. Module header contract** — every code-root module docstring carries
+  explicit, non-empty `title:` and `summary:` lines, in exactly the grammar
+  `build_corpus` reads (pinned by a parity test, not a shared import — this
+  script stays 3.6-safe). Without them the corpus falls back to
+  filename/first-prose-line and labels the result `authored`, and an
+  undocumented module is silently dropped from the index (ADR-0008).
 
 **When to run.** Every commit (pre-commit) and in CI; any time you add a
 directory, package, doc, tool, or agent.
@@ -127,7 +157,12 @@ script and `CONVENTIONS.md`.
 §11). This check validates the graph — unique `node_id`s, resolvable
 `parent`/`children`/`links`, valid `kind`/`owner_source`/`visibility`, owner
 coherence, sorted tags, **acyclic** parent chains — and proves the build is
-**deterministic** (builds twice, asserts byte-identical output).
+**deterministic** (builds twice, asserts byte-identical output). It also gates
+the **local** corpus — the file the agents actually query: absent is a loud
+pass (a fresh clone, CI, and a day-one generated project have none), while
+present-but-stale is an **error** naming `make site-data`. Staleness is judged
+on the *deterministic projection* — `index_enforcer`'s `"generated"` summary
+fills and semantic links are enrichment, not rot (ADR-0008).
 
 **When to run.** In CI, and after any change to the corpus builders or to
 content that feeds the corpus.

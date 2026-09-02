@@ -1,5 +1,5 @@
 {
-  "_comment": "Vendor-neutral registry of the coding practices Project Keel promotes. This is DATA read BY PATH (json.load), never imported as a library — the 3.6-safe gate scripts/check_structure.py, the advisory scripts/check_practices.py, and the agents/practice_refactor/ doer all consume it the same way check_H reads project.json. No provider/vendor is baked into check LOGIC; every provider/tensor token lives here as data (CONVENTIONS section 18). Adding/retiring a practice is a data edit here plus its mechanism; enabling a domain profile is a flag in project.json practices.profiles (NOT here — defining a profile is not enabling it).",
+  "_comment": "Vendor-neutral registry of the coding practices this project promotes. This is DATA read BY PATH (json.load), never imported as a library — the 3.6-safe gate scripts/check_structure.py, the advisory scripts/check_practices.py, and the agents/practice_refactor/ doer all consume it the same way check_H reads project.json. No provider/vendor is baked into check LOGIC; every provider/tensor token lives here as data (CONVENTIONS section 18). Adding/retiring a practice is a data edit here plus its mechanism; enabling a domain profile is a flag in project.json practices.profiles (NOT here — defining a profile is not enabling it).",
   "schema_version": 1,
   "rulesets": {
     "_comment": "The concrete lint/type rulesets that carry the 'gate' tier. Mirrors, in DATA, what pyproject.toml enables — check_structure.py check_M reads this to prove pyproject cannot silently LOOSEN the declared policy (a declared extend_select family missing, a mypy flag off, or a 'deferred' family silently selected is an error). Slice 5 widened it: every extend_select family below was measured at zero current violations (pure future-protection), and mypy went full-strict (backlog was 3, now fixed).",
@@ -13,10 +13,41 @@
         "RUF100": "intentional `# noqa: S310` etc. read as unused until the S (bandit) family is selected, which we don't",
         "E501": "docstring summaries deliberately exceed 88 cols"
       },
-      "per_file_ignores": {"src/app/**": ["T201"]}
+      "per_file_ignores": {
+        "_comment": "Declared mirror of [tool.ruff.lint.per-file-ignores]. Pass 3 widened `make lint-py` from `src tests` to every CODE_ROOT, which surfaced 41 T201 print() sites — all of them process entrypoints writing to stdout, the same carve-out src/app/** already had. Named per file wherever the root also holds library code; scripts/ takes a glob because every print() there is inside a main() and nothing in src/ imports it. check_M ENFORCES this key: a per-file-ignore in pyproject.toml that is not declared here, or that ignores a code this does not list for it, is an error (the previously unread declaration was the widest hole in the parity gate — one `\"**/*.py\"` line could silence a family corpus-wide).",
+        "src/app/**": ["T201"],
+        "scripts/**": ["T201"],
+        "api/grpc/server.py": ["T201"],
+        "api/rest_fastapi/export_openapi.py": ["T201"],
+        "demo/run_demo.py": ["T201"]
+      }
     },
     "mypy": {
-      "flags": ["strict", "warn_unreachable"]
+      "_comment": "`flags` is what check_M enforces at the [tool.mypy] level and is unchanged: strict stays ON for the whole scope. `scope`, `ratchet` and `overrides` declare WHERE that policy is applied and where it is relaxed — the blind spot pass 3 exists to close was that a gate-tier ruleset was proven SELECTED but never proven APPLIED. Together they must partition CODE_ROOTS (scripts/check_structure.py): a code root is either type-checked or an explicit, costed rung. tests/integration/test_gate_scope.py enforces the partition and the pyproject/scope parity today; check_M has read `overrides` since pass 3.6 (see the bound stated there); `scope` and `ratchet` still have no consumer inside check_M itself, and teaching it to read them is the natural next rung, belonging to whoever owns check_structure.py.",
+      "flags": ["strict", "warn_unreachable"],
+      "scope": ["src", "models", "demo", "agents"],
+      "overrides": {
+        "_comment": "Declared mirror of every [[tool.mypy.overrides]] block in pyproject.toml: which module pattern may relax which flags. Until pass 3.6 check_M read only `tool.mypy.<flag>`, while _toml_targets normalises override blocks to `tool.mypy.overrides.<flag>` — so a per-module `strict = false`, an `ignore_errors = true`, or (the real case here) switching off strict's COMPONENTS was a loosening the parity gate could not see, and the blocks aliased onto one dotted key so only the last would have been read anyway. Now enforced, with a bound worth stating plainly: check_M errors on an undeclared per-module relaxation of a flag THIS ruleset declares (`strict`, the twelve components `--strict` expands to, `warn_unreachable`) or of `ignore_errors`. Keys outside that set are recorded here but NOT read by the gate — `ignore_missing_imports` on `aad` scopes import resolution rather than type strictness — so they are declared for completeness and judged by review, not by exit code. The removal condition for each lives beside the block in pyproject.toml — deleting a flag from both files is the ratchet step.",
+        "models.*": ["disallow_untyped_defs", "disallow_incomplete_defs", "disallow_untyped_calls", "disallow_untyped_decorators", "disallow_any_generics", "warn_return_any"],
+        "demo.*": ["disallow_untyped_defs", "disallow_incomplete_defs", "disallow_untyped_calls", "disallow_untyped_decorators", "disallow_any_generics"],
+        "agents.*": ["disallow_untyped_defs", "disallow_incomplete_defs", "disallow_untyped_calls", "disallow_untyped_decorators", "disallow_any_generics"],
+        "runtimes.*": ["ignore_errors"],
+        "aad": ["ignore_missing_imports"],
+        "aad.*": ["ignore_missing_imports"]
+      },
+      "ratchet": {
+        "_comment": "Code roots NOT yet in [tool.mypy] files. `errors` is the measured full-strict backlog with the scope prerequisites applied (explicit_package_bases + mypy_path=src) — a number that may only go down. A root at zero belongs in `scope`, not here.",
+        "tests": {"errors": 622,
+                  "removed_when": "the test suite is annotated; blocked first on the roots it imports (disallow_untyped_calls fires in the CALLER), so this is the LAST rung, not the first"},
+        "scripts": {"errors": 464,
+                    "removed_when": "the gate scripts are annotated — constrained by the 3.6-safe five (check_structure/check_generic/check_practices/check_python_version/generate_aad_schema), which cannot use PEP 585/604 or `from __future__ import annotations` and so need typing.List/Optional forms"},
+        "runtimes": {"errors": 87,
+                     "removed_when": "the engine internals are annotated and runtimes/contracts.py parameterises the step state/update dicts (that one contract change also unblocks the agents.* disallow_any_generics rung)"},
+        "api": {"errors": 43,
+                "removed_when": "the FastAPI adapters are annotated AND api/grpc becomes checkable — its thing_pb2/thing_pb2_grpc are `make gen` output that does not exist in a fresh checkout, and grpc ships no stubs"},
+        "mcp": {"errors": 16,
+                "removed_when": "agents/wiki_navigator is annotated (mcp's untyped-call errors are REPORTED in mcp but CAUSED there) and mcp/protocol.py stops passing `params.get('name')` into a `str` parameter — a real contract defect, not an annotation"}
+      }
     }
   },
   "practices": [
@@ -35,6 +66,18 @@
     {"id": "no-blanket-suppressions", "row": 16, "scope": "universal", "tier": "gate", "status": "on",
      "title": "No blanket # noqa / # type: ignore — every suppression names its code",
      "mechanism": "ruff PGH003/PGH004 — Slice 5 (pairs with the # practice-ok discipline)"},
+    {"id": "consistent-formatting", "row": 17, "scope": "universal", "tier": "gate", "status": "on",
+     "title": "One machine-decided layout — no hand-formatting arguments in review",
+     "mechanism": "ruff format --check over CODE_ROOTS, via `make fmt-check` riding `make lint` (`make fmt` rewrites). Read-only in the gate: a check that writes is not a check. Formatter DEFAULTS on purpose — a configured formatter is a style opinion to re-litigate, and the point of this tier is that nobody argues. Note it reflows CODE only, so the deliberate E501 deferral for long docstring summaries is unaffected"},
+    {"id": "documented-module-header", "row": 18, "scope": "universal", "tier": "gate", "status": "on",
+     "title": "Every module carries the machine-readable header (title:/summary:) the corpus reads; every exported symbol is docstringed",
+     "mechanism": "check_structure.py check_O (module header; grammar pinned to build_corpus by test) + check_E (symbol docstrings, ERR since ADR-0008) + check_corpus.py (the local corpus agents query is gated fresh-when-present, stale names make site-data)"},
+    {"id": "readability-over-speed", "row": 19, "scope": "universal", "tier": "doc", "status": "on",
+     "title": "Optimize for the reader (human or agent): readability and loud failure modes outrank speed",
+     "mechanism": "docs/guides/python-style.md section 0 — judgment, deliberately ungated: a heuristic gate would reject correct code. Speed is traded only with a measurement cited in a comment"},
+    {"id": "absent-vs-broken", "row": 20, "scope": "universal", "tier": "doc", "status": "on",
+     "title": "Distinguish absent (say so, continue) from broken (fail loudly) — never collapse the two",
+     "mechanism": "docs/guides/python-style.md section 3 — the recurring house split (openapi --check, check_corpus local gate, tests/optional_deps.py); partially gated by ruff BLE001/B904, the split itself is design judgment"},
     {"id": "exception-chaining", "row": 6, "scope": "universal", "tier": "gate", "status": "on",
      "title": "Preserve the cause; never blind-except",
      "mechanism": "ruff B904 (raise ... from) + BLE001 (blind except)"},

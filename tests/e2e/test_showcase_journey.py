@@ -4,13 +4,16 @@ kind: tests
 layer: n/a
 summary: A visitor walks the whole showcase surface and every curated link resolves into the live corpus.
 """
+
 import sys
 from pathlib import Path
 
 import pytest
 
-pytest.importorskip("fastapi")  # optional transport dep — skip when absent
-pytest.importorskip("httpx")    # backs the FastAPI TestClient
+import optional_deps
+
+optional_deps.importorskip("fastapi", extra="transport")  # optional transport dep
+optional_deps.importorskip("httpx", extra="dev")  # backs FastAPI's TestClient
 
 from fastapi.testclient import TestClient  # noqa: E402
 
@@ -26,11 +29,11 @@ client = TestClient(app)
 
 # Every backend payload a visitor's session loads as they walk the nav.
 PAGE_FEEDS = (
-    "/api/features",     # Conventions/Features/Checks/Setup are list endpoints
+    "/api/features",  # Conventions/Features/Checks/Setup are list endpoints
     "/api/principles",
-    "/api/models",       # the Architecture page's live model-adapter list
-    "/api/practices",    # the Architecture page's live coding-practices list
-    "/api/profiles",     # the Architecture page's live domain-profiles list
+    "/api/models",  # the Architecture page's live model-adapter list
+    "/api/practices",  # the Architecture page's live coding-practices list
+    "/api/profiles",  # the Architecture page's live domain-profiles list
     "/api/checks",
     "/api/setup",
     "/api/wiki/tree",
@@ -54,13 +57,18 @@ def test_curated_links_resolve_into_the_corpus():
     strand the visitor. Asserting the general invariant (not specific ids) keeps
     the curated content honest against the live corpus as either side changes.
     """
-    hrefs = sorted({
-        link["href"]
-        for feed in ("/api/features", "/api/principles")
-        for item in client.get(feed).json()
-        for link in item["links"]
-    })
+    hrefs = sorted(
+        {
+            link["href"]
+            for feed in ("/api/features", "/api/principles")
+            for item in client.get(feed).json()
+            for link in item["links"]
+        }
+    )
     assert hrefs, "there should be curated links to verify"
-    dead = [h for h in hrefs
-            if client.get("/api/wiki/node", params={"id": h}).status_code != 200]
+    dead = [
+        h
+        for h in hrefs
+        if client.get("/api/wiki/node", params={"id": h}).status_code != 200
+    ]
     assert not dead, "dead curated links (no such corpus node): %s" % dead

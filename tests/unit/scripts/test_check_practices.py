@@ -4,6 +4,7 @@ kind: tests
 layer: n/a
 summary: The coding-practices advisor detects DI-inline / isinstance-chain / hot-path / acquire smells generally (over the input class, not one example), and its detectors are pure over an AST.
 """
+
 import ast
 import sys
 from pathlib import Path
@@ -19,6 +20,7 @@ pytestmark = pytest.mark.unit
 
 
 # --- dependency-injection smell ------------------------------------------------
+
 
 def test_flags_provider_constructed_inline():
     tree = ast.parse("def build():\n    return ChatOpenAI(model='x')\n")
@@ -36,10 +38,13 @@ def test_di_solves_the_class_not_one_token():
 
 # --- singledispatch-candidate smell -------------------------------------------
 
+
 def _chain(n):
     branches = "".join(
-        "    %sif isinstance(x, T%d):\n        return %d\n" % ("" if i == 0 else "el", i, i)
-        for i in range(n))
+        "    %sif isinstance(x, T%d):\n        return %d\n"
+        % ("" if i == 0 else "el", i, i)
+        for i in range(n)
+    )
     return ast.parse("def f(x):\n%s    return None\n" % branches)
 
 
@@ -53,15 +58,18 @@ def test_two_isinstance_branches_is_fine():
 
 
 def test_different_subjects_are_not_a_chain():
-    src = ("def f(x, y):\n"
-           "    if isinstance(x, int):\n        return 1\n"
-           "    elif isinstance(y, str):\n        return 2\n"
-           "    elif isinstance(x, float):\n        return 3\n"
-           "    return 0\n")
+    src = (
+        "def f(x, y):\n"
+        "    if isinstance(x, int):\n        return 1\n"
+        "    elif isinstance(y, str):\n        return 2\n"
+        "    elif isinstance(x, float):\n        return 3\n"
+        "    return 0\n"
+    )
     assert cp.find_isinstance_chains(ast.parse(src)) == []
 
 
 # --- hot-path / __slots__ smell -----------------------------------------------
+
 
 def _hotpath(body):
     src = "# hot-path\n" + body
@@ -69,13 +77,17 @@ def _hotpath(body):
 
 
 def test_flags_hot_path_class_without_slots():
-    tree, markers = _hotpath("class Chunk:\n    def __init__(self):\n        self.x = 1\n")
+    tree, markers = _hotpath(
+        "class Chunk:\n    def __init__(self):\n        self.x = 1\n"
+    )
     found = cp.find_hotpath_no_slots(tree, markers)
     assert len(found) == 1 and found[0]["kind"] == "slots-hot-path"
 
 
 def test_hot_path_with_slots_is_clean():
-    tree, markers = _hotpath("class Chunk:\n    __slots__ = ('x',)\n    def m(self):\n        return 1\n")
+    tree, markers = _hotpath(
+        "class Chunk:\n    __slots__ = ('x',)\n    def m(self):\n        return 1\n"
+    )
     assert cp.find_hotpath_no_slots(tree, markers) == []
 
 
@@ -90,6 +102,7 @@ def test_unmarked_class_is_never_flagged():
 
 
 # --- resource / context-manager smell (domain) --------------------------------
+
 
 def test_acquire_outside_with_is_flagged():
     """Matches the last dotted segment, so 'torch.cuda.stream' catches stream()."""

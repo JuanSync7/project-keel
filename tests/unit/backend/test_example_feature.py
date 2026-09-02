@@ -4,6 +4,7 @@ kind: tests
 layer: backend
 summary: Mirrors src/backend/example_feature/. Tests via the public API.
 """
+
 import pytest
 
 from backend import Thing, do_thing  # public API, not _impl
