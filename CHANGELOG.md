@@ -25,6 +25,18 @@ version rather than a bare commit:
   citations to update.
 - **`status: superseded` requires `superseded_by`**, as `deprecated` always
   has — one lifecycle rule, two vocabularies (check_A).
+- **`check_R` — check catalogue parity.** `docs/guides/deterministic-checks.md`
+  and the triggers that run the checks must agree on one membership: every
+  catalogued script exists, an error-tier row is reachable from `make
+  check-all`, a report row is run by some target, every script `check-all`
+  reaches is catalogued, and the hooks table names exactly the hooks
+  `.pre-commit-config.yaml` declares. Its first run found four lies, all fixed
+  below.
+- **`make check-cdmon`**, reached from `check-all`: the cdmon adapter now runs
+  where the catalogue always claimed it did — a stated skip (exit 0) until
+  `cdmon` is on PATH and `config/cdmon/cdmon.yaml` exists.
+- **`make advise` runs `scripts/accountability_report.py`** — the unowned-node
+  report was catalogued and invoked by nothing.
 
 ### Fixed
 - **`make help` hid `e2e`.** The recipe's character class `[a-zA-Z_-]` had no
@@ -35,6 +47,11 @@ version rather than a bare commit:
   generated project, so the link dangled downstream on arrival. Now a plain
   citation that says why. **`python-style.md` cited its own sections as bare
   `§1`/`§3`**, the form that means `CONVENTIONS.md` everywhere else; now named.
+- **The check catalogue told four lies** (found by `check_R`): the cdmon row
+  claimed the error tier while `check-all` never ran it; the accountability
+  report was listed and run by nothing; `check_python_version.py` ran under
+  `check-all` with no row; the hooks table omitted `ruff-format`. Each is now
+  either true or gone.
 
 ## [0.1.0] — 2026-09-02
 

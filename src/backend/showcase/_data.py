@@ -396,7 +396,7 @@ CHECKS: tuple[Check, ...] = (
         when="Every commit and in CI",
         purpose="Labels, taxonomy, package boundaries, tool/agent governance, "
         "project facts, agent-rules symlinks, ruleset parity, template twin "
-        "parity, the machine-readable module contract, Makefile help parity and cross-reference resolution (checks A–Q).",
+        "parity, the machine-readable module contract, Makefile help parity, cross-reference resolution and check-catalogue parity (checks A–R).",
     ),
     Check(
         slug="corpus",

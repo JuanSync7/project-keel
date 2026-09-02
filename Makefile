@@ -23,7 +23,7 @@ CODE_ROOTS := src tests api models mcp agents demo scripts runtimes
 # downstream instead of linting what shipped.
 PY_ROOTS := $(wildcard $(CODE_ROOTS))
 
-.PHONY: help new check-python check check-all check-corpus check-openapi check-aad advise check-generic verify test unit integration e2e smoke \
+.PHONY: help new check-python check check-all check-corpus check-openapi check-aad check-cdmon advise check-generic verify test unit integration e2e smoke \
         lint lint-py lint-fe fmt fmt-check typecheck typecheck-py typecheck-fe \
         fe-install run run-api run-web site-data site-static demo agent-surface-schema
 
@@ -68,17 +68,20 @@ new: ## Generate a NEW project from this template into DEST (interactive Q&A). N
 check: ## Validate structure + frontmatter (3.6-safe)
 	$(PY) scripts/check_structure.py
 
-check-all: check check-corpus check-openapi check-aad ## All deterministic checks (project interpreter; see docs/guides/deterministic-checks.md)
+check-all: check check-corpus check-openapi check-aad check-cdmon ## All deterministic checks (project interpreter; see docs/guides/deterministic-checks.md)
 check-corpus: check-python ## Corpus integrity + build determinism (needs the project interpreter)
 	$(PY) scripts/jobs/check_corpus.py
 check-openapi: ## Committed openapi.json in sync with the app (skips if FastAPI absent)
 	$(PY) api/rest_fastapi/export_openapi.py --check
 check-aad: ## Committed AAD schema in sync with the model (skips if pydantic absent)
 	$(PY) scripts/agent_surface/generate_aad_schema.py --check
+check-cdmon: ## cdmon code-doc drift (a stated skip until cdmon and config/cdmon/cdmon.yaml exist)
+	$(PY) scripts/cdmon_sync.py --check
 
-advise: ## Advisory: flag overfitting / answer-key + coding-practice smells (CONVENTIONS §18; never fails the build)
+advise: ## Advisory: overfitting / answer-key + coding-practice smells, and unowned corpus nodes (CONVENTIONS §18; never fails the build)
 	-$(PY) scripts/check_generic.py
 	-$(PY) scripts/check_practices.py
+	-$(PY) scripts/accountability_report.py
 check-generic: advise ## Alias for `advise` (the generic-solution + practice advisor)
 
 verify: check-all lint typecheck test ## Run all gates (all checks + lint + types + tests)

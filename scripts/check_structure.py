@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 title: check_structure — the deterministic conventions gate
-summary: Stdlib-only, 3.6-safe enforcement of CONVENTIONS.md — labeling, taxonomy, package boundaries, tool/agent governance, manifest and ruleset parity, twin parity, the machine-readable module contract, Makefile help parity, and cross-reference resolution (checks A-Q). Exit 1 on any error; warnings never fail the build.
+summary: Stdlib-only, 3.6-safe enforcement of CONVENTIONS.md — labeling, taxonomy, package boundaries, tool/agent governance, manifest and ruleset parity, twin parity, the machine-readable module contract, Makefile help parity, cross-reference resolution, and check-catalogue parity (checks A-R). Exit 1 on any error; warnings never fail the build.
 
 check_structure.py - enforce the project conventions (see CONVENTIONS.md).
 
@@ -57,6 +57,12 @@ Checks:
      citation names a numbered section — of CONVENTIONS.md unless a document
      is named in front of it (`docs/guides/python-style.md §3`). Links inside
      fenced or inline code are illustrations and are not checked
+  R. Check catalogue parity (ERR): docs/guides/deterministic-checks.md and
+     the triggers agree on one membership — every catalogued script exists,
+     an error-tier row is reachable from `make check-all`, a report row is
+     run by some target, every script check-all reaches is catalogued, and
+     the hooks table matches .pre-commit-config.yaml. A catalogue this
+     check cannot read is a stated WARN
 
 Exit 0 = clean, 1 = errors. Warnings never fail the build. Stdlib only; 3.6+.
 """
@@ -2517,6 +2523,224 @@ def check_Q():
         err(m)
 
 
+# --- check_R: check catalogue parity ------------------------------------------
+#
+# docs/guides/deterministic-checks.md is the roster of every deterministic
+# check: what runs, at which tier, wired how. A roster is only worth reading if
+# it agrees with the triggers, and nothing held the two together: the catalogue
+# listed `cdmon_sync.py --check` at the error tier for as long as it existed
+# while `make check-all` never ran it. Five directions, one membership:
+#   - every catalogued script exists;
+#   - an error-tier row is reachable from `make check-all` (a gate nobody runs
+#     is a claim);
+#   - a report row is run by SOME make target (a report nobody runs is the
+#     `make advise` precedent: documented, invoked by nothing);
+#   - every script `check-all` reaches is catalogued;
+#   - the hooks table and .pre-commit-config.yaml declare the same hook ids.
+
+_CATALOGUE_DOC = "docs/guides/deterministic-checks.md"
+_PRECOMMIT_CONFIG = ".pre-commit-config.yaml"
+_CHECK_ALL = "check-all"
+_GATE_TIERS = ("error", "error*", "report")
+_BACKTICKED = re.compile(r"`([^`]+)`")
+_PY_SCRIPT = re.compile(r"(?<![\w./-])([\w./-]+\.py)\b")
+_MAKE_RULE = re.compile(r"^([^\s:#=$]+)\s*:(?!=)([^#\n]*?)\s*(?:##.*)?$")
+_TABLE_RULE = re.compile(r"^\|\s*:?-+")
+_HOOK_ID = re.compile(r"^\s*-\s*id:\s*(\S+)", re.MULTILINE)
+
+
+def _pipe_table(text, required_columns):
+    """The first pipe table (outside fenced code) whose header carries every
+    required column -> (header cells, lowercased; row cell lists), else None."""
+    lines = _unfenced_lines(text)
+    for i, line in enumerate(lines):
+        if not line.startswith("|") or i + 1 >= len(lines):
+            continue
+        header = [c.strip().lower() for c in line.strip().strip("|").split("|")]
+        if not all(col.lower() in header for col in required_columns):
+            continue
+        if not _TABLE_RULE.match(lines[i + 1]):
+            continue
+        rows = []
+        for row in lines[i + 2 :]:
+            if not row.startswith("|"):
+                break
+            rows.append([c.strip() for c in row.strip().strip("|").split("|")])
+        return header, rows
+    return None
+
+
+def _make_rules(text):
+    """{target: ([prerequisites], [recipe lines])}. Blank and comment lines
+    inside a recipe are ignored, as make ignores them; `$(...)` prerequisites
+    and the dotted special targets are dropped."""
+    rules, current = {}, None
+    for line in text.split("\n"):
+        if line.startswith("\t"):
+            if current is not None:
+                rules[current][1].append(line)
+            continue
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        m = _MAKE_RULE.match(line)
+        if not m or re.match(r"^\.[A-Z_]+$", m.group(1)):
+            current = None
+            continue
+        current = m.group(1)
+        prereqs = [x for x in m.group(2).split() if not x.startswith("$")]
+        rules.setdefault(current, ([], []))[0].extend(prereqs)
+    return rules
+
+
+def _scripts_reachable_from(rules, target):
+    """Every `*.py` path a recipe mentions, over `target` and its prerequisites
+    transitively (a missing prerequisite is make's error, not this check's)."""
+    seen, stack, scripts = set(), [target], set()
+    while stack:
+        t = stack.pop()
+        if t in seen or t not in rules:
+            continue
+        seen.add(t)
+        prereqs, recipe = rules[t]
+        stack.extend(prereqs)
+        for line in recipe:
+            scripts.update(_PY_SCRIPT.findall(line))
+    return scripts
+
+
+def _catalogue_parity_findings(catalogue, makefile, precommit, tree):
+    """catalogue / makefile / precommit: file text, or None when absent. tree:
+    every file path (root-relative, '/'-separated). -> (errs, warns). Pure;
+    the reads are check_R's. No catalogue is silent; a catalogue whose checks
+    table cannot be read, or a Makefile with no `check-all`, is a stated WARN."""
+    errs, warns = [], []
+    if catalogue is None:
+        return errs, warns
+    table = _pipe_table(catalogue, ("Script", "Gate?"))
+    if table is None:
+        warns.append(
+            "%s: catalogue parity unverified -- no checks table with 'Script' and "
+            "'Gate?' columns this check can read" % _CATALOGUE_DOC
+        )
+        return errs, warns
+    header, rows = table
+    script_col, tier_col = header.index("script"), header.index("gate?")
+    catalogued = {}
+    for row in rows:
+        if len(row) <= max(script_col, tier_col):
+            continue
+        m = _BACKTICKED.search(row[script_col])
+        if not m:
+            errs.append(
+                "%s: a checks-table row names no `script` in its Script column: %s"
+                % (_CATALOGUE_DOC, " | ".join(row))
+            )
+            continue
+        script, tier = m.group(1).split()[0], row[tier_col]
+        if tier not in _GATE_TIERS:
+            errs.append(
+                "%s: '%s' is not a gate tier for %s (one of: %s)"
+                % (_CATALOGUE_DOC, tier, script, ", ".join(_GATE_TIERS))
+            )
+        if script not in tree:
+            errs.append(
+                "%s: catalogue names %s, which does not exist"
+                % (_CATALOGUE_DOC, script)
+            )
+        catalogued[script] = tier
+    if makefile is None:
+        warns.append(
+            "%s: catalogue parity unverified -- no Makefile, so which catalogued "
+            "checks actually run cannot be known" % _CATALOGUE_DOC
+        )
+    else:
+        rules = _make_rules(makefile)
+        if _CHECK_ALL not in rules:
+            warns.append(
+                "Makefile: catalogue parity unverified -- no '%s' target, so the "
+                "error-tier rows of %s cannot be shown to run"
+                % (_CHECK_ALL, _CATALOGUE_DOC)
+            )
+        else:
+            gated = _scripts_reachable_from(rules, _CHECK_ALL)
+            anywhere = set()
+            for target in rules:
+                anywhere.update(_scripts_reachable_from(rules, target))
+            for script in sorted(catalogued):
+                tier = catalogued[script]
+                if tier.startswith("error") and script not in gated:
+                    errs.append(
+                        "%s: catalogue claims %s gates at tier '%s' but 'make %s' "
+                        "never runs it -- reach it from %s or change the row"
+                        % (_CATALOGUE_DOC, script, tier, _CHECK_ALL, _CHECK_ALL)
+                    )
+                elif tier == "report" and script not in anywhere:
+                    errs.append(
+                        "%s: catalogue lists %s as a report but no make target runs "
+                        "it -- wire it into a target or drop the row"
+                        % (_CATALOGUE_DOC, script)
+                    )
+            errs.extend(
+                "Makefile: 'make %s' runs %s, which the catalogue (%s) does not list"
+                % (_CHECK_ALL, script, _CATALOGUE_DOC)
+                for script in sorted(gated - set(catalogued))
+            )
+    hooks = _pipe_table(catalogue, ("Hook id", "Calls"))
+    if hooks is not None:
+        id_col = hooks[0].index("hook id")
+        listed = set()
+        for row in hooks[1]:
+            if len(row) > id_col:
+                listed.update(_BACKTICKED.findall(row[id_col]))
+        if precommit is None:
+            errs.extend(
+                "%s: hooks table lists '%s' but there is no %s"
+                % (_CATALOGUE_DOC, hook, _PRECOMMIT_CONFIG)
+                for hook in sorted(listed)
+            )
+        else:
+            declared = set(_HOOK_ID.findall(precommit))
+            errs.extend(
+                "%s: hook '%s' is declared in %s but the hooks table omits it"
+                % (_CATALOGUE_DOC, hook, _PRECOMMIT_CONFIG)
+                for hook in sorted(declared - listed)
+            )
+            errs.extend(
+                "%s: hooks table lists '%s' but %s declares no such hook"
+                % (_CATALOGUE_DOC, hook, _PRECOMMIT_CONFIG)
+                for hook in sorted(listed - declared)
+            )
+    return errs, warns
+
+
+def _optional_text(relpath):
+    """A root file's text, None when absent; present-but-unreadable is an error
+    (the check keyed on it would otherwise go dark)."""
+    full = os.path.join(ROOT, relpath)
+    return _read_text(full, err) if os.path.isfile(full) else None
+
+
+def check_R():
+    """ERROR when the catalogue of deterministic checks and the triggers that
+    run them (Makefile, .pre-commit-config.yaml) disagree on one membership.
+    Silent when there is no catalogue; the shapes it cannot read are WARNs."""
+    catalogue = _optional_text(_CATALOGUE_DOC)
+    if catalogue is None:
+        return
+    tree = set()
+    for dirpath, _, filenames in walk(ROOT):
+        reldir = rel(dirpath).replace(os.sep, "/")
+        for f in filenames:
+            tree.add(f if reldir == "." else reldir + "/" + f)
+    errs, warns_ = _catalogue_parity_findings(
+        catalogue, _optional_text("Makefile"), _optional_text(_PRECOMMIT_CONFIG), tree
+    )
+    for m in errs:
+        err(m)
+    for m in warns_:
+        warn(m)
+
+
 def main():
     check_A()
     check_B()
@@ -2535,6 +2759,7 @@ def main():
     check_O()
     check_P()
     check_Q()
+    check_R()
     for w_ in warnings:
         print("WARN  " + w_)
     for e_ in errors:

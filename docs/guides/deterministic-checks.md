@@ -62,12 +62,13 @@ everything and therefore expect the project interpreter.
 
 | Check | Script | Gate? | Interpreter | What it guarantees |
 |-------|--------|:-----:|-------------|--------------------|
-| Structure & frontmatter | `scripts/check_structure.py` | error | 3.6-safe | Labels, taxonomy, package boundaries, tool/agent governance, project facts, agent-rules symlinks, owned-exception & frozen-config boundaries, naked-tensor domain warn, lint/type ruleset parity, template twin parity, Makefile help parity, cross-reference resolution (checks A–Q) |
+| Structure & frontmatter | `scripts/check_structure.py` | error | 3.6-safe | Labels, taxonomy, package boundaries, tool/agent governance, project facts, agent-rules symlinks, owned-exception & frozen-config boundaries, naked-tensor domain warn, lint/type ruleset parity, template twin parity, Makefile help parity, cross-reference resolution, check-catalogue parity (checks A–R) |
+| Interpreter floor | `scripts/check_python_version.py` | error | any | `$(PY)` satisfies `pyproject.toml`'s `requires-python`, said plainly before a newer-syntax check fails with a traceback — runs first under `check-all` and `test` |
 | Corpus integrity | `scripts/jobs/check_corpus.py` | error | ≥3.7 | the fresh build is a valid, acyclic, reproducible graph **and** the local `wiki/corpus.json` (what agents query) is current when present — absent is a loud pass, stale is an error naming `make site-data` (ADR-0008) |
 | OpenAPI drift | `api/rest_fastapi/export_openapi.py --check` | error | FastAPI | Committed `openapi.json` matches the live routes |
 | AAD schema drift | `scripts/agent_surface/generate_aad_schema.py --check` | error | pydantic | Committed AAD JSON Schema matches the model |
-| Code-doc drift | `scripts/cdmon_sync.py --check` | error* | any | cdmon code↔doc drift (*no-op until cdmon is installed) |
-| Accountability | `scripts/accountability_report.py` | report | ≥3.7 | Lists corpus nodes that resolve to no owner (informational) |
+| Code-doc drift | `scripts/cdmon_sync.py --check` | error* | any | cdmon code↔doc drift — the CONVENTIONS §9 worked example of a thin adapter over an external tool (*a stated skip, exit 0, until `cdmon` is on PATH **and** `config/cdmon/cdmon.yaml` exists; cdmon is not on PyPI). Reached from `check-all` via `make check-cdmon` |
+| Accountability | `scripts/accountability_report.py` | report | ≥3.7 | Lists corpus nodes that resolve to no owner (informational; rides `make advise`) |
 | Generic-solution advisor | `scripts/check_generic.py` | report | 3.6-safe | Distinctive literals asserted as golden in tests **and** hardcoded in `src/` logic (the "answer-key" overfit smell, §18). Advisory only — never fails the build |
 | Coding-practices advisor | `scripts/check_practices.py` | report | 3.6-safe | Coding-practice smells (a provider constructed inline instead of injected, a ≥3-branch `isinstance` chain, a `# hot-path` class without `__slots__`, a resource acquired outside a `with`). Reads `config/practices.json`; advisory only — never fails the build (see [coding-practices](coding-practices.md)) |
 
@@ -78,7 +79,7 @@ print but never fail the build.
 
 ### 1. Structure & frontmatter — `scripts/check_structure.py`
 
-**Purpose.** The core enforcer of `CONVENTIONS.md`. Checks A–Q:
+**Purpose.** The core enforcer of `CONVENTIONS.md`. Checks A–R:
 
 - **A. Frontmatter** — every `README.md` / `AGENT.md` / `CLAUDE.md`, `docs/**`,
   `test-docs/**` markdown, and `agents/**/*.tool.md` has the required keys with
@@ -172,6 +173,18 @@ print but never fail the build.
   every generated project. What this buys: renumbering `CONVENTIONS.md`, or
   moving a doc, now fails with the full list of citations to update instead of
   leaving the knowledge graph pointing at the wrong sections at exit 0.
+- **R. Check catalogue parity** — this file's checks table and the triggers
+  that run the checks agree on one membership: every catalogued script exists;
+  a row at the `error`/`error*` tier is reachable from `make check-all` (a gate
+  nobody runs is a claim); a `report` row is run by *some* make target (a
+  report nobody runs is the `make advise` precedent — documented, invoked by
+  nothing); every script `check-all` reaches, transitively through
+  prerequisites, has a row; and the hooks table below names exactly the hook
+  ids `.pre-commit-config.yaml` declares. The tier column is a closed
+  vocabulary (`error`, `error*`, `report`). The live instance this closed: the
+  cdmon row claimed the error tier for as long as it existed while `check-all`
+  never ran it. Silent without this file; a checks table or Makefile it cannot
+  read is a WARN that says *unverified*.
 
 **When to run.** Every commit (pre-commit) and in CI; any time you add a
 directory, package, doc, tool, or agent.
@@ -268,8 +281,8 @@ commit (each hook is a thin trigger that calls a `scripts/` doer):
 | `structure` | `python3 scripts/check_structure.py` |
 | `openapi` | `python3 api/rest_fastapi/export_openapi.py --check` (skips if FastAPI absent) |
 | `aad-schema` | `python3 scripts/agent_surface/generate_aad_schema.py --check` (skips if pydantic absent) |
-| `cdmon` | `python3 scripts/cdmon_sync.py --check` (no-op until installed) |
-| `eslint` / `ruff` | frontend + Python style |
+| `cdmon` | `python3 scripts/cdmon_sync.py --check` (a stated skip until cdmon and its config exist) |
+| `eslint` / `ruff` / `ruff-format` | frontend lint + Python lint + Python formatting |
 
 Enable once: `pip install pre-commit && pre-commit install`.
 
@@ -278,7 +291,7 @@ Enable once: `pip install pre-commit && pre-commit install`.
 `.github/workflows/ci.yml` runs under Python 3.11 and Node 22:
 
 ```yaml
-- run: make check-all   # structure, corpus, openapi, aad
+- run: make check-all   # structure, corpus, openapi, aad, cdmon
 - run: make lint
 - run: make typecheck
 - run: make test

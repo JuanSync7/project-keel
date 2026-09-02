@@ -25,7 +25,7 @@ jobs:
       # Install FE deps so the frontend lint/typecheck gates run; no-op
       # if there are no frontend apps.
       - run: make fe-install
-      - run: make check-all
+      - run: make check-all   # structure, corpus, openapi, aad, cdmon (a stated skip)
       - run: make lint
       - run: make typecheck
       # The corpus (wiki/corpus.json) is a generated artifact (gitignored), so a

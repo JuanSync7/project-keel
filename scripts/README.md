@@ -27,7 +27,7 @@ is the template; see [ADR 0004](../docs/adr/0004-project-templating-copier.md)).
 These scripts keep the template structurally honest — labeling, package
 boundaries, the doc/code corpus, and the published contracts:
 
-- `check_structure.py` — conventions validator (checks A–Q); `make check`.
+- `check_structure.py` — conventions validator (checks A–R); `make check`.
 - `jobs/check_corpus.py` — `wiki/corpus.json` integrity + build reproducibility.
 - `agent_surface/generate_aad_schema.py --check` / `cdmon_sync.py --check` — contract drift.
 

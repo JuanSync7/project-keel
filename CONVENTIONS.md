@@ -206,6 +206,7 @@ pre-commit hook) fails the build if the conventions above drift:
 | Module contract (§16) | every `.py` under the code roots opens with a docstring carrying explicit, non-empty `title:` and `summary:` lines — the grammar the corpus reads — and every `__all__`-exported symbol defined in-file has a docstring |
 | Help parity | every `## `-annotated Makefile target is one the `help` recipe's own grep pattern lists (read from the recipe, never restated), so no target is documented-but-invisible to `make help`; a recipe the check cannot read is a stated WARN |
 | Cross-references | every relative Markdown link in prose (file, directory, `#anchor`) names something that exists, and every `§N` citation names a numbered section: a bare `§N` always cites this file, a section of any other document is cited by naming it (`docs/guides/python-style.md §3`). Read from prose and from code/config; links inside code are illustrations and are not read |
+| Check catalogue | `docs/guides/deterministic-checks.md` and the triggers agree on one membership: every catalogued script exists, an error-tier row is reachable from `make check-all`, a report row is run by some target, every script `check-all` reaches is catalogued, and the hooks table names exactly the hooks `.pre-commit-config.yaml` declares |
 
 Missing `owner` is a warning, not a failure. If you change the scheme
 (KINDS / LAYERS / STATUSES / VISIBILITIES) or a check, update **both**
