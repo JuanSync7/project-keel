@@ -62,14 +62,14 @@ everything and therefore expect the project interpreter.
 
 | Check | Script | Gate? | Interpreter | What it guarantees |
 |-------|--------|:-----:|-------------|--------------------|
-| Structure & frontmatter | `scripts/check_structure.py` | error | 3.6-safe | Labels, taxonomy, package boundaries, tool/agent governance, project facts, agent-rules symlinks, owned-exception & frozen-config boundaries, naked-tensor domain warn, lint/type ruleset parity, template twin parity, Makefile help parity, cross-reference resolution, check-catalogue parity, rosters (checks A–S) |
+| Structure & frontmatter | `scripts/check_structure.py` | error | 3.6-safe | Labels, taxonomy, package boundaries, tool/agent governance, project facts, agent-rules symlinks, owned-exception & frozen-config boundaries, naked-tensor domain warn, lint/type ruleset parity, template twin parity, Makefile help parity, cross-reference resolution, check-catalogue parity, rosters, practice mechanisms (checks A–T) |
 | Interpreter floor | `scripts/check_python_version.py` | error | any | `$(PY)` satisfies `pyproject.toml`'s `requires-python`, said plainly before a newer-syntax check fails with a traceback — runs before every check that needs the project interpreter (`check-corpus`, `test`) |
 | Corpus integrity | `scripts/jobs/check_corpus.py` | error | ≥3.7 | the fresh build is a valid, acyclic, reproducible graph whose edge kinds are from the closed set (`keyword`, `link`, `citation`, `mention`, `semantic`) **and** the local `wiki/corpus.json` (what agents query) is current when present — absent is a loud pass, stale is an error naming `make site-data` (ADR-0008) |
 | OpenAPI drift | `api/rest_fastapi/export_openapi.py --check` | error | FastAPI | Committed `openapi.json` matches the live routes |
 | AAD schema drift | `scripts/agent_surface/generate_aad_schema.py --check` | error | pydantic | Committed AAD JSON Schema matches the model |
 | Code-doc drift | `scripts/cdmon_sync.py --check` | error* | any | cdmon code↔doc drift — the CONVENTIONS §9 worked example of a thin adapter over an external tool (*a stated skip, exit 0, until `cdmon` is on PATH **and** `config/cdmon/cdmon.yaml` exists; cdmon is not on PyPI). Reached from `check-all` via `make check-cdmon` |
 | Accountability | `scripts/accountability_report.py` | report | ≥3.7 | Lists corpus nodes that resolve to no owner (informational; rides `make advise`) |
-| Doc freshness | `scripts/review_docs.py` | report | any (git) | Every governed document's `updated:` is no earlier than its last commit, and a document modified in the working tree carries today's date. Report under `make advise`; the same rule gates in `tests/integration/test_doc_freshness.py` (`--strict`). No git is a stated skip |
+| Doc review | `scripts/review_docs.py` | report | any (git) | Freshness — every governed document's `updated:` is no earlier than its last commit, and a document modified in the working tree carries today's date (gated by `tests/integration/test_doc_freshness.py`, `--strict`) — and the advisory that stays advisory: backticked repository paths that resolve to nothing. No git is a stated skip |
 | Generic-solution advisor | `scripts/check_generic.py` | report | 3.6-safe | Distinctive literals asserted as golden in tests **and** hardcoded in `src/` logic (the "answer-key" overfit smell, §18). Advisory only — never fails the build |
 | Coding-practices advisor | `scripts/check_practices.py` | report | 3.6-safe | Coding-practice smells (a provider constructed inline instead of injected, a ≥3-branch `isinstance` chain, a `# hot-path` class without `__slots__`, a resource acquired outside a `with`). Reads `config/practices.json`; advisory only — never fails the build (see [coding-practices](coding-practices.md)) |
 
@@ -80,7 +80,7 @@ print but never fail the build.
 
 ### 1. Structure & frontmatter — `scripts/check_structure.py`
 
-**Purpose.** The core enforcer of `CONVENTIONS.md`. Checks A–S:
+**Purpose.** The core enforcer of `CONVENTIONS.md`. Checks A–T:
 
 - **A. Frontmatter** — every `README.md` / `AGENT.md` / `CLAUDE.md`, `docs/**`,
   `test-docs/**` markdown, and `agents/**/*.tool.md` has the required keys with
@@ -238,6 +238,15 @@ print but never fail the build.
   twin, so a generated project's roster matches its pruned tree — the
   generation tests run this check inside every generated project. Lands as an
   error: every roster was written in the landing commit.
+- **T. Practice mechanisms resolve** — every `config/practices.json` entry
+  carries `enforced_by`, a list in a closed grammar (`check:<LETTER>`,
+  `script:<path>`, `test:<path>`, `make:<target>`, `doc:<path>[ §N]`,
+  `ruff:<CODE>`, `mypy:<flag>`), and every reference resolves: the check letter
+  is defined here, the script/test/doc exists (and has that numbered section),
+  the make target is a rule. `ruff:`/`mypy:` codes are accepted as written —
+  the tools themselves reject an unknown one. `mechanism` stays as prose for a
+  reader; this is the same claim a machine can hold. Silent without a
+  registry. Lands as an error: every entry was annotated in the landing commit.
 
 **When to run.** Every commit (pre-commit) and in CI; any time you add a
 directory, package, doc, tool, or agent.

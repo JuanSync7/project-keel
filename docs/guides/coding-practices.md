@@ -153,6 +153,13 @@ finding can be waived with `# practice-ok: <reason>`:
 
 ### Docs — conventions to follow
 
+The documentation practices (`subject: "docs"` in the registry — rosters, the
+citation grammar, freshness, the tool-spec body, the check catalogue) are
+catalogued the same way; their judgment half is `doc-style.md` and their gates
+are checks P–T plus `scripts/review_docs.py`. Every entry, code or docs, names
+its mechanism twice: `mechanism` as prose and `enforced_by` in the closed
+grammar `check_T` resolves.
+
 Shape/dtype/device-aware hints (`jaxtyping` or a `TypeAlias` + inline `# (B, T, H)`
 comment); `Protocol` for structurally typing third-party shapes you don't own;
 `TypedDict`/Pydantic for LangGraph state; frozen config vs mutable state kept

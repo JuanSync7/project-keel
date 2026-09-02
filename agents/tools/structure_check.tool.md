@@ -22,11 +22,11 @@ tool_effect: read-only
 `python3 scripts/check_structure.py`
 
 ## Purpose
-Enforces CONVENTIONS.md — checks A–S: frontmatter validity and unique corpus
+Enforces CONVENTIONS.md — checks A–T: frontmatter validity and unique corpus
 ids, documented dirs, the package and private-import boundaries, authored
 coverage and the module header contract, tool-spec governance and the
 tool↔agent binding, project facts, agent-rules symlinks, the gate-tier practice
-boundaries, ruleset/twin/help/catalogue parity, cross-references and rosters;
+boundaries, ruleset/twin/help/catalogue parity, cross-references, rosters and practice mechanisms;
 plus the accountability warnings. This is how the `index_enforcer` proves the
 repo is convention-clean before it trusts the corpus.
 

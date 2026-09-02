@@ -44,6 +44,23 @@ version rather than a bare commit:
   READMEs whose members are pruned with the showcase (`docs/guides/`,
   `scripts/jobs/`) are `.jinja` twins, so a `showcase=false` project's roster
   matches its tree.
+- **Documentation practices are registered, and every practice names a
+  mechanism that exists.** `config/practices.json` entries carry `subject`
+  (`code` | `docs`) and `enforced_by`, a list in a closed grammar
+  (`check:<LETTER>`, `script:`, `test:`, `make:`, `doc:<path> §N`, `ruff:`,
+  `mypy:`); twelve documentation practices join the twenty-two code ones at
+  honest tiers (eight gates, one advisory, three doc). **`check_T`** resolves
+  every `enforced_by` reference — the cdmon lesson applied to the registry.
+  `scripts/check_practices.py` reads only code-subject entries.
+- **`docs/guides/doc-style.md`** — the documentation twin of `python-style.md`:
+  what a document is for, one claim per sentence, the discriminator between
+  siblings, the citation grammar, freshness as a fact, the plain imperative over
+  BCP 14, idempotency stated and proven, and the table of what is enforced,
+  advised and judged.
+- **`make advise` lists unresolved mentions** — backticked repository paths that
+  resolve to nothing (`scripts/review_docs.py`; advisory, because most are bare
+  basenames used as nouns). **`make check` ends with a nudge** naming what its
+  gate does not fail on and the one command that reports it.
 - **`ModelUnavailable` — absent versus broken, for models.** A `claude` binary
   not on PATH, or an OpenAI-compatible endpoint that cannot be reached, now
   raises the owned `models.ModelUnavailable` instead of a raw `FileNotFoundError`

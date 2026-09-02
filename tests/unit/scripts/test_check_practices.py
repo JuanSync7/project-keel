@@ -114,3 +114,38 @@ def test_acquire_outside_with_is_flagged():
 def test_acquire_inside_with_is_clean():
     tree = ast.parse("def f():\n    with stream() as s:\n        return s\n")
     assert cp.find_acquire_no_cm(tree, ["torch.cuda.stream"]) == []
+
+
+# --- subject: a docs-subject practice is prose, not an AST smell ----------------
+
+
+def test_docs_subject_practices_are_not_read_as_code_smells():
+    """`doc-unresolved-mentions` is advisory and lives in review_docs; the AST
+    scanner must not treat it as a smell it has no detector for."""
+    registry = {
+        "practices": [
+            {
+                "id": "dependency-injection",
+                "tier": "advisory",
+                "status": "on",
+                "subject": "code",
+            },
+            {
+                "id": "doc-unresolved-mentions",
+                "tier": "advisory",
+                "status": "on",
+                "subject": "docs",
+            },
+        ],
+        "tokens": {"provider_constructors": []},
+    }
+    status = cp._enabled(registry)
+    assert "dependency-injection" in status and "doc-unresolved-mentions" not in status
+
+
+def test_an_entry_without_subject_is_code():
+    registry = {
+        "practices": [{"id": "x", "tier": "advisory", "status": "on"}],
+        "tokens": {},
+    }
+    assert "x" in cp._enabled(registry)

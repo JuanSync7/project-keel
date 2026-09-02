@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 title: check_structure — the deterministic conventions gate
-summary: Stdlib-only, 3.6-safe enforcement of CONVENTIONS.md — labeling, taxonomy, package boundaries, tool/agent governance, manifest and ruleset parity, twin parity, the machine-readable module contract, Makefile help parity, cross-reference resolution, check-catalogue parity, and rosters (checks A-S). Exit 1 on any error; warnings never fail the build.
+summary: Stdlib-only, 3.6-safe enforcement of CONVENTIONS.md — labeling, taxonomy, package boundaries, tool/agent governance, manifest and ruleset parity, twin parity, the machine-readable module contract, Makefile help parity, cross-reference resolution, check-catalogue parity, rosters, and practice mechanisms (checks A-T). Exit 1 on any error; warnings never fail the build.
 
 check_structure.py - enforce the project conventions (see CONVENTIONS.md).
 
@@ -69,6 +69,9 @@ Checks:
   S. Roster parity (ERR): a README declaring `## What ships here` names every
      member of its directory exactly once and nothing else (Member column),
      and every row's `Not for` cell is filled. Opt-in by the heading
+  T. Practice mechanisms resolve (ERR): every config/practices.json entry's
+     `enforced_by` names a check letter, script, test, make target or guide
+     section that exists (a closed grammar; ruff/mypy codes are accepted)
 
 Exit 0 = clean, 1 = errors. Warnings never fail the build. Stdlib only; 3.6+.
 """
@@ -3209,6 +3212,112 @@ def check_S():
             err(m)
 
 
+# --- check_T: practice mechanisms resolve --------------------------------------
+#
+# config/practices.json says how each practice is enforced. `mechanism` is prose
+# for a reader; `enforced_by` is the same claim in a closed grammar a check can
+# resolve, so a practice cannot name a check letter, script, test, make target
+# or guide section that does not exist — the cdmon lesson, applied to the
+# practices registry. ruff and mypy references are external tools' vocabularies
+# and are accepted as written (the tools themselves reject an unknown code).
+
+_MECHANISM_RE = re.compile(r"^(check|script|test|make|doc|ruff|mypy):(.+)$")
+_MECHANISM_FORMS = "check:<LETTER> | script:<path> | test:<path> | make:<target> | doc:<path>[ §N] | ruff:<CODE> | mypy:<flag>"
+
+
+def _mechanism_findings(practices, check_letters, tree, make_targets, sections_of):
+    """practices: the registry dict; check_letters: the letters check_structure
+    defines; tree: every file path; make_targets: the Makefile's rule names;
+    sections_of(path) -> set of numbered sections or None. -> error strings."""
+    errs = []
+    entries = practices.get("practices") if isinstance(practices, dict) else None
+    if not isinstance(entries, list):
+        return errs
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        pid = entry.get("id", "?")
+        refs = entry.get("enforced_by")
+        if not isinstance(refs, list) or not refs:
+            errs.append(
+                "config/practices.json: practice '%s' has no `enforced_by` list -- name "
+                "the mechanism(s) that enforce it (%s)" % (pid, _MECHANISM_FORMS)
+            )
+            continue
+        for ref in refs:
+            m = _MECHANISM_RE.match(str(ref))
+            if not m:
+                errs.append(
+                    "config/practices.json: practice '%s' names '%s', which is not in "
+                    "the mechanism grammar (%s)" % (pid, ref, _MECHANISM_FORMS)
+                )
+                continue
+            form, value = m.group(1), m.group(2).strip()
+            if form == "check":
+                if value not in check_letters:
+                    errs.append(
+                        "config/practices.json: practice '%s' claims check_%s, which "
+                        "check_structure.py does not define" % (pid, value)
+                    )
+            elif form in ("script", "test"):
+                if value not in tree:
+                    errs.append(
+                        "config/practices.json: practice '%s' claims %s '%s', which does "
+                        "not exist" % (pid, form, value)
+                    )
+            elif form == "make":
+                if value not in make_targets:
+                    errs.append(
+                        "config/practices.json: practice '%s' claims `make %s`, and the "
+                        "Makefile has no such target" % (pid, value)
+                    )
+            elif form == "doc":
+                path, _, section = value.partition(" §")
+                if path not in tree:
+                    errs.append(
+                        "config/practices.json: practice '%s' claims doc '%s', which does "
+                        "not exist" % (pid, path)
+                    )
+                elif section:
+                    present = sections_of(path)
+                    if present is None or int(section) not in present:
+                        errs.append(
+                            "config/practices.json: practice '%s' claims %s §%s, and that "
+                            "document has no numbered section %s"
+                            % (pid, path, section, section)
+                        )
+    return errs
+
+
+def check_T():
+    """ERROR when a practice's `enforced_by` names a mechanism that does not exist.
+    Silent when there is no practices registry (a generated project may drop it)."""
+    practices = _load_practices()
+    if not practices:
+        return
+    letters = set(
+        re.findall(
+            r"^def check_([A-Z])\(",
+            _read_text(os.path.abspath(__file__), err) or "",
+            re.MULTILINE,
+        )
+    )
+    tree = set()
+    for dirpath, _, filenames in walk(ROOT):
+        reldir = rel(dirpath).replace(os.sep, "/")
+        for f in filenames:
+            tree.add(f if reldir == "." else reldir + "/" + f)
+    makefile = _optional_text("Makefile")
+    targets = set(_make_rules(makefile)) if makefile else set()
+
+    def sections_of(path):
+        text = _read_text(os.path.join(ROOT, path), err)
+        return None if text is None else _numbered_sections(text)
+
+    for m in _mechanism_findings(practices, letters, tree, targets, sections_of):
+        err(m)
+
+
 def main():
     check_A()
     check_B()
@@ -3229,12 +3338,18 @@ def main():
     check_Q()
     check_R()
     check_S()
+    check_T()
     for w_ in warnings:
         print("WARN  " + w_)
     for e_ in errors:
         print("ERROR " + e_)
     print()
     print("check_structure: %d error(s), %d warning(s)" % (len(errors), len(warnings)))
+    # The nudge, on the line everyone already reads: what this gate does not fail
+    # on has its own doers, and they are one command away.
+    print(
+        "next: `make advise` reports what this gate does not fail on (stale stamps, unresolved mentions, unowned nodes, answer keys)"
+    )
     return 1 if errors else 0
 
 

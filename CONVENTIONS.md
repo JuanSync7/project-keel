@@ -226,6 +226,7 @@ pre-commit hook) fails the build if the conventions above drift:
 | Check catalogue | `docs/guides/deterministic-checks.md` and the triggers agree on one membership: every catalogued script exists, an error-tier row is reachable from `make check-all`, a report row is run by some target, every script `check-all` reaches is catalogued, and the hooks table names exactly the hooks `.pre-commit-config.yaml` declares |
 | Tool spec body (§10) | a `kind: tool` spec's body is the seven sections in order (Command, Purpose, When to use, Args, Output, Side effects, Used by); `## Side effects` opens with the word for its `tool_effect` (`READ-ONLY` / `WRITES` / `MODEL-CALL`); `## When to use` carries at least one `- NOT ...` bullet |
 | Rosters (§2) | a README declaring `## What ships here` names every member of its directory exactly once and nothing else, in a `Member` first column, and every row's `Not for` cell is filled |
+| Practice mechanisms (§15) | every `config/practices.json` entry's `enforced_by` names a mechanism that exists — a check letter defined in `check_structure.py`, a script, test or doc path (and numbered section) in the tree, a Makefile target; `ruff:`/`mypy:` codes are the tools' own vocabulary |
 
 Missing `owner` is a warning, not a failure. If you change the scheme
 (KINDS / LAYERS / STATUSES / VISIBILITIES) or a check, update **both**

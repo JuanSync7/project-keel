@@ -3,7 +3,7 @@
 title: review_docs — the deterministic documentation review
 kind: script
 layer: n/a
-summary: Reports documentation facts a rule can decide but check_structure cannot reach without git. Today that is freshness: a governed document's `updated:` is never earlier than the date of its last commit, and a document modified in the working tree carries today's date or later. Report tier (always exit 0) under `make advise`; `--strict` exits 1 on any finding, which is how tests/integration/test_doc_freshness.py turns the same rule into a gate. No model, no network; git is the only tool it shells to, and no git is a stated skip.
+summary: Reports documentation facts a rule can decide but check_structure does not gate. Freshness (gated elsewhere): a governed document's `updated:` is never earlier than the date of its last commit, and a document modified in the working tree carries today's date or later. Report tier (always exit 0) under `make advise`; `--strict` exits 1 on any finding, which is how tests/integration/test_doc_freshness.py turns the same rule into a gate. Also the advisory that stays advisory: a backticked repository path that resolves to nothing (most are bare basenames used as nouns, hence never a gate). No model, no network; git is the only tool it shells to, and no git is a stated skip.
 """
 
 # 3.6-safe on purpose: `make advise` runs this under $(PY), but the rule it
@@ -121,6 +121,65 @@ def stale_findings(records, today):
     return findings
 
 
+_MENTION = re.compile(r"`([A-Za-z0-9_][A-Za-z0-9_./-]*)`")
+_SKIP_DIRS = {
+    ".git",
+    "__pycache__",
+    "node_modules",
+    ".venv",
+    "venv",
+    "dist",
+    "build",
+    ".astro",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".tox",
+    ".nox",
+    ".eggs",
+    "htmlcov",
+    "wiki",
+}
+
+
+def unresolved_mentions(root):
+    """[(relpath, lineno, mention)] for every backticked span in a Markdown file
+    that looks like a repository path (a slash, or a .py/.md suffix) yet names no
+    file or directory, root-relative or beside the citing file. Advisory: a bare
+    basename used as a noun (`check_structure.py`) is prose the graph cannot
+    follow, not an error."""
+    out = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(
+            d for d in dirnames if d not in _SKIP_DIRS and not d.startswith(".")
+        )
+        for name in sorted(filenames):
+            if not name.endswith(".md"):
+                continue
+            full = os.path.join(dirpath, name)
+            if os.path.islink(full):
+                continue
+            try:
+                with open(full, encoding="utf-8") as fh:
+                    lines = fh.read().split("\n")
+            except (OSError, ValueError):
+                continue
+            relpath = os.path.relpath(full, root).replace(os.sep, "/")
+            base = os.path.dirname(full)
+            for lineno, line in enumerate(lines, 1):
+                for m in _MENTION.finditer(line):
+                    span = m.group(1)
+                    if not ("/" in span or span.endswith((".py", ".md"))):
+                        continue
+                    candidate = span.rstrip("/")
+                    if os.path.exists(os.path.join(root, candidate)) or os.path.exists(
+                        os.path.join(base, candidate)
+                    ):
+                        continue
+                    out.append((relpath, lineno, span))
+    return out
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.strip().splitlines()[-1])
     ap.add_argument(
@@ -144,15 +203,30 @@ def main(argv=None):
         print("review_docs: no git repository to compare against; freshness unverified")
         return 0
     findings = stale_findings(records, args.today)
+    mentions = unresolved_mentions(args.root)
     if args.json:
-        print(json.dumps({"checked": len(records), "findings": findings}, indent=2))
+        print(
+            json.dumps(
+                {
+                    "checked": len(records),
+                    "findings": findings,
+                    "unresolved_mentions": [
+                        {"path": p, "line": n, "mention": m} for p, n, m in mentions
+                    ],
+                },
+                indent=2,
+            )
+        )
     else:
         for f in findings:
             print("STALE %s: %s" % (f["path"], f["reason"]))
+        for p, n, m in mentions:
+            print("MENTION %s:%d: `%s` resolves to nothing (advisory)" % (p, n, m))
         print(
-            "review_docs: %d governed document(s), %d stale"
-            % (len(records), len(findings))
+            "review_docs: %d governed document(s), %d stale; %d unresolved mention(s) (advisory)"
+            % (len(records), len(findings), len(mentions))
         )
+    # --strict gates freshness only; mentions are advisory in every mode.
     return 1 if (args.strict and findings) else 0
 
 

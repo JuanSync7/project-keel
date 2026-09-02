@@ -64,3 +64,30 @@ def test_a_committed_stale_stamp_is_reported_once_even_when_also_modified():
 
 def test_no_records_no_findings():
     assert review_docs.stale_findings([], TODAY) == []
+
+
+# --- the advisory that stays advisory: unresolved mentions ---------------------
+
+
+def test_a_backticked_path_that_resolves_to_nothing_is_listed(tmp_path):
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "real.py").write_text("x = 1\n", encoding="utf-8")
+    (tmp_path / "docs" / "a.md").write_text(
+        "See `scripts/real.py`, `scripts/gone.py`, `docs/a.md`, `a.md` and `not a path`.\n"
+        "Also `check_structure.py` as a noun.\n",
+        encoding="utf-8",
+    )
+    found = review_docs.unresolved_mentions(str(tmp_path))
+    assert found == [
+        ("docs/a.md", 1, "scripts/gone.py"),
+        ("docs/a.md", 2, "check_structure.py"),
+    ]
+
+
+def test_mentions_never_make_strict_fail(tmp_path, monkeypatch, capsys):
+    """Advisory in every mode: `--strict` gates freshness only."""
+    (tmp_path / "a.md").write_text("`nowhere/x.py`\n", encoding="utf-8")
+    monkeypatch.setattr(review_docs, "collect", lambda root: [])
+    assert review_docs.main(["--root", str(tmp_path), "--strict"]) == 0
+    assert "unresolved mention" in capsys.readouterr().out

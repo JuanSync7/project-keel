@@ -279,7 +279,12 @@ def _enabled(registry):
     """{practice_id: status_string} for the advisory practices in the registry."""
     status = {}
     for p in registry.get("practices") or []:
-        if isinstance(p, dict) and p.get("tier") == "advisory":
+        # A docs-subject practice is prose, not an AST smell: review_docs reads it.
+        if (
+            isinstance(p, dict)
+            and p.get("tier") == "advisory"
+            and p.get("subject", "code") == "code"
+        ):
             status[p.get("id")] = str(p.get("status", ""))
     return status
 
