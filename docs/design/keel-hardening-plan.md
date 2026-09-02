@@ -34,7 +34,7 @@ worklist.
 
 | Pass | Subject | Status |
 |---|---|---|
-| 1 | Restore the upgrade channel (`.copier-answers.yml`, version identity) | done **except the `v0.1.0` tag** |
+| 1 | Restore the upgrade channel (`.copier-answers.yml`, version identity) | done (tag cut 2026-09-02, ADR-0009) |
 | 2 | Make `copier update` runnable, and test it | done |
 | 3 | Close the gate's blind spot (lint/type scope → `CODE_ROOTS`) | done |
 | 3.5 | Pass-2 review findings | done |
@@ -80,7 +80,7 @@ are recorded with each pass.
 
 ## Passes
 
-### Pass 1 — restore the upgrade channel *(done except the `v0.1.0` tag)*
+### Pass 1 — restore the upgrade channel *(done; the tag was cut 2026-09-02, ADR-0009)*
 
 `copier update` is the entire justification for choosing copier (ADR-0004), and
 it is advertised in six places and tested in none.
@@ -564,10 +564,18 @@ a new instance of the drift class it claims to fix.
 Re-derived from the repo on 2026-09-02 by a six-lens verification pass, after the
 merge. Every item below was **reproduced**, not inferred.
 
-**Status: 9 of 12 closed.** Blockers 4–12 were fixed in the same day's work, each
-test-first and mutation-verified; they are struck through below with what closed
-them. Blockers **1–3 remain open and are a single decision** — what `0.1.0` is,
-and tagging it — which is the owner's to make, not an edit.
+**Status: 12 of 12 closed.** Blockers 4–12 were fixed first, each test-first and
+mutation-verified. Blockers 1–3 were one decision, now taken and recorded in
+[ADR-0009](../adr/0009-release-identity-and-the-tag-ordering-rule.md): **`0.1.0`
+is the merge, dated the day it was cut**, not the 2026-08-04 commit the CHANGELOG
+named in anticipation. Tagging the older commit was the harmful reading — a
+descendant generated from `main` resolves to `0.1.0.postN.devM`, which PEP 440
+orders above `0.1.0`, and copier refuses to update downwards, so the tag would
+have broken every descendant's `copier update`. The durable rule that falls out:
+**a tag must name a commit no descendant is ahead of.** Gated by
+`tests/integration/test_release_identity.py`, which also pins that a version
+heading may only exist for a tag that exists — the defect survived a month
+because nothing read the changelog.
 
 Three gates were added so these classes cannot return: the generated project's own
 suite now runs under an **answer matrix** (defaults / profiles-enabled /
@@ -583,19 +591,19 @@ actively harmful: copier refuses downgrades (`copier/_main.py:1341-1345`), a
 project generated from `main` today records `_commit: 956b7da`, and `git
 describe` renders that `0.1.0.post37.dev0` — which compares **greater** than
 `0.1.0`, so the README's own `copier update --trust` would hard-error. Re-scope
-`[0.1.0]` to this merge and tag `956b7da`.
+`[0.1.0]` to this merge and tag `956b7da`. ✅ **CLOSED** by ADR-0009: `0.1.0` re-scoped to this release and tagged at the tip.
 
 **2. Rotate `[Unreleased]` into the dated heading before tagging.** ~470 lines of
 passes 2–8 sit undated under `[Unreleased]`; tagging now would publish a release
 note describing two August fixes. The `[0.1.0]` section also still says
 `_min_copier_version: "9"` while `copier.yml:19` says `"9.3.0"`. Nothing gates
-this — no test reads keel's own CHANGELOG.
+this — no test reads keel's own CHANGELOG. ✅ **CLOSED:** `[Unreleased]` folded into a dated `## [0.1.0]`, a fresh empty `[Unreleased]` opened, and the `_min_copier_version` line corrected to the `9.3.0` that actually ships.
 
 **3. Five shipped references advertise a tag that does not resolve.**
 `CHANGELOG.md:8` and `:153`, `copier.yml:18`, `.github/workflows/ci.yml:9`, plus
 `README.md:73` and `README.md.jinja:73` (which pass no `--vcs-ref` at all, so
 copier resolves `self.ref or get_latest_tag`). Cutting **and pushing** the tag
-makes all five true at once; a local-only tag fixes nothing.
+makes all five true at once; a local-only tag fixes nothing. ✅ **CLOSED:** all five become true on push; the README now also states what a bare `copier copy` resolves to (the newest tag).
 
 **4. A generated project with DEFAULT answers is red on arrival.** Measured:
 `9 failed, 341 passed` (`test_showcase_journey` ×2, `test_showcase_api` ×5,

@@ -9,6 +9,23 @@ version rather than a bare commit:
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.1.0] — 2026-09-02
+
+First named version. Everything below shipped in it — the `[Unreleased]` and the
+former `[0.1.0] — 2026-08-04` sections are folded together here because **nothing
+was ever released before this tag**: that August heading was written in
+anticipation, in `d0a25c4`, and the tag was never cut.
+
+The tag names this commit rather than the August one deliberately, and the
+reasoning is durable enough to have its own record —
+[ADR-0009](docs/adr/0009-release-identity-and-the-tag-ordering-rule.md). Briefly:
+a project generated from `main` records that commit, `git describe` renders it
+`0.1.0.postN.devM`, PEP 440 orders that **above** `0.1.0`, and copier refuses to
+update downwards — so a tag placed behind live descendants converts a working
+upgrade channel into a hard error.
+
 ### Added
 - **`docs/guides/python-style.md`** — the canonical "how Python is written
   here": readability and loud failure modes outrank speed; docstrings say what,
@@ -542,32 +559,24 @@ version rather than a bare commit:
   path, so `copier update` works on that machine only. Generate from
   `gh:JuanSync7/project-keel` for a project you intend to share.
 
-## [0.1.0] — 2026-08-04
-First named version. Everything below existed before this tag; the tag exists so
-a descendant can state which keel it came from and upgrade to a known-good ref
-instead of a bare SHA (`docs/design/keel-hardening-plan.md`, pass 1).
+### Earlier in this release — the upgrade channel (pass 1, `d0a25c4`)
 
-> **This heading has never corresponded to a tag.** `git tag --list` is empty:
-> the section was written in `d0a25c4` in anticipation and no tag was ever cut,
-> so every reference to `--vcs-ref v0.1.0` in this repo currently fails to
-> resolve. Resolving it is a release decision, not an edit — and the obvious
-> reading is wrong: tagging `v0.1.0` at `d0a25c4` would *break* the documented
-> upgrade path, because a project generated from `main` today records
-> `_commit: 956b7da`, which `git describe` renders `0.1.0.post37.dev0` —
-> greater than `0.1.0` — and copier refuses downgrades. See "Release readiness"
-> in `docs/design/keel-hardening-plan.md` for the measurements.
+This work carried the `[0.1.0] — 2026-08-04` heading while it waited for a tag
+that was never cut. It ships here, in the one release it was ever part of.
 
-### Fixed
+#### Fixed
 - Generated projects now **track** their own `.copier-answers.yml`. Keel's
   `.gitignore` shipped verbatim and ignored it, so while `copier update` worked
   in the directory copier created, any `git clone`, teammate checkout or CI run
   had no answers file and update failed with "Cannot update because cannot
   obtain old template references". A `.gitignore.jinja` divergence twin drops
   that line downstream; keel keeps ignoring its own copy.
-- `_min_copier_version: "9"` — an old copier now fails with copier's own message
-  instead of a mystery render error.
+- `_min_copier_version` — an old copier now fails with copier's own message
+  instead of a mystery render error. Declared `"9"` in this pass; raised to
+  `"9.1.0"` for `multiselect:` and to `"9.3.0"` for the new-format `_migrations`
+  later in the same release, so `9.3.0` is what actually ships.
 
-### Added
+#### Added
 - ADR-0005 (proposed): declare the external environment in
   `config/environment.json` — the parts a container cannot reach.
 - `docs/design/keel-hardening-plan.md` — the bounded convergence plan.
