@@ -8,7 +8,7 @@ tags: [adr, agent, surface, aad, discovery]
 summary: Services become discoverable agents via a neutral AgentSurface contract; AAD is one thin wire adapter, not the standard.
 id: docs-adr-0002-agent-surface
 created: 2026-06-18
-updated: 2026-06-18
+updated: 2026-09-02
 visibility: internal
 canonical: true
 ---

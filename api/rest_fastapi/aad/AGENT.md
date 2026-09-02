@@ -7,7 +7,7 @@ owner: TBD
 summary: Local agent rules inside api/rest_fastapi/aad/.
 id: api-rest-fastapi-aad-agent
 created: 2026-06-18
-updated: 2026-06-18
+updated: 2026-09-02
 visibility: internal
 canonical: true
 ---

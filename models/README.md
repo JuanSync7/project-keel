@@ -9,7 +9,7 @@ tags: []
 summary: Model backends the app/agents run on — adapters + registry behind one contract.
 id: models-readme
 created: 2026-06-17
-updated: 2026-06-17
+updated: 2026-09-02
 visibility: internal
 canonical: true
 ---

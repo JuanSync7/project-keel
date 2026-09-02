@@ -7,7 +7,7 @@ owner: TBD
 summary: Living map: acceptance criterion -> scenario -> status.
 id: test-docs-coverage-register
 created: 2026-06-17
-updated: 2026-06-17
+updated: 2026-09-02
 visibility: internal
 canonical: true
 ---

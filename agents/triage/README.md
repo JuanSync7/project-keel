@@ -9,7 +9,7 @@ tags: [agent, example, llm]
 summary: Example LLM 'brain' that triages an event payload into a short summary.
 id: agents-triage-readme
 created: 2026-06-17
-updated: 2026-06-17
+updated: 2026-09-02
 visibility: internal
 canonical: true
 ---

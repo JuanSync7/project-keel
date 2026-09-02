@@ -9,7 +9,7 @@ tags: []
 summary: API transports over the domain — REST/OpenAPI (FastAPI), gRPC, and the nginx edge. All thin over src/.
 id: api-readme
 created: 2026-06-17
-updated: 2026-06-17
+updated: 2026-09-02
 visibility: internal
 canonical: true
 ---

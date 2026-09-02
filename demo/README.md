@@ -9,7 +9,7 @@ tags: []
 summary: Runnable demos / examples of the system in use.
 id: demo-readme
 created: 2026-06-17
-updated: 2026-06-17
+updated: 2026-09-02
 visibility: internal
 canonical: true
 ---

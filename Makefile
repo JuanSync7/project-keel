@@ -78,10 +78,11 @@ check-aad: ## Committed AAD schema in sync with the model (skips if pydantic abs
 check-cdmon: ## cdmon code-doc drift (a stated skip until cdmon and config/cdmon/cdmon.yaml exist)
 	$(PY) scripts/cdmon_sync.py --check
 
-advise: ## Advisory: overfitting / answer-key + coding-practice smells, and unowned corpus nodes (CONVENTIONS §18; never fails the build)
+advise: ## Advisory: overfitting / answer-key + coding-practice smells, unowned corpus nodes, stale doc stamps (CONVENTIONS §18; never fails the build)
 	-$(PY) scripts/check_generic.py
 	-$(PY) scripts/check_practices.py
 	-$(PY) scripts/accountability_report.py
+	-$(PY) scripts/review_docs.py
 check-generic: advise ## Alias for `advise` (the generic-solution + practice advisor)
 
 verify: check-all lint typecheck test ## Run all gates (all checks + lint + types + tests)

@@ -7,7 +7,7 @@ owner: TBD
 summary: Local agent rules inside demo/aad_reference_agent/.
 id: demo-aad-reference-agent-agent
 created: 2026-06-18
-updated: 2026-06-18
+updated: 2026-09-02
 visibility: internal
 canonical: true
 ---

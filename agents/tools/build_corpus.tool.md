@@ -9,7 +9,7 @@ tags: [tool, corpus, index, AXI]
 summary: Walk the repo into wiki/corpus.json (doc/module/section/symbol nodes); writes.
 id: tool-build-corpus
 created: 2026-06-17
-updated: 2026-06-17
+updated: 2026-09-02
 visibility: internal
 canonical: true
 tool_command: python3 scripts/jobs/build_corpus.py --out wiki/corpus.json

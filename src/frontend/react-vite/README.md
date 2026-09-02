@@ -9,7 +9,7 @@ tags: []
 summary: Type-strict Vite + React 19 + Tailwind v4 + ESLint SPA.
 id: src-frontend-react-vite-readme
 created: 2026-06-17
-updated: 2026-06-17
+updated: 2026-09-02
 visibility: internal
 canonical: true
 ---

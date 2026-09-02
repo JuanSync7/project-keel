@@ -9,7 +9,7 @@ tags: []
 summary: UI / client code. Two reference apps — keep one, delete the other.
 id: src-frontend-readme
 created: 2026-06-17
-updated: 2026-06-17
+updated: 2026-09-02
 visibility: internal
 canonical: true
 ---

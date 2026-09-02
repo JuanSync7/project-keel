@@ -9,7 +9,7 @@ tags: []
 summary: Committed configuration defaults and examples (no secrets).
 id: config-readme
 created: 2026-06-17
-updated: 2026-06-17
+updated: 2026-09-02
 visibility: internal
 canonical: true
 ---

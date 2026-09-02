@@ -9,7 +9,7 @@ tags: [scheduled, cron, triggers, automation]
 summary: Thin schedule adapters — when to fire a job. The job itself lives in scripts/jobs/.
 id: ops-scheduled-readme
 created: 2026-06-17
-updated: 2026-06-17
+updated: 2026-09-02
 visibility: internal
 canonical: true
 ---

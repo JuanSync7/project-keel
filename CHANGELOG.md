@@ -44,6 +44,13 @@ version rather than a bare commit:
   READMEs whose members are pruned with the showcase (`docs/guides/`,
   `scripts/jobs/`) are `.jinja` twins, so a `showcase=false` project's roster
   matches its tree.
+- **Doc freshness is gated.** `scripts/review_docs.py` (new; rides `make advise`
+  as a report) states the rule — a governed document's `updated:` is never
+  earlier than its last commit, and a document modified in the working tree
+  carries today's date — and `tests/integration/test_doc_freshness.py` gates it.
+  `updated:` now has one meaning: *touched*. 91 of 117 governed documents were
+  stamped earlier than their last commit (AGENT.md and CONVENTIONS.md among
+  them); every stamp is normalised in this change.
 - **The tool-spec body is gated (check_F):** the seven CONVENTIONS §10 sections
   in order, `## Side effects` opening with the word for the declared
   `tool_effect`, and at least one `- NOT ...` bullet under `## When to use`.

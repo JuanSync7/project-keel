@@ -8,7 +8,7 @@ tags: [agents, runtime, control-flow, langgraph, determinism, guide]
 summary: How to declare an agent's control flow as a neutral Plan, run it on the default engine, and opt into LangGraph as one adapter.
 id: docs-guides-agent-runtimes
 created: 2026-06-22
-updated: 2026-06-22
+updated: 2026-09-02
 visibility: internal
 canonical: true
 ---

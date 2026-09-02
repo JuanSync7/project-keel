@@ -9,7 +9,7 @@ tags: [agent, toolset, manifest]
 summary: The shared tools agents/wiki_navigator is permitted to invoke.
 id: agents-wiki-navigator-tools
 created: 2026-06-17
-updated: 2026-06-17
+updated: 2026-09-02
 visibility: internal
 canonical: true
 ---

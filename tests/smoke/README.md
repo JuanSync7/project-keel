@@ -7,7 +7,7 @@ owner: TBD
 summary: Fast post-deploy liveness checks.
 id: tests-smoke-readme
 created: 2026-06-17
-updated: 2026-06-17
+updated: 2026-09-02
 visibility: internal
 canonical: true
 ---

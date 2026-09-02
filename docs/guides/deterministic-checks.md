@@ -69,6 +69,7 @@ everything and therefore expect the project interpreter.
 | AAD schema drift | `scripts/agent_surface/generate_aad_schema.py --check` | error | pydantic | Committed AAD JSON Schema matches the model |
 | Code-doc drift | `scripts/cdmon_sync.py --check` | error* | any | cdmon code↔doc drift — the CONVENTIONS §9 worked example of a thin adapter over an external tool (*a stated skip, exit 0, until `cdmon` is on PATH **and** `config/cdmon/cdmon.yaml` exists; cdmon is not on PyPI). Reached from `check-all` via `make check-cdmon` |
 | Accountability | `scripts/accountability_report.py` | report | ≥3.7 | Lists corpus nodes that resolve to no owner (informational; rides `make advise`) |
+| Doc freshness | `scripts/review_docs.py` | report | any (git) | Every governed document's `updated:` is no earlier than its last commit, and a document modified in the working tree carries today's date. Report under `make advise`; the same rule gates in `tests/integration/test_doc_freshness.py` (`--strict`). No git is a stated skip |
 | Generic-solution advisor | `scripts/check_generic.py` | report | 3.6-safe | Distinctive literals asserted as golden in tests **and** hardcoded in `src/` logic (the "answer-key" overfit smell, §18). Advisory only — never fails the build |
 | Coding-practices advisor | `scripts/check_practices.py` | report | 3.6-safe | Coding-practice smells (a provider constructed inline instead of injected, a ≥3-branch `isinstance` chain, a `# hot-path` class without `__slots__`, a resource acquired outside a `with`). Reads `config/practices.json`; advisory only — never fails the build (see [coding-practices](coding-practices.md)) |
 
@@ -303,7 +304,27 @@ have drifted from the code they describe.
 
 **Run.** `python scripts/accountability_report.py`
 
-### 7. Generic-solution advisor — `scripts/check_generic.py`
+### 7. Doc freshness — `scripts/review_docs.py`
+
+**Purpose.** The deterministic documentation review: what a rule can decide
+about the docs but `check_structure.py` cannot reach without git. Today that is
+**freshness** — a governed document (git-tracked Markdown whose frontmatter has
+`updated:`) is stamped no earlier than the date of its last commit, and a
+document modified in the working tree is stamped today or later. `updated:`
+means *touched*: it is a cache of the git date, kept in the file so the corpus
+can rank by recency without git (CONVENTIONS §1). The remedy is always one
+line, and the report says which.
+
+**Tier.** A *report* under `make advise` (exit 0). The same rule is a **gate**
+in `tests/integration/test_doc_freshness.py`, beside the release-identity test
+and for the same reason (ADR-0009): a check that shells to git does not belong
+in the 3.6 pre-commit hook. Landed with every stale stamp normalised in the same
+commit — 91 of 117 governed documents — so the tree complied on arrival.
+
+**Run.** `python scripts/review_docs.py [--json] [--strict] [--today YYYY-MM-DD]`
+· `make advise`
+
+### 8. Generic-solution advisor — `scripts/check_generic.py`
 
 **Purpose.** A *report*, not a gate: the advisory backstop for the "solve the
 general case" discipline (CONVENTIONS §18). It flags an **answer key in source** —

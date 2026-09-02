@@ -9,7 +9,7 @@ tags: [demo, agent, surface, aad, template]
 summary: Runnable example — implement AgentSurface, mount the AAD adapter, become discoverable.
 id: demo-aad-reference-agent-readme
 created: 2026-06-18
-updated: 2026-06-18
+updated: 2026-09-02
 visibility: internal
 canonical: true
 ---

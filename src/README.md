@@ -9,7 +9,7 @@ tags: []
 summary: All production source, split by layer.
 id: src-readme
 created: 2026-06-17
-updated: 2026-06-17
+updated: 2026-09-02
 visibility: internal
 canonical: true
 ---

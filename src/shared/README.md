@@ -9,7 +9,7 @@ tags: []
 summary: The data contract both frontend and backend agree on.
 id: src-shared-readme
 created: 2026-06-17
-updated: 2026-06-17
+updated: 2026-09-02
 visibility: internal
 canonical: true
 ---

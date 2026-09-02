@@ -7,7 +7,7 @@ owner: TBD
 summary: Two or more real components together, named by scenario.
 id: tests-integration-readme
 created: 2026-06-17
-updated: 2026-06-17
+updated: 2026-09-02
 visibility: internal
 canonical: true
 ---

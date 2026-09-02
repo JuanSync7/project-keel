@@ -7,7 +7,7 @@ owner: TBD
 summary: Local agent rules inside agents/index_enforcer/.
 id: agents-index-enforcer-agent
 created: 2026-06-17
-updated: 2026-06-17
+updated: 2026-09-02
 visibility: internal
 canonical: true
 ---

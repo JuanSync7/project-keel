@@ -9,7 +9,7 @@ tags: [agent, toolset, manifest]
 summary: The shared tools agents/index_enforcer is permitted to invoke.
 id: agents-index-enforcer-tools
 created: 2026-06-17
-updated: 2026-06-17
+updated: 2026-09-02
 visibility: internal
 canonical: true
 ---

@@ -9,7 +9,7 @@ tags: [tool, corpus, links, entity, AXI]
 summary: Add deterministic keyword/entity link edges to wiki/corpus.json in place; writes.
 id: tool-link-corpus
 created: 2026-06-17
-updated: 2026-06-17
+updated: 2026-09-02
 visibility: internal
 canonical: true
 tool_command: python3 scripts/jobs/link_corpus.py --corpus wiki/corpus.json

@@ -8,7 +8,7 @@ tags: [api, transport, architecture]
 summary: How clients reach the domain: the edge + transport layers in api/.
 id: docs-architecture-transports
 created: 2026-06-17
-updated: 2026-07-17
+updated: 2026-09-02
 visibility: internal
 canonical: true
 ---

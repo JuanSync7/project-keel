@@ -9,7 +9,7 @@ tags: [tool, corpus, retrieval, query]
 summary: Read-only retrieval over wiki/corpus.json — candidate nodes for a question.
 id: tool-query-corpus
 created: 2026-06-17
-updated: 2026-06-17
+updated: 2026-09-02
 visibility: internal
 canonical: true
 tool_command: python3 scripts/query_corpus.py "QUESTION" --corpus wiki/corpus.json

@@ -9,7 +9,7 @@ tags: [showcase, wiki, docs, frontend]
 summary: Type-strict Astro 5 + Tailwind v4 docs/wiki site that renders the template live from the backend.
 id: src-frontend-astro-readme
 created: 2026-06-17
-updated: 2026-06-19
+updated: 2026-09-02
 visibility: internal
 canonical: true
 ---

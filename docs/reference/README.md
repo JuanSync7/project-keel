@@ -7,7 +7,7 @@ owner: TBD
 summary: Per-module reference. The only docs that may thinly mirror src/.
 id: docs-reference-readme
 created: 2026-06-17
-updated: 2026-06-17
+updated: 2026-09-02
 visibility: internal
 canonical: true
 ---

@@ -7,7 +7,7 @@ owner: TBD
 summary: How to run the eval harness.
 id: evals-readme-run
 created: 2026-06-17
-updated: 2026-06-17
+updated: 2026-09-02
 visibility: internal
 canonical: true
 ---

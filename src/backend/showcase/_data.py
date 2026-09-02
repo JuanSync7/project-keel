@@ -451,6 +451,17 @@ CHECKS: tuple[Check, ...] = (
         "tool; optional).",
     ),
     Check(
+        slug="doc-freshness",
+        name="Doc freshness",
+        script="scripts/review_docs.py",
+        gate="report",
+        interpreter="any (git)",
+        command="make advise",
+        when="Anytime; gated by tests/integration/test_doc_freshness.py",
+        purpose="Every governed document's `updated:` is no earlier than its last "
+        "commit, and a document modified in the working tree carries today's date.",
+    ),
+    Check(
         slug="accountability",
         name="Accountability report",
         script="scripts/accountability_report.py",

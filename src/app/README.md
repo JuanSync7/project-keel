@@ -9,7 +9,7 @@ tags: []
 summary: OPTIONAL single-process composition root. Delete it for client-server web apps.
 id: src-app-readme
 created: 2026-06-17
-updated: 2026-06-17
+updated: 2026-09-02
 visibility: internal
 canonical: true
 ---

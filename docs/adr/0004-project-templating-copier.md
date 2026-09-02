@@ -8,7 +8,7 @@ tags: [adr, template, scaffold, copier, generator, jinja2]
 summary: Keel's repo root is a copier template — one command runs a Q&A and writes a tailored project; copier coexists with scaffold.py until a parity harness proves no loss, then scaffold.py is retired.
 id: docs-adr-0004-project-templating-copier
 created: 2026-07-16
-updated: 2026-07-16
+updated: 2026-09-02
 visibility: internal
 canonical: true
 ---

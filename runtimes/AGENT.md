@@ -7,7 +7,7 @@ owner: TBD
 summary: Local agent rules inside runtimes/.
 id: runtimes-agent
 created: 2026-06-22
-updated: 2026-06-22
+updated: 2026-09-02
 visibility: internal
 canonical: true
 ---

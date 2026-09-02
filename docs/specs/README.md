@@ -7,7 +7,7 @@ owner: TBD
 summary: Requirements and acceptance criteria with traceability.
 id: docs-specs-readme
 created: 2026-06-17
-updated: 2026-06-17
+updated: 2026-09-02
 visibility: internal
 canonical: true
 ---

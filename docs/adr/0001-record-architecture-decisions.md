@@ -7,7 +7,7 @@ owner: TBD
 summary: We will record architecturally significant decisions as ADRs.
 id: docs-adr-0001-record-architecture-decisions
 created: 2026-06-17
-updated: 2026-06-17
+updated: 2026-09-02
 visibility: internal
 canonical: true
 ---

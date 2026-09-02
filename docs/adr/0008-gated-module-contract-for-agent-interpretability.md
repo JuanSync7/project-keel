@@ -8,7 +8,7 @@ tags: [adr, corpus, docstrings, gate, agents, readability, practices]
 summary: "An agent can only rely on what the gate proves. The machine-readable module header (title:/summary:) becomes check_O, authored symbol coverage (check_E) is promoted to an error, the corpus builder single-sources its scope from check_structure, and the local corpus agents query is gated fresh-when-present. The judgment half — readability and failure-mode discipline — is canonical prose in docs/guides/python-style.md, deliberately ungated."
 id: docs-adr-0008-gated-module-contract-for-agent-interpretability
 created: 2026-08-18
-updated: 2026-08-18
+updated: 2026-09-02
 visibility: internal
 canonical: true
 ---

@@ -8,7 +8,7 @@ tags: [showcase, demo, frontend, astro, fastapi, wiki, guide]
 summary: How the docs/wiki frontend presents the template as a product and stays in sync with the backend.
 id: docs-guides-showcase-site
 created: 2026-06-19
-updated: 2026-06-19
+updated: 2026-09-02
 visibility: internal
 canonical: true
 ---

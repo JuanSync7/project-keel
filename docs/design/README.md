@@ -7,7 +7,7 @@ owner: TBD
 summary: Per-feature technical design, task decomposition, code contracts.
 id: docs-design-readme
 created: 2026-06-17
-updated: 2026-06-17
+updated: 2026-09-02
 visibility: internal
 canonical: true
 ---

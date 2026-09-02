@@ -7,7 +7,7 @@ owner: TBD
 summary: Team-shared Claude Code config (settings, skills, commands).
 id: claude-readme
 created: 2026-06-17
-updated: 2026-06-17
+updated: 2026-09-02
 visibility: internal
 canonical: true
 ---

@@ -9,7 +9,7 @@ tags: [runtime, orchestration, control-flow, agents]
 summary: Execute an agent's control flow as a neutral Plan — engines (in-process, LangGraph) are adapters behind one contract.
 id: runtimes-readme
 created: 2026-06-22
-updated: 2026-06-22
+updated: 2026-09-02
 visibility: internal
 canonical: true
 ---

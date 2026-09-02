@@ -31,7 +31,7 @@ produced live where a project can read them: `CONVENTIONS.md` §2, §6, §10 and
 | 2 | Honesty about the check inventory: catalogue parity (`check_R`), the cdmon decision | done (`003c471`) |
 | — | Adversarial review of P/Q/R — 59 raised, the modelled/unmodelled boundary made explicit | done (`b8d0226`) |
 | 3 | The seam: rosters (`check_S`, six `## What ships here` tables) and the tool-spec body contract (`check_F`) | done (this commit) |
-| 4 | Freshness: `updated:` versus the git history | **not started** — needs the `updated:` decision below |
+| 4 | Freshness: `updated:` versus the git history (`scripts/review_docs.py`, `tests/integration/test_doc_freshness.py`) | done — `updated:` means *touched*; 91 of 117 stamps normalised in the landing commit |
 | 5 | Make the knowledge graph authored: reference edges in `build_corpus`, edge-kind vocabulary in `check_corpus`, retrieval repair in `query_corpus` | **not started** |
 | 6 | The model-absent path in `models/claude_code_headless.py` (absent says so and exits 0; present-but-failing fails) | **not started** — prerequisite for anything automatic |
 | 7 | The deterministic doer (`scripts/review_docs.py`), a `subject` field in `config/practices.json`, `docs/guides/doc-style.md`, the `make check` tail nudge | **not started** |
@@ -39,7 +39,8 @@ produced live where a project can read them: `CONVENTIONS.md` §2, §6, §10 and
 
 Every phase lands as one bounded pass: red test, smallest change, `make verify`
 green, one commit. Letters belong to landed checks (ADR-0008): the next free
-one is `T`.
+one is `T`. Freshness took no letter: it shells to git, so it lives beside the
+release-identity test (ADR-0009), not in `check_structure.py`.
 
 ## Why
 
@@ -221,11 +222,10 @@ LLM-backed jobs call agents, and none does.
 
 ## Open questions, with the answer this plan will take unless told otherwise
 
-1. **What does `updated:` mean?** The only machine-checkable reading is
-   *touched*: `updated:` is never earlier than the file's last commit date.
-   A separate `reviewed:` key can carry the human meaning later. Phase 4 lands
-   on this reading, as a WARN first, with a mechanical normalisation of the
-   135 stale files in its own commit, then promotes (ADR-0008 grace).
+1. **What does `updated:` mean?** *Touched* — the only machine-checkable
+   reading: never earlier than the file's last commit date, and today's date
+   when the file is modified. Decided and landed in Phase 4 (CONVENTIONS §1
+   says so). A separate `reviewed:` key can carry the human meaning later.
 2. **May `check_structure.py` shell out to git?** No — ADR-0009 already
    decided that for the release gate. Freshness goes to
    `tests/integration/test_doc_freshness.py`, beside `test_release_identity.py`.

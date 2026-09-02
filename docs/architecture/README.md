@@ -7,7 +7,7 @@ owner: TBD
 summary: System-level shape: components, boundaries, data flow, tech choices.
 id: docs-architecture-readme
 created: 2026-06-17
-updated: 2026-06-17
+updated: 2026-09-02
 visibility: internal
 canonical: true
 ---

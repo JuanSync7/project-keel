@@ -9,7 +9,7 @@ tags: []
 summary: Evaluation suites for agents/models (not unit tests).
 id: evals-readme
 created: 2026-06-17
-updated: 2026-06-17
+updated: 2026-09-02
 visibility: internal
 canonical: true
 ---

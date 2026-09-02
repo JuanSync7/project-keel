@@ -9,7 +9,7 @@ tags: []
 summary: Thin gRPC transport (HTTP/2 + protobuf) over the backend domain.
 id: api-grpc-readme
 created: 2026-06-17
-updated: 2026-06-17
+updated: 2026-09-02
 visibility: internal
 canonical: true
 ---

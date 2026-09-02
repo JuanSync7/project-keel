@@ -9,7 +9,7 @@ tags: [api, agent, surface, aad, adapter]
 summary: Thin FastAPI adapter exposing a neutral AgentSurface over the AAD wire format.
 id: api-rest-fastapi-aad-readme
 created: 2026-06-18
-updated: 2026-06-18
+updated: 2026-09-02
 visibility: internal
 canonical: true
 ---
