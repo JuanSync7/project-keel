@@ -8,7 +8,7 @@ tags: [adr, environment, external-dependency, versioning, reproducibility, modul
 summary: Externals (binaries, env vars, licence servers, mounts, sibling repos, modules) become typed records in config/environment.json; a deterministic check proves the declaration is complete, a prober measures the live host, and a lock plus fingerprint make a result attributable to the environment that produced it.
 id: docs-adr-0005-external-environment-manifest
 created: 2026-08-04
-updated: 2026-08-04
+updated: 2026-09-02
 visibility: internal
 canonical: true
 ---
@@ -104,7 +104,7 @@ Say this plainly so nobody builds machinery they do not need:
   forces adoption — the same safe degradation `check_H` already applies to an
   absent `project.json`.
 - The part that pays for itself in *every* project regardless of exotica is
-  `check_P`'s completeness scan (below). The version-constraint machinery is
+  the completeness scan (below). The version-constraint machinery is
   opt-in on top of it.
 
 ## Decision
@@ -134,10 +134,11 @@ Profiles (`eda`, `web`, `cloud`) ship **defined but off** and are enabled from
 `config/project.json`, reusing the defined-vs-enabled split and the
 `_profile_flag_findings` helper that `practices.json` already established.
 
-**2. `check_P` in `check_structure.py` — deterministic, 3.6-safe, no probing.**
-(Originally drafted as `check_O`; ADR-0008 landed first and letters belong
-to landed checks, so this proposal moves to `P`.)
-(`check_N` is reserved for twin parity, which lands first — see the plan.)
+**2. A `check_*` letter in `check_structure.py` — deterministic, 3.6-safe, no probing.**
+(Drafted as `check_O`, then `check_P`; each was taken by a check that landed
+first — `O` by ADR-0008, `P` by Makefile help parity — and letters belong to
+landed checks, so this proposal takes the next free letter on the day it lands
+rather than reserving one.)
 It validates the records' shape and closed vocabularies, and does the thing that
 stops a manifest rotting into paperwork: **it discovers undeclared externals.**
 Without it the manifest becomes the `owner:` field: elaborate, and unsatisfied on
@@ -215,7 +216,7 @@ the gap neither tool sees alone.
 - `.env.example` stops being hand-written prose and becomes a generated,
   drift-checked view of the `kind: env-var` records — the same
   generate-and-byte-compare contract as the AAD schema and `openapi.json`.
-- `check_P`'s completeness scan will fail the repo on first run against the
+- The completeness scan will fail the repo on first run against the
   seven undeclared externals in the table above. That is the point; they are
   declared as part of landing it.
 - **Prerequisite:** no gate currently knows the `.jinja` twins exist. A fifth

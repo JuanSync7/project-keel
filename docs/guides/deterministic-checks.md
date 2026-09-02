@@ -62,7 +62,7 @@ everything and therefore expect the project interpreter.
 
 | Check | Script | Gate? | Interpreter | What it guarantees |
 |-------|--------|:-----:|-------------|--------------------|
-| Structure & frontmatter | `scripts/check_structure.py` | error | 3.6-safe | Labels, taxonomy, package boundaries, tool/agent governance, project facts, agent-rules symlinks, owned-exception & frozen-config boundaries, naked-tensor domain warn, lint/type ruleset parity, template twin parity, Makefile help parity (checks A–P) |
+| Structure & frontmatter | `scripts/check_structure.py` | error | 3.6-safe | Labels, taxonomy, package boundaries, tool/agent governance, project facts, agent-rules symlinks, owned-exception & frozen-config boundaries, naked-tensor domain warn, lint/type ruleset parity, template twin parity, Makefile help parity, cross-reference resolution (checks A–Q) |
 | Corpus integrity | `scripts/jobs/check_corpus.py` | error | ≥3.7 | the fresh build is a valid, acyclic, reproducible graph **and** the local `wiki/corpus.json` (what agents query) is current when present — absent is a loud pass, stale is an error naming `make site-data` (ADR-0008) |
 | OpenAPI drift | `api/rest_fastapi/export_openapi.py --check` | error | FastAPI | Committed `openapi.json` matches the live routes |
 | AAD schema drift | `scripts/agent_surface/generate_aad_schema.py --check` | error | pydantic | Committed AAD JSON Schema matches the model |
@@ -78,12 +78,13 @@ print but never fail the build.
 
 ### 1. Structure & frontmatter — `scripts/check_structure.py`
 
-**Purpose.** The core enforcer of `CONVENTIONS.md`. Checks A–P:
+**Purpose.** The core enforcer of `CONVENTIONS.md`. Checks A–Q:
 
 - **A. Frontmatter** — every `README.md` / `AGENT.md` / `CLAUDE.md`, `docs/**`,
   `test-docs/**` markdown, and `agents/**/*.tool.md` has the required keys with
   valid `kind` / `layer` / `status` / `visibility`; `id` is unique; a path-like
-  `canonical` resolves; `deprecated` requires `superseded_by`.
+  `canonical` resolves; `deprecated` and `superseded` both require
+  `superseded_by` (one rule, two lifecycle vocabularies).
 - **B. Documented dirs** — every taxonomy directory has `README.md` + `CLAUDE.md`.
 - **C. Package boundary** — every `src/` dir with `.py` has an `__init__.py`
   defining `__all__`.
@@ -152,6 +153,25 @@ print but never fail the build.
   is a WARN that says *unverified*, never a pass. Lands as an error, not a
   release-long warning (the ADR-0008 grace rule), because the tree complied the
   moment the recipe was widened — there was nothing to give anyone time for.
+- **Q. Cross-references resolve** — every relative Markdown link in prose
+  (`[text](path)`, `![alt](path)`, a directory, a `#anchor`) names something
+  that exists, and every `§N` citation names a numbered `## N.` heading. The
+  citation grammar is closed on purpose: a bare `§N` **always** cites
+  `CONVENTIONS.md`; a section of any other document is cited by naming it —
+  `docs/guides/python-style.md §3` (root-relative, or the citing file's
+  neighbour). A bare `§N` never means "this document", because that reading
+  turns ambiguous the moment a guide numbers its own sections. Citations are
+  read from prose *and* from code and config (`.py`, `.toml`, `.yml`,
+  `.jinja`, `Makefile`), since a docstring's `(§18)` rots exactly as a guide's
+  does. Anchors follow GitHub's slug rule (lowercase; drop all but word
+  characters, spaces and hyphens; spaces to hyphens; repeats numbered `-1`,
+  `-2`). Links inside fenced or inline code are syntax illustrations and are
+  not read; `.jinja` twins are not read for links (their rendered links are
+  the generation tests' business). Absent is not silent here: a citation to a
+  missing `CONVENTIONS.md` is an error, because the file ships verbatim into
+  every generated project. What this buys: renumbering `CONVENTIONS.md`, or
+  moving a doc, now fails with the full list of citations to update instead of
+  leaving the knowledge graph pointing at the wrong sections at exit 0.
 
 **When to run.** Every commit (pre-commit) and in CI; any time you add a
 directory, package, doc, tool, or agent.

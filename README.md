@@ -115,7 +115,10 @@ rename `src/backend/example_feature/` to your first real package.
 `models/` is the exception: `config/project.json` **declares** the adapters that live
 there, so deleting the directory alone leaves the manifest claiming three adapters that
 no longer exist and `make check` correctly reports 3 errors. To drop it, clear
-`models.available` to `{}` and set `models.default` to `null` in the same commit. Project
+`models.available` to `{}` and set `models.default` to `null` in the same commit, then
+run `make check` once more: it lists every doc that still links into `models/`, by file
+and line, so you can unlink or reword each one. That second step is the same for any
+directory you remove — the gate holds every link to a target that exists. Project
 generation is `copier`-based (see [ADR 0004](docs/adr/0004-project-templating-copier.md)).
 
 ## Showcase demo (synced docs site)

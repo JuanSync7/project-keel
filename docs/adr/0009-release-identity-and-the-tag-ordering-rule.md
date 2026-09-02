@@ -15,9 +15,11 @@ canonical: true
 
 # ADR-0009: Release identity, and the tag-ordering rule
 
-**Status:** accepted. Completes pass 1 of
-[the hardening plan](../design/keel-hardening-plan.md), whose version-identity
-half has been outstanding since `d0a25c4`. Governs every future release.
+**Status:** accepted. Completes pass 1 of the hardening plan
+(`docs/design/keel-hardening-plan.md` — keel's own worklist, which a generated
+project deliberately does not carry, so it is cited here rather than linked),
+whose version-identity half has been outstanding since `d0a25c4`. Governs
+every future release.
 
 ## Context
 

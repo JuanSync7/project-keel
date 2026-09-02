@@ -518,10 +518,13 @@ def test_deleting_a_manifest_declared_dir_is_caught_and_the_documented_fix_works
 ):
     """The other half: `models/` is NOT free to delete, and the README says so.
 
-    Two claims, both load-bearing. (1) The caveat is real — deleting `models/`
+    Three claims, all load-bearing. (1) The caveat is real — deleting `models/`
     alone must fail, or the README would be warning about nothing. (2) The remedy
-    the README gives actually works, so a user who follows it lands green rather
-    than stuck.
+    the README gives is complete: after the manifest is cleared, the ONLY thing
+    left standing between the user and green is what the README says it is — the
+    gate naming, by file and line, each doc that still links into the deleted
+    directory (check_Q). (3) Doing what those lines say lands green, so a user who
+    follows the README is never stuck.
     """
     dest = tmp_path / "proj"
     _generate(dest, project_name="demo_proj", frontend_stack="none")
@@ -548,16 +551,57 @@ def test_deleting_a_manifest_declared_dir_is_caught_and_the_documented_fix_works
     data["models"]["default"] = None
     manifest.write_text(json.dumps(data, indent=2) + "\n")
 
-    r = subprocess.run(
-        [sys.executable, "scripts/check_structure.py"],
-        cwd=str(dest),
-        capture_output=True,
-        text=True,
+    r = _structure_gate(dest)
+    dangling = _dangling_links_into(r.stdout, "models/")
+    others = [
+        ln
+        for ln in r.stdout.splitlines()
+        if ln.startswith("ERROR ") and ln not in dangling
+    ]
+    assert not others, (
+        "after the manifest fix the README documents, the gate still reports "
+        "errors that are NOT the links-into-`models/` it says remain:\n"
+        + "\n".join(others)
     )
+    assert dangling, (
+        "the README tells the user a second `make check` will list the docs still "
+        "linking into `models/`, but the gate lists none — re-derive the advice"
+    )
+
+    for relpath, lineno in dangling.values():
+        _unlink_line(dest / relpath, lineno)
+    r = _structure_gate(dest)
     assert r.returncode == 0, (
-        "the fix the README documents for a deleted `models/` does not produce a "
-        "green gate:\n" + r.stdout + r.stderr
+        "unlinking every line the gate named does not produce a green gate:\n"
+        + r.stdout
+        + r.stderr
     )
+
+
+# `ERROR <file>:<line>: link target '...' does not exist (resolves to '<target>')`
+_DANGLING_LINK = re.compile(
+    r"^ERROR (?P<file>[^:]+):(?P<line>\d+): link target '[^']*' does not exist "
+    r"\(resolves to '(?P<target>[^']*)'\)$"
+)
+
+
+def _dangling_links_into(gate_stdout, prefix):
+    """{error line: (file, lineno)} for each check_Q dead-link error whose
+    resolved target lies under `prefix` — the shape the README promises."""
+    found = {}
+    for line in gate_stdout.splitlines():
+        m = _DANGLING_LINK.match(line)
+        if m and m.group("target").startswith(prefix):
+            found[line] = (m.group("file"), int(m.group("line")))
+    return found
+
+
+def _unlink_line(path, lineno):
+    """Turn every `[text](target)` on one line into plain `text` — the smallest
+    edit the README's "unlink or reword" allows, applied mechanically."""
+    lines = path.read_text(encoding="utf-8").split("\n")
+    lines[lineno - 1] = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", lines[lineno - 1])
+    path.write_text("\n".join(lines), encoding="utf-8")
 
 
 # An `_exclude` entry is ANSWER-DRIVEN when it is wrapped in a jinja condition;

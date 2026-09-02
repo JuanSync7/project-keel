@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """
 title: check_structure — the deterministic conventions gate
-summary: Stdlib-only, 3.6-safe enforcement of CONVENTIONS.md — labeling, taxonomy, package boundaries, tool/agent governance, manifest and ruleset parity, twin parity, the machine-readable module contract, and Makefile help parity (checks A-P). Exit 1 on any error; warnings never fail the build.
+summary: Stdlib-only, 3.6-safe enforcement of CONVENTIONS.md — labeling, taxonomy, package boundaries, tool/agent governance, manifest and ruleset parity, twin parity, the machine-readable module contract, Makefile help parity, and cross-reference resolution (checks A-Q). Exit 1 on any error; warnings never fail the build.
 
 check_structure.py - enforce the project conventions (see CONVENTIONS.md).
 
 Checks:
   A. Frontmatter validity on README.md / AGENT.md / CLAUDE.md, docs/**,
-     test-docs/** *.md, and agents/**/*.tool.md
+     test-docs/** *.md, and agents/**/*.tool.md; a 'deprecated' or
+     'superseded' document names its successor in superseded_by
   B. Each taxonomy directory that exists has README.md + CLAUDE.md
   C. Each src/ directory containing *.py is a package: __init__.py with __all__
   D. The __init__ boundary: no absolute import of another package's _private module
@@ -51,6 +52,11 @@ Checks:
      `help` recipe's own grep pattern lists. The pattern is read out of the
      recipe, not restated here, so the check cannot agree with a wrong one;
      a recipe it cannot read is a stated WARN ('unverified'), never a pass
+  Q. Cross-references resolve (ERR): every relative Markdown link (file,
+     directory, #anchor) in prose names a real target, and every `§N`
+     citation names a numbered section — of CONVENTIONS.md unless a document
+     is named in front of it (`docs/guides/python-style.md §3`). Links inside
+     fenced or inline code are illustrations and are not checked
 
 Exit 0 = clean, 1 = errors. Warnings never fail the build. Stdlib only; 3.6+.
 """
@@ -59,6 +65,7 @@ import ast
 import io
 import json
 import os
+import posixpath
 import re
 import sys
 import tokenize
@@ -301,9 +308,11 @@ def check_frontmatter(path, seen_ids):
         and not os.path.exists(os.path.join(ROOT, can))
     ):
         err("%s: canonical target '%s' does not exist" % (rel(path), can))
-    # Corpus: deprecated content must point at its successor.
-    if fm.get("status") == "deprecated" and not fm.get("superseded_by"):
-        err("%s: status is 'deprecated' but no 'superseded_by' is set" % rel(path))
+    # Corpus: replaced content must point at its successor, whichever word the
+    # lifecycle uses for "replaced" (general: deprecated; ADRs: superseded).
+    status = fm.get("status")
+    if status in ("deprecated", "superseded") and not fm.get("superseded_by"):
+        err("%s: status is '%s' but no 'superseded_by' is set" % (rel(path), status))
     if not fm.get("owner"):
         warn("%s: frontmatter missing 'owner'" % rel(path))
 
@@ -2289,6 +2298,225 @@ def check_P():
         warn(m)
 
 
+# --- check_Q: cross-references resolve ----------------------------------------
+#
+# A document's outbound references are the edges of the knowledge graph the
+# corpus is built from, and they rot silently: a renumbered CONVENTIONS section
+# or a moved guide leaves every citation pointing at the wrong thing, at exit
+# 0. Two reference forms are recognised, both closed:
+#   - a relative Markdown link `[text](path#anchor)` in prose (fenced and
+#     inline code are syntax illustrations, not references);
+#   - a section citation `§N`, which cites CONVENTIONS.md unless a document is
+#     named in front of it (`docs/guides/python-style.md §3`). Bare `§N` never means "this
+#     document": that reading is ambiguous the moment a guide numbers its own
+#     sections, so the house grammar names the document instead.
+
+_FENCE = re.compile(r"^\s*(```|~~~)")
+_INLINE_CODE = re.compile(r"`[^`\n]*`")
+_MD_LINK = re.compile(r"!?\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+\"[^\"]*\")?\s*\)")
+_URL_SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
+_ATX_HEADING = re.compile(r"^#{1,6}\s+(.*?)\s*$")
+_NUMBERED_HEADING = re.compile(r"^#{1,6}\s+(\d+)\.")
+_SECTION_CITE = re.compile(r"(?:([A-Za-z0-9_./-]+\.md)\s+)?§\s*(\d+)")
+_CONVENTIONS_DOC = "CONVENTIONS.md"
+# Where a `§N` may appear: prose, and the code/config whose docstrings and help
+# strings cite the conventions (check_structure's own header does).
+_CITING_SUFFIXES = (".md", ".py", ".toml", ".yml", ".yaml", ".jinja", ".example")
+_CITING_NAMES = ("Makefile",)
+
+
+def _unfenced_lines(text):
+    """The document's lines with every fenced code block blanked, numbering kept.
+    A ``` fence closes only on ```; a ~~~ inside it is content, and vice versa."""
+    out, fence = [], None
+    for line in text.split("\n"):
+        m = _FENCE.match(line)
+        if m and (fence is None or m.group(1) == fence):
+            fence = m.group(1) if fence is None else None
+            out.append("")
+            continue
+        out.append("" if fence is not None else line)
+    return out
+
+
+def _prose_lines(text):
+    """_unfenced_lines with inline code spans blanked too — what a renderer
+    would treat as prose, so a link written inside backticks is not a link."""
+    return [_INLINE_CODE.sub("", line) for line in _unfenced_lines(text)]
+
+
+def _heading_slug(heading):
+    """GitHub's anchor for an ATX heading: lowercase, drop everything but word
+    characters, spaces and hyphens, spaces become hyphens. The leading `#`s,
+    optional closing `#`s, backticks and emphasis stars are markup, not text."""
+    t = re.sub(r"^#{1,6}\s*", "", heading.strip())
+    t = re.sub(r"\s*#+\s*$", "", t)
+    t = t.replace("`", "").replace("*", "").lower()
+    t = re.sub(r"[^\w\- ]", "", t)
+    return t.replace(" ", "-")
+
+
+def _anchors(text):
+    """Every anchor a renderer would emit for `text`, repeats numbered -1, -2."""
+    counts, anchors = {}, set()
+    for line in _unfenced_lines(text):
+        m = _ATX_HEADING.match(line)
+        if not m:
+            continue
+        slug = _heading_slug(m.group(1))
+        n = counts.get(slug, 0)
+        counts[slug] = n + 1
+        anchors.add(slug if n == 0 else "%s-%d" % (slug, n))
+    return anchors
+
+
+def _numbered_sections(text):
+    """The N of every `## N.` heading outside fenced code."""
+    found = set()
+    for line in _unfenced_lines(text):
+        m = _NUMBERED_HEADING.match(line)
+        if m:
+            found.add(int(m.group(1)))
+    return found
+
+
+def _resolve_link(base, path):
+    """`path` as written in a doc under directory `base` -> a root-relative path
+    ('' is the root), or None when it climbs above the repository."""
+    joined = path.lstrip("/") if path.startswith("/") else posixpath.join(base, path)
+    resolved = posixpath.normpath(joined)
+    if resolved == "..":
+        return None
+    if resolved.startswith("../"):
+        return None
+    return "" if resolved == "." else resolved
+
+
+def _link_findings(relpath, text, files, tree):
+    errs = []
+    base = posixpath.dirname(relpath)
+    for lineno, line in enumerate(_prose_lines(text), 1):
+        for m in _MD_LINK.finditer(line):
+            target = m.group(1)
+            if _URL_SCHEME.match(target):
+                continue
+            path, _, fragment = target.partition("#")
+            doc = relpath
+            if path:
+                doc = _resolve_link(base, path)
+                if doc is None:
+                    errs.append(
+                        "%s:%d: link target '%s' escapes the repository"
+                        % (relpath, lineno, target)
+                    )
+                    continue
+                if doc and doc not in tree:
+                    errs.append(
+                        "%s:%d: link target '%s' does not exist (resolves to '%s')"
+                        % (relpath, lineno, target, doc)
+                    )
+                    continue
+            anchored = fragment and doc.endswith(".md") and doc in files
+            if anchored and fragment not in _anchors(files[doc]):
+                errs.append(
+                    "%s:%d: link anchor '#%s' matches no heading of %s"
+                    % (relpath, lineno, fragment, doc)
+                )
+    return errs
+
+
+def _citation_findings(relpath, text, files, sections_of):
+    errs = []
+    base = posixpath.dirname(relpath)
+    for lineno, line in enumerate(text.split("\n"), 1):
+        for m in _SECTION_CITE.finditer(line):
+            named, number = m.group(1), int(m.group(2))
+            doc = _CONVENTIONS_DOC
+            if named:
+                # Root-relative first (the house spelling), then as the citing
+                # document's neighbour.
+                doc = (
+                    named
+                    if named in files
+                    else posixpath.normpath(posixpath.join(base, named))
+                )
+            present = sections_of(doc)
+            if present is None:
+                where = (
+                    "neither at the root nor beside %s" % relpath
+                    if named
+                    else "which does not exist"
+                )
+                errs.append(
+                    "%s:%d: '§%d' cites %s, %s"
+                    % (relpath, lineno, number, named or doc, where)
+                )
+            elif number not in present:
+                errs.append(
+                    "%s:%d: '§%d' names no numbered section of %s (present: %s)"
+                    % (
+                        relpath,
+                        lineno,
+                        number,
+                        doc,
+                        ", ".join(str(n) for n in sorted(present)),
+                    )
+                )
+    return errs
+
+
+def _crossref_findings(files, tree):
+    """files: {relpath: text} for every citing file; tree: every path (file or
+    directory, root-relative, '/'-separated) the walk saw. -> error strings.
+    Pure; the walk is check_Q's. Links are read from `.md` files only (a
+    `.jinja` twin's rendered links are the generation tests' business);
+    citations from every citing suffix."""
+    errs = []
+    cache = {}
+
+    def sections_of(doc):
+        if doc not in cache:
+            text = files.get(doc)
+            cache[doc] = None if text is None else _numbered_sections(text)
+        return cache[doc]
+
+    for relpath in sorted(files):
+        text = files[relpath]
+        name = posixpath.basename(relpath)
+        if name.endswith(".md"):
+            errs.extend(_link_findings(relpath, text, files, tree))
+        if name in _CITING_NAMES or name.endswith(_CITING_SUFFIXES):
+            errs.extend(_citation_findings(relpath, text, files, sections_of))
+    return errs
+
+
+def check_Q():
+    """ERROR when a relative Markdown link or a `§N` citation names nothing.
+    Walks every citing file once (symlinked twins such as CLAUDE.md deduped by
+    real path, as check_A does) and records every path the walk saw, so a link
+    to a directory or a non-text file resolves without reading it."""
+    files, tree, seen_real = {}, set(), set()
+    for dirpath, _, filenames in walk(ROOT):
+        reldir = rel(dirpath).replace(os.sep, "/")
+        if reldir != ".":
+            tree.add(reldir)
+        for f in filenames:
+            full = os.path.join(dirpath, f)
+            relp = f if reldir == "." else reldir + "/" + f
+            tree.add(relp)
+            if not (f in _CITING_NAMES or f.endswith(_CITING_SUFFIXES)):
+                continue
+            real = os.path.realpath(full)
+            if real in seen_real:
+                continue
+            seen_real.add(real)
+            text = _read_text(full, err)  # present but undecodable: a gate defect
+            if text is not None:
+                files[relp] = text
+    for m in _crossref_findings(files, tree):
+        err(m)
+
+
 def main():
     check_A()
     check_B()
@@ -2306,6 +2534,7 @@ def main():
     check_N()
     check_O()
     check_P()
+    check_Q()
     for w_ in warnings:
         print("WARN  " + w_)
     for e_ in errors:

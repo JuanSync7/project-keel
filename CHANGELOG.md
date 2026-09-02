@@ -15,12 +15,26 @@ version rather than a bare commit:
   recipe rather than restated, so the check cannot agree with a wrong one, and a
   recipe it cannot read is a WARN that says *unverified*. First slice of the
   documentation-quality work: a regression barrier that also fixed a live bug.
+- **`check_Q` — cross-references resolve.** Every relative Markdown link in
+  prose (file, directory, `#anchor`) must name something that exists, and every
+  `§N` citation must name a numbered section — of `CONVENTIONS.md` unless a
+  document is named in front of it (`docs/guides/python-style.md §3`); a bare
+  `§N` never means "this document". Read from prose and from code/config.
+  Green on arrival (58 links, 120 citations, none dead); what it buys is that
+  renumbering `CONVENTIONS.md` or moving a doc now fails with the full list of
+  citations to update.
+- **`status: superseded` requires `superseded_by`**, as `deprecated` always
+  has — one lifecycle rule, two vocabularies (check_A).
 
 ### Fixed
 - **`make help` hid `e2e`.** The recipe's character class `[a-zA-Z_-]` had no
   digits, so the one digit-named target was annotated and never listed, for as
   long as it existed. Widened to `[a-zA-Z0-9_-]`; the name column widened from
   14 to 22 so `agent-surface-schema` no longer overruns it.
+- **ADR-0009 hyperlinked keel's hardening plan**, which copier prunes from every
+  generated project, so the link dangled downstream on arrival. Now a plain
+  citation that says why. **`python-style.md` cited its own sections as bare
+  `§1`/`§3`**, the form that means `CONVENTIONS.md` everywhere else; now named.
 
 ## [0.1.0] — 2026-09-02
 

@@ -63,8 +63,9 @@ failure mode:
 | `canonical` | `true` or a path/id | dedup: when the same fact lives in N places, point mirrors at the one source of truth |
 
 Related (set when applicable, not required): `superseded_by` — **required
-when `status: deprecated`** so the brain follows the chain to the live
-version. A new doc must carry `id`/dates/`visibility`/`canonical` (check A
+when `status: deprecated` or `status: superseded`** so the brain follows the
+chain to the live version (one rule; the two words are the general and the
+ADR lifecycle's names for "replaced"). A new doc must carry `id`/dates/`visibility`/`canonical` (check A
 validates them); set **real dates/owners** rather than placeholders, and tighten
 `visibility` on anything sensitive.
 
@@ -186,7 +187,7 @@ pre-commit hook) fails the build if the conventions above drift:
 | Frontmatter | every `README.md`/`CLAUDE.md` (+ `docs/**`, `test-docs/**` md) has the required keys with valid `kind`/`layer`/`status`/`visibility` |
 | Corpus id | every `id` is unique across the corpus |
 | Corpus canonical | a path-like `canonical` pointer resolves to a real file |
-| Corpus lifecycle | `status: deprecated` requires `superseded_by` |
+| Corpus lifecycle | `status: deprecated` and `status: superseded` both require `superseded_by` |
 | Documented dirs (§2) | every taxonomy directory that exists has both `README.md` and `CLAUDE.md` |
 | Package boundary (§3) | every `src/` dir with `.py` has an `__init__.py` that defines `__all__` |
 | `__init__` is the API (§3) | no absolute import of another package's `_private` module |
@@ -204,6 +205,7 @@ pre-commit hook) fails the build if the conventions above drift:
 | Template twin parity (§15) | every `*.jinja` twin is declared in `config/project.json` `template.twins` as `parity`, `divergence` or `generated`, and matches that declaration — a `parity` twin carries no non-templated line the plain file has lost, a `divergence` twin actually differs, a `generated` twin has no plain sibling. Render-free, so it runs in the 3.6 gate; silent in a generated project, which has no twins |
 | Module contract (§16) | every `.py` under the code roots opens with a docstring carrying explicit, non-empty `title:` and `summary:` lines — the grammar the corpus reads — and every `__all__`-exported symbol defined in-file has a docstring |
 | Help parity | every `## `-annotated Makefile target is one the `help` recipe's own grep pattern lists (read from the recipe, never restated), so no target is documented-but-invisible to `make help`; a recipe the check cannot read is a stated WARN |
+| Cross-references | every relative Markdown link in prose (file, directory, `#anchor`) names something that exists, and every `§N` citation names a numbered section: a bare `§N` always cites this file, a section of any other document is cited by naming it (`docs/guides/python-style.md §3`). Read from prose and from code/config; links inside code are illustrations and are not read |
 
 Missing `owner` is a warning, not a failure. If you change the scheme
 (KINDS / LAYERS / STATUSES / VISIBILITIES) or a check, update **both**

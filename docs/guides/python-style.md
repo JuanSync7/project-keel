@@ -8,7 +8,7 @@ tags: [practices, style, readability, robustness, docstrings, comments, agents, 
 summary: The canonical statement of how Python is written in this project — readability and loud failure modes outrank speed; the machine-readable module header; comment and docstring discipline; and how a code agent works here. The provable floor is gated (check_O/E, ruff, mypy); this guide is the judgment above it.
 id: docs-guides-python-style
 created: 2026-08-18
-updated: 2026-08-18
+updated: 2026-09-02
 visibility: internal
 canonical: true
 ---
@@ -185,7 +185,7 @@ that go with them, for any agent (or person) writing Python in this repo:
 
 | Scale | What holds | What relaxes |
 |---|---|---|
-| One-off EDA script / checklist | header (§1), failure modes (§3), stdlib-first | no package structure, no mirror test required outside `src/` |
+| One-off EDA script / checklist | header (python-style.md §1), failure modes (python-style.md §3), stdlib-first | no package structure, no mirror test required outside `src/` |
 | Agent + tooling around it | all of the above + `__all__` boundary + tool spec (`agents/tools/`) | — |
 | Full product (`src/`) | everything: mirror tests, e2e for user-facing flows, strict types | nothing |
 

@@ -48,7 +48,7 @@ worklist.
 | — | Merge-readiness audit — 1 blocker + 4 should-fixes (`efd8b3b`) | done |
 | — | Exact pins for the gate's own toolchain (`0ab1bbf`) | done |
 | — | The optional-surface questions (`wiki` / `evals` / `containers`) | **not started** |
-| — | ADR-0005 slice 1: `config/environment.json` + `check_P` | **not started** |
+| — | ADR-0005 slice 1: `config/environment.json` + its check letter (the next free one; `P` went to help parity on 2026-09-02) | **not started** |
 
 **The pass narratives below are historical.** They were written before the work
 landed, and several of their "remaining" and "not closed" notes went stale as it
@@ -508,7 +508,9 @@ a fresh clone and a generated project are green on arrival; every on-disk
 `CODE_ROOTS` module appears in a fresh corpus with an authored title+summary
 (integration-tested). ADR-0008. **Note:** this pass takes the letter `O`;
 ADR-0005's proposed completeness scan (status: proposed, never implemented)
-moves to `check_P` — letters belong to landed checks.
+moves to `check_P` — letters belong to landed checks. *(Correction, 2026-09-02:
+`P` was then taken by Makefile help parity, by the same rule; ADR-0005 takes
+the next free letter when it lands.)*
 
 **Slice 2 of the same pass:** the judgment half that cannot be a gate —
 `docs/guides/python-style.md`, the canonical "how Python is written here"
@@ -554,7 +556,7 @@ Mutation-verified on all three failure modes; each was silent before.
 
 **Still to do: ADR-0005 slice 1.** `config/environment.json`, the deterministic
 declaration check (shape, vocabularies, and the undeclared-external completeness
-scan — `check_P`, shifted from `check_O` by ADR-0008), and the generated `.env.example`. The lock, the fingerprint and
+scan — its check letter, shifted from `O` by ADR-0008 and again from `P` by help parity), and the generated `.env.example`. The lock, the fingerprint and
 the provider adapters are slice 2, outside this plan. Its stated prerequisite is
 now met: twin parity is gated, so adding a seventh twin can no longer manufacture
 a new instance of the drift class it claims to fix.
