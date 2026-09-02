@@ -7,7 +7,7 @@ summary: Mirrors src/backend/showcase/. Exercises the read model via the public 
 
 import pytest
 
-from backend.showcase import Showcase, to_jsonable
+from backend.showcase import CHECKS, Showcase, to_jsonable
 
 pytestmark = pytest.mark.unit
 
@@ -133,6 +133,27 @@ def test_overview_counts_and_layers():
     rest = next(t for t in ov.transports if t.name == "rest")
     assert rest.enabled and rest.directory == "api/rest_fastapi"
     assert next(t for t in ov.transports if t.name == "mcp").enabled is False
+
+
+def test_checks_mirror_the_catalogue_row_for_row():
+    """The showcase's Checks page and docs/guides/deterministic-checks.md must
+    describe one gate. check_R holds the catalogue to the Makefile; this holds
+    the mirror to the catalogue, with the same table reader, so a row added to
+    either without the other fails here rather than shipping two truths."""
+    import sys as _sys
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[3]
+    _sys.path.insert(0, str(root / "scripts"))
+    import check_structure as cs  # noqa: PLC0415 — the reader is the gate's own
+
+    catalogue = root / "docs" / "guides" / "deterministic-checks.md"
+    header, rows = cs._pipe_table(
+        catalogue.read_text(encoding="utf-8"), ("Script", "Gate?")
+    )
+    col = header.index("script")
+    catalogued = {cs._BACKTICKED.search(r[col]).group(1).split()[0] for r in rows}
+    assert {c.script for c in CHECKS} == catalogued
 
 
 def test_checks_present_flag_reflects_disk():

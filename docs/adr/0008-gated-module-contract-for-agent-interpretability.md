@@ -21,6 +21,8 @@ live in `scripts/check_structure.py` (`check_O`, `check_E`) and
 `scripts/jobs/check_corpus.py`. Takes the check letter `O`;
 [ADR-0005](0005-external-environment-manifest.md)'s proposed completeness scan
 (never implemented) moves to `check_P` — letters belong to landed checks.
+*(Maintenance note, 2026-09-02: `P` was then taken by Makefile help parity under
+the same rule; ADR-0005 takes the next free letter when it lands.)*
 
 ## Context
 

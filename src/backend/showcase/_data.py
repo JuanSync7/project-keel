@@ -399,6 +399,17 @@ CHECKS: tuple[Check, ...] = (
         "parity, the machine-readable module contract, Makefile help parity, cross-reference resolution and check-catalogue parity (checks A–R).",
     ),
     Check(
+        slug="python-floor",
+        name="Interpreter floor",
+        script="scripts/check_python_version.py",
+        gate="error",
+        interpreter="any",
+        command="make check-python",
+        when="Before every check that needs the project interpreter",
+        purpose="$(PY) satisfies pyproject.toml's requires-python, said plainly "
+        "before a newer-syntax check fails with a traceback.",
+    ),
+    Check(
         slug="corpus",
         name="Corpus integrity & determinism",
         script="scripts/jobs/check_corpus.py",
@@ -435,8 +446,19 @@ CHECKS: tuple[Check, ...] = (
         gate="error",
         interpreter="any",
         command="python3 scripts/cdmon_sync.py --check",
-        when="Every commit (no-op until installed)",
-        purpose="cdmon code↔doc drift monitor (a thin adapter; optional).",
+        when="Every commit and under check-all (a stated skip until installed)",
+        purpose="cdmon code↔doc drift monitor (a thin adapter over an external "
+        "tool; optional).",
+    ),
+    Check(
+        slug="accountability",
+        name="Accountability report",
+        script="scripts/accountability_report.py",
+        gate="report",
+        interpreter=">=3.7",
+        command="make advise",
+        when="Anytime; informational",
+        purpose="Lists corpus nodes that resolve to no owner.",
     ),
     Check(
         slug="generic",
@@ -450,6 +472,17 @@ CHECKS: tuple[Check, ...] = (
         "AND hardcoded in src/ logic — a 'fit the solution to the eval' "
         "smell. Advisory: draws attention, never gates. Suppress with "
         "# generic-ok: <reason>.",
+    ),
+    Check(
+        slug="practices",
+        name="Coding-practices advisor",
+        script="scripts/check_practices.py",
+        gate="report",
+        interpreter="3.6-safe",
+        command="make advise",
+        when="Anytime; advisory (never fails the build)",
+        purpose="Coding-practice smells read from config/practices.json. "
+        "Advisory: draws attention, never gates.",
     ),
 )
 

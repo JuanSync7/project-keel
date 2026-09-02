@@ -2,7 +2,7 @@
 title: Unit — check_structure check_R (check catalogue parity)
 kind: tests
 layer: n/a
-summary: check_R errors when the catalogue of deterministic checks and the triggers that run them disagree on one membership — a catalogued script that does not exist, a row claiming the error tier whose script `make check-all` never runs, a script `check-all` runs that the catalogue does not list, a report row no make target invokes, or a pre-commit hook the hooks table omits (and vice versa). The live instance: the catalogue marked `cdmon_sync.py --check` as an error-tier gate for as long as it existed while `check-all` never ran it — a claim, not a check. Absent is silent (no catalogue, no Makefile); a catalogue whose table this check cannot read is a stated WARN.
+summary: check_R errors when the catalogue of deterministic checks and the triggers that run them disagree on one membership — a catalogued script that does not exist, a row claiming the error tier whose script `make check-all` never runs, a script `check-all` runs that the catalogue does not list, a report row no make target invokes, or a pre-commit hook the hooks table omits (and vice versa). The live instance: the catalogue marked `cdmon_sync.py --check` as an error-tier gate for as long as it existed while `check-all` never ran it — a claim, not a check. No catalogue is silent; a Makefile this check cannot read, or a catalogue whose table it cannot read, is a stated WARN — never a pass.
 """
 
 import sys
@@ -198,8 +198,74 @@ def test_no_precommit_config_leaves_the_hooks_table_unchecked_silently_when_the_
     assert _find(catalogue=cat, precommit=None) == ([], [])
 
 
-def test_a_hooks_table_with_no_precommit_config_errors_per_row():
+# --- review round: the shapes a Makefile actually takes ------------------------
+
+
+def test_a_precommit_config_with_hooks_but_no_hooks_table_errors():
+    """The one direction the first cut missed: hooks declared, table absent."""
+    cat = _CATALOGUE.split("## How the hooks are wired")[0]
+    errs, _ = _find(catalogue=cat)
+    assert len(errs) == 1 and "hooks table" in errs[0] and "structure" in errs[0], errs
+
+
+def test_a_missing_precommit_config_is_one_error_naming_every_listed_hook():
     errs, _ = _find(precommit=None)
-    assert sorted(e.split("'")[1] for e in errs) == ["eslint", "ruff", "structure"], (
-        errs
+    assert len(errs) == 1, errs
+    assert (
+        all(h in errs[0] for h in ("eslint", "ruff", "structure")) and "--" in errs[0]
     )
+
+
+def test_a_row_with_too_few_cells_is_an_error_not_a_skip():
+    cat = _CATALOGUE.replace(
+        "| Advisor | `scripts/check_generic.py` | report | 3.6-safe | smells |",
+        "| Advisor | `scripts/check_generic.py` |",
+    )
+    errs, _ = _find(cat)
+    assert len(errs) == 1 and "cell" in errs[0] and "check_generic.py" in errs[0], errs
+
+
+def test_a_commented_out_invocation_does_not_count_as_running():
+    """`\\t# $(PY) scripts/x.py` reaches the shell as a comment; the cdmon row
+    would otherwise stay green after check-all stopped running it."""
+    mk = _MAKEFILE.replace(
+        "check-corpus: ## corpus\n\t$(PY) scripts/jobs/check_corpus.py\n",
+        "check-corpus: ## corpus\n\t# $(PY) scripts/jobs/check_corpus.py\n\techo skip  # scripts/jobs/check_corpus.py\n",
+    )
+    errs, _ = _find(makefile=mk)
+    assert (
+        len(errs) == 1 and "check_corpus.py" in errs[0] and "never runs" in errs[0]
+    ), errs
+
+
+def test_a_conditional_inside_a_recipe_does_not_end_the_recipe():
+    mk = _MAKEFILE.replace(
+        "check-corpus: ## corpus\n\t$(PY) scripts/jobs/check_corpus.py\n",
+        "check-corpus: ## corpus\nifeq ($(CI),1)\n\t@echo ci\nelse\n\t@echo local\nendif\n\t$(PY) scripts/jobs/check_corpus.py\n",
+    )
+    assert _find(makefile=mk) == ([], [])
+
+
+def test_a_backslash_continued_prerequisite_list_is_unfolded():
+    mk = _MAKEFILE.replace(
+        "check-all: check check-corpus ## all",
+        "check-all: check \\\n\tcheck-corpus ## all",
+    )
+    assert _find(makefile=mk) == ([], [])
+
+
+def test_make_recursion_is_followed():
+    mk = _MAKEFILE.replace(
+        "check-all: check check-corpus ## all",
+        "check-all: check ## all\n\t$(MAKE) check-corpus",
+    )
+    assert _find(makefile=mk) == ([], [])
+
+
+def test_every_error_carries_a_remedy():
+    cat = _CATALOGUE.replace(
+        "| Advisor |",
+        "| Drift | `scripts/cdmon_sync.py --check` | error* | any | drift |\n| Advisor |",
+    )
+    errs, _ = _find(cat, tree=_TREE)  # cdmon_sync.py also does not exist
+    assert len(errs) == 2 and all("--" in e for e in errs), errs

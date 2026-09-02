@@ -578,10 +578,10 @@ def test_deleting_a_manifest_declared_dir_is_caught_and_the_documented_fix_works
     )
 
 
-# `ERROR <file>:<line>: link target '...' does not exist (resolves to '<target>')`
+# `ERROR <file>:<line>: link target '...' does not exist (resolves to '<target>') -- <remedy>`
 _DANGLING_LINK = re.compile(
     r"^ERROR (?P<file>[^:]+):(?P<line>\d+): link target '[^']*' does not exist "
-    r"\(resolves to '(?P<target>[^']*)'\)$"
+    r"\(resolves to '(?P<target>[^']*)'\)(?: -- .*)?$"
 )
 
 

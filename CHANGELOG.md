@@ -20,9 +20,11 @@ version rather than a bare commit:
   `§N` citation must name a numbered section — of `CONVENTIONS.md` unless a
   document is named in front of it (`docs/guides/python-style.md §3`); a bare
   `§N` never means "this document". Read from prose and from code/config.
-  Green on arrival (58 links, 120 citations, none dead); what it buys is that
-  renumbering `CONVENTIONS.md` or moving a doc now fails with the full list of
-  citations to update.
+  Green on arrival (57 links and 132 citations as the check counts them, none
+  dead); what it buys is that renumbering `CONVENTIONS.md` or moving a doc now
+  fails with the full list of citations to update. P, Q and R all land at the
+  error tier rather than ADR-0008's release-long WARN, each for the same stated
+  reason: the tree complied on arrival, or was made to in the landing commit.
 - **`status: superseded` requires `superseded_by`**, as `deprecated` always
   has — one lifecycle rule, two vocabularies (check_A).
 - **`check_R` — check catalogue parity.** `docs/guides/deterministic-checks.md`
@@ -52,6 +54,23 @@ version rather than a bare commit:
   report was listed and run by nothing; `check_python_version.py` ran under
   `check-all` with no row; the hooks table omitted `ruff-format`. Each is now
   either true or gone.
+- **The showcase's Checks page mirrored six of the catalogue's nine rows.** Now
+  nine, and pinned to the catalogue's Script column by a test that uses the
+  gate's own table reader, so the two cannot drift again.
+- **An adversarial review of `check_P`/`Q`/`R` found what they could not model
+  and were not saying.** `check_P` now treats a grep without `-E` (basic-regex
+  semantics Python cannot run), `-F`, a second selecting grep, an include named
+  by a variable or wildcard, and a pattern variable it cannot expand as WARNs
+  that say *unverified*; it honours `-i`, `grep -v` stages and plain pattern
+  variables, follows nested includes, and names the line. `check_Q` now reads
+  the house spelling `` `doc.md` §N `` (and a comma or line break between them),
+  closes a fence only on an equal-or-longer one, skips HTML comments, decodes
+  percent-encoded targets, slugs headings as rendered, sees setext and
+  `<a id>` anchors, and checks a link to a symlinked twin against the twin's
+  text. `check_R` now reads a Makefile as make does (continuations,
+  conditionals, `$(MAKE)` recursion, shell comments), errors on a short row
+  instead of skipping it, and errors when hooks are declared but uncatalogued.
+  Every error now ends with its remedy.
 
 ## [0.1.0] — 2026-09-02
 

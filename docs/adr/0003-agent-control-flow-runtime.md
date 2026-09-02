@@ -8,7 +8,7 @@ tags: [adr, agent, runtime, control-flow, langgraph, determinism]
 summary: Agents declare control flow as a neutral Plan run by a Runtime; the default engine is stdlib, LangGraph is one optional adapter.
 id: docs-adr-0003-agent-control-flow-runtime
 created: 2026-06-22
-updated: 2026-06-22
+updated: 2026-09-02
 visibility: internal
 canonical: true
 ---
@@ -41,8 +41,8 @@ tree (langchain-core, langgraph-checkpoint, orjson, httpx, …). Our
 Two premises were offered and are **not** load-bearing:
 
 - *"It's open-source, so there's no coupling problem."* Open-source settles
-  licensing, not architecture. The coupling this template bans (root `AGENT.md`,
-  §9) lives at the import/API boundary — `from langgraph.graph import StateGraph`
+  licensing, not architecture. The coupling this template bans (root `AGENT.md`;
+  CONVENTIONS §9) lives at the import/API boundary — `from langgraph.graph import StateGraph`
   in `agents/_brain.py` would wed the brain layer to one vendor's control-flow
   design. cdmon is open-source and still enters behind a thin adapter.
 - *"It's the only SDK that follows a flowchart."* Burr, pydantic-graph, and

@@ -124,3 +124,143 @@ def test_posix_character_classes_in_the_recipe_are_understood():
 
 def test_an_empty_makefile_list_is_silent():
     assert cs._help_parity_findings([]) == ([], [])
+
+
+# --- review round: grep semantics, includes, variables, pipelines --------------
+
+
+def test_a_recipe_without_dash_e_is_unverified_not_green():
+    """`grep -h '^[a-z0-9_-]+:.*?## '` is BRE: `+` and `?` are literal, so `make
+    help` prints nothing — while a Python re would say every target is listed.
+    The check has no BRE engine, so it must say so instead of agreeing."""
+    bre = _HELP_WIDE.replace("grep -hE", "grep -h")
+    errs, warns = _find(bre + "e2e: ## a\n\tx\n")
+    assert errs == []
+    assert len(warns) == 1 and "unverified" in warns[0] and "-E" in warns[0], warns
+
+
+def test_a_fixed_string_grep_is_unverified():
+    errs, warns = _find(_HELP_WIDE.replace("grep -hE", "grep -hF") + "e2e: ## a\n\tx\n")
+    assert errs == [] and len(warns) == 1 and "unverified" in warns[0], warns
+
+
+@pytest.mark.parametrize("cmd", ["egrep -h", "grep -hP", "grep -h -E", "grep -E -h"])
+def test_extended_regex_spellings_are_all_understood(cmd):
+    assert _find(_HELP_WIDE.replace("grep -hE", cmd) + "e2e: ## a\n\tx\n") == ([], [])
+
+
+def test_case_insensitive_grep_lists_a_capitalised_target():
+    ci = _HELP_NARROW.replace("grep -hE '^[a-zA-Z_-]", "grep -hiE '^[a-z_-]")
+    assert _find(ci + "Build: ## Build it\n\tx\n") == ([], [])
+
+
+def test_a_help_variable_assignment_is_not_the_help_target():
+    text = "help := unused\n" + _HELP_WIDE + "e2e: ## a\n\tx\n"
+    assert _find(text) == ([], [])
+
+
+def test_a_comment_line_inside_the_help_recipe_does_not_end_it():
+    text = _HELP_WIDE.replace(
+        "help: ## List tasks\n",
+        "help: ## List tasks\n\t# the pattern below is the contract\n",
+    )
+    assert _find(text + "e2e: ## a\n\tx\n") == ([], [])
+
+
+def test_a_pattern_held_in_a_make_variable_is_expanded_when_assigned():
+    text = "HELP_RE := ^[a-zA-Z0-9_-]+:.*?## \n" + _HELP_WIDE.replace(
+        "'^[a-zA-Z0-9_-]+:.*?## '", '"$(HELP_RE)"'
+    )
+    assert _find(text + "e2e: ## a\n\tx\n") == ([], [])
+
+
+def test_a_pattern_variable_this_check_cannot_expand_is_unverified():
+    text = _HELP_WIDE.replace("'^[a-zA-Z0-9_-]+:.*?## '", '"$(HELP_RE)"')
+    errs, warns = _find(text + "e2e: ## a\n\tx\n")
+    assert (
+        errs == []
+        and len(warns) == 1
+        and "HELP_RE" in warns[0]
+        and "unverified" in warns[0]
+    ), warns
+
+
+def test_a_later_grep_dash_v_hides_targets_on_purpose():
+    """`| grep -v '^_'` is how an author hides helper targets from help; a target
+    the author excluded is not a defect."""
+    text = _HELP_WIDE.replace(
+        "$(MAKEFILE_LIST) | \\", "$(MAKEFILE_LIST) | grep -v '^_' | \\"
+    )
+    assert _find(text + "_internal: ## hidden on purpose\n\tx\n") == ([], [])
+
+
+def test_a_second_selecting_grep_is_a_pipeline_this_check_does_not_model():
+    text = _HELP_WIDE.replace(
+        "$(MAKEFILE_LIST) | \\", "$(MAKEFILE_LIST) | grep -E 'x' | \\"
+    )
+    errs, warns = _find(text + "e2e: ## a\n\tx\n")
+    assert errs == [] and len(warns) == 1 and "unverified" in warns[0], warns
+
+
+def test_grep_reading_something_other_than_makefile_list_is_unverified():
+    text = _HELP_WIDE.replace("$(MAKEFILE_LIST)", "Makefile")
+    errs, warns = _find(text + "include rules.mk\n", **{"rules.mk": "e2e: ## a\n\tx\n"})
+    assert errs == [] and len(warns) == 1 and "MAKEFILE_LIST" in warns[0], warns
+
+
+def test_the_error_names_the_line_and_the_makefile_holding_the_pattern():
+    errs, _ = _find(
+        _HELP_NARROW + "\ne2e: ## a\n\tx\n", **{"rules.mk": "v2: ## b\n\ty\n"}
+    )
+    assert any(e.startswith("Makefile:5:") for e in errs), errs
+    assert any(e.startswith("rules.mk:1:") and "(in Makefile)" in e for e in errs), errs
+
+
+# --- check_P itself: include resolution over a real tree -----------------------
+
+
+@pytest.fixture
+def repo(tmp_path, monkeypatch):
+    monkeypatch.setattr(cs, "ROOT", str(tmp_path))
+    monkeypatch.setattr(cs, "errors", [])
+    monkeypatch.setattr(cs, "warnings", [])
+    monkeypatch.setattr(cs, "_READ_REPORTED", set())
+    return tmp_path
+
+
+def test_a_nested_include_is_read(repo):
+    (repo / "Makefile").write_text(_HELP_NARROW + "include a.mk\n", encoding="utf-8")
+    (repo / "a.mk").write_text("include b.mk\n", encoding="utf-8")
+    (repo / "b.mk").write_text("e2e: ## a\n\tx\n", encoding="utf-8")
+    cs.check_P()
+    assert len(cs.errors) == 1 and "b.mk" in cs.errors[0] and "e2e" in cs.errors[0], (
+        cs.errors
+    )
+
+
+def test_an_include_this_check_cannot_resolve_is_unverified(repo):
+    (repo / "Makefile").write_text(
+        _HELP_WIDE + "include $(EXTRA)\ninclude *.mk\n", encoding="utf-8"
+    )
+    cs.check_P()
+    assert cs.errors == []
+    assert len(cs.warnings) == 2 and all("unverified" in w for w in cs.warnings), (
+        cs.warnings
+    )
+
+
+def test_an_optional_include_that_is_absent_is_silent(repo):
+    """`-include x.mk` / `sinclude x.mk` is make's own 'if present'."""
+    (repo / "Makefile").write_text(
+        _HELP_WIDE + "-include missing.mk\nsinclude gone.mk\n", encoding="utf-8"
+    )
+    cs.check_P()
+    assert cs.errors == [] and cs.warnings == []
+
+
+def test_a_required_include_that_is_absent_is_said_out_loud(repo):
+    (repo / "Makefile").write_text(
+        _HELP_WIDE + "include missing.mk\n", encoding="utf-8"
+    )
+    cs.check_P()
+    assert cs.errors == [] and len(cs.warnings) == 1 and "missing.mk" in cs.warnings[0]

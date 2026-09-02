@@ -63,7 +63,7 @@ everything and therefore expect the project interpreter.
 | Check | Script | Gate? | Interpreter | What it guarantees |
 |-------|--------|:-----:|-------------|--------------------|
 | Structure & frontmatter | `scripts/check_structure.py` | error | 3.6-safe | Labels, taxonomy, package boundaries, tool/agent governance, project facts, agent-rules symlinks, owned-exception & frozen-config boundaries, naked-tensor domain warn, lint/type ruleset parity, template twin parity, Makefile help parity, cross-reference resolution, check-catalogue parity (checks A–R) |
-| Interpreter floor | `scripts/check_python_version.py` | error | any | `$(PY)` satisfies `pyproject.toml`'s `requires-python`, said plainly before a newer-syntax check fails with a traceback — runs first under `check-all` and `test` |
+| Interpreter floor | `scripts/check_python_version.py` | error | any | `$(PY)` satisfies `pyproject.toml`'s `requires-python`, said plainly before a newer-syntax check fails with a traceback — runs before every check that needs the project interpreter (`check-corpus`, `test`) |
 | Corpus integrity | `scripts/jobs/check_corpus.py` | error | ≥3.7 | the fresh build is a valid, acyclic, reproducible graph **and** the local `wiki/corpus.json` (what agents query) is current when present — absent is a loud pass, stale is an error naming `make site-data` (ADR-0008) |
 | OpenAPI drift | `api/rest_fastapi/export_openapi.py --check` | error | FastAPI | Committed `openapi.json` matches the live routes |
 | AAD schema drift | `scripts/agent_surface/generate_aad_schema.py --check` | error | pydantic | Committed AAD JSON Schema matches the model |
@@ -150,29 +150,47 @@ print but never fail the build.
   check, so the two cannot agree on a wrong answer; `include`d makefiles are
   read too, as `$(MAKEFILE_LIST)` would. The live instance: `e2e` was annotated
   from the day it existed and never listed, because `[a-zA-Z_-]` has no digits.
-  Silent without a `help` target; a recipe the check cannot read a pattern from
-  is a WARN that says *unverified*, never a pass. Lands as an error, not a
+  Read only from the file named `Makefile` and what it includes (recursively;
+  `-include`/`sinclude` of an absent file is make's own "if present"); a
+  `$(VAR)`-named target, a dotted special target and a line naming two targets
+  are outside the annotation convention and outside the check. It models a
+  `grep -E`/`-P`/`egrep` first stage reading `$(MAKEFILE_LIST)`, `-i`, a
+  pattern held in a plain make variable, and later `grep -v` stages (an author
+  hiding a target on purpose). Everything else — a grep without `-E` (basic
+  regex, which Python cannot run), `-F`, a second selecting grep, a variable or
+  wildcard include, a pattern variable it cannot expand — is a WARN that says
+  *unverified*, never a pass. Silent without a `help` target. Lands as an error, not a
   release-long warning (the ADR-0008 grace rule), because the tree complied the
   moment the recipe was widened — there was nothing to give anyone time for.
 - **Q. Cross-references resolve** — every relative Markdown link in prose
   (`[text](path)`, `![alt](path)`, a directory, a `#anchor`) names something
   that exists, and every `§N` citation names a numbered `## N.` heading. The
   citation grammar is closed on purpose: a bare `§N` **always** cites
-  `CONVENTIONS.md`; a section of any other document is cited by naming it —
-  `docs/guides/python-style.md §3` (root-relative, or the citing file's
-  neighbour). A bare `§N` never means "this document", because that reading
-  turns ambiguous the moment a guide numbers its own sections. Citations are
-  read from prose *and* from code and config (`.py`, `.toml`, `.yml`,
-  `.jinja`, `Makefile`), since a docstring's `(§18)` rots exactly as a guide's
-  does. Anchors follow GitHub's slug rule (lowercase; drop all but word
-  characters, spaces and hyphens; spaces to hyphens; repeats numbered `-1`,
-  `-2`). Links inside fenced or inline code are syntax illustrations and are
-  not read; `.jinja` twins are not read for links (their rendered links are
-  the generation tests' business). Absent is not silent here: a citation to a
+  `CONVENTIONS.md`; a section of any other document is cited by naming it
+  immediately before the sign — `docs/guides/python-style.md §3`, with the
+  path in backticks or not, a comma or a line break between them or not
+  (root-relative, else the citing file's neighbour; only `.md` names count).
+  A bare `§N` never means "this document", because that reading turns
+  ambiguous the moment a guide numbers its own sections. A numbered heading
+  is `N.` at any level (`##` in `CONVENTIONS.md`, `###` in this file).
+  Citations are read from prose *and* from code and config (`.py`, `.toml`,
+  `.yml`, `.yaml`, `.jinja`, `.example`, `Makefile`), and from inside fenced
+  or inline code too, since a quoted help string's `(§18)` cites the same
+  section a sentence does. Links are the other way round: inside fenced code,
+  inline code or an HTML comment a link is a syntax illustration and is not
+  read; `.jinja` twins are not read for links (their rendered links are the
+  generation tests' business). Link targets may be percent-encoded or
+  `<angle-bracketed>`; anchors follow GitHub's slug rule on the heading *as
+  rendered* (code spans kept, link text kept, emphasis markers dropped;
+  lowercase; drop all but word characters, spaces and hyphens; spaces to
+  hyphens; repeats numbered `-1`, `-2`), plus setext headings and explicit
+  `<a id>`/`<a name>` anchors. Absent is not silent here: a citation to a
   missing `CONVENTIONS.md` is an error, because the file ships verbatim into
   every generated project. What this buys: renumbering `CONVENTIONS.md`, or
   moving a doc, now fails with the full list of citations to update instead of
-  leaving the knowledge graph pointing at the wrong sections at exit 0.
+  leaving the knowledge graph pointing at the wrong sections at exit 0. Lands
+  as an error, not the ADR-0008 release-long WARN: the tree had no dead
+  reference on arrival, so there was nothing to give anyone time for.
 - **R. Check catalogue parity** — this file's checks table and the triggers
   that run the checks agree on one membership: every catalogued script exists;
   a row at the `error`/`error*` tier is reachable from `make check-all` (a gate
@@ -180,11 +198,17 @@ print but never fail the build.
   report nobody runs is the `make advise` precedent — documented, invoked by
   nothing); every script `check-all` reaches, transitively through
   prerequisites, has a row; and the hooks table below names exactly the hook
-  ids `.pre-commit-config.yaml` declares. The tier column is a closed
-  vocabulary (`error`, `error*`, `report`). The live instance this closed: the
-  cdmon row claimed the error tier for as long as it existed while `check-all`
-  never ran it. Silent without this file; a checks table or Makefile it cannot
-  read is a WARN that says *unverified*.
+  ids `.pre-commit-config.yaml` declares — and neither exists without the
+  other. The tier column is a closed vocabulary (`error`, `error*`, `report`);
+  a short row is an error, not a skip. The Makefile is read as make reads it
+  (continuations unfolded, conditionals transparent, `$(MAKE) target` followed,
+  shell comments ignored); catalogued checks are `.py` paths, so a check in
+  another language is reached through a `.py` adapter (CONVENTIONS §9). The
+  live instance this closed: the cdmon row claimed the error tier for as long
+  as it existed while `check-all` never ran it. Silent without this file; a
+  checks table or Makefile it cannot read is a WARN that says *unverified*.
+  Lands as an error, not the ADR-0008 release-long WARN: the four rows it found
+  were made true in the landing commit.
 
 **When to run.** Every commit (pre-commit) and in CI; any time you add a
 directory, package, doc, tool, or agent.
@@ -291,7 +315,7 @@ Enable once: `pip install pre-commit && pre-commit install`.
 `.github/workflows/ci.yml` runs under Python 3.11 and Node 22:
 
 ```yaml
-- run: make check-all   # structure, corpus, openapi, aad, cdmon
+- run: make check-all   # structure, python floor, corpus, openapi, aad, cdmon
 - run: make lint
 - run: make typecheck
 - run: make test

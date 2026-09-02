@@ -75,6 +75,7 @@ import posixpath
 import re
 import sys
 import tokenize
+from urllib.parse import unquote
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -90,6 +91,10 @@ IGNORE_DIRS = {
     ".mypy_cache",
     ".pytest_cache",
     ".ruff_cache",
+    ".tox",
+    ".nox",
+    ".eggs",
+    "htmlcov",
 }
 
 KINDS = {
@@ -2178,18 +2183,34 @@ def check_O():
 # day it existed and never once listed, because `[a-zA-Z_-]` has no digits.
 # So this check does not restate what a listable target looks like — it reads
 # the recipe's own pattern out of the Makefile and applies it, which is the one
-# design under which the check cannot agree with a wrong pattern.
+# design under which the check cannot agree with a wrong pattern. What it
+# cannot model it says so: a grep without -E (basic-regex semantics Python's
+# re does not have), a pattern held in a variable it cannot expand, a second
+# selecting grep in the pipeline, an include it cannot resolve — each is a
+# WARN that says 'unverified', never a pass.
 
 # A target line as the ANNOTATION convention defines it: a name, a colon that
 # is not part of `:=`, anything, then `## `. Deliberately wider than any help
 # recipe's pattern — the gap between the two IS the finding. Excludes what no
 # help output could list by name: a `$(VAR)`-named target and the dotted
-# special targets (`.PHONY`, `.SUFFIXES`, ...).
+# special targets (`.PHONY`, `.SUFFIXES`, ...). One line naming two targets
+# (`a b: ## x`) is outside both patterns and so outside this check.
 _ANNOTATED_TARGET = re.compile(r"^(?!\.[A-Z_]+\s*:)([^\s:#=$]+)\s*:(?!=)[^#\n]*##\s")
-_INCLUDE_LINE = re.compile(r"^-?include\s+(.+?)\s*$", re.MULTILINE)
-_HELP_TARGET = re.compile(r"^help\s*:", re.MULTILINE)
-# The pattern grep is given, single- or double-quoted, with any flags before it.
-_RECIPE_GREP = re.compile(r"""grep\s+(?:-[A-Za-z]+\s+)*(?:'([^']*)'|"([^"]*)")""")
+_INCLUDE_LINE = re.compile(r"^\s*(-?include|sinclude)\s+(.+?)\s*$", re.MULTILINE)
+_HELP_TARGET = re.compile(r"^help\s*:(?!=)", re.MULTILINE)
+# One grep in a pipeline: the command, its flags, its quoted pattern, and the
+# operands up to the next pipe.
+_GREP_CALL = re.compile(
+    r"""(?P<cmd>\b[ef]?grep)\s+(?P<flags>(?:-[A-Za-z]+\s+)*)"""
+    r"""(?:'(?P<sq>[^']*)'|"(?P<dq>[^"]*)")(?P<rest>[^|]*)"""
+)
+_MAKE_VAR = re.compile(r"\$[({]([A-Za-z_][A-Za-z0-9_]*)[)}]")
+_MAKE_ASSIGN = re.compile(
+    r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*[:?+]?=\s*(.*?)\s*$", re.MULTILINE
+)
+_MAKE_CONDITIONAL = re.compile(r"^(ifeq|ifneq|ifdef|ifndef|else|endif)\b")
+_UNFOLD = re.compile(r"\\\n[ \t]*")
+_MAKEFILE_LIST = "$(MAKEFILE_LIST)"
 # POSIX bracket classes grep -E accepts and Python's re does not — translated so
 # the widening a user is most likely to write does not turn the check dark.
 _POSIX_CLASSES = (
@@ -2202,26 +2223,56 @@ _POSIX_CLASSES = (
 )
 
 
+def _recipe_command(line):
+    """A recipe line as the shell sees it: the tab and any `@`/`-`/`+` prefix
+    dropped, a line that is a shell comment reduced to nothing, and a trailing
+    unquoted ` #comment` cut off."""
+    cmd = line.lstrip("\t ").lstrip("@-+").lstrip()
+    if cmd.startswith("#"):
+        return ""
+    quote = None
+    for i, ch in enumerate(cmd):
+        if quote:
+            if ch == quote:
+                quote = None
+        elif ch in "'\"":
+            quote = ch
+        elif ch == "#" and i > 0 and cmd[i - 1] in " \t":
+            return cmd[:i].rstrip()
+    return cmd
+
+
 def _help_recipe(text):
-    """The `help` target's recipe lines joined (continuations unfolded), or None."""
+    """The `help` target's recipe as one string (continuations unfolded, blank
+    and comment lines skipped as make skips them), or None without a `help:`."""
     m = _HELP_TARGET.search(text)
     if not m:
         return None
-    lines = text[m.end() :].split("\n")[1:]
     recipe = []
-    for line in lines:
+    for line in _UNFOLD.sub(" ", text[m.end() :]).split("\n")[1:]:
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
         if not line.startswith("\t"):
             break
-        recipe.append(line.rstrip("\\").strip())
+        recipe.append(line.strip())
     return " ".join(recipe)
 
 
-def _help_pattern(recipe):
-    """The first quoted pattern handed to grep in the recipe, or None."""
-    m = _RECIPE_GREP.search(recipe)
-    if not m:
-        return None
-    return m.group(1) if m.group(1) is not None else m.group(2)
+def _expand_make_vars(pattern, makefiles):
+    """`$(NAME)` / `${NAME}` replaced from a plain `NAME = value` assignment in
+    any of the makefiles (one level, no functions). Unknown names stay put."""
+    assigned = {}
+    for _, text in makefiles:
+        for name, value in _MAKE_ASSIGN.findall(text):
+            assigned.setdefault(name, value)
+    return _MAKE_VAR.sub(lambda m: assigned.get(m.group(1), m.group(0)), pattern)
+
+
+def _compile_grep(pattern, flags):
+    """A grep -E pattern as a Python regex, honouring -i; raises re.error."""
+    for posix, python in _POSIX_CLASSES:
+        pattern = pattern.replace(posix, python)
+    return re.compile(pattern, re.IGNORECASE if "i" in flags else 0)
 
 
 def _help_parity_findings(makefiles):
@@ -2230,14 +2281,14 @@ def _help_parity_findings(makefiles):
     walk and include resolution are check_P's.
 
     Silent when no makefile declares a `help` target (nothing lists the
-    annotations, so nothing can hide one). WARNs, never errs, when the help
-    recipe exists but this check cannot read a pattern out of it — parity is
-    then unverified and says so, rather than reporting a green it did not earn.
+    annotations, so nothing can hide one). WARNs, never errs, for every shape
+    it cannot model — parity is then unverified and says so, rather than
+    reporting a green it did not earn.
     """
     errs, warns = [], []
     if not makefiles:
         return errs, warns
-    recipe = None
+    recipe, help_in = None, None
     for relpath, text in makefiles:
         recipe = _help_recipe(text)
         if recipe is not None:
@@ -2245,58 +2296,137 @@ def _help_parity_findings(makefiles):
             break
     if recipe is None:
         return errs, warns
-    raw = _help_pattern(recipe)
-    if raw is None:
+    unverified = "%s: help parity unverified -- " % help_in
+    greps = [
+        (
+            m.group("cmd"),
+            m.group("flags").replace("-", ""),
+            m.group("sq") if m.group("sq") is not None else m.group("dq"),
+            m.group("rest"),
+        )
+        for m in _GREP_CALL.finditer(recipe)
+    ]
+    if not greps:
         warns.append(
-            "%s: help parity unverified -- the 'help' recipe hands grep no quoted "
-            "pattern this check can read, so an annotated target may be hidden "
-            "from 'make help' without anything noticing" % help_in
+            unverified + "the 'help' recipe hands grep no quoted pattern this check "
+            "can read, so an annotated target may be hidden from 'make help' "
+            "without anything noticing"
         )
         return errs, warns
-    pattern = raw
-    for posix, python in _POSIX_CLASSES:
-        pattern = pattern.replace(posix, python)
+    cmd, flags, raw, rest = greps[0]
+    if "F" in flags:
+        warns.append(
+            unverified
+            + "the help recipe's grep -F matches fixed strings, which this check does not model"
+        )
+        return errs, warns
+    if cmd != "egrep" and "E" not in flags and "P" not in flags:
+        warns.append(
+            unverified + "the help recipe's grep uses basic-regex semantics (no -E), "
+            "under which '+' and '?' are literal and this check has no engine -- "
+            "use grep -E"
+        )
+        return errs, warns
+    if _MAKEFILE_LIST not in rest:
+        warns.append(
+            unverified + "the help recipe's grep reads '%s' rather than %s, so what "
+            "it lists may not be what the makefiles annotate"
+            % (rest.strip() or "(nothing)", _MAKEFILE_LIST)
+        )
+        return errs, warns
+    pattern = _expand_make_vars(raw, makefiles)
+    if _MAKE_VAR.search(pattern):
+        warns.append(
+            unverified + "the help recipe's pattern '%s' holds a make variable this "
+            "check cannot expand (%s)"
+            % (raw, ", ".join(sorted(set(_MAKE_VAR.findall(pattern)))))
+        )
+        return errs, warns
+    excluded = []
+    for later_cmd, later_flags, later_raw, _ in greps[1:]:
+        if "v" not in later_flags:
+            warns.append(
+                unverified + "the help recipe pipes through a second selecting %s "
+                "('%s'), a pipeline this check does not model" % (later_cmd, later_raw)
+            )
+            return errs, warns
+        excluded.append((later_raw, later_flags))
     try:
-        listed = re.compile(pattern)
+        listed = _compile_grep(pattern, flags)
+        hidden_on_purpose = [_compile_grep(p, f) for p, f in excluded]
     except re.error as e:
         warns.append(
-            "%s: help parity unverified -- the help recipe's pattern '%s' is not "
-            "one this check can apply (%s)" % (help_in, raw, e)
+            unverified + "the help recipe's pattern '%s' is not one this check can "
+            "apply (%s)" % (raw, e)
         )
         return errs, warns
     for relpath, text in makefiles:
-        for line in text.split("\n"):
+        where = "" if relpath == help_in else " (in %s)" % help_in
+        for lineno, line in enumerate(text.split("\n"), 1):
             m = _ANNOTATED_TARGET.match(line)
-            if m and not listed.search(line):
-                errs.append(
-                    "%s: target '%s' carries a '## ' help annotation but the help "
-                    "recipe's pattern '%s' does not match it, so 'make help' hides "
-                    "it -- widen the pattern (or drop the annotation)"
-                    % (relpath, m.group(1), raw)
-                )
+            if not m or listed.search(line):
+                continue
+            if any(x.search(line) for x in hidden_on_purpose):
+                continue  # the author's own `grep -v` hides it; that is a choice
+            errs.append(
+                "%s:%d: target '%s' carries a '## ' help annotation but the help "
+                "recipe's pattern '%s'%s does not match it, so 'make help' hides "
+                "it -- widen the pattern%s (or drop the annotation)"
+                % (relpath, lineno, m.group(1), raw, where, where and " in " + help_in)
+            )
     return errs, warns
+
+
+def _includes(text):
+    """[(directive, name)] for every include line, one entry per named file."""
+    return [
+        (directive, name)
+        for directive, names in _INCLUDE_LINE.findall(text)
+        for name in names.split()
+    ]
 
 
 def check_P():
     """ERROR when a `## `-annotated target is one the `help` recipe's own grep
-    pattern cannot list. Reads `Makefile` and, in order, every file an
-    `include`/`-include` line names (what `$(MAKEFILE_LIST)` holds), so an
-    annotation in an included makefile is held to the same promise. Silent
-    when there is no Makefile or no `help` target; a recipe it cannot read is
-    a WARN that says 'unverified'."""
+    pattern cannot list. Reads `Makefile` and, recursively, every file an
+    `include`/`-include`/`sinclude` line names (what `$(MAKEFILE_LIST)` holds),
+    so an annotation in an included makefile is held to the same promise. An
+    include named through a variable or a wildcard is not expanded here and is
+    a WARN; an absent optional include is make's own 'if present' and silent.
+    Silent when there is no Makefile or no `help` target."""
     root_path = os.path.join(ROOT, "Makefile")
     if not os.path.isfile(root_path):
         return
     text = _read_text(root_path, err)
     if text is None:
         return
-    makefiles = [("Makefile", text)]
-    for inc in _INCLUDE_LINE.findall(text):
-        for name in inc.split():
-            inc_path = os.path.join(ROOT, name)
-            inc_text = _read_text(inc_path, err)  # absent: make itself would fail
+    makefiles, queue, seen = [("Makefile", text)], [("Makefile", text)], {"Makefile"}
+    while queue:
+        relpath, body = queue.pop(0)
+        for directive, name in _includes(body):
+            if _MAKE_VAR.search(name) or any(ch in name for ch in "*?["):
+                warn(
+                    "%s: help parity unverified for `%s %s` -- a variable or wildcard "
+                    "this check does not expand, so that makefile's annotated "
+                    "targets go unchecked" % (relpath, directive, name)
+                )
+                continue
+            inc_rel = posixpath.normpath(name)
+            if inc_rel in seen:
+                continue
+            seen.add(inc_rel)
+            inc_path = os.path.join(ROOT, inc_rel)
+            if not os.path.isfile(inc_path):
+                if directive == "include":
+                    warn(
+                        "%s: `include %s` names no file -- make itself would stop "
+                        "here; help parity for it is unverified" % (relpath, name)
+                    )
+                continue
+            inc_text = _read_text(inc_path, err)
             if inc_text is not None:
-                makefiles.append((name.replace(os.sep, "/"), inc_text))
+                makefiles.append((inc_rel, inc_text))
+                queue.append((inc_rel, inc_text))
     errs, warns_ = _help_parity_findings(makefiles)
     for m in errs:
         err(m)
@@ -2310,20 +2440,28 @@ def check_P():
 # corpus is built from, and they rot silently: a renumbered CONVENTIONS section
 # or a moved guide leaves every citation pointing at the wrong thing, at exit
 # 0. Two reference forms are recognised, both closed:
-#   - a relative Markdown link `[text](path#anchor)` in prose (fenced and
-#     inline code are syntax illustrations, not references);
+#   - a relative Markdown link `[text](path#anchor)` in prose (fenced code,
+#     inline code and HTML comments are illustrations, not references);
 #   - a section citation `§N`, which cites CONVENTIONS.md unless a document is
-#     named in front of it (`docs/guides/python-style.md §3`). Bare `§N` never means "this
-#     document": that reading is ambiguous the moment a guide numbers its own
-#     sections, so the house grammar names the document instead.
+#     named in front of it (`docs/guides/python-style.md §3`, the path in
+#     backticks or not, a comma or a line break between them or not). Bare
+#     `§N` never means "this document": that reading is ambiguous the moment a
+#     guide numbers its own sections, so the house grammar names the document
+#     instead. A `§N` inside code IS read (a quoted help string cites the same
+#     section a sentence does); a link inside code is not.
 
-_FENCE = re.compile(r"^\s*(```|~~~)")
-_INLINE_CODE = re.compile(r"`[^`\n]*`")
-_MD_LINK = re.compile(r"!?\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+\"[^\"]*\")?\s*\)")
+_FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+_INLINE_CODE = re.compile(r"(`+)(.+?)\1")
+_HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
+_MD_LINK = re.compile(
+    r"!?\[[^\]]*\]\(\s*(?:<([^>]*)>|([^)\s]+))(?:\s+(?:\"[^\"]*\"|'[^']*'))?\s*\)"
+)
 _URL_SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
 _ATX_HEADING = re.compile(r"^#{1,6}\s+(.*?)\s*$")
+_SETEXT_UNDERLINE = re.compile(r"^ {0,3}(=+|-+)\s*$")
+_HTML_ANCHOR = re.compile(r"""<a\s+(?:id|name)=["']([^"']+)["']""")
 _NUMBERED_HEADING = re.compile(r"^#{1,6}\s+(\d+)\.")
-_SECTION_CITE = re.compile(r"(?:([A-Za-z0-9_./-]+\.md)\s+)?§\s*(\d+)")
+_SECTION_CITE = re.compile(r"(?:`?([A-Za-z0-9_./-]+\.md)`?,?\s+)?§\s*(\d+)")
 _CONVENTIONS_DOC = "CONVENTIONS.md"
 # Where a `§N` may appear: prose, and the code/config whose docstrings and help
 # strings cite the conventions (check_structure's own header does).
@@ -2331,13 +2469,30 @@ _CITING_SUFFIXES = (".md", ".py", ".toml", ".yml", ".yaml", ".jinja", ".example"
 _CITING_NAMES = ("Makefile",)
 
 
+def _frontmatter_end(lines):
+    """Index of the first body line: past a leading `---` block, else 0."""
+    if lines and lines[0].strip() == "---":
+        for i in range(1, len(lines)):
+            if lines[i].strip() == "---":
+                return i + 1
+    return 0
+
+
 def _unfenced_lines(text):
-    """The document's lines with every fenced code block blanked, numbering kept.
-    A ``` fence closes only on ```; a ~~~ inside it is content, and vice versa."""
+    """The document's lines with fenced code blocks and HTML comments blanked,
+    numbering kept. A fence closes only on the same character, at least as
+    long (CommonMark), so a ```` block may show a ``` fence as content."""
     out, fence = [], None
+    text = _HTML_COMMENT.sub(lambda m: "\n" * m.group(0).count("\n"), text)
     for line in text.split("\n"):
         m = _FENCE.match(line)
-        if m and (fence is None or m.group(1) == fence):
+        closes = (
+            m
+            and fence is not None
+            and m.group(1)[0] == fence[0]
+            and len(m.group(1)) >= len(fence)
+        )
+        if m and (fence is None or closes):
             fence = m.group(1) if fence is None else None
             out.append("")
             continue
@@ -2352,32 +2507,56 @@ def _prose_lines(text):
 
 
 def _heading_slug(heading):
-    """GitHub's anchor for an ATX heading: lowercase, drop everything but word
-    characters, spaces and hyphens, spaces become hyphens. The leading `#`s,
-    optional closing `#`s, backticks and emphasis stars are markup, not text."""
+    """GitHub's anchor for a heading: the heading as RENDERED (code spans kept
+    verbatim, link markup reduced to its text, emphasis markers dropped),
+    lowercased, everything but word characters, spaces and hyphens removed,
+    spaces to hyphens. Leading `#`s and optional closing `#`s are markup."""
     t = re.sub(r"^#{1,6}\s*", "", heading.strip())
     t = re.sub(r"\s*#+\s*$", "", t)
-    t = t.replace("`", "").replace("*", "").lower()
-    t = re.sub(r"[^\w\- ]", "", t)
+    spans = []
+
+    def keep(m):
+        spans.append(m.group(2))
+        return "\x00%d\x00" % (len(spans) - 1)
+
+    t = _INLINE_CODE.sub(keep, t)
+    t = re.sub(r"!?\[([^\]]*)\]\([^)]*\)", r"\1", t)
+    t = t.replace("*", "")
+    t = re.sub(r"(?<!\w)_+(\S(?:.*?\S)?)_+(?!\w)", r"\1", t)
+    t = re.sub(r"\x00(\d+)\x00", lambda m: spans[int(m.group(1))], t)
+    t = re.sub(r"[^\w\- ]", "", t.lower())
     return t.replace(" ", "-")
 
 
 def _anchors(text):
-    """Every anchor a renderer would emit for `text`, repeats numbered -1, -2."""
+    """Every anchor a renderer would emit for `text`: ATX and setext headings
+    (repeats numbered -1, -2) plus explicit `<a id=...>` / `<a name=...>`."""
     counts, anchors = {}, set()
-    for line in _unfenced_lines(text):
+    lines = _unfenced_lines(text)
+    body = lines[_frontmatter_end(lines) :]
+    for i, line in enumerate(body):
+        heading = None
         m = _ATX_HEADING.match(line)
-        if not m:
-            continue
-        slug = _heading_slug(m.group(1))
-        n = counts.get(slug, 0)
-        counts[slug] = n + 1
-        anchors.add(slug if n == 0 else "%s-%d" % (slug, n))
+        if m:
+            heading = m.group(1)
+        elif (
+            line.strip()
+            and not line.lstrip().startswith(("|", "#", "-", "=", ">", "*", "+"))
+            and i + 1 < len(body)
+            and _SETEXT_UNDERLINE.match(body[i + 1])
+        ):
+            heading = line.strip()
+        if heading is not None:
+            slug = _heading_slug(heading)
+            n = counts.get(slug, 0)
+            counts[slug] = n + 1
+            anchors.add(slug if n == 0 else "%s-%d" % (slug, n))
+        anchors.update(_HTML_ANCHOR.findall(line))
     return anchors
 
 
 def _numbered_sections(text):
-    """The N of every `## N.` heading outside fenced code."""
+    """The N of every numbered heading (`N.` at any level) outside fenced code."""
     found = set()
     for line in _unfenced_lines(text):
         m = _NUMBERED_HEADING.match(line)
@@ -2391,9 +2570,7 @@ def _resolve_link(base, path):
     ('' is the root), or None when it climbs above the repository."""
     joined = path.lstrip("/") if path.startswith("/") else posixpath.join(base, path)
     resolved = posixpath.normpath(joined)
-    if resolved == "..":
-        return None
-    if resolved.startswith("../"):
+    if resolved == ".." or resolved.startswith("../"):
         return None
     return "" if resolved == "." else resolved
 
@@ -2403,80 +2580,103 @@ def _link_findings(relpath, text, files, tree):
     base = posixpath.dirname(relpath)
     for lineno, line in enumerate(_prose_lines(text), 1):
         for m in _MD_LINK.finditer(line):
-            target = m.group(1)
+            target = m.group(1) if m.group(1) is not None else m.group(2)
             if _URL_SCHEME.match(target):
                 continue
             path, _, fragment = target.partition("#")
             doc = relpath
             if path:
-                doc = _resolve_link(base, path)
+                doc = _resolve_link(base, unquote(path))
                 if doc is None:
                     errs.append(
-                        "%s:%d: link target '%s' escapes the repository"
-                        % (relpath, lineno, target)
+                        "%s:%d: link target '%s' escapes the repository -- point it "
+                        "at a file that ships" % (relpath, lineno, target)
                     )
                     continue
                 if doc and doc not in tree:
                     errs.append(
-                        "%s:%d: link target '%s' does not exist (resolves to '%s')"
+                        "%s:%d: link target '%s' does not exist (resolves to '%s') -- "
+                        "fix the path, restore the file, or unlink the text"
                         % (relpath, lineno, target, doc)
                     )
                     continue
-            anchored = fragment and doc.endswith(".md") and doc in files
-            if anchored and fragment not in _anchors(files[doc]):
-                errs.append(
-                    "%s:%d: link anchor '#%s' matches no heading of %s"
-                    % (relpath, lineno, fragment, doc)
-                )
+            if fragment and doc.endswith(".md") and doc in files:
+                anchors = _anchors(files[doc])
+                if fragment not in anchors:
+                    shown = sorted(anchors)
+                    listed = ", ".join(shown[:8]) + (", ..." if len(shown) > 8 else "")
+                    errs.append(
+                        "%s:%d: link anchor '#%s' matches no heading of %s (its "
+                        "anchors: %s) -- fix the fragment or add the heading"
+                        % (relpath, lineno, fragment, doc, listed or "none")
+                    )
     return errs
 
 
-def _citation_findings(relpath, text, files, sections_of):
+def _citation_findings(relpath, text, files, tree, sections_of):
     errs = []
     base = posixpath.dirname(relpath)
-    for lineno, line in enumerate(text.split("\n"), 1):
-        for m in _SECTION_CITE.finditer(line):
-            named, number = m.group(1), int(m.group(2))
-            doc = _CONVENTIONS_DOC
-            if named:
-                # Root-relative first (the house spelling), then as the citing
-                # document's neighbour.
-                doc = (
-                    named
-                    if named in files
-                    else posixpath.normpath(posixpath.join(base, named))
-                )
-            present = sections_of(doc)
-            if present is None:
-                where = (
-                    "neither at the root nor beside %s" % relpath
-                    if named
-                    else "which does not exist"
-                )
+    for m in _SECTION_CITE.finditer(text):
+        lineno = text.count("\n", 0, m.start(2)) + 1
+        named, number = m.group(1), int(m.group(2))
+        cite = " ".join(m.group(0).split())
+        doc = _CONVENTIONS_DOC
+        if named:
+            # Root-relative first (the house spelling), then as the citing
+            # document's neighbour.
+            doc = (
+                named
+                if named in tree
+                else posixpath.normpath(posixpath.join(base, named))
+            )
+            if doc not in tree:
                 errs.append(
-                    "%s:%d: '§%d' cites %s, %s"
-                    % (relpath, lineno, number, named or doc, where)
+                    "%s:%d: '%s' cites %s, which exists neither at the root nor "
+                    "relative to %s/ -- name the document as it sits in the tree, "
+                    "or restore it" % (relpath, lineno, cite, named, base or ".")
                 )
-            elif number not in present:
-                errs.append(
-                    "%s:%d: '§%d' names no numbered section of %s (present: %s)"
-                    % (
-                        relpath,
-                        lineno,
-                        number,
-                        doc,
-                        ", ".join(str(n) for n in sorted(present)),
-                    )
+                continue
+        elif doc not in tree:
+            errs.append(
+                "%s:%d: bare '%s' cites %s (the default for an unnamed §), which "
+                "does not exist -- name the document in front of the §, or "
+                "restore %s" % (relpath, lineno, cite, doc, doc)
+            )
+            continue
+        present = sections_of(doc)
+        if present is None:
+            errs.append(
+                "%s:%d: '%s' cites %s, which this check could not read"
+                % (relpath, lineno, cite, doc)
+            )
+        elif not present:
+            errs.append(
+                "%s:%d: '%s' cites %s, which has no numbered heading at all -- "
+                "number its sections or drop the §" % (relpath, lineno, cite, doc)
+            )
+        elif number not in present:
+            errs.append(
+                "%s:%d: '%s' names no numbered section of %s (present: %s) -- "
+                "renumber the citation"
+                % (
+                    relpath,
+                    lineno,
+                    cite,
+                    doc,
+                    ", ".join(str(n) for n in sorted(present)),
                 )
+            )
     return errs
 
 
-def _crossref_findings(files, tree):
-    """files: {relpath: text} for every citing file; tree: every path (file or
-    directory, root-relative, '/'-separated) the walk saw. -> error strings.
-    Pure; the walk is check_Q's. Links are read from `.md` files only (a
-    `.jinja` twin's rendered links are the generation tests' business);
-    citations from every citing suffix."""
+def _crossref_findings(files, tree, scan=None):
+    """files: {relpath: text} for every citing file, under EVERY name it has (a
+    symlinked twin is registered twice so a link to either name resolves);
+    tree: every path (file or directory, root-relative, '/'-separated) the
+    walk saw; scan: the names to read references FROM, one per real file
+    (default: all). -> error strings. Pure; the walk is check_Q's. Links are
+    read from `.md` files only (a `.jinja` twin's rendered links are the
+    generation tests' business); citations from every citing suffix."""
     errs = []
     cache = {}
 
@@ -2486,22 +2686,24 @@ def _crossref_findings(files, tree):
             cache[doc] = None if text is None else _numbered_sections(text)
         return cache[doc]
 
-    for relpath in sorted(files):
+    for relpath in sorted(files if scan is None else scan):
         text = files[relpath]
         name = posixpath.basename(relpath)
         if name.endswith(".md"):
             errs.extend(_link_findings(relpath, text, files, tree))
         if name in _CITING_NAMES or name.endswith(_CITING_SUFFIXES):
-            errs.extend(_citation_findings(relpath, text, files, sections_of))
+            errs.extend(_citation_findings(relpath, text, files, tree, sections_of))
     return errs
 
 
 def check_Q():
     """ERROR when a relative Markdown link or a `§N` citation names nothing.
-    Walks every citing file once (symlinked twins such as CLAUDE.md deduped by
-    real path, as check_A does) and records every path the walk saw, so a link
-    to a directory or a non-text file resolves without reading it."""
-    files, tree, seen_real = {}, set(), set()
+    Walks every citing file, registers its text under every name it has
+    (CLAUDE.md and the AGENT.md it links to both resolve), reads references
+    from each real file once (under its alphabetically first name), and
+    records every path the walk saw so a link to a directory or a non-text
+    file resolves without reading it."""
+    files, tree, first_name = {}, set(), {}
     for dirpath, _, filenames in walk(ROOT):
         reldir = rel(dirpath).replace(os.sep, "/")
         if reldir != ".":
@@ -2512,14 +2714,14 @@ def check_Q():
             tree.add(relp)
             if not (f in _CITING_NAMES or f.endswith(_CITING_SUFFIXES)):
                 continue
-            real = os.path.realpath(full)
-            if real in seen_real:
-                continue
-            seen_real.add(real)
             text = _read_text(full, err)  # present but undecodable: a gate defect
-            if text is not None:
-                files[relp] = text
-    for m in _crossref_findings(files, tree):
+            if text is None:
+                continue
+            files[relp] = text
+            real = os.path.realpath(full)
+            if real not in first_name or relp < first_name[real]:
+                first_name[real] = relp
+    for m in _crossref_findings(files, tree, scan=set(first_name.values())):
         err(m)
 
 
@@ -2529,14 +2731,17 @@ def check_Q():
 # check: what runs, at which tier, wired how. A roster is only worth reading if
 # it agrees with the triggers, and nothing held the two together: the catalogue
 # listed `cdmon_sync.py --check` at the error tier for as long as it existed
-# while `make check-all` never ran it. Five directions, one membership:
+# while `make check-all` never ran it. Six directions, one membership:
 #   - every catalogued script exists;
 #   - an error-tier row is reachable from `make check-all` (a gate nobody runs
 #     is a claim);
 #   - a report row is run by SOME make target (a report nobody runs is the
 #     `make advise` precedent: documented, invoked by nothing);
 #   - every script `check-all` reaches is catalogued;
-#   - the hooks table and .pre-commit-config.yaml declare the same hook ids.
+#   - the hooks table and .pre-commit-config.yaml declare the same hook ids,
+#     and neither exists without the other.
+# Catalogued checks are `.py` paths; a check in another language is reached
+# through a `.py` adapter, as CONVENTIONS §9 asks anyway.
 
 _CATALOGUE_DOC = "docs/guides/deterministic-checks.md"
 _PRECOMMIT_CONFIG = ".pre-commit-config.yaml"
@@ -2545,6 +2750,9 @@ _GATE_TIERS = ("error", "error*", "report")
 _BACKTICKED = re.compile(r"`([^`]+)`")
 _PY_SCRIPT = re.compile(r"(?<![\w./-])([\w./-]+\.py)\b")
 _MAKE_RULE = re.compile(r"^([^\s:#=$]+)\s*:(?!=)([^#\n]*?)\s*(?:##.*)?$")
+_MAKE_RECURSION = re.compile(
+    r"\$[({]MAKE[)}]\s+(?:-\S+\s+)*([A-Za-z0-9_][A-Za-z0-9_.-]*)"
+)
 _TABLE_RULE = re.compile(r"^\|\s*:?-+")
 _HOOK_ID = re.compile(r"^\s*-\s*id:\s*(\S+)", re.MULTILINE)
 
@@ -2571,16 +2779,25 @@ def _pipe_table(text, required_columns):
 
 
 def _make_rules(text):
-    """{target: ([prerequisites], [recipe lines])}. Blank and comment lines
-    inside a recipe are ignored, as make ignores them; `$(...)` prerequisites
-    and the dotted special targets are dropped."""
+    """{target: ([prerequisites], [recipe commands])} as make would read it:
+    `\\`-continuations unfolded, blank and comment lines skipped, conditional
+    directives transparent, `$(MAKE) target` in a recipe counted as an edge,
+    `$(...)` prerequisites and the dotted special targets dropped. Recipe
+    lines are kept as the shell sees them (see _recipe_command)."""
     rules, current = {}, None
-    for line in text.split("\n"):
+    for line in _UNFOLD.sub(" ", text).split("\n"):
         if line.startswith("\t"):
             if current is not None:
-                rules[current][1].append(line)
+                cmd = _recipe_command(line)
+                if cmd:
+                    rules[current][1].append(cmd)
+                    rules[current][0].extend(_MAKE_RECURSION.findall(cmd))
             continue
-        if not line.strip() or line.lstrip().startswith("#"):
+        if (
+            not line.strip()
+            or line.lstrip().startswith("#")
+            or _MAKE_CONDITIONAL.match(line)
+        ):
             continue
         m = _MAKE_RULE.match(line)
         if not m or re.match(r"^\.[A-Z_]+$", m.group(1)):
@@ -2593,8 +2810,9 @@ def _make_rules(text):
 
 
 def _scripts_reachable_from(rules, target):
-    """Every `*.py` path a recipe mentions, over `target` and its prerequisites
-    transitively (a missing prerequisite is make's error, not this check's)."""
+    """Every `*.py` path a recipe command mentions, over `target` and its
+    prerequisites transitively (a missing prerequisite is make's error, not
+    this check's)."""
     seen, stack, scripts = set(), [target], set()
     while stack:
         t = stack.pop()
@@ -2603,8 +2821,8 @@ def _scripts_reachable_from(rules, target):
         seen.add(t)
         prereqs, recipe = rules[t]
         stack.extend(prereqs)
-        for line in recipe:
-            scripts.update(_PY_SCRIPT.findall(line))
+        for cmd in recipe:
+            scripts.update(_PY_SCRIPT.findall(cmd))
     return scripts
 
 
@@ -2612,7 +2830,8 @@ def _catalogue_parity_findings(catalogue, makefile, precommit, tree):
     """catalogue / makefile / precommit: file text, or None when absent. tree:
     every file path (root-relative, '/'-separated). -> (errs, warns). Pure;
     the reads are check_R's. No catalogue is silent; a catalogue whose checks
-    table cannot be read, or a Makefile with no `check-all`, is a stated WARN."""
+    table cannot be read, no Makefile, or a Makefile with no `check-all`, is
+    a stated WARN."""
     errs, warns = [], []
     if catalogue is None:
         return errs, warns
@@ -2627,25 +2846,32 @@ def _catalogue_parity_findings(catalogue, makefile, precommit, tree):
     script_col, tier_col = header.index("script"), header.index("gate?")
     catalogued = {}
     for row in rows:
-        if len(row) <= max(script_col, tier_col):
+        if len(row) < len(header):
+            errs.append(
+                "%s: a checks-table row has %d cell(s) but the header has %d (row: "
+                "%s) -- complete the row"
+                % (_CATALOGUE_DOC, len(row), len(header), " | ".join(row))
+            )
             continue
         m = _BACKTICKED.search(row[script_col])
         if not m:
             errs.append(
-                "%s: a checks-table row names no `script` in its Script column: %s"
+                "%s: a checks-table row names no script in backticks in its Script "
+                "column (row: %s) -- name the script it catalogues"
                 % (_CATALOGUE_DOC, " | ".join(row))
             )
             continue
         script, tier = m.group(1).split()[0], row[tier_col]
         if tier not in _GATE_TIERS:
             errs.append(
-                "%s: '%s' is not a gate tier for %s (one of: %s)"
-                % (_CATALOGUE_DOC, tier, script, ", ".join(_GATE_TIERS))
+                "%s: the Gate? cell for %s is '%s', not one of %s -- pick the tier "
+                "it actually runs at"
+                % (_CATALOGUE_DOC, script, tier, ", ".join(_GATE_TIERS))
             )
         if script not in tree:
             errs.append(
-                "%s: catalogue names %s, which does not exist"
-                % (_CATALOGUE_DOC, script)
+                "%s: catalogue names %s, which does not exist -- drop the row or "
+                "restore the script" % (_CATALOGUE_DOC, script)
             )
         catalogued[script] = tier
     if makefile is None:
@@ -2657,9 +2883,9 @@ def _catalogue_parity_findings(catalogue, makefile, precommit, tree):
         rules = _make_rules(makefile)
         if _CHECK_ALL not in rules:
             warns.append(
-                "Makefile: catalogue parity unverified -- no '%s' target, so the "
-                "error-tier rows of %s cannot be shown to run"
-                % (_CHECK_ALL, _CATALOGUE_DOC)
+                "Makefile: catalogue parity unverified -- no '%s' target, so which "
+                "error-tier rows of %s run, and which scripts run uncatalogued, "
+                "cannot be known" % (_CHECK_ALL, _CATALOGUE_DOC)
             )
         else:
             gated = _scripts_reachable_from(rules, _CHECK_ALL)
@@ -2681,35 +2907,48 @@ def _catalogue_parity_findings(catalogue, makefile, precommit, tree):
                         % (_CATALOGUE_DOC, script)
                     )
             errs.extend(
-                "Makefile: 'make %s' runs %s, which the catalogue (%s) does not list"
-                % (_CHECK_ALL, script, _CATALOGUE_DOC)
+                "Makefile: 'make %s' runs %s, which the catalogue (%s) does not list "
+                "-- add a row for it, or stop running it from %s"
+                % (_CHECK_ALL, script, _CATALOGUE_DOC, _CHECK_ALL)
                 for script in sorted(gated - set(catalogued))
             )
     hooks = _pipe_table(catalogue, ("Hook id", "Calls"))
-    if hooks is not None:
-        id_col = hooks[0].index("hook id")
-        listed = set()
-        for row in hooks[1]:
-            if len(row) > id_col:
-                listed.update(_BACKTICKED.findall(row[id_col]))
-        if precommit is None:
-            errs.extend(
-                "%s: hooks table lists '%s' but there is no %s"
-                % (_CATALOGUE_DOC, hook, _PRECOMMIT_CONFIG)
-                for hook in sorted(listed)
+    declared = set(_HOOK_ID.findall(precommit)) if precommit is not None else set()
+    if hooks is None:
+        if declared:
+            errs.append(
+                "%s: %s declares hook(s) %s but the catalogue has no hooks table "
+                "('Hook id' / 'Calls') -- add one, so every trigger is catalogued"
+                % (_CATALOGUE_DOC, _PRECOMMIT_CONFIG, ", ".join(sorted(declared)))
             )
-        else:
-            declared = set(_HOOK_ID.findall(precommit))
-            errs.extend(
-                "%s: hook '%s' is declared in %s but the hooks table omits it"
-                % (_CATALOGUE_DOC, hook, _PRECOMMIT_CONFIG)
-                for hook in sorted(declared - listed)
+        return errs, warns
+    id_col = hooks[0].index("hook id")
+    listed = set()
+    for row in hooks[1]:
+        if len(row) > id_col:
+            listed.update(_BACKTICKED.findall(row[id_col]))
+    if precommit is None:
+        if listed:
+            errs.append(
+                "%s: the hooks table names %s but there is no %s -- restore the "
+                "config or delete the table"
+                % (
+                    _CATALOGUE_DOC,
+                    ", ".join("'%s'" % h for h in sorted(listed)),
+                    _PRECOMMIT_CONFIG,
+                )
             )
-            errs.extend(
-                "%s: hooks table lists '%s' but %s declares no such hook"
-                % (_CATALOGUE_DOC, hook, _PRECOMMIT_CONFIG)
-                for hook in sorted(listed - declared)
-            )
+        return errs, warns
+    errs.extend(
+        "%s: hook '%s' is declared in %s but the hooks table omits it -- add a row for it"
+        % (_CATALOGUE_DOC, hook, _PRECOMMIT_CONFIG)
+        for hook in sorted(declared - listed)
+    )
+    errs.extend(
+        "%s: the hooks table names '%s' but %s declares no such hook -- drop the "
+        "row or declare the hook" % (_CATALOGUE_DOC, hook, _PRECOMMIT_CONFIG)
+        for hook in sorted(listed - declared)
+    )
     return errs, warns
 
 

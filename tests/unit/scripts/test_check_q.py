@@ -239,3 +239,149 @@ def test_a_section_sign_without_a_number_is_prose():
 
 def test_a_bare_tree_with_no_references_is_silent():
     assert _find({"README.md": "hello\n", "src/a.py": "X = 1\n"}) == []
+
+
+# --- review round: the citation grammar as the house actually writes it -------
+
+
+def test_a_named_citation_with_the_path_in_backticks_targets_that_document():
+    """A backticked path and then section 4: the house puts paths in code spans, so the name and
+    the sign are separated by a backtick. Silently falling back to CONVENTIONS
+    here would be a green that checked the wrong file."""
+    files = {
+        "CONVENTIONS.md": _CONVENTIONS,
+        "docs/style.md": "## 1. A\n",
+        "docs/a.md": "see `docs/style.md` " + _S + "4\n",
+    }
+    errs = _find(files)
+    assert len(errs) == 1 and "docs/style.md" in errs[0] and _S + "4" in errs[0], errs
+
+
+def test_a_named_citation_with_a_comma_targets_that_document():
+    files = {
+        "CONVENTIONS.md": _CONVENTIONS,
+        "docs/style.md": "## 1. A\n",
+        "docs/a.md": "see docs/style.md, " + _S + "4\n",
+    }
+    assert len(_find(files)) == 1
+
+
+def test_a_named_citation_wrapped_across_a_line_break_keeps_its_document():
+    files = {
+        "CONVENTIONS.md": _CONVENTIONS,
+        "docs/style.md": "## 1. A\n",
+        "docs/a.md": "as docs/style.md\n" + _S + "4 says\n",
+    }
+    errs = _find(files)
+    assert len(errs) == 1 and "docs/style.md" in errs[0] and "docs/a.md:2" in errs[0], (
+        errs
+    )
+
+
+def test_a_citation_to_a_document_with_no_numbered_headings_says_so():
+    files = {
+        "CONVENTIONS.md": "# Conventions\n\nno numbers here\n",
+        "docs/a.md": "see " + _S + "2\n",
+    }
+    errs = _find(files)
+    assert (
+        len(errs) == 1
+        and "no numbered heading" in errs[0]
+        and "present:" not in errs[0]
+    ), errs
+
+
+def test_a_named_citation_to_a_document_that_does_not_exist_names_both_places_tried():
+    files = {
+        "CONVENTIONS.md": _CONVENTIONS,
+        "docs/a.md": "see docs/nope.md " + _S + "1\n",
+    }
+    errs = _find(files)
+    assert (
+        len(errs) == 1
+        and "docs/nope.md" in errs[0]
+        and "root" in errs[0]
+        and "docs/" in errs[0]
+    ), errs
+
+
+# --- review round: fences, comments, encodings, anchors --------------------------
+
+
+def test_a_longer_fence_is_not_closed_by_a_shorter_one_inside_it():
+    """CommonMark: a ```` block closes only on four or more backticks, so the ```
+    shown inside it is content — and links inside are still illustrations."""
+    text = "````md\n```\n[x](nowhere.md)\n```\n````\n\n[y](gone.md)\n"
+    errs = _find({"a.md": text})
+    assert len(errs) == 1 and "gone.md" in errs[0] and "a.md:7" in errs[0], errs
+
+
+def test_a_link_inside_an_html_comment_is_not_a_link():
+    assert _find({"a.md": "<!-- [x](nowhere.md) -->\n<!--\n[y](gone.md)\n-->\n"}) == []
+
+
+def test_a_percent_encoded_target_resolves_to_the_decoded_path():
+    assert _find({"a.md": "[x](my%20doc.md)\n", "my doc.md": "x\n"}) == []
+
+
+def test_an_angle_bracket_target_may_contain_a_space():
+    assert _find({"a.md": "[x](<my doc.md>)\n", "my doc.md": "x\n"}) == []
+
+
+def test_a_single_quoted_link_title_is_not_part_of_the_target():
+    assert _find({"a.md": "[b](b.md 'the B doc')\n", "b.md": "x\n"}) == []
+
+
+@pytest.mark.parametrize(
+    "heading, anchor",
+    [
+        ("## _Private_ things", "private-things"),
+        ("## [Setup](setup.md) first", "setup-first"),
+        ("## Keep `snake_case` here", "keep-snake_case-here"),
+    ],
+)
+def test_anchors_see_the_rendered_heading_not_its_markup(heading, anchor):
+    assert cs._heading_slug(heading) == anchor
+
+
+def test_an_explicit_html_anchor_is_an_anchor():
+    files = {"a.md": "[x](b.md#custom)\n", "b.md": '<a id="custom"></a>\n\n# B\n'}
+    assert _find(files) == []
+
+
+def test_a_setext_heading_is_an_anchor():
+    files = {"a.md": "[x](b.md#the-title)\n", "b.md": "The title\n=========\n\ntext\n"}
+    assert _find(files) == []
+
+
+def test_a_frontmatter_closer_is_not_a_setext_heading():
+    fm = "---\ntitle: T\n---\n\n# B\n"
+    assert "title-t" not in cs._anchors(fm)
+
+
+# --- review round: symlinked twins ----------------------------------------------
+
+
+def test_a_dead_anchor_reached_through_a_symlinked_twin_is_still_dead():
+    """CLAUDE.md -> AGENT.md: the text is scanned once (as AGENT.md), but a link
+    TO CLAUDE.md#nope must still be checked against that same text."""
+    files = {
+        "AGENT.md": "# Rules\n",
+        "CLAUDE.md": "# Rules\n",
+        "docs/a.md": "[r](../CLAUDE.md#nope)\n",
+    }
+    errs = cs._crossref_findings(files, _tree_of(files), scan={"AGENT.md", "docs/a.md"})
+    assert len(errs) == 1 and "#nope" in errs[0], errs
+
+
+def test_dead_link_and_anchor_messages_carry_a_remedy_and_the_anchors_that_exist():
+    errs = _find(
+        {"a.md": "[b](b.md#nope)\n[c](c.md)\n", "b.md": "## Setup\n\n## Teardown\n"}
+    )
+    anchor = [e for e in errs if "#nope" in e][0]
+    assert "setup" in anchor and "teardown" in anchor and "--" in anchor, anchor
+    assert all("--" in e for e in errs), errs
+
+
+def test_vendored_trees_are_ignored_directories():
+    assert {".tox", ".nox", "htmlcov", ".eggs"} <= cs.IGNORE_DIRS
