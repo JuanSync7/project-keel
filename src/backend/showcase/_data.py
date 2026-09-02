@@ -395,7 +395,8 @@ CHECKS: tuple[Check, ...] = (
         command="make check",
         when="Every commit and in CI",
         purpose="Labels, taxonomy, package boundaries, tool/agent governance, "
-        "project facts and agent-rules symlinks (checks A–I).",
+        "project facts, agent-rules symlinks, ruleset parity, template twin "
+        "parity and the machine-readable module contract (checks A–O).",
     ),
     Check(
         slug="corpus",
@@ -465,8 +466,16 @@ SETUP_STEPS: tuple[Step, ...] = (
     ),
     Step(
         title="Make it yours",
+        # `models/` is deliberately NOT in this list, and README.md explains why:
+        # config/project.json declares three model adapters, so deleting the
+        # directory leaves the manifest claiming what no longer exists and
+        # `make check` correctly reports 3 errors. The product page used to say
+        # `models/`, so the two shipped surfaces gave opposite advice and this one
+        # broke the newcomer's first command.
         body="Rename src/backend/example_feature/ to your first real package and delete "
-        "any optional dirs you don't need (wiki/, models/, evals/, containers/).",
+        "any optional dirs you don't need (wiki/, evals/, containers/). Removing "
+        "models/ also means removing its adapters from config/project.json, or "
+        "`make check` will report the manifest claiming what is gone.",
         command="",
     ),
     Step(

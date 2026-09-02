@@ -562,7 +562,19 @@ a new instance of the drift class it claims to fix.
 ## Release readiness — what blocks `v0.1.0`
 
 Re-derived from the repo on 2026-09-02 by a six-lens verification pass, after the
-merge. Every item below was **reproduced**, not inferred. This is the worklist.
+merge. Every item below was **reproduced**, not inferred.
+
+**Status: 9 of 12 closed.** Blockers 4–12 were fixed in the same day's work, each
+test-first and mutation-verified; they are struck through below with what closed
+them. Blockers **1–3 remain open and are a single decision** — what `0.1.0` is,
+and tagging it — which is the owner's to make, not an edit.
+
+Three gates were added so these classes cannot return: the generated project's own
+suite now runs under an **answer matrix** (defaults / profiles-enabled /
+no-frontend, alongside the existing showcase=false case), `check_structure`'s
+letter range is **derived from the source** and compared against every shipped
+document that claims one, and the `--check` drift guards are pinned by an
+**environment-vs-defect** split in both `export_openapi` and `generate_aad_schema`.
 
 **1. Decide what `0.1.0` is, and tag it at the merge — not at `d0a25c4`.**
 `CHANGELOG.md` has a `## [0.1.0] — 2026-08-04` heading that describes `d0a25c4`
@@ -594,7 +606,7 @@ prerequisite** — while the generated `README:97` tells the newcomer to run
 `make verify`. CI is green only because `ci.yml` happens to run `make site-data`
 first. Building the corpus by hand turns the same tree to `351 passed`.
 *This is a worse instance of the class `efd8b3b` fixed for `showcase=false`: the
-default path, not a declined answer.*
+default path, not a declined answer.* ✅ **CLOSED:** `tests/conftest.py` gains a session `real_corpus` fixture that builds the view ONLY IF ABSENT (a stale corpus must stay stale, or the fixture would repair what `check-corpus` exists to report), and the three modules that read it declare the dependency. Guarded by a parametrised generated-project suite run.
 
 **5. Answering the `profiles` question at all ships a permanently red suite.**
 `tests/integration/test_advisories.py:34` asserts `profiles_on() == set()` and
@@ -602,7 +614,7 @@ default path, not a declined answer.*
 both literal. Generating with any non-empty `profiles` gives `2 failed, 349
 passed`, and `check_structure` stays at 0 errors so the structural gate never
 sees it. The template reddens a project for answering a question the template
-itself asks (a CONVENTIONS §18 violation, shipped downstream).
+itself asks (a CONVENTIONS §18 violation, shipped downstream). ✅ **CLOSED:** both tests now assert the advisor and `/api/profiles` AGREE with `config/project.json` instead of asserting keel's own answer. Mutation-verified: restoring the literal assertion fails the `profiles-enabled` matrix case.
 
 **6. `config/project.json.jinja` ships keel's whole `template.twins` block
 downstream.** The block and its keel-explaining `_comment` are untemplated
@@ -610,21 +622,21 @@ downstream.** The block and its keel-explaining `_comment` are untemplated
 first one yields **7 errors, 6 of them about keel's twins**. `_migrations` can
 only `rm`, so a descendant that inherits this cannot be repaired by a later
 update — which is precisely why it must be fixed *before* anyone generates from a
-tag.
+tag. ✅ **CLOSED:** the `template` block is wrapped so it is never rendered downstream; a generated project inherits no declarations, and its own first `.jinja` still gets check_N's actionable `undeclared template twin`.
 
 **7. `api/rest_fastapi/export_openapi.py --check` launders any failure into exit
 0.** Line 51, `except Exception` around `from app import app` + `app.openapi()`.
 It is inside the release gate and is **not** excluded by `copier.yml`, so every
 generated project inherits a drift guard that can report success while checking
 nothing. The correct shape exists one directory away
-(`generate_aad_schema.py:26`, `_ENVIRONMENT_CANNOT_RUN`).
+(`generate_aad_schema.py:26`, `_ENVIRONMENT_CANNOT_RUN`). ✅ **CLOSED:** `_ENVIRONMENT_CANNOT_RUN = (ImportError, SyntaxError)`, mirroring the AAD twin, with `tests/unit/api/test_export_openapi.py` cloned from its test. Mutation-verified: restoring the blanket except fails 6 cases.
 
 **8. `mcp/protocol.py`: one malformed JSON-RPC line kills the server loop.**
 `handle_message:119` passes `params.get("name")` straight into
 `call_tool(name: str)`; a `name` that is a JSON array or object raises TypeError,
 and any non-object top-level JSON line raises AttributeError at `:101`.
 `serve_stdio` catches only `ValueError` from `json.loads`, so either ends the
-session. **Reproduced end to end.**
+session. **Reproduced end to end.** ✅ **CLOSED:** validated at the transport boundary — a non-object message answers `-32600`, a non-string `params.name` answers `-32602`, and the loop keeps serving. `tests/unit/mcp/test_protocol.py`. No blanket except was added: the fix is validation, not suppression.
 
 **9. Three shipped documents misdescribe the gate they explain.**
 `scripts/README.md:30` says "checks A–M"; `src/backend/showcase/_data.py:398`
@@ -632,26 +644,26 @@ says "checks A–I" and lists 6 of 8 catalogued checks; `CONVENTIONS.md` contain
 **no occurrence** of `check_N` or `template.twins`, though its own lines 206–207
 order you to update it whenever a check changes. The real range is A–O.
 (`docs/guides/deterministic-checks.md` is fully current — it is the only accurate
-description of the check set in the repo.)
+description of the check set in the repo.) ✅ **CLOSED:** both ranges corrected, `CONVENTIONS.md` gained the check_N, module-contract and `template.twins` entries — and the range is now GATED, derived from `check_structure.py` and compared against every shipped file (`CHANGELOG.md` and `docs/design/` excluded: they record what was true then).
 
 **10. The live showcase tells newcomers to delete `models/`.**
 `_data.py:469` `SETUP_STEPS` lists `models/` among the optional dirs, served at
 `/api/setup.json`; `README.md` deliberately omits it and explains that deleting
 it leaves `config/project.json` claiming three adapters that no longer exist, so
 `make check` correctly reports 3 errors. Two shipped surfaces give opposite
-advice and the product page's version breaks the newcomer's first `make check`.
+advice and the product page's version breaks the newcomer's first `make check`. ✅ **CLOSED:** `models/` removed from `SETUP_STEPS`, with the README's two-step instruction carried into the served copy.
 
 **11. The mypy ratchet declares measured facts that are false.** Re-measured
 under the pinned mypy 2.1.0: `runtimes=87`, `api=43`, `mcp=16` reproduce exactly
 (validating the method), but `tests` measures **920** against 622 declared and
 `scripts` **529** against 464 — two rungs have gone **up**, under a `_comment`
 calling it "a number that may only go down". `config/practices.json` ships to
-every descendant.
+every descendant. ✅ **CLOSED:** re-measured and corrected (tests 958, scripts 528, mcp 18; runtimes 87 and api 43 reproduce exactly). The `_comment` now carries the command that reproduces them and states plainly that nothing enforces the downward direction.
 
 **12. Nothing tells a newcomer how to install the environment the gate needs.**
 There is no `make setup`/`make install`, and no README line for
 `pip install -e ".[dev]"` — yet pytest, ruff and mypy live in that extra and
-`make new` needs `.[template]`. The first thing a `v0.1.0` user does is fail.
+`make new` needs `.[template]`. The first thing a `v0.1.0` user does is fail. ✅ **CLOSED:** both README twins gained the venv + `pip install -e \".[dev]\"` block, the `.[template]` note for `make new`, and the `PY=` hint for an old system interpreter.
 
 ## Corrections to this document (2026-09-02)
 

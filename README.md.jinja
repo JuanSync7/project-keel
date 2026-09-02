@@ -93,9 +93,17 @@ that records the template's **absolute local path** as the update origin, so
 (as above) for a project you intend to share. Then:
 
 ```bash
+python3 -m venv .venv                     # the gate's tools live in the `dev` extra:
+.venv/bin/pip install -e ".[dev]"         # pytest, ruff and mypy. Without it, `make
+. .venv/bin/activate                      # verify` fails on the first missing tool.
 make help          # list tasks
 make check         # fast structural gate (or: make verify)
 ```
+
+Add `.[template]` too (`pip install -e ".[dev,template]"`) if you want `make new`,
+which needs `copier`. If your system `python3` predates the project floor, pass the
+interpreter explicitly — `make PY=.venv/bin/python verify` — which is what
+`check_python_version.py` is telling you when it refuses.
 
 Delete any optional dirs you don't need (`wiki/`, `evals/`, `containers/`) and
 rename `src/backend/example_feature/` to your first real package.

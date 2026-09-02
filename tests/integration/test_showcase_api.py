@@ -5,6 +5,7 @@ layer: backend
 summary: The FastAPI showcase router serves overview/features/checks/wiki/search over the live repo.
 """
 
+import json
 import sys
 from pathlib import Path
 
@@ -23,7 +24,11 @@ sys.path.insert(0, str(_ROOT / "api" / "rest_fastapi"))
 
 from app import app  # noqa: E402
 
-pytestmark = pytest.mark.integration
+# The showcase read model reads wiki/corpus.json, a GENERATED view that a
+# fresh clone and a freshly generated project do not have. Declared as a
+# fixture rather than assumed: these tests used to fail on arrival in a new
+# project (9 of them) while its README said to run `make verify`.
+pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("real_corpus")]
 
 client = TestClient(app)
 
@@ -72,14 +77,27 @@ def test_practices_listed_from_the_registry():
     assert by_id["owned-exception-boundary"]["status"] == "on"
 
 
-def test_domain_profiles_listed_all_off_by_default():
+def test_domain_profiles_listed_and_enabled_flags_mirror_the_manifest():
+    """Every profile defined in practices.json is listed, and each `enabled` flag
+    agrees with `config/project.json`.
+
+    This asserted `all(p["enabled"] is False ...)` — keel's own answer, pasted in.
+    A project that enabled a profile (the question the template asks) served a
+    correct payload and failed this test anyway. The property that holds for
+    every answer is that the API mirrors the manifest."""
     profiles = client.get("/api/profiles").json()
     assert profiles, "domain profiles should be listed from config/practices.json"
     names = [p["name"] for p in profiles]
     assert names == sorted(names)  # stable order
     assert {"ai", "cuda", "langgraph"} <= set(names)
-    # The template ships domain-neutral: every profile is OFF by default.
-    assert all(p["enabled"] is False for p in profiles)
+
+    with open(str(_ROOT / "config" / "project.json"), encoding="utf-8") as fh:
+        declared = (json.load(fh).get("practices") or {}).get("profiles") or {}
+    for profile in profiles:
+        assert profile["enabled"] is (declared.get(profile["name"]) is True), (
+            "/api/profiles reports %s enabled=%s while config/project.json says %r"
+            % (profile["name"], profile["enabled"], declared.get(profile["name"]))
+        )
     cuda = next(p for p in profiles if p["name"] == "cuda")
     assert "shape-typed-tensors" in cuda["activates"]  # definition joined in
 

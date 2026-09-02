@@ -22,7 +22,15 @@ __all__ = ["Tool", "ToolServer", "handle_message", "serve_stdio"]
 # stdio loop is the thin wire binding.
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_VERSION = "0.1.0"
+# The JSON-RPC codes this transport can answer with. A transport's job is to turn
+# anything a client can put on the wire into a RESPONSE — never into a traceback:
+# handle_message used to take `msg.get(...)` and `params.get("name")` on faith, so a
+# non-object line raised AttributeError and a `name` that was a JSON array raised
+# TypeError (unhashable) straight out through serve_stdio, ending the session for
+# every later request from that client.
+_INVALID_REQUEST = -32600
 _METHOD_NOT_FOUND = -32601
+_INVALID_PARAMS = -32602
 
 
 @dataclass(frozen=True)
@@ -91,6 +99,13 @@ def _error_result(message: str) -> dict:
     return {"content": [{"type": "text", "text": message}], "isError": True}
 
 
+def _error(msg_id: Any, code: int, message: str) -> dict:
+    """A JSON-RPC error response. Distinct from ``_error_result``, which is a
+    successful call whose TOOL failed — the two are different layers and the
+    client acts on them differently."""
+    return {"jsonrpc": "2.0", "id": msg_id, "error": {"code": code, "message": message}}
+
+
 def handle_message(server: ToolServer, msg: dict) -> Optional[dict]:
     """Map one JSON-RPC request to a response (or ``None`` for a notification).
 
@@ -98,6 +113,13 @@ def handle_message(server: ToolServer, msg: dict) -> Optional[dict]:
     ``tools/list`` and ``tools/call`` are handled; anything else is a
     ``-32601 method not found`` error.
     """
+    if not isinstance(msg, dict):
+        # Any JSON value is a legal LINE; only an object is a legal REQUEST.
+        return _error(
+            None,
+            _INVALID_REQUEST,
+            "request must be a JSON object, got %s" % type(msg).__name__,
+        )
     msg_id = msg.get("id")
     method = msg.get("method", "")
     if msg_id is None:  # a notification — acknowledge nothing
@@ -114,18 +136,24 @@ def handle_message(server: ToolServer, msg: dict) -> Optional[dict]:
     if method == "tools/list":
         return _ok(msg_id, {"tools": server.tools_list()})
     if method == "tools/call":
-        params = msg.get("params") or {}
-        return _ok(
-            msg_id, server.call_tool(params.get("name"), params.get("arguments"))
-        )
-    return {
-        "jsonrpc": "2.0",
-        "id": msg_id,
-        "error": {
-            "code": _METHOD_NOT_FOUND,
-            "message": "method not found: %s" % method,
-        },
-    }
+        params = msg.get("params")
+        if params is None:
+            params = {}
+        if not isinstance(params, dict):
+            return _error(msg_id, _INVALID_PARAMS, "params must be an object")
+        name = params.get("name")
+        # An ABSENT name is a well-formed request for a tool that does not exist,
+        # which the registry already answers as a tool-level isError. A name of the
+        # WRONG TYPE is malformed input, and it is the one that used to crash: the
+        # registry is a dict, so a list or dict name is unhashable.
+        if name is not None and not isinstance(name, str):
+            return _error(
+                msg_id,
+                _INVALID_PARAMS,
+                "params.name must be a string, got %s" % type(name).__name__,
+            )
+        return _ok(msg_id, server.call_tool(name, params.get("arguments")))
+    return _error(msg_id, _METHOD_NOT_FOUND, "method not found: %s" % method)
 
 
 def _ok(msg_id: Any, result: dict) -> dict:

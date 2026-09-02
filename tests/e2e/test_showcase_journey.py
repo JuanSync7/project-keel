@@ -23,7 +23,11 @@ sys.path.insert(0, str(_ROOT / "api" / "rest_fastapi"))
 
 from app import app  # noqa: E402
 
-pytestmark = pytest.mark.e2e
+# The showcase read model reads wiki/corpus.json, a GENERATED view that a
+# fresh clone and a freshly generated project do not have. Declared as a
+# fixture rather than assumed: these tests used to fail on arrival in a new
+# project (9 of them) while its README said to run `make verify`.
+pytestmark = [pytest.mark.e2e, pytest.mark.usefixtures("real_corpus")]
 
 client = TestClient(app)
 

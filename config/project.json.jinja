@@ -1,6 +1,7 @@
 {
   "_comment": "Authoritative project facts: hand-edited, enforced by scripts/check_structure.py (check_H, CONVENTIONS section 15). Choose one frontend stack; list shipped stacks/transports under 'available'.",
   "name": "{{ project_slug }}",
+  {%- if false %}{# NOT rendered, deliberately: `template` is keel-AS-A-TEMPLATE metadata and a generated project is not a template. Inheriting these six declarations is unrepairable — `_migrations` can only `rm` files — and check_N's final loop reports one error per declared twin whose file does not exist, so the project's first `.jinja` of its own would surface six errors about keel's files. With no block at all, `_declared_twins()` returns {} and check_N still catches the project's own undeclared twin, actionably. Kept here rather than deleted so this file stays a readable parity twin of keel's. #}
   "template": {
     "_comment": "Keel is a copier template: files suffixed .jinja are rendered, everything else is copied verbatim. `twins` declares every .jinja and what it is FOR, so a new one cannot appear unnoticed — scripts/check_structure.py check_N enforces it, render-free, so it runs in the 3.6 pre-commit gate. 'parity' = must reproduce keel's own file except where templated; 'divergence' = must NOT (the difference is the point); 'generated' = copier writes it into a new project and keel commits none of its own. A generated project has no .jinja files, so check_N is silent there.",
     "twins": {
@@ -12,6 +13,7 @@
       ".copier-answers.yml": "generated"
     }
   },
+  {%- endif %}
   "layers": {
 {%- if frontend_stack != "none" %}
     "frontend": {

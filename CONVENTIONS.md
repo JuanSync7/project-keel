@@ -200,7 +200,9 @@ pre-commit hook) fails the build if the conventions above drift:
 | Owned-exception boundary (§18) | in library code (`src`/`models`/`runtimes`/`agents`), no `raise` of an exception **type** imported from a foreign (non-local, non-stdlib) module — wrap it in an owned error; `# practice-ok: <reason>` waives |
 | Frozen-config gate (§18) | a class carrying the declared marker (`config/practices.json` `tokens.config_marker`, `# practice: frozen-config`) must be provably immutable (frozen dataclass / `NamedTuple` / attrs-frozen); keyed on the marker, never a `*Config` name suffix; `# practice-ok` waives |
 | Naked-tensor domain (warn) | only when the `cuda` profile is enabled (`project.json` `practices.profiles`), a parameter annotated with a bare tensor base type (`tokens.tensor_base_types`) and no shape comment **warns** — an advisory heuristic, never an error |
-| Ruleset parity (§15) | `pyproject.toml` must not silently loosen the declared policy — every ruff `extend_select` family and mypy flag in `config/practices.json` `rulesets` is enforced, and no `deferred` (policy-off) family is selected |
+| Ruleset parity (§15) | `pyproject.toml` must not silently loosen the declared policy — every ruff `extend_select` family and mypy flag in `config/practices.json` `rulesets` is enforced, no `deferred` (policy-off) family is selected, every `per-file-ignores` pattern is declared, and a `[[tool.mypy.overrides]]` relaxing a declared flag (or `ignore_errors`) is declared per module |
+| Template twin parity (§15) | every `*.jinja` twin is declared in `config/project.json` `template.twins` as `parity`, `divergence` or `generated`, and matches that declaration — a `parity` twin carries no non-templated line the plain file has lost, a `divergence` twin actually differs, a `generated` twin has no plain sibling. Render-free, so it runs in the 3.6 gate; silent in a generated project, which has no twins |
+| Module contract (§16) | every `.py` under the code roots opens with a docstring carrying explicit, non-empty `title:` and `summary:` lines — the grammar the corpus reads — and every `__all__`-exported symbol defined in-file has a docstring |
 
 Missing `owner` is a warning, not a failure. If you change the scheme
 (KINDS / LAYERS / STATUSES / VISIBILITIES) or a check, update **both**
@@ -431,6 +433,17 @@ It is keyed **by layer/concern, never one global `language`**:
   in `config/practices.json`; this block only flips them on. `check_H` errs on a
   non-boolean flag and **warns** (never errs) on an enabled flag naming no defined
   profile — an inert flag activates nothing (see `docs/guides/coding-practices.md`).
+
+- `template.twins` (template repos only) — keel is itself a copier template, so
+  every `*.jinja` file is declared here with what it is FOR: `parity` (must
+  reproduce its plain sibling except where templated), `divergence` (must **not**
+  — the difference is the point, e.g. `.gitignore.jinja` drops the
+  `.copier-answers.yml` ignore so a descendant keeps its upgrade channel), or
+  `generated` (copier writes it into a new project and the template commits none
+  of its own). `check_N` enforces it render-free, so it runs in the 3.6
+  pre-commit gate; the byte-exact rendered comparison lives in
+  `tests/integration/`. A generated project is **not** a template: it inherits no
+  declarations, and `check_N` stays silent until it adds a twin of its own.
 
 `check_H` **errors** on a hard contradiction (a declared `path`/`stack`/
 `enabled` transport dir that is missing; `enabled` not in `available`; a

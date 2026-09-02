@@ -583,3 +583,58 @@ def test_pre_commit_runs_the_same_ruff_as_the_gate():
         "pre-commit runs ruff %s while the gate runs %s — the same file can be "
         "clean for one and dirty for the other" % (m.group("rev"), pins["ruff"])
     )
+
+
+# ---- scope: what the SHIPPED documents claim the gate covers ------------------
+# Two shipped files described a different gate than the one that runs: after
+# check_N and check_O landed, scripts/README.md still named a range ending at M and
+# the showcase catalogue one ending at I. Both ship verbatim, so every generated
+# project
+# inherited a false description of its own gate — and the showcase's copy is served
+# live at /api/checks. (This comment states the old ranges in words on purpose:
+# writing them in the matched form would make this file its own first finding.) The range is DERIVABLE from check_structure.py, so nothing
+# here is a judgment call.
+#
+# CHANGELOG.md and docs/design/ are excluded on purpose: a changelog entry and a
+# design narrative record what was true at a point in time, and rewriting history
+# to match today is the opposite of the property this asserts.
+_CLAIMED_RANGE = re.compile(r"checks A[\u2013-]([A-Z])\b")
+_HISTORICAL = ("CHANGELOG.md", "docs/design/")
+
+
+def _highest_check_letter():
+    text = (_ROOT / "scripts" / "check_structure.py").read_text(encoding="utf-8")
+    letters = re.findall(r"^def check_([A-Z])\b", text, re.MULTILINE)
+    assert letters, "no check_<LETTER> functions found — re-derive this check"
+    return max(letters)
+
+
+def test_every_shipped_description_of_the_gate_names_the_real_check_range():
+    """A document that misdescribes the gate is worse than one that says nothing:
+    the reader believes it, and here so does every descendant project."""
+    highest = _highest_check_letter()
+    wrong = []
+    # check_structure's own walk, NOT `git ls-files`: this test ships verbatim into
+    # every generated project, and a generated project is not a git repository
+    # until its author runs `git init` — so the git form failed on arrival there,
+    # which is precisely the defect class this file exists to catch. (Caught by the
+    # answer-matrix guard in test_copier_generation.py, within one run of adding it.)
+    for dirpath, _dirnames, filenames in cs.walk(str(_ROOT)):
+        for filename in filenames:
+            if not filename.endswith((".md", ".py")):
+                continue
+            path = Path(dirpath) / filename
+            rel = str(path.relative_to(_ROOT))
+            if rel.startswith(_HISTORICAL):
+                continue
+            wrong.extend(
+                "%s claims checks A-%s" % (rel, claimed)
+                for claimed in _CLAIMED_RANGE.findall(
+                    path.read_text(encoding="utf-8", errors="replace")
+                )
+                if claimed != highest
+            )
+    assert not wrong, (
+        "check_structure.py defines checks through %s, but these shipped files "
+        "describe a different gate: %s" % (highest, wrong)
+    )

@@ -11,7 +11,11 @@ import pytest
 
 from backend.showcase import load_showcase
 
-pytestmark = pytest.mark.integration
+# The showcase read model reads wiki/corpus.json, a GENERATED view that a
+# fresh clone and a freshly generated project do not have. Declared as a
+# fixture rather than assumed: these tests used to fail on arrival in a new
+# project (9 of them) while its README said to run `make verify`.
+pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("real_corpus")]
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 

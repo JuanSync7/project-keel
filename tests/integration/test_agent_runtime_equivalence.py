@@ -5,7 +5,6 @@ layer: backend
 summary: index_enforcer / wiki_navigator produce identical dry-run results on inprocess and langgraph.
 """
 
-import os
 import sys
 from pathlib import Path
 
@@ -33,9 +32,10 @@ def test_index_enforcer_dry_run_identical_across_engines():
     assert a.dry_run is True and a.gaps_filled == 0
 
 
-def test_wiki_navigator_dry_run_identical_across_engines():
-    if not os.path.isfile(_ROOT / "wiki" / "corpus.json"):
-        pytest.skip("corpus not built; retrieval step needs wiki/corpus.json")
+def test_wiki_navigator_dry_run_identical_across_engines(real_corpus):
+    """`real_corpus` builds the view if absent instead of skipping: the engines'
+    equivalence was the assertion most worth running, and it was the one that
+    silently did not run on any machine that had not built the corpus."""
     q = "what are the conventions for frontmatter?"
     a = answer(q, execute=False, runtime="inprocess")
     b = answer(q, execute=False, runtime="langgraph")

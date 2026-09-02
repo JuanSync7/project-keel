@@ -293,6 +293,45 @@ def test_generated_project_does_not_ship_keels_template_meta_tests(tmp_path):
     assert (dest / "tests" / "integration" / "README.md").is_file()
 
 
+def test_generated_project_does_not_inherit_keels_template_twins(tmp_path):
+    """`template.twins` is keel-as-a-template metadata. A generated project is not
+    a template, and inheriting the block is not merely untidy — it is unrepairable:
+    `_migrations` can only `rm` files, so a descendant that received keel's six
+    declarations cannot be fixed by any later `copier update`.
+
+    check_N is silent while the project has no `.jinja` of its own, which is why
+    this hid. The moment it adds one, `_twin_parity_findings`' final loop reports
+    one error per inherited declaration whose file does not exist — six of them,
+    about keel's files, in the user's project. Asserted here through the gate the
+    user would actually run."""
+    dest = tmp_path / "proj"
+    _generate(dest, project_name="demo_proj", frontend_stack="none")
+
+    manifest = json.loads((dest / "config" / "project.json").read_text())
+    inherited = (manifest.get("template") or {}).get("twins") or {}
+    assert not inherited, (
+        "the generated project inherited keel's twin declarations: %s"
+        % sorted(inherited)
+    )
+
+    # ...and the gate stays USEFUL: the project's own first twin is still caught.
+    (dest / "config" / "example.toml").write_text("x = 1\n", encoding="utf-8")
+    (dest / "config" / "example.toml.jinja").write_text(
+        "x = {{ 1 }}\n", encoding="utf-8"
+    )
+    r = _structure_gate(dest)
+    output = r.stdout + r.stderr
+    assert "undeclared template twin" in output, (
+        "the project's own .jinja twin is not reported, so check_N is inert "
+        "downstream rather than merely quiet:\n%s" % output
+    )
+    for keel_only in ("pyproject.toml.jinja", "README.md.jinja", ".gitignore.jinja"):
+        assert keel_only not in output, (
+            "the project is being told about keel's twin %s, which it does not have"
+            % keel_only
+        )
+
+
 def test_generated_project_does_not_ship_keels_own_hardening_plan(tmp_path):
     """Same rule as the meta-tests, for prose: `docs/design/keel-hardening-plan.md`
     is keel's in-flight worklist — passes, measurements and deferrals about THIS
@@ -824,6 +863,44 @@ def test_declining_the_showcase_prunes_the_whole_surface_and_leaves_a_green_gate
     # honest as the suite that runs after it.
     r = _test_gate(dest)
     assert r.returncode == 0, r.stdout[-4000:] + r.stderr[-2000:]
+
+
+# Every answer the template ASKS FOR is an answer it must stay green under. Two
+# defects proved that is not automatic: the DEFAULT answers shipped a project whose
+# own suite failed 9 times (the showcase tests read wiki/corpus.json, a generated
+# view a new project does not have), and answering `profiles` at all failed 2 more
+# (two tests asserted keel's own answer literally instead of agreeing with the
+# manifest). Both were invisible to check_structure, which reads layout and never
+# runs anything. One case per axis, not one test per bug found.
+_ANSWER_MATRIX = [
+    pytest.param({}, id="defaults"),
+    pytest.param({"profiles": ["ai", "cuda"]}, id="profiles-enabled"),
+    pytest.param({"frontend_stack": "none"}, id="no-frontend"),
+]
+
+
+@pytest.mark.parametrize("answers", _ANSWER_MATRIX)
+def test_a_generated_project_passes_its_own_suite(tmp_path, answers):
+    """A project must be green on arrival for every answer the template offers.
+
+    Its README tells the newcomer to run `make verify`; if that is red on a
+    freshly generated tree, the template shipped the user a defect they did not
+    write and cannot diagnose. `showcase=false` has its own case above, which is
+    where this class was first found."""
+    dest = tmp_path / "proj"
+    _generate(dest, project_name="demo_proj", **answers)
+
+    structure = _structure_gate(dest)
+    assert structure.returncode == 0, structure.stdout + structure.stderr
+
+    suite = _test_gate(dest)
+    assert suite.returncode == 0, (
+        "a project generated with %s fails its OWN test suite on arrival:\n%s"
+        % (
+            answers or "the default answers",
+            suite.stdout[-4000:] + suite.stderr[-2000:],
+        )
+    )
 
 
 def test_declining_the_showcase_leaves_nothing_importing_it(tmp_path):

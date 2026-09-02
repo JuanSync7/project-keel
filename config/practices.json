@@ -36,17 +36,17 @@
         "aad.*": ["ignore_missing_imports"]
       },
       "ratchet": {
-        "_comment": "Code roots NOT yet in [tool.mypy] files. `errors` is the measured full-strict backlog with the scope prerequisites applied (explicit_package_bases + mypy_path=src) — a number that may only go down. A root at zero belongs in `scope`, not here.",
-        "tests": {"errors": 622,
+        "_comment": "Code roots NOT yet in [tool.mypy] files. `errors` is the measured full-strict backlog. Reproduce with: MYPYPATH=src .venv/bin/python -m mypy --explicit-package-bases <root> (for `runtimes`, lift its ignore_errors override in pyproject first, or you measure 0 and learn nothing). Measured 2026-09-02: tests 958, scripts 528, runtimes 87, api 43, mcp 18. READ THIS BEFORE TRUSTING THE NUMBERS: the intent is that they only ever go down, but NOTHING ENFORCES IT — tests and scripts had drifted UP (622->958 and 464->528) with the gate green throughout, because these are declarations, not assertions. Re-measure before relying on one. Making the direction a real gate needs a test that runs mypy per pending root, which costs minutes of wall clock and is therefore its own decision. A root at zero belongs in `scope`, not here.",
+        "tests": {"errors": 958,
                   "removed_when": "the test suite is annotated; blocked first on the roots it imports (disallow_untyped_calls fires in the CALLER), so this is the LAST rung, not the first"},
-        "scripts": {"errors": 464,
+        "scripts": {"errors": 528,
                     "removed_when": "the gate scripts are annotated — constrained by the 3.6-safe five (check_structure/check_generic/check_practices/check_python_version/generate_aad_schema), which cannot use PEP 585/604 or `from __future__ import annotations` and so need typing.List/Optional forms"},
         "runtimes": {"errors": 87,
                      "removed_when": "the engine internals are annotated and runtimes/contracts.py parameterises the step state/update dicts (that one contract change also unblocks the agents.* disallow_any_generics rung)"},
         "api": {"errors": 43,
                 "removed_when": "the FastAPI adapters are annotated AND api/grpc becomes checkable — its thing_pb2/thing_pb2_grpc are `make gen` output that does not exist in a fresh checkout, and grpc ships no stubs"},
-        "mcp": {"errors": 16,
-                "removed_when": "agents/wiki_navigator is annotated (mcp's untyped-call errors are REPORTED in mcp but CAUSED there) and mcp/protocol.py stops passing `params.get('name')` into a `str` parameter — a real contract defect, not an annotation"}
+        "mcp": {"errors": 18,
+                "removed_when": "agents/wiki_navigator is annotated (mcp's untyped-call errors are REPORTED in mcp but CAUSED there) . The second half of this rung is DONE: mcp/protocol.py no longer passes `params.get('name')` into a `str` parameter — it validates at the transport boundary and answers -32602 invalid params (tests/unit/mcp/test_protocol.py)"}
       }
     }
   },

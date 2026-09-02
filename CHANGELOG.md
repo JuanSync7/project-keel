@@ -48,6 +48,70 @@ version rather than a bare commit:
   `E501` deferral for long docstring summaries is untouched.
 
 ### Fixed
+- **A generated project was red on arrival — with the DEFAULT answers.** Nine of
+  its own tests failed (`9 failed, 341 passed`): the showcase read model needs
+  `wiki/corpus.json`, a *generated view* a new project does not have, and the
+  generated `Makefile`'s `verify` had no `site-data` prerequisite — while the
+  generated README told the newcomer to run exactly that. CI was green only
+  because `ci.yml` happens to build the corpus first. The suite is now
+  self-sufficient however it is invoked: a `real_corpus` fixture builds the view
+  **only if absent**, deliberately never rebuilding it, because a stale corpus
+  must stay stale or the fixture would repair the drift `make check-corpus`
+  exists to report. Guarded by an **answer matrix** — the generated project's own
+  suite is now run for defaults, profiles-enabled and no-frontend, alongside the
+  existing `showcase=false` case — so this is closed as a class, not an instance.
+- **Answering the `profiles` question at all shipped a permanently red suite.**
+  Two tests asserted keel's own answer literally (`profiles_on() == set()`, and
+  every profile `enabled is False`), so a project that enabled a profile — the
+  question the template itself asks — served a correct payload and failed anyway.
+  CONVENTIONS §18 inverted, shipped downstream. Both now assert that the advisor
+  and `/api/profiles` **agree with `config/project.json`**, which is the property
+  that holds for every answer.
+- **Every generated project inherited keel's `template.twins` block.**
+  `config/project.json.jinja` rendered it untemplated, and because `_migrations`
+  can only `rm` files, a descendant that received it could never be repaired by a
+  later `copier update`. check_N is silent until a project has a `.jinja` of its
+  own, which is why it hid; the first one would have produced seven errors, six
+  about keel's files. A generated project is not a template, so it now inherits
+  no declarations — and its own first twin still gets the actionable
+  `undeclared template twin`.
+- **`export_openapi.py --check` laundered any failure into exit 0.** A blanket
+  `except` around `from app import app` + `app.openapi()` meant a duplicate
+  operation id, a bad `response_model` or a `NameError` anywhere in the import
+  graph printed "check skipped" and passed — inside `make verify`, and inherited
+  by every generated project. It now carries the same
+  `_ENVIRONMENT_CANNOT_RUN = (ImportError, SyntaxError)` split as its AAD twin,
+  which it had claimed to mirror since before that twin was fixed.
+- **One malformed JSON-RPC line killed the MCP server.** `handle_message` took
+  `msg.get(...)` and `params.get("name")` on faith: a non-object line raised
+  `AttributeError`, a `name` that was a JSON array raised `TypeError:
+  unhashable type`, and `serve_stdio` wraps only `json.loads` — so either ended
+  the session for every later request from that client. The transport now
+  answers `-32600` and `-32602` and keeps serving. Note what was *not* done: no
+  blanket `except` was added around the loop. The fix is validation at the
+  boundary, because a catch-all there would launder the next real bug.
+- **Three shipped documents misdescribed the gate they explain**, and the range
+  is now gated. `scripts/README.md` and the showcase catalogue named check ranges
+  ending at M and I after check_N and check_O had landed — and the catalogue's
+  copy is served live at `/api/checks`. The real range is derived from
+  `check_structure.py` and compared against every shipped file
+  (`CHANGELOG.md` and `docs/design/` are excluded: a changelog and a design
+  narrative record what was true then). `CONVENTIONS.md` gained the check_N,
+  module-contract and `template.twins` entries its own text requires.
+- **The live showcase told newcomers to delete `models/`**, which `README.md`
+  explains will red their gate — `config/project.json` declares three adapters
+  that would no longer exist. Two shipped surfaces gave opposite advice and the
+  product page's version broke the newcomer's first `make check`.
+- **The mypy ratchet declared numbers that had gone up.** Re-measured: `tests`
+  958 against 622 declared and `scripts` 528 against 464, while `runtimes` (87)
+  and `api` (43) reproduce exactly — which is what validates the method. The
+  `_comment` claimed "a number that may only go down"; nothing enforced that, so
+  it now carries the command that reproduces the measurement and says plainly
+  that the direction is an intent, not a gate.
+- **Nothing told a newcomer how to install the tools the gate needs.** Both
+  README twins gained the venv + `pip install -e ".[dev]"` block, the
+  `.[template]` note for `make new`, and the `PY=` hint for a system interpreter
+  older than the project floor.
 - **The gate's own toolchain was unpinned, so CI and the venv disagreed about what
   "clean" means.** `dev` listed bare `"ruff"` and `"mypy"`, so CI resolved ruff
   **0.16.4** against the venv's **0.15.18**; because `extend-select` *adds* to
