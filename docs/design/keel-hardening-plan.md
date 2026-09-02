@@ -49,6 +49,7 @@ worklist.
 | — | Exact pins for the gate's own toolchain (`0ab1bbf`) | done |
 | — | The optional-surface questions (`wiki` / `evals` / `containers`) | **not started** |
 | — | ADR-0005 slice 1: `config/environment.json` + its check letter (the next free one; `P` went to help parity on 2026-09-02) | **not started** |
+| — | The documentation-quality system (checks P–S, rosters, the tool-spec body; phases 4–8 open) | in progress — its own record is `docs/design/documentation-quality.md` |
 
 **The pass narratives below are historical.** They were written before the work
 landed, and several of their "remaining" and "not closed" notes went stale as it

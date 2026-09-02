@@ -60,6 +60,7 @@ _exclude:
   # directory's labeled README.md is the placeholder a project writes into, and
   # pruning it would red the project's own check_B.
   - "docs/design/keel-hardening-plan.md"
+  - "docs/design/documentation-quality.md"
   - "wiki/corpus.json"
   - "wiki/llms.txt"
   - "wiki/llms-full.txt"

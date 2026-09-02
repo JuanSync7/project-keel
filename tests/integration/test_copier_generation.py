@@ -345,9 +345,10 @@ def test_generated_project_does_not_ship_keels_own_hardening_plan(tmp_path):
     dest = tmp_path / "proj"
     _generate(dest, project_name="demo_proj", frontend_stack="none")
 
-    assert not (dest / "docs" / "design" / "keel-hardening-plan.md").exists(), (
-        "keel's own hardening plan shipped into the generated project"
-    )
+    for keel_only in ("keel-hardening-plan.md", "documentation-quality.md"):
+        assert not (dest / "docs" / "design" / keel_only).exists(), (
+            "keel's own design record %s shipped into the generated project" % keel_only
+        )
     assert (dest / "docs" / "design" / "README.md").is_file(), (
         "the design directory's labeled placeholder was pruned with it — a project "
         "still needs somewhere to put its own design notes"
