@@ -121,6 +121,23 @@ Note: `agents/<name>/` holds **all** files for one agent — its
 `tools.md` (toolset manifest), and labels. Shared tools live one level
 up in `agents/tools/` (see §10).
 
+### Rosters: `## What ships here`
+
+A directory README may declare what its directory contains under the exact
+heading `## What ships here`. The declaration is opt-in, and once made it is
+held to the tree (`check_S`): a pipe table follows the heading; its first
+column is `Member`, each cell the member's path in backticks relative to the
+README's own directory (a directory member ends in `/`); every member of the
+directory appears exactly once and nothing else does (`README.md`, `AGENT.md`,
+`CLAUDE.md`, `__init__.py`, `__pycache__` and `.jinja` twins are labels,
+packaging and template metadata, not members); and a `Not for` column states, for every row, what a reader must
+**not** reach for that member to do — naming the sibling that does it. That
+cell is the discriminator a bare listing never states: the answer to "why are
+these two separate things?". Other columns (`Purpose`, `Effect`, `Trigger`,
+`Delegates to`) are the author's. A member that ships only under a copier
+answer (the showcase) gets its row inside `{% if %}` in a `.jinja` twin of the
+README (§15), so a generated project's roster matches its pruned directory.
+
 ## 3. The `__init__.py` boundary rule (the important one)
 
 A package's `__init__.py` **is its public API**. Callers import from the
@@ -207,6 +224,8 @@ pre-commit hook) fails the build if the conventions above drift:
 | Help parity | every `## `-annotated Makefile target is one the `help` recipe's own grep pattern lists (read from the recipe, never restated), so no target is documented-but-invisible to `make help`; a recipe the check cannot read is a stated WARN |
 | Cross-references | every relative Markdown link in prose (file, directory, `#anchor`) names something that exists, and every `§N` citation names a numbered section: a bare `§N` always cites this file, a section of any other document is cited by naming it (`docs/guides/python-style.md §3`). Read from prose and from code/config; links inside code are illustrations and are not read |
 | Check catalogue | `docs/guides/deterministic-checks.md` and the triggers agree on one membership: every catalogued script exists, an error-tier row is reachable from `make check-all`, a report row is run by some target, every script `check-all` reaches is catalogued, and the hooks table names exactly the hooks `.pre-commit-config.yaml` declares |
+| Tool spec body (§10) | a `kind: tool` spec's body is the seven sections in order (Command, Purpose, When to use, Args, Output, Side effects, Used by); `## Side effects` opens with the word for its `tool_effect` (`READ-ONLY` / `WRITES` / `MODEL-CALL`); `## When to use` carries at least one `- NOT ...` bullet |
+| Rosters (§2) | a README declaring `## What ships here` names every member of its directory exactly once and nothing else, in a `Member` first column, and every row's `Not for` cell is filled |
 
 Missing `owner` is a warning, not a failure. If you change the scheme
 (KINDS / LAYERS / STATUSES / VISIBILITIES) or a check, update **both**
@@ -313,8 +332,12 @@ adapter** that tells any LLM agent how to invoke a `scripts/` doer — the
 tool's logic stays in the script (cross-ref §7/§9). Frontmatter:
 `public_api` (the wrapped script, validated to exist), `tool_command`
 (the exact argv), `tool_effect` (`read-only` | `writes` | `model-call`),
-and a real `owner`. Body sections: Command, Purpose, When to use, Args,
-Output, Side effects (begins with `READ-ONLY`/`WRITES`), Used by.
+and a real `owner`. Body sections, gated in this order (`check_F`): Command,
+Purpose, When to use, Args, Output, Side effects (begins with the word for
+`tool_effect`: `READ-ONLY`, `WRITES` or `MODEL-CALL`), Used by. `## When to
+use` carries at least one `- NOT ...` bullet — what the tool is **not** for,
+naming the sibling that is. That line is the discriminator between tools; a
+spec without it describes a tool but not its boundary.
 
 Each agent declares the tools it may invoke in `agents/<name>/tools.md`
 (a one-table manifest). The binding is **bidirectional**: a tool's

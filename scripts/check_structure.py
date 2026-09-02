@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 title: check_structure — the deterministic conventions gate
-summary: Stdlib-only, 3.6-safe enforcement of CONVENTIONS.md — labeling, taxonomy, package boundaries, tool/agent governance, manifest and ruleset parity, twin parity, the machine-readable module contract, Makefile help parity, cross-reference resolution, and check-catalogue parity (checks A-R). Exit 1 on any error; warnings never fail the build.
+summary: Stdlib-only, 3.6-safe enforcement of CONVENTIONS.md — labeling, taxonomy, package boundaries, tool/agent governance, manifest and ruleset parity, twin parity, the machine-readable module contract, Makefile help parity, cross-reference resolution, check-catalogue parity, and rosters (checks A-S). Exit 1 on any error; warnings never fail the build.
 
 check_structure.py - enforce the project conventions (see CONVENTIONS.md).
 
@@ -14,7 +14,10 @@ Checks:
   D. The __init__ boundary: no absolute import of another package's _private module
   E. Authored coverage (ERR): every __all__-exported symbol defined in-file
      has a docstring — the corpus's symbol summaries (WARN until ADR-0008)
-  F. Tool specs governed (ERR) + accountability (WARN): tool/agent docs are owned
+  F. Tool specs governed (ERR) + accountability (WARN): tool/agent docs are
+     owned; a spec's body is the seven CONVENTIONS §10 sections in order, its
+     Side effects opens with the word for its tool_effect, and its When to use
+     carries a `- NOT` bullet (the negative-scope line)
   G. Tool<->agent binding (ERR): tools.md <-> '## Used by' agree; tool_command invokes public_api
   H. Project facts in config/project.json agree with the tree (ERR); an
      undeclared leftover stack/transport dir WARNs (CONVENTIONS section 15).
@@ -63,6 +66,9 @@ Checks:
      run by some target, every script check-all reaches is catalogued, and
      the hooks table matches .pre-commit-config.yaml. A catalogue this
      check cannot read is a stated WARN
+  S. Roster parity (ERR): a README declaring `## What ships here` names every
+     member of its directory exactly once and nothing else (Member column),
+     and every row's `Not for` cell is filled. Opt-in by the heading
 
 Exit 0 = clean, 1 = errors. Warnings never fail the build. Stdlib only; 3.6+.
 """
@@ -503,6 +509,88 @@ def check_E():
                         )
 
 
+# The body of a `kind: tool` spec, as CONVENTIONS §10 names it: seven sections
+# in this order. `## Side effects` opens with the word for the declared effect,
+# and `## When to use` carries at least one `- NOT` bullet — the negative-scope
+# line that says what the tool is NOT for and names the sibling that is. Six of
+# seven specs carried it by discipline; the rule makes the seventh, and every
+# later one, carry it too.
+_TOOL_SECTIONS = (
+    "Command",
+    "Purpose",
+    "When to use",
+    "Args",
+    "Output",
+    "Side effects",
+    "Used by",
+)
+_EFFECT_WORD = {
+    "read-only": "READ-ONLY",
+    "writes": "WRITES",
+    "model-call": "MODEL-CALL",
+}
+_NOT_BULLET = re.compile(r"^\s*[-*]\s+NOT\b")
+
+
+def _sections(text):
+    """[(heading text, [body lines])] for every `## ` heading outside fenced code."""
+    out = []
+    for line in _unfenced_lines(text):
+        if line.startswith("## "):
+            out.append((line[3:].strip(), []))
+        elif out:
+            out[-1][1].append(line)
+    return out
+
+
+def _tool_spec_body_findings(relpath, text, tool_effect):
+    """relpath: the spec; text: its full text; tool_effect: the frontmatter value.
+    -> error strings. Pure; check_F does the reads."""
+    errs = []
+    sections = _sections(text)
+    names = [name for name, _ in sections]
+    missing = [name for name in _TOOL_SECTIONS if name not in names]
+    if missing:
+        errs.append(
+            "%s: tool spec body lacks the section(s) %s -- CONVENTIONS §10 names "
+            "seven: %s"
+            % (
+                relpath,
+                ", ".join("'## %s'" % m for m in missing),
+                ", ".join(_TOOL_SECTIONS),
+            )
+        )
+    present = [name for name in names if name in _TOOL_SECTIONS]
+    expected = [name for name in _TOOL_SECTIONS if name in present]
+    if present != expected:
+        errs.append(
+            "%s: tool spec sections are out of order (%s) -- CONVENTIONS §10 "
+            "fixes the order: %s"
+            % (relpath, " > ".join(present), " > ".join(_TOOL_SECTIONS))
+        )
+    body = dict(sections)
+    effects = [ln.strip() for ln in body.get("Side effects", []) if ln.strip()]
+    want = _EFFECT_WORD.get(tool_effect)
+    if want is not None and "Side effects" in body:
+        first = effects[0].split()[0].rstrip(".,:;") if effects else ""
+        if first != want:
+            errs.append(
+                "%s: '## Side effects' opens with '%s' but tool_effect is '%s', so "
+                "it must open with %s -- the body and the frontmatter are read by "
+                "different agents and must not disagree"
+                % (relpath, first or "(nothing)", tool_effect, want)
+            )
+    if "When to use" in body and not any(
+        _NOT_BULLET.match(ln) for ln in body["When to use"]
+    ):
+        errs.append(
+            "%s: '## When to use' has no '- NOT ...' bullet -- say what this tool is "
+            "NOT for and name the sibling that is (the discriminator between "
+            "tools; CONVENTIONS §10)" % relpath
+        )
+    return errs
+
+
 def check_F():
     """ERROR on malformed tool specs; WARN when tool/agent docs lack a real owner."""
     agents_dir = os.path.join(ROOT, "agents")
@@ -539,6 +627,10 @@ def check_F():
                         "%s: tool_command does not invoke public_api '%s'"
                         % (rel(full), inv)
                     )
+                text = _read_text(full, err)
+                if text is not None:
+                    for m in _tool_spec_body_findings(rel(full), text, eff):
+                        err(m)
     # accountability roll-up (warning): tools/agents must name a real owner
     for path, kind, owner in GOVERNED:
         if kind in ("tool", "agent") and (not owner or owner == "TBD"):
@@ -2980,6 +3072,143 @@ def check_R():
         warn(m)
 
 
+# --- check_S: roster parity ---------------------------------------------------
+#
+# A README that says "## What ships here" is making a claim about its
+# directory, and the claim rots the day a file is added or removed. The roster
+# is opt-in by that heading (no README is retro-failed); once declared it is
+# held to the tree both ways, and every row must carry a `Not for` cell — what
+# a reader must NOT reach for the member to do, naming the sibling that does.
+# That cell is the discriminator a bare listing never states: the answer to
+# "why are these two separate things?"
+
+_ROSTER_HEADING = "What ships here"
+_ROSTER_BOILERPLATE = {
+    "README.md",
+    "AGENT.md",
+    "CLAUDE.md",
+    "__init__.py",
+    "__pycache__",
+}
+_EMPTY_CELLS = {"", "-", "—", "n/a", "none"}
+
+
+def _roster_members(listing, isdir):
+    """The members of a directory from its listing: everything but the labels,
+    packaging, hidden entries, ignored dirs and `.jinja` template twins (keel-as-
+    a-template metadata, check_N's business); a directory carries a slash."""
+    members = set()
+    for name in listing:
+        if name in _ROSTER_BOILERPLATE or name in IGNORE_DIRS or name.startswith("."):
+            continue
+        if name.endswith((".pyc", _TWIN_SUFFIX)):
+            continue
+        members.add(name + "/" if isdir(name) else name)
+    return members
+
+
+def _roster_table(text):
+    """The first pipe table under '## What ships here' and before the next
+    `## ` heading -> (header, rows), or None when the heading is absent, or
+    ([], []) when it is present with no table."""
+    section = None
+    for name, body in _sections(text):
+        if name == _ROSTER_HEADING:
+            section = body
+            break
+    if section is None:
+        return None
+    table = _pipe_table("\n".join(section), ())
+    return table if table is not None else ([], [])
+
+
+def _roster_findings(relpath, text, members):
+    """relpath: the README; text: its text; members: the directory's members
+    (dirs with a trailing slash). -> error strings. Silent without the heading."""
+    table = _roster_table(text)
+    if table is None:
+        return []
+    header, rows = table
+    if not header:
+        return [
+            "%s: declares '## %s' but no table follows it -- list every member "
+            "(CONVENTIONS §2)" % (relpath, _ROSTER_HEADING)
+        ]
+    errs = []
+    if header[0] != "member":
+        raw_header = [ln for ln in _sections(text) if ln[0] == _ROSTER_HEADING][0][1]
+        raw_first = [ln for ln in raw_header if ln.startswith("|")][0]
+        errs.append(
+            "%s: the '## %s' table's first column must be 'Member' (got '%s') -- "
+            "the roster reader keys on that name"
+            % (
+                relpath,
+                _ROSTER_HEADING,
+                raw_first.strip().strip("|").split("|")[0].strip(),
+            )
+        )
+    not_for = header.index("not for") if "not for" in header else None
+    if not_for is None:
+        errs.append(
+            "%s: the '## %s' table has no 'Not for' column -- every row must say "
+            "what a reader must NOT reach for that member to do, naming the "
+            "sibling that does" % (relpath, _ROSTER_HEADING)
+        )
+    named = {}
+    plain = {m.rstrip("/") for m in members}
+    for row in rows:
+        if not row:
+            continue
+        m = _BACKTICKED.search(row[0])
+        name = (m.group(1) if m else row[0]).strip().rstrip("/")
+        if name in named:
+            shown = name + "/" if name + "/" in members else name
+            errs.append(
+                "%s: '## %s' names '%s' twice -- one row per member"
+                % (relpath, _ROSTER_HEADING, shown)
+            )
+            continue
+        named[name] = row
+        if name not in plain:
+            errs.append(
+                "%s: '## %s' names '%s', which is not a member of this directory "
+                "-- drop the row, or check the spelling against the listing"
+                % (relpath, _ROSTER_HEADING, (m.group(1) if m else row[0]).strip())
+            )
+        if not_for is not None:
+            cell = row[not_for].strip() if len(row) > not_for else ""
+            if cell.lower() in _EMPTY_CELLS:
+                errs.append(
+                    "%s: roster row '%s' has an empty 'Not for' cell -- say what a "
+                    "reader must NOT reach for it to do, naming the sibling that "
+                    "does" % (relpath, name)
+                )
+    for member in sorted(plain - set(named)):
+        shown = member + "/" if member + "/" in members else member
+        errs.append(
+            "%s: '## %s' does not name %s -- add a row, or remove the member"
+            % (relpath, _ROSTER_HEADING, shown)
+        )
+    return errs
+
+
+def check_S():
+    """ERROR when a README declaring '## What ships here' disagrees with its
+    directory, or a row lacks its 'Not for' discriminator. Opt-in per README."""
+    for dirpath, _, filenames in walk(ROOT):
+        if "README.md" not in filenames:
+            continue
+        full = os.path.join(dirpath, "README.md")
+        text = _read_text(full, err)
+        if text is None or ("## " + _ROSTER_HEADING) not in text:
+            continue
+        members = _roster_members(
+            os.listdir(dirpath), lambda n, d=dirpath: os.path.isdir(os.path.join(d, n))
+        )
+        for m in _roster_findings(rel(full), text, members):
+            err(m)
+
+
 def main():
     check_A()
     check_B()
@@ -2999,6 +3228,7 @@ def main():
     check_P()
     check_Q()
     check_R()
+    check_S()
     for w_ in warnings:
         print("WARN  " + w_)
     for e_ in errors:

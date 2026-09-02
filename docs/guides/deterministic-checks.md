@@ -62,7 +62,7 @@ everything and therefore expect the project interpreter.
 
 | Check | Script | Gate? | Interpreter | What it guarantees |
 |-------|--------|:-----:|-------------|--------------------|
-| Structure & frontmatter | `scripts/check_structure.py` | error | 3.6-safe | Labels, taxonomy, package boundaries, tool/agent governance, project facts, agent-rules symlinks, owned-exception & frozen-config boundaries, naked-tensor domain warn, lint/type ruleset parity, template twin parity, Makefile help parity, cross-reference resolution, check-catalogue parity (checks A–R) |
+| Structure & frontmatter | `scripts/check_structure.py` | error | 3.6-safe | Labels, taxonomy, package boundaries, tool/agent governance, project facts, agent-rules symlinks, owned-exception & frozen-config boundaries, naked-tensor domain warn, lint/type ruleset parity, template twin parity, Makefile help parity, cross-reference resolution, check-catalogue parity, rosters (checks A–S) |
 | Interpreter floor | `scripts/check_python_version.py` | error | any | `$(PY)` satisfies `pyproject.toml`'s `requires-python`, said plainly before a newer-syntax check fails with a traceback — runs before every check that needs the project interpreter (`check-corpus`, `test`) |
 | Corpus integrity | `scripts/jobs/check_corpus.py` | error | ≥3.7 | the fresh build is a valid, acyclic, reproducible graph **and** the local `wiki/corpus.json` (what agents query) is current when present — absent is a loud pass, stale is an error naming `make site-data` (ADR-0008) |
 | OpenAPI drift | `api/rest_fastapi/export_openapi.py --check` | error | FastAPI | Committed `openapi.json` matches the live routes |
@@ -79,7 +79,7 @@ print but never fail the build.
 
 ### 1. Structure & frontmatter — `scripts/check_structure.py`
 
-**Purpose.** The core enforcer of `CONVENTIONS.md`. Checks A–R:
+**Purpose.** The core enforcer of `CONVENTIONS.md`. Checks A–S:
 
 - **A. Frontmatter** — every `README.md` / `AGENT.md` / `CLAUDE.md`, `docs/**`,
   `test-docs/**` markdown, and `agents/**/*.tool.md` has the required keys with
@@ -93,7 +93,17 @@ print but never fail the build.
   `_private` module.
 - **E. Authored coverage** — every `__all__`-exported symbol defined in-file has
   a docstring: the corpus's symbol summaries (error since ADR-0008).
-- **F. Tool specs governed** (error) + **accountability** (warn).
+- **F. Tool specs governed** (error) + **accountability** (warn) — valid
+  `kind: tool` frontmatter with a resolvable `public_api`, a `tool_effect` from
+  the closed set, a `tool_command` that invokes the script; and the body
+  contract of CONVENTIONS §10: the seven sections in order, `## Side effects`
+  opening with the word for the declared effect (`READ-ONLY` / `WRITES` /
+  `MODEL-CALL` — the body and the frontmatter are read by different agents and
+  must not disagree), and at least one `- NOT ...` bullet under `## When to
+  use` — the negative-scope line that names the sibling this tool is not. Six
+  of seven specs carried it by discipline; the rule makes every later one carry
+  it too. Lands as an error: the one spec without it was fixed in the landing
+  commit.
 - **G. Tool↔agent binding** — `tools.md` ↔ each spec's `## Used by` agree.
 - **H. Project facts** — `config/project.json` agrees with the tree (§15).
 - **I. Agent-rules symlink** — every `CLAUDE.md` is a symlink to its sibling
@@ -209,6 +219,24 @@ print but never fail the build.
   checks table or Makefile it cannot read is a WARN that says *unverified*.
   Lands as an error, not the ADR-0008 release-long WARN: the four rows it found
   were made true in the landing commit.
+- **S. Roster parity** — a README that declares `## What ships here` is held
+  to its directory: a pipe table follows the heading, its first column is
+  `Member` (each cell a backticked path relative to the README's directory,
+  directories with a trailing `/`), every member appears exactly once and
+  nothing that is not a member appears (labels and packaging — `README.md`,
+  `AGENT.md`, `CLAUDE.md`, `__init__.py`, `__pycache__` — hidden entries,
+  ignored dirs and `.jinja` twins are not members), and a `Not for` column exists with every
+  cell filled. Opt-in by the heading, so no README is retro-failed; keel
+  declares rosters for `agents/`, `agents/tools/`, `docs/guides/`, `mcp/`,
+  `scripts/` and `scripts/jobs/`. The `Not for` cell is the point: it states
+  what a reader must not reach for that member to do and names the sibling
+  that does — the discriminator between two things that look alike
+  (`rebuild_index.py` and `build_corpus.py` both say "index"; the roster says
+  which is the corpus and which is a README list). A member that ships only
+  under a copier answer has its row inside `{% if %}` in the README's `.jinja`
+  twin, so a generated project's roster matches its pruned tree — the
+  generation tests run this check inside every generated project. Lands as an
+  error: every roster was written in the landing commit.
 
 **When to run.** Every commit (pre-commit) and in CI; any time you add a
 directory, package, doc, tool, or agent.

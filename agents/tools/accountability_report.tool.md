@@ -9,7 +9,7 @@ tags: [tool, accountability, owner, governance]
 summary: Read-only list of corpus nodes with no resolved owner (accountability gaps).
 id: tool-accountability-report
 created: 2026-06-17
-updated: 2026-06-17
+updated: 2026-09-02
 visibility: internal
 canonical: true
 tool_command: python3 scripts/accountability_report.py --corpus wiki/corpus.json
@@ -32,6 +32,8 @@ nodes that resolve to nothing (or to the `TBD` placeholder) are reported.
 - When the `index_enforcer` reports owner gaps, to enumerate exactly which
   docs/sections/symbols need an owner assigned.
 - In CI/review to keep accountability from rotting.
+- NOT to gate the tree (that is `structure_check`, which errors; this always
+  exits 0) and NOT to build the corpus it reads (that is `build_corpus`).
 
 ## Args
 | Flag | Required | Default | Meaning |

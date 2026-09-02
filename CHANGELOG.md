@@ -34,6 +34,20 @@ version rather than a bare commit:
   reaches is catalogued, and the hooks table names exactly the hooks
   `.pre-commit-config.yaml` declares. Its first run found four lies, all fixed
   below.
+- **`check_S` — roster parity, and six rosters.** A README that declares
+  `## What ships here` is held to its directory: every member named exactly once
+  in a `Member` column, nothing else named, and a `Not for` cell on every row
+  saying what a reader must not reach for that member to do — naming the sibling
+  that does. `agents/`, `agents/tools/`, `docs/guides/`, `mcp/`, `scripts/` and
+  `scripts/jobs/` now carry one; before, `agents/README.md` named none of its
+  four agents and `agents/tools/README.md` none of its seven specs. The two
+  READMEs whose members are pruned with the showcase (`docs/guides/`,
+  `scripts/jobs/`) are `.jinja` twins, so a `showcase=false` project's roster
+  matches its tree.
+- **The tool-spec body is gated (check_F):** the seven CONVENTIONS §10 sections
+  in order, `## Side effects` opening with the word for the declared
+  `tool_effect`, and at least one `- NOT ...` bullet under `## When to use`.
+  `accountability_report.tool.md` was the one spec without that line.
 - **`make check-cdmon`**, reached from `check-all`: the cdmon adapter now runs
   where the catalogue always claimed it did — a stated skip (exit 0) until
   `cdmon` is on PATH and `config/cdmon/cdmon.yaml` exists.
@@ -54,6 +68,11 @@ version rather than a bare commit:
   report was listed and run by nothing; `check_python_version.py` ran under
   `check-all` with no row; the hooks table omitted `ruff-format`. Each is now
   either true or gone.
+- **`scripts/README_check_structure.md` was a stale duplicate** of the catalogue
+  (checks A–D of what is now A–S; nothing referenced it; it was a corpus node).
+  Removed. **`structure_check.tool.md`'s Purpose** listed the same A–F-era set;
+  now the full range. **`scripts/jobs/README.md`** claimed LLM-backed jobs call
+  agents; none does, and it now says so.
 - **The showcase's Checks page mirrored six of the catalogue's nine rows.** Now
   nine, and pinned to the catalogue's Script column by a test that uses the
   gate's own table reader, so the two cannot drift again.
