@@ -7,7 +7,7 @@ owner: TBD
 summary: Global rules for any agent working in this repo.
 id: agent
 created: 2026-06-17
-updated: 2026-09-02
+updated: 2026-09-09
 visibility: internal
 canonical: true
 ---
@@ -34,6 +34,14 @@ of truth for labeling and the directory taxonomy. Each directory's own
   docstrings say what, comments say why — a comment carries a reason or a
   measurement, never a restatement. The mechanical floor is gated (ruff, mypy
   strict, check_O/E); the rest is what review holds you to.
+- **Write documentation to the house pattern.** `docs/guides/doc-style.md` is
+  canonical, and it is `python-style.md`'s twin: unambiguous before complete
+  before short; one checkable claim per sentence, naming the mechanism that
+  enforces it; a roster row or a tool spec says what a member is **not** for and
+  names the sibling that is; a bare `§N` always cites `CONVENTIONS.md` and any
+  other document is cited by name; `updated:` means touched. The mechanical
+  floor is gated (checks A, F, P, Q, R, S, T, U and `make check-docs`); the rest
+  is what review, and `make doc-review`, hold you to.
 - **Respect the `__init__.py` boundary.** Import a package's public
   symbols from the package, never from its private (`_*`) submodules.
   When you add a public symbol, add it to `__all__` and re-export it.

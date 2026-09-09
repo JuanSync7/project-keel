@@ -8,7 +8,7 @@ tags: [practices, style, readability, robustness, docstrings, comments, agents, 
 summary: The canonical statement of how Python is written in this project — readability and loud failure modes outrank speed; the machine-readable module header; comment and docstring discipline; and how a code agent works here. The provable floor is gated (check_O/E, ruff, mypy); this guide is the judgment above it.
 id: docs-guides-python-style
 created: 2026-08-18
-updated: 2026-09-02
+updated: 2026-09-09
 visibility: internal
 canonical: true
 ---
@@ -23,6 +23,8 @@ the names, the docstrings, and the comments before they read the control flow.
 
 This guide is the **judgment half** of the practices registry
 (`config/practices.json`; catalogue in [coding-practices](coding-practices.md)).
+Its twin for prose is [doc-style](doc-style.md), which states the same contract
+for the documents around the code.
 Everything a rule can decide is already a gate — formatting, typing, the module
 header, exception hygiene. What follows is the part a gate cannot prove, stated
 plainly enough that a reviewer can point at a section and an agent can follow

@@ -8,7 +8,7 @@ tags: [documentation, style, rosters, citations, freshness, guide]
 summary: The canonical statement of how documentation is written in this repo — the judgment half above the gated floor. What a document is for, one claim per sentence, the discriminator between siblings (rosters and NOT lines), the citation grammar, freshness as a fact, the plain imperative over BCP 14, idempotency stated and proven, and what the gate checks versus what a reviewer must judge. The twin of python-style.md.
 id: docs-guides-doc-style
 created: 2026-09-02
-updated: 2026-09-02
+updated: 2026-09-09
 visibility: internal
 canonical: true
 ---
@@ -21,7 +21,9 @@ prove about the docs — every link and `§N` resolves (`check_Q`), every roster
 matches its directory (`check_S`), every tool spec has its seven sections and
 its `- NOT` line (`check_F`), every `##`-annotated target is in `make help`
 (`check_P`), the check catalogue tells the truth (`check_R`) — and
-`scripts/jobs/review_docs.py` proves that `updated:` is not a lie. Everything else
+`scripts/jobs/review_docs.py` proves that `updated:` is not a lie. This guide is
+itself held to that standard: `check_U` fails the build if the root `AGENT.md`
+stops naming it, because a style guide nobody is pointed at governs nothing. Everything else
 on this page is what those checks cannot decide and a reviewer, human or
 agent, holds you to. Where a rule below is gated, the gate is named; where
 it is not, that is deliberate, and the reason is given.
@@ -185,6 +187,7 @@ edit that leaves the decision untouched, and that edit restamps `updated:`.
 | A tool spec's seven sections, effect word, `- NOT` line | `check_F` | gate |
 | `updated:` no earlier than the last commit; today when modified | `scripts/jobs/review_docs.py`, `tests/integration/test_doc_freshness.py` | gate |
 | Every practice's `enforced_by` names a mechanism that exists | `check_T` | gate |
+| A practice enforced by a document names it where an agent reads it | `check_U` | gate |
 | A backticked path that resolves to nothing | `scripts/jobs/review_docs.py` under `make advise` | advisory |
 | A `Not for` cell that is true; a `- NOT` line that names the right sibling | this guide, a reviewer, `agents/doc_reviewer` (`make doc-review`) | judgment |
 | One claim per sentence; the mechanism named; measurements dated | this guide | judgment |

@@ -10,6 +10,19 @@ version rather than a bare commit:
 ## [Unreleased]
 
 ### Added
+- **`check_U` — policy documents are reachable, and `doc-style.md` now is.** A
+  practice whose mechanism IS a document must name that document within one hop
+  of the root `AGENT.md`: named there, or named in a document named there.
+  `check_T` already proved such a path exists; existing is not being found. The
+  live instance: `docs/guides/doc-style.md` shipped as the canonical statement of
+  how documentation is written here, was cited by four practices, and was named
+  by nothing an agent reads by default — not `AGENT.md`, not `CONVENTIONS.md`,
+  not the root `README.md`, not `docs/AGENT.md`, not a gate message. The rule
+  existed and could not reach the agent it governed. Closed on four paths: an
+  `AGENT.md` "Always" bullet beside its Python twin, the reverse twin pointer
+  from `python-style.md`, a first rule in `docs/AGENT.md`, and a line in
+  `docs/README.md`, whose table had named no guide at all. Registered as the
+  practice `doc-policy-reachable`.
 - **`check_P` — Makefile help parity.** Every `## `-annotated target must be one
   the `help` recipe's own grep pattern lists; the pattern is read out of the
   recipe rather than restated, so the check cannot agree with a wrong one, and a

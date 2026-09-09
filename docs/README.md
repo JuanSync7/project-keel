@@ -9,7 +9,7 @@ tags: []
 summary: Documentation organized by purpose and audience, not by source file.
 id: docs-readme
 created: 2026-06-17
-updated: 2026-09-02
+updated: 2026-09-09
 visibility: internal
 canonical: true
 ---
@@ -26,3 +26,8 @@ Documentation organized by purpose and audience, not by source file.
 | `guides/` | users + new devs | user guides, engineering guides, how-tos |
 | `reference/` | everyone | per-module reference (the only part that thinly mirrors `src/`) |
 | `adr/` | builders | Architecture Decision Records (numbered, immutable) |
+
+Before writing anything here, read **[doc-style](guides/doc-style.md)** — how
+prose is written in this repository, and the twin of
+[python-style](guides/python-style.md) for code. `make check-docs` gates the
+mechanical half; `make doc-review` reports the rest.

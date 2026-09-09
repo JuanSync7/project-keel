@@ -580,6 +580,19 @@
       "enforced_by": [
         "doc:docs/guides/doc-style.md §6"
       ]
+    },
+    {
+      "id": "doc-policy-reachable",
+      "row": 33,
+      "scope": "universal",
+      "tier": "gate",
+      "status": "on",
+      "title": "A practice enforced by a document names that document where an agent reads it",
+      "mechanism": "check_structure.py check_U -- every `doc:` mechanism within one hop of the root AGENT.md",
+      "subject": "docs",
+      "enforced_by": [
+        "check:U"
+      ]
     }
   ],
   "tokens": {

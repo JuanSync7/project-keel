@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 title: check_structure — the deterministic conventions gate
-summary: Stdlib-only, 3.6-safe enforcement of CONVENTIONS.md — labeling, taxonomy, package boundaries, tool/agent governance, manifest and ruleset parity, twin parity, the machine-readable module contract, Makefile help parity, cross-reference resolution, check-catalogue parity, rosters, and practice mechanisms (checks A-T). Exit 1 on any error; warnings never fail the build.
+summary: Stdlib-only, 3.6-safe enforcement of CONVENTIONS.md — labeling, taxonomy, package boundaries, tool/agent governance, manifest and ruleset parity, twin parity, the machine-readable module contract, Makefile help parity, cross-reference resolution, check-catalogue parity, rosters, practice mechanisms, and policy reachability (checks A-U). Exit 1 on any error; warnings never fail the build.
 
 check_structure.py - enforce the project conventions (see CONVENTIONS.md).
 
@@ -72,6 +72,9 @@ Checks:
   T. Practice mechanisms resolve (ERR): every config/practices.json entry's
      `enforced_by` names a check letter, script, test, make target or guide
      section that exists (a closed grammar; ruff/mypy codes are accepted)
+  U. Policy documents are reachable (ERR): a practice enforced BY a document
+     must sit within one hop of the root AGENT.md -- named there, or named in
+     a document named there. A rule nobody reads is unenforceable in principle
 
 Exit 0 = clean, 1 = errors. Warnings never fail the build. Stdlib only; 3.6+.
 """
@@ -3318,6 +3321,122 @@ def check_T():
         err(m)
 
 
+# --- check_U: policy documents are reachable -----------------------------------
+#
+# A practice whose enforcement IS a document is only as real as the chance that
+# somebody reads it. config/practices.json can name `doc:<path>` as a mechanism,
+# and check_T proves that path exists -- but existing is not the same as being
+# found. docs/guides/doc-style.md shipped as the canonical statement of how
+# documentation is written here, cited by four practices, and was reachable from
+# nothing an agent reads by default: not the root AGENT.md, not a document
+# AGENT.md names, not a gate message. The rule was unenforceable in principle.
+#
+# So: every `doc:` mechanism must sit within ONE HOP of the root AGENT.md, the
+# file always in an agent's context. Named there, or named in a document named
+# there. One hop rather than direct, because AGENT.md is a rules file and not an
+# index -- an agent told to open python-style.md is handed whatever it points at.
+# Two hops is not discoverability, it is a treasure hunt.
+
+_AGENT_RULES = "AGENT.md"
+# A repository-relative markdown path as the house writes one, usually inside
+# backticks. Bounded so `see foo.md.` and `a/b.md)` still yield the path.
+_POLICY_PATH = re.compile(r"(?<![\w./-])([A-Za-z0-9_][\w./-]*\.md)(?![\w/])")
+
+
+def _document_references(relpath, text, known):
+    """Every path in `known` that this document names, by markdown link or by
+    literal path, root-relative or relative to the document's own directory.
+
+    Fenced code is an illustration and is not read. Inline code IS read: a
+    backticked path is exactly how this repository names a document, so
+    excluding it (as check_Q does for links) would miss every real reference.
+    """
+    base = posixpath.dirname(relpath)
+    found = set()
+    for line in _unfenced_lines(text):
+        candidates = [
+            m.group(1) if m.group(1) is not None else m.group(2)
+            for m in _MD_LINK.finditer(line)
+        ]
+        candidates.extend(_POLICY_PATH.findall(line))
+        for cand in candidates:
+            if not cand or _URL_SCHEME.match(cand):
+                continue
+            path = cand.partition("#")[0]
+            if not path:
+                continue
+            for resolved in (path.lstrip("/"), _resolve_link(base, path)):
+                if resolved in known:
+                    found.add(resolved)
+    return found
+
+
+def _policy_reachability_findings(practices, docs):
+    """practices: the registry dict; docs: {relpath: text} for every markdown file.
+    -> error strings, one per unreachable document (not one per citing practice:
+    the fix is a single edit). Silent without a registry, without any `doc:`
+    mechanism, or without a root AGENT.md to measure from. A `doc:` path that is
+    not in the tree is check_T's finding, never reported twice here."""
+    entries = practices.get("practices") if isinstance(practices, dict) else None
+    if not isinstance(entries, list) or _AGENT_RULES not in docs:
+        return []
+    cited = {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        for ref in entry.get("enforced_by") or []:
+            if not str(ref).startswith("doc:"):
+                continue
+            path = str(ref)[len("doc:") :].partition(" ")[0].strip()
+            if path in docs:
+                cited.setdefault(path, []).append(str(entry.get("id", "?")))
+    if not cited:
+        return []
+    known = set(docs)
+    hop0 = _document_references(_AGENT_RULES, docs[_AGENT_RULES], known)
+    reachable = set(hop0)
+    for doc in sorted(hop0):
+        reachable |= _document_references(doc, docs[doc], known)
+    errs = []
+    for path in sorted(cited):
+        if path in reachable:
+            continue
+        errs.append(
+            "config/practices.json: %s name%s %s as their mechanism, but no agent "
+            "reads it -- %s does not name it, nor does any document %s names. Name "
+            "it in %s, or in one it already names, or the practice cannot reach the "
+            "agent it governs"
+            % (
+                ", ".join(sorted(cited[path])),
+                "" if len(cited[path]) > 1 else "s",
+                path,
+                _AGENT_RULES,
+                _AGENT_RULES,
+                _AGENT_RULES,
+            )
+        )
+    return errs
+
+
+def check_U():
+    """ERROR when a practice's `doc:` mechanism is more than one hop from the
+    root AGENT.md. Silent without a practices registry or without AGENT.md."""
+    practices = _load_practices()
+    if not practices:
+        return
+    docs = {}
+    for dirpath, _, filenames in walk(ROOT):
+        reldir = rel(dirpath).replace(os.sep, "/")
+        for f in filenames:
+            if not f.endswith(".md"):
+                continue
+            text = _read_text(os.path.join(dirpath, f), err)
+            if text is not None:
+                docs[f if reldir == "." else reldir + "/" + f] = text
+    for m in _policy_reachability_findings(practices, docs):
+        err(m)
+
+
 def main():
     check_A()
     check_B()
@@ -3339,6 +3458,7 @@ def main():
     check_R()
     check_S()
     check_T()
+    check_U()
     for w_ in warnings:
         print("WARN  " + w_)
     for e_ in errors:

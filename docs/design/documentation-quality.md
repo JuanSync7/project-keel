@@ -8,7 +8,7 @@ tags: [plan, documentation, checks, corpus, rosters, citations, convergence]
 summary: The bounded-convergence record for keel's documentation-quality system: which documentation rules are decidable by a machine and are now gated (checks P–S, the tool-spec body, supersession), which are judgment and belong to a guide and an agent, what each pass measured and decided, and what remains. The status table is authoritative; the per-pass notes below it are historical.
 id: docs-design-documentation-quality
 created: 2026-09-02
-updated: 2026-09-02
+updated: 2026-09-09
 visibility: internal
 canonical: true
 ---
@@ -36,10 +36,11 @@ produced live where a project can read them: `CONVENTIONS.md` §2, §6, §10 and
 | 6 | The model-absent path: `models.ModelUnavailable`, raised by both adapters, caught as a stated skip by the two model-calling doers | done |
 | 7 | The deterministic doer (`scripts/jobs/review_docs.py`, with the unresolved-mentions advisory), `subject` + `enforced_by` in `config/practices.json` with twelve doc practices, `check_T`, `docs/guides/doc-style.md`, the `make check` tail nudge | done |
 | 8 | `agents/doc_reviewer/` and its three thin adapters (skill, stop hook, pre-commit); the scheduled job repointed at the deterministic review | done |
+| 9 | Policy reachability (`check_U`): the guides an agent must read are named where it reads them | done |
 
 Every phase lands as one bounded pass: red test, smallest change, `make verify`
 green, one commit. Letters belong to landed checks (ADR-0008): the next free
-one is `U` (`T` is practice mechanisms). Freshness took no letter: it shells to git, so it lives beside the
+one is `V` (`T` is practice mechanisms, `U` is policy reachability). Freshness took no letter: it shells to git, so it lives beside the
 release-identity test (ADR-0009), not in `check_structure.py`.
 
 ## Why
@@ -194,6 +195,25 @@ was a stale duplicate of the catalogue (checks A–D of what is now A–S,
 referenced by nothing, indexed by the corpus) — removed; `structure_check.tool.md`'s
 Purpose listed the same A–F-era set; `scripts/jobs/README.md` claimed
 LLM-backed jobs call agents, and none does.
+
+### `check_U` — policy documents are reachable (Phase 9)
+
+Phase 7 registered twelve documentation practices and wrote `doc-style.md`;
+phase 8 built the agent that applies it. Neither made the guide *discoverable*.
+Measured afterwards: `doc-style.md` was named in fourteen files, none of which an
+agent reads unprompted, while `python-style.md` was named in the always-in-context
+`AGENT.md`. The wiring pattern this repository already uses has three legs — an
+`AGENT.md` rule points at the guide, the catalogue names it, the registry carries
+it — and `doc-style.md` had legs two and three only.
+
+`check_U` makes the first leg a rule rather than a habit: every `doc:` mechanism
+in `config/practices.json` must sit within one hop of the root `AGENT.md`. One hop,
+not direct, because `AGENT.md` is a rules file and not an index; two hops is a
+treasure hunt. The bound is honest about what it proves — that an agent is *pointed*
+at the document, never that it read or understood it.
+
+This closes the precondition for any document-monitoring integration: the policies
+are reachable before anything monitors compliance with them.
 
 ## Decisions taken here (the ones a later reader will look for)
 

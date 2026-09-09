@@ -8,7 +8,7 @@ tags: [checks, ci, linter, determinism, pre-commit, hooks, guide]
 summary: Catalogue of every deterministic check that keeps a project-template repo honest — purpose, when to run, and how to wire as a hook.
 id: docs-guides-deterministic-checks
 created: 2026-06-19
-updated: 2026-09-02
+updated: 2026-09-09
 visibility: internal
 canonical: true
 ---
@@ -62,7 +62,7 @@ everything and therefore expect the project interpreter.
 
 | Check | Script | Gate? | Interpreter | What it guarantees |
 |-------|--------|:-----:|-------------|--------------------|
-| Structure & frontmatter | `scripts/check_structure.py` | error | 3.6-safe | Labels, taxonomy, package boundaries, tool/agent governance, project facts, agent-rules symlinks, owned-exception & frozen-config boundaries, naked-tensor domain warn, lint/type ruleset parity, template twin parity, Makefile help parity, cross-reference resolution, check-catalogue parity, rosters, practice mechanisms (checks A–T) |
+| Structure & frontmatter | `scripts/check_structure.py` | error | 3.6-safe | Labels, taxonomy, package boundaries, tool/agent governance, project facts, agent-rules symlinks, owned-exception & frozen-config boundaries, naked-tensor domain warn, lint/type ruleset parity, template twin parity, Makefile help parity, cross-reference resolution, check-catalogue parity, rosters, practice mechanisms, policy reachability (checks A–U) |
 | Interpreter floor | `scripts/check_python_version.py` | error | any | `$(PY)` satisfies `pyproject.toml`'s `requires-python`, said plainly before a newer-syntax check fails with a traceback — runs before every check that needs the project interpreter (`check-corpus`, `test`) |
 | Corpus integrity | `scripts/jobs/check_corpus.py` | error | ≥3.7 | the fresh build is a valid, acyclic, reproducible graph whose edge kinds are from the closed set (`keyword`, `link`, `citation`, `mention`, `semantic`) **and** the local `wiki/corpus.json` (what agents query) is current when present — absent is a loud pass, stale is an error naming `make site-data` (ADR-0008) |
 | OpenAPI drift | `api/rest_fastapi/export_openapi.py --check` | error | FastAPI | Committed `openapi.json` matches the live routes |
@@ -80,7 +80,7 @@ print but never fail the build.
 
 ### 1. Structure & frontmatter — `scripts/check_structure.py`
 
-**Purpose.** The core enforcer of `CONVENTIONS.md`. Checks A–T:
+**Purpose.** The core enforcer of `CONVENTIONS.md`. Checks A–U:
 
 - **A. Frontmatter** — every `README.md` / `AGENT.md` / `CLAUDE.md`, `docs/**`,
   `test-docs/**` markdown, and `agents/**/*.tool.md` has the required keys with
@@ -247,6 +247,21 @@ print but never fail the build.
   the tools themselves reject an unknown one. `mechanism` stays as prose for a
   reader; this is the same claim a machine can hold. Silent without a
   registry. Lands as an error: every entry was annotated in the landing commit.
+- **U. Policy documents are reachable** — a practice whose mechanism IS a
+  document (`doc:<path>` in `enforced_by`) must name that document within one
+  hop of the root `AGENT.md`: named there, or named in a document named there.
+  `check_T` proves the path exists; existing is not the same as being found, and
+  a rule nobody reads is unenforceable in principle. One hop rather than direct,
+  because `AGENT.md` is a rules file and not an index: an agent told to open
+  `python-style.md` is handed whatever that points at. Two hops is a treasure
+  hunt, not discoverability. References count whether written as a Markdown link
+  or as a plain path, and inline code counts because a backticked path is how
+  this repository names a document; fenced code does not, being an illustration.
+  A `doc:` path absent from the tree is `check_T`'s finding and is not reported
+  twice here. Silent without a practices registry or without a root `AGENT.md`.
+  The live instance this closed: `docs/guides/doc-style.md` shipped as the
+  canonical statement of how documentation is written, was cited by four
+  practices, and was named by nothing an agent reads by default.
 
 **When to run.** Every commit (pre-commit) and in CI; any time you add a
 directory, package, doc, tool, or agent.

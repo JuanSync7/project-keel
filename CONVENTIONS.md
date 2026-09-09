@@ -8,7 +8,7 @@ tags: [conventions, frontmatter, taxonomy]
 summary: Single source of truth for labeling (frontmatter) and the directory taxonomy.
 id: conventions
 created: 2026-06-17
-updated: 2026-09-02
+updated: 2026-09-09
 visibility: internal
 canonical: true
 ---
@@ -227,6 +227,7 @@ pre-commit hook) fails the build if the conventions above drift:
 | Tool spec body (§10) | a `kind: tool` spec's body is the seven sections in order (Command, Purpose, When to use, Args, Output, Side effects, Used by); `## Side effects` opens with the word for its `tool_effect` (`READ-ONLY` / `WRITES` / `MODEL-CALL`); `## When to use` carries at least one `- NOT ...` bullet |
 | Rosters (§2) | a README declaring `## What ships here` names every member of its directory exactly once and nothing else, in a `Member` first column, and every row's `Not for` cell is filled |
 | Practice mechanisms (§15) | every `config/practices.json` entry's `enforced_by` names a mechanism that exists — a check letter defined in `check_structure.py`, a script, test or doc path (and numbered section) in the tree, a Makefile target; `ruff:`/`mypy:` codes are the tools' own vocabulary |
+| Policy reachability | a practice enforced BY a document names that document within one hop of the root `AGENT.md` — named there, or named in a document named there — so a rule an agent never reads cannot be declared enforced |
 
 Missing `owner` is a warning, not a failure. If you change the scheme
 (KINDS / LAYERS / STATUSES / VISIBILITIES) or a check, update **both**
