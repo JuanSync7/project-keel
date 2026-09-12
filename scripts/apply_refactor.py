@@ -4,6 +4,9 @@ title: Apply a gated refactor (refactor doer)
 kind: script
 layer: n/a
 summary: Deterministic doer — apply a proposed set of file edits ATOMICALLY, run a gate (a make target), and ROLL BACK every file if the gate fails. The refactor loop (agents/practice_refactor) proposes one bounded, named-practice edit at a time; this doer is the safety net that keeps the tree green — a chunk is accepted only if the gate stays green, else the change is reverted. Vendor-neutral, stdlib.
+effect: writes
+rerun: fixed-point
+rerun_proof: test:tests/integration/test_idempotence.py
 """
 
 from __future__ import annotations

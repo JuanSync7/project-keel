@@ -74,42 +74,10 @@ def _answers(project):
 
 
 def _clone_template(dest, work):
-    """Clone keel into `dest` INCLUDING the uncommitted working tree.
-
-    `git clone` carries only HEAD, so an edit you have not committed yet is
-    invisible to the template these tests actually exercise. That is not
-    hypothetical: a whole `_migrations` block sat in the working tree while this
-    module ran against a clone that had none, so the migrations "silently did
-    nothing" — they did not exist. The symptom (a feature that no-ops) looks
-    nothing like the cause (the harness tests a different tree), which is what
-    made it expensive.
-
-    So replay the working-tree diff as a real commit in the clone: what you are
-    editing is what gets tested. On a clean tree — CI, and any run after you
-    commit — the patch is empty and this is exactly a plain clone.
-
-    `git diff HEAD` covers modifications, deletions and files already `git add`ed;
-    a brand-new file that has never been staged is still invisible, so `git add`
-    it before expecting these tests to see it.
-    """
-    _git("clone", "--quiet", "--no-hardlinks", str(_ROOT), str(dest), cwd=work)
-    patch = subprocess.run(
-        ("git", "diff", "HEAD", "--binary"), cwd=str(_ROOT), capture_output=True
-    )
-    assert patch.returncode == 0, patch.stderr.decode("utf-8", "replace")
-    if patch.stdout.strip():
-        applied = subprocess.run(
-            ("git", "apply", "--index", "-"),
-            cwd=str(dest),
-            input=patch.stdout,
-            capture_output=True,
-        )
-        assert applied.returncode == 0, (
-            "could not replay keel's working tree onto its clone:\n"
-            + applied.stderr.decode("utf-8", "replace")
-        )
-        _git("commit", "--quiet", "-m", "uncommitted working tree under test", cwd=dest)
-    return dest
+    """Keel cloned into `dest`, working tree and all — see
+    `hermetic_git.clone_including_worktree`, which owns the reasoning and is
+    shared with test_copier_generation.py so the two cannot drift."""
+    return hermetic_git.clone_including_worktree(_ROOT, dest, work)
 
 
 @pytest.fixture(scope="module")
@@ -493,3 +461,60 @@ def test_unshowcased_project_records_the_new_answer_and_passes_its_own_gate(
         text=True,
     )
     assert r.returncode == 0, r.stdout + r.stderr
+
+
+# --- update reaches a fixed point (docs/guides/idempotency.md §6) ----------------
+
+
+@pytest.fixture(scope="module")
+def unmoved(tmp_path_factory):
+    """A project generated, committed, and then UPDATED against the very revision
+    it was generated from. Yields the project path, with git clean-or-not as the
+    whole assertion below."""
+    mp = pytest.MonkeyPatch()
+    work = tmp_path_factory.mktemp("copier_update_noop")
+    for var, value in hermetic_git.git_env_vars(work).items():
+        mp.setenv(var, value)
+    mp.setenv("COPIER_CACHE_DIR", str(work / "copier-cache"))
+    try:
+        template = _clone_template(work / "template", work)
+        project = work / "proj"
+        copier.run_copy(
+            str(template),
+            str(project),
+            data={"project_name": "demo_proj", "frontend_stack": "none"},
+            defaults=True,
+            vcs_ref="HEAD",
+            unsafe=False,
+            quiet=True,
+        )
+        _git("init", "--quiet", "-b", "main", cwd=project)
+        _git("add", "-A", cwd=project)
+        _git("commit", "--quiet", "-m", "generated from keel", cwd=project)
+        copier.run_update(
+            str(project),
+            defaults=True,
+            overwrite=True,
+            vcs_ref="HEAD",
+            unsafe=True,
+            quiet=True,
+        )
+        yield project
+    finally:
+        mp.undo()
+
+
+def test_updating_a_project_already_on_this_revision_changes_nothing(unmoved):
+    """Running the upgrade channel when there is nothing to deliver must be a
+    no-op, or nobody can safely run it to find out. The assertion is the project's
+    own git status: an update that rewrote a file it did not need to would show
+    here even if copier reported success."""
+    assert _git("status", "--porcelain", cwd=unmoved) == "", (
+        "`copier update` against the recorded revision dirtied the working tree"
+    )
+
+
+def test_the_noop_update_leaves_the_recorded_revision_alone(unmoved):
+    """The other half: a no-op must not quietly advance `_commit` either, or the
+    next real update starts from a revision this project never received."""
+    assert _answers(unmoved)["_commit"], "the answers file lost its revision"

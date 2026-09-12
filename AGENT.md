@@ -7,7 +7,7 @@ owner: TBD
 summary: Global rules for any agent working in this repo.
 id: agent
 created: 2026-06-17
-updated: 2026-09-09
+updated: 2026-09-12
 visibility: internal
 canonical: true
 ---
@@ -42,6 +42,14 @@ of truth for labeling and the directory taxonomy. Each directory's own
   other document is cited by name; `updated:` means touched. The mechanical
   floor is gated (checks A, F, P, Q, R, S, T, U and `make check-docs`); the rest
   is what review, and `make doc-review`, hold you to.
+- **Make every writer safe to run twice.** A module that writes into the
+  tree says so in its header and says what a second run does: `effect: writes`,
+  `rerun:` from `fixed-point` / `append-only` / `unsafe`, and — for the strong
+  claim — a `rerun_proof:` that resolves (check_V). Reach the fixed point by
+  deriving rather than accumulating: whole files not appends, sorted iteration,
+  canonical JSON, no wall-clock in the output. `docs/guides/idempotency.md` is
+  canonical; the proof is a rung on its ladder — a `--check` target, a double
+  build, or a case in `tests/integration/test_idempotence.py`.
 - **Respect the `__init__.py` boundary.** Import a package's public
   symbols from the package, never from its private (`_*`) submodules.
   When you add a public symbol, add it to `__all__` and re-export it.

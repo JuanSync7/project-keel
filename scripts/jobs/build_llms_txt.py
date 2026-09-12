@@ -4,6 +4,9 @@ title: Build llms.txt job
 kind: script
 layer: n/a
 summary: Deterministic: write wiki/llms.txt + wiki/llms-full.txt (the agent front door) from the corpus.
+effect: writes
+rerun: fixed-point
+rerun_proof: test:tests/integration/test_idempotence.py
 """
 
 from __future__ import annotations

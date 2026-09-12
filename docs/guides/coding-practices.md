@@ -8,7 +8,7 @@ tags: [practices, gate, advisory, ruff, mypy, types, llm, cuda, langgraph, guide
 summary: The catalogue of good-Python practices Keel promotes for general and LLM/CUDA/LangGraph code — each sorted onto the gate/advisory/doc line, sourced from config/practices.json.
 id: docs-guides-coding-practices
 created: 2026-07-06
-updated: 2026-09-02
+updated: 2026-09-12
 visibility: internal
 canonical: true
 ---
@@ -119,6 +119,7 @@ would be exactly the fit-to-specimen smell §18 warns against:
 | Don't leak a third-party exception across a public boundary | `check_J` | raises a foreign-imported exception type; builtins/stdlib/owned pass |
 | A declared config/settings class is frozen | `check_K` | keyed on the `# practice: frozen-config` marker; resolves aliased frozen dataclass / `NamedTuple` / attrs-frozen; **err** |
 | Tensor params carry a shape, not a bare `Tensor` | `check_L` | **domain** (cuda profile), over `tokens.tensor_base_types`; `warn()`, never `err()` — it over/under-flags |
+| A module that writes declares what a second run does | `check_V` | `effect: writes` plus a `rerun:` from the closed set; a `fixed-point` claim names a `rerun_proof:` in `check_T`'s grammar. Keyed on the resolved BASE of each call (`os.replace`, never `str.replace`), so it under-flags rather than over-flags — a write behind `subprocess` is a stated WARN, never a pass. The behavioural half is `tests/integration/test_idempotence.py`, which re-runs what claims a fixed point; the judgment half is [idempotency](idempotency.md) |
 
 `check_K` is **inverted** relative to `check_J`: `check_J` errs only when it
 *proves* a leak, so a recognizer gap is a safe miss; `check_K` errs when a
@@ -159,6 +160,9 @@ catalogued the same way; their judgment half is `doc-style.md` and their gates
 are checks P–T plus `scripts/review_docs.py`. Every entry, code or docs, names
 its mechanism twice: `mechanism` as prose and `enforced_by` in the closed
 grammar `check_T` resolves.
+
+On the code side the same tier holds `idempotent-by-construction`: derive rather than accumulate, write whole files, sort what reaches the output, serialize canonically, keep the clock out, replace atomically. Only the
+DECLARATION of the result is mechanically checkable (`check_V`); getting there is judgment, and [idempotency](idempotency.md) §3 is where it is written down.
 
 Shape/dtype/device-aware hints (`jaxtyping` or a `TypeAlias` + inline `# (B, T, H)`
 comment); `Protocol` for structurally typing third-party shapes you don't own;

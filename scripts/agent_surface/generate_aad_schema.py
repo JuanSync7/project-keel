@@ -3,6 +3,9 @@ title: Generate the AAD JSON Schema
 kind: script
 layer: backend
 summary: Emit config/agent_surface/aad-v1.0.schema.json from the AadDescriptor model (one source of truth).
+effect: writes
+rerun: fixed-point
+rerun_proof: make:check-aad
 """
 
 # NB: no `from __future__ import annotations` here on purpose — the pre-commit

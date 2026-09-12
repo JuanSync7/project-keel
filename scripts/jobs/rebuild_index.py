@@ -4,6 +4,9 @@ title: Rebuild index job
 kind: script
 layer: n/a
 summary: Deterministic scheduled job — regenerates a doc index. No LLM.
+effect: writes
+rerun: fixed-point
+rerun_proof: test:tests/integration/test_idempotence.py
 """
 
 from __future__ import annotations

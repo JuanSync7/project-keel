@@ -8,7 +8,7 @@ tags: [checks, ci, linter, determinism, pre-commit, hooks, guide]
 summary: Catalogue of every deterministic check that keeps a project-template repo honest — purpose, when to run, and how to wire as a hook.
 id: docs-guides-deterministic-checks
 created: 2026-06-19
-updated: 2026-09-09
+updated: 2026-09-12
 visibility: internal
 canonical: true
 ---
@@ -62,7 +62,7 @@ everything and therefore expect the project interpreter.
 
 | Check | Script | Gate? | Interpreter | What it guarantees |
 |-------|--------|:-----:|-------------|--------------------|
-| Structure & frontmatter | `scripts/check_structure.py` | error | 3.6-safe | Labels, taxonomy, package boundaries, tool/agent governance, project facts, agent-rules symlinks, owned-exception & frozen-config boundaries, naked-tensor domain warn, lint/type ruleset parity, template twin parity, Makefile help parity, cross-reference resolution, check-catalogue parity, rosters, practice mechanisms, policy reachability (checks A–U) |
+| Structure & frontmatter | `scripts/check_structure.py` | error | 3.6-safe | Labels, taxonomy, package boundaries, tool/agent governance, project facts, agent-rules symlinks, owned-exception & frozen-config boundaries, naked-tensor domain warn, lint/type ruleset parity, template twin parity, Makefile help parity, cross-reference resolution, check-catalogue parity, rosters, practice mechanisms, policy reachability, writer rerun declarations (checks A–V) |
 | Interpreter floor | `scripts/check_python_version.py` | error | any | `$(PY)` satisfies `pyproject.toml`'s `requires-python`, said plainly before a newer-syntax check fails with a traceback — runs before every check that needs the project interpreter (`check-corpus`, `test`) |
 | Corpus integrity | `scripts/jobs/check_corpus.py` | error | ≥3.7 | the fresh build is a valid, acyclic, reproducible graph whose edge kinds are from the closed set (`keyword`, `link`, `citation`, `mention`, `semantic`) **and** the local `wiki/corpus.json` (what agents query) is current when present — absent is a loud pass, stale is an error naming `make site-data` (ADR-0008) |
 | OpenAPI drift | `api/rest_fastapi/export_openapi.py --check` | error | FastAPI | Committed `openapi.json` matches the live routes |
@@ -80,7 +80,7 @@ print but never fail the build.
 
 ### 1. Structure & frontmatter — `scripts/check_structure.py`
 
-**Purpose.** The core enforcer of `CONVENTIONS.md`. Checks A–U:
+**Purpose.** The core enforcer of `CONVENTIONS.md`. Checks A–V:
 
 - **A. Frontmatter** — every `README.md` / `AGENT.md` / `CLAUDE.md`, `docs/**`,
   `test-docs/**` markdown, and `agents/**/*.tool.md` has the required keys with
@@ -262,6 +262,23 @@ print but never fail the build.
   The live instance this closed: `docs/guides/doc-style.md` shipped as the
   canonical statement of how documentation is written, was cited by four
   practices, and was named by nothing an agent reads by default.
+- **V. Writers declare their second run** — a module that writes to the
+  filesystem says so in its header (`effect: writes`, the CONVENTIONS §10
+  `tool_effect` vocabulary, reused rather than re-invented) and says what
+  re-running it does (`rerun:` from `fixed-point` / `append-only` / `unsafe`); a
+  `fixed-point` claim names a `rerun_proof:` in the same closed grammar
+  `check_T` holds `enforced_by` to. Every doer here already reached a fixed
+  point when it was measured — generation, the corpus, both schemas, the static
+  snapshot — and nothing held it there: the property was a habit, and a habit is
+  exactly what a generated project does not inherit. The detector resolves the
+  base of every call, so `text.replace(...)` is not `os.replace(...)`; measured
+  over this repo it found 10 writers and no false positives, which is what makes
+  this a gate rather than an advisory. It under-reports by design — a write
+  behind `subprocess` is invisible to an AST — so a declared write it cannot see
+  is a WARN reading *unverified*, never a silent pass and never an error, since
+  the honest declaration must not be the one that fails the build. `check_V`
+  proves the claim was made; `tests/integration/test_idempotence.py` re-runs the
+  doers that claim it. See [idempotency](idempotency.md).
 
 **When to run.** Every commit (pre-commit) and in CI; any time you add a
 directory, package, doc, tool, or agent.

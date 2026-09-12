@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 title: check_structure — the deterministic conventions gate
-summary: Stdlib-only, 3.6-safe enforcement of CONVENTIONS.md — labeling, taxonomy, package boundaries, tool/agent governance, manifest and ruleset parity, twin parity, the machine-readable module contract, Makefile help parity, cross-reference resolution, check-catalogue parity, rosters, practice mechanisms, and policy reachability (checks A-U). Exit 1 on any error; warnings never fail the build.
+summary: Stdlib-only, 3.6-safe enforcement of CONVENTIONS.md — labeling, taxonomy, package boundaries, tool/agent governance, manifest and ruleset parity, twin parity, the machine-readable module contract, Makefile help parity, cross-reference resolution, check-catalogue parity, rosters, practice mechanisms, policy reachability, and writer rerun declarations (checks A-V). Exit 1 on any error; warnings never fail the build.
 
 check_structure.py - enforce the project conventions (see CONVENTIONS.md).
 
@@ -75,6 +75,13 @@ Checks:
   U. Policy documents are reachable (ERR): a practice enforced BY a document
      must sit within one hop of the root AGENT.md -- named there, or named in
      a document named there. A rule nobody reads is unenforceable in principle
+  V. Writers declare their second run (ERR): a module that writes to the
+     filesystem says `effect: writes` in its header and says what re-running
+     it does (`rerun:` from a closed set); a `rerun: fixed-point` claim names
+     a `rerun_proof:` in check_T's grammar. The detector resolves the base of
+     each call (`os.replace`, never `str.replace`), so it under-reports rather
+     than over-reports: a write behind subprocess is invisible to it, and a
+     declared write it cannot see is a stated WARN ('unverified'), never a pass
 
 Exit 0 = clean, 1 = errors. Warnings never fail the build. Stdlib only; 3.6+.
 """
@@ -188,6 +195,13 @@ CODE_ROOTS = [
     "scripts",
     "runtimes",
 ]
+
+# check_V's scope: the code that runs AS the product. CODE_ROOTS minus `tests`,
+# because a test writes a scratch tree by design -- holding every `tmp_path`
+# fixture to a writer's declaration would make the rule noise, and a rule that is
+# noise is a rule authors learn to skip. A test that writes into the REPO is a
+# different defect, and not this one's to catch.
+WRITER_ROOTS = [r for r in CODE_ROOTS if r != "tests"]
 
 errors = []
 warnings = []
@@ -2202,6 +2216,9 @@ def _module_meta(doc):
             "public_api",
             "owner",
             "visibility",
+            "effect",
+            "rerun",
+            "rerun_proof",
         ):
             k, _, v = s.partition(":")
             meta[k.strip()] = v.strip()
@@ -3228,6 +3245,44 @@ _MECHANISM_RE = re.compile(r"^(check|script|test|make|doc|ruff|mypy):(.+)$")
 _MECHANISM_FORMS = "check:<LETTER> | script:<path> | test:<path> | make:<target> | doc:<path>[ §N] | ruff:<CODE> | mypy:<flag>"
 
 
+def _mechanism_reason(ref, check_letters, tree, make_targets, sections_of):
+    """Why `ref` does not name a real mechanism, as the clause that follows the
+    claimant -- or None when it resolves. Shared with check_V so that "name the
+    thing that proves this" has ONE grammar wherever the claim is made: a
+    practice's `enforced_by`, a writer's `rerun_proof:`. Split out of
+    _mechanism_findings rather than duplicated, because two graders of the same
+    grammar drift and the drift is invisible until one of them is wrong."""
+    m = _MECHANISM_RE.match(str(ref))
+    if not m:
+        return "names '%s', which is not in the mechanism grammar (%s)" % (
+            ref,
+            _MECHANISM_FORMS,
+        )
+    form, value = m.group(1), m.group(2).strip()
+    if form == "check":
+        if value not in check_letters:
+            return "claims check_%s, which check_structure.py does not define" % value
+    elif form in ("script", "test"):
+        if value not in tree:
+            return "claims %s '%s', which does not exist" % (form, value)
+    elif form == "make":
+        if value not in make_targets:
+            return "claims `make %s`, and the Makefile has no such target" % value
+    elif form == "doc":
+        path, _, section = value.partition(" §")
+        if path not in tree:
+            return "claims doc '%s', which does not exist" % path
+        if section:
+            present = sections_of(path)
+            if present is None or int(section) not in present:
+                return "claims %s §%s, and that document has no numbered section %s" % (
+                    path,
+                    section,
+                    section,
+                )
+    return None
+
+
 def _mechanism_findings(practices, check_letters, tree, make_targets, sections_of):
     """practices: the registry dict; check_letters: the letters check_structure
     defines; tree: every file path; make_targets: the Makefile's rule names;
@@ -3248,47 +3303,11 @@ def _mechanism_findings(practices, check_letters, tree, make_targets, sections_o
             )
             continue
         for ref in refs:
-            m = _MECHANISM_RE.match(str(ref))
-            if not m:
-                errs.append(
-                    "config/practices.json: practice '%s' names '%s', which is not in "
-                    "the mechanism grammar (%s)" % (pid, ref, _MECHANISM_FORMS)
-                )
-                continue
-            form, value = m.group(1), m.group(2).strip()
-            if form == "check":
-                if value not in check_letters:
-                    errs.append(
-                        "config/practices.json: practice '%s' claims check_%s, which "
-                        "check_structure.py does not define" % (pid, value)
-                    )
-            elif form in ("script", "test"):
-                if value not in tree:
-                    errs.append(
-                        "config/practices.json: practice '%s' claims %s '%s', which does "
-                        "not exist" % (pid, form, value)
-                    )
-            elif form == "make":
-                if value not in make_targets:
-                    errs.append(
-                        "config/practices.json: practice '%s' claims `make %s`, and the "
-                        "Makefile has no such target" % (pid, value)
-                    )
-            elif form == "doc":
-                path, _, section = value.partition(" §")
-                if path not in tree:
-                    errs.append(
-                        "config/practices.json: practice '%s' claims doc '%s', which does "
-                        "not exist" % (pid, path)
-                    )
-                elif section:
-                    present = sections_of(path)
-                    if present is None or int(section) not in present:
-                        errs.append(
-                            "config/practices.json: practice '%s' claims %s §%s, and that "
-                            "document has no numbered section %s"
-                            % (pid, path, section, section)
-                        )
+            reason = _mechanism_reason(
+                ref, check_letters, tree, make_targets, sections_of
+            )
+            if reason:
+                errs.append("config/practices.json: practice '%s' %s" % (pid, reason))
     return errs
 
 
@@ -3437,6 +3456,313 @@ def check_U():
         err(m)
 
 
+# --- check_V: a writer says what a second run does -----------------------------
+#
+# Every doer in this repository reaches a fixed point today -- generation, the
+# corpus, the schemas, the static snapshot were each measured running twice and
+# landing byte-identical. Nothing held them there. The property was a habit, and
+# a habit is exactly what a generated project does not inherit: the tenth writer
+# somebody adds downstream, six months from now, appends instead of rewrites, and
+# the first anyone knows is a corpus that grows every CI run.
+#
+# So the obligation is placed where the author already is -- in the module's own
+# gated header, next to `title:` and `summary:`. A module that writes says
+# `effect: writes` (the CONVENTIONS §10 tool_effect vocabulary, reused rather
+# than re-invented), says what a second run does (`rerun:`), and, if it claims
+# the strong property, names the proof in the SAME closed grammar check_T holds
+# `enforced_by` to.
+#
+# This is a gate rather than an advisory because the detection is exact, which it
+# only became once the call's BASE was resolved: a detector keyed on the method
+# name alone reads `text.replace(...)` as `os.replace(...)` and flags a third of
+# the tree, and a check that cries wolf gets waived, not obeyed. Measured on this
+# repo: 10 writers found, 0 false positives.
+#
+# What it cannot see, it says so about: a module that shells out to write is
+# invisible to an AST, so `effect: writes` with no visible write is a WARN that
+# reads 'unverified' -- never a quiet pass, and never an error either, because
+# the honest declaration must not be the one that fails the build.
+
+# The tool_effect vocabulary of CONVENTIONS §10, unchanged: one word for what a
+# unit of this repository does to the world, whether the unit is a tool spec or a
+# module. `model-call` is neither read-only nor a filesystem write; it is here so
+# the vocabularies cannot drift apart.
+_EFFECTS = ("read-only", "writes", "model-call")
+# What a SECOND run does. Three values, and the split that matters is between the
+# claim and the two admissions: `fixed-point` asserts something provable and must
+# name its proof; `append-only` and `unsafe` assert nothing, so demanding a proof
+# of them would only push an honest author toward the flattering word.
+_RERUNS = ("fixed-point", "append-only", "unsafe")
+_RERUN_NEEDING_PROOF = "fixed-point"
+# Filesystem mutation reached through a module: `os.rename`, never `str.replace`.
+_OS_WRITES = frozenset(
+    (
+        "makedirs",
+        "mkdir",
+        "remove",
+        "removedirs",
+        "rmdir",
+        "rename",
+        "renames",
+        "replace",
+        "symlink",
+        "link",
+        "unlink",
+        "truncate",
+        "chmod",
+        "mknod",
+    )
+)
+_SHUTIL_WRITES = frozenset(
+    (
+        "rmtree",
+        "copy",
+        "copy2",
+        "copyfile",
+        "copytree",
+        "copymode",
+        "move",
+        "make_archive",
+    )
+)
+# Methods that exist on pathlib.Path and mutate. Counted only on a literal
+# `Path(...)` receiver: `out.write_text(...)` could be anything, and a guess
+# there is the same false positive the qualified rule exists to avoid.
+_PATH_WRITES = frozenset(
+    (
+        "write_text",
+        "write_bytes",
+        "touch",
+        "mkdir",
+        "unlink",
+        "rmdir",
+        "rename",
+        "replace",
+        "symlink_to",
+        "hardlink_to",
+        "chmod",
+    )
+)
+_QUALIFIED_WRITES = {"os": _OS_WRITES, "shutil": _SHUTIL_WRITES}
+
+
+def _literal_str(node):
+    """The str a literal node holds, else None. Handles BOTH ast.Str (the 3.6
+    pre-commit interpreter, where this file must still run) and ast.Constant
+    (3.8+); reading only one of them is how a detector silently finds nothing on
+    the very interpreter the gate runs under."""
+    if node.__class__.__name__ == "Str":  # 3.6/3.7; removed as a name in 3.12
+        return node.s
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    return None
+
+
+def _call_base(func):
+    """Dotted receiver of an attribute call: `os.path.join` -> 'os.path'. Empty
+    when the receiver is not a plain dotted name (a call, a subscript, self)."""
+    parts = []
+    node = func.value
+    while isinstance(node, ast.Attribute):
+        parts.append(node.attr)
+        node = node.value
+    if isinstance(node, ast.Name):
+        parts.append(node.id)
+        parts.reverse()
+        return ".".join(parts)
+    return ""
+
+
+def _write_sites(tree):
+    """Every filesystem write an AST proves, as sorted (lineno, what) pairs.
+
+    Exact by construction: a call counts only when the thing being called is
+    resolvable to a writing API -- builtin `open` in a mutating mode, a call on
+    the `os`/`shutil` module, or a method on a literal `Path(...)`. An
+    unresolvable receiver counts as nothing, which is the deliberate trade: this
+    UNDER-reports (a write behind `subprocess`, or through an aliased import) and
+    never over-reports, because a gate that fires on correct code is a gate that
+    gets turned off.
+    """
+    sites = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if isinstance(func, ast.Name) and func.id == "open":
+            mode, given = "", False
+            if len(node.args) > 1:
+                given = True
+                mode = _literal_str(node.args[1]) or ""
+                if _literal_str(node.args[1]) is None:
+                    sites.append((node.lineno, "open(<computed>)"))
+                    continue
+            for kw in node.keywords:
+                if kw.arg != "mode":
+                    continue
+                given = True
+                lit = _literal_str(kw.value)
+                if lit is None:
+                    sites.append((node.lineno, "open(<computed>)"))
+                    mode = ""
+                    break
+                mode = lit
+            else:
+                if given and any(c in mode for c in "wax+"):
+                    sites.append((node.lineno, "open(%r)" % mode))
+            continue
+        if not isinstance(func, ast.Attribute):
+            continue
+        base = _call_base(func)
+        if base in _QUALIFIED_WRITES and func.attr in _QUALIFIED_WRITES[base]:
+            sites.append((node.lineno, "%s.%s" % (base, func.attr)))
+        elif (
+            func.attr in _PATH_WRITES
+            and isinstance(func.value, ast.Call)
+            and isinstance(func.value.func, ast.Name)
+            and func.value.func.id == "Path"
+        ):
+            sites.append((node.lineno, "Path().%s" % func.attr))
+    sites.sort()
+    return sites
+
+
+def _effect_declaration_findings(
+    modules, check_letters, tree, make_targets, sections_of
+):
+    """modules: {relpath: source}; the rest as _mechanism_reason takes them.
+    -> (errors, warnings). Pure; the walk is check_V's.
+
+    Unparseable sources and modules with no docstring are skipped -- check_D and
+    check_O respectively already own those, and a second report is noise.
+    """
+    errs, warns_ = [], []
+    for relpath in sorted(modules):
+        try:
+            parsed = ast.parse(modules[relpath], filename=relpath)
+        except UNPARSEABLE:
+            continue
+        doc = ast.get_docstring(parsed)
+        if not doc:
+            continue
+        meta = _module_meta(doc)
+        effect = meta.get("effect", "")
+        rerun = meta.get("rerun", "")
+        proof = meta.get("rerun_proof", "")
+        sites = _write_sites(parsed)
+        if effect and effect not in _EFFECTS:
+            errs.append(
+                "%s: `effect: %s` is not one of %s -- the CONVENTIONS §10 "
+                "tool_effect vocabulary, one word for what a unit does to the world"
+                % (relpath, effect, "/".join(_EFFECTS))
+            )
+            continue
+        if effect != "writes":
+            if sites:
+                lineno, what = sites[0]
+                errs.append(
+                    "%s:%d: writes to the filesystem (%s) but its header %s -- add "
+                    "`effect: writes` and a `rerun:` saying what a second run does, "
+                    "so nobody has to read the body to find out "
+                    "(docs/guides/idempotency.md)"
+                    % (
+                        relpath,
+                        lineno,
+                        what,
+                        "says `effect: %s`" % effect if effect else "does not say so",
+                    )
+                )
+            elif rerun or proof:
+                errs.append(
+                    "%s: declares `rerun:`/`rerun_proof:` without `effect: writes` "
+                    "-- a statement about a second run of something that never "
+                    "claims to write the first time" % relpath
+                )
+            continue
+        if not sites:
+            warns_.append(
+                "%s: declares `effect: writes`, and no write is visible in its "
+                "source -- unverified, not disproven (a write behind subprocess "
+                "reads this way; so does a header left behind by a removed write)"
+                % relpath
+            )
+        if not rerun:
+            errs.append(
+                "%s: declares `effect: writes` with no `rerun:` -- say what a "
+                "second run does (%s); an unstated one is the assumption every "
+                "caller makes and nobody checked (docs/guides/idempotency.md)"
+                % (relpath, "/".join(_RERUNS))
+            )
+            continue
+        if rerun not in _RERUNS:
+            errs.append(
+                "%s: `rerun: %s` is not one of %s" % (relpath, rerun, "/".join(_RERUNS))
+            )
+            continue
+        if rerun != _RERUN_NEEDING_PROOF:
+            continue
+        if not proof:
+            errs.append(
+                "%s: claims `rerun: %s` and names no `rerun_proof:` -- the strong "
+                "claim is the one that needs evidence (%s)"
+                % (relpath, _RERUN_NEEDING_PROOF, _MECHANISM_FORMS)
+            )
+            continue
+        reason = _mechanism_reason(
+            proof, check_letters, tree, make_targets, sections_of
+        )
+        if reason:
+            errs.append("%s: its `rerun_proof:` %s" % (relpath, reason))
+    return errs, warns_
+
+
+def check_V():
+    """ERROR when a module that writes to the filesystem does not declare it
+    (`effect: writes`), does not say what a second run does (`rerun:`), or claims
+    `rerun: fixed-point` without naming a proof that resolves. WARN when a module
+    declares a write this check cannot see. Silent over `tests/`."""
+    modules = {}
+    for wroot in WRITER_ROOTS:
+        base = os.path.join(ROOT, wroot)
+        if not os.path.isdir(base):
+            continue
+        for dirpath, _, filenames in walk(base):
+            for f in filenames:
+                if not f.endswith(".py"):
+                    continue
+                try:
+                    with open(os.path.join(dirpath, f), encoding="utf-8-sig") as fh:
+                        modules[rel(os.path.join(dirpath, f))] = fh.read()
+                except UNREADABLE:
+                    continue  # unreadable is reported by the checks keyed on it
+    letters = set(
+        re.findall(
+            r"^def check_([A-Z])\(",
+            _read_text(os.path.abspath(__file__), err) or "",
+            re.MULTILINE,
+        )
+    )
+    tree = set()
+    for dirpath, _, filenames in walk(ROOT):
+        reldir = rel(dirpath).replace(os.sep, "/")
+        for f in filenames:
+            tree.add(f if reldir == "." else reldir + "/" + f)
+    makefile = _optional_text("Makefile")
+    targets = set(_make_rules(makefile)) if makefile else set()
+
+    def sections_of(path):
+        text = _read_text(os.path.join(ROOT, path), err)
+        return None if text is None else _numbered_sections(text)
+
+    errs, warns_ = _effect_declaration_findings(
+        modules, letters, tree, targets, sections_of
+    )
+    for m in errs:
+        err(m)
+    for m in warns_:
+        warn(m)
+
+
 def main():
     check_A()
     check_B()
@@ -3459,6 +3785,7 @@ def main():
     check_S()
     check_T()
     check_U()
+    check_V()
     for w_ in warnings:
         print("WARN  " + w_)
     for e_ in errors:

@@ -10,6 +10,64 @@ version rather than a bare commit:
 ## [Unreleased]
 
 ### Added
+- **`check_V` — a writer declares what a second run does, and the tree is held
+  to it.** Every doer here already reached a fixed point when it was measured:
+  generating twice from the same answers gives byte-identical trees, re-running
+  the generator over an existing project writes nothing, `copier update` against
+  the recorded revision leaves the working tree clean, and the corpus, both
+  schemas and the static snapshot all land identical on a second run. Nothing
+  held any of it there. The property was a habit, and a habit is exactly what a
+  generated project does not inherit — the tenth writer somebody adds downstream
+  appends instead of rewrites, and the first anyone knows is an artifact that
+  grows every CI run. So the obligation now sits where the author already is: a
+  module that writes to the filesystem says `effect: writes` in its gated header
+  (the CONVENTIONS §10 `tool_effect` vocabulary, reused rather than re-invented),
+  says what a second run does (`rerun:` — `fixed-point`, `append-only` or
+  `unsafe`), and, for the strong claim, names a `rerun_proof:` in the same closed
+  grammar `check_T` holds `enforced_by` to. All ten of this repo's writers now
+  declare `rerun: fixed-point`; the check found them and nothing else.
+- **`tests/integration/test_idempotence.py` — the behavioural half.** `check_V`
+  can only prove the claim was made, so this re-runs the doers that make it and
+  asserts the second run changed nothing. It derives its worklist from the
+  headers themselves: a writer naming this file as its proof with no case here
+  fails the suite, and a case covering a module that stopped claiming it fails
+  too. A proof that silently covers nothing is the defect the declaration exists
+  to prevent, so the proof is not allowed to be one.
+- **Generation and update are now pinned as fixed points.**
+  `test_copier_generation.py` asserts two generations with the same answers give
+  identical trees and that re-copying over an existing project writes nothing;
+  `test_copier_update.py` asserts that updating a project already on the recorded
+  revision leaves git clean and does not advance `_commit`. Both render from a
+  CLEAN clone, which is the condition the property actually holds under and the
+  one `make new` already enforces — copier renders a dirty template by committing
+  it afresh each run, so two such runs differ in the `_commit` they record and in
+  nothing else. Measured, not assumed.
+- **`docs/guides/idempotency.md`** — the code twin of `docs/guides/doc-style.md` §6, which
+  governs how an idempotency claim is written rather than how it is made true:
+  the three separable properties, the declaration and its two closed
+  vocabularies, the six rules for reaching a fixed point (derive rather than
+  accumulate, whole files not appends, sort what reaches the output, serialize
+  canonically, keep the clock out, replace atomically), the ladder of proofs, and
+  the honest declarations for writers that cannot reach one. Reachable from the
+  root `AGENT.md`, which `check_U` now requires. Registered as the practices
+  `writer-declares-rerun` (gate), `writer-reaches-its-fixed-point` (gate) and
+  `idempotent-by-construction` (doc).
+
+### Fixed
+- **The check-range pin matched only one of the two spellings people write.**
+  `test_gate_scope.py` required the literal word "checks" before a range, so the
+  guides roster describing what `check_structure.py` proves as a "list" ending at
+  S went stale through the whole of checks T and U — in a row every generated
+  project inherits. The pattern now catches the noun forms too, and the row is
+  correct.
+
+### Changed
+- **`hermetic_git.clone_including_worktree`** — the clone-with-working-tree
+  helper moved out of `test_copier_update.py` into the shared test module, which
+  is where the two copies of the git environment helper already went after they
+  drifted. `test_copier_generation.py` is its second caller.
+
+### Added
 - **`check_U` — policy documents are reachable, and `doc-style.md` now is.** A
   practice whose mechanism IS a document must name that document within one hop
   of the root `AGENT.md`: named there, or named in a document named there.

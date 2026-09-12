@@ -9,7 +9,7 @@ tags: [tool, enforce, structure]
 summary: Validate repo structure + frontmatter against CONVENTIONS.md; read-only.
 id: tool-structure-check
 created: 2026-06-17
-updated: 2026-09-09
+updated: 2026-09-12
 visibility: internal
 canonical: true
 tool_command: python3 scripts/check_structure.py
@@ -22,7 +22,7 @@ tool_effect: read-only
 `python3 scripts/check_structure.py`
 
 ## Purpose
-Enforces CONVENTIONS.md — checks A–U: frontmatter validity and unique corpus
+Enforces CONVENTIONS.md — checks A–V: frontmatter validity and unique corpus
 ids, documented dirs, the package and private-import boundaries, authored
 coverage and the module header contract, tool-spec governance and the
 tool↔agent binding, project facts, agent-rules symlinks, the gate-tier practice

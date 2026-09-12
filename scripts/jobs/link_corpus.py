@@ -4,6 +4,9 @@ title: Link corpus job
 kind: script
 layer: n/a
 summary: Deterministic: add keyword/entity link edges to wiki/corpus.json in place.
+effect: writes
+rerun: fixed-point
+rerun_proof: make:check-corpus
 """
 
 from __future__ import annotations

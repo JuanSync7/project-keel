@@ -6,6 +6,7 @@ summary: One canonical hermetic git config for every test that shells out to git
 """
 
 import os
+import subprocess
 
 # Every knob below broke a real run, or would have:
 #   user.*             — `git commit` refuses without an identity
@@ -52,3 +53,61 @@ def git_env(work_dir):
     env = dict(os.environ)
     env.update(git_env_vars(work_dir))
     return env
+
+
+def clone_including_worktree(src, dest, work):
+    """Clone the repo at *src* into *dest* INCLUDING its uncommitted working tree.
+
+    `git clone` carries only HEAD, so an edit you have not committed yet is
+    invisible to the template a generation test actually exercises. That is not
+    hypothetical: a whole `_migrations` block sat in the working tree while the
+    update suite ran against a clone that had none, so the migrations "silently
+    did nothing" — they did not exist. The symptom (a feature that no-ops) looks
+    nothing like the cause (the harness tests a different tree), which is what
+    made it expensive.
+
+    So replay the working-tree diff as a real commit in the clone: what you are
+    editing is what gets tested. On a clean tree — CI, and any run after you
+    commit — the patch is empty and this is exactly a plain clone.
+
+    `git diff HEAD` covers modifications, deletions and files already `git add`ed;
+    a brand-new file that has never been staged is still invisible, so `git add`
+    it before expecting a test to see it.
+
+    The clone is also a CLEAN checkout, which is the condition generation
+    determinism is stated under: copier renders a dirty template by committing it
+    afresh each run, and two such commits differ in their sha (see
+    docs/guides/idempotency.md §6). `make new` refuses a dirty template for the
+    same reason.
+    """
+
+    def _git(*argv, **kwargs):
+        cwd = kwargs.pop("cwd")
+        r = subprocess.run(
+            ("git",) + argv, cwd=str(cwd), capture_output=True, text=True
+        )
+        assert r.returncode == 0, "git %s failed:\n%s%s" % (
+            " ".join(argv),
+            r.stdout,
+            r.stderr,
+        )
+        return r.stdout
+
+    _git("clone", "--quiet", "--no-hardlinks", str(src), str(dest), cwd=work)
+    patch = subprocess.run(
+        ("git", "diff", "HEAD", "--binary"), cwd=str(src), capture_output=True
+    )
+    assert patch.returncode == 0, patch.stderr.decode("utf-8", "replace")
+    if patch.stdout.strip():
+        applied = subprocess.run(
+            ("git", "apply", "--index", "-"),
+            cwd=str(dest),
+            input=patch.stdout,
+            capture_output=True,
+        )
+        assert applied.returncode == 0, (
+            "could not replay the working tree onto its clone:\n"
+            + applied.stderr.decode("utf-8", "replace")
+        )
+        _git("commit", "--quiet", "-m", "uncommitted working tree under test", cwd=dest)
+    return dest

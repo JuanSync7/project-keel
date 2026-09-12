@@ -1198,3 +1198,101 @@ def test_no_retirement_migration_deletes_something_every_project_needs():
         "these paths are needed whatever the answers, but a _migrations command "
         "deletes them from a real project's working tree: %s" % doomed
     )
+
+
+# --- generation reaches a fixed point (docs/guides/idempotency.md §6) ------------
+
+
+def _tree_bytes(root):
+    """Every path under *root*, relative -> bytes (or the symlink's target).
+
+    Symlinks are read as links, never followed: keel ships CLAUDE.md -> AGENT.md
+    symlinks (`_preserve_symlinks`), and comparing their TARGETS would call two
+    trees identical even if one had turned a link into a regular file.
+    """
+    out = {}
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+        dirnames.sort()
+        for name in sorted(dirnames + filenames):
+            full = Path(dirpath) / name
+            rel = full.relative_to(root).as_posix()
+            if full.is_symlink():
+                out[rel] = b"-> " + os.readlink(full).encode()
+            elif full.is_file():
+                out[rel] = full.read_bytes()
+    return out
+
+
+def _assert_same_tree(a, b, what):
+    left, right = _tree_bytes(a), _tree_bytes(b)
+    assert set(left) == set(right), "%s: differing paths %s" % (
+        what,
+        sorted(set(left) ^ set(right)),
+    )
+    differing = sorted(k for k in left if left[k] != right[k])
+    assert not differing, "%s: differing content in %s" % (what, differing)
+
+
+@pytest.fixture(scope="module")
+def clean_template(tmp_path_factory):
+    """Keel as a CLEAN git checkout, which is the condition generation
+    determinism is stated under and the one `make new` already enforces
+    (`test_make_new_refuses_a_dirty_template`).
+
+    Measured, and the reason this is not just `_ROOT`: copier renders a DIRTY
+    template by committing the working tree afresh on each run, so two runs
+    record two different `_commit` shas in `.copier-answers.yml` and nothing else
+    differs at all. Generating from a clean ref removes the one varying input
+    rather than excusing it."""
+    work = tmp_path_factory.mktemp("clean_template")
+    mp = pytest.MonkeyPatch()
+    for var, value in hermetic_git.git_env_vars(work).items():
+        mp.setenv(var, value)
+    try:
+        yield hermetic_git.clone_including_worktree(_ROOT, work / "template", work)
+    finally:
+        mp.undo()
+
+
+def test_generating_twice_produces_identical_trees(clean_template, tmp_path):
+    """The first guarantee a template owes a project: the same answers give the
+    same project, on any day and on any machine. Nothing may reach the output
+    that varies between two runs — a timestamp, a uuid, an unsorted iteration.
+    """
+    first, second = tmp_path / "a", tmp_path / "b"
+    for dest in (first, second):
+        copier.run_copy(
+            str(clean_template),
+            str(dest),
+            data={"project_name": "demo_proj", "frontend_stack": "none"},
+            defaults=True,
+            vcs_ref="HEAD",
+            unsafe=False,
+            quiet=True,
+        )
+    _assert_same_tree(first, second, "two generations with the same answers")
+
+
+def test_regenerating_over_an_existing_project_writes_nothing(clean_template, tmp_path):
+    """`copier copy` run again over a project it already produced is a no-op, so
+    re-running the generator is never a way to lose work. Asserted on the bytes
+    rather than on copier's own `identical` report, which is a claim about what it
+    decided to do and not about what is on disk."""
+    dest = tmp_path / "proj"
+
+    def copy(**extra):
+        copier.run_copy(
+            str(clean_template),
+            str(dest),
+            data={"project_name": "demo_proj", "frontend_stack": "none"},
+            defaults=True,
+            vcs_ref="HEAD",
+            unsafe=False,
+            quiet=True,
+            **extra,
+        )
+
+    copy()
+    before = _tree_bytes(dest)
+    copy(overwrite=True)
+    assert _tree_bytes(dest) == before, "a second copy over the same project wrote"

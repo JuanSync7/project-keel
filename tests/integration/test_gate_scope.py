@@ -598,7 +598,15 @@ def test_pre_commit_runs_the_same_ruff_as_the_gate():
 # CHANGELOG.md and docs/design/ are excluded on purpose: a changelog entry and a
 # design narrative record what was true at a point in time, and rewriting history
 # to match today is the opposite of the property this asserts.
-_CLAIMED_RANGE = re.compile(r"checks A[\u2013-]([A-Z])\b")
+# Two spellings, because only one of them was matched and the other went stale in
+# silence: the guides roster described what check_structure.py proves as a "list"
+# ending at S — with no leading "checks", so the narrower pattern never saw it —
+# for the whole of checks T and U, in a row every generated project inherits. A
+# range claim is a range claim whichever noun follows it. (Stated in words, not in
+# the matched form: writing it out would make this file its own first finding.)
+_CLAIMED_RANGE = re.compile(
+    r"checks\s+A[\u2013-]([A-Z])\b|\bA[\u2013-]([A-Z])\s+(?:list|set|range)\b"
+)
 _HISTORICAL = ("CHANGELOG.md", "docs/design/")
 
 
@@ -629,9 +637,10 @@ def test_every_shipped_description_of_the_gate_names_the_real_check_range():
                 continue
             wrong.extend(
                 "%s claims checks A-%s" % (rel, claimed)
-                for claimed in _CLAIMED_RANGE.findall(
+                for match in _CLAIMED_RANGE.findall(
                     path.read_text(encoding="utf-8", errors="replace")
                 )
+                for claimed in [next(g for g in match if g)]
                 if claimed != highest
             )
     assert not wrong, (

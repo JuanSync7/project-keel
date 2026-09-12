@@ -3,6 +3,9 @@ title: Export OpenAPI schema
 kind: script
 layer: backend
 summary: Emit api/rest_fastapi/openapi.json from the live FastAPI app (one source of truth).
+effect: writes
+rerun: fixed-point
+rerun_proof: make:check-openapi
 """
 
 # No `from __future__ import annotations`: the --check hook may run under an old

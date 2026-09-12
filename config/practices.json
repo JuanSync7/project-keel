@@ -593,6 +593,46 @@
       "enforced_by": [
         "check:U"
       ]
+    },
+    {
+      "id": "writer-declares-rerun",
+      "row": 34,
+      "scope": "universal",
+      "tier": "gate",
+      "status": "on",
+      "title": "A module that writes to the filesystem declares what a second run does",
+      "mechanism": "check_structure.py check_V -- `effect: writes` + `rerun:` from the closed set, and a `rerun: fixed-point` claim names a `rerun_proof:` that resolves in the same grammar check_T holds `enforced_by` to. The detector resolves the base of each call, so it under-reports (a write behind subprocess is invisible) and never over-reports: measured 10 writers, 0 false positives",
+      "subject": "code",
+      "enforced_by": [
+        "check:V"
+      ]
+    },
+    {
+      "id": "writer-reaches-its-fixed-point",
+      "row": 35,
+      "scope": "universal",
+      "tier": "gate",
+      "status": "on",
+      "title": "A declared fixed point is re-run and compared, not taken on the header's word",
+      "mechanism": "tests/integration/test_idempotence.py derives its worklist from the headers themselves, so a writer naming it as its proof with no case there fails; `make check-corpus` double-builds the corpus, and the `--check` targets re-render the committed contracts",
+      "subject": "code",
+      "enforced_by": [
+        "test:tests/integration/test_idempotence.py",
+        "make:check-corpus"
+      ]
+    },
+    {
+      "id": "idempotent-by-construction",
+      "row": 36,
+      "scope": "universal",
+      "tier": "doc",
+      "status": "on",
+      "title": "Derive rather than accumulate, and keep the clock out of the output",
+      "mechanism": "docs/guides/idempotency.md §3 -- judgment: the six rules that make a writer reach a fixed point in the first place, of which only the declaration is mechanically checkable",
+      "subject": "code",
+      "enforced_by": [
+        "doc:docs/guides/idempotency.md §3"
+      ]
     }
   ],
   "tokens": {

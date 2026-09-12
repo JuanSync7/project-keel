@@ -3,6 +3,9 @@ title: Index enforcer brain
 layer: backend
 public_api: no
 summary: Plan: gate -> build -> link -> report -> (durable fill loop) -> commit; run on a neutral Runtime.
+effect: writes
+rerun: fixed-point
+rerun_proof: test:tests/integration/test_index_enforcer_durability.py
 """
 
 from __future__ import annotations

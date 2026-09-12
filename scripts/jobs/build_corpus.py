@@ -4,6 +4,9 @@ title: Build corpus job
 kind: script
 layer: n/a
 summary: Deterministic: walk the repo into wiki/corpus.json (the one-brain index).
+effect: writes
+rerun: fixed-point
+rerun_proof: make:check-corpus
 """
 
 from __future__ import annotations

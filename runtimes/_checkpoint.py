@@ -3,6 +3,9 @@ title: Checkpointer implementations
 layer: backend
 public_api: no
 summary: In-memory and JSON-file Checkpointer backends for durable/ resumable runs.
+effect: writes
+rerun: fixed-point
+rerun_proof: test:tests/integration/test_runtime_durability.py
 """
 
 from __future__ import annotations

@@ -4,6 +4,9 @@ title: Export showcase static job
 kind: script
 layer: n/a
 summary: Deterministic: snapshot the showcase API + agent front door to static files so the frontend runs with no backend (static hosting, e.g. GitHub Pages).
+effect: writes
+rerun: fixed-point
+rerun_proof: test:tests/integration/test_idempotence.py
 """
 
 from __future__ import annotations
