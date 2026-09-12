@@ -47,7 +47,8 @@ of truth for labeling and the directory taxonomy. Each directory's own
   `rerun:` from `fixed-point` / `append-only` / `unsafe`, and — for the strong
   claim — a `rerun_proof:` that resolves (check_V). Reach the fixed point by
   deriving rather than accumulating: whole files not appends, sorted iteration,
-  canonical JSON, no wall-clock in the output. `docs/guides/idempotency.md` is
+  canonical JSON, no wall-clock in the output, and an output path git either
+  tracks or ignores. `docs/guides/idempotency.md` is
   canonical; the proof is a rung on its ladder — a `--check` target, a double
   build, or a case in `tests/integration/test_idempotence.py`.
 - **Respect the `__init__.py` boundary.** Import a package's public

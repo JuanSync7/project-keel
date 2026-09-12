@@ -91,9 +91,17 @@ invisible to it. A module that declares `effect: writes` with no write the check
 can see gets a WARN that reads *unverified*, never a silent pass and never an
 error, because the honest declaration must not be the one that fails the build.
 
+It also sees only **Python modules**. A Makefile recipe that writes by running
+another program is outside it: `make fmt` rewrites source with a formatter, and
+`make fe-install` writes a lockfile. Those are proven the same way but by their
+own targets — `fmt` by `fmt-check` riding `make verify`, which is the strongest
+proof available anywhere here, because a green gate means re-running the
+formatter changes zero bytes. When you add a recipe that writes, say so in its
+`## ` annotation and give it a read-only check that rides the gate.
+
 ## 3. Building a writer that reaches a fixed point
 
-Six rules, in the order they usually go wrong:
+Seven rules, in the order they usually go wrong:
 
 1. **Derive, never accumulate.** Compute the whole output from the inputs and
    write it. `build_corpus` walks the tree and emits the corpus; it never opens
@@ -117,6 +125,12 @@ Six rules, in the order they usually go wrong:
    file and `os.replace` it, as `runtimes/_checkpoint.py` does; `os.replace` is
    atomic on POSIX, so a reader sees the old bytes or the new ones and never
    half of each.
+7. **Put the output somewhere git has an opinion about** — tracked, or ignored.
+   A default output path that is neither leaves a clean checkout dirty the first
+   time anyone runs the doer, and a dirty tree is not cosmetic here: `make new`
+   refuses to generate from one. The MCP action server's `rebuild_index` wrote
+   `wiki/INDEX.md`, a generated view sitting beside three that were already
+   ignored, and was not.
 
 ## 4. The ladder of proofs
 
@@ -170,6 +184,21 @@ named after the property:
   `rm -f` commands, which are no-ops on an absent path by construction — a
   migration that was not is the thing to catch in review.
 
+**Two writers on one artifact compose into something neither declares.**
+`wiki/corpus.json` has two: `make site-data` rebuilds it from the tree, and
+`agents/index_enforcer` enriches it with model-written summaries. Each is a
+fixed point of its own inputs. The composition is not, and the order that loses
+work — enrich, then rebuild — is the common one. `check_corpus` is deliberately
+blind to it (`_deterministic_projection` strips the enrichment before judging
+staleness, so a legitimate fill never reads as rot), which is the right call for
+that check and leaves the composition unowned by any rule. If you add a second
+writer to an artifact, say in both headers which one is authoritative and when.
+
+A related trap on the calling side: `scripts/run_make_target.py` validates that
+a target is a plain token, not that it is read-only. An agent told to "gate on
+X" can pass `site-data` or `fmt` and mutate the tree while believing it only
+measured it. Pass a target you have read.
+
 A project generated from this template inherits all of it without doing
 anything: `scripts/check_structure.py` ships verbatim, so `check_V` runs in its
 `make check` from the first commit; `tests/integration/test_idempotence.py`
@@ -190,3 +219,6 @@ the agent working in it is told the rule before it writes the tenth doer.
 | A write reached through `subprocess` is declared | — | judged (the detector cannot see it; `check_V` says *unverified*) |
 | `append-only` or `unsafe` is the honest value, not a dodge | — | judged |
 | A procedure lands the same state from any starting point | — | judged |
+| A Makefile recipe that writes has a read-only check riding the gate | `make fmt` ← `fmt-check` | gate, per recipe |
+| Two writers on one artifact agree which is authoritative | — | judged |
+| A doer's default output path is tracked or ignored | — | judged |

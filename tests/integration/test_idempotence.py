@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -124,20 +125,38 @@ def rendered_root(tmp_path_factory) -> Path:
     shutil.copy2(_ROOT / "config" / "project.json", root / "config" / "project.json")
     (root / "wiki").mkdir()
     corpus = root / "wiki" / "corpus.json"
-    _run("scripts/jobs/build_corpus.py", "--root", str(_ROOT), "--out", str(corpus))
-    _run("scripts/jobs/link_corpus.py", "--corpus", str(corpus))
+    _run(
+        "scripts/jobs/build_corpus.py",
+        "--root",
+        str(_ROOT),
+        "--out",
+        str(corpus),
+        env={"PYTHONHASHSEED": "0"},
+    )
+    _run(
+        "scripts/jobs/link_corpus.py",
+        "--corpus",
+        str(corpus),
+        env={"PYTHONHASHSEED": "0"},
+    )
     assert json.loads(corpus.read_text(encoding="utf-8"))["nodes"], "empty corpus"
     return root
 
 
-def _run(script: str, *args: str) -> str:
-    """Run one of this repo's scripts with the test interpreter; fail loudly."""
+def _run(script: str, *args: str, env: dict[str, str] | None = None) -> str:
+    """Run one of this repo's scripts with the test interpreter; fail loudly.
+
+    A separate PROCESS on purpose, not an import: string-hash order is fixed per
+    process, so two in-process runs share it and cannot see a set-iteration
+    dependency. `env` overlays the inherited environment (PYTHONHASHSEED below).
+    """
     proc = subprocess.run(
         [sys.executable, str(_ROOT / script), *args],
         capture_output=True,
         text=True,
         cwd=str(_ROOT),
         timeout=600,
+        env={**os.environ, **(env or {})},
     )
     assert proc.returncode == 0, "%s failed: %s%s" % (script, proc.stdout, proc.stderr)
     return proc.stdout
@@ -248,12 +267,30 @@ def test_apply_refactor_leaves_the_tree_alone_on_a_second_apply(tmp_path):
 
 def test_the_corpus_build_is_a_fixed_point(rendered_root, tmp_path):
     """Not a `rerun_proof:` target — `make check-corpus` owns build_corpus and
-    link_corpus, and it compares a fresh double build. This asserts the narrower
-    thing that check has no reason to: writing to a DIFFERENT path yields the
-    same bytes, so the output does not depend on where it lands."""
+    link_corpus. This asserts the two things that check cannot, because its two
+    builds run in ONE process against ONE path:
+
+    - the output does not depend on WHERE it lands (a different `--out`), and
+    - it does not depend on the process, specifically on string-hash order.
+      `PYTHONHASHSEED` is pinned nowhere in this repo, so set iteration order
+      genuinely differs run to run; this fixes two different seeds and requires
+      the bytes to match anyway, which a same-process double build cannot see.
+    """
     elsewhere = tmp_path / "somewhere" / "corpus.json"
-    _run("scripts/jobs/build_corpus.py", "--root", str(_ROOT), "--out", str(elsewhere))
-    _run("scripts/jobs/link_corpus.py", "--corpus", str(elsewhere))
+    _run(
+        "scripts/jobs/build_corpus.py",
+        "--root",
+        str(_ROOT),
+        "--out",
+        str(elsewhere),
+        env={"PYTHONHASHSEED": "12345"},
+    )
+    _run(
+        "scripts/jobs/link_corpus.py",
+        "--corpus",
+        str(elsewhere),
+        env={"PYTHONHASHSEED": "12345"},
+    )
     assert (
         elsewhere.read_bytes() == (rendered_root / "wiki" / "corpus.json").read_bytes()
     )

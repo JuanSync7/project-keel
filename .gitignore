@@ -20,6 +20,10 @@ api/grpc/*_pb2_grpc.py
 wiki/corpus.json
 wiki/llms.txt
 wiki/llms-full.txt
+# The MCP action server's rebuild_index writes this by default (mcp/action_server.py);
+# it is a generated VIEW like the three above, and left untracked-and-unignored it
+# dirties the tree — which `make new` refuses to generate from.
+wiki/INDEX.md
 # generated static showcase snapshot (export_showcase_static.py → frontend reads on backendless/Pages builds)
 src/frontend/astro/public/api/
 src/frontend/astro/public/llms.txt

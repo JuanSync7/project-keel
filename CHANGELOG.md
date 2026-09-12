@@ -9,6 +9,30 @@ version rather than a bare commit:
 
 ## [Unreleased]
 
+### Fixed
+- **`wiki/INDEX.md` was neither tracked nor ignored.** The MCP action server's
+  `rebuild_index` action writes it by default — a generated view sitting beside
+  three that were already ignored — so running the action left a clean checkout
+  dirty, and `make new` refuses to generate from a dirty tree. Ignored now in
+  both `.gitignore` twins, and stated as the seventh rule in
+  `docs/guides/idempotency.md` §3: a doer's output path goes somewhere git has an
+  opinion about.
+
+### Changed
+- **The corpus fixed point is now proven across PROCESSES, not just across two
+  builds.** `make check-corpus` runs both of its builds in one process, so it
+  shares that process's string-hash order and cannot see a set-iteration
+  dependency; `PYTHONHASHSEED` is pinned nowhere in this repo, so that order
+  really does vary run to run. `tests/integration/test_idempotence.py` now builds
+  under two different seeds, in two subprocesses, to two different output paths,
+  and requires the bytes to match.
+- **`is_safe_target` says what it does not mean.** `scripts/run_make_target.py`
+  validates that a target is a plain token, never that it is read-only:
+  `site-data`, `fmt` and `doc-review-apply` are all plain tokens that write. An
+  agent gating on a target it has not read can mutate what it believes it is only
+  measuring. Stated in the docstring and in `docs/guides/idempotency.md` §6; declaring a
+  target's effect is not yet possible and is named as such rather than implied.
+
 ### Added
 - **`check_V` — a writer declares what a second run does, and the tree is held
   to it.** Every doer here already reached a fixed point when it was measured:

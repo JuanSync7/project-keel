@@ -25,7 +25,14 @@ Runner = Callable[[Sequence[str], "str | None", int], "tuple[int, str]"]
 
 
 def is_safe_target(name: str) -> bool:
-    """True when `name` is a plain make-target token (no shell metacharacters)."""
+    """True when `name` is a plain make-target token (no shell metacharacters).
+
+    SAFE means well-formed, NOT read-only. `site-data`, `fmt` and `doc-review-apply`
+    are all plain tokens and all write into the tree, so a caller that gates on a
+    target it did not read can mutate what it believes it is only measuring. The
+    effect of a make target is declared nowhere (`docs/guides/idempotency.md` §6);
+    until it is, reading the recipe is the caller's job.
+    """
     return bool(_TARGET_RE.match(name or ""))
 
 
