@@ -51,6 +51,13 @@ of truth for labeling and the directory taxonomy. Each directory's own
   tracks or ignores. `docs/guides/idempotency.md` is
   canonical; the proof is a rung on its ladder — a `--check` target, a double
   build, or a case in `tests/integration/test_idempotence.py`.
+- **Label every make target with its effect.** A `## `-annotated target
+  opens its help with `[local]`, `[tree]`, `[read]`, `[cost]` or `[write]`
+  (comma-joined in that order; `local` alone), covering what its prerequisites
+  reach; a `[write]` recipe opens with `$(WRITE_GUARD)` (check_W). Run a gate
+  through `scripts/run_make_target.py`, which runs only a target inside
+  `config/project.json` `make_targets.gate_effects` and fails one that changed
+  the tree. `docs/adr/0011-make-target-effect-labels.md` is the decision.
 - **Respect the `__init__.py` boundary.** Import a package's public
   symbols from the package, never from its private (`_*`) submodules.
   When you add a public symbol, add it to `__all__` and re-export it.
@@ -113,4 +120,7 @@ of truth for labeling and the directory taxonomy. Each directory's own
   (CONVENTIONS §18).
 - Report work complete (or advance a loop) on your own assessment instead of
   a green `make verify`.
+- Run a `[tree]` or `[write]` make target unattended, or label a target
+  narrower than what it does to get it past the gate runner — the label is the
+  claim `tests/integration/test_make_target_effects.py` measures.
 - Commit secrets to `config/` — only defaults and `*.example.*`.

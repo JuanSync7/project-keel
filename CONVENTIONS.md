@@ -249,6 +249,7 @@ pre-commit hook) fails the build if the conventions above drift:
 | Practice mechanisms (§15) | every `config/practices.json` entry's `enforced_by` names a mechanism that exists — a check letter defined in `check_structure.py`, a script, test or doc path (and numbered section) in the tree, a Makefile target; `ruff:`/`mypy:` codes are the tools' own vocabulary |
 | Policy reachability | a practice enforced BY a document names that document within one hop of the root `AGENT.md` — named there, or named in a document named there — so a rule an agent never reads cannot be declared enforced |
 | Writer rerun declaration (§7) | a module that writes to the filesystem declares `effect: writes` and what a second run does (`rerun:` — `fixed-point`, `append-only` or `unsafe`); a `fixed-point` claim names a `rerun_proof:` in the same grammar as `enforced_by` above. The detector resolves each call's base (`os.replace`, never `str.replace`), so it under-reports rather than over-reports: a declared write it cannot see is a stated WARN, never a pass. See [`docs/guides/idempotency.md`](docs/guides/idempotency.md) |
+| Make-target effect labels (§7) | every `## `-annotated Makefile target opens its help with one bracketed effect label — `local`, `tree`, `read`, `cost`, `write`, comma-separated in that order, `local` alone; a target annotated twice carries one label; a composite's label covers what its prerequisites and `$(MAKE)` calls reach; a `[write]` target (or one whose name ends in a `make_targets.write_shapes` suffix) opens its recipe with `$(WRITE_GUARD)` and no `-` prefix, and the guard (make comments stripped) tests exactly the `make_targets.unattended_vars` names, has no `-` prefix of its own, and exits 1; the `make_targets` policy in `config/project.json` is well-formed. A recursion the check cannot resolve is a stated WARN. See [`docs/adr/0011-make-target-effect-labels.md`](docs/adr/0011-make-target-effect-labels.md) |
 
 Missing `owner` is a warning, not a failure. If you change the scheme
 (KINDS / LAYERS / STATUSES / VISIBILITIES) or a check, update **both**
@@ -282,6 +283,32 @@ Rules:
   hook ecosystem is a new thin adapter, never a fork of the doer.
 - LLM doers stay thin: the `scripts/` entrypoint calls into `agents/`,
   which gets its model from `models/` — no provider names in the doer.
+
+### Make targets declare their effect
+
+A make target is a doer a person or an agent invokes by name, so its name must
+say what it touches. Every `## `-annotated target opens its help with one
+bracketed label of one or more words from the table below, comma-separated in
+the table's order, with no duplicates and `local` only alone (`doc-review-apply`
+is `[tree,cost]`), and `make help` prints it. A target annotated on two rules
+carries the same label on both, because make merges the rules into one target:
+
+| Label | Meaning | A gate may run it |
+|-------|---------|-------------------|
+| `local` | this machine only; writes nothing git would list | yes |
+| `tree` | rewrites files in the working tree | no |
+| `read` | reads a remote service | when `make_targets.gate_effects` says so |
+| `cost` | spends money | when `make_targets.gate_effects` says so |
+| `write` | changes shared remote state | never; `$(WRITE_GUARD)` refuses it under any `make_targets.unattended_vars` name |
+
+`check_W` holds the labels (§6). `scripts/run_make_target.py` is the only way an
+agent or a loop runs a target: it refuses one whose label, closed over its
+prerequisites, is outside `make_targets.gate_effects`, accepts only the
+`make_targets.gate_vars` variables with a one-word path-like value, and fails a
+green run that changed what git sees (content or index). `tests/integration/test_make_target_effects.py` runs
+every `[local]` target that way, so a `[local]` claim is measured, not trusted.
+A person runs a `[tree]` or `[write]` target with plain `make`. The decision is
+[`docs/adr/0011-make-target-effect-labels.md`](docs/adr/0011-make-target-effect-labels.md).
 
 ## 8. Configuration: where tunable values live
 
@@ -499,6 +526,17 @@ It is keyed **by layer/concern, never one global `language`**:
   does not exist (stale) or is already a §2 row (redundant), and on a declared
   directory without `README.md` and `CLAUDE.md`. Names only: the directory's own
   `README.md` `summary:` says why it exists.
+- `make_targets` — the effect-label policy (§7): `unattended_vars` (the variables
+  `$(WRITE_GUARD)` refuses under), `gate_runner_var` (the one the gate runner
+  sets), `gate_effects` (the labels a gate may run; must hold `local`, must not
+  hold `tree` or `write`), `write_shapes` (name suffixes that need the guard
+  whatever the label says), `area_dir` (the directory of `<area>.mk` files, or
+  `null`), `effect_proof_skip` (a `[local]` target the runtime sweep cannot
+  run unattended, with the reason), and `gate_vars` (the only `NAME=VALUE`
+  variables the gate runner passes to make, e.g. `PY`; never one of make's own
+  control variables such as `MAKEFILES` or `MAKEFLAGS`, `SHELL`, `WRITE_GUARD`
+  or an `unattended_vars` name). `check_W` validates the block and errors when
+  it is missing or malformed.
 
 - `template.twins` (template repos only) — keel is itself a copier template, so
   every `*.jinja` file is declared here with what it is FOR: `parity` (must
@@ -603,7 +641,9 @@ govern *how you work*; their executable analog — a loop a program runs unatten
   surface; name it by scenario, not by a source file.
 - **The gate is the judge.** "Done" means `make verify` (`check-all` + `lint` +
   `typecheck` + `test`) is green; phase transitions and completion gate on the
-  real exit code, never on a model's self-report.
+  real exit code, never on a model's self-report. A loop runs its gate through
+  `scripts/run_make_target.py`, which runs only a target labelled inside
+  `make_targets.gate_effects` and fails one that changed the tree (§7).
 
 These are conventions an agent follows, not gated by a structural check today: no
 check verifies the test mirror, that a test came first, or that it exercises the

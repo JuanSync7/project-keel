@@ -1496,3 +1496,68 @@ def test_copy_without_trust_is_refused_naming_tasks(tmp_path):
         )
     assert "tasks" in str(refusal.value)
     assert not (tmp_path / "proj").exists(), "the refused copy still wrote"
+
+
+# --- make targets declare their effect, downstream -------------------------------
+
+
+def _gate_runner(project, *args):
+    """The generated project's OWN gate runner, as an agent invokes it."""
+    return subprocess.run(
+        [sys.executable, "scripts/run_make_target.py", "--json"]
+        + ["--make-arg", "PY=" + sys.executable]
+        + list(args),
+        cwd=str(project),
+        capture_output=True,
+        text=True,
+    )
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
+@pytest.mark.parametrize("stack", ["react-vite", "astro"])
+def test_a_generated_project_gates_only_on_targets_that_leave_its_tree_alone(
+    stack, tmp_path
+):
+    """Slice 3 held downstream: the project ships keel's policy, its own gate
+    reads its labels, its runner refuses a [tree] target and proves a [local] one
+    read-only. `site-static` writes the showcase snapshot into the shipped
+    frontend's `public/`; before .gitignore covered every stack, it dirtied a
+    react-vite project's tree while labelled [local]."""
+    dest = tmp_path / "proj"
+    _generate(dest, project_name="demo_proj", frontend_stack=stack)
+    keel = json.loads((_ROOT / "config" / "project.json").read_text())
+    shipped = json.loads((dest / "config" / "project.json").read_text())
+    assert shipped["make_targets"] == keel["make_targets"]
+    r = _structure_gate(dest)
+    assert r.returncode == 0, r.stdout + r.stderr
+
+    env = _hermetic_git_env(tmp_path)
+    for argv in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "generated"]):
+        g = subprocess.run(
+            ["git"] + argv, cwd=str(dest), env=env, capture_output=True, text=True
+        )
+        assert g.returncode == 0, g.stderr
+
+    refused = _gate_runner(dest, "fmt")
+    assert refused.returncode == 2, refused.stdout + refused.stderr
+    assert "[tree]" in json.loads(refused.stdout)["refused"]
+
+    for target in ("check", "site-static"):
+        ran = _gate_runner(dest, target)
+        res = json.loads(ran.stdout)
+        assert ran.returncode == 0, (target, res)
+        assert res["changed"] == [] and res["effects"] == ["local"], (target, res)
+
+    listed = subprocess.run(
+        ["make", "-s", "help", "EFFECT=tree", "PY=" + sys.executable],
+        cwd=str(dest),
+        capture_output=True,
+        text=True,
+    )
+    assert listed.returncode == 0, listed.stderr
+    # The target column, not the whole text: a [tree] target's help may name a
+    # [local] one ("the fix check-docs names").
+    listed_targets = {
+        line.split()[0] for line in listed.stdout.splitlines() if line.startswith("  ")
+    }
+    assert "fmt" in listed_targets and "check-docs" not in listed_targets, listed.stdout

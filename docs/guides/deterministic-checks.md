@@ -62,7 +62,7 @@ everything and therefore expect the project interpreter.
 
 | Check | Script | Gate? | Interpreter | What it guarantees |
 |-------|--------|:-----:|-------------|--------------------|
-| Structure & frontmatter | `scripts/check_structure.py` | error | 3.6-safe | Labels, taxonomy, package boundaries, tool/agent governance, project facts, agent-rules symlinks, owned-exception & frozen-config boundaries, naked-tensor domain warn, lint/type ruleset parity, template twin parity, Makefile help parity, cross-reference resolution, check-catalogue parity, rosters, practice mechanisms, policy reachability, writer rerun declarations (checks A–V) |
+| Structure & frontmatter | `scripts/check_structure.py` | error | 3.6-safe | Labels, taxonomy, package boundaries, tool/agent governance, project facts, agent-rules symlinks, owned-exception & frozen-config boundaries, naked-tensor domain warn, lint/type ruleset parity, template twin parity, Makefile help parity, cross-reference resolution, check-catalogue parity, rosters, practice mechanisms, policy reachability, writer rerun declarations, make-target effect labels (checks A–W) |
 | Interpreter floor | `scripts/check_python_version.py` | error | any | `$(PY)` satisfies `pyproject.toml`'s `requires-python`, said plainly before a newer-syntax check fails with a traceback — runs before every check that needs the project interpreter (`check-corpus`, `test`) |
 | Corpus integrity | `scripts/jobs/check_corpus.py` | error | ≥3.7 | the fresh build is a valid, acyclic, reproducible graph whose edge kinds are from the closed set (`keyword`, `link`, `citation`, `mention`, `semantic`) **and** the local `wiki/corpus.json` (what agents query) is current when present — absent is a loud pass, stale is an error naming `make site-data` (ADR-0008) |
 | OpenAPI drift | `api/rest_fastapi/export_openapi.py --check` | error | FastAPI | Committed `openapi.json` matches the live routes |
@@ -80,7 +80,7 @@ print but never fail the build.
 
 ### 1. Structure & frontmatter — `scripts/check_structure.py`
 
-**Purpose.** The core enforcer of `CONVENTIONS.md`. Checks A–V:
+**Purpose.** The core enforcer of `CONVENTIONS.md`. Checks A–W:
 
 - **A. Frontmatter** — every `README.md` / `AGENT.md` / `CLAUDE.md`, `docs/**`,
   `test-docs/**` markdown, and `agents/**/*.tool.md` has the required keys with
@@ -284,6 +284,28 @@ print but never fail the build.
   the honest declaration must not be the one that fails the build. `check_V`
   proves the claim was made; `tests/integration/test_idempotence.py` re-runs the
   doers that claim it. See [idempotency](idempotency.md).
+- **W. Make targets declare their effect** — every `## `-annotated target opens
+  its help with one bracketed label from `local`, `tree`, `read`, `cost`,
+  `write` (comma-joined in that order, no duplicates, `local` alone, one
+  bracket). A composite's label must cover every word its prerequisites and
+  `$(MAKE)` calls reach, so `verify` cannot claim `[local]` over a `[tree]`
+  prerequisite. A `[write]` target, or one whose name ends in a
+  `config/project.json` `make_targets.write_shapes` suffix, opens its recipe
+  with `$(WRITE_GUARD)` and no `-` prefix (make would ignore the guard's
+  failure), and the guard's definition, read as make stores it (a `#` comment
+  cut off), must test exactly the `make_targets.unattended_vars` names, carry no
+  `-` prefix of its own, and `exit 1`. A target annotated on two rules must carry
+  one label on both, since make merges them. The `make_targets` block
+  itself is validated: `gate_effects` must hold `local` and must not hold `tree`
+  or `write`, and `gate_vars` may not name make's own control variables,
+  `WRITE_GUARD` or an unattended variable. With `area_dir` set, each `<area>.mk` is included, opens with one
+  `##@ <area>` header, and prefixes its public targets `<area>-`. A recursion it
+  cannot resolve (`$(MAKE) -C`, a variable target) is a WARN reading
+  *unverified*. Measured over keel at landing: 37 annotated targets, 32
+  `[local]`, 5 carrying `tree`. The label is a static claim; the runtime half is
+  `tests/integration/test_make_target_effects.py`, which runs every `[local]`
+  target through `scripts/run_make_target.py` and fails one that changed the
+  tree. See [`docs/adr/0011-make-target-effect-labels.md`](../adr/0011-make-target-effect-labels.md).
 
 **When to run.** Every commit (pre-commit) and in CI; any time you add a
 directory, package, doc, tool, or agent.

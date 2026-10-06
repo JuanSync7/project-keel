@@ -3,7 +3,7 @@
 title: Apply a gated refactor (refactor doer)
 kind: script
 layer: n/a
-summary: Deterministic doer — apply a proposed set of file edits ATOMICALLY, run a gate (a make target), and ROLL BACK every file if the gate fails. The refactor loop (agents/practice_refactor) proposes one bounded, named-practice edit at a time; this doer is the safety net that keeps the tree green — a chunk is accepted only if the gate stays green, else the change is reverted. Vendor-neutral, stdlib.
+summary: Deterministic doer — apply a proposed set of file edits ATOMICALLY, run a gate (a make target, through scripts/run_make_target.py, so only a target labelled read-only runs and a gate run that changes the tree is red), and ROLL BACK every file if the gate fails or is refused. The refactor loop (agents/practice_refactor) proposes one bounded, named-practice edit at a time; this doer is the safety net that keeps the tree green — a chunk is accepted only if the gate stays green, else the change is reverted. Vendor-neutral, stdlib.
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/integration/test_idempotence.py
@@ -17,6 +17,10 @@ import os
 import subprocess
 import sys
 from collections.abc import Callable, Sequence
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+import run_make_target  # noqa: E402 — the read-only gate runner; tests patch it here
 
 # gate_runner(gate, cwd, timeout) -> (ok, combined_output)
 GateRunner = Callable[[str, str, int], "tuple[bool, str]"]
@@ -79,16 +83,18 @@ def plan_edits(spec: dict[str, object], root: str) -> list[tuple[str, str, str]]
     return [(p, originals[p], working[p]) for p in order]
 
 
-def _make_gate(gate: str, cwd: str, timeout: int) -> tuple[bool, str]:
-    proc = subprocess.run(  # noqa: S603 — argv list, never a shell string
-        ["make", gate],
-        cwd=cwd,
-        timeout=timeout,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        universal_newlines=True,
-    )
-    return proc.returncode == 0, proc.stdout
+def _read_only_gate(gate: str, cwd: str, timeout: int) -> tuple[bool, str]:
+    """The default gate: scripts/run_make_target.py, as (ok, output).
+
+    A refusal (a target labelled wider than a gate may run, no git, no policy)
+    and a green run that changed the tree are both red, so the caller rolls the
+    edit back; the changed paths are appended so the reader sees why."""
+    res = run_make_target.run_target(gate, cwd, timeout)
+    output = str(res["output"])
+    changed = list(res.get("changed") or [])  # type: ignore[call-overload]
+    if changed:
+        output += "".join("\nchanged: %s" % path for path in changed)
+    return bool(res["ok"]), output
 
 
 def apply_and_gate(
@@ -124,8 +130,8 @@ def apply_and_gate(
         # any such failure as RED so the rollback below still fires. Preserve the
         # cause in the reported output rather than swallowing it.
         try:
-            ok, output = (gate_runner or _make_gate)(gate, root, timeout)
-        except (subprocess.SubprocessError, OSError) as exc:
+            ok, output = (gate_runner or _read_only_gate)(gate, root, timeout)
+        except (subprocess.SubprocessError, OSError, ValueError) as exc:
             ok, output = False, "gate did not complete: %r" % exc
 
     if not ok:

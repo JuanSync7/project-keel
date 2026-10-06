@@ -9,7 +9,7 @@ tags: [tool, refactor, gate, apply, rollback]
 summary: Apply one bounded edit spec atomically, run a make gate, and roll back every file unless it stays green.
 id: tool-apply-refactor
 created: 2026-07-07
-updated: 2026-09-02
+updated: 2026-10-06
 visibility: internal
 canonical: true
 tool_command: python3 scripts/apply_refactor.py --spec - --root . --gate verify --json
@@ -25,8 +25,11 @@ tool_effect: writes
 ## Purpose
 The refactor loop's **hands + safety net**. Given a JSON edit spec on stdin it
 applies each edit atomically (each `find` must match its file exactly once),
-runs a make gate, and — if the gate goes red — **rolls back every file** to its
-original bytes. So a chunk is *accepted* only when the tree stays green; a chunk
+runs a make gate through `scripts/run_make_target.py`, and — if the gate goes
+red — **rolls back every file** to its original bytes. The runner refuses a gate
+labelled wider than `config/project.json` `make_targets.gate_effects` (`--gate
+fmt` is red, not a pass) and fails a gate run that changed the tree, naming the
+paths in `gate_output`. So a chunk is *accepted* only when the tree stays green; a chunk
 that would break the build is reverted, never left half-applied. This is how
 `agents/practice_refactor` cannot mark a chunk done unless it satisfies the very
 `make verify` the gate encodes.
@@ -55,7 +58,7 @@ With `--json`, a result object: `{practice, gate, applied, rolled_back, files, g
 WRITES the files named in the spec — but **transactionally**: if the gate goes red
 *or never returns a verdict* (a timeout, a hang, a killed `make`), every file is
 restored to its original bytes, so a failed run leaves the tree exactly as it
-found it. Runs the gate as a subprocess (`make <target>`); no model call. The one
+found it. Runs the gate through `run_make_target` (`make <target>` as a subprocess); no model call. The one
 window it cannot itself undo is a hard external kill (SIGKILL/OOM) of the doer
 mid-write — that partial edit is surfaced by the next gate run, never kept as done.
 

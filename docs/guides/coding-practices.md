@@ -8,7 +8,7 @@ tags: [practices, gate, advisory, ruff, mypy, types, llm, cuda, langgraph, guide
 summary: The catalogue of good-Python practices Keel promotes for general and LLM/CUDA/LangGraph code — each sorted onto the gate/advisory/doc line, sourced from config/practices.json.
 id: docs-guides-coding-practices
 created: 2026-07-06
-updated: 2026-09-12
+updated: 2026-10-06
 visibility: internal
 canonical: true
 ---
@@ -182,7 +182,9 @@ It is an ordinary keel agent — a neutral `Plan` on a `Runtime`, model from
    *where* the rule applies).
 2. **baseline** (read-only) — `run_make_target` gates the tree green *before*
    touching anything; a red baseline stops the run (a dirty tree yields a dirty
-   refactor).
+   refactor). The runner refuses a gate labelled wider than
+   `make_targets.gate_effects`, so the baseline cannot rewrite the tree it
+   measures (CONVENTIONS §7).
 3. **propose** (model-call) — draft ONE bounded edit for the chunk at the cursor.
 4. **apply** (writes) — `apply_refactor` applies it atomically and **rolls it
    back** unless `make verify` stays green.
@@ -194,7 +196,8 @@ and write nothing) and the per-chunk loop is **durable** (one chunk per step, so
 a crash mid-refactor resumes at the cursor without re-applying accepted chunks).
 
 Its mechanical hands are two vendor-neutral `scripts/` doers (no model, no
-provider): **`run_make_target.py`** runs a make target and reports a structured
+provider): **`run_make_target.py`** runs a make target whose effect label a
+gate may run, fails a green run that changed the tree, and reports a structured
 pass/fail (the *gate*), and **`apply_refactor.py`** applies one bounded edit
 *atomically* and **rolls it back** unless the gate stays green (the *safety
 net*) — each declared as a tool in `agents/tools/`. The agent supplies the

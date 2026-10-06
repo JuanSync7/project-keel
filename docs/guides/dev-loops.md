@@ -8,7 +8,7 @@ tags: [tdd, bounded-convergence, ralph-loop, testing, e2e, workflow, agents, gui
 summary: The default working loops any human or LLM follows in this repo — test-first, bounded convergence, and end-to-end coverage — all gated by `make verify`.
 id: docs-guides-dev-loops
 created: 2026-06-22
-updated: 2026-09-02
+updated: 2026-10-06
 visibility: internal
 canonical: true
 ---
@@ -117,6 +117,14 @@ Why these guardrails:
   spinning. (The `runtimes/` engine has only a global `_MAX_STEPS` *safety-abort*;
   a clean bounded exit is a per-loop counter you own.)
 - **Commit each pass** so a bad iteration is isolated and revertible.
+- **Gate through the read-only runner.** A loop that runs its own gate calls
+  `scripts/run_make_target.py <target>`, not `make` directly. The runner runs a
+  target only when its effect label is inside `config/project.json`
+  `make_targets.gate_effects` (`[local]` and `[read]` in keel), sets `RALPH=1`
+  last so a `[write]` recipe's `$(WRITE_GUARD)` refuses, and fails a green run
+  that changed what git sees. `make verify` is `[local]`, so it is a legal gate;
+  `make fmt` is `[tree]`, so it is refused before it can rewrite the code the
+  pass is about to commit (CONVENTIONS §7).
 
 When you want this loop to run unattended (a program, not you, driving it), encode
 it as a durable `Plan` and let a `Runtime` checkpoint and resume it — see

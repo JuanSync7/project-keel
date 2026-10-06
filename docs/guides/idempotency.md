@@ -202,10 +202,19 @@ staleness, so a legitimate fill never reads as rot), which is the right call for
 that check and leaves the composition unowned by any rule. If you add a second
 writer to an artifact, say in both headers which one is authoritative and when.
 
-A related trap on the calling side: `scripts/run_make_target.py` validates that
-a target is a plain token, not that it is read-only. An agent told to "gate on
-X" can pass `site-data` or `fmt` and mutate the tree while believing it only
-measured it. Pass a target you have read.
+The calling side is closed by the effect labels (CONVENTIONS §7). A gate must
+measure the tree, not change it, so `scripts/run_make_target.py` runs a target
+only when its label, closed over its prerequisites, is inside
+`config/project.json` `make_targets.gate_effects`. An agent told to "gate on
+`fmt`" is refused before make runs, because `fmt` is `[tree]`, and so is a
+variable outside `make_targets.gate_vars` or a value that is more than one
+path-like word, since a recipe expands the value into a shell line where it
+could run a target whose label nobody read. A `[local]` target that writes
+anyway is caught after it runs: the runner compares what git lists before and
+after, each path's status and content, and a green run that changed either is
+red and names the paths. `make site-data` stays a legal gate because everything it writes is
+ignored, and that is measured, not assumed, by
+`tests/integration/test_make_target_effects.py`.
 
 A project generated from this template inherits all of it without doing
 anything: `scripts/check_structure.py` ships verbatim, so `check_V` runs in its
@@ -228,5 +237,8 @@ the agent working in it is told the rule before it writes the tenth doer.
 | `append-only` or `unsafe` is the honest value, not a dodge | — | judged |
 | A procedure lands the same state from any starting point | — | judged |
 | A Makefile recipe that writes has a read-only check riding the gate | `make fmt` ← `fmt-check` | gate, per recipe |
+| A make target's label says what it touches, and a composite's covers its prerequisites | `check_W` | gate |
+| A `[local]` target leaves what git sees unchanged | `tests/integration/test_make_target_effects.py` (every `[local]` target not in `make_targets.effect_proof_skip`) | gate |
+| A gate run never rewrites the tree or changes shared state | `scripts/run_make_target.py` (refuses by label, fails a dirty run) and `$(WRITE_GUARD)` | gate |
 | Two writers on one artifact agree which is authoritative | — | judged |
 | A doer's default output path is tracked or ignored | — | judged |

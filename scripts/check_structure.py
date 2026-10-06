@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 title: check_structure — the deterministic conventions gate
-summary: Stdlib-only, 3.6-safe enforcement of CONVENTIONS.md — labeling, taxonomy, package boundaries, tool/agent governance, manifest and ruleset parity, twin parity, the machine-readable module contract, Makefile help parity, cross-reference resolution, check-catalogue parity, rosters, practice mechanisms, policy reachability, and writer rerun declarations (checks A-V). Exit 1 on any error; warnings never fail the build.
+summary: Stdlib-only, 3.6-safe enforcement of CONVENTIONS.md — labeling, taxonomy, package boundaries, tool/agent governance, manifest and ruleset parity, twin parity, the machine-readable module contract, Makefile help parity, cross-reference resolution, check-catalogue parity, rosters, practice mechanisms, policy reachability, writer rerun declarations, and make-target effect labels (checks A-W). Exit 1 on any error; warnings never fail the build.
 
 check_structure.py - enforce the project conventions (see CONVENTIONS.md).
 
@@ -86,11 +86,23 @@ Checks:
      each call (`os.replace`, never `str.replace`), so it under-reports rather
      than over-reports: a write behind subprocess is invisible to it, and a
      declared write it cannot see is a stated WARN ('unverified'), never a pass
+  W. Make targets declare their effect (ERR): every `## `-annotated target
+     opens its help with one bracketed label of EFFECT_LABELS words in
+     canonical order (`local` alone), the same label on every rule that
+     annotates the target; a composite covers what its prerequisites and
+     `$(MAKE)` calls reach; a [write] target, or one whose name ends in a
+     config/project.json `make_targets.write_shapes` suffix, opens its recipe
+     with $(WRITE_GUARD) and no `-` prefix; the guard, read as make stores it,
+     tests exactly the `unattended_vars` names, has no `-` prefix and exits 1;
+     with an `area_dir`, each <area>.mk there is included, opens with one
+     `##@ <area>` header and prefixes its public targets `<area>-`. A
+     recursion it cannot resolve is a stated WARN ('unverified'), never a pass
 
 Exit 0 = clean, 1 = errors. Warnings never fail the build. Stdlib only; 3.6+.
 """
 
 import ast
+import collections
 import io
 import json
 import os
@@ -2617,44 +2629,13 @@ def _includes(text):
 def check_P():
     """ERROR when a `## `-annotated target is one the `help` recipe's own grep
     pattern cannot list. Reads `Makefile` and, recursively, every file an
-    `include`/`-include`/`sinclude` line names (what `$(MAKEFILE_LIST)` holds),
-    so an annotation in an included makefile is held to the same promise. An
-    include named through a variable or a wildcard is not expanded here and is
-    a WARN; an absent optional include is make's own 'if present' and silent.
-    Silent when there is no Makefile or no `help` target."""
-    root_path = os.path.join(ROOT, "Makefile")
-    if not os.path.isfile(root_path):
-        return
-    text = _read_text(root_path, err)
-    if text is None:
-        return
-    makefiles, queue, seen = [("Makefile", text)], [("Makefile", text)], {"Makefile"}
-    while queue:
-        relpath, body = queue.pop(0)
-        for directive, name in _includes(body):
-            if _MAKE_VAR.search(name) or any(ch in name for ch in "*?["):
-                warn(
-                    "%s: help parity unverified for `%s %s` -- a variable or wildcard "
-                    "this check does not expand, so that makefile's annotated "
-                    "targets go unchecked" % (relpath, directive, name)
-                )
-                continue
-            inc_rel = posixpath.normpath(name)
-            if inc_rel in seen:
-                continue
-            seen.add(inc_rel)
-            inc_path = os.path.join(ROOT, inc_rel)
-            if not os.path.isfile(inc_path):
-                if directive == "include":
-                    warn(
-                        "%s: `include %s` names no file -- make itself would stop "
-                        "here; help parity for it is unverified" % (relpath, name)
-                    )
-                continue
-            inc_text = _read_text(inc_path, err)
-            if inc_text is not None:
-                makefiles.append((inc_rel, inc_text))
-                queue.append((inc_rel, inc_text))
+    `include`/`-include`/`sinclude` line names (walk_makefiles: what
+    `$(MAKEFILE_LIST)` holds), so an annotation in an included makefile is held
+    to the same promise. An include named through a variable or a wildcard is
+    not expanded here and is a WARN; an absent optional include is make's own
+    'if present' and silent. Silent when there is no Makefile or no `help`
+    target. check_W walks the same makefiles and leaves their reporting here."""
+    makefiles = walk_makefiles(ROOT, warn, err)
     errs, warns_ = _help_parity_findings(makefiles)
     for m in errs:
         err(m)
@@ -3876,6 +3857,989 @@ def check_V():
         warn(m)
 
 
+# --- check_W: every make target declares its effect ----------------------------
+#
+# A make target is a doer an agent runs by name, and nothing about the name says
+# whether it reads, rewrites the tree, spends money or changes shared state. The
+# label is that statement, written where `make help` shows it, in a closed
+# vocabulary ordered by reach (docs/adr/0011-make-target-effect-labels.md):
+#   [local]  this machine only; writes nothing git would list
+#   [tree]   rewrites files in the working tree
+#   [read]   reads a remote service
+#   [cost]   spends money
+#   [write]  changes shared remote state; refused under CI and gate runs
+# check_W holds the static half: the grammar, a composite's cover of what it
+# reaches, the write guard, the policy, and (opt-in) area makefiles. The runtime
+# half -- a label is a claim only running the target can test -- is
+# tests/integration/test_make_target_effects.py, through scripts/run_make_target.py.
+
+EFFECT_MEANINGS = (
+    ("local", "this machine only; writes nothing git would list"),
+    ("tree", "rewrites files in the working tree"),
+    ("read", "reads a remote service"),
+    ("cost", "spends money"),
+    ("write", "changes shared remote state; refused under CI and gate runs"),
+)
+EFFECT_LABELS = tuple(word for word, _ in EFFECT_MEANINGS)
+
+_POLICY_BLOCK = "make_targets"
+_POLICY_KEYS = (
+    "unattended_vars",
+    "gate_runner_var",
+    "gate_effects",
+    "write_shapes",
+    "area_dir",
+    "effect_proof_skip",
+    "gate_vars",
+)
+# make's own control variables and the guard: a gate run that let a caller set
+# one could load a makefile nobody labelled (MAKEFILES), pass flags (MAKEFLAGS,
+# MFLAGS), swap the shell or make itself, or empty the guard, so gate_vars may
+# never name one. These are GNU make's names, not a project fact.
+_RESERVED_MAKE_VARS = (
+    "GNUMAKEFLAGS",
+    "MAKE",
+    "MAKECMDGOALS",
+    "MAKEFILES",
+    "MAKEFILE_LIST",
+    "MAKEFLAGS",
+    "MAKELEVEL",
+    "MAKEOVERRIDES",
+    "MAKESHELL",
+    "MAKE_RESTARTS",
+    "MFLAGS",
+    "SHELL",
+    "VPATH",
+)
+# A gate run proves read-only-ness, so it may never run what rewrites the tree or
+# shared state, and it must be able to run a target that only reads locally.
+_GATE_MUST_HOLD = "local"
+_GATE_MUST_NOT_HOLD = ("tree", "write")
+_MAKE_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_WRITE_SHAPE = re.compile(r"^-[a-z0-9][a-z0-9-]*$")
+_AREA_DIR_NAME = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]*$")
+_KEBAB = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+AREA_HEADER = re.compile(r"^##@\s+(\S+)(?:\s+(.*?))?\s*$")
+# The guard's name is the contract between the Makefile and this check, as
+# `help` is check_P's: the ADR names it, the Makefile defines it.
+_GUARD_NAME = "WRITE_GUARD"
+_GUARD_CALLS = ("$(WRITE_GUARD)", "${WRITE_GUARD}")
+_GUARD_DEF = re.compile(
+    r"^\s*(?:override\s+)?WRITE_GUARD\s*[:?]?=\s*(.*?)\s*$", re.MULTILINE
+)
+_GUARD_EXIT = re.compile(r"\bexit\s+1\b")
+# make strips `@`, `-`, `+` and blanks from the front of a recipe line, after
+# expansion; `-` makes it carry on past a failure, so a guard behind one refuses
+# and the recipe runs anyway (measured: `Error 1 (ignored)`, rc 0).
+_RECIPE_PREFIX = re.compile(r"^[@+\- \t]*")
+# A variable reference in a shell condition: $(X), ${X}, $$X, $${X}.
+_VAR_REF = re.compile(
+    r"\$(?:\(([A-Za-z_][A-Za-z0-9_]*)\)|\{([A-Za-z_][A-Za-z0-9_]*)\}"
+    r"|\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*))"
+)
+_GUARD_THEN = re.compile(r"\bthen\b")
+_RULE_HEAD = re.compile(r"^([^:#=\t][^:#=]*?)\s*(::?)(?!=)(.*)$")
+_TARGET_VAR = re.compile(
+    r"^\s*(?:(?:export|override|private)\s+)*[A-Za-z_][A-Za-z0-9_.-]*\s*[:?+!]?="
+)
+_SPECIAL_TARGET = re.compile(r"^\.[A-Z_]+$")
+_RECURSE = re.compile(r"\$[({]MAKE[)}]")
+# make flags that consume the next word, and those that point make somewhere
+# this check cannot follow (another directory or another makefile).
+_FLAGS_WITH_ARG = ("-I", "-o", "-W", "--include-dir", "--old-file", "--what-if")
+_FLAGS_ELSEWHERE = ("-C", "-f", "--file", "--directory", "--makefile")
+_SHELL_STOP = re.compile(r";|&&|\|\||\|")
+
+MakeRule = collections.namedtuple(
+    "MakeRule",
+    "target help prereqs recursions unresolved recipe first_recipe lineno first_prefix",
+)
+
+
+def parse_effect_labels(help_):
+    """A `## ` help string -> (labels, text, None), or (None, help, problem).
+
+    labels is the tuple of words in the opening `[...]`, text what follows it.
+    The problem is one sentence fragment naming what is wrong, worded to follow
+    a target name ("`check` has no effect label ...")."""
+    vocab = ", ".join(EFFECT_LABELS)
+    help_ = (help_ or "").strip()
+    if not help_.startswith("["):
+        return (
+            None,
+            help_,
+            "has no effect label -- open its `## ` help with one of [%s] "
+            "(comma-separated, in that order; docs/adr/0011-make-target-effect-labels.md)"
+            % vocab.replace(", ", "], ["),
+        )
+    close = help_.find("]")
+    if close < 0:
+        return (
+            None,
+            help_,
+            "has no effect label -- the `[` opening its help is never closed",
+        )
+    inner, rest = help_[1:close], help_[close + 1 :].strip()
+    if not inner:
+        return (
+            None,
+            help_,
+            "has an empty effect label `[]` -- name its effect from %s" % vocab,
+        )
+    words = inner.split(",")
+    for word in words:
+        if word not in EFFECT_LABELS:
+            return (
+                None,
+                help_,
+                "'%s' is not an effect label (the vocabulary is %s, comma-separated "
+                "with no spaces)" % (word, vocab),
+            )
+    for word in words:
+        if words.count(word) > 1:
+            return None, help_, "effect label [%s] names `%s` twice" % (inner, word)
+    if "local" in words and len(words) > 1:
+        return (
+            None,
+            help_,
+            "effect label [%s]: `local` stands alone -- it says nothing leaves this "
+            "machine, so drop it beside a wider word" % inner,
+        )
+    ordered = sorted(words, key=EFFECT_LABELS.index)
+    if words != ordered:
+        return (
+            None,
+            help_,
+            "effect label [%s] is not in canonical order -- write [%s]"
+            % (inner, ",".join(ordered)),
+        )
+    if rest.startswith("["):
+        end = rest.find("]")
+        second = rest[1:end] if end > 0 else ""
+        if second and all(w.strip() in EFFECT_LABELS for w in second.split(",")):
+            return (
+                None,
+                help_,
+                "carries a second effect label `[%s]` -- write one label holding "
+                "every word, [%s]" % (second, ",".join(words + [second])),
+            )
+    return tuple(words), rest, None
+
+
+def _make_words(text):
+    """Whitespace-separated words, a `$(...)`/`${...}` reference kept whole."""
+    words, cur, depth = [], "", 0
+    i = 0
+    while i < len(text):
+        ch = text[i]
+        if ch == "$" and i + 1 < len(text) and text[i + 1] in "({":
+            depth += 1
+            cur += text[i : i + 2]
+            i += 2
+            continue
+        if depth and ch in ")}":
+            depth -= 1
+        if ch.isspace() and not depth:
+            if cur:
+                words.append(cur)
+            cur = ""
+        else:
+            cur += ch
+        i += 1
+    if cur:
+        words.append(cur)
+    return words
+
+
+def _recursions(cmd):
+    """([targets], [unresolved]) for every `$(MAKE)` call in one recipe command.
+
+    A flag or NAME=VALUE is skipped; a call that changes directory or makefile,
+    or names its goal through a variable, is unresolved -- this check cannot see
+    what it runs, so it says so rather than assume nothing."""
+    targets, unresolved = [], []
+    for m in _RECURSE.finditer(cmd):
+        call = _SHELL_STOP.split(cmd[m.end() :], 1)[0]
+        goals, skip_next, elsewhere = [], False, False
+        for word in _make_words(call):
+            word = word.strip("'\"")
+            if "$(" not in word and "${" not in word:
+                word = word.rstrip(")")
+            if not word or word.isdigit():
+                continue  # a `-j 4` count, or a subshell's closing parenthesis
+            if skip_next:
+                skip_next = False
+                continue
+            if word.startswith("-"):
+                flag = word.split("=", 1)[0]
+                if flag in _FLAGS_ELSEWHERE or (
+                    word[:2] in ("-C", "-f") and not word.startswith("--")
+                ):
+                    elsewhere = True
+                    break
+                if flag in _FLAGS_WITH_ARG and "=" not in word:
+                    skip_next = True
+                continue
+            if "=" in word.split("$", 1)[0]:
+                continue
+            goals.append(word)
+        if elsewhere:
+            unresolved.append((m.group(0) + call).strip())
+            continue
+        if not goals:
+            unresolved.append("%s (its default goal)" % m.group(0))
+        for goal in goals:
+            (unresolved if goal.startswith("$") else targets).append(goal)
+    return targets, unresolved
+
+
+def make_target_rules(text):
+    """Every explicit rule in one makefile's text, as MakeRule records in order.
+
+    Reads what make reads: `\\`-continuations joined (lineno is the rule's first
+    physical line), `define`...`endef` bodies, assignments, target-specific
+    variables, pattern rules, `$`-named and dotted special targets skipped, one
+    record per target on a multi-target line. help is the text after `## `
+    (None without one); prereqs drops order-only `|` and moves `$`-references to
+    unresolved; recursions are the goals of `$(MAKE)` calls in the recipe."""
+    lines = text.split("\n")
+    rules, current, define_depth, i = [], [], 0, 0
+    while i < len(lines):
+        start = i
+        line = lines[i]
+        while line.endswith("\\") and i + 1 < len(lines):
+            i += 1
+            line = line[:-1].rstrip(" \t") + " " + lines[i].lstrip(" \t")
+        i += 1
+        stripped = line.strip()
+        if define_depth:
+            if re.match(r"^\s*(?:override\s+|export\s+)?define\b", line):
+                define_depth += 1
+            elif re.match(r"^\s*endef\b", line):
+                define_depth -= 1
+            continue
+        if line.startswith("\t"):
+            if not current:
+                continue
+            cmd = _recipe_command(line)
+            if not cmd:
+                continue
+            found, opaque = _recursions(cmd)
+            prefix = _RECIPE_PREFIX.match(line.lstrip("\t ")).group(0)
+            for rec in current:
+                if not rec["recipe"]:
+                    rec["first_prefix"] = prefix.replace(" ", "").replace("\t", "")
+                rec["recipe"].append(cmd)
+                rec["recursions"].extend(found)
+                rec["unresolved"].extend(opaque)
+            continue
+        if (
+            not stripped
+            or stripped.startswith("#")
+            or _MAKE_CONDITIONAL.match(stripped)
+        ):
+            continue
+        if re.match(r"^\s*(?:override\s+|export\s+)?define\b", line):
+            define_depth, current = 1, []
+            continue
+        m = _RULE_HEAD.match(line)
+        if not m:
+            current = []
+            continue
+        names, rest = _make_words(m.group(1)), m.group(3)
+        hash_at = rest.find("#")
+        body = rest if hash_at < 0 else rest[:hash_at]
+        help_ = None
+        if hash_at >= 0:
+            hm = re.match(r"##(?:\s+(.*)|\s*$)", rest[hash_at:])
+            if hm:
+                help_ = (hm.group(1) or "").strip()
+        if (
+            _TARGET_VAR.match(body)
+            or "%" in m.group(1)
+            or ("%" in body and ":" in body)
+        ):
+            current = []
+            continue
+        prereqs, unresolved = [], []
+        for word in _make_words(body):
+            if word == "|":
+                continue
+            (unresolved if word.startswith("$") else prereqs).append(word)
+        current = []
+        for name in names:
+            if name.startswith("$") or _SPECIAL_TARGET.match(name):
+                continue
+            rec = {
+                "target": name,
+                "help": help_,
+                "prereqs": list(prereqs),
+                "recursions": [],
+                "unresolved": list(unresolved),
+                "recipe": [],
+                "lineno": start + 1,
+                "first_prefix": "",
+            }
+            current.append(rec)
+            rules.append(rec)
+    return [
+        MakeRule(
+            r["target"],
+            r["help"],
+            r["prereqs"],
+            r["recursions"],
+            r["unresolved"],
+            r["recipe"],
+            r["recipe"][0] if r["recipe"] else None,
+            r["lineno"],
+            r["first_prefix"],
+        )
+        for r in rules
+    ]
+
+
+def walk_makefiles(root, warn_, err_=None):
+    """[(relpath, text)]: `Makefile` under root, then every makefile an
+    `include`/`-include`/`sinclude` line names, depth-first in the order make
+    reads them (what `$(MAKEFILE_LIST)` holds). An include named through a
+    variable or wildcard, and a required include naming no file, go to warn_;
+    an unreadable makefile goes to err_ (default warn_). An absent optional
+    include is make's own 'if present' and is silent. [] without a Makefile."""
+    err_ = err_ or warn_
+    out, seen = [], set()
+
+    def visit(relpath):
+        text = _read_text(os.path.join(root, relpath), err_)
+        if text is None:
+            return
+        out.append((relpath, text))
+        for directive, name in _includes(text):
+            if _MAKE_VAR.search(name) or any(ch in name for ch in "*?["):
+                warn_(
+                    "%s: `%s %s` names its makefile through a variable or wildcard "
+                    "this gate does not expand, so that makefile is unverified -- "
+                    "its targets go unchecked" % (relpath, directive, name)
+                )
+                continue
+            inc_rel = posixpath.normpath(name)
+            if inc_rel in seen:
+                continue
+            seen.add(inc_rel)
+            if not os.path.isfile(os.path.join(root, inc_rel)):
+                if directive == "include":
+                    warn_(
+                        "%s: `include %s` names no file -- make itself would stop "
+                        "here, and that makefile is unverified" % (relpath, name)
+                    )
+                continue
+            visit(inc_rel)
+
+    if not os.path.isfile(os.path.join(root, "Makefile")):
+        return out
+    seen.add("Makefile")
+    visit("Makefile")
+    return out
+
+
+def _is_name_list(value):
+    return isinstance(value, list) and all(isinstance(v, str) for v in value)
+
+
+def make_targets_policy(manifest):
+    """config/project.json's make_targets block -> (policy, errs). Pure.
+
+    Every key is required and a key outside them is an error (`_comment` aside),
+    so a typo cannot silently fall back to a default; each bad value is one
+    error naming the key and what is wrong. policy is None when errs is not
+    empty -- a consumer refuses rather than half-trusting it."""
+    if not isinstance(manifest, dict) or _POLICY_BLOCK not in manifest:
+        return None, [
+            "%s is missing -- a project with a Makefile declares its make-target "
+            "effect policy there (CONVENTIONS §15)" % _POLICY_BLOCK
+        ]
+    block = manifest[_POLICY_BLOCK]
+    if not isinstance(block, dict):
+        return None, [
+            "%s must be an object, got %s" % (_POLICY_BLOCK, type(block).__name__)
+        ]
+    errs = [
+        "%s is missing `%s`" % (_POLICY_BLOCK, key)
+        for key in _POLICY_KEYS
+        if key not in block
+    ]
+    errs.extend(
+        "%s has an unknown key `%s` (the keys are %s)"
+        % (_POLICY_BLOCK, key, ", ".join(_POLICY_KEYS))
+        for key in sorted(block)
+        if key not in _POLICY_KEYS and key != "_comment"
+    )
+    where = _POLICY_BLOCK + "."
+    unattended = block.get("unattended_vars")
+    unattended_ok = False
+    if "unattended_vars" in block:
+        if not _is_name_list(unattended) or not unattended:
+            errs.append(
+                where + "unattended_vars must be a non-empty list of make variable "
+                "names (the variables CI and gate runs set)"
+            )
+        else:
+            bad = [v for v in unattended if not _MAKE_NAME.match(v)]
+            dup = sorted({v for v in unattended if unattended.count(v) > 1})
+            if bad:
+                errs.append(
+                    where
+                    + "unattended_vars: %s is not a make variable name"
+                    % ", ".join("`%s`" % v for v in bad)
+                )
+            elif dup:
+                errs.append(where + "unattended_vars names %s twice" % ", ".join(dup))
+            else:
+                unattended_ok = True
+    if "gate_runner_var" in block:
+        runner = block["gate_runner_var"]
+        if not isinstance(runner, str) or not _MAKE_NAME.match(runner):
+            errs.append(where + "gate_runner_var must be a make variable name")
+        elif unattended_ok and runner not in unattended:
+            errs.append(
+                where + "gate_runner_var `%s` is not in unattended_vars (%s), so a "
+                "gate run would not trip WRITE_GUARD" % (runner, ", ".join(unattended))
+            )
+    if "gate_effects" in block:
+        gate = block["gate_effects"]
+        if not _is_name_list(gate):
+            errs.append(where + "gate_effects must be a list of effect labels")
+        else:
+            unknown = [g for g in gate if g not in EFFECT_LABELS]
+            wide = [g for g in _GATE_MUST_NOT_HOLD if g in gate]
+            if unknown:
+                errs.append(
+                    where
+                    + "gate_effects: %s is not an effect label (%s)"
+                    % (", ".join("`%s`" % g for g in unknown), ", ".join(EFFECT_LABELS))
+                )
+            elif _GATE_MUST_HOLD not in gate:
+                errs.append(
+                    where + "gate_effects must include `%s` -- a gate that cannot run "
+                    "a local target runs nothing" % _GATE_MUST_HOLD
+                )
+            elif wide:
+                errs.append(
+                    where + "gate_effects may not hold %s -- a gate run proves the "
+                    "tree and shared state unchanged"
+                    % ", ".join("`%s`" % g for g in wide)
+                )
+    if "write_shapes" in block:
+        shapes = block["write_shapes"]
+        if not _is_name_list(shapes):
+            errs.append(where + "write_shapes must be a list of name suffixes")
+        else:
+            bad = [s for s in shapes if not _WRITE_SHAPE.match(s)]
+            if bad:
+                errs.append(
+                    where
+                    + "write_shapes: %s is not a `-word` target-name suffix"
+                    % ", ".join("`%s`" % s for s in bad)
+                )
+    if "area_dir" in block:
+        area_dir = block["area_dir"]
+        if area_dir is not None and not (
+            isinstance(area_dir, str)
+            and _AREA_DIR_NAME.match(area_dir)
+            and area_dir not in (".", "..")
+        ):
+            errs.append(
+                where + "area_dir must be null or one directory name at the root, "
+                "got %s" % json.dumps(area_dir)
+            )
+    if "effect_proof_skip" in block:
+        skip = block["effect_proof_skip"]
+        if not isinstance(skip, dict):
+            errs.append(
+                where + "effect_proof_skip must be an object of target -> reason"
+            )
+        else:
+            bad = sorted(
+                k for k, v in skip.items() if not isinstance(v, str) or not v.strip()
+            )
+            if bad:
+                errs.append(
+                    where + "effect_proof_skip: %s carries no reason -- a skip says "
+                    "why the target cannot run unattended"
+                    % ", ".join("`%s`" % k for k in bad)
+                )
+    if "gate_vars" in block:
+        gate_vars = block["gate_vars"]
+        if not _is_name_list(gate_vars):
+            errs.append(
+                where + "gate_vars must be a list of make variable names (the "
+                "NAME=VALUE variables a gate run may set, e.g. PY)"
+            )
+        else:
+            bad = [v for v in gate_vars if not _MAKE_NAME.match(v)]
+            owned = [
+                v
+                for v in gate_vars
+                if v in _RESERVED_MAKE_VARS
+                or v == _GUARD_NAME
+                or (_is_name_list(unattended) and v in unattended)
+            ]
+            if bad:
+                errs.append(
+                    where
+                    + "gate_vars: %s is not a make variable name"
+                    % ", ".join("`%s`" % v for v in bad)
+                )
+            elif owned:
+                errs.append(
+                    where + "gate_vars may not name %s -- a caller who sets make's "
+                    "control variables, the guard or an unattended variable can run "
+                    "what no label declares" % ", ".join("`%s`" % v for v in owned)
+                )
+    if errs:
+        return None, errs
+    return {k: block[k] for k in _POLICY_KEYS}, []
+
+
+def _rule_index(makefiles):
+    """{target: MakeRule} over every makefile, a target's rules merged as make
+    merges them: prerequisites, recursions and unresolved items unioned, the
+    help and recipe from the first rule carrying one."""
+    index = {}
+    for _, text in makefiles:
+        for r in make_target_rules(text):
+            have = index.get(r.target)
+            if have is None:
+                index[r.target] = r
+                continue
+            index[r.target] = have._replace(
+                help=have.help if have.help is not None else r.help,
+                prereqs=have.prereqs + r.prereqs,
+                recursions=have.recursions + r.recursions,
+                unresolved=have.unresolved + r.unresolved,
+                recipe=have.recipe or r.recipe,
+                first_recipe=have.first_recipe or r.first_recipe,
+                first_prefix=have.first_prefix if have.recipe else r.first_prefix,
+            )
+    return index
+
+
+def _label_conflicts(makefiles):
+    """{target: ((relpath, lineno, labels), (relpath, lineno, labels))} for each
+    target whose `## ` annotations carry two different well-formed labels: the
+    first annotation and the first that disagrees with it. make merges the rules
+    into one target, so keeping either label alone would hide the other's
+    effect; a malformed label is reported on its own and skipped here."""
+    seen, out = {}, {}
+    for relpath, text in makefiles:
+        for rule in make_target_rules(text):
+            if rule.help is None:
+                continue
+            labels, _, why = parse_effect_labels(rule.help)
+            if why is not None:
+                continue
+            here = (relpath, rule.lineno, labels)
+            first = seen.setdefault(rule.target, here)
+            if first[2] != labels and rule.target not in out:
+                out[rule.target] = (first, here)
+    return out
+
+
+def _conflict_text(name, pair):
+    (path_a, line_a, labels_a), (path_b, line_b, labels_b) = pair
+    return (
+        "`%s` is annotated twice with different labels, [%s] at %s:%d and [%s] at "
+        "%s:%d -- make merges the rules into one target, so annotate it once"
+        % (
+            name,
+            ",".join(labels_a),
+            path_a,
+            line_a,
+            ",".join(labels_b),
+            path_b,
+            line_b,
+        )
+    )
+
+
+def _children(rule):
+    return rule.prereqs + rule.recursions
+
+
+def _normalise(words):
+    """A set of effect words as a canonical label: `local` only when alone."""
+    wider = [w for w in EFFECT_LABELS if w in words and w != "local"]
+    return tuple(wider) if wider else ("local",)
+
+
+def target_effects(root):
+    """{target: (labels, None) or (None, reason)} for every rule under root.
+
+    labels is the target's declared label closed over everything it reaches
+    (prerequisites and `$(MAKE)` recursions, transitively), canonicalised. A
+    target is unprovable -- None with the reason -- when it is unlabelled, its
+    label is malformed, or what it reaches includes an unlabelled rule with a
+    recipe, a malformed label, or a recursion this module cannot follow. A name
+    no rule defines is a file prerequisite and reaches nothing."""
+    makefiles = walk_makefiles(root, lambda _m: None)
+    index = _rule_index(makefiles)
+    conflicts = _label_conflicts(makefiles)
+    parsed = {}
+    for name, rule in index.items():
+        if rule.help is None:
+            parsed[name] = (None, "`%s` has no effect label" % name)
+        elif name in conflicts:
+            parsed[name] = (None, _conflict_text(name, conflicts[name]))
+        else:
+            labels, _, why = parse_effect_labels(rule.help)
+            parsed[name] = (labels, None if why is None else "`%s` %s" % (name, why))
+    out = {}
+    for name in sorted(index):
+        labels, why = parsed[name]
+        if labels is None:
+            out[name] = (None, why)
+            continue
+        words, stack, seen, problem = set(labels), [name], {name}, None
+        while stack and problem is None:
+            rule = index[stack.pop()]
+            if rule.unresolved:
+                problem = "`%s` runs `%s`, which this gate cannot follow" % (
+                    rule.target,
+                    rule.unresolved[0],
+                )
+                break
+            for child in _children(rule):
+                if child in seen or child not in index:
+                    continue
+                seen.add(child)
+                child_labels, child_why = parsed[child]
+                if child_labels is not None:
+                    words.update(child_labels)
+                elif index[child].help is not None:
+                    problem = child_why
+                    break
+                elif index[child].recipe:
+                    problem = (
+                        "`%s` reaches `%s`, which has a recipe but no effect label"
+                        % (name, child)
+                    )
+                    break
+                stack.append(child)
+        out[name] = (None, problem) if problem else (_normalise(words), None)
+    return out
+
+
+def _strip_make_comment(value):
+    """An assignment's value as make stores it: an unescaped `#` starts a make
+    comment there, even inside shell quotes."""
+    m = re.search(r"(?<!\\)#", value)
+    return value if m is None else value[: m.start()].rstrip()
+
+
+def _guard_findings(makefiles, unattended):
+    """(defined_in or None, errs) for the WRITE_GUARD definition.
+
+    The guard must test every configured unattended variable and `exit 1`, must
+    not open with a `-` (make would ignore its failure), and its condition --
+    the text before `then`, or before `exit 1` without one -- may test no
+    variable the config omits, so the Makefile and config/project.json name the
+    same set in both directions."""
+    for relpath, text in makefiles:
+        m = _GUARD_DEF.search(_UNFOLD.sub(" ", text))
+        if not m:
+            continue
+        body = _strip_make_comment(m.group(1))
+        if "-" in _RECIPE_PREFIX.match(body).group(0):
+            return relpath, [
+                "%s: `%s` opens with a `-` prefix, so make ignores its `exit 1` and "
+                "a [write] recipe runs under CI and gate runs anyway -- drop the `-`"
+                % (relpath, _GUARD_NAME)
+            ]
+        cut = _GUARD_THEN.search(body) or _GUARD_EXIT.search(body)
+        condition = body if cut is None else body[: cut.start()]
+        tested = sorted(
+            {next(g for g in ref.groups() if g) for ref in _VAR_REF.finditer(condition)}
+        )
+        extra = [v for v in tested if v not in unattended]
+        if extra:
+            return relpath, [
+                "%s: `%s` tests %s, which make_targets.unattended_vars omits, so no "
+                "gate run or test exercises it -- add it to config/project.json or "
+                "drop it from the guard"
+                % (relpath, _GUARD_NAME, ", ".join("`%s`" % v for v in extra))
+            ]
+        missing = []
+        for var in unattended:
+            spellings = (
+                r"\$\(%s\)" % var,
+                r"\$\{%s\}" % var,
+                r"\$\$%s(?![A-Za-z0-9_])" % var,
+                r"\$\$\{%s\}" % var,
+            )
+            if not any(re.search(s, body) for s in spellings):
+                missing.append(var)
+        if not _GUARD_EXIT.search(body):
+            missing.append("exit 1")
+        if missing:
+            return relpath, [
+                "%s: `%s` must test every make_targets.unattended_vars entry and "
+                "`exit 1`, so a [write] target refuses under CI and gate runs; it "
+                "misses %s" % (relpath, _GUARD_NAME, ", ".join(missing))
+            ]
+        return relpath, []
+    return None, []
+
+
+def _area_findings(makefiles, by_file, area_dir):
+    """errs for the area-makefile rules; area_dir None means areas are off, and
+    then a `##@` header is itself the error (it promises a grouping nothing
+    checks)."""
+    errs = []
+    headers = {}
+    for relpath, text in makefiles:
+        for lineno, line in enumerate(text.split("\n"), 1):
+            m = AREA_HEADER.match(line)
+            if m:
+                headers.setdefault(relpath, []).append((lineno, m.group(1)))
+    if area_dir is None:
+        for relpath, _ in makefiles:
+            for lineno, name in headers.get(relpath, []):
+                errs.append(
+                    "%s:%d: `##@ %s` declares an area, but make_targets.area_dir "
+                    "is null -- name the directory of <area>.mk files in "
+                    "config/project.json, or drop the header" % (relpath, lineno, name)
+                )
+        return errs
+    for relpath, _ in makefiles:
+        found = headers.get(relpath, [])
+        if len(found) > 1:
+            errs.append(
+                "%s: holds %d `##@` headers (%s) -- one makefile is one area"
+                % (relpath, len(found), ", ".join(n for _, n in found))
+            )
+    base = os.path.join(ROOT, area_dir)
+    if not os.path.isdir(base):
+        errs.append(
+            "config/project.json: make_targets.area_dir names `%s`, which is not a "
+            "directory -- the declaration is stale" % area_dir
+        )
+        return errs
+    walked = {relpath for relpath, _ in makefiles}
+    for fname in sorted(os.listdir(base)):
+        if not fname.endswith(".mk"):
+            continue
+        relpath, area = area_dir + "/" + fname, fname[: -len(".mk")]
+        if not _KEBAB.match(area):
+            errs.append(
+                "%s: `%s` is not a kebab-case area name -- an area makefile is "
+                "<area>.mk with a lower-case, hyphenated name" % (relpath, area)
+            )
+            continue
+        if relpath not in walked:
+            errs.append(
+                "%s: an area makefile nothing includes, so make never reads it -- "
+                "add `include %s` to the Makefile" % (relpath, relpath)
+            )
+            continue
+        found = headers.get(relpath, [])
+        if len(found) <= 1 and [n for _, n in found] != [area]:
+            errs.append(
+                "%s: an area makefile opens its targets with exactly one `##@ %s` "
+                "header (found %s)"
+                % (relpath, area, ", ".join("`##@ %s`" % n for _, n in found) or "none")
+            )
+        for rule in by_file.get(relpath, []):
+            if rule.target.startswith("_"):
+                continue
+            if not rule.target.startswith(area + "-"):
+                errs.append(
+                    "%s:%d: `%s` is not prefixed `%s-` -- a public area target "
+                    "carries its area's name (prefix a private helper with `_`)"
+                    % (relpath, rule.lineno, rule.target, area)
+                )
+            elif rule.help is None:
+                errs.append(
+                    "%s:%d: `%s` carries no `## ` annotation -- a public area "
+                    "target is listed by `make help` with its effect label"
+                    % (relpath, rule.lineno, rule.target)
+                )
+    return errs
+
+
+def _effect_findings(makefiles, policy):
+    """(errs, warns) for check_W over [(relpath, text)] under one valid policy."""
+    errs, warns, run_once = [], [], set()
+    by_file, first = {}, {}
+    for relpath, text in makefiles:
+        for rule in make_target_rules(text):
+            by_file.setdefault(relpath, []).append(rule)
+            first.setdefault(rule.target, (relpath, rule))
+    index = _rule_index(makefiles)
+    labels_of = {}
+    for relpath, _ in makefiles:
+        for rule in by_file.get(relpath, []):
+            if rule.help is None:
+                continue
+            labels, _, why = parse_effect_labels(rule.help)
+            if why is not None:
+                errs.append("%s:%d: `%s` %s" % (relpath, rule.lineno, rule.target, why))
+            elif rule.target not in labels_of:
+                labels_of[rule.target] = labels
+    conflicts = _label_conflicts(makefiles)
+    for name in sorted(conflicts):
+        relpath, lineno, _ = conflicts[name][1]
+        errs.append(
+            "%s:%d: %s" % (relpath, lineno, _conflict_text(name, conflicts[name]))
+        )
+    # A composite's label covers what it reaches. A labelled child answers for
+    # its own subtree (its label is checked in turn); an unlabelled one is
+    # transparent, and with a recipe it is an effect nobody declared.
+    for name in sorted(labels_of):
+        relpath, rule = first[name]
+        declared = set(labels_of[name])
+        short = {}
+        stack, seen = [name], {name}
+        while stack:
+            node = index[stack.pop()]
+            for item in node.unresolved:
+                msg = (
+                    "%s:%d: `%s` runs `%s`, which this gate cannot follow, so its "
+                    "effect label is unverified past it"
+                    % (
+                        first[node.target][0],
+                        first[node.target][1].lineno,
+                        node.target,
+                        item,
+                    )
+                    if node.target == name
+                    else "%s:%d: `%s` reaches `%s`, which runs `%s` this gate cannot "
+                    "follow" % (relpath, rule.lineno, name, node.target, item)
+                )
+                if msg not in run_once:
+                    run_once.add(msg)
+                    warns.append(msg)
+            for child in _children(node):
+                if child in seen or child not in index:
+                    continue
+                seen.add(child)
+                if child in labels_of:
+                    gap = [
+                        w
+                        for w in labels_of[child]
+                        if w != "local" and w not in declared
+                    ]
+                    if gap:
+                        short[child] = gap
+                    continue
+                if index[child].help is not None:
+                    continue  # malformed label: reported above
+                if index[child].recipe:
+                    warns.append(
+                        "%s:%d: `%s` reaches `%s`, which has a recipe but no effect "
+                        "label, so `%s`'s label cannot account for it -- annotate it"
+                        % (relpath, rule.lineno, name, child, name)
+                    )
+                stack.append(child)
+        if short:
+            errs.append(
+                "%s:%d: `%s` is labelled [%s] but reaches %s -- its label must cover "
+                "what its prerequisites and `$(MAKE)` calls do"
+                % (
+                    relpath,
+                    rule.lineno,
+                    name,
+                    ",".join(labels_of[name]),
+                    ", ".join(
+                        "`%s` [%s]" % (c, ",".join(short[c])) for c in sorted(short)
+                    ),
+                )
+            )
+    # The write guard: what changes shared state refuses to run unattended.
+    shapes = policy["write_shapes"]
+    guard_in, guard_errs = _guard_findings(makefiles, policy["unattended_vars"])
+    errs.extend(guard_errs)
+    needs_guard = []
+    for name in sorted(first):
+        relpath, at = first[name]
+        rule = index[name]
+        labels = labels_of.get(name)
+        is_write = labels is not None and "write" in labels
+        shaped = [s for s in shapes if name.endswith(s)]
+        where = "%s:%d: `%s`" % (relpath, at.lineno, name)
+        if shaped and not is_write and (rule.help is None or labels is not None):
+            errs.append(
+                "%s is named like a write (`%s`) but %s -- label it [write]"
+                % (
+                    where,
+                    shaped[0],
+                    "carries no effect label"
+                    if rule.help is None
+                    else "is labelled [%s]" % ",".join(labels),
+                )
+            )
+        if is_write and shapes and not shaped:
+            errs.append(
+                "%s is labelled [write] but its name ends in none of the "
+                "make_targets.write_shapes (%s)" % (where, ", ".join(shapes))
+            )
+        if (is_write or shaped) and rule.recipe:
+            needs_guard.append(name)
+            if rule.first_recipe not in _GUARD_CALLS:
+                errs.append(
+                    "%s: a [write] target opens its recipe with `$(%s)`, so CI and "
+                    "gate runs refuse it before it acts (its recipe opens with `%s`)"
+                    % (where, _GUARD_NAME, rule.first_recipe)
+                )
+            elif "-" in rule.first_prefix:
+                errs.append(
+                    "%s: its `$(%s)` line carries a `-` prefix, so make ignores the "
+                    "guard's `exit 1` and runs the recipe under CI and gate runs "
+                    "anyway -- drop the `-`" % (where, _GUARD_NAME)
+                )
+    if needs_guard and guard_in is None:
+        errs.append(
+            "Makefile: `%s` is never defined, but %s open their recipes with it -- "
+            "define it (docs/adr/0011-make-target-effect-labels.md)"
+            % (_GUARD_NAME, ", ".join("`%s`" % n for n in needs_guard))
+        )
+    errs.extend(
+        "config/project.json: make_targets.effect_proof_skip names `%s`, "
+        "which no make target defines -- drop the stale entry" % key
+        for key in sorted(policy["effect_proof_skip"])
+        if key not in index
+    )
+    errs.extend(_area_findings(makefiles, by_file, policy["area_dir"]))
+    return errs, warns
+
+
+def check_W():
+    """ERROR when an annotated make target has no well-formed effect label or
+    two different ones, a composite's label misses what it reaches, a [write] or
+    write-shaped target does not open with `$(WRITE_GUARD)` or opens with it
+    behind a `-`, the guard misses a configured unattended variable, tests one
+    the config omits, or ignores its own failure, the make_targets policy is malformed or stale, or (with
+    areas on) an area makefile breaks its header, prefix or include. WARN where
+    a recursion or an unlabelled recipe hides an effect. Silent without a
+    Makefile; include problems are check_P's to report."""
+    if not os.path.isfile(os.path.join(ROOT, "Makefile")):
+        return
+    manifest = _read_json_config("config/project.json")
+    if manifest is _NO_DATA:
+        if os.path.isfile(os.path.join(ROOT, "config", "project.json")):
+            return  # unreadable: _read_json_config reported it, once
+        manifest = None
+    policy, perrs = make_targets_policy(manifest)
+    for m in perrs:
+        err("config/project.json: " + m)
+    if policy is None:
+        return
+    makefiles = walk_makefiles(ROOT, lambda _m: None, lambda _m: None)
+    errs, warns_ = _effect_findings(makefiles, policy)
+    for m in errs:
+        err(m)
+    for m in warns_:
+        warn(m)
+
+
 def main():
     check_A()
     check_B()
@@ -3899,6 +4863,7 @@ def main():
     check_T()
     check_U()
     check_V()
+    check_W()
     for w_ in warnings:
         print("WARN  " + w_)
     for e_ in errors:

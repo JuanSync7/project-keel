@@ -8,7 +8,7 @@ tags: [showcase, demo, frontend, astro, fastapi, wiki, guide]
 summary: How the docs/wiki frontend presents the template as a product and stays in sync with the backend.
 id: docs-guides-showcase-site
 created: 2026-06-19
-updated: 2026-09-02
+updated: 2026-10-06
 visibility: internal
 canonical: true
 ---
@@ -103,9 +103,12 @@ JSON, and the frontend reads those files instead of a live backend.
 
 - **Snapshot** — `scripts/jobs/export_showcase_static.py` (run via `make
   site-static`) calls `load_showcase()` — the exact domain the REST router uses —
-  and writes `src/frontend/astro/public/api/*.json`, a `wiki/nodes.json` (every
-  node + rendered markdown, fetched once and cached — one corpus-bounded file),
-  plus `llms.txt` + `llms-full.txt`. One source of truth; no logic duplicated.
+  and writes `src/frontend/<stack>/public/api/*.json` (the first frontend app the
+  Makefile discovers), a `wiki/nodes.json` (every node + rendered markdown,
+  fetched once and cached — one corpus-bounded file), plus `llms.txt` +
+  `llms-full.txt`. One source of truth; no logic duplicated. `.gitignore` covers
+  that output for every stack, so `make site-static` is `[local]` and the gate
+  runner proves it leaves the tree alone (CONVENTIONS §7).
 - **Frontend** — `src/frontend/astro/src/lib/api.ts` has two modes: *live*
   (default; fetch `/api/*`) and *static* (`PUBLIC_DATA_MODE=static`; read the
   snapshot under the site base). Search runs client-side over `nodes.json` (a

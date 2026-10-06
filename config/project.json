@@ -18,6 +18,25 @@
     "_comment": "Top-level directories this project adds beyond the CONVENTIONS section 2 taxonomy, by name. scripts/check_structure.py check_B errors on any other non-hidden top-level directory, on a name here that does not exist or is already in the taxonomy, and on a declared directory without README.md and CLAUDE.md. Names only: the directory's own README.md summary says why it exists.",
     "extra_toplevel": []
   },
+  "make_targets": {
+    "_comment": "Every annotated make target opens its `## ` help with an effect label from the closed vocabulary [local] [tree] [read] [cost] [write] (docs/adr/0011-make-target-effect-labels.md). scripts/check_structure.py check_W validates this block and the labels; scripts/run_make_target.py runs only a target whose label falls inside gate_effects, sets gate_runner_var=1 last so WRITE_GUARD refuses a [write] target, accepts only the gate_vars as NAME=VALUE variables (each value one path-like word), and fails a run that changed what git sees. unattended_vars are the variables WRITE_GUARD refuses under; write_shapes are target-name suffixes that must be [write]; area_dir is the directory of <area>.mk makefiles (null: areas off); effect_proof_skip keeps a [local] target out of tests/integration/test_make_target_effects.py, by name and reason only.",
+    "unattended_vars": ["CI", "RALPH"],
+    "gate_runner_var": "RALPH",
+    "gate_effects": ["local", "read"],
+    "write_shapes": [],
+    "area_dir": null,
+    "effect_proof_skip": {
+      "new": "generates a project outside the tree and needs DEST and a clean checkout",
+      "run": "starts the app composition root, which serves until stopped",
+      "smoke": "selects no tests today, and pytest exits 5 on an empty selection",
+      "run-api": "a dev server that never exits",
+      "run-web": "a dev server that never exits and needs npm",
+      "test": "runs the whole suite, which holds this sweep, so it would run itself; tests/integration/test_write_guard.py runs its make-driving cases through the gate runner",
+      "integration": "runs the integration suite, which holds this proof",
+      "verify": "runs `test`, which holds this proof"
+    },
+    "gate_vars": ["PY"]
+  },
   "layers": {
     "frontend": {
       "stack": null,

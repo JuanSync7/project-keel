@@ -26,7 +26,7 @@ the decision.
 |-------|--------|--------|
 | 1 | A generated project fails its own doc-freshness test on arrival | done — `make verify` green (776 passed); ADR-0010 proposed, awaiting acceptance |
 | 2 | An unknown directory is invisible to the structure gate | done — `make verify` green (807 passed) |
-| 3 | A make target's effect is declared nowhere, so a "check" can write | planned |
+| 3 | A make target's effect is declared nowhere, so a "check" can write | done — `make verify` green (987 passed); ADR-0011 proposed |
 | 4 | Every child process inherits every credential in the environment | planned |
 | 5 | No command checks an existing keel project for slices 1–4 | planned |
 
@@ -136,16 +136,80 @@ one unit test red. Keel's own gate reports 0 errors and one WARN, for
 
 ## Slice 3 — every make target declares its effect
 
-**Measured.** `scripts/run_make_target.py` validates a target's spelling, not its
-effect, and says so. bedrock-platform added effect labels (its ADR-0010) and
-labels `fmt` and `site-data` `[local]`, the same as `check`, so the gap it closed
-for remote writes stays open for the tree.
+**Measured.** `scripts/run_make_target.py` validated a target's spelling, not its
+effect, and said so. bedrock-platform added effect labels (its
+`docs/adr/0010-areas-and-effect-labels.md`) and labels `fmt` and `site-data`
+`[local]`, the same as `check`, so the gap it closed for remote writes stays
+open for the tree. Run over a read-only copy of bedrock-platform's `Makefile` and
+`mk/`, with `area_dir` `mk` and `write_shapes` `-apply`, `-drill`, `-destroy`,
+`check_W` reads 81 labelled targets (51 `[local]`, 12 `[read]`, 11 `[write]`,
+7 `[cost]`) and reports 2 errors and 0 warnings. Both are one target:
+`doc-review-apply`, inherited from keel, is named like a write (`-apply`) but
+labelled `[cost]`, and so lacks `$(WRITE_GUARD)`. Its four areas pass the
+header, prefix and include rules. Three of its `[local]` targets, `fmt`, `fe-install`
+and `agent-surface-schema`, rewrite the tree, which keel labels `tree`; no
+static check can see that, and only the runtime sweep would. In keel, `make site-static` in a generated react-vite
+project, run through the new runner under the old astro-only `.gitignore`, was
+green and changed 12 paths under `src/frontend/react-vite/public/`; under the
+new `.gitignore` it changes none.
 
 **Decision.** Port the labels, the `$(WRITE_GUARD)` refusal under CI and Ralph
 loops and the labelled `make help` as check_W, letter-compatible with
-bedrock-platform's, and split the read-only targets from the ones that rewrite the
-tree. The gate runner refuses a target whose label says it writes and fails a
-read-only one that dirtied the tree.
+bedrock-platform's, and split the read-only targets from the ones that rewrite
+the tree with a fifth word, `tree`. The gate runner refuses a target whose
+closed label is outside `make_targets.gate_effects` and fails a read-only one
+that dirtied the tree. A composite's label must cover what its prerequisites
+reach, so the runner and the check close labels the same way
+(`check_structure.target_effects`). The policy is data in `config/project.json`
+`make_targets`, so a project names its own unattended variables, write shapes
+and area directory. The ADR is `docs/adr/0011-make-target-effect-labels.md`,
+status proposed; its number is the next free one in keel and collides with
+nothing in bedrock-platform today, which the queued number-space item still
+owns.
+
+**Built.** `scripts/check_structure.py` `check_W` with `parse_effect_labels`,
+`make_targets_policy`, `target_effects` and `walk_makefiles`;
+`scripts/make_help.py` and the labelled `help` recipe; `scripts/run_make_target.py`
+rewritten as the read-only gate runner, and `scripts/apply_refactor.py` gating
+through it; the `make_targets` block in `config/project.json` and its twin;
+`$(WRITE_GUARD)` and a label on every one of keel's 37 annotated targets (32
+`[local]`, 5 carrying `tree`); both `.gitignore` twins; the practice
+`make-target-declares-its-effect`; CONVENTIONS §6, §7, §15 and §17, `AGENT.md`,
+and the guides, tool specs and rosters that describe the runner. The tests are
+`tests/unit/scripts/test_check_w.py`, `test_make_help.py`,
+`test_run_make_target.py` and `test_apply_refactor.py`,
+`tests/integration/test_write_guard.py`, `test_make_target_effects.py` and
+`test_a_generated_project_gates_only_on_targets_that_leave_its_tree_alone` in
+`test_copier_generation.py`. Before the change 113 of them failed and 2 errored
+at collection; three mutations (the runner's dirty-tree verdict, check_W's
+cover rule, the guard's `exit 1` rule) each turned at least one test red. The
+runtime sweep runs 24 `[local]` targets, including `doc-review`, and skips 8 by
+reason.
+
+**Review.** An independent review found eleven defects, each reproduced by a
+second agent, and each is fixed test-first with a mutation that turns its test
+red. check_W accepted `-$(WRITE_GUARD)`, which make ignores (`Error 1
+(ignored)`, rc 0, the recipe ran under `CI=1`), and a `-` at the head of the
+guard's definition; both are errors now. A target annotated `[local]` on one
+rule and `[write]` on another kept only the first label, so the gate runner ran
+it; check_W and `target_effects` now refuse a target with two different labels.
+The guard's definition was read with its make `#` comment, so `@true # $(CI)
+$(RALPH) exit 1` passed; the comment is cut off first. The names the guard
+tests are now checked against `make_targets.unattended_vars` in both directions,
+and ADR-0011 records the two copies as a deliberate departure from "define once".
+The gate runner accepted any `NAME=VALUE`: `PY=make deploy-apply RALPH= CI= ;
+true` ran a `[write]` target through a `[local]` one, and `MAKEFILES=` or
+`WRITE_GUARD=` reached make. It now accepts only the new
+`make_targets.gate_vars` (keel: `PY`), never make's control variables, the
+guard or an unattended variable, with a one-word path-like value. Its snapshot
+dropped the porcelain status, so `git add` in a `[local]` target passed, and
+read a worktree rename (` R`) as garbage paths; it now keys on status and
+content and reads the source in either column. `tests/integration/test_write_guard.py`
+went red whenever the suite ran under the runner, because make hands `RALPH=1`
+to children through `MAKEFLAGS`; its make calls now drop the inherited make
+variables, and a test runs its attended cases through the runner. The CHANGELOG
+now tells a project to re-audit its `[local]` labels, and CONVENTIONS §7, the
+CHANGELOG and the ADR say a label is one bracket of one or more words.
 
 ## Slice 4 — child processes get an allowlisted environment
 
@@ -178,11 +242,35 @@ Found during the slices and deliberately not started:
 - **`make new ALLOW_DIRTY=1` copies untracked files** from a dirty template,
   including a stray symlink at the root.
 - **The copier 9.3.0 floor is unverified** for `_tasks` with `_copier_python`.
+- **`FE_APPS` order is the filesystem's.** `make site-static` writes into
+  `$(firstword $(FE_APPS))`, and `$(wildcard)` does not promise an order, so a
+  project that keeps two frontend stacks can snapshot into either. Sort it.
+- **react-vite ships no lockfile**, so `make fe-install` there is not
+  reproducible, and the sweep cannot prove `lint-fe` or `typecheck-fe` against
+  installed dependencies in that stack.
+- **`make run` needs `PYTHONPATH`** to find `src/` outside the test harness;
+  the sweep skips it as a server, so nothing exercises the composition root's
+  import path.
+- **`make smoke` exits 5** because it selects no tests today, so the sweep skips
+  it by reason instead of proving it.
+- **ADR numbers.** Slice 3's ADR took keel's next free number, 0011; the queued
+  number-space item above still decides how template and project ADRs coexist.
+- **`api/grpc/Makefile` is outside the walk.** `check_W` and `check_P` follow
+  `include` from the root `Makefile`, so a transport's own makefile, run with
+  `make -C`, carries no labels and no guard check.
 - **An untagged template skips `_migrations`**, including the update restamp.
 - **Nothing pins `TAXONOMY` to the CONVENTIONS §2 table.** The list in
   `scripts/check_structure.py` and the table are kept in step by hand, and since
   slice 2 a drift between them is an error source. A parity check or test should
   read one from the other.
+- **make can ignore errors outside a recipe line's prefix.** A `.IGNORE:` special
+  target, or `-i` in a `MAKEFLAGS` set in the environment rather than through
+  the gate runner, makes make carry on past `$(WRITE_GUARD)`'s `exit 1`. check_W
+  reads neither; a `.IGNORE` that covers a `[write]` target should be an error.
+- **A gate variable still names a program.** `make_targets.gate_vars` keeps
+  make's control surface out of a gate run, but `PY=` chooses the interpreter a
+  recipe runs; the tree snapshot is the only backstop for what that program does
+  outside the tree.
 - **Keel's copier `_exclude` names a root `tmp/`.** Under the closed taxonomy
   a scratch directory at the root cannot be declared (stale while absent) or left
   undeclared (error while present); scratch belongs in a dot-directory.

@@ -11,6 +11,68 @@ version rather than a bare commit:
 ## [Unreleased]
 
 ### Fixed
+- **`make site-static` dirtied the tree in a project whose frontend is not
+  astro.** It writes the static snapshot into the first frontend app's
+  `public/`, and `.gitignore` covered only `src/frontend/astro/public/`, so in a
+  react-vite project the run left `public/api/`, `llms.txt` and `llms-full.txt`
+  untracked. Both `.gitignore` twins now ignore `src/frontend/*/public/api/` and
+  the two `llms` files for every stack, and
+  `tests/integration/test_copier_generation.py` runs `site-static` through the
+  read-only gate runner in a generated react-vite and astro project.
+
+### Changed
+- **`scripts/apply_refactor.py` gates through the read-only runner.** Its gate
+  now goes through `scripts/run_make_target.py`, so `--gate fmt` is refused and
+  rolled back as red instead of passing, and a gate run that changed the tree
+  is red with the changed paths in `gate_output`.
+- **`scripts/run_make_target.py` is now a read-only gate runner.** It used to
+  check only that a target was a plain token. It now runs a target only when
+  its effect label, closed over its prerequisites, is inside
+  `config/project.json` `make_targets.gate_effects`; refuses an extra argument
+  that is not a `NAME=VALUE` variable named in `make_targets.gate_vars` with a
+  one-word path-like value, and a tree without git; passes `RALPH=1` last so
+  `$(WRITE_GUARD)` refuses a `[write]` recipe; and fails a green run that changed
+  what git lists, content or index, naming the paths. A refusal exits 2.
+- **`make help` prints each target's effect label** and a legend, and filters
+  with `EFFECT=<word>` or `AREA=<area>` (`scripts/make_help.py`).
+- **Upgrading: add the `make_targets` block and label your targets.** After
+  `copier update`, `make check` fails until `config/project.json` carries a
+  `make_targets` block (copy keel's: `unattended_vars`, `gate_runner_var`,
+  `gate_effects`, `write_shapes`, `area_dir`, `effect_proof_skip`, `gate_vars`)
+  and every
+  `## `-annotated target in the project's own makefiles opens its help with a
+  label such as `## [local] ...` or `## [tree] ...`. A target that changes
+  shared remote state is `[write]` and opens its recipe with `$(WRITE_GUARD)`.
+  `make help EFFECT=tree` lists what a gate will refuse.
+- **Upgrading: re-audit every target you already label `[local]`.** `local` is
+  narrower than bedrock-platform's: it now means the target changes nothing git
+  lists. A formatter or a generator of committed files is `[tree]`, so
+  bedrock-platform's `[local] fmt`, `fe-install` and `agent-surface-schema`
+  become `[tree]`. check_W cannot see this, because a label is only proven by
+  running the target: the gate runner now runs a `[local]` target as a gate and
+  fails it only after it has rewritten the tree, and
+  `tests/integration/test_make_target_effects.py` fails the label. Relabel before
+  you gate.
+
+### Added
+- **Effect labels on every make target, held by `check_W`.** Every `## `
+  target opens its help with one bracketed label of one or more words from
+  `local`, `tree`, `read`, `cost`, `write`, comma-separated in that order
+  (`local` only alone, so `doc-review-apply` is `[tree,cost]`); a target
+  annotated twice carries one label; a composite's label covers what its prerequisites and `$(MAKE)` calls
+  reach; a `[write]` recipe opens with `$(WRITE_GUARD)`, which refuses under any
+  `make_targets.unattended_vars` name (`CI`, `RALPH`). Measured over keel: 37
+  annotated targets, 32 `[local]`, 5 carrying `tree`
+  (`docs/adr/0011-make-target-effect-labels.md`, proposed; adapted from
+  bedrock-platform's `docs/adr/0010-areas-and-effect-labels.md`). Registered as
+  the gate practice `make-target-declares-its-effect`.
+- **`tests/integration/test_make_target_effects.py` — a `[local]` claim is
+  measured.** It runs every `[local]` target through the gate runner in a
+  hermetic clone of the working tree and fails any that is red or changed the
+  tree; a skip is by name and reason in `make_targets.effect_proof_skip`, a
+  stale skip fails, and a planted target proves the sweep can go red.
+
+### Fixed
 - **A generated project failed its own doc-freshness test on arrival.** Every
   `updated:` was a literal from keel's history, so committing a project on the
   day it was generated made 112 of 112 governed documents stale under
