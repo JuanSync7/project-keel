@@ -7,7 +7,7 @@ owner: TBD
 summary: How to add code/tests/docs without breaking the structure.
 id: contributing
 created: 2026-06-17
-updated: 2026-06-24
+updated: 2026-10-06
 visibility: internal
 canonical: true
 ---
@@ -20,8 +20,11 @@ you**; the playbooks are `docs/guides/dev-loops.md` and
 steps below are that discipline applied to one change:
 
 1. Read `CONVENTIONS.md`.
-2. New package → add `__init__.py` with `__all__`, a `README.md`, and a
-   `CLAUDE.md`. Private modules are `_underscore`d.
+2. New package → add `__init__.py` with `__all__` (check_C). New top-level
+   directory → make it a CONVENTIONS §2 row or declare it in
+   `config/project.json` `structure.extra_toplevel`, and add a `README.md` and
+   a `CLAUDE.md` (check_B); a new directory directly under `agents/` (an
+   agent, §13, or the shared `agents/tools/`, §10) needs the same two files. Private modules are `_underscore`d.
 3. New public symbol → re-export it from the package `__init__.py`.
 4. New `src/` module → write the mirrored `tests/unit/...` test **first**
    (red), then the code (green), then refactor with the suite green.

@@ -52,8 +52,28 @@ version rather than a bare commit:
   both `.gitignore` twins, and stated as the seventh rule in
   `docs/guides/idempotency.md` §3: a doer's output path goes somewhere git has an
   opinion about.
+- **An unknown directory was invisible to the structure gate.** `check_B`
+  labelled only the directories in its own `TAXONOMY` list, so a `parked/` at
+  the root passed with zero errors. The first generated project reported it,
+  and it reproduced in keel and in a project generated from it. The top level
+  is now closed: an undeclared non-hidden directory at the root is an error that
+  names both fixes. The new `config/project.json` `structure.extra_toplevel`
+  declares a project's own top-level directories. A declaration must name a
+  directory that exists, must not repeat a CONVENTIONS §2 row, and the directory
+  carries `README.md` + `CLAUDE.md`. An undeclared symlinked directory warns,
+  because no check reads through a link. `AGENT.md` no longer claims that every
+  directory is labelled: the gate holds every top-level directory and every
+  `agents/<name>/` (CONVENTIONS §2, §13), and 39 of keel's 59 nested non-hidden
+  directories legitimately carry only one label or none.
 
 ### Changed
+- **Upgrading: declare your own top-level directories.** After `copier update`,
+  a project with a top-level directory outside the CONVENTIONS §2 taxonomy fails
+  `make check` with `ERROR <dir>/: top-level directory is not in the taxonomy`.
+  The fix is to add the name to `config/project.json` `structure.extra_toplevel`
+  and give the directory a `README.md` and `CLAUDE.md`, or to move it under an
+  existing directory. A directory directly under `agents/` (an agent, or the
+  shared `agents/tools/`) without both files now fails the same way.
 - **`copier copy` and `make new` now require `--trust`.** This supersedes the
   0.1.0-era note below that generation needs no flag. Generation now runs a
   copier task, and copier refuses a template with tasks unless it is trusted;

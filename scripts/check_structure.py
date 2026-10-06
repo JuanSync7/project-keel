@@ -9,7 +9,11 @@ Checks:
   A. Frontmatter validity on README.md / AGENT.md / CLAUDE.md, docs/**,
      test-docs/** *.md, and agents/**/*.tool.md; a 'deprecated' or
      'superseded' document names its successor in superseded_by
-  B. Each taxonomy directory that exists has README.md + CLAUDE.md
+  B. Closed taxonomy (ERR): every non-hidden top-level dir is in TAXONOMY or
+     declared in config/project.json structure.extra_toplevel; a declaration
+     exists and is not redundant; every top-level dir and every agents/<name>/
+     has README.md + CLAUDE.md. An undeclared symlinked dir WARNs (no check
+     reads through a link)
   C. Each src/ directory containing *.py is a package: __init__.py with __all__
   D. The __init__ boundary: no absolute import of another package's _private module
   E. Authored coverage (ERR): every __all__-exported symbol defined in-file
@@ -378,16 +382,125 @@ def check_A():
                     GOVERNED.append((rel(full), fm.get("kind"), fm.get("owner")))
 
 
+def _declared_toplevel():
+    """The top-level names config/project.json declares beyond TAXONOMY.
+
+    Reads `structure.extra_toplevel`, a plain list of names. An absent manifest
+    or key declares nothing, silently: check_H already warns on a missing
+    manifest, and a project that has not run `copier update` yet has no key.
+    Every entry the rule would never consult is an ERROR rather than a skip, so
+    a declaration cannot sit in the manifest looking like it does something.
+    A malformed manifest declares nothing, so it can never turn the gate green.
+    """
+    manifest = _read_json_config(os.path.join("config", "project.json"))
+    if not isinstance(manifest, dict):
+        return []  # absent is silent; unreadable/non-object is reported elsewhere
+    structure = _expect(manifest.get("structure"), dict, "structure", {})
+    names = _expect(
+        structure.get("extra_toplevel"), list, "structure.extra_toplevel", []
+    )
+    accepted = []
+    for name in names:
+        if (
+            not isinstance(name, str)
+            or not name
+            or "/" in name
+            or "\\" in name
+            or name in (".", "..")
+        ):
+            err(
+                "config/project.json: structure.extra_toplevel entry %r is not a "
+                "top-level directory name" % (name,)
+            )
+        elif name.startswith(".") or name in IGNORE_DIRS:
+            err(
+                "config/project.json: structure.extra_toplevel '%s' is outside the "
+                "taxonomy rule (hidden or ignored by the gate); remove it" % name
+            )
+        elif name in TAXONOMY:
+            err(
+                "config/project.json: structure.extra_toplevel '%s' is already in "
+                "the taxonomy (CONVENTIONS section 2); remove the redundant "
+                "declaration" % name
+            )
+        elif name in accepted:
+            err("config/project.json: structure.extra_toplevel names '%s' twice" % name)
+        else:
+            accepted.append(name)
+    return accepted
+
+
+def _require_labels(relpath, why=""):
+    """ERROR for each of README.md / CLAUDE.md missing from ROOT/relpath."""
+    for need in ("README.md", "CLAUDE.md"):
+        if not os.path.isfile(os.path.join(ROOT, relpath, need)):
+            err("%s/: missing %s%s" % (relpath, need, why))
+
+
 def check_B():
+    """The top level is a closed vocabulary, and what it admits is labelled.
+
+    See CONVENTIONS section 2 ("The taxonomy is closed") and section 15.
+    """
     for d in REQUIRED_TOPLEVEL:
         if not os.path.isdir(os.path.join(ROOT, d)):
             err("required top-level dir '%s/' is missing" % d)
+    declared = _declared_toplevel()
     for d in TAXONOMY:
-        full = os.path.join(ROOT, d)
-        if os.path.isdir(full):
-            for need in ("README.md", "CLAUDE.md"):
-                if not os.path.isfile(os.path.join(full, need)):
-                    err("%s/: missing %s" % (d, need))
+        if os.path.isdir(os.path.join(ROOT, d)):
+            _require_labels(d)
+    for d in declared:
+        if not os.path.isdir(os.path.join(ROOT, d)):
+            err(
+                "config/project.json: structure.extra_toplevel declares '%s/' but "
+                "it does not exist; delete the declaration" % d
+            )
+        else:
+            _require_labels(d)
+    for name in sorted(os.listdir(ROOT)):
+        full = os.path.join(ROOT, name)
+        if name.startswith(".") or name in IGNORE_DIRS or not os.path.isdir(full):
+            continue  # hidden (section 5), tool dirs, files and dangling links
+        if name in TAXONOMY or name in declared:
+            continue
+        # An undeclared symlinked directory WARNs; it is never an ERROR and never
+        # silent. walk() is os.walk with followlinks=False, so no check (A, C, D,
+        # I, O, V...) ever reads through the link: its contents are ungated, and
+        # the WARN says so on every run. It is not an ERROR because git stores a
+        # symlink as a path, not as project content, and this gate cannot ask git
+        # whether the link is tracked (stdlib-only, no git: Alternatives in
+        # docs/adr/0009-release-identity-and-the-tag-ordering-rule.md). An
+        # ERROR would turn keel's own local gate red over an untracked stray link
+        # at the root, and every copier generation from a dirty tree with it,
+        # since copier's dirty-HEAD clone runs `git add -A` and copies the link
+        # into the project. It is not a loophole for a real directory: turning
+        # `parked/` into `parked -> elsewhere` moves the content out of the
+        # repository, and a real directory beside a link to it still errors.
+        # The cost: a tracked link to an in-repo directory also only warns.
+        if os.path.islink(full):
+            warn(
+                "%s/: symlinked directory outside the taxonomy; no check reads "
+                "through a link, so its contents are ungated -- remove it, or "
+                "declare it in config/project.json structure.extra_toplevel "
+                "(CONVENTIONS section 2)" % name
+            )
+            continue
+        err(
+            "%s/: top-level directory is not in the taxonomy (CONVENTIONS section "
+            "2) -- move it under an existing directory, or declare it in "
+            "config/project.json structure.extra_toplevel and give it a README.md "
+            "and CLAUDE.md" % name
+        )
+    # Every immediate subdirectory of agents/ is held, not only agents/<name>/:
+    # the shared agents/tools/ (section 10) is a sibling of the agents (section
+    # 13), so the message names the position rather than calling it an agent.
+    for name in _subdirs("agents"):
+        if not name.startswith("."):
+            _require_labels(
+                os.path.join("agents", name),
+                " (every directory directly under agents/ is labelled, "
+                "CONVENTIONS sections 10 and 13)",
+            )
 
 
 def check_C():

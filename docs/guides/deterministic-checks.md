@@ -87,7 +87,12 @@ print but never fail the build.
   valid `kind` / `layer` / `status` / `visibility`; `id` is unique; a path-like
   `canonical` resolves; `deprecated` and `superseded` both require
   `superseded_by` (one rule, two lifecycle vocabularies).
-- **B. Documented dirs** — every taxonomy directory has `README.md` + `CLAUDE.md`.
+- **B. Closed taxonomy** — every non-hidden top-level directory is a §2 row or
+  declared in `config/project.json` `structure.extra_toplevel` (§15); a
+  declaration names a directory that exists and is not already a row; every
+  top-level directory and every directory directly under `agents/` (each
+  `agents/<name>/` and `agents/tools/`) carries `README.md` + `CLAUDE.md`. An undeclared symlinked directory is a WARN, because no check
+  reads through a link and the gate cannot ask git whether it is tracked.
 - **C. Package boundary** — every `src/` dir with `.py` has an `__init__.py`
   defining `__all__`.
 - **D. `__init__` is the API** — no absolute import of another package's

@@ -16,6 +16,10 @@
     }
   },
   {%- endif %}
+  "structure": {
+    "_comment": "Top-level directories this project adds beyond the CONVENTIONS section 2 taxonomy, by name. scripts/check_structure.py check_B errors on any other non-hidden top-level directory, on a name here that does not exist or is already in the taxonomy, and on a declared directory without README.md and CLAUDE.md. Names only: the directory's own README.md summary says why it exists.",
+    "extra_toplevel": []
+  },
   "layers": {
 {%- if frontend_stack != "none" %}
     "frontend": {

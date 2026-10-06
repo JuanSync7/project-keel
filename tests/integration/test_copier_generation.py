@@ -2,7 +2,7 @@
 title: Integration — copier generates a structurally valid, tailored project
 kind: tests
 layer: n/a
-summary: `copier` renders keel's root template into a new project — the manifest is tailored to the answers, the un-chosen frontend stack is pruned, CLAUDE.md->AGENT.md symlinks are preserved, keel's own template meta-tests are pruned, and check_structure passes. Skipped on a bare local clone without the optional `template` extra; CI installs `.[dev,template]` and declares the surface required (KEEL_REQUIRED_EXTRAS), so there a missing copier is a hard failure instead of a silent skip.
+summary: `copier` renders keel's root template into a new project — the manifest is tailored to the answers, the un-chosen frontend stack is pruned, CLAUDE.md->AGENT.md symlinks are preserved, keel's own template meta-tests are pruned, and check_structure passes; an undeclared top-level directory reds the project until it is declared and labelled. Skipped on a bare local clone without the optional `template` extra; CI installs `.[dev,template]` and declares the surface required (KEEL_REQUIRED_EXTRAS), so there a missing copier is a hard failure instead of a silent skip.
 """
 
 import json
@@ -868,6 +868,73 @@ def _test_gate(project):
         env=dict(os.environ, PYTHONPATH="src:."),
         capture_output=True,
         text=True,
+    )
+
+
+def _label_dir(path, slug):
+    """Label a directory the way check_A and check_I hold it: README.md and AGENT.md
+    with full frontmatter (unique ids), and CLAUDE.md as a symlink to AGENT.md."""
+    path.mkdir(parents=True, exist_ok=True)
+    for name, kind in (("README.md", "readme"), ("AGENT.md", "rules")):
+        (path / name).write_text(
+            "---\n"
+            "title: %s %s\n"
+            "kind: %s\n"
+            "layer: n/a\n"
+            "status: draft\n"
+            "owner: someone\n"
+            "summary: Work parked outside the taxonomy, declared by the project.\n"
+            "id: %s-%s\n"
+            "created: 2026-01-01\n"
+            "updated: 2026-01-01\n"
+            "visibility: internal\n"
+            "canonical: true\n"
+            "---\n"
+            "# %s\n" % (slug, kind, kind, slug, kind, slug),
+            encoding="utf-8",
+        )
+    os.symlink("AGENT.md", str(path / "CLAUDE.md"))
+
+
+def test_an_undeclared_top_level_directory_reds_a_generated_project_until_declared_and_labelled(
+    tmp_path,
+):
+    """The closed taxonomy holds DOWNSTREAM, through the project's own gate.
+
+    A fresh project ships the declaration key empty and is green; an extra
+    top-level directory reds it; declaring it is not enough without labels; the
+    documented fix (declare + README.md + CLAUDE.md) lands green. Warnings are not
+    asserted: a generation from a dirty template tree carries any untracked
+    symlink at keel's root, which the gate reports as a WARN by design."""
+    dest = tmp_path / "proj"
+    _generate(dest, project_name="demo_proj", frontend_stack="none")
+    manifest = dest / "config" / "project.json"
+    data = json.loads(manifest.read_text())
+    assert data["structure"]["extra_toplevel"] == []
+    r = _structure_gate(dest)
+    assert r.returncode == 0, "a fresh project is not green:\n" + r.stdout + r.stderr
+
+    (dest / "parked").mkdir()
+    (dest / "parked" / "notes.txt").write_text("x\n", encoding="utf-8")
+    r = _structure_gate(dest)
+    assert r.returncode != 0, "an undeclared parked/ left the gate green:\n" + r.stdout
+    assert any(
+        ln.startswith("ERROR parked/: top-level directory is not in the taxonomy")
+        for ln in r.stdout.splitlines()
+    ), r.stdout
+
+    data["structure"]["extra_toplevel"] = ["parked"]
+    manifest.write_text(json.dumps(data, indent=2) + "\n")
+    r = _structure_gate(dest)
+    lines = r.stdout.splitlines()
+    assert r.returncode != 0, "a declared but unlabelled parked/ is green:\n" + r.stdout
+    assert "ERROR parked/: missing README.md" in lines, r.stdout
+    assert "ERROR parked/: missing CLAUDE.md" in lines, r.stdout
+
+    _label_dir(dest / "parked", "parked")
+    r = _structure_gate(dest)
+    assert r.returncode == 0, (
+        "declaring and labelling parked/ does not land green:\n" + r.stdout + r.stderr
     )
 
 

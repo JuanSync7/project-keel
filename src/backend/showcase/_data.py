@@ -15,15 +15,17 @@ TAGLINE = "A polyglot-aware, agent-friendly project skeleton that stays honest."
 # came from. `_repo.py` fills it from the manifest name.
 SUMMARY_TEMPLATE = (
     "{title} is a generic project skeleton with a strict, documented "
-    "structure that both humans and coding agents can navigate. Every directory "
-    "is labelled, every package has a public-API boundary, and a suite of "
-    "deterministic checks keeps any project built from it structurally honest."
+    "structure that both humans and coding agents can navigate. Every top-level "
+    "directory is declared and labelled, every package has a public-API boundary, "
+    "and a suite of deterministic checks keeps any project built from it "
+    "structurally honest."
 )
 
 # The three load-bearing conventions (kept in step with README.md).
 CONVENTIONS: tuple[str, ...] = (
     "__init__.py is the API — nothing leaves a package except through __all__.",
-    "Every directory is labelled with README.md + CLAUDE.md frontmatter.",
+    "Every top-level directory is declared and labelled with README.md + CLAUDE.md "
+    "frontmatter.",
     "Tests mirror src/ where it helps; integration/e2e/smoke go by scenario.",
 )
 
@@ -43,7 +45,7 @@ FEATURES: tuple[Feature, ...] = (
     Feature(
         slug="labelled-tree",
         title="Self-describing tree",
-        summary="Every directory carries README + CLAUDE frontmatter.",
+        summary="Every top-level directory carries README + CLAUDE frontmatter.",
         detail=(
             "Files sort and route mechanically by their labels (kind, layer, "
             "status, owner, visibility), so humans and agents find their way "
@@ -253,9 +255,10 @@ PRINCIPLES: tuple[Principle, ...] = (
             "`src/` is the only home for production code, split frontend / "
             "backend / shared / app; transports live in `api/` and `mcp/`, "
             "automation in `scripts/`, agent brains in `agents/` — each with an "
-            "explicit boundary on what it must not hold. A new directory is not "
-            "finished until it carries a `README.md` and an `AGENT.md` with valid "
-            "frontmatter, which is how the tree stays self-describing."
+            "explicit boundary on what it must not hold. A new top-level directory "
+            "is not finished until it is in the table or declared in "
+            "`config/project.json`, and carries a `README.md` and an `AGENT.md` "
+            "with valid frontmatter, which is how the tree stays self-describing."
         ),
         links=(Link("Directory taxonomy", "conventions#2-directory-taxonomy"),),
     ),

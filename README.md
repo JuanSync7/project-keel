@@ -15,9 +15,10 @@ canonical: true
 # Project Keel
 
 Project Keel is a generic project skeleton with a strict, documented structure
-that is friendly to both humans and coding agents (Claude Code). Every directory
-carries a `README.md` (what + frontmatter labels) and a `CLAUDE.md`
-(local rules). The single source of truth for the labeling scheme and
+that is friendly to both humans and coding agents (Claude Code). Every top-level
+directory, and every directory directly under `agents/`, carries a `README.md` (what +
+frontmatter labels) and a `CLAUDE.md` (local rules); a top-level directory
+outside the taxonomy must be declared in `config/project.json`. The single source of truth for the labeling scheme and
 the directory taxonomy is **[`CONVENTIONS.md`](CONVENTIONS.md)** — read
 it first.
 
@@ -54,7 +55,7 @@ it first.
 1. **`__init__.py` is the API.** Nothing leaves a package except through
    its `__init__.py` (`__all__`). Private modules are `_underscore`d.
    (TS analog: an `index.ts` barrel; Rust: `pub` in `mod.rs`.)
-2. **Every dir is labeled.** `README.md` + `CLAUDE.md` with YAML
+2. **Every top-level dir is declared and labeled.** `README.md` + `CLAUDE.md` with YAML
    frontmatter (`kind`, `layer`, `status`, `public_api`, `tags`) so
    files sort and route mechanically.
 3. **Tests mirror only where it helps.** `tests/unit/` mirrors `src/`

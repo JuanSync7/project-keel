@@ -8,7 +8,7 @@ tags: [conventions, frontmatter, taxonomy]
 summary: Single source of truth for labeling (frontmatter) and the directory taxonomy.
 id: conventions
 created: 2026-06-17
-updated: 2026-09-12
+updated: 2026-10-06
 visibility: internal
 canonical: true
 ---
@@ -121,6 +121,26 @@ Note: `agents/<name>/` holds **all** files for one agent — its
 `tools.md` (toolset manifest), and labels. Shared tools live one level
 up in `agents/tools/` (see §10).
 
+### The taxonomy is closed
+
+The table above is the whole vocabulary of top-level directories, and `check_B`
+holds the project root to it. A non-hidden top-level directory is an error unless
+it is a row of the table or the project declares it by name in
+`config/project.json` `structure.extra_toplevel` (§15). Every top-level
+directory, from the table or declared, carries `README.md` and `CLAUDE.md`, and
+`check_B` errors on a missing one. Every directory directly under `agents/`
+carries the same two files, and `check_B` errors on a missing one there too:
+each agent directory `agents/<name>/` (§13) and the shared `agents/tools/` (§10).
+No other nested directory is required to carry them; where one does, `check_A`
+validates their frontmatter. Hidden directories (§5) and the tool directories
+named in `IGNORE_DIRS` in `scripts/check_structure.py` are outside the rule. An
+undeclared symlinked directory is a warning, not an error: no check reads through
+a link, and the checker cannot ask git whether the link is tracked (it is
+stdlib-only and git-free; see Alternatives in
+`docs/adr/0009-release-identity-and-the-tag-ordering-rule.md`). Scratch space
+belongs in a dot-directory, because an undeclared one is an error while it exists
+and a declared one is an error (stale) while it does not.
+
 ### Rosters: `## What ships here`
 
 A directory README may declare what its directory contains under the exact
@@ -205,7 +225,7 @@ pre-commit hook) fails the build if the conventions above drift:
 | Corpus id | every `id` is unique across the corpus |
 | Corpus canonical | a path-like `canonical` pointer resolves to a real file |
 | Corpus lifecycle | `status: deprecated` and `status: superseded` both require `superseded_by` |
-| Documented dirs (§2) | every taxonomy directory that exists has both `README.md` and `CLAUDE.md` |
+| Closed taxonomy (§2) | every non-hidden top-level directory is a §2 row or declared in `config/project.json` `structure.extra_toplevel`; a declared name exists and is not already a row; every top-level directory and every directory directly under `agents/` (each `agents/<name>/` and `agents/tools/`) has both `README.md` and `CLAUDE.md`; an undeclared symlinked directory warns |
 | Package boundary (§3) | every `src/` dir with `.py` has an `__init__.py` that defines `__all__` |
 | `__init__` is the API (§3) | no absolute import of another package's `_private` module |
 | Authored coverage (error) | every `__all__`-exported symbol defined in-file has a one-line docstring (warn until ADR-0008) |
@@ -473,6 +493,12 @@ It is keyed **by layer/concern, never one global `language`**:
   in `config/practices.json`; this block only flips them on. `check_H` errs on a
   non-boolean flag and **warns** (never errs) on an enabled flag naming no defined
   profile — an inert flag activates nothing (see `docs/guides/coding-practices.md`).
+- `structure.extra_toplevel` — the top-level directories this project adds beyond
+  the §2 taxonomy, as a plain list of names (`["parked"]`; empty by default).
+  `check_B` errors on an undeclared top-level directory, on a declared name that
+  does not exist (stale) or is already a §2 row (redundant), and on a declared
+  directory without `README.md` and `CLAUDE.md`. Names only: the directory's own
+  `README.md` `summary:` says why it exists.
 
 - `template.twins` (template repos only) — keel is itself a copier template, so
   every `*.jinja` file is declared here with what it is FOR: `parity` (must

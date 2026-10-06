@@ -7,7 +7,7 @@ owner: TBD
 summary: Global rules for any agent working in this repo.
 id: agent
 created: 2026-06-17
-updated: 2026-09-12
+updated: 2026-10-06
 visibility: internal
 canonical: true
 ---
@@ -54,8 +54,12 @@ of truth for labeling and the directory taxonomy. Each directory's own
 - **Respect the `__init__.py` boundary.** Import a package's public
   symbols from the package, never from its private (`_*`) submodules.
   When you add a public symbol, add it to `__all__` and re-export it.
-- **Label new dirs.** A new directory is not done until it has a
-  `README.md` and `CLAUDE.md` with valid frontmatter (see CONVENTIONS).
+- **Label new dirs.** A new top-level directory is not done until it is a
+  CONVENTIONS §2 row or declared in `config/project.json`
+  `structure.extra_toplevel`, and has a `README.md` and `CLAUDE.md` with valid
+  frontmatter. Every directory directly under `agents/` needs the same two
+  files: each `agents/<name>/` (§13) and the shared `agents/tools/` (§10).
+  check_B enforces both; no other nested directory is required to carry them.
 - **Put code where the taxonomy says.** Transport layers (`api/`,
   `mcp/`) must stay thin and call into `src/`; never duplicate domain
   logic there. Triggers (hooks/schedules) stay thin over

@@ -25,7 +25,7 @@ the decision.
 | Slice | Defect | Status |
 |-------|--------|--------|
 | 1 | A generated project fails its own doc-freshness test on arrival | done — `make verify` green (776 passed); ADR-0010 proposed, awaiting acceptance |
-| 2 | An unknown directory is invisible to the structure gate | planned |
+| 2 | An unknown directory is invisible to the structure gate | done — `make verify` green (807 passed) |
 | 3 | A make target's effect is declared nowhere, so a "check" can write | planned |
 | 4 | Every child process inherits every credential in the environment | planned |
 | 5 | No command checks an existing keel project for slices 1–4 | planned |
@@ -80,15 +80,59 @@ holds every copier invocation of the writer to one argument list.
 
 ## Slice 2 — the directory taxonomy is closed
 
-**Measured.** `check_B` labels only directories named in its own `TAXONOMY` list.
-A `parked/` at the root and an unlabeled `src/zzz/` both pass with zero errors.
-Of keel's 81 tracked directories, 45 carry no README.md/CLAUDE.md, so
-`AGENT.md`'s "a new directory is not done until it has a README.md and CLAUDE.md"
-has never been the rule the tree lives by.
+**Measured.** `check_B` labelled only directories named in its own `TAXONOMY`
+list, so a `parked/` at the root passed with zero errors, in keel and in a
+project generated from it. Keel tracks 81 directories, and 45 of them lack
+`README.md` or `CLAUDE.md`. That count includes 6 hidden directories
+(`.claude/**`, `.github/**`), which CONVENTIONS §5 puts outside the taxonomy.
+Of the 75 non-hidden directories, 16 are top-level; all 16 are `TAXONOMY` rows
+and all carry both labels. Of the 59 nested ones, 20 carry both labels (6 agent
+directories, 4 under `api/`, 6 `src/` layers and stacks, `ops/scheduled`,
+`scripts/hooks`, `scripts/jobs`, `demo/aad_reference_agent`). 10 carry
+`README.md` only (5 `docs/` subfolders, `test-docs/test-plan`, 4 `tests/`
+scenario directories), and 29 carry neither. The 39 that are not fully labelled
+are 5 Python packages under `src/backend/` (check_C gates them as packages), 9
+frontend source directories, 11 test directories, 8 `docs/` and `test-docs/`
+subfolders, 5 config and data subfolders, and `scripts/agent_surface`. An
+unlabelled `src/zzz/` passes only while it holds no `.py`; with Python and no
+`__init__.py`, check_C already errors. A generation from a dirty keel tree
+copies keel's untracked root symlink `project-keel` into the project, because
+copier's dirty-HEAD clone runs `git add -A` on the work tree.
 
-**Decision.** An unknown top-level directory is an error unless the project
-declares it. The rule for nested directories is stated precisely, gated as
-stated, and `AGENT.md` is made to say what the gate holds.
+**Decision.** The top level is a closed vocabulary. A non-hidden root directory
+is a CONVENTIONS §2 row or is declared by name in `config/project.json`
+`structure.extra_toplevel`; anything else is an error naming both fixes. The key
+is a plain list of names, because the declared directory's own `README.md`
+`summary:` already says why it exists, and a second copy in the manifest would
+drift. A declaration must exist (else stale), must not repeat a row (else
+redundant), and must be a plain top-level name. The nested rule is every
+directory directly under `agents/`: each `agents/<name>/`, which CONVENTIONS §13
+already makes a "done when" condition, and the shared `agents/tools/` (§10),
+which keel already labels; every other nested directory is free, and `AGENT.md`,
+CONVENTIONS §2, `CONTRIBUTING.md`, `README.md` and the showcase copy now say
+exactly that. An undeclared symlinked directory is a WARN, not an ERROR: no
+check reads through a link, and `scripts/check_structure.py` cannot ask git whether the
+link is tracked. An ERROR would turn keel's local gate red over the stray
+symlink, and every generation from a dirty tree with it. The rule lands as an
+ERROR rather than a one-release WARN under the
+`docs/adr/0008-gated-module-contract-for-agent-interpretability.md` grace tier,
+because keel complies at landing, which is the precedent checks P, Q, R, S and
+V set. A downstream project with its own top-level directory goes red on
+`copier update`, so the `CHANGELOG.md` upgrade note names the one-line fix.
+
+**Built.** `scripts/check_structure.py` `check_B` with `_declared_toplevel` and
+`_require_labels`; the empty `structure.extra_toplevel` key in both
+`config/project.json` and its twin; CONVENTIONS §2 ("The taxonomy is closed"),
+§6 and §15; `AGENT.md`, `CONTRIBUTING.md`, both `README.md` twins,
+`src/backend/showcase/_data.py`, `docs/guides/deterministic-checks.md` and
+`CHANGELOG.md`. The tests are `tests/unit/scripts/test_check_b.py` (25 cases:
+22 red before the change, 3 guards green) and
+`test_an_undeclared_top_level_directory_reds_a_generated_project_until_declared_and_labelled`
+in `tests/integration/test_copier_generation.py`. That test failed against the
+old `check_B` (a generated project with `parked/` reported 0 errors) and passes
+against the new one. Nine mutations of the new `check_B` each turned at least
+one unit test red. Keel's own gate reports 0 errors and one WARN, for
+`project-keel/`.
 
 ## Slice 3 — every make target declares its effect
 
@@ -135,3 +179,17 @@ Found during the slices and deliberately not started:
   including a stray symlink at the root.
 - **The copier 9.3.0 floor is unverified** for `_tasks` with `_copier_python`.
 - **An untagged template skips `_migrations`**, including the update restamp.
+- **Nothing pins `TAXONOMY` to the CONVENTIONS §2 table.** The list in
+  `scripts/check_structure.py` and the table are kept in step by hand, and since
+  slice 2 a drift between them is an error source. A parity check or test should
+  read one from the other.
+- **Keel's copier `_exclude` names a root `tmp/`.** Under the closed taxonomy
+  a scratch directory at the root cannot be declared (stale while absent) or left
+  undeclared (error while present); scratch belongs in a dot-directory.
+- **A declared extra directory is outside `CODE_ROOTS`.** Python in it is not
+  read by check_D, E, O or V, by lint or by typecheck.
+- **A `TAXONOMY` directory that is itself a symlink** passes check_B through the
+  link while every walking check skips its contents.
+- **Gitignored tool output at the root** (`site/`, `logs/`, `out/`) not in
+  `IGNORE_DIRS` now reds a local `make check`; the gate cannot read
+  `.gitignore` semantics without git.
