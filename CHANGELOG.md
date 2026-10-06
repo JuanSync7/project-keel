@@ -22,8 +22,38 @@ version rather than a bare commit:
   `os.exec*`, `os.spawn*` and `pty.spawn`
   (`docs/adr/0012-child-process-environment-allowlist.md`, proposed).
   Registered as the gate practice `child-gets-an-allowlisted-environment`.
+- **`make audit-project DEST=<path>` previews what another keel project owes
+  before it updates.** `scripts/audit_project.py` runs this checkout's checks
+  A–X against DEST's files in-process, with DEST's `config/project.json` and
+  `config/practices.json` replaced in memory by a key-level three-way merge of
+  the template at DEST's `_commit`, DEST itself and this template, each rendered
+  with DEST's answers. It adds the doc-freshness judge and the restamp worklist,
+  groups every finding by check letter with the check's own message and an
+  origin label, and lists what it did not run under "not checked". An error in
+  a file DEST never edited (origin `template-unedited`) is reported as resolved
+  by the update and is not owed; it exits 1 only on an owed letter error or when
+  it saw no file, and 2 when it refuses DEST or cannot render DEST's answers. It
+  never imports, executes or `make`s DEST's code, runs no command DEST's git
+  config names (filter drivers, fsmonitor, signature verification), and writes
+  no byte under DEST. Keel-only: copier excludes the doer, and a generated
+  project's `make audit-project` prints the command to run from the template.
+- **`scripts/check_structure.py --root PATH` and `run_checks(root,
+  config_overrides)`.** The checks stay this checkout's; every file they
+  read, the JSON configs in `JSON_CONFIGS` included, is read under PATH unless
+  a caller of `run_checks` passes `config_overrides`. `CHECKS` registers every
+  check in run order. With no `--root` the output is byte-identical to before.
 
 ### Changed
+- **`review_docs` and `restamp_docs --check` no longer rewrite `.git/index`.**
+  Both read changed paths through `review_docs.modified_paths`, which runs
+  `git status --porcelain --ignore-submodules=all` through
+  `review_docs.git_argv`: `--no-optional-locks`, with fsmonitor, signature
+  verification and every configured filter driver switched off; the
+  `git diff --relative HEAD` it replaces refreshes stat data and rewrites the
+  index (measured on git 2.43.5, `GIT_OPTIONAL_LOCKS=0` included).
+  `restamp_docs.pending(root, today)` returns each doc `--check` would restamp
+  with its current and target stamp. A governed doc that cannot be read is
+  named on stderr with exit 1, as a non-date stamp is, instead of a traceback.
 - **Every child process keel starts gets the allowlisted environment.** The
   11 spawn calls in `models/`, `agents/`, `mcp/` and `scripts/` pass
   `env=build_child_env(...)`. `claude_code_headless` gives the CLI

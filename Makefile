@@ -34,7 +34,7 @@ PY_ROOTS := $(wildcard $(CODE_ROOTS))
 # Keel ships no [write] target; a project that adds one inherits the guard.
 WRITE_GUARD = @if [ -n "$(CI)$(RALPH)" ]; then echo "refusing '$@': a [write] target never runs under CI or a Ralph loop (docs/adr/0011-make-target-effect-labels.md)" >&2; exit 1; fi
 
-.PHONY: help new check-python check check-all check-corpus check-openapi check-aad check-cdmon advise check-generic verify test unit integration e2e smoke \
+.PHONY: help new audit-project check-python check check-all check-corpus check-openapi check-aad check-cdmon advise check-generic verify test unit integration e2e smoke \
         lint lint-py lint-fe fmt fmt-check typecheck typecheck-py typecheck-fe \
         fe-install run run-api run-web site-data site-static demo agent-surface-schema check-docs restamp-docs doc-review doc-review-apply
 
@@ -82,6 +82,14 @@ new: ## [local] Generate a NEW project from this template into DEST (interactive
 		echo "exists only in its throwaway clone and '$(DEST)' could never update from"; \
 		echo "it. Commit or stash first, or re-run with ALLOW_DIRTY=1."; exit 2; }
 	$(PY) -m copier copy --trust --vcs-ref "$(VCS_REF)" "$(abspath .)" "$(DEST)"
+
+# Read-only: DEST's files are data, never imported, made or hooked. Keel-only
+# doer (copier.yml `_exclude`); in a generated project this target only says
+# where the template checkout is (docs/design/downstream-feedback.md, slice 5).
+audit-project: ## [local] Report what DEST, another keel project, would fail under this template's current gates after `copier update`; reads DEST, writes nothing, runs none of its code
+	@[ -f scripts/audit_project.py ] || { echo "audit-project runs from the template checkout: make -C <the _src_path in .copier-answers.yml> audit-project DEST=$(abspath $(or $(DEST),$(CURDIR)))"; exit 2; }
+	@test -n "$(DEST)" || { echo "usage: make audit-project DEST=../my-project"; exit 2; }
+	$(PY) scripts/audit_project.py "$(DEST)"
 
 check: ## [local] Validate structure + frontmatter (3.6-safe)
 	$(PY) scripts/check_structure.py

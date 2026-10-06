@@ -308,12 +308,12 @@ def test_generated_project_does_not_ship_keels_template_meta_tests(tmp_path):
 def test_generated_project_does_not_inherit_keels_template_twins(tmp_path):
     """`template.twins` is keel-as-a-template metadata. A generated project is not
     a template, and inheriting the block is not merely untidy — it is unrepairable:
-    `_migrations` can only `rm` files, so a descendant that received keel's six
+    `_migrations` can only `rm` files, so a descendant that received keel's
     declarations cannot be fixed by any later `copier update`.
 
     check_N is silent while the project has no `.jinja` of its own, which is why
     this hid. The moment it adds one, `_twin_parity_findings`' final loop reports
-    one error per inherited declaration whose file does not exist — six of them,
+    one error per inherited declaration whose file does not exist — every one of them,
     about keel's files, in the user's project. Asserted here through the gate the
     user would actually run."""
     dest = tmp_path / "proj"

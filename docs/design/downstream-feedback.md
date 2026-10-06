@@ -28,7 +28,7 @@ the decision.
 | 2 | An unknown directory is invisible to the structure gate | done — `make verify` green (807 passed) |
 | 3 | A make target's effect is declared nowhere, so a "check" can write | done — `make verify` green (987 passed); ADR-0011 proposed |
 | 4 | Every child process inherits every credential in the environment | done — `make verify` green (1124 passed); ADR-0012 proposed |
-| 5 | No command checks an existing keel project for slices 1–4 | planned |
+| 5 | No command checks an existing keel project for slices 1–4 | done — `make verify` green (1178 passed); 7 of 8 review findings confirmed and fixed |
 
 The cap is these five passes. A concern found mid-slice is queued at the end of
 this document, not started.
@@ -269,9 +269,100 @@ follows the recipe as written.
 
 ## Slice 5 — audit an existing keel project
 
-**Decision.** One command runs the template's current gates for slices 1–4 against
-another project's tree, read-only, and reports what that project would fail after
-`copier update` — so a project learns what it owes before it updates.
+**Measured.** On git 2.43.5, `git diff HEAD`, plain `git status` and
+`git describe --dirty` each rewrite `.git/index` when a stat refresh is due, and
+`GIT_OPTIONAL_LOCKS=0` does not stop `diff` doing it; `--no-optional-locks status`,
+`ls-files`, `log` and `rev-parse` leave the index alone. Before this slice,
+`review_docs` and `restamp_docs --check` listed modified files with
+`git diff HEAD`, so a read-only freshness check wrote into the project it judged.
+A dry run of slices 1–4's checks over bedrock-platform, before the config merge
+was built, gave B 1 error, F 6 warnings, V 9 warnings, W 1 error and X 18 errors.
+
+**Decision.** `make audit-project DEST=<path>`, backed by
+`scripts/audit_project.py`, runs every check_structure letter in-process over
+DEST's files and reports what DEST would fail once `copier update` lands; it
+writes nothing in DEST and runs none of DEST's code, make targets or hooks.
+The stakeholder is a project owner deciding whether to update. The alternatives
+were `copier update --pretend`, which lists files and runs no gate, and a trial
+update in a scratch clone followed by `make verify`, which has full fidelity but
+runs the project's code. The verdict: the audit is the pre-flight, and the trial
+update is the confirmation. The audit is keel-only: `copier.yml` `_exclude`
+keeps it out of a generated project, whose `make audit-project` stub exits 2
+and names the template checkout recorded in `_src_path`. The stub guard runs
+before the `DEST` usage guard, so a generated project gets the pointer even
+without `DEST`.
+
+Each JSON config the checks read is replaced in memory by a key-level 3-way
+merge with copier's replay semantics: base is the template at DEST's `_commit`,
+ours is DEST, theirs is this checkout, and base and theirs are rendered from the
+`.jinja` twin with DEST's answers. A key the template dropped and the project
+never edited is removed, as copier's replay removes it. Without a resolvable
+`_commit` the merge falls back to 2-way and reports arrivals only. Every finding
+carries an origin evidence kind read from git at `_commit`: `template-rendered`
+when the template ships a `.jinja` twin (checked first, because copier renders
+the twin and never copies its plain sibling), `template-unedited` or
+`template-edited` by byte comparison, `project` for a path the template does not
+ship, and `unknown` otherwise, including a file that cannot be read. A letter
+error in a `template-unedited` file is reported as resolved by the update,
+because the update replaces that file; every other letter error is owed. The
+exit code is 1 when a letter error is owed or no file was seen, 2 on a usage
+error, a refusal (malformed answers included), a render error (answers of the
+wrong type included) or a missing extra, and 0 otherwise. Its "not checked" section names every proof it
+does not run. `CONVENTIONS.md`, `AGENT.md` and `config/practices.json` need no
+change: the audit adds no rule, only a way to run the existing ones elsewhere.
+
+**Built.** `scripts/audit_project.py`; `--root PATH` and
+`run_checks(root, config_overrides)` in `scripts/check_structure.py`;
+`modified_paths` in `scripts/jobs/review_docs.py` (`status` plus `ls-files`)
+and `git_argv`, which builds every git call of the audit and both doc jobs with
+`--no-optional-locks` and fsmonitor, signature verification and each configured
+filter driver switched off, used by `scripts/jobs/restamp_docs.py`, whose `pending`
+the audit reads; the `audit-project` target and stub in the `Makefile`, with its
+`make_targets.effect_proof_skip` entry in `config/project.json` and its twin;
+the `_exclude` entries in `copier.yml`; `scripts/README.md.jinja`, so a
+generated project's roster does not list the audit; the `--root` row in
+`agents/tools/structure_check.tool.md`; and the read-only rule for doers in
+`docs/guides/idempotency.md`. The tests are
+`tests/unit/scripts/test_audit_project.py` (31 cases),
+`tests/unit/scripts/test_check_structure_root.py`, the index cases in
+`test_review_docs.py` and `test_restamp_docs.py`, and
+`tests/integration/test_copier_audit.py`, which generates a fresh project, plants
+one defect each for B, W and X plus a stale doc, audits it twice and proves the
+tree, the index and the porcelain status unchanged, then audits a project
+generated at `7f0a68b`. Each test failed before its code existed, the origin
+test against the plain-path-first order it replaced. Sixteen unit mutations,
+among them a merge that element-merges lists and a freshness finding counted
+toward the exit code, each turned a test red; in the integration suite an audit
+that runs `git diff HEAD` in DEST failed tree equality, and a dropped X plant
+failed the group set. An adversarial review then confirmed seven findings, and
+each fix has a test that failed first: errors the update resolves were counted
+as owed; a clean filter, a long-running process filter and a `showSignature`
+gpg program configured in DEST ran during the audit; an unreadable file crashed
+origin and the restamp list (`restamp_docs` now names it and exits 1); a
+non-string answer key or a wrongly typed answer gave a traceback; the
+stub printed a relative `DEST`; and the `--root` documentation said the configs
+are this checkout's. Ten further mutations (group sort, the unreadable-file
+reset, the override copy, the zero-files exit, the `-` commit guard, the
+resolved label, the owed count, the unreadable-origin catch, the answer-type
+catch and the key check) each turned a test red.
+
+**Bedrock result.** Against bedrock-platform (`_commit` v0.1.0-14-g7f0a68b, which
+resolves to `7f0a68b`) the audit exits 1 with 26 letter errors and 17 warnings
+over 507 files; after the review fixes, rerun on the replica, 9 of those errors
+are resolved by the update and 17 are owed: B 1 error (`mk/`, origin project), W 6 errors (4 project, 1
+template-edited, 1 template-rendered), X 19 errors (9 project, 1 template-edited,
+9 template-unedited), F 6 warnings (unknown), V 10 warnings (project), and
+config 4 arrivals (`structure`, `make_targets`, `child_env`,
+`models.credential_env`) plus 1 `config/practices.json` conflict warning. The V
+and X counts are one higher than the dry run because bedrock-platform changed in
+between. One W error is the template's own `effect_proof_skip` entry for
+`audit-project`, which the old Makefile does not define (queued below). Under
+strace, `make audit-project` made 329 write-capable calls, all to `/dev/null` or
+the terminal, and none under bedrock-platform's real path. Another session was
+editing bedrock-platform at the time, so the tree proof ran on a `cp -a` replica:
+the tree hash, the index mtime and the porcelain status were equal before and
+after, and two JSON runs were byte-identical. On the same replica, `git diff
+HEAD` moved the index mtime, so the proof can fail.
 
 ## Queued
 
@@ -352,5 +443,42 @@ Found during the slices and deliberately not started:
   `git diff HEAD`, which omits untracked files, so this slice's new
   `scripts/child_env.py` was absent from every clone and 24 tests failed on
   `ModuleNotFoundError: No module named 'child_env'`. `git add -N` on the new
-  files fixed it. The harness could refuse to run while a non-ignored file under
-  the template is untracked, so the failure names its cause.
+  files fixed it. Slice 5 hit it again: the tracked `scripts/README.md` and
+  `config/project.json` named the untracked `audit_project.py` and
+  `scripts/README.md.jinja`, so check_structure failed in every clone (three
+  update tests and the effect sweep), and `git add -N` fixed it again. The
+  harness could refuse to run while a non-ignored file under the template is
+  untracked, so the failure names its cause. The same
+  `git diff HEAD` rewrites keel's own `.git/index` on every run (slice 5's
+  measurement); `review_docs.modified_paths` is the read-only replacement.
+- **check_N caps its report at five lines** with `[:5]` and says nothing about
+  the rest; the audit names the cap, but the check should print the count.
+- **The audit judges `config/practices.json` and the `Makefile` before the
+  merge.** Only JSON configs are merged; a template-shipped file is read as the
+  project has it, so an old project's Makefile reads the template's new
+  `effect_proof_skip` entry for `audit-project` as stale (bedrock-platform's one
+  `template-rendered` W error). Origin is per file, so this mixed view (a
+  rendered manifest against a `template-unedited` Makefile) is owed, and it is
+  the one owed error a pristine `7f0a68b` project still reports.
+- **A filtered file with stale stat data reads as modified.** The audit and the
+  doc jobs switch off DEST's filter drivers, so git compares such a file (an LFS
+  pointer, say) raw.
+- **The audit cannot see a spawn in a shell script**, because check_X reads
+  Python with ast.
+- **`make audit-project` has no tool card** in `agents/tools/`; add one if an
+  agent should run it.
+- **Origin cannot see a path the base `_exclude`d.** A project file at a path the
+  template carries but excluded reads as `template-edited`, not `project`.
+- **`child_env.names` passes `GIT_DIR`, `GIT_WORK_TREE` and `GIT_INDEX_FILE`**,
+  so a git child of a process started with them set acts on that repository,
+  not on its own working directory.
+- **A restamped doc reads as `template-edited`** after the update's migration,
+  so origin overstates the project's edits there.
+
+## Campaign result
+
+Slices 1–4 landed as `3bc2f8a`, `860b9e4`, `6cea98a` and `094dbca`, each on a
+green `make verify`. Slice 5 adds `make audit-project DEST=` on a green
+`make verify` (1178 passed).
+ADR-0010, ADR-0011 and ADR-0012 are proposed and await acceptance. Everything
+found along the way and not fixed is in Queued above.

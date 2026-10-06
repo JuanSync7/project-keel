@@ -9,6 +9,7 @@
       "README.md": "parity",
     "docs/guides/README.md": "parity",
     "scripts/jobs/README.md": "parity",
+    "scripts/README.md": "parity",
       ".gitignore": "divergence",
       "CHANGELOG.md": "divergence",
       ".copier-answers.yml": "generated"
@@ -27,6 +28,7 @@
     "area_dir": null,
     "effect_proof_skip": {
       "new": "generates a project outside the tree and needs DEST and a clean checkout",
+      "audit-project": "audits another project's tree and needs DEST; the template checkout proves it read-only in tests/integration/test_copier_audit.py, a whole-tree hash of DEST with .git included (in a generated project the target is a stub naming the template)",
       "run": "starts the app composition root, which serves until stopped",
       "smoke": "selects no tests today, and pytest exits 5 on an empty selection",
       "run-api": "a dev server that never exits",

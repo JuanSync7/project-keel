@@ -500,3 +500,108 @@ does.
    automatically (copier ships the real `scripts/` tree — see
    [ADR 0004](../adr/0004-project-templating-copier.md)).
 4. Document it in this file.
+
+## Auditing another project against this template
+
+`make audit-project DEST=<path>` reports what a keel-generated project at
+DEST would fail under this checkout's current gates once `copier update` has
+landed, before anyone runs the update. It is a preview, not a gate, so it is
+not a row in the catalogue above.
+
+**Where it runs.** Only from the template checkout. The doer,
+`scripts/audit_project.py`, is excluded from generated projects
+(copier.yml `_exclude`), because it imports this checkout's `check_structure`
+API and a copy in a project would pair an older doer with newer gates. A
+generated project's `make audit-project` is a stub that prints the
+`make -C <template> audit-project DEST=...` line to run instead, with DEST
+made absolute (the project itself when DEST is not given), so the printed line
+works from the template checkout.
+
+**What it runs.**
+- Every check_structure letter, A–X, in-process through `run_checks`, against
+  DEST's files.
+- The freshness judge (`scripts/jobs/review_docs.py`). Each finding carries
+  `resolved_by`, because the update's last `_migrations` step runs
+  `restamp_docs` and clears it.
+- The restamp writer's `pending` list (`scripts/jobs/restamp_docs.py`), the
+  stamps that migration will rewrite.
+
+**The config view.** Each JSON config a check reads (`JSON_CONFIGS`) is
+replaced in memory by a key-level 3-way merge:
+- base: the template at DEST's `_commit`, rendered with DEST's answers;
+- ours: DEST's own file;
+- theirs: this checkout, rendered with DEST's answers.
+
+Copier replays the project's edits onto a fresh render, so the merge does the
+same, key by key:
+- a key DEST lacks arrives;
+- a key DEST left as rendered takes the template's new value;
+- a key both sides changed is a conflict and keeps DEST's value;
+- a key the template dropped and DEST never edited is removed.
+
+Lists are atomic. When `_commit` does not resolve here, the merge is 2-way:
+only arrivals are reported, and the "not checked" section says so. Every
+change is reported under `[config]`. DEST's file is never written.
+
+**Origin.** Each check finding names the evidence that decides whether the
+update itself moves it. The audit compares the path the message names with
+git at `_commit`:
+- `template-unedited`: the bytes match, so the update replaces the file;
+- `template-edited`: the file shipped but DEST changed it;
+- `template-rendered`: only its `.jinja` twin shipped;
+- `project`: the template never had it;
+- `unknown`: there is no base, no path, or the file cannot be read.
+
+**Owed or resolved by the update.** A letter error whose origin is
+`template-unedited` carries `resolved_by`, because the update replaces that
+file with this checkout's copy. The summary counts it under
+`resolved_by_update`, not under `errors`, and the text report prints both
+counts. Every other letter error is owed: the project must act on it, or the
+update leaves it red. The origin is computed per file, so a finding that
+pairs a rendered manifest with an old template-unedited file (a key the update
+brings, judged against a file the update also replaces) is owed even though
+the update fixes it; the audit reports it rather than guess.
+
+**What it does not run.** The report always ends with a "not checked"
+section. It lists:
+- the `[local]` effect sweep, and the project's tests, lint and typecheck,
+  which are runtime proofs that run project code;
+- the rest of `make check-all`;
+- child processes started from shell scripts;
+- makefiles outside the include walk;
+- the template-shipped non-JSON files the update will merge, which are judged
+  as they stand.
+
+The confirmation is a trial `copier update` in a scratch clone of the project,
+then `make verify` there.
+
+**Read-only.** The audit never imports, makes or hooks DEST's code. It reads
+DEST's files with `open()` and `ast`, and its git only through name-level
+commands built by `review_docs.git_argv`: `--no-optional-locks`,
+`core.fsmonitor=false`, `log.showSignature=false`, and every filter driver
+DEST's git config names set to an empty, non-required command. When git will
+not list those drivers, the call is not made. `git status` also passes
+`--ignore-submodules=all`, so no submodule's config is consulted.
+Plain `git status` and `git diff HEAD` rewrite `.git/index` (measured,
+git 2.43.5), so the audit and the two doc jobs use neither. The cost of the
+switched-off filters: a filtered file (an LFS pointer, say) whose stat data is
+stale is compared raw, so it may read as modified.
+`tests/integration/test_copier_audit.py` proves this with a whole-tree hash
+of DEST, `.git` included.
+
+**Exit codes.**
+- 0: no letter error is owed.
+- 1: a letter error is owed, or the audit saw no file. An error resolved by
+  the update, freshness and config never set it.
+- 2: a usage error, a refusal (DEST is not a keel project), a template render
+  error (DEST's answers included, when one has the wrong type), or a missing
+  `template` extra.
+
+DEST is a keel project when every one of these holds:
+- it is a directory, and not this checkout;
+- its `.copier-answers.yml` is a mapping whose keys are all strings, with
+  non-empty `_src_path` and `_commit` strings;
+- its `config/project.json` is a JSON object.
+
+`--json` prints the same report as canonical JSON, so two runs over the same
+DEST are byte-identical.

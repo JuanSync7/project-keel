@@ -132,6 +132,24 @@ Seven rules, in the order they usually go wrong:
    `wiki/INDEX.md`, a generated view sitting beside three that were already
    ignored, and was not.
 
+A doer that claims `effect: read-only` has a fixed point to keep too: the
+second run, like the first, must leave every byte where it was, and
+`.git/index` is one of those bytes. `git diff HEAD`, a plain `git status` and
+`git describe --dirty` each refresh stat data and rewrite the index, and
+`GIT_OPTIONAL_LOCKS=0` does not stop `git diff` (measured on git 2.43.5).
+`git --no-optional-locks status`, `ls-files`, `log` and `rev-parse` leave it
+alone. `review_docs.modified_paths` is the shared reader for "which files differ
+from `HEAD`": it runs `git status --porcelain --ignore-submodules=all`, and
+`restamp_docs` reads its worklist through it. Every git call in both jobs is
+built by `review_docs.git_argv`, which adds `--no-optional-locks` and switches
+off what a repository's config could run: fsmonitor, the `showSignature`
+verifier and every configured filter driver. A run that executes a command
+named in the judged tree's config is not read-only, whatever bytes it leaves.
+`tests/unit/scripts/test_review_docs.py` and
+`tests/unit/scripts/test_restamp_docs.py` hold the index bytes and mtime equal
+across a run, and `test_review_docs.py` holds that no configured filter or
+signature command runs.
+
 ## 4. The ladder of proofs
 
 Pick the cheapest rung that actually proves the claim:

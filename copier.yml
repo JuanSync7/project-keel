@@ -102,6 +102,14 @@ _exclude:
   # turning every descendant's CI red. The glob covers every test_copier_*.py.
   # Pinned by tests/integration/test_copier_generation.py.
   - "tests/integration/test_copier_*.py"
+  # The downstream audit is keel-only: it imports THIS checkout's check_structure
+  # API (run_checks, CHECKS, JSON_CONFIGS), so a copy shipped into a project would
+  # pair an older doer with a newer template's gates. A generated project keeps the
+  # `make audit-project` stub, which names the template checkout to run it from.
+  # Decision: docs/design/downstream-feedback.md, slice 5. Never shipped, so no
+  # `_migrations` removal. Its integration test is pruned by the glob above.
+  - "scripts/audit_project.py"
+  - "tests/unit/scripts/test_audit_project.py"
   # Answer-driven pruning: keep only the chosen frontend stack (the two reference
   # apps are self-contained under src/frontend/<stack>/, so pruning one is clean).
   - "{% if frontend_stack != 'react-vite' %}src/frontend/react-vite{% endif %}"

@@ -95,6 +95,13 @@ only delete through `_migrations`; the last one restamps the documents the updat
 changed. Changing an answer deletes that directory, so commit your work first;
 `git checkout -- <path>` brings it back.
 
+Before you update, preview what the project would fail under the newer template's
+gates: from a checkout of the template, run `make audit-project DEST=<your project>`
+(inside the project, `make audit-project` prints that command with your project's
+path filled in). It reads the project and writes nothing, runs none of its code, and
+lists what it did not check. Confirm with a trial `copier update --trust` in a scratch
+clone of the project, then `make verify` there.
+
 In a checkout of this repo you can also run `make new DEST=../my-project` — but note
 that records the template's **absolute local path** as the update origin, so
 `copier update` then works on that machine only. Generate from `gh:JuanSync7/project-keel`
