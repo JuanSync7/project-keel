@@ -24,10 +24,10 @@ the decision.
 
 | Slice | Defect | Status |
 |-------|--------|--------|
-| 1 | A generated project fails its own doc-freshness test on arrival | done — `make verify` green (776 passed); ADR-0010 proposed, awaiting acceptance |
+| 1 | A generated project fails its own doc-freshness test on arrival | done — `make verify` green (776 passed); ADR-0010 accepted |
 | 2 | An unknown directory is invisible to the structure gate | done — `make verify` green (807 passed) |
-| 3 | A make target's effect is declared nowhere, so a "check" can write | done — `make verify` green (987 passed); ADR-0011 proposed |
-| 4 | Every child process inherits every credential in the environment | done — `make verify` green (1124 passed); ADR-0012 proposed |
+| 3 | A make target's effect is declared nowhere, so a "check" can write | done — `make verify` green (987 passed); ADR-0011 accepted |
+| 4 | Every child process inherits every credential in the environment | done — `make verify` green (1124 passed); ADR-0012 accepted |
 | 5 | No command checks an existing keel project for slices 1–4 | done — `make verify` green (1178 passed); 7 of 8 review findings confirmed and fixed |
 
 The cap is these five passes. A concern found mid-slice is queued at the end of
@@ -480,5 +480,5 @@ Found during the slices and deliberately not started:
 Slices 1–4 landed as `3bc2f8a`, `860b9e4`, `6cea98a` and `094dbca`, each on a
 green `make verify`. Slice 5 adds `make audit-project DEST=` on a green
 `make verify` (1178 passed).
-ADR-0010, ADR-0011 and ADR-0012 are proposed and await acceptance. Everything
+ADR-0010, ADR-0011 and ADR-0012 were accepted on 2026-10-06. Everything
 found along the way and not fixed is in Queued above.

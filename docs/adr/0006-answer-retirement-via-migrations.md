@@ -64,7 +64,7 @@ had the path simply runs a no-op `rm`.
   than by prose.
 - **Generation is unaffected.** `_check_unsafe` only counts migrations when
   `mode == "update"`, so `copier copy` and `make new` still need no trust flag
-  (amendment proposed: [ADR-0010](0010-generation-needs-trust-to-stamp-docs.md)).
+  (amended by [ADR-0010](0010-generation-needs-trust-to-stamp-docs.md)).
 - **Changing an answer deletes a directory a project may have edited.**
   `src/frontend/<stack>` is a real app tree. That is the honest meaning of switching
   stacks, and it is bounded by copier's own preconditions: update requires git and

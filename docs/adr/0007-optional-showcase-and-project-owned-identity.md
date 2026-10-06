@@ -115,7 +115,7 @@ committed contract has drifted* (exit 1).
   stale exactly when the showcase is declined.
 - **A copier task regenerating `openapi.json` at generation.** Rejected: copier
   tasks are unsafe, so `make new` would need `--trust`. Generation is deliberately
-  trust-free (ADR-0006; amendment proposed in
+  trust-free (ADR-0006; amended by
   [ADR-0010](0010-generation-needs-trust-to-stamp-docs.md)).
 - **Coercing `astro` to `react-vite` under `showcase: false`.** Rejected — see
   decision 2.

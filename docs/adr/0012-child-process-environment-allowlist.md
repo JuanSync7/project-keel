@@ -2,7 +2,7 @@
 title: "ADR-0012: A child process gets an allowlisted environment, not every credential the parent holds"
 kind: adr
 layer: n/a
-status: proposed
+status: accepted
 owner: TBD
 tags: [adr, environment, credentials, subprocess, check-x]
 summary: "Every process keel's code starts gets `env=build_child_env(...)` from scripts/child_env.py, which starts from an empty dict and copies only the variable names config/project.json `child_env` declares, plus the `make_targets` unattended and gate variables and, for a model adapter, that adapter's `models.credential_env` names. A missing or malformed manifest is an error, never a fall-back to the parent's environment. check_X in scripts/check_structure.py holds every spawn under the code roots to the helper, with no waiver. It is defence-in-depth, not a sandbox."
@@ -15,8 +15,7 @@ canonical: true
 
 # ADR-0012: A child process gets an allowlisted environment
 
-**Status:** proposed. The allowlist, the config blocks and check_X await the
-maintainer's acceptance.
+**Status:** accepted 2026-10-06 by the maintainer.
 
 ## Context
 

@@ -2,7 +2,7 @@
 title: "ADR-0010: Generation runs a stamping task, so `copier copy` needs `--trust`, amending ADR-0006 and ADR-0007"
 kind: adr
 layer: n/a
-status: proposed
+status: accepted
 owner: TBD
 tags: [adr, template, copier, tasks, trust, freshness, idempotency]
 summary: "A project generated from keel and committed the same day failed its own doc-freshness test on arrival, because every `updated:` was a literal from keel's history. Generation now runs `scripts/jobs/restamp_docs.py` as a copier task and every update ends with the same writer as its last migration, so a document is stamped on the day it arrives. Tasks are unsafe to copier, so `copier copy` and `make new` now require `--trust`, which reverses ADR-0006's claim that generation is trust-free."
@@ -15,8 +15,7 @@ canonical: true
 
 # ADR-0010: Generation needs `--trust` to stamp documents
 
-**Status:** proposed — the `--trust` trade-off awaits the maintainer's
-acceptance. It amends the "generation is unaffected" consequence of
+**Status:** accepted 2026-10-06 by the maintainer. It amends the "generation is unaffected" consequence of
 [ADR-0006](0006-answer-retirement-via-migrations.md) and the "generation is
 deliberately trust-free" reasoning in
 [ADR-0007](0007-optional-showcase-and-project-owned-identity.md). Both ADRs stand

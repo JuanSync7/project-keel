@@ -2,7 +2,7 @@
 title: "ADR-0011: Every make target declares its effect, and a gate runner runs only a read-only one"
 kind: adr
 layer: n/a
-status: proposed
+status: accepted
 owner: TBD
 tags: [adr, make, effect-labels, gate, ralph, idempotency, check-w]
 summary: "Every `## `-annotated make target opens its help with one bracketed effect label of one or more words from a closed vocabulary (local, tree, read, cost, write), comma-separated in that order, `local` only alone. check_W in scripts/check_structure.py holds the labels, a composite's label must cover what its prerequisites and `$(MAKE)` calls reach, and a [write] target opens its recipe with `$(WRITE_GUARD)`. scripts/run_make_target.py, the gate runner agents use, runs only a target inside config/project.json `make_targets.gate_effects` and fails a green run that changed what git sees. Adapted from bedrock-platform's ADR-0010, with a `tree` label that bedrock folded into `local`."
@@ -15,8 +15,7 @@ canonical: true
 
 # ADR-0011: Make targets declare their effect
 
-**Status:** proposed — the vocabulary and the gate-runner contract await the
-maintainer's acceptance. It adapts a decision a downstream project already
+**Status:** accepted 2026-10-06 by the maintainer. It adapts a decision a downstream project already
 made: bedrock-platform's `docs/adr/0010-areas-and-effect-labels.md` (the
 bedrock-platform repository, accepted 2026-10-03).
 
