@@ -506,7 +506,7 @@ SETUP_STEPS: tuple[Step, ...] = (
         "future template improvements later. The template URL is whatever this "
         "project recorded as `_src_path` in .copier-answers.yml. Needs copier "
         "(pipx install copier, or pip install '.[template]' in a checkout).",
-        command="copier copy <template-url> my-project",
+        command="copier copy --trust <template-url> my-project",
     ),
     Step(
         title="Make it yours",

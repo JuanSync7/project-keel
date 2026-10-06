@@ -26,6 +26,9 @@ prose written from scratch.
    or, for the full report: `.venv/bin/python scripts/doc_review.py --json`. Read
    `stale`, `unresolved`, `rosters`, and `candidates` (the chunks the model would be
    asked about, in order). `preview` is the exact prompt the first chunk would get.
+   If `stale` is above 0, run `make restamp-docs` first: a stale stamp is never a
+   chunk, and it keeps `make check-docs` red, so `baseline_green` is false and an
+   execute run would stop before its first edit.
 
 2. **Execute** once the dry-run looks right (one bounded edit per chunk, applied
    through the gated `apply_refactor`, which **rolls back** any edit that turns

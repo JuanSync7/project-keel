@@ -509,9 +509,10 @@
       "tier": "gate",
       "status": "on",
       "title": "`updated:` means touched: never earlier than the last commit, today when modified",
-      "mechanism": "scripts/jobs/review_docs.py, gated by tests/integration/test_doc_freshness.py",
+      "mechanism": "scripts/jobs/review_docs.py, gated by tests/integration/test_doc_freshness.py; scripts/jobs/restamp_docs.py is the fix it names and runs at generation and update",
       "subject": "docs",
       "enforced_by": [
+        "script:scripts/jobs/restamp_docs.py",
         "script:scripts/jobs/review_docs.py",
         "test:tests/integration/test_doc_freshness.py"
       ]

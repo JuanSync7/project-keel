@@ -8,7 +8,7 @@ tags: [adr, template, copier, showcase, branding, identity, manifest]
 summary: "The showcase demo was 84% of a generated project's Python with no way to decline it, and the running app served the template's own name; keel adds a `showcase` answer that prunes and retires the whole demo surface, and reads its display title from config/project.json instead of hardcoding it."
 id: docs-adr-0007-optional-showcase-and-project-owned-identity
 created: 2026-08-06
-updated: 2026-08-06
+updated: 2026-10-06
 visibility: internal
 canonical: true
 ---
@@ -115,7 +115,8 @@ committed contract has drifted* (exit 1).
   stale exactly when the showcase is declined.
 - **A copier task regenerating `openapi.json` at generation.** Rejected: copier
   tasks are unsafe, so `make new` would need `--trust`. Generation is deliberately
-  trust-free (ADR-0006).
+  trust-free (ADR-0006; amendment proposed in
+  [ADR-0010](0010-generation-needs-trust-to-stamp-docs.md)).
 - **Coercing `astro` to `react-vite` under `showcase: false`.** Rejected — see
   decision 2.
 - **Pruning the corpus tooling along with the showcase.** Rejected on the

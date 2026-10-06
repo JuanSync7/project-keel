@@ -8,7 +8,7 @@ tags: [template, scaffold, project_keel]
 summary: A generic, polyglot-aware, agent-friendly project skeleton that stays honest.
 id: readme
 created: 2026-06-17
-updated: 2026-09-02
+updated: 2026-10-06
 visibility: internal
 canonical: true
 ---
@@ -69,8 +69,8 @@ writes only the parts you chose, fills in
 improvements with `copier update --trust`:
 
 ```bash
-pipx install copier                                 # once
-copier copy gh:JuanSync7/project-keel my-project    # interactive Q&A -> tailored skeleton
+pipx install copier                                         # once
+copier copy --trust gh:JuanSync7/project-keel my-project    # interactive Q&A -> tailored skeleton
 ```
 
 With no `--vcs-ref`, copier resolves the **newest tag** — so the command above
@@ -83,13 +83,16 @@ Later, from inside the generated project, pull template improvements:
 copier update --trust    # re-runs the Q&A with your recorded answers as defaults
 ```
 
-`--trust` is required, not optional politeness: re-answering a question has to
-*remove* what you declined (the showcase demo, the frontend stack you switched away
-from, a transport you turned off), and copier can only delete through
-`_migrations`, which run
-commands — so it refuses to update an unattended template without it. Generation
-never needs the flag. Changing an answer deletes that directory, so commit your work
-first; `git checkout -- <path>` brings it back.
+`--trust` is required on both commands, not optional politeness: copier refuses a
+template that runs commands unless you pass it. Generation runs one, which stamps
+every document's `updated:` with the day you generated it, so the project passes its
+own freshness gate on its first commit (`scripts/jobs/restamp_docs.py`;
+`docs/adr/0010-generation-needs-trust-to-stamp-docs.md`). An update runs more:
+re-answering a question has to *remove* what you declined (the showcase demo, the
+frontend stack you switched away from, a transport you turned off), and copier can
+only delete through `_migrations`; the last one restamps the documents the update
+changed. Changing an answer deletes that directory, so commit your work first;
+`git checkout -- <path>` brings it back.
 
 In a checkout of this repo you can also run `make new DEST=../my-project` — but note
 that records the template's **absolute local path** as the update origin, so

@@ -5,11 +5,46 @@ All notable changes. Format: Keep a Changelog.
 Generated projects record the template ref they came from in
 `.copier-answers.yml` (tracked, not ignored — see 0.1.0). Generate a **named**
 version rather than a bare commit:
-`copier copy --vcs-ref v0.1.0 gh:JuanSync7/project-keel my-project`.
+`copier copy --trust --vcs-ref v0.1.0 gh:JuanSync7/project-keel my-project`
+(`--trust` since Unreleased, below).
 
 ## [Unreleased]
 
 ### Fixed
+- **A generated project failed its own doc-freshness test on arrival.** Every
+  `updated:` was a literal from keel's history, so committing a project on the
+  day it was generated made 112 of 112 governed documents stale under
+  `tests/integration/test_doc_freshness.py`. Every `copier update` that changed
+  a document repeated the defect. Copier now runs the new restamp writer at
+  generation and as the last update migration, so a document is stamped on the
+  day it arrives. The rule itself is unchanged
+  (`docs/adr/0010-generation-needs-trust-to-stamp-docs.md`). The copy task
+  carries no mode flag: it stamps what git would commit, so it is also right
+  when generating into a repository that already has history, and under
+  `copier update --conflict rej` (an earlier `--fresh-only` design measured 105
+  of 113 documents stale in the first case and one `.rej` per document in the
+  second).
+- **The writer and the judge could stand on different days.** `review_docs`
+  ignored `SOURCE_DATE_EPOCH`, and the writer stamped only its own today while
+  the judge also demands the last commit date. Under a pinned epoch behind a
+  commit, `make restamp-docs` wrote nothing and `--check` passed while
+  `make check-docs` stayed red. Both now resolve today through
+  `review_docs.resolve_today`, the writer's target is never earlier than the
+  last commit, and a `SOURCE_DATE_EPOCH` past year 9999 is a named error
+  (exit 2) instead of a traceback.
+- **A project below its repository's top missed its own modified documents.**
+  `review_docs` read `git status --porcelain`, whose paths are relative to the
+  repository top, so under `--root sub` no modified document ever matched. It
+  now reads `git diff --relative`, as the writer does.
+- **The doc reviewer no longer sends stale stamps to the model.** A stale stamp
+  is a rule's decision and keeps `make check-docs` red, so a gated edit for it
+  could never land. It is counted in `stale` and cleared by
+  `make restamp-docs`.
+- **`review_docs` missed two document shapes.** A document starting with a
+  byte-order mark was ungoverned, because `startswith("---")` is false after
+  U+FEFF. An empty `updated:` read the next line's token as its date, because
+  `\s*` crosses the newline. The judge and the writer now share one grammar,
+  `review_docs.updated_span`.
 - **`wiki/INDEX.md` was neither tracked nor ignored.** The MCP action server's
   `rebuild_index` action writes it by default — a generated view sitting beside
   three that were already ignored — so running the action left a clean checkout
@@ -19,6 +54,14 @@ version rather than a bare commit:
   opinion about.
 
 ### Changed
+- **`copier copy` and `make new` now require `--trust`.** This supersedes the
+  0.1.0-era note below that generation needs no flag. Generation now runs a
+  copier task, and copier refuses a template with tasks unless it is trusted;
+  the refusal names "tasks". Every documented copier command carries the flag,
+  pinned by `tests/integration/test_copier_generator_contract.py`
+  (`docs/adr/0010-generation-needs-trust-to-stamp-docs.md`).
+- **A stale-document finding names its remedy.** Each `review_docs` reason now
+  ends with `make restamp-docs`.
 - **The corpus fixed point is now proven across PROCESSES, not just across two
   builds.** `make check-corpus` runs both of its builds in one process, so it
   shares that process's string-hash order and cannot see a set-iteration
@@ -34,6 +77,13 @@ version rather than a bare commit:
   target's effect is not yet possible and is named as such rather than implied.
 
 ### Added
+- **`scripts/jobs/restamp_docs.py` and `make restamp-docs` — the writer that
+  keeps `updated:` true.** It sets a stale stamp to today on every document that
+  is new, changed against `HEAD`, or already stale against its last commit. It
+  changes only the date bytes, never moves a stamp backwards, and takes today
+  from `--today`, then `SOURCE_DATE_EPOCH` in UTC, then the clock. It declares
+  `rerun: fixed-point`, and `tests/integration/test_idempotence.py` proves the
+  claim. `--check` lists what it would change and writes nothing.
 - **`check_V` — a writer declares what a second run does, and the tree is held
   to it.** Every doer here already reached a fixed point when it was measured:
   generating twice from the same answers gives byte-identical trees, re-running

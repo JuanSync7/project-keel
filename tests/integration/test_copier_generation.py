@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pytest
 
+import doc_stamps
 import hermetic_git
 import optional_deps
 
@@ -26,6 +27,13 @@ import optional_deps
 # is also what stops a fourth copy of this guard from drifting.)
 copier = optional_deps.importorskip("copier", extra="template")
 yaml = optional_deps.importorskip("yaml", extra="template")
+# copier runs `_tasks` through plumbum, whose `local.env` is a snapshot taken at
+# import: `monkeypatch.setenv` never reaches a task, so a test that pins the
+# generation date does it with `plumbum.local.env`.
+plumbum = optional_deps.importorskip("plumbum", extra="template")
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "jobs"))
+
+import review_docs  # noqa: E402
 
 _ROOT = Path(__file__).resolve().parents[2]
 
@@ -72,14 +80,18 @@ _PYPROJECT_ANSWER_FIELDS = (
 
 
 def _generate(dest, **data):
-    """Render the keel template (from git HEAD) into dest with the given answers."""
+    """Render the keel template (from git HEAD) into dest with the given answers.
+
+    `unsafe=True` is `copier copy --trust`: copier.yml's `_tasks` stamp the new
+    project's documents, and copier refuses a template that runs tasks without
+    trust (pinned by test_copy_without_trust_is_refused_naming_tasks)."""
     copier.run_copy(
         str(_ROOT),
         str(dest),
         data=data,
         defaults=True,
         vcs_ref="HEAD",
-        unsafe=False,
+        unsafe=True,
         quiet=True,
     )
 
@@ -623,6 +635,15 @@ def _answer_driven_prunes():
 
 
 # `{% if not showcase %}path{% endif %}` -> the condition, for the pairing test below.
+def _command_text(command):
+    """A copier task or migration command as one string. copier accepts a string
+    (run through a shell) or a list (argv, no shell); the restamp migration is a
+    list, and a `" ".join` over a list of lists would raise rather than read it."""
+    if isinstance(command, (list, tuple)):
+        return " ".join(str(part) for part in command)
+    return str(command)
+
+
 _EXCLUDE_CONDITION = re.compile(r"\{%\s*if\s+(.+?)\s*%\}")
 
 
@@ -652,7 +673,7 @@ def test_every_answer_driven_prune_has_a_retirement_migration():
 
     migrations = [
         (
-            m["command"] if isinstance(m, dict) else str(m),
+            _command_text(m["command"] if isinstance(m, dict) else m),
             str(m.get("when", "")) if isinstance(m, dict) else "",
         )
         for m in cfg.get("_migrations", [])
@@ -1183,7 +1204,7 @@ def test_no_retirement_migration_deletes_something_every_project_needs():
     and `scripts/query_corpus.py`, none of which depend on the showcase at all."""
     cfg, _ = _answer_driven_prunes()
     commands = " ".join(
-        m["command"] if isinstance(m, dict) else str(m)
+        _command_text(m["command"] if isinstance(m, dict) else m)
         for m in cfg.get("_migrations", [])
     )
     assert commands, (
@@ -1260,16 +1281,20 @@ def test_generating_twice_produces_identical_trees(clean_template, tmp_path):
     that varies between two runs — a timestamp, a uuid, an unsorted iteration.
     """
     first, second = tmp_path / "a", tmp_path / "b"
+    epoch, _ = doc_stamps.epoch_after_newest_stamp(clean_template)
     for dest in (first, second):
-        copier.run_copy(
-            str(clean_template),
-            str(dest),
-            data={"project_name": "demo_proj", "frontend_stack": "none"},
-            defaults=True,
-            vcs_ref="HEAD",
-            unsafe=False,
-            quiet=True,
-        )
+        # The one input that legitimately varies by day is pinned, as a
+        # reproducible build pins it: the stamp `_tasks` writes.
+        with plumbum.local.env(SOURCE_DATE_EPOCH=str(epoch)):
+            copier.run_copy(
+                str(clean_template),
+                str(dest),
+                data={"project_name": "demo_proj", "frontend_stack": "none"},
+                defaults=True,
+                vcs_ref="HEAD",
+                unsafe=True,
+                quiet=True,
+            )
     _assert_same_tree(first, second, "two generations with the same answers")
 
 
@@ -1279,20 +1304,128 @@ def test_regenerating_over_an_existing_project_writes_nothing(clean_template, tm
     rather than on copier's own `identical` report, which is a claim about what it
     decided to do and not about what is on disk."""
     dest = tmp_path / "proj"
+    epoch, _ = doc_stamps.epoch_after_newest_stamp(clean_template)
 
     def copy(**extra):
-        copier.run_copy(
-            str(clean_template),
-            str(dest),
-            data={"project_name": "demo_proj", "frontend_stack": "none"},
-            defaults=True,
-            vcs_ref="HEAD",
-            unsafe=False,
-            quiet=True,
-            **extra,
-        )
+        with plumbum.local.env(SOURCE_DATE_EPOCH=str(epoch)):
+            copier.run_copy(
+                str(clean_template),
+                str(dest),
+                data={"project_name": "demo_proj", "frontend_stack": "none"},
+                defaults=True,
+                vcs_ref="HEAD",
+                unsafe=True,
+                quiet=True,
+                **extra,
+            )
 
     copy()
     before = _tree_bytes(dest)
     copy(overwrite=True)
     assert _tree_bytes(dest) == before, "a second copy over the same project wrote"
+
+
+# --- freshness: a generated project's documents are true on arrival -------------
+
+
+def test_a_generated_project_has_no_stale_docs_after_its_first_commit(
+    clean_template, tmp_path
+):
+    """The defect, as a project meets it: generate, `git init`, commit, and the
+    project's own freshness gate (tests/integration/test_doc_freshness.py) must
+    already be green. Before copier.yml's `_tasks` it was red on every governed
+    document, because each carried the day keel last touched it while its first
+    commit was the day of generation. The date is pinned past every stamp the
+    template carries, and the commit is made on that same day, so the assertion
+    is exact: every governed document carries the generation day."""
+    epoch, day = doc_stamps.epoch_after_newest_stamp(clean_template)
+    project = tmp_path / "proj"
+    with plumbum.local.env(SOURCE_DATE_EPOCH=str(epoch)):
+        copier.run_copy(
+            str(clean_template),
+            str(project),
+            data={"project_name": "demo_proj", "frontend_stack": "none"},
+            defaults=True,
+            vcs_ref="HEAD",
+            unsafe=True,
+            quiet=True,
+        )
+    env = _hermetic_git_env(tmp_path)
+    env["GIT_AUTHOR_DATE"] = env["GIT_COMMITTER_DATE"] = "@%d +0000" % epoch
+    for argv in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "generated"]):
+        r = subprocess.run(
+            ["git"] + argv, cwd=str(project), env=env, capture_output=True, text=True
+        )
+        assert r.returncode == 0, r.stderr
+    records = review_docs.collect(str(project))
+    assert records, "no governed documents were collected -- this proves nothing"
+    assert review_docs.stale_findings(records, day.isoformat()) == []
+    assert sorted({updated for _, updated, _, _ in records}) == [day.isoformat()]
+
+
+def test_generating_into_a_repository_with_history_is_fresh_after_its_commit(
+    clean_template, tmp_path
+):
+    """`copier copy` into a directory that is already a git repository with
+    commits (`git init && git commit` first, or a monorepo subdirectory) — the
+    shape keel's own README does not forbid. The copy task used to be a no-op
+    there, so the project's first commit had 105 of 113 governed documents
+    stale (measured). Every arriving document is untracked, so the task stamps
+    it; the repository's own file is left alone."""
+    epoch, day = doc_stamps.epoch_after_newest_stamp(clean_template)
+    project = tmp_path / "proj"
+    project.mkdir()
+    env = _hermetic_git_env(tmp_path)
+    env["GIT_AUTHOR_DATE"] = env["GIT_COMMITTER_DATE"] = "@%d +0000" % epoch
+
+    def git(*argv):
+        r = subprocess.run(
+            ["git"] + list(argv),
+            cwd=str(project),
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        assert r.returncode == 0, r.stderr
+
+    (project / "NOTES.txt").write_text("history before keel\n", encoding="utf-8")
+    git("init", "-q")
+    git("add", "-A")
+    git("commit", "-qm", "history")
+    with plumbum.local.env(SOURCE_DATE_EPOCH=str(epoch)):
+        copier.run_copy(
+            str(clean_template),
+            str(project),
+            data={"project_name": "demo_proj", "frontend_stack": "none"},
+            defaults=True,
+            vcs_ref="HEAD",
+            unsafe=True,
+            quiet=True,
+        )
+    git("add", "-A")
+    git("commit", "-qm", "generated")
+    records = review_docs.collect(str(project))
+    assert records, "no governed documents were collected -- this proves nothing"
+    assert review_docs.stale_findings(records, day.isoformat()) == []
+    assert (project / "NOTES.txt").read_text(encoding="utf-8") == (
+        "history before keel\n"
+    )
+
+
+def test_copy_without_trust_is_refused_naming_tasks(tmp_path):
+    """The cost of the stamp, pinned so the docs cannot drift from it: copier
+    classes a template with `_tasks` as unsafe and refuses `copy` without trust,
+    naming the feature. Every documented copy command carries `--trust`
+    (test_copier_generator_contract.py holds them to it)."""
+    with pytest.raises(copier.errors.UnsafeTemplateError) as refusal:
+        copier.run_copy(
+            str(_ROOT),
+            str(tmp_path / "proj"),
+            data={"project_name": "demo_proj", "frontend_stack": "none"},
+            defaults=True,
+            vcs_ref="HEAD",
+            unsafe=False,
+            quiet=True,
+        )
+    assert "tasks" in str(refusal.value)
+    assert not (tmp_path / "proj").exists(), "the refused copy still wrote"

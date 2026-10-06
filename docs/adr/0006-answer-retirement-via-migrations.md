@@ -8,7 +8,7 @@ tags: [adr, template, copier, migrations, update, trust]
 summary: "`_exclude` prunes at generation but can never delete on update, so re-answering a question left the declined tree on disk and reddened the project's own gate; keel mirrors every answer-driven prune with a `_migrations` entry and accepts that `copier update` now requires `--trust`."
 id: docs-adr-0006-answer-retirement-via-migrations
 created: 2026-08-05
-updated: 2026-08-05
+updated: 2026-10-06
 visibility: internal
 canonical: true
 ---
@@ -63,7 +63,8 @@ had the path simply runs a no-op `rm`.
   above. Every documented update command carries the flag, pinned by a test rather
   than by prose.
 - **Generation is unaffected.** `_check_unsafe` only counts migrations when
-  `mode == "update"`, so `copier copy` and `make new` still need no trust flag.
+  `mode == "update"`, so `copier copy` and `make new` still need no trust flag
+  (amendment proposed: [ADR-0010](0010-generation-needs-trust-to-stamp-docs.md)).
 - **Changing an answer deletes a directory a project may have edited.**
   `src/frontend/<stack>` is a real app tree. That is the honest meaning of switching
   stacks, and it is bounded by copier's own preconditions: update requires git and

@@ -32,8 +32,9 @@ once per chunk. **Your job on each call is step 4 only.**
    spec: `{"edits": [{"file": "<path>", "find": "<verbatim text>", "replace":
    "<new text>"}], "gate": "check-docs"}`. The `find` text MUST appear **verbatim
    and exactly once** in the file. By kind:
-   - `stale` — replace the frontmatter `updated:` line with today's date (the
-     finding names it); nothing else.
+   You are never sent a `stale` chunk: a rule decides a stale stamp, so the
+   deterministic writer clears it (`make restamp-docs`), and while one is
+   outstanding the baseline in step 3 is red and the run stops.
    - `mention` — if the backticked path has an obvious correct spelling in the
      tree, fix the path; if it is a bare name used as a noun, leave it and return
      `{"edits": []}`; never invent a file.

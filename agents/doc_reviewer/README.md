@@ -9,7 +9,7 @@ tags: [agent, documentation, review, rosters, freshness]
 summary: Reviews the documentation against docs/guides/doc-style.md — the deterministic findings first, then one judged edit per chunk, each gated on make check-docs and rolled back if red.
 id: agents-doc-reviewer
 created: 2026-09-02
-updated: 2026-09-02
+updated: 2026-10-06
 visibility: internal
 canonical: true
 ---
@@ -24,9 +24,10 @@ The **judgment half** of the documentation-quality system. The gate
 (`check_structure.py` P–T) proves what a rule can prove — links resolve, rosters
 match, tool specs carry their sections — and `scripts/jobs/review_docs.py`
 reports what stays a report (stale stamps are gated separately; unresolved
-mentions never are). What neither can decide — is this `Not for` cell *true*, does
-this stale stamp deserve today's date, is this backticked name a path or a noun —
-this agent judges, one chunk at a time, with the guide's own rules retrieved from
+mentions never are). A stale stamp is counted but never judged: a rule decides
+it, so `make restamp-docs` clears it, and until then `make check-docs` is red and
+the run stops at its baseline. What no rule can decide — is this `Not for` cell
+*true*, is this backticked name a path or a noun — this agent judges, one chunk at a time, with the guide's own rules retrieved from
 the corpus as its context. Every edit lands through `apply_refactor`, gated on
 `make check-docs` (the structure gate plus strict freshness), and is **rolled
 back** unless the tree stays green.

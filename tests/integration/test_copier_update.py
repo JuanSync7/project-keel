@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+import doc_stamps
 import hermetic_git
 import optional_deps
 
@@ -24,6 +25,13 @@ import optional_deps
 copier = optional_deps.importorskip("copier", extra="template")
 optional_deps.importorskip("copier.errors", extra="template")
 yaml = optional_deps.importorskip("yaml", extra="template")
+# copier runs `_tasks` and `_migrations` through plumbum, whose `local.env` is a
+# snapshot taken at import: `monkeypatch.setenv` never reaches a task, so the
+# generation date is pinned with `plumbum.local.env` instead.
+plumbum = optional_deps.importorskip("plumbum", extra="template")
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "jobs"))
+
+import review_docs  # noqa: E402
 
 _ROOT = Path(__file__).resolve().parents[2]
 pytestmark = [
@@ -51,6 +59,10 @@ _NEW_FILE = "docs/upstream-only.txt"
 _NEW_FILE_TEXT = "This file only ever existed in the newer template.\n"
 _UPSTREAM_EDIT = "\n# upstream marker added after the project was generated\n"
 _UPSTREAM_IGNORE = "*.upstream-junk"
+# A governed document the template edits after generation, far from its
+# frontmatter, so the edit and the stamp are separate hunks.
+_UPSTREAM_DOC = "docs/guides/idempotency.md"
+_UPSTREAM_DOC_EDIT = "\nA paragraph the newer template added.\n"
 
 # What the project itself changes afterwards (the update must NOT clobber it). These
 # must be files the template's own step-3 edits do not touch: appending to the same
@@ -85,7 +97,12 @@ def upgraded(tmp_path_factory):
     """generate -> commit -> evolve the template -> `copier update`.
 
     Module-scoped because the whole cycle costs ~15s and every assertion below reads
-    the same resulting tree. Yields (template, project, commit_before).
+    the same resulting tree. Yields (template, project, commit_before, update_day).
+
+    Generated on one pinned day and updated on a later one, both after every
+    stamp the template carries, so the update's restamping is visible: a
+    document the update changed carries `update_day`, and every other document
+    keeps the generation day it already had.
 
     The template is a clone of keel, so keel itself is never written to. The clone
     carries the uncommitted working tree too (see `_clone_template`), so an edit you
@@ -100,18 +117,21 @@ def upgraded(tmp_path_factory):
         # A throwaway clone is the template: real history, real copier.yml, and a repo
         # we may commit to.
         template = _clone_template(work / "template", work)
+        generated_epoch, _ = doc_stamps.epoch_after_newest_stamp(template, days=1)
+        update_epoch, update_day = doc_stamps.epoch_after_newest_stamp(template, days=2)
 
         # 1. a project generated from it, exactly as `make new` does
         project = work / "proj"
-        copier.run_copy(
-            str(template),
-            str(project),
-            data={"project_name": "demo_proj", "frontend_stack": "none"},
-            defaults=True,
-            vcs_ref="HEAD",
-            unsafe=False,
-            quiet=True,
-        )
+        with plumbum.local.env(SOURCE_DATE_EPOCH=str(generated_epoch)):
+            copier.run_copy(
+                str(template),
+                str(project),
+                data={"project_name": "demo_proj", "frontend_stack": "none"},
+                defaults=True,
+                vcs_ref="HEAD",
+                unsafe=True,
+                quiet=True,
+            )
         _git("init", "--quiet", "-b", "main", cwd=project)
         _git("add", "-A", cwd=project)
         _git("commit", "--quiet", "-m", "generated from keel", cwd=project)
@@ -136,6 +156,10 @@ def upgraded(tmp_path_factory):
                 else ("\n# upstream new ignore rule\n%s\n" % _UPSTREAM_IGNORE)
             )
             p.write_text(p.read_text() + extra)
+        doc = template / _UPSTREAM_DOC
+        doc.write_text(
+            doc.read_text(encoding="utf-8") + _UPSTREAM_DOC_EDIT, encoding="utf-8"
+        )
         _git("add", "-A", cwd=template)
         _git("commit", "--quiet", "-m", "template improves", cwd=template)
 
@@ -148,28 +172,29 @@ def upgraded(tmp_path_factory):
         #    unsafe=True is what `copier update --trust` passes, and keel's `_migrations`
         #    make it mandatory: copier classes a template carrying them as unsafe and
         #    refuses to update without trust (pinned by the restack tests below).
-        copier.run_update(
-            str(project),
-            defaults=True,
-            overwrite=True,
-            vcs_ref="HEAD",
-            unsafe=True,
-            quiet=True,
-        )
-        yield template, project, commit_before
+        with plumbum.local.env(SOURCE_DATE_EPOCH=str(update_epoch)):
+            copier.run_update(
+                str(project),
+                defaults=True,
+                overwrite=True,
+                vcs_ref="HEAD",
+                unsafe=True,
+                quiet=True,
+            )
+        yield template, project, commit_before, update_day.isoformat()
     finally:
         mp.undo()
 
 
 def test_update_delivers_new_template_files(upgraded):
     """A file added to the template after generation reaches the project."""
-    _, project, _ = upgraded
+    _, project, _, _ = upgraded
     assert (project / _NEW_FILE).read_text() == _NEW_FILE_TEXT
 
 
 def test_update_delivers_edits_to_existing_files(upgraded):
     """An edit to an already-copied file is merged in, not skipped."""
-    _, project, _ = upgraded
+    _, project, _, _ = upgraded
     assert _UPSTREAM_EDIT.strip() in (project / ".editorconfig").read_text()
 
 
@@ -178,7 +203,7 @@ def test_update_advances_the_recorded_commit(upgraded):
     replay this one — while `_src_path` still names a RESOLVABLE origin. (The literal
     `.` that `copier copy .` used to record resolves to the generated project itself
     and kills every update; see test_copier_generator_contract.py.)"""
-    template, project, commit_before = upgraded
+    template, project, commit_before, _ = upgraded
     answers = _answers(project)
     # `git describe --tags --always` is exactly what copier records, so this holds
     # whether or not the template carries release tags.
@@ -191,7 +216,7 @@ def test_update_advances_the_recorded_commit(upgraded):
 
 def test_update_preserves_downstream_work(upgraded):
     """The whole point of `update` over `recopy`: the project's own commits stay."""
-    _, project, _ = upgraded
+    _, project, _, _ = upgraded
     assert (project / _LOCAL_FILE).exists()
     assert _LOCAL_EDIT.strip() in (project / "README.md").read_text()
 
@@ -201,7 +226,7 @@ def test_update_keeps_the_gitignore_divergence_twin(upgraded):
     file (it drops the `.copier-answers.yml` ignore so the answers file is TRACKED
     downstream). An update must carry the twin's new rules WITHOUT re-introducing that
     line from keel's plain `.gitignore`, or every future update of every clone dies."""
-    _, project, _ = upgraded
+    _, project, _, _ = upgraded
     lines = [ln.strip() for ln in (project / ".gitignore").read_text().splitlines()]
     assert _UPSTREAM_IGNORE in lines  # the upstream's new rule arrived
     assert ".copier-answers.yml" not in lines  # ...and the twin still diverges
@@ -212,7 +237,7 @@ def test_update_leaves_no_conflicts(upgraded):
     """A clean update must leave no `.rej` files, no inline conflict markers and no
     unmerged paths — otherwise "it worked" is hiding a broken tree. (copier 9 defaults
     to conflict="inline", so a real collision shows up as markers + `UU`, not `.rej`.)"""
-    _, project, _ = upgraded
+    _, project, _, _ = upgraded
     assert not list(project.rglob("*.rej"))
     assert not _git("diff", "--name-only", "--diff-filter=U", cwd=project).split()
     marked = [
@@ -228,7 +253,7 @@ def test_update_leaves_no_conflicts(upgraded):
 
 def test_updated_project_still_passes_its_own_gate(upgraded):
     """The real judge: the upgraded tree is still a structurally valid project."""
-    _, project, _ = upgraded
+    _, project, _, _ = upgraded
     r = subprocess.run(
         [sys.executable, "scripts/check_structure.py"],
         cwd=str(project),
@@ -236,6 +261,188 @@ def test_updated_project_still_passes_its_own_gate(upgraded):
         text=True,
     )
     assert r.returncode == 0, r.stdout + r.stderr
+
+
+# --- freshness: an update restamps what it changed, and nothing else -----------
+
+
+def _governed(project, rev=None):
+    """{relpath: text} of every governed document, at *rev* or in the work tree."""
+    names = _git("ls-files", "-z", "--", "*.md", cwd=project).split("\0")
+    if rev is None:
+        names += _git(
+            "ls-files", "-o", "--exclude-standard", "-z", "--", "*.md", cwd=project
+        ).split("\0")
+    out = {}
+    for name in sorted(n for n in set(names) if n):
+        path = project / name
+        if path.is_symlink():
+            continue
+        if rev is None:
+            if not path.is_file():
+                continue
+            text = path.read_text(encoding="utf-8")
+        else:
+            shown = subprocess.run(
+                ["git", "show", "%s:%s" % (rev, name)],
+                cwd=str(project),
+                capture_output=True,
+                text=True,
+            )
+            if shown.returncode != 0:
+                continue  # not in that revision: a document the update added
+            text = shown.stdout
+        if review_docs.updated_span(text):
+            out[name] = text
+    return out
+
+
+def _unstamped(text):
+    start, end = review_docs.updated_span(text)
+    return text[:start] + text[end:]
+
+
+def _stamp(text):
+    start, end = review_docs.updated_span(text)
+    return text[start:end]
+
+
+def test_an_update_restamps_exactly_the_docs_it_changed(upgraded):
+    """The last `_migrations` entry, observed: a document whose body the update
+    changed (or delivered) carries the update day; every other document keeps
+    the day it was generated on. A restamp of an unchanged document would be
+    churn in every update diff; a changed one left behind fails the project's
+    own freshness gate the day after the update."""
+    _, project, _, update_day = upgraded
+    before, after = _governed(project, "HEAD"), _governed(project)
+    assert len(after) > 10, "too few governed documents to prove anything"
+    changed = sorted(
+        n
+        for n in after
+        if n not in before or _unstamped(after[n]) != _unstamped(before[n])
+    )
+    assert _UPSTREAM_DOC in changed, changed
+    restamped = sorted(n for n in after if _stamp(after[n]) == update_day)
+    assert restamped == changed
+    for name in sorted(set(after) - set(changed)):
+        assert after[name] == before[name], name
+    records = review_docs.collect(str(project))
+    assert records and review_docs.stale_findings(records, update_day) == []
+
+
+@pytest.fixture(scope="module")
+def no_op_update(tmp_path_factory):
+    """generate -> commit -> `copier update` to the SAME template commit, a day
+    later. Yields the project."""
+    mp = pytest.MonkeyPatch()
+    work = tmp_path_factory.mktemp("copier_noop_update")
+    for var, value in hermetic_git.git_env_vars(work).items():
+        mp.setenv(var, value)
+    mp.setenv("COPIER_CACHE_DIR", str(work / "copier-cache"))
+    try:
+        template = _clone_template(work / "template", work)
+        generated_epoch, _ = doc_stamps.epoch_after_newest_stamp(template, days=1)
+        update_epoch, _ = doc_stamps.epoch_after_newest_stamp(template, days=2)
+        project = work / "proj"
+        with plumbum.local.env(SOURCE_DATE_EPOCH=str(generated_epoch)):
+            copier.run_copy(
+                str(template),
+                str(project),
+                data={"project_name": "demo_proj", "frontend_stack": "none"},
+                defaults=True,
+                vcs_ref="HEAD",
+                unsafe=True,
+                quiet=True,
+            )
+        _git("init", "--quiet", "-b", "main", cwd=project)
+        _git("add", "-A", cwd=project)
+        _git("commit", "--quiet", "-m", "generated from keel", cwd=project)
+        with plumbum.local.env(SOURCE_DATE_EPOCH=str(update_epoch)):
+            copier.run_update(
+                str(project),
+                defaults=True,
+                overwrite=True,
+                vcs_ref="HEAD",
+                unsafe=True,
+                quiet=True,
+            )
+        yield project
+    finally:
+        mp.undo()
+
+
+def test_a_no_op_update_on_a_later_day_leaves_the_tree_clean(no_op_update):
+    """Nothing changed upstream, so nothing may change downstream — in
+    particular no document may be restamped merely because the update ran on a
+    later day. A dirty tree after a no-op update is noise every project would
+    have to commit or revert, every time."""
+    status = _git("status", "--porcelain", cwd=no_op_update)
+    assert status == "", status
+
+
+@pytest.fixture(scope="module")
+def rej_update(tmp_path_factory):
+    """generate -> commit -> the template changes ONE non-document file ->
+    `copier update --conflict rej` a day later. Yields the project.
+
+    `--conflict rej` is copier's other documented mode: what fails to merge is
+    left as `<file>.rej` beside the file instead of inline markers. Every
+    governed document's stamp line is a hunk the update's patch carries, so a
+    stamp written in one of copier's renders and not in another fails to apply
+    there (measured: one `.rej` per document when the copy task skipped the
+    real project)."""
+    mp = pytest.MonkeyPatch()
+    work = tmp_path_factory.mktemp("copier_rej_update")
+    for var, value in hermetic_git.git_env_vars(work).items():
+        mp.setenv(var, value)
+    mp.setenv("COPIER_CACHE_DIR", str(work / "copier-cache"))
+    try:
+        template = _clone_template(work / "template", work)
+        generated_epoch, _ = doc_stamps.epoch_after_newest_stamp(template, days=1)
+        update_epoch, _ = doc_stamps.epoch_after_newest_stamp(template, days=2)
+        project = work / "proj"
+        with plumbum.local.env(SOURCE_DATE_EPOCH=str(generated_epoch)):
+            copier.run_copy(
+                str(template),
+                str(project),
+                data={"project_name": "demo_proj", "frontend_stack": "none"},
+                defaults=True,
+                vcs_ref="HEAD",
+                unsafe=True,
+                quiet=True,
+            )
+        _git("init", "--quiet", "-b", "main", cwd=project)
+        _git("add", "-A", cwd=project)
+        _git("commit", "--quiet", "-m", "generated from keel", cwd=project)
+        editorconfig = template / ".editorconfig"
+        editorconfig.write_text(editorconfig.read_text() + _UPSTREAM_EDIT)
+        _git("add", "-A", cwd=template)
+        _git("commit", "--quiet", "-m", "template improves", cwd=template)
+        with plumbum.local.env(SOURCE_DATE_EPOCH=str(update_epoch)):
+            copier.run_update(
+                str(project),
+                defaults=True,
+                overwrite=True,
+                vcs_ref="HEAD",
+                unsafe=True,
+                quiet=True,
+                conflict="rej",
+            )
+        yield project
+    finally:
+        mp.undo()
+
+
+def test_a_rej_mode_update_leaves_no_rejects_and_touches_no_document(rej_update):
+    rejects = sorted(str(p.relative_to(rej_update)) for p in rej_update.rglob("*.rej"))
+    assert rejects == [], rejects
+    changed = sorted(
+        line[3:]
+        for line in _git(
+            "status", "--porcelain", "--untracked-files=all", cwd=rej_update
+        ).splitlines()
+    )
+    assert changed == [".copier-answers.yml", ".editorconfig"], changed
 
 
 # --- retirement: what an update must REMOVE when an answer changes -------------
@@ -272,7 +479,7 @@ def restacked(tmp_path_factory):
             data={"project_name": "demo_proj", "frontend_stack": "react-vite"},
             defaults=True,
             vcs_ref="HEAD",
-            unsafe=False,
+            unsafe=True,
             quiet=True,
         )
         _git("init", "--quiet", "-b", "main", cwd=project)
@@ -342,8 +549,9 @@ def test_update_without_trust_refuses_a_template_carrying_migrations(restacked):
     the template as unsafe and `copier update` now REFUSES without `--trust` instead of
     silently skipping them. That makes `--trust` part of the documented update command
     rather than a nicety — pinned here so the docs and the behaviour cannot drift.
-    Generation is unaffected: `_check_unsafe` only counts migrations on `update`, which
-    is why `make new` still needs no trust flag (the run_copy above uses unsafe=False)."""
+    Generation needs it too, for `_tasks` rather than `_migrations`
+    (docs/adr/0010-generation-needs-trust-to-stamp-docs.md); that refusal is pinned in
+    test_copier_generation.py."""
     _, refusal = restacked
     assert "migrations" in str(refusal)
 
@@ -378,7 +586,7 @@ def unshowcased(tmp_path_factory):
             },
             defaults=True,
             vcs_ref="HEAD",
-            unsafe=False,
+            unsafe=True,
             quiet=True,
         )
         assert (project / "src" / "backend" / "showcase").is_dir(), (
@@ -485,7 +693,7 @@ def unmoved(tmp_path_factory):
             data={"project_name": "demo_proj", "frontend_stack": "none"},
             defaults=True,
             vcs_ref="HEAD",
-            unsafe=False,
+            unsafe=True,
             quiet=True,
         )
         _git("init", "--quiet", "-b", "main", cwd=project)

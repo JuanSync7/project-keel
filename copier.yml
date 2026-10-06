@@ -2,7 +2,7 @@
 #
 # Keel's repo root IS the template: copier copies the real files verbatim and only
 # renders files carrying the `.jinja` suffix, so keel stays a valid, self-gating
-# working repo. Run:  copier copy gh:JuanSync7/project-keel <dest>   (or `make new`).
+# working repo. Run:  copier copy --trust gh:JuanSync7/project-keel <dest>   (or `make new`).
 _subdirectory: "."
 _answers_file: ".copier-answers.yml"
 _templates_suffix: ".jinja"
@@ -12,14 +12,36 @@ _templates_suffix: ".jinja"
 # no floor, because the user is told the version was checked:
 #   9.1.0  `multiselect:` (transports/profiles); 9.0.1 dies on `Could not convert [] to string`
 #   9.3.0  the `command:`/`when:` `_migrations` form; 9.2.0 dies on KeyError: 'version',
-#          because its migration_tasks reads migration["version"] with no guard
+#          because its migration_tasks reads migration["version"] with no guard;
+#          the list-form `_tasks` and `{{ _copier_python }}` below are older than it.
+#          `_copier_operation` is NOT used: it is newer than this floor.
 # Raise it whenever a newer feature is used;
 # tests/integration/test_copier_generator_contract.py pins the two together.
-# Generate a NAMED version, not a bare SHA:  copier copy --vcs-ref v0.1.0 ...
+# Generate a NAMED version, not a bare SHA:  copier copy --trust --vcs-ref v0.1.0 ...
 _min_copier_version: "9.3.0"
 # Keel uses CLAUDE.md -> AGENT.md symlinks throughout (enforced by check_I); recreate
 # them as symlinks in the generated project instead of dereferencing to regular files.
 _preserve_symlinks: true
+# A generated project's documents must be fresh on arrival: the template's
+# `updated:` stamps are the dates keel last touched them, so a project committed
+# the day it was generated had every governed document stale against its own
+# first commit (112 of 112, measured). The task stamps them with the generation
+# date — SOURCE_DATE_EPOCH in UTC when set, so a pinned build is reproducible.
+# No mode flag, on purpose: the writer stamps only what git would commit
+# (untracked, changed against HEAD, committed stale), so the same command is
+# right in a bare directory, in a repository that already has history (an
+# arriving document is untracked; a flag that skipped such trees left 105 of
+# 113 documents stale, measured), and in every render `copier update` makes —
+# the scratch copies of the old and new template AND the real project — so the
+# stamp lines of the three agree and the update's patch applies (a task that
+# stamped only the scratch copies left one `.rej` per document under
+# `--conflict rej`, measured). A list, not a string, so no shell is involved;
+# `_copier_python` is the interpreter copier itself runs under, so no
+# virtualenv is needed yet.
+# THE COST: tasks make keel an unsafe template, so `copier copy` needs `--trust`
+# as `copier update` already did (docs/adr/0010-generation-needs-trust-to-stamp-docs.md).
+_tasks:
+  - ["{{ _copier_python }}", "scripts/jobs/restamp_docs.py", "--quiet"]
 
 # Keel's own instance/meta files that must NOT be copied verbatim into a new
 # project (their `.jinja` twins render the tailored versions; the generator's own
@@ -61,6 +83,7 @@ _exclude:
   # pruning it would red the project's own check_B.
   - "docs/design/keel-hardening-plan.md"
   - "docs/design/documentation-quality.md"
+  - "docs/design/downstream-feedback.md"
   - "wiki/corpus.json"
   - "wiki/llms.txt"
   - "wiki/llms-full.txt"
@@ -217,9 +240,11 @@ profiles:
 # rather than trusting this comment.
 #
 # THE COST, stated plainly: migrations run arbitrary commands, so copier now classes
-# keel as an unsafe template and `copier update` REFUSES without `--trust`. That is
-# why every documented update command carries the flag. Generation is unaffected —
-# copier only counts migrations on update — so `make new` still needs no trust.
+# keel as an unsafe template and `copier update` REFUSES without `--trust`. `_tasks`
+# above do the same to `copier copy`, so every documented copier command carries
+# the flag (docs/adr/0010-generation-needs-trust-to-stamp-docs.md supersedes the
+# trust-free generation docs/adr/0006-answer-retirement-via-migrations.md assumed);
+# tests/integration/test_copier_generator_contract.py holds every command to it.
 #
 # THE RISK, stated plainly: `src/frontend/<stack>` is a real app directory that a
 # project is expected to have edited, so these commands can delete work. That is the
@@ -283,4 +308,13 @@ _migrations:
   # landed still carry it, and only a migration can retire what `_exclude` can
   # merely stop shipping. Named exactly — `docs/design/` itself must survive.
   - command: "rm -f docs/design/keel-hardening-plan.md"
+    when: "{{ _stage == 'after' }}"
+  # LAST on purpose: restamp every document the update changed, after every
+  # other migration has finished changing the tree. In the `after` stage the
+  # project is a git work tree whose HEAD is the pre-update commit, so the
+  # worklist is exactly the documents this update touched (plus any already
+  # committed stale). A no-op update on a later day therefore leaves the tree
+  # clean: a document neither this update nor the project changed is not in
+  # the worklist, so it keeps its stamp.
+  - command: ["{{ _copier_python }}", "scripts/jobs/restamp_docs.py", "--quiet"]
     when: "{{ _stage == 'after' }}"

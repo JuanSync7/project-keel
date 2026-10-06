@@ -3,7 +3,7 @@
 title: review_docs — the deterministic documentation review
 kind: script
 layer: n/a
-summary: The deterministic documentation review, the doc reviewer's first tool. Reports documentation facts a rule can decide but check_structure does not gate. Freshness (gated elsewhere): a governed document's `updated:` is never earlier than the date of its last commit, and a document modified in the working tree carries today's date or later. Report tier (always exit 0) under `make advise`; `--strict` exits 1 on any finding, which is how tests/integration/test_doc_freshness.py turns the same rule into a gate. Also the advisory that stays advisory: a backticked repository path that resolves to nothing (most are bare basenames used as nouns, hence never a gate). And, with --json, every roster row, for the agent to judge. No model, no network; git is the only tool it shells to, and no git is a stated skip.
+summary: The deterministic documentation review, the doc reviewer's first tool. Reports documentation facts a rule can decide but check_structure does not gate. Freshness (gated elsewhere): a governed document's `updated:` is never earlier than the date of its last commit, and a document modified in the working tree carries today's date or later; this is the judge, and scripts/jobs/restamp_docs.py is the writer that clears a finding, reading the stamp through the same `updated_span` grammar. Report tier (always exit 0) under `make advise`; `--strict` exits 1 on any finding, which is how tests/integration/test_doc_freshness.py turns the same rule into a gate. Today is `--today`, else SOURCE_DATE_EPOCH read in UTC, else the local clock, through `resolve_today`, the one clock the writer also reads; a malformed source exits 2. Changed paths come from `git diff --relative`, so a root below the repository top is judged on its own documents. Also the advisory that stays advisory: a backticked repository path that resolves to nothing (most are bare basenames used as nouns, hence never a gate). And, with --json, every roster row, for the agent to judge. No model, no network; git is the only tool it shells to, and no git is a stated skip.
 """
 
 # 3.6-safe on purpose: `make advise` runs this under $(PY), but the rule it
@@ -18,8 +18,50 @@ import subprocess
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-_UPDATED = re.compile(r"^updated:\s*(\S+)", re.MULTILINE)
-_ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+# `[ \t]*`, not `\s*`: `\s` spans the newline, so an empty `updated:` read the
+# NEXT line's first token as its date.
+_UPDATED = re.compile(r"^updated:[ \t]*(\S+)", re.MULTILINE)
+ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_BOM = "\ufeff"
+_EPOCH = re.compile(r"^[0-9]+$")
+
+
+class DateSourceError(ValueError):
+    """A date source (`--today`, SOURCE_DATE_EPOCH) this script refuses to guess
+    about. A ValueError so a caller that only knows the stdlib still catches it."""
+
+
+def resolve_today(argv_today, environ):
+    """The date the freshness rule calls today: *argv_today* when given, else
+    SOURCE_DATE_EPOCH read in UTC (the reproducible-builds convention, so a
+    pinned build agrees with itself on every host), else the local clock. The
+    one clock: scripts/jobs/restamp_docs.py calls this too, because a writer and
+    a judge on two clocks disagree about what "fresh" means (measured). A
+    malformed source raises DateSourceError, never a silent fallback."""
+    if argv_today is not None:
+        if not ISO_DATE.match(argv_today):
+            raise DateSourceError("--today %r is not an ISO date" % argv_today)
+        try:
+            return datetime.datetime.strptime(argv_today, "%Y-%m-%d").date()
+        except ValueError as exc:
+            raise DateSourceError(
+                "--today %r is not a calendar date" % argv_today
+            ) from exc
+    if "SOURCE_DATE_EPOCH" in environ:
+        raw = environ["SOURCE_DATE_EPOCH"]
+        if not _EPOCH.match(raw):
+            raise DateSourceError(
+                "SOURCE_DATE_EPOCH=%r is not a whole number of seconds" % raw
+            )
+        try:
+            moment = datetime.datetime.fromtimestamp(int(raw), datetime.timezone.utc)
+        except (ValueError, OverflowError, OSError) as exc:
+            # Digits past datetime's year 9999 (or the platform's time_t).
+            raise DateSourceError(
+                "SOURCE_DATE_EPOCH=%r is not a representable date" % raw
+            ) from exc
+        return moment.date()
+    return datetime.date.today()
 
 
 def _git(root, *args):
@@ -36,21 +78,35 @@ def _git(root, *args):
     return proc.stdout if proc.returncode == 0 else None
 
 
+def updated_span(text):
+    """The (start, end) offsets of the frontmatter `updated:` value in *text*, or
+    None when there is no frontmatter block or no top-level `updated:` with a
+    value in it (then the document is not governed here).
+
+    The one grammar the judge (this module) and the writer
+    (scripts/jobs/restamp_docs.py) share: the writer replaces exactly
+    `text[start:end]`, so what it rewrites is by construction what is judged.
+    A leading U+FEFF is allowed, because a BOM document is still a document."""
+    offset = len(_BOM) if text.startswith(_BOM) else 0
+    if not text.startswith("---", offset):
+        return None
+    end = text.find("\n---", offset + 3)
+    if end < 0:
+        return None
+    m = _UPDATED.search(text, offset, end)
+    return m.span(1) if m else None
+
+
 def _frontmatter_updated(path):
-    """The frontmatter `updated:` value of a Markdown file, or None when the file
-    has no frontmatter block or no such key (then it is not governed here)."""
+    """The frontmatter `updated:` value of a Markdown file, or None when it is
+    not governed (see `updated_span`)."""
     try:
         with open(path, encoding="utf-8") as fh:
             text = fh.read()
     except (OSError, ValueError):
         return None
-    if not text.startswith("---"):
-        return None
-    end = text.find("\n---", 3)
-    if end < 0:
-        return None
-    m = _UPDATED.search(text[:end])
-    return m.group(1) if m else None
+    span = updated_span(text)
+    return text[span[0] : span[1]] if span else None
 
 
 def collect(root):
@@ -62,10 +118,18 @@ def collect(root):
     listed = _git(root, "ls-files", "-z", "--", "*.md")
     if listed is None:
         return None
-    dirty = _git(root, "status", "--porcelain", "-z", "--untracked-files=no") or ""
-    modified = {entry[3:] for entry in dirty.split("\0") if len(entry) > 3}
+    tracked = [p for p in listed.split("\0") if p]
+    if _git(root, "rev-parse", "--verify", "-q", "HEAD") is None:
+        # Before the first commit every tracked file is a change being made.
+        modified = set(tracked)
+    else:
+        # --relative, not `status --porcelain`: porcelain names a path from the
+        # repository top whatever the working directory, so a project below the
+        # top (`--root sub`) never matched its own modified documents (measured).
+        dirty = _git(root, "diff", "--name-only", "--relative", "-z", "HEAD") or ""
+        modified = {p for p in dirty.split("\0") if p}
     records = []
-    for relpath in sorted(p for p in listed.split("\0") if p):
+    for relpath in sorted(tracked):
         full = os.path.join(root, relpath)
         if os.path.islink(full):
             continue  # CLAUDE.md -> AGENT.md: the target carries the date
@@ -88,7 +152,7 @@ def stale_findings(records, today):
     testable and the report reproducible."""
     findings = []
     for relpath, updated, last_commit, modified in records:
-        if not _ISO_DATE.match(updated):
+        if not ISO_DATE.match(updated):
             findings.append(
                 {
                     "path": relpath,
@@ -105,7 +169,8 @@ def stale_findings(records, today):
                     "updated": updated,
                     "expected": last_commit,
                     "reason": "last committed %s but stamped %s -- a change landed "
-                    "without restamping `updated:`" % (last_commit, updated),
+                    "without restamping `updated:`; run `make restamp-docs`"
+                    % (last_commit, updated),
                 }
             )
         elif modified and updated < today:
@@ -115,7 +180,8 @@ def stale_findings(records, today):
                     "updated": updated,
                     "expected": today,
                     "reason": "modified in the working tree but stamped %s -- set "
-                    "`updated: %s` in the same change" % (updated, today),
+                    "`updated: %s` in the same change (`make restamp-docs` "
+                    "does it)" % (updated, today),
                 }
             )
     return findings
@@ -248,16 +314,22 @@ def main(argv=None):
     )
     ap.add_argument(
         "--today",
-        default=datetime.date.today().isoformat(),
-        help="the date a modified file must carry (default: today; tests pin it)",
+        default=None,
+        help="the date a modified file must carry "
+        "(default: SOURCE_DATE_EPOCH in UTC, else today; tests pin it)",
     )
     args = ap.parse_args(argv)
+    try:
+        today = resolve_today(args.today, os.environ).isoformat()
+    except DateSourceError as exc:
+        print("review_docs: %s" % exc, file=sys.stderr)
+        return 2
     records = collect(args.root)
     if records is None:
         # Absent, not broken: no git, or not a repository. Say so, exit 0.
         print("review_docs: no git repository to compare against; freshness unverified")
         return 0
-    findings = stale_findings(records, args.today)
+    findings = stale_findings(records, today)
     mentions = unresolved_mentions(args.root)
     if args.json:
         print(

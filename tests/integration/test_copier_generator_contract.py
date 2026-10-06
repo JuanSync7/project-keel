@@ -5,6 +5,7 @@ layer: n/a
 summary: Pins on the ways keel's generator rots silently, read off the real `make -n new` recipe and the real CI workflow. (1) `make new` must hand copier a RESOLVABLE template path — copier records the CLI argument verbatim as `_src_path`, so a literal `.` resolves to the generated project itself and `copier update` dies there on an unhandled traceback. (2) It must refuse a dirty template, whose `_commit` would exist only in copier's throwaway clone. (3) CI must install the optional `template` extra AND declare it required, or every copier test importorskips and the template's own generation/update gates never run. Imports nothing optional on purpose — this pin must never itself skip, or the fix it guards is circular.
 """
 
+import re
 import shlex
 import shutil
 import subprocess
@@ -271,7 +272,40 @@ _FEATURE_FLOORS = [
     # KeyError mid-update — the unhandled-traceback shape this floor converts into
     # copier's own clear message. 9.3.0 branches on the format instead.
     ("9.3.0", "_stage ==", "new-format _migrations (command:/when:)"),
+    # `_tasks` and the `{{ _copier_python }}` they run under are older than the
+    # 9.3.0 floor; the row pins them to it so a floor lowered past them fails here.
+    ("9.3.0", "_copier_python", "_tasks run under copier's own interpreter"),
 ]
+
+
+def _yaml_keys_and_values(text):
+    """copier.yml with every comment line dropped: what copier reads, not what
+    the comments say about it."""
+    return "\n".join(ln for ln in text.splitlines() if not ln.lstrip().startswith("#"))
+
+
+def test_copier_yml_uses_no_variable_newer_than_its_floor():
+    """`_copier_operation` would have said "copy" or "update" to a task directly,
+    but it is newer than the declared floor, so a copier the floor admits would
+    render it empty and the task would run in the wrong mode. The writer needs
+    no mode at all: it derives what to stamp from git (what git would commit),
+    which is the same answer on copy and on update."""
+    used = _yaml_keys_and_values((_ROOT / "copier.yml").read_text())
+    assert "_copier_operation" not in used
+
+
+def test_the_restamp_runs_one_way_wherever_copier_runs_it():
+    """copier runs the copy task in every render an update makes (two scratch
+    copies and the real project) and the last migration once more. A mode flag
+    on one invocation and not the others made their stamp lines disagree: one
+    `.rej` per governed document under `--conflict rej`, and 105 of 113
+    documents stale when generating into a repository with history (both
+    measured). So every invocation of the writer carries the same arguments."""
+    used = _yaml_keys_and_values((_ROOT / "copier.yml").read_text())
+    calls = [ln.strip() for ln in used.splitlines() if "restamp_docs.py" in ln]
+    assert len(calls) >= 2, "the copy task and the update migration both restamp"
+    argv = {re.sub(r"^(- )?(command: )?", "", c) for c in calls}
+    assert len(argv) == 1, "restamp invocations differ: %s" % sorted(argv)
 
 
 def test_declared_copier_floor_covers_every_feature_the_template_uses():
@@ -295,3 +329,68 @@ def test_declared_copier_floor_covers_every_feature_the_template_uses():
             "_min_copier_version: %r — that version passes the gate and then fails "
             "to render" % (why, floor, declared)
         )
+
+
+# --- trust: every copier command a user is told to run carries it ---------------
+
+_COPIER_CMD = re.compile(r"\bcopier\s+(copy|update)\b")
+
+
+def _fenced_lines(text):
+    """The lines inside ``` fences: what a reader copies and runs."""
+    inside, out = False, []
+    for line in text.splitlines():
+        if line.lstrip().startswith("```"):
+            inside = not inside
+            continue
+        if inside:
+            out.append(line)
+    return out
+
+
+def _documented_copier_commands():
+    """(where, line) for every copier invocation keel tells someone to run: the
+    fenced blocks of every tracked Markdown file and Markdown template twin, the
+    expanded `make new` recipe, and the showcase's setup steps."""
+    found = []
+    listed = subprocess.run(
+        ["git", "ls-files", "-z", "--", "*.md", "*.md.jinja"],
+        cwd=str(_ROOT),
+        capture_output=True,
+        text=True,
+    )
+    assert listed.returncode == 0, listed.stderr
+    for rel in sorted(p for p in listed.stdout.split("\0") if p):
+        path = _ROOT / rel
+        if path.is_symlink() or not path.is_file():
+            continue
+        found.extend(
+            (rel, line.strip())
+            for line in _fenced_lines(path.read_text(encoding="utf-8"))
+            if _COPIER_CMD.search(line)
+        )
+    if shutil.which("make") is not None:
+        found.append(("make -n new", _recipe_line(_make_n_new(), "copier copy")))
+    import backend.showcase as showcase  # keel-only: this module skips downstream
+
+    found.extend(
+        ("backend.showcase.SETUP_STEPS", step.command)
+        for step in showcase.SETUP_STEPS
+        if step.command and _COPIER_CMD.search(step.command)
+    )
+    return found
+
+
+def test_every_documented_copier_command_carries_trust():
+    """`_tasks` (the doc restamp) and `_migrations` (answer retirement) make keel
+    an unsafe template, so copier REFUSES both `copy` and `update` without
+    `--trust` (docs/adr/0010-generation-needs-trust-to-stamp-docs.md). A command
+    shown without the flag is a command that fails for the reader who copies it."""
+    found = _documented_copier_commands()
+    assert len(found) >= 3, (
+        "found almost no copier commands -- is the scan broken? %r" % found
+    )
+    missing = [
+        "%s: %s" % (where, line) for where, line in found if "--trust" not in line
+    ]
+    assert not missing, "copier commands without --trust:\n  " + "\n  ".join(missing)

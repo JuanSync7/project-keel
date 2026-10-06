@@ -25,7 +25,7 @@ PY_ROOTS := $(wildcard $(CODE_ROOTS))
 
 .PHONY: help new check-python check check-all check-corpus check-openapi check-aad check-cdmon advise check-generic verify test unit integration e2e smoke \
         lint lint-py lint-fe fmt fmt-check typecheck typecheck-py typecheck-fe \
-        fe-install run run-api run-web site-data site-static demo agent-surface-schema check-docs doc-review doc-review-apply
+        fe-install run run-api run-web site-data site-static demo agent-surface-schema check-docs restamp-docs doc-review doc-review-apply
 
 help: ## List tasks
 	@grep -hE '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -53,6 +53,9 @@ VCS_REF ?= HEAD
 #   3. a DIRTY tree — with ref=HEAD copier stages the working tree into its throwaway
 #      clone and commits it (copier/_vcs.py), so `_commit` names a sha no clone of
 #      keel has ever seen. ALLOW_DIRTY=1 overrides, for template authors iterating.
+# --trust: copier.yml's `_tasks` stamp the new project's documents, and copier
+# refuses a template that runs tasks without it
+# (docs/adr/0010-generation-needs-trust-to-stamp-docs.md).
 new: ## Generate a NEW project from this template into DEST (interactive Q&A). Needs the 'template' extra.
 	@test -n "$(DEST)" || { echo "usage: make new DEST=../my-new-project"; exit 2; }
 	@git rev-parse --git-dir >/dev/null 2>&1 || { \
@@ -63,7 +66,7 @@ new: ## Generate a NEW project from this template into DEST (interactive Q&A). N
 		echo "refusing: keel's tree is dirty, so copier would record a WIP commit that"; \
 		echo "exists only in its throwaway clone and '$(DEST)' could never update from"; \
 		echo "it. Commit or stash first, or re-run with ALLOW_DIRTY=1."; exit 2; }
-	$(PY) -m copier copy --vcs-ref "$(VCS_REF)" "$(abspath .)" "$(DEST)"
+	$(PY) -m copier copy --trust --vcs-ref "$(VCS_REF)" "$(abspath .)" "$(DEST)"
 
 check: ## Validate structure + frontmatter (3.6-safe)
 	$(PY) scripts/check_structure.py
@@ -79,6 +82,9 @@ check-cdmon: ## cdmon code-doc drift (a stated skip until cdmon and config/cdmon
 	$(PY) scripts/cdmon_sync.py --check
 check-docs: check ## The structure gate + strict doc freshness: what every doc-review edit is gated on
 	$(PY) scripts/jobs/review_docs.py --strict
+
+restamp-docs: ## Set a stale `updated:` to today on every changed, new or committed-stale doc (the fix check-docs names)
+	$(PY) scripts/jobs/restamp_docs.py
 
 doc-review: ## Review the docs (dry-run: findings, rules, baseline; no model, writes nothing)
 	$(PY) scripts/doc_review.py

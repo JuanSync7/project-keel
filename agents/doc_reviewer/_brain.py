@@ -51,7 +51,7 @@ class DocReviewReport:
     stale: int
     unresolved: int
     rosters: int
-    candidates: tuple  # tuple[str, ...] — chunk ids, e.g. "stale:docs/a.md"
+    candidates: tuple  # tuple[str, ...] — chunk ids, e.g. "mention:docs/a.md:4"
     applied: tuple  # tuple[str, ...] — files whose edit passed the gate
     skipped: tuple  # tuple[str, ...] — chunk ids with no accepted edit
     preview: str  # the prompt the first chunk WOULD send (dry-run)
@@ -87,19 +87,11 @@ def _read_lines(root, relpath, lineno, around=3):
 
 
 def _chunks(report, root, max_chunks):
-    """The ordered work list from a review_docs JSON report: stale stamps first
-    (mechanical), then unresolved mentions, then roster rows to judge."""
-    stale = [
-        {
-            "id": "stale:%s" % f["path"],
-            "kind": "stale",
-            "path": f["path"],
-            "line": 1,
-            "finding": f["reason"],
-            "text": _read_lines(root, f["path"], 1, around=14),
-        }
-        for f in report.get("findings", [])
-    ]
+    """The ordered work list from a review_docs JSON report: unresolved mentions,
+    then roster rows to judge. Stale stamps are counted (`stale`) but never a
+    chunk: a rule decides them, so the deterministic writer clears them
+    (`make restamp-docs`), and while one is outstanding `make check-docs` is red,
+    so a gated edit could never land and the baseline stops the run."""
     mentions = [
         {
             "id": "mention:%s:%d" % (m["path"], m["line"]),
@@ -122,7 +114,7 @@ def _chunks(report, root, max_chunks):
         }
         for r in report.get("rosters", [])
     ]
-    return (stale + mentions + rosters)[:max_chunks]
+    return (mentions + rosters)[:max_chunks]
 
 
 def _propose_prompt(rules, chunk, gate):

@@ -116,16 +116,11 @@ def test_dry_run_gathers_retrieves_gates_and_writes_nothing(seams):
     r = review(root=str(root))
     assert r.dry_run and r.baseline_green
     assert (r.stale, r.unresolved, r.rosters) == (1, 1, 1)
-    assert r.candidates == (
-        "stale:docs/a.md",
-        "mention:docs/b.md:4",
-        "roster:scripts/README.md:x.py",
-    )
-    assert (
-        "Name the sibling." in r.preview
-        and "stale:" not in r.preview
-        and "kind: stale" in r.preview
-    )
+    # A stale stamp is counted but never a chunk: the writer clears it
+    # deterministically (`make restamp-docs`), and while one is outstanding
+    # `make check-docs` is red, so no gated edit could ever land anyway.
+    assert r.candidates == ("mention:docs/b.md:4", "roster:scripts/README.md:x.py")
+    assert "Name the sibling." in r.preview and "kind: mention" in r.preview
     assert model.prompts == [] and "apply_refactor" not in runner.calls
     assert runner.calls == ["review_docs", "query_corpus", "run_make_target"]
 
@@ -134,15 +129,15 @@ def test_execute_applies_each_accepted_chunk_through_the_gated_doer(seams):
     runner, model, root = seams
     r = review(execute=True, root=str(root), checkpointer=None)
     assert not r.dry_run
-    assert len(model.prompts) == 3 and runner.calls.count("apply_refactor") == 3
-    assert r.applied == ("docs/a.md",) * 3 and r.skipped == ()
+    assert len(model.prompts) == 2 and runner.calls.count("apply_refactor") == 2
+    assert r.applied == ("docs/a.md",) * 2 and r.skipped == ()
 
 
 def test_a_declined_chunk_is_skipped_without_touching_apply(seams, monkeypatch):
     runner, model, root = seams
     model.reply = '{"edits": []}'
     r = review(execute=True, root=str(root), max_chunks=1)
-    assert r.skipped == ("stale:docs/a.md",) and r.applied == ()
+    assert r.skipped == ("mention:docs/b.md:4",) and r.applied == ()
     assert "apply_refactor" not in runner.calls
 
 
@@ -152,7 +147,7 @@ def test_a_red_gate_rolls_back_so_the_chunk_is_skipped(monkeypatch, tmp_path):
     monkeypatch.setattr(_BRAIN + ".get_model", lambda name=None: _Model(_SPEC))
     monkeypatch.setattr(_BRAIN + "._read_lines", lambda *a, **k: "")
     r = review(execute=True, root=str(tmp_path), max_chunks=1)
-    assert r.applied == () and r.skipped == ("stale:docs/a.md",)
+    assert r.applied == () and r.skipped == ("mention:docs/b.md:4",)
 
 
 def test_a_red_baseline_attempts_nothing(monkeypatch, tmp_path):
@@ -188,3 +183,25 @@ def test_the_cli_and_hook_report_the_review_and_skip_an_absent_model(
         hook.main(["payload", "--execute"]) == 0
         and "skipping" in capsys.readouterr().out
     )
+
+
+def test_a_stale_stamp_is_never_sent_to_the_model(monkeypatch, tmp_path):
+    """A report with only stale stamps gives the model nothing to do: the count
+    is reported, the remedy is the deterministic writer, and no prompt is spent
+    on a date a rule already knows."""
+    only_stale = dict(_REVIEW, unresolved_mentions=[], rosters=[])
+    runner = _Runner()
+    model = _Model(_SPEC)
+
+    def run(args, stdin=None):
+        if "review_docs.py" in " ".join(args):
+            runner.calls.append("review_docs")
+            return 0, json.dumps(only_stale), ""
+        return runner(args, stdin)
+
+    monkeypatch.setattr(_BRAIN + "._run", run)
+    monkeypatch.setattr(_BRAIN + ".get_model", lambda name=None: model)
+    monkeypatch.setattr(_BRAIN + "._read_lines", lambda *a, **k: "")
+    r = review(execute=True, root=str(tmp_path))
+    assert r.stale == 1 and r.candidates == ()
+    assert model.prompts == [] and "apply_refactor" not in runner.calls

@@ -8,7 +8,7 @@ tags: [checks, ci, linter, determinism, pre-commit, hooks, guide]
 summary: Catalogue of every deterministic check that keeps a project-template repo honest — purpose, when to run, and how to wire as a hook.
 id: docs-guides-deterministic-checks
 created: 2026-06-19
-updated: 2026-09-12
+updated: 2026-10-06
 visibility: internal
 canonical: true
 ---
@@ -69,7 +69,7 @@ everything and therefore expect the project interpreter.
 | AAD schema drift | `scripts/agent_surface/generate_aad_schema.py --check` | error | pydantic | Committed AAD JSON Schema matches the model |
 | Code-doc drift | `scripts/cdmon_sync.py --check` | error* | any | cdmon code↔doc drift — the CONVENTIONS §9 worked example of a thin adapter over an external tool (*a stated skip, exit 0, until `cdmon` is on PATH **and** `config/cdmon/cdmon.yaml` exists; cdmon is not on PyPI). Reached from `check-all` via `make check-cdmon` |
 | Accountability | `scripts/accountability_report.py` | report | ≥3.7 | Lists corpus nodes that resolve to no owner (informational; rides `make advise`) |
-| Doc review | `scripts/jobs/review_docs.py` | report | any (git) | Freshness — every governed document's `updated:` is no earlier than its last commit, and a document modified in the working tree carries today's date (gated by `tests/integration/test_doc_freshness.py`, `--strict`) — and the advisory that stays advisory: backticked repository paths that resolve to nothing. No git is a stated skip |
+| Doc review | `scripts/jobs/review_docs.py` | report | any (git) | Freshness — every governed document's `updated:` is no earlier than its last commit, and a document modified in the working tree carries today's date (gated by `tests/integration/test_doc_freshness.py`, `--strict`) — and the advisory that stays advisory: backticked repository paths that resolve to nothing. No git is a stated skip. The fix it names is `make restamp-docs` (`scripts/jobs/restamp_docs.py`) |
 | Generic-solution advisor | `scripts/check_generic.py` | report | 3.6-safe | Distinctive literals asserted as golden in tests **and** hardcoded in `src/` logic (the "answer-key" overfit smell, §18). Advisory only — never fails the build |
 | Coding-practices advisor | `scripts/check_practices.py` | report | 3.6-safe | Coding-practice smells (a provider constructed inline instead of injected, a ≥3-branch `isinstance` chain, a `# hot-path` class without `__slots__`, a resource acquired outside a `with`). Reads `config/practices.json`; advisory only — never fails the build (see [coding-practices](coding-practices.md)) |
 
@@ -354,7 +354,11 @@ about the docs but `check_structure.py` cannot reach without git. Today that is
 document modified in the working tree is stamped today or later. `updated:`
 means *touched*: it is a cache of the git date, kept in the file so the corpus
 can rank by recency without git (CONVENTIONS §1). The remedy is always one
-line, and the report says which.
+line, the report says which, and every stale finding names `make restamp-docs`.
+That target runs `scripts/jobs/restamp_docs.py`, the writer half of this rule.
+It reads the stamp through the same grammar (`review_docs.updated_span`) and
+never moves a stamp backwards. Copier runs it at generation and as the last
+update migration (`docs/adr/0010-generation-needs-trust-to-stamp-docs.md`).
 
 **Tier.** A *report* under `make advise` (exit 0). The same rule is a **gate**
 in `tests/integration/test_doc_freshness.py`, beside the release-identity test

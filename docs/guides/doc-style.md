@@ -8,7 +8,7 @@ tags: [documentation, style, rosters, citations, freshness, guide]
 summary: The canonical statement of how documentation is written in this repo — the judgment half above the gated floor. What a document is for, one claim per sentence, the discriminator between siblings (rosters and NOT lines), the citation grammar, freshness as a fact, the plain imperative over BCP 14, idempotency stated and proven, and what the gate checks versus what a reviewer must judge. The twin of python-style.md.
 id: docs-guides-doc-style
 created: 2026-09-02
-updated: 2026-09-09
+updated: 2026-10-06
 visibility: internal
 canonical: true
 ---
@@ -159,7 +159,9 @@ gestures at.
 today's date when the file is modified (CONVENTIONS §1). It is a cache of the
 git date kept in the file so the corpus can rank by recency without git. Set it
 in the same change that touches the file; the gate lists every file that was
-not. A separate `reviewed:` key can carry the human meaning — "someone read
+not, and `make restamp-docs` (`scripts/jobs/restamp_docs.py`) sets each one it
+lists. Copier runs the same writer when it generates or updates a project, so a
+document is stamped on the day it arrives. A separate `reviewed:` key can carry the human meaning — "someone read
 this and it is still true" — when someone wants to track that.
 
 A design record carries a **corrections log**: when a claim above it goes
@@ -185,7 +187,7 @@ edit that leaves the decision untouched, and that edit restamps `updated:`.
 | The check catalogue and the triggers agree | `check_R` | gate |
 | A roster names every member, nothing else, with a `Not for` cell | `check_S` | gate |
 | A tool spec's seven sections, effect word, `- NOT` line | `check_F` | gate |
-| `updated:` no earlier than the last commit; today when modified | `scripts/jobs/review_docs.py`, `tests/integration/test_doc_freshness.py` | gate |
+| `updated:` no earlier than the last commit; today when modified | `scripts/jobs/review_docs.py`, `tests/integration/test_doc_freshness.py`; fixed by `scripts/jobs/restamp_docs.py` | gate |
 | Every practice's `enforced_by` names a mechanism that exists | `check_T` | gate |
 | A practice enforced by a document names it where an agent reads it | `check_U` | gate |
 | A backticked path that resolves to nothing | `scripts/jobs/review_docs.py` under `make advise` | advisory |

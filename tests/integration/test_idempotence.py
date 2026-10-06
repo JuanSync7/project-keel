@@ -234,6 +234,33 @@ def test_rebuild_index_is_a_fixed_point(tmp_path):
     )
 
 
+def test_restamp_docs_is_a_fixed_point(tmp_path):
+    """@covers scripts/jobs/restamp_docs.py
+
+    Over a copy of this repo's real documents, with no git, so the walk sees all
+    of them and the first run has stamps to move. A stamp is never moved
+    backwards and today is pinned, so the second run finds nothing to do.
+    """
+    _require("scripts/jobs/restamp_docs.py")
+    out = tmp_path / "docs"
+    shutil.copytree(str(_ROOT / "docs"), str(out), symlinks=True)
+    _assert_second_run_changes_nothing(
+        out,
+        lambda: _run(
+            "scripts/jobs/restamp_docs.py",
+            "--root",
+            str(out),
+            "--today",
+            "2999-01-01",
+            "--quiet",
+        ),
+    )
+    stamped = [
+        p for p in out.rglob("*.md") if "updated: 2999-01-01" in p.read_text("utf-8")
+    ]
+    assert stamped, "the first run restamped nothing -- the case proves nothing"
+
+
 def test_apply_refactor_leaves_the_tree_alone_on_a_second_apply(tmp_path):
     """@covers scripts/apply_refactor.py
 

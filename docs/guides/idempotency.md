@@ -8,7 +8,7 @@ tags: [idempotency, writers, fixed-point, determinism, guide]
 summary: How a doer that writes into the tree is built so that running it twice changes nothing the first run did not, and how that is declared and proven here — the `effect:` / `rerun:` / `rerun_proof:` header check_V gates, the recipe for reaching a fixed point, the ladder of proofs, and the honest declarations for the writers that cannot reach one. The code twin of doc-style.md §6, which governs how the claim is written down rather than how it is made true.
 id: docs-guides-idempotency
 created: 2026-09-12
-updated: 2026-09-12
+updated: 2026-10-06
 visibility: internal
 canonical: true
 ---
@@ -176,13 +176,21 @@ The rungs above are about one command. Two procedures here are idempotent as a
 whole, and neither is something a rule can decide, so both are held by tests
 named after the property:
 
-- **Generation.** `copier copy` with the same answers into two destinations
-  produces byte-identical trees, and re-running it over an existing generated
-  project reports every file `identical` and writes nothing.
+- **Generation.** `copier copy --trust` with the same answers and the same
+  `SOURCE_DATE_EPOCH` into two destinations produces byte-identical trees, and
+  re-running it over an existing generated project reports every file
+  `identical` and writes nothing. The epoch matters because generation runs one
+  task, `scripts/jobs/restamp_docs.py`, which stamps every arriving document
+  with the day it arrives
+  (`docs/adr/0010-generation-needs-trust-to-stamp-docs.md`). A second copy finds
+  every stamp already on that day, so it writes nothing.
 - **Update.** `copier update --trust` against the template revision a project is
-  already on leaves the working tree clean. The `_migrations` are `rm -rf` and
-  `rm -f` commands, which are no-ops on an absent path by construction — a
-  migration that was not is the thing to catch in review.
+  already on leaves the working tree clean, on the same day or a later one. The
+  answer-retirement `_migrations` are `rm -rf` and `rm -f` commands, which are
+  no-ops on an absent path by construction — a migration that was not is the
+  thing to catch in review. The last migration is `restamp_docs.py`, which
+  only moves a stamp on a document that differs from `HEAD`, so a no-op update
+  gives it nothing to do.
 
 **Two writers on one artifact compose into something neither declares.**
 `wiki/corpus.json` has two: `make site-data` rebuilds it from the tree, and
