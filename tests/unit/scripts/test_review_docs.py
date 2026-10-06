@@ -6,6 +6,8 @@ summary: The pure half of scripts/review_docs.py, pinned: `updated:` must be an 
 """
 
 import datetime
+import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -15,6 +17,8 @@ _ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(_ROOT / "scripts" / "jobs"))
 
 import review_docs  # noqa: E402
+
+import hermetic_git  # noqa: E402
 
 pytestmark = pytest.mark.unit
 
@@ -185,3 +189,172 @@ def test_the_judge_exits_2_on_a_malformed_date_source(tmp_path, monkeypatch, cap
     monkeypatch.setenv("SOURCE_DATE_EPOCH", "99999999999999")
     assert review_docs.main(["--root", str(tmp_path)]) == 2
     assert "SOURCE_DATE_EPOCH" in capsys.readouterr().err
+
+
+# --- read-only git: the judge must not rewrite .git/index ----------------------
+#
+# Measured on git 2.43.5 (docs/design/downstream-feedback.md slice 5): `git diff
+# HEAD` and plain `git status` refresh stat data and rewrite .git/index, even with
+# GIT_OPTIONAL_LOCKS=0; `git --no-optional-locks status`, ls-files, log and
+# rev-parse do not. A "read-only" judge pointed at another project's tree must
+# leave that index alone, so the changed-path source is pinned here.
+
+_DOC = "---\ntitle: %s\nupdated: 2026-01-01\n---\n\n# %s\n"
+
+
+def _git(cwd, *argv):
+    proc = subprocess.run(
+        ["git"] + list(argv),
+        cwd=str(cwd),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        universal_newlines=True,
+        env=dict(
+            os.environ,
+            GIT_AUTHOR_DATE="2026-01-01T12:00:00+0000",
+            GIT_COMMITTER_DATE="2026-01-01T12:00:00+0000",
+        ),
+    )
+    assert proc.returncode == 0, proc.stderr
+    return proc.stdout
+
+
+@pytest.fixture()
+def repo(tmp_path, monkeypatch):
+    """A committed repo with governed docs in `sub/docs/` and one outside it.
+    The hermetic git config reaches review_docs' own git calls through
+    child_env's GIT_CONFIG_* allowlist entries."""
+    work = tmp_path / "gitwork"
+    work.mkdir()
+    for key, value in hermetic_git.git_env_vars(work).items():
+        monkeypatch.setenv(key, value)
+    top = tmp_path / "repo"
+    for rel in ("sub/docs/a.md", "sub/docs/b.md", "outside.md"):
+        path = top / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(_DOC % (rel, rel), encoding="utf-8")
+    _git(top, "init", "-q")
+    _git(top, "add", "-A")
+    _git(top, "commit", "-q", "-m", "init")
+    return top
+
+
+def _index_state(top):
+    index = top / ".git" / "index"
+    return index.read_bytes(), index.stat().st_mtime_ns
+
+
+def test_collect_leaves_the_git_index_untouched(repo):
+    (repo / "sub" / "docs" / "a.md").write_text(
+        _DOC % ("edited", "edited"), encoding="utf-8"
+    )
+    # An unmodified tracked file whose mtime moved: its stat data is now stale
+    # in the index, so any command that refreshes the index will rewrite it.
+    unmodified = repo / "sub" / "docs" / "b.md"
+    later = unmodified.stat().st_mtime + 120
+    os.utime(str(unmodified), (later, later))
+    before = _index_state(repo)
+
+    records = review_docs.collect(str(repo))
+
+    assert _index_state(repo) == before
+    modified = {relpath for relpath, _u, _c, is_modified in records if is_modified}
+    assert modified == {"sub/docs/a.md"}
+
+
+def test_modified_paths_below_the_repository_top_are_root_relative(repo):
+    (repo / "sub" / "docs" / "a.md").write_text(
+        _DOC % ("edited", "edited"), encoding="utf-8"
+    )
+    (repo / "outside.md").write_text(_DOC % ("edited", "edited"), encoding="utf-8")
+    sub = repo / "sub"
+
+    assert review_docs.modified_paths(str(sub)) == {"docs/a.md"}
+    assert review_docs.modified_paths(str(repo)) == {"sub/docs/a.md", "outside.md"}
+    records = review_docs.collect(str(sub))
+    assert {r[0] for r in records if r[3]} == {"docs/a.md"}
+
+
+def test_modified_paths_is_none_outside_a_repository(tmp_path):
+    assert review_docs.modified_paths(str(tmp_path)) is None
+
+
+def _probe(tmp_path, name):
+    """An executable that records it ran (in `<name>.ran`) and passes stdin
+    through, so a filter it stands in for would otherwise succeed."""
+    script = tmp_path / ("%s.sh" % name)
+    script.write_text(
+        "#!/bin/sh\necho ran >> %s\ncat\n" % (tmp_path / ("%s.ran" % name))
+    )
+    script.chmod(0o755)
+    return script
+
+
+def _signed_head(top):
+    """Point HEAD at a copy of itself carrying a (fake) PGP signature header, so
+    `log.showSignature` makes git run `gpg.program` to verify it."""
+    raw = _git(top, "cat-file", "commit", "HEAD")
+    head, _blank, body = raw.partition("\n\n")
+    sig = (
+        "gpgsig -----BEGIN PGP SIGNATURE-----\n \n iQ==\n -----END PGP SIGNATURE-----\n"
+    )
+    obj = top / "signed.commit"
+    obj.write_text(head + "\n" + sig + "\n" + body)
+    sha = _git(top, "hash-object", "-t", "commit", "-w", str(obj)).strip()
+    obj.unlink()
+    _git(top, "update-ref", "HEAD", sha)
+
+
+def test_judging_a_repository_runs_none_of_its_configured_commands(repo, tmp_path):
+    """The repository judged is data. Its own config may name a clean or smudge
+    filter (selected by a committed .gitattributes or .git/info/attributes), a
+    long-running filter process, or a signature verifier that `git log` runs
+    under log.showSignature; status re-hashes a stat-dirty file through the
+    clean filter, so each would run inside the judge (measured: 366 runs in
+    one audit before the fix)."""
+    clean, process, gpg = (_probe(tmp_path, n) for n in ("clean", "process", "gpg"))
+    for key, value in (
+        ("filter.probe.clean", str(clean)),
+        ("filter.probe.smudge", str(clean)),
+        ("filter.probe.required", "true"),
+        ("filter.lfs-like.process", str(process)),
+        ("filter.lfs-like.required", "true"),
+        ("log.showSignature", "true"),
+        ("gpg.program", str(gpg)),
+    ):
+        _git(repo, "config", key, value)
+    (repo / ".git" / "info").mkdir(exist_ok=True)
+    (repo / ".git" / "info" / "attributes").write_text("sub/docs/*.md filter=probe\n")
+    (repo / ".gitattributes").write_text("outside.md filter=lfs-like\n")
+    _signed_head(repo)
+    for rel in ("sub/docs/a.md", "sub/docs/b.md", "outside.md"):
+        path = repo / rel
+        later = path.stat().st_mtime + 120
+        os.utime(str(path), (later, later))
+
+    records = review_docs.collect(str(repo))
+
+    assert records is not None
+    ran = sorted(p.name for p in tmp_path.glob("*.ran"))
+    assert ran == [], ran
+
+
+def test_a_root_whose_filter_drivers_cannot_be_listed_is_refused(monkeypatch):
+    """Fail closed: when `git config` fails (anything but exit 1, "no match"),
+    the call that might have run a driver is not made."""
+    calls = []
+
+    class _Proc:
+        returncode, stdout, stderr = 3, "", "bad config line 7"
+
+    def fake_run(argv, **_kw):
+        calls.append(argv)
+        return _Proc()
+
+    monkeypatch.setattr(review_docs.subprocess, "run", fake_run)
+    with pytest.raises(review_docs.GitConfigError) as exc:
+        review_docs.git_argv("/nowhere", "status")
+    assert "bad config line 7" in str(exc.value)
+    del calls[:]
+    assert review_docs._git("/nowhere", "status") is None
+    assert len(calls) == 1 and "config" in calls[0], calls

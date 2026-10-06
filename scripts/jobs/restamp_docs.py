@@ -3,7 +3,7 @@
 title: restamp_docs — the writer that keeps `updated:` true
 kind: script
 layer: n/a
-summary: Sets the frontmatter `updated:` of every governed Markdown document that needs it to the date the judge will demand, and changes no other byte. scripts/jobs/review_docs.py is the judge of the freshness rule; this is the writer that clears its findings, reading the stamp through the judge's own `updated_span` and today through the judge's own `resolve_today` (`--today`, else SOURCE_DATE_EPOCH read in UTC, else the local clock), so the two cannot disagree on what a stamp is or what day it is. The worklist in a git work tree is what git would commit: the untracked documents, the ones changed against HEAD (every tracked one before the first commit), and the ones already committed stale; with no git it is every Markdown file outside check_structure's IGNORE_DIRS. The target is today, raised to the date of the document's last commit when that is later, because the judge reads that date from git, not from a clock. A document's template twin (`<doc>.jinja`, check_N's suffix) is restamped with it, so the parity gate never sees the two stamps differ. A stamp is never moved backwards, and a stamp that is not an ISO date is named on stderr and left alone (exit 1) while the rest are still written; a malformed date source exits 2. `--check` lists and writes nothing. Run by `make restamp-docs`, by copier's `_tasks` on every render (copy, and the scratch renders an update diffs), and by the last `after` migration on update.
+summary: Sets the frontmatter `updated:` of every governed Markdown document that needs it to the date the judge will demand, and changes no other byte. scripts/jobs/review_docs.py is the judge of the freshness rule; this is the writer that clears its findings, reading the stamp through the judge's own `updated_span` and today through the judge's own `resolve_today` (`--today`, else SOURCE_DATE_EPOCH read in UTC, else the local clock), so the two cannot disagree on what a stamp is or what day it is. The worklist in a git work tree is what git would commit: the untracked documents, the ones changed against HEAD (every tracked one before the first commit, else review_docs' `modified_paths`, which reads `git --no-optional-locks status` and so never rewrites .git/index), and the ones already committed stale; with no git it is every Markdown file outside check_structure's IGNORE_DIRS. The target is today, raised to the date of the document's last commit when that is later, because the judge reads that date from git, not from a clock. A document's template twin (`<doc>.jinja`, check_N's suffix) is restamped with it, so the parity gate never sees the two stamps differ. A stamp is never moved backwards, and a stamp that is not an ISO date, or a document that cannot be read, is named on stderr and left alone (exit 1) while the rest are still written; a malformed date source exits 2. `--check` lists and writes nothing, the index included; `pending` is the same list as data (path, current stamp, target), for a caller such as scripts/audit_project.py. Run by `make restamp-docs`, by copier's `_tasks` on every render (copy, and the scratch renders an update diffs), and by the last `after` migration on update.
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/integration/test_idempotence.py
@@ -106,8 +106,14 @@ def _git(root, *args):
     """git's stdout at *root*, or None when git is absent or the call fails."""
     if shutil.which("git") is None:
         return None
+    try:
+        # The judge's read-only argv: no index write-back, and no command the
+        # repository's own config names (fsmonitor, filters, gpg).
+        argv = review_docs.git_argv(root, *args)
+    except review_docs.GitConfigError:
+        return None
     proc = subprocess.run(
-        ["git"] + list(args),
+        argv,
         cwd=root,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -155,22 +161,10 @@ def worklist(root, today):
     if _git(root, "rev-parse", "--verify", "-q", "HEAD") is None:
         paths.update(_split(_git(root, "ls-files", "-z", "--", "*.md")))
     else:
-        # --relative: below the repository top, git names a changed file from
-        # the top (`sub/docs/a.md`) unless told otherwise, and that name would
-        # never match the root-relative ones the rest of this list uses.
+        # The judge's reader, root-relative below the repository top and
+        # read-only: `git diff HEAD` would rewrite .git/index (measured).
         paths.update(
-            _split(
-                _git(
-                    root,
-                    "diff",
-                    "--name-only",
-                    "--relative",
-                    "-z",
-                    "HEAD",
-                    "--",
-                    "*.md",
-                )
-            )
+            p for p in review_docs.modified_paths(root) or () if p.endswith(".md")
         )
     records = review_docs.collect(root) or []
     floors = {relpath: last_commit for relpath, _u, last_commit, _m in records}
@@ -198,20 +192,73 @@ def _write_atomic(path, data):
         raise
 
 
+class UnreadableError(Exception):
+    """A governed file exists but cannot be read; the message says why."""
+
+
+def _read_stamp(full):
+    """(text, current stamp) of a governed file, or None when there is nothing
+    to judge: a symlink, a missing path, undecodable text, or no stamp. Raises
+    UnreadableError when the file exists and cannot be opened or read."""
+    if os.path.islink(full) or not os.path.isfile(full):
+        return None
+    try:
+        with open(full, "rb") as fh:
+            raw = fh.read()
+    except OSError as exc:
+        raise UnreadableError("cannot read (%s)" % (exc.strerror or exc)) from exc
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+    span = review_docs.updated_span(text)
+    if span is None:
+        return None
+    return text, text[span[0] : span[1]]
+
+
+def pending(root, today, errors=None):
+    """What a run would rewrite, written nowhere: a sorted list of (root-relative
+    path, current stamp, target stamp), a document's template twin included.
+    A stamp that is not an ISO date, or a file that cannot be read, is not
+    listed; when *errors* is a list, (path, reason) is appended to it instead.
+    Raises RestampError on a malformed commit date, as a run would."""
+    rows = []
+    for rel, target_day in worklist(root, today):
+        for target in (rel, rel + TWIN_SUFFIX):
+            try:
+                read = _read_stamp(os.path.join(root, target))
+            except UnreadableError as exc:
+                if errors is not None:
+                    errors.append((target, str(exc)))
+                continue
+            if read is None:
+                continue
+            text, current = read
+            try:
+                new = restamp_text(text, target_day)
+            except RestampError as exc:
+                if errors is not None:
+                    errors.append((target, str(exc)))
+                continue
+            if new is not None:
+                rows.append((target, current, target_day.isoformat()))
+    return sorted(rows)
+
+
 def _restamp_file(full, today, check):
     """Restamp one file in place (or only report it, under *check*). Returns
     (rewritten, error): *rewritten* when it was, or would be, rewritten, and
     *error* the reason a stamp could not be read, leaving the file alone. A symlink, a missing path and non-UTF-8 text
     are skipped: a symlink's target carries the date, a deletion has none, and
     the judge cannot read undecodable text either, so it is not governed."""
-    if os.path.islink(full) or not os.path.isfile(full):
-        return False, None
-    with open(full, "rb") as fh:
-        raw = fh.read()
     try:
-        text = raw.decode("utf-8")
-    except UnicodeDecodeError:
+        read = _read_stamp(full)
+    except UnreadableError as exc:
+        return False, str(exc)
+    if read is None:
         return False, None
+    text = read[0]
     try:
         new = restamp_text(text, today)
     except RestampError as exc:
@@ -253,6 +300,18 @@ def main(argv=None):
     if not os.path.isdir(root):
         print("restamp_docs: --root %s is not a directory" % root, file=sys.stderr)
         return 2
+    if args.check:
+        errors = []
+        try:
+            rows = pending(root, today, errors)
+        except RestampError as exc:
+            print("restamp_docs: %s" % exc, file=sys.stderr)
+            return 2
+        for target, reason in errors:
+            print("restamp_docs: %s: %s" % (target, reason), file=sys.stderr)
+        for target, _current, _target_day in rows:
+            print(target)
+        return 1 if errors or rows else 0
     try:
         work = worklist(root, today)
     except RestampError as exc:
