@@ -112,10 +112,19 @@ Checks:
      function parameter is under-reported, never over-reported
 
 Exit 0 = clean, 1 = errors. Warnings never fail the build. Stdlib only; 3.6+.
+
+`--root PATH` judges another tree with this checkout's checks (default: this
+checkout). `run_checks(root, config_overrides)` is the same run as a function:
+it resets the module state a run accumulates, reads each overridden JSON config
+(a key of JSON_CONFIGS) from the given data instead of the file on disk, and
+returns (letter, tier, message) per finding without printing.
+scripts/audit_project.py is its caller.
 """
 
+import argparse
 import ast
 import collections
+import copy
 import io
 import json
 import os
@@ -134,6 +143,9 @@ if _HERE not in sys.path:
 import child_env  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# The checkout this module ships in. ROOT is rebound by run_checks; main()'s
+# default must stay the template whatever an earlier run judged.
+_OWN_ROOT = ROOT
 
 IGNORE_DIRS = {
     ".git",
@@ -5496,45 +5508,105 @@ def check_X():
         err(m)
 
 
-def main():
-    check_A()
-    check_B()
-    check_C()
-    check_D()
-    check_E()
-    check_F()
-    check_G()
-    check_H()
-    check_I()
-    check_J()
-    check_K()
-    check_L()
-    check_M()
-    check_N()
-    check_O()
-    check_P()
-    check_Q()
-    check_R()
-    check_S()
-    check_T()
-    check_U()
-    check_V()
-    check_W()
-    check_X()
-    for w_ in warnings:
-        print("WARN  " + w_)
-    for e_ in errors:
-        print("ERROR " + e_)
+# Every check, in the order a run makes them. tests/unit/scripts/
+# test_check_structure_root.py fails a check_<LETTER> defined but not listed.
+CHECKS = (
+    ("A", check_A),
+    ("B", check_B),
+    ("C", check_C),
+    ("D", check_D),
+    ("E", check_E),
+    ("F", check_F),
+    ("G", check_G),
+    ("H", check_H),
+    ("I", check_I),
+    ("J", check_J),
+    ("K", check_K),
+    ("L", check_L),
+    ("M", check_M),
+    ("N", check_N),
+    ("O", check_O),
+    ("P", check_P),
+    ("Q", check_Q),
+    ("R", check_R),
+    ("S", check_S),
+    ("T", check_T),
+    ("U", check_U),
+    ("V", check_V),
+    ("W", check_W),
+    ("X", check_X),
+)
+
+# The JSON configs the checks read through _read_json_config, so a caller that
+# overrides them (scripts/audit_project.py) derives the set instead of
+# re-typing it; the mirror test fails a third config read but not listed here.
+JSON_CONFIGS = (
+    os.path.join("config", "project.json"),
+    os.path.join("config", "practices.json"),
+)
+
+
+def run_checks(root, config_overrides=None):
+    """Every check in CHECKS against the tree at *root*, as a list of
+    (letter, "error" | "warning", message) in emission order. Prints nothing.
+
+    Resets the state a run accumulates (errors, warnings, GOVERNED, the config
+    memo and the reported-unreadable set), so two runs in one process share
+    nothing. *config_overrides* maps a JSON_CONFIGS path to parsed data that
+    every check reads in its place; the data is copied, never mutated, and the
+    file on disk is never opened."""
+    global ROOT, errors, warnings, GOVERNED, _CONFIG_READ, _READ_REPORTED
+    ROOT = os.path.abspath(root)
+    errors = []
+    warnings = []
+    GOVERNED = []
+    _CONFIG_READ = {}
+    _READ_REPORTED = set()
+    for relpath, data in sorted((config_overrides or {}).items()):
+        _CONFIG_READ[os.path.normpath(relpath)] = copy.deepcopy(data)
+    found = []
+    for letter, check in CHECKS:
+        n_err, n_warn = len(errors), len(warnings)
+        check()
+        # Warnings first within a letter: a check emits both kinds interleaved,
+        # but no consumer reads the order across tiers, only within one.
+        found.extend((letter, "warning", m) for m in warnings[n_warn:])
+        found.extend((letter, "error", m) for m in errors[n_err:])
+    return found
+
+
+def main(argv=None):
+    """The gate's CLI. *argv* None means no arguments, never sys.argv: an
+    importer calling main() gets the template's own judgement."""
+    ap = argparse.ArgumentParser(
+        description="Enforce the project conventions (checks A-X); exit 1 on error."
+    )
+    ap.add_argument(
+        "--root",
+        default=_OWN_ROOT,
+        help="the tree to judge (default: this checkout)",
+    )
+    args = ap.parse_args([] if argv is None else argv)
+    if not os.path.isdir(args.root):
+        ap.exit(2, "check_structure: --root %s is not a directory\n" % args.root)
+    found = run_checks(args.root)
+    for _letter, tier, m in found:
+        if tier == "warning":
+            print("WARN  " + m)
+    for _letter, tier, m in found:
+        if tier == "error":
+            print("ERROR " + m)
+    n_err = sum(1 for f in found if f[1] == "error")
     print()
-    print("check_structure: %d error(s), %d warning(s)" % (len(errors), len(warnings)))
+    print("check_structure: %d error(s), %d warning(s)" % (n_err, len(found) - n_err))
     # The nudge, on the line everyone already reads: what this gate does not fail
     # on has its own doers, and they are one command away.
     print(
         "next: `make advise` reports what this gate does not fail on; "
         "`make doc-review` runs the doc reviewer (dry-run)"
     )
-    return 1 if errors else 0
+    return 1 if n_err else 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))

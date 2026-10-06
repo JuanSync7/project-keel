@@ -39,7 +39,7 @@ repo is convention-clean before it trusts the corpus.
 ## Args
 | Flag | Required | Default | Meaning |
 |------|----------|---------|---------|
-| (none) | — | — | Scans the repo root; no flags. |
+| `--root PATH` | no | this checkout | The tree to judge. A path that is not a directory exits 2. The checks are this checkout's; every file they read is read under PATH, the JSON configs (`JSON_CONFIGS`) included, unless a caller of `run_checks` passes `config_overrides`. |
 
 ## Output
 `WARN <msg>` / `ERROR <msg>` lines on stdout, then
