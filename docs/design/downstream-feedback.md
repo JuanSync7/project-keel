@@ -27,7 +27,7 @@ the decision.
 | 1 | A generated project fails its own doc-freshness test on arrival | done — `make verify` green (776 passed); ADR-0010 proposed, awaiting acceptance |
 | 2 | An unknown directory is invisible to the structure gate | done — `make verify` green (807 passed) |
 | 3 | A make target's effect is declared nowhere, so a "check" can write | done — `make verify` green (987 passed); ADR-0011 proposed |
-| 4 | Every child process inherits every credential in the environment | planned |
+| 4 | Every child process inherits every credential in the environment | done — `make verify` green (1124 passed); ADR-0012 proposed |
 | 5 | No command checks an existing keel project for slices 1–4 | planned |
 
 The cap is these five passes. A concern found mid-slice is queued at the end of
@@ -213,13 +213,59 @@ CHANGELOG and the ADR say a label is one bracket of one or more words.
 
 ## Slice 4 — child processes get an allowlisted environment
 
-**Measured.** No subprocess in keel passes `env=`. The model adapter that spawns a
-model CLI hands it every variable in the parent's environment, cloud credentials
-included.
+**Measured.** No spawn in keel passed `env=`. check_X, run over the tree before
+conversion, reports 11 spawn calls in 10 modules: the model adapter
+`models/claude_code_headless.py`, the four agent brains' `_run`,
+`mcp/action_server.py`, `scripts/run_make_target.py` (make and git),
+`scripts/jobs/review_docs.py`, `scripts/jobs/restamp_docs.py` and
+`scripts/cdmon_sync.py`. The model adapter handed the `claude` CLI every
+variable in the parent's environment, cloud credentials included. On Slurm job
+3302705, `env -i PATH=$PATH HOME=$HOME make PY=.venv/bin/python test` gave 987
+passed in 14m15s, and lint, typecheck, check-openapi, check-aad, check-cdmon and
+check-docs were green with only `PATH` and `HOME`; so `make verify` alone
+justifies two names, and every other name in `child_env` carries a non-verify
+reason in the block's `_comment`. make 4.2.1 carries command-line variables to
+a child in `MAKEFLAGS`, and an agent calls the gate runner without
+`--make-arg`, so an allowlist that drops `MAKEFLAGS` also drops the `PY` and
+`RALPH` a caller chose. A child started with only `PATH` read a variable planted
+in its parent from `/proc/$PPID/environ` on the development host, where
+`kernel.yama.ptrace_scope` is 0.
 
-**Decision.** One helper builds a child environment from a configured allowlist; a
-model adapter that needs a credential names the variable in its own config. A
-check fails a subprocess call that does not use it.
+**Decision.** One helper, `build_child_env` in `scripts/child_env.py`, builds a
+child's environment from an empty dict and the names `config/project.json`
+declares: `child_env.names` and `child_env.prefixes`, the
+`make_targets.unattended_vars` and `make_targets.gate_vars`, and, for a model
+adapter, its `models.credential_env` entry. A missing or malformed manifest is
+an error, never a fall-back to the parent's environment. check_X holds every
+spawn under the code roots to the helper, with no waiver. The gate runner
+forwards a gate variable it finds in its environment onto make's command line
+under the `--make-arg` rule. It is defence-in-depth, not a sandbox; the ADR is
+`docs/adr/0012-child-process-environment-allowlist.md`, status proposed.
+
+**Built.** `scripts/child_env.py` (stdlib-only, legal on the 3.6 hook
+interpreter); `check_X` and `spawn_findings` in `scripts/check_structure.py`;
+the `child_env` block and `models.credential_env` in `config/project.json` and
+its twin; `env=build_child_env(...)` at all 11 spawn calls; gate-variable
+forwarding in `scripts/run_make_target.py`; the practice
+`child-gets-an-allowlisted-environment`; CONVENTIONS §6, §7, §8 and §15,
+`AGENT.md`, `scripts/AGENT.md`, `models/AGENT.md`, the guides, tool specs and
+rosters that name the A–X check range. The tests are
+`tests/unit/scripts/test_child_env.py`, `test_check_x.py`, the new cases in
+`test_run_make_target.py` and `tests/unit/models/test_claude_code_headless.py`,
+`tests/integration/test_child_process_environment.py`, the sibling-import and
+old-interpreter cases in `tests/integration/test_gate_scope.py`, and
+`test_a_generated_project_starts_children_only_through_the_allowlist` in
+`test_copier_generation.py`. Before the change 67 of them failed and one test
+module errored at collection. Seven mutations each turned at least one test
+red: the helper copying all of `os.environ`, check_X skipping a spawn without
+`env=`, dropping the gate variables, dropping the unattended variables, the
+runner ignoring `PY` in its environment, `main` not calling check_X (the
+generated-project test), and a `from __future__ import annotations` in the
+helper (the old-interpreter test). The README's recipe for deleting `models/`
+now also clears `models.credential_env`, because a credential declaration for an
+adapter that is not in `models.available` is an error;
+`test_deleting_a_manifest_declared_dir_is_caught_and_the_documented_fix_works`
+follows the recipe as written.
 
 ## Slice 5 — audit an existing keel project
 
@@ -281,3 +327,30 @@ Found during the slices and deliberately not started:
 - **Gitignored tool output at the root** (`site/`, `logs/`, `out/`) not in
   `IGNORE_DIRS` now reds a local `make check`; the gate cannot read
   `.gitignore` semantics without git.
+- **`models/config/default.example.toml` has no consumer.** No adapter reads it,
+  so it cannot be the home of an adapter's credential names; they live in
+  `config/project.json` `models.credential_env`.
+- **ADR-0005 overlaps `child_env`.** Its proposed `config/environment.json`
+  records environment variables; if it is built, its records can subsume
+  `child_env.names` and the two lists must not drift.
+- **check_X does not see a spawn through an unresolvable receiver**
+  (`self.runner(...)`, `loop.subprocess_exec`, `sp = subprocess; sp.run`),
+  nor a parent-environment value that reaches the helper across a function
+  parameter. It under-reports, never over-reports.
+- **`src/` cannot import `scripts.child_env`**, so the first spawn site under
+  `src/` must move the helper there first, keeping it 3.6-safe for the hook
+  interpreter.
+- **A proxy URL can embed credentials** (`https://user:pass@proxy`); the proxy
+  names are allowlisted, so such a value still reaches every child.
+- **`BASH_FUNC_*` and `PYTHONPATH` are not passed.** Environment Modules export
+  shell functions that way; a caller that needs one passes it with `extra=`.
+- **A child can read its parent's environment** from `/proc/$PPID/environ`
+  while `kernel.yama.ptrace_scope` is 0; closing that is an OS-identity or
+  container control, outside keel.
+- **The generation and update suites cannot see a file that was never
+  staged.** `tests/hermetic_git.py` `clone_including_worktree` replays
+  `git diff HEAD`, which omits untracked files, so this slice's new
+  `scripts/child_env.py` was absent from every clone and 24 tests failed on
+  `ModuleNotFoundError: No module named 'child_env'`. `git add -N` on the new
+  files fixed it. The harness could refuse to run while a non-ignored file under
+  the template is untracked, so the failure names its cause.

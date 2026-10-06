@@ -34,6 +34,7 @@ if __name__ == "__main__":
     sys.dont_write_bytecode = True
 
 import check_structure  # noqa: E402
+import child_env  # noqa: E402
 import review_docs  # noqa: E402
 
 ROOT = os.path.dirname(_SCRIPTS)
@@ -111,6 +112,7 @@ def _git(root, *args):
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         universal_newlines=True,
+        env=child_env.build_child_env(),
     )
     return proc.stdout if proc.returncode == 0 else None
 

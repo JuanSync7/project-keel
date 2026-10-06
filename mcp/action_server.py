@@ -12,11 +12,14 @@ import subprocess
 import sys
 from pathlib import Path
 
-# Thin transport: insert this dir so `protocol` imports as a sibling module.
+# Thin transport: insert this dir so `protocol` imports as a sibling module, and
+# the repo root so the doer's child gets the allowlisted environment.
 _ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(1, str(_ROOT))
 
 from protocol import Tool, ToolServer, serve_stdio  # noqa: E402
+from scripts.child_env import build_child_env  # noqa: E402
 
 __all__ = ["build_action_server"]
 
@@ -39,12 +42,14 @@ _REBUILD_SCHEMA = {
 
 
 def _run_doer(root: str, args: list) -> tuple:
-    """Invoke a jobs doer via its CLI with the running interpreter; return (rc, out)."""
+    """Invoke a jobs doer via its CLI with the running interpreter and the
+    allowlisted environment; return (rc, out)."""
     proc = subprocess.run(
         [sys.executable, _REBUILD_DOER, "--root", root] + args,
         cwd=str(_ROOT),
         capture_output=True,
         text=True,
+        env=build_child_env(),
     )
     return proc.returncode, proc.stdout, proc.stderr
 

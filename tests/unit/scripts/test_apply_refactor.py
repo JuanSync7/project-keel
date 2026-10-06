@@ -2,7 +2,7 @@
 title: Unit — apply_refactor (edit application and its default gate)
 kind: tests
 layer: n/a
-summary: apply_one applies a search/replace only when the target text occurs EXACTLY once, so a refactor edit is unambiguous — zero or multiple matches raise before anything is written. The default gate is scripts/run_make_target.py, so a refused gate (a target labelled wider than a gate may run) and a gate that changed the tree are both red and roll the edit back.
+summary: apply_one applies a search/replace only when the target text occurs EXACTLY once, so a refactor edit is unambiguous — zero or multiple matches raise before anything is written. The default gate is scripts/run_make_target.py, so a refused gate (a target labelled wider than a gate may run) and a gate that changed the tree are both red and roll the edit back, and so is a gate that raises any exception.
 """
 
 import sys
@@ -109,4 +109,30 @@ def test_a_gate_that_dirtied_the_tree_is_red_and_names_the_paths(tmp_path, monke
     monkeypatch.setattr(ar.run_make_target, "run_target", fake)
     res = ar.apply_and_gate(spec, str(tmp_path), gate="check")
     assert res["rolled_back"] is True and "wiki/x.json" in res["gate_output"]
+    assert f.read_text(encoding="utf-8") == "keep = 1\n"
+
+
+def _raise(exc):
+    def gate_runner(gate, cwd, timeout):
+        raise exc
+
+    return gate_runner
+
+
+@pytest.mark.parametrize(
+    "exc",
+    [
+        ar.run_make_target.child_env.ChildEnvError("child_env.names: bad"),
+        KeyError("result"),
+        RuntimeError("gate crashed"),
+    ],
+    ids=["child-env-error", "key-error", "runtime-error"],
+)
+def test_a_gate_that_raises_anything_is_red_and_rolls_back(tmp_path, exc):
+    """The rollback contract is "a non-returning gate never leaves an ungated
+    write behind", so it cannot depend on which exception type the gate raised."""
+    f, spec = _spec(tmp_path)
+    res = ar.apply_and_gate(spec, str(tmp_path), gate="check", gate_runner=_raise(exc))
+    assert res["rolled_back"] is True and res["applied"] is False
+    assert type(exc).__name__ in res["gate_output"]
     assert f.read_text(encoding="utf-8") == "keep = 1\n"

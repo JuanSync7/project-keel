@@ -18,6 +18,8 @@ import shutil
 import subprocess
 import sys
 
+import child_env
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_CONFIG = os.path.join("config", "cdmon", "cdmon.yaml")
 
@@ -46,7 +48,11 @@ def main(argv=None) -> int:
         return 0
 
     mode = "lint" if args.check else args.mode
-    return subprocess.run(["cdmon", mode, "--config", args.config], cwd=ROOT).returncode
+    return subprocess.run(
+        ["cdmon", mode, "--config", args.config],
+        cwd=ROOT,
+        env=child_env.build_child_env(),
+    ).returncode
 
 
 if __name__ == "__main__":

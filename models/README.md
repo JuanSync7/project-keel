@@ -9,7 +9,7 @@ tags: []
 summary: Model backends the app/agents run on — adapters + registry behind one contract.
 id: models-readme
 created: 2026-06-17
-updated: 2026-09-02
+updated: 2026-10-06
 visibility: internal
 canonical: true
 ---
@@ -26,8 +26,8 @@ those models live and how each is launched.
 
 | Member | Purpose | Not for |
 |--------|---------|---------|
-| `claude_code_headless.py` | The `claude-code-headless` backend: shells out to `claude -p <prompt> --model <m>` and returns stdout. A binary that is not on PATH raises `ModelUnavailable` (absent); a non-zero exit raises `RuntimeError` (broken) | Any HTTP endpoint — that is `openai_compatible.py`; offline tests or dry runs — that is `fake.py`; choosing which backend runs — `registry.py` |
-| `config/` | Per-model configuration defaults (`default.example.toml`: default model name, launch flags), committed as examples only | API keys or any secret — those come from the environment (`api_key_env`), never a file here; the name→adapter map — `registry.py` |
+| `claude_code_headless.py` | The `claude-code-headless` backend: shells out to `claude -p <prompt> --model <m>` and returns stdout. A binary that is not on PATH raises `ModelUnavailable` (absent); a non-zero exit raises `RuntimeError` (broken). The CLI child gets the allowlisted environment plus `models.credential_env["claude-code-headless"]` (config/project.json, via `scripts/child_env.py`); a name the parent lacks is absent | Any HTTP endpoint — that is `openai_compatible.py`; offline tests or dry runs — that is `fake.py`; choosing which backend runs — `registry.py` |
+| `config/` | Per-model configuration defaults (`default.example.toml`: default model name, launch flags), committed as examples only | API keys or any secret — those come from the environment (`api_key_env`), never a file here; which credential names a CLI child receives — config/project.json `models.credential_env`; the name→adapter map — `registry.py` |
 | `contracts.py` | The `ModelBackend` ABC every adapter implements (`run(prompt, **opts) -> str`) and `ModelUnavailable`, the owned error for a backend that cannot run here — distinct from one that ran and failed | Provider logic of any kind — an adapter; selection — `registry.py` |
 | `fake.py` | The `fake` backend: deterministic, offline, no network and no binary — what tests and disconnected development run on | Real inference; it echoes a canned answer, so a green run on `fake` proves the plumbing, not the model |
 | `openai_compatible.py` | The `openai-compatible` backend: any server speaking the OpenAI chat-completions wire format (OpenAI, Ollama, vLLM, an internal gateway) via stdlib `urllib`, key from the environment. An unreachable endpoint (refused, no route, unknown host) raises `ModelUnavailable`; an HTTP error from a reachable one propagates as the failure it is | The Claude Code CLI — that is `claude_code_headless.py`; holding a key — the environment does |

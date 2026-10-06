@@ -1,0 +1,234 @@
+"""
+title: child_env — the environment a child process inherits
+kind: script
+layer: n/a
+summary: Builds the environment keel's code hands a process it starts. It starts from an empty dict and copies from os.environ only what config/project.json allows — a `child_env.names` entry, a name under a `child_env.prefixes` entry, a `make_targets` unattended or gate variable, and, for a named model adapter, that adapter's `models.credential_env` names — then adds the caller's `extra`. A missing, unreadable or malformed manifest is a ChildEnvError, never a fall-back to the parent's environment. It reads config/project.json on every call and writes nothing. scripts/check_structure.py check_X holds every spawn under the code roots to this helper. Defence-in-depth, not a sandbox (docs/adr/0012-child-process-environment-allowlist.md).
+"""
+
+# NB: stdlib only, no `from __future__ import annotations`, no f-strings, no walrus,
+# no `list[str]` or `X | None` annotations. check_structure.py and cdmon_sync.py
+# import this module, and .pre-commit-config.yaml runs them under a bare `python3`,
+# which on a `language: system` hook is the committing shell's (3.6.8 on this
+# host). tests/integration/test_gate_scope.py parses and runs it there.
+# It does not import check_structure: check_structure imports it, and a gate
+# runner child must not pay for the whole gate to build an environment.
+
+import json
+import os
+import re
+from typing import Dict, List, Mapping, NamedTuple, Optional, Tuple
+
+__all__ = ["ChildEnvError", "build_child_env", "child_env_policy"]
+
+_MANIFEST = os.path.join("config", "project.json")
+_BLOCK = "child_env"
+_BLOCK_KEYS = ("_comment", "names", "prefixes")
+_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_PREFIX = re.compile(r"^[A-Za-z][A-Za-z0-9]*_$")
+# make passes its command-line variables to every child through these. Carrying
+# one across a Python hop would hand a nested make the outer make's goals and
+# overrides, which no label of the nested target declared.
+_MAKE_CONTROL = ("MAKEFLAGS", "MAKEFILES", "MAKELEVEL", "MAKEOVERRIDES", "MFLAGS")
+
+Policy = NamedTuple(
+    "Policy",
+    [
+        ("names", Tuple[str, ...]),
+        ("prefixes", Tuple[str, ...]),
+        ("credentials", Dict[str, Tuple[str, ...]]),
+        ("adapters", Optional[Tuple[str, ...]]),
+    ],
+)
+
+
+class ChildEnvError(Exception):
+    """The allowlist cannot be built, so no child may start.
+
+    Deliberately not a RuntimeError: a caller that skips an absent model on
+    models.ModelUnavailable (a RuntimeError) must not skip a broken config."""
+
+
+def _name_list(value: object, where: str, errs: List[str]) -> Optional[List[str]]:
+    """value as a list of unique, valid, non-control names, else None (errs grows)."""
+    if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+        errs.append("%s must be a list of environment variable names" % where)
+        return None
+    bad = [v for v in value if not _NAME.match(v)]
+    if bad:
+        errs.append(
+            "%s: %s is not an environment variable name"
+            % (where, ", ".join("`%s`" % v for v in bad))
+        )
+        return None
+    dup = sorted({v for v in value if value.count(v) > 1})
+    if dup:
+        errs.append("%s names %s twice" % (where, ", ".join(dup)))
+        return None
+    control = [v for v in value if v in _MAKE_CONTROL]
+    if control:
+        errs.append(
+            "%s names %s, which make uses to hand its command line to a child -- "
+            "a nested make would inherit goals and overrides no label declared"
+            % (where, ", ".join(control))
+        )
+        return None
+    return list(value)
+
+
+def _located(message: str) -> str:
+    """message, prefixed with the manifest's path unless it already names it."""
+    return message if message.startswith(_MANIFEST) else "%s: %s" % (_MANIFEST, message)
+
+
+def child_env_policy(manifest: object) -> Tuple[Optional[Policy], List[str]]:
+    """config/project.json (parsed) -> (policy, errs). Pure.
+
+    policy is None whenever errs is not empty: a consumer refuses rather than
+    half-trusting an allowlist. The errors name the key and what is wrong,
+    without the manifest's path (each caller adds it)."""
+    if not isinstance(manifest, dict):
+        return None, ["the manifest must be a JSON object"]
+    if _BLOCK not in manifest:
+        return None, [
+            "config/project.json has no child_env block -- a child process would "
+            "have no allowlist to run with"
+        ]
+    block = manifest[_BLOCK]
+    if not isinstance(block, dict):
+        return None, ["child_env must be an object"]
+    errs: List[str] = []
+    errs.extend(
+        "child_env has an unknown key `%s` (the keys are names, prefixes)" % key
+        for key in sorted(block)
+        if key not in _BLOCK_KEYS
+    )
+    names = _name_list(block.get("names"), "child_env.names", errs)
+    prefixes = block.get("prefixes")
+    if not isinstance(prefixes, list) or not all(isinstance(p, str) for p in prefixes):
+        errs.append("child_env.prefixes must be a list of prefixes such as `LC_`")
+        prefixes = None
+    else:
+        bad = [p for p in prefixes if not _PREFIX.match(p)]
+        if bad:
+            errs.append(
+                "child_env.prefixes: %s is not a letter-led prefix ending in `_` "
+                "(a shorter one would admit a whole family of unrelated names)"
+                % ", ".join("`%s`" % p for p in bad)
+            )
+            prefixes = None
+
+    extra_names: List[str] = []
+    targets = manifest.get("make_targets")
+    if targets is not None and not isinstance(targets, dict):
+        errs.append("make_targets must be an object")
+    elif isinstance(targets, dict):
+        for key in ("unattended_vars", "gate_vars"):
+            if key in targets:
+                got = _name_list(targets[key], "make_targets." + key, errs)
+                extra_names.extend(got or [])
+
+    credentials: Dict[str, Tuple[str, ...]] = {}
+    adapters: Optional[Tuple[str, ...]] = None
+    models = manifest.get("models")
+    if models is not None and not isinstance(models, dict):
+        errs.append("models must be an object")
+    elif isinstance(models, dict):
+        available = models.get("available")
+        if isinstance(available, dict):
+            adapters = tuple(sorted(available))
+        cred = models.get("credential_env")
+        if cred is not None:
+            if not isinstance(cred, dict):
+                errs.append(
+                    "models.credential_env must map a model adapter to the "
+                    "credential names its child process needs"
+                )
+            else:
+                for adapter in sorted(cred):
+                    if adapters is None or adapter not in adapters:
+                        errs.append(
+                            "models.credential_env names `%s`, which is not in "
+                            "models.available (%s)"
+                            % (adapter, ", ".join(adapters or ()))
+                        )
+                        continue
+                    got = _name_list(
+                        cred[adapter], "models.credential_env.%s" % adapter, errs
+                    )
+                    if got is not None:
+                        credentials[adapter] = tuple(sorted(got))
+
+    if errs or names is None or prefixes is None:
+        return None, errs
+    return (
+        Policy(
+            names=tuple(sorted(set(names) | set(extra_names))),
+            prefixes=tuple(sorted(prefixes)),
+            credentials=credentials,
+            adapters=adapters,
+        ),
+        [],
+    )
+
+
+def build_child_env(
+    credentials_for: Optional[str] = None,
+    extra: Optional[Mapping[str, str]] = None,
+    root: Optional[str] = None,
+) -> Dict[str, str]:
+    """The environment for a child process, built from the allowlist.
+
+    ``credentials_for`` names a model adapter whose ``models.credential_env``
+    names are added; ``extra`` is applied last, so a caller can set a variable
+    explicitly. ``root`` is the project whose config/project.json is read
+    (default: the project this module ships in). A declared name the parent
+    lacks stays absent, never empty.
+    Raises ChildEnvError on a missing, unreadable or malformed manifest, an
+    adapter not in models.available, or an ``extra`` that is not name -> str."""
+    if root is None:
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    path = os.path.join(root, _MANIFEST)
+    try:
+        with open(path, encoding="utf-8") as fh:
+            manifest = json.load(fh)
+    except (OSError, ValueError) as exc:
+        raise ChildEnvError(
+            "%s cannot be read (%s), so no child may start without an allowlist"
+            % (_MANIFEST, exc)
+        ) from exc
+    policy, errs = child_env_policy(manifest)
+    if policy is None:
+        raise ChildEnvError("; ".join(_located(e) for e in errs))
+
+    allowed = set(policy.names)
+    env: Dict[str, str] = {}
+    for key in sorted(os.environ):
+        if key in allowed or any(key.startswith(p) for p in policy.prefixes):
+            env[key] = os.environ[key]
+    if credentials_for is not None:
+        if policy.adapters is not None and credentials_for not in policy.adapters:
+            raise ChildEnvError(
+                "%s: model adapter `%s` is not in models.available (%s), so it has "
+                "no declared credentials"
+                % (
+                    _MANIFEST,
+                    credentials_for,
+                    ", ".join(policy.adapters),
+                )
+            )
+        for key in policy.credentials.get(credentials_for, ()):
+            if key in os.environ:
+                env[key] = os.environ[key]
+    for key in sorted(extra or {}):
+        value = (extra or {})[key]
+        if not isinstance(key, str) or not _NAME.match(key) or key in _MAKE_CONTROL:
+            raise ChildEnvError(
+                "extra key %r is not an environment variable name a child may be "
+                "given" % (key,)
+            )
+        if not isinstance(value, str):
+            raise ChildEnvError(
+                "extra value for %s must be a str, got %s" % (key, type(value).__name__)
+            )
+        env[key] = value
+    return env

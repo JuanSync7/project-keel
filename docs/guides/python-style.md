@@ -8,7 +8,7 @@ tags: [practices, style, readability, robustness, docstrings, comments, agents, 
 summary: The canonical statement of how Python is written in this project — readability and loud failure modes outrank speed; the machine-readable module header; comment and docstring discipline; and how a code agent works here. The provable floor is gated (check_O/E, ruff, mypy); this guide is the judgment above it.
 id: docs-guides-python-style
 created: 2026-08-18
-updated: 2026-09-09
+updated: 2026-10-06
 visibility: internal
 canonical: true
 ---
@@ -126,6 +126,11 @@ Every rule here exists because one of those was found and measured:
 - **Fail at the boundary you own.** Validate inputs where they enter (the CLI
   arg, the config load, the API edge) with a message that names the fix — not
   three calls deeper where the traceback names an implementation detail.
+- **A child gets what it needs, not what you hold.** Start a process with
+  `env=build_child_env(...)` (`scripts/child_env.py`); a child that silently
+  inherits every token is the same class of defect as the blanket except in
+  "Never blanket-except" above — the exposure is invisible until it leaks.
+  (Gated: check_X.)
 - **Exit codes are the contract for scripts.** `0` = clean, non-zero = act.
   Print *what to do*, not just what is wrong: `regenerate with make site-data`
   beats `stale`.

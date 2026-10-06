@@ -3,7 +3,7 @@
 title: Run make target (the read-only gate runner)
 kind: script
 layer: n/a
-summary: Deterministic doer — run a make target as a gate and report a structured pass/fail, but only a target whose effect label, closed over what it runs, falls inside config/project.json `make_targets.gate_effects`. It refuses an unknown, unlabelled or wider target, an extra argument that is not a NAME=VALUE variable named in `make_targets.gate_vars` with a one-word path-like value, and a tree without git, all before make runs; it sets the gate-runner variable last so WRITE_GUARD refuses a [write] target; and it snapshots what git lists before and after (each path's porcelain status and content), failing a green run that changed it and naming the paths. The refactor loop (agents/practice_refactor, scripts/apply_refactor.py) and tests/integration/test_make_target_effects.py gate through it. Vendor-neutral, stdlib; it writes nothing itself.
+summary: Deterministic doer — run a make target as a gate and report a structured pass/fail, but only a target whose effect label, closed over what it runs, falls inside config/project.json `make_targets.gate_effects`. It refuses an unknown, unlabelled or wider target, an extra argument that is not a NAME=VALUE variable named in `make_targets.gate_vars` with a one-word path-like value, a tree without git, and an allowlist scripts/child_env.py cannot build, all before make runs; it forwards a `make_targets.gate_vars` variable found in its own environment onto make's command line under the same one-word rule (an explicit one wins), because make and git get the allowlisted environment from scripts/child_env.py, never this one; it sets the gate-runner variable last so WRITE_GUARD refuses a [write] target; and it snapshots what git lists before and after (each path's porcelain status and content), failing a green run that changed it and naming the paths, and one whose tree cannot be re-read afterwards. The refactor loop (agents/practice_refactor, scripts/apply_refactor.py) and tests/integration/test_make_target_effects.py gate through it. Vendor-neutral, stdlib; it writes nothing itself.
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ from collections.abc import Callable, Sequence
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import check_structure  # noqa: E402 — the one owner of the label grammar and policy
+import child_env  # noqa: E402 — the environment make and git inherit
 
 # A make target is a plain token — reject anything that could be a shell
 # injection (the target reaches `make` as an argv element, never a shell string,
@@ -69,6 +70,7 @@ def _default_runner(
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         universal_newlines=True,
+        env=child_env.build_child_env(),
     )
     return proc.returncode, proc.stdout
 
@@ -82,6 +84,7 @@ def _git(root: str, *argv: str) -> bytes:
             cwd=root,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
+            env=child_env.build_child_env(),
         )
     except OSError as exc:
         raise NoGitError("git is not runnable here (%s)" % exc) from exc
@@ -180,8 +183,11 @@ def run_target(
     closed-over label), changed (sorted paths whose git-listed state differs
     after the run) and refused (None, or why the run never started). A refusal
     never calls the runner. ``extra`` are NAME=VALUE make variables, each named
-    in ``make_targets.gate_vars`` with a one-word path-like value; the
-    gate-runner variable is appended last, so a caller cannot unset it.
+    in ``make_targets.gate_vars`` with a one-word path-like value; a gate
+    variable set in this process's environment and not in ``extra`` is
+    forwarded the same way (make itself gets the allowlisted environment from
+    scripts/child_env.py, never this one). The gate-runner variable is appended
+    last, so a caller cannot unset it.
     ``runner`` and ``snapshot`` are injected for testing.
     Raises ValueError on a target name that is not a plain token.
     """
@@ -201,6 +207,22 @@ def run_target(
     if policy is None:
         return _refusal(target, str(why))
     allowed = list(policy["gate_vars"])  # type: ignore[call-overload]
+    # A gate variable the caller's make set reaches this process only through the
+    # environment; make's own child gets the allowlist, so it is forwarded here,
+    # on the command line, under the same one-word rule. An explicit one wins.
+    given = {arg.split("=", 1)[0] for arg in extra}
+    for name in sorted(allowed):
+        if name in given or name not in os.environ:
+            continue
+        if not _GATE_VALUE.match(os.environ[name]):
+            return _refusal(
+                target,
+                "the environment variable %s=%r is not one path-like word -- "
+                "forwarded to make it would be expanded into a shell line, where "
+                "spaces, `;`, `$` or quotes could run a target whose label nobody "
+                "read" % (name, os.environ[name]),
+            )
+        extra.append("%s=%s" % (name, os.environ[name]))
     for arg in extra:
         name, value = arg.split("=", 1)
         if name not in allowed:
@@ -235,6 +257,16 @@ def run_target(
             "tree and shared state alone" % (target, ",".join(labels), ",".join(gate)),
             labels,
         )
+    # Built once here so a malformed allowlist is a refusal before the tree is
+    # touched; make and git rebuild it from the same file a moment later.
+    try:
+        child_env.build_child_env()
+    except child_env.ChildEnvError as exc:
+        return _refusal(
+            target,
+            "cannot start make or git without an allowlisted environment -- %s" % exc,
+            labels,
+        )
     snap = snapshot or tree_snapshot
     try:
         before = snap(root)
@@ -257,7 +289,7 @@ def run_target(
                 timeout,
             ),
         )
-    except OSError as exc:
+    except (OSError, child_env.ChildEnvError) as exc:
         code, output = (
             None,
             "run_make_target: `make %s` did not complete: %s\n"
@@ -266,7 +298,21 @@ def run_target(
                 exc,
             ),
         )
-    after = snap(root)
+    try:
+        after = snap(root)
+    except (NoGitError, child_env.ChildEnvError) as exc:
+        # The run may have broken git or the allowlist itself; either way its
+        # read-only claim is unproven, so the verdict is red, never a crash.
+        return {
+            "target": target,
+            "ok": False,
+            "returncode": code,
+            "output": "%s\nrun_make_target: cannot re-read the tree after `make %s`, "
+            "so the run is not proven read-only: %s\n" % (output, target, exc),
+            "effects": list(labels),
+            "changed": [],
+            "refused": None,
+        }
     changed = sorted(
         p for p in set(before) | set(after) if before.get(p) != after.get(p)
     )

@@ -399,7 +399,7 @@ CHECKS: tuple[Check, ...] = (
         when="Every commit and in CI",
         purpose="Labels, taxonomy, package boundaries, tool/agent governance, "
         "project facts, agent-rules symlinks, ruleset parity, template twin "
-        "parity, the machine-readable module contract, Makefile help parity, cross-reference resolution, check-catalogue parity, rosters, practice mechanisms, policy reachability, writer rerun declarations and make-target effect labels (checks A–W).",
+        "parity, the machine-readable module contract, Makefile help parity, cross-reference resolution, check-catalogue parity, rosters, practice mechanisms, policy reachability, writer rerun declarations, make-target effect labels and child-process environments (checks A–X).",
     ),
     Check(
         slug="python-floor",

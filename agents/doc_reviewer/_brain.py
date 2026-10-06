@@ -25,6 +25,7 @@ from runtimes import (
     Step,
     get_runtime,
 )
+from scripts.child_env import build_child_env
 
 __all__ = ["review", "DocReviewReport"]
 
@@ -62,7 +63,12 @@ def _run(args, stdin=None):
     """Invoke a repo script via its CLI (tools are consumed as CLIs, never imported),
     under the interpreter running this agent."""
     proc = subprocess.run(
-        [sys.executable] + args, cwd=_REPO, capture_output=True, text=True, input=stdin
+        [sys.executable] + args,
+        cwd=_REPO,
+        capture_output=True,
+        text=True,
+        env=build_child_env(),
+        input=stdin,
     )
     return proc.returncode, proc.stdout, proc.stderr
 

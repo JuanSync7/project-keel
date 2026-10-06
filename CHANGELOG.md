@@ -10,6 +10,39 @@ version rather than a bare commit:
 
 ## [Unreleased]
 
+### Added
+- **`check_X` and `scripts/child_env.py` — a child process gets an
+  allowlisted environment.** `build_child_env` starts from an empty dict and
+  copies only the names `config/project.json` declares: `child_env.names` and
+  `child_env.prefixes`, the `make_targets` unattended and gate variables, and,
+  for a model adapter, its `models.credential_env` names. A missing or
+  malformed manifest is an error, never the parent's environment. `check_X`
+  holds every `subprocess`/`asyncio` spawn under the code roots outside
+  `tests/` to it, with no waiver, and errors on `os.system`, `os.popen`,
+  `os.exec*`, `os.spawn*` and `pty.spawn`
+  (`docs/adr/0012-child-process-environment-allowlist.md`, proposed).
+  Registered as the gate practice `child-gets-an-allowlisted-environment`.
+
+### Changed
+- **Every child process keel starts gets the allowlisted environment.** The
+  11 spawn calls in `models/`, `agents/`, `mcp/` and `scripts/` pass
+  `env=build_child_env(...)`. `claude_code_headless` gives the CLI
+  `ANTHROPIC_API_KEY` and `CLAUDE_CONFIG_DIR` and no cloud or forge credential.
+- **`scripts/run_make_target.py` forwards an environment gate variable.** A
+  `make_targets.gate_vars` value (`PY`) found in its environment and not given
+  as `--make-arg` goes onto make's command line under the same one-word rule; a
+  value that is not one path-like word is refused before make runs.
+- **Upgrading: add `child_env` and `models.credential_env`.** After
+  `copier update`, `config/project.json` needs both blocks (copy keel's), or
+  `make check` fails and every child refuses to start. A project whose model
+  CLI authenticates through other variables adds them to
+  `models.credential_env.<adapter>`; bedrock-platform, for example, adds its
+  cloud provider's mode, region and profile names. A project whose tools need
+  another variable adds it to `child_env.names`. A project's own `subprocess`
+  call without `env=build_child_env(...)` now fails `make check`. This does not
+  sandbox a child: one running as the same user can still read credential files
+  and its parent's `/proc/<pid>/environ`.
+
 ### Fixed
 - **`make site-static` dirtied the tree in a project whose frontend is not
   astro.** It writes the static snapshot into the first frontend app's

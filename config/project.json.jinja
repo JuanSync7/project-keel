@@ -39,6 +39,49 @@
     },
     "gate_vars": ["PY"]
   },
+  "child_env": {
+    "_comment": "The environment a process keel's code starts inherits (docs/adr/0012-child-process-environment-allowlist.md). scripts/child_env.py build_child_env starts from an empty dict and copies only these names, a name starting with a prefix, make_targets.unattended_vars and gate_vars (so WRITE_GUARD and the interpreter choice survive a hop through a Python doer), and, for a model adapter, its models.credential_env names; scripts/check_structure.py check_X holds every spawn to it. Why each family: PATH, HOME, USER and LOGNAME to find and run tools; LANG, LANGUAGE, TERM, TZ and LC_ for locale and output; the proxy and CA-bundle names because this network intercepts TLS; GIT_CONFIG_* so the test suite's hermetic git reaches git, and GIT_DIR, GIT_WORK_TREE, GIT_INDEX_FILE and the object-directory names so a git hook's child sees the repository git ran it in; TEMP, TMP and TMPDIR for scratch; VIRTUAL_ENV and XDG_* for tool caches; SOURCE_DATE_EPOCH for reproducible output. Deliberately absent: every credential (a model adapter's go in models.credential_env), MAKEFLAGS, MFLAGS, MAKELEVEL, MAKEOVERRIDES and MAKEFILES (a nested make must not inherit the outer make's goals; check_X refuses them here), PYTHONPATH (a caller passes it in extra), and GIT_ as a prefix (it would admit GIT_ASKPASS and GIT_SSH_COMMAND). Defence-in-depth, not a sandbox: a same-uid child can still read /proc/$PPID/environ.",
+    "names": [
+      "ALL_PROXY",
+      "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+      "GIT_CEILING_DIRECTORIES",
+      "GIT_CONFIG_GLOBAL",
+      "GIT_CONFIG_NOSYSTEM",
+      "GIT_CONFIG_SYSTEM",
+      "GIT_DIR",
+      "GIT_INDEX_FILE",
+      "GIT_OBJECT_DIRECTORY",
+      "GIT_WORK_TREE",
+      "HOME",
+      "HTTPS_PROXY",
+      "HTTP_PROXY",
+      "LANG",
+      "LANGUAGE",
+      "LOGNAME",
+      "NODE_EXTRA_CA_CERTS",
+      "NO_PROXY",
+      "PATH",
+      "REQUESTS_CA_BUNDLE",
+      "SOURCE_DATE_EPOCH",
+      "SSL_CERT_DIR",
+      "SSL_CERT_FILE",
+      "TEMP",
+      "TERM",
+      "TMP",
+      "TMPDIR",
+      "TZ",
+      "USER",
+      "VIRTUAL_ENV",
+      "XDG_CACHE_HOME",
+      "XDG_CONFIG_HOME",
+      "XDG_DATA_HOME",
+      "all_proxy",
+      "http_proxy",
+      "https_proxy",
+      "no_proxy"
+    ],
+    "prefixes": ["LC_"]
+  },
   "layers": {
 {%- if frontend_stack != "none" %}
     "frontend": {
@@ -71,12 +114,15 @@
     }
   },
   "models": {
-    "_comment": "Model/provider adapters this project makes available (registered in models/registry.py). 'default' is the registry default; the showcase surfaces this list.",
+    "_comment": "Model/provider adapters this project makes available (registered in models/registry.py). 'default' is the registry default; the showcase surfaces this list. credential_env names, per adapter that starts a process, the environment variables that process needs on top of child_env (scripts/child_env.py build_child_env(credentials_for=<adapter>)); an adapter absent from it gets the base allowlist only. Add a name here, not in code, when a CLI needs one more (for example a cloud provider's region).",
     "default": "claude-code-headless",
     "available": {
       "claude-code-headless": "models",
       "openai-compatible": "models",
       "fake": "models"
+    },
+    "credential_env": {
+      "claude-code-headless": ["ANTHROPIC_API_KEY", "CLAUDE_CONFIG_DIR"]
     }
   },
   "practices": {

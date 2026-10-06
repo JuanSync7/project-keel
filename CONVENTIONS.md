@@ -106,7 +106,7 @@ accidental first line as its summary, labeled as if someone wrote it.
 | `mcp`          | mcp | MCP servers exposing tools | business logic (call into `src/`) |
 | `api`          | api | HTTP handlers + OpenAPI specs | business logic (call into `src/`) |
 | `wiki`         | wiki | browsable index/knowledge site (optional) | source of truth |
-| `scripts`      | script | dev/CI automation, one-shots | importable library code |
+| `scripts`      | script | dev/CI automation, one-shots | importable library code, except the two shared modules named in the note below |
 | `config`       | config | committed defaults + `*.example.*` | secrets |
 | `demo`         | demo | runnable examples | tests |
 | `containers`   | container | Dockerfiles, compose, build context | app code |
@@ -115,6 +115,15 @@ accidental first line as its summary, labeled as if someone wrote it.
 | `models`       | model | model backends the app/agents run on (adapters + registry, e.g. Claude Code headless) | domain logic (that's `src/`) |
 | `runtimes`     | package | agent control-flow engines: a neutral `Plan` + `Runtime` (adapters + registry, e.g. LangGraph) | domain/business logic (that's `src/`) |
 | `agents/tools` | tool | shared, thin `*.tool.md` tool-use specs (markdown adapters over `scripts/`) | tool logic (stays in `scripts/`) |
+
+Note: `scripts/` holds two importable modules by exception, and only these two.
+`scripts/check_structure.py` is the gate the tests and jobs import, and
+`scripts/child_env.py` builds the allowlisted environment every child process
+starts with (`docs/adr/0012-child-process-environment-allowlist.md`). Both must
+import under the bare `python3` that `.pre-commit-config.yaml` hooks run (3.6.8
+on this host), which cannot import `src/`; that is why they live here and not
+in `src/`. `models/`, `agents/` and `mcp/` import the second as
+`scripts.child_env`. Any other reused code still belongs in `src/`.
 
 Note: `agents/<name>/` holds **all** files for one agent — its
 `prompt.md` (system prompt), code (`__init__.py` + private `_brain.py`),
@@ -250,6 +259,7 @@ pre-commit hook) fails the build if the conventions above drift:
 | Policy reachability | a practice enforced BY a document names that document within one hop of the root `AGENT.md` — named there, or named in a document named there — so a rule an agent never reads cannot be declared enforced |
 | Writer rerun declaration (§7) | a module that writes to the filesystem declares `effect: writes` and what a second run does (`rerun:` — `fixed-point`, `append-only` or `unsafe`); a `fixed-point` claim names a `rerun_proof:` in the same grammar as `enforced_by` above. The detector resolves each call's base (`os.replace`, never `str.replace`), so it under-reports rather than over-reports: a declared write it cannot see is a stated WARN, never a pass. See [`docs/guides/idempotency.md`](docs/guides/idempotency.md) |
 | Make-target effect labels (§7) | every `## `-annotated Makefile target opens its help with one bracketed effect label — `local`, `tree`, `read`, `cost`, `write`, comma-separated in that order, `local` alone; a target annotated twice carries one label; a composite's label covers what its prerequisites and `$(MAKE)` calls reach; a `[write]` target (or one whose name ends in a `make_targets.write_shapes` suffix) opens its recipe with `$(WRITE_GUARD)` and no `-` prefix, and the guard (make comments stripped) tests exactly the `make_targets.unattended_vars` names, has no `-` prefix of its own, and exits 1; the `make_targets` policy in `config/project.json` is well-formed. A recursion the check cannot resolve is a stated WARN. See [`docs/adr/0011-make-target-effect-labels.md`](docs/adr/0011-make-target-effect-labels.md) |
+| Child-process environment (§7) | every subprocess/asyncio spawn in a `.py` at the root or under any top-level directory but `tests/` passes `env=` built by `build_child_env` (`scripts/child_env.py`), directly or through a name bound only to it and afterwards only read; `os.system`/`popen`/`exec*`/`spawn*`, `pty.spawn` and `subprocess.getoutput` are errors, as is a spawn API referenced without a call and a spawn name bound two ways in one scope; names resolve per Python scope; the helper's arguments never carry `os.environ`/`os.getenv`, directly or through a name within the module; `config/project.json` `child_env` and `models.credential_env` are well-formed. A spawn through an unresolvable receiver, and a parent value crossing a function parameter, are not seen. See [docs/adr/0012-child-process-environment-allowlist.md](docs/adr/0012-child-process-environment-allowlist.md) |
 
 Missing `owner` is a warning, not a failure. If you change the scheme
 (KINDS / LAYERS / STATUSES / VISIBILITIES) or a check, update **both**
@@ -310,6 +320,27 @@ every `[local]` target that way, so a `[local]` claim is measured, not trusted.
 A person runs a `[tree]` or `[write]` target with plain `make`. The decision is
 [`docs/adr/0011-make-target-effect-labels.md`](docs/adr/0011-make-target-effect-labels.md).
 
+### Child processes get an allowlisted environment
+
+A doer that starts a process hands it an environment, and by default that is
+every variable the parent holds: a cloud key, a forge token, a model API key.
+So every spawn passes `env=build_child_env(...)` from `scripts/child_env.py`
+(`check_X`, §6). The helper starts from an empty dict and copies from the
+parent only the variables `config/project.json` names: `child_env.names`, a
+name under a `child_env.prefixes` entry, and the `make_targets.unattended_vars`
+and `make_targets.gate_vars` names. The last two are added because the write
+guard must still see `CI` or `RALPH` across a Python hop between two makes, and
+the interpreter a caller chose (`PY`) must survive one too; make hands both to
+its children through `MAKEFLAGS`, which the allowlist never carries.
+`credentials_for=<adapter>` adds that model adapter's `models.credential_env`
+names. A caller adds anything else through `extra=`, the only in-code addition,
+and never from `os.environ`. A missing or malformed manifest is an error,
+never a fall-back to the parent's environment. This is defence-in-depth, not a
+sandbox: a child running as the same user can still read credential files
+under `HOME`, use the network, and read the parent's environment from
+`/proc/$PPID/environ`. The decision is
+[`docs/adr/0012-child-process-environment-allowlist.md`](docs/adr/0012-child-process-environment-allowlist.md).
+
 ## 8. Configuration: where tunable values live
 
 Configuration is **data the app reads**, never logic. Collate it by
@@ -322,10 +353,12 @@ tune:
 | model-backend selection / launch | which embedding model or reranker adapter + flags | `models/config/` — next to the registry that picks by name |
 | build-time, component-coupled | frontend font, colours, footer (design tokens) | with the frontend package (`src/frontend/<app>/src/styles` / theme) — the build is the consumer |
 | secret | API keys, tokens | the environment / `.env` (gitignored) — **never** `config/` |
+| child-process environment | which variable NAMES a child receives; which an adapter's child also receives | `config/project.json` `child_env`, `models.credential_env` — names only; values stay in the environment |
 
 Decision rule: *runtime + app-wide + neutral → `config/`; provider
 launch → `models/config/`; build-time + package-coupled → with the
-package; secret → env.* Keep one source of truth: if a container or the
+package; secret → env; which variables a child process may see →
+`config/project.json`, by name only.* Keep one source of truth: if a container or the
 `app/` layer needs a port, it reads the value from `config/` rather than
 re-declaring it. Running code receives values via injection (the `app/`
 layer loads config and passes it down) — domain code never reads files
@@ -537,6 +570,18 @@ It is keyed **by layer/concern, never one global `language`**:
   control variables such as `MAKEFILES` or `MAKEFLAGS`, `SHELL`, `WRITE_GUARD`
   or an `unattended_vars` name). `check_W` validates the block and errors when
   it is missing or malformed.
+- `child_env` — the environment a child process inherits (§7): `names` (the
+  variables copied from the parent when present, e.g. `PATH`, `HOME`, the
+  proxy and CA-bundle names), `prefixes` (letter-led and ending in `_`, e.g.
+  `LC_`). make's own control names (`MAKEFLAGS`, `MAKEFILES`, `MAKELEVEL`,
+  `MAKEOVERRIDES`, `MFLAGS`) are reserved and refused. `check_X` validates the
+  block through `child_env.child_env_policy` and errors when it is missing or
+  malformed.
+- `models.credential_env` — per model adapter in `models.available`, the
+  credential names its child process also receives
+  (`{"claude-code-headless": ["ANTHROPIC_API_KEY", "CLAUDE_CONFIG_DIR"]}`).
+  Names only; the values stay in the environment. `check_X` errors on an
+  adapter that is not in `models.available`.
 
 - `template.twins` (template repos only) — keel is itself a copier template, so
   every `*.jinja` file is declared here with what it is FOR: `parity` (must

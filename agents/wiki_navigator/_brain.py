@@ -15,6 +15,7 @@ from dataclasses import dataclass
 
 from models import get_model
 from runtimes import END, MODEL_CALL, READ_ONLY, Edge, Plan, Step, get_runtime
+from scripts.child_env import build_child_env
 
 __all__ = ["answer", "Answer", "Citation"]
 
@@ -46,7 +47,11 @@ class Answer:
 def _run(args):
     """Invoke a repo script via its CLI with the SAME interpreter running us."""
     proc = subprocess.run(
-        [sys.executable] + args, cwd=_REPO, capture_output=True, text=True
+        [sys.executable] + args,
+        cwd=_REPO,
+        capture_output=True,
+        text=True,
+        env=build_child_env(),
     )
     return proc.returncode, proc.stdout, proc.stderr
 

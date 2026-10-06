@@ -14,7 +14,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import subprocess
 import sys
 from collections.abc import Callable, Sequence
 
@@ -108,7 +107,8 @@ def apply_and_gate(
 
     ``gate`` defaults to the spec's ``gate`` then ``"verify"``; ``"none"`` skips
     the gate (apply only). ``gate_runner`` is injected for testing. A gate that
-    RAISES (a timeout, a hang, a killed ``make`` subprocess) is treated as red, so
+    RAISES -- any exception: a timeout, a hang, a killed ``make`` subprocess, an
+    allowlist that cannot be built -- is treated as red, so
     the rollback still fires -- a non-returning gate must never leave an ungated
     write behind. Returns a result dict describing what happened; the tree is left
     green either way (accepted, or reverted to the originals). The one window it
@@ -126,12 +126,14 @@ def apply_and_gate(
     if gate == "none":
         ok, output = True, "(no gate requested)"
     else:
-        # A gate that times out / hangs / is killed never returns a verdict; treat
-        # any such failure as RED so the rollback below still fires. Preserve the
-        # cause in the reported output rather than swallowing it.
+        # A gate that times out / hangs / is killed / cannot build its child
+        # environment never returns a verdict; treat ANY raise as RED so the
+        # rollback below still fires -- a list of expected types once let a
+        # ChildEnvError skip it and keep an ungated write. The cause is kept in
+        # the reported output (and the result says rolled_back), not swallowed.
         try:
             ok, output = (gate_runner or _read_only_gate)(gate, root, timeout)
-        except (subprocess.SubprocessError, OSError, ValueError) as exc:
+        except Exception as exc:  # noqa: BLE001 — any raise is red; cause reported
             ok, output = False, "gate did not complete: %r" % exc
 
     if not ok:

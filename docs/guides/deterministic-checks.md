@@ -62,7 +62,7 @@ everything and therefore expect the project interpreter.
 
 | Check | Script | Gate? | Interpreter | What it guarantees |
 |-------|--------|:-----:|-------------|--------------------|
-| Structure & frontmatter | `scripts/check_structure.py` | error | 3.6-safe | Labels, taxonomy, package boundaries, tool/agent governance, project facts, agent-rules symlinks, owned-exception & frozen-config boundaries, naked-tensor domain warn, lint/type ruleset parity, template twin parity, Makefile help parity, cross-reference resolution, check-catalogue parity, rosters, practice mechanisms, policy reachability, writer rerun declarations, make-target effect labels (checks A–W) |
+| Structure & frontmatter | `scripts/check_structure.py` | error | 3.6-safe | Labels, taxonomy, package boundaries, tool/agent governance, project facts, agent-rules symlinks, owned-exception & frozen-config boundaries, naked-tensor domain warn, lint/type ruleset parity, template twin parity, Makefile help parity, cross-reference resolution, check-catalogue parity, rosters, practice mechanisms, policy reachability, writer rerun declarations, make-target effect labels, child-process environment (checks A–X) |
 | Interpreter floor | `scripts/check_python_version.py` | error | any | `$(PY)` satisfies `pyproject.toml`'s `requires-python`, said plainly before a newer-syntax check fails with a traceback — runs before every check that needs the project interpreter (`check-corpus`, `test`) |
 | Corpus integrity | `scripts/jobs/check_corpus.py` | error | ≥3.7 | the fresh build is a valid, acyclic, reproducible graph whose edge kinds are from the closed set (`keyword`, `link`, `citation`, `mention`, `semantic`) **and** the local `wiki/corpus.json` (what agents query) is current when present — absent is a loud pass, stale is an error naming `make site-data` (ADR-0008) |
 | OpenAPI drift | `api/rest_fastapi/export_openapi.py --check` | error | FastAPI | Committed `openapi.json` matches the live routes |
@@ -80,7 +80,7 @@ print but never fail the build.
 
 ### 1. Structure & frontmatter — `scripts/check_structure.py`
 
-**Purpose.** The core enforcer of `CONVENTIONS.md`. Checks A–W:
+**Purpose.** The core enforcer of `CONVENTIONS.md`. Checks A–X:
 
 - **A. Frontmatter** — every `README.md` / `AGENT.md` / `CLAUDE.md`, `docs/**`,
   `test-docs/**` markdown, and `agents/**/*.tool.md` has the required keys with
@@ -306,6 +306,42 @@ print but never fail the build.
   `tests/integration/test_make_target_effects.py`, which runs every `[local]`
   target through `scripts/run_make_target.py` and fails one that changed the
   tree. See [`docs/adr/0011-make-target-effect-labels.md`](../adr/0011-make-target-effect-labels.md).
+- **X. Child processes get an allowlisted environment** — every `subprocess`
+  (`run`, `Popen`, `call`, `check_call`, `check_output`) or `asyncio`
+  (`create_subprocess_exec`, `create_subprocess_shell`) spawn passes `env=`
+  built by `build_child_env` from `scripts/child_env.py`, either directly or
+  through a name bound only to that call and afterwards only read (`env=`,
+  `name[key]`, `.get`, `.copy`, `.items`, `.keys`, `.values`, a comparison).
+  Any other use of that name, in any scope, fails it: a store into it, a method
+  call, an alias, a nested `def` or lambda, or handing it to a function. The
+  scan covers every `.py` at the repo root and under every top-level directory
+  except `tests/`, hidden directories, `IGNORE_DIRS` and a symlinked directory,
+  so an undeclared directory is scanned too. A spawn with no `env=`, one whose
+  `env=` is anything else, and one with `**kwargs` (which cannot be proven) are
+  errors; so are `os.system`, `os.popen`, `os.exec*`, `os.spawn*`,
+  `os.posix_spawn*`, `os.forkpty`, `pty.spawn` and `subprocess.getoutput`,
+  which cannot take an allowlisted environment the gate can verify. A spawn API
+  referenced without being called (assigned, passed to `functools.partial`,
+  used as a default or put in a list) is an error, because the `env=` it is
+  later called with cannot be read; a type annotation and an
+  `isinstance`/`issubclass` argument are not. A call is resolved with Python's
+  own scope rules (function, lambda, class and comprehension scopes, `global`
+  and `nonlocal`), so a name rebound in another scope does not hide a spawn,
+  and a name bound both by an import and another way in one scope is an error
+  rather than a guess. A helper call whose arguments carry the parent's
+  environment is an error: `os.environ` or `os.getenv` directly, or a name
+  that a value from them reached within the module, through assignment,
+  aliasing, `dict.update`, a subscript store, a loop or a comprehension. There
+  is no waiver. The `config/project.json` `child_env` block and
+  `models.credential_env` are validated through `child_env.child_env_policy`.
+  It under-reports, never over-reports, in two places: a spawn through a
+  receiver it cannot resolve (`self.runner(...)`, `loop.subprocess_exec`,
+  `sp = subprocess; sp.run`), and a parent-environment value that reaches the
+  helper across a function parameter. Measured over keel at landing: 11 spawn
+  calls in 10 modules, all converted. It is defence-in-depth, not a sandbox: a
+  same-user child can still read the parent's environment from
+  `/proc/$PPID/environ`. See
+  [`docs/adr/0012-child-process-environment-allowlist.md`](../adr/0012-child-process-environment-allowlist.md).
 
 **When to run.** Every commit (pre-commit) and in CI; any time you add a
 directory, package, doc, tool, or agent.

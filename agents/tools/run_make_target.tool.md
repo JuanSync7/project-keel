@@ -65,12 +65,16 @@ stdout. `effects` is the target's closed label; `changed` lists the paths a run
 changed; `refused` is the reason when the runner did not run make, and `null`
 otherwise. Exit 0 when the target passed and changed nothing, 1 when it was red,
 timed out or changed the tree, 2 when it was refused or the name was unsafe.
+A `make_targets.gate_vars` value present in the caller's environment and not
+given as `--make-arg` is forwarded on make's command line under the same
+one-word rule; one that is not a one-word path is refused (exit 2).
 
 ## Side effects
 READ-ONLY: it never edits a file itself, and it refuses any target whose label
 says it rewrites the tree or changes shared state. A target it runs may write
 files git ignores (test caches, `wiki/corpus.json`); a write git would list
-turns the run red. No model call.
+turns the run red. No model call. make and git run with the allowlisted
+environment from `scripts/child_env.py`, never the caller's whole environment.
 
 ## Used by
 - agents/practice_refactor

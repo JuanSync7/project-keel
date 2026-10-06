@@ -58,6 +58,12 @@ of truth for labeling and the directory taxonomy. Each directory's own
   through `scripts/run_make_target.py`, which runs only a target inside
   `config/project.json` `make_targets.gate_effects` and fails one that changed
   the tree. `docs/adr/0011-make-target-effect-labels.md` is the decision.
+- **Start a child process through the allowlist.** Pass
+  `env=build_child_env(...)` from `scripts/child_env.py` to every subprocess;
+  name a variable a child needs in `config/project.json` `child_env.names`, or
+  an adapter's credential in `models.credential_env`, never in code (check_X).
+  `docs/adr/0012-child-process-environment-allowlist.md` is the decision; it
+  is defence-in-depth, not a sandbox.
 - **Respect the `__init__.py` boundary.** Import a package's public
   symbols from the package, never from its private (`_*`) submodules.
   When you add a public symbol, add it to `__all__` and re-export it.
@@ -123,4 +129,6 @@ of truth for labeling and the directory taxonomy. Each directory's own
 - Run a `[tree]` or `[write]` make target unattended, or label a target
   narrower than what it does to get it past the gate runner — the label is the
   claim `tests/integration/test_make_target_effects.py` measures.
+- Hand a child `os.environ` (directly or through `extra=`), or spawn with
+  `os.system`/`os.popen`.
 - Commit secrets to `config/` — only defaults and `*.example.*`.

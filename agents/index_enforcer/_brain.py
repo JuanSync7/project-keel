@@ -28,6 +28,7 @@ from runtimes import (
     Step,
     get_runtime,
 )
+from scripts.child_env import build_child_env
 
 __all__ = ["enforce", "EnforceReport"]
 
@@ -57,7 +58,11 @@ def _run(args):
     run under a compatible Python rather than a hardcoded 'python3' on PATH.
     """
     proc = subprocess.run(
-        [sys.executable] + args, cwd=_REPO, capture_output=True, text=True
+        [sys.executable] + args,
+        cwd=_REPO,
+        capture_output=True,
+        text=True,
+        env=build_child_env(),
     )
     return proc.returncode, proc.stdout, proc.stderr
 

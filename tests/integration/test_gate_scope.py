@@ -367,6 +367,47 @@ def _too_new_syntax(path):
     return bad
 
 
+def _local_imports(path):
+    """Keel modules `path` imports by bare name from scripts/ — the `import
+    child_env` a script reaches through scripts/ on sys.path. An entry in scripts/
+    resolves against its own directory and scripts/; one elsewhere (api/) reaches
+    no scripts/ module by bare name. An entry that parses at 3.6 but imports one
+    that does not still aborts the commit, so that module is part of its surface."""
+    scripts = _ROOT / "scripts"
+    dirs = [scripts]
+    if scripts in path.parents and path.parent != scripts:
+        dirs.insert(0, path.parent)
+    if scripts not in path.parents:
+        return []
+    tree = ast.parse(path.read_text(), str(path))
+    found = []
+    for node in ast.walk(tree):
+        names = []
+        if isinstance(node, ast.Import):
+            names = [a.name for a in node.names]
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            names = [node.module]
+        for name in names:
+            if "." in name:
+                continue
+            for d in dirs:
+                sibling = d / (name + ".py")
+                if sibling.is_file() and sibling != path:
+                    found.append(sibling)
+                    break
+    return sorted(set(found))
+
+
+def _precommit_python3_surface():
+    """Every pre-commit `python3` entry plus each sibling module it imports."""
+    out = []
+    for entry in _precommit_python3_entries():
+        path = _ROOT / entry
+        out.append(path)
+        out += _local_imports(path)
+    return sorted(set(out))
+
+
 def test_precommit_python3_entries_are_discoverable():
     """A discovery bug that finds nothing would make the next test vacuously green —
     the same never-actually-ran failure mode pass 2 had to fix once."""
@@ -374,6 +415,14 @@ def test_precommit_python3_entries_are_discoverable():
     assert len(entries) >= 4, entries
     for e in entries:
         assert (_ROOT / e).is_file(), "%s: pre-commit entry does not exist" % e
+
+
+def test_the_old_interpreter_surface_reaches_sibling_imports():
+    """check_structure.py imports child_env from its own directory, so the 3.6
+    guard must read child_env.py too, or a 3.7+ construct there aborts a commit
+    while this suite stays green."""
+    surface = [p.relative_to(_ROOT).as_posix() for p in _precommit_python3_surface()]
+    assert "scripts/child_env.py" in surface, surface
 
 
 def test_precommit_python3_entries_run_on_the_documented_old_interpreter():
@@ -385,8 +434,8 @@ def test_precommit_python3_entries_run_on_the_documented_old_interpreter():
 
     Derived from the config, so a new `python3` hook is gated automatically."""
     offenders = []
-    for entry in _precommit_python3_entries():
-        offenders += _too_new_syntax(_ROOT / entry)
+    for path in _precommit_python3_surface():
+        offenders += _too_new_syntax(path)
     assert not offenders, (
         "pre-commit `python3` entry points must be legal at Python %d.%d "
         "(docs/guides/deterministic-checks.md): \n  %s"
@@ -417,7 +466,8 @@ def test_precommit_python3_entries_actually_execute_on_an_old_interpreter():
     if old is None:
         pytest.skip("no interpreter between the pre-commit floor and requires-python")
 
-    for entry in _precommit_python3_entries():
+    for path in _precommit_python3_surface():
+        entry = path.relative_to(_ROOT).as_posix()
         r = subprocess.run(
             [
                 old,
@@ -434,6 +484,25 @@ def test_precommit_python3_entries_actually_execute_on_an_old_interpreter():
             old,
             r.stderr,
         )
+
+    # Parsing is not running: the allowlist builder must also EXECUTE there, since
+    # a gate hook calls it before every child it starts. -B keeps the old
+    # interpreter from writing a 3.6 .pyc into scripts/__pycache__.
+    r = subprocess.run(
+        [
+            old,
+            "-B",
+            "-c",
+            "import sys; sys.path.insert(0, 'scripts'); import child_env; "
+            "env = child_env.build_child_env(); "
+            "assert 'PATH' in env and 'KEEL_PLANTED_SECRET' not in env, env",
+        ],
+        cwd=str(_ROOT),
+        capture_output=True,
+        text=True,
+        env=dict(os.environ, KEEL_PLANTED_SECRET="s"),
+    )
+    assert r.returncode == 0, "child_env does not run under %s:\n%s" % (old, r.stderr)
 
 
 # --- scope: a dependency CI installs must never degrade into a silent skip ----

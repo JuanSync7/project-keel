@@ -7,7 +7,7 @@ owner: TBD
 summary: Local agent rules inside models/.
 id: models-agent
 created: 2026-06-17
-updated: 2026-09-02
+updated: 2026-10-06
 visibility: internal
 canonical: true
 ---
@@ -21,3 +21,4 @@ These rules are **local and authoritative** for this directory. They inherit fro
 - Every adapter implements the `ModelBackend` contract; callers depend on the contract, never on a concrete provider.
 - Selecting/adding a model is a `registry.py` change — agents pick a model by name, never hardcode a provider or launch flag.
 - Read secrets (API keys) from the environment, never from `config/` here.
+  An adapter that spawns a process passes `env=build_child_env(credentials_for=self.name)`; the names it needs are declared in `config/project.json` `models.credential_env`, never hardcoded.

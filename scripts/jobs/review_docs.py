@@ -17,7 +17,13 @@ import shutil
 import subprocess
 import sys
 
-ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_SCRIPTS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _SCRIPTS not in sys.path:
+    sys.path.insert(0, _SCRIPTS)
+
+import child_env  # noqa: E402
+
+ROOT = os.path.dirname(_SCRIPTS)
 # `[ \t]*`, not `\s*`: `\s` spans the newline, so an empty `updated:` read the
 # NEXT line's first token as its date.
 _UPDATED = re.compile(r"^updated:[ \t]*(\S+)", re.MULTILINE)
@@ -74,6 +80,7 @@ def _git(root, *args):
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         universal_newlines=True,
+        env=child_env.build_child_env(),
     )
     return proc.stdout if proc.returncode == 0 else None
 

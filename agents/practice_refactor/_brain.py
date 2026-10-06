@@ -25,6 +25,7 @@ from runtimes import (
     Step,
     get_runtime,
 )
+from scripts.child_env import build_child_env
 
 __all__ = ["refactor", "RefactorReport"]
 
@@ -62,7 +63,12 @@ def _run(args, stdin=None):
     apply_refactor this way.
     """
     proc = subprocess.run(
-        [sys.executable] + args, cwd=_REPO, capture_output=True, text=True, input=stdin
+        [sys.executable] + args,
+        cwd=_REPO,
+        capture_output=True,
+        text=True,
+        env=build_child_env(),
+        input=stdin,
     )
     return proc.returncode, proc.stdout, proc.stderr
 

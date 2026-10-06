@@ -2,7 +2,7 @@
 title: Integration — copier generates a structurally valid, tailored project
 kind: tests
 layer: n/a
-summary: `copier` renders keel's root template into a new project — the manifest is tailored to the answers, the un-chosen frontend stack is pruned, CLAUDE.md->AGENT.md symlinks are preserved, keel's own template meta-tests are pruned, and check_structure passes; an undeclared top-level directory reds the project until it is declared and labelled. Skipped on a bare local clone without the optional `template` extra; CI installs `.[dev,template]` and declares the surface required (KEEL_REQUIRED_EXTRAS), so there a missing copier is a hard failure instead of a silent skip.
+summary: `copier` renders keel's root template into a new project — the manifest is tailored to the answers, the un-chosen frontend stack is pruned, CLAUDE.md->AGENT.md symlinks are preserved, keel's own template meta-tests are pruned, and check_structure passes; an undeclared top-level directory reds the project until it is declared and labelled. A bare `subprocess.run` reds a generated project through check_X until it passes `env=build_child_env()`, and the project's helper passes an adapter's declared credential and no planted secret. Skipped on a bare local clone without the optional `template` extra; CI installs `.[dev,template]` and declares the surface required (KEEL_REQUIRED_EXTRAS), so there a missing copier is a hard failure instead of a silent skip.
 """
 
 import json
@@ -561,6 +561,7 @@ def test_deleting_a_manifest_declared_dir_is_caught_and_the_documented_fix_works
     manifest = dest / "config" / "project.json"
     data = json.loads(manifest.read_text())
     data["models"]["available"] = {}
+    data["models"]["credential_env"] = {}
     data["models"]["default"] = None
     manifest.write_text(json.dumps(data, indent=2) + "\n")
 
@@ -1561,3 +1562,89 @@ def test_a_generated_project_gates_only_on_targets_that_leave_its_tree_alone(
         line.split()[0] for line in listed.stdout.splitlines() if line.startswith("  ")
     }
     assert "fmt" in listed_targets and "check-docs" not in listed_targets, listed.stdout
+
+
+_ROGUE_HEADER = (
+    '"""\ntitle: Rogue spawn probe\nkind: demo\nlayer: n/a\n'
+    'summary: Starts a child process, the way a project module would.\n"""\n\n'
+)
+
+
+def test_a_generated_project_starts_children_only_through_the_allowlist(tmp_path):
+    """check_X and the allowlist hold DOWNSTREAM, through the project's own gate
+    and its own helper.
+
+    The project ships keel's `child_env` and `models.credential_env`, is green
+    on arrival, goes red on a bare `subprocess.run` and green again once the
+    spawn passes `env=build_child_env()`. Its helper leaves a planted secret out
+    and passes the adapter's declared credential, and a name added to the
+    project's `models.credential_env` reaches the child with no code change.
+    The probe lives in `demo/`, a code root with no roster, so check_S cannot
+    be what reds it."""
+    dest = tmp_path / "proj"
+    _generate(dest, project_name="demo_proj", frontend_stack="none")
+    keel = json.loads((_ROOT / "config" / "project.json").read_text())
+    manifest = dest / "config" / "project.json"
+    shipped = json.loads(manifest.read_text())
+    assert shipped["child_env"] == keel["child_env"]
+    assert shipped["models"]["credential_env"] == keel["models"]["credential_env"]
+    r = _structure_gate(dest)
+    assert r.returncode == 0, "a fresh project is not green:\n" + r.stdout + r.stderr
+
+    rogue = dest / "demo" / "rogue_spawn.py"
+    rogue.write_text(
+        _ROGUE_HEADER + "import subprocess\n\n\n"
+        "def main():\n    return subprocess.run(['true']).returncode\n",
+        encoding="utf-8",
+    )
+    r = _structure_gate(dest)
+    assert r.returncode != 0, "a bare subprocess.run left the gate green:\n" + r.stdout
+    hits = [
+        ln
+        for ln in r.stdout.splitlines()
+        if ln.startswith("ERROR demo/rogue_spawn.py:")
+    ]
+    assert hits and all("env=" in ln for ln in hits), r.stdout
+
+    rogue.write_text(
+        _ROGUE_HEADER + "import subprocess\n\n"
+        "from scripts.child_env import build_child_env\n\n\n"
+        "def main():\n"
+        "    return subprocess.run(['true'], env=build_child_env()).returncode\n",
+        encoding="utf-8",
+    )
+    r = _structure_gate(dest)
+    assert r.returncode == 0, "the allowlisted spawn is not green:\n" + r.stdout
+
+    probe = [
+        sys.executable,
+        "-c",
+        "import json,sys; sys.path.insert(0, 'scripts'); import child_env; "
+        "print(json.dumps(child_env.build_child_env("
+        "credentials_for='claude-code-headless')))",
+    ]
+    env = dict(
+        os.environ,
+        KEEL_PLANTED_SECRET="planted",
+        ANTHROPIC_API_KEY="key",
+        CLOUD_PROVIDER_REGION="region",
+    )
+    got = subprocess.run(
+        probe, cwd=str(dest), env=env, capture_output=True, text=True, check=True
+    )
+    child = json.loads(got.stdout)
+    assert child.get("ANTHROPIC_API_KEY") == "key", child
+    assert "KEEL_PLANTED_SECRET" not in child and "CLOUD_PROVIDER_REGION" not in child
+
+    shipped["models"]["credential_env"]["claude-code-headless"].append(
+        "CLOUD_PROVIDER_REGION"
+    )
+    manifest.write_text(json.dumps(shipped, indent=2) + "\n")
+    got = subprocess.run(
+        probe, cwd=str(dest), env=env, capture_output=True, text=True, check=True
+    )
+    child = json.loads(got.stdout)
+    assert child.get("CLOUD_PROVIDER_REGION") == "region", child
+    assert "KEEL_PLANTED_SECRET" not in child, child
+    r = _structure_gate(dest)
+    assert r.returncode == 0, "a declared credential name reds the gate:\n" + r.stdout

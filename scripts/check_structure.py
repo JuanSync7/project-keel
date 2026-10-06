@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 title: check_structure — the deterministic conventions gate
-summary: Stdlib-only, 3.6-safe enforcement of CONVENTIONS.md — labeling, taxonomy, package boundaries, tool/agent governance, manifest and ruleset parity, twin parity, the machine-readable module contract, Makefile help parity, cross-reference resolution, check-catalogue parity, rosters, practice mechanisms, policy reachability, writer rerun declarations, and make-target effect labels (checks A-W). Exit 1 on any error; warnings never fail the build.
+summary: Stdlib-only, 3.6-safe enforcement of CONVENTIONS.md — labeling, taxonomy, package boundaries, tool/agent governance, manifest and ruleset parity, twin parity, the machine-readable module contract, Makefile help parity, cross-reference resolution, check-catalogue parity, rosters, practice mechanisms, policy reachability, writer rerun declarations, make-target effect labels, and child-process environments (checks A-X). Exit 1 on any error; warnings never fail the build.
 
 check_structure.py - enforce the project conventions (see CONVENTIONS.md).
 
@@ -97,6 +97,19 @@ Checks:
      with an `area_dir`, each <area>.mk there is included, opens with one
      `##@ <area>` header and prefixes its public targets `<area>-`. A
      recursion it cannot resolve is a stated WARN ('unverified'), never a pass
+  X. A child process gets an allowlisted environment (ERR): every
+     subprocess/asyncio spawn in a .py at the root or under any top-level
+     directory but tests/ passes env= built by child_env.build_child_env
+     (scripts/child_env.py), directly or through a name bound only to that
+     call and afterwards only read; a **kwargs spawn, an
+     os.system/popen/exec*/spawn*, pty.spawn or subprocess.getoutput, a spawn
+     API referenced without a call and a spawn name bound two ways in one
+     scope are errors, as is a helper call whose arguments carry os.environ,
+     directly or through a name within the module; and config/project.json
+     `child_env` and `models.credential_env` are well-formed. Names resolve
+     with Python's scope rules; a spawn through an unresolvable receiver
+     (`self.runner(...)`, an alias of the module) or a parent value crossing a
+     function parameter is under-reported, never over-reported
 
 Exit 0 = clean, 1 = errors. Warnings never fail the build. Stdlib only; 3.6+.
 """
@@ -111,6 +124,14 @@ import re
 import sys
 import tokenize
 from urllib.parse import unquote
+
+# The allowlist's owner is scripts/child_env.py, beside this file; reading its
+# policy from there keeps check_X and the helper one rule, not two.
+_HERE = os.path.dirname(os.path.abspath(__file__))
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+
+import child_env  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -4840,6 +4861,641 @@ def check_W():
         warn(m)
 
 
+# --- check_X: a child process gets an allowlisted environment --------------------
+#
+# A process keel's code starts inherits the environment it is given, and a bare
+# subprocess call gives it every credential the parent holds: a model CLI, a hook
+# tool or a nested make would see the cloud keys, the forge token and the API keys
+# of whoever ran the gate. scripts/child_env.py builds the allowlisted environment
+# from config/project.json; this check holds every spawn to it, statically
+# (docs/adr/0012-child-process-environment-allowlist.md). It resolves each call's
+# base through the import that binds it in the scope Python would look in, so a
+# receiver it cannot resolve (`self.runner(...)`, `sp = subprocess; sp.run`) is
+# not seen, and it follows the parent's environment through names in one module
+# but not across a parameter: it under-reports and never fires on correct code. There is no waiver -- a spawn that truly needs another variable
+# declares it in config/project.json, where review sees it.
+
+# module -> the calls on it that start a process and take env=.
+_SPAWN_NEEDS_ENV = {
+    "asyncio": ("create_subprocess_exec", "create_subprocess_shell"),
+    "subprocess": ("Popen", "call", "check_call", "check_output", "run"),
+}
+# module -> the calls that start a process the helper cannot reach: they take no
+# environment at all, or one this check could not tell from os.environ.
+_SPAWN_NO_ENV = {
+    "os": ("forkpty", "popen", "posix_spawn", "posix_spawnp", "system"),
+    "pty": ("spawn",),
+    "subprocess": ("getoutput", "getstatusoutput"),
+}
+_SPAWN_NO_ENV_PREFIXES = {"os": ("exec", "spawn")}
+_HELPER = "build_child_env"
+# The two names the helper is imported under: `child_env` from a script that has
+# scripts/ on sys.path, `scripts.child_env` from models/, agents/ and mcp/.
+_HELPER_MODULES = ("child_env", "scripts.child_env")
+# What a use of the bound dict may do besides being a spawn's env=: read it. Any
+# other use (a call argument, an alias, a mutating method) lets a value the check
+# cannot follow reach the child, so it fails closed.
+_READS = ("copy", "get", "items", "keys", "values")
+_PARENT_ENV = ("os.environ", "os.environb", "os.getenv", "os.getenvb")
+_ADR_0012 = "docs/adr/0012-child-process-environment-allowlist.md"
+
+# The nodes Python gives their own names: a def, a lambda, a class body and (in
+# Python 3) a comprehension, whose loop variable does not leak.
+_FUNCTION_SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)
+_COMPREHENSIONS = (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)
+_SCOPES = _FUNCTION_SCOPES + (ast.ClassDef,) + _COMPREHENSIONS
+# `x := v` is 3.8+; the gate also parses under 3.6, where no such node exists.
+_NAMED_EXPR = tuple(t for t in [getattr(ast, "NamedExpr", None)] if t)
+# Pattern captures (3.10+) bind a plain-string name; read by type name for 3.6.
+_MATCH_NAME = ("MatchAs", "MatchStar")
+
+
+def _scope_nodes(scope):
+    """Every node in scope's own body, not inside a nested scope (a def, lambda,
+    class or comprehension); the nested scope's own node is included."""
+    out = []
+    todo = list(ast.iter_child_nodes(scope))
+    while todo:
+        node = todo.pop()
+        out.append(node)
+        if isinstance(node, _SCOPES):
+            continue
+        todo.extend(ast.iter_child_nodes(node))
+    return out
+
+
+class _Scope(object):
+    """One Python scope: its node, the scope it nests in, its own nodes, and
+    every name bound in it with the import origin of each binding ("" for a
+    binding that is not an import: a def, an assignment, a parameter)."""
+
+    def __init__(self, node, parent):
+        self.node = node
+        self.parent = parent
+        self.nodes = _scope_nodes(node)
+        self.declared_global = set()
+        self.declared_nonlocal = set()
+        self.origins = {}
+        self.binds = {}
+
+
+class _Module(object):
+    """A parsed module whose names check_X resolves per scope, as Python does:
+    a name bound anywhere in a function is that function's, a class body is
+    skipped by the scopes nested in it, and `global`/`nonlocal` redirect a
+    binding. A name bound by an import AND another way in one scope is
+    ambiguous: the check cannot know which a call means."""
+
+    def __init__(self, tree):
+        self.tree = tree
+        self.scopes = []
+        self.owner = {}  # id(node) -> its innermost _Scope
+        self.parents = {}  # id(node) -> the node that holds it
+        for node in ast.walk(tree):
+            for child in ast.iter_child_nodes(node):
+                self.parents[id(child)] = node
+        self.top = self._visit(tree, None)
+        for scope in self.scopes:
+            for node in scope.nodes:
+                if isinstance(node, ast.Global):
+                    scope.declared_global.update(node.names)
+                elif isinstance(node, ast.Nonlocal):
+                    scope.declared_nonlocal.update(node.names)
+        for scope in self.scopes:
+            self._collect(scope)
+        self.tainted = set()  # (id(home scope), name) holding the parent's env
+        self._taint()
+
+    def _visit(self, node, parent):
+        scope = _Scope(node, parent)
+        self.scopes.append(scope)
+        for child in scope.nodes:
+            self.owner[id(child)] = scope
+        for child in scope.nodes:
+            if isinstance(child, _SCOPES):
+                self._visit(child, scope)
+        return scope
+
+    def scope_of(self, node):
+        return self.owner.get(id(node), self.top)
+
+    def _enclosing(self, scope):
+        """Where a nested scope's free names resolve: class bodies are skipped."""
+        up = scope.parent
+        while up is not None and isinstance(up.node, ast.ClassDef):
+            up = up.parent
+        return up
+
+    @staticmethod
+    def _binds_here(scope, name):
+        for node in scope.nodes:
+            if isinstance(node, ast.Name) and node.id == name:
+                if not isinstance(node.ctx, ast.Load):
+                    return True
+            elif (isinstance(node, ast.arg) and node.arg == name) or (
+                isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+                and node.name == name
+            ):
+                return True
+        return False
+
+    def _bind(self, scope, name, origin, node):
+        if name in scope.declared_global:
+            scope = self.top
+        elif name in scope.declared_nonlocal:
+            home = self._enclosing(scope)
+            up = home
+            while up is not None and isinstance(up.node, _FUNCTION_SCOPES):
+                if name not in up.declared_nonlocal and self._binds_here(up, name):
+                    home = up
+                    break
+                up = self._enclosing(up)
+            scope = home or self.top
+        scope.origins.setdefault(name, set()).add(origin)
+        scope.binds.setdefault(name, []).append(node)
+
+    def _collect(self, scope):
+        loop_vars = set()
+        if isinstance(scope.node, _COMPREHENSIONS):
+            for gen in scope.node.generators:
+                loop_vars.update(id(n) for n in ast.walk(gen.target))
+        for node in scope.nodes:
+            if isinstance(node, ast.Import):
+                for a in node.names:
+                    head = a.name.split(".")[0]
+                    origin = a.name if a.asname else head
+                    self._bind(scope, a.asname or head, origin, node)
+            elif isinstance(node, ast.ImportFrom):
+                for a in node.names:
+                    if a.name == "*":
+                        continue
+                    origin = ""  # a relative import is this project's own code
+                    if node.module and not node.level:
+                        origin = node.module + "." + a.name
+                    self._bind(scope, a.asname or a.name, origin, node)
+            elif isinstance(
+                node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+            ):
+                self._bind(scope, node.name, "", node)
+            elif isinstance(node, ast.arg):
+                self._bind(scope, node.arg, "", node)
+            elif isinstance(node, ast.Name) and not isinstance(node.ctx, ast.Load):
+                home = scope
+                if (
+                    isinstance(scope.node, _COMPREHENSIONS)
+                    and id(node) not in loop_vars
+                ):
+                    # `x := v` inside a comprehension binds in the enclosing scope.
+                    while isinstance(home.node, _COMPREHENSIONS):
+                        home = home.parent
+                self._bind(home, node.id, "", node)
+            elif (isinstance(node, ast.ExceptHandler) and node.name) or (
+                type(node).__name__ in _MATCH_NAME and getattr(node, "name", None)
+            ):
+                self._bind(scope, node.name, "", node)
+            elif type(node).__name__ == "MatchMapping" and getattr(node, "rest", None):
+                self._bind(scope, node.rest, "", node)
+
+    def home(self, name, scope):
+        """The scope whose binding of `name` a use in `scope` reads, else None."""
+        s = scope
+        while s is not None:
+            if name in s.declared_global:
+                return self.top if name in self.top.origins else None
+            if name in s.origins:
+                return s
+            s = self._enclosing(s)
+        return None
+
+    def lookup(self, name, scope):
+        """('origin', dotted) / ('ambiguous', (dotted, ...)) / (None, None)."""
+        home = self.home(name, scope)
+        if home is None:
+            return None, None
+        origins = home.origins[name]
+        imports = tuple(sorted(o for o in origins if o))
+        if not imports:
+            return None, None
+        if len(imports) == 1 and "" not in origins:
+            return "origin", imports[0]
+        return "ambiguous", imports
+
+    def _chain(self, node):
+        parts = []
+        while isinstance(node, ast.Attribute):
+            parts.append(node.attr)
+            node = node.value
+        if not isinstance(node, ast.Name):
+            return None, None, ""
+        kind, value = self.lookup(node.id, self.scope_of(node))
+        return kind, value, "".join("." + p for p in reversed(parts))
+
+    def dotted(self, node):
+        """The dotted origin of a Name/Attribute chain through the imports, else None."""
+        kind, value, rest = self._chain(node)
+        return value + rest if kind == "origin" else None
+
+    def candidates(self, node):
+        """Every dotted origin an ambiguous Name/Attribute chain may mean, else []."""
+        kind, value, rest = self._chain(node)
+        return [v + rest for v in value] if kind == "ambiguous" else []
+
+    def spawn_api(self, call):
+        origin = self.dotted(call.func)
+        kind = _spawn_kind(origin)
+        return (kind, origin) if kind else None
+
+    def is_helper_call(self, node):
+        """True when node is a call of build_child_env imported from the helper."""
+        return isinstance(node, ast.Call) and self.dotted(node.func) in [
+            m + "." + _HELPER for m in _HELPER_MODULES
+        ]
+
+    # --- the parent's environment, followed through names -------------------------
+
+    def _key(self, node):
+        """(id(home), name) for a Name that is not an import, else None."""
+        if not isinstance(node, ast.Name):
+            return None
+        scope = self.scope_of(node)
+        home = self.home(node.id, scope)
+        if home is None or any(home.origins[node.id]):
+            return None  # unbound here, or a module/import: never data
+        return id(home), node.id
+
+    def parent_env_in(self, expr):
+        """Sorted descriptions of every read of the parent's environment in expr:
+        a direct os.environ/os.getenv, or a name bound from one."""
+        found = set()
+        for sub in ast.walk(expr):
+            d = self.dotted(sub)
+            if d in _PARENT_ENV:
+                found.add(d)
+            elif (
+                isinstance(sub, ast.Name)
+                and isinstance(sub.ctx, ast.Load)
+                and self._key(sub) in self.tainted
+            ):
+                found.add("`%s` (bound from the parent's environment)" % sub.id)
+        return sorted(found)
+
+    def _fed(self, node):
+        """The targets a node writes a parent-environment value into."""
+        pairs = []
+        if isinstance(node, ast.Assign):
+            pairs = [(t, node.value) for t in node.targets]
+        elif isinstance(node, (ast.AugAssign, ast.AnnAssign) + _NAMED_EXPR):
+            if node.value is not None:
+                pairs = [(node.target, node.value)]
+        elif isinstance(node, (ast.For, ast.AsyncFor, ast.comprehension)):
+            pairs = [(node.target, node.iter)]
+        elif isinstance(node, ast.withitem) and node.optional_vars is not None:
+            pairs = [(node.optional_vars, node.context_expr)]
+        elif isinstance(node, ast.Call) and not self.is_helper_call(node):
+            # A call handed the parent's environment may copy it into any name it
+            # is also handed, or into its receiver (`d.update(os.environ)`,
+            # `dict.update(d, os.environ)`).
+            args = list(node.args) + [k.value for k in node.keywords]
+            if any(self.parent_env_in(a) for a in args):
+                outs = [a for a in args if isinstance(a, ast.Name)]
+                if isinstance(node.func, ast.Attribute):
+                    outs.append(node.func.value)
+                return outs
+        return [t for t, v in pairs if self.parent_env_in(v)]
+
+    def _taint(self):
+        grew = True
+        while grew:
+            grew = False
+            for scope in self.scopes:
+                for node in scope.nodes:
+                    for target in self._fed(node):
+                        for sub in _written_names(target):
+                            key = self._key(sub)
+                            if key is not None and key not in self.tainted:
+                                self.tainted.add(key)
+                                grew = True
+
+    # --- a name bound to the helper's result -----------------------------------
+
+    def _reads_only(self, node):
+        """True when a Load of the bound name is a spawn's env= or a read."""
+        up = self.parents.get(id(node))
+        if isinstance(up, ast.keyword) and up.arg == "env":
+            call = self.parents.get(id(up))
+            api = self.spawn_api(call) if isinstance(call, ast.Call) else None
+            return bool(api) and api[0] == "env"
+        if isinstance(up, ast.Subscript) and up.value is node:
+            return isinstance(up.ctx, ast.Load)
+        if isinstance(up, ast.Attribute) and up.value is node:
+            return up.attr in _READS
+        return isinstance(up, ast.Compare)
+
+    def name_is_helper_built(self, name, scope):
+        """True when every binding of `name` in scope is `name = <helper call>`
+        (a sole target, never a parameter, a loop variable or a `nonlocal`
+        rebinding from a nested def) and every use of it, in scope and in the
+        defs nested in it, is a spawn's env= or a read (`_READS`, `[k]`, `in`)."""
+        if self.home(name, scope) is not scope:
+            return False  # a free, global or unbound name: not built here
+        for event in scope.binds.get(name, []):
+            stmt = self.parents.get(id(event))
+            if not (
+                isinstance(event, ast.Name)
+                and isinstance(event.ctx, ast.Store)
+                and (
+                    (isinstance(stmt, ast.Assign) and stmt.targets == [event])
+                    or (isinstance(stmt, ast.AnnAssign) and stmt.target is event)
+                )
+                and self.is_helper_call(stmt.value)
+            ):
+                return False
+        for other in self.scopes:
+            for node in other.nodes:
+                if (
+                    isinstance(node, ast.Name)
+                    and node.id == name
+                    and isinstance(node.ctx, ast.Load)
+                    and self.home(name, other) is scope
+                    and not self._reads_only(node)
+                ):
+                    return False
+        return True
+
+    # --- a spawn API used as a value --------------------------------------------
+
+    def _type_positions(self):
+        """ids of every node in an annotation or an isinstance/issubclass call,
+        where naming subprocess.Popen is a type, not a spawn."""
+        out = set()
+        roots = []
+        for node in ast.walk(self.tree):
+            if isinstance(node, ast.arg) and node.annotation is not None:
+                roots.append(node.annotation)
+            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                if node.returns is not None:
+                    roots.append(node.returns)
+            elif isinstance(node, ast.AnnAssign):
+                roots.append(node.annotation)
+            elif (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id in ("isinstance", "issubclass")
+            ):
+                roots.extend(node.args[1:])
+        for root in roots:
+            out.update(id(n) for n in ast.walk(root))
+        return out
+
+    def references(self):
+        """[(lineno, origin)] for every spawn API named without being called."""
+        typed = self._type_positions()
+        out = []
+        for node in ast.walk(self.tree):
+            if not isinstance(node, (ast.Name, ast.Attribute)):
+                continue
+            if not isinstance(node.ctx, ast.Load) or id(node) in typed:
+                continue
+            up = self.parents.get(id(node))
+            if isinstance(up, ast.Call) and up.func is node:
+                continue
+            if isinstance(up, ast.Attribute):
+                continue  # the middle of a longer chain (`subprocess.run.__doc__`)
+            origin = self.dotted(node)
+            if _spawn_kind(origin):
+                out.append((node.lineno, origin))
+        return out
+
+
+def _written_names(target):
+    """The Names an assignment target writes into: each element of a tuple or
+    list target, and the container of `d[k] = v` or `d.x = v` (never `k`)."""
+    out = []
+    todo = [target]
+    while todo:
+        node = todo.pop()
+        if isinstance(node, ast.Name):
+            out.append(node)
+        elif isinstance(node, (ast.Tuple, ast.List)):
+            todo.extend(node.elts)
+        elif isinstance(node, (ast.Starred, ast.Subscript, ast.Attribute)):
+            todo.append(node.value)
+    return out
+
+
+def _spawn_kind(origin):
+    """'env' / 'no-env' for a dotted origin that starts a process, else None."""
+    if not origin or "." not in origin:
+        return None
+    module, name = origin.rsplit(".", 1)
+    if name in _SPAWN_NEEDS_ENV.get(module, ()):
+        return "env"
+    if name in _SPAWN_NO_ENV.get(module, ()) or any(
+        name.startswith(p) for p in _SPAWN_NO_ENV_PREFIXES.get(module, ())
+    ):
+        return "no-env"
+    return None
+
+
+def _parse_module(source):
+    try:
+        return _Module(ast.parse(source))
+    except (SyntaxError, ValueError):
+        return None
+
+
+def spawn_sites(source):
+    """Sorted (lineno, origin) for every call in source that starts a process
+    through an API check_X resolves. [] when the source does not parse."""
+    mod = _parse_module(source)
+    if mod is None:
+        return []
+    sites = []
+    for node in ast.walk(mod.tree):
+        if isinstance(node, ast.Call):
+            api = mod.spawn_api(node)
+            if api:
+                sites.append((node.lineno, api[1]))
+    return sorted(sites)
+
+
+def spawn_findings(source, relpath):
+    """check_X's errors for one module, sorted by line. Pure.
+
+    A source that does not parse yields [] -- a syntax error is another check's
+    to report."""
+    mod = _parse_module(source)
+    if mod is None:
+        return []
+    found = []
+    for lineno, origin in mod.references():
+        found.append(
+            (
+                lineno,
+                "%s:%d: `%s` is referenced, not called, so the env= the child is "
+                "eventually started with cannot be read -- call it directly with "
+                "env=build_child_env() from scripts/child_env.py (%s)"
+                % (relpath, lineno, origin, _ADR_0012),
+            )
+        )
+    for node in ast.walk(mod.tree):
+        if not isinstance(node, ast.Call):
+            continue
+        where = "%s:%d: " % (relpath, node.lineno)
+        if mod.is_helper_call(node):
+            leaks = sorted(
+                {d for a in node.args + node.keywords for d in mod.parent_env_in(a)}
+            )
+            if leaks:
+                found.append(
+                    (
+                        node.lineno,
+                        where + "build_child_env is handed %s, which copies the "
+                        "parent's environment past the allowlist -- declare the name "
+                        "in config/project.json child_env.names, or an adapter's "
+                        "credential in models.credential_env (%s)"
+                        % (", ".join(leaks), _ADR_0012),
+                    )
+                )
+            continue
+        api = mod.spawn_api(node)
+        if api is None:
+            spawns = [c for c in mod.candidates(node.func) if _spawn_kind(c)]
+            if spawns:
+                found.append(
+                    (
+                        node.lineno,
+                        where + "the name called here is bound both by an import "
+                        "of `%s` and another way in one scope, so this check cannot "
+                        "tell whether it starts a process -- rename one binding (%s)"
+                        % ("`, `".join(spawns), _ADR_0012),
+                    )
+                )
+            continue
+        kind, origin = api
+        if kind == "no-env":
+            found.append(
+                (
+                    node.lineno,
+                    where + "`%s` cannot take an allowlisted environment the gate "
+                    "can verify -- start the child with subprocess.run(..., "
+                    "env=build_child_env()) from scripts/child_env.py (%s)"
+                    % (origin, _ADR_0012),
+                )
+            )
+            continue
+        if any(kw.arg is None for kw in node.keywords):
+            found.append(
+                (
+                    node.lineno,
+                    where + "`%s` is passed **kwargs, so the env= it starts the "
+                    "child with cannot be read -- pass env=build_child_env() "
+                    "explicitly (%s)" % (origin, _ADR_0012),
+                )
+            )
+            continue
+        env = [kw.value for kw in node.keywords if kw.arg == "env"]
+        if not env:
+            found.append(
+                (
+                    node.lineno,
+                    where + "`%s` passes no env=, so the child inherits every "
+                    "credential this process holds -- pass env=build_child_env() "
+                    "from scripts/child_env.py (%s)" % (origin, _ADR_0012),
+                )
+            )
+            continue
+        value = env[0]
+        ok = mod.is_helper_call(value) or (
+            isinstance(value, ast.Name)
+            and mod.name_is_helper_built(value.id, mod.scope_of(node))
+        )
+        if not ok:
+            found.append(
+                (
+                    node.lineno,
+                    where + "`%s` passes an env= that is not built by "
+                    "scripts/child_env.py build_child_env (directly, or through a "
+                    "name every assignment in this function binds to it and that "
+                    "is only ever read, never mutated, aliased or handed on) -- the "
+                    "child may inherit what the allowlist leaves out (%s)"
+                    % (origin, _ADR_0012),
+                )
+            )
+    return [m for _, m in sorted(found)]
+
+
+def _spawn_roots():
+    """check_X's scope: every top-level directory but tests/ -- the taxonomy's
+    code homes, evals/ (the model and agent harness) and ops/ among them, a
+    declared extra_toplevel name, and an undeclared one (check_B reds the gate
+    over it too, and the author sees both at once). A hidden or ignored
+    directory (CONVENTIONS section 5) and a symlinked one, which no check reads
+    through (check_B warns), are skipped."""
+    roots = []
+    for name in sorted(os.listdir(ROOT)):
+        full = os.path.join(ROOT, name)
+        if name.startswith(".") or name in IGNORE_DIRS or name == "tests":
+            continue
+        if os.path.isdir(full) and not os.path.islink(full):
+            roots.append(name)
+    return roots
+
+
+def check_X():
+    """ERROR when a module at the top level or under a spawn root
+    (`_spawn_roots`: every code home but tests/) starts a process
+    without env= built by scripts/child_env.py build_child_env, through an API
+    that cannot take one, passes **kwargs to a spawn, or hands the helper the
+    parent's environment; and when config/project.json `child_env` (or the
+    `make_targets` and `models.credential_env` names it reads) is malformed while
+    a spawn exists or the block does. Silent when nothing spawns and no block
+    exists; an unreadable manifest is reported once, by the reader."""
+    modules = {}
+    for name in sorted(os.listdir(ROOT)):
+        if name.endswith(".py") and os.path.isfile(os.path.join(ROOT, name)):
+            try:
+                with open(os.path.join(ROOT, name), encoding="utf-8-sig") as fh:
+                    modules[name] = fh.read()
+            except UNREADABLE:
+                continue  # unreadable is reported by the checks keyed on it
+    for root in _spawn_roots():
+        base = os.path.join(ROOT, root)
+        for dirpath, _, filenames in walk(base):
+            for f in filenames:
+                if not f.endswith(".py"):
+                    continue
+                try:
+                    with open(os.path.join(dirpath, f), encoding="utf-8-sig") as fh:
+                        modules[rel(os.path.join(dirpath, f)).replace(os.sep, "/")] = (
+                            fh.read()
+                        )
+                except UNREADABLE:
+                    continue  # unreadable is reported by the checks keyed on it
+    findings = []
+    spawns = False
+    for path in sorted(modules):
+        spawns = spawns or bool(spawn_sites(modules[path]))
+        findings.extend(spawn_findings(modules[path], path))
+    manifest = _read_json_config("config/project.json")
+    if manifest is _NO_DATA:
+        if os.path.isfile(os.path.join(ROOT, "config", "project.json")):
+            manifest = None  # unreadable: _read_json_config reported it, once
+        else:
+            manifest = {}
+    has_block = isinstance(manifest, dict) and "child_env" in manifest
+    if manifest is not None and (spawns or has_block):
+        _, perrs = child_env.child_env_policy(manifest)
+        for m in perrs:
+            err(
+                m
+                if m.startswith("config/project.json")
+                else "config/project.json: " + m
+            )
+    for m in findings:
+        err(m)
+
+
 def main():
     check_A()
     check_B()
@@ -4864,6 +5520,7 @@ def main():
     check_U()
     check_V()
     check_W()
+    check_X()
     for w_ in warnings:
         print("WARN  " + w_)
     for e_ in errors:
