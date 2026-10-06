@@ -2,7 +2,7 @@
 title: child_env — the environment a child process inherits
 kind: script
 layer: n/a
-summary: Builds the environment keel's code hands a process it starts. It starts from an empty dict and copies from os.environ only what config/project.json allows — a `child_env.names` entry, a name under a `child_env.prefixes` entry, a `make_targets` unattended or gate variable, and, for a named model adapter, that adapter's `models.credential_env` names — then adds the caller's `extra`. A missing, unreadable or malformed manifest is a ChildEnvError, never a fall-back to the parent's environment. It reads config/project.json on every call and writes nothing. scripts/check_structure.py check_X holds every spawn under the code roots to this helper. Defence-in-depth, not a sandbox (docs/adr/0012-child-process-environment-allowlist.md).
+summary: Builds the environment keel's code hands a process it starts. It starts from an empty dict and copies from os.environ only what config/project.json allows — a `child_env.names` entry, a name under a `child_env.prefixes` entry, a `make_targets` unattended or gate variable, and, for a named model adapter, that adapter's `models.credential_env` names — then adds the caller's `extra`. git's repository context (`child_env.repo_context_names`: the variables git binds to the repository it started a process in, such as a hook's GIT_DIR and GIT_INDEX_FILE) is never copied unless the call passes `repo_context=True`, and no allowlist source may list one; the opt-in is a keyword because it is one call's decision, visible where the child starts, not a project-wide setting. A missing, unreadable or malformed manifest is a ChildEnvError, never a fall-back to the parent's environment. It reads config/project.json on every call and writes nothing. scripts/check_structure.py check_X holds every spawn under the code roots to this helper. Defence-in-depth, not a sandbox (docs/adr/0012-child-process-environment-allowlist.md).
 """
 
 # NB: stdlib only, no `from __future__ import annotations`, no f-strings, no walrus,
@@ -22,13 +22,17 @@ __all__ = ["ChildEnvError", "build_child_env", "child_env_policy"]
 
 _MANIFEST = os.path.join("config", "project.json")
 _BLOCK = "child_env"
-_BLOCK_KEYS = ("_comment", "names", "prefixes")
+_BLOCK_KEYS = ("_comment", "names", "prefixes", "repo_context_names")
 _NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _PREFIX = re.compile(r"^[A-Za-z][A-Za-z0-9]*_$")
 # make passes its command-line variables to every child through these. Carrying
 # one across a Python hop would hand a nested make the outer make's goals and
 # overrides, which no label of the nested target declared.
 _MAKE_CONTROL = ("MAKEFLAGS", "MAKEFILES", "MAKELEVEL", "MAKEOVERRIDES", "MFLAGS")
+# git's environment namespace (git(1), ENVIRONMENT VARIABLES). It decides
+# nothing: it only picks the child_env.names entries a manifest without
+# repo_context_names is told to check, since that manifest names no set itself.
+_GIT_NAMESPACE = "GIT_"
 
 Policy = NamedTuple(
     "Policy",
@@ -37,6 +41,7 @@ Policy = NamedTuple(
         ("prefixes", Tuple[str, ...]),
         ("credentials", Dict[str, Tuple[str, ...]]),
         ("adapters", Optional[Tuple[str, ...]]),
+        ("repo_context", Tuple[str, ...]),
     ],
 )
 
@@ -75,6 +80,79 @@ def _name_list(value: object, where: str, errs: List[str]) -> Optional[List[str]
     return list(value)
 
 
+def _bound(source: str, names: List[str], fix: str) -> str:
+    """The refusal for an allowlist source that re-admits a repository variable."""
+    return (
+        "%s %s, which child_env.repo_context_names marks as bound to the "
+        "repository the parent was started in -- a child that runs git in another "
+        "directory would act on that repository; %s (a child that must act on the "
+        "parent's repository passes build_child_env(repo_context=True))"
+        % (source, ", ".join(sorted(names)), fix)
+    )
+
+
+def _overlaps(
+    repo_context: List[str],
+    names: Optional[List[str]],
+    prefixes: Optional[List[str]],
+    make_vars: Dict[str, List[str]],
+    credentials: Dict[str, Tuple[str, ...]],
+) -> List[str]:
+    """One error per allowlist source that would copy a repo_context name.
+
+    A source that failed its own validation is None or absent here, so one root
+    cause never also reports as an overlap."""
+    bound = set(repo_context)
+    errs: List[str] = []
+    sources: List[Tuple[str, Optional[List[str]]]] = [("child_env.names", names)]
+    sources.extend(("make_targets." + key, make_vars[key]) for key in sorted(make_vars))
+    sources.extend(
+        ("models.credential_env." + adapter, list(credentials[adapter]))
+        for adapter in sorted(credentials)
+    )
+    for source, listed in sources:
+        hit = sorted(bound & set(listed or ()))
+        if hit:
+            errs.append(_bound(source + " lists", hit, "remove them from %s" % source))
+    for prefix in sorted(prefixes or ()):
+        hit = sorted(n for n in bound if n.startswith(prefix))
+        if hit:
+            errs.append(
+                _bound(
+                    "child_env.prefixes `%s` admits" % prefix,
+                    hit,
+                    "remove `%s` from child_env.prefixes and list the names it "
+                    "was for in child_env.names" % prefix,
+                )
+            )
+    return errs
+
+
+def _missing_repo_context(names: object) -> str:
+    """The refusal for a manifest from before repo_context_names existed.
+
+    Such a project's child_env.names usually still lists GIT_DIR and its
+    siblings, and the overlap check needs the missing key to see them, so this
+    one message carries both halves of the fix and names the candidates."""
+    msg = (
+        "child_env.repo_context_names is missing -- add it, listing the variables "
+        "git binds to the repository it started a process in (`git rev-parse "
+        "--local-env-vars`), and remove each of them from child_env.names, where "
+        "a child would act on the parent's repository; keel's own "
+        "config/project.json carries the list"
+    )
+    listed = names if isinstance(names, list) else []
+    candidates = sorted(
+        {n for n in listed if isinstance(n, str) and n.startswith(_GIT_NAMESPACE)}
+    )
+    if candidates:
+        msg += (
+            " (child_env.names lists %s: move each one `git rev-parse "
+            "--local-env-vars` prints, keep the rest)" % ", ".join(candidates)
+        )
+    return msg
+
+
 def _located(message: str) -> str:
     """message, prefixed with the manifest's path unless it already names it."""
     return message if message.startswith(_MANIFEST) else "%s: %s" % (_MANIFEST, message)
@@ -98,11 +176,25 @@ def child_env_policy(manifest: object) -> Tuple[Optional[Policy], List[str]]:
         return None, ["child_env must be an object"]
     errs: List[str] = []
     errs.extend(
-        "child_env has an unknown key `%s` (the keys are names, prefixes)" % key
+        "child_env has an unknown key `%s` (the keys are names, prefixes, "
+        "repo_context_names)" % key
         for key in sorted(block)
         if key not in _BLOCK_KEYS
     )
     names = _name_list(block.get("names"), "child_env.names", errs)
+    repo_context: Optional[List[str]] = None
+    if "repo_context_names" not in block:
+        errs.append(_missing_repo_context(block.get("names")))
+    elif block["repo_context_names"] == []:
+        # A pass over zero names would hold nothing back and look like a guard.
+        errs.append(
+            "child_env.repo_context_names must name at least one variable -- an "
+            "empty list holds back none of git's repository context"
+        )
+    else:
+        repo_context = _name_list(
+            block["repo_context_names"], "child_env.repo_context_names", errs
+        )
     prefixes = block.get("prefixes")
     if not isinstance(prefixes, list) or not all(isinstance(p, str) for p in prefixes):
         errs.append("child_env.prefixes must be a list of prefixes such as `LC_`")
@@ -118,6 +210,7 @@ def child_env_policy(manifest: object) -> Tuple[Optional[Policy], List[str]]:
             prefixes = None
 
     extra_names: List[str] = []
+    make_vars: Dict[str, List[str]] = {}
     targets = manifest.get("make_targets")
     if targets is not None and not isinstance(targets, dict):
         errs.append("make_targets must be an object")
@@ -126,6 +219,8 @@ def child_env_policy(manifest: object) -> Tuple[Optional[Policy], List[str]]:
             if key in targets:
                 got = _name_list(targets[key], "make_targets." + key, errs)
                 extra_names.extend(got or [])
+                if got is not None:
+                    make_vars[key] = got
 
     credentials: Dict[str, Tuple[str, ...]] = {}
     adapters: Optional[Tuple[str, ...]] = None
@@ -158,7 +253,9 @@ def child_env_policy(manifest: object) -> Tuple[Optional[Policy], List[str]]:
                     if got is not None:
                         credentials[adapter] = tuple(sorted(got))
 
-    if errs or names is None or prefixes is None:
+    if repo_context is not None:
+        errs.extend(_overlaps(repo_context, names, prefixes, make_vars, credentials))
+    if errs or names is None or prefixes is None or repo_context is None:
         return None, errs
     return (
         Policy(
@@ -166,6 +263,7 @@ def child_env_policy(manifest: object) -> Tuple[Optional[Policy], List[str]]:
             prefixes=tuple(sorted(prefixes)),
             credentials=credentials,
             adapters=adapters,
+            repo_context=tuple(sorted(repo_context)),
         ),
         [],
     )
@@ -175,6 +273,7 @@ def build_child_env(
     credentials_for: Optional[str] = None,
     extra: Optional[Mapping[str, str]] = None,
     root: Optional[str] = None,
+    repo_context: bool = False,
 ) -> Dict[str, str]:
     """The environment for a child process, built from the allowlist.
 
@@ -183,8 +282,21 @@ def build_child_env(
     explicitly. ``root`` is the project whose config/project.json is read
     (default: the project this module ships in). A declared name the parent
     lacks stays absent, never empty.
+    ``repo_context=True`` also copies each ``child_env.repo_context_names``
+    variable the parent holds (an empty value included): only for a child that
+    must act on the repository git started the parent in, such as a hook helper
+    on a bare repository, which cannot rediscover it from its cwd. Every other
+    call leaves it False, so a child that runs git in another directory finds
+    that directory's repository.
     Raises ChildEnvError on a missing, unreadable or malformed manifest, an
-    adapter not in models.available, or an ``extra`` that is not name -> str."""
+    adapter not in models.available, a ``repo_context`` that is not a bool, or
+    an ``extra`` that is not name -> str."""
+    # The type, not truthiness: "no" and 1 are truthy, and an opt-in that hands
+    # a child the parent's repository must be the call site's explicit True.
+    if type(repo_context) is not bool:
+        raise ChildEnvError(
+            "repo_context must be True or False, got %r" % (repo_context,)
+        )
     if root is None:
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     path = os.path.join(root, _MANIFEST)
@@ -217,6 +329,10 @@ def build_child_env(
                 )
             )
         for key in policy.credentials.get(credentials_for, ()):
+            if key in os.environ:
+                env[key] = os.environ[key]
+    if repo_context:
+        for key in policy.repo_context:
             if key in os.environ:
                 env[key] = os.environ[key]
     for key in sorted(extra or {}):

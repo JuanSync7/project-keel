@@ -8,7 +8,7 @@ tags: [checks, ci, linter, determinism, pre-commit, hooks, guide]
 summary: Catalogue of every deterministic check that keeps a project-template repo honest — purpose, when to run, and how to wire as a hook.
 id: docs-guides-deterministic-checks
 created: 2026-06-19
-updated: 2026-10-06
+updated: 2026-10-07
 visibility: internal
 canonical: true
 ---
@@ -334,6 +334,24 @@ print but never fail the build.
   aliasing, `dict.update`, a subscript store, a loop or a comprehension. There
   is no waiver. The `config/project.json` `child_env` block and
   `models.credential_env` are validated through `child_env.child_env_policy`.
+  That includes `child_env.repo_context_names`, which is required and
+  non-empty: it lists the variables git binds to the repository it started a
+  process in (a hook's `GIT_DIR`, `GIT_INDEX_FILE`, `GIT_PREFIX`, ...).
+  `build_child_env` drops them, so a child that runs git in another directory
+  acts on that directory's repository and not on the one being committed. The
+  check refuses any allowlist source that would copy one anyway: `names`, a
+  `prefixes` entry (`GIT_`), `make_targets.unattended_vars` or `gate_vars`,
+  and any `models.credential_env` list. The message names the source and the
+  fix, for example `child_env.names lists GIT_DIR, which
+  child_env.repo_context_names marks as bound to the repository the parent was
+  started in -- ...; remove them from child_env.names (a child that must act
+  on the parent's repository passes build_child_env(repo_context=True))`. The
+  opt-in is a keyword, not a config name, because it is one call's decision,
+  visible where that child starts. A name in config would hand the parent's
+  repository to every child the project starts, and nothing at the call site
+  would show it. A project generated before slice C2-1 of
+  `docs/design/downstream-feedback.md` fails with `child_env.repo_context_names
+  is missing` until `copier update` brings the key.
   It under-reports, never over-reports, in two places: a spawn through a
   receiver it cannot resolve (`self.runner(...)`, `loop.subprocess_exec`,
   `sp = subprocess; sp.run`), and a parent-environment value that reaches the
@@ -536,10 +554,14 @@ Copier replays the project's edits onto a fresh render, so the merge does the
 same, key by key:
 - a key DEST lacks arrives;
 - a key DEST left as rendered takes the template's new value;
-- a key both sides changed is a conflict and keeps DEST's value;
+- a list of distinct strings both sides changed (an allowlist such as
+  `child_env.names`, which the manifest renders one item per line) merges item
+  by item: DEST's additions and removals are replayed onto the template's list,
+  reported as `merges`, because copier's line-level merge keeps both edits;
+- any other key both sides changed is a conflict and keeps DEST's value;
 - a key the template dropped and DEST never edited is removed.
 
-Lists are atomic. When `_commit` does not resolve here, the merge is 2-way:
+Any other list is atomic. When `_commit` does not resolve here, the merge is 2-way:
 only arrivals are reported, and the "not checked" section says so. Every
 change is reported under `[config]`. DEST's file is never written.
 

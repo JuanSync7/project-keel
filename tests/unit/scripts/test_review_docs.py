@@ -358,3 +358,39 @@ def test_a_root_whose_filter_drivers_cannot_be_listed_is_refused(monkeypatch):
     del calls[:]
     assert review_docs._git("/nowhere", "status") is None
     assert len(calls) == 1 and "config" in calls[0], calls
+
+
+def test_the_judge_ignores_the_repository_the_parent_was_pointed_at(
+    tmp_path, monkeypatch, capsys
+):
+    """A git hook exports GIT_DIR/GIT_INDEX_FILE for the repository being
+    committed. Measured before the fix: under them, `--strict` on another
+    repository judged 0 documents and exited 0, because every git call the
+    judge made answered for the hook's repository."""
+    env = hermetic_git.git_env(tmp_path)
+    decoy, other = tmp_path / "decoy", tmp_path / "other"
+    decoy.mkdir()
+    (decoy / "a").write_text("a\n", encoding="utf-8")
+    (other / "docs").mkdir(parents=True)
+    (other / "docs" / "x.md").write_text(
+        "---\ntitle: x\nupdated: 2020-01-01\n---\n\n# x\n", encoding="utf-8"
+    )
+    dated = dict(env, GIT_COMMITTER_DATE="@1790000000", GIT_AUTHOR_DATE="@1790000000")
+    for top in (decoy, other):
+        for argv in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "init"]):
+            r = subprocess.run(
+                ["git"] + argv, cwd=str(top), env=dated, capture_output=True
+            )
+            assert r.returncode == 0, r.stderr
+    index = decoy / ".git" / "index"
+    before = index.read_bytes(), index.stat().st_mtime_ns
+    monkeypatch.setenv("GIT_DIR", str(decoy / ".git"))
+    monkeypatch.setenv("GIT_INDEX_FILE", str(index))
+
+    rc = review_docs.main(["--root", str(other), "--strict", "--today", "2026-10-06"])
+    out = capsys.readouterr().out
+    assert rc == 1, out
+    assert "STALE docs/x.md" in out and "1 governed document(s)" in out, out
+    found = review_docs._git(str(other), "rev-parse", "--absolute-git-dir")
+    assert Path(found.strip()).resolve() == (other / ".git").resolve(), found
+    assert (index.read_bytes(), index.stat().st_mtime_ns) == before

@@ -8,7 +8,7 @@ tags: [adr, environment, credentials, subprocess, check-x]
 summary: "Every process keel's code starts gets `env=build_child_env(...)` from scripts/child_env.py, which starts from an empty dict and copies only the variable names config/project.json `child_env` declares, plus the `make_targets` unattended and gate variables and, for a model adapter, that adapter's `models.credential_env` names. A missing or malformed manifest is an error, never a fall-back to the parent's environment. check_X in scripts/check_structure.py holds every spawn under the code roots to the helper, with no waiver. It is defence-in-depth, not a sandbox."
 id: docs-adr-0012-child-process-environment-allowlist
 created: 2026-10-06
-updated: 2026-10-06
+updated: 2026-10-07
 visibility: internal
 canonical: true
 ---
@@ -47,7 +47,9 @@ unresolvable receiver would not be in it (see Consequences).
    parent, only a variable that is present and is:
    - named in `config/project.json` `child_env.names` (`PATH`, `HOME`, the
      locale, the proxy and CA-bundle names, the `GIT_` names that select a
-     repository, `VIRTUAL_ENV`, the temp and XDG directories);
+     repository (moved to `child_env.repo_context_names` by slice C2-1 in
+     docs/design/downstream-feedback.md), `VIRTUAL_ENV`, the temp and XDG
+     directories);
    - under a `child_env.prefixes` entry (`LC_`);
    - a `make_targets.unattended_vars` name (`CI`, `RALPH`): the write guard
      must still see one across a Python hop between two makes, because make

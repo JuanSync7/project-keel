@@ -8,7 +8,7 @@ tags: [plan, template, downstream, freshness, taxonomy, effects, credentials, au
 summary: The bounded-convergence record for the defects bedrock-platform, the first real project generated from keel, reported back — a red gate on arrival, unknown directories the gate never sees, make targets whose effect nobody declares, and child processes that inherit every credential — plus the command that checks any keel-generated project for all of them. One slice per defect, five passes, each landed as one commit on a green `make verify`.
 id: docs-design-downstream-feedback
 created: 2026-10-06
-updated: 2026-10-06
+updated: 2026-10-07
 visibility: internal
 canonical: true
 ---
@@ -471,9 +471,19 @@ Found during the slices and deliberately not started:
   template carries but excluded reads as `template-edited`, not `project`.
 - **`child_env.names` passes `GIT_DIR`, `GIT_WORK_TREE` and `GIT_INDEX_FILE`**,
   so a git child of a process started with them set acts on that repository,
-  not on its own working directory.
+  not on its own working directory. Fixed by slice C2-1.
 - **A restamped doc reads as `template-edited`** after the update's migration,
   so origin overstates the project's edits there.
+- **`GIT_CONFIG`, `GIT_CONFIG_COUNT` and `GIT_CONFIG_PARAMETERS` reach a
+  child.** Slice C2-1 left them out of `repo_context_names` because they carry
+  configuration, not a repository. A hook still exports a `git -c` value
+  through `GIT_CONFIG_PARAMETERS`, so a policy could refuse the three in
+  `child_env.names` and hold them back by default.
+- **A git or make run that does not start through `build_child_env` keeps the
+  hook's repository.** copier runs git through plumbum with its own environment,
+  and a hook can start `make` directly rather than through the gate runner.
+  Slice C2-1 covers only processes started through the helper and the test
+  suite.
 
 ## Campaign result
 
@@ -482,3 +492,86 @@ green `make verify`. Slice 5 adds `make audit-project DEST=` on a green
 `make verify` (1178 passed).
 ADR-0010, ADR-0011 and ADR-0012 were accepted on 2026-10-06. Everything
 found along the way and not fixed is in Queued above.
+
+## Campaign 2 — the ranked queue
+
+The maintainer accepted ADR-0010, ADR-0011 and ADR-0012 on 2026-10-06 and asked
+for the Queued list above to be worked in risk order before bedrock-platform's
+next round of feedback. The cap is five slices, each one commit on a green
+`make verify`. v0.2.0 is tagged after slice C2-1, because C2-1 closes a hole in
+ADR-0012's own guarantee. A concern found mid-slice joins Queued.
+
+| Slice | Defect | Status |
+|-------|--------|--------|
+| C2-1 | A child inherits `GIT_DIR`/`GIT_WORK_TREE`/`GIT_INDEX_FILE`, so its git acts on the parent's repository | done — `make verify` green (1206 passed); 3 review findings confirmed and fixed |
+| C2-2 | A proxy URL with embedded credentials reaches every child | planned |
+| C2-3 | The audit reads the `Makefile` and `config/practices.json` before the merge, so an old project reports a false W error | planned |
+| C2-4 | `make smoke` passes over zero tests, and `make run` fails with `No module named app` | planned |
+| C2-5 | A downstream project's ADR numbers collide with the template's | planned — needs the maintainer's numbering decision |
+
+### Slice C2-1 — a child does not inherit the parent's repository
+
+**Measured.** git 2.43.5 exports repository-location variables to a hook. A
+`pre-commit` hook in a plain checkout receives `GIT_INDEX_FILE` and
+`GIT_PREFIX`; with `git commit <paths>` the index is an absolute
+`.git/next-index-<pid>.lock`. The same hook in a linked worktree also receives
+an absolute `GIT_DIR`. Four reproductions followed, each before the fix:
+
+- `review_docs --strict`, started in another repository under a hook's
+  `GIT_DIR`, judged "0 governed document(s), 0 stale" and exited 0. Without
+  the variable it reported 1 stale document and exited 1.
+- A gate that `scripts/run_make_target.py` ran in another checkout printed the
+  hook repository's `.git` from `git rev-parse --absolute-git-dir`, and the
+  runner reported PASS.
+- `tests/hermetic_git.py` `clone_including_worktree`, called under a parent
+  `GIT_DIR` and `GIT_INDEX_FILE`, wrote into the parent's index. Afterwards
+  `git status` failed with "unable to read" and `git fsck` reported an invalid
+  sha1 pointer in the index's cache-tree.
+- A generated project's own `review_docs --strict` under the same variables
+  judged 0 documents and exited 0.
+
+**The list.** `child_env.repo_context_names` is `git rev-parse
+--local-env-vars` minus `GIT_CONFIG`, `GIT_CONFIG_COUNT` and
+`GIT_CONFIG_PARAMETERS`, plus `GIT_NAMESPACE` and `GIT_QUARANTINE_PATH`. The
+three config names are left out because they carry configuration, such as a
+`git -c` value, not a repository. The two additions bind a ref namespace and
+a receive-time object directory to one repository. The names live in config
+so that a later git release that adds a name is a manifest edit. The test
+`test_keels_policy_holds_back_every_repository_variable_git_names` compares
+the list with the installed git's own list.
+
+**Keyword, not config.** `build_child_env` drops the names unless the call
+passes `repo_context=True`, and the keyword must be a real `bool`. A config
+switch would apply to every child in the project. Acting on the parent's
+repository is a property of one call site, so the call site declares it.
+`child_env_policy`, and so check_X, refuses any allowlist source that admits
+a listed name: `child_env.names`, a `child_env.prefixes` entry,
+`make_targets.unattended_vars`, `make_targets.gate_vars` and
+`models.credential_env`. A missing `repo_context_names` is an error. An older
+project's `make check` names that key until it takes the update, and the same
+message says to move git's repository variables out of `child_env.names` and
+lists the `GIT_`-prefixed names it holds, so one round of `make check` carries
+the whole fix. The `GIT_` prefix only picks the names to show; the set that is
+held back is still `repo_context_names`.
+
+**The audit.** `scripts/audit_project.py` merges a list of distinct strings that
+both sides edited item by item, as copier's line-level merge leaves an
+allowlist. Before this slice the list was atomic. A pre-C2-1 project that had
+added its own `child_env.names` entry was then judged on its old list. The
+audit reported an owed X error for `GIT_DIR` and predicted a copier conflict,
+but the real `copier update` merged cleanly and `make check` was green.
+`tests/integration/test_copier_audit.py` generates a project at `a70a7b5` and
+checks that it owes no X error, with and without an added name.
+
+**The suite.** `tests/hermetic_git.py` and copier run git without the helper.
+For that reason `tests/conftest.py` strips the same names from `os.environ` at
+import, before plumbum snapshots the environment, and `git_env` never carries
+them.
+
+**Residual risk.** The `GIT_CONFIG*` names still reach a child. copier's own
+git, run through plumbum, and a make recipe that a hook starts directly do
+not pass through `build_child_env`. Both are in Queued.
+
+The vault backlog for keel (`KEEL-*` items: the frontend contract chain FE-2,
+FE-1, FE-6, FE-3; TEST-1 live-store guard; SEC-1 secrets scan) is the next
+campaign, not this one.

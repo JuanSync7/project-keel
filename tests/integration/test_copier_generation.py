@@ -1648,3 +1648,104 @@ def test_a_generated_project_starts_children_only_through_the_allowlist(tmp_path
     assert "KEEL_PLANTED_SECRET" not in child, child
     r = _structure_gate(dest)
     assert r.returncode == 0, "a declared credential name reds the gate:\n" + r.stdout
+
+
+def test_a_generated_projects_children_never_follow_the_hooks_repository(tmp_path):
+    """The repository-context rule holds DOWNSTREAM, through the project's own
+    doers and its own gate.
+
+    A hook git starts in the project gets GIT_DIR/GIT_INDEX_FILE (and GIT_PREFIX)
+    naming the project's repository; this is the linked-worktree / `commit -a`
+    shape measured on git 2.43.5. The project's freshness judge, asked about
+    ANOTHER repository from inside that hook, judges the other repository and
+    leaves the project's index alone. Before slice C2-1 it judged 0 documents
+    and exited 0 (measured). The project's helper returns its own repository
+    only on `repo_context=True`, and its structure gate refuses GIT_DIR in
+    child_env.names with the fix, then passes once it is removed."""
+    dest = tmp_path / "proj"
+    _generate(dest, project_name="demo_proj", frontend_stack="none")
+    env = _hermetic_git_env(tmp_path)
+    for argv in (["init", "-q", "-b", "main"], ["add", "-A"], ["commit", "-qm", "g"]):
+        r = subprocess.run(["git"] + argv, cwd=str(dest), env=env, capture_output=True)
+        assert r.returncode == 0, r.stderr
+
+    other = tmp_path / "other"
+    (other / "docs").mkdir(parents=True)
+    (other / "docs" / "x.md").write_text(
+        "---\ntitle: x\nupdated: 2020-01-01\n---\n\n# x\n", encoding="utf-8"
+    )
+    dated = dict(env, GIT_COMMITTER_DATE="@1790000000", GIT_AUTHOR_DATE="@1790000000")
+    for argv in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "o"]):
+        r = subprocess.run(
+            ["git"] + argv, cwd=str(other), env=dated, capture_output=True
+        )
+        assert r.returncode == 0, r.stderr
+
+    hook_env = dict(
+        env,
+        GIT_DIR=str(dest / ".git"),
+        GIT_INDEX_FILE=str(dest / ".git" / "index"),
+        GIT_PREFIX="",
+    )
+    index = dest / ".git" / "index"
+    before = index.read_bytes(), index.stat().st_mtime_ns
+
+    judged = subprocess.run(
+        [sys.executable, "scripts/jobs/review_docs.py", "--root", str(other)]
+        + ["--strict", "--today", "2026-10-06"],
+        cwd=str(dest),
+        env=hook_env,
+        capture_output=True,
+        text=True,
+    )
+    assert judged.returncode == 1, judged.stdout + judged.stderr
+    assert "STALE docs/x.md" in judged.stdout, judged.stdout
+
+    seen = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; sys.path.insert(0, 'scripts'); "
+            "sys.path.insert(0, 'scripts/jobs'); import review_docs; "
+            "print(review_docs._git(sys.argv[1], 'rev-parse', '--absolute-git-dir'))",
+            str(other),
+        ],
+        cwd=str(dest),
+        env=hook_env,
+        capture_output=True,
+        text=True,
+    )
+    assert seen.returncode == 0, seen.stderr
+    assert Path(seen.stdout.strip()).resolve() == (other / ".git").resolve(), (
+        seen.stdout
+    )
+    assert (index.read_bytes(), index.stat().st_mtime_ns) == before
+
+    helper = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import json, sys; sys.path.insert(0, 'scripts'); import child_env; "
+            "print(json.dumps([child_env.build_child_env().get('GIT_DIR'), "
+            "child_env.build_child_env(repo_context=True).get('GIT_DIR')]))",
+        ],
+        cwd=str(dest),
+        env=hook_env,
+        capture_output=True,
+        text=True,
+    )
+    assert helper.returncode == 0, helper.stderr
+    assert json.loads(helper.stdout) == [None, str(dest / ".git")], helper.stdout
+
+    manifest = dest / "config" / "project.json"
+    shipped = manifest.read_text(encoding="utf-8")
+    edited = json.loads(shipped)
+    edited["child_env"]["names"].append("GIT_DIR")
+    manifest.write_text(json.dumps(edited, indent=2) + "\n", encoding="utf-8")
+    r = _structure_gate(dest)
+    assert r.returncode != 0, "GIT_DIR in child_env.names left the gate green"
+    assert "child_env.names lists GIT_DIR" in r.stdout, r.stdout
+    assert "build_child_env(repo_context=True)" in r.stdout, r.stdout
+    manifest.write_text(shipped, encoding="utf-8")
+    r = _structure_gate(dest)
+    assert r.returncode == 0, r.stdout + r.stderr

@@ -495,12 +495,15 @@ def test_precommit_python3_entries_actually_execute_on_an_old_interpreter():
             "-c",
             "import sys; sys.path.insert(0, 'scripts'); import child_env; "
             "env = child_env.build_child_env(); "
-            "assert 'PATH' in env and 'KEEL_PLANTED_SECRET' not in env, env",
+            "assert 'PATH' in env and 'KEEL_PLANTED_SECRET' not in env, env; "
+            "assert 'GIT_DIR' not in env, env; "
+            "got = child_env.build_child_env(repo_context=True)['GIT_DIR']; "
+            "assert got == '/nonexistent/.git', got",
         ],
         cwd=str(_ROOT),
         capture_output=True,
         text=True,
-        env=dict(os.environ, KEEL_PLANTED_SECRET="s"),
+        env=dict(os.environ, KEEL_PLANTED_SECRET="s", GIT_DIR="/nonexistent/.git"),
     )
     assert r.returncode == 0, "child_env does not run under %s:\n%s" % (old, r.stderr)
 

@@ -1,11 +1,12 @@
 """
 title: Shared pytest fixtures + the hermetic git environment
-summary: Repo-wide fixtures, and the one place the suite's git environment is neutralised (see tests/hermetic_git.py for what is neutralised and why).
+summary: Repo-wide fixtures, and the one place the suite's git environment is neutralised and the parent's git repository context removed (see tests/hermetic_git.py for what is neutralised and why).
 
 Shared pytest fixtures live here.
 
-Also the one place the suite's git environment is neutralised — see the comment
-below, and tests/hermetic_git.py for what is neutralised and why.
+Also the one place the suite's git environment is neutralised, and the parent's
+repository context (a hook's GIT_DIR, GIT_INDEX_FILE, ...) removed — see the
+comments below, and tests/hermetic_git.py for what is neutralised and why.
 """
 
 import atexit
@@ -41,6 +42,19 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _GITCONFIG_DIR = tempfile.mkdtemp(prefix="keel-hermetic-git-")
 atexit.register(shutil.rmtree, _GITCONFIG_DIR, True)
 os.environ.update(hermetic_git.git_env_vars(_GITCONFIG_DIR))
+
+# Also at import, for the same plumbum snapshot: the parent's repository context.
+# A git hook exports GIT_INDEX_FILE (and, in a linked worktree, GIT_DIR) for the
+# repository being committed, and the suite's own git — hermetic_git, copier — is
+# not started through build_child_env. Measured under a parent GIT_DIR and
+# GIT_INDEX_FILE: hermetic_git.clone_including_worktree wrote a blob into the
+# PARENT's index that is missing from the parent's objects (`git status`: "unable
+# to read"; fsck: "missing blob", "invalid sha1 pointer in cache-tree"). So a
+# pytest started from a pre-commit or pre-push hook would otherwise corrupt the
+# repository being committed. The names are config/project.json
+# child_env.repo_context_names, the list build_child_env holds back.
+for _name in hermetic_git.repo_context_names(_ROOT):
+    os.environ.pop(_name, None)
 
 
 @pytest.fixture(scope="session")

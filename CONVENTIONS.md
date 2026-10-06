@@ -8,7 +8,7 @@ tags: [conventions, frontmatter, taxonomy]
 summary: Single source of truth for labeling (frontmatter) and the directory taxonomy.
 id: conventions
 created: 2026-06-17
-updated: 2026-10-06
+updated: 2026-10-07
 visibility: internal
 canonical: true
 ---
@@ -259,7 +259,7 @@ pre-commit hook) fails the build if the conventions above drift:
 | Policy reachability | a practice enforced BY a document names that document within one hop of the root `AGENT.md` — named there, or named in a document named there — so a rule an agent never reads cannot be declared enforced |
 | Writer rerun declaration (§7) | a module that writes to the filesystem declares `effect: writes` and what a second run does (`rerun:` — `fixed-point`, `append-only` or `unsafe`); a `fixed-point` claim names a `rerun_proof:` in the same grammar as `enforced_by` above. The detector resolves each call's base (`os.replace`, never `str.replace`), so it under-reports rather than over-reports: a declared write it cannot see is a stated WARN, never a pass. See [`docs/guides/idempotency.md`](docs/guides/idempotency.md) |
 | Make-target effect labels (§7) | every `## `-annotated Makefile target opens its help with one bracketed effect label — `local`, `tree`, `read`, `cost`, `write`, comma-separated in that order, `local` alone; a target annotated twice carries one label; a composite's label covers what its prerequisites and `$(MAKE)` calls reach; a `[write]` target (or one whose name ends in a `make_targets.write_shapes` suffix) opens its recipe with `$(WRITE_GUARD)` and no `-` prefix, and the guard (make comments stripped) tests exactly the `make_targets.unattended_vars` names, has no `-` prefix of its own, and exits 1; the `make_targets` policy in `config/project.json` is well-formed. A recursion the check cannot resolve is a stated WARN. See [`docs/adr/0011-make-target-effect-labels.md`](docs/adr/0011-make-target-effect-labels.md) |
-| Child-process environment (§7) | every subprocess/asyncio spawn in a `.py` at the root or under any top-level directory but `tests/` passes `env=` built by `build_child_env` (`scripts/child_env.py`), directly or through a name bound only to it and afterwards only read; `os.system`/`popen`/`exec*`/`spawn*`, `pty.spawn` and `subprocess.getoutput` are errors, as is a spawn API referenced without a call and a spawn name bound two ways in one scope; names resolve per Python scope; the helper's arguments never carry `os.environ`/`os.getenv`, directly or through a name within the module; `config/project.json` `child_env` and `models.credential_env` are well-formed. A spawn through an unresolvable receiver, and a parent value crossing a function parameter, are not seen. See [docs/adr/0012-child-process-environment-allowlist.md](docs/adr/0012-child-process-environment-allowlist.md) |
+| Child-process environment (§7) | every subprocess/asyncio spawn in a `.py` at the root or under any top-level directory but `tests/` passes `env=` built by `build_child_env` (`scripts/child_env.py`), directly or through a name bound only to it and afterwards only read; `os.system`/`popen`/`exec*`/`spawn*`, `pty.spawn` and `subprocess.getoutput` are errors, as is a spawn API referenced without a call and a spawn name bound two ways in one scope; names resolve per Python scope; the helper's arguments never carry `os.environ`/`os.getenv`, directly or through a name within the module; `config/project.json` `child_env` and `models.credential_env` are well-formed, and no allowlist source admits a `child_env.repo_context_names` variable. A spawn through an unresolvable receiver, and a parent value crossing a function parameter, are not seen. See [docs/adr/0012-child-process-environment-allowlist.md](docs/adr/0012-child-process-environment-allowlist.md) |
 
 Missing `owner` is a warning, not a failure. If you change the scheme
 (KINDS / LAYERS / STATUSES / VISIBILITIES) or a check, update **both**
@@ -334,7 +334,11 @@ the interpreter a caller chose (`PY`) must survive one too; make hands both to
 its children through `MAKEFLAGS`, which the allowlist never carries.
 `credentials_for=<adapter>` adds that model adapter's `models.credential_env`
 names. A caller adds anything else through `extra=`, the only in-code addition,
-and never from `os.environ`. A missing or malformed manifest is an error,
+and never from `os.environ`. git's repository-context variables
+(`child_env.repo_context_names`, such as a hook's `GIT_DIR` and `GIT_INDEX_FILE`)
+never reach a child unless the call passes `repo_context=True`, so a child that
+runs git in another directory acts on that directory's repository, and `check_X`
+refuses a manifest whose allowlist admits one. A missing or malformed manifest is an error,
 never a fall-back to the parent's environment. This is defence-in-depth, not a
 sandbox: a child running as the same user can still read credential files
 under `HOME`, use the network, and read the parent's environment from
@@ -573,7 +577,11 @@ It is keyed **by layer/concern, never one global `language`**:
 - `child_env` — the environment a child process inherits (§7): `names` (the
   variables copied from the parent when present, e.g. `PATH`, `HOME`, the
   proxy and CA-bundle names), `prefixes` (letter-led and ending in `_`, e.g.
-  `LC_`). make's own control names (`MAKEFLAGS`, `MAKEFILES`, `MAKELEVEL`,
+  `LC_`), `repo_context_names` (required, non-empty: the variables git binds to
+  the repository it started a process in, held back unless a call passes
+  `build_child_env(repo_context=True)`; none may appear in `names`, under a
+  `prefixes` entry, in the `make_targets` variables or in
+  `models.credential_env`). make's own control names (`MAKEFLAGS`, `MAKEFILES`, `MAKELEVEL`,
   `MAKEOVERRIDES`, `MFLAGS`) are reserved and refused. `check_X` validates the
   block through `child_env.child_env_policy` and errors when it is missing or
   malformed.

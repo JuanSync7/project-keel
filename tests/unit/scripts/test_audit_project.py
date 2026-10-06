@@ -2,7 +2,7 @@
 title: Unit — audit_project (another project judged by this template's gates)
 kind: tests
 layer: n/a
-summary: scripts/audit_project.py pinned against a small fake template and a keel-shaped DEST in a scratch directory. It refuses, exit 2 and naming each missing item, whatever is not a keel project; its config view is a key-level 3-way merge (arrives, updates, conflict, removed-upstream as copier's replay of the project's edits leaves them; lists atomic; `_` keys kept; inputs never mutated); the update's config is rendered in memory from the template's twin with DEST's answers and copier.yml's derived defaults; findings are grouped A..X then config, freshness and restamp, sorted, and the --json output is canonical and byte-identical across runs; the exit code follows owed letter errors only, an error in a template-unedited file being counted as resolved by the update; an unreadable file has unknown origin, and malformed or wrongly typed answers are a refusal, not a traceback; a not-checked section is always present; and DEST's code, Makefile and the commands its git config names (fsmonitor, a clean filter) are never run and its files never written. Excluded from generated projects with the doer.
+summary: scripts/audit_project.py pinned against a small fake template and a keel-shaped DEST in a scratch directory. It refuses, exit 2 and naming each missing item, whatever is not a keel project; its config view is a key-level 3-way merge (arrives, updates, conflict, removed-upstream as copier's replay of the project's edits leaves them; a set of names merged item by item, any other list atomic; `_` keys kept; inputs never mutated); the update's config is rendered in memory from the template's twin with DEST's answers and copier.yml's derived defaults; findings are grouped A..X then config, freshness and restamp, sorted, and the --json output is canonical and byte-identical across runs; the exit code follows owed letter errors only, an error in a template-unedited file being counted as resolved by the update; an unreadable file has unknown origin, and malformed or wrongly typed answers are a refusal, not a traceback; a not-checked section is always present; and DEST's code, Makefile and the commands its git config names (fsmonitor, a clean filter) are never run and its files never written. Excluded from generated projects with the doer.
 """
 
 import copy
@@ -363,9 +363,44 @@ def test_merge_is_a_key_level_three_way():
     assert arrived["theirs"] == {"a": 1}
 
 
-def test_a_list_is_replaced_whole_never_merged_by_element():
+def test_a_list_that_is_not_a_set_of_names_is_replaced_whole():
+    """Numbers, or a list with a repeated item, may be ordered data: a both-sides
+    edit is a conflict, kept as ours."""
     merged, changes = ap.merge({"l": [1, 2]}, {"l": [1, 2, 3]}, {"l": [1]})
     assert merged == {"l": [1, 2, 3]} and _kinds(changes) == {"l": "conflict"}
+    merged, changes = ap.merge({"l": ["a", "a"]}, {"l": ["a", "a", "b"]}, {"l": ["a"]})
+    assert merged == {"l": ["a", "a", "b"]} and _kinds(changes) == {"l": "conflict"}
+
+
+def test_a_set_of_names_both_sides_edited_merges_by_item():
+    """A manifest renders a list of names one item per line, so copier's
+    line-level merge keeps the project's additions and the template's removals
+    when they are different items. The audit must judge that merged list: kept
+    as ours, a project that added its own allowlist name would be told it owes
+    the template's own fix (slice C2-1 moved GIT_DIR and its siblings out of
+    child_env.names)."""
+    base = {"names": ["GIT_DIR", "GIT_INDEX_FILE", "HOME", "PATH"]}
+    ours = {"names": ["GIT_DIR", "GIT_INDEX_FILE", "HOME", "MY_TOOL_HOME", "PATH"]}
+    theirs = {"names": ["HOME", "PATH", "TZ"]}
+    inputs = copy.deepcopy((base, ours, theirs))
+
+    merged, changes = ap.merge(base, ours, theirs)
+
+    assert (base, ours, theirs) == inputs
+    # Each item keeps its place: ours' addition after the item it follows.
+    assert merged == {"names": ["HOME", "MY_TOOL_HOME", "PATH", "TZ"]}
+    assert _kinds(changes) == {"names": "merges"}
+    msg = ap._config_message("config/project.json", changes[0])
+    assert "will show a conflict" not in msg and "item by item" in msg, msg
+    assert "MY_TOOL_HOME" in msg and "GIT_DIR" in msg and "TZ" in msg, msg
+    # A removal on one side and the same removal on the other is one removal.
+    merged, changes = ap.merge(
+        {"l": ["a", "b", "c"]}, {"l": ["b", "c", "d"]}, {"l": ["b", "c"]}
+    )
+    assert merged == {"l": ["b", "c", "d"]} and _kinds(changes) == {"l": "merges"}
+    # Ours removed an item the template still lists: it stays removed.
+    merged, _ = ap.merge({"l": ["a", "b"]}, {"l": ["b"]}, {"l": ["a", "b", "z"]})
+    assert merged == {"l": ["b", "z"]}
 
 
 def test_without_a_base_only_arrivals_are_reported():

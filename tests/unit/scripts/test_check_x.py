@@ -23,7 +23,11 @@ pytestmark = pytest.mark.unit
 
 _HEADER = '"""\ntitle: x\nsummary: x\n"""\n'
 _GOOD_MANIFEST = {
-    "child_env": {"names": ["PATH", "HOME"], "prefixes": ["LC_"]},
+    "child_env": {
+        "names": ["PATH", "HOME"],
+        "prefixes": ["LC_"],
+        "repo_context_names": ["GIT_DIR"],
+    },
     "make_targets": {"unattended_vars": ["CI", "RALPH"], "gate_vars": ["PY"]},
 }
 
@@ -555,7 +559,14 @@ def test_the_literal_reader_handles_the_old_and_new_string_node():
 def test_a_malformed_policy_is_reported_with_the_manifest_prefix(repo):
     _manifest(
         repo,
-        dict(_GOOD_MANIFEST, child_env={"names": ["MAKEFLAGS"], "prefixes": []}),
+        dict(
+            _GOOD_MANIFEST,
+            child_env={
+                "names": ["MAKEFLAGS"],
+                "prefixes": [],
+                "repo_context_names": ["GIT_DIR"],
+            },
+        ),
     )
     _module(
         repo,
@@ -569,6 +580,33 @@ def test_a_malformed_policy_is_reported_with_the_manifest_prefix(repo):
         cs.errors[0].startswith("config/project.json: ")
         and "MAKEFLAGS" in (cs.errors[0])
     ), cs.errors
+
+
+def test_a_manifest_allowlisting_a_repository_variable_fails_check_x_with_the_fix(
+    repo,
+):
+    """GIT_DIR in child_env.names would hand every child the repository its
+    parent was started in. The gate says which key marks it and what to do."""
+    child = dict(_GOOD_MANIFEST["child_env"], names=["PATH", "HOME", "GIT_DIR"])
+    _manifest(repo, dict(_GOOD_MANIFEST, child_env=child))
+    _module(
+        repo,
+        "scripts/a.py",
+        "import subprocess\nfrom child_env import build_child_env\n"
+        "subprocess.run(['true'], env=build_child_env())\n",
+    )
+    cs.check_X()
+    assert len(cs.errors) == 1, cs.errors
+    msg = cs.errors[0]
+    assert msg.startswith("config/project.json: child_env.names lists GIT_DIR"), msg
+    assert "child_env.repo_context_names" in msg, msg
+    assert "build_child_env(repo_context=True)" in msg, msg
+    # The same tree with GIT_DIR gone is clean: the guard is not vacuous.
+    cs.errors[:] = []
+    cs._CONFIG_READ.clear()  # one gate run reads the manifest once; this is a second
+    _manifest(repo, _GOOD_MANIFEST)
+    cs.check_X()
+    assert cs.errors == [], cs.errors
 
 
 def test_a_missing_block_with_a_spawn_site_is_an_error(repo):

@@ -3,7 +3,7 @@
 title: audit_project — another keel project judged by this template's current gates
 kind: script
 layer: n/a
-summary: Answers "what would this template's current gates say about DEST once `copier update` has landed?" without updating anything. It runs every check_structure letter (A..X) in-process against DEST's files through `run_checks`, with each JSON config the checks read replaced in memory by a key-level 3-way merge: base is the template at DEST's `_commit`, ours is DEST, theirs is this checkout, and base and theirs are rendered from the template's `.jinja` twin with DEST's answers plus copier.yml's derived defaults. It adds the freshness judge (scripts/jobs/review_docs.py) and the restamp writer's `pending` list (scripts/jobs/restamp_docs.py), both of which the update's last migration clears. Every finding reuses the check's own message and carries an origin evidence kind (template-unedited, template-edited, template-rendered, project, unknown) read from git at `_commit`; a file that cannot be read is `unknown`. A letter error in a template-unedited file is reported as resolved by the update (the update replaces the file) and is not owed. A "not checked" section names every proof it does not run. DEST is data: its files are read with open() and ast, its git with name-level commands built by `review_docs.git_argv` that write nothing and switch off fsmonitor, signature verification and every filter driver DEST's git config names, and none of its code, make targets or hooks run. Exit 0 when no letter error is owed, 1 when one is (or no file was seen), 2 on a usage error, a refusal (DEST is not a keel project, or its answers are malformed), a template render error (including answers of the wrong type) or a missing extra. Keel-only: excluded from generated projects (docs/design/downstream-feedback.md, slice 5); a generated project's `make audit-project` stub points back at the template checkout.
+summary: Answers "what would this template's current gates say about DEST once `copier update` has landed?" without updating anything. It runs every check_structure letter (A..X) in-process against DEST's files through `run_checks`, with each JSON config the checks read replaced in memory by a key-level 3-way merge (a list of distinct strings both sides edited merges item by item, as copier's line-level merge leaves an allowlist): base is the template at DEST's `_commit`, ours is DEST, theirs is this checkout, and base and theirs are rendered from the template's `.jinja` twin with DEST's answers plus copier.yml's derived defaults. It adds the freshness judge (scripts/jobs/review_docs.py) and the restamp writer's `pending` list (scripts/jobs/restamp_docs.py), both of which the update's last migration clears. Every finding reuses the check's own message and carries an origin evidence kind (template-unedited, template-edited, template-rendered, project, unknown) read from git at `_commit`; a file that cannot be read is `unknown`. A letter error in a template-unedited file is reported as resolved by the update (the update replaces the file) and is not owed. A "not checked" section names every proof it does not run. DEST is data: its files are read with open() and ast, its git with name-level commands built by `review_docs.git_argv` that write nothing and switch off fsmonitor, signature verification and every filter driver DEST's git config names, and none of its code, make targets or hooks run. Exit 0 when no letter error is owed, 1 when one is (or no file was seen), 2 on a usage error, a refusal (DEST is not a keel project, or its answers are malformed), a template render error (including answers of the wrong type) or a missing extra. Keel-only: excluded from generated projects (docs/design/downstream-feedback.md, slice 5); a generated project's `make audit-project` stub points back at the template checkout.
 effect: read-only
 """
 
@@ -335,14 +335,44 @@ def render_configs(reader, answers):
 # --- the merge --------------------------------------------------------------
 
 
-def _change(key, kind, ours, theirs, has_ours=True):
+def _change(key, kind, ours, theirs, has_ours=True, base=None):
     change = {"key": key, "kind": kind, "theirs": copy.deepcopy(theirs)}
     if has_ours:
         change["ours"] = copy.deepcopy(ours)
+    if base is not None:
+        change["base"] = copy.deepcopy(base)
     return change
 
 
 _ABSENT = object()
+
+
+def _is_name_set(value):
+    """True for a list of distinct strings: the shape of an allowlist, which a
+    manifest renders one item per line."""
+    return (
+        isinstance(value, list)
+        and all(isinstance(v, str) for v in value)
+        and len(set(value)) == len(value)
+    )
+
+
+def _merge_items(base, ours, theirs):
+    """theirs, less the items ours removed from base, plus the items ours added,
+    each placed after the item it follows in ours -- what copier's line-level
+    merge leaves when the two sides edited different items."""
+    removed = set(base) - set(ours)
+    merged = [v for v in theirs if v not in removed]
+    for i, v in enumerate(ours):
+        if v in base or v in merged:
+            continue
+        at = 0
+        for prev in reversed(ours[:i]):
+            if prev in merged:
+                at = merged.index(prev) + 1
+                break
+        merged.insert(at, v)
+    return merged
 
 
 def merge(base, ours, theirs, _prefix=""):
@@ -350,10 +380,14 @@ def merge(base, ours, theirs, _prefix=""):
     copier's update leaves it -- the project's own edits (base -> ours) replayed
     onto the template's fresh render (theirs). Pure; inputs are not mutated.
 
-    Objects recurse; lists and scalars are atomic. `_`-prefixed keys
-    (commentary) keep ours. Kinds: `arrives` (new in the template, the project
-    never had it), `updates` (the project left it as rendered, the template
-    changed it), `conflict` (both changed it, kept as ours), `removed-upstream`
+    Objects recurse. A list of distinct strings (an allowlist, rendered one
+    item per line) that both sides edited merges item by item; any other list,
+    and every scalar, is atomic. `_`-prefixed keys (commentary) keep ours.
+    Kinds: `arrives` (new in the template, the project never had it),
+    `updates` (the project left it as rendered, the template changed it),
+    `merges` (both edited a list of names; the project's additions and
+    removals are replayed onto the template's), `conflict` (both changed it,
+    kept as ours), `removed-upstream`
     (the template dropped a key the project never edited, so it goes). With
     *base* None (the project's `_commit` is unknown) nothing is known about
     edits, so only arrivals are reported and every present key keeps ours."""
@@ -397,6 +431,9 @@ def merge(base, ours, theirs, _prefix=""):
             changes.append(_change(key, "updates", o, t))
         elif b is not _ABSENT and t == b:
             merged[k] = copy.deepcopy(o)
+        elif b is not _ABSENT and all(_is_name_set(v) for v in (b, o, t)):
+            merged[k] = _merge_items(b, o, t)
+            changes.append(_change(key, "merges", o, t, base=b))
         else:
             merged[k] = copy.deepcopy(o)
             changes.append(_change(key, "conflict", o, t))
@@ -416,6 +453,10 @@ def _shown(value):
     return _canonical(strip(value))
 
 
+def _items(values):
+    return ", ".join(values) if values else "nothing"
+
+
 def _config_message(rel, change):
     key, kind = change["key"], change["kind"]
     if kind == "arrives":
@@ -429,6 +470,22 @@ def _config_message(rel, change):
             rel,
             key,
             _shown(change["theirs"]),
+        )
+    if kind == "merges":
+        base, ours, theirs = change["base"], change["ours"], change["theirs"]
+        return (
+            "%s: `%s` was edited by you and by the template; the update merges "
+            "it item by item (yours adds %s and removes %s; the template adds %s "
+            "and removes %s), and where the two edits touch adjacent lines copier "
+            "marks a conflict that resolves to the same items"
+            % (
+                rel,
+                key,
+                _items([v for v in ours if v not in base]),
+                _items([v for v in base if v not in ours]),
+                _items([v for v in theirs if v not in base]),
+                _items([v for v in base if v not in theirs]),
+            )
         )
     if kind == "removed-upstream":
         return "%s: `%s` is no longer in the template; the update removes it" % (

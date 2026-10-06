@@ -2,11 +2,13 @@
 title: Test helper — a git environment that ignores the developer's machine
 kind: tests
 layer: n/a
-summary: One canonical hermetic git config for every test that shells out to git or lets copier do it. Neutralises global + system config AND `core.excludesFile`, whose default value git reads from $XDG_CONFIG_HOME/git/ignore with no config entry at all — so GIT_CONFIG_GLOBAL/SYSTEM alone do not reach it and a single `*.yml` line on someone's laptop fails a correct tree.
+summary: One canonical hermetic git config for every test that shells out to git or lets copier do it. Neutralises global + system config AND `core.excludesFile`, whose default value git reads from $XDG_CONFIG_HOME/git/ignore with no config entry at all — so GIT_CONFIG_GLOBAL/SYSTEM alone do not reach it and a single `*.yml` line on someone's laptop fails a correct tree. The hermetic environment is also free of the parent's repository context: `repo_context_names` reads config/project.json `child_env.repo_context_names` through scripts/child_env.py, and `git_env` drops every one, so a test started from a git hook never runs git against the repository being committed.
 """
 
+import json
 import os
 import subprocess
+import sys
 
 # Every knob below broke a real run, or would have:
 #   user.*             — `git commit` refuses without an identity
@@ -48,9 +50,33 @@ def git_env_vars(work_dir):
     }
 
 
+def repo_context_names(root):
+    """config/project.json `child_env.repo_context_names` under *root*, validated.
+
+    Read through scripts/child_env.py's own policy, so the suite strips exactly
+    what build_child_env holds back. A manifest the policy refuses is an
+    AssertionError naming why: a broken key must not quietly strip nothing."""
+    scripts = os.path.join(str(root), "scripts")
+    if scripts not in sys.path:
+        sys.path.insert(0, scripts)
+    import child_env
+
+    with open(
+        os.path.join(str(root), "config", "project.json"), encoding="utf-8"
+    ) as fh:
+        policy, errs = child_env.child_env_policy(json.load(fh))
+    assert policy is not None, "config/project.json child_env: " + "; ".join(errs)
+    return policy.repo_context
+
+
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
 def git_env(work_dir):
-    """The current environment plus `git_env_vars` — ready for subprocess `env=`."""
-    env = dict(os.environ)
+    """The current environment minus the parent's repository context, plus
+    `git_env_vars` — ready for subprocess `env=`."""
+    dropped = set(repo_context_names(_REPO_ROOT))
+    env = {k: v for k, v in os.environ.items() if k not in dropped}
     env.update(git_env_vars(work_dir))
     return env
 

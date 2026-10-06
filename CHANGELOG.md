@@ -20,7 +20,7 @@ version rather than a bare commit:
   holds every `subprocess`/`asyncio` spawn under the code roots outside
   `tests/` to it, with no waiver, and errors on `os.system`, `os.popen`,
   `os.exec*`, `os.spawn*` and `pty.spawn`
-  (`docs/adr/0012-child-process-environment-allowlist.md`, proposed).
+  (`docs/adr/0012-child-process-environment-allowlist.md`, accepted).
   Registered as the gate practice `child-gets-an-allowlisted-environment`.
 - **`make audit-project DEST=<path>` previews what another keel project owes
   before it updates.** `scripts/audit_project.py` runs this checkout's checks
@@ -74,6 +74,26 @@ version rather than a bare commit:
   and its parent's `/proc/<pid>/environ`.
 
 ### Fixed
+- **A child process no longer inherits the git repository its parent was
+  started in.** `build_child_env` drops `config/project.json`
+  `child_env.repo_context_names` (git's `--local-env-vars` plus `GIT_NAMESPACE`
+  and `GIT_QUARANTINE_PATH`) unless a call passes `repo_context=True`, and
+  `check_X` refuses a manifest that allowlists one. Measured: under a hook's
+  `GIT_DIR`, `review_docs --strict` on another repository judged 0 documents
+  and exited 0. `tests/conftest.py` strips the same names at import, because
+  the suite's own git (`tests/hermetic_git.py`, copier) does not start through
+  the helper; under a parent `GIT_INDEX_FILE` the hermetic clone had written
+  into the parent's index, leaving it pointing at a blob the parent does not
+  have. An older project's `make check` now names
+  `child_env.repo_context_names` as missing until it takes the update, and the
+  same message says to move git's repository variables out of
+  `child_env.names`, listing the `GIT_` names it holds.
+- **`make audit-project` no longer reports a false owed error for an edited
+  allowlist.** `scripts/audit_project.py` merged every list as one value, so a
+  project that had added its own `child_env.names` entry was judged on its
+  pre-update list: an owed X error and a predicted copier conflict, although
+  `copier update` merged the list cleanly. A list of distinct strings that both
+  sides edited now merges item by item, reported as `merges`.
 - **`make site-static` dirtied the tree in a project whose frontend is not
   astro.** It writes the static snapshot into the first frontend app's
   `public/`, and `.gitignore` covered only `src/frontend/astro/public/`, so in a
@@ -126,7 +146,7 @@ version rather than a bare commit:
   reach; a `[write]` recipe opens with `$(WRITE_GUARD)`, which refuses under any
   `make_targets.unattended_vars` name (`CI`, `RALPH`). Measured over keel: 37
   annotated targets, 32 `[local]`, 5 carrying `tree`
-  (`docs/adr/0011-make-target-effect-labels.md`, proposed; adapted from
+  (`docs/adr/0011-make-target-effect-labels.md`, accepted; adapted from
   bedrock-platform's `docs/adr/0010-areas-and-effect-labels.md`). Registered as
   the gate practice `make-target-declares-its-effect`.
 - **`tests/integration/test_make_target_effects.py` — a `[local]` claim is

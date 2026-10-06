@@ -40,18 +40,13 @@
     "gate_vars": ["PY"]
   },
   "child_env": {
-    "_comment": "The environment a process keel's code starts inherits (docs/adr/0012-child-process-environment-allowlist.md). scripts/child_env.py build_child_env starts from an empty dict and copies only these names, a name starting with a prefix, make_targets.unattended_vars and gate_vars (so WRITE_GUARD and the interpreter choice survive a hop through a Python doer), and, for a model adapter, its models.credential_env names; scripts/check_structure.py check_X holds every spawn to it. Why each family: PATH, HOME, USER and LOGNAME to find and run tools; LANG, LANGUAGE, TERM, TZ and LC_ for locale and output; the proxy and CA-bundle names because this network intercepts TLS; GIT_CONFIG_* so the test suite's hermetic git reaches git, and GIT_DIR, GIT_WORK_TREE, GIT_INDEX_FILE and the object-directory names so a git hook's child sees the repository git ran it in; TEMP, TMP and TMPDIR for scratch; VIRTUAL_ENV and XDG_* for tool caches; SOURCE_DATE_EPOCH for reproducible output. Deliberately absent: every credential (a model adapter's go in models.credential_env), MAKEFLAGS, MFLAGS, MAKELEVEL, MAKEOVERRIDES and MAKEFILES (a nested make must not inherit the outer make's goals; check_X refuses them here), PYTHONPATH (a caller passes it in extra), and GIT_ as a prefix (it would admit GIT_ASKPASS and GIT_SSH_COMMAND). Defence-in-depth, not a sandbox: a same-uid child can still read /proc/$PPID/environ.",
+    "_comment": "The environment a process keel's code starts inherits (docs/adr/0012-child-process-environment-allowlist.md). scripts/child_env.py build_child_env starts from an empty dict and copies only these names, a name starting with a prefix, make_targets.unattended_vars and gate_vars (so WRITE_GUARD and the interpreter choice survive a hop through a Python doer), and, for a model adapter, its models.credential_env names; scripts/check_structure.py check_X holds every spawn to it. Why each family: PATH, HOME, USER and LOGNAME to find and run tools; LANG, LANGUAGE, TERM, TZ and LC_ for locale and output; the proxy and CA-bundle names because this network intercepts TLS; GIT_CONFIG_GLOBAL, GIT_CONFIG_SYSTEM and GIT_CONFIG_NOSYSTEM so the test suite's hermetic git reaches git, and GIT_CEILING_DIRECTORIES, because these four choose configuration and the discovery ceiling, not a repository; TEMP, TMP and TMPDIR for scratch; VIRTUAL_ENV and XDG_* for tool caches; SOURCE_DATE_EPOCH for reproducible output. Deliberately absent: every credential (a model adapter's go in models.credential_env), MAKEFLAGS, MFLAGS, MAKELEVEL, MAKEOVERRIDES and MAKEFILES (a nested make must not inherit the outer make's goals; check_X refuses them here), PYTHONPATH (a caller passes it in extra), and GIT_ as a prefix (it would admit GIT_ASKPASS and GIT_SSH_COMMAND). repo_context_names are the variables git binds to the repository it started a process in: `git rev-parse --local-env-vars` (git 2.43.5) plus GIT_NAMESPACE (gitnamespaces(7)) and GIT_QUARANTINE_PATH (githooks(5), pre-receive). githooks(5) tells a hook that runs git in another repository to clear them, so build_child_env drops them unless a call passes repo_context=True, and child_env_policy (hence check_X) refuses names, prefixes, make_targets vars or a models.credential_env list that admits one. git's list also carries GIT_CONFIG, GIT_CONFIG_COUNT and GIT_CONFIG_PARAMETERS; they hold the parent's -c settings, not a location, so they are not repo context, and they are absent from names, so the allowlist already drops them. Defence-in-depth, not a sandbox: a same-uid child can still read /proc/$PPID/environ.",
     "names": [
       "ALL_PROXY",
-      "GIT_ALTERNATE_OBJECT_DIRECTORIES",
       "GIT_CEILING_DIRECTORIES",
       "GIT_CONFIG_GLOBAL",
       "GIT_CONFIG_NOSYSTEM",
       "GIT_CONFIG_SYSTEM",
-      "GIT_DIR",
-      "GIT_INDEX_FILE",
-      "GIT_OBJECT_DIRECTORY",
-      "GIT_WORK_TREE",
       "HOME",
       "HTTPS_PROXY",
       "HTTP_PROXY",
@@ -80,7 +75,23 @@
       "https_proxy",
       "no_proxy"
     ],
-    "prefixes": ["LC_"]
+    "prefixes": ["LC_"],
+    "repo_context_names": [
+      "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+      "GIT_COMMON_DIR",
+      "GIT_DIR",
+      "GIT_GRAFT_FILE",
+      "GIT_IMPLICIT_WORK_TREE",
+      "GIT_INDEX_FILE",
+      "GIT_NAMESPACE",
+      "GIT_NO_REPLACE_OBJECTS",
+      "GIT_OBJECT_DIRECTORY",
+      "GIT_PREFIX",
+      "GIT_QUARANTINE_PATH",
+      "GIT_REPLACE_REF_BASE",
+      "GIT_SHALLOW_FILE",
+      "GIT_WORK_TREE"
+    ]
   },
   "layers": {
     "frontend": {

@@ -2,7 +2,7 @@
 title: Integration — the downstream audit judges a generated project and writes nothing
 kind: tests
 layer: n/a
-summary: `scripts/audit_project.py` run against projects copier generates from this template. A project generated from the working tree audits with no letter error and no config arrival; the same project with four planted defects (an undeclared top-level directory, an unlabelled make target, a bare subprocess call, an unstamped doc edit) reports exactly those four under B, W, X and freshness, and its whole tree — `.git` included, bytes and modes, plus `.git/index`'s mtime — is identical after two audits whose JSON is byte-identical. A project generated at 7f0a68b, before the downstream-feedback campaign, reports the W and X errors and the config keys the update brings, each W/X finding labelled template-unedited (template-rendered in the manifest); every template-unedited error is resolved by the update, and the one owed error is the manifest's `effect_proof_skip` naming `audit-project`, the audit's kept blind spot. A planted defect in an edited file is owed, with an exact origin. A generated project's own `make audit-project` is a stub that names the template checkout. Keel-only: copier's `tests/integration/test_copier_*.py` glob prunes it.
+summary: `scripts/audit_project.py` run against projects copier generates from this template. A project generated from the working tree audits with no letter error and no config arrival; the same project with four planted defects (an undeclared top-level directory, an unlabelled make target, a bare subprocess call, an unstamped doc edit) reports exactly those four under B, W, X and freshness, and its whole tree — `.git` included, bytes and modes, plus `.git/index`'s mtime — is identical after two audits whose JSON is byte-identical. A project generated at 7f0a68b, before the downstream-feedback campaign, reports the W and X errors and the config keys the update brings, each W/X finding labelled template-unedited (template-rendered in the manifest); every template-unedited error is resolved by the update, and the one owed error is the manifest's `effect_proof_skip` naming `audit-project`, the audit's kept blind spot. A planted defect in an edited file is owed, with an exact origin. A project generated at a70a7b5, before slice C2-1 moved git's repository variables out of `child_env.names`, owes no X error whether or not it added its own allowlist name: the audit merges that list item by item, as copier's line-level merge does. A generated project's own `make audit-project` is a stub that names the template checkout. Keel-only: copier's `tests/integration/test_copier_*.py` glob prunes it.
 """
 
 import json
@@ -28,6 +28,9 @@ _AUDIT = _ROOT / "scripts" / "audit_project.py"
 # The last commit before the downstream-feedback campaign: bedrock-platform was
 # generated from it, so it is the old revision whose update the audit previews.
 _PRE_CAMPAIGN = "7f0a68b"
+# The last commit before slice C2-1 moved git's repository variables out of
+# child_env.names into child_env.repo_context_names.
+_PRE_C2_1 = "a70a7b5"
 _ANSWERS = {"project_name": "demo_proj", "frontend_stack": "none"}
 
 pytestmark = [
@@ -232,12 +235,48 @@ def test_four_planted_defects_audit_as_exactly_those_four_and_the_tree_is_byte_i
     ]
 
 
-@pytest.fixture(scope="module")
-def pre_campaign(tmp_path_factory):
-    """A project generated at 7f0a68b from a clone of this template, committed.
-    The clone is a plain `git clone`: the old revision is history, so the
-    working tree does not matter, and keel is never written."""
-    work = tmp_path_factory.mktemp("copier_audit_old")
+def test_a_project_whose_child_env_allowlists_a_repository_variable_owes_an_x_error(
+    generated, tmp_path
+):
+    """A project that kept GIT_DIR in child_env.names (the template shipped it
+    there before slice C2-1) is told, by the check's own message, which key
+    marks it and what the fix is. The project's edit survives the merge, so
+    the error is owed, not resolved by the update."""
+    project, day, env = generated
+    dest = tmp_path / "edited"
+    _git(tmp_path, "clone", "-q", "--no-hardlinks", str(project), str(dest), env=env)
+    r = _audit(dest, day)
+    assert _errors(json.loads(r.stdout), "X") == [], r.stdout  # not vacuous
+
+    manifest_path = dest / "config" / "project.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    names = manifest["child_env"]["names"]
+    assert "GIT_DIR" not in names, "the template itself ships GIT_DIR in names"
+    names.append("GIT_DIR")
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    _git(dest, "commit", "-qam", "allowlist GIT_DIR", env=env)
+
+    r = _audit(dest, day)
+    assert r.returncode == 1, r.stdout + r.stderr
+    report = json.loads(r.stdout)
+    x = _errors(report, "X")
+    assert len(x) == 1, x
+    message = x[0]["message"]
+    assert message.startswith("config/project.json: child_env.names lists GIT_DIR")
+    assert "child_env.repo_context_names" in message, message
+    assert "build_child_env(repo_context=True)" in message, message
+    # The manifest is rendered from its `.jinja` twin, so with a base its origin
+    # says so (audit_project.origin_of); without one every origin is unknown.
+    resolved = report["base"]["resolved"]
+    assert x[0]["origin"] == ("template-rendered" if resolved else "unknown"), x
+    assert "resolved_by" not in x[0], x
+
+
+def _generated_at(tmp_path_factory, ref):
+    """A project generated at *ref* from a clone of this template, committed;
+    yields (project, env). The clone is a plain `git clone`: the old revision is
+    history, so the working tree does not matter, and keel is never written."""
+    work = tmp_path_factory.mktemp("copier_audit_" + ref)
     mp = pytest.MonkeyPatch()
     for var, value in hermetic_git.git_env_vars(work).items():
         mp.setenv(var, value)
@@ -251,7 +290,7 @@ def pre_campaign(tmp_path_factory):
             str(project),
             data=_ANSWERS,
             defaults=True,
-            vcs_ref=_PRE_CAMPAIGN,
+            vcs_ref=ref,
             unsafe=True,
             quiet=True,
         )
@@ -265,6 +304,19 @@ def pre_campaign(tmp_path_factory):
         yield project, env
     finally:
         mp.undo()
+
+
+@pytest.fixture(scope="module")
+def pre_campaign(tmp_path_factory):
+    """A project generated at 7f0a68b, before the downstream-feedback campaign."""
+    yield from _generated_at(tmp_path_factory, _PRE_CAMPAIGN)
+
+
+@pytest.fixture(scope="module")
+def pre_c2_1(tmp_path_factory):
+    """A project generated at a70a7b5, whose child_env.names still lists GIT_DIR
+    and the other repository variables slice C2-1 moved out."""
+    yield from _generated_at(tmp_path_factory, _PRE_C2_1)
 
 
 def test_a_project_from_7f0a68b_audits_with_the_w_and_x_findings_the_update_brings(
@@ -328,6 +380,46 @@ def test_a_project_from_7f0a68b_audits_with_the_w_and_x_findings_the_update_brin
     assert "audit-project" in owed[0]["message"], owed
     assert report["summary"]["errors"] == 1, report["summary"]
     assert report["summary"]["resolved_by_update"] == len(unedited)
+
+
+@pytest.mark.parametrize("customised", [False, True], ids=["as-rendered", "own-name"])
+def test_a_pre_c2_1_project_owes_no_x_error_for_the_moved_git_names(
+    pre_c2_1, tmp_path, customised
+):
+    """The update moves GIT_DIR and its siblings out of child_env.names. A project
+    that added its own allowlist name edited the same list, and copier's
+    line-level merge keeps both edits, so the audit must judge the merged list:
+    no X error is owed, and the config entry is a merge, not a conflict. The
+    as-rendered project is the control (the template's value simply replaces
+    its own)."""
+    project, env = pre_c2_1
+    dest = tmp_path / "dest"
+    _git(tmp_path, "clone", "-q", "--no-hardlinks", str(project), str(dest), env=env)
+    manifest_path = dest / "config" / "project.json"
+    text = manifest_path.read_text(encoding="utf-8")
+    assert '"GIT_DIR",' in text, "the pre-C2-1 template must list GIT_DIR in names"
+    if customised:
+        # One line, where a person adds a name, so the file keeps its layout.
+        assert text.count('      "HOME",\n') == 1
+        text = text.replace('      "HOME",\n', '      "HOME",\n      "MY_TOOL_HOME",\n')
+        manifest_path.write_text(text, encoding="utf-8")
+        _git(dest, "commit", "-qam", "allowlist MY_TOOL_HOME", env=env)
+
+    r = _audit(dest, doc_stamps.newest_stamp(_ROOT))
+    report = json.loads(r.stdout)
+    assert report["base"]["resolved"], "a70a7b5 must resolve in the template"
+    assert _errors(report, "X") == [], report["groups"]["X"]
+    names = [
+        f
+        for f in report["groups"]["config"]
+        if f.get("file") == "config/project.json" and f["key"] == "child_env.names"
+    ]
+    assert len(names) == 1, report["groups"]["config"]
+    assert names[0]["kind"] == ("merges" if customised else "updates"), names
+    assert names[0]["tier"] == "info", names
+    if customised:
+        assert "MY_TOOL_HOME" in names[0]["message"], names
+        assert "GIT_DIR" in names[0]["message"], names
 
 
 def test_the_shipped_audit_target_points_back_at_the_template(generated):

@@ -8,7 +8,7 @@ tags: [practices, style, readability, robustness, docstrings, comments, agents, 
 summary: The canonical statement of how Python is written in this project — readability and loud failure modes outrank speed; the machine-readable module header; comment and docstring discipline; and how a code agent works here. The provable floor is gated (check_O/E, ruff, mypy); this guide is the judgment above it.
 id: docs-guides-python-style
 created: 2026-08-18
-updated: 2026-10-06
+updated: 2026-10-07
 visibility: internal
 canonical: true
 ---
@@ -130,6 +130,10 @@ Every rule here exists because one of those was found and measured:
   `env=build_child_env(...)` (`scripts/child_env.py`); a child that silently
   inherits every token is the same class of defect as the blanket except in
   "Never blanket-except" above — the exposure is invisible until it leaks.
+  A child that must act on the repository git started the parent in (a hook
+  helper that runs git on a bare repository being pushed to) passes
+  `repo_context=True`, and every other call omits it, so a child that runs git
+  elsewhere never inherits the hook's `GIT_DIR` or `GIT_INDEX_FILE`.
   (Gated: check_X.)
 - **Exit codes are the contract for scripts.** `0` = clean, non-zero = act.
   Print *what to do*, not just what is wrong: `regenerate with make site-data`
