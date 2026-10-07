@@ -2,7 +2,7 @@
 title: "ADR-K-0013: Template and project ADRs live in separate number spaces"
 kind: adr
 layer: n/a
-status: proposed
+status: accepted
 owner: TBD
 tags: [adr, copier, update, numbering, check-y]
 summary: "The ADRs a template ships and the ADRs a project writes are numbered in two spaces. A project's own ADRs are docs/adr/NNNN-<slug>.md, numbered from 0001; the template's are docs/adr/keel/K-NNNN-<slug>.md, shown as ADR-K-NNNN. config/project.json `adr` names both spaces and check_Y holds every ADR file to its space. On update, scripts/jobs/keep_edited_retired.py puts back a retired template ADR the project edited. This is the first breaking change to the generated-project contract, so the next release is 0.2.0."
@@ -15,7 +15,7 @@ canonical: true
 
 # ADR-K-0013: Template and project ADRs live in separate number spaces
 
-**Status:** proposed 2026-10-07; the maintainer accepts it.
+**Status:** accepted 2026-10-07 by the maintainer.
 
 ## Context
 

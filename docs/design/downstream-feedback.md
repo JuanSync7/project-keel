@@ -505,8 +505,8 @@ found along the way and not fixed is in Queued above.
 The maintainer accepted ADR-0010, ADR-0011 and ADR-0012 on 2026-10-06 and asked
 for the Queued list above to be worked in risk order before bedrock-platform's
 next round of feedback. The cap is five slices, each one commit on a green
-`make verify`. v0.2.0 is tagged after slice C2-1, because C2-1 closes a hole in
-ADR-0012's own guarantee. A concern found mid-slice joins Queued.
+`make verify`. v0.2.0 was tagged after slice C2-5, whose number-space move is the first
+breaking change to the generated-project contract (ADR-K-0013). A concern found mid-slice joins Queued.
 
 | Slice | Defect | Status |
 |-------|--------|--------|
@@ -514,7 +514,7 @@ ADR-0012's own guarantee. A concern found mid-slice joins Queued.
 | C2-2 | A proxy URL with embedded credentials reaches every child | done — `make verify` green (1288 passed); 8 of 9 review findings confirmed and fixed |
 | C2-3 | The audit reads the `Makefile` and `config/practices.json` before the merge, so an old project reports a false W error | done — `make verify` green (1308 passed); 4 review findings confirmed and fixed |
 | C2-4 | `make smoke` passes over zero tests, and `make run` fails with `No module named app` | planned |
-| C2-5 | A downstream project's ADR numbers collide with the template's | done — `make verify` green (1356 passed); 6 of 7 review findings confirmed and fixed; ADR-K-0013 proposed, awaiting the maintainer |
+| C2-5 | A downstream project's ADR numbers collide with the template's | done — `make verify` green (1356 passed); 6 of 7 review findings confirmed and fixed; ADR-K-0013 accepted 2026-10-07 by the maintainer |
 
 ### Slice C2-1 — a child does not inherit the parent's repository
 
@@ -771,7 +771,7 @@ have dropped those edits without a word.
 
 **The rule.** keel's ADRs move to `docs/adr/keel/K-NNNN-<slug>.md` and are
 cited as `ADR-K-NNNN`; `docs/adr/` is the project's own space, numbered from
-0001 (CONVENTIONS §19, ADR-K-0013, proposed). `config/project.json` `adr`
+0001 (CONVENTIONS §19, ADR-K-0013). `config/project.json` `adr`
 names both spaces and the template's own ADR file names (`template_adrs`),
 and check_Y holds every ADR to its space: a template-space file the list does
 not name, and a `kind: adr` document outside both directories, are errors, so

@@ -5,10 +5,12 @@ All notable changes. Format: Keep a Changelog.
 Generated projects record the template ref they came from in
 `.copier-answers.yml` (tracked, not ignored — see 0.1.0). Generate a **named**
 version rather than a bare commit:
-`copier copy --trust --vcs-ref v0.1.0 gh:JuanSync7/project-keel my-project`
+`copier copy --trust --vcs-ref v0.2.0 gh:JuanSync7/project-keel my-project`
 (`--trust` since Unreleased, below).
 
 ## [Unreleased]
+
+## [0.2.0] — 2026-10-07
 
 ### Added
 - **`check_Y`, `scripts/jobs/keep_edited_retired.py` and the audit's
@@ -24,8 +26,7 @@ version rather than a bare commit:
   deletes a retired file before any migration runs. `make audit-project`'s
   `retired` group reports the same files, by the same `is_edited`, as an owed
   error. Registered as the gate practice `adr-number-spaces`
-  (`docs/adr/keel/K-0013-template-and-project-adr-number-spaces.md`, ADR-K-0013,
-  proposed).
+  (`docs/adr/keel/K-0013-template-and-project-adr-number-spaces.md`, ADR-K-0013).
 - **`check_X` and `scripts/child_env.py` — a child process gets an
   allowlisted environment.** `build_child_env` starts from an empty dict and
   copies only the names `config/project.json` declares: `child_env.names` and
@@ -65,7 +66,7 @@ version rather than a bare commit:
   `docs/adr/` is now a gate error. `make audit-project` names each edited file
   the update would still delete, such as one a named `rm` migration removes.
   This is the first breaking change to the generated-project
-  contract, so the next release is 0.2.0 (ADR-K-0013, proposed; ADR-K-0009).
+  contract, so the next release is 0.2.0 (ADR-K-0013; ADR-K-0009).
 - **`review_docs` and `restamp_docs --check` no longer rewrite `.git/index`.**
   Both read changed paths through `review_docs.modified_paths`, which runs
   `git status --porcelain --ignore-submodules=all` through

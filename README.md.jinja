@@ -76,7 +76,7 @@ copier copy --trust gh:JuanSync7/project-keel my-project    # interactive Q&A ->
 
 With no `--vcs-ref`, copier resolves the **newest tag** — so the command above
 gives you the latest named release, which is what you want. Pin a specific one
-with `--vcs-ref v0.1.0` when you need two projects generated from the same keel.
+with `--vcs-ref v0.2.0` when you need two projects generated from the same keel.
 
 Later, from inside the generated project, pull template improvements:
 
