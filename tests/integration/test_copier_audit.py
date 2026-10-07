@@ -2,7 +2,7 @@
 title: Integration — the downstream audit judges a generated project and writes nothing
 kind: tests
 layer: n/a
-summary: `scripts/audit_project.py` run against projects copier generates from this template. A project generated from the working tree audits with no letter error and no config arrival; the same project with four planted defects (an undeclared top-level directory, an unlabelled make target, a bare subprocess call, an unstamped doc edit) reports exactly those four under B, W, X and freshness, and its whole tree — `.git` included, bytes and modes, plus `.git/index`'s mtime — is identical after two audits whose JSON is byte-identical. A project generated at 7f0a68b, before the downstream-feedback campaign, reports the W and X errors and the config keys the update brings, each W/X finding labelled template-unedited (template-rendered in the manifest); every template-unedited error is resolved by the update, and the one owed error is the manifest's `effect_proof_skip` naming `audit-project`, the audit's kept blind spot. A planted defect in an edited file is owed, with an exact origin. A project generated at a70a7b5, before slice C2-1 moved git's repository variables out of `child_env.names`, owes no X error whether or not it added its own allowlist name: the audit merges that list item by item, as copier's line-level merge does. A project generated at 29e45f0, before slice C2-2, receives `child_env.credentialed_values` as an info arrival with the template default `{}` and owes no X error. A generated project's own `make audit-project` is a stub that names the template checkout. Keel-only: copier's `tests/integration/test_copier_*.py` glob prunes it.
+summary: `scripts/audit_project.py` run against projects copier generates from this template. The audit judges the tree a real `copier update` leaves, built in a scratch copy; the parity test runs that update itself, on an independent clone of each old project against `hermetic_git.clone_including_worktree`, and holds the audit's owed and warned letter findings equal to `check_structure.py --root` on the result; for a 7f0a68b project whose own `.PHONY` edit makes copier conflict on the Makefile, the result is resolved both ways by git's `merge-file --ours/--theirs` over copier's index stages, and the audit's judged findings equal what both resolutions have outside the conflicted file, with nothing owed. A project generated from the working tree audits with no letter error, no config arrival and no conflict; the same project with four planted defects (an undeclared top-level directory, an unlabelled make target, a bare subprocess call, an unstamped doc edit) reports exactly those four under B, W, X and freshness, and its whole tree — `.git` included, bytes and modes, plus `.git/index`'s mtime — is identical after two audits whose JSON is byte-identical, with no `keel-audit-*` scratch left behind. A project generated at 7f0a68b, before the downstream-feedback campaign, owes nothing: every W/X error it has today is absent from the tree the update leaves, and the config keys the update brings are reported. A project generated at a70a7b5, before slice C2-1 moved git's repository variables out of `child_env.names`, owes no X error whether or not it added its own allowlist name, and the config group calls that list an update or a merge from copier's own merge. A project generated at 29e45f0, before slice C2-2, receives `child_env.credentialed_values` as an info arrival with the template default `{}` and owes no X error. The template checkout's index is never refreshed by an audit. A generated project's own `make audit-project` is a stub that names the template checkout. Keel-only: copier's `tests/integration/test_copier_*.py` glob prunes it.
 """
 
 import json
@@ -85,16 +85,67 @@ def _porcelain(root, env):
     ).stdout
 
 
-def _audit(dest, today, json_out=True):
-    """Run the template's audit as a CLI, the way `make audit-project` does."""
-    argv = [sys.executable, str(_AUDIT), str(dest), "--today", today.isoformat()]
+def _audit(dest, today, json_out=True, tmpdir=None, audit=_AUDIT):
+    """Run the template's audit as a CLI, the way `make audit-project` does;
+    *tmpdir* is the system temporary directory it sees, where its scratch
+    copy lives."""
+    argv = [sys.executable, str(audit), str(dest), "--today", today.isoformat()]
     if json_out:
         argv.append("--json")
-    return subprocess.run(argv, cwd=str(_ROOT), capture_output=True, text=True)
+    env = dict(os.environ)
+    if tmpdir is not None:
+        env["TMPDIR"] = str(tmpdir)
+    return subprocess.run(
+        argv, cwd=str(audit.parents[1]), env=env, capture_output=True, text=True
+    )
+
+
+def _scratch_left(tmpdir):
+    return sorted(p.name for p in Path(tmpdir).iterdir() if "keel-audit-" in p.name)
+
+
+def _predicted(report):
+    """The audit's letter findings in the tree the update leaves, as
+    (tier, message): those it neither resolves nor leaves unjudged."""
+    return {
+        (f["tier"], f["message"])
+        for g in _letters(report)
+        for f in report["groups"][g]
+        if "resolved_by" not in f and "unjudged" not in f
+    }
+
+
+def _gate(root):
+    """`check_structure.py --root` on *root*, as a set of (tier, message)."""
+    r = subprocess.run(
+        [sys.executable, str(_ROOT / "scripts" / "check_structure.py"), "--root"]
+        + [str(root)],
+        cwd=str(_ROOT),
+        capture_output=True,
+        text=True,
+    )
+    assert r.returncode in (0, 1), r.stdout + r.stderr
+    found = set()
+    for line in r.stdout.splitlines():
+        if line.startswith("WARN  "):
+            found.add(("warning", line[len("WARN  ") :]))
+        elif line.startswith("ERROR "):
+            found.add(("error", line[len("ERROR ") :]))
+    return found
 
 
 def _errors(report, group):
     return [f for f in report["groups"][group] if f["tier"] == "error"]
+
+
+def _owed(report, group):
+    """The errors in `group` the project still owes after the update: not ones
+    the update resolves, and not ones in a file copier leaves conflicted."""
+    return [
+        f
+        for f in _errors(report, group)
+        if not f.get("resolved_by") and not f.get("unjudged")
+    ]
 
 
 def _letters(report):
@@ -141,15 +192,17 @@ def generated(tmp_path_factory):
         mp.undo()
 
 
-def test_a_project_generated_from_the_working_tree_audits_clean(generated):
+def test_a_project_generated_from_the_working_tree_audits_clean(generated, tmp_path):
     """(a) What the template generates today passes the template's gates today:
     no letter error, no config key the update would add or change, nothing
     stale, and the keel-only doer and its roster row did not ship."""
     project, day, _env = generated
-    r = _audit(project, day)
+    r = _audit(project, day, tmpdir=tmp_path)
     assert r.returncode == 0, r.stdout + r.stderr
     report = json.loads(r.stdout)
     assert len(_letters(report)) == 24
+    assert report["summary"]["conflicts"] == 0, report["groups"]["conflict"]
+    assert _scratch_left(tmp_path) == []
     assert report["summary"]["files_seen"] > 0
     assert {g: _errors(report, g) for g in _letters(report) if _errors(report, g)} == {}
     moving = [
@@ -203,7 +256,13 @@ def test_four_planted_defects_audit_as_exactly_those_four_and_the_tree_is_byte_i
 
     before, porcelain = _tree(dest), _porcelain(dest, env)
     later = day.fromordinal(day.toordinal() + 1)
-    first, second = _audit(dest, later), _audit(dest, later)
+    systmp = tmp_path / "systmp"
+    systmp.mkdir()
+    first, second = (
+        _audit(dest, later, tmpdir=systmp),
+        _audit(dest, later, tmpdir=systmp),
+    )
+    assert _scratch_left(systmp) == []
     assert _tree(dest) == before, "the audit changed DEST's tree"
     assert _porcelain(dest, env) == porcelain
     assert first.stdout == second.stdout, "two --json runs differ"
@@ -227,6 +286,7 @@ def test_four_planted_defects_audit_as_exactly_those_four_and_the_tree_is_byte_i
     assert all("resolved_by" not in f for g in errors for f in errors[g])
     assert report["summary"]["errors"] == 3, report["summary"]
     assert report["summary"]["resolved_by_update"] == 0, report["summary"]
+    assert report["summary"]["conflicts"] == 0, report["groups"]["conflict"]
 
     fresh = report["groups"]["freshness"]
     assert [f["path"] for f in fresh] == ["docs/guides/idempotency.md"], fresh
@@ -327,67 +387,222 @@ def pre_c2_2(tmp_path_factory):
     yield from _generated_at(tmp_path_factory, _PRE_C2_2)
 
 
-def test_a_project_from_7f0a68b_audits_with_the_w_and_x_findings_the_update_brings(
-    pre_campaign,
-):
-    """(c) The audit previews an update: the old project has no effect labels and
-    no child allowlist, so W and X are red, and the config blocks that fix them
-    arrive with the update. B stays empty, because every top-level directory of
-    a 7f0a68b project is a taxonomy row. Each W/X finding sits in a file the
-    project never edited, which is the evidence that the update itself replaces
-    it, or in the manifest copier renders from its twin.
+def _customise(dest, env):
+    """Add the project's own allowlist name to a pre-C2-1 manifest, on its own
+    line where a person adds one, so the file keeps its layout; committed."""
+    manifest_path = dest / "config" / "project.json"
+    text = manifest_path.read_text(encoding="utf-8")
+    assert text.count('      "HOME",\n') == 1
+    text = text.replace('      "HOME",\n', '      "HOME",\n      "MY_TOOL_HOME",\n')
+    manifest_path.write_text(text, encoding="utf-8")
+    _git(dest, "commit", "-qam", "allowlist MY_TOOL_HOME", env=env)
 
-    Every letter error in a template-unedited file is reported as resolved by
-    the update and is not owed. One W error is the audit's own blind spot, kept
-    visible rather than special-cased: the merged manifest's `effect_proof_skip`
-    names `audit-project`, which the old Makefile, judged as it stands, does not
-    define; the update brings both. Its origin says the manifest is rendered,
-    so it is owed and the exit stays 1."""
+
+def _edit_phony(dest, env):
+    """Add the project's own target to its Makefile, naming it on the `.PHONY`
+    line the template's update also changes, as a project adds one: copier
+    leaves the Makefile conflicted. Committed."""
+    path = dest / "Makefile"
+    text = path.read_text(encoding="utf-8")
+    assert text.count(".PHONY: help ") == 1
+    text = text.replace(".PHONY: help ", ".PHONY: help mytarget ", 1)
+    text += "\nmytarget: ## [local] The project's own target\n\t@echo hi\n"
+    path.write_text(text, encoding="utf-8")
+    _git(dest, "commit", "-qam", "the project's own target", env=env)
+
+
+_CUSTOMISE = {"own-name": _customise, "phony": _edit_phony}
+
+
+def _resolved_gate(upd, conflicted, side, env):
+    """`check_structure.py --root` on the real update with every conflict hunk
+    taken one way, rebuilt by git's own `merge-file --ours/--theirs` from the
+    index stages copier records (1 base, 2 the project, 3 the template), not
+    from the audit's reading of the markers."""
+    for rel in conflicted:
+        stages = []
+        for n in (2, 1, 3):
+            stage = upd.parent / ("stage%d" % n)
+            r = subprocess.run(
+                ["git", "show", ":%d:%s" % (n, rel)],
+                cwd=str(upd),
+                env=env,
+                capture_output=True,
+            )
+            stage.write_bytes(r.stdout if r.returncode == 0 else b"")
+            stages.append(str(stage))
+        r = subprocess.run(
+            ["git", "merge-file", "-p", side] + stages, env=env, capture_output=True
+        )
+        assert r.returncode == 0, r.stderr
+        (upd / rel).write_bytes(r.stdout)
+    return _gate(upd)
+
+
+def _real_update(dest, work, day, env):
+    """What a real `copier update` leaves: an independent clone of *dest*
+    updated in-process against `clone_including_worktree(_ROOT)` (not the
+    audit's own snapshot), on *day*. Returns (the updated clone, the paths it
+    leaves unmerged)."""
+    template = work / "template"
+    hermetic_git.clone_including_worktree(_ROOT, template, work)
+    upd = work / "updated"
+    _git(work, "clone", "-q", "--no-hardlinks", str(dest), str(upd), env=env)
+    answers_path = upd / ".copier-answers.yml"
+    answers = yaml.safe_load(answers_path.read_text(encoding="utf-8"))
+    answers["_src_path"] = str(template)
+    answers_path.write_text(yaml.safe_dump(answers, sort_keys=True), encoding="utf-8")
+    _git(upd, "commit", "-qam", "point at the template clone", env=env)
+    mp = pytest.MonkeyPatch()
+    for var, value in hermetic_git.git_env_vars(work).items():
+        mp.setenv(var, value)
+    mp.setenv("COPIER_CACHE_DIR", str(work / "copier-cache"))
+    try:
+        with plumbum.local.env(SOURCE_DATE_EPOCH=str(doc_stamps.epoch_of(day))):
+            copier.run_update(
+                str(upd),
+                defaults=True,
+                overwrite=True,
+                skip_answered=True,
+                vcs_ref="HEAD",
+                conflict="inline",
+                unsafe=True,
+                quiet=True,
+            )
+    finally:
+        mp.undo()
+    out = _git(upd, "ls-files", "-u", "-z", env=env)
+    unmerged = sorted({e.split("\t", 1)[1] for e in out.split("\0") if "\t" in e})
+    return upd, unmerged
+
+
+def _token(message):
+    return message.split(None, 1)[0].split(":", 1)[0].rstrip("/")
+
+
+@pytest.mark.parametrize(
+    "fixture, customise",
+    [
+        ("pre_campaign", None),
+        ("pre_campaign", "phony"),
+        ("pre_c2_1", None),
+        ("pre_c2_1", "own-name"),
+        ("pre_c2_2", None),
+    ],
+    ids=[
+        "7f0a68b",
+        "7f0a68b-conflict",
+        "a70a7b5-as-rendered",
+        "a70a7b5-own-name",
+        "29e45f0",
+    ],
+)
+def test_predicted_findings_equal_check_structure_on_a_real_update(
+    request, tmp_path, fixture, customise
+):
+    """The audit's prediction is the tree a real update leaves: its owed and
+    warned letter findings equal what check_structure says about an
+    independent clone after `copier update`, exactly. Every finding it calls
+    resolved by the update is absent there. When copier leaves a file
+    conflicted, the real update is judged twice, every hunk the project's way
+    and every hunk the template's way: what the audit judges is what both
+    have, outside the conflicted file (the 7f0a68b project that names its own
+    target on the `.PHONY` line owes nothing; a pre-update Makefile beside the
+    post-update manifest owed the `audit-project` entry)."""
+    project, env = request.getfixturevalue(fixture)
+    dest = tmp_path / "dest"
+    _git(tmp_path, "clone", "-q", "--no-hardlinks", str(project), str(dest), env=env)
+    if customise:
+        _CUSTOMISE[customise](dest, env)
+    day = doc_stamps.newest_stamp(_ROOT)
+    systmp = tmp_path / "systmp"
+    systmp.mkdir()
+    r = _audit(dest, day, tmpdir=systmp)
+    assert r.returncode in (0, 1), r.stdout + r.stderr
+    report = json.loads(r.stdout)
+    assert report["base"]["resolved"], "%s must resolve in the template" % fixture
+    assert _scratch_left(systmp) == []
+
+    work = tmp_path / "real"
+    work.mkdir()
+    upd, unmerged = _real_update(dest, work, day, env)
+    assert [f["path"] for f in report["groups"]["conflict"]] == unmerged
+    if customise == "phony":
+        # Non-vacuous: the case this fixture exists for has a conflict.
+        assert unmerged == ["Makefile"], unmerged
+        assert report["summary"]["errors"] == 0, report["summary"]
+    if unmerged:
+        sides = [_resolved_gate(upd, unmerged, s, env) for s in ("--ours", "--theirs")]
+        gate = {f for f in sides[0] & sides[1] if _token(f[1]) not in unmerged}
+    else:
+        sides = [_gate(upd)]
+        gate = sides[0]
+    predicted = _predicted(report)
+    # Non-vacuous: the F warnings a generated project carries are on both sides.
+    assert any(tier == "warning" for tier, _m in predicted), predicted
+    assert predicted == gate, (sorted(predicted - gate), sorted(gate - predicted))
+    resolved = {
+        (f["tier"], f["message"])
+        for g in _letters(report)
+        for f in report["groups"][g]
+        if "resolved_by" in f
+    }
+    seen = set().union(*sides)
+    assert not resolved & seen, sorted(resolved & seen)
+
+
+def test_a_project_from_7f0a68b_owes_nothing_the_update_fixes(pre_campaign, tmp_path):
+    """(c) The audit previews an update: the old project has no effect labels and
+    no child allowlist, so W and X are red as it stands, and the update brings
+    the labels, the allowlist and the config blocks together. Judged as the one
+    tree the update leaves, nothing is owed, including the manifest's
+    `effect_proof_skip` entry naming `audit-project`, whose target arrives in
+    the same update (a view that merged only the manifest owed it)."""
     project, env = pre_campaign
     answers = yaml.safe_load((project / ".copier-answers.yml").read_text())
     assert _PRE_CAMPAIGN in str(answers["_commit"])
-    before = _tree(project)
+    before, porcelain = _tree(project), _porcelain(project, env)
     today = doc_stamps.newest_stamp(_ROOT)
-    r = _audit(project, today)
+    systmp = tmp_path / "systmp"
+    systmp.mkdir()
+    r = _audit(project, today, tmpdir=systmp)
+    again = _audit(project, today, tmpdir=systmp)
     assert _tree(project) == before, "the audit changed DEST's tree"
-    assert r.returncode == 1, r.stdout + r.stderr
+    assert _porcelain(project, env) == porcelain
+    assert r.stdout == again.stdout, "two --json runs differ"
+    assert _scratch_left(systmp) == []
+    assert r.returncode == 0, r.stdout + r.stderr
     report = json.loads(r.stdout)
     assert report["base"]["resolved"], "7f0a68b must resolve in the template"
+
+    letter_errors = [f for g in _letters(report) for f in _errors(report, g)]
+    owed = [f for f in letter_errors if "resolved_by" not in f]
+    assert owed == [], owed
+    assert report["summary"]["errors"] == 0, report["summary"]
+    assert report["summary"]["conflicts"] == 0, report["groups"]["conflict"]
+    # Resolved: exactly the errors the project has as it stands that the tree
+    # the update leaves does not (here: all of them, since none is owed).
+    as_it_stands = {m for tier, m in _gate(project) if tier == "error"}
+    assert as_it_stands, "a 7f0a68b project fails today's gates as it stands"
+    assert {f["message"] for f in letter_errors} == as_it_stands
+    assert report["summary"]["resolved_by_update"] == len(as_it_stands)
+    assert _errors(report, "W") and _errors(report, "X")
+    assert _errors(report, "B") == []
 
     arrived = {
         f["key"]
         for f in report["groups"]["config"]
         if f["kind"] == "arrives" and f.get("file") == "config/project.json"
     }
-    for key in ("make_targets", "child_env", "models.credential_env"):
+    for key in ("make_targets", "child_env", "models.credential_env", "structure"):
         assert key in arrived, (key, sorted(arrived))
-    assert _errors(report, "W") and _errors(report, "X")
-    assert _errors(report, "B") == []
-    # The manifest is rendered from its twin, so its findings say so; every
-    # other W/X finding is in a verbatim file the project never touched.
-    origins = {
-        f["message"].split(":", 1)[0]: f["origin"]
-        for g in ("W", "X")
-        for f in report["groups"][g]
-    }
-    assert "template-unedited" in origins.values(), origins
-    for path, origin in origins.items():
-        twin = path == "config/project.json"
-        assert origin == ("template-rendered" if twin else "template-unedited"), path
-
-    letter_errors = [f for g in _letters(report) for f in _errors(report, g)]
-    unedited = [f for f in letter_errors if f["origin"] == "template-unedited"]
-    assert unedited, "a 7f0a68b project has errors the update replaces"
-    for f in unedited:
-        assert f["resolved_by"].startswith("copier update"), f
-    owed = [f for f in letter_errors if "resolved_by" not in f]
-    assert len(owed) == 1, owed
-    assert owed[0]["origin"] == "template-rendered", owed
-    assert owed[0]["message"].startswith("config/project.json"), owed
-    assert "effect_proof_skip" in owed[0]["message"], owed
-    assert "audit-project" in owed[0]["message"], owed
-    assert report["summary"]["errors"] == 1, report["summary"]
-    assert report["summary"]["resolved_by_update"] == len(unedited)
+    practices = [
+        f
+        for f in report["groups"]["config"]
+        if f.get("file") == "config/practices.json"
+        and f["kind"] in ("arrives", "updates")
+    ]
+    assert practices, report["groups"]["config"]
 
 
 @pytest.mark.parametrize("customised", [False, True], ids=["as-rendered", "own-name"])
@@ -396,27 +611,29 @@ def test_a_pre_c2_1_project_owes_no_x_error_for_the_moved_git_names(
 ):
     """The update moves GIT_DIR and its siblings out of child_env.names. A project
     that added its own allowlist name edited the same list, and copier's
-    line-level merge keeps both edits, so the audit must judge the merged list:
-    no X error is owed, and the config entry is a merge, not a conflict. The
-    as-rendered project is the control (the template's value simply replaces
-    its own)."""
+    line-level merge keeps both edits: no X error is owed, and the config group
+    calls the list a merge, read from copier's own result. The as-rendered
+    project is the control (the template's value simply replaces its own)."""
     project, env = pre_c2_1
     dest = tmp_path / "dest"
     _git(tmp_path, "clone", "-q", "--no-hardlinks", str(project), str(dest), env=env)
-    manifest_path = dest / "config" / "project.json"
-    text = manifest_path.read_text(encoding="utf-8")
+    text = (dest / "config" / "project.json").read_text(encoding="utf-8")
     assert '"GIT_DIR",' in text, "the pre-C2-1 template must list GIT_DIR in names"
     if customised:
-        # One line, where a person adds a name, so the file keeps its layout.
-        assert text.count('      "HOME",\n') == 1
-        text = text.replace('      "HOME",\n', '      "HOME",\n      "MY_TOOL_HOME",\n')
-        manifest_path.write_text(text, encoding="utf-8")
-        _git(dest, "commit", "-qam", "allowlist MY_TOOL_HOME", env=env)
+        _customise(dest, env)
 
-    r = _audit(dest, doc_stamps.newest_stamp(_ROOT))
+    systmp = tmp_path / "systmp"
+    systmp.mkdir()
+    r = _audit(dest, doc_stamps.newest_stamp(_ROOT), tmpdir=systmp)
     report = json.loads(r.stdout)
     assert report["base"]["resolved"], "a70a7b5 must resolve in the template"
-    assert _errors(report, "X") == [], report["groups"]["X"]
+    assert report["summary"]["conflicts"] == 0, report["groups"]["conflict"]
+    assert _scratch_left(systmp) == []
+    assert _owed(report, "X") == [], report["groups"]["X"]
+    # The old tree lacks the key the update brings, so the error is real before
+    # the update and gone after it: reported, but as resolved, never as owed.
+    moved = [f for f in _errors(report, "X") if "repo_context_names" in f["message"]]
+    assert moved and all(f["resolved_by"].startswith("copier update") for f in moved)
     names = [
         f
         for f in report["groups"]["config"]
@@ -431,15 +648,18 @@ def test_a_pre_c2_1_project_owes_no_x_error_for_the_moved_git_names(
 
 
 def test_a_pre_c2_2_project_receives_credentialed_values_as_an_arrival_and_owes_no_x_error(
-    pre_c2_2,
+    pre_c2_2, tmp_path
 ):
     """The key is optional, so an older project owes nothing for lacking it: the
     audit reports it as the one config key the update brings, at its empty
     default, and no X error."""
     project, _env = pre_c2_2
     before = _tree(project)
-    r = _audit(project, doc_stamps.newest_stamp(_ROOT))
+    systmp = tmp_path / "systmp"
+    systmp.mkdir()
+    r = _audit(project, doc_stamps.newest_stamp(_ROOT), tmpdir=systmp)
     assert _tree(project) == before, "the audit changed DEST's tree"
+    assert _scratch_left(systmp) == []
     report = json.loads(r.stdout)
     assert report["base"]["resolved"], "29e45f0 must resolve in the template"
     assert _errors(report, "X") == [], report["groups"]["X"]
@@ -451,6 +671,36 @@ def test_a_pre_c2_2_project_receives_credentialed_values_as_an_arrival_and_owes_
     assert {f["key"] for f in arrived} == {"child_env.credentialed_values"}, arrived
     assert "template default: {}" in arrived[0]["message"], arrived
     assert arrived[0]["tier"] == "info", arrived
+
+
+def test_the_audit_never_refreshes_the_template_index(pre_c2_2, tmp_path):
+    """Copier run straight against a dirty local template runs a plain `git
+    status` there, which rewrites its index. The audit snapshots the checkout
+    by clone instead, so a template whose tracked file is stat-dirty keeps its
+    index bytes, its index mtime and its status. The audit run is the copy's
+    own scripts/audit_project.py, so the copy is the template it judges by."""
+    project, env = pre_c2_2
+    template = tmp_path / "template"
+    hermetic_git.clone_including_worktree(_ROOT, template, tmp_path)
+    readme = template / "README.md"
+    os.utime(readme, (readme.stat().st_atime, readme.stat().st_mtime + 7))
+    index = template / ".git" / "index"
+    before = (index.read_bytes(), index.stat().st_mtime_ns)
+    porcelain = _porcelain(template, env)
+    systmp = tmp_path / "systmp"
+    systmp.mkdir()
+
+    r = _audit(
+        project,
+        doc_stamps.newest_stamp(_ROOT),
+        tmpdir=systmp,
+        audit=template / "scripts" / "audit_project.py",
+    )
+    assert r.returncode in (0, 1), r.stdout + r.stderr
+    assert json.loads(r.stdout)["base"]["resolved"], "29e45f0 must resolve"
+    assert (index.read_bytes(), index.stat().st_mtime_ns) == before
+    assert _porcelain(template, env) == porcelain
+    assert _scratch_left(systmp) == []
 
 
 def test_the_shipped_audit_target_points_back_at_the_template(generated):

@@ -24,24 +24,21 @@ version rather than a bare commit:
   Registered as the gate practice `child-gets-an-allowlisted-environment`.
 - **`make audit-project DEST=<path>` previews what another keel project owes
   before it updates.** `scripts/audit_project.py` runs this checkout's checks
-  A–X against DEST's files in-process, with DEST's `config/project.json` and
-  `config/practices.json` replaced in memory by a key-level three-way merge of
-  the template at DEST's `_commit`, DEST itself and this template, each rendered
-  with DEST's answers. It adds the doc-freshness judge and the restamp worklist,
-  groups every finding by check letter with the check's own message and an
-  origin label, and lists what it did not run under "not checked". An error in
-  a file DEST never edited (origin `template-unedited`) is reported as resolved
-  by the update and is not owed; it exits 1 only on an owed letter error or when
-  it saw no file, and 2 when it refuses DEST or cannot render DEST's answers. It
+  A–X in-process on the tree a real `copier update` of a scratch copy of DEST
+  leaves (see Fixed, below). It adds the doc-freshness judge and the restamp
+  worklist, groups every finding by check letter with the check's own message
+  and an origin label, and lists what it did not run under "not checked". An
+  error only before the update is reported as resolved by it and is not owed;
+  it exits 1 only on an owed letter error or when it saw no file, and 2 when it
+  refuses DEST, cannot render DEST's answers or the update fails. It
   never imports, executes or `make`s DEST's code, runs no command DEST's git
   config names (filter drivers, fsmonitor, signature verification), and writes
   no byte under DEST. Keel-only: copier excludes the doer, and a generated
   project's `make audit-project` prints the command to run from the template.
-- **`scripts/check_structure.py --root PATH` and `run_checks(root,
-  config_overrides)`.** The checks stay this checkout's; every file they
-  read, the JSON configs in `JSON_CONFIGS` included, is read under PATH unless
-  a caller of `run_checks` passes `config_overrides`. `CHECKS` registers every
-  check in run order. With no `--root` the output is byte-identical to before.
+- **`scripts/check_structure.py --root PATH` and `run_checks(root)`.** The
+  checks stay this checkout's; every file they read, the JSON configs in
+  `JSON_CONFIGS` included, is read under PATH. `CHECKS` registers every check
+  in run order. With no `--root` the output is byte-identical to before.
 
 ### Changed
 - **`review_docs` and `restamp_docs --check` no longer rewrite `.git/index`.**
@@ -109,8 +106,34 @@ version rather than a bare commit:
   allowlist.** `scripts/audit_project.py` merged every list as one value, so a
   project that had added its own `child_env.names` entry was judged on its
   pre-update list: an owed X error and a predicted copier conflict, although
-  `copier update` merged the list cleanly. A list of distinct strings that both
-  sides edited now merges item by item, reported as `merges`.
+  `copier update` merged the list cleanly. The list is now judged as copier's
+  own update merges it, one item per line, and reported as `merges` (since the
+  next entry, the audit runs that update rather than merging itself).
+- **`make audit-project` judges the tree the update leaves, so it no longer
+  owes an error the update itself fixes.** It merged only the JSON configs and
+  read every other file as DEST had it, so a key the update brings was judged
+  against a file the update also changes: a project generated at 7f0a68b owed
+  one W error (`effect_proof_skip` naming `audit-project`, whose target arrives
+  in the same update), and so did bedrock-platform. The audit now runs a real
+  `copier update --trust --conflict inline` on a scratch copy of DEST against a
+  clone of this checkout, and runs checks A–X on the copy before and after: an
+  error after the update is owed, an error only before it is resolved by the
+  update, and a file copier leaves conflicted is listed under `[conflict]` with
+  its findings not judged. A conflicted file is never put back to DEST's bytes
+  beside the update's other files: the tree is checked with every conflict
+  hunk the project's way and again the template's way, a finding both have is
+  owed and one only one has is not judged (a project that names its own target
+  on the Makefile's `.PHONY` line, which the update also changes, no longer
+  owes the `audit-project` entry). The `[config]` group names what copier's
+  merge did to each key (`arrives`, `updates`, `merges`, `removed-upstream`),
+  warns (`update-refused`) when the real update would refuse DEST, outside git
+  or with uncommitted changes, which it names, and the origin `template-new`
+  names a file only the update brings. The update's own
+  tasks and migrations run in that copy, which the "not checked" section says.
+  DEST and this checkout's index are still never written; the scratch
+  directory is removed on exit; a failed update is exit 2. When DEST's
+  `_commit` does not resolve here, nothing is predicted and DEST is judged as
+  it stands.
 - **`make site-static` dirtied the tree in a project whose frontend is not
   astro.** It writes the static snapshot into the first frontend app's
   `public/`, and `.gitignore` covered only `src/frontend/astro/public/`, so in a

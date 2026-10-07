@@ -2,7 +2,7 @@
 title: Unit — audit_project (another project judged by this template's gates)
 kind: tests
 layer: n/a
-summary: scripts/audit_project.py pinned against a small fake template and a keel-shaped DEST in a scratch directory. It refuses, exit 2 and naming each missing item, whatever is not a keel project; its config view is a key-level 3-way merge (arrives, updates, conflict, removed-upstream as copier's replay of the project's edits leaves them; a set of names merged item by item, any other list atomic; `_` keys kept; inputs never mutated); the update's config is rendered in memory from the template's twin with DEST's answers and copier.yml's derived defaults; findings are grouped A..X then config, freshness and restamp, sorted, and the --json output is canonical and byte-identical across runs; the exit code follows owed letter errors only, an error in a template-unedited file being counted as resolved by the update; an unreadable file has unknown origin, and malformed or wrongly typed answers are a refusal, not a traceback; a not-checked section is always present; and DEST's code, Makefile and the commands its git config names (fsmonitor, a clean filter) are never run and its files never written. Excluded from generated projects with the doer.
+summary: scripts/audit_project.py pinned against a small fake template (a git history of a base and a newer commit, or uncommitted edits) and a keel-shaped DEST in a scratch directory. It refuses, exit 2 and naming each missing item, whatever is not a keel project; with a base it judges the tree a real `copier update` leaves on a scratch copy of DEST: an error the update brings a fix for is resolved, an error the update leaves is owed even in a file the project never edited, a key the update brings is judged with the file that uses it, and a file copier would conflict on is reported in the conflict group and its findings not judged, while the rest of the tree is judged with every conflict hunk the project's way and the template's way, never beside DEST's pre-update bytes: a cross-file finding both resolutions have is owed, one only one has is not judged (`resolve_conflict` keeps one side of each hunk, the diff3 base dropped, and refuses markers copier does not write); an update copier would refuse (DEST outside git, or uncommitted changes, each named) is an `update-refused` config warning with no exit change; `classify` names what the update did to each config key (arrives, updates, merges, removed-upstream; a list is one value; inputs never mutated); without a base nothing is predicted and DEST is judged as it stands; a failed update is exit 2 with the scratch path masked; a symlink leaving DEST is never written through; the scratch tree is removed on every path. The update's base config is rendered in memory from the template's twin with DEST's answers and copier.yml's derived defaults; findings are grouped A..X then conflict, config, freshness and restamp, sorted, and the --json output is canonical and byte-identical across runs; an unreadable file has unknown origin, and malformed or wrongly typed answers are a refusal, not a traceback; a not-checked section is always present; and DEST's code, Makefile, git hooks and the commands its git config names (fsmonitor, a clean filter) are never run and its files never written. Excluded from generated projects with the doer.
 """
 
 import copy
@@ -11,6 +11,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -21,6 +22,14 @@ sys.path.insert(0, str(_ROOT / "scripts"))
 import audit_project as ap  # noqa: E402
 
 import hermetic_git  # noqa: E402
+import optional_deps  # noqa: E402
+
+# The audit predicts the update by running copier itself (`python -m copier` in
+# this interpreter), and `_generated` renders a DEST with it: without copier every
+# prediction test fails for a reason that is not the audit's. Routed through
+# optional_deps so CI, which declares the template surface, fails on a missing
+# copier instead of skipping (test_copier_generator_contract.py pins this).
+copier = optional_deps.importorskip("copier", extra="template")
 
 pytestmark = pytest.mark.unit
 
@@ -46,6 +55,7 @@ _GUARD = (
 _COPIER_YML = """\
 _exclude:
   - "copier.yml"
+  - ".git"
 project_name:
   type: str
   default: "my_project"
@@ -59,14 +69,24 @@ profiles:
   choices: [ai]
   default: []
 """
-_TWIN = """\
+_TWIN_FORMAT = """\
 {
   "name": "{{ project_slug }}",
   "structure": {"extra_toplevel": []},
   "make_targets": %s,
   "practices": {"profiles": {"ai": {{ "true" if "ai" in profiles else "false" }}}}
 }
-""" % json.dumps(_POLICY)
+"""
+
+
+def _twin(**policy):
+    """The fake manifest twin, `make_targets` being _POLICY updated by *policy*
+    and rendered on one line, so a template edit to it is a one-line edit."""
+    return _TWIN_FORMAT % json.dumps(dict(_POLICY, **policy))
+
+
+_TWIN = _twin()
+_MAKEFILE = _GUARD + "a: ## [local] A\n\t@true\n"
 
 
 def _git(cwd, *argv):
@@ -110,6 +130,11 @@ def _hermetic(tmp_path, monkeypatch):
         monkeypatch.setattr(cs, name, getattr(cs, name))
     monkeypatch.setattr(cs, "_CONFIG_READ", dict(cs._CONFIG_READ))
     monkeypatch.setattr(cs, "_READ_REPORTED", set(cs._READ_REPORTED))
+    # The audit's scratch tree lives under tempfile's directory: one per test,
+    # so a test can prove it is empty afterwards.
+    systmp = tmp_path / "systmp"
+    systmp.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(systmp))
 
 
 @pytest.fixture()
@@ -124,10 +149,10 @@ def template(tmp_path, monkeypatch):
     return root
 
 
-def _dest(tmp_path, template, manifest=None, commit="0000000"):
+def _dest(tmp_path, template, manifest=None, commit="0000000", name="dest"):
     """A keel-shaped DEST: answers naming the fake template, a labelled tree and
     its own config/project.json (default: the name only)."""
-    dest = tmp_path / "dest"
+    dest = tmp_path / name
     for name in ("src", "tests", "docs", "config"):
         _label(dest, name)
     (dest / ".copier-answers.yml").write_text(
@@ -152,6 +177,55 @@ def _commit_dest(dest):
     _git(dest, "init", "-q")
     _git(dest, "add", "-A")
     _git(dest, "commit", "-q", "-m", "generated")
+
+
+def _template_commits(template, base_files, theirs_files, commit_theirs=True):
+    """The fake template's history: *base_files* written and committed (the
+    commit a project is generated from), then *theirs_files* written over it,
+    as a second commit or, with *commit_theirs* False, left as uncommitted
+    edits -- the two states of a checkout the audit snapshots. Returns the base
+    sha."""
+    for rel, text in base_files.items():
+        path = template / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    _commit_dest(template)
+    sha = _git(template, "rev-parse", "HEAD").strip()
+    for rel, text in theirs_files.items():
+        path = template / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    if theirs_files and commit_theirs:
+        _git(template, "add", "-A")
+        _git(template, "commit", "-q", "-m", "theirs")
+    return sha
+
+
+def _generated(tmp_path, template, sha, name="dest"):
+    """A DEST as copier generates it from the fake template at *sha*: the
+    labelled tree and answers of `_dest`, with every template file rendered
+    over it by copier itself, so its bytes are what the update's base renders."""
+    dest = _dest(tmp_path, template, commit=sha, name=name)
+    proc = subprocess.run(
+        [sys.executable, "-m", "copier", "copy", "--quiet", "--defaults"]
+        + ["--overwrite", "--vcs-ref", sha, "--data", "project_name=Demo"]
+        + [str(template), str(dest)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        universal_newlines=True,
+        env=dict(os.environ),
+    )
+    assert proc.returncode == 0, proc.stderr
+    return dest
+
+
+def _errors(report, group):
+    return [f for f in report["groups"][group] if f["tier"] == "error"]
+
+
+def _scratch_left(tmp_path):
+    """What the audit left under tempfile's directory (the `_hermetic` one)."""
+    return sorted(os.listdir(str(tmp_path / "systmp")))
 
 
 def _snapshot(root):
@@ -188,7 +262,7 @@ def test_help_exits_zero_and_names_dest(capsys):
     assert exc.value.code == 0
     text = capsys.readouterr().out
     assert "DEST" in text and "--json" in text
-    assert "writes nothing" in text and "runs none" in text
+    assert "DEST is never written" in text and "scratch copy" in text
 
 
 # --- refusal: what is not a keel project ----------------------------------------
@@ -291,16 +365,19 @@ def _kinds(changes):
     return {c["key"]: c["kind"] for c in changes}
 
 
-def test_merge_is_a_key_level_three_way():
+def test_classify_names_what_the_update_did_to_each_key():
+    """The audit merges nothing: copier's own update produced *predicted*, and
+    classify reads each key's story from base (the template at `_commit`),
+    ours (DEST) and predicted. Objects recurse with dotted keys; a list is one
+    value; `_` keys are commentary and never reported."""
     base = {
         "same": 1,
         "tmpl_moved": "old",
         "ours_moved": "old",
         "both_moved": "old",
         "gone_upstream": 1,
-        "gone_but_edited": 1,
-        "deleted_by_project": 5,
         "listy": ["a", "b"],
+        "names": ["GIT_DIR", "HOME"],
         "nest": {"inner": 1, "keep": True},
         "_comment": "base",
     }
@@ -310,105 +387,52 @@ def test_merge_is_a_key_level_three_way():
         "ours_moved": "mine",
         "both_moved": "mine",
         "gone_upstream": 1,
-        "gone_but_edited": 2,
         "listy": ["a", "b"],
-        "nest": {"inner": 1},
-        "project_own": "x",
+        "names": ["GIT_DIR", "HOME", "MY_TOOL_HOME"],
+        "nest": {"inner": 1, "keep": True},
         "_comment": "ours",
     }
-    theirs = {
+    predicted = {
         "same": 1,
         "tmpl_moved": "new",
-        "ours_moved": "old",
-        "both_moved": "theirs",
-        "deleted_by_project": 5,
+        "ours_moved": "mine",
+        "both_moved": "merged",
         "listy": ["a", "c"],
+        "names": ["HOME", "MY_TOOL_HOME"],
         "nest": {"inner": 2, "keep": True, "fresh": [1]},
         "arrived": {"a": 1},
         "_comment": "theirs",
     }
-    inputs = copy.deepcopy((base, ours, theirs))
+    inputs = copy.deepcopy((base, ours, predicted))
 
-    merged, changes = ap.merge(base, ours, theirs)
+    changes = ap.classify(base, ours, predicted)
 
-    assert (base, ours, theirs) == inputs
-    assert merged == {
-        "same": 1,
-        "tmpl_moved": "new",
-        "ours_moved": "mine",
-        "both_moved": "mine",
-        # Copier replays the project's own edits onto a fresh render: a key the
-        # template dropped and the project never edited is dropped with it; an
-        # edited one is an edit to a line that is gone, which is a conflict.
-        "gone_but_edited": 2,
-        "listy": ["a", "c"],
-        # The project dropped `keep`; the template did not change it, so it stays
-        # dropped, as a line-level merge of the rendered file would leave it.
-        "nest": {"inner": 2, "fresh": [1]},
-        "project_own": "x",
-        "arrived": {"a": 1},
-        "_comment": "ours",
-    }
+    assert (base, ours, predicted) == inputs
     assert _kinds(changes) == {
         "tmpl_moved": "updates",
-        "both_moved": "conflict",
+        "both_moved": "merges",
         "gone_upstream": "removed-upstream",
-        "gone_but_edited": "conflict",
         "listy": "updates",
+        "names": "merges",
         "nest.inner": "updates",
         "nest.fresh": "arrives",
         "arrived": "arrives",
     }
+    assert [c["key"] for c in changes] == sorted(c["key"] for c in changes)
     arrived = [c for c in changes if c["key"] == "arrived"][0]
-    assert arrived["theirs"] == {"a": 1}
-
-
-def test_a_list_that_is_not_a_set_of_names_is_replaced_whole():
-    """Numbers, or a list with a repeated item, may be ordered data: a both-sides
-    edit is a conflict, kept as ours."""
-    merged, changes = ap.merge({"l": [1, 2]}, {"l": [1, 2, 3]}, {"l": [1]})
-    assert merged == {"l": [1, 2, 3]} and _kinds(changes) == {"l": "conflict"}
-    merged, changes = ap.merge({"l": ["a", "a"]}, {"l": ["a", "a", "b"]}, {"l": ["a"]})
-    assert merged == {"l": ["a", "a", "b"]} and _kinds(changes) == {"l": "conflict"}
-
-
-def test_a_set_of_names_both_sides_edited_merges_by_item():
-    """A manifest renders a list of names one item per line, so copier's
-    line-level merge keeps the project's additions and the template's removals
-    when they are different items. The audit must judge that merged list: kept
-    as ours, a project that added its own allowlist name would be told it owes
-    the template's own fix (slice C2-1 moved GIT_DIR and its siblings out of
-    child_env.names)."""
-    base = {"names": ["GIT_DIR", "GIT_INDEX_FILE", "HOME", "PATH"]}
-    ours = {"names": ["GIT_DIR", "GIT_INDEX_FILE", "HOME", "MY_TOOL_HOME", "PATH"]}
-    theirs = {"names": ["HOME", "PATH", "TZ"]}
-    inputs = copy.deepcopy((base, ours, theirs))
-
-    merged, changes = ap.merge(base, ours, theirs)
-
-    assert (base, ours, theirs) == inputs
-    # Each item keeps its place: ours' addition after the item it follows.
-    assert merged == {"names": ["HOME", "MY_TOOL_HOME", "PATH", "TZ"]}
-    assert _kinds(changes) == {"names": "merges"}
-    msg = ap._config_message("config/project.json", changes[0])
-    assert "will show a conflict" not in msg and "item by item" in msg, msg
-    assert "MY_TOOL_HOME" in msg and "GIT_DIR" in msg and "TZ" in msg, msg
-    # A removal on one side and the same removal on the other is one removal.
-    merged, changes = ap.merge(
-        {"l": ["a", "b", "c"]}, {"l": ["b", "c", "d"]}, {"l": ["b", "c"]}
-    )
-    assert merged == {"l": ["b", "c", "d"]} and _kinds(changes) == {"l": "merges"}
-    # Ours removed an item the template still lists: it stays removed.
-    merged, _ = ap.merge({"l": ["a", "b"]}, {"l": ["b"]}, {"l": ["a", "b", "z"]})
-    assert merged == {"l": ["b", "z"]}
-
-
-def test_without_a_base_only_arrivals_are_reported():
-    merged, changes = ap.merge(
-        None, {"a": 1, "b": {"c": 1}}, {"a": 2, "b": {"c": 2, "d": 3}, "e": 4}
-    )
-    assert merged == {"a": 1, "b": {"c": 1, "d": 3}, "e": 4}
-    assert _kinds(changes) == {"b.d": "arrives", "e": "arrives"}
+    assert arrived["predicted"] == {"a": 1}
+    names = [c for c in changes if c["key"] == "names"][0]
+    msg = ap._config_message("config/project.json", names)
+    assert "MY_TOOL_HOME" in msg and "GIT_DIR" in msg, msg
+    # The predicted value is what copier wrote, whatever it is: an edited key
+    # the update left as the project had it is not reported at all.
+    assert ap.classify({"k": 1}, {"k": 2}, {"k": 2}) == []
+    # No base: nothing is known about the project's edits, so a key the
+    # template lacks is not "removed", and only arrivals and updates remain.
+    assert _kinds(ap.classify(None, {"a": 1, "own": 1}, {"a": 2, "b": 3})) == {
+        "a": "updates",
+        "b": "arrives",
+    }
 
 
 def test_origin_names_what_git_at_the_base_says_about_the_path(tmp_path, monkeypatch):
@@ -441,6 +465,15 @@ def test_origin_names_what_git_at_the_base_says_about_the_path(tmp_path, monkeyp
     assert ap.origin_of(dest, "zzz/ is not a taxonomy row", sha, tree) == "project"
     assert ap.origin_of(dest, "Makefile: target t", None, tree) == "unknown"
     assert ap.origin_of(dest, "", sha, tree) == "unknown"
+    # A path neither DEST nor the base has, which the predicted tree has: the
+    # update brings it.
+    predicted = tmp_path.parent / "predicted"
+    (predicted / "mk").mkdir(parents=True)
+    (predicted / "mk" / "new.mk").write_text("x\n")
+    assert ap.origin_of(dest, "mk/new.mk: t", sha, tree, str(predicted)) == (
+        "template-new"
+    )
+    assert ap.origin_of(dest, "mk/new.mk: t", sha, tree) == "unknown"
 
 
 @pytest.mark.skipif(
@@ -533,7 +566,12 @@ def test_an_undefined_template_variable_is_a_named_error(tmp_path, template):
 def test_findings_are_grouped_sorted_and_json_is_byte_identical(
     tmp_path, template, capsys
 ):
-    dest = _dest(tmp_path, template)
+    sha = _template_commits(
+        template,
+        {"config/project.json.jinja": _TWIN},
+        {"config/project.json.jinja": _twin(gate_effects=["local", "read", "cost"])},
+    )
+    dest = _generated(tmp_path, template, sha)
     _plant_b_and_w(dest)
     argv = [str(dest), "--today", TODAY]
 
@@ -541,6 +579,7 @@ def test_findings_are_grouped_sorted_and_json_is_byte_identical(
     assert code == 1, err
     headers = re.findall(r"^\[([A-Za-z]+)\]", text, re.MULTILINE)
     assert headers == [chr(c) for c in range(ord("A"), ord("X") + 1)] + [
+        "conflict",
         "config",
         "freshness",
         "restamp",
@@ -550,24 +589,34 @@ def test_findings_are_grouped_sorted_and_json_is_byte_identical(
     assert "zzz" in b_block and "planted" in w_block
     config_block = text.split("[config]", 1)[1].split("[freshness]", 1)[0]
     lines = [ln for ln in config_block.splitlines()[1:] if ln.strip()]
-    assert lines == sorted(lines) and any("make_targets" in ln for ln in lines)
+    # Errors, then warnings (here: the update copier refuses on a DEST outside
+    # git), then info, each sorted by message.
+    by_tier = sorted(lines, key=lambda ln: (ap.TIERS.index(ln.split()[0].lower()), ln))
+    assert lines == by_tier and any("make_targets" in ln for ln in lines)
+    assert lines[0].split()[0] == "WARNING", lines
+    assert "0 conflicted file(s) not judged" in text, text
 
     _c1, first, _e1 = _run(argv + ["--json"], capsys)
     _c2, second, _e2 = _run(argv + ["--json"], capsys)
     assert first == second
     report = json.loads(first)
+    assert report["base"]["resolved"] == sha
     assert (
         json.dumps(report, sort_keys=True, indent=2, ensure_ascii=False) + "\n" == first
     )
     assert report["summary"]["checks_run"] == [
         chr(c) for c in range(ord("A"), ord("X") + 1)
     ]
+    assert report["summary"]["conflicts"] == 0
+    assert sorted(report["groups"]) == sorted(ap.GROUPS)  # JSON sorts keys
+    assert ap.GROUPS[-4:] == ("conflict", "config", "freshness", "restamp")
     assert report["summary"]["files_seen"] > 0
     assert [f["tier"] for f in report["groups"]["B"]] == ["error"]
     assert [f["tier"] for f in report["groups"]["W"]] == ["error"]
     for output in (text, first):
         rest = output.replace(os.path.realpath(str(dest)), "DEST")
         assert str(tmp_path) not in rest and os.path.realpath(str(tmp_path)) not in rest
+    assert _scratch_left(tmp_path) == []
 
 
 def test_each_group_is_sorted_by_tier_then_message(
@@ -582,9 +631,7 @@ def test_each_group_is_sorted_by_tier_then_message(
         ("B", "warning", "a-warn"),
         ("B", "error", "a-err"),
     ]
-    monkeypatch.setattr(
-        ap.check_structure, "run_checks", lambda root, overrides=None: list(emitted)
-    )
+    monkeypatch.setattr(ap.check_structure, "run_checks", lambda root: list(emitted))
     _code, out, _err = _run([str(dest), "--today", TODAY, "--json"], capsys)
     b = [(f["tier"], f["message"]) for f in json.loads(out)["groups"]["B"]]
     assert b == [
@@ -640,46 +687,365 @@ def test_exit_code_follows_letter_errors_only(tmp_path, template, capsys):
     assert ap.main([str(dest / "nope"), "--today", TODAY]) == 2
 
 
-def test_an_error_in_a_file_the_update_replaces_is_not_owed(tmp_path, template, capsys):
-    """The audit answers "what does this project owe after the update". A
-    finding in a file the project never edited (its bytes equal the template's
-    at `_commit`) is replaced by the update, so it is reported as resolved by
-    the update and neither counts as owed nor fails the exit; the same defect
-    in a file the project edited is owed."""
-    makefile = _GUARD + "planted: ## Does a thing\n\t@true\n"
-    (template / "Makefile").write_text(makefile, encoding="utf-8")
-    _commit_dest(template)
-    sha = _git(template, "rev-parse", "HEAD").strip()
-    rendered, _notes = ap.render_configs(
-        ap.worktree_reader(str(template)), {"project_name": "Demo", "profiles": []}
+# --- the predicted tree: what `copier update` leaves ------------------------------
+
+_PLANTED = "planted: ## Does a thing\n\t@true\n"
+_LABELLED = "planted: ## [local] Does a thing\n\t@true\n"
+# Lines after the target, so an edit at the end of the file is not adjacent
+# to an edit of the target's line (git's merge conflicts on touching hunks).
+_TAIL = "\nother: ## [local] Other\n\t@true\n\nlast: ## [local] Last\n\t@true\n"
+
+
+def test_a_key_the_update_brings_is_judged_with_the_file_that_uses_it(
+    tmp_path, template, capsys
+):
+    """The 7f0a68b class: the update adds a target to the Makefile and names it
+    in the manifest's effect_proof_skip. Judged as one tree, the entry and its
+    target arrive together; a view that merged only the manifest would call the
+    entry stale against the old Makefile and owe a W error."""
+    sha = _template_commits(
+        template,
+        {"config/project.json.jinja": _TWIN, "Makefile": _MAKEFILE},
+        {
+            "config/project.json.jinja": _twin(effect_proof_skip={"x": "reason"}),
+            "Makefile": _MAKEFILE + "x: ## [local] X\n\t@true\n",
+        },
     )
-    dest = _dest(tmp_path, template, rendered["config/project.json"], commit=sha)
-    (dest / "Makefile").write_text(makefile, encoding="utf-8")
+    dest = _generated(tmp_path, template, sha)
+
+    code, out, err = _run([str(dest), "--today", TODAY, "--json"], capsys)
+    report = json.loads(out)
+    assert _errors(report, "W") == [], report["groups"]["W"]
+    assert report["summary"]["errors"] == 0, report["summary"]
+    assert (code, report["exit"]) == (0, 0), err
+    kinds = {(c["key"], c["kind"]) for c in report["groups"]["config"]}
+    assert ("make_targets.effect_proof_skip.x", "arrives") in kinds, kinds
+    assert _scratch_left(tmp_path) == []
+
+
+@pytest.mark.parametrize("commit_theirs", [True, False], ids=["committed", "dirty"])
+def test_an_error_the_update_does_not_fix_is_owed_even_in_an_unedited_file(
+    tmp_path, template, capsys, commit_theirs
+):
+    """A file the project never edited is replaced by the template's, which may
+    carry the same defect: the error is owed. Holds whether the template's newer
+    state is a commit or uncommitted edits in the checkout."""
+    sha = _template_commits(
+        template,
+        {"config/project.json.jinja": _TWIN, "Makefile": _GUARD + _PLANTED},
+        {"Makefile": _GUARD + _PLANTED + _TAIL},
+        commit_theirs=commit_theirs,
+    )
+    dest = _generated(tmp_path, template, sha)
 
     code, out, err = _run([str(dest), "--today", TODAY, "--json"], capsys)
     report = json.loads(out)
     w = report["groups"]["W"]
     assert [(f["tier"], f["origin"]) for f in w] == [("error", "template-unedited")]
-    assert w[0]["resolved_by"].startswith("copier update"), w
-    assert report["summary"]["errors"] == 0, report["summary"]
-    assert report["summary"]["resolved_by_update"] == 1
-    assert report["summary"]["counts"]["W"]["resolved_by_update"] == 1
-    assert (code, report["exit"]) == (0, 0), err
-    _c, text, _e = _run([str(dest), "--today", TODAY], capsys)
-    assert "[W] 1 error(s) (1 resolved by the update)" in text, text
-    assert "0 error(s) owed, 1 resolved by the update" in text, text
+    assert "resolved_by" not in w[0], w
+    assert report["summary"]["errors"] == 1, report["summary"]
+    assert report["summary"]["resolved_by_update"] == 0, report["summary"]
+    assert (code, report["exit"]) == (1, 1), err
+    # The snapshot never wrote the template checkout (its uncommitted edits
+    # included).
+    assert (template / "Makefile").read_text() == _GUARD + _PLANTED + _TAIL
 
-    (dest / "Makefile").write_text(makefile + "# edited\n", encoding="utf-8")
-    code, out, _err = _run([str(dest), "--today", TODAY, "--json"], capsys)
-    report = json.loads(out)
-    w = report["groups"]["W"]
-    assert [(f["tier"], f["origin"]) for f in w] == [("error", "template-edited")]
-    assert "resolved_by" not in w[0]
-    assert (report["summary"]["errors"], report["summary"]["resolved_by_update"]) == (
-        1,
-        0,
+
+@pytest.mark.parametrize("commit_theirs", [True, False], ids=["committed", "dirty"])
+def test_an_error_the_update_fixes_is_resolved_and_an_edited_copy_is_judged_merged(
+    tmp_path, template, capsys, commit_theirs
+):
+    """The template labels the target. The project that never touched its
+    Makefile and the project that appended a line both receive the label
+    through copier's merge, so in both the W error is resolved by the update:
+    the per-file "unedited" proxy owed the edited one."""
+    sha = _template_commits(
+        template,
+        {"config/project.json.jinja": _TWIN, "Makefile": _GUARD + _PLANTED + _TAIL},
+        {"Makefile": _GUARD + _LABELLED + _TAIL},
+        commit_theirs=commit_theirs,
     )
-    assert code == 1
+    for name, edit in (("unedited", ""), ("edited", "# edited\n")):
+        dest = _generated(tmp_path, template, sha, name=name)
+        makefile = dest / "Makefile"
+        makefile.write_text(makefile.read_text() + edit, encoding="utf-8")
+
+        code, out, err = _run([str(dest), "--today", TODAY, "--json"], capsys)
+        report = json.loads(out)
+        w = report["groups"]["W"]
+        assert [f["tier"] for f in w] == ["error"], (name, w)
+        assert w[0]["resolved_by"].startswith("copier update"), (name, w)
+        origin = "template-edited" if edit else "template-unedited"
+        assert w[0]["origin"] == origin, (name, w)
+        assert report["summary"]["errors"] == 0, (name, report["summary"])
+        assert report["summary"]["resolved_by_update"] == 1, (name, report["summary"])
+        assert report["summary"]["counts"]["W"]["resolved_by_update"] == 1
+        assert report["summary"]["conflicts"] == 0, (name, report["groups"])
+        assert (code, report["exit"]) == (0, 0), (name, err)
+        _c, text, _e = _run([str(dest), "--today", TODAY], capsys)
+        assert "[W] 1 error(s) (1 resolved by the update)" in text, text
+        assert "0 error(s) owed, 1 resolved by the update" in text, text
+    assert _scratch_left(tmp_path) == []
+
+
+def test_a_file_copier_would_conflict_on_is_reported_not_judged(
+    tmp_path, template, capsys
+):
+    """The project and the template changed the same line: copier leaves
+    conflict markers, which no check may parse. The file is reported in the
+    conflict group, judged as DEST holds it, and its findings are not counted."""
+    sha = _template_commits(
+        template,
+        {"config/project.json.jinja": _TWIN, "Makefile": _GUARD + _LABELLED + _TAIL},
+        {"Makefile": _GUARD + "planted: ## [local] Does it better\n\t@true\n" + _TAIL},
+    )
+    dest = _generated(tmp_path, template, sha)
+    (dest / "Makefile").write_text(_GUARD + _PLANTED + _TAIL, encoding="utf-8")
+
+    code, out, err = _run([str(dest), "--today", TODAY, "--json"], capsys)
+    report = json.loads(out)
+    conflict = report["groups"]["conflict"]
+    assert [(f["tier"], f["path"]) for f in conflict] == [("warning", "Makefile")]
+    assert conflict[0]["message"].startswith(
+        "Makefile: copier update leaves a conflict"
+    )
+    assert report["summary"]["conflicts"] == 1
+    w = report["groups"]["W"]
+    assert [(f["tier"], f.get("unjudged")) for f in w] == [("error", "conflict")], w
+    assert report["summary"]["errors"] == 0, report["summary"]
+    assert (code, report["exit"]) == (0, 0), err
+    for g in ap.LETTERS:
+        for f in report["groups"][g]:
+            assert "<<<<<<<" not in f["message"], f
+    _c, text, _e = _run([str(dest), "--today", TODAY], capsys)
+    assert "1 conflicted file(s) not judged" in text, text
+
+
+_BETTER = "planted: ## [local] Does it better\n\t@true\n"
+_X = "x: ## [local] X\n\t@true\n"
+
+
+@pytest.mark.parametrize(
+    "x_lands, owed_x",
+    [
+        # The update's target lands in lines copier merges cleanly: it is in
+        # the tree however the conflict is resolved, so its manifest entry is
+        # not stale.
+        ("clean", False),
+        # The update's target lands inside the conflict hunk: kept the
+        # project's way it is gone and its entry is stale, kept the template's
+        # way it is there. The finding depends on the resolution: not judged.
+        ("in-conflict", None),
+    ],
+)
+def test_a_finding_beside_a_conflict_is_judged_on_both_resolutions(
+    tmp_path, template, capsys, x_lands, owed_x
+):
+    """A conflict in the Makefile must not put the pre-update Makefile next to
+    the post-update manifest: check_W reads the Makefile but reports the
+    manifest's stale `effect_proof_skip` entry against config/project.json, a
+    file copier merged cleanly. The tree is judged with every conflict hunk the
+    project's way and again the template's way: a finding in both is owed (the
+    entry `y`, whose target no side defines), one in only one depends on how
+    the conflict is resolved and is not judged, one in neither is absent."""
+    if x_lands == "clean":
+        theirs_makefile = _GUARD + _BETTER + _TAIL + "\n" + _X
+    else:
+        theirs_makefile = _GUARD + _BETTER + _X + _TAIL
+    sha = _template_commits(
+        template,
+        {"config/project.json.jinja": _TWIN, "Makefile": _GUARD + _PLANTED + _TAIL},
+        {
+            "config/project.json.jinja": _twin(
+                effect_proof_skip={"x": "reason", "y": "reason"}
+            ),
+            "Makefile": theirs_makefile,
+        },
+    )
+    dest = _generated(tmp_path, template, sha)
+    (dest / "Makefile").write_text(_GUARD + _LABELLED + _TAIL, encoding="utf-8")
+
+    code, out, err = _run([str(dest), "--today", TODAY, "--json"], capsys)
+    report = json.loads(out)
+    assert [f["path"] for f in report["groups"]["conflict"]] == ["Makefile"]
+    w = {
+        re.search(r"`(\w+)`", f["message"]).group(1): f
+        for f in _errors(report, "W")
+        if f["message"].startswith("config/project.json:")
+    }
+    assert sorted(w) == (["y"] if owed_x is False else ["x", "y"]), w
+    assert "unjudged" not in w["y"] and "resolved_by" not in w["y"], w
+    if owed_x is None:
+        assert w["x"]["unjudged"] == "conflict", w
+    assert report["summary"]["errors"] == 1, report["summary"]
+    assert (code, report["exit"]) == (1, 1), err
+    for g in ap.LETTERS:
+        for f in report["groups"][g]:
+            assert "<<<<<<<" not in f["message"], f
+    assert _scratch_left(tmp_path) == []
+
+
+_CONFLICTED = (
+    b"keep 1\n"
+    b"<<<<<<< before updating\n"
+    b"project 1\n"
+    b"=======\n"
+    b"template 1\n"
+    b">>>>>>> after updating\n"
+    b"keep 2\n"
+    b"<<<<<<< before updating\n"
+    b"project 2\n"
+    b"||||||| last update\n"
+    b"base 2\n"
+    b"=======\n"
+    b">>>>>>> after updating\n"
+)
+
+
+@pytest.mark.parametrize(
+    "side, want",
+    [
+        ("project", b"keep 1\nproject 1\nkeep 2\nproject 2\n"),
+        ("template", b"keep 1\ntemplate 1\nkeep 2\n"),
+    ],
+)
+def test_resolve_conflict_keeps_one_side_of_every_hunk(side, want):
+    """Each hunk copier writes (the diff3 base section too) resolves to one
+    side; what copier merged cleanly outside the hunks stays either way."""
+    assert ap.resolve_conflict(_CONFLICTED, side) == want
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        b"<<<<<<< before updating\nx\n=======\ny\n",
+        b"x\n>>>>>>> after updating\n",
+        b"<<<<<<< before updating\n<<<<<<< before updating\n",
+    ],
+    ids=["unclosed", "stray-close", "nested"],
+)
+def test_resolve_conflict_refuses_markers_copier_does_not_write(data):
+    """A guess at a malformed hunk would judge a tree no resolution makes."""
+    with pytest.raises(ValueError):
+        ap.resolve_conflict(data, "project")
+
+
+@pytest.mark.parametrize(
+    "state, refused",
+    [
+        ("committed", None),
+        ("modified", "dirty"),
+        ("untracked", "dirty"),
+        ("no-git", "git"),
+    ],
+)
+def test_an_update_copier_would_refuse_is_named(
+    tmp_path, template, capsys, state, refused
+):
+    """The scratch copy is committed, so copier updates it whatever DEST's git
+    state; the real update refuses a DEST with uncommitted changes and one
+    outside git. The config group warns of that refusal, naming each
+    uncommitted path, and the prediction still stands: no exit change."""
+    sha = _template_commits(template, {"config/project.json.jinja": _TWIN}, {})
+    dest = _generated(tmp_path, template, sha)
+    if state != "no-git":
+        _commit_dest(dest)
+    if state == "modified":
+        readme = dest / "docs" / "README.md"
+        readme.write_text(readme.read_text() + "\nlocal\n")
+    elif state == "untracked":
+        (dest / "docs" / "notes.txt").write_text("x\n")
+
+    code, out, err = _run([str(dest), "--today", TODAY, "--json"], capsys)
+    report = json.loads(out)
+    refusals = [c for c in report["groups"]["config"] if c["kind"] == "update-refused"]
+    if refused is None:
+        assert refusals == [], refusals
+    else:
+        assert [c["tier"] for c in refusals] == ["warning"], refusals
+        assert refused in refusals[0]["message"], refusals
+        assert "copier update" in refusals[0]["message"], refusals
+    if state == "modified":
+        assert refusals[0]["paths"] == ["docs/README.md"], refusals
+    if state == "untracked":
+        assert refusals[0]["paths"] == ["docs/notes.txt"], refusals
+    assert code == report["exit"], err
+    _c, text, _e = _run([str(dest), "--today", TODAY], capsys)
+    if refused is not None:
+        assert refusals[0]["message"] in text, text
+
+
+def test_without_a_base_the_project_is_judged_as_it_stands(tmp_path, template, capsys):
+    """`_commit` resolves nowhere: copier cannot update either, so nothing is
+    predicted and no scratch is made. DEST's own config names nothing stale, so
+    a key only the template has must not reach the checks."""
+    (template / "config" / "project.json.jinja").write_text(
+        _twin(effect_proof_skip={"x": "reason"}), encoding="utf-8"
+    )
+    dest = _dest(tmp_path, template, manifest={"name": "demo", "make_targets": _POLICY})
+    (dest / "Makefile").write_text(_MAKEFILE, encoding="utf-8")
+
+    code, out, err = _run([str(dest), "--today", TODAY, "--json"], capsys)
+    report = json.loads(out)
+    assert _errors(report, "W") == [], report["groups"]["W"]
+    arrivals = [c["key"] for c in report["groups"]["config"] if c["kind"] == "arrives"]
+    assert "make_targets.effect_proof_skip.x" in arrivals, report["groups"]["config"]
+    assert {c["tier"] for c in report["groups"]["config"]} == {"info"}
+    assert any(i["item"].startswith("no base") for i in report["not_checked"])
+    assert report["base"]["resolved"] is None
+    assert (code, report["exit"]) == (0, 0), err
+    assert _scratch_left(tmp_path) == []
+
+
+def test_a_failed_update_is_exit_2_and_leaves_no_scratch(tmp_path, template, capsys):
+    """A copier update that fails (here: the template needs a copier that does
+    not exist) is a report the audit cannot build: exit 2 naming copier, the
+    scratch path masked, nothing printed on stdout and nothing left behind."""
+    sha = _template_commits(template, {"config/project.json.jinja": _TWIN}, {})
+    dest = _generated(tmp_path, template, sha)
+    (template / "copier.yml").write_text(
+        "_min_copier_version: '999'\n" + _COPIER_YML, encoding="utf-8"
+    )
+    _git(template, "commit", "-q", "-am", "needs a copier that does not exist")
+    before = _snapshot(dest)
+
+    code, out, err = _run([str(dest), "--today", TODAY], capsys)
+    assert code == 2, out + err
+    assert out == ""
+    assert "copier" in err and "<scratch>" in err, err
+    assert str(tmp_path / "systmp") not in err, err
+    assert _scratch_left(tmp_path) == []
+    assert _snapshot(dest) == before
+
+
+def test_a_symlink_leaving_dest_is_never_written_through(tmp_path, template, capsys):
+    """Copier writes through a symlink, so a link out of DEST copied as a link
+    would let the update write outside the scratch tree. The copy holds the
+    target's bytes instead, and the report says so."""
+    sha = _template_commits(
+        template,
+        {"config/project.json.jinja": _TWIN, "Makefile": _MAKEFILE},
+        {"Makefile": _MAKEFILE + _TAIL},
+    )
+    dest = _generated(tmp_path, template, sha)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    target = outside / "Makefile"
+    target.write_text(_MAKEFILE, encoding="utf-8")
+    (dest / "Makefile").unlink()
+    os.symlink(str(target), str(dest / "Makefile"))
+    before = (target.read_bytes(), target.stat().st_mtime_ns)
+    link_before = _snapshot(dest)
+
+    code, out, err = _run([str(dest), "--today", TODAY, "--json"], capsys)
+    assert code in (0, 1), err
+    assert (target.read_bytes(), target.stat().st_mtime_ns) == before
+    assert _snapshot(dest) == link_before
+    named = [i for i in json.loads(out)["not_checked"] if i["item"] == "Makefile"]
+    assert named and "outside DEST" in named[0]["reason"], json.loads(out)[
+        "not_checked"
+    ]
+    assert _scratch_left(tmp_path) == []
 
 
 def test_not_checked_section_is_always_present(tmp_path, template, capsys):
@@ -693,11 +1059,17 @@ def test_not_checked_section_is_always_present(tmp_path, template, capsys):
         assert needle in text
     no_git = [i for i in items if i["reason"].startswith("no git")]
     assert sorted(i["item"] for i in no_git) == ["freshness", "restamp"]
-    assert "base" in joined  # _commit 0000000 resolves nowhere: a 2-way merge
+    # _commit 0000000 resolves nowhere: nothing is predicted.
+    assert any(i["item"].startswith("no base") for i in items), joined
+    assert "no base" in text
 
 
 def test_dest_code_is_never_imported_or_run(tmp_path, template, capsys):
-    dest = _dest(tmp_path, template)
+    """With a base that resolves, so the prediction runs: neither the audit nor
+    the copy's git or copier child runs DEST's code, make targets, git hooks
+    (`.git/hooks`, a `core.hooksPath`) or the commands its git config names."""
+    sha = _template_commits(template, {"config/project.json.jinja": _TWIN}, {})
+    dest = _generated(tmp_path, template, sha)
     sentinel = tmp_path / "sentinel"
     (dest / "scripts").mkdir()
     for name in ("check_structure.py", "child_env.py", "review_docs.py"):
@@ -720,18 +1092,30 @@ def test_dest_code_is_never_imported_or_run(tmp_path, template, capsys):
     _git(dest, "config", "filter.probe.clean", str(clean))
     (dest / ".git" / "info").mkdir(exist_ok=True)
     (dest / ".git" / "info" / "attributes").write_text("*.md filter=probe\n")
+    # Every hook a commit runs, in DEST's own hooks directory and in one its
+    # config names: the copy is committed, and copier commits in it too.
+    for hooks in (dest / ".git" / "hooks", tmp_path / "hooks"):
+        hooks.mkdir(exist_ok=True)
+        for name in ("pre-commit", "post-commit", "post-checkout"):
+            path = hooks / name
+            path.write_text("#!/bin/sh\ntouch %s.hook\n" % sentinel)
+            path.chmod(0o755)
+    _git(dest, "config", "core.hooksPath", str(tmp_path / "hooks"))
     readme = dest / "docs" / "README.md"
     os.utime(str(readme), (readme.stat().st_atime, readme.stat().st_mtime + 7))
     assert not list(tmp_path.glob("sentinel*"))
 
-    code, _out, err = _run([str(dest), "--today", TODAY], capsys)
+    code, out, err = _run([str(dest), "--today", TODAY, "--json"], capsys)
 
     assert code in (0, 1), err
+    assert "conflicts" in json.loads(out)["summary"]
     assert not list(tmp_path.glob("sentinel*"))
-    root = os.path.realpath(str(dest))
+    roots = [os.path.realpath(str(p)) for p in (dest, tmp_path / "systmp")]
     for module in list(sys.modules.values()):
-        path = getattr(module, "__file__", None) or ""
-        assert not os.path.realpath(path).startswith(root + os.sep), path
+        path = os.path.realpath(getattr(module, "__file__", None) or "")
+        for root in roots:
+            assert not path.startswith(root + os.sep), path
+    assert _scratch_left(tmp_path) == []
 
 
 def test_dest_config_is_never_written(tmp_path, template, capsys):

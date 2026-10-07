@@ -2,10 +2,9 @@
 title: Unit — check_structure judges a root it is given
 kind: tests
 layer: n/a
-summary: The gate's root override, pinned. `run_checks(root, config_overrides)` judges the tree at *root*, never keel's own; it resets every piece of module state a run accumulates (the unreadable-file memo included), so a second run in one process sees nothing of the first; it attributes each message to the check letter that emitted it; and a config override is what every check reads in place of the file on disk, which stays byte-unchanged, and the caller's override object is never mutated even by a check that mutates what it reads. `CHECKS` lists every `check_<LETTER>` the module defines, in order, so a check that is defined but not registered fails here. `main(['--root', path])` prints today's report shape and exit code for that root, refuses a root that is not a directory with exit 2, and `main()` with no argv still judges the template whatever `sys.argv` holds.
+summary: The gate's root override, pinned. `run_checks(root)` judges the tree at *root*, never keel's own; it resets every piece of module state a run accumulates (the unreadable-file memo included), so a second run in one process sees nothing of the first; and it attributes each message to the check letter that emitted it. `CHECKS` lists every `check_<LETTER>` the module defines, in order, so a check that is defined but not registered fails here. `main(['--root', path])` prints today's report shape and exit code for that root, refuses a root that is not a directory with exit 2, and `main()` with no argv still judges the template whatever `sys.argv` holds.
 """
 
-import copy
 import json
 import os
 import re
@@ -137,40 +136,6 @@ def test_each_message_is_attributed_to_the_check_that_emitted_it(tmp_path, capsy
     assert printed == [m for _l, tier, m in found if tier == "error"]
 
 
-def test_a_config_override_is_what_every_check_reads(tmp_path):
-    root = _tree(tmp_path / "proj")
-    _label(root, "mk")
-    on_disk = root / "config" / "project.json"
-    before = (on_disk.read_bytes(), on_disk.stat().st_mtime_ns)
-
-    plain = cs.run_checks(str(root))
-    assert [m for letter, _t, m in plain if letter == "B" and "mk/" in m], plain
-
-    merged = {"structure": {"extra_toplevel": ["mk"]}}
-    overridden = cs.run_checks(
-        str(root), config_overrides={os.path.join("config", "project.json"): merged}
-    )
-    assert overridden == [], overridden
-    assert (on_disk.read_bytes(), on_disk.stat().st_mtime_ns) == before
-
-
-def test_an_override_is_not_mutated_by_the_checks(tmp_path, monkeypatch):
-    """No check mutates what it reads today; one that did must still not reach
-    the caller's object, so a check that mutates is planted alongside the real
-    ones."""
-
-    def mutating_check():
-        data = cs._read_json_config(os.path.join("config", "project.json"))
-        data["structure"]["extra_toplevel"].append("planted")
-
-    monkeypatch.setattr(cs, "CHECKS", tuple(cs.CHECKS) + (("Z", mutating_check),))
-    root = _tree(tmp_path / "proj")
-    merged = {"structure": {"extra_toplevel": []}}
-    kept = copy.deepcopy(merged)
-    cs.run_checks(str(root), config_overrides={"config/project.json": merged})
-    assert merged == kept
-
-
 @pytest.mark.skipif(
     hasattr(os, "geteuid") and os.geteuid() == 0, reason="root reads a 000 file"
 )
@@ -199,8 +164,9 @@ def test_checks_registry_lists_every_check_function_in_order():
 
 
 def test_json_configs_names_every_config_a_check_reads():
-    """The audit derives what to override from this tuple, so a check reading a
-    third JSON config without listing it here would judge DEST's unmerged file."""
+    """The audit's config group derives the configs it classifies from this
+    tuple, so a check reading a third JSON config without listing it here would
+    leave that config's update unreported."""
     source = (_ROOT / "scripts" / "check_structure.py").read_text(encoding="utf-8")
     read = set(re.findall(r'_read_json_config\(\s*"([^"]+)"', source))
     read |= {
@@ -241,9 +207,7 @@ def test_main_without_argv_judges_the_template_whatever_sys_argv_holds(
     """agents/index_enforcer/_brain.py and other importers call main() with no
     argument; it must not parse the importer's own command line."""
     seen = []
-    monkeypatch.setattr(
-        cs, "run_checks", lambda root, config_overrides=None: seen.append(root) or []
-    )
+    monkeypatch.setattr(cs, "run_checks", lambda root: seen.append(root) or [])
     monkeypatch.setattr(sys, "argv", ["x", "--bogus"])
     assert cs.main() == 0
     assert seen == [str(_ROOT)]

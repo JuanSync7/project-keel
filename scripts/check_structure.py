@@ -115,17 +115,15 @@ Checks:
 Exit 0 = clean, 1 = errors. Warnings never fail the build. Stdlib only; 3.6+.
 
 `--root PATH` judges another tree with this checkout's checks (default: this
-checkout). `run_checks(root, config_overrides)` is the same run as a function:
-it resets the module state a run accumulates, reads each overridden JSON config
-(a key of JSON_CONFIGS) from the given data instead of the file on disk, and
-returns (letter, tier, message) per finding without printing.
-scripts/audit_project.py is its caller.
+checkout). `run_checks(root)` is the same run as a function: it resets the
+module state a run accumulates and returns (letter, tier, message) per finding
+without printing. scripts/audit_project.py is its caller, on the scratch copy a
+real `copier update` leaves.
 """
 
 import argparse
 import ast
 import collections
-import copy
 import io
 import json
 import os
@@ -5540,23 +5538,22 @@ CHECKS = (
 )
 
 # The JSON configs the checks read through _read_json_config, so a caller that
-# overrides them (scripts/audit_project.py) derives the set instead of
-# re-typing it; the mirror test fails a third config read but not listed here.
+# reports on them (scripts/audit_project.py's config group) derives the set
+# instead of re-typing it; the mirror test fails a third config read but not
+# listed here.
 JSON_CONFIGS = (
     os.path.join("config", "project.json"),
     os.path.join("config", "practices.json"),
 )
 
 
-def run_checks(root, config_overrides=None):
+def run_checks(root):
     """Every check in CHECKS against the tree at *root*, as a list of
     (letter, "error" | "warning", message) in emission order. Prints nothing.
 
     Resets the state a run accumulates (errors, warnings, GOVERNED, the config
     memo and the reported-unreadable set), so two runs in one process share
-    nothing. *config_overrides* maps a JSON_CONFIGS path to parsed data that
-    every check reads in its place; the data is copied, never mutated, and the
-    file on disk is never opened."""
+    nothing."""
     global ROOT, errors, warnings, GOVERNED, _CONFIG_READ, _READ_REPORTED
     ROOT = os.path.abspath(root)
     errors = []
@@ -5564,8 +5561,6 @@ def run_checks(root, config_overrides=None):
     GOVERNED = []
     _CONFIG_READ = {}
     _READ_REPORTED = set()
-    for relpath, data in sorted((config_overrides or {}).items()):
-        _CONFIG_READ[os.path.normpath(relpath)] = copy.deepcopy(data)
     found = []
     for letter, check in CHECKS:
         n_err, n_warn = len(errors), len(warnings)

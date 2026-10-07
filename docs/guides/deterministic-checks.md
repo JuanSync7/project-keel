@@ -545,54 +545,82 @@ generated project's `make audit-project` is a stub that prints the
 made absolute (the project itself when DEST is not given), so the printed line
 works from the template checkout.
 
-**What it runs.**
-- Every check_structure letter, A–X, in-process through `run_checks`, against
-  DEST's files.
-- The freshness judge (`scripts/jobs/review_docs.py`). Each finding carries
-  `resolved_by`, because the update's last `_migrations` step runs
-  `restamp_docs` and clears it.
-- The restamp writer's `pending` list (`scripts/jobs/restamp_docs.py`), the
-  stamps that migration will rewrite.
+**What it runs.** The audit judges one tree, the one the update leaves. It
+builds that tree in a scratch directory (`tempfile.TemporaryDirectory`,
+prefix `keel-audit-`), which it removes on every exit path:
+- a snapshot of this checkout: a `git clone`, with the checkout's modified,
+  deleted and untracked files committed on top;
+- a copy of DEST: the files git lists there (tracked and untracked, not
+  ignored), or every file check_structure walks when DEST is not a git work
+  tree, committed in the copy's own repository;
+- `copier update --trust --defaults --skip-answered --vcs-ref HEAD
+  --conflict inline` of the copy against the snapshot, run as a child
+  process.
+Every check_structure letter, A–X, runs in-process through `run_checks` on the
+copy twice: before the update and after it. The freshness judge
+(`scripts/jobs/review_docs.py`) and the restamp writer's `pending` list
+(`scripts/jobs/restamp_docs.py`) run on DEST itself. Each freshness finding
+carries `resolved_by`, because the update's last `_migrations` step runs
+`restamp_docs` and clears it; the `pending` list names the stamps that
+migration will rewrite.
 
-**The config view.** Each JSON config a check reads (`JSON_CONFIGS`) is
-replaced in memory by a key-level 3-way merge:
-- base: the template at DEST's `_commit`, rendered with DEST's answers;
-- ours: DEST's own file;
-- theirs: this checkout, rendered with DEST's answers.
+**The predicted tree.** The tree after the update is copier's own merge, so
+the audit merges nothing itself. A path copier leaves conflicted (`git
+ls-files -u` in the copy) is reported as a warning in the `[conflict]` group,
+and its letter findings are marked `unjudged: conflict`. The tree after the
+update is then checked twice: once with every conflict hunk as the project had
+it, and once as the template brings it (`resolve_conflict` reads copier's own
+`before updating` / `after updating` markers, and refuses markers that do not
+nest). No check parses a marker, and no conflicted file is put back to DEST's
+bytes beside the update's other files; a check that reads one file and reports
+against another (check_W reads the Makefile and reports a stale
+`effect_proof_skip` entry against `config/project.json`) would judge a mix
+again. A finding both runs have is owed, whichever way the project resolves
+the conflict. A finding only one run has depends on that choice, and is marked
+`unjudged: conflict` too. The `[config]` group names what the update did to
+each key of each JSON config a check reads (`JSON_CONFIGS`), by comparing the
+template's render at DEST's `_commit` with DEST's file and the file after the
+update (`classify` in `scripts/audit_project.py`):
+- `arrives`: DEST lacks the key, and the update brings it;
+- `updates`: DEST left the key as rendered, and the update changes it;
+- `merges`: DEST and the template both changed the key, and copier's merge
+  keeps both edits (an allowlist such as `child_env.names`, which the manifest
+  renders one item per line);
+- `removed-upstream`: the update removes a key DEST has.
+A list is one value. A JSON config copier leaves conflicted gets one
+file-level `conflict` entry and no key kinds. The group also carries an
+`update-refused` warning when the real update would not start on DEST: copier
+updates only a project in git with nothing uncommitted, tracked or untracked,
+while the scratch copy is committed whatever DEST's state. The warning names
+each uncommitted path (`paths`); the prediction stands for the tree once they
+are committed, and the exit code does not change.
 
-Copier replays the project's edits onto a fresh render, so the merge does the
-same, key by key:
-- a key DEST lacks arrives;
-- a key DEST left as rendered takes the template's new value;
-- a list of distinct strings both sides changed (an allowlist such as
-  `child_env.names`, which the manifest renders one item per line) merges item
-  by item: DEST's additions and removals are replayed onto the template's list,
-  reported as `merges`, because copier's line-level merge keeps both edits;
-- any other key both sides changed is a conflict and keeps DEST's value;
-- a key the template dropped and DEST never edited is removed.
+**No base.** When DEST's `_commit` does not resolve in this checkout (a fork,
+a rewritten history), copier cannot update either, so nothing is predicted and
+no scratch directory is made. DEST is judged as it stands, every origin is
+`unknown`, the `[config]` group compares DEST with this checkout's render
+(arrivals and updates only), and the "not checked" section has a `no base`
+item.
 
-Any other list is atomic. When `_commit` does not resolve here, the merge is 2-way:
-only arrivals are reported, and the "not checked" section says so. Every
-change is reported under `[config]`. DEST's file is never written.
-
-**Origin.** Each check finding names the evidence that decides whether the
-update itself moves it. The audit compares the path the message names with
-git at `_commit`:
-- `template-unedited`: the bytes match, so the update replaces the file;
+**Origin.** Each check finding names the evidence about the file it is in.
+The audit compares the path the message names in DEST with git at `_commit`:
+- `template-unedited`: the bytes match the template's at `_commit`;
 - `template-edited`: the file shipped but DEST changed it;
 - `template-rendered`: only its `.jinja` twin shipped;
+- `template-new`: neither DEST nor the template at `_commit` has the path, and
+  the tree the update leaves does;
 - `project`: the template never had it;
 - `unknown`: there is no base, no path, or the file cannot be read.
 
-**Owed or resolved by the update.** A letter error whose origin is
-`template-unedited` carries `resolved_by`, because the update replaces that
-file with this checkout's copy. The summary counts it under
-`resolved_by_update`, not under `errors`, and the text report prints both
-counts. Every other letter error is owed: the project must act on it, or the
-update leaves it red. The origin is computed per file, so a finding that
-pairs a rendered manifest with an old template-unedited file (a key the update
-brings, judged against a file the update also replaces) is owed even though
-the update fixes it; the audit reports it rather than guess.
+**Owed or resolved by the update.** A letter finding in the run after the
+update is owed, unless its file is conflicted or only one resolution of the
+conflicts has it: the project must act on it, or the update leaves it red. A letter finding only in the run before the update
+carries `resolved_by`, because the update itself removes it. The summary
+counts resolved errors under `resolved_by_update`, not under `errors`, and the
+text report prints both counts and the number of conflicted files. Findings
+are matched by their message, so a message carrying a line number the update
+shifts reads as one resolved and one owed: the owed count stays right, and
+`resolved_by_update` may count one too many.
 
 **What it does not run.** The report always ends with a "not checked"
 section. It lists:
@@ -601,33 +629,51 @@ section. It lists:
 - the rest of `make check-all`;
 - child processes started from shell scripts;
 - makefiles outside the include walk;
-- the template-shipped non-JSON files the update will merge, which are judged
-  as they stand.
+- files DEST's git ignores, which are not copied, so neither run judges them;
+- the code the update runs: copier's `_tasks` and `_migrations` run in the
+  scratch copy, and keel's run `scripts/jobs/restamp_docs.py` as the update
+  merges it with the project's edits. They run with an allowlisted
+  environment, a scratch git config with no hooks, and no DEST `.git`, the
+  same step the project's own update runs;
+- each path it could not copy as it is: a symlink leaving DEST (copied as its
+  target's bytes, or dropped when it dangles), a submodule, an untracked
+  symlink in this checkout.
 
-The confirmation is a trial `copier update` in a scratch clone of the project,
-then `make verify` there.
+The confirmation is the real `copier update` in the project, then
+`make verify` there.
 
-**Read-only.** The audit never imports, makes or hooks DEST's code. It reads
-DEST's files with `open()` and `ast`, and its git only through name-level
-commands built by `review_docs.git_argv`: `--no-optional-locks`,
-`core.fsmonitor=false`, `log.showSignature=false`, and every filter driver
-DEST's git config names set to an empty, non-required command. When git will
-not list those drivers, the call is not made. `git status` also passes
-`--ignore-submodules=all`, so no submodule's config is consulted.
-Plain `git status` and `git diff HEAD` rewrite `.git/index` (measured,
-git 2.43.5), so the audit and the two doc jobs use neither. The cost of the
-switched-off filters: a filtered file (an LFS pointer, say) whose stat data is
-stale is compared raw, so it may read as modified.
-`tests/integration/test_copier_audit.py` proves this with a whole-tree hash
-of DEST, `.git` included.
+**DEST is never written.** The audit never imports, makes or hooks DEST's code
+in its own process. It reads DEST's files with `open()` and `ast`, and its git
+only through name-level commands built by `review_docs.git_argv`:
+`--no-optional-locks`, `core.fsmonitor=false`, `log.showSignature=false`, and
+every filter driver DEST's git config names set to an empty, non-required
+command. When git will not list those drivers, the call is not made. `git
+status` also passes `--ignore-submodules=all`, so no submodule's config is
+consulted. Plain `git status` and `git diff HEAD` rewrite `.git/index`
+(measured, git 2.43.5), so the audit and the two doc jobs use neither. The
+cost of the switched-off filters: a filtered file (an LFS pointer, say) whose
+stat data is stale is compared raw, so it may read as modified. A symlink
+leaving DEST is copied as its target's bytes, because copier writes through a
+link. This checkout is snapshotted by `git clone`, never handed to copier, so
+its index is never refreshed: copier on a dirty local template runs a plain
+`git status` there. The scratch copy is removed on exit, so a second run
+leaves every tree as the first did. `tests/integration/test_copier_audit.py`
+proves this with a whole-tree hash of DEST, `.git` included, the template
+copy's index bytes and mtime, and two byte-identical `--json` runs; its parity
+test holds the prediction equal to `check_structure.py --root` on a real
+update, and, for a project whose Makefile edit conflicts, equal to what that
+gate finds on the real update resolved both ways (git's own `merge-file
+--ours` and `--theirs` over copier's index stages).
 
 **Exit codes.**
 - 0: no letter error is owed.
 - 1: a letter error is owed, or the audit saw no file. An error resolved by
-  the update, freshness and config never set it.
+  the update or in a conflicted file, a conflict, freshness and config never
+  set it.
 - 2: a usage error, a refusal (DEST is not a keel project), a template render
-  error (DEST's answers included, when one has the wrong type), or a missing
-  `template` extra.
+  error (DEST's answers included, when one has the wrong type), a failed
+  `copier update` of the scratch copy (copier's last lines, the scratch path
+  shown as `<scratch>`), or a missing `template` extra.
 
 DEST is a keel project when every one of these holds:
 - it is a directory, and not this checkout;
@@ -636,4 +682,5 @@ DEST is a keel project when every one of these holds:
 - its `config/project.json` is a JSON object.
 
 `--json` prints the same report as canonical JSON, so two runs over the same
-DEST are byte-identical.
+DEST on the same day are byte-identical: the scratch git's commit dates and
+`SOURCE_DATE_EPOCH` are midnight UTC of the day the audit calls today.

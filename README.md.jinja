@@ -8,7 +8,7 @@ tags: [template, scaffold, {{ project_slug }}]
 summary: A generic, polyglot-aware, agent-friendly project skeleton that stays honest.
 id: readme
 created: 2026-06-17
-updated: 2026-10-06
+updated: 2026-10-07
 visibility: internal
 canonical: true
 ---
@@ -98,9 +98,10 @@ changed. Changing an answer deletes that directory, so commit your work first;
 Before you update, preview what the project would fail under the newer template's
 gates: from a checkout of the template, run `make audit-project DEST=<your project>`
 (inside the project, `make audit-project` prints that command with your project's
-path filled in). It reads the project and writes nothing, runs none of its code, and
-lists what it did not check. Confirm with a trial `copier update --trust` in a scratch
-clone of the project, then `make verify` there.
+path filled in). It runs a real `copier update` on a scratch copy of the project,
+judges the tree that update leaves, never writes the project itself, and lists
+what it did not check. Confirm with the real `copier update --trust` in the
+project, then `make verify` there.
 
 In a checkout of this repo you can also run `make new DEST=../my-project` — but note
 that records the template's **absolute local path** as the update origin, so

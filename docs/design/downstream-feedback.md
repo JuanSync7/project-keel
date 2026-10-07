@@ -312,7 +312,8 @@ does not run. `CONVENTIONS.md`, `AGENT.md` and `config/practices.json` need no
 change: the audit adds no rule, only a way to run the existing ones elsewhere.
 
 **Built.** `scripts/audit_project.py`; `--root PATH` and
-`run_checks(root, config_overrides)` in `scripts/check_structure.py`;
+`run_checks(root, config_overrides)` in `scripts/check_structure.py` (slice
+C2-3 removed `config_overrides`, which only the in-memory merge used);
 `modified_paths` in `scripts/jobs/review_docs.py` (`status` plus `ls-files`)
 and `git_argv`, which builds every git call of the audit and both doc jobs with
 `--no-optional-locks` and fsmonitor, signature verification and each configured
@@ -460,7 +461,8 @@ Found during the slices and deliberately not started:
   `effect_proof_skip` entry for `audit-project` as stale (bedrock-platform's one
   `template-rendered` W error). Origin is per file, so this mixed view (a
   rendered manifest against a `template-unedited` Makefile) is owed, and it is
-  the one owed error a pristine `7f0a68b` project still reports.
+  the one owed error a pristine `7f0a68b` project still reports. Fixed by
+  slice C2-3.
 - **A filtered file with stale stat data reads as modified.** The audit and the
   doc jobs switch off DEST's filter drivers, so git compares such a file (an LFS
   pointer, say) raw.
@@ -506,7 +508,7 @@ ADR-0012's own guarantee. A concern found mid-slice joins Queued.
 |-------|--------|--------|
 | C2-1 | A child inherits `GIT_DIR`/`GIT_WORK_TREE`/`GIT_INDEX_FILE`, so its git acts on the parent's repository | done — `make verify` green (1206 passed); 3 review findings confirmed and fixed |
 | C2-2 | A proxy URL with embedded credentials reaches every child | done — `make verify` green (1288 passed); 8 of 9 review findings confirmed and fixed |
-| C2-3 | The audit reads the `Makefile` and `config/practices.json` before the merge, so an old project reports a false W error | planned |
+| C2-3 | The audit reads the `Makefile` and `config/practices.json` before the merge, so an old project reports a false W error | done — `make verify` green (1308 passed); 4 review findings confirmed and fixed |
 | C2-4 | `make smoke` passes over zero tests, and `make run` fails with `No module named app` | planned |
 | C2-5 | A downstream project's ADR numbers collide with the template's | planned — needs the maintainer's numbering decision |
 
@@ -555,9 +557,11 @@ lists the `GIT_`-prefixed names it holds, so one round of `make check` carries
 the whole fix. The `GIT_` prefix only picks the names to show; the set that is
 held back is still `repo_context_names`.
 
-**The audit.** `scripts/audit_project.py` merges a list of distinct strings that
-both sides edited item by item, as copier's line-level merge leaves an
-allowlist. Before this slice the list was atomic. A pre-C2-1 project that had
+**The audit.** This slice made `scripts/audit_project.py` merge a list of
+distinct strings that both sides edited item by item, as copier's line-level
+merge leaves an allowlist; slice C2-3 replaced that merge with copier's own
+update, which the audit now runs and reads. Before this slice the list was
+atomic. A pre-C2-1 project that had
 added its own `child_env.names` entry was then judged on its old list. The
 audit reported an owed X error for `GIT_DIR` and predicted a copier conflict,
 but the real `copier update` merged cleanly and `make check` was green.
@@ -657,6 +661,98 @@ error.
 - copier's git, and a make recipe a hook starts directly, still bypass the
   helper.
 - A same-user child can still read `/proc/$PPID/environ`.
+
+### Slice C2-3 — the audit judges the tree the update leaves
+
+**Measured.** Before the fix, the audit merged the JSON configs in memory and
+read every other file as it stood in DEST. On a project generated at `7f0a68b`
+it reported 1 owed error and exit 1: config/project.json W, because the merged
+`effect_proof_skip` names `audit-project` and the unmerged Makefile lacks that
+target. A real `copier update` of the same project followed by
+`check_structure.py` reports 0 errors. The old audit also marked 49 errors
+resolved, because it marked every error in a template-unedited file resolved,
+whether or not the update fixes it.
+
+**The rule.** `scripts/audit_project.py` `predict` copies DEST into a
+`keel-audit-*` temporary directory and runs copier's own update there, against a
+clone of this checkout. It then runs `check_structure.run_checks` on the copy
+twice: before the update and after it. A letter error in the after run is owed.
+A letter error found only in the before run is `resolved_by` the update. A path
+that `git ls-files -u` reports as unmerged in the copy goes to the `conflict`
+group, and its findings carry `unjudged: conflict` and are not counted. The
+after run then happens twice, with every conflict hunk the project's way and
+the template's way (`resolve_conflict` reads copier's markers); a finding only
+one of the two has is `unjudged: conflict` as well. The config group compares the
+base render, DEST's JSON and the copy's JSON after the update (`classify`).
+The audit merges nothing itself. After the fix, the same `7f0a68b` project
+reports 0 owed, 12 resolved and 0 conflicts, with exit 0, in 30 s.
+`test_predicted_findings_equal_check_structure_on_a_real_update` checks that
+the predicted letter findings equal `check_structure.py` on a real update of an
+independent clone. It covers projects from `7f0a68b`, `29e45f0`, and `a70a7b5`
+both as rendered and with the project's own `child_env.names` entry.
+
+**Decision: copier runs the project's restamp.** keel's copier.yml `_tasks`
+and its last `_migrations` entry run `scripts/jobs/restamp_docs.py` from the
+merged copy, so the audit runs code the project may have edited. The audit
+accepts this. The parity test only means something with copier's real update,
+and the project runs the same restamp on every update anyway. Containment is
+the scratch copy with no DEST `.git`, `build_child_env`'s allowlisted
+environment, a hermetic gitconfig with `core.hooksPath=/dev/null`, and a
+check that no finding names the scratch root. The "not checked" list states
+it.
+
+**Decision: a conflict does not set the exit.** A conflict is reported and
+counted in the text summary, but the exit code still means "a letter error is
+owed", as before this slice. A failed `copier update` is exit 2 with copier's
+last stderr lines and the scratch root masked as `<scratch>`. No partial report
+is printed.
+
+**Rehearsal on bedrock-platform.** A scratch clone at `_commit:
+v0.1.0-14-g7f0a68b` audits as exit 2 in 28 s. The update conflicts on
+`scripts/check_structure.py`, because the project added its own check W and the
+template added a different one. copier's restamp task then imports the
+conflicted module and stops on the conflict marker. A real `copier update` on
+an independent clone fails the same way (exit 1, same task, in 25 s) and leaves
+120 conflicted files, most of them `updated:` frontmatter lines. Two runs
+printed byte-identical stderr. The clone's tree, `.git` and index mtime were
+unchanged, and no `keel-audit-*` directory was left behind. Slice 5's count of
+17 owed errors cannot be compared, because the update itself does not complete.
+
+**Review fixes.** An independent review reproduced two defects, both fixed
+test-first.
+- The first build restored a conflicted file to DEST's bytes and left every
+  other file as the update leaves it, which is the per-file mix this slice
+  removes. The `7f0a68b` project with its own target added to the Makefile's
+  `.PHONY` line (a line the update also changes) owed the `audit-project`
+  error again, exit 1: check_W reads the conflicted Makefile and reports
+  against the cleanly merged manifest. With both resolutions the project
+  reports 0 owed, 12 resolved and 1 conflicted file, with exit 0. The parity
+  test gained that project (`7f0a68b-conflict`). It resolves the real update
+  both ways with `git merge-file --ours` and `--theirs` over copier's index
+  stages, not with the audit's marker reader, and holds the audit's judged
+  findings equal to what both resolutions have outside the conflicted file.
+- The scratch copy is committed whatever DEST's state, so a DEST with
+  uncommitted changes previewed a clean update that the real `copier update`
+  refuses ("Destination repository is dirty"). The config group now warns
+  `update-refused` and names each uncommitted path, or says DEST is outside
+  git. The exit code does not change.
+- `run_checks(root, config_overrides)` lost its last caller with the in-memory
+  merge, so the parameter is gone (`run_checks(root)`).
+
+**Residual risk.**
+- A finding that neither the all-project nor the all-template resolution of
+  the conflicts raises, but a resolution mixing the two hunk by hunk would, is
+  not seen; one that both raise but a mix would clear is owed. Only a tree with
+  more than one conflict hunk can hit this.
+- A finding whose message carries a line number that the update shifts, such
+  as `Makefile:42:`, is reported once as resolved and once as owed. The owed
+  count and the exit stay correct, but `resolved_by_update` can over-count.
+- A failed update gives no partial report. On bedrock-platform the audit names
+  the failing task, but not the 120 conflicts the user meets next.
+- Files DEST's git ignores are not copied, so neither run judges them.
+- A link that leaves DEST is copied as its target's bytes, or dropped when it
+  is a directory or dangles. A submodule is not copied. Each is listed in "not
+  checked".
 
 The vault backlog for keel (`KEEL-*` items: the frontend contract chain FE-2,
 FE-1, FE-6, FE-3; TEST-1 live-store guard; SEC-1 secrets scan) is the next
