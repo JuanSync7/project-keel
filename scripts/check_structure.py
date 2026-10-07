@@ -106,7 +106,8 @@ Checks:
      API referenced without a call and a spawn name bound two ways in one
      scope are errors, as is a helper call whose arguments carry os.environ,
      directly or through a name within the module; and config/project.json
-     `child_env` and `models.credential_env` are well-formed. Names resolve
+     `child_env` (with `credentialed_values` naming only a variable the
+     allowlist copies) and `models.credential_env` are well-formed. Names resolve
      with Python's scope rules; a spawn through an unresolvable receiver
      (`self.runner(...)`, an alias of the module) or a parent value crossing a
      function parameter is under-reported, never over-reported
@@ -5461,7 +5462,8 @@ def check_X():
     that cannot take one, passes **kwargs to a spawn, or hands the helper the
     parent's environment; and when config/project.json `child_env` (or the
     `make_targets` and `models.credential_env` names it reads) is malformed while
-    a spawn exists or the block does. Silent when nothing spawns and no block
+    a spawn exists or the block does, including a `credentialed_values` entry
+    that no allowlist source copies. Silent when nothing spawns and no block
     exists; an unreadable manifest is reported once, by the reader."""
     modules = {}
     for name in sorted(os.listdir(ROOT)):

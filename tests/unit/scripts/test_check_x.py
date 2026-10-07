@@ -2,7 +2,7 @@
 title: Unit — check_structure check_X (a child process gets an allowlisted environment)
 kind: tests
 layer: n/a
-summary: check_X's rule, pinned: every subprocess/asyncio spawn in a .py at the repo root or under any top-level directory but tests/ (hidden, ignored and symlinked directories skipped) passes `env=` built by scripts/child_env.py `build_child_env`, directly or through a name every binding of which is a sole-target helper call and which is afterwards only read, in any scope; names resolve with Python's scope rules, so a binding in another scope never hides a spawn and a spawn name bound two ways in one scope is an error; a spawn API referenced without a call is an error; `os.system`, `os.popen`, `os.exec*`, `os.spawn*`, `pty.spawn` and `subprocess.getoutput` are errors outright, with no waiver; a helper call carrying `os.environ` or `os.getenv`, directly or through a name it reached in the module, is an error; config/project.json `child_env` is validated whenever a spawn exists. A spawn through a receiver the AST cannot resolve, and a parent value crossing a function parameter, are not seen, by design, and correct code is never an error. Keel's own tree is clean and the detector sees every spawn site in it.
+summary: check_X's rule, pinned: every subprocess/asyncio spawn in a .py at the repo root or under any top-level directory but tests/ (hidden, ignored and symlinked directories skipped) passes `env=` built by scripts/child_env.py `build_child_env`, directly or through a name every binding of which is a sole-target helper call and which is afterwards only read, in any scope; names resolve with Python's scope rules, so a binding in another scope never hides a spawn and a spawn name bound two ways in one scope is an error; a spawn API referenced without a call is an error; `os.system`, `os.popen`, `os.exec*`, `os.spawn*`, `pty.spawn` and `subprocess.getoutput` are errors outright, with no waiver; a helper call carrying `os.environ` or `os.getenv`, directly or through a name it reached in the module, is an error; config/project.json `child_env` is validated whenever a spawn exists, including a `credentialed_values` entry that no allowlist source copies. A spawn through a receiver the AST cannot resolve, and a parent value crossing a function parameter, are not seen, by design, and correct code is never an error. Keel's own tree is clean and the detector sees every spawn site in it.
 """
 
 import io
@@ -605,6 +605,33 @@ def test_a_manifest_allowlisting_a_repository_variable_fails_check_x_with_the_fi
     cs.errors[:] = []
     cs._CONFIG_READ.clear()  # one gate run reads the manifest once; this is a second
     _manifest(repo, _GOOD_MANIFEST)
+    cs.check_X()
+    assert cs.errors == [], cs.errors
+
+
+def test_a_stale_credentialed_values_entry_fails_check_x_with_the_fix(repo):
+    """An opt-in for a variable no allowlist source copies grants nothing and
+    reads as a reviewed exemption; the gate says to drop it. The same opt-in for
+    a copied name is clean, so the guard is not vacuous."""
+    child = dict(_GOOD_MANIFEST["child_env"], credentialed_values={"NOT_COPIED": "r"})
+    _manifest(repo, dict(_GOOD_MANIFEST, child_env=child))
+    _module(
+        repo,
+        "scripts/a.py",
+        "import subprocess\nfrom child_env import build_child_env\n"
+        "subprocess.run(['true'], env=build_child_env())\n",
+    )
+    cs.check_X()
+    assert len(cs.errors) == 1, cs.errors
+    msg = cs.errors[0]
+    assert msg.startswith(
+        "config/project.json: child_env.credentialed_values names `NOT_COPIED`"
+    ), msg
+    assert "drop the stale entry" in msg, msg
+    cs.errors[:] = []
+    cs._CONFIG_READ.clear()  # one gate run reads the manifest once; this is a second
+    child = dict(_GOOD_MANIFEST["child_env"], credentialed_values={"PATH": "r"})
+    _manifest(repo, dict(_GOOD_MANIFEST, child_env=child))
     cs.check_X()
     assert cs.errors == [], cs.errors
 

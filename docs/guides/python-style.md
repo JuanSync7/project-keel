@@ -134,6 +134,10 @@ Every rule here exists because one of those was found and measured:
   helper that runs git on a bare repository being pushed to) passes
   `repo_context=True`, and every other call omits it, so a child that runs git
   elsewhere never inherits the hook's `GIT_DIR` or `GIT_INDEX_FILE`.
+  The helper refuses a copied value carrying user information, such as
+  `http://user:password@proxy`, naming the variable and never the value;
+  when a message could quote a value, call the helper before building the
+  message, as `scripts/run_make_target.py` does.
   (Gated: check_X.)
 - **Exit codes are the contract for scripts.** `0` = clean, non-zero = act.
   Print *what to do*, not just what is wrong: `regenerate with make site-data`

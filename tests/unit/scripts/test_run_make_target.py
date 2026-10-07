@@ -2,7 +2,7 @@
 title: Unit — run_make_target (the read-only gate runner)
 kind: tests
 layer: n/a
-summary: run_target runs a make target only when its effect label, closed over its prerequisites, falls inside config/project.json `make_targets.gate_effects`; it refuses an unknown, unlabelled or wider target, an extra argument that is not a NAME=VALUE variable, a variable outside `make_targets.gate_vars` (make's control variables, the guard and the unattended variables among them), a value that is not one path-like word, a tree without git and a project without the policy, all without calling the runner. It passes the gate-runner variable last, so the Makefile's WRITE_GUARD refuses whatever the caller supplied, and fails a green run that changed the tree, naming the paths. A `make_targets.gate_vars` value found in the runner's own environment is forwarded on make's command line under the same one-word rule, an explicit one wins, and a bad one is refused before make runs. make and git get the allowlisted environment from scripts/child_env.py, never the runner's own. An allowlist that cannot be built is a refusal before anything runs, and a ChildEnvError during the run or a tree that cannot be re-read afterwards is red, never a traceback. The runner and the snapshot are injected, so no make or git process runs here.
+summary: run_target runs a make target only when its effect label, closed over its prerequisites, falls inside config/project.json `make_targets.gate_effects`; it refuses an unknown, unlabelled or wider target, an extra argument that is not a NAME=VALUE variable, a variable outside `make_targets.gate_vars` (make's control variables, the guard and the unattended variables among them), a value that is not one path-like word, a tree without git and a project without the policy, all without calling the runner. It passes the gate-runner variable last, so the Makefile's WRITE_GUARD refuses whatever the caller supplied, and fails a green run that changed the tree, naming the paths. A `make_targets.gate_vars` value found in the runner's own environment is forwarded on make's command line under the same one-word rule, an explicit one wins, and a bad one is refused before make runs. make and git get the allowlisted environment from scripts/child_env.py, never the runner's own. An allowlist that cannot be built, or that would copy a gate variable carrying a credential, is a refusal before anything runs and before any message could quote the value; a gate value, explicit or forwarded, that carries a credential is refused by name even when opted in, and no refusal quotes a value; and a ChildEnvError during the run or a tree that cannot be re-read afterwards is red, never a traceback. The runner and the snapshot are injected, so no make or git process runs here.
 """
 
 import json
@@ -330,6 +330,86 @@ def test_a_gate_variable_in_the_environment_that_is_not_one_word_is_refused(
     res = rmt.run_target("check", cwd=str(proj), runner=runner, snapshot=_never)
     assert res["refused"] and "PY" in res["refused"], res
     assert "environment" in res["refused"] and res["returncode"] is None, res
+    assert runner.calls == []
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["http://alice:s3cr3t-pw@x y", "http://alice:s3cr3t-pw@x"],
+    ids=["not-one-word", "one-word"],
+)
+def test_a_credentialed_gate_variable_is_refused_before_any_message_could_echo_it(
+    proj, monkeypatch, value
+):
+    """PY is a gate variable, so the allowlist copies it. A value carrying a
+    password is refused by name before the one-word rule could quote it back or
+    the forwarding could put it on make's command line."""
+    monkeypatch.setenv("PY", value)
+    runner = _fake(0)
+    res = rmt.run_target("check", cwd=str(proj), runner=runner, snapshot=_never)
+    assert res["ok"] is False and res["refused"], res
+    assert "PY" in res["refused"], res
+    assert "child_env.credentialed_values" in res["refused"], res
+    assert "s3cr3t-pw" not in json.dumps(res), "the refusal carries the value"
+    assert runner.calls == []
+
+
+_CREDENTIALED_GATE_VALUES = [
+    "http://alice:s3cr3t-pw@x y",
+    "http://alice:s3cr3t-pw@x",
+    "alice:s3cr3t-pw@x:1",
+]
+
+
+@pytest.mark.parametrize("value", _CREDENTIALED_GATE_VALUES)
+def test_an_explicit_gate_variable_carrying_a_credential_is_refused_by_name(
+    proj, value
+):
+    """An explicit --make-arg value is the caller's, but make's command line
+    reaches every recipe through MAKEFLAGS and any `ps`; it is judged by the rule
+    child_env applies, refused by name, and never quoted back."""
+    runner = _fake(0)
+    res = rmt.run_target(
+        "check", cwd=str(proj), extra=["PY=" + value], runner=runner, snapshot=_never
+    )
+    assert res["refused"] and "`PY`" in res["refused"], res
+    assert "s3cr3t-pw" not in json.dumps(res), "the refusal carries the value"
+    assert runner.calls == []
+
+
+def test_an_opted_in_gate_variable_still_never_reaches_makes_command_line(
+    proj, monkeypatch
+):
+    """child_env.credentialed_values lets a child's environment carry a
+    credential; it does not put one on make's command line. The allowlist is
+    stubbed as if PY were opted in, so only the forwarding rule is under test."""
+    monkeypatch.setattr(rmt.child_env, "build_child_env", lambda **kw: {})
+    monkeypatch.setenv("PY", "http://alice:s3cr3t-pw@x")
+    runner = _fake(0)
+    res = rmt.run_target("check", cwd=str(proj), runner=runner, snapshot=_never)
+    assert res["refused"] and "PY" in res["refused"], res
+    assert "s3cr3t-pw" not in json.dumps(res), "the refusal carries the value"
+    assert runner.calls == []
+
+
+@pytest.mark.parametrize("source", ["explicit", "environment"])
+def test_a_value_that_is_not_one_word_is_refused_without_being_quoted(
+    proj, monkeypatch, source
+):
+    """A credential in a form no rule recognises (a bare token after a space)
+    still never reaches the refusal: the one-word rule names the variable only."""
+    value = "python3 tok-UNQUOTED"
+    extra = []
+    if source == "explicit":
+        extra = ["PY=" + value]
+    else:
+        monkeypatch.setenv("PY", value)
+    runner = _fake(0)
+    res = rmt.run_target(
+        "check", cwd=str(proj), extra=extra, runner=runner, snapshot=_never
+    )
+    assert res["refused"] and "PY" in res["refused"], res
+    assert "UNQUOTED" not in json.dumps(res), res
     assert runner.calls == []
 
 

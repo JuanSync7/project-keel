@@ -67,7 +67,9 @@ unresolvable receiver would not be in it (see Consequences).
    `cdmon_sync.py` import it.
 2. **The names live in config, not code.** `child_env` and
    `models.credential_env` are names only; the values stay in the
-   environment. make's own control names (`MAKEFLAGS`, `MAKEFILES`,
+   environment (a copied value that carries user information is refused
+   unless `child_env.credentialed_values` names it, slice C2-2 in
+   `docs/design/downstream-feedback.md`). make's own control names (`MAKEFLAGS`, `MAKEFILES`,
    `MAKELEVEL`, `MAKEOVERRIDES`, `MFLAGS`) are refused in any list.
 3. **check_X holds every spawn to the helper, with no waiver.** Every
    `subprocess` or `asyncio` spawn in a `.py` at the root or under any

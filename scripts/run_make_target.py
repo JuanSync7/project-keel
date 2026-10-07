@@ -3,7 +3,7 @@
 title: Run make target (the read-only gate runner)
 kind: script
 layer: n/a
-summary: Deterministic doer — run a make target as a gate and report a structured pass/fail, but only a target whose effect label, closed over what it runs, falls inside config/project.json `make_targets.gate_effects`. It refuses an unknown, unlabelled or wider target, an extra argument that is not a NAME=VALUE variable named in `make_targets.gate_vars` with a one-word path-like value, a tree without git, and an allowlist scripts/child_env.py cannot build, all before make runs; it forwards a `make_targets.gate_vars` variable found in its own environment onto make's command line under the same one-word rule (an explicit one wins), because make and git get the allowlisted environment from scripts/child_env.py, never this one; it sets the gate-runner variable last so WRITE_GUARD refuses a [write] target; and it snapshots what git lists before and after (each path's porcelain status and content), failing a green run that changed it and naming the paths, and one whose tree cannot be re-read afterwards. The refactor loop (agents/practice_refactor, scripts/apply_refactor.py) and tests/integration/test_make_target_effects.py gate through it. Vendor-neutral, stdlib; it writes nothing itself.
+summary: Deterministic doer — run a make target as a gate and report a structured pass/fail, but only a target whose effect label, closed over what it runs, falls inside config/project.json `make_targets.gate_effects`. It refuses an unknown, unlabelled or wider target, an extra argument that is not a NAME=VALUE variable named in `make_targets.gate_vars` with a one-word path-like value, a tree without git, and an allowlist scripts/child_env.py cannot build or that would copy a value carrying a credential, all before make runs; it forwards a `make_targets.gate_vars` variable found in its own environment onto make's command line under the same one-word rule (an explicit one wins), and refuses any gate value, explicit or forwarded, that carries a credential by scripts/child_env.py's carries_credential, even one `child_env.credentialed_values` opts in, because make's command line reaches every recipe; every refusal names the variable and never quotes a value; because make and git get the allowlisted environment from scripts/child_env.py, never this one; it sets the gate-runner variable last so WRITE_GUARD refuses a [write] target; and it snapshots what git lists before and after (each path's porcelain status and content), failing a green run that changed it and naming the paths, and one whose tree cannot be re-read afterwards. The refactor loop (agents/practice_refactor, scripts/apply_refactor.py) and tests/integration/test_make_target_effects.py gate through it. Vendor-neutral, stdlib; it writes nothing itself.
 """
 
 from __future__ import annotations
@@ -206,6 +206,19 @@ def run_target(
     policy, why = _policy(root)
     if policy is None:
         return _refusal(target, str(why))
+    # Built once here so a malformed allowlist is a refusal before the tree is
+    # touched; make and git rebuild it from the same file a moment later. It
+    # runs before the gate variables are forwarded because a gate variable is
+    # allowlisted: one whose value carries a credential must be refused by name
+    # before the one-word rule below could quote the value back, or forwarding
+    # could put it on make's command line.
+    try:
+        child_env.build_child_env()
+    except child_env.ChildEnvError as exc:
+        return _refusal(
+            target,
+            "cannot start make or git without an allowlisted environment -- %s" % exc,
+        )
     allowed = list(policy["gate_vars"])  # type: ignore[call-overload]
     # A gate variable the caller's make set reaches this process only through the
     # environment; make's own child gets the allowlist, so it is forwarded here,
@@ -215,12 +228,14 @@ def run_target(
         if name in given or name not in os.environ:
             continue
         if not _GATE_VALUE.match(os.environ[name]):
+            # The value is never quoted: a credential in a form no rule
+            # recognises would otherwise reach the caller's log.
             return _refusal(
                 target,
-                "the environment variable %s=%r is not one path-like word -- "
-                "forwarded to make it would be expanded into a shell line, where "
-                "spaces, `;`, `$` or quotes could run a target whose label nobody "
-                "read" % (name, os.environ[name]),
+                "the environment variable %s is not one path-like word (value not "
+                "shown) -- forwarded to make it would be expanded into a shell "
+                "line, where spaces, `;`, `$` or quotes could run a target whose "
+                "label nobody read" % name,
             )
         extra.append("%s=%s" % (name, os.environ[name]))
     for arg in extra:
@@ -232,12 +247,23 @@ def run_target(
                 "no make control variable, guard or unattended variable, which could "
                 "run what no label declares" % (name, ",".join(allowed)),
             )
+        # Judged even when child_env.credentialed_values opts the variable in:
+        # that lets a child's environment carry it, but make hands its command
+        # line to every recipe through MAKEFLAGS, and `ps` shows it.
+        if child_env.carries_credential(name, value):
+            return _refusal(
+                target,
+                "`%s`'s value carries user information, a credential (value not "
+                "shown) -- a gate variable names a program or path, and make's "
+                "command line reaches every recipe and any `ps`; pass the program "
+                "without the credential" % name,
+            )
         if not _GATE_VALUE.match(value):
             return _refusal(
                 target,
-                "`%s`'s value %r is not one path-like word -- a recipe expands it "
-                "into a shell line, where spaces, `;`, `$` or quotes could run a "
-                "target whose label nobody read" % (name, value),
+                "`%s`'s value is not one path-like word (value not shown) -- a "
+                "recipe expands it into a shell line, where spaces, `;`, `$` or "
+                "quotes could run a target whose label nobody read" % name,
             )
     effects = check_structure.target_effects(root)
     if target not in effects:
@@ -255,16 +281,6 @@ def run_target(
             "`make %s` is labelled [%s] (closed over what it runs), outside "
             "make_targets.gate_effects [%s] -- a gate run only runs what leaves the "
             "tree and shared state alone" % (target, ",".join(labels), ",".join(gate)),
-            labels,
-        )
-    # Built once here so a malformed allowlist is a refusal before the tree is
-    # touched; make and git rebuild it from the same file a moment later.
-    try:
-        child_env.build_child_env()
-    except child_env.ChildEnvError as exc:
-        return _refusal(
-            target,
-            "cannot start make or git without an allowlisted environment -- %s" % exc,
             labels,
         )
     snap = snapshot or tree_snapshot

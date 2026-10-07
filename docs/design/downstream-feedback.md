@@ -432,7 +432,8 @@ Found during the slices and deliberately not started:
   `src/` must move the helper there first, keeping it 3.6-safe for the hook
   interpreter.
 - **A proxy URL can embed credentials** (`https://user:pass@proxy`); the proxy
-  names are allowlisted, so such a value still reaches every child.
+  names are allowlisted, so such a value still reaches every child. Fixed by
+  slice C2-2.
 - **`BASH_FUNC_*` and `PYTHONPATH` are not passed.** Environment Modules export
   shell functions that way; a caller that needs one passes it with `extra=`.
 - **A child can read its parent's environment** from `/proc/$PPID/environ`
@@ -504,7 +505,7 @@ ADR-0012's own guarantee. A concern found mid-slice joins Queued.
 | Slice | Defect | Status |
 |-------|--------|--------|
 | C2-1 | A child inherits `GIT_DIR`/`GIT_WORK_TREE`/`GIT_INDEX_FILE`, so its git acts on the parent's repository | done — `make verify` green (1206 passed); 3 review findings confirmed and fixed |
-| C2-2 | A proxy URL with embedded credentials reaches every child | planned |
+| C2-2 | A proxy URL with embedded credentials reaches every child | done — `make verify` green (1288 passed); 8 of 9 review findings confirmed and fixed |
 | C2-3 | The audit reads the `Makefile` and `config/practices.json` before the merge, so an old project reports a false W error | planned |
 | C2-4 | `make smoke` passes over zero tests, and `make run` fails with `No module named app` | planned |
 | C2-5 | A downstream project's ADR numbers collide with the template's | planned — needs the maintainer's numbering decision |
@@ -571,6 +572,91 @@ them.
 **Residual risk.** The `GIT_CONFIG*` names still reach a child. copier's own
 git, run through plumbum, and a make recipe that a hook starts directly do
 not pass through `build_child_env`. Both are in Queued.
+
+### Slice C2-2 — a credential in an allowlisted value does not reach a child
+
+**Measured.** Before the fix, with `HTTPS_PROXY=http://u:<password>@127.0.0.1:9`
+and `LC_X=https://tok@host` in the parent, `build_child_env` returned both
+values verbatim, and a child running `echo $HTTPS_PROXY` printed the password.
+`scripts/run_make_target.py` also quoted a refused gate variable with `%r`, so
+a `PY` holding a password with a space in it was echoed in the refusal, and a
+one-word one was put on make's command line before any check ran.
+
+**The rule.** Whether a value carries user information depends on who reads
+it, so `carries_credential(name, value)` in `scripts/child_env.py` applies
+three readings, and a value any of them flags is a credential:
+
+1. Every value: each URL authority in it, after `scheme://` or a leading `//`,
+   up to the first `/`, `?` or `#` (RFC 3986 section 3.2). Whitespace does not
+   end it, because `urllib.parse.urlsplit` keeps `u:p x@h` in the netloc. Any
+   non-empty text before its last `@` counts, because a token rides there with
+   no password.
+2. Every value: a whole value that is a scheme-less `user[:password]@host:port`.
+   The port separates it from ordinary values. A glibc `LANGUAGE` list
+   (`sr_RS:sr@latin`), `USER`'s `name@domain` and `git@host:org/repo` never end
+   in `@host:digits`.
+3. A variable whose lower-cased name ends `_proxy`, which is how
+   `urllib.request.getproxies_environment` picks the variables it reads as
+   proxies: the user information urllib's `_parse_proxy` finds. That parser
+   reads a scheme-less value as a whole authority, and a URL's authority up to
+   the first `/` after its first `@`. So `#`, `?`, `/` or a space in a
+   password, a scheme-less `token@proxy`, and even `http://h:8080/p?q=a@b`
+   (user `h` on 3.11) all reach `Proxy-Authorization`. Each case was measured.
+
+A scheme-less value outside a proxy name is not read as an address, so rule 3
+is scoped to proxy names. The first cut judged every value as if it were a
+proxy (`x:y@z`). That refused a Serbian-Latin or Valencian user's `LANGUAGE`
+and stopped every child, while it passed `token@proxy:8080`, `//u:p@proxy` and
+passwords containing `#`, `?`, `/` or a space. The independent review
+reproduced all of these. The scan is linear: about 0.02 s on a 128 kB
+adversarial value under 3.6.8. It anchors on the literal `://`, because a
+pattern that matched the scheme took 0.40 s on a 20 kB value.
+
+**Refuse, not strip or drop.** Stripping the user information would hand the
+child a proxy that answers 407, and dropping the variable would send the child
+around the proxy. Both fail later and far from the cause. `build_child_env`
+raises one `ChildEnvError` that names every such variable, sorted, and never
+quotes the value. The error carries no chained exception that could hold the
+value.
+
+**Config, not keyword.** C2-1's opt-in is a keyword because acting on the
+parent's repository is one call site's decision. An authenticating proxy is a
+property of the site, and every child crosses it, so the opt-in is
+`config/project.json` `child_env.credentialed_values`: an optional object that
+maps a copied variable to a non-empty reason. `child_env_policy`, and so
+check_X, refuses an entry that is not a variable name, has no reason, or names
+a variable no allowlist source copies (`drop the stale entry`).
+
+**Exemptions.** A name in `credentialed_values` passes its value through. A
+name in the called adapter's `models.credential_env` is not judged, because
+that list already declares a credential for that child alone; it is not
+exempt for any other call. A key the caller replaces through `extra=` is not
+judged, because the parent's value never reaches the child.
+
+**The runner.** `scripts/run_make_target.py` builds the child environment
+before it forwards a gate variable. It judges every gate value, explicit or
+forwarded, with `carries_credential`, and refuses one that carries a credential
+even when `credentialed_values` opts it in, because make hands its command line
+to every recipe through `MAKEFLAGS` and `ps` shows it. No refusal quotes a
+value, so a credential in a form no rule recognises still never reaches a log.
+
+**The audit.** `tests/integration/test_copier_audit.py` generates a project at
+`29e45f0`, before this slice. The audit reports `child_env.credentialed_values`
+as an `info` arrival with the template default `{}`, and the project owes no X
+error.
+
+**Residual risk.**
+- A credential in another form is not detected: a bare token, an
+  `Authorization` header value, or a `user:password@host` with no port outside
+  a proxy name.
+- `ssh://git@host` is refused although it carries a user name only.
+- A proxy value with an `@` after its host (`http://h:8080/p?q=a@b`) is refused,
+  although only urllib, not an RFC 3986 reader, would send it.
+- The runner judges the environment against keel's own config, not the
+  `--dir` project's.
+- copier's git, and a make recipe a hook starts directly, still bypass the
+  helper.
+- A same-user child can still read `/proc/$PPID/environ`.
 
 The vault backlog for keel (`KEEL-*` items: the frontend contract chain FE-2,
 FE-1, FE-6, FE-3; TEST-1 live-store guard; SEC-1 secrets scan) is the next

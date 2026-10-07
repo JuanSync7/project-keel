@@ -74,6 +74,23 @@ version rather than a bare commit:
   and its parent's `/proc/<pid>/environ`.
 
 ### Fixed
+- **A credential embedded in an allowlisted variable no longer reaches every
+  child.** The proxy names are allowlisted, so `HTTPS_PROXY=http://user:pass@proxy`
+  reached every child process verbatim. `build_child_env` now raises
+  `ChildEnvError` for a copied value carrying user information, naming the
+  variables and never the value. `carries_credential` judges a user part in
+  any URL authority (`scheme://` or a leading `//`), a whole value
+  `user[:password]@host:port`, and, in a variable whose name ends `_proxy`,
+  any user part urllib's proxy parser reads. A locale list such as
+  `LANGUAGE=sr_RS:sr@latin` is not refused. `scripts/run_make_target.py`
+  refuses a gate value, explicit or forwarded, that carries a credential, and
+  no longer quotes any value in a refusal, because before this fix a refused
+  `PY` was echoed in its message or put on make's command line. A project whose
+  children must authenticate through such a proxy names each variable in
+  `config/project.json` `child_env.credentialed_values` with the reason;
+  `check_X` refuses an entry the allowlist does not copy. Upgrading: the key
+  arrives as `{}` through `copier update`, and an older project owes no new
+  error.
 - **A child process no longer inherits the git repository its parent was
   started in.** `build_child_env` drops `config/project.json`
   `child_env.repo_context_names` (git's `--local-env-vars` plus `GIT_NAMESPACE`

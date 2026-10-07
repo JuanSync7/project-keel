@@ -2,7 +2,7 @@
 title: Integration — the downstream audit judges a generated project and writes nothing
 kind: tests
 layer: n/a
-summary: `scripts/audit_project.py` run against projects copier generates from this template. A project generated from the working tree audits with no letter error and no config arrival; the same project with four planted defects (an undeclared top-level directory, an unlabelled make target, a bare subprocess call, an unstamped doc edit) reports exactly those four under B, W, X and freshness, and its whole tree — `.git` included, bytes and modes, plus `.git/index`'s mtime — is identical after two audits whose JSON is byte-identical. A project generated at 7f0a68b, before the downstream-feedback campaign, reports the W and X errors and the config keys the update brings, each W/X finding labelled template-unedited (template-rendered in the manifest); every template-unedited error is resolved by the update, and the one owed error is the manifest's `effect_proof_skip` naming `audit-project`, the audit's kept blind spot. A planted defect in an edited file is owed, with an exact origin. A project generated at a70a7b5, before slice C2-1 moved git's repository variables out of `child_env.names`, owes no X error whether or not it added its own allowlist name: the audit merges that list item by item, as copier's line-level merge does. A generated project's own `make audit-project` is a stub that names the template checkout. Keel-only: copier's `tests/integration/test_copier_*.py` glob prunes it.
+summary: `scripts/audit_project.py` run against projects copier generates from this template. A project generated from the working tree audits with no letter error and no config arrival; the same project with four planted defects (an undeclared top-level directory, an unlabelled make target, a bare subprocess call, an unstamped doc edit) reports exactly those four under B, W, X and freshness, and its whole tree — `.git` included, bytes and modes, plus `.git/index`'s mtime — is identical after two audits whose JSON is byte-identical. A project generated at 7f0a68b, before the downstream-feedback campaign, reports the W and X errors and the config keys the update brings, each W/X finding labelled template-unedited (template-rendered in the manifest); every template-unedited error is resolved by the update, and the one owed error is the manifest's `effect_proof_skip` naming `audit-project`, the audit's kept blind spot. A planted defect in an edited file is owed, with an exact origin. A project generated at a70a7b5, before slice C2-1 moved git's repository variables out of `child_env.names`, owes no X error whether or not it added its own allowlist name: the audit merges that list item by item, as copier's line-level merge does. A project generated at 29e45f0, before slice C2-2, receives `child_env.credentialed_values` as an info arrival with the template default `{}` and owes no X error. A generated project's own `make audit-project` is a stub that names the template checkout. Keel-only: copier's `tests/integration/test_copier_*.py` glob prunes it.
 """
 
 import json
@@ -31,6 +31,8 @@ _PRE_CAMPAIGN = "7f0a68b"
 # The last commit before slice C2-1 moved git's repository variables out of
 # child_env.names into child_env.repo_context_names.
 _PRE_C2_1 = "a70a7b5"
+# The last commit before slice C2-2 added child_env.credentialed_values.
+_PRE_C2_2 = "29e45f0"
 _ANSWERS = {"project_name": "demo_proj", "frontend_stack": "none"}
 
 pytestmark = [
@@ -319,6 +321,12 @@ def pre_c2_1(tmp_path_factory):
     yield from _generated_at(tmp_path_factory, _PRE_C2_1)
 
 
+@pytest.fixture(scope="module")
+def pre_c2_2(tmp_path_factory):
+    """A project generated at 29e45f0, whose child_env has no credentialed_values."""
+    yield from _generated_at(tmp_path_factory, _PRE_C2_2)
+
+
 def test_a_project_from_7f0a68b_audits_with_the_w_and_x_findings_the_update_brings(
     pre_campaign,
 ):
@@ -420,6 +428,29 @@ def test_a_pre_c2_1_project_owes_no_x_error_for_the_moved_git_names(
     if customised:
         assert "MY_TOOL_HOME" in names[0]["message"], names
         assert "GIT_DIR" in names[0]["message"], names
+
+
+def test_a_pre_c2_2_project_receives_credentialed_values_as_an_arrival_and_owes_no_x_error(
+    pre_c2_2,
+):
+    """The key is optional, so an older project owes nothing for lacking it: the
+    audit reports it as the one config key the update brings, at its empty
+    default, and no X error."""
+    project, _env = pre_c2_2
+    before = _tree(project)
+    r = _audit(project, doc_stamps.newest_stamp(_ROOT))
+    assert _tree(project) == before, "the audit changed DEST's tree"
+    report = json.loads(r.stdout)
+    assert report["base"]["resolved"], "29e45f0 must resolve in the template"
+    assert _errors(report, "X") == [], report["groups"]["X"]
+    arrived = [
+        f
+        for f in report["groups"]["config"]
+        if f["kind"] == "arrives" and f.get("file") == "config/project.json"
+    ]
+    assert {f["key"] for f in arrived} == {"child_env.credentialed_values"}, arrived
+    assert "template default: {}" in arrived[0]["message"], arrived
+    assert arrived[0]["tier"] == "info", arrived
 
 
 def test_the_shipped_audit_target_points_back_at_the_template(generated):

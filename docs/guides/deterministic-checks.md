@@ -352,6 +352,16 @@ print but never fail the build.
   would show it. A project generated before slice C2-1 of
   `docs/design/downstream-feedback.md` fails with `child_env.repo_context_names
   is missing` until `copier update` brings the key.
+  `child_env.credentialed_values` is optional and maps a copied variable to
+  the reason its value may carry user information. The check refuses an
+  entry that is not a variable name, has an empty reason, or names a
+  variable no allowlist source copies, with `drop the stale entry` in the
+  message. The value itself is judged at run time, not here, because the gate
+  never sees the environment a child will get: `build_child_env` raises
+  `ChildEnvError` with `build_child_env: HTTPS_PROXY holds user information`
+  and the fix, and never the value. This opt-in is config, not a
+  keyword, because an authenticating proxy is a property of the site that
+  every child crosses, not of one call.
   It under-reports, never over-reports, in two places: a spawn through a
   receiver it cannot resolve (`self.runner(...)`, `loop.subprocess_exec`,
   `sp = subprocess; sp.run`), and a parent-environment value that reaches the

@@ -2,7 +2,7 @@
 title: Integration — copier generates a structurally valid, tailored project
 kind: tests
 layer: n/a
-summary: `copier` renders keel's root template into a new project — the manifest is tailored to the answers, the un-chosen frontend stack is pruned, CLAUDE.md->AGENT.md symlinks are preserved, keel's own template meta-tests are pruned, and check_structure passes; an undeclared top-level directory reds the project until it is declared and labelled. A bare `subprocess.run` reds a generated project through check_X until it passes `env=build_child_env()`, and the project's helper passes an adapter's declared credential and no planted secret. Skipped on a bare local clone without the optional `template` extra; CI installs `.[dev,template]` and declares the surface required (KEEL_REQUIRED_EXTRAS), so there a missing copier is a hard failure instead of a silent skip.
+summary: `copier` renders keel's root template into a new project — the manifest is tailored to the answers, the un-chosen frontend stack is pruned, CLAUDE.md->AGENT.md symlinks are preserved, keel's own template meta-tests are pruned, and check_structure passes; an undeclared top-level directory reds the project until it is declared and labelled. A bare `subprocess.run` reds a generated project through check_X until it passes `env=build_child_env()`, and the project's helper passes an adapter's declared credential and no planted secret. A credentialed proxy (a `#` in the password included) fails the project's doc judge by name and never by value, while a `LANGUAGE=sr_RS:sr@latin` locale list does not, until `child_env.credentialed_values` names it, and a stale entry there reds the gate. Skipped on a bare local clone without the optional `template` extra; CI installs `.[dev,template]` and declares the surface required (KEEL_REQUIRED_EXTRAS), so there a missing copier is a hard failure instead of a silent skip.
 """
 
 import json
@@ -1746,6 +1746,112 @@ def test_a_generated_projects_children_never_follow_the_hooks_repository(tmp_pat
     assert r.returncode != 0, "GIT_DIR in child_env.names left the gate green"
     assert "child_env.names lists GIT_DIR" in r.stdout, r.stdout
     assert "build_child_env(repo_context=True)" in r.stdout, r.stdout
+    manifest.write_text(shipped, encoding="utf-8")
+    r = _structure_gate(dest)
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
+def test_a_generated_projects_children_never_receive_a_credentialed_proxy(tmp_path):
+    """The value rule holds DOWNSTREAM, through the project's own doer, gate and
+    helper.
+
+    With a proxy URL carrying a password in HTTPS_PROXY, the project's freshness
+    judge (which starts git through build_child_env) refuses by name and prints
+    the password nowhere. Its structure gate stays green, because a gate cannot
+    see the environment its doers run under. Once the project's own config opts
+    HTTPS_PROXY in with a reason, the judge behaves as without a proxy and the
+    helper hands a child the value; a stale opt-in reds the gate."""
+    dest = tmp_path / "proj"
+    _generate(dest, project_name="demo_proj", frontend_stack="none")
+    env = _hermetic_git_env(tmp_path)
+    for argv in (["init", "-q", "-b", "main"], ["add", "-A"], ["commit", "-qm", "g"]):
+        r = subprocess.run(["git"] + argv, cwd=str(dest), env=env, capture_output=True)
+        assert r.returncode == 0, r.stderr
+
+    other = tmp_path / "other"
+    (other / "docs").mkdir(parents=True)
+    (other / "docs" / "x.md").write_text(
+        "---\ntitle: x\nupdated: 2020-01-01\n---\n\n# x\n", encoding="utf-8"
+    )
+    dated = dict(env, GIT_COMMITTER_DATE="@1790000000", GIT_AUTHOR_DATE="@1790000000")
+    for argv in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "o"]):
+        r = subprocess.run(
+            ["git"] + argv, cwd=str(other), env=dated, capture_output=True
+        )
+        assert r.returncode == 0, r.stderr
+
+    manifest = dest / "config" / "project.json"
+    shipped = manifest.read_text(encoding="utf-8")
+    assert json.loads(shipped)["child_env"]["credentialed_values"] == {}
+    proxy = "http://u:secret@127.0.0.1:9"
+    proxied = dict(env, HTTPS_PROXY=proxy)
+    judge = [sys.executable, "scripts/jobs/review_docs.py", "--root", str(other)]
+    judge += ["--strict", "--today", "2026-10-06"]
+
+    def judged(environ):
+        return subprocess.run(
+            judge, cwd=str(dest), env=environ, capture_output=True, text=True
+        )
+
+    plain = judged(env)
+    assert plain.returncode == 1 and "STALE docs/x.md" in plain.stdout, (
+        plain.stdout + plain.stderr
+    )
+    refused = judged(proxied)
+    out = refused.stdout + refused.stderr
+    assert refused.returncode != 0, out
+    assert "HTTPS_PROXY" in out and "child_env.credentialed_values" in out, out
+    assert "secret" not in out, "the refusal printed the proxy's password"
+    # A password urllib's proxy parser reads past a `#` is refused the same way,
+    # and a glibc locale list with an @modifier is no credential at all.
+    hashed = judged(dict(env, HTTPS_PROXY="http://u:pw#QZ7x@127.0.0.1:9"))
+    out = hashed.stdout + hashed.stderr
+    assert hashed.returncode != 0 and "HTTPS_PROXY" in out, out
+    assert "QZ7x" not in out, "the refusal printed the proxy's password"
+    localed = judged(dict(env, LANGUAGE="sr_RS:sr@latin"))
+    assert (localed.returncode, localed.stdout) == (plain.returncode, plain.stdout), (
+        localed.stdout + localed.stderr
+    )
+    r = subprocess.run(
+        [sys.executable, "scripts/check_structure.py"],
+        cwd=str(dest),
+        env=proxied,
+        capture_output=True,
+        text=True,
+    )
+    assert r.returncode == 0, "the gate cannot see values:\n" + r.stdout + r.stderr
+
+    edited = json.loads(shipped)
+    edited["child_env"]["credentialed_values"] = {
+        "HTTPS_PROXY": "the site proxy authenticates every request"
+    }
+    manifest.write_text(json.dumps(edited, indent=2) + "\n", encoding="utf-8")
+    r = _structure_gate(dest)
+    assert r.returncode == 0, "a reasoned opt-in reds the gate:\n" + r.stdout
+    opted = judged(proxied)
+    assert (opted.returncode, opted.stdout) == (plain.returncode, plain.stdout), (
+        opted.stdout + opted.stderr
+    )
+    helper = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; sys.path.insert(0, 'scripts'); import child_env; "
+            "print(child_env.build_child_env().get('HTTPS_PROXY'))",
+        ],
+        cwd=str(dest),
+        env=proxied,
+        capture_output=True,
+        text=True,
+    )
+    assert helper.returncode == 0, helper.stderr
+    assert helper.stdout.strip() == proxy
+
+    edited["child_env"]["credentialed_values"] = {"NOT_COPIED": "r"}
+    manifest.write_text(json.dumps(edited, indent=2) + "\n", encoding="utf-8")
+    r = _structure_gate(dest)
+    assert r.returncode != 0, "a stale opt-in left the gate green"
+    assert "drop the stale entry" in r.stdout, r.stdout
     manifest.write_text(shipped, encoding="utf-8")
     r = _structure_gate(dest)
     assert r.returncode == 0, r.stdout + r.stderr

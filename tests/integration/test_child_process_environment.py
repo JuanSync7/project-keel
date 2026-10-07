@@ -2,7 +2,7 @@
 title: Integration — a child process sees only the allowlisted environment
 kind: tests
 layer: n/a
-summary: Driven through real make, git and a fake model CLI. A target the gate runner starts prints an environment holding none of the credentials planted in the parent, yet holding PATH and the gate-runner variable. The interpreter choice (`PY`, a `make_targets.gate_vars` name) and the write guard (`RALPH`, a `make_targets.unattended_vars` name) both survive a hop through a Python process that builds its child's environment with scripts/child_env.py. The claude-code-headless adapter hands its CLI the credential names config/project.json `models.credential_env` declares for it and no other planted credential.
+summary: Driven through real make, git and a fake model CLI. A target the gate runner starts prints an environment holding none of the credentials planted in the parent, yet holding PATH and the gate-runner variable. The interpreter choice (`PY`, a `make_targets.gate_vars` name) and the write guard (`RALPH`, a `make_targets.unattended_vars` name) both survive a hop through a Python process that builds its child's environment with scripts/child_env.py. The claude-code-headless adapter hands its CLI the credential names config/project.json `models.credential_env` declares for it and no other planted credential. A proxy URL carrying a password refuses the gate run by name, and the password appears nowhere in its result.
 """
 
 import json
@@ -77,6 +77,22 @@ def test_a_gate_run_child_sees_no_planted_secret(tmp_path, monkeypatch):
     out = str(res["output"])
     assert not set(_PLANTED) & _names(out), out
     assert "PATH" in _names(out) and "\nRALPH=1\n" in "\n" + out, out
+
+
+def test_a_credentialed_proxy_never_reaches_a_gate_run_child(tmp_path, monkeypatch):
+    """Through real make and git: a proxy URL carrying a password is an
+    allowlisted name with a credential in its value. The run is refused by
+    name, the password appears nowhere in the result, and the same probe
+    without the variable runs (the control). The opt-in is not exercised: the
+    runner builds the environment from keel's own config, not the probe's."""
+    repo = _probe_repo(tmp_path)
+    monkeypatch.delenv("HTTPS_PROXY", raising=False)
+    assert rmt.run_target("probe", cwd=str(repo))["ok"] is True
+    monkeypatch.setenv("HTTPS_PROXY", "http://alice:s3cr3t-pw@127.0.0.1:9")
+    res = rmt.run_target("probe", cwd=str(repo))
+    assert res["ok"] is False and res["refused"], res
+    assert "HTTPS_PROXY" in res["refused"], res
+    assert "s3cr3t-pw" not in json.dumps(res), "the result carries the password"
 
 
 def test_the_interpreter_choice_survives_a_python_hop(tmp_path, monkeypatch):
