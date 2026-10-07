@@ -3,7 +3,7 @@
 title: audit_project — another keel project judged by this template's current gates
 kind: script
 layer: n/a
-summary: Answers "what would this template's current gates say about DEST once `copier update` has landed?" by judging one consistent tree, the one the update leaves, never a mix of merged and unmerged files. It builds that tree in a scratch directory (`tempfile.TemporaryDirectory`, prefix `keel-audit-`, removed on every exit path): a clone of this checkout with its uncommitted edits committed on top (a snapshot, so the template's own index is never refreshed), a copy of DEST's files (the ones git does not ignore; a symlink leaving DEST is copied as its target's bytes, so nothing is written through it), and a real `copier update --trust --conflict inline` of the copy against the snapshot, run as a child process with an allowlisted environment and a hermetic git config. check_structure's letters (A..X) run in-process on the copy before and after the update: a letter finding after the update is owed; one present only before is resolved by the update; a path copier leaves conflicted is reported in the `conflict` group, and the tree after the update is then checked twice, every conflict hunk the project's way and every hunk the template's way (`resolve_conflict`, read from copier's own markers), so no check parses a marker and no conflicted file is put back to DEST's bytes beside the update's other files: a finding both resolutions have is owed, one only one has depends on how the conflict is resolved and is not judged, and a finding in a conflicted file is not judged. The config group warns (`update-refused`) when the real update would refuse DEST: outside git, or with uncommitted changes, which it names. The config group names what the update did to each key of each JSON config (`classify`: arrives, updates, merges, removed-upstream) from the template's render at DEST's `_commit`, DEST's file and the predicted file. Every finding carries an origin evidence kind (template-unedited, template-edited, template-rendered, template-new, project, unknown) read from git at `_commit`; a file that cannot be read is `unknown`. When `_commit` does not resolve here nothing is predicted: DEST is judged as it stands and the not-checked section says so. It adds the freshness judge (scripts/jobs/review_docs.py) and the restamp writer's `pending` list (scripts/jobs/restamp_docs.py) on DEST, both of which the update's last migration clears. A "not checked" section names every proof it does not run, including that the update's tasks run the project's merged restamp step inside the scratch copy. DEST and this checkout are never written: DEST is read with open() and ast and its git with name-level commands built by `review_docs.git_argv` that write nothing and switch off fsmonitor, signature verification and every filter driver its git config names; no make target, hook or module of DEST runs in this process. Exit 0 when no letter error is owed, 1 when one is (or no file was seen), 2 on a usage error, a refusal (DEST is not a keel project, or its answers are malformed), a template render error (including answers of the wrong type), a failed copier update or a missing extra. Keel-only: excluded from generated projects (docs/design/downstream-feedback.md, slice 5); a generated project's `make audit-project` stub points back at the template checkout.
+summary: Answers "what would this template's current gates say about DEST once `copier update` has landed?" by judging one consistent tree, the one the update leaves, never a mix of merged and unmerged files. It builds that tree in a scratch directory (`tempfile.TemporaryDirectory`, prefix `keel-audit-`, removed on every exit path): a clone of this checkout with its uncommitted edits committed on top (a snapshot, so the template's own index is never refreshed), a copy of DEST's files (the ones git does not ignore; a symlink leaving DEST is copied as its target's bytes, so nothing is written through it), and a real `copier update --trust --conflict inline` of the copy against the snapshot, run as a child process with an allowlisted environment and a hermetic git config. check_structure's letters (A..Y) run in-process on the copy before and after the update: a letter finding after the update is owed; one present only before is resolved by the update; a path copier leaves conflicted is reported in the `conflict` group, and the tree after the update is then checked twice, every conflict hunk the project's way and every hunk the template's way (`resolve_conflict`, read from copier's own markers), so no check parses a marker and no conflicted file is put back to DEST's bytes beside the update's other files: a finding both resolutions have is owed, one only one has depends on how the conflict is resolved and is not judged, and a finding in a conflicted file is not judged. The `retired` group names each DEST file the update deletes that the project edited (an error, owed: the same `is_edited` rule scripts/jobs/keep_edited_retired.py applies; the prediction runs that guard migration as the real update does, so a file still deleted after it is one a later `rm` migration removes or one copier deleted without running migrations). The config group warns (`update-refused`) when the real update would refuse DEST: outside git, or with uncommitted changes, which it names. The config group names what the update did to each key of each JSON config (`classify`: arrives, updates, merges, removed-upstream) from the template's render at DEST's `_commit`, DEST's file and the predicted file. Every finding carries an origin evidence kind (template-unedited, template-edited, template-rendered, template-new, project, unknown) read from git at `_commit`; a file that cannot be read is `unknown`. When `_commit` does not resolve here nothing is predicted: DEST is judged as it stands and the not-checked section says so. It adds the freshness judge (scripts/jobs/review_docs.py) and the restamp writer's `pending` list (scripts/jobs/restamp_docs.py) on DEST, both of which the update's last migration clears. A "not checked" section names every proof it does not run, including that the update's tasks run the project's merged restamp step inside the scratch copy. DEST and this checkout are never written: DEST is read with open() and ast and its git with name-level commands built by `review_docs.git_argv` that write nothing and switch off fsmonitor, signature verification and every filter driver its git config names; no make target, hook or module of DEST runs in this process. Exit 0 when no letter or `retired` error is owed, 1 when one is (or no file was seen), 2 on a usage error, a refusal (DEST is not a keel project, or its answers are malformed), a template render error (including answers of the wrong type), a failed copier update or a missing extra. Keel-only: excluded from generated projects (docs/design/downstream-feedback.md, slice 5); a generated project's `make audit-project` stub points back at the template checkout.
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/integration/test_copier_audit.py
@@ -30,6 +30,7 @@ for _dir in (_SCRIPTS, os.path.join(_SCRIPTS, "jobs")):
 
 import check_structure  # noqa: E402
 import child_env  # noqa: E402
+import keep_edited_retired  # noqa: E402
 import restamp_docs  # noqa: E402
 import review_docs  # noqa: E402
 
@@ -38,7 +39,7 @@ TEMPLATE = os.path.dirname(_SCRIPTS)
 ANSWERS = ".copier-answers.yml"
 MANIFEST = "config/project.json"
 LETTERS = tuple(letter for letter, _fn in check_structure.CHECKS)
-GROUPS = LETTERS + ("conflict", "config", "freshness", "restamp")
+GROUPS = LETTERS + ("conflict", "config", "freshness", "restamp", "retired")
 TIERS = ("error", "warning", "info")
 FRESHNESS_RESOLVED_BY = "copier update (_migrations: restamp_docs)"
 # A letter finding in the tree before the update that the tree the update
@@ -1110,6 +1111,56 @@ def _judged_after_update(
             groups["config"].extend(
                 _config_changes(rel, bases.get(rel) or {}, ours, predicted)
             )
+        groups["retired"].extend(_retired(dest, base_sha, tree, pred.root))
+
+
+def _dest_bytes(dest, rel):
+    """DEST's *rel* as git would store it: a symlink's target, a file's bytes,
+    or None when it is neither."""
+    full = os.path.join(dest, rel)
+    if os.path.islink(full):
+        return os.fsencode(os.readlink(full))
+    if not os.path.isfile(full):
+        return None
+    with open(full, "rb") as fh:
+        return fh.read()
+
+
+def _retired(dest, base_sha, tree, after_root):
+    """A finding per DEST file the predicted update deletes that the project
+    edited, judged by the guard migration's own rule
+    (keep_edited_retired.is_edited) against the template's blob at `_commit`.
+    The prediction runs the same update, guard included, so a file still
+    deleted after it is one the real update deletes: a later `rm` migration
+    removed it, or copier ran no migration."""
+    found = []
+    for rel in _dest_paths(dest):
+        if rel == ANSWERS or os.path.lexists(os.path.join(after_root, rel)):
+            continue
+        ours = _dest_bytes(dest, rel)
+        if ours is None:
+            continue
+        if tree.get(rel) == "blob":
+            if keep_edited_retired.is_edited(ours, _blob(base_sha, rel)):
+                found.append(
+                    {
+                        "tier": "error",
+                        "path": rel,
+                        "message": "the update deletes %s, which the project "
+                        "edited" % rel,
+                    }
+                )
+        elif tree.get(rel + check_structure._TWIN_SUFFIX) == "blob":
+            found.append(
+                {
+                    "tier": "warning",
+                    "path": rel,
+                    "message": "the update deletes %s, which the template renders "
+                    "from %s%s, so whether the project edited it is not judged"
+                    % (rel, rel, check_structure._TWIN_SUFFIX),
+                }
+            )
+    return found
 
 
 def audit(dest, today):
@@ -1176,7 +1227,7 @@ def audit(dest, today):
         for g in LETTERS
         for f in groups[g]
         if f["tier"] == "error" and "resolved_by" not in f and "unjudged" not in f
-    )
+    ) + sum(1 for f in groups["retired"] if f["tier"] == "error")
     warnings = sum(
         1
         for g in GROUPS
@@ -1344,7 +1395,7 @@ template's CURRENT gates once `copier update` has landed.
 
 The audit judges one tree, the one the update leaves. It runs a real
 `copier update` on a scratch copy of DEST (a temporary directory removed on
-exit) against a snapshot of this checkout, and runs check_structure A..X on
+exit) against a snapshot of this checkout, and runs check_structure A..Y on
 the copy before and after. DEST is never written, nor DEST/.git, nor this
 checkout; it runs none of DEST's code in this process.
 

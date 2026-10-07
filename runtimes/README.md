@@ -9,7 +9,7 @@ tags: [runtime, orchestration, control-flow, agents]
 summary: Execute an agent's control flow as a neutral Plan — engines (in-process, LangGraph) are adapters behind one contract.
 id: runtimes-readme
 created: 2026-06-22
-updated: 2026-09-02
+updated: 2026-10-07
 visibility: internal
 canonical: true
 ---
@@ -91,6 +91,6 @@ contract or to `agents/`. Adopt a heavier engine **per agent** only when a
 real trigger arrives (durable resume across a crash, mid-flow human
 approval, or a genuine cycle/fan-out), not for uniformity.
 
-See [`docs/adr/0003-agent-control-flow-runtime.md`](../docs/adr/0003-agent-control-flow-runtime.md)
+See [`docs/adr/keel/K-0003-agent-control-flow-runtime.md`](../docs/adr/keel/K-0003-agent-control-flow-runtime.md)
 for the decision and [`docs/guides/agent-runtimes.md`](../docs/guides/agent-runtimes.md)
 for the how-to.

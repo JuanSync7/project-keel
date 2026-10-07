@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 title: check_structure — the deterministic conventions gate
-summary: Stdlib-only, 3.6-safe enforcement of CONVENTIONS.md — labeling, taxonomy, package boundaries, tool/agent governance, manifest and ruleset parity, twin parity, the machine-readable module contract, Makefile help parity, cross-reference resolution, check-catalogue parity, rosters, practice mechanisms, policy reachability, writer rerun declarations, make-target effect labels, and child-process environments (checks A-X). Exit 1 on any error; warnings never fail the build.
+summary: Stdlib-only, 3.6-safe enforcement of CONVENTIONS.md — labeling, taxonomy, package boundaries, tool/agent governance, manifest and ruleset parity, twin parity, the machine-readable module contract, Makefile help parity, cross-reference resolution, check-catalogue parity, rosters, practice mechanisms, policy reachability, writer rerun declarations, make-target effect labels, child-process environments, and ADR number spaces (checks A-Y). Exit 1 on any error; warnings never fail the build.
 
 check_structure.py - enforce the project conventions (see CONVENTIONS.md).
 
@@ -17,7 +17,7 @@ Checks:
   C. Each src/ directory containing *.py is a package: __init__.py with __all__
   D. The __init__ boundary: no absolute import of another package's _private module
   E. Authored coverage (ERR): every __all__-exported symbol defined in-file
-     has a docstring — the corpus's symbol summaries (WARN until ADR-0008)
+     has a docstring — the corpus's symbol summaries (WARN until ADR-K-0008)
   F. Tool specs governed (ERR) + accountability (WARN): tool/agent docs are
      owned; a spec's body is the seven CONVENTIONS §10 sections in order, its
      Side effects opens with the word for its tool_effect, and its When to use
@@ -54,7 +54,7 @@ Checks:
      explicit, non-empty title:/summary: lines — the grammar build_corpus
      reads. Without them the corpus falls back to filename/first-prose-line
      and labels the result 'authored'; an undocumented module is silently
-     DROPPED from the corpus entirely (ADR-0008)
+     DROPPED from the corpus entirely (ADR-K-0008)
   P. Makefile help parity (ERR): every `## `-annotated target is one the
      `help` recipe's own grep pattern lists. The pattern is read out of the
      recipe, not restated here, so the check cannot agree with a wrong one;
@@ -111,6 +111,14 @@ Checks:
      with Python's scope rules; a spawn through an unresolvable receiver
      (`self.runner(...)`, an alias of the module) or a parent value crossing a
      function parameter is under-reported, never over-reported
+  Y. ADR number spaces (ERR): config/project.json `adr` is well-formed once
+     the tree holds a `kind: adr` document; a project-space ADR is
+     NNNN-<slug>.md without the template prefix, a template-space ADR is
+     <prefix>NNNN-<slug>.md that `adr.template_adrs` lists (and every listed
+     name is a file there), a `kind: adr` document lives directly in one of
+     the two spaces, a number is unique within its space, and an ADR's kind
+     is adr and its title begins ADR-<prefix?>NNNN: for its own file
+     (CONVENTIONS §19). WARN when both spaces are empty
 
 Exit 0 = clean, 1 = errors. Warnings never fail the build. Stdlib only; 3.6+.
 
@@ -513,7 +521,7 @@ def check_B():
         # the WARN says so on every run. It is not an ERROR because git stores a
         # symlink as a path, not as project content, and this gate cannot ask git
         # whether the link is tracked (stdlib-only, no git: Alternatives in
-        # docs/adr/0009-release-identity-and-the-tag-ordering-rule.md). An
+        # docs/adr/keel/K-0009-release-identity-and-the-tag-ordering-rule.md). An
         # ERROR would turn keel's own local gate red over an untracked stray link
         # at the root, and every copier generation from a dirty tree with it,
         # since copier's dirty-HEAD clone runs `git add -A` and copies the link
@@ -623,7 +631,7 @@ def _exported_names(tree):
         # An annotated `__all__: list[str] = [...]` is an AnnAssign, not an
         # Assign — matching only Assign made annotated exports invisible to
         # this reader (and identically to its twin), found by a mutation check
-        # in the ADR-0008 pass. Both readers changed together; the parity is
+        # in the ADR-K-0008 pass. Both readers changed together; the parity is
         # pinned by tests/unit/scripts/test_check_corpus.py::
         # test_exported_names_parity_with_the_corpus_reader. Deliberately a
         # top-level LITERAL reader: `__all__ +=` / .extend / conditional forms
@@ -652,7 +660,7 @@ def _exported_names(tree):
 def check_E():
     """ERROR when an __all__-exported symbol defined in-file has no docstring.
     Authored docstrings are the canonical corpus summaries — a gap is a symbol
-    an agent can name but not explain. WARN until ADR-0008 promoted it (the
+    an agent can name but not explain. WARN until ADR-K-0008 promoted it (the
     tree measured zero findings, so promotion cost nothing)."""
     for croot in CODE_ROOTS:
         base = os.path.join(ROOT, croot)
@@ -682,7 +690,7 @@ def check_E():
                     if nd is not None and not ast.get_docstring(nd):
                         err(
                             "%s: exported symbol '%s' has no docstring "
-                            "(authored summary missing; ADR-0008)" % (rel(full), name)
+                            "(authored summary missing; ADR-K-0008)" % (rel(full), name)
                         )
 
 
@@ -2215,7 +2223,7 @@ def _twin_parity_findings(files, declared):
     prove, and does:
 
       * every twin is declared, so a sixth one cannot appear unnoticed — the drift
-        class re-opening is the thing ADR-0005 was told to wait for;
+        class re-opening is the thing ADR-K-0005 was told to wait for;
       * the declaration matches reality (a parity/divergence twin has its plain
         sibling; a `generated` one must NOT, because keel is the template);
       * a `parity` twin carries no NON-TEMPLATED line the plain file has lost.
@@ -2400,7 +2408,7 @@ def _module_header_findings(files):
         if not doc:
             errs.append(
                 "%s: module has no docstring -- build_corpus cannot index it, "
-                "so it is invisible to every corpus query (ADR-0008; see "
+                "so it is invisible to every corpus query (ADR-K-0008; see "
                 "docs/guides/python-style.md)" % relpath
             )
             continue
@@ -2409,7 +2417,7 @@ def _module_header_findings(files):
             errs.append(
                 "%s: module docstring lacks explicit %s -- the corpus falls "
                 "back to the filename / first prose line and labels the result "
-                "authored (ADR-0008; see docs/guides/python-style.md)"
+                "authored (ADR-K-0008; see docs/guides/python-style.md)"
                 % (relpath, " and ".join(m + ":" for m in missing))
             )
     return errs
@@ -2417,7 +2425,7 @@ def _module_header_findings(files):
 
 def check_O():
     """ERROR when a CODE_ROOTS module lacks the machine-readable header the
-    corpus reads (ADR-0008). A docstring that merely EXISTS is the trap this
+    corpus reads (ADR-K-0008). A docstring that merely EXISTS is the trap this
     closes: build_corpus falls back to the filename and the first prose line
     and labels the result 'authored', and a module with no docstring at all is
     silently dropped from the corpus — an agent's map of the project is then
@@ -2437,7 +2445,7 @@ def check_O():
                     # build_corpus too): a BOM file is valid importable Python
                     # (the runtime strips the BOM), but read as plain utf-8 the
                     # U+FEFF makes ast.parse raise and the except-swallow turned
-                    # exactly those files back into silent drops (ADR-0008
+                    # exactly those files back into silent drops (ADR-K-0008
                     # review). utf-8-sig on a BOM-less file is byte-identical.
                     with open(full, encoding="utf-8-sig") as fh:
                         files[rel(full)] = fh.read()
@@ -3894,7 +3902,7 @@ def check_V():
 # A make target is a doer an agent runs by name, and nothing about the name says
 # whether it reads, rewrites the tree, spends money or changes shared state. The
 # label is that statement, written where `make help` shows it, in a closed
-# vocabulary ordered by reach (docs/adr/0011-make-target-effect-labels.md):
+# vocabulary ordered by reach (docs/adr/keel/K-0011-make-target-effect-labels.md):
 #   [local]  this machine only; writes nothing git would list
 #   [tree]   rewrites files in the working tree
 #   [read]   reads a remote service
@@ -4001,7 +4009,7 @@ def parse_effect_labels(help_):
             None,
             help_,
             "has no effect label -- open its `## ` help with one of [%s] "
-            "(comma-separated, in that order; docs/adr/0011-make-target-effect-labels.md)"
+            "(comma-separated, in that order; docs/adr/keel/K-0011-make-target-effect-labels.md)"
             % vocab.replace(", ", "], ["),
         )
     close = help_.find("]")
@@ -4830,7 +4838,7 @@ def _effect_findings(makefiles, policy):
     if needs_guard and guard_in is None:
         errs.append(
             "Makefile: `%s` is never defined, but %s open their recipes with it -- "
-            "define it (docs/adr/0011-make-target-effect-labels.md)"
+            "define it (docs/adr/keel/K-0011-make-target-effect-labels.md)"
             % (_GUARD_NAME, ", ".join("`%s`" % n for n in needs_guard))
         )
     errs.extend(
@@ -4879,7 +4887,7 @@ def check_W():
 # tool or a nested make would see the cloud keys, the forge token and the API keys
 # of whoever ran the gate. scripts/child_env.py builds the allowlisted environment
 # from config/project.json; this check holds every spawn to it, statically
-# (docs/adr/0012-child-process-environment-allowlist.md). It resolves each call's
+# (docs/adr/keel/K-0012-child-process-environment-allowlist.md). It resolves each call's
 # base through the import that binds it in the scope Python would look in, so a
 # receiver it cannot resolve (`self.runner(...)`, `sp = subprocess; sp.run`) is
 # not seen, and it follows the parent's environment through names in one module
@@ -4908,7 +4916,7 @@ _HELPER_MODULES = ("child_env", "scripts.child_env")
 # cannot follow reach the child, so it fails closed.
 _READS = ("copy", "get", "items", "keys", "values")
 _PARENT_ENV = ("os.environ", "os.environb", "os.getenv", "os.getenvb")
-_ADR_0012 = "docs/adr/0012-child-process-environment-allowlist.md"
+_ADR_0012 = "docs/adr/keel/K-0012-child-process-environment-allowlist.md"
 
 # The nodes Python gives their own names: a def, a lambda, a class body and (in
 # Python 3) a comprehension, whose loop variable does not leak.
@@ -5508,6 +5516,311 @@ def check_X():
         err(m)
 
 
+# --- check_Y: ADR number spaces --------------------------------------------------
+#
+# A template ships its own ADRs into every project it generates, and a project
+# writes its own. In one numbered directory the two collide: bedrock-platform's
+# own 0010 sat beside keel's 0010-0012, and project-jarvis's 0005-0011 beside
+# keel's 0005-0012 (measured; docs/adr/keel/K-0013-template-and-project-adr-number-spaces.md).
+# config/project.json `adr` names two spaces: the project's (plain numbers) and
+# the template's (numbers behind a prefix), each numbered on its own. check_Y
+# holds every ADR file to the space it sits in, and every `kind: adr` document
+# to one of the two directories. Which names the template owns is a fact the
+# template ships with the block (`template_adrs`): a project's own decision
+# written into the template space under a free K- number would meet the
+# template's next ADR of that number on update, the original collision moved.
+# Whether a project edited a template ADR is not decidable from one tree, so it
+# is not judged here: scripts/jobs/keep_edited_retired.py guards it on update
+# and scripts/audit_project.py's `retired` group reports it.
+_ADR_BLOCK = "adr"
+_ADR_KEYS = (
+    "project_dir",
+    "template_dir",
+    "template_prefix",
+    "number_digits",
+    "template_adrs",
+)
+# The label files a directory carries (check_B's pair plus the README): never
+# an ADR, whatever directory they label.
+_ADR_LABELS = ("README.md", "AGENT.md", "CLAUDE.md")
+# A slug is lower-case words joined by single hyphens: the grammar every ADR
+# file name keel and its two measured downstream projects use already has.
+_ADR_SLUG = r"[a-z0-9]+(?:-[a-z0-9]+)*"
+_ADR_KIND = re.compile(r"^kind:[ \t]*['\"]?adr['\"]?[ \t]*$", re.MULTILINE)
+
+
+def adr_policy(manifest):
+    """config/project.json's `adr` block -> (policy, errs). Pure.
+
+    policy is a dict of _ADR_KEYS (the directories as given, without a trailing
+    slash) or None when errs is not empty: a consumer refuses rather than
+    half-trusting it. Every key is required and an unknown key is an error
+    (`_comment` aside), so a typo cannot fall back to a default."""
+    if not isinstance(manifest, dict) or _ADR_BLOCK not in manifest:
+        return None, [
+            "%s is missing -- a project with ADRs (kind: adr) declares its ADR "
+            "number spaces there (CONVENTIONS §19)" % _ADR_BLOCK
+        ]
+    block = manifest[_ADR_BLOCK]
+    if not isinstance(block, dict):
+        return None, [
+            "%s must be an object, got %s" % (_ADR_BLOCK, type(block).__name__)
+        ]
+    errs = [
+        "%s is missing `%s`" % (_ADR_BLOCK, key)
+        for key in _ADR_KEYS
+        if key not in block
+    ]
+    errs.extend(
+        "%s has an unknown key `%s`" % (_ADR_BLOCK, key)
+        for key in sorted(block)
+        if key not in _ADR_KEYS and key != "_comment"
+    )
+    if errs:
+        return None, errs
+    policy = {}
+    for key in ("project_dir", "template_dir", "template_prefix"):
+        value = block[key]
+        if not isinstance(value, str) or not value.strip():
+            errs.append("%s.%s must be a non-empty string" % (_ADR_BLOCK, key))
+            continue
+        policy[key] = value.rstrip("/") if key.endswith("_dir") else value
+    for key in ("project_dir", "template_dir"):
+        value = policy.get(key)
+        if value is None:
+            continue
+        parts = value.split("/")
+        if value.startswith("/") or ".." in parts or "" in parts:
+            errs.append(
+                "%s.%s must be a relative path inside the project, got %r"
+                % (_ADR_BLOCK, key, block[key])
+            )
+    project_dir = policy.get("project_dir")
+    if project_dir is not None and project_dir == policy.get("template_dir"):
+        errs.append(
+            "%s.template_dir must differ from %s.project_dir: the two number "
+            "spaces are two directories" % (_ADR_BLOCK, _ADR_BLOCK)
+        )
+    prefix = policy.get("template_prefix")
+    if prefix is not None and prefix[:1].isdigit():
+        errs.append(
+            "%s.template_prefix must not start with a digit, or a template ADR's "
+            "name would read as a project number" % _ADR_BLOCK
+        )
+    digits = block["number_digits"]
+    if isinstance(digits, bool) or not isinstance(digits, int) or digits < 1:
+        errs.append("%s.number_digits must be an integer >= 1" % _ADR_BLOCK)
+    else:
+        policy["number_digits"] = digits
+    owned = block["template_adrs"]
+    if not isinstance(owned, list) or not all(isinstance(n, str) for n in owned):
+        errs.append(
+            "%s.template_adrs must be a list of the file names the template "
+            "ships in template_dir" % _ADR_BLOCK
+        )
+    elif not errs:
+        template_re = _adr_grammars(policy)[1]
+        shape = policy["template_prefix"] + "N" * policy["number_digits"]
+        errs.extend(
+            "%s.template_adrs names %r, not a %s-<slug>.md file name"
+            % (_ADR_BLOCK, name, shape)
+            for name in owned
+            if not template_re.match(name)
+        )
+        errs.extend(
+            "%s.template_adrs names %r twice" % (_ADR_BLOCK, name)
+            for name in sorted({n for n in owned if owned.count(n) > 1})
+        )
+        policy["template_adrs"] = list(owned)
+    return (None, errs) if errs else (policy, [])
+
+
+def _adr_grammars(policy):
+    """(project pattern, template pattern), each capturing the number."""
+    number = r"([0-9]{%d})" % policy["number_digits"]
+    tail = "-" + _ADR_SLUG + r"\.md"
+    return (
+        re.compile(number + tail + "$"),
+        re.compile(re.escape(policy["template_prefix"]) + number + tail + "$"),
+    )
+
+
+def adr_inventory(policy):
+    """{"project": [...], "template": [...]}: every ADR candidate directly in
+    each space -- a Markdown file (`.md` in any case) that is not a label -- as
+    (number, relpath), number None when the name is outside the space's
+    grammar. Sorted by path. An absent directory is an empty space."""
+    project_re, template_re = _adr_grammars(policy)
+    out = {}
+    for space, key, grammar in (
+        ("project", "project_dir", project_re),
+        ("template", "template_dir", template_re),
+    ):
+        base = os.path.join(ROOT, *policy[key].split("/"))
+        names = []
+        if os.path.isdir(base):
+            names = sorted(
+                n
+                for n in os.listdir(base)
+                if n.lower().endswith(".md")
+                and n not in _ADR_LABELS
+                and os.path.isfile(os.path.join(base, n))
+            )
+        found = []
+        for name in names:
+            m = grammar.match(name)
+            found.append((m.group(1) if m else None, policy[key] + "/" + name))
+        out[space] = found
+    return out
+
+
+def adr_documents():
+    """Every Markdown document under ROOT whose frontmatter declares
+    `kind: adr`, as sorted relpaths with `/` separators. A tree with one has
+    ADRs, so it must say where they live; one outside both spaces is judged
+    by check_Y."""
+    found = []
+    for dirpath, _, filenames in walk(ROOT):
+        for f in filenames:
+            if not f.lower().endswith(".md"):
+                continue
+            full = os.path.join(dirpath, f)
+            try:
+                with open(full, encoding="utf-8") as fh:
+                    text = fh.read()
+            except UNREADABLE:
+                continue  # check_A reports an unreadable document
+            if not text.startswith("---"):
+                continue
+            end = text.find("\n---", 3)
+            if end > 0 and _ADR_KIND.search(text, 3, end):
+                found.append(rel(full).replace(os.sep, "/"))
+    return sorted(found)
+
+
+def _unquote(value):
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+        return value[1:-1]
+    return value
+
+
+def check_Y():
+    """ERROR when config/project.json `adr` is missing (in a tree with a
+    `kind: adr` document) or malformed; when a project-space ADR carries the
+    template prefix or is not NNNN-<slug>.md; when a template-space ADR is not
+    <prefix>NNNN-<slug>.md (it names the project space as where an unprefixed
+    one belongs) or is not a name `adr.template_adrs` lists, and when a listed
+    name is not a file there; when a `kind: adr` document lives anywhere but
+    directly in one of the two spaces; when two ADRs share a number within one space (the same
+    number once in each space is the point); and when an ADR's frontmatter
+    kind is not adr or its title does not begin ADR-<prefix?>NNNN: for its own
+    file. WARN when both spaces hold no ADR. Silent with neither a block nor
+    an ADR; an unreadable manifest is reported once, by the reader. A kept
+    copy of a template ADR the project edited shares its id with the template's
+    file, and check_A's duplicate-id error already names both."""
+    manifest = _read_json_config(os.path.join("config", "project.json"))
+    if manifest is _NO_DATA:
+        if os.path.isfile(os.path.join(ROOT, "config", "project.json")):
+            return  # unreadable: _read_json_config reported it, once
+        manifest = {}
+    documents = adr_documents()
+    if isinstance(manifest, dict) and _ADR_BLOCK not in manifest and not documents:
+        return
+    policy, perrs = adr_policy(manifest)
+    for m in perrs:
+        err("config/project.json: " + m)
+    if policy is None:
+        return
+    spaces = adr_inventory(policy)
+    prefix = policy["template_prefix"]
+    shape = "N" * policy["number_digits"]
+    project_re, template_re = _adr_grammars(policy)
+    for number, path in spaces["project"]:
+        name = path.rsplit("/", 1)[1]
+        if template_re.match(name) or name.startswith(prefix):
+            err(
+                "%s: an ADR named with the template prefix '%s' is a template "
+                "ADR; it belongs in %s, not in the project space %s"
+                % (path, prefix, policy["template_dir"], policy["project_dir"])
+            )
+        elif number is None:
+            err(
+                "%s: an ADR in %s is named %s-<slug>.md (a lower-case "
+                "hyphenated slug)" % (path, policy["project_dir"], shape)
+            )
+    owned = policy["template_adrs"]
+    for number, path in spaces["template"]:
+        if number is None:
+            err(
+                "%s: the template space %s holds only %s%s-<slug>.md; a project "
+                "ADR belongs in %s"
+                % (path, policy["template_dir"], prefix, shape, policy["project_dir"])
+            )
+        elif path.rsplit("/", 1)[1] not in owned:
+            err(
+                "%s: the template does not ship this ADR (config/project.json "
+                "adr.template_adrs), so the template's own next ADR of that "
+                "number would meet it on update; a project's decision belongs in "
+                "%s as %s-<slug>.md, and a template lists each ADR it ships"
+                % (path, policy["project_dir"], shape)
+            )
+    present = {path.rsplit("/", 1)[1] for _n, path in spaces["template"]}
+    for name in owned:
+        if name not in present:
+            err(
+                "config/project.json: adr.template_adrs names %s, which %s "
+                "lacks; the list names exactly the ADRs the template ships"
+                % (name, policy["template_dir"])
+            )
+    homes = (policy["project_dir"], policy["template_dir"])
+    for path in documents:
+        parent = path.rsplit("/", 1)[0] if "/" in path else ""
+        if parent not in homes:
+            err(
+                "%s: an ADR (kind: adr) lives directly in %s or %s, where it is "
+                "numbered against the others in its space"
+                % (path, policy["project_dir"], policy["template_dir"])
+            )
+    for space, label in (("project", ""), ("template", prefix)):
+        by_number = {}
+        for number, path in spaces[space]:
+            if number is not None:
+                by_number.setdefault(number, []).append(path)
+        for number in sorted(by_number):
+            paths = by_number[number]
+            if len(paths) > 1:
+                err(
+                    "%s: ADR number %s%s is also taken by %s (a number is unique "
+                    "within its space)"
+                    % (paths[0], label, number, ", ".join(paths[1:]))
+                )
+        for number in sorted(by_number):
+            for path in by_number[number]:
+                full = os.path.join(ROOT, *path.split("/"))
+                try:
+                    with open(full, encoding="utf-8"):
+                        pass
+                except UNREADABLE:
+                    continue  # check_A reports an unreadable document
+                fm = parse_frontmatter(full) or {}
+                kind = _unquote(fm.get("kind", ""))
+                if kind != "adr":
+                    err("%s: an ADR has frontmatter kind: adr, not '%s'" % (path, kind))
+                want = "ADR-%s%s:" % (label, number)
+                title = _unquote(fm.get("title", ""))
+                if not title.startswith(want):
+                    err(
+                        "%s: an ADR's title begins '%s', naming its own file (got "
+                        "'%s')" % (path, want, title)
+                    )
+    if not spaces["project"] and not spaces["template"]:
+        warn(
+            "ADR number spaces: %s and %s hold no ADR (config/project.json adr)"
+            % (policy["project_dir"], policy["template_dir"])
+        )
+
+
 # Every check, in the order a run makes them. tests/unit/scripts/
 # test_check_structure_root.py fails a check_<LETTER> defined but not listed.
 CHECKS = (
@@ -5535,6 +5848,7 @@ CHECKS = (
     ("V", check_V),
     ("W", check_W),
     ("X", check_X),
+    ("Y", check_Y),
 )
 
 # The JSON configs the checks read through _read_json_config, so a caller that
@@ -5576,7 +5890,7 @@ def main(argv=None):
     """The gate's CLI. *argv* None means no arguments, never sys.argv: an
     importer calling main() gets the template's own judgement."""
     ap = argparse.ArgumentParser(
-        description="Enforce the project conventions (checks A-X); exit 1 on error."
+        description="Enforce the project conventions (checks A-Y); exit 1 on error."
     )
     ap.add_argument(
         "--root",

@@ -9,7 +9,7 @@ tags: []
 summary: API transports over the domain — REST/OpenAPI (FastAPI), gRPC, and the nginx edge. All thin over src/.
 id: api-readme
 created: 2026-06-17
-updated: 2026-09-02
+updated: 2026-10-07
 visibility: internal
 canonical: true
 ---
@@ -35,6 +35,6 @@ add a sibling subdir following the same thin-over-`src/` rule.
 `edge_nginx/` is edge **config**, not app code; in production it
 often lives in `ops/`.
 
-At generation time (`copier`, ADR 0004), `rest_fastapi/` always ships (the bundled
+At generation time (`copier`, ADR-K-0004), `rest_fastapi/` always ships (the bundled
 showcase runs on it); `grpc/` and `edge_nginx/` are add-ons kept only when selected in
 the `transports` question, and pruned otherwise.

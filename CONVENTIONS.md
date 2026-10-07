@@ -83,7 +83,7 @@ summary: Does the one thing this feature does.
 __all__ = ["do_thing", "Thing"]
 ```
 
-`title:` and `summary:` are **required and gated** (`check_O`, ADR-0008): they
+`title:` and `summary:` are **required and gated** (`check_O`, ADR-K-0008): they
 are what the corpus — and therefore every agent — reads. A module without them
 either vanishes from the index or is filed under its filename with an
 accidental first line as its summary, labeled as if someone wrote it.
@@ -119,7 +119,7 @@ accidental first line as its summary, labeled as if someone wrote it.
 Note: `scripts/` holds two importable modules by exception, and only these two.
 `scripts/check_structure.py` is the gate the tests and jobs import, and
 `scripts/child_env.py` builds the allowlisted environment every child process
-starts with (`docs/adr/0012-child-process-environment-allowlist.md`). Both must
+starts with (`docs/adr/keel/K-0012-child-process-environment-allowlist.md`). Both must
 import under the bare `python3` that `.pre-commit-config.yaml` hooks run (3.6.8
 on this host), which cannot import `src/`; that is why they live here and not
 in `src/`. `models/`, `agents/` and `mcp/` import the second as
@@ -146,7 +146,7 @@ named in `IGNORE_DIRS` in `scripts/check_structure.py` are outside the rule. An
 undeclared symlinked directory is a warning, not an error: no check reads through
 a link, and the checker cannot ask git whether the link is tracked (it is
 stdlib-only and git-free; see Alternatives in
-`docs/adr/0009-release-identity-and-the-tag-ordering-rule.md`). Scratch space
+`docs/adr/keel/K-0009-release-identity-and-the-tag-ordering-rule.md`). Scratch space
 belongs in a dot-directory, because an undeclared one is an error while it exists
 and a declared one is an error (stale) while it does not.
 
@@ -237,8 +237,8 @@ pre-commit hook) fails the build if the conventions above drift:
 | Closed taxonomy (§2) | every non-hidden top-level directory is a §2 row or declared in `config/project.json` `structure.extra_toplevel`; a declared name exists and is not already a row; every top-level directory and every directory directly under `agents/` (each `agents/<name>/` and `agents/tools/`) has both `README.md` and `CLAUDE.md`; an undeclared symlinked directory warns |
 | Package boundary (§3) | every `src/` dir with `.py` has an `__init__.py` that defines `__all__` |
 | `__init__` is the API (§3) | no absolute import of another package's `_private` module |
-| Authored coverage (error) | every `__all__`-exported symbol defined in-file has a one-line docstring (warn until ADR-0008) |
-| Module header (error) | every code-root module docstring carries explicit `title:` + `summary:` — the corpus's input contract (ADR-0008) |
+| Authored coverage (error) | every `__all__`-exported symbol defined in-file has a one-line docstring (warn until ADR-K-0008) |
+| Module header (error) | every code-root module docstring carries explicit `title:` + `summary:` — the corpus's input contract (ADR-K-0008) |
 | Tool specs governed (error) | `agents/**/*.tool.md` carry valid `kind: tool` frontmatter + a resolvable `public_api` + a valid `tool_effect` |
 | Accountability (warn) | tool/agent docs name a real `owner` (not missing or `TBD`) |
 | Tool/agent binding (error) | each agent `tools.md` ↔ each spec's `## Used by` agree (both ways); `tool_command` invokes `public_api` |
@@ -258,8 +258,9 @@ pre-commit hook) fails the build if the conventions above drift:
 | Practice mechanisms (§15) | every `config/practices.json` entry's `enforced_by` names a mechanism that exists — a check letter defined in `check_structure.py`, a script, test or doc path (and numbered section) in the tree, a Makefile target; `ruff:`/`mypy:` codes are the tools' own vocabulary |
 | Policy reachability | a practice enforced BY a document names that document within one hop of the root `AGENT.md` — named there, or named in a document named there — so a rule an agent never reads cannot be declared enforced |
 | Writer rerun declaration (§7) | a module that writes to the filesystem declares `effect: writes` and what a second run does (`rerun:` — `fixed-point`, `append-only` or `unsafe`); a `fixed-point` claim names a `rerun_proof:` in the same grammar as `enforced_by` above. The detector resolves each call's base (`os.replace`, never `str.replace`), so it under-reports rather than over-reports: a declared write it cannot see is a stated WARN, never a pass. See [`docs/guides/idempotency.md`](docs/guides/idempotency.md) |
-| Make-target effect labels (§7) | every `## `-annotated Makefile target opens its help with one bracketed effect label — `local`, `tree`, `read`, `cost`, `write`, comma-separated in that order, `local` alone; a target annotated twice carries one label; a composite's label covers what its prerequisites and `$(MAKE)` calls reach; a `[write]` target (or one whose name ends in a `make_targets.write_shapes` suffix) opens its recipe with `$(WRITE_GUARD)` and no `-` prefix, and the guard (make comments stripped) tests exactly the `make_targets.unattended_vars` names, has no `-` prefix of its own, and exits 1; the `make_targets` policy in `config/project.json` is well-formed. A recursion the check cannot resolve is a stated WARN. See [`docs/adr/0011-make-target-effect-labels.md`](docs/adr/0011-make-target-effect-labels.md) |
-| Child-process environment (§7) | every subprocess/asyncio spawn in a `.py` at the root or under any top-level directory but `tests/` passes `env=` built by `build_child_env` (`scripts/child_env.py`), directly or through a name bound only to it and afterwards only read; `os.system`/`popen`/`exec*`/`spawn*`, `pty.spawn` and `subprocess.getoutput` are errors, as is a spawn API referenced without a call and a spawn name bound two ways in one scope; names resolve per Python scope; the helper's arguments never carry `os.environ`/`os.getenv`, directly or through a name within the module; `config/project.json` `child_env` and `models.credential_env` are well-formed, no allowlist source admits a `child_env.repo_context_names` variable, and `child_env.credentialed_values` names only a variable the allowlist copies, each with a reason. A spawn through an unresolvable receiver, and a parent value crossing a function parameter, are not seen. See [docs/adr/0012-child-process-environment-allowlist.md](docs/adr/0012-child-process-environment-allowlist.md) |
+| Make-target effect labels (§7) | every `## `-annotated Makefile target opens its help with one bracketed effect label — `local`, `tree`, `read`, `cost`, `write`, comma-separated in that order, `local` alone; a target annotated twice carries one label; a composite's label covers what its prerequisites and `$(MAKE)` calls reach; a `[write]` target (or one whose name ends in a `make_targets.write_shapes` suffix) opens its recipe with `$(WRITE_GUARD)` and no `-` prefix, and the guard (make comments stripped) tests exactly the `make_targets.unattended_vars` names, has no `-` prefix of its own, and exits 1; the `make_targets` policy in `config/project.json` is well-formed. A recursion the check cannot resolve is a stated WARN. See [`docs/adr/keel/K-0011-make-target-effect-labels.md`](docs/adr/keel/K-0011-make-target-effect-labels.md) |
+| Child-process environment (§7) | every subprocess/asyncio spawn in a `.py` at the root or under any top-level directory but `tests/` passes `env=` built by `build_child_env` (`scripts/child_env.py`), directly or through a name bound only to it and afterwards only read; `os.system`/`popen`/`exec*`/`spawn*`, `pty.spawn` and `subprocess.getoutput` are errors, as is a spawn API referenced without a call and a spawn name bound two ways in one scope; names resolve per Python scope; the helper's arguments never carry `os.environ`/`os.getenv`, directly or through a name within the module; `config/project.json` `child_env` and `models.credential_env` are well-formed, no allowlist source admits a `child_env.repo_context_names` variable, and `child_env.credentialed_values` names only a variable the allowlist copies, each with a reason. A spawn through an unresolvable receiver, and a parent value crossing a function parameter, are not seen. See [docs/adr/keel/K-0012-child-process-environment-allowlist.md](docs/adr/keel/K-0012-child-process-environment-allowlist.md) |
+| ADR number spaces (§19) | `config/project.json` `adr` is well-formed once the tree holds a `kind: adr` document; an ADR in the project space is `NNNN-<slug>.md` and never carries the template prefix; an ADR in the template space is `<prefix>NNNN-<slug>.md` and is one `adr.template_adrs` lists, and every listed name is a file there; a `kind: adr` document lives directly in one of the two spaces; a number is unique within its space (once in each space is clean); an ADR's frontmatter `kind` is `adr` and its `title` begins `ADR-NNNN:` or `ADR-<prefix>NNNN:` for its own file. Both spaces empty is a WARN. A kept copy of a retired template ADR shares its `id:` with the template's file, which check_A reports. See [docs/adr/keel/K-0013-template-and-project-adr-number-spaces.md](docs/adr/keel/K-0013-template-and-project-adr-number-spaces.md) |
 
 Missing `owner` is a warning, not a failure. If you change the scheme
 (KINDS / LAYERS / STATUSES / VISIBILITIES) or a check, update **both**
@@ -318,7 +319,7 @@ prerequisites, is outside `make_targets.gate_effects`, accepts only the
 green run that changed what git sees (content or index). `tests/integration/test_make_target_effects.py` runs
 every `[local]` target that way, so a `[local]` claim is measured, not trusted.
 A person runs a `[tree]` or `[write]` target with plain `make`. The decision is
-[`docs/adr/0011-make-target-effect-labels.md`](docs/adr/0011-make-target-effect-labels.md).
+[`docs/adr/keel/K-0011-make-target-effect-labels.md`](docs/adr/keel/K-0011-make-target-effect-labels.md).
 
 ### Child processes get an allowlisted environment
 
@@ -350,7 +351,7 @@ never a fall-back to the parent's environment. This is defence-in-depth, not a
 sandbox: a child running as the same user can still read credential files
 under `HOME`, use the network, and read the parent's environment from
 `/proc/$PPID/environ`. The decision is
-[`docs/adr/0012-child-process-environment-allowlist.md`](docs/adr/0012-child-process-environment-allowlist.md).
+[`docs/adr/keel/K-0012-child-process-environment-allowlist.md`](docs/adr/keel/K-0012-child-process-environment-allowlist.md).
 
 ## 8. Configuration: where tunable values live
 
@@ -542,7 +543,7 @@ triggers hiding cron-vs-systemd, §9 third-party tools).
   shipped field is never mutated. `auth.kind` declares *that* auth is needed,
   never the secret; `none` is dev-only.
 
-See `docs/guides/agent-surface.md` (how-to) and `docs/adr/0002-agent-surface-and-discovery.md` (the decision).
+See `docs/guides/agent-surface.md` (how-to) and `docs/adr/keel/K-0002-agent-surface-and-discovery.md` (the decision).
 
 ## 15. Project facts manifest (`config/project.json`)
 
@@ -601,6 +602,15 @@ It is keyed **by layer/concern, never one global `language`**:
   (`{"claude-code-headless": ["ANTHROPIC_API_KEY", "CLAUDE_CONFIG_DIR"]}`).
   Names only; the values stay in the environment. `check_X` errors on an
   adapter that is not in `models.available`.
+- `adr` — the two ADR number spaces (§19): `project_dir` (the project's own
+  ADRs, `docs/adr`), `template_dir` (the ADRs the template ships,
+  `docs/adr/keel`; it must differ from `project_dir`), `template_prefix` (the
+  prefix a template ADR's file name and display form carry, `K-`; it must not
+  start with a digit), `number_digits` (`4`) and `template_adrs` (the file
+  names the template ships in `template_dir`; the template writes this list and
+  a project does not add to it). Every key is required and an unknown key is an
+  error. `check_Y` validates the block and errors when it is
+  missing or malformed in a tree that holds a `kind: adr` document.
 
 - `template.twins` (template repos only) — keel is itself a copier template, so
   every `*.jinja` file is declared here with what it is FOR: `parity` (must
@@ -671,7 +681,7 @@ lives at the import/API boundary, not the licence.
   (`default` + `available`), validated by `check_structure.py` (`check_H`).
 
 See `docs/guides/agent-runtimes.md` (how-to) and
-`docs/adr/0003-agent-control-flow-runtime.md` (the decision).
+`docs/adr/keel/K-0003-agent-control-flow-runtime.md` (the decision).
 
 ## 17. Development loops (how to work in this repo)
 
@@ -788,3 +798,45 @@ chain, a `# hot-path` class without `__slots__` — honouring a `# practice-ok:
 `make verify`) versus *advisories*, and the universal-vs-domain split, live in
 `docs/guides/coding-practices.md`, sourced from the `config/practices.json`
 registry.
+
+## 19. ADR number spaces
+
+A template's ADRs and a project's ADRs are numbered in two separate spaces, so
+neither can take a number the other already holds.
+[ADR-K-0013](docs/adr/keel/K-0013-template-and-project-adr-number-spaces.md)
+is the decision; this section is the rule.
+
+- **The project space.** A project's own ADRs live directly in
+  `config/project.json` `adr.project_dir` (`docs/adr`) as `NNNN-<slug>.md`,
+  numbered from `0001`, with `adr.number_digits` digits. The display form is
+  `ADR-NNNN`.
+- **The template space.** The ADRs the template ships live directly in
+  `adr.template_dir` (`docs/adr/keel`) as `<prefix>NNNN-<slug>.md`, with
+  `adr.template_prefix` as the prefix (`K-`). The display form is `ADR-K-NNNN`.
+  `copier update` writes these files, and `adr.template_adrs` names each one;
+  a file there the list does not name is an error, because the template's own
+  next ADR of that number would meet it on update. A project's own decision
+  goes in the project space.
+- **An ADR lives directly in one of the two spaces.** A `kind: adr` document
+  in a subdirectory or any other folder is an error: it would never be
+  numbered against the rest of its space.
+- **The display form names the space.** An ADR's frontmatter `title:` and its
+  heading begin with its display form and a colon (`ADR-0003:`,
+  `ADR-K-0003:`). A citation of a template ADR uses `ADR-K-NNNN`; a bare
+  `ADR-NNNN` names the project's own ADR.
+- **A number is unique within its space.** A project's `ADR-0010` and the
+  template's `ADR-K-0010` are two decisions and neither blocks the other.
+- **A moved ADR keeps its `id:`.** The corpus resolves an ADR by its frontmatter
+  `id:`, so a template ADR moved into the template space keeps the id it had.
+- **An edited template ADR the template retires is kept.** On `copier update`,
+  `scripts/jobs/keep_edited_retired.py` puts back a file the update deleted
+  when the project's copy differs from the template's in anything but the
+  `updated:` value, and names it on stderr. The kept copy shares its `id:` with
+  the template's new file, so `check_A` errors until the project resolves it as
+  `docs/adr/README.md` describes. A later `rm` migration still deletes the
+  path it names, so `make audit-project`'s `retired` group names each edited
+  file the update would delete before it runs.
+
+`check_Y` holds every ADR file in either space to this rule (§6). The spaces are
+configuration (§15), not code: a project that keeps its decisions elsewhere
+changes the `adr` block, and `check_Y` judges that layout instead.

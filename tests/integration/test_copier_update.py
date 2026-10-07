@@ -2,7 +2,7 @@
 title: Integration — `copier update` carries template improvements downstream
 kind: tests
 layer: n/a
-summary: The upgrade channel ADR-0004 chose copier for, exercised end to end against the REAL template — clone keel into a scratch dir, generate a project, commit it, evolve the clone, then `copier update`. Proves new template files arrive, template edits land, the project's own edits survive, the `.gitignore` divergence twin holds, `_commit` advances and `_src_path` stays resolvable. Skipped on a bare local clone without the optional `template` extra; CI installs `.[dev,template]` and declares the surface required (KEEL_REQUIRED_EXTRAS), so there a missing copier is a hard failure instead of a silent skip.
+summary: The upgrade channel ADR-K-0004 chose copier for, exercised end to end against the REAL template — clone keel into a scratch dir, generate a project, commit it, evolve the clone, then `copier update`. Proves new template files arrive, template edits land, the project's own edits survive, the `.gitignore` divergence twin holds, `_commit` advances and `_src_path` stays resolvable. Skipped on a bare local clone without the optional `template` extra; CI installs `.[dev,template]` and declares the surface required (KEEL_REQUIRED_EXTRAS), so there a missing copier is a hard failure instead of a silent skip.
 """
 
 import shutil
@@ -550,7 +550,7 @@ def test_update_without_trust_refuses_a_template_carrying_migrations(restacked):
     silently skipping them. That makes `--trust` part of the documented update command
     rather than a nicety — pinned here so the docs and the behaviour cannot drift.
     Generation needs it too, for `_tasks` rather than `_migrations`
-    (docs/adr/0010-generation-needs-trust-to-stamp-docs.md); that refusal is pinned in
+    (docs/adr/keel/K-0010-generation-needs-trust-to-stamp-docs.md); that refusal is pinned in
     test_copier_generation.py."""
     _, refusal = restacked
     assert "migrations" in str(refusal)

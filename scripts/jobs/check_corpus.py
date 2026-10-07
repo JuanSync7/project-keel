@@ -76,7 +76,7 @@ def _load_corpus(path: str) -> tuple:
 def _deterministic_projection(corpus: dict) -> dict:
     """The corpus with LLM enrichment stripped back to its deterministic base:
     links keep only source 'deterministic', and a summary filled as 'generated'
-    resets to the empty not-yet-authored state. Staleness (ADR-0008) is judged
+    resets to the empty not-yet-authored state. Staleness (ADR-K-0008) is judged
     on THIS projection, so index_enforcer's legitimate fills (it only ever
     targets EMPTY summaries) — and any future enricher appending 'generated'
     links, which LINK_SOURCES already anticipates — never read as rot, while
@@ -286,11 +286,11 @@ def main(argv=None) -> int:
         rc = 1
 
     # The LOCAL corpus is what the agents actually query (wiki/corpus.json, a
-    # gitignored generated view) — and until ADR-0008 nothing here ever read it,
+    # gitignored generated view) — and until ADR-K-0008 nothing here ever read it,
     # so it could rot silently while this check rebuilt fresh copies (measured:
     # 33 nodes behind the tree at a green gate). Absent is a real state, not a
     # drift — a fresh clone, CI, and a day-one generated project have none — so
-    # say it loudly and stay green (the ADR-0007 absent-vs-drifted split).
+    # say it loudly and stay green (the ADR-K-0007 absent-vs-drifted split).
     # Present-but-stale is an ERROR naming the repair; a check that writes is
     # not a check, so nothing here regenerates anything.
     local = os.path.join(args.root, "wiki", "corpus.json")
@@ -304,7 +304,7 @@ def main(argv=None) -> int:
         # `null`, a list, or {"nodes": 5} is ROT and must take the designed
         # ERROR path — running the projection over a non-graph would crash
         # with a traceback (and `null` slipped a `is not None` guard entirely,
-        # exit 0 — found by the ADR-0008 review pass).
+        # exit 0 — found by the ADR-K-0008 review pass).
         committed, why = _load_corpus(local)
         if why:
             sys.stderr.write(

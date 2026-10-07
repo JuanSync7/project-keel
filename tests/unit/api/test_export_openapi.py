@@ -76,7 +76,7 @@ def test_write_mode_fails_when_the_app_is_broken(monkeypatch, tmp_path, exc):
 @pytest.mark.parametrize("exc", ENVIRONMENT, ids=_ids(ENVIRONMENT))
 def test_check_skips_when_the_environment_cannot_run_it(monkeypatch, capsys, exc):
     """A `language: system` pre-commit hook execs the ambient python3, which may
-    be old or FastAPI-less. Absent is not broken (ADR-0007): say so, exit 0."""
+    be old or FastAPI-less. Absent is not broken (ADR-K-0007): say so, exit 0."""
     monkeypatch.setattr(eo, "_spec", _raise(exc))
     rc = eo.main(["--check"])
     err = capsys.readouterr().err

@@ -226,7 +226,7 @@ def test_nondefault_name_and_python_propagate_and_stay_valid(tmp_path):
     assert r.returncode == 0, r.stdout + r.stderr
 
 
-# --- the upgrade channel (ADR-0004's whole justification) ------------------
+# --- the upgrade channel (ADR-K-0004's whole justification) ------------------
 #
 # copier reads .copier-answers.yml from the WORKING TREE, so an ignored-but-
 # present file still updates in the directory copier created. The break happens
@@ -238,7 +238,7 @@ def test_nondefault_name_and_python_propagate_and_stay_valid(tmp_path):
 
 def test_generated_project_commits_its_copier_answers(tmp_path):
     """A generated project must TRACK .copier-answers.yml, or every clone of it
-    loses the ability to `copier update` — the one capability ADR-0004 chose
+    loses the ability to `copier update` — the one capability ADR-K-0004 chose
     copier for. Keel's own .gitignore ignores the file (keel is the template,
     never a generated project); the .gitignore.jinja twin drops that line."""
     dest = tmp_path / "proj"

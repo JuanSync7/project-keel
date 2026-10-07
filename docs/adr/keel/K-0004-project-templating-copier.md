@@ -1,5 +1,5 @@
 ---
-title: "ADR-0004: Interactive project generation via copier (root-as-template), superseding scaffold.py"
+title: "ADR-K-0004: Interactive project generation via copier (root-as-template), superseding scaffold.py"
 kind: adr
 layer: n/a
 status: accepted
@@ -8,12 +8,12 @@ tags: [adr, template, scaffold, copier, generator, jinja2]
 summary: Keel's repo root is a copier template — one command runs a Q&A and writes a tailored project; copier coexists with scaffold.py until a parity harness proves no loss, then scaffold.py is retired.
 id: docs-adr-0004-project-templating-copier
 created: 2026-07-16
-updated: 2026-09-02
+updated: 2026-10-07
 visibility: internal
 canonical: true
 ---
 
-# ADR-0004: Interactive project generation via copier (root-as-template)
+# ADR-K-0004: Interactive project generation via copier (root-as-template)
 
 **Status:** accepted
 

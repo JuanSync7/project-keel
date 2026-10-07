@@ -1,5 +1,5 @@
 ---
-title: "ADR-0008: Agent interpretability is a gated contract — the module header, authored coverage, and corpus currency"
+title: "ADR-K-0008: Agent interpretability is a gated contract — the module header, authored coverage, and corpus currency"
 kind: adr
 layer: n/a
 status: accepted
@@ -8,21 +8,21 @@ tags: [adr, corpus, docstrings, gate, agents, readability, practices]
 summary: "An agent can only rely on what the gate proves. The machine-readable module header (title:/summary:) becomes check_O, authored symbol coverage (check_E) is promoted to an error, the corpus builder single-sources its scope from check_structure, and the local corpus agents query is gated fresh-when-present. The judgment half — readability and failure-mode discipline — is canonical prose in docs/guides/python-style.md, deliberately ungated."
 id: docs-adr-0008-gated-module-contract-for-agent-interpretability
 created: 2026-08-18
-updated: 2026-09-02
+updated: 2026-10-07
 visibility: internal
 canonical: true
 ---
 
-# ADR-0008: A gated module contract for agent interpretability
+# ADR-K-0008: A gated module contract for agent interpretability
 
 **Status:** accepted. Extends the practices registry of
-[coding-practices](../guides/coding-practices.md); the enforcement mechanics
+[coding-practices](../../guides/coding-practices.md); the enforcement mechanics
 live in `scripts/check_structure.py` (`check_O`, `check_E`) and
 `scripts/jobs/check_corpus.py`. Takes the check letter `O`;
-[ADR-0005](0005-external-environment-manifest.md)'s proposed completeness scan
+[ADR-K-0005](K-0005-external-environment-manifest.md)'s proposed completeness scan
 (never implemented) moves to `check_P` — letters belong to landed checks.
 *(Maintenance note, 2026-09-02: `P` was then taken by Makefile help parity under
-the same rule; ADR-0005 takes the next free letter when it lands.)*
+the same rule; ADR-K-0005 takes the next free letter when it lands.)*
 
 ## Context
 
@@ -52,7 +52,7 @@ guarantee had three holes:
    gitignored generated view; `make check-corpus` builds *fresh* and never
    compares the on-disk file, so it was three modules (33 nodes) behind the
    tree while `make verify` ran green — the `openapi.json` defect class
-   (ADR-0007), but the stale artifact here is the agents' world-model.
+   (ADR-K-0007), but the stale artifact here is the agents' world-model.
 
 ## Decision
 
@@ -78,7 +78,7 @@ the same source `make lint`/`fmt` are already pinned to by
 
 **4. `make check-corpus` gates the local corpus when present.** Absent → say so
 loudly, exit 0 (a fresh clone, CI, and a day-one generated project have none —
-the absent-vs-drifted split ADR-0007 established for `openapi.json`).
+the absent-vs-drifted split ADR-K-0007 established for `openapi.json`).
 Present-but-stale → ERROR naming `make site-data`. Staleness is judged on the
 **deterministic projection**: nodes' `"generated"` summaries and links are
 stripped back to their deterministic base before comparison, so

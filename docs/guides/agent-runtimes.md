@@ -8,7 +8,7 @@ tags: [agents, runtime, control-flow, langgraph, determinism, guide]
 summary: How to declare an agent's control flow as a neutral Plan, run it on the default engine, and opt into LangGraph as one adapter.
 id: docs-guides-agent-runtimes
 created: 2026-06-22
-updated: 2026-09-02
+updated: 2026-10-07
 visibility: internal
 canonical: true
 ---
@@ -19,7 +19,7 @@ An agent's *policy* is what it decides; its *control flow* is the order its
 steps run in. This template keeps control flow a **neutral concept** — a
 `Plan` executed by a `Runtime` — so the execution engine is one interchangeable
 adapter, exactly like a model provider behind [`models/`](../../models/README.md)
-(see CONVENTIONS §16 for the rule, ADR-0003 for the decision).
+(see CONVENTIONS §16 for the rule, ADR-K-0003 for the decision).
 
 ## The model
 
@@ -159,5 +159,5 @@ need not adopt one at all. Don't switch engines for uniformity.
 ## See also
 
 - [`runtimes/README.md`](../../runtimes/README.md) — the package map.
-- [`docs/adr/0003-agent-control-flow-runtime.md`](../adr/0003-agent-control-flow-runtime.md) — the decision.
+- [`docs/adr/keel/K-0003-agent-control-flow-runtime.md`](../adr/keel/K-0003-agent-control-flow-runtime.md) — the decision.
 - [`docs/guides/deterministic-checks.md`](deterministic-checks.md) — the suite that keeps the repo (and the conformance test) honest.

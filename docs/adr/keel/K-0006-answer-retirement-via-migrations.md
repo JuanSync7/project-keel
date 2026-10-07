@@ -1,5 +1,5 @@
 ---
-title: "ADR-0006: Retire declined answers with `_migrations`, accepting the `--trust` requirement, amending ADR-0004"
+title: "ADR-K-0006: Retire declined answers with `_migrations`, accepting the `--trust` requirement, amending ADR-K-0004"
 kind: adr
 layer: n/a
 status: accepted
@@ -8,19 +8,19 @@ tags: [adr, template, copier, migrations, update, trust]
 summary: "`_exclude` prunes at generation but can never delete on update, so re-answering a question left the declined tree on disk and reddened the project's own gate; keel mirrors every answer-driven prune with a `_migrations` entry and accepts that `copier update` now requires `--trust`."
 id: docs-adr-0006-answer-retirement-via-migrations
 created: 2026-08-05
-updated: 2026-10-06
+updated: 2026-10-07
 visibility: internal
 canonical: true
 ---
 
-# ADR-0006: Retire declined answers with `_migrations`
+# ADR-K-0006: Retire declined answers with `_migrations`
 
 **Status:** accepted — amends the update consequences of
-[ADR-0004](0004-project-templating-copier.md), which stands otherwise.
+[ADR-K-0004](K-0004-project-templating-copier.md), which stands otherwise.
 
 ## Context
 
-ADR-0004 made keel's repo root a copier template and chose `copier update` as the
+ADR-K-0004 made keel's repo root a copier template and chose `copier update` as the
 upgrade channel. Answer-driven pruning was implemented with `_exclude`: a project
 that answers `frontend_stack: astro` never receives `src/frontend/react-vite`.
 
@@ -64,7 +64,7 @@ had the path simply runs a no-op `rm`.
   than by prose.
 - **Generation is unaffected.** `_check_unsafe` only counts migrations when
   `mode == "update"`, so `copier copy` and `make new` still need no trust flag
-  (amended by [ADR-0010](0010-generation-needs-trust-to-stamp-docs.md)).
+  (amended by [ADR-K-0010](K-0010-generation-needs-trust-to-stamp-docs.md)).
 - **Changing an answer deletes a directory a project may have edited.**
   `src/frontend/<stack>` is a real app tree. That is the honest meaning of switching
   stacks, and it is bounded by copier's own preconditions: update requires git and
@@ -83,4 +83,4 @@ had the path simply runs a no-op `rm`.
   cannot retire anything for an existing project — and they would make *generation*
   require trust, which migrations do not.
 - **Never prune by answer; ship everything and document deletion.** This is what
-  `scaffold.py` did and what ADR-0004 rejected.
+  `scaffold.py` did and what ADR-K-0004 rejected.

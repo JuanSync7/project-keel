@@ -200,7 +200,7 @@ def test_a_project_generated_from_the_working_tree_audits_clean(generated, tmp_p
     r = _audit(project, day, tmpdir=tmp_path)
     assert r.returncode == 0, r.stdout + r.stderr
     report = json.loads(r.stdout)
-    assert len(_letters(report)) == 24
+    assert len(_letters(report)) == 25
     assert report["summary"]["conflicts"] == 0, report["groups"]["conflict"]
     assert _scratch_left(tmp_path) == []
     assert report["summary"]["files_seen"] > 0
@@ -594,8 +594,23 @@ def test_a_project_from_7f0a68b_owes_nothing_the_update_fixes(pre_campaign, tmp_
         for f in report["groups"]["config"]
         if f["kind"] == "arrives" and f.get("file") == "config/project.json"
     }
-    for key in ("make_targets", "child_env", "models.credential_env", "structure"):
+    for key in (
+        "make_targets",
+        "child_env",
+        "models.credential_env",
+        "structure",
+        "adr",
+    ):
         assert key in arrived, (key, sorted(arrived))
+    # The update moves keel's ADRs into their own number space; this project
+    # never edited one, so none is kept and nothing collides. As it stands it
+    # holds ADRs and no `adr` block, which the update brings.
+    ys = _errors(report, "Y")
+    assert [f for f in ys if "resolved_by" not in f] == [], ys
+    assert [f["message"].split(" -- ")[0] for f in ys] == [
+        "config/project.json: adr is missing"
+    ], ys
+    assert report["groups"]["retired"] == [], report["groups"]["retired"]
     practices = [
         f
         for f in report["groups"]["config"]
@@ -651,8 +666,8 @@ def test_a_pre_c2_2_project_receives_credentialed_values_as_an_arrival_and_owes_
     pre_c2_2, tmp_path
 ):
     """The key is optional, so an older project owes nothing for lacking it: the
-    audit reports it as the one config key the update brings, at its empty
-    default, and no X error."""
+    audit reports it as a config key the update brings, at its empty default,
+    and no X error. The `adr` block (CONVENTIONS §19) arrives beside it."""
     project, _env = pre_c2_2
     before = _tree(project)
     systmp = tmp_path / "systmp"
@@ -668,9 +683,13 @@ def test_a_pre_c2_2_project_receives_credentialed_values_as_an_arrival_and_owes_
         for f in report["groups"]["config"]
         if f["kind"] == "arrives" and f.get("file") == "config/project.json"
     ]
-    assert {f["key"] for f in arrived} == {"child_env.credentialed_values"}, arrived
-    assert "template default: {}" in arrived[0]["message"], arrived
-    assert arrived[0]["tier"] == "info", arrived
+    assert {f["key"] for f in arrived} == {
+        "adr",
+        "child_env.credentialed_values",
+    }, arrived
+    values = [f for f in arrived if f["key"] == "child_env.credentialed_values"]
+    assert "template default: {}" in values[0]["message"], arrived
+    assert {f["tier"] for f in arrived} == {"info"}, arrived
 
 
 def test_the_audit_never_refreshes_the_template_index(pre_c2_2, tmp_path):
@@ -733,3 +752,136 @@ def test_the_shipped_audit_target_points_back_at_the_template(generated):
     assert not [ln for ln in own.stdout.splitlines() if "audit-project" in ln], (
         own.stdout
     )
+
+
+# --- ADR number spaces: an update moves keel's ADRs to docs/adr/keel ------------
+
+_KEEL_ADRS = 13
+
+
+def _own_adr(number, slug, title):
+    """A project ADR as a project writes one, in its own number space."""
+    return (
+        "---\n"
+        'title: "ADR-%s: %s"\n'
+        "kind: adr\nlayer: n/a\nstatus: accepted\nowner: us\ntags: [adr]\n"
+        'summary: "%s."\n'
+        "id: docs-adr-%s-%s\ncreated: 2026-10-01\nupdated: 2026-10-01\n"
+        "visibility: internal\ncanonical: true\n---\n\n# ADR-%s: %s\n\n"
+        "The project's own decision.\n"
+    ) % (number, title, title, number, slug, number, title)
+
+
+@pytest.fixture(scope="module")
+def adr_update(pre_campaign, tmp_path_factory):
+    """One real update of a 7f0a68b project that wrote two ADRs of its own --
+    one numbered 0010, which keel's own 0010 collided with before the number
+    spaces split -- edited `owner:` on keel's 0002 (what project-jarvis did to
+    0001-0004) and moved only the `updated:` stamp of keel's 0003. Yields
+    (the updated clone, the update's stderr, env). stderr is read at the file
+    descriptor: copier's migrations are child processes."""
+    project, env = pre_campaign
+    work = tmp_path_factory.mktemp("adr_update")
+    dest = work / "dest"
+    _git(work, "clone", "-q", "--no-hardlinks", str(project), str(dest), env=env)
+    adr = dest / "docs" / "adr"
+    (adr / "0010-areas-of-our-own.md").write_text(
+        _own_adr("0010", "areas-of-our-own", "Areas of our own"), encoding="utf-8"
+    )
+    (adr / "0013-our-own-decision.md").write_text(
+        _own_adr("0013", "our-own-decision", "Our own decision"), encoding="utf-8"
+    )
+    edited = adr / "0002-agent-surface-and-discovery.md"
+    text = edited.read_text(encoding="utf-8")
+    assert text.count("\nowner: TBD\n") == 1
+    edited.write_text(text.replace("\nowner: TBD\n", "\nowner: us\n"), encoding="utf-8")
+    stamped = adr / "0003-agent-control-flow-runtime.md"
+    text = stamped.read_text(encoding="utf-8")
+    old_stamp = [ln for ln in text.splitlines() if ln.startswith("updated: ")][0]
+    stamped.write_text(
+        text.replace(old_stamp + "\n", "updated: 2026-10-06\n", 1), encoding="utf-8"
+    )
+    _git(dest, "add", "-A", env=env)
+    _git(dest, "commit", "-qm", "our own ADRs and an owner", env=env)
+    real = work / "real"
+    real.mkdir()
+    sink = work / "stderr.txt"
+    saved = os.dup(2)
+    try:
+        with open(str(sink), "wb") as fh:
+            os.dup2(fh.fileno(), 2)
+            upd, unmerged = _real_update(
+                dest, real, doc_stamps.newest_stamp(_ROOT), env
+            )
+    finally:
+        os.dup2(saved, 2)
+        os.close(saved)
+    assert unmerged == [], unmerged
+    yield dest, upd, sink.read_text(encoding="utf-8", errors="replace"), env
+
+
+def _adr_names(root, sub=""):
+    d = Path(root) / "docs" / "adr" / sub
+    return sorted(
+        n for n in os.listdir(str(d)) if n[:1].isdigit() or n.startswith("K-")
+    )
+
+
+def test_an_update_from_7f0a68b_moves_template_adrs_and_keeps_the_projects_own(
+    adr_update,
+):
+    """keel's ADRs arrive in docs/adr/keel as K- files, every unedited old copy
+    is retired, and the project's own ADRs -- its 0010 included -- stay where
+    they are, in the number space the project owns."""
+    _dest, upd, _err, _env = adr_update
+    keel = _adr_names(upd, "keel")
+    assert len(keel) == _KEEL_ADRS and all(n.startswith("K-") for n in keel), keel
+    assert keel == sorted(
+        n
+        for n in os.listdir(str(_ROOT / "docs" / "adr" / "keel"))
+        if n.startswith("K-")
+    )
+    assert _adr_names(upd) == [
+        "0002-agent-surface-and-discovery.md",  # edited: kept (next test)
+        "0010-areas-of-our-own.md",
+        "0013-our-own-decision.md",
+    ]
+    errors = {m for tier, m in _gate(upd) if tier == "error"}
+    assert [m for m in errors if "docs/adr" in m and "duplicate id" not in m] == []
+
+
+def test_an_update_keeps_and_reports_a_template_adr_the_project_edited(adr_update):
+    """copier deletes the retired 0002 though the project edited it; the guard
+    migration puts the project's bytes back and says so. The restamp migration
+    then moves its `updated:` value, because the project's committed edit left
+    the stamp stale; every other byte is the project's. What the gate then
+    owes is exactly check_A's duplicate id: the kept copy and K-0002 share it,
+    and the project chooses (docs/adr/README.md)."""
+    dest, upd, err, _env = adr_update
+    rel = "docs/adr/0002-agent-surface-and-discovery.md"
+
+    def unstamped(path):
+        lines = path.read_text(encoding="utf-8").splitlines(True)
+        return [ln for ln in lines if not ln.startswith("updated: ")]
+
+    assert unstamped(upd / rel) == unstamped(dest / rel)
+    assert "\nowner: us\n" in (upd / rel).read_text(encoding="utf-8")
+    assert (
+        "kept %s: the project edited it and the template retired it "
+        "(now docs/adr/keel/K-0002-agent-surface-and-discovery.md)" % rel
+    ) in err, err
+    errors = sorted(m for tier, m in _gate(upd) if tier == "error")
+    assert len(errors) == 1, errors
+    # The id is the one 0002 has carried since the first commit (the file
+    # name grew "-and-discovery" later; the id did not).
+    assert "duplicate id 'docs-adr-0002-agent-surface'" in errors[0], errors
+    assert rel in errors[0] and "K-0002-agent-surface-and-discovery.md" in errors[0]
+
+
+def test_a_restamp_only_difference_is_not_kept(adr_update):
+    """A copy that differs from the template's only in the `updated:` stamp the
+    restamp writer moves is not an edit: its retirement stands, silently."""
+    _dest, upd, err, _env = adr_update
+    assert not (upd / "docs" / "adr" / "0003-agent-control-flow-runtime.md").exists()
+    assert (upd / "docs/adr/keel/K-0003-agent-control-flow-runtime.md").is_file()
+    assert "0003-agent-control-flow-runtime" not in err, err

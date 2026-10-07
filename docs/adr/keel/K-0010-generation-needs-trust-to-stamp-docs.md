@@ -1,24 +1,24 @@
 ---
-title: "ADR-0010: Generation runs a stamping task, so `copier copy` needs `--trust`, amending ADR-0006 and ADR-0007"
+title: "ADR-K-0010: Generation runs a stamping task, so `copier copy` needs `--trust`, amending ADR-K-0006 and ADR-K-0007"
 kind: adr
 layer: n/a
 status: accepted
 owner: TBD
 tags: [adr, template, copier, tasks, trust, freshness, idempotency]
-summary: "A project generated from keel and committed the same day failed its own doc-freshness test on arrival, because every `updated:` was a literal from keel's history. Generation now runs `scripts/jobs/restamp_docs.py` as a copier task and every update ends with the same writer as its last migration, so a document is stamped on the day it arrives. Tasks are unsafe to copier, so `copier copy` and `make new` now require `--trust`, which reverses ADR-0006's claim that generation is trust-free."
+summary: "A project generated from keel and committed the same day failed its own doc-freshness test on arrival, because every `updated:` was a literal from keel's history. Generation now runs `scripts/jobs/restamp_docs.py` as a copier task and every update ends with the same writer as its last migration, so a document is stamped on the day it arrives. Tasks are unsafe to copier, so `copier copy` and `make new` now require `--trust`, which reverses ADR-K-0006's claim that generation is trust-free."
 id: docs-adr-0010-generation-needs-trust-to-stamp-docs
 created: 2026-10-06
-updated: 2026-10-06
+updated: 2026-10-07
 visibility: internal
 canonical: true
 ---
 
-# ADR-0010: Generation needs `--trust` to stamp documents
+# ADR-K-0010: Generation needs `--trust` to stamp documents
 
 **Status:** accepted 2026-10-06 by the maintainer. It amends the "generation is unaffected" consequence of
-[ADR-0006](0006-answer-retirement-via-migrations.md) and the "generation is
+[ADR-K-0006](K-0006-answer-retirement-via-migrations.md) and the "generation is
 deliberately trust-free" reasoning in
-[ADR-0007](0007-optional-showcase-and-project-owned-identity.md). Both ADRs stand
+[ADR-K-0007](K-0007-optional-showcase-and-project-owned-identity.md). Both ADRs stand
 otherwise.
 
 ## Context

@@ -9,7 +9,7 @@ tags: []
 summary: Model backends the app/agents run on — adapters + registry behind one contract.
 id: models-readme
 created: 2026-06-17
-updated: 2026-10-06
+updated: 2026-10-07
 visibility: internal
 canonical: true
 ---
@@ -33,7 +33,7 @@ those models live and how each is launched.
 | `openai_compatible.py` | The `openai-compatible` backend: any server speaking the OpenAI chat-completions wire format (OpenAI, Ollama, vLLM, an internal gateway) via stdlib `urllib`, key from the environment. An unreachable endpoint (refused, no route, unknown host) raises `ModelUnavailable`; an HTTP error from a reachable one propagates as the failure it is | The Claude Code CLI — that is `claude_code_headless.py`; holding a key — the environment does |
 | `registry.py` | `get_model(name=None)` / `list_models()`: the name → adapter map and the default (`claude-code-headless`); an unknown name is a `KeyError` naming the options | Implementing a backend — write an adapter and register it here; agents import the name, never a concrete class |
 
-`ModelUnavailable` is the **absent-versus-broken** split for models (ADR-0007's
+`ModelUnavailable` is the **absent-versus-broken** split for models (ADR-K-0007's
 rule, applied here): the doers that call a model — `scripts/hooks/on_stop_triage.py`,
 `scripts/refactor_practice.py` — catch it, print `model unavailable (...); skipping`
 and exit 0, because a hook that fires on a machine without a model must not

@@ -70,7 +70,7 @@ def real_corpus():
 
     Built only when ABSENT, and deliberately never REBUILT. A stale corpus must
     stay stale, or this fixture would quietly repair the drift that
-    `make check-corpus` exists to report (ADR-0008) — a test that fixes its own
+    `make check-corpus` exists to report (ADR-K-0008) — a test that fixes its own
     subject proves nothing. Building it by the same two jobs `make site-data`
     runs, in subprocesses, keeps one definition of how the view is produced.
     """

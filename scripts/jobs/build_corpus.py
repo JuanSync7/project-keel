@@ -24,7 +24,7 @@ SCHEMA_VERSION = 1
 # The walk scope is check_structure's, IMPORTED, never re-typed: the private
 # copy here never carried `runtimes` (from the initial commit onward), so six
 # modules were invisible to every corpus query while `make verify` stayed green
-# (ADR-0008). check_structure is 3.6-safe stdlib by contract, so importing it is
+# (ADR-K-0008). check_structure is 3.6-safe stdlib by contract, so importing it is
 # free under any interpreter this job runs on; the reverse import would not be.
 _SCRIPTS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _SCRIPTS not in sys.path:
@@ -316,7 +316,7 @@ def _doc_and_sections(path: str, root: str, nodes: list, refs: list):
     try:
         # utf-8-sig, like every .py read here: read as plain utf-8 a BOM'd file
         # keeps its U+FEFF, so _parse_frontmatter never sees a leading `---` and
-        # the doc drops out of the corpus silently — the ADR-0008 drop class,
+        # the doc drops out of the corpus silently — the ADR-K-0008 drop class,
         # for the node kind that dominates the graph. Byte-identical otherwise.
         with open(path, encoding="utf-8-sig") as fh:
             text = fh.read()
@@ -460,7 +460,7 @@ def _module_and_symbols(path: str, root: str, nodes: list):
     rel = _rel(path, root)
     try:
         # utf-8-sig: keep BOM'd (valid, importable) modules indexable — the
-        # twin read in check_structure does the same (ADR-0008 review).
+        # twin read in check_structure does the same (ADR-K-0008 review).
         with open(path, encoding="utf-8-sig") as fh:
             src = fh.read()
         tree = ast.parse(src, filename=path)
@@ -556,7 +556,7 @@ def _exported_names(tree) -> list:
         # An annotated `__all__: list[str] = [...]` is an AnnAssign, not an
         # Assign — matching only Assign made annotated exports invisible to
         # this reader (and identically to its twin), found by a mutation check
-        # in the ADR-0008 pass. Both readers changed together; the parity is
+        # in the ADR-K-0008 pass. Both readers changed together; the parity is
         # pinned by tests/unit/scripts/test_check_corpus.py::
         # test_exported_names_parity_with_the_corpus_reader. Deliberately a
         # top-level LITERAL reader: `__all__ +=` / .extend / conditional forms

@@ -8,7 +8,7 @@ tags: [plan, template, copier, upgrade, gate, environment, convergence]
 summary: The bounded-convergence record for keel's template-as-product hardening: eight numbered passes plus four unnumbered units, all merged to main as 956b7da, with the still-open release blockers for v0.1.0 and every deferral's measurement and trigger. The status table and the release-readiness section are authoritative; the per-pass narratives below them are historical and carry inline corrections where they went stale.
 id: docs-design-keel-hardening-plan
 created: 2026-08-04
-updated: 2026-09-02
+updated: 2026-10-07
 visibility: internal
 canonical: true
 ---
@@ -569,7 +569,7 @@ merge. Every item below was **reproduced**, not inferred.
 
 **Status: 12 of 12 closed.** Blockers 4–12 were fixed first, each test-first and
 mutation-verified. Blockers 1–3 were one decision, now taken and recorded in
-[ADR-0009](../adr/0009-release-identity-and-the-tag-ordering-rule.md): **`0.1.0`
+[ADR-K-0009](../adr/keel/K-0009-release-identity-and-the-tag-ordering-rule.md): **`0.1.0`
 is the merge, dated the day it was cut**, not the 2026-08-04 commit the CHANGELOG
 named in anticipation. Tagging the older commit was the harmful reading — a
 descendant generated from `main` resolves to `0.1.0.postN.devM`, which PEP 440

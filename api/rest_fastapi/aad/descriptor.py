@@ -19,7 +19,8 @@ __all__ = ["AadDescriptor", "card_to_aad", "AAD_VERSION"]
 
 # Wire-format version, MAJOR.MINOR. MINOR is additive-only (a reader that knows
 # an older minor ignores unknown fields); MAJOR is breaking. Never mutate a
-# shipped field — only add (minor) or open a new major. See docs/adr.
+# shipped field — only add (minor) or open a new major. See ADR-K-0002
+# (docs/adr/keel/K-0002-agent-surface-and-discovery.md).
 AAD_VERSION = "1.0"
 
 

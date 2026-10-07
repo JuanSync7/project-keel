@@ -2,7 +2,7 @@
 title: Unit — check_corpus gates the LOCAL corpus (absent vs stale vs enriched)
 kind: tests
 layer: n/a
-summary: wiki/corpus.json is the gitignored world-model the corpus agents actually query, and until ADR-0008 nothing gated it — the default check built FRESH and never looked at the on-disk file, so it could rot silently (measured 33 nodes behind the tree at a green gate). Now absent is a loud exit 0 (a fresh clone, CI, and a day-one generated project have none — the ADR-0007 absent-vs-drifted split), present-but-stale is exit 1 naming make site-data, and staleness is judged on the DETERMINISTIC PROJECTION so index_enforcer's "generated" summaries and links are enrichment, not rot. A structurally invalid local corpus fails regardless.
+summary: wiki/corpus.json is the gitignored world-model the corpus agents actually query, and until ADR-K-0008 nothing gated it — the default check built FRESH and never looked at the on-disk file, so it could rot silently (measured 33 nodes behind the tree at a green gate). Now absent is a loud exit 0 (a fresh clone, CI, and a day-one generated project have none — the ADR-K-0007 absent-vs-drifted split), present-but-stale is exit 1 naming make site-data, and staleness is judged on the DETERMINISTIC PROJECTION so index_enforcer's "generated" summaries and links are enrichment, not rot. A structurally invalid local corpus fails regardless.
 """
 
 import ast
@@ -123,7 +123,7 @@ def test_rotten_local_corpus_fails_even_if_fresh(repo, capsys):
 
 def test_local_corpus_of_json_null_fails(repo, capsys):
     """`null` parses fine and is not a dict; it must be reported as rot, not
-    slip past a `is not None` guard at exit 0 — found by the ADR-0008 review."""
+    slip past a `is not None` guard at exit 0 — found by the ADR-K-0008 review."""
     (repo / "wiki").mkdir()
     (repo / "wiki" / "corpus.json").write_text("null\n", encoding="utf-8")
     assert cc.main(["--root", str(repo)]) == 1
@@ -145,7 +145,7 @@ def test_wrong_shaped_local_corpus_fails_without_a_traceback(repo, payload, caps
 def test_bom_module_is_still_indexed(repo):
     """A UTF-8-BOM file is valid, importable Python (the runtime strips the
     BOM); reading it as plain utf-8 left U+FEFF in the source and the module
-    silently vanished from the corpus — the drop class ADR-0008 exists to
+    silently vanished from the corpus — the drop class ADR-K-0008 exists to
     close, re-opened for exactly BOM files. Both twins read utf-8-sig now."""
     mod = _MOD.replace("Thing", "Bom").replace("thing", "bom")
     (repo / "src" / "bom.py").write_bytes(b"\xef\xbb\xbf" + mod.encode("utf-8"))
@@ -179,7 +179,7 @@ def test_unreadable_local_corpus_fails_loudly(repo, capsys):
     """Present-but-unreadable (permissions, a directory, a dangling symlink) is
     'broken', not 'absent': catching only ValueError let an OSError escape as a
     traceback from `make verify` instead of the designed ERROR — the same
-    absent-vs-broken split this file exists to hold (ADR-0007)."""
+    absent-vs-broken split this file exists to hold (ADR-K-0007)."""
     (repo / "wiki").mkdir()
     (repo / "wiki" / "corpus.json").mkdir()  # a directory is unreadable as JSON
     assert cc.main(["--root", str(repo)]) == 1
@@ -201,7 +201,7 @@ def test_corpus_mode_reports_rot_without_a_traceback(repo, payload, capsys):
 def test_bom_markdown_doc_is_still_indexed(repo):
     """The .py twins moved to utf-8-sig; markdown did not, so a BOM'd doc kept
     its \\ufeff prefix, the frontmatter never matched a leading '---', and the doc
-    was silently dropped — the ADR-0008 drop class re-opened for the node kind
+    was silently dropped — the ADR-K-0008 drop class re-opened for the node kind
     that dominates the corpus."""
     doc = _DOC.replace("id: guide", "id: bomguide")
     (repo / "docs" / "bom.md").write_bytes(b"\xef\xbb\xbf" + doc.encode("utf-8"))

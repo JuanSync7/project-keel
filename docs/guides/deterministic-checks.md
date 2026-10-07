@@ -62,9 +62,9 @@ everything and therefore expect the project interpreter.
 
 | Check | Script | Gate? | Interpreter | What it guarantees |
 |-------|--------|:-----:|-------------|--------------------|
-| Structure & frontmatter | `scripts/check_structure.py` | error | 3.6-safe | Labels, taxonomy, package boundaries, tool/agent governance, project facts, agent-rules symlinks, owned-exception & frozen-config boundaries, naked-tensor domain warn, lint/type ruleset parity, template twin parity, Makefile help parity, cross-reference resolution, check-catalogue parity, rosters, practice mechanisms, policy reachability, writer rerun declarations, make-target effect labels, child-process environment (checks A–X) |
+| Structure & frontmatter | `scripts/check_structure.py` | error | 3.6-safe | Labels, taxonomy, package boundaries, tool/agent governance, project facts, agent-rules symlinks, owned-exception & frozen-config boundaries, naked-tensor domain warn, lint/type ruleset parity, template twin parity, Makefile help parity, cross-reference resolution, check-catalogue parity, rosters, practice mechanisms, policy reachability, writer rerun declarations, make-target effect labels, child-process environment, ADR number spaces (checks A–Y) |
 | Interpreter floor | `scripts/check_python_version.py` | error | any | `$(PY)` satisfies `pyproject.toml`'s `requires-python`, said plainly before a newer-syntax check fails with a traceback — runs before every check that needs the project interpreter (`check-corpus`, `test`) |
-| Corpus integrity | `scripts/jobs/check_corpus.py` | error | ≥3.7 | the fresh build is a valid, acyclic, reproducible graph whose edge kinds are from the closed set (`keyword`, `link`, `citation`, `mention`, `semantic`) **and** the local `wiki/corpus.json` (what agents query) is current when present — absent is a loud pass, stale is an error naming `make site-data` (ADR-0008) |
+| Corpus integrity | `scripts/jobs/check_corpus.py` | error | ≥3.7 | the fresh build is a valid, acyclic, reproducible graph whose edge kinds are from the closed set (`keyword`, `link`, `citation`, `mention`, `semantic`) **and** the local `wiki/corpus.json` (what agents query) is current when present — absent is a loud pass, stale is an error naming `make site-data` (ADR-K-0008) |
 | OpenAPI drift | `api/rest_fastapi/export_openapi.py --check` | error | FastAPI | Committed `openapi.json` matches the live routes |
 | AAD schema drift | `scripts/agent_surface/generate_aad_schema.py --check` | error | pydantic | Committed AAD JSON Schema matches the model |
 | Code-doc drift | `scripts/cdmon_sync.py --check` | error* | any | cdmon code↔doc drift — the CONVENTIONS §9 worked example of a thin adapter over an external tool (*a stated skip, exit 0, until `cdmon` is on PATH **and** `config/cdmon/cdmon.yaml` exists; cdmon is not on PyPI). Reached from `check-all` via `make check-cdmon` |
@@ -80,7 +80,7 @@ print but never fail the build.
 
 ### 1. Structure & frontmatter — `scripts/check_structure.py`
 
-**Purpose.** The core enforcer of `CONVENTIONS.md`. Checks A–X:
+**Purpose.** The core enforcer of `CONVENTIONS.md`. Checks A–Y:
 
 - **A. Frontmatter** — every `README.md` / `AGENT.md` / `CLAUDE.md`, `docs/**`,
   `test-docs/**` markdown, and `agents/**/*.tool.md` has the required keys with
@@ -98,7 +98,7 @@ print but never fail the build.
 - **D. `__init__` is the API** — no absolute import of another package's
   `_private` module.
 - **E. Authored coverage** — every `__all__`-exported symbol defined in-file has
-  a docstring: the corpus's symbol summaries (error since ADR-0008).
+  a docstring: the corpus's symbol summaries (error since ADR-K-0008).
 - **F. Tool specs governed** (error) + **accountability** (warn) — valid
   `kind: tool` frontmatter with a resolvable `public_api`, a `tool_effect` from
   the closed set, a `tool_command` that invokes the script; and the body
@@ -159,7 +159,7 @@ print but never fail the build.
   `build_corpus` reads (pinned by a parity test, not a shared import — this
   script stays 3.6-safe). Without them the corpus falls back to
   filename/first-prose-line and labels the result `authored`, and an
-  undocumented module is silently dropped from the index (ADR-0008).
+  undocumented module is silently dropped from the index (ADR-K-0008).
 - **P. Makefile help parity** — every target line carrying a `## ` annotation
   is one the `help` recipe's own grep pattern lists. The pattern is read out of
   the recipe (`grep -hE '<pattern>' $(MAKEFILE_LIST)`), not restated in the
@@ -176,7 +176,7 @@ print but never fail the build.
   regex, which Python cannot run), `-F`, a second selecting grep, a variable or
   wildcard include, a pattern variable it cannot expand — is a WARN that says
   *unverified*, never a pass. Silent without a `help` target. Lands as an error, not a
-  release-long warning (the ADR-0008 grace rule), because the tree complied the
+  release-long warning (the ADR-K-0008 grace rule), because the tree complied the
   moment the recipe was widened — there was nothing to give anyone time for.
 - **Q. Cross-references resolve** — every relative Markdown link in prose
   (`[text](path)`, `![alt](path)`, a directory, a `#anchor`) names something
@@ -205,7 +205,7 @@ print but never fail the build.
   every generated project. What this buys: renumbering `CONVENTIONS.md`, or
   moving a doc, now fails with the full list of citations to update instead of
   leaving the knowledge graph pointing at the wrong sections at exit 0. Lands
-  as an error, not the ADR-0008 release-long WARN: the tree had no dead
+  as an error, not the ADR-K-0008 release-long WARN: the tree had no dead
   reference on arrival, so there was nothing to give anyone time for.
 - **R. Check catalogue parity** — this file's checks table and the triggers
   that run the checks agree on one membership: every catalogued script exists;
@@ -223,7 +223,7 @@ print but never fail the build.
   live instance this closed: the cdmon row claimed the error tier for as long
   as it existed while `check-all` never ran it. Silent without this file; a
   checks table or Makefile it cannot read is a WARN that says *unverified*.
-  Lands as an error, not the ADR-0008 release-long WARN: the four rows it found
+  Lands as an error, not the ADR-K-0008 release-long WARN: the four rows it found
   were made true in the landing commit.
 - **S. Roster parity** — a README that declares `## What ships here` is held
   to its directory: a pipe table follows the heading, its first column is
@@ -305,7 +305,7 @@ print but never fail the build.
   `[local]`, 5 carrying `tree`. The label is a static claim; the runtime half is
   `tests/integration/test_make_target_effects.py`, which runs every `[local]`
   target through `scripts/run_make_target.py` and fails one that changed the
-  tree. See [`docs/adr/0011-make-target-effect-labels.md`](../adr/0011-make-target-effect-labels.md).
+  tree. See [`docs/adr/keel/K-0011-make-target-effect-labels.md`](../adr/keel/K-0011-make-target-effect-labels.md).
 - **X. Child processes get an allowlisted environment** — every `subprocess`
   (`run`, `Popen`, `call`, `check_call`, `check_output`) or `asyncio`
   (`create_subprocess_exec`, `create_subprocess_shell`) spawn passes `env=`
@@ -369,7 +369,28 @@ print but never fail the build.
   calls in 10 modules, all converted. It is defence-in-depth, not a sandbox: a
   same-user child can still read the parent's environment from
   `/proc/$PPID/environ`. See
-  [`docs/adr/0012-child-process-environment-allowlist.md`](../adr/0012-child-process-environment-allowlist.md).
+  [`docs/adr/keel/K-0012-child-process-environment-allowlist.md`](../adr/keel/K-0012-child-process-environment-allowlist.md).
+- **Y. ADR number spaces** — the ADRs a template ships and the ADRs a project
+  writes are numbered in two spaces (CONVENTIONS §19), named by
+  `config/project.json` `adr`: `project_dir` (`docs/adr`), `template_dir`
+  (`docs/adr/keel`), `template_prefix` (`K-`) and `number_digits` (`4`).
+  The check reads every `.md` file directly in each space except
+  `README.md`, `AGENT.md` and `CLAUDE.md`. It errors on a project-space ADR
+  named with the template prefix (the message names the template space), on
+  one that is not `NNNN-<slug>.md`, on a template-space ADR that is not
+  `K-NNNN-<slug>.md` (the message names the project space as where it
+  belongs), on a number taken twice within one space (both paths named; the
+  same number once in each space is clean), on frontmatter `kind` other than
+  `adr`, and on a `title` that does not begin `ADR-NNNN:` or `ADR-K-NNNN:` for
+  its own file. A missing `adr` block is an error once any Markdown document in
+  the tree declares `kind: adr`; a malformed one (a missing or unknown key, the
+  two directories equal, a prefix that starts with a digit, a non-integer digit
+  count) is always an error naming the key. Both spaces empty is a WARN. A
+  template ADR the project edited and `copier update` retired is kept by
+  `scripts/jobs/keep_edited_retired.py`; the kept copy shares its `id:` with
+  the template's file, which check_A reports as a duplicate id. Measured over
+  keel at landing: 13 template ADRs, 0 project ADRs, 0 findings. See
+  [`docs/adr/keel/K-0013-template-and-project-adr-number-spaces.md`](../adr/keel/K-0013-template-and-project-adr-number-spaces.md).
 
 **When to run.** Every commit (pre-commit) and in CI; any time you add a
 directory, package, doc, tool, or agent.
@@ -390,7 +411,7 @@ the **local** corpus — the file the agents actually query: absent is a loud
 pass (a fresh clone, CI, and a day-one generated project have none), while
 present-but-stale is an **error** naming `make site-data`. Staleness is judged
 on the *deterministic projection* — `index_enforcer`'s `"generated"` summary
-fills and semantic links are enrichment, not rot (ADR-0008).
+fills and semantic links are enrichment, not rot (ADR-K-0008).
 
 **When to run.** In CI, and after any change to the corpus builders or to
 content that feeds the corpus.
@@ -449,11 +470,11 @@ line, the report says which, and every stale finding names `make restamp-docs`.
 That target runs `scripts/jobs/restamp_docs.py`, the writer half of this rule.
 It reads the stamp through the same grammar (`review_docs.updated_span`) and
 never moves a stamp backwards. Copier runs it at generation and as the last
-update migration (`docs/adr/0010-generation-needs-trust-to-stamp-docs.md`).
+update migration (`docs/adr/keel/K-0010-generation-needs-trust-to-stamp-docs.md`).
 
 **Tier.** A *report* under `make advise` (exit 0). The same rule is a **gate**
 in `tests/integration/test_doc_freshness.py`, beside the release-identity test
-and for the same reason (ADR-0009): a check that shells to git does not belong
+and for the same reason (ADR-K-0009): a check that shells to git does not belong
 in the 3.6 pre-commit hook. Landed with every stale stamp normalised in the same
 commit — 91 of 117 governed documents — so the tree complied on arrival.
 
@@ -526,7 +547,7 @@ does.
 3. Add a `make` target and, if it should gate commits, a `.pre-commit-config.yaml`
    hook and/or a CI step. New projects generated with `copier` get the file
    automatically (copier ships the real `scripts/` tree — see
-   [ADR 0004](../adr/0004-project-templating-copier.md)).
+   [ADR-K-0004](../adr/keel/K-0004-project-templating-copier.md)).
 4. Document it in this file.
 
 ## Auditing another project against this template
@@ -556,7 +577,7 @@ prefix `keel-audit-`), which it removes on every exit path:
 - `copier update --trust --defaults --skip-answered --vcs-ref HEAD
   --conflict inline` of the copy against the snapshot, run as a child
   process.
-Every check_structure letter, A–X, runs in-process through `run_checks` on the
+Every check_structure letter, A–Y, runs in-process through `run_checks` on the
 copy twice: before the update and after it. The freshness judge
 (`scripts/jobs/review_docs.py`) and the restamp writer's `pending` list
 (`scripts/jobs/restamp_docs.py`) run on DEST itself. Each freshness finding

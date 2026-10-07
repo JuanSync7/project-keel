@@ -88,7 +88,7 @@ copier update --trust    # re-runs the Q&A with your recorded answers as default
 template that runs commands unless you pass it. Generation runs one, which stamps
 every document's `updated:` with the day you generated it, so the project passes its
 own freshness gate on its first commit (`scripts/jobs/restamp_docs.py`;
-`docs/adr/0010-generation-needs-trust-to-stamp-docs.md`). An update runs more:
+`docs/adr/keel/K-0010-generation-needs-trust-to-stamp-docs.md`). An update runs more:
 re-answering a question has to *remove* what you declined (the showcase demo, the
 frontend stack you switched away from, a transport you turned off), and copier can
 only delete through `_migrations`; the last one restamps the documents the update
@@ -102,6 +102,16 @@ path filled in). It runs a real `copier update` on a scratch copy of the project
 judges the tree that update leaves, never writes the project itself, and lists
 what it did not check. Confirm with the real `copier update --trust` in the
 project, then `make verify` there.
+
+The template's own ADRs live in `docs/adr/keel/` as `K-NNNN-<slug>.md`, cited as
+`ADR-K-NNNN`; `docs/adr/` holds only your project's ADRs, numbered from `0001`
+(CONVENTIONS §19, held by `check_Y`). When an update retires or moves a template
+file you edited, such as a template ADR that moved into `docs/adr/keel/`,
+`scripts/jobs/keep_edited_retired.py` keeps your edited copy and names it on
+stderr (`kept <path>: ...`); `docs/adr/README.md` says how to resolve a kept ADR.
+A later migration that deletes a named path still wins over that job, so run
+`make audit-project` before an update: its `retired` group names each edited
+file the update would delete.
 
 In a checkout of this repo you can also run `make new DEST=../my-project` — but note
 that records the template's **absolute local path** as the update origin, so
@@ -132,7 +142,7 @@ longer exist and `make check` correctly reports one error per adapter. To drop i
 available is itself an error), then run `make check` once more: it lists every doc that still links into `models/`, by file
 and line, so you can unlink or reword each one. That second step is the same for any
 directory you remove — the gate holds every link to a target that exists. Project
-generation is `copier`-based (see [ADR 0004](docs/adr/0004-project-templating-copier.md)).
+generation is `copier`-based (see [ADR-K-0004](docs/adr/keel/K-0004-project-templating-copier.md)).
 
 {% if showcase %}## Showcase demo (synced docs site)
 

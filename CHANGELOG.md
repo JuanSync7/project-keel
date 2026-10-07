@@ -11,6 +11,21 @@ version rather than a bare commit:
 ## [Unreleased]
 
 ### Added
+- **`check_Y`, `scripts/jobs/keep_edited_retired.py` and the audit's
+  `retired` group — template and project ADRs keep their own numbers.**
+  `check_Y` holds every ADR to its number space as `config/project.json` `adr`
+  names it: a project ADR in `docs/adr/` is `NNNN-<slug>.md` and never carries
+  the template prefix, a template ADR in `docs/adr/keel/` is
+  `K-NNNN-<slug>.md` and is one the template ships (`adr.template_adrs`), an
+  ADR anywhere else is an error, a number is unique within its space, and the
+  title names the file. `keep_edited_retired.py` is copier's first `after` migration: it
+  puts back each file the update deleted that the project had edited (only the
+  `updated:` value is discounted) and names it on stderr, because copier
+  deletes a retired file before any migration runs. `make audit-project`'s
+  `retired` group reports the same files, by the same `is_edited`, as an owed
+  error. Registered as the gate practice `adr-number-spaces`
+  (`docs/adr/keel/K-0013-template-and-project-adr-number-spaces.md`, ADR-K-0013,
+  proposed).
 - **`check_X` and `scripts/child_env.py` — a child process gets an
   allowlisted environment.** `build_child_env` starts from an empty dict and
   copies only the names `config/project.json` declares: `child_env.names` and
@@ -41,6 +56,16 @@ version rather than a bare commit:
   in run order. With no `--root` the output is byte-identical to before.
 
 ### Changed
+- **BREAKING: the template's ADRs move to `docs/adr/keel/K-NNNN-<slug>.md`.**
+  Keel's ADR-0001 to ADR-0012 are now ADR-K-0001 to ADR-K-0012, and
+  `docs/adr/` holds only the project's own ADRs, numbered from 0001; each moved
+  ADR keeps its `id:`. A generated project's update deletes the old template
+  copies, keeps any it edited (named `kept <path>: ...`), and adds the `adr`
+  block to `config/project.json`. A project ADR named `K-NNNN-...` in
+  `docs/adr/` is now a gate error. `make audit-project` names each edited file
+  the update would still delete, such as one a named `rm` migration removes.
+  This is the first breaking change to the generated-project
+  contract, so the next release is 0.2.0 (ADR-K-0013, proposed; ADR-K-0009).
 - **`review_docs` and `restamp_docs --check` no longer rewrite `.git/index`.**
   Both read changed paths through `review_docs.modified_paths`, which runs
   `git status --porcelain --ignore-submodules=all` through
@@ -513,7 +538,7 @@ anticipation, in `d0a25c4`, and the tag was never cut.
 
 The tag names this commit rather than the August one deliberately, and the
 reasoning is durable enough to have its own record —
-[ADR-0009](docs/adr/0009-release-identity-and-the-tag-ordering-rule.md). Briefly:
+[ADR-K-0009](docs/adr/keel/K-0009-release-identity-and-the-tag-ordering-rule.md). Briefly:
 a project generated from `main` records that commit, `git describe` renders it
 `0.1.0.postN.devM`, PEP 440 orders that **above** `0.1.0`, and copier refuses to
 update downwards — so a tag placed behind live descendants converts a working

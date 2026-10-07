@@ -8,7 +8,7 @@ tags: [api, transport, architecture]
 summary: How clients reach the domain: the edge + transport layers in api/.
 id: docs-architecture-transports
 created: 2026-06-17
-updated: 2026-09-02
+updated: 2026-10-07
 visibility: internal
 canonical: true
 ---
@@ -38,11 +38,11 @@ client ──HTTP/HTTPS──> edge (nginx)  ──> transport ──> src/ (dom
   following the same thin-over-`src/` rule.
 
 ## At generation time
-`copier` (ADR 0004) tailors which transports a new project ships. **REST + MCP are
+`copier` (ADR-K-0004) tailors which transports a new project ships. **REST + MCP are
 the always-shipped foundation** — the skeleton's own `/things` route, the AAD
 reference implementation and the MCP servers all run on them. The bundled showcase
 also mounts a router here, but it is a *tenant*, not a reason: the `showcase`
-question (ADR 0007) prunes that router and its read model while REST stays, and
+question (ADR-K-0007) prunes that router and its read model while REST stays, and
 `api/rest_fastapi/app.py` mounts it only when the file is present. The
 **add-ons `grpc` and `edge_nginx`** are self-contained
 (no code/test imports them), so the `transports` question keeps each only when

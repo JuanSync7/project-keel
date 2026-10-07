@@ -384,7 +384,7 @@ def _documented_copier_commands():
 def test_every_documented_copier_command_carries_trust():
     """`_tasks` (the doc restamp) and `_migrations` (answer retirement) make keel
     an unsafe template, so copier REFUSES both `copy` and `update` without
-    `--trust` (docs/adr/0010-generation-needs-trust-to-stamp-docs.md). A command
+    `--trust` (docs/adr/keel/K-0010-generation-needs-trust-to-stamp-docs.md). A command
     shown without the flag is a command that fails for the reader who copies it."""
     found = _documented_copier_commands()
     assert len(found) >= 3, (

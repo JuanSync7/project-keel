@@ -1,5 +1,5 @@
 ---
-title: "ADR-0003: Agent control flow as a neutral Runtime, with LangGraph as one adapter"
+title: "ADR-K-0003: Agent control flow as a neutral Runtime, with LangGraph as one adapter"
 kind: adr
 layer: n/a
 status: accepted
@@ -8,12 +8,12 @@ tags: [adr, agent, runtime, control-flow, langgraph, determinism]
 summary: Agents declare control flow as a neutral Plan run by a Runtime; the default engine is stdlib, LangGraph is one optional adapter.
 id: docs-adr-0003-agent-control-flow-runtime
 created: 2026-06-22
-updated: 2026-09-02
+updated: 2026-10-07
 visibility: internal
 canonical: true
 ---
 
-# ADR-0003: Agent control flow as a neutral Runtime, with LangGraph as one adapter
+# ADR-K-0003: Agent control flow as a neutral Runtime, with LangGraph as one adapter
 
 **Status:** accepted
 

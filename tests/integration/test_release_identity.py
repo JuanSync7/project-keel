@@ -2,7 +2,7 @@
 title: Integration — a version heading names a tag that exists
 kind: tests
 layer: n/a
-summary: CHANGELOG.md carried a `## [0.1.0] — 2026-08-04` heading for a release nobody ever cut, and nothing noticed because no check reads the changelog — while five shipped references told users to `copier copy --vcs-ref v0.1.0`, which resolved to nothing. This pins the pair: every dated version heading must have a matching git tag. Not a check_* letter on purpose (ADR-0009): check_structure.py is stdlib-only and 3.6-safe and has no business shelling to git in a pre-commit hook. Absent is not broken — no git, no repository, or a repository with no tags AND no version headings are all real states that pass loudly.
+summary: CHANGELOG.md carried a `## [0.1.0] — 2026-08-04` heading for a release nobody ever cut, and nothing noticed because no check reads the changelog — while five shipped references told users to `copier copy --vcs-ref v0.1.0`, which resolved to nothing. This pins the pair: every dated version heading must have a matching git tag. Not a check_* letter on purpose (ADR-K-0009): check_structure.py is stdlib-only and 3.6-safe and has no business shelling to git in a pre-commit hook. Absent is not broken — no git, no repository, or a repository with no tags AND no version headings are all real states that pass loudly.
 """
 
 import re
@@ -65,13 +65,13 @@ def test_every_released_version_heading_has_a_matching_tag():
     assert not missing, (
         "CHANGELOG.md documents %s but no matching tag exists (tags: %s). Either "
         "cut and push the tag, or move the section back under [Unreleased] — a "
-        "version heading is a claim that a named ref is checkable out (ADR-0009)."
+        "version heading is a claim that a named ref is checkable out (ADR-K-0009)."
         % (", ".join(missing), sorted(tags) or "none")
     )
 
 
 def test_the_newest_tag_is_not_behind_the_default_branch_tip():
-    """The tag-ordering rule of ADR-0009, asserted rather than trusted.
+    """The tag-ordering rule of ADR-K-0009, asserted rather than trusted.
 
     copier resolves an untagged template through dunamai, so a descendant
     generated from a commit AHEAD of the newest tag records a version like
@@ -97,5 +97,5 @@ def test_the_newest_tag_is_not_behind_the_default_branch_tip():
     reachable, _ = _git("merge-base", "--is-ancestor", newest, "HEAD")
     assert reachable, (
         "the newest reachable tag %s is not an ancestor of HEAD — a tag must name "
-        "a commit no descendant is ahead of (ADR-0009)" % newest
+        "a commit no descendant is ahead of (ADR-K-0009)" % newest
     )

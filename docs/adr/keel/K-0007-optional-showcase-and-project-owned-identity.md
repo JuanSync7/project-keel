@@ -1,5 +1,5 @@
 ---
-title: "ADR-0007: Make the bundled showcase optional, and derive the project's identity from its manifest, amending ADR-0004"
+title: "ADR-K-0007: Make the bundled showcase optional, and derive the project's identity from its manifest, amending ADR-K-0004"
 kind: adr
 layer: n/a
 status: accepted
@@ -8,16 +8,16 @@ tags: [adr, template, copier, showcase, branding, identity, manifest]
 summary: "The showcase demo was 84% of a generated project's Python with no way to decline it, and the running app served the template's own name; keel adds a `showcase` answer that prunes and retires the whole demo surface, and reads its display title from config/project.json instead of hardcoding it."
 id: docs-adr-0007-optional-showcase-and-project-owned-identity
 created: 2026-08-06
-updated: 2026-10-06
+updated: 2026-10-07
 visibility: internal
 canonical: true
 ---
 
-# ADR-0007: An optional showcase, and identity from the manifest
+# ADR-K-0007: An optional showcase, and identity from the manifest
 
-**Status:** accepted — supersedes ADR-0004's "no-showcase mode is out of scope"
+**Status:** accepted — supersedes ADR-K-0004's "no-showcase mode is out of scope"
 and its claim that the showcase is inseparable from the REST/MCP transports.
-ADR-0004 stands otherwise. Retirement mechanics are [ADR-0006](0006-answer-retirement-via-migrations.md).
+ADR-K-0004 stands otherwise. Retirement mechanics are [ADR-K-0006](K-0006-answer-retirement-via-migrations.md).
 
 ## Context
 
@@ -26,7 +26,7 @@ Two defects with one observable.
 **The showcase could not be declined.** `src/backend/showcase` is 1,205 of a
 generated project's 1,433 Python lines — 84% — against a 30-line
 `example_feature`. Everyone who generated a project got a product tour of keel
-whether they wanted one or not, and ADR-0004 explicitly deferred the question.
+whether they wanted one or not, and ADR-K-0004 explicitly deferred the question.
 
 **The generated project served keel's name.** `api/rest_fastapi/app.py` was
 `FastAPI(title="Project Keel API")` and the showcase overview hardcoded
@@ -42,7 +42,7 @@ So they are one decision, not two.
 
 ### What the showcase actually couples to
 
-ADR-0004 asserted that REST and MCP "back the bundled showcase & AAD reference
+ADR-K-0004 asserted that REST and MCP "back the bundled showcase & AAD reference
 implementation" and that removing the demo was therefore a distinct template
 mode. Measured, that is false. Nothing under `api/rest_fastapi/aad/`, `mcp/`,
 `agents/` or `scripts/query_corpus.py` imports `backend.showcase`. They read
@@ -61,7 +61,7 @@ mode. Measured, that is false. Nothing under `api/rest_fastapi/aad/`, `mcp/`,
 
 **1. A `showcase` boolean answer, defaulting to `true`.** It prunes the whole
 demo surface at generation (`_exclude`) and retires it on update
-(`_migrations`), which the pairing gate from ADR-0006 enforces for free. The
+(`_migrations`), which the pairing gate from ADR-K-0006 enforces for free. The
 `llms.txt` renderer goes with it — it renders the read model — but the corpus
 does not.
 
@@ -115,8 +115,8 @@ committed contract has drifted* (exit 1).
   stale exactly when the showcase is declined.
 - **A copier task regenerating `openapi.json` at generation.** Rejected: copier
   tasks are unsafe, so `make new` would need `--trust`. Generation is deliberately
-  trust-free (ADR-0006; amended by
-  [ADR-0010](0010-generation-needs-trust-to-stamp-docs.md)).
+  trust-free (ADR-K-0006; amended by
+  [ADR-K-0010](K-0010-generation-needs-trust-to-stamp-docs.md)).
 - **Coercing `astro` to `react-vite` under `showcase: false`.** Rejected — see
   decision 2.
 - **Pruning the corpus tooling along with the showcase.** Rejected on the

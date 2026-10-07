@@ -90,7 +90,7 @@ def render(groups):
             for row in g["targets"]
         )
     out.append("")
-    out.append("Effect labels (docs/adr/0011-make-target-effect-labels.md):")
+    out.append("Effect labels (docs/adr/keel/K-0011-make-target-effect-labels.md):")
     out.extend(
         "  [%s] %s" % (word, meaning)
         for word, meaning in check_structure.EFFECT_MEANINGS

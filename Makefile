@@ -25,14 +25,14 @@ PY_ROOTS := $(wildcard $(CODE_ROOTS))
 
 # Every annotated target opens its `## ` help with an effect label -- [local] [tree]
 # [read] [cost] [write], comma-joined in that order -- and check_W holds it
-# (docs/adr/0011-make-target-effect-labels.md). A [write] target changes shared
+# (docs/adr/keel/K-0011-make-target-effect-labels.md). A [write] target changes shared
 # remote state, so its recipe opens with $(WRITE_GUARD): under CI, or under a gate
 # runner (scripts/run_make_target.py sets RALPH=1), it refuses before it acts. The
 # variables tested here are config/project.json make_targets.unattended_vars, and
 # check_W fails the gate if the two sets differ in either direction. Call it as
 # a recipe's first line with no `-` prefix: `-` would make make ignore its exit 1.
 # Keel ships no [write] target; a project that adds one inherits the guard.
-WRITE_GUARD = @if [ -n "$(CI)$(RALPH)" ]; then echo "refusing '$@': a [write] target never runs under CI or a Ralph loop (docs/adr/0011-make-target-effect-labels.md)" >&2; exit 1; fi
+WRITE_GUARD = @if [ -n "$(CI)$(RALPH)" ]; then echo "refusing '$@': a [write] target never runs under CI or a Ralph loop (docs/adr/keel/K-0011-make-target-effect-labels.md)" >&2; exit 1; fi
 
 .PHONY: help new audit-project check-python check check-all check-corpus check-openapi check-aad check-cdmon advise check-generic verify test unit integration e2e smoke \
         lint lint-py lint-fe fmt fmt-check typecheck typecheck-py typecheck-fe \
@@ -70,7 +70,7 @@ VCS_REF ?= HEAD
 #      keel has ever seen. ALLOW_DIRTY=1 overrides, for template authors iterating.
 # --trust: copier.yml's `_tasks` stamp the new project's documents, and copier
 # refuses a template that runs tasks without it
-# (docs/adr/0010-generation-needs-trust-to-stamp-docs.md).
+# (docs/adr/keel/K-0010-generation-needs-trust-to-stamp-docs.md).
 new: ## [local] Generate a NEW project from this template into DEST (interactive Q&A). Needs the 'template' extra.
 	@test -n "$(DEST)" || { echo "usage: make new DEST=../my-new-project"; exit 2; }
 	@git rev-parse --git-dir >/dev/null 2>&1 || { \

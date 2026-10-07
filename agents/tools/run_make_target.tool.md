@@ -43,7 +43,7 @@ green run that changed either is red, naming the paths. `agents/practice_refacto
 up front to establish a **green baseline**: a dirty tree yields a dirty
 refactor, so if the gate is already red the agent stops and surfaces it instead
 of editing on top of failures. The labels are defined in
-`docs/adr/0011-make-target-effect-labels.md`.
+`docs/adr/keel/K-0011-make-target-effect-labels.md`.
 
 ## When to use
 - To verify the tree is green *before* refactoring (the baseline gate).

@@ -1,5 +1,5 @@
 ---
-title: "ADR-0009: Release identity — a tag names a commit no descendant is ahead of"
+title: "ADR-K-0009: Release identity — a tag names a commit no descendant is ahead of"
 kind: adr
 layer: n/a
 status: accepted
@@ -8,12 +8,12 @@ tags: [adr, release, versioning, copier, upgrade, tags, changelog]
 summary: "keel's first release is the current main tip, not the 2026-08-04 commit its CHANGELOG named in anticipation. A version heading may only exist for a tag that exists, and a tag may only name a commit that no already-generated descendant is ahead of — because copier resolves an untagged template to a `.postN.devM` version that compares GREATER than the tag, and refuses to update downwards. Tagging the older commit would have broken `copier update` for every project generated from main."
 id: docs-adr-0009-release-identity-and-the-tag-ordering-rule
 created: 2026-09-02
-updated: 2026-09-02
+updated: 2026-10-07
 visibility: internal
 canonical: true
 ---
 
-# ADR-0009: Release identity, and the tag-ordering rule
+# ADR-K-0009: Release identity, and the tag-ordering rule
 
 **Status:** accepted. Completes pass 1 of the hardening plan
 (`docs/design/keel-hardening-plan.md` — keel's own worklist, which a generated
@@ -23,7 +23,7 @@ every future release.
 
 ## Context
 
-Version identity is the whole reason [ADR-0004](0004-project-templating-copier.md)
+Version identity is the whole reason [ADR-K-0004](K-0004-project-templating-copier.md)
 chose copier: a descendant should be able to state which keel it came from and
 upgrade to a *named* known-good ref instead of a bare SHA. Pass 1 landed the
 mechanics — the tracked `.copier-answers.yml`, `_min_copier_version`, and a
@@ -55,7 +55,7 @@ That left three defects, all measured on this tree:
 A related fact, verified because it was previously believed backwards: copier
 does **not** need a tag to run migrations. `Template.version` falls back to
 dunamai, which synthesises `0.0.0.postN.devM+<sha>` from `git describe --always`
-with zero tags. Answer retirement (ADR-0006) has been live all along. What the
+with zero tags. Answer retirement (ADR-K-0006) has been live all along. What the
 absence of a tag actually cost was *nameable* identity, not machinery.
 
 ## Decision
@@ -78,7 +78,7 @@ this is gated (`tests/integration/test_release_identity.py`) rather than left to
 discipline — the defect above survived precisely because nothing read the
 changelog. `[Unreleased]` is exempt by definition, and a repository with no tags
 at all is a real state (a fresh clone, a generated project), reported as such and
-passed, per the absent-vs-broken split of [ADR-0007](0007-optional-showcase-and-project-owned-identity.md).
+passed, per the absent-vs-broken split of [ADR-K-0007](K-0007-optional-showcase-and-project-owned-identity.md).
 
 **4. The release procedure is: rotate, verify, tag, push — in that order.**
 Rotate `[Unreleased]` into a dated heading and open a fresh empty one; run the
@@ -107,7 +107,7 @@ none of the five references.
   history: `d0a25c4` was never released and no descendant was ever generated from
   it as a named version, so a tag there names nothing anyone can have.
 - **Leave the tree untagged and delete the `[0.1.0]` heading.** Rejected: it
-  resolves the contradiction by giving up the capability ADR-0004 was chosen for,
+  resolves the contradiction by giving up the capability ADR-K-0004 was chosen for,
   and leaves `--vcs-ref` unusable in five documented commands.
 - **A `check_*` letter for changelog/tag parity.** Rejected: `check_structure.py`
   is stdlib-only and must stay 3.6-safe, and this rule needs `git`. It also has
@@ -119,7 +119,7 @@ none of the five references.
 - `copier copy --vcs-ref v0.1.0 gh:JuanSync7/project-keel` works, and a bare
   `copier copy` resolves the newest tag — so all five references become true at
   once, on push.
-- ADR-0008's grace-tier rule ("ship a new check WARN for one release, promote in
+- ADR-K-0008's grace-tier rule ("ship a new check WARN for one release, promote in
   the next") acquires a real boundary to count from. That free pass is now spent.
 - A future release cannot silently claim a version again: the heading and the tag
   are gated against each other.

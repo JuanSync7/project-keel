@@ -8,7 +8,7 @@ tags: [practices, gate, advisory, ruff, mypy, types, llm, cuda, langgraph, guide
 summary: The catalogue of good-Python practices Keel promotes for general and LLM/CUDA/LangGraph code — each sorted onto the gate/advisory/doc line, sourced from config/practices.json.
 id: docs-guides-coding-practices
 created: 2026-07-06
-updated: 2026-10-06
+updated: 2026-10-07
 visibility: internal
 canonical: true
 ---
@@ -78,7 +78,7 @@ populating `select` + a few strict flags was the highest-leverage first move:
 | Every function is fully typed (no untyped defs / calls / decorators) | mypy `strict` (Slice 5) |
 | No blanket `# noqa` / `# type: ignore` — each names its code | ruff `PGH` (Slice 5) |
 | One machine-decided layout (no hand-formatting in review) | `ruff format --check` via `make fmt-check` |
-| Machine-readable module header (`title:`/`summary:`) + exported-symbol docstrings | `check_O` + `check_E` (ADR-0008); the local corpus gated fresh via `check_corpus` |
+| Machine-readable module header (`title:`/`summary:`) + exported-symbol docstrings | `check_O` + `check_E` (ADR-K-0008); the local corpus gated fresh via `check_corpus` |
 
 The **Slice-5 widen pass** measured every candidate rule first (Slice 0's
 discipline). It took mypy to full **`strict`** (the backlog was 3 `no-untyped-def`
@@ -120,7 +120,7 @@ would be exactly the fit-to-specimen smell §18 warns against:
 | A declared config/settings class is frozen | `check_K` | keyed on the `# practice: frozen-config` marker; resolves aliased frozen dataclass / `NamedTuple` / attrs-frozen; **err** |
 | Tensor params carry a shape, not a bare `Tensor` | `check_L` | **domain** (cuda profile), over `tokens.tensor_base_types`; `warn()`, never `err()` — it over/under-flags |
 | A module that writes declares what a second run does | `check_V` | `effect: writes` plus a `rerun:` from the closed set; a `fixed-point` claim names a `rerun_proof:` in `check_T`'s grammar. Keyed on the resolved BASE of each call (`os.replace`, never `str.replace`), so it under-flags rather than over-flags — a write behind `subprocess` is a stated WARN, never a pass. The behavioural half is `tests/integration/test_idempotence.py`, which re-runs what claims a fixed point; the judgment half is [idempotency](idempotency.md) |
-| A child process gets an allowlisted environment | `check_X` | every spawn passes `env=` built by `build_child_env` (`scripts/child_env.py`); `os.system`/`popen`/`exec*`/`spawn*` err; no waiver; under-reports a spawn through an unresolvable receiver; defence-in-depth, not a sandbox ([ADR-0012](../adr/0012-child-process-environment-allowlist.md)) |
+| A child process gets an allowlisted environment | `check_X` | every spawn passes `env=` built by `build_child_env` (`scripts/child_env.py`); `os.system`/`popen`/`exec*`/`spawn*` err; no waiver; under-reports a spawn through an unresolvable receiver; defence-in-depth, not a sandbox ([ADR-K-0012](../adr/keel/K-0012-child-process-environment-allowlist.md)) |
 
 `check_K` is **inverted** relative to `check_J`: `check_J` errs only when it
 *proves* a leak, so a recognizer gap is a safe miss; `check_K` errs when a

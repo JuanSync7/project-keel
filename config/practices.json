@@ -212,7 +212,7 @@
       "tier": "gate",
       "status": "on",
       "title": "Every module carries the machine-readable header (title:/summary:) the corpus reads; every exported symbol is docstringed",
-      "mechanism": "check_structure.py check_O (module header; grammar pinned to build_corpus by test) + check_E (symbol docstrings, ERR since ADR-0008) + check_corpus.py (the local corpus agents query is gated fresh-when-present, stale names make site-data)",
+      "mechanism": "check_structure.py check_O (module header; grammar pinned to build_corpus by test) + check_E (symbol docstrings, ERR since ADR-K-0008) + check_corpus.py (the local corpus agents query is gated fresh-when-present, stale names make site-data)",
       "subject": "code",
       "enforced_by": [
         "check:O"
@@ -642,7 +642,7 @@
       "tier": "gate",
       "status": "on",
       "title": "Every make target declares its effect, and a gate runs only a read-only one",
-      "mechanism": "check_structure.py check_W -- every `## ` target opens its help with a label from local/tree/read/cost/write, a composite covers what its prerequisites reach, and a [write] recipe opens with $(WRITE_GUARD); scripts/run_make_target.py refuses a target outside config/project.json make_targets.gate_effects and fails a run that changed the tree; tests/integration/test_make_target_effects.py runs every [local] target that way (docs/adr/0011-make-target-effect-labels.md)",
+      "mechanism": "check_structure.py check_W -- every `## ` target opens its help with a label from local/tree/read/cost/write, a composite covers what its prerequisites reach, and a [write] recipe opens with $(WRITE_GUARD); scripts/run_make_target.py refuses a target outside config/project.json make_targets.gate_effects and fails a run that changed the tree; tests/integration/test_make_target_effects.py runs every [local] target that way (docs/adr/keel/K-0011-make-target-effect-labels.md)",
       "subject": "code",
       "enforced_by": [
         "check:W",
@@ -656,11 +656,26 @@
       "tier": "gate",
       "status": "on",
       "title": "A child process gets an allowlisted environment, not every credential the parent holds",
-      "mechanism": "check_structure.py check_X -- every subprocess/asyncio spawn under the code roots outside tests/ passes env= built by scripts/child_env.py build_child_env from config/project.json child_env (plus make_targets unattended/gate vars and the adapter's models.credential_env); os.system/popen/exec*/spawn* are errors; defence-in-depth, not a sandbox (docs/adr/0012-child-process-environment-allowlist.md)",
+      "mechanism": "check_structure.py check_X -- every subprocess/asyncio spawn under the code roots outside tests/ passes env= built by scripts/child_env.py build_child_env from config/project.json child_env (plus make_targets unattended/gate vars and the adapter's models.credential_env); os.system/popen/exec*/spawn* are errors; defence-in-depth, not a sandbox (docs/adr/keel/K-0012-child-process-environment-allowlist.md)",
       "subject": "code",
       "enforced_by": [
         "check:X",
         "test:tests/integration/test_child_process_environment.py"
+      ]
+    }
+,
+    {
+      "id": "adr-number-spaces",
+      "row": 39,
+      "scope": "universal",
+      "tier": "gate",
+      "status": "on",
+      "title": "Template ADRs and project ADRs are numbered in separate spaces",
+      "mechanism": "check_structure.py check_Y -- config/project.json adr names the project space (docs/adr, NNNN-<slug>.md) and the template space (docs/adr/keel, K-NNNN-<slug>.md); a project ADR never carries the template prefix, a template-space file is one adr.template_adrs lists, a kind: adr document lives directly in one of the two spaces, a number is unique within its space, and an ADR's title names its own file; scripts/jobs/keep_edited_retired.py keeps an edited template ADR an update retires (docs/adr/keel/K-0013-template-and-project-adr-number-spaces.md)",
+      "subject": "docs",
+      "enforced_by": [
+        "check:Y",
+        "test:tests/unit/scripts/test_check_y.py"
       ]
     }
   ],

@@ -80,7 +80,7 @@ def test_a_write_target_refuses_under_any_unattended_variable(guarded, var, wher
         r = _make(guarded, {}, var + "=1")
     assert r.returncode != 0, r.stdout
     assert "refusing 'demo-apply'" in r.stderr, r.stderr
-    assert "docs/adr/0011-make-target-effect-labels.md" in r.stderr, r.stderr
+    assert "docs/adr/keel/K-0011-make-target-effect-labels.md" in r.stderr, r.stderr
     assert not (guarded / "applied.txt").exists()
 
 

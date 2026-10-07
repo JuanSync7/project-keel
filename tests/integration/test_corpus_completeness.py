@@ -2,7 +2,7 @@
 title: Integration — every CODE_ROOTS module is corpus-visible with an authored header
 kind: tests
 layer: n/a
-summary: The completeness theorem check_O and the single-sourced walk buy together, proved over the REAL tree: a fresh corpus build indexes EVERY .py under check_structure.CODE_ROOTS as a module node whose title and summary are explicit and authored — no silently dropped modules (build_corpus skips undocumented ones), no filename-fallback titles mislabeled authored, and no second scope list to drift (runtimes/ was invisible to every agent for exactly that reason, from the initial commit until ADR-0008).
+summary: The completeness theorem check_O and the single-sourced walk buy together, proved over the REAL tree: a fresh corpus build indexes EVERY .py under check_structure.CODE_ROOTS as a module node whose title and summary are explicit and authored — no silently dropped modules (build_corpus skips undocumented ones), no filename-fallback titles mislabeled authored, and no second scope list to drift (runtimes/ was invisible to every agent for exactly that reason, from the initial commit until ADR-K-0008).
 """
 
 import os

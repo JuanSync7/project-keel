@@ -1,5 +1,5 @@
 ---
-title: "ADR-0005: Declare the external environment in config/environment.json — Docker's contract, applied to what you cannot containerize"
+title: "ADR-K-0005: Declare the external environment in config/environment.json — Docker's contract, applied to what you cannot containerize"
 kind: adr
 layer: n/a
 status: proposed
@@ -8,12 +8,12 @@ tags: [adr, environment, external-dependency, versioning, reproducibility, modul
 summary: Externals (binaries, env vars, licence servers, mounts, sibling repos, modules) become typed records in config/environment.json; a deterministic check proves the declaration is complete, a prober measures the live host, and a lock plus fingerprint make a result attributable to the environment that produced it.
 id: docs-adr-0005-external-environment-manifest
 created: 2026-08-04
-updated: 2026-09-02
+updated: 2026-10-07
 visibility: internal
 canonical: true
 ---
 
-# ADR-0005: Declare the external environment (`config/environment.json`)
+# ADR-K-0005: Declare the external environment (`config/environment.json`)
 
 **Status:** proposed
 
@@ -136,7 +136,7 @@ Profiles (`eda`, `web`, `cloud`) ship **defined but off** and are enabled from
 
 **2. A `check_*` letter in `check_structure.py` — deterministic, 3.6-safe, no probing.**
 (Drafted as `check_O`, then `check_P`; each was taken by a check that landed
-first — `O` by ADR-0008, `P` by Makefile help parity — and letters belong to
+first — `O` by ADR-K-0008, `P` by Makefile help parity — and letters belong to
 landed checks, so this proposal takes the next free letter on the day it lands
 rather than reserving one.)
 It validates the records' shape and closed vocabularies, and does the thing that

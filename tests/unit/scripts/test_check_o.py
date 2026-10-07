@@ -2,7 +2,7 @@
 title: Unit — check_structure check_O (module header contract) + promoted check_E
 kind: tests
 layer: n/a
-summary: check_O errors on any CODE_ROOTS module whose docstring lacks the explicit, non-empty title:/summary: lines the corpus reads — a docstring that merely EXISTS is the defect (filename-as-title fallback, first-prose-line summary, both then labeled authored). The grammar is a 3.6-safe mirror of build_corpus._docstring_meta, pinned here by a parity test over tricky docstrings rather than by a shared import, because check_structure runs under the 3.6 pre-commit interpreter and must not import a $(PY)-only module. check_E is an ERROR now (ADR-0008): an __all__-exported symbol with no docstring is a gap in the corpus, not a note.
+summary: check_O errors on any CODE_ROOTS module whose docstring lacks the explicit, non-empty title:/summary: lines the corpus reads — a docstring that merely EXISTS is the defect (filename-as-title fallback, first-prose-line summary, both then labeled authored). The grammar is a 3.6-safe mirror of build_corpus._docstring_meta, pinned here by a parity test over tricky docstrings rather than by a shared import, because check_structure runs under the 3.6 pre-commit interpreter and must not import a $(PY)-only module. check_E is an ERROR now (ADR-K-0008): an __all__-exported symbol with no docstring is a gap in the corpus, not a note.
 """
 
 import sys
@@ -126,7 +126,7 @@ def test_check_o_is_silent_on_a_compliant_tree(gate):
 
 
 def test_exported_symbol_without_docstring_is_an_error_now(gate):
-    """check_E, promoted WARN -> ERR by ADR-0008: authored symbol docstrings are
+    """check_E, promoted WARN -> ERR by ADR-K-0008: authored symbol docstrings are
     the corpus's symbol summaries, so a gap is a hole in the agents' map."""
     (gate / "src" / "mod.py").write_text(
         '"""\ntitle: m\nsummary: s\n"""\n__all__ = ["f"]\n\n\ndef f():\n    return 1\n',
@@ -143,7 +143,7 @@ def test_exported_symbol_without_docstring_is_an_error_now(gate):
 def test_annotated_dunder_all_is_read_too(gate):
     """`__all__: list[str] = [...]` is an ast.AnnAssign; matching only ast.Assign
     made annotated exports invisible to check_E AND to the corpus's identical
-    reader — found by a mutation check, not by review (ADR-0008 pass). Both
+    reader — found by a mutation check, not by review (ADR-K-0008 pass). Both
     readers were widened together."""
     (gate / "src" / "mod.py").write_text(
         '"""\ntitle: m\nsummary: s\n"""\n'
@@ -158,7 +158,7 @@ def test_bom_module_is_read_not_skipped(gate):
     """A UTF-8-BOM module is valid Python at import time, but read as plain
     utf-8 the BOM survives into the str, ast.parse raises, and the
     except-UNPARSEABLE swallow re-opened the silent-drop class for exactly
-    those files — found by the ADR-0008 review pass. Every .py read that feeds
+    those files — found by the ADR-K-0008 review pass. Every .py read that feeds
     ast is utf-8-sig now, in check_structure and build_corpus together."""
     (gate / "src" / "bom_ok.py").write_bytes(b"\xef\xbb\xbf" + _OK.encode("utf-8"))
     (gate / "src" / "bom_bad.py").write_bytes(b"\xef\xbb\xbfX = 1\n")

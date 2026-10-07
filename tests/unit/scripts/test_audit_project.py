@@ -2,7 +2,7 @@
 title: Unit — audit_project (another project judged by this template's gates)
 kind: tests
 layer: n/a
-summary: scripts/audit_project.py pinned against a small fake template (a git history of a base and a newer commit, or uncommitted edits) and a keel-shaped DEST in a scratch directory. It refuses, exit 2 and naming each missing item, whatever is not a keel project; with a base it judges the tree a real `copier update` leaves on a scratch copy of DEST: an error the update brings a fix for is resolved, an error the update leaves is owed even in a file the project never edited, a key the update brings is judged with the file that uses it, and a file copier would conflict on is reported in the conflict group and its findings not judged, while the rest of the tree is judged with every conflict hunk the project's way and the template's way, never beside DEST's pre-update bytes: a cross-file finding both resolutions have is owed, one only one has is not judged (`resolve_conflict` keeps one side of each hunk, the diff3 base dropped, and refuses markers copier does not write); an update copier would refuse (DEST outside git, or uncommitted changes, each named) is an `update-refused` config warning with no exit change; `classify` names what the update did to each config key (arrives, updates, merges, removed-upstream; a list is one value; inputs never mutated); without a base nothing is predicted and DEST is judged as it stands; a failed update is exit 2 with the scratch path masked; a symlink leaving DEST is never written through; the scratch tree is removed on every path. The update's base config is rendered in memory from the template's twin with DEST's answers and copier.yml's derived defaults; findings are grouped A..X then conflict, config, freshness and restamp, sorted, and the --json output is canonical and byte-identical across runs; an unreadable file has unknown origin, and malformed or wrongly typed answers are a refusal, not a traceback; a not-checked section is always present; and DEST's code, Makefile, git hooks and the commands its git config names (fsmonitor, a clean filter) are never run and its files never written. Excluded from generated projects with the doer.
+summary: scripts/audit_project.py pinned against a small fake template (a git history of a base and a newer commit, or uncommitted edits) and a keel-shaped DEST in a scratch directory. It refuses, exit 2 and naming each missing item, whatever is not a keel project; with a base it judges the tree a real `copier update` leaves on a scratch copy of DEST: an error the update brings a fix for is resolved, an error the update leaves is owed even in a file the project never edited, a key the update brings is judged with the file that uses it, and a file copier would conflict on is reported in the conflict group and its findings not judged, while the rest of the tree is judged with every conflict hunk the project's way and the template's way, never beside DEST's pre-update bytes: a cross-file finding both resolutions have is owed, one only one has is not judged (`resolve_conflict` keeps one side of each hunk, the diff3 base dropped, and refuses markers copier does not write); an update copier would refuse (DEST outside git, or uncommitted changes, each named) is an `update-refused` config warning with no exit change; `classify` names what the update did to each config key (arrives, updates, merges, removed-upstream; a list is one value; inputs never mutated); without a base nothing is predicted and DEST is judged as it stands; a failed update is exit 2 with the scratch path masked; a symlink leaving DEST is never written through; the scratch tree is removed on every path. The update's base config is rendered in memory from the template's twin with DEST's answers and copier.yml's derived defaults; findings are grouped A..Y then conflict, config, freshness and restamp, sorted, and the --json output is canonical and byte-identical across runs; an unreadable file has unknown origin, and malformed or wrongly typed answers are a refusal, not a traceback; a not-checked section is always present; and DEST's code, Makefile, git hooks and the commands its git config names (fsmonitor, a clean filter) are never run and its files never written. Excluded from generated projects with the doer.
 """
 
 import copy
@@ -578,11 +578,12 @@ def test_findings_are_grouped_sorted_and_json_is_byte_identical(
     code, text, err = _run(argv, capsys)
     assert code == 1, err
     headers = re.findall(r"^\[([A-Za-z]+)\]", text, re.MULTILINE)
-    assert headers == [chr(c) for c in range(ord("A"), ord("X") + 1)] + [
+    assert headers == [chr(c) for c in range(ord("A"), ord("Y") + 1)] + [
         "conflict",
         "config",
         "freshness",
         "restamp",
+        "retired",
     ]
     b_block = text.split("[B]", 1)[1].split("[C]", 1)[0]
     w_block = text.split("[W]", 1)[1].split("[X]", 1)[0]
@@ -605,11 +606,11 @@ def test_findings_are_grouped_sorted_and_json_is_byte_identical(
         json.dumps(report, sort_keys=True, indent=2, ensure_ascii=False) + "\n" == first
     )
     assert report["summary"]["checks_run"] == [
-        chr(c) for c in range(ord("A"), ord("X") + 1)
+        chr(c) for c in range(ord("A"), ord("Y") + 1)
     ]
     assert report["summary"]["conflicts"] == 0
     assert sorted(report["groups"]) == sorted(ap.GROUPS)  # JSON sorts keys
-    assert ap.GROUPS[-4:] == ("conflict", "config", "freshness", "restamp")
+    assert ap.GROUPS[-5:] == ("conflict", "config", "freshness", "restamp", "retired")
     assert report["summary"]["files_seen"] > 0
     assert [f["tier"] for f in report["groups"]["B"]] == ["error"]
     assert [f["tier"] for f in report["groups"]["W"]] == ["error"]
@@ -1128,3 +1129,50 @@ def test_dest_config_is_never_written(tmp_path, template, capsys):
     assert any(c["kind"] == "arrives" for c in json.loads(out)["groups"]["config"])
     assert [(p.read_bytes(), p.stat().st_mtime_ns) for p in watched] == before
     assert _snapshot(dest) == whole
+
+
+# --- the retired group: a file the update deletes ---------------------------------
+
+
+def test_retired_group_flags_only_an_edited_copy_the_update_deletes(
+    tmp_path, template, capsys
+):
+    """copier's update deletes every file the template retired, edited or not.
+    The guard migration puts an edited one back; this fake template has no
+    migrations at all, so nothing does, as when a later `rm` migration deletes
+    a named path. The audit names the edited copy the update would delete,
+    with the same rule as the guard (keep_edited_retired.is_edited): a copy
+    that differs only in its `updated:` stamp is not an edit."""
+    old = _FM % ("old", "doc", "docs-old")
+    sha = _template_commits(
+        template,
+        {
+            "config/project.json.jinja": _TWIN,
+            "docs/edited.md": old,
+            "docs/stamped.md": old.replace("docs-old", "docs-stamped"),
+            "docs/plain.md": old.replace("docs-old", "docs-plain"),
+        },
+        {},
+    )
+    _git(template, "rm", "-q", "docs/edited.md", "docs/stamped.md", "docs/plain.md")
+    _git(template, "commit", "-q", "-m", "retire three docs")
+    dest = _generated(tmp_path, template, sha)
+    edited = dest / "docs" / "edited.md"
+    edited.write_text(edited.read_text().replace("owner: me", "owner: us"))
+    stamped = dest / "docs" / "stamped.md"
+    stamped.write_text(
+        stamped.read_text().replace("updated: 2026-01-01", "updated: 2026-02-02")
+    )
+
+    code, out, err = _run([str(dest), "--today", TODAY, "--json"], capsys)
+    report = json.loads(out)
+    retired = report["groups"]["retired"]
+    assert [(f["tier"], f["path"]) for f in retired] == [("error", "docs/edited.md")]
+    assert retired[0]["message"] == (
+        "the update deletes docs/edited.md, which the project edited"
+    ), retired
+    assert report["summary"]["counts"]["retired"]["error"] == 1, report["summary"]
+    assert report["summary"]["errors"] == 1, report["summary"]
+    assert (code, report["exit"]) == (1, 1), err
+    _c, text, _e = _run([str(dest), "--today", TODAY], capsys)
+    assert "the update deletes docs/edited.md, which the project edited" in text

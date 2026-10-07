@@ -2,7 +2,7 @@
 title: Integration — every governed document is stamped no earlier than its last commit
 kind: tests
 layer: n/a
-summary: The freshness rule of scripts/review_docs.py as a gate: `updated:` is never earlier than the file's last commit, and a document modified in the working tree carries today's date. Not a check_* letter on purpose (ADR-0009): check_structure.py is stdlib-only and 3.6-safe and does not shell to git. Absent is not broken — no git, or not a repository, is a stated skip. Landed with every stamp normalised in the same commit, so the tree complied on arrival.
+summary: The freshness rule of scripts/review_docs.py as a gate: `updated:` is never earlier than the file's last commit, and a document modified in the working tree carries today's date. Not a check_* letter on purpose (ADR-K-0009): check_structure.py is stdlib-only and 3.6-safe and does not shell to git. Absent is not broken — no git, or not a repository, is a stated skip. Landed with every stamp normalised in the same commit, so the tree complied on arrival.
 """
 
 import os

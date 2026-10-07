@@ -60,7 +60,7 @@ runs it after copy and after update, and the project can run it by hand. The
 freshness rule itself is not weakened.
 
 **Built.** The writer is `scripts/jobs/restamp_docs.py` (`make restamp-docs`),
-recorded in `docs/adr/0010-generation-needs-trust-to-stamp-docs.md`. Its cost is
+recorded in `docs/adr/keel/K-0010-generation-needs-trust-to-stamp-docs.md`. Its cost is
 that `copier copy` now needs `--trust`. A project generated from the working
 tree measured 112 of 112 governed documents stale before the writer and 0 after.
 The tests are `tests/unit/scripts/test_restamp_docs.py`,
@@ -115,7 +115,7 @@ check reads through a link, and `scripts/check_structure.py` cannot ask git whet
 link is tracked. An ERROR would turn keel's local gate red over the stray
 symlink, and every generation from a dirty tree with it. The rule lands as an
 ERROR rather than a one-release WARN under the
-`docs/adr/0008-gated-module-contract-for-agent-interpretability.md` grace tier,
+`docs/adr/keel/K-0008-gated-module-contract-for-agent-interpretability.md` grace tier,
 because keel complies at landing, which is the precedent checks P, Q, R, S and
 V set. A downstream project with its own top-level directory goes red on
 `copier update`, so the `CHANGELOG.md` upgrade note names the one-line fix.
@@ -162,10 +162,10 @@ that dirtied the tree. A composite's label must cover what its prerequisites
 reach, so the runner and the check close labels the same way
 (`check_structure.target_effects`). The policy is data in `config/project.json`
 `make_targets`, so a project names its own unattended variables, write shapes
-and area directory. The ADR is `docs/adr/0011-make-target-effect-labels.md`,
-status proposed; its number is the next free one in keel and collides with
-nothing in bedrock-platform today, which the queued number-space item still
-owns.
+and area directory. The ADR is `docs/adr/keel/K-0011-make-target-effect-labels.md`,
+status proposed. It took keel's next free number, which collided with
+nothing in bedrock-platform then; slice C2-5 moved it into the template's own
+number space as ADR-K-0011.
 
 **Built.** `scripts/check_structure.py` `check_W` with `parse_effect_labels`,
 `make_targets_policy`, `target_effects` and `walk_makefiles`;
@@ -240,7 +240,7 @@ an error, never a fall-back to the parent's environment. check_X holds every
 spawn under the code roots to the helper, with no waiver. The gate runner
 forwards a gate variable it finds in its environment onto make's command line
 under the `--make-arg` rule. It is defence-in-depth, not a sandbox; the ADR is
-`docs/adr/0012-child-process-environment-allowlist.md`, status proposed.
+`docs/adr/keel/K-0012-child-process-environment-allowlist.md`, status proposed.
 
 **Built.** `scripts/child_env.py` (stdlib-only, legal on the 3.6 hook
 interpreter); `check_X` and `spawn_findings` in `scripts/check_structure.py`;
@@ -372,7 +372,7 @@ Found during the slices and deliberately not started:
 - **ADR numbers collide downstream.** Keel's ADR-0010 and bedrock-platform's own
   ADR-0010 share a number, so `copier update` would bring keel's in beside it.
   Template ADRs and project ADRs need separate number spaces; slice 3's ADR
-  must not deepen the collision.
+  must not deepen the collision. Fixed by slice C2-5.
 - **`review_docs` path forms in a nested repository.** Porcelain paths and
   `ls-files` paths can disagree when the project is below its repository's top.
 - **`_SKIP_DIRS` and the `_git` helper are duplicated** between
@@ -393,10 +393,14 @@ Found during the slices and deliberately not started:
   it by reason instead of proving it.
 - **ADR numbers.** Slice 3's ADR took keel's next free number, 0011; the queued
   number-space item above still decides how template and project ADRs coexist.
+  Fixed by slice C2-5.
 - **`api/grpc/Makefile` is outside the walk.** `check_W` and `check_P` follow
   `include` from the root `Makefile`, so a transport's own makefile, run with
   `make -C`, carries no labels and no guard check.
 - **An untagged template skips `_migrations`**, including the update restamp.
+  Slice C2-5 measured the opposite for an untagged `_commit` on copier 9.17:
+  dunamai versions project-jarvis's `72fd224` `0.0.0.post17.dev0+72fd224`, and
+  its update ran every migration.
 - **Nothing pins `TAXONOMY` to the CONVENTIONS §2 table.** The list in
   `scripts/check_structure.py` and the table are kept in step by hand, and since
   slice 2 a drift between them is an error source. A parity check or test should
@@ -510,7 +514,7 @@ ADR-0012's own guarantee. A concern found mid-slice joins Queued.
 | C2-2 | A proxy URL with embedded credentials reaches every child | done — `make verify` green (1288 passed); 8 of 9 review findings confirmed and fixed |
 | C2-3 | The audit reads the `Makefile` and `config/practices.json` before the merge, so an old project reports a false W error | done — `make verify` green (1308 passed); 4 review findings confirmed and fixed |
 | C2-4 | `make smoke` passes over zero tests, and `make run` fails with `No module named app` | planned |
-| C2-5 | A downstream project's ADR numbers collide with the template's | planned — needs the maintainer's numbering decision |
+| C2-5 | A downstream project's ADR numbers collide with the template's | done — `make verify` green (1356 passed); 6 of 7 review findings confirmed and fixed; ADR-K-0013 proposed, awaiting the maintainer |
 
 ### Slice C2-1 — a child does not inherit the parent's repository
 
@@ -753,6 +757,79 @@ test-first.
 - A link that leaves DEST is copied as its target's bytes, or dropped when it
   is a directory or dangles. A submodule is not copied. Each is listed in "not
   checked".
+
+### Slice C2-5 — template and project ADRs live in separate number spaces
+
+**Measured.** bedrock-platform holds keel's ADR 0001-0009 and its own 0010;
+keel's 0010-0012 would land beside it. project-jarvis holds keel's 0001-0004
+and its own 0005-0011, so keel's 0005-0011 are seven different decisions under
+the same seven numbers. project-jarvis also edited keel's 0001-0004: each
+carries `owner: Juan.Kok` where keel ships `owner: TBD`. copier 9.17's
+`_remove_old_files` deletes every file the old render had and the new render
+lacks, edited or not, before any migration runs, so moving keel's ADRs would
+have dropped those edits without a word.
+
+**The rule.** keel's ADRs move to `docs/adr/keel/K-NNNN-<slug>.md` and are
+cited as `ADR-K-NNNN`; `docs/adr/` is the project's own space, numbered from
+0001 (CONVENTIONS §19, ADR-K-0013, proposed). `config/project.json` `adr`
+names both spaces and the template's own ADR file names (`template_adrs`),
+and check_Y holds every ADR to its space: a template-space file the list does
+not name, and a `kind: adr` document outside both directories, are errors, so
+a project's decision cannot take a free `K-` number either. Each moved ADR
+keeps its `id:`. `scripts/jobs/keep_edited_retired.py`, the first `after`
+migration, puts back a file the update deleted when the project edited it
+(any byte but the `updated:` value) and names it with its successor. The
+audit's new `retired` group names each edited file the update still deletes.
+The next release is 0.2.0, because a generated project's contract breaks.
+
+**Correction during the slice.** The first draft said copier runs no
+migration for a `_commit` with no tag ancestry, and so that project-jarvis
+would get no guard. A spy on `_remove_old_files` during a real update of a
+project-jarvis clone disproved it: copier versions `72fd224` through dunamai
+as `0.0.0.post17.dev0+72fd224`, runs every migration, and the guard printed
+`kept docs/adr/0001-record-architecture-decisions.md: ... (now
+docs/adr/keel/K-0001-record-architecture-decisions.md)` for each of 0001-0004
+and for `scripts/README_check_structure.md`. ADR-K-0013, CONVENTIONS §19, the
+READMEs, `docs/adr/README.md`, `copier.yml` and the CHANGELOG were reworded to
+the measurement.
+
+**Rehearsal.** The audit from this tree, against the rehearsal clones:
+- project-jarvis (`_commit: 72fd224`): owed errors 92 before the slice, 99
+  after. The new ones are 4 check_A duplicate ids (each kept 0001-0004 shares
+  its `id:` with the K- file, as designed), 1 Q, 1 Y (its own `0010` title
+  begins `A neutral job-placement seam` rather than `ADR-0010:`) and 1
+  `retired`: the named `rm` migration for keel's meta-tests deletes the
+  project's edited `tests/integration/test_copier_generation.py`. A second Y
+  finding, the missing `adr` block, is resolved by the update. Conflicts stay
+  at 110.
+- bedrock-platform (`_commit: v0.1.0-14-g7f0a68b`): owed errors 15 before and
+  after. Its keel ADRs are unedited, so the update deletes them and nothing is
+  kept; the `adr` block's Y finding is resolved by the update. Conflicts fall
+  from 119 to 110.
+
+**Residual risk.**
+- An `rm` migration runs after the guard and still deletes the path it names.
+  The `retired` group reports it before the update; nothing stops it.
+- A file the template renders from a `.jinja` source is put back and named,
+  not judged: comparing it needs the old answers and a render.
+- The guard imports `review_docs` and `child_env` from the project, and
+  `build_child_env` reads `config/project.json`. When the update leaves one of
+  them conflicted, the guard exits 2 before it can list what was deleted, the
+  update fails at that migration, and a deleted file comes back only through
+  `git checkout HEAD -- <path>`.
+- The restamp `_task` moves `updated:` in every ADR the update touched, so a
+  kept ADR shows as modified twice.
+- A bare `ADR-NNNN` mention is not checked against the space it names. This
+  slice re-pointed the keel mentions in shipped files (scripts, tests, the
+  guides, CONVENTIONS) by hand; a review found 21 in the shipped tests that
+  the first pass missed. The excluded plan documents keep the old numbers as
+  history.
+- `adr.template_adrs` is a file a project can edit. check_Y makes adding a
+  project ADR to the template space a deliberate edit of that list, not an
+  accident; it does not stop a project that edits the list on purpose.
+- `audit_project.origin_of` does not discount the `updated:` value the way
+  `is_edited` does, so a copy differing only in its stamp reads as
+  template-edited there.
 
 The vault backlog for keel (`KEEL-*` items: the frontend contract chain FE-2,
 FE-1, FE-6, FE-3; TEST-1 live-store guard; SEC-1 secrets scan) is the next

@@ -7,7 +7,7 @@ owner: TBD
 summary: Global rules for any agent working in this repo.
 id: agent
 created: 2026-06-17
-updated: 2026-10-06
+updated: 2026-10-07
 visibility: internal
 canonical: true
 ---
@@ -57,12 +57,12 @@ of truth for labeling and the directory taxonomy. Each directory's own
   reach; a `[write]` recipe opens with `$(WRITE_GUARD)` (check_W). Run a gate
   through `scripts/run_make_target.py`, which runs only a target inside
   `config/project.json` `make_targets.gate_effects` and fails one that changed
-  the tree. `docs/adr/0011-make-target-effect-labels.md` is the decision.
+  the tree. `docs/adr/keel/K-0011-make-target-effect-labels.md` is the decision.
 - **Start a child process through the allowlist.** Pass
   `env=build_child_env(...)` from `scripts/child_env.py` to every subprocess;
   name a variable a child needs in `config/project.json` `child_env.names`, or
   an adapter's credential in `models.credential_env`, never in code (check_X).
-  `docs/adr/0012-child-process-environment-allowlist.md` is the decision; it
+  `docs/adr/keel/K-0012-child-process-environment-allowlist.md` is the decision; it
   is defence-in-depth, not a sandbox.
 - **Respect the `__init__.py` boundary.** Import a package's public
   symbols from the package, never from its private (`_*`) submodules.

@@ -39,7 +39,7 @@ _preserve_symlinks: true
 # `_copier_python` is the interpreter copier itself runs under, so no
 # virtualenv is needed yet.
 # THE COST: tasks make keel an unsafe template, so `copier copy` needs `--trust`
-# as `copier update` already did (docs/adr/0010-generation-needs-trust-to-stamp-docs.md).
+# as `copier update` already did (docs/adr/keel/K-0010-generation-needs-trust-to-stamp-docs.md).
 _tasks:
   - ["{{ _copier_python }}", "scripts/jobs/restamp_docs.py", "--quiet"]
 
@@ -128,7 +128,7 @@ _exclude:
   # and MCP (mcp/) are NOT pruned: they are the always-shipped transport foundation —
   # the skeleton's own /things route, the AAD reference impl and the MCP servers all
   # live on them, and none of that depends on the showcase (see the `showcase` prunes
-  # below and ADR-0007, which supersedes ADR-0004's claim that they are inseparable).
+  # below and ADR-K-0007, which supersedes ADR-K-0004's claim that they are inseparable).
   - "{% if 'grpc' not in transports %}api/grpc{% endif %}"
   - "{% if 'edge_nginx' not in transports %}api/edge_nginx{% endif %}"
   # Showcase pruning. The bundled demo is 1,205 of a generated project's 1,433
@@ -250,8 +250,8 @@ profiles:
 # THE COST, stated plainly: migrations run arbitrary commands, so copier now classes
 # keel as an unsafe template and `copier update` REFUSES without `--trust`. `_tasks`
 # above do the same to `copier copy`, so every documented copier command carries
-# the flag (docs/adr/0010-generation-needs-trust-to-stamp-docs.md supersedes the
-# trust-free generation docs/adr/0006-answer-retirement-via-migrations.md assumed);
+# the flag (docs/adr/keel/K-0010-generation-needs-trust-to-stamp-docs.md supersedes the
+# trust-free generation docs/adr/keel/K-0006-answer-retirement-via-migrations.md assumed);
 # tests/integration/test_copier_generator_contract.py holds every command to it.
 #
 # THE RISK, stated plainly: `src/frontend/<stack>` is a real app directory that a
@@ -266,6 +266,19 @@ profiles:
 # comparing old to new, so a project that never had the path just runs a harmless
 # no-op `rm`.
 _migrations:
+  # FIRST on purpose: copier's `_remove_old_files` has already deleted every file
+  # the old render had and the new one lacks -- edited or not (copier 9.17,
+  # measured) -- before any migration runs. This job puts back each one the
+  # project edited (any byte but the frontmatter `updated:` stamp) and names it on
+  # stderr, so moving keel's ADRs to docs/adr/keel/ cannot silently drop a
+  # project's edit (docs/adr/keel/K-0013-template-and-project-adr-number-spaces.md).
+  # It must judge those deletions before the answer-driven `rm` entries below,
+  # which must still win over it, and before the restamp, which stays LAST. A list,
+  # so no shell; `--from` is the commit the project was generated from. copier
+  # runs it for a `_commit` with no tag ancestry too: dunamai versions such a
+  # commit `0.0.0.postN.devM` (project-jarvis's 72fd224, measured).
+  - command: ["{{ _copier_python }}", "scripts/jobs/keep_edited_retired.py", "--quiet", "--template", "{{ _copier_conf.src_path }}", "--from", "{{ _version_from }}"]
+    when: "{{ _stage == 'after' }}"
   # Mirrors the frontend-stack prunes.
   - command: "rm -rf src/frontend/react-vite"
     when: "{{ _stage == 'after' and frontend_stack != 'react-vite' }}"

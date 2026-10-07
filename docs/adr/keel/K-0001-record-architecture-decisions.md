@@ -1,5 +1,5 @@
 ---
-title: ADR-0001: Record architecture decisions
+title: ADR-K-0001: Record architecture decisions
 kind: adr
 layer: n/a
 status: accepted
@@ -7,11 +7,11 @@ owner: TBD
 summary: We will record architecturally significant decisions as ADRs.
 id: docs-adr-0001-record-architecture-decisions
 created: 2026-06-17
-updated: 2026-09-02
+updated: 2026-10-07
 visibility: internal
 canonical: true
 ---
-# ADR-0001: Record architecture decisions
+# ADR-K-0001: Record architecture decisions
 
 **Status:** accepted
 

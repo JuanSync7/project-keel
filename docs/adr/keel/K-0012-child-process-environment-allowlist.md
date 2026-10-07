@@ -1,5 +1,5 @@
 ---
-title: "ADR-0012: A child process gets an allowlisted environment, not every credential the parent holds"
+title: "ADR-K-0012: A child process gets an allowlisted environment, not every credential the parent holds"
 kind: adr
 layer: n/a
 status: accepted
@@ -13,7 +13,7 @@ visibility: internal
 canonical: true
 ---
 
-# ADR-0012: A child process gets an allowlisted environment
+# ADR-K-0012: A child process gets an allowlisted environment
 
 **Status:** accepted 2026-10-06 by the maintainer.
 
@@ -132,8 +132,8 @@ forwards its own environment no longer carries every credential with it.
 - **A list per call site in code.** Rejected. The lists are hardcoded and
   drift from each other.
 - **`config/environment.json` from
-  [docs/adr/0005-external-environment-manifest.md](0005-external-environment-manifest.md).**
-  Deferred, not rejected. ADR-0005 is proposed and not built. If it is built,
+  [docs/adr/keel/K-0005-external-environment-manifest.md](K-0005-external-environment-manifest.md).**
+  Deferred, not rejected. ADR-K-0005 is proposed and not built. If it is built,
   its environment-variable records can subsume `child_env.names`.
 - **A required-credential flag per adapter that fails when the name is
   absent.** Rejected. The CLI authenticates by a file under `HOME` or by one
