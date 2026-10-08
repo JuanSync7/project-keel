@@ -675,7 +675,10 @@ def test_a_pre_c2_2_project_receives_credentialed_values_as_an_arrival_and_owes_
     audit reports it as a config key the update brings, at its empty default,
     and no X error. The `adr` block (CONVENTIONS §19), the `work_naming`
     block (CONVENTIONS §20), `layers.app` and
-    `make_targets.empty_test_selections` (CONVENTIONS §15) arrive beside it."""
+    `make_targets.empty_test_selections` (CONVENTIONS §15) arrive beside it.
+    `structure.project_checks` does not: the template never ships it, because
+    a key beside `extra_toplevel` would conflict with every project that
+    declared one."""
     project, _env = pre_c2_2
     before = _tree(project)
     systmp = tmp_path / "systmp"
@@ -767,7 +770,7 @@ def test_the_shipped_audit_target_points_back_at_the_template(generated):
 
 # --- ADR number spaces: an update moves keel's ADRs to docs/adr/keel ------------
 
-_KEEL_ADRS = 13
+_KEEL_ADRS = 14
 
 
 def _own_adr(number, slug, title):

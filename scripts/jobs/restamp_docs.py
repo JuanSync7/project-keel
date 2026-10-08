@@ -3,7 +3,7 @@
 title: restamp_docs — the writer that keeps `updated:` true
 kind: script
 layer: n/a
-summary: Sets the frontmatter `updated:` of every governed Markdown document that needs it to the date the judge will demand, and changes no other byte. scripts/jobs/review_docs.py is the judge of the freshness rule; this is the writer that clears its findings, reading the stamp through the judge's own `updated_span` and today through the judge's own `resolve_today` (`--today`, else SOURCE_DATE_EPOCH read in UTC, else the local clock), so the two cannot disagree on what a stamp is or what day it is. The worklist in a git work tree is what git would commit: the untracked documents, the ones changed against HEAD (every tracked one before the first commit, else review_docs' `modified_paths`, which reads `git --no-optional-locks status` and so never rewrites .git/index), and the ones already committed stale; with no git it is every Markdown file outside check_structure's IGNORE_DIRS. The target is today, raised to the date of the document's last commit when that is later, because the judge reads that date from git, not from a clock. A document's template twin (`<doc>.jinja`, check_N's suffix) is restamped with it, so the parity gate never sees the two stamps differ. A stamp is never moved backwards, and a stamp that is not an ISO date, or a document that cannot be read, is named on stderr and left alone (exit 1) while the rest are still written; a malformed date source exits 2. `--check` lists and writes nothing, the index included; `pending` is the same list as data (path, current stamp, target), for a caller such as scripts/audit_project.py. Run by `make restamp-docs`, by copier's `_tasks` on every render (copy, and the scratch renders an update diffs), and by the last `after` migration on update.
+summary: Sets the frontmatter `updated:` of every governed Markdown document that needs it to the date the judge will demand, and changes no other byte. scripts/jobs/review_docs.py is the judge of the freshness rule; this is the writer that clears its findings, reading the stamp through the judge's own `updated_span` and today through the judge's own `resolve_today` (`--today`, else SOURCE_DATE_EPOCH read in UTC, else the local clock), so the two cannot disagree on what a stamp is or what day it is. The worklist in a git work tree is what git would commit: the untracked documents, the ones changed against HEAD (every tracked one before the first commit, else review_docs' `modified_paths`, which reads `git --no-optional-locks status` and so never rewrites .git/index), and the ones already committed stale; with no git it is every Markdown file outside check_structure's IGNORE_DIRS. The target is today, raised to the date of the document's last commit when that is later, because the judge reads that date from git, not from a clock. A document's template twin (`<doc>.jinja`, check_N's suffix) is restamped with it, so the parity gate never sees the two stamps differ. A stamp is never moved backwards, and a stamp that is not an ISO date, or a document that cannot be read, is named on stderr and left alone (exit 1) while the rest are still written; a malformed date source exits 2. `--check` lists and writes nothing, the index included; `pending` is the same list as data (path, current stamp, target), for a caller such as scripts/audit_project.py. A document git lists as unmerged, or one whose text holds a conflict hunk (scripts/jobs/conflict_guard.py's grammar), is left for the merge with its twin and named on stderr, and the exit code is unchanged: rewriting the project's stamp inside an unresolved conflict would decide half of it. Run as a script, it first refuses, exit 2 naming each file and `make restamp-docs`, when a module it imports from the project holds a conflict hunk. A config/project.json it cannot read (one an update left conflicted) gives no child an allowlist, so no git may start: the run names the manifest, its hunk's line and `make restamp-docs` and exits 2, listing and writing nothing. Run by `make restamp-docs`, by copier's `_tasks` on every render (copy, and the scratch renders an update diffs), and by the last `after` migration on update.
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/integration/test_idempotence.py
@@ -32,6 +32,21 @@ for _dir in (_JOBS, _SCRIPTS):
 # as a script: an importer's own bytecode policy is not this module's to change.
 if __name__ == "__main__":
     sys.dont_write_bytecode = True
+
+import conflict_guard  # noqa: E402
+
+# Before every import below: copier runs this in a project mid-update,
+# where a module it imports may hold conflict markers, and that import
+# would die on a SyntaxError traceback naming neither the file nor the
+# remedy. Only when run as a script: an importer's imports are its own.
+if __name__ == "__main__":
+    conflict_guard.exit_if_conflicted(
+        __file__,
+        os.path.dirname(_SCRIPTS),
+        "restamp_docs",
+        "make restamp-docs",
+        search_path=(_JOBS, _SCRIPTS),
+    )
 
 import check_structure  # noqa: E402
 import child_env  # noqa: E402
@@ -143,9 +158,63 @@ def _walk(root):
     return found
 
 
-def worklist(root, today):
+# Why a document is left out of the run; the remedy is the job's own target.
+CONFLICTED = "conflicted; left for the merge, run `make restamp-docs` after resolving"
+TWIN_OF_CONFLICTED = "its twin is conflicted; left with it for the merge"
+
+
+def conflicted_paths(root):
+    """The root-relative paths git records as unmerged at *root* (`git ls-files
+    -u`, read-only), as a set; empty outside a work tree."""
+    paths = set()
+    for entry in _split(_git(root, "ls-files", "-u", "-z")):
+        path = entry.partition("\t")[2]
+        if path:
+            paths.add(path)
+    return paths
+
+
+def _holds_conflict(full):
+    """True when the file at *full* holds a conflict hunk. A file that cannot be
+    read or decoded is not judged here: the restamp names an unreadable one."""
+    if os.path.islink(full) or not os.path.isfile(full):
+        return False
+    try:
+        with open(full, "rb") as fh:
+            return conflict_guard.has_conflict(fh.read().decode("utf-8"))
+    except (OSError, ValueError):
+        return False
+
+
+def _drop_conflicted(root, rows, skipped):
+    """*rows* without each document that, or whose twin, is unmerged in the
+    index or holds a conflict hunk in the work tree: a stamp inside a merge is
+    the merge's to settle, and restamping one side of it turned a stamp-only
+    conflict into one with two identical sides (measured). Each one left out is
+    appended to *skipped* (a list, or None) as (path, reason)."""
+    unmerged = conflicted_paths(root)
+    kept = []
+    for rel, target_day in rows:
+        pair = (rel, rel + TWIN_SUFFIX)
+        hit = [
+            p for p in pair if p in unmerged or _holds_conflict(os.path.join(root, p))
+        ]
+        if not hit:
+            kept.append((rel, target_day))
+            continue
+        if skipped is not None:
+            for p in pair:
+                if p in hit:
+                    skipped.append((p, CONFLICTED))
+                elif os.path.lexists(os.path.join(root, p)):
+                    skipped.append((p, TWIN_OF_CONFLICTED))
+    return kept
+
+
+def worklist(root, today, skipped=None):
     """(root-relative path, target date) for each Markdown file that may need a
-    stamp, sorted by path.
+    stamp, sorted by path. A document that is conflicted, or whose twin is, is
+    left out and, when *skipped* is a list, named in it as (path, reason).
 
     With no git work tree it is every Markdown file outside WALK_SKIP_DIRS. In a
     work tree it is what git would commit: the untracked files (not ignored),
@@ -154,7 +223,8 @@ def worklist(root, today):
     is what makes the judge's remedy ("run `make restamp-docs`") true. The
     target is never earlier than the file's last commit (`target_date`)."""
     if not _inside_work_tree(root):
-        return [(rel, today) for rel in sorted(set(_walk(root)))]
+        rows = [(rel, today) for rel in sorted(set(_walk(root)))]
+        return _drop_conflicted(root, rows, skipped)
     paths = set(
         _split(_git(root, "ls-files", "-o", "--exclude-standard", "-z", "--", "*.md"))
     )
@@ -170,7 +240,8 @@ def worklist(root, today):
     floors = {relpath: last_commit for relpath, _u, last_commit, _m in records}
     for finding in review_docs.stale_findings(records, today.isoformat()):
         paths.add(finding["path"])
-    return [(rel, target_date(today, floors.get(rel))) for rel in sorted(paths)]
+    rows = [(rel, target_date(today, floors.get(rel))) for rel in sorted(paths)]
+    return _drop_conflicted(root, rows, skipped)
 
 
 def _write_atomic(path, data):
@@ -217,14 +288,16 @@ def _read_stamp(full):
     return text, text[span[0] : span[1]]
 
 
-def pending(root, today, errors=None):
+def pending(root, today, errors=None, skipped=None):
     """What a run would rewrite, written nowhere: a sorted list of (root-relative
     path, current stamp, target stamp), a document's template twin included.
     A stamp that is not an ISO date, or a file that cannot be read, is not
     listed; when *errors* is a list, (path, reason) is appended to it instead.
-    Raises RestampError on a malformed commit date, as a run would."""
+    A conflicted document and its twin are not listed either; when *skipped*
+    is a list, (path, reason) is appended to it. Raises RestampError on a
+    malformed commit date, as a run would."""
     rows = []
-    for rel, target_day in worklist(root, today):
+    for rel, target_day in worklist(root, today, skipped):
         for target in (rel, rel + TWIN_SUFFIX):
             try:
                 read = _read_stamp(os.path.join(root, target))
@@ -270,6 +343,28 @@ def _restamp_file(full, today, check):
     return True, None
 
 
+def _no_allowlist(exc):
+    """The stderr line for a ChildEnvError: no child may start, so no git runs
+    and nothing is listed or written. A manifest an update left conflicted is
+    the likely cause, and it is named with its hunk's line when it is one."""
+    manifest = os.path.join("config", "project.json")
+    hunk = ""
+    try:
+        with open(os.path.join(ROOT, manifest), "rb") as fh:
+            line = conflict_guard.conflict_line(fh.read().decode("utf-8"))
+        if line is not None:
+            hunk = "; %s holds a conflict hunk at line %d" % (
+                manifest.replace(os.sep, "/"),
+                line,
+            )
+    except (OSError, ValueError):
+        pass  # the ChildEnvError itself already says the manifest is unreadable
+    return (
+        "restamp_docs: cannot start git: %s%s; resolve it, then run "
+        "`make restamp-docs`" % (exc, hunk)
+    )
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(
         description="Set a stale frontmatter `updated:` to today; change nothing else."
@@ -300,23 +395,36 @@ def main(argv=None):
     if not os.path.isdir(root):
         print("restamp_docs: --root %s is not a directory" % root, file=sys.stderr)
         return 2
+    # A skip is named, never a failure: an ordinary content conflict in a
+    # governed document must not fail the `copier update` that left it.
+    skipped = []
     if args.check:
         errors = []
         try:
-            rows = pending(root, today, errors)
+            rows = pending(root, today, errors, skipped)
         except RestampError as exc:
             print("restamp_docs: %s" % exc, file=sys.stderr)
             return 2
+        except child_env.ChildEnvError as exc:
+            print(_no_allowlist(exc), file=sys.stderr)
+            return 2
+        for target, reason in skipped:
+            print("restamp_docs: %s: %s" % (target, reason), file=sys.stderr)
         for target, reason in errors:
             print("restamp_docs: %s: %s" % (target, reason), file=sys.stderr)
         for target, _current, _target_day in rows:
             print(target)
         return 1 if errors or rows else 0
     try:
-        work = worklist(root, today)
+        work = worklist(root, today, skipped)
     except RestampError as exc:
         print("restamp_docs: %s" % exc, file=sys.stderr)
         return 2
+    except child_env.ChildEnvError as exc:
+        print(_no_allowlist(exc), file=sys.stderr)
+        return 2
+    for target, reason in skipped:
+        print("restamp_docs: %s: %s" % (target, reason), file=sys.stderr)
     changed, failed = [], False
     for rel, target_day in work:
         # The twin rides with its document: it is never in the worklist itself

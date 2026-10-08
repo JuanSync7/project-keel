@@ -3,7 +3,7 @@
 title: keep_edited_retired — puts back a file the template retired but the project edited
 kind: script
 layer: n/a
-summary: Copier's first `after` migration on update. copier's `_remove_old_files` deletes every file the old render had and the new one lacks before any migration runs, whether the project edited it or not (measured on copier 9.17), so an edit to a file the template retired or moved -- an ADR that became docs/adr/keel/K-NNNN-<slug>.md -- would be lost without a word. This job lists the files the update deleted (`git diff-index --name-only --diff-filter=D HEAD` in the project, read-only: plumbing that writes no index, `--no-optional-locks`, filters off through review_docs' `git_argv`) and compares each one's HEAD bytes with the template's blob at `--from` (the commit the project was generated from). `is_edited` calls a copy unedited only when the two differ in nothing but the frontmatter `updated:` value, read through review_docs' `updated_span`; an edited copy is put back from HEAD with HEAD's mode (an executable, a symlink) and named on stderr with its successor in the template where a rename says so. A file the template renders from `<path>.jinja` cannot be judged byte for byte, so it is put back and named; so is a path the template does not hold at `--from`. The index is never written. An unresolvable `--from` or a git failure puts back every deleted file and exits 2, because without a base nothing may stay deleted. scripts/audit_project.py's `retired` group imports `is_edited`, so the guard and the audit cannot disagree. It runs before the answer-driven `rm` migrations, which still win, and before the restamp, which stays last.
+summary: Copier's first `after` migration on update. copier's `_remove_old_files` deletes every file the old render had and the new one lacks before any migration runs, whether the project edited it or not (measured on copier 9.17), so an edit to a file the template retired or moved -- an ADR that became docs/adr/keel/K-NNNN-<slug>.md -- would be lost without a word. This job lists the files the update deleted (`git diff-index --name-only --diff-filter=D HEAD` in the project, read-only: plumbing that writes no index, `--no-optional-locks`, filters off through review_docs' `git_argv`) and compares each one's HEAD bytes with the template's blob at `--from` (the commit the project was generated from). `is_edited` calls a copy unedited only when the two differ in nothing but the frontmatter `updated:` value, read through review_docs' `updated_span`; an edited copy is put back from HEAD with HEAD's mode (an executable, a symlink) and named on stderr with its successor in the template where a rename says so. A file the template renders from `<path>.jinja` cannot be judged byte for byte, so it is put back and named; so is a path the template does not hold at `--from`. The index is never written. An unresolvable `--from` or a git failure puts back every deleted file and exits 2, because without a base nothing may stay deleted. scripts/audit_project.py's `retired` group imports `is_edited`, so the guard and the audit cannot disagree. It runs before the answer-driven `rm` migrations, which still win, and before the restamp, which stays last. Run as a script, it first asks scripts/jobs/conflict_guard.py whether a module it imports from the project holds a conflict hunk, and if one does it names each file and the rerun command and exits 2 instead of dying on the import.
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/integration/test_edited_retired_files.py
@@ -28,6 +28,21 @@ for _dir in (_JOBS, _SCRIPTS):
 # restamp_docs.py sets the same flag). Only when run as a script.
 if __name__ == "__main__":
     sys.dont_write_bytecode = True
+
+import conflict_guard  # noqa: E402
+
+# Before every import below: copier runs this in a project mid-update,
+# where a module it imports may hold conflict markers, and that import
+# would die on a SyntaxError traceback naming neither the file nor the
+# remedy. Only when run as a script: an importer's imports are its own.
+if __name__ == "__main__":
+    conflict_guard.exit_if_conflicted(
+        __file__,
+        os.path.dirname(_SCRIPTS),
+        "keep_edited_retired",
+        conflict_guard.rerun_command(__file__, os.path.dirname(_SCRIPTS), sys.argv[1:]),
+        search_path=(_JOBS, _SCRIPTS),
+    )
 
 import child_env  # noqa: E402
 import review_docs  # noqa: E402

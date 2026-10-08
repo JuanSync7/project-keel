@@ -38,7 +38,8 @@
       "K-0010-generation-needs-trust-to-stamp-docs.md",
       "K-0011-make-target-effect-labels.md",
       "K-0012-child-process-environment-allowlist.md",
-      "K-0013-template-and-project-adr-number-spaces.md"
+      "K-0013-template-and-project-adr-number-spaces.md",
+      "K-0014-project-owned-structure-checks.md"
     ]
   },
   "work_naming": {

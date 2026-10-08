@@ -3,7 +3,7 @@
 title: declare_no_app — a project whose composition root is gone stays green across copier update
 kind: script
 layer: n/a
-summary: A copier `after` migration on `copier update`. A project generated before config/project.json carried `layers.app`, and that deleted src/app as the template then advised, receives `"app": {"path": "src/app", ...}` from the update, and check_H errors on a path that does not exist. When the declared path is absent from the tree and the pre-update manifest (`git cat-file blob HEAD:config/project.json`, read-only, through review_docs' `git_argv` and the allowlisted environment) had no `layers.app`, this job makes the three edits src/app/README.md names for a project with no composition root: `layers.app` becomes null; each bare marker of the smoke test that needs the composition root (tests/smoke/test_app_runs.py `pytestmark`) is declared in `make_targets.empty_test_selections`; each Makefile target whose recipe runs scripts/run_app.py is added to `make_targets.effect_proof_skip`. It names what it did on stderr. config/project.json is edited as text, so no other byte moves, and an edit that does not parse back to exactly the intended manifest is refused: nothing is written, the edits are named on stderr, exit 1. A project that declared `layers.app` itself is left to check_H. A manifest that is not JSON (an update conflict) is a stated skip, exit 0; a git failure exits 2.
+summary: A copier `after` migration on `copier update`. A project generated before config/project.json carried `layers.app`, and that deleted src/app as the template then advised, receives `"app": {"path": "src/app", ...}` from the update, and check_H errors on a path that does not exist. When the declared path is absent from the tree and the pre-update manifest (`git cat-file blob HEAD:config/project.json`, read-only, through review_docs' `git_argv` and the allowlisted environment) had no `layers.app`, this job makes the three edits src/app/README.md names for a project with no composition root: `layers.app` becomes null; each bare marker of the smoke test that needs the composition root (tests/smoke/test_app_runs.py `pytestmark`) is declared in `make_targets.empty_test_selections`; each Makefile target whose recipe runs scripts/run_app.py is added to `make_targets.effect_proof_skip`. It names what it did on stderr. config/project.json is edited as text, so no other byte moves, and an edit that does not parse back to exactly the intended manifest is refused: nothing is written, the edits are named on stderr, exit 1. A project that declared `layers.app` itself is left to check_H. A manifest that is not JSON (an update conflict) is a stated skip, exit 0; a git failure exits 2. Run as a script, it first asks scripts/jobs/conflict_guard.py whether a module it imports from the project holds a conflict hunk, and if one does it names each file and the rerun command and exits 2 instead of dying on the import.
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/integration/test_update_without_app.py
@@ -29,6 +29,21 @@ for _dir in (_JOBS, _SCRIPTS):
 # siblings below would otherwise leave __pycache__/*.pyc in it.
 if __name__ == "__main__":
     sys.dont_write_bytecode = True
+
+import conflict_guard  # noqa: E402
+
+# Before every import below: copier runs this in a project mid-update,
+# where a module it imports may hold conflict markers, and that import
+# would die on a SyntaxError traceback naming neither the file nor the
+# remedy. Only when run as a script: an importer's imports are its own.
+if __name__ == "__main__":
+    conflict_guard.exit_if_conflicted(
+        __file__,
+        os.path.dirname(_SCRIPTS),
+        "declare_no_app",
+        conflict_guard.rerun_command(__file__, os.path.dirname(_SCRIPTS), sys.argv[1:]),
+        search_path=(_JOBS, _SCRIPTS),
+    )
 
 import child_env  # noqa: E402
 import review_docs  # noqa: E402

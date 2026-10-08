@@ -62,7 +62,7 @@ everything and therefore expect the project interpreter.
 
 | Check | Script | Gate? | Interpreter | What it guarantees |
 |-------|--------|:-----:|-------------|--------------------|
-| Structure & frontmatter | `scripts/check_structure.py` | error | 3.6-safe | Labels, taxonomy, package boundaries, tool/agent governance, project facts, agent-rules symlinks, owned-exception & frozen-config boundaries, naked-tensor domain warn, lint/type ruleset parity, template twin parity, Makefile help parity, cross-reference resolution, check-catalogue parity, rosters, practice mechanisms, policy reachability, writer rerun declarations, make-target effect labels, child-process environment, ADR number spaces, work naming (checks A–Z) |
+| Structure & frontmatter | `scripts/check_structure.py` | error | 3.6-safe | Labels, taxonomy, package boundaries, tool/agent governance, project facts, agent-rules symlinks, owned-exception & frozen-config boundaries, naked-tensor domain warn, lint/type ruleset parity, template twin parity, Makefile help parity, cross-reference resolution, check-catalogue parity, rosters, practice mechanisms, policy reachability, writer rerun declarations, make-target effect labels, child-process environment, ADR number spaces, work naming (checks A–Z), then the project's own checks (`structure.project_checks`) |
 | Interpreter floor | `scripts/check_python_version.py` | error | any | `$(PY)` satisfies `pyproject.toml`'s `requires-python`, said plainly before a newer-syntax check fails with a traceback — runs before every check that needs the project interpreter (`check-corpus`, `test`) |
 | Corpus integrity | `scripts/jobs/check_corpus.py` | error | ≥3.7 | the fresh build is a valid, acyclic, reproducible graph whose edge kinds are from the closed set (`keyword`, `link`, `citation`, `mention`, `semantic`) **and** the local `wiki/corpus.json` (what agents query) is current when present — absent is a loud pass, stale is an error naming `make site-data` (ADR-K-0008) |
 | OpenAPI drift | `api/rest_fastapi/export_openapi.py --check` | error | FastAPI | Committed `openapi.json` matches the live routes |
@@ -93,6 +93,9 @@ print but never fail the build.
   top-level directory and every directory directly under `agents/` (each
   `agents/<name>/` and `agents/tools/`) carries `README.md` + `CLAUDE.md`. An undeclared symlinked directory is a WARN, because no check
   reads through a link and the gate cannot ask git whether it is tracked.
+  `structure.project_checks` is absent, null or a declared name, and a
+  declared project-checks directory holds at least one module (section 1's
+  "The project's own checks").
 - **C. Package boundary** — every `src/` dir with `.py` has an `__init__.py`
   defining `__all__`.
 - **D. `__init__` is the API** — no absolute import of another package's
@@ -427,6 +430,32 @@ print but never fail the build.
   because check_structure reads no git (ADR-K-0009). Measured over keel at
   landing: 1 plan doc, 4 campaigns, 20 slices, 0 findings.
 
+**The project's own checks.** After the last letter, the gate runs each
+top-level `*.py` module in the directory config/project.json
+`structure.project_checks` names, in file-name order
+(`docs/adr/keel/K-0014-project-owned-structure-checks.md`). A module defines
+`check(root)` and returns `(tier, message)` pairs, the tier `error` or
+`warning`; each finding is reported as `project:<stem>`, its message prefixed
+with the module's path. A module may `import check_structure` and use the
+gate's readers, such as `walk_makefiles` and `make_target_rules`, and its
+`err()` and `warn()`: what a module reports through those is its own finding
+at that tier, so a rule moved out of the gate unchanged still fails it. The
+key is absent or null (off) or a name already in `structure.extra_toplevel`;
+the template never ships it, so a project adds it when it adopts. check_B
+errors on any other value and on a declared directory that holds no module. Every way a
+module can fail is an ERROR naming it, and such a module is never executed
+when it holds a conflict hunk:
+- a `*.py` name that is not a regular file, such as a dangling symlink
+- unreadable, not UTF-8, conflicted or not compiling
+- raising or exiting while loading
+- no callable `check`
+- a `check` that raises, exits or returns a malformed value
+- leaving the gate's `errors` or `warnings` as anything but a list
+
+The template's findings are complete before the first module loads, and each
+module runs against fresh `errors` and `warnings` lists, so a project check
+can only add findings. Measured at landing: keel declares none.
+
 **When to run.** Every commit (pre-commit) and in CI; any time you add a
 directory, package, doc, tool, or agent.
 
@@ -578,6 +607,13 @@ does.
 
 ## Adding a new deterministic check
 
+A generated project that wants one more structure rule writes a module in its
+`structure.project_checks` directory (section 1 above), not an edit to
+`scripts/check_structure.py`. That file is the template's, and `copier update`
+merges a project's edit to it, which leaves conflict markers when both sides
+changed the same lines. The steps below are for the template itself, or for a
+new script with its own make target.
+
 1. Write the doer in `scripts/` (or `scripts/jobs/` for unattended jobs).
    Stdlib-only + 3.6-safe if it must run in pre-commit; otherwise it may use
    the project interpreter and **skip gracefully** when a dependency is absent.
@@ -616,7 +652,9 @@ prefix `keel-audit-`), which it removes on every exit path:
   --conflict inline` of the copy against the snapshot, run as a child
   process.
 Every check_structure letter, A–Z, runs in-process through `run_checks` on the
-copy twice: before the update and after it. The freshness judge
+copy twice: before the update and after it. The project's own checks
+(`structure.project_checks`) never run, because they are DEST's code; the
+not-checked section names them. The freshness judge
 (`scripts/jobs/review_docs.py`) and the restamp writer's `pending` list
 (`scripts/jobs/restamp_docs.py`) run on DEST itself. Each freshness finding
 carries `resolved_by`, because the update's last `_migrations` step runs

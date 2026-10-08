@@ -234,7 +234,7 @@ pre-commit hook) fails the build if the conventions above drift:
 | Corpus id | every `id` is unique across the corpus |
 | Corpus canonical | a path-like `canonical` pointer resolves to a real file |
 | Corpus lifecycle | `status: deprecated` and `status: superseded` both require `superseded_by` |
-| Closed taxonomy (§2) | every non-hidden top-level directory is a §2 row or declared in `config/project.json` `structure.extra_toplevel`; a declared name exists and is not already a row; every top-level directory and every directory directly under `agents/` (each `agents/<name>/` and `agents/tools/`) has both `README.md` and `CLAUDE.md`; an undeclared symlinked directory warns |
+| Closed taxonomy (§2) | every non-hidden top-level directory is a §2 row or declared in `config/project.json` `structure.extra_toplevel`; a declared name exists and is not already a row; every top-level directory and every directory directly under `agents/` (each `agents/<name>/` and `agents/tools/`) has both `README.md` and `CLAUDE.md`; an undeclared symlinked directory warns; `structure.project_checks` is absent, null or a declared name, and a declared project-checks directory holds at least one module |
 | Package boundary (§3) | every `src/` dir with `.py` has an `__init__.py` that defines `__all__` |
 | `__init__` is the API (§3) | no absolute import of another package's `_private` module |
 | Authored coverage (error) | every `__all__`-exported symbol defined in-file has a one-line docstring (warn until ADR-K-0008) |
@@ -585,6 +585,19 @@ It is keyed **by layer/concern, never one global `language`**:
   does not exist (stale) or is already a §2 row (redundant), and on a declared
   directory without `README.md` and `CLAUDE.md`. Names only: the directory's own
   `README.md` `summary:` says why it exists.
+- `structure.project_checks` — absent or `null` (off) or one `extra_toplevel`
+  name: the directory of this project's own structure checks
+  (`docs/adr/keel/K-0014-project-owned-structure-checks.md`). The template never
+  ships the key; a project adds it. Each top-level `*.py` module there defines
+  `check(root)`, which returns `(tier, message)` pairs, and
+  `check_structure.py` runs it after every lettered check, in file-name order,
+  reporting `project:<stem>`; what a module reports through the gate's `err()`
+  and `warn()` is its finding too. A project adds a rule here, never by editing
+  `check_structure.py`, so `copier update` never merges that file. A project
+  check only adds findings. `check_B` errors on any other value and on a
+  declared directory with no module; a module name that is not a regular file
+  (a dangling symlink), and a module that cannot load, has no callable `check`,
+  raises, exits or returns a malformed value, is an error naming it.
 - `make_targets` — the effect-label policy (§7): `unattended_vars` (the variables
   `$(WRITE_GUARD)` refuses under), `gate_runner_var` (the one the gate runner
   sets), `gate_effects` (the labels a gate may run; must hold `local`, must not

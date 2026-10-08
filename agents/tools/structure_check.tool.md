@@ -28,6 +28,9 @@ coverage and the module header contract, tool-spec governance and the
 tool↔agent binding, project facts, agent-rules symlinks, the gate-tier practice
 boundaries, ruleset/twin/help/catalogue parity, cross-references, rosters, practice mechanisms, policy reachability, writer rerun declarations, make-target effect labels, the child-process
 environment, the ADR number spaces and work naming;
+then the project's own checks, the modules in the directory
+`structure.project_checks` names, each finding one the module returns or
+reports through the gate's `err()`/`warn()` (ADR-K-0014);
 plus the accountability warnings. This is how the `index_enforcer` proves the
 repo is convention-clean before it trusts the corpus.
 

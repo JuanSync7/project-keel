@@ -11,6 +11,25 @@ version rather than a bare commit:
 ## [Unreleased]
 
 ### Added
+- **`structure.project_checks` — a project adds structure checks without
+  editing `scripts/check_structure.py`.** The new `config/project.json` key is
+  absent or null (off), or a directory already in `structure.extra_toplevel`.
+  The template never ships the key, because one inserted beside
+  `extra_toplevel` conflicted on update with every project that had declared a
+  directory there; a project adds it when it adopts. The gate runs
+  `check(root)` from each top-level `*.py` module there after every lettered
+  check, in file-name order, and reports `project:<stem>` findings: what a
+  check returns, and what it reports through the gate's `err()` and `warn()`.
+  Every way a module can fail is an error naming it: a name that is not a
+  regular file (a dangling symlink), a load failure, a conflict hunk, a missing
+  `check`, a raise or exit, a malformed return value, or leaving the gate's
+  `errors` or `warnings` as anything but a list. A declared directory with no
+  module is an error too. A project check only adds
+  findings, and `make audit-project` never runs one
+  (`docs/adr/keel/K-0014-project-owned-structure-checks.md`, proposed). Not
+  breaking: an absent key is silent. A project that edited
+  `scripts/check_structure.py` moves each rule into the directory and restores the
+  template's file; its next update then merges no edit there.
 - **`check_Z` and `tests/integration/test_work_trailers.py` — campaigns and
   slices carry one checked name.** A campaign is `CMP-<n>` and a slice
   `CMP-<n>.S<m>`, the grammar read from the new `config/project.json`
@@ -38,6 +57,20 @@ version rather than a bare commit:
   `layers.app` null, re-adds the entry with that reason.
 
 ### Fixed
+- **A `copier update` over a conflicted module stops with its name, not a
+  traceback.** Every `after` migration (`keep_edited_retired`,
+  `declare_no_app`, `resolve_stamp_conflicts`, `restamp_docs`) now follows its
+  imports through the project's modules before importing them, with the new
+  `scripts/jobs/conflict_guard.py`. When one holds a conflict hunk, the job
+  names each file and line and the command to rerun once they are resolved,
+  and exits 2. Before this, the restamp died on a `SyntaxError` at the first
+  marker in `scripts/check_structure.py`. `restamp_docs` also leaves a
+  document git lists as unmerged, or one that holds a hunk, together with its
+  twin, and names each skip on stderr. It no longer rewrites the project's
+  stamp inside a conflict nobody has resolved yet. Run by hand over a
+  `config/project.json` it cannot read, it names the manifest's hunk line and
+  `make restamp-docs` and exits 2, where it raised a `ChildEnvError` traceback
+  before. `conflict_guard.py` is a library those jobs import, not a script.
 - **`make run` runs the composition root config/project.json `layers.app`
   declares.** The recipe was `$(PY) -m app` with no `PYTHONPATH`, so it worked
   only when the caller's environment already had `src` on the path and failed

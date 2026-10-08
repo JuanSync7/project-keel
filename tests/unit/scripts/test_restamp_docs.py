@@ -8,6 +8,7 @@ summary: The pure half of scripts/jobs/restamp_docs.py, pinned: only the ten dat
 import datetime
 import difflib
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -355,3 +356,219 @@ def test_pending_reports_a_twin_and_skips_what_is_current(tmp_path):
         ("docs/a.md", "2026-01-01", "2026-09-02"),
         ("docs/a.md.jinja", "2026-01-01", "2026-09-02"),
     ]
+
+
+# --- a conflicted document is left for the merge ------------------------------
+#
+# copier's inline update leaves a conflicted document with markers in the work
+# tree and stages 1, 2 and 3 in the index. Restamping it rewrote the project
+# side's stamp inside the hunk (the CMP-3.S2 residual risk); a skip is named on
+# stderr and is not a failure, so an ordinary content conflict does not fail
+# the update.
+
+# Spelled as repetitions so this file holds no marker text: the leftover-marker
+# tree scans read it too.
+_OPEN, _SPLIT, _CLOSE = "<" * 7, "=" * 7, ">" * 7
+
+
+def _unmerge(repo, sides, rel, base, theirs):
+    """Merge *base* -> *theirs* into the committed *rel* as copier does, and
+    record stages 1, 2 and 3 as copier does."""
+    stem = rel.replace("/", "__")
+    base_path, theirs_path = sides / (stem + ".base"), sides / (stem + ".theirs")
+    base_path.write_text(base, encoding="utf-8")
+    theirs_path.write_text(theirs, encoding="utf-8")
+    labels = ["-L", "before updating", "-L", "last update", "-L", "after updating"]
+    proc = subprocess.run(
+        ["git", "merge-file"] + labels + [rel, str(base_path), str(theirs_path)],
+        cwd=str(repo),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    assert proc.returncode > 0, proc.stderr
+    mode, sha = _git(repo, "ls-files", "--stage", "--", rel).split()[:2]
+    lines = ["0 %s\t%s" % ("0" * 40, rel), "%s %s 2\t%s" % (mode, sha, rel)]
+    for stage, path in ((1, base_path), (3, theirs_path)):
+        blob = _git(repo, "hash-object", "-w", str(path)).strip()
+        lines.append("%s %s %d\t%s" % (mode, blob, stage, rel))
+    subprocess.run(
+        ["git", "update-index", "--index-info"],
+        cwd=str(repo),
+        input="\n".join(lines) + "\n",
+        universal_newlines=True,
+        check=True,
+    )
+
+
+def _tree_bytes(root):
+    state = {}
+    for dirpath, dirnames, filenames in os.walk(str(root)):
+        dirnames[:] = sorted(d for d in dirnames if d != ".git")
+        for name in sorted(filenames):
+            full = os.path.join(dirpath, name)
+            with open(full, "rb") as fh:
+                state[os.path.relpath(full, str(root))] = fh.read()
+    return state
+
+
+def test_conflicted_doc_left_for_merge(tmp_path, monkeypatch, capsys):
+    work = tmp_path / "gitwork"
+    work.mkdir()
+    for key, value in hermetic_git.git_env_vars(work).items():
+        monkeypatch.setenv(key, value)
+    repo, sides = tmp_path / "repo", tmp_path / "sides"
+    (repo / "docs").mkdir(parents=True)
+    sides.mkdir()
+    x, twin, y = (
+        repo / "docs" / "x.md",
+        repo / "docs" / ("x.md" + restamp_docs.TWIN_SUFFIX),
+        repo / "docs" / "y.md",
+    )
+    x.write_text(_doc("2026-01-01", tail=""), encoding="utf-8")
+    twin.write_text(_doc("2026-01-01"), encoding="utf-8")
+    y.write_text(_doc("2026-01-01"), encoding="utf-8")
+    z = repo / "docs" / "z.md"
+    z.write_text(_doc("2026-01-01"), encoding="utf-8")
+    _git(repo, "init", "-q")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "init")
+    # A content conflict far from the stamp; both sides keep the stale stamp,
+    # so a restamp that did not skip would rewrite it inside the document.
+    ours = _doc("2026-01-01").replace("Body text", "Body text, ours,")
+    x.write_text(ours, encoding="utf-8")
+    z.write_text(ours, encoding="utf-8")
+    _git(repo, "commit", "-q", "-am", "ours")
+    _unmerge(
+        repo,
+        sides,
+        "docs/x.md",
+        _doc("2026-01-01"),
+        _doc("2026-01-01").replace("Body text", "Body text, theirs,"),
+    )
+    # z's merge is open in the index but its markers are already edited out:
+    # only the index says the merge is not finished, so only it can skip z.
+    _unmerge(
+        repo,
+        sides,
+        "docs/z.md",
+        _doc("2026-01-01"),
+        _doc("2026-01-01").replace("Body text", "Body text, theirs,"),
+    )
+    z.write_text(ours, encoding="utf-8")
+    y.write_text(_doc("2026-01-01", tail="  # edited"), encoding="utf-8")
+    assert _OPEN in x.read_text(encoding="utf-8")
+    x_before, twin_before, z_before = x.read_bytes(), twin.read_bytes(), z.read_bytes()
+
+    assert restamp_docs.pending(str(repo), TODAY) == [
+        ("docs/y.md", "2026-01-01", "2026-09-02")
+    ]
+    argv = ["--root", str(repo), "--today", TODAY.isoformat()]
+    assert restamp_docs.main(argv) == 0
+    out = capsys.readouterr()
+    assert out.out.splitlines() == ["docs/y.md"]
+    assert "restamp_docs: docs/x.md: conflicted" in out.err
+    assert "restamp_docs: docs/z.md: conflicted" in out.err
+    assert "docs/x.md%s" % restamp_docs.TWIN_SUFFIX in out.err
+    assert (x.read_bytes(), twin.read_bytes()) == (x_before, twin_before)
+    assert z.read_bytes() == z_before
+    assert "updated: 2026-09-02" in y.read_text(encoding="utf-8")
+
+    first = _tree_bytes(repo)
+    assert restamp_docs.main(argv + ["--quiet"]) == 0
+    assert _tree_bytes(repo) == first
+    assert "docs/x.md: conflicted" in capsys.readouterr().err
+
+
+def test_a_doc_with_markers_is_skipped_without_git(tmp_path, monkeypatch, capsys):
+    """No index to ask, so the text scan alone decides; a setext underline is
+    not a conflict and its document is still restamped."""
+    monkeypatch.setattr(restamp_docs, "_inside_work_tree", lambda root: False)
+    hunk = "%s ours\na\n%s\nb\n%s theirs\n" % (_OPEN, _SPLIT, _CLOSE)
+    marked = tmp_path / "marked.md"
+    marked.write_text(_doc("2026-01-01") + hunk, encoding="utf-8")
+    setext = tmp_path / "setext.md"
+    setext.write_text(_doc("2026-01-01") + "Title\n%s\n" % _SPLIT, encoding="utf-8")
+    before = marked.read_bytes()
+    argv = ["--root", str(tmp_path), "--today", TODAY.isoformat()]
+    assert restamp_docs.main(argv) == 0
+    out = capsys.readouterr()
+    assert out.out.splitlines() == ["setext.md"]
+    assert "restamp_docs: marked.md: conflicted" in out.err
+    assert marked.read_bytes() == before
+
+
+def test_conflicted_import_exits_2_cleanly(tmp_path):
+    """copier runs the restamp last, in a project whose check_structure.py may
+    itself be conflicted: a SyntaxError traceback named neither the file nor
+    what to do. The job now refuses before the import, exit 2, naming both."""
+    proj = tmp_path / "proj"
+    shutil.copytree(
+        str(_ROOT / "scripts"),
+        str(proj / "scripts"),
+        ignore=shutil.ignore_patterns("__pycache__"),
+    )
+    (proj / "docs").mkdir()
+    doc = proj / "docs" / "a.md"
+    doc.write_text(_doc("2026-01-01"), encoding="utf-8")
+    target = proj / "scripts" / "check_structure.py"
+    target.write_text(
+        target.read_text(encoding="utf-8")
+        + "%s ours\nX = 1\n%s\nX = 2\n%s theirs\n" % (_OPEN, _SPLIT, _CLOSE),
+        encoding="utf-8",
+    )
+    proc = subprocess.run(
+        [sys.executable, str(proj / "scripts" / "jobs" / "restamp_docs.py")]
+        + ["--root", str(proj), "--today", TODAY.isoformat()],
+        cwd=str(proj),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        universal_newlines=True,
+    )
+    assert proc.returncode == 2, proc.stdout + proc.stderr
+    assert "scripts/check_structure.py (line" in proc.stderr
+    assert "`make restamp-docs`" in proc.stderr
+    assert "Traceback" not in proc.stderr and "SyntaxError" not in proc.stderr
+    assert "updated: 2026-01-01" in doc.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("check", [False, True], ids=["write", "check"])
+def test_conflicted_manifest_exits_2_cleanly(tmp_path, check):
+    """A project whose config/project.json is conflicted has no allowlist, so
+    the job may start no git; that raised a ChildEnvError traceback out of the
+    worklist. It now names the manifest and the rerun command, exit 2, and
+    writes nothing."""
+    proj = tmp_path / "proj"
+    shutil.copytree(
+        str(_ROOT / "scripts"),
+        str(proj / "scripts"),
+        ignore=shutil.ignore_patterns("__pycache__"),
+    )
+    (proj / "config").mkdir()
+    manifest = (_ROOT / "config" / "project.json").read_text(encoding="utf-8")
+    head, sep, tail = manifest.partition("\n")
+    (proj / "config" / "project.json").write_text(
+        head
+        + sep
+        + '%s ours\n  "x": 1,\n%s\n  "x": 2,\n%s theirs\n' % (_OPEN, _SPLIT, _CLOSE)
+        + tail,
+        encoding="utf-8",
+    )
+    (proj / "docs").mkdir()
+    doc = proj / "docs" / "a.md"
+    doc.write_text(_doc("2026-01-01"), encoding="utf-8")
+    proc = subprocess.run(
+        [sys.executable, str(proj / "scripts" / "jobs" / "restamp_docs.py")]
+        + ["--root", str(proj), "--today", TODAY.isoformat()]
+        + (["--check"] if check else []),
+        cwd=str(proj),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        universal_newlines=True,
+    )
+    assert proc.returncode == 2, proc.stdout + proc.stderr
+    assert proc.stderr.startswith("restamp_docs: "), proc.stderr
+    assert "config/project.json" in proc.stderr, proc.stderr
+    assert "conflict hunk at line 2" in proc.stderr, proc.stderr
+    assert "`make restamp-docs`" in proc.stderr, proc.stderr
+    assert "Traceback" not in proc.stderr, proc.stderr
+    assert "updated: 2026-01-01" in doc.read_text(encoding="utf-8")

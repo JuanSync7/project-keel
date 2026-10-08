@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 title: check_structure — the deterministic conventions gate
-summary: Stdlib-only, 3.6-safe enforcement of CONVENTIONS.md — labeling, taxonomy, package boundaries, tool/agent governance, manifest and ruleset parity, twin parity, the machine-readable module contract, Makefile help parity, cross-reference resolution, check-catalogue parity, rosters, practice mechanisms, policy reachability, writer rerun declarations, make-target effect labels, child-process environments, ADR number spaces, and work naming (checks A-Z). Exit 1 on any error; warnings never fail the build.
+summary: Stdlib-only, 3.6-safe enforcement of CONVENTIONS.md — labeling, taxonomy, package boundaries, tool/agent governance, manifest and ruleset parity, twin parity, the machine-readable module contract, Makefile help parity, cross-reference resolution, check-catalogue parity, rosters, practice mechanisms, policy reachability, writer rerun declarations, make-target effect labels, child-process environments, ADR number spaces, and work naming (checks A-Z), then the project's own checks: each top-level module in the directory config/project.json structure.project_checks names (a key the template never ships), whose check(root) findings, returned or reported through err()/warn(), are reported as project:<stem> and whose every failure, a module name that is not a readable file included, is an error naming it (docs/adr/keel/K-0014-project-owned-structure-checks.md). Exit 1 on any error; warnings never fail the build.
 
 check_structure.py - enforce the project conventions (see CONVENTIONS.md).
 
@@ -13,7 +13,9 @@ Checks:
      declared in config/project.json structure.extra_toplevel; a declaration
      exists and is not redundant; every top-level dir and every agents/<name>/
      has README.md + CLAUDE.md. An undeclared symlinked dir WARNs (no check
-     reads through a link)
+     reads through a link). structure.project_checks is absent, null or a
+     declared name, and a declared project-checks dir holds at least one
+     module
   C. Each src/ directory containing *.py is a package: __init__.py with __all__
   D. The __init__ boundary: no absolute import of another package's _private module
   E. Authored coverage (ERR): every __all__-exported symbol defined in-file
@@ -141,6 +143,7 @@ real `copier update` leaves.
 import argparse
 import ast
 import collections
+import importlib.util
 import io
 import json
 import os
@@ -158,6 +161,12 @@ if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 
 import child_env  # noqa: E402
+
+# Run as a script this module is `__main__`; a project check's `import
+# check_structure` must get THIS module (its live ROOT and helpers), not load a
+# second copy whose ROOT is the template checkout.
+if __name__ == "__main__":
+    sys.modules.setdefault("check_structure", sys.modules[__name__])
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # The checkout this module ships in. ROOT is rebound by run_checks; main()'s
@@ -272,6 +281,9 @@ WRITER_ROOTS = [r for r in CODE_ROOTS if r != "tests"]
 errors = []
 warnings = []
 GOVERNED = []  # (relpath, kind, owner) for frontmatter docs check_A validated
+# The directory structure.project_checks names, once check_B has accepted it
+# (None when off or invalid); reset by run_checks, read by _project_findings.
+_PROJECT_CHECKS = None
 
 
 def err(msg):
@@ -492,6 +504,65 @@ def _declared_toplevel():
     return accepted
 
 
+def _project_check_files(dirname):
+    """Sorted top-level `*.py` names in ROOT/dirname: what a project-checks
+    directory runs. A dot-file, a subdirectory and anything that is not `.py`
+    are not check modules, so a helper lives in a subdirectory a check imports
+    by path. Any other `*.py` name is one, a dangling symlink included, so the
+    run names it as an error instead of dropping that check without a word."""
+    full = os.path.join(ROOT, dirname)
+    return sorted(
+        name
+        for name in os.listdir(full)
+        if name.endswith(".py")
+        and not name.startswith(".")
+        and not os.path.isdir(os.path.join(full, name))
+    )
+
+
+def _project_checks_dir(declared):
+    """The directory config/project.json `structure.project_checks` names, or
+    None: absent or null is off and silent. Any other value must be a name
+    *declared* in `structure.extra_toplevel`, which reuses check_B's guarantees
+    for it (top level, outside the taxonomy, labelled, so the template never
+    ships a file there); an ERROR otherwise. A declared directory that holds no
+    check module is an ERROR too: a pass over zero modules checks nothing. A
+    declared directory that does not exist is check_B's own error, not
+    repeated here."""
+    manifest = _read_json_config(os.path.join("config", "project.json"))
+    if not isinstance(manifest, dict):
+        return None
+    structure = manifest.get("structure")
+    if not isinstance(structure, dict):
+        return None
+    value = structure.get("project_checks")
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value:
+        err(
+            "config/project.json: structure.project_checks %r is not a directory "
+            "name; set it to null or to a name in structure.extra_toplevel "
+            "(ADR-K-0014)" % (value,)
+        )
+        return None
+    if value not in declared:
+        err(
+            "config/project.json: structure.project_checks '%s' is not declared in "
+            "structure.extra_toplevel; declare it there, with a README.md and "
+            "CLAUDE.md, or set it to null (ADR-K-0014)" % value
+        )
+        return None
+    if not os.path.isdir(os.path.join(ROOT, value)):
+        return None
+    if not _project_check_files(value):
+        err(
+            "config/project.json: structure.project_checks '%s/' declares no check "
+            "module; add one or set it to null" % value
+        )
+        return None
+    return value
+
+
 def _require_labels(relpath, why=""):
     """ERROR for each of README.md / CLAUDE.md missing from ROOT/relpath."""
     for need in ("README.md", "CLAUDE.md"):
@@ -507,7 +578,9 @@ def check_B():
     for d in REQUIRED_TOPLEVEL:
         if not os.path.isdir(os.path.join(ROOT, d)):
             err("required top-level dir '%s/' is missing" % d)
+    global _PROJECT_CHECKS
     declared = _declared_toplevel()
+    _PROJECT_CHECKS = _project_checks_dir(declared)
     for d in TAXONOMY:
         if os.path.isdir(os.path.join(ROOT, d)):
             _require_labels(d)
@@ -6616,20 +6689,203 @@ JSON_CONFIGS = (
 )
 
 
-def run_checks(root):
+# --- the project's own checks (structure.project_checks, ADR-K-0014) ----------
+#
+# A generated project adds a check as a module in a directory it owns, never as
+# an edit to this file, which `copier update` would then conflict on in the very
+# module the update's restamp imports. The modules are project code run in this
+# process, with the same trust as its Makefile: not a sandbox. They can only
+# add findings: run_checks has built the template's findings before the first
+# one loads, each runs against fresh errors/warnings lists whose entries are its
+# own findings, and no knob here waives a template check.
+
+_PROJECT_TIERS = ("warning", "error")
+
+
+def _conflict_line(text):
+    """The line of the first complete merge-conflict hunk in *text*, or None.
+    scripts/jobs/conflict_guard.py's grammar, restated because this gate
+    imports nothing from scripts/jobs/: an opening marker line, then a
+    separator line, then a closing marker line (labels allowed on the outer
+    two). Spelled as repetitions so this file holds no marker text."""
+    opening, split, closing = "<" * 7, "=" * 7, ">" * 7
+    opened, seen_split = None, False
+    for lineno, line in enumerate(text.splitlines(), 1):
+        body = line.rstrip("\r\n")
+        if body == opening or body.startswith(opening + " "):
+            opened, seen_split = lineno, False
+        elif opened is not None and not seen_split and body == split:
+            seen_split = True
+        elif seen_split and (body == closing or body.startswith(closing + " ")):
+            return opened
+    return None
+
+
+def _short(value):
+    text = repr(value)
+    return text if len(text) <= 80 else text[:77] + "..."
+
+
+def _project_pairs(result):
+    """(warnings, errors): the messages a check's return value carries, sorted
+    within each tier, a malformed value or item turned into an error message.
+    The contract is an iterable of (tier, message) pairs, tier in
+    _PROJECT_TIERS and message a non-empty str; iterating may raise, and the
+    caller treats that as the check raising."""
+    if isinstance(result, (str, bytes)) or not hasattr(result, "__iter__"):
+        return [], [
+            "check returned %s, want an iterable of (tier, message) pairs"
+            % _short(result)
+        ]
+    found = {"warning": [], "error": []}
+    for item in result:
+        if (
+            isinstance(item, (tuple, list))
+            and len(item) == 2
+            and item[0] in _PROJECT_TIERS
+            and isinstance(item[1], str)
+            and item[1]
+        ):
+            found[item[0]].append(item[1])
+        else:
+            found["error"].append(
+                "check returned the item %s, want (tier, message) with tier one of "
+                "%s and a non-empty str message" % (_short(item), _PROJECT_TIERS)
+            )
+    return sorted(found["warning"]), sorted(found["error"])
+
+
+def _run_project_check(path, modname):
+    """(warnings, errors) from one project check module at *path*, every
+    failure an error: the file cannot be read or decoded, holds a conflict hunk
+    (never executed), does not compile, raises or exits while loading, has no
+    callable `check`, or `check(ROOT)` raises, exits or returns a malformed
+    value. The module runs from the bytes read here (no second read, no
+    __pycache__ written into the project) under *modname*, and is never put in
+    sys.modules, so each run loads it afresh. A name that is not a regular
+    file (a dangling symlink, a device) is an error, never opened."""
+    if not os.path.isfile(path):
+        if os.path.islink(path):
+            return [], ["is a symlink whose target is missing (%s)" % os.readlink(path)]
+        return [], ["is not a regular file"]
+    try:
+        with open(path, "rb") as fh:
+            raw = fh.read()
+    except OSError as exc:
+        return [], ["cannot read (%s)" % (exc.strerror or exc)]
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        return [], ["is not UTF-8 (%s)" % exc]
+    line = _conflict_line(text)
+    if line is not None:
+        return [], [
+            "conflict markers at line %d; resolve before the check can load" % line
+        ]
+    try:
+        code = compile(text, path, "exec", dont_inherit=True)
+    except SyntaxError as exc:
+        return [], ["SyntaxError at line %s: %s" % (exc.lineno, exc.msg)]
+    except ValueError as exc:  # source with a NUL byte
+        return [], ["does not compile (%s)" % exc]
+    spec = importlib.util.spec_from_file_location(modname, path)
+    module = importlib.util.module_from_spec(spec)
+    stage = "loading the module"
+    try:
+        exec(code, module.__dict__)
+        check = getattr(module, "check", None)
+        if not callable(check):
+            return [], [
+                "has no callable check(root); define one returning (tier, message) "
+                "pairs"
+            ]
+        stage = "check(root)"
+        return _project_pairs(check(ROOT))
+    # SystemExit too: a check calling sys.exit(0) must not end the gate green.
+    except (Exception, SystemExit) as exc:  # noqa: BLE001 — any raise is an ERROR naming it
+        return [], ["%s raised %s: %s" % (stage, type(exc).__name__, exc)]
+
+
+def _reported(name, value):
+    """(messages, errors): what a project module left in the gate's *name* list
+    (`errors` or `warnings`) through err()/warn(), or an error when it left
+    something that is not a list there."""
+    if isinstance(value, list):
+        return ["%s" % (m,) for m in value], []
+    return [], [
+        "left check_structure.%s as %s, want a list; report through err()/warn() "
+        "or the return value" % (name, _short(value))
+    ]
+
+
+def _run_reporting_project_check(path, modname):
+    """_run_project_check's (warnings, errors), plus what the module reported
+    through the gate's own err()/warn(), each tier sorted. The module runs
+    against fresh `errors`/`warnings` lists, so each of its appends is its own
+    finding and nothing it does to the lists reaches the template's, which are
+    put back afterwards."""
+    global errors, warnings
+    kept_errors, kept_warnings = errors, warnings
+    errors, warnings = [], []
+    try:
+        warns, errs = _run_project_check(path, modname)
+    finally:
+        left_errors, left_warnings = errors, warnings
+        errors, warnings = kept_errors, kept_warnings
+    more_warns, bad_warns = _reported("warnings", left_warnings)
+    more_errs, bad_errs = _reported("errors", left_errors)
+    return (
+        sorted(warns + more_warns),
+        sorted(errs + more_errs + bad_warns + bad_errs),
+    )
+
+
+def _project_findings():
+    """(letter, tier, message) for each finding of each module in the directory
+    check_B accepted, modules in sorted filename order, each module's warnings
+    before its errors. A finding is what the module returns or reports through
+    err()/warn(). The letter is `project:<stem>` and each message opens with
+    the module's root-relative path."""
+    dirname = _PROJECT_CHECKS
+    if dirname is None or not os.path.isdir(os.path.join(ROOT, dirname)):
+        return []
+    found = []
+    for n, name in enumerate(_project_check_files(dirname)):
+        stem = name[: -len(".py")]
+        relpath = "%s/%s" % (dirname, name)
+        modname = "keel_project_check_%d_%s" % (n, re.sub(r"\W", "_", stem))
+        warns, errs = _run_reporting_project_check(
+            os.path.join(ROOT, dirname, name), modname
+        )
+        letter = "project:" + stem
+        found.extend((letter, "warning", "%s: %s" % (relpath, m)) for m in warns)
+        found.extend((letter, "error", "%s: %s" % (relpath, m)) for m in errs)
+    return found
+
+
+def run_checks(root, project_checks=True):
     """Every check in CHECKS against the tree at *root*, as a list of
-    (letter, "error" | "warning", message) in emission order. Prints nothing.
+    (letter, "error" | "warning", message) in emission order, then, unless
+    *project_checks* is False, the findings of the project's own checks
+    (letter `project:<stem>`). Prints nothing.
 
     Resets the state a run accumulates (errors, warnings, GOVERNED, the config
-    memo and the reported-unreadable set), so two runs in one process share
-    nothing."""
+    memo, the reported-unreadable set and the accepted project-checks
+    directory), so two runs in one process share nothing. The template's
+    findings are complete before the first project module loads, and each
+    module runs against fresh `errors`/`warnings` lists, so a project check that
+    empties them hides nothing and what it reports through err()/warn() is its
+    own finding. scripts/audit_project.py passes
+    False: a project check is the audited project's code."""
     global ROOT, errors, warnings, GOVERNED, _CONFIG_READ, _READ_REPORTED
+    global _PROJECT_CHECKS
     ROOT = os.path.abspath(root)
     errors = []
     warnings = []
     GOVERNED = []
     _CONFIG_READ = {}
     _READ_REPORTED = set()
+    _PROJECT_CHECKS = None
     found = []
     for letter, check in CHECKS:
         n_err, n_warn = len(errors), len(warnings)
@@ -6638,6 +6894,8 @@ def run_checks(root):
         # but no consumer reads the order across tiers, only within one.
         found.extend((letter, "warning", m) for m in warnings[n_warn:])
         found.extend((letter, "error", m) for m in errors[n_err:])
+    if project_checks:
+        found.extend(_project_findings())
     return found
 
 

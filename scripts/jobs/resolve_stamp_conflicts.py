@@ -3,7 +3,7 @@
 title: resolve_stamp_conflicts — resolves a copier conflict whose only hunk is a document's updated: stamp
 kind: script
 layer: n/a
-summary: Copier's `after` migration on update, run after every other migration but before the restamp, which stays last. copier's inline update leaves a document conflicted when the project and the template both moved its frontmatter `updated:` value since the project's `_commit` (projects generated before every render was fresh on arrival, and renders that straddled midnight with no SOURCE_DATE_EPOCH: 95 of bedrock-platform's 111 conflicts, measured). `updated:` means touched and both sides touched it, so such a conflict has one right answer: the later date. This job reads `git ls-files -u` (through review_docs' `git_argv`) and, for each unmerged `*.md` path that is a regular file with a project stage (2) and a template stage (3), hands its bytes to `resolve_stamp_conflict`. That resolves only when copier's markers (read with any label) make exactly one hunk, each side of it is one line, that line is the frontmatter `updated:` value on both sides as review_docs' `updated_span` reads it, the two sides differ in nothing else, and both values are real calendar dates; the diff3 base section is ignored. The file is then written atomically (mode kept) as the project's text with the later date, and one `git update-index --index-info` puts its index entry back to stage 0 at stage 2's mode and sha, so it shows as a cleanly merged ` M` file. Every other unmerged path keeps its bytes and its stages and is named on stderr with a reason from the closed vocabulary `REASONS`; a file that is not unmerged is never opened. Exit 0 when every unmerged path was resolved or left with a reason, 2 on a git or write failure. It does not import check_structure, whose copy in a project mid-update may itself be conflicted.
+summary: Copier's `after` migration on update, run after every other migration but before the restamp, which stays last. copier's inline update leaves a document conflicted when the project and the template both moved its frontmatter `updated:` value since the project's `_commit` (projects generated before every render was fresh on arrival, and renders that straddled midnight with no SOURCE_DATE_EPOCH: 95 of bedrock-platform's 111 conflicts, measured). `updated:` means touched and both sides touched it, so such a conflict has one right answer: the later date. This job reads `git ls-files -u` (through review_docs' `git_argv`) and, for each unmerged `*.md` path that is a regular file with a project stage (2) and a template stage (3), hands its bytes to `resolve_stamp_conflict`. That resolves only when copier's markers (read with any label) make exactly one hunk, each side of it is one line, that line is the frontmatter `updated:` value on both sides as review_docs' `updated_span` reads it, the two sides differ in nothing else, and both values are real calendar dates; the diff3 base section is ignored. The file is then written atomically (mode kept) as the project's text with the later date, and one `git update-index --index-info` puts its index entry back to stage 0 at stage 2's mode and sha, so it shows as a cleanly merged ` M` file. Every other unmerged path keeps its bytes and its stages and is named on stderr with a reason from the closed vocabulary `REASONS`; a file that is not unmerged is never opened. Exit 0 when every unmerged path was resolved or left with a reason, 2 on a git or write failure. It does not import check_structure, whose copy in a project mid-update may itself be conflicted, and before importing review_docs it asks scripts/jobs/conflict_guard.py whether a module it imports holds a hunk: if one does, it names the files and the rerun command and exits 2.
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/integration/test_stamp_conflicts.py
@@ -30,6 +30,21 @@ for _dir in (_JOBS, _SCRIPTS):
 # restamp_docs.py sets the same flag). Only when run as a script.
 if __name__ == "__main__":
     sys.dont_write_bytecode = True
+
+import conflict_guard  # noqa: E402
+
+# Before every import below: copier runs this in a project mid-update,
+# where a module it imports may hold conflict markers, and that import
+# would die on a SyntaxError traceback naming neither the file nor the
+# remedy. Only when run as a script: an importer's imports are its own.
+if __name__ == "__main__":
+    conflict_guard.exit_if_conflicted(
+        __file__,
+        os.path.dirname(_SCRIPTS),
+        "resolve_stamp_conflicts",
+        conflict_guard.rerun_command(__file__, os.path.dirname(_SCRIPTS), sys.argv[1:]),
+        search_path=(_JOBS, _SCRIPTS),
+    )
 
 import child_env  # noqa: E402
 import review_docs  # noqa: E402
@@ -69,15 +84,12 @@ NOT_A_FILE = "not a regular file"
 SKIPS = (NOT_MARKDOWN, NO_PROJECT_SIDE, NO_TEMPLATE_SIDE, ABSENT, SYMLINK, NOT_A_FILE)
 REASONS = (RESOLVED,) + REFUSALS + SKIPS
 
-# `git merge-file` markers at its default size, any label (copier 9.x passes
-# "before updating" / "last update" / "after updating"; the rule does not
-# depend on them). Spelled as repetitions so this file holds no marker text:
-# a tree scan for leftover conflicts (test_copier_update.py's) reads it too.
-_MARKER_SIZE = 7
-_OPEN = "<" * _MARKER_SIZE
-_BASE = "|" * _MARKER_SIZE
-_SPLIT = "=" * _MARKER_SIZE
-_CLOSE = ">" * _MARKER_SIZE
+# `git merge-file` markers, any label: conflict_guard owns the grammar, so the
+# guard that refuses a conflicted import and this resolver read one marker set.
+_OPEN = conflict_guard.OPEN
+_BASE = conflict_guard.BASE
+_SPLIT = conflict_guard.SPLIT
+_CLOSE = conflict_guard.CLOSE
 _MD = ".md"
 _DATE_FORMAT = "%Y-%m-%d"
 _NULL_SHA = "0" * 40
@@ -87,12 +99,7 @@ class JobError(Exception):
     """git failed, or a resolved file could not be written."""
 
 
-def _marker(line, mark):
-    """True when *line* is *mark*, alone or followed by a space and a label."""
-    body = line.rstrip("\r\n")
-    if mark == _SPLIT:
-        return body == mark
-    return body == mark or body.startswith(mark + " ")
+_marker = conflict_guard.marker
 
 
 def _eol(line):

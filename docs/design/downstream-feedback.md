@@ -937,7 +937,7 @@ lands. The cap is five slices, each one commit on a green `make verify`.
 |-------|--------|--------|
 | CMP-3.S1 | `make smoke` passes over zero tests, and `make run` fails with `No module named app` | done — `make verify` green (1517 passed); 5 review findings confirmed and fixed |
 | CMP-3.S2 | A document whose only conflict on `copier update` is its `updated:` line is left conflicted for a person to resolve | done — `make verify` green (1562 passed); 1 of 2 review findings confirmed and fixed |
-| CMP-3.S3 | A project can add a check only by editing `scripts/check_structure.py`, so its next `copier update` conflicts in the module the restamp task imports | planned |
+| CMP-3.S3 | A project can add a check only by editing `scripts/check_structure.py`, so its next `copier update` conflicts in the module the restamp task imports | done — `make verify` green (1614 passed); 6 review findings confirmed and fixed; ADR-K-0014 proposed |
 | CMP-3.S4 | The `GIT_CONFIG_COUNT`/`GIT_CONFIG_PARAMETERS` variables reach a child, copier's own git calls bypass `build_child_env`, and a bare token or `Authorization` value is not recognised as a credential | planned |
 | CMP-3.S5 | — | free |
 
@@ -1052,6 +1052,117 @@ second run left the work tree, the index and its mtime byte-identical.
 - The restamp migration rewrites the project's stamp inside a document that
   still has a content conflict. Fixing that changes `restamp_docs.py` and
   belongs with CMP-3.S3.
+
+### Slice CMP-3.S3 — a project adds a check without editing the gate
+
+**Measured.** Both replicas had edited their copy of
+`scripts/check_structure.py`. bedrock-platform added its make-target effect
+rules (223 lines added, 13 removed). project-jarvis added a Markdown link
+check as `check_N`, widened the owner warning, ignored `.claude` and added
+`self` to the taxonomy (115 changed lines). The template later gave the letter
+N to twin parity. On a real `copier update`, that module conflicted on both
+replicas. Every `after` migration imports it, and the restamp migration died on
+a `SyntaxError` traceback (CMP-3.S2's residual risk).
+
+**Decision.** `config/project.json` `structure.project_checks` is absent or
+null (off), or names a directory already declared in
+`structure.extra_toplevel`. The template never ships the key, because one
+shipped beside `extra_toplevel` conflicted on update (the toy rows below). A
+project adds it when it adopts. check_structure runs each top-level `*.py`
+module there, in sorted order, after every lettered check, and reports each
+`(tier, message)` pair the module's `check(root)` returns, prefixed with
+`<dir>/<file>.py`. What the module reports through the gate's `err()` and
+`warn()` counts as its findings too. The template ships no file in that directory,
+so `copier update` never merges one. A project check only adds findings: the
+template's findings are collected first and there is no waiver key. Every
+failure of a project check is an error naming the module, including a load
+error, a conflicted module, a bad return value and a declared directory with no
+module, and a `*.py` name that is a dangling symlink.
+`scripts/jobs/conflict_guard.py` stops each of the four `after`
+migrations, with exit 2 and no traceback, when a module it imports holds
+conflict markers. It names each file and line and the command to rerun.
+`scripts/jobs/restamp_docs.py` skips a conflicted document and its twin and
+names each skip on stderr. `scripts/audit_project.py` never runs a project's
+checks, and lists them under what it does not check.
+`docs/adr/keel/K-0014-project-owned-structure-checks.md` is the decision.
+
+**Trajectory.** Each row is a real `copier update --vcs-ref HEAD` of a scratch
+copy, against a snapshot of this tree.
+
+| Rehearsal | Exit | Unmerged | `scripts/check_structure.py` | What stops it |
+|-----------|------|----------|----------------------|---------------|
+| bedrock-platform, CMP-3.S2 | 1 | 16 | conflicted | restamp `SyntaxError` traceback |
+| bedrock-platform, edits kept | 1 | 16 | conflicted | restamp guard, exit 2, 5 hunks named |
+| bedrock-platform, checks adopted first, block appended | 0 | 15 | merged | nothing |
+| bedrock-platform, gate restored first, checks after | 0 | 15 | merged | nothing |
+| project-jarvis, CMP-3.S2 | 1 | 54 | conflicted | restamp `SyntaxError` traceback |
+| project-jarvis, edits kept | 1 | 54 | conflicted | restamp guard, exit 2, 4 hunks named |
+| project-jarvis, checks adopted first, block appended | 0 | 53 | merged | nothing |
+| project-jarvis, gate restored first, checks after | 0 | 53 | merged | nothing |
+| either replica, `structure` block inserted after `name` | 1 | 111 | merged | `keep_edited_retired` exits 2 on the conflicted `config/project.json` |
+| toy project with a declared directory, key shipped as null (first draft) | 1 | 1 | merged | `keep_edited_retired` exits 2 on the conflicted `config/project.json` |
+| toy project with a declared directory, key not shipped | 0 | 0 | merged | nothing |
+| bedrock-platform, gate restored first, key added after the update | 0 | 15 | merged | nothing |
+
+In the adopted copies, bedrock-platform's `checks/guarded_write.py` (a recipe
+that opens with `$(WRITE_GUARD)` is labelled `[write]`) reported a planted
+target and nothing once it was removed. project-jarvis's `checks/doc_owner.py`
+reported 23 warnings. Two gate runs printed byte-identical output, and two
+restamp runs left the work tree and the index byte-identical, skipping 7 and 17
+conflicted documents. `tests/integration/test_copier_project_checks.py` runs
+the same two shapes on a toy project.
+
+In the last bedrock-platform row the project added `"project_checks":
+"checks"` beside the `extra_toplevel` the update brought. A planted mislabelled
+target was reported as `checks/guarded_write.py`, and the gate reported nothing
+from it once the target was removed.
+
+**Proof.** Nineteen mutations each turned a named test red, and each file was
+restored byte-identical. They covered running the project checks before the
+template's, letting a `SystemExit` through, accepting an empty directory,
+skipping the marker scan, dropping the `__main__` alias, skipping the restamp
+guard, not asking git for unmerged paths, skipping the restamp marker scan,
+returning from `exit_if_conflicted`, not following imports, running the
+checks in either audit mode, dropping what a check reported through `err()` or
+`warn()`, accepting a non-list left in their place, skipping a dangling
+symlink, opening a name that is not a regular file, letting the restamp's
+`ChildEnvError` through in either mode, and shipping the key as null.
+
+**Adoption.** Restore `scripts/check_structure.py` to the template's version,
+then move each rule into a module under `checks/`. Fill the `structure` block
+the update brings, and add `"project_checks": "checks"` beside its
+`extra_toplevel`, rather than adding a block: a block inserted where the template
+inserts its own conflicts in `config/project.json`, and that conflict stops the
+first migration. A block added at the end merges, but leaves two `structure`
+keys, and the gate reads the last one without saying so. A rule the template
+now enforces belongs in no project check: project-jarvis's link check reported
+the same planted link the template's own check did.
+
+**Residual risk.**
+- A project check is trusted code that runs inside the gate. It is not a
+  sandbox.
+- The `checks/` directory sits outside the module-header, export and rerun
+  checks (O, E and V), which cover the code roots only.
+- A document that quotes a whole conflict hunk is never restamped. This tree has
+  none.
+- `conflict_guard` covers Python imports only. A conflicted
+  `config/project.json` still stops `keep_edited_retired` with exit 2, naming
+  the manifest but no rerun command. `scripts/jobs/restamp_docs.py` run by hand
+  then names the hunk's line and `make restamp-docs`, exit 2.
+- The template's `structure` block is two lines beside the one every adopting
+  project edits. A later template edit to its `_comment` conflicts in
+  `config/project.json` for each of them. That was already true of every
+  project that declared a directory in `structure.extra_toplevel`.
+- Not every edit can move: project-jarvis's `.claude` ignore has no config key,
+  and its `examples` directory also needs `structure.extra_toplevel`.
+
+**Queued.**
+- Upstream the converse `[write]` rule into check_W, so bedrock-platform can
+  drop `checks/guarded_write.py`.
+- A config key for directories the walk ignores, for project-jarvis's `.claude`.
+- Reject a duplicate key in `config/project.json`.
+- Extend the guard to a conflicted `config/project.json` in
+  `keep_edited_retired` and `declare_no_app`, naming the rerun.
 
 ## CMP-4 — keel enforces what it claims, and emits evidence jarvis can read
 

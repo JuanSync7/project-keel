@@ -642,7 +642,9 @@ def test_each_group_is_sorted_by_tier_then_message(
         ("B", "warning", "a-warn"),
         ("B", "error", "a-err"),
     ]
-    monkeypatch.setattr(ap.check_structure, "run_checks", lambda root: list(emitted))
+    monkeypatch.setattr(
+        ap.check_structure, "run_checks", lambda root, **_kw: list(emitted)
+    )
     _code, out, _err = _run([str(dest), "--today", TODAY, "--json"], capsys)
     b = [(f["tier"], f["message"]) for f in json.loads(out)["groups"]["B"]]
     assert b == [
@@ -1127,6 +1129,42 @@ def test_dest_code_is_never_imported_or_run(tmp_path, template, capsys):
         for root in roots:
             assert not path.startswith(root + os.sep), path
     assert _scratch_left(tmp_path) == []
+
+
+@pytest.mark.parametrize("with_base", [False, True], ids=["as-it-stands", "predicted"])
+def test_audit_never_runs_dest_project_checks(tmp_path, template, capsys, with_base):
+    """DEST's `structure.project_checks` modules are DEST code: the audit runs
+    the template's lettered checks only, on DEST as it stands and on the copy
+    an update leaves, and names what it did not run."""
+    manifest = {
+        "name": "demo",
+        "structure": {"extra_toplevel": ["checks"], "project_checks": "checks"},
+    }
+    if with_base:
+        sha = _template_commits(template, {"config/project.json.jinja": _TWIN}, {})
+        dest = _generated(tmp_path, template, sha)
+        (dest / "config" / "project.json").write_text(
+            json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
+        )
+    else:
+        dest = _dest(tmp_path, template, manifest=manifest)
+    _label(dest, "checks")
+    sentinel = tmp_path / "sentinel"
+    (dest / "checks" / "x.py").write_text(
+        "open(%r, 'w').close()\n\ndef check(root):\n    return [('error', 'x')]\n"
+        % str(sentinel),
+        encoding="utf-8",
+    )
+    _commit_dest(dest)
+
+    code, out, err = _run([str(dest), "--today", TODAY, "--json"], capsys)
+
+    assert code in (0, 1), err
+    report = json.loads(out)
+    assert not sentinel.exists()
+    assert not [g for g in report["groups"] if g.startswith("project:")]
+    items = [i["item"] for i in report["not_checked"]]
+    assert any("structure.project_checks" in item for item in items), items
 
 
 def test_dest_config_is_never_written(tmp_path, template, capsys):
