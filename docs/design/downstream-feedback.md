@@ -8,7 +8,7 @@ tags: [plan, template, downstream, freshness, taxonomy, effects, credentials, au
 summary: The bounded-convergence record for the defects bedrock-platform, the first real project generated from keel, reported back — a red gate on arrival, unknown directories the gate never sees, make targets whose effect nobody declares, and child processes that inherit every credential — plus the command that checks any keel-generated project for all of them. One slice per defect, five passes, each landed as one commit on a green `make verify`.
 id: docs-design-downstream-feedback
 created: 2026-10-06
-updated: 2026-10-07
+updated: 2026-10-08
 visibility: internal
 canonical: true
 ---
@@ -20,15 +20,22 @@ Each was reproduced in keel before it was accepted. This document is the worklis
 the status table is authoritative, the per-slice notes record the measurement and
 the decision.
 
-## Status
+Work here is named as CONVENTIONS §20 sets out, and check_Z in
+`scripts/check_structure.py` holds every table and mention below to it: a
+campaign is `CMP-<n>`, a slice is `CMP-<n>.S<m>`, and a pass is counted, never
+named. Campaign 1's slices were numbered 1 to 5 and Campaign 2's C2-1 to C2-5
+until CMP-2.S4 renamed them in place; a commit message from before then keeps
+the old form.
+
+## CMP-1 — the five defects bedrock-platform reported
 
 | Slice | Defect | Status |
 |-------|--------|--------|
-| 1 | A generated project fails its own doc-freshness test on arrival | done — `make verify` green (776 passed); ADR-0010 accepted |
-| 2 | An unknown directory is invisible to the structure gate | done — `make verify` green (807 passed) |
-| 3 | A make target's effect is declared nowhere, so a "check" can write | done — `make verify` green (987 passed); ADR-0011 accepted |
-| 4 | Every child process inherits every credential in the environment | done — `make verify` green (1124 passed); ADR-0012 accepted |
-| 5 | No command checks an existing keel project for slices 1–4 | done — `make verify` green (1178 passed); 7 of 8 review findings confirmed and fixed |
+| CMP-1.S1 | A generated project fails its own doc-freshness test on arrival | done — `make verify` green (776 passed); ADR-0010 accepted |
+| CMP-1.S2 | An unknown directory is invisible to the structure gate | done — `make verify` green (807 passed) |
+| CMP-1.S3 | A make target's effect is declared nowhere, so a "check" can write | done — `make verify` green (987 passed); ADR-0011 accepted |
+| CMP-1.S4 | Every child process inherits every credential in the environment | done — `make verify` green (1124 passed); ADR-0012 accepted |
+| CMP-1.S5 | No command checks an existing keel project for CMP-1.S1 to CMP-1.S4 | done — `make verify` green (1178 passed); 7 of 8 review findings confirmed and fixed |
 
 The cap is these five passes. A concern found mid-slice is queued at the end of
 this document, not started.
@@ -43,7 +50,7 @@ this document, not started.
 - Every writer a slice adds is declared to check_V and proven to reach its fixed
   point (`docs/guides/idempotency.md`).
 
-## Slice 1 — freshness on arrival
+## Slice CMP-1.S1 — freshness on arrival
 
 **Measured.** Keel's 31 governed documents, committed once into a fresh
 repository, are 31 of 31 stale under `tests/integration/test_doc_freshness.py`:
@@ -78,7 +85,7 @@ below its repository's top is judged on its own documents. Each shape has a case
 in the files above, and `tests/integration/test_copier_generator_contract.py`
 holds every copier invocation of the writer to one argument list.
 
-## Slice 2 — the directory taxonomy is closed
+## Slice CMP-1.S2 — the directory taxonomy is closed
 
 **Measured.** `check_B` labelled only directories named in its own `TAXONOMY`
 list, so a `parked/` at the root passed with zero errors, in keel and in a
@@ -134,7 +141,7 @@ against the new one. Nine mutations of the new `check_B` each turned at least
 one unit test red. Keel's own gate reports 0 errors and one WARN, for
 `project-keel/`.
 
-## Slice 3 — every make target declares its effect
+## Slice CMP-1.S3 — every make target declares its effect
 
 **Measured.** `scripts/run_make_target.py` validated a target's spelling, not its
 effect, and said so. bedrock-platform added effect labels (its
@@ -164,7 +171,7 @@ reach, so the runner and the check close labels the same way
 `make_targets`, so a project names its own unattended variables, write shapes
 and area directory. The ADR is `docs/adr/keel/K-0011-make-target-effect-labels.md`,
 status proposed. It took keel's next free number, which collided with
-nothing in bedrock-platform then; slice C2-5 moved it into the template's own
+nothing in bedrock-platform then; CMP-2.S5 moved it into the template's own
 number space as ADR-K-0011.
 
 **Built.** `scripts/check_structure.py` `check_W` with `parse_effect_labels`,
@@ -211,7 +218,7 @@ variables, and a test runs its attended cases through the runner. The CHANGELOG
 now tells a project to re-audit its `[local]` labels, and CONVENTIONS §7, the
 CHANGELOG and the ADR say a label is one bracket of one or more words.
 
-## Slice 4 — child processes get an allowlisted environment
+## Slice CMP-1.S4 — child processes get an allowlisted environment
 
 **Measured.** No spawn in keel passed `env=`. check_X, run over the tree before
 conversion, reports 11 spawn calls in 10 modules: the model adapter
@@ -267,7 +274,7 @@ adapter that is not in `models.available` is an error;
 `test_deleting_a_manifest_declared_dir_is_caught_and_the_documented_fix_works`
 follows the recipe as written.
 
-## Slice 5 — audit an existing keel project
+## Slice CMP-1.S5 — audit an existing keel project
 
 **Measured.** On git 2.43.5, `git diff HEAD`, plain `git status` and
 `git describe --dirty` each rewrite `.git/index` when a stat refresh is due, and
@@ -275,7 +282,7 @@ follows the recipe as written.
 `ls-files`, `log` and `rev-parse` leave the index alone. Before this slice,
 `review_docs` and `restamp_docs --check` listed modified files with
 `git diff HEAD`, so a read-only freshness check wrote into the project it judged.
-A dry run of slices 1–4's checks over bedrock-platform, before the config merge
+A dry run of the CMP-1.S1 to CMP-1.S4 checks over bedrock-platform, before the config merge
 was built, gave B 1 error, F 6 warnings, V 9 warnings, W 1 error and X 18 errors.
 
 **Decision.** `make audit-project DEST=<path>`, backed by
@@ -312,8 +319,8 @@ does not run. `CONVENTIONS.md`, `AGENT.md` and `config/practices.json` need no
 change: the audit adds no rule, only a way to run the existing ones elsewhere.
 
 **Built.** `scripts/audit_project.py`; `--root PATH` and
-`run_checks(root, config_overrides)` in `scripts/check_structure.py` (slice
-C2-3 removed `config_overrides`, which only the in-memory merge used);
+`run_checks(root, config_overrides)` in `scripts/check_structure.py` (CMP-2.S3
+removed `config_overrides`, which only the in-memory merge used);
 `modified_paths` in `scripts/jobs/review_docs.py` (`status` plus `ls-files`)
 and `git_argv`, which builds every git call of the audit and both doc jobs with
 `--no-optional-locks` and fsmonitor, signature verification and each configured
@@ -371,8 +378,8 @@ Found during the slices and deliberately not started:
 
 - **ADR numbers collide downstream.** Keel's ADR-0010 and bedrock-platform's own
   ADR-0010 share a number, so `copier update` would bring keel's in beside it.
-  Template ADRs and project ADRs need separate number spaces; slice 3's ADR
-  must not deepen the collision. Fixed by slice C2-5.
+  Template ADRs and project ADRs need separate number spaces; CMP-1.S3's ADR
+  must not deepen the collision. Fixed by CMP-2.S5.
 - **`review_docs` path forms in a nested repository.** Porcelain paths and
   `ls-files` paths can disagree when the project is below its repository's top.
 - **`_SKIP_DIRS` and the `_git` helper are duplicated** between
@@ -391,19 +398,19 @@ Found during the slices and deliberately not started:
   import path.
 - **`make smoke` exits 5** because it selects no tests today, so the sweep skips
   it by reason instead of proving it.
-- **ADR numbers.** Slice 3's ADR took keel's next free number, 0011; the queued
+- **ADR numbers.** CMP-1.S3's ADR took keel's next free number, 0011; the queued
   number-space item above still decides how template and project ADRs coexist.
-  Fixed by slice C2-5.
+  Fixed by CMP-2.S5.
 - **`api/grpc/Makefile` is outside the walk.** `check_W` and `check_P` follow
   `include` from the root `Makefile`, so a transport's own makefile, run with
   `make -C`, carries no labels and no guard check.
 - **An untagged template skips `_migrations`**, including the update restamp.
-  Slice C2-5 measured the opposite for an untagged `_commit` on copier 9.17:
+  CMP-2.S5 measured the opposite for an untagged `_commit` on copier 9.17:
   dunamai versions project-jarvis's `72fd224` `0.0.0.post17.dev0+72fd224`, and
   its update ran every migration.
 - **Nothing pins `TAXONOMY` to the CONVENTIONS §2 table.** The list in
   `scripts/check_structure.py` and the table are kept in step by hand, and since
-  slice 2 a drift between them is an error source. A parity check or test should
+  CMP-1.S2 a drift between them is an error source. A parity check or test should
   read one from the other.
 - **make can ignore errors outside a recipe line's prefix.** A `.IGNORE:` special
   target, or `-i` in a `MAKEFLAGS` set in the environment rather than through
@@ -438,7 +445,7 @@ Found during the slices and deliberately not started:
   interpreter.
 - **A proxy URL can embed credentials** (`https://user:pass@proxy`); the proxy
   names are allowlisted, so such a value still reaches every child. Fixed by
-  slice C2-2.
+  CMP-2.S2.
 - **`BASH_FUNC_*` and `PYTHONPATH` are not passed.** Environment Modules export
   shell functions that way; a caller that needs one passes it with `extra=`.
 - **A child can read its parent's environment** from `/proc/$PPID/environ`
@@ -449,13 +456,13 @@ Found during the slices and deliberately not started:
   `git diff HEAD`, which omits untracked files, so this slice's new
   `scripts/child_env.py` was absent from every clone and 24 tests failed on
   `ModuleNotFoundError: No module named 'child_env'`. `git add -N` on the new
-  files fixed it. Slice 5 hit it again: the tracked `scripts/README.md` and
+  files fixed it. CMP-1.S5 hit it again: the tracked `scripts/README.md` and
   `config/project.json` named the untracked `audit_project.py` and
   `scripts/README.md.jinja`, so check_structure failed in every clone (three
   update tests and the effect sweep), and `git add -N` fixed it again. The
   harness could refuse to run while a non-ignored file under the template is
   untracked, so the failure names its cause. The same
-  `git diff HEAD` rewrites keel's own `.git/index` on every run (slice 5's
+  `git diff HEAD` rewrites keel's own `.git/index` on every run (CMP-1.S5's
   measurement); `review_docs.modified_paths` is the read-only replacement.
 - **check_N caps its report at five lines** with `[:5]` and says nothing about
   the rest; the audit names the cap, but the check should print the count.
@@ -466,7 +473,7 @@ Found during the slices and deliberately not started:
   `template-rendered` W error). Origin is per file, so this mixed view (a
   rendered manifest against a `template-unedited` Makefile) is owed, and it is
   the one owed error a pristine `7f0a68b` project still reports. Fixed by
-  slice C2-3.
+  CMP-2.S3.
 - **A filtered file with stale stat data reads as modified.** The audit and the
   doc jobs switch off DEST's filter drivers, so git compares such a file (an LFS
   pointer, say) raw.
@@ -478,45 +485,45 @@ Found during the slices and deliberately not started:
   template carries but excluded reads as `template-edited`, not `project`.
 - **`child_env.names` passes `GIT_DIR`, `GIT_WORK_TREE` and `GIT_INDEX_FILE`**,
   so a git child of a process started with them set acts on that repository,
-  not on its own working directory. Fixed by slice C2-1.
+  not on its own working directory. Fixed by CMP-2.S1.
 - **A restamped doc reads as `template-edited`** after the update's migration,
   so origin overstates the project's edits there.
 - **`GIT_CONFIG`, `GIT_CONFIG_COUNT` and `GIT_CONFIG_PARAMETERS` reach a
-  child.** Slice C2-1 left them out of `repo_context_names` because they carry
+  child.** CMP-2.S1 left them out of `repo_context_names` because they carry
   configuration, not a repository. A hook still exports a `git -c` value
   through `GIT_CONFIG_PARAMETERS`, so a policy could refuse the three in
   `child_env.names` and hold them back by default.
 - **A git or make run that does not start through `build_child_env` keeps the
   hook's repository.** copier runs git through plumbum with its own environment,
   and a hook can start `make` directly rather than through the gate runner.
-  Slice C2-1 covers only processes started through the helper and the test
+  CMP-2.S1 covers only processes started through the helper and the test
   suite.
 
 ## Campaign result
 
-Slices 1–4 landed as `3bc2f8a`, `860b9e4`, `6cea98a` and `094dbca`, each on a
-green `make verify`. Slice 5 adds `make audit-project DEST=` on a green
+CMP-1.S1 to CMP-1.S4 landed as `3bc2f8a`, `860b9e4`, `6cea98a` and `094dbca`, each on a
+green `make verify`. CMP-1.S5 adds `make audit-project DEST=` on a green
 `make verify` (1178 passed).
 ADR-0010, ADR-0011 and ADR-0012 were accepted on 2026-10-06. Everything
 found along the way and not fixed is in Queued above.
 
-## Campaign 2 — the ranked queue
+## CMP-2 — the ranked queue
 
 The maintainer accepted ADR-0010, ADR-0011 and ADR-0012 on 2026-10-06 and asked
 for the Queued list above to be worked in risk order before bedrock-platform's
 next round of feedback. The cap is five slices, each one commit on a green
-`make verify`. v0.2.0 was tagged after slice C2-5, whose number-space move is the first
+`make verify`. v0.2.0 was tagged after CMP-2.S5, whose number-space move is the first
 breaking change to the generated-project contract (ADR-K-0013). A concern found mid-slice joins Queued.
 
 | Slice | Defect | Status |
 |-------|--------|--------|
-| C2-1 | A child inherits `GIT_DIR`/`GIT_WORK_TREE`/`GIT_INDEX_FILE`, so its git acts on the parent's repository | done — `make verify` green (1206 passed); 3 review findings confirmed and fixed |
-| C2-2 | A proxy URL with embedded credentials reaches every child | done — `make verify` green (1288 passed); 8 of 9 review findings confirmed and fixed |
-| C2-3 | The audit reads the `Makefile` and `config/practices.json` before the merge, so an old project reports a false W error | done — `make verify` green (1308 passed); 4 review findings confirmed and fixed |
-| C2-4 | `make smoke` passes over zero tests, and `make run` fails with `No module named app` | planned |
-| C2-5 | A downstream project's ADR numbers collide with the template's | done — `make verify` green (1356 passed); 6 of 7 review findings confirmed and fixed; ADR-K-0013 accepted 2026-10-07 by the maintainer |
+| CMP-2.S1 | A child inherits `GIT_DIR`/`GIT_WORK_TREE`/`GIT_INDEX_FILE`, so its git acts on the parent's repository | done — `make verify` green (1206 passed); 3 review findings confirmed and fixed |
+| CMP-2.S2 | A proxy URL with embedded credentials reaches every child | done — `make verify` green (1288 passed); 8 of 9 review findings confirmed and fixed |
+| CMP-2.S3 | The audit reads the `Makefile` and `config/practices.json` before the merge, so an old project reports a false W error | done — `make verify` green (1308 passed); 4 review findings confirmed and fixed |
+| CMP-2.S4 | A campaign, slice or pass has no fixed name, so a commit, a plan row and a ledger entry cannot name the same unit of work | done — `make verify` green (1436 passed); 7 review findings confirmed and fixed; replaced the `make smoke` slice, which moved to CMP-3 as CMP-3.S1 |
+| CMP-2.S5 | A downstream project's ADR numbers collide with the template's | done — `make verify` green (1356 passed); 6 of 7 review findings confirmed and fixed; ADR-K-0013 accepted 2026-10-07 by the maintainer |
 
-### Slice C2-1 — a child does not inherit the parent's repository
+### Slice CMP-2.S1 — a child does not inherit the parent's repository
 
 **Measured.** git 2.43.5 exports repository-location variables to a hook. A
 `pre-commit` hook in a plain checkout receives `GIT_INDEX_FILE` and
@@ -563,9 +570,9 @@ held back is still `repo_context_names`.
 
 **The audit.** This slice made `scripts/audit_project.py` merge a list of
 distinct strings that both sides edited item by item, as copier's line-level
-merge leaves an allowlist; slice C2-3 replaced that merge with copier's own
+merge leaves an allowlist; CMP-2.S3 replaced that merge with copier's own
 update, which the audit now runs and reads. Before this slice the list was
-atomic. A pre-C2-1 project that had
+atomic. A project from before CMP-2.S1 that had
 added its own `child_env.names` entry was then judged on its old list. The
 audit reported an owed X error for `GIT_DIR` and predicted a copier conflict,
 but the real `copier update` merged cleanly and `make check` was green.
@@ -581,7 +588,7 @@ them.
 git, run through plumbum, and a make recipe that a hook starts directly do
 not pass through `build_child_env`. Both are in Queued.
 
-### Slice C2-2 — a credential in an allowlisted value does not reach a child
+### Slice CMP-2.S2 — a credential in an allowlisted value does not reach a child
 
 **Measured.** Before the fix, with `HTTPS_PROXY=http://u:<password>@127.0.0.1:9`
 and `LC_X=https://tok@host` in the parent, `build_child_env` returned both
@@ -627,7 +634,7 @@ raises one `ChildEnvError` that names every such variable, sorted, and never
 quotes the value. The error carries no chained exception that could hold the
 value.
 
-**Config, not keyword.** C2-1's opt-in is a keyword because acting on the
+**Config, not keyword.** CMP-2.S1's opt-in is a keyword because acting on the
 parent's repository is one call site's decision. An authenticating proxy is a
 property of the site, and every child crosses it, so the opt-in is
 `config/project.json` `child_env.credentialed_values`: an optional object that
@@ -666,7 +673,7 @@ error.
   helper.
 - A same-user child can still read `/proc/$PPID/environ`.
 
-### Slice C2-3 — the audit judges the tree the update leaves
+### Slice CMP-2.S3 — the audit judges the tree the update leaves
 
 **Measured.** Before the fix, the audit merged the JSON configs in memory and
 read every other file as it stood in DEST. On a project generated at `7f0a68b`
@@ -719,7 +726,7 @@ conflicted module and stops on the conflict marker. A real `copier update` on
 an independent clone fails the same way (exit 1, same task, in 25 s) and leaves
 120 conflicted files, most of them `updated:` frontmatter lines. Two runs
 printed byte-identical stderr. The clone's tree, `.git` and index mtime were
-unchanged, and no `keel-audit-*` directory was left behind. Slice 5's count of
+unchanged, and no `keel-audit-*` directory was left behind. CMP-1.S5's count of
 17 owed errors cannot be compared, because the update itself does not complete.
 
 **Review fixes.** An independent review reproduced two defects, both fixed
@@ -758,7 +765,93 @@ test-first.
   is a directory or dangles. A submodule is not copied. Each is listed in "not
   checked".
 
-### Slice C2-5 — template and project ADRs live in separate number spaces
+### Slice CMP-2.S4 — campaigns and slices carry one checked name
+
+**Measured.** Before this slice, this document named the same units of work in
+four spellings: a bare number for the first campaign's slices ("Slice 1", 12
+uses), `C2-n` for the second (26 uses), `C3-n` and `C4-n` in the draft of the
+next two (17 uses), and "Campaign n" in prose (6 uses). keel's 67 commits carry
+no trailer that names a slice. project-jarvis's 343 commits carry none either,
+and jarvis already uses `C0` to `C8` for its risk classes, so a `C2-4` in a
+jarvis ledger reads as a risk class.
+
+**The rule.** CONVENTIONS §20. A campaign is `CMP-<n>` and a slice
+`CMP-<n>.S<m>`; a pass is counted against its cap, not named. A plan doc (a
+`kind: design` document with a `Slice` table) declares the ids, a commit that
+delivers a slice ends with a `Slice:` trailer, and another repository's slice
+is `<project>:CMP-<n>.S<m>`, with `<project>` from that repository's
+`config/project.json` `name`.
+
+**Decision: the grammar is config.** `config/project.json` `work_naming` holds
+the plan kinds, the slice column, both id templates, the backlog pattern, both
+trailer keys and the adoption boundary, and ships in `config/project.json.jinja`
+unchanged. check_Z reads only the block, apart from two fallback constants
+(`design`, `Slice`) used to find a plan doc when the block is missing; a test
+holds them equal to the block.
+
+**Decision: the git half is a test.** check_Z judges the plan docs, and
+`tests/integration/test_work_trailers.py` judges the trailers, because
+check_structure reads no git (ADR-K-0009). A trailer key in another case, a
+second `Slice:`, a prefixed or undeclared id, a malformed `Backlog:`, and a
+`Slice:` or `Backlog:` line above the trailer block whose value has the id's
+shape are findings; a line such as `slice: split the parser` is prose. A
+boundary that does not resolve, or is not an ancestor of `HEAD`, fails the
+test rather than judging nothing. A history with no trailer is a stated skip
+with its commit count.
+
+**Decision: mentions are judged everywhere.** A bare id in the prose of any
+Markdown file must name a declared one, so shipped documents write their
+examples in code spans. A row's first cell and a code span are not mentions. A
+token is read whole, so `CMP-1.S02` is malformed rather than a mention of
+`CMP-1`.
+
+**Built.**
+- `scripts/check_structure.py` `check_Z`, with `work_naming_policy`,
+  `id_grammar`, `parse_plan` and `plan_inventory`.
+- `tests/unit/scripts/test_check_z.py` and
+  `tests/integration/test_work_trailers.py`.
+- The `work_naming` block in `config/project.json` and its twin, and the gate
+  practice `work-naming` (row 40).
+- CONVENTIONS §20, with a §6 row and a §15 bullet; the root `AGENT.md` rule;
+  the naming section of `docs/guides/dev-loops.md`; the Z entry in
+  `docs/guides/deterministic-checks.md`.
+- This document renamed to the rule: CMP-1 for the five defects, CMP-2 for the
+  queue, CMP-3 and CMP-4 for the drafted campaigns that follow.
+- `tests/unit/scripts/test_audit_project.py` reads the check letters from
+  check_structure's own `def check_<L>` lines instead of a hand-kept range.
+
+**Downstream.**
+- A project generated from this tree carries the block and no plan doc, and
+  its gate is green with no Z finding. Its first plan doc reds the gate on a
+  `| 2 |` row, naming the line, and is green with `CMP-1.S2`
+  (`test_generated_project_judges_work_naming`).
+- `make audit-project` on a project generated at `7f0a68b`: exit 0, 0 owed,
+  0 Z findings, and `work_naming` listed as arriving with the update. The same
+  audit from `HEAD` before this slice differs only by the Z row and that
+  config entry. Two runs printed byte-identical JSON.
+- The bedrock-platform rehearsal clone: exit 1 with 26 owed errors, the same
+  26 as the audit from `HEAD` before this slice, and 0 Z findings. With the
+  block added, its 166 commits are a stated skip with no trailer.
+- project-jarvis, on a scratch clone at `1094ea3` with the block added: 0 Z
+  findings, no plan doc, and no other letter's count changed. Its 343 commits
+  are a stated skip.
+
+**Adopting in project-jarvis.** jarvis adds the `work_naming` block to its
+`config/project.json` and sets `adoption_boundary` to its last commit before
+adoption, so its earlier history is not judged. Its ledger then ingests the
+`Slice:` trailer of each commit as the slice the commit delivers, and names a
+keel slice as `project_keel:CMP-2.S4` (or this repository's own `name`, if it
+differs).
+
+**Residual risk.**
+- A slice id reused across several commits breaks the one-commit rule of
+  CONVENTIONS §20 but is not detected.
+- A foreign-prefixed id is not resolved, because the other plan is not in this
+  tree.
+- A requirement id is not named by the rule; requirements and slices are many
+  to many.
+
+### Slice CMP-2.S5 — template and project ADRs live in separate number spaces
 
 **Measured.** bedrock-platform holds keel's ADR 0001-0009 and its own 0010;
 keel's 0010-0012 would land beside it. project-jarvis holds keel's 0001-0004
@@ -832,5 +925,90 @@ the measurement.
   template-edited there.
 
 The vault backlog for keel (`KEEL-*` items: the frontend contract chain FE-2,
-FE-1, FE-6, FE-3; TEST-1 live-store guard; SEC-1 secrets scan) is the next
-campaign, not this one.
+FE-1, FE-6, FE-3; TEST-1 live-store guard; SEC-1 secrets scan) is queued in
+CMP-4 below, not worked here.
+
+## CMP-3 — what blocks bedrock-platform's next update
+
+The maintainer approved this campaign on 2026-10-07, to start once CMP-2.S4
+lands. The cap is five slices, each one commit on a green `make verify`.
+
+| Slice | Defect | Status |
+|-------|--------|--------|
+| CMP-3.S1 | `make smoke` passes over zero tests, and `make run` fails with `No module named app` | planned |
+| CMP-3.S2 | Every document's `updated:` line conflicts on `copier update` when both sides touched it | planned |
+| CMP-3.S3 | A project can add a check only by editing `scripts/check_structure.py`, so its next `copier update` conflicts in the module the restamp task imports | planned |
+| CMP-3.S4 | The `GIT_CONFIG_COUNT`/`GIT_CONFIG_PARAMETERS` variables reach a child, copier's own git calls bypass `build_child_env`, and a bare token or `Authorization` value is not recognised as a credential | planned |
+| CMP-3.S5 | — | free |
+
+CMP-3.S3 is the bedrock blocker measured in CMP-2.S3's rehearsal: a real
+`copier update` of bedrock-platform left 120 files conflicted and failed in the
+restamp task.
+
+## CMP-4 — keel enforces what it claims, and emits evidence jarvis can read
+
+**Why.** A generated project is told to work test-first, in bounded passes, with
+end-to-end coverage and checked responses. On 2026-10-07 the maintainer asked
+which of those keel enforces. Measured against the tree:
+
+| Practice | What ships | Enforced by |
+|----------|------------|-------------|
+| Idempotency | `docs/guides/idempotency.md`, `effect:`/`rerun:` headers | check_V and `tests/integration/test_idempotence.py` |
+| TDD | `docs/guides/dev-loops.md`, the mirror-test rule | the mirror rule only; nothing proves a test can fail |
+| Ralph loop | `docs/guides/dev-loops.md` | check_Z on plan tables and `tests/integration/test_work_trailers.py` on `Slice:` commit trailers; neither proves a pass converged |
+| E2E, Python | `tests/e2e/`, two scenarios | nothing; both scenarios call the app in process, not over a socket |
+| E2E, frontend | eslint and the type check | nothing; neither frontend has a test runner, so zero tests pass the gate |
+| Actual responses | an empty `evals/` | nothing |
+| SDD | `docs/specs/` | nothing; project-jarvis has requirement ids and a traceability check, keel has neither |
+| Test generation | none | none |
+
+**The boundary with project-jarvis.** keel judges one commit from its files
+alone and keeps no history. jarvis keeps the ledger across runs and repositories
+and starts the agents and workflows. A rule that can be judged from the files is
+a keel check that jarvis reads; a feature that needs history, a schedule or a
+database is jarvis's. jarvis monitors keel's own development by tracking keel as
+one of its projects, not by keel carrying the spine.
+
+**Cap.** Five slices, each one commit on a green `make verify`, in this order.
+
+| Slice | Gap | Status |
+|-------|-----|--------|
+| CMP-4.S1 | `make verify` reports only an exit code and log text, so nothing outside the repo can read which gate ran, on which commit, with what result | planned |
+| CMP-4.S2 | A frontend has no test runner, so it ships with zero tests and the gate is green | planned |
+| CMP-4.S3 | The e2e scenarios call the app in process, and nothing checks that a route has a scenario | planned |
+| CMP-4.S4 | Nothing calls a real model or a running server and judges what comes back | planned |
+| CMP-4.S5 | A spec's requirements are not tied to tests, so an uncovered requirement passes the gate | planned |
+
+- **CMP-4.S1, the evidence contract.** `make verify` writes a canonical JSON
+  record next to its exit: commit, gate targets run, per-target result, test
+  counts, check letters and their findings. It is written under an ignored path
+  and is byte-identical on a second run of the same commit. The schema is typed
+  and versioned, and a test holds the record to it. This is the format
+  project-jarvis ingests; the ingest itself is jarvis work.
+- **CMP-4.S2, frontend tests.** Each shipped stack gets a unit runner (Vitest)
+  and a browser journey (Playwright, run headless against the built site),
+  wired into the gate behind the existing `node_modules` skip. A stack with a
+  runner and zero tests fails the gate.
+- **CMP-4.S3, Python e2e over a socket.** One scenario starts the real server on
+  a free loopback port, drives it over HTTP and stops it. A check fails when a
+  route or transport endpoint has no scenario naming it (CONVENTIONS §17).
+- **CMP-4.S4, evals that judge actual responses.** A dataset format, a scorer
+  and a threshold gate in `evals/`. The default mode replays recorded responses,
+  so `make verify` needs no network and no credential; a `[cost]` target runs it
+  live through `models/` and the `child_env` allowlist.
+- **CMP-4.S5, spec-to-test traceability.** A generic requirement-id grammar and
+  a check that every requirement in `docs/specs/` is named by a test or by a
+  documented gap, lifted from project-jarvis's `scripts/traceability_matrix.py`.
+  jarvis's own copy is then retired in favour of keel's on update; that is a
+  jarvis change and needs the maintainer's yes. The live status of each
+  requirement stays in jarvis's ledger.
+
+**Queued for Campaign 5.**
+- `make new-test MODULE=` writes a mirror test that fails until it is filled in.
+- Proof that a test can fail: mutation testing over changed code.
+- The vault backlog: KEEL-FE-2, then FE-1, then FE-6; FE-3; TEST-1 (no test
+  touches a live store); SEC-1 (secrets scan).
+- The agent and playbook contract, the seed of keel-lite: a design document
+  and an ADR before any code.
+- project-jarvis side, in jarvis's repository: register keel as a tracked
+  project and ingest CMP-4.S1's record and the `Slice:` trailers.

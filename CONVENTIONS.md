@@ -8,7 +8,7 @@ tags: [conventions, frontmatter, taxonomy]
 summary: Single source of truth for labeling (frontmatter) and the directory taxonomy.
 id: conventions
 created: 2026-06-17
-updated: 2026-10-07
+updated: 2026-10-08
 visibility: internal
 canonical: true
 ---
@@ -261,6 +261,7 @@ pre-commit hook) fails the build if the conventions above drift:
 | Make-target effect labels (§7) | every `## `-annotated Makefile target opens its help with one bracketed effect label — `local`, `tree`, `read`, `cost`, `write`, comma-separated in that order, `local` alone; a target annotated twice carries one label; a composite's label covers what its prerequisites and `$(MAKE)` calls reach; a `[write]` target (or one whose name ends in a `make_targets.write_shapes` suffix) opens its recipe with `$(WRITE_GUARD)` and no `-` prefix, and the guard (make comments stripped) tests exactly the `make_targets.unattended_vars` names, has no `-` prefix of its own, and exits 1; the `make_targets` policy in `config/project.json` is well-formed. A recursion the check cannot resolve is a stated WARN. See [`docs/adr/keel/K-0011-make-target-effect-labels.md`](docs/adr/keel/K-0011-make-target-effect-labels.md) |
 | Child-process environment (§7) | every subprocess/asyncio spawn in a `.py` at the root or under any top-level directory but `tests/` passes `env=` built by `build_child_env` (`scripts/child_env.py`), directly or through a name bound only to it and afterwards only read; `os.system`/`popen`/`exec*`/`spawn*`, `pty.spawn` and `subprocess.getoutput` are errors, as is a spawn API referenced without a call and a spawn name bound two ways in one scope; names resolve per Python scope; the helper's arguments never carry `os.environ`/`os.getenv`, directly or through a name within the module; `config/project.json` `child_env` and `models.credential_env` are well-formed, no allowlist source admits a `child_env.repo_context_names` variable, and `child_env.credentialed_values` names only a variable the allowlist copies, each with a reason. A spawn through an unresolvable receiver, and a parent value crossing a function parameter, are not seen. See [docs/adr/keel/K-0012-child-process-environment-allowlist.md](docs/adr/keel/K-0012-child-process-environment-allowlist.md) |
 | ADR number spaces (§19) | `config/project.json` `adr` is well-formed once the tree holds a `kind: adr` document; an ADR in the project space is `NNNN-<slug>.md` and never carries the template prefix; an ADR in the template space is `<prefix>NNNN-<slug>.md` and is one `adr.template_adrs` lists, and every listed name is a file there; a `kind: adr` document lives directly in one of the two spaces; a number is unique within its space (once in each space is clean); an ADR's frontmatter `kind` is `adr` and its `title` begins `ADR-NNNN:` or `ADR-<prefix>NNNN:` for its own file. Both spaces empty is a WARN. A kept copy of a retired template ADR shares its `id:` with the template's file, which check_A reports. See [docs/adr/keel/K-0013-template-and-project-adr-number-spaces.md](docs/adr/keel/K-0013-template-and-project-adr-number-spaces.md) |
+| Work naming (§20) | `config/project.json` `work_naming` is well-formed once the tree holds a plan doc; every first cell of a plan doc's slice table is a slice id; a slice table sits under exactly one campaign heading, its rows name that campaign and run from `S1` in document order (a duplicate names both lines, a gap names the missing slice); a campaign is declared by one heading across all plan docs, and campaigns run from 1 with no gap; a mention in any Markdown prose, bare or with the project's own `name:` prefix, names a declared campaign or slice, and an id-shaped token outside the grammar (`CMP-1.S02`) is an error, not a mention of its campaign. A plan doc that declares no slice is a WARN. `tests/integration/test_work_trailers.py` judges the `Slice:` and `Backlog:` commit trailers, because check_structure does not read git |
 
 Missing `owner` is a warning, not a failure. If you change the scheme
 (KINDS / LAYERS / STATUSES / VISIBILITIES) or a check, update **both**
@@ -611,6 +612,16 @@ It is keyed **by layer/concern, never one global `language`**:
   a project does not add to it). Every key is required and an unknown key is an
   error. `check_Y` validates the block and errors when it is
   missing or malformed in a tree that holds a `kind: adr` document.
+- `work_naming` — how campaigns and slices are named (§20): `plan_kinds` (the
+  frontmatter kinds a plan doc may have, `["design"]`), `slice_column` (the
+  first header cell of a slice table, `Slice`), `campaign_id` and `slice_id`
+  (the id templates, `CMP-<n>` and `CMP-<n>.S<m>`; `slice_id` starts with
+  `campaign_id` and a literal separator), `backlog_id` (the regular expression
+  a `Backlog:` trailer value matches), `slice_trailer` and `backlog_trailer`
+  (the trailer keys, `Slice` and `Backlog`) and `adoption_boundary` (the last
+  commit whose trailers are not judged, or `null` to judge every commit). Every key
+  is required and an unknown key is an error. `check_Z` validates the block and
+  errors when it is missing in a tree that holds a plan doc, or malformed.
 
 - `template.twins` (template repos only) — keel is itself a copier template, so
   every `*.jinja` file is declared here with what it is FOR: `parity` (must
@@ -714,7 +725,7 @@ govern *how you work*; their executable analog — a loop a program runs unatten
   endpoint) gets a `tests/e2e/` scenario that exercises it through its public
   surface; name it by scenario, not by a source file.
 - **The gate is the judge.** "Done" means `make verify` (`check-all` + `lint` +
-  `typecheck` + `test`) is green; phase transitions and completion gate on the
+  `typecheck` + `test`) is green; step transitions and completion gate on the
   real exit code, never on a model's self-report. A loop runs its gate through
   `scripts/run_make_target.py`, which runs only a target labelled inside
   `make_targets.gate_effects` and fails one that changed the tree (§7).
@@ -840,3 +851,63 @@ is the decision; this section is the rule.
 `check_Y` holds every ADR file in either space to this rule (§6). The spaces are
 configuration (§15), not code: a project that keeps its decisions elsewhere
 changes the `adr` block, and `check_Y` judges that layout instead.
+
+## 20. Work naming: campaigns and slices
+
+A unit of work has one name, so a plan row, a commit and another repository's
+ledger can all point at the same thing. `check_Z` holds the plan docs to the
+rule below, and `tests/integration/test_work_trailers.py` holds the commits to
+it. `config/project.json` `work_naming` (§15) holds the grammar, so a project
+that names its work differently changes the block, not the checks.
+
+- **A campaign is `CMP-<n>`.** A campaign is a bounded run of work with one
+  goal and a cap, numbered from 1 across the repository with no gap. A plan doc
+  declares it with a heading that names exactly one campaign id, such as
+  `## CMP-3 — what blocks the next update`, above its slice table.
+- **A slice is `CMP-<n>.S<m>`.** A slice is one end-to-end capability (§17),
+  delivered as one commit on a green gate, numbered from `S1` within its
+  campaign in document order. A number has no leading zero, so `CMP-1.S1` has
+  one spelling. `S` is the letter because project-jarvis uses `C0` to `C8` for
+  its risk classes, and a `C` would read as one of them.
+- **A pass is counted, never named.** A pass is one turn of the convergence
+  loop (§17). It has a count and a cap, not an id: the slice it works on is the
+  name. The word "phase" is retired; a step of a loop is a step.
+- **A plan doc is where ids are declared.** A plan doc is a Markdown document
+  whose frontmatter `kind` is in `work_naming.plan_kinds` and that holds a table
+  whose first header cell is `work_naming.slice_column`. Each row's first cell
+  is a slice id, bare and without backticks. A table with any other first
+  column, such as a `Phase` or `Pass` table, is prose.
+- **A mention resolves.** A campaign or slice id written in prose in any
+  Markdown document names one a plan doc declares. A token is read whole, so
+  one shaped like an id but outside the grammar, such as `CMP-1.S02` or
+  `CMP-1.S9a`, is a finding rather than a mention of `CMP-1`. Code spans and
+  fenced blocks are examples and are not read.
+- **A cross-repository id carries its project.** `<project>:CMP-<n>.S<m>`
+  names another repository's slice, where `<project>` is that repository's
+  `config/project.json` `name`, such as `project_jarvis:CMP-2.S1`. This
+  repository does not judge a foreign id, because it cannot see that plan; a
+  prefix with its own `name` is judged like a bare id.
+- **A delivering commit says which slice.** The commit that delivers a slice
+  ends its message with a `Slice: CMP-<n>.S<m>` trailer, in the last paragraph
+  beside `Co-Authored-By:`. A commit carries at most one, with a bare id that
+  a plan doc in the tree declares. An optional `Backlog: <ID>` trailer names the
+  backlog item, and its value matches `work_naming.backlog_id`. A key spelled
+  in another case is a finding. So is a `Slice:` or `Backlog:` line above the
+  last paragraph whose value has the shape of the id that key carries, because
+  git reads trailers only there; a line such as `slice: split the parser` is
+  prose and is not judged.
+- **Create the plan doc first.** Write the plan doc and its row before the first
+  commit with a `Slice:` trailer, or the trailer test reports an id that nothing
+  declares.
+- **Adopting in a project with history.** `work_naming.adoption_boundary` names
+  the last commit before a project adopted trailers; the trailer test judges
+  only the commits after it. A boundary that is not an ancestor of `HEAD` fails
+  the test rather than judging nothing. `null` judges every commit.
+- **Requirements are not slices.** A requirement (`REQ-...`) is a standing
+  property of the product, and a slice is an event that changes it. One slice
+  can touch many requirements and one requirement many slices, so neither id
+  contains the other, and this section does not name requirements.
+
+What `check_Z` does not judge: commit history (the trailer test does), a
+foreign-prefixed id, whether one slice id was reused across several commits,
+and tables whose first column is not the slice column.

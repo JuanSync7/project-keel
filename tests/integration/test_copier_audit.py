@@ -2,7 +2,7 @@
 title: Integration — the downstream audit judges a generated project and writes nothing
 kind: tests
 layer: n/a
-summary: `scripts/audit_project.py` run against projects copier generates from this template. The audit judges the tree a real `copier update` leaves, built in a scratch copy; the parity test runs that update itself, on an independent clone of each old project against `hermetic_git.clone_including_worktree`, and holds the audit's owed and warned letter findings equal to `check_structure.py --root` on the result; for a 7f0a68b project whose own `.PHONY` edit makes copier conflict on the Makefile, the result is resolved both ways by git's `merge-file --ours/--theirs` over copier's index stages, and the audit's judged findings equal what both resolutions have outside the conflicted file, with nothing owed. A project generated from the working tree audits with no letter error, no config arrival and no conflict; the same project with four planted defects (an undeclared top-level directory, an unlabelled make target, a bare subprocess call, an unstamped doc edit) reports exactly those four under B, W, X and freshness, and its whole tree — `.git` included, bytes and modes, plus `.git/index`'s mtime — is identical after two audits whose JSON is byte-identical, with no `keel-audit-*` scratch left behind. A project generated at 7f0a68b, before the downstream-feedback campaign, owes nothing: every W/X error it has today is absent from the tree the update leaves, and the config keys the update brings are reported. A project generated at a70a7b5, before slice C2-1 moved git's repository variables out of `child_env.names`, owes no X error whether or not it added its own allowlist name, and the config group calls that list an update or a merge from copier's own merge. A project generated at 29e45f0, before slice C2-2, receives `child_env.credentialed_values` as an info arrival with the template default `{}` and owes no X error. The template checkout's index is never refreshed by an audit. A generated project's own `make audit-project` is a stub that names the template checkout. Keel-only: copier's `tests/integration/test_copier_*.py` glob prunes it.
+summary: `scripts/audit_project.py` run against projects copier generates from this template. The audit judges the tree a real `copier update` leaves, built in a scratch copy; the parity test runs that update itself, on an independent clone of each old project against `hermetic_git.clone_including_worktree`, and holds the audit's owed and warned letter findings equal to `check_structure.py --root` on the result; for a 7f0a68b project whose own `.PHONY` edit makes copier conflict on the Makefile, the result is resolved both ways by git's `merge-file --ours/--theirs` over copier's index stages, and the audit's judged findings equal what both resolutions have outside the conflicted file, with nothing owed. A project generated from the working tree audits with no letter error, no config arrival and no conflict; the same project with four planted defects (an undeclared top-level directory, an unlabelled make target, a bare subprocess call, an unstamped doc edit) reports exactly those four under B, W, X and freshness, and its whole tree — `.git` included, bytes and modes, plus `.git/index`'s mtime — is identical after two audits whose JSON is byte-identical, with no `keel-audit-*` scratch left behind. A project generated at 7f0a68b, before the downstream-feedback campaign, owes nothing: every W/X error it has today is absent from the tree the update leaves, and the config keys the update brings are reported. A project generated at a70a7b5, before slice CMP-2.S1 moved git's repository variables out of `child_env.names`, owes no X error whether or not it added its own allowlist name, and the config group calls that list an update or a merge from copier's own merge. A project generated at 29e45f0, before slice CMP-2.S2, receives `child_env.credentialed_values` as an info arrival with the template default `{}` and owes no X error. The template checkout's index is never refreshed by an audit. A generated project's own `make audit-project` is a stub that names the template checkout. Keel-only: copier's `tests/integration/test_copier_*.py` glob prunes it.
 """
 
 import json
@@ -25,13 +25,17 @@ plumbum = optional_deps.importorskip("plumbum", extra="template")
 
 _ROOT = Path(__file__).resolve().parents[2]
 _AUDIT = _ROOT / "scripts" / "audit_project.py"
+sys.path.insert(0, str(_ROOT / "scripts"))
+
+import check_structure  # noqa: E402
+
 # The last commit before the downstream-feedback campaign: bedrock-platform was
 # generated from it, so it is the old revision whose update the audit previews.
 _PRE_CAMPAIGN = "7f0a68b"
-# The last commit before slice C2-1 moved git's repository variables out of
+# The last commit before slice CMP-2.S1 moved git's repository variables out of
 # child_env.names into child_env.repo_context_names.
 _PRE_C2_1 = "a70a7b5"
-# The last commit before slice C2-2 added child_env.credentialed_values.
+# The last commit before slice CMP-2.S2 added child_env.credentialed_values.
 _PRE_C2_2 = "29e45f0"
 _ANSWERS = {"project_name": "demo_proj", "frontend_stack": "none"}
 
@@ -200,7 +204,9 @@ def test_a_project_generated_from_the_working_tree_audits_clean(generated, tmp_p
     r = _audit(project, day, tmpdir=tmp_path)
     assert r.returncode == 0, r.stdout + r.stderr
     report = json.loads(r.stdout)
-    assert len(_letters(report)) == 25
+    # Every letter the template's gate registers runs, read from the registry
+    # rather than counted here, so a new letter does not need this line edited.
+    assert _letters(report) == [letter for letter, _fn in check_structure.CHECKS]
     assert report["summary"]["conflicts"] == 0, report["groups"]["conflict"]
     assert _scratch_left(tmp_path) == []
     assert report["summary"]["files_seen"] > 0
@@ -301,7 +307,7 @@ def test_a_project_whose_child_env_allowlists_a_repository_variable_owes_an_x_er
     generated, tmp_path
 ):
     """A project that kept GIT_DIR in child_env.names (the template shipped it
-    there before slice C2-1) is told, by the check's own message, which key
+    there before slice CMP-2.S1) is told, by the check's own message, which key
     marks it and what the fix is. The project's edit survives the merge, so
     the error is owed, not resolved by the update."""
     project, day, env = generated
@@ -377,7 +383,7 @@ def pre_campaign(tmp_path_factory):
 @pytest.fixture(scope="module")
 def pre_c2_1(tmp_path_factory):
     """A project generated at a70a7b5, whose child_env.names still lists GIT_DIR
-    and the other repository variables slice C2-1 moved out."""
+    and the other repository variables slice CMP-2.S1 moved out."""
     yield from _generated_at(tmp_path_factory, _PRE_C2_1)
 
 
@@ -388,7 +394,7 @@ def pre_c2_2(tmp_path_factory):
 
 
 def _customise(dest, env):
-    """Add the project's own allowlist name to a pre-C2-1 manifest, on its own
+    """Add the project's own allowlist name to a pre-CMP-2.S1 manifest, on its own
     line where a person adds one, so the file keeps its layout; committed."""
     manifest_path = dest / "config" / "project.json"
     text = manifest_path.read_text(encoding="utf-8")
@@ -633,7 +639,7 @@ def test_a_pre_c2_1_project_owes_no_x_error_for_the_moved_git_names(
     dest = tmp_path / "dest"
     _git(tmp_path, "clone", "-q", "--no-hardlinks", str(project), str(dest), env=env)
     text = (dest / "config" / "project.json").read_text(encoding="utf-8")
-    assert '"GIT_DIR",' in text, "the pre-C2-1 template must list GIT_DIR in names"
+    assert '"GIT_DIR",' in text, "the pre-CMP-2.S1 template must list GIT_DIR in names"
     if customised:
         _customise(dest, env)
 
@@ -667,7 +673,8 @@ def test_a_pre_c2_2_project_receives_credentialed_values_as_an_arrival_and_owes_
 ):
     """The key is optional, so an older project owes nothing for lacking it: the
     audit reports it as a config key the update brings, at its empty default,
-    and no X error. The `adr` block (CONVENTIONS §19) arrives beside it."""
+    and no X error. The `adr` block (CONVENTIONS §19) and the `work_naming`
+    block (CONVENTIONS §20) arrive beside it."""
     project, _env = pre_c2_2
     before = _tree(project)
     systmp = tmp_path / "systmp"
@@ -686,6 +693,7 @@ def test_a_pre_c2_2_project_receives_credentialed_values_as_an_arrival_and_owes_
     assert {f["key"] for f in arrived} == {
         "adr",
         "child_env.credentialed_values",
+        "work_naming",
     }, arrived
     values = [f for f in arrived if f["key"] == "child_env.credentialed_values"]
     assert "template default: {}" in values[0]["message"], arrived

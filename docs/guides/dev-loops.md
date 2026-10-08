@@ -8,7 +8,7 @@ tags: [tdd, bounded-convergence, ralph-loop, testing, e2e, workflow, agents, gui
 summary: The default working loops any human or LLM follows in this repo — test-first, bounded convergence, and end-to-end coverage — all gated by `make verify`.
 id: docs-guides-dev-loops
 created: 2026-06-22
-updated: 2026-10-06
+updated: 2026-10-08
 visibility: internal
 canonical: true
 ---
@@ -65,6 +65,33 @@ Why slice this way:
 Slicing by layer or dimension is the right move for a **read-only review or
 research sweep** (each worker is a lens, not a deliverable) — but not for
 building functionality.
+
+### Naming the slice you are on
+
+A slice has one name, `CMP-<n>.S<m>`: slice `m` of campaign `n`, declared as a
+row of a plan doc's slice table (§20). Write the row before the first commit
+that names it, because `check_Z` reports a mention that no row declares and the
+trailer test reports a trailer that none declares. A pass of the convergence
+loop below is counted against its cap, not named: the slice it works on is the
+name.
+
+The commit that delivers the slice ends with a `Slice:` trailer in its last
+paragraph, beside `Co-Authored-By:`. An optional `Backlog:` trailer names the
+backlog item the slice closes:
+
+```text
+feat(naming): campaigns and slices carry one checked name
+
+check_Z judges the plan docs and the trailer test judges commits.
+
+Slice: CMP-2.S4
+Backlog: KEEL-42
+Co-Authored-By: A Contributor <contributor@example.com>
+```
+
+`tests/integration/test_work_trailers.py` judges the trailers. Another
+repository's slice is named with its `config/project.json` `name` as a prefix,
+such as `project_jarvis:CMP-2.S1`; this repository does not judge that id.
 
 ## TDD loop — red → green → refactor
 

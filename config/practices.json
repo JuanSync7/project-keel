@@ -678,6 +678,22 @@
         "test:tests/unit/scripts/test_check_y.py"
       ]
     }
+,
+    {
+      "id": "work-naming",
+      "row": 40,
+      "scope": "universal",
+      "tier": "gate",
+      "status": "on",
+      "title": "Campaigns and slices carry one checked name, and a delivering commit names its slice",
+      "mechanism": "check_structure.py check_Z -- config/project.json work_naming names the grammar: a campaign is CMP-<n> and a slice CMP-<n>.S<m>; each row of a plan doc's slice table is a slice of the one campaign its heading names, numbered from S1 in document order with no duplicate or gap; a campaign is declared once and campaigns run from 1 with no gap; a prose mention in any Markdown file names a declared id; tests/integration/test_work_trailers.py holds each commit after work_naming.adoption_boundary to at most one bare, declared Slice: trailer and a Backlog: trailer matching backlog_id (CONVENTIONS section 20)",
+      "subject": "docs",
+      "enforced_by": [
+        "check:Z",
+        "test:tests/unit/scripts/test_check_z.py",
+        "test:tests/integration/test_work_trailers.py"
+      ]
+    }
   ],
   "tokens": {
     "_comment": "DATA the future AST checks/advisories match against. Listing a vendor's class name here is data, not a baked-in dependency — the checks stay vendor-neutral by reading this list (CONVENTIONS section 18). Extend per project.",

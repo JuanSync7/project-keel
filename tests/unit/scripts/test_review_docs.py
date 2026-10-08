@@ -193,7 +193,7 @@ def test_the_judge_exits_2_on_a_malformed_date_source(tmp_path, monkeypatch, cap
 
 # --- read-only git: the judge must not rewrite .git/index ----------------------
 #
-# Measured on git 2.43.5 (docs/design/downstream-feedback.md slice 5): `git diff
+# Measured on git 2.43.5 (docs/design/downstream-feedback.md CMP-1.S5): `git diff
 # HEAD` and plain `git status` refresh stat data and rewrite .git/index, even with
 # GIT_OPTIONAL_LOCKS=0; `git --no-optional-locks status`, ls-files, log and
 # rev-parse do not. A "read-only" judge pointed at another project's tree must

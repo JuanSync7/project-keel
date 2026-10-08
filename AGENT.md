@@ -7,7 +7,7 @@ owner: TBD
 summary: Global rules for any agent working in this repo.
 id: agent
 created: 2026-06-17
-updated: 2026-10-07
+updated: 2026-10-08
 visibility: internal
 canonical: true
 ---
@@ -101,6 +101,10 @@ of truth for labeling and the directory taxonomy. Each directory's own
   subagent. Stop at the plan's done-condition — or at a pass cap (default 5 if
   the task gives none), and report done-vs-remaining instead of starting another
   pass.
+- **Name the work you deliver.** Name a campaign `CMP-<n>` and a slice
+  `CMP-<n>.S<m>` in a plan doc's slice table, and end the commit that delivers
+  a slice with a `Slice: CMP-<n>.S<m>` trailer; a pass is counted, never named
+  (CONVENTIONS §20, check_Z, tests/integration/test_work_trailers.py).
 - **Cover user-facing flows end to end.** A new route, page, or transport
   endpoint gets a `tests/e2e/` scenario that drives it through its public
   surface. (The loops above are disciplines for *you*; the playbook is

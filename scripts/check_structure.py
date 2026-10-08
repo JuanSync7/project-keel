@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 title: check_structure — the deterministic conventions gate
-summary: Stdlib-only, 3.6-safe enforcement of CONVENTIONS.md — labeling, taxonomy, package boundaries, tool/agent governance, manifest and ruleset parity, twin parity, the machine-readable module contract, Makefile help parity, cross-reference resolution, check-catalogue parity, rosters, practice mechanisms, policy reachability, writer rerun declarations, make-target effect labels, child-process environments, and ADR number spaces (checks A-Y). Exit 1 on any error; warnings never fail the build.
+summary: Stdlib-only, 3.6-safe enforcement of CONVENTIONS.md — labeling, taxonomy, package boundaries, tool/agent governance, manifest and ruleset parity, twin parity, the machine-readable module contract, Makefile help parity, cross-reference resolution, check-catalogue parity, rosters, practice mechanisms, policy reachability, writer rerun declarations, make-target effect labels, child-process environments, ADR number spaces, and work naming (checks A-Z). Exit 1 on any error; warnings never fail the build.
 
 check_structure.py - enforce the project conventions (see CONVENTIONS.md).
 
@@ -119,6 +119,15 @@ Checks:
      the two spaces, a number is unique within its space, and an ADR's kind
      is adr and its title begins ADR-<prefix?>NNNN: for its own file
      (CONVENTIONS §19). WARN when both spaces are empty
+  Z. Work naming (ERR): config/project.json `work_naming` is well-formed once
+     the tree holds a plan doc; each slice-table row of a plan doc is a
+     slice id of the one campaign its heading names, numbered from S1 in
+     document order with no duplicate or gap; a campaign is declared once and
+     campaigns run from 1 with no gap; an id-shaped prose token in any
+     Markdown file is well formed and names a declared campaign or slice
+     (CONVENTIONS §20). WARN for a plan doc
+     that declares no slice. Commit trailers are judged by
+     tests/integration/test_work_trailers.py, because this file reads no git
 
 Exit 0 = clean, 1 = errors. Warnings never fail the build. Stdlib only; 3.6+.
 
@@ -5821,6 +5830,610 @@ def check_Y():
         )
 
 
+# --- check_Z: campaigns and slices carry one checked name ---------------------
+#
+# A campaign and a slice each have one id, built from config/project.json
+# `work_naming` (CONVENTIONS §20), so a plan row, a commit trailer and another
+# repository's ledger name the same unit of work. This check judges the tree:
+# plan-doc tables, campaign headings and prose mentions. The commit half reads
+# git, so it is tests/integration/test_work_trailers.py, not a letter here
+# (ADR-K-0009: check_structure.py does not shell to git).
+
+_WORK_BLOCK = "work_naming"
+_WORK_KEYS = (
+    "plan_kinds",
+    "slice_column",
+    "campaign_id",
+    "slice_id",
+    "backlog_id",
+    "slice_trailer",
+    "backlog_trailer",
+    "adoption_boundary",
+)
+# What finds a plan doc when the block itself is missing, so that error can
+# name the document that needs the block. They are the template's shipped
+# default, and tests/unit/scripts/test_check_z.py pins them to it: check_Y's
+# _ADR_KIND makes the same move for the same reason.
+_WORK_PLAN_KINDS_FALLBACK = ("design",)
+_WORK_SLICE_COLUMN_FALLBACK = "Slice"
+# A number in an id is a positive integer without a leading zero, so CMP-01
+# and CMP-1 cannot both name campaign 1.
+_WORK_NUMBER = "[1-9][0-9]*"
+# What prose reads as a number when it looks for an id: any run that starts
+# with a digit, so CMP-1.S02 or CMP-1.S9a is read whole and judged malformed
+# instead of being read as the campaign CMP-1 it starts with.
+_WORK_NUMBER_LOOSE = "[0-9][A-Za-z0-9_]*"
+_WORK_PLACEHOLDER = re.compile(r"<([^<>]*)>")
+# git(1) interpret-trailers: a key is letters, digits and hyphens.
+_TRAILER_KEY = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]*$")
+_FRONTMATTER_KIND = re.compile(r"^kind:[ \t]*(.*?)[ \t]*$", re.MULTILINE)
+
+
+def _id_template_error(key, template, placeholder):
+    """Why *template* is not an id template with exactly one <placeholder>
+    after a literal, else None."""
+    names = _WORK_PLACEHOLDER.findall(template)
+    unknown = sorted({n for n in names if n not in ("n", "m")})
+    if unknown:
+        return (
+            "%s.%s has an unknown placeholder <%s>; the placeholders are <n> and <m>"
+            % (
+                _WORK_BLOCK,
+                key,
+                unknown[0],
+            )
+        )
+    if "<" in _WORK_PLACEHOLDER.sub("", template) or ">" in _WORK_PLACEHOLDER.sub(
+        "", template
+    ):
+        return "%s.%s has an unclosed placeholder" % (_WORK_BLOCK, key)
+    other = "m" if placeholder == "n" else "n"
+    if names.count(placeholder) != 1 or other in names:
+        return "%s.%s must hold exactly one <%s>%s, got %r" % (
+            _WORK_BLOCK,
+            key,
+            placeholder,
+            "" if placeholder == "n" else " after the campaign id",
+            template,
+        )
+    if template.startswith("<"):
+        return (
+            "%s.%s must open with a literal before <%s>, or any number in prose "
+            "would read as an id, got %r" % (_WORK_BLOCK, key, placeholder, template)
+        )
+    return None
+
+
+def work_naming_policy(manifest):
+    """config/project.json's `work_naming` block -> (policy, errs). Pure.
+
+    policy is a dict of _WORK_KEYS, or None when errs is not empty: a consumer
+    refuses rather than half-trusting it. Every key is required and an unknown
+    key is an error (`_comment` aside), so a typo cannot fall back to a
+    default."""
+    if not isinstance(manifest, dict) or _WORK_BLOCK not in manifest:
+        return None, [
+            "%s is missing -- it declares how campaigns and slices are named "
+            "and which commit trailers name them (CONVENTIONS §20)" % _WORK_BLOCK
+        ]
+    block = manifest[_WORK_BLOCK]
+    if not isinstance(block, dict):
+        return None, [
+            "%s must be an object, got %s" % (_WORK_BLOCK, type(block).__name__)
+        ]
+    errs = [
+        "%s is missing `%s`" % (_WORK_BLOCK, key)
+        for key in _WORK_KEYS
+        if key not in block
+    ]
+    errs.extend(
+        "%s has an unknown key `%s`" % (_WORK_BLOCK, key)
+        for key in sorted(block)
+        if key not in _WORK_KEYS and key != "_comment"
+    )
+    if errs:
+        return None, errs
+    kinds = block["plan_kinds"]
+    if (
+        not isinstance(kinds, list)
+        or not kinds
+        or not all(isinstance(k, str) and k.strip() for k in kinds)
+    ):
+        errs.append(
+            "%s.plan_kinds must be a non-empty list of frontmatter kinds" % _WORK_BLOCK
+        )
+    for key in ("slice_column", "slice_trailer", "backlog_trailer"):
+        value = block[key]
+        if not isinstance(value, str) or not value.strip():
+            errs.append("%s.%s must be a non-empty string" % (_WORK_BLOCK, key))
+        elif key != "slice_column" and not _TRAILER_KEY.match(value):
+            errs.append(
+                "%s.%s must be a git trailer key (letters, digits and hyphens), "
+                "got %r" % (_WORK_BLOCK, key, value)
+            )
+    slice_key, backlog_key = block["slice_trailer"], block["backlog_trailer"]
+    if (
+        isinstance(slice_key, str)
+        and isinstance(backlog_key, str)
+        and _TRAILER_KEY.match(slice_key)
+        and slice_key.lower() == backlog_key.lower()
+    ):
+        errs.append(
+            "%s.backlog_trailer must differ from %s.slice_trailer, case aside: git "
+            "reads trailer keys without case" % (_WORK_BLOCK, _WORK_BLOCK)
+        )
+    campaign, slice_ = block["campaign_id"], block["slice_id"]
+    problem = None
+    if not isinstance(campaign, str):
+        problem = "%s.campaign_id must be a string" % _WORK_BLOCK
+    else:
+        problem = _id_template_error("campaign_id", campaign, "n")
+    if problem:
+        errs.append(problem)
+    elif not isinstance(slice_, str) or not slice_.startswith(campaign):
+        errs.append(
+            "%s.slice_id must start with campaign_id %r, so a slice id names its "
+            "campaign, got %r" % (_WORK_BLOCK, campaign, slice_)
+        )
+    else:
+        suffix = slice_[len(campaign) :]
+        problem = _id_template_error("slice_id", suffix, "m")
+        if problem:
+            errs.append(problem.replace(repr(suffix), repr(slice_)))
+    pattern = block["backlog_id"]
+    if not isinstance(pattern, str) or not pattern:
+        errs.append(
+            "%s.backlog_id must be a non-empty regular expression" % _WORK_BLOCK
+        )
+    else:
+        try:
+            re.compile(pattern)
+        except re.error as e:
+            errs.append(
+                "%s.backlog_id is not a regular expression (%s)" % (_WORK_BLOCK, e)
+            )
+    boundary = block["adoption_boundary"]
+    if boundary is not None and (not isinstance(boundary, str) or not boundary.strip()):
+        errs.append(
+            "%s.adoption_boundary must be null or a commit (a non-empty string), "
+            "got %r" % (_WORK_BLOCK, boundary)
+        )
+    if errs:
+        return None, errs
+    policy = {key: block[key] for key in _WORK_KEYS}
+    policy["plan_kinds"] = list(kinds)
+    return policy, []
+
+
+def _template_regex(template, groups, number=_WORK_NUMBER):
+    """*template* as a regex: each placeholder a named group matching
+    *number*, the rest literal."""
+    out, pos = [], 0
+    for m in _WORK_PLACEHOLDER.finditer(template):
+        out.append(re.escape(template[pos : m.start()]))
+        out.append("(?P<%s>%s)" % (groups[m.group(1)], number))
+        pos = m.end()
+    out.append(re.escape(template[pos:]))
+    return "".join(out)
+
+
+def id_grammar(policy):
+    """The compiled id grammar of a valid policy: `campaign` and `slice` match
+    a whole id (groups n, and n and m); `mention` finds an id-shaped token in
+    prose, with an optional `<project>:` prefix in group `prefix`. A mention's
+    numbers are read loosely (any run from a digit), so a token is judged
+    whole: `campaign` or `slice` decides whether it is well formed."""
+    campaign = _template_regex(policy["campaign_id"], {"n": "n"})
+    suffix = _template_regex(
+        policy["slice_id"][len(policy["campaign_id"]) :], {"m": "m"}
+    )
+    loose_campaign = _template_regex(
+        policy["campaign_id"], {"n": "n"}, _WORK_NUMBER_LOOSE
+    )
+    loose_suffix = _template_regex(
+        policy["slice_id"][len(policy["campaign_id"]) :],
+        {"m": "m"},
+        _WORK_NUMBER_LOOSE,
+    )
+    return {
+        "campaign": re.compile("^%s\\Z" % campaign),
+        "slice": re.compile("^%s%s\\Z" % (campaign, suffix)),
+        # A word character on either side makes the id part of another word.
+        "mention": re.compile(
+            "(?<![A-Za-z0-9_])(?:(?P<prefix>[A-Za-z0-9_][A-Za-z0-9_.-]*):)?"
+            "%s(?:%s)?(?![A-Za-z0-9_])" % (loose_campaign, loose_suffix)
+        ),
+    }
+
+
+def _work_id(policy, n, m=None):
+    if m is None:
+        return policy["campaign_id"].replace("<n>", str(n))
+    return policy["slice_id"].replace("<n>", str(n)).replace("<m>", str(m))
+
+
+def _cells(line):
+    return [c.strip() for c in line.strip().strip("|").split("|")]
+
+
+def _slice_tables(lines, column):
+    """[(header index, [row indexes])] for every pipe table in *lines* whose
+    first header cell is *column*."""
+    found, i = [], 0
+    while i < len(lines):
+        line = lines[i]
+        if (
+            line.startswith("|")
+            and i + 1 < len(lines)
+            and _TABLE_RULE.match(lines[i + 1])
+        ):
+            rows, j = [], i + 2
+            while j < len(lines) and lines[j].startswith("|"):
+                rows.append(j)
+                j += 1
+            if _cells(line)[0] == column:
+                found.append((i, rows))
+            i = j
+            continue
+        i += 1
+    return found
+
+
+def _mentions(lines, grammar, own_name):
+    """[(line number, token, n, m)] for every id-shaped token in *lines* that
+    is this repository's: bare or prefixed with its own name. m is None for a
+    campaign; n and m are both None for a token outside the grammar. A foreign
+    prefix is another repository's id and not judged here."""
+    out = []
+    for i, line in enumerate(lines):
+        for m in grammar["mention"].finditer(line):
+            prefix = m.group("prefix")
+            if prefix is not None and prefix != own_name:
+                continue
+            bare = m.group(0)[len(prefix) + 1 :] if prefix is not None else m.group(0)
+            whole = grammar["slice"].match(bare) or grammar["campaign"].match(bare)
+            if whole is None:
+                out.append((i + 1, m.group(0), None, None))
+                continue
+            parts = whole.groupdict()
+            out.append(
+                (
+                    i + 1,
+                    m.group(0),
+                    int(parts["n"]),
+                    int(parts["m"]) if parts.get("m") is not None else None,
+                )
+            )
+    return out
+
+
+def parse_plan(text, policy, own_name):
+    """A plan doc's slice tables and mentions. Pure.
+
+    Returns {"tables": [{"line", "scope", "rows"}], "mentions": [...]}. A
+    table's scope is the nearest enclosing heading that names at least one
+    campaign ({"line", "campaigns": [n, ...]}), or None; a row is {"line",
+    "cell" (raw), "n", "m"} with n and m None for a cell that is not a slice
+    id. The first cell of a slice row is its declaration, so it is not also a
+    mention."""
+    grammar = id_grammar(policy)
+    lines = _unfenced_lines(text)
+    prose = _prose_lines(text)
+    tables = _slice_tables(lines, policy["slice_column"])
+    declaring = set()
+    for _header, rows in tables:
+        declaring.update(rows)
+    for i in declaring:
+        first = prose[i].find("|")
+        second = prose[i].find("|", first + 1)
+        if first >= 0 and second > first:
+            prose[i] = (
+                prose[i][: first + 1] + " " * (second - first - 1) + prose[i][second:]
+            )
+    headings = {}
+    for i, line in enumerate(lines):
+        if _ATX_HEADING.match(line):
+            level = len(line) - len(line.lstrip("#"))
+            campaigns = sorted(
+                {
+                    n
+                    for _l, _t, n, m in _mentions([prose[i]], grammar, own_name)
+                    if n is not None and m is None
+                }
+            )
+            headings[i] = (level, campaigns)
+    out_tables = []
+    stack = []
+    heading_lines = sorted(headings)
+    hpos = 0
+    for header, rows in tables:
+        while hpos < len(heading_lines) and heading_lines[hpos] < header:
+            idx = heading_lines[hpos]
+            level, campaigns = headings[idx]
+            while stack and stack[-1][0] >= level:
+                stack.pop()
+            stack.append((level, idx, campaigns))
+            hpos += 1
+        scope = None
+        for _level, idx, campaigns in reversed(stack):
+            if campaigns:
+                scope = {"line": idx + 1, "campaigns": campaigns}
+                break
+        out_rows = []
+        for r in rows:
+            cell = _cells(lines[r])[0]
+            m = grammar["slice"].match(cell)
+            out_rows.append(
+                {
+                    "line": r + 1,
+                    "cell": cell,
+                    "n": int(m.group("n")) if m else None,
+                    "m": int(m.group("m")) if m else None,
+                }
+            )
+        out_tables.append({"line": header + 1, "scope": scope, "rows": out_rows})
+    return {"tables": out_tables, "mentions": _mentions(prose, grammar, own_name)}
+
+
+def _frontmatter_kind(text):
+    if not text.startswith("---"):
+        return None
+    end = text.find("\n---", 3)
+    if end < 0:
+        return None
+    m = _FRONTMATTER_KIND.search(text, 3, end)
+    return _unquote(m.group(1)) if m else None
+
+
+def _markdown_texts(root):
+    """[(relpath, text)] for every Markdown file under *root*, sorted. A
+    symlink is skipped (its target is read under its own name) and so is an
+    unreadable file (check_A reports it)."""
+    out = []
+    for dirpath, _, filenames in walk(root):
+        for f in filenames:
+            full = os.path.join(dirpath, f)
+            if not f.lower().endswith(".md") or os.path.islink(full):
+                continue
+            try:
+                with open(full, encoding="utf-8") as fh:
+                    text = fh.read()
+            except UNREADABLE:
+                continue
+            out.append((os.path.relpath(full, root).replace(os.sep, "/"), text))
+    return sorted(out)
+
+
+def _inventory(texts, policy, own_name):
+    docs = []
+    for path, text in texts:
+        if _frontmatter_kind(text) not in policy["plan_kinds"]:
+            continue
+        parsed = parse_plan(text, policy, own_name)
+        if parsed["tables"]:
+            docs.append((path, parsed))
+    campaigns, slices = {}, {}
+    for path, parsed in docs:
+        for table in parsed["tables"]:
+            scope = table["scope"]
+            if scope is None or len(scope["campaigns"]) != 1:
+                continue
+            n = scope["campaigns"][0]
+            campaigns.setdefault(_work_id(policy, n), (path, scope["line"]))
+            for row in table["rows"]:
+                if row["n"] == n:
+                    slices.setdefault(
+                        _work_id(policy, n, row["m"]), (path, row["line"])
+                    )
+    return {"docs": docs, "campaigns": campaigns, "slices": slices}
+
+
+def work_owner(manifest):
+    """This repository's own `<project>:` prefix: config/project.json `name`
+    when it is a non-empty string, else None (no prefixed id is then this
+    repository's). check_Z and the trailer test read it here, so both read a
+    plan doc the same way."""
+    own = manifest.get("name") if isinstance(manifest, dict) else None
+    return own if isinstance(own, str) and own else None
+
+
+def plan_inventory(root, policy, own_name=None):
+    """Every plan doc under *root* and what it declares: {"docs": [(relpath,
+    parse_plan result)], "campaigns": {id: (relpath, line)}, "slices": {id:
+    (relpath, line)}}. A plan doc has a frontmatter kind in plan_kinds and a
+    slice_column table; a campaign is declared by the heading that scopes its
+    table, and a slice by a well-formed row of that campaign under it."""
+    return _inventory(_markdown_texts(root), policy, own_name)
+
+
+def _judge_plan(path, parsed, policy):
+    """Emit the findings one plan doc carries on its own."""
+    column, shape = policy["slice_column"], policy["slice_id"]
+    sequences = {}
+    for table in parsed["tables"]:
+        scope = table["scope"]
+        if scope is None:
+            err(
+                "%s:%d: a %s table sits under no campaign heading; put it under a "
+                "heading that names one %s (CONVENTIONS §20)"
+                % (path, table["line"], column, policy["campaign_id"])
+            )
+        elif len(scope["campaigns"]) > 1:
+            err(
+                "%s:%d: the heading at line %d scoping this %s table names %d "
+                "campaigns (%s); it names exactly one"
+                % (
+                    path,
+                    table["line"],
+                    scope["line"],
+                    column,
+                    len(scope["campaigns"]),
+                    ", ".join(_work_id(policy, n) for n in scope["campaigns"]),
+                )
+            )
+        for row in table["rows"]:
+            if row["n"] is None:
+                err(
+                    "%s:%d: %s cell %r is not a %s id (config/project.json "
+                    "work_naming.slice_id, CONVENTIONS §20)"
+                    % (path, row["line"], column, row["cell"], shape)
+                )
+            elif scope is not None and len(scope["campaigns"]) == 1:
+                n = scope["campaigns"][0]
+                if row["n"] != n:
+                    err(
+                        "%s:%d: %s sits under the heading of %s (line %d); a row "
+                        "names the campaign it is listed under"
+                        % (
+                            path,
+                            row["line"],
+                            row["cell"],
+                            _work_id(policy, n),
+                            scope["line"],
+                        )
+                    )
+                else:
+                    sequences.setdefault((scope["line"], n), []).append(
+                        (row["line"], row["m"])
+                    )
+    for (heading, n), rows in sorted(sequences.items()):
+        seen, top = {}, 0
+        for line, m in rows:
+            here = _work_id(policy, n, m)
+            if m in seen:
+                err(
+                    "%s:%d: %s is also declared at line %d"
+                    % (path, line, here, seen[m])
+                )
+                continue
+            if m < top:
+                err(
+                    "%s:%d: %s comes after %s; rows run S1..Sk in document order"
+                    % (path, line, here, _work_id(policy, n, top))
+                )
+            seen[m] = line
+            top = max(top, m)
+        missing = [k for k in range(1, top + 1) if k not in seen]
+        if missing:
+            err(
+                "%s:%d: %s skips %s; rows run S1..Sk in document order with no gap"
+                % (
+                    path,
+                    heading,
+                    _work_id(policy, n),
+                    ", ".join(_work_id(policy, n, k) for k in missing),
+                )
+            )
+    if not sequences:
+        warn(
+            "%s: a plan doc (a %s table) declares no slice yet (CONVENTIONS §20)"
+            % (path, column)
+        )
+
+
+def check_Z():
+    """ERROR when config/project.json `work_naming` is missing (in a tree with
+    a plan doc) or malformed; when a plan doc's slice cell is not a slice id;
+    when a slice table sits under no campaign heading, or under one naming two
+    or more; when a row names another campaign than its heading's; when a
+    campaign's rows repeat, run out of order or skip a slice; when a campaign
+    is declared twice across the plan docs or the declared campaigns skip a
+    number; and when a Markdown document mentions, bare or with the project's
+    own `name:` prefix, an id no plan doc declares or an id-shaped token the
+    grammar does not accept (CMP-1.S02 is malformed, not campaign CMP-1).
+    The own name is `work_owner`'s. WARN on a plan doc that
+    declares no slice. Silent with neither a block nor a plan doc; an
+    unreadable manifest is reported once, by the reader. Commit trailers are
+    tests/integration/test_work_trailers.py's to judge (ADR-K-0009)."""
+    manifest = _read_json_config(os.path.join("config", "project.json"))
+    if manifest is _NO_DATA:
+        if os.path.isfile(os.path.join(ROOT, "config", "project.json")):
+            return  # unreadable: _read_json_config reported it, once
+        manifest = {}
+    texts = _markdown_texts(ROOT)
+    if isinstance(manifest, dict) and _WORK_BLOCK not in manifest:
+        plans = [
+            path
+            for path, text in texts
+            if _frontmatter_kind(text) in _WORK_PLAN_KINDS_FALLBACK
+            and _slice_tables(_unfenced_lines(text), _WORK_SLICE_COLUMN_FALLBACK)
+        ]
+        if plans:
+            err(
+                "config/project.json: %s is missing -- %s is a plan doc, so the "
+                "project declares how its campaigns and slices are named "
+                "(CONVENTIONS §20)" % (_WORK_BLOCK, ", ".join(plans))
+            )
+        return
+    policy, perrs = work_naming_policy(manifest)
+    for m in perrs:
+        err("config/project.json: " + m)
+    if policy is None:
+        return
+    own = work_owner(manifest)
+    inventory = _inventory(texts, policy, own)
+    first = {}
+    for path, parsed in inventory["docs"]:
+        _judge_plan(path, parsed, policy)
+        heads = sorted(
+            {
+                (t["scope"]["line"], t["scope"]["campaigns"][0])
+                for t in parsed["tables"]
+                if t["scope"] is not None and len(t["scope"]["campaigns"]) == 1
+            }
+        )
+        for line, n in heads:
+            if n in first:
+                err(
+                    "%s:%d: campaign %s is also declared at %s:%d; a campaign is "
+                    "declared by one heading"
+                    % (path, line, _work_id(policy, n), first[n][0], first[n][1])
+                )
+            else:
+                first[n] = (path, line)
+    for n in sorted(first):
+        missing = [k for k in range(1, n) if k not in first]
+        if missing:
+            err(
+                "%s:%d: %s is declared but %s is not; campaigns run from %s with "
+                "no gap"
+                % (
+                    first[n][0],
+                    first[n][1],
+                    _work_id(policy, n),
+                    ", ".join(_work_id(policy, k) for k in missing),
+                    _work_id(policy, 1),
+                )
+            )
+            break
+    plan_paths = dict(inventory["docs"])
+    grammar = id_grammar(policy)
+    for path, text in texts:
+        parsed = plan_paths.get(path)
+        found = (
+            parsed["mentions"]
+            if parsed is not None
+            else _mentions(_prose_lines(text), grammar, own)
+        )
+        for line, token, n, m in found:
+            if n is None:
+                err(
+                    "%s:%d: %s is not a %s or %s id (config/project.json "
+                    "work_naming, CONVENTIONS §20)"
+                    % (path, line, token, policy["campaign_id"], policy["slice_id"])
+                )
+            elif m is None:
+                if _work_id(policy, n) not in inventory["campaigns"]:
+                    err(
+                        "%s:%d: %s names no campaign a plan doc declares"
+                        % (path, line, token)
+                    )
+            elif _work_id(policy, n, m) not in inventory["slices"]:
+                err(
+                    "%s:%d: %s names no slice a plan doc declares" % (path, line, token)
+                )
+
+
 # Every check, in the order a run makes them. tests/unit/scripts/
 # test_check_structure_root.py fails a check_<LETTER> defined but not listed.
 CHECKS = (
@@ -5849,6 +6462,7 @@ CHECKS = (
     ("W", check_W),
     ("X", check_X),
     ("Y", check_Y),
+    ("Z", check_Z),
 )
 
 # The JSON configs the checks read through _read_json_config, so a caller that
@@ -5890,7 +6504,7 @@ def main(argv=None):
     """The gate's CLI. *argv* None means no arguments, never sys.argv: an
     importer calling main() gets the template's own judgement."""
     ap = argparse.ArgumentParser(
-        description="Enforce the project conventions (checks A-Y); exit 1 on error."
+        description="Enforce the project conventions (checks A-Z); exit 1 on error."
     )
     ap.add_argument(
         "--root",

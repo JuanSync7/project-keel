@@ -106,7 +106,7 @@ _exclude:
   # API (run_checks, CHECKS, JSON_CONFIGS), so a copy shipped into a project would
   # pair an older doer with a newer template's gates. A generated project keeps the
   # `make audit-project` stub, which names the template checkout to run it from.
-  # Decision: docs/design/downstream-feedback.md, slice 5. Never shipped, so no
+  # Decision: docs/design/downstream-feedback.md, CMP-1.S5. Never shipped, so no
   # `_migrations` removal. Its integration test is pruned by the glob above.
   - "scripts/audit_project.py"
   - "tests/unit/scripts/test_audit_project.py"

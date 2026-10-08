@@ -86,7 +86,7 @@ new: ## [local] Generate a NEW project from this template into DEST (interactive
 # DEST is never written: the update is predicted in a scratch copy removed on
 # exit, and DEST's files are data, never imported, made or hooked. Keel-only
 # doer (copier.yml `_exclude`); in a generated project this target only says
-# where the template checkout is (docs/design/downstream-feedback.md, slice 5).
+# where the template checkout is (docs/design/downstream-feedback.md, CMP-1.S5).
 audit-project: ## [local] Report what DEST, another keel project, would fail under this template's current gates after `copier update`, judged on a real update of a scratch copy; never writes DEST
 	@[ -f scripts/audit_project.py ] || { echo "audit-project runs from the template checkout: make -C <the _src_path in .copier-answers.yml> audit-project DEST=$(abspath $(or $(DEST),$(CURDIR)))"; exit 2; }
 	@test -n "$(DEST)" || { echo "usage: make audit-project DEST=../my-project"; exit 2; }

@@ -8,7 +8,7 @@ tags: [checks, ci, linter, determinism, pre-commit, hooks, guide]
 summary: Catalogue of every deterministic check that keeps a project-template repo honest — purpose, when to run, and how to wire as a hook.
 id: docs-guides-deterministic-checks
 created: 2026-06-19
-updated: 2026-10-07
+updated: 2026-10-08
 visibility: internal
 canonical: true
 ---
@@ -62,7 +62,7 @@ everything and therefore expect the project interpreter.
 
 | Check | Script | Gate? | Interpreter | What it guarantees |
 |-------|--------|:-----:|-------------|--------------------|
-| Structure & frontmatter | `scripts/check_structure.py` | error | 3.6-safe | Labels, taxonomy, package boundaries, tool/agent governance, project facts, agent-rules symlinks, owned-exception & frozen-config boundaries, naked-tensor domain warn, lint/type ruleset parity, template twin parity, Makefile help parity, cross-reference resolution, check-catalogue parity, rosters, practice mechanisms, policy reachability, writer rerun declarations, make-target effect labels, child-process environment, ADR number spaces (checks A–Y) |
+| Structure & frontmatter | `scripts/check_structure.py` | error | 3.6-safe | Labels, taxonomy, package boundaries, tool/agent governance, project facts, agent-rules symlinks, owned-exception & frozen-config boundaries, naked-tensor domain warn, lint/type ruleset parity, template twin parity, Makefile help parity, cross-reference resolution, check-catalogue parity, rosters, practice mechanisms, policy reachability, writer rerun declarations, make-target effect labels, child-process environment, ADR number spaces, work naming (checks A–Z) |
 | Interpreter floor | `scripts/check_python_version.py` | error | any | `$(PY)` satisfies `pyproject.toml`'s `requires-python`, said plainly before a newer-syntax check fails with a traceback — runs before every check that needs the project interpreter (`check-corpus`, `test`) |
 | Corpus integrity | `scripts/jobs/check_corpus.py` | error | ≥3.7 | the fresh build is a valid, acyclic, reproducible graph whose edge kinds are from the closed set (`keyword`, `link`, `citation`, `mention`, `semantic`) **and** the local `wiki/corpus.json` (what agents query) is current when present — absent is a loud pass, stale is an error naming `make site-data` (ADR-K-0008) |
 | OpenAPI drift | `api/rest_fastapi/export_openapi.py --check` | error | FastAPI | Committed `openapi.json` matches the live routes |
@@ -80,7 +80,7 @@ print but never fail the build.
 
 ### 1. Structure & frontmatter — `scripts/check_structure.py`
 
-**Purpose.** The core enforcer of `CONVENTIONS.md`. Checks A–Y:
+**Purpose.** The core enforcer of `CONVENTIONS.md`. Checks A–Z:
 
 - **A. Frontmatter** — every `README.md` / `AGENT.md` / `CLAUDE.md`, `docs/**`,
   `test-docs/**` markdown, and `agents/**/*.tool.md` has the required keys with
@@ -349,7 +349,7 @@ print but never fail the build.
   opt-in is a keyword, not a config name, because it is one call's decision,
   visible where that child starts. A name in config would hand the parent's
   repository to every child the project starts, and nothing at the call site
-  would show it. A project generated before slice C2-1 of
+  would show it. A project generated before keel slice project_keel:CMP-2.S1 of
   `docs/design/downstream-feedback.md` fails with `child_env.repo_context_names
   is missing` until `copier update` brings the key.
   `child_env.credentialed_values` is optional and maps a copied variable to
@@ -391,6 +391,31 @@ print but never fail the build.
   the template's file, which check_A reports as a duplicate id. Measured over
   keel at landing: 13 template ADRs, 0 project ADRs, 0 findings. See
   [`docs/adr/keel/K-0013-template-and-project-adr-number-spaces.md`](../adr/keel/K-0013-template-and-project-adr-number-spaces.md).
+- **Z. Work naming** — a campaign is `CMP-<n>` and a slice `CMP-<n>.S<m>`
+  (CONVENTIONS §20), with the grammar read from `config/project.json`
+  `work_naming`: `plan_kinds`, `slice_column`, `campaign_id`, `slice_id`,
+  `backlog_id`, `slice_trailer`, `backlog_trailer` and `adoption_boundary`. A
+  plan doc is a Markdown document whose frontmatter `kind` is a plan kind and
+  that holds a table whose first header cell is the slice column. The check
+  errors on a row whose first cell is not a slice id (the message shows the
+  expected form), on a slice table under no campaign heading or under a
+  heading that names two campaigns, on a row of another campaign, on a slice
+  number taken twice (both lines named), out of document order, or skipped
+  (the missing slice named), on a campaign declared by two headings, on a gap
+  between campaigns (the first campaign after the gap names the missing one),
+  and on a prose mention in any Markdown file, bare or with the project's own
+  `name:` prefix, that names no declared campaign or slice, and on an
+  id-shaped token the grammar does not accept (`CMP-1.S02` is malformed, not a
+  mention of `CMP-1`). Code spans,
+  fences, a foreign-prefixed id and a table with another first column (a
+  `Phase` or `Pass` table) are not read. A missing block is an error once the
+  tree holds a plan doc, the message naming the doc; a malformed block (a
+  missing or unknown key, a template without `<n>` or `<m>`, a `slice_id`
+  that does not extend `campaign_id`, a `backlog_id` that does not compile) is
+  always an error naming the key. A plan doc that declares no slice is a WARN.
+  Commit trailers are judged by `tests/integration/test_work_trailers.py`,
+  because check_structure reads no git (ADR-K-0009). Measured over keel at
+  landing: 1 plan doc, 4 campaigns, 20 slices, 0 findings.
 
 **When to run.** Every commit (pre-commit) and in CI; any time you add a
 directory, package, doc, tool, or agent.
@@ -475,7 +500,10 @@ update migration (`docs/adr/keel/K-0010-generation-needs-trust-to-stamp-docs.md`
 **Tier.** A *report* under `make advise` (exit 0). The same rule is a **gate**
 in `tests/integration/test_doc_freshness.py`, beside the release-identity test
 and for the same reason (ADR-K-0009): a check that shells to git does not belong
-in the 3.6 pre-commit hook. Landed with every stale stamp normalised in the same
+in the 3.6 pre-commit hook. The work-naming rule has the same git half:
+`tests/integration/test_work_trailers.py` judges each commit's `Slice:` and
+`Backlog:` trailers after `work_naming.adoption_boundary`, and check_Z judges
+the plan docs. Landed with every stale stamp normalised in the same
 commit — 91 of 117 governed documents — so the tree complied on arrival.
 
 **Run.** `python scripts/jobs/review_docs.py [--json] [--strict] [--today YYYY-MM-DD]`
@@ -577,7 +605,7 @@ prefix `keel-audit-`), which it removes on every exit path:
 - `copier update --trust --defaults --skip-answered --vcs-ref HEAD
   --conflict inline` of the copy against the snapshot, run as a child
   process.
-Every check_structure letter, A–Y, runs in-process through `run_checks` on the
+Every check_structure letter, A–Z, runs in-process through `run_checks` on the
 copy twice: before the update and after it. The freshness judge
 (`scripts/jobs/review_docs.py`) and the restamp writer's `pending` list
 (`scripts/jobs/restamp_docs.py`) run on DEST itself. Each freshness finding

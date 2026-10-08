@@ -2,7 +2,7 @@
 title: Integration — copier generates a structurally valid, tailored project
 kind: tests
 layer: n/a
-summary: `copier` renders keel's root template into a new project — the manifest is tailored to the answers, the un-chosen frontend stack is pruned, CLAUDE.md->AGENT.md symlinks are preserved, keel's own template meta-tests are pruned, and check_structure passes; an undeclared top-level directory reds the project until it is declared and labelled. A bare `subprocess.run` reds a generated project through check_X until it passes `env=build_child_env()`, and the project's helper passes an adapter's declared credential and no planted secret. A credentialed proxy (a `#` in the password included) fails the project's doc judge by name and never by value, while a `LANGUAGE=sr_RS:sr@latin` locale list does not, until `child_env.credentialed_values` names it, and a stale entry there reds the gate. Skipped on a bare local clone without the optional `template` extra; CI installs `.[dev,template]` and declares the surface required (KEEL_REQUIRED_EXTRAS), so there a missing copier is a hard failure instead of a silent skip.
+summary: `copier` renders keel's root template into a new project — the manifest is tailored to the answers, the un-chosen frontend stack is pruned, CLAUDE.md->AGENT.md symlinks are preserved, keel's own template meta-tests are pruned, and check_structure passes; an undeclared top-level directory reds the project until it is declared and labelled. A bare `subprocess.run` reds a generated project through check_X until it passes `env=build_child_env()`, and the project's helper passes an adapter's declared credential and no planted secret. A credentialed proxy (a `#` in the password included) fails the project's doc judge by name and never by value, while a `LANGUAGE=sr_RS:sr@latin` locale list does not, until `child_env.credentialed_values` names it, and a stale entry there reds the gate. A generated project carries keel's `work_naming` block and no plan doc, so check_Z is silent until the project writes one; a slice row that is not a slice id then reds the gate and a well-formed one does not. Skipped on a bare local clone without the optional `template` extra; CI installs `.[dev,template]` and declares the surface required (KEEL_REQUIRED_EXTRAS), so there a missing copier is a hard failure instead of a silent skip.
 """
 
 import json
@@ -364,6 +364,55 @@ def test_generated_project_does_not_ship_keels_own_hardening_plan(tmp_path):
     assert (dest / "docs" / "design" / "README.md").is_file(), (
         "the design directory's labeled placeholder was pruned with it — a project "
         "still needs somewhere to put its own design notes"
+    )
+
+
+_PLAN_FRONTMATTER = (
+    "---\ntitle: Roadmap\nkind: design\nlayer: n/a\nstatus: draft\nowner: TBD\n"
+    "summary: The project's own campaigns.\nid: docs-design-roadmap\n"
+    "created: 2026-01-01\nupdated: 2026-01-01\nvisibility: internal\n"
+    "canonical: true\n---\n\n# Roadmap\n\n"
+)
+
+
+def test_generated_project_judges_work_naming(tmp_path):
+    """The work-naming block arrives as config, a fresh project owes check_Z
+    nothing (keel's own plan doc is not shipped), and the project's own first
+    plan doc is judged by its own gate: a retired `2` row reds it, naming the
+    line, and the CMP-<n>.S<m> form lands green (CONVENTIONS §20)."""
+    dest = tmp_path / "proj"
+    _generate(dest, project_name="demo_proj", frontend_stack="none")
+    data = json.loads((dest / "config" / "project.json").read_text())
+    keel = json.loads((_ROOT / "config" / "project.json").read_text())
+    assert data["work_naming"] == keel["work_naming"]
+    assert not (dest / "docs" / "design" / "downstream-feedback.md").exists()
+    # The shipped real-tree test in tests/unit/scripts/test_check_z.py skips
+    # where no plan doc declares a slice, as here; keel's own plan doc is what
+    # keeps that test from being a skip in keel.
+    keel_rows = re.findall(
+        r"^\|\s*(CMP-[0-9]+\.S[0-9]+)\s*\|",
+        (_ROOT / "docs" / "design" / "downstream-feedback.md").read_text(
+            encoding="utf-8"
+        ),
+        re.MULTILINE,
+    )
+    assert "CMP-2.S4" in keel_rows, keel_rows
+    r = _structure_gate(dest)
+    assert r.returncode == 0, "a fresh project is not green:\n" + r.stdout + r.stderr
+    assert "work_naming" not in r.stdout, r.stdout
+
+    plan = dest / "docs" / "design" / "roadmap.md"
+    table = "## CMP-1 — first\n\n| Slice | Subject |\n|---|---|\n| CMP-1.S1 | a |\n"
+    plan.write_text(_PLAN_FRONTMATTER + table + "| 2 | b |\n", encoding="utf-8")
+    r = _structure_gate(dest)
+    lineno = plan.read_text(encoding="utf-8").split("\n").index("| 2 | b |") + 1
+    assert r.returncode != 0, "a retired slice number left the gate green:\n" + r.stdout
+    assert "ERROR docs/design/roadmap.md:%d:" % lineno in r.stdout, r.stdout
+
+    plan.write_text(_PLAN_FRONTMATTER + table + "| CMP-1.S2 | b |\n", encoding="utf-8")
+    r = _structure_gate(dest)
+    assert r.returncode == 0, (
+        "the documented id form is not green:\n" + r.stdout + r.stderr
     )
 
 
@@ -1519,7 +1568,7 @@ def _gate_runner(project, *args):
 def test_a_generated_project_gates_only_on_targets_that_leave_its_tree_alone(
     stack, tmp_path
 ):
-    """Slice 3 held downstream: the project ships keel's policy, its own gate
+    """Slice CMP-1.S3 held downstream: the project ships keel's policy, its own gate
     reads its labels, its runner refuses a [tree] target and proves a [local] one
     read-only. `site-static` writes the showcase snapshot into the shipped
     frontend's `public/`; before .gitignore covered every stack, it dirtied a
@@ -1658,7 +1707,7 @@ def test_a_generated_projects_children_never_follow_the_hooks_repository(tmp_pat
     naming the project's repository; this is the linked-worktree / `commit -a`
     shape measured on git 2.43.5. The project's freshness judge, asked about
     ANOTHER repository from inside that hook, judges the other repository and
-    leaves the project's index alone. Before slice C2-1 it judged 0 documents
+    leaves the project's index alone. Before slice CMP-2.S1 it judged 0 documents
     and exited 0 (measured). The project's helper returns its own repository
     only on `repo_context=True`, and its structure gate refuses GIT_DIR in
     child_env.names with the fix, then passes once it is removed."""

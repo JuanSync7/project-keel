@@ -41,6 +41,17 @@
       "K-0013-template-and-project-adr-number-spaces.md"
     ]
   },
+  "work_naming": {
+    "_comment": "How a campaign and a slice are named (CONVENTIONS section 20). campaign_id and slice_id are the id templates: <n> is the campaign number and <m> the slice number, each a positive integer with no leading zero, and slice_id is campaign_id plus a literal separator. A plan doc is a Markdown document whose frontmatter kind is in plan_kinds and that holds a table whose first header cell is slice_column. A cross-repository reference prefixes an id with the other project's `name` and a colon. A delivering commit carries one slice_trailer trailer with a bare slice id and may carry a backlog_trailer trailer whose value matches the backlog_id pattern. adoption_boundary is a commit before which trailers are not judged (null: every commit). scripts/check_structure.py check_Z holds the plan docs' Slice cells, campaign headings, slice order and prose mentions to this block; tests/integration/test_work_trailers.py holds commit trailers to it; a missing block is an error once the tree has a plan doc, and a malformed one always is.",
+    "plan_kinds": ["design"],
+    "slice_column": "Slice",
+    "campaign_id": "CMP-<n>",
+    "slice_id": "CMP-<n>.S<m>",
+    "backlog_id": "^[A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)*-[1-9][0-9]*$",
+    "slice_trailer": "Slice",
+    "backlog_trailer": "Backlog",
+    "adoption_boundary": null
+  },
   "make_targets": {
     "_comment": "Every annotated make target opens its `## ` help with an effect label from the closed vocabulary [local] [tree] [read] [cost] [write] (docs/adr/keel/K-0011-make-target-effect-labels.md). scripts/check_structure.py check_W validates this block and the labels; scripts/run_make_target.py runs only a target whose label falls inside gate_effects, sets gate_runner_var=1 last so WRITE_GUARD refuses a [write] target, accepts only the gate_vars as NAME=VALUE variables (each value one path-like word), and fails a run that changed what git sees. unattended_vars are the variables WRITE_GUARD refuses under; write_shapes are target-name suffixes that must be [write]; area_dir is the directory of <area>.mk makefiles (null: areas off); effect_proof_skip keeps a [local] target out of tests/integration/test_make_target_effects.py, by name and reason only.",
     "unattended_vars": ["CI", "RALPH"],

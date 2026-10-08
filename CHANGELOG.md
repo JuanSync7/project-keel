@@ -10,6 +10,24 @@ version rather than a bare commit:
 
 ## [Unreleased]
 
+### Added
+- **`check_Z` and `tests/integration/test_work_trailers.py` — campaigns and
+  slices carry one checked name.** A campaign is `CMP-<n>` and a slice
+  `CMP-<n>.S<m>`, the grammar read from the new `config/project.json`
+  `work_naming` block (CONVENTIONS §20). `check_Z` holds every plan doc's
+  slice table to it: each row is a slice of the one campaign its heading names,
+  numbered from `S1` with no duplicate or gap, a campaign is declared once,
+  campaigns run from 1, and an id-shaped prose token in any Markdown file is
+  well formed and names a declared id. The trailer test holds each commit after
+  `work_naming.adoption_boundary` to at most one bare, declared `Slice:`
+  trailer and a well-formed `Backlog:` trailer. Another repository's slice is
+  named `<project>:CMP-<n>.S<m>`, the same form project-jarvis's ledger reads.
+  Not breaking for a project whose Markdown has no `kind: design` table with a
+  `Slice` first column and no `CMP-` id outside code: `check_Z` is silent
+  there, and a history with no `Slice:` or `Backlog:` line whose value has an
+  id's shape is a stated skip (a prose line such as `slice: split the parser`
+  is not judged). Registered as the gate practice `work-naming`.
+
 ## [0.2.0] — 2026-10-07
 
 ### Added
