@@ -26,7 +26,7 @@ version rather than a bare commit:
   `errors` or `warnings` as anything but a list. A declared directory with no
   module is an error too. A project check only adds
   findings, and `make audit-project` never runs one
-  (`docs/adr/keel/K-0014-project-owned-structure-checks.md`, proposed). Not
+  (`docs/adr/keel/K-0014-project-owned-structure-checks.md`, accepted). Not
   breaking: an absent key is silent. A project that edited
   `scripts/check_structure.py` moves each rule into the directory and restores the
   template's file; its next update then merges no edit there.

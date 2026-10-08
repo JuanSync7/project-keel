@@ -2,7 +2,7 @@
 title: "ADR-K-0014: A project adds structure checks in a directory it owns, not by editing the gate"
 kind: adr
 layer: n/a
-status: proposed
+status: accepted
 owner: TBD
 tags: [adr, copier, update, check-structure, extension]
 summary: "A generated project adds its own structure checks as modules in a top-level directory it owns, named by config/project.json `structure.project_checks`, and never as an edit to scripts/check_structure.py. The gate runs each module's `check(root)` after every lettered check, in file-name order, reports each finding as `project:<stem>`, and turns every way a module can fail into an ERROR naming it. A project check only adds findings: no knob waives a template check. Every `copier update` after-migration refuses to run over a conflicted module it imports, exit 2, and the restamp leaves a conflicted document for the merge."
@@ -15,7 +15,7 @@ canonical: true
 
 # ADR-K-0014: A project adds structure checks in a directory it owns
 
-**Status:** proposed.
+**Status:** accepted 2026-10-08 by the maintainer.
 
 ## Context
 

@@ -937,9 +937,9 @@ lands. The cap is five slices, each one commit on a green `make verify`.
 |-------|--------|--------|
 | CMP-3.S1 | `make smoke` passes over zero tests, and `make run` fails with `No module named app` | done — `make verify` green (1517 passed); 5 review findings confirmed and fixed |
 | CMP-3.S2 | A document whose only conflict on `copier update` is its `updated:` line is left conflicted for a person to resolve | done — `make verify` green (1562 passed); 1 of 2 review findings confirmed and fixed |
-| CMP-3.S3 | A project can add a check only by editing `scripts/check_structure.py`, so its next `copier update` conflicts in the module the restamp task imports | done — `make verify` green (1614 passed); 6 review findings confirmed and fixed; ADR-K-0014 proposed |
+| CMP-3.S3 | A project can add a check only by editing `scripts/check_structure.py`, so its next `copier update` conflicts in the module the restamp task imports | done — `make verify` green (1614 passed); 6 review findings confirmed and fixed; ADR-K-0014 accepted |
 | CMP-3.S4 | The `GIT_CONFIG_COUNT`/`GIT_CONFIG_PARAMETERS` variables reach a child, copier's own git calls bypass `build_child_env`, and a bare token or `Authorization` value is not recognised as a credential | done — `make verify` green (1659 passed); 5 review findings confirmed and fixed |
-| CMP-3.S5 | — | free |
+| CMP-3.S5 | Four defects bedrock-platform hit adopting 0.2.0: `make audit-project` under the default `PY=python3` (3.6) dies with a `SyntaxError` (K1); the audit exits 2 when the update's restamp refuses over a conflicted import (K2); a project's `write_shapes` cannot include `-apply` because keel's own `doc-review-apply` is a non-write (K3); and check_W passes a recipe that opens with `$(WRITE_GUARD)` under a non-`[write]` label (K4) | planned |
 
 CMP-3.S3 is the bedrock blocker measured in CMP-2.S3's rehearsal: a real
 `copier update` of bedrock-platform left 120 files conflicted and failed in the
@@ -1321,7 +1321,7 @@ one of its projects, not by keel carrying the spine.
 | CMP-4.S2 | A frontend has no test runner, so it ships with zero tests and the gate is green | planned |
 | CMP-4.S3 | The e2e scenarios call the app in process, and nothing checks that a route has a scenario | planned |
 | CMP-4.S4 | Nothing calls a real model or a running server and judges what comes back | planned |
-| CMP-4.S5 | A spec's requirements are not tied to tests, so an uncovered requirement passes the gate | planned |
+| CMP-4.S5 | A spec's requirements are not tied to tests, so an uncovered requirement passes the gate | planned — approved by the maintainer |
 
 - **CMP-4.S1, the evidence contract.** `make verify` writes a canonical JSON
   record next to its exit: commit, gate targets run, per-target result, test
