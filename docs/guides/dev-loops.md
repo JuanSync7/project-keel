@@ -38,6 +38,14 @@ make test     # the test tiers: unit · integration · e2e · smoke
 make check    # fast, 3.6-safe structural gate (runs in pre-commit)
 ```
 
+A test tier fails when zero tests ran, skips included: `tests/conftest.py` counts
+the tests that ran and `tests/selection_guard.py` turns a run of zero into exit 5,
+unless the tier's one `-m` marker is declared in config/project.json
+`make_targets.empty_test_selections` with a reason. The declaration covers only
+that bare `-m <marker>` run: narrowed by `-k` or a path it exits 5, and the
+message names the selection as given. So a green tier always
+executed at least one assertion.
+
 Run the *smallest sufficient* target often (a focused `pytest -m unit -k name`),
 and the full `make verify` before declaring a task complete. A loop that advances
 on the model's claim of success rather than a real exit code is unsafe — gate on

@@ -559,6 +559,19 @@ It is keyed **by layer/concern, never one global `language`**:
 - `layers.<layer>` — per layer: a `language`, plus a `path` (backend) or a
   `root` + `available` stack list (frontend) and the chosen `stack` (`null`
   while the template still ships more than one — pick one, delete the rest).
+- `layers.app` — the composition root `make run` runs (`scripts/run_app.py`):
+  `{"language", "path", "module"}`, or `null` for a project with none. `check_H`
+  errors unless `path` is a package with `__main__.py` or a `.py` file and
+  `module` is the dotted form of that path's trailing components; an absent key
+  is silent, so a project generated before it gets it through `copier update`.
+  A project with no composition root makes two declarations with the `null`, or
+  its gate goes red: the smoke test's marker in
+  `make_targets.empty_test_selections` (its one test skips, and a tier that ran
+  zero tests fails) and the target that runs `scripts/run_app.py` in
+  `make_targets.effect_proof_skip` (it exits 2). When `copier update` brings
+  `layers.app` to a project whose declared path is absent and whose pre-update
+  manifest had no `layers.app`, the migration `scripts/jobs/declare_no_app.py`
+  makes all three edits and names them.
 - `transports` — `enabled` ⊆ `available`, a name→dir map of the shipped
   transports (REST / gRPC / nginx-edge / MCP).
 - `practices.profiles` (optional) — the domain coding-practice profiles this repo
@@ -578,7 +591,12 @@ It is keyed **by layer/concern, never one global `language`**:
   hold `tree` or `write`), `write_shapes` (name suffixes that need the guard
   whatever the label says), `area_dir` (the directory of `<area>.mk` files, or
   `null`), `effect_proof_skip` (a `[local]` target the runtime sweep cannot
-  run unattended, with the reason), and `gate_vars` (the only `NAME=VALUE`
+  run unattended, with the reason), `empty_test_selections` (a bare pytest
+  marker a `-m <marker>` recipe may run zero tests of, with the reason; not for
+  a compound expression, the whole suite or a run narrowed by `-k` or a path,
+  which `tests/selection_guard.py` never exempts, and not a way to quiet a tier that has tests: an entry is
+  stale, and fails the run, once a test of that marker runs, and `check_W`
+  errors on an entry no `pytest -m` recipe selects), and `gate_vars` (the only `NAME=VALUE`
   variables the gate runner passes to make, e.g. `PY`; never one of make's own
   control variables such as `MAKEFILES` or `MAKEFLAGS`, `SHELL`, `WRITE_GUARD`
   or an `unattended_vars` name). `check_W` validates the block and errors when

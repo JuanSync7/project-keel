@@ -53,7 +53,7 @@
     "adoption_boundary": null
   },
   "make_targets": {
-    "_comment": "Every annotated make target opens its `## ` help with an effect label from the closed vocabulary [local] [tree] [read] [cost] [write] (docs/adr/keel/K-0011-make-target-effect-labels.md). scripts/check_structure.py check_W validates this block and the labels; scripts/run_make_target.py runs only a target whose label falls inside gate_effects, sets gate_runner_var=1 last so WRITE_GUARD refuses a [write] target, accepts only the gate_vars as NAME=VALUE variables (each value one path-like word), and fails a run that changed what git sees. unattended_vars are the variables WRITE_GUARD refuses under; write_shapes are target-name suffixes that must be [write]; area_dir is the directory of <area>.mk makefiles (null: areas off); effect_proof_skip keeps a [local] target out of tests/integration/test_make_target_effects.py, by name and reason only.",
+    "_comment": "Every annotated make target opens its `## ` help with an effect label from the closed vocabulary [local] [tree] [read] [cost] [write] (docs/adr/keel/K-0011-make-target-effect-labels.md). scripts/check_structure.py check_W validates this block and the labels; scripts/run_make_target.py runs only a target whose label falls inside gate_effects, sets gate_runner_var=1 last so WRITE_GUARD refuses a [write] target, accepts only the gate_vars as NAME=VALUE variables (each value one path-like word), and fails a run that changed what git sees. unattended_vars are the variables WRITE_GUARD refuses under; write_shapes are target-name suffixes that must be [write]; area_dir is the directory of <area>.mk makefiles (null: areas off); effect_proof_skip keeps a [local] target out of tests/integration/test_make_target_effects.py, by name and reason only; empty_test_selections names a pytest marker a `-m <marker>` recipe may run zero tests of, with the reason as the value (tests/selection_guard.py fails any other run of zero tests, and a run of that marker that ran a test makes the entry stale).",
     "unattended_vars": ["CI", "RALPH"],
     "gate_runner_var": "RALPH",
     "gate_effects": ["local", "read"],
@@ -62,14 +62,13 @@
     "effect_proof_skip": {
       "new": "generates a project outside the tree and needs DEST and a clean checkout",
       "audit-project": "audits another project's tree and needs DEST; the template checkout proves it read-only in tests/integration/test_copier_audit.py, a whole-tree hash of DEST with .git included (in a generated project the target is a stub naming the template)",
-      "run": "starts the app composition root, which serves until stopped",
-      "smoke": "selects no tests today, and pytest exits 5 on an empty selection",
       "run-api": "a dev server that never exits",
       "run-web": "a dev server that never exits and needs npm",
       "test": "runs the whole suite, which holds this sweep, so it would run itself; tests/integration/test_write_guard.py runs its make-driving cases through the gate runner",
       "integration": "runs the integration suite, which holds this proof",
       "verify": "runs `test`, which holds this proof"
     },
+    "empty_test_selections": {},
     "gate_vars": ["PY"]
   },
   "child_env": {
@@ -138,6 +137,11 @@
       "language": "python",
       "python": ">=3.10",
       "path": "src/backend"
+    },
+    "app": {
+      "language": "python",
+      "path": "src/app",
+      "module": "app"
     }
   },
   "transports": {

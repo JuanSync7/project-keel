@@ -57,6 +57,7 @@ _POLICY = {
     "write_shapes": [],
     "area_dir": None,
     "effect_proof_skip": {},
+    "empty_test_selections": {},
     "gate_vars": ["PY"],
 }
 _GUARD = (

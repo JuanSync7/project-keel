@@ -27,6 +27,7 @@ _POLICY = {
     "write_shapes": [],
     "area_dir": None,
     "effect_proof_skip": {},
+    "empty_test_selections": {},
     "gate_vars": ["PY"],
 }
 _GUARD = (
@@ -411,6 +412,11 @@ def test_every_policy_key_is_required(key):
         ({"area_dir": 3}, "area_dir"),
         ({"effect_proof_skip": ["run"]}, "effect_proof_skip"),
         ({"effect_proof_skip": {"run": ""}}, "run"),
+        ({"empty_test_selections": ["smoke"]}, "empty_test_selections"),
+        ({"empty_test_selections": {"smoke": ""}}, "empty_test_selections.smoke"),
+        ({"empty_test_selections": {"smoke": 3}}, "empty_test_selections.smoke"),
+        ({"empty_test_selections": {"smoke test": "r"}}, "smoke test"),
+        ({"empty_test_selections": {"smoke-test": "r"}}, "smoke-test"),
         ({"gate_vars": "PY"}, "gate_vars"),
         ({"gate_vars": ["PY", "bad name"]}, "bad name"),
         ({"gate_vars": ["MAKEFILES"]}, "MAKEFILES"),
@@ -443,6 +449,64 @@ def test_a_skip_entry_naming_no_target_is_stale(repo):
         _policy(effect_proof_skip={"gone": "was a dev server"}),
     )
     assert len(errs) == 1 and "gone" in errs[0] and "effect_proof_skip" in errs[0]
+
+
+# --- empty_test_selections: a declared-empty marker names a pytest -m recipe -------
+
+_TIERS = (
+    "test: ## [local] t\n\tPYTHONPATH=$(PYTHONPATH) $(PY) -m pytest\n"
+    "smoke: ## [local] s\n\tPYTHONPATH=$(PYTHONPATH) $(PY) -m pytest -m smoke\n"
+)
+
+
+def test_a_declared_empty_selection_naming_a_pytest_marker_is_clean(repo):
+    errs, warns = _run(
+        repo, _TIERS, _policy(empty_test_selections={"smoke": "no smoke surface yet"})
+    )
+    assert errs == [] and warns == [], (errs, warns)
+
+
+def test_a_declared_empty_selection_naming_no_pytest_marker_is_stale(repo):
+    errs, _ = _run(
+        repo, _TIERS, _policy(empty_test_selections={"nightly": "not written yet"})
+    )
+    assert len(errs) == 1, errs
+    assert "stale: make_targets.empty_test_selections.nightly" in errs[0], errs
+
+
+def test_a_non_pytest_dash_m_is_not_a_marker(repo):
+    """`$(PY) -m pytest` is itself a `-m`: only a `-m` after the pytest word
+    selects a marker, so `pytest` cannot be declared as one."""
+    errs, _ = _run(repo, _TIERS, _policy(empty_test_selections={"pytest": "x"}))
+    assert len(errs) == 1 and "empty_test_selections.pytest" in errs[0], errs
+
+
+def test_the_pytest_selections_are_read_from_the_recipes_not_a_list():
+    """target -> the `-m` expression after the pytest word (None: no `-m`); a
+    recipe that never runs pytest is not a selection, and nothing is listed."""
+    text = (
+        _TIERS
+        + "quoted: ## [local] q\n\t$(PY) -m pytest -q -m 'nightly' tests\n"
+        + 'compound: ## [local] c\n\t$(PY) -m pytest -m "smoke and not slow"\n'
+        + "lint: ## [local] l\n\t$(PY) -m ruff check -m x\n"
+    )
+    assert cs.pytest_selections([("Makefile", "")]) == {}
+    assert cs.pytest_selections([("Makefile", text)]) == {
+        "test": None,
+        "smoke": "smoke",
+        "quoted": "nightly",
+        "compound": "smoke and not slow",
+    }
+
+
+def test_a_compound_selection_cannot_be_declared_empty(repo):
+    """Only a bare marker is declarable: `smoke and not slow` is not `smoke`."""
+    errs, _ = _run(
+        repo,
+        'part: ## [local] p\n\t$(PY) -m pytest -m "smoke and not slow"\n',
+        _policy(empty_test_selections={"smoke": "r"}),
+    )
+    assert len(errs) == 1 and "empty_test_selections.smoke" in errs[0], errs
 
 
 # --- areas --------------------------------------------------------------------------

@@ -181,8 +181,8 @@ typecheck-fe: ## [local] Type-check frontend apps (tsc / astro check)
 fe-install: ## [tree,read] Install frontend deps for all FE apps
 	@for app in $(FE_APPS); do echo "npm install: $$app"; (cd $$app && npm install) || exit 1; done
 
-run: ## [local] Run the app composition root
-	$(PY) -m app
+run: check-python ## [local] Run the composition root config/project.json layers.app declares
+	PYTHONPATH=$(PYTHONPATH) $(PY) scripts/run_app.py
 # The corpus is NOT showcase-owned — mcp/qa_server.py, scripts/query_corpus.py and
 # three of the four agents read it — so it is built in every project. llms.txt renders
 # the showcase READ MODEL, so its renderer is pruned along with the showcase

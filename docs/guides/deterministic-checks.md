@@ -112,6 +112,11 @@ print but never fail the build.
   commit.
 - **G. Tool↔agent binding** — `tools.md` ↔ each spec's `## Used by` agree.
 - **H. Project facts** — `config/project.json` agrees with the tree (§15).
+  Among those facts, `layers.app` (the composition root `make run` runs) must
+  name, by `path`, a package with `__main__.py` or a `.py` file, and by
+  `module`, the dotted form of that path's trailing components; each problem is
+  one error naming `layers.app.path` or `layers.app.module`. `null` declares no
+  composition root, and an absent key is silent until `copier update` brings it.
 - **I. Agent-rules symlink** — every `CLAUDE.md` is a symlink to its sibling
   `AGENT.md`, and every `AGENT.md` has that sibling (§5).
 - **J. Owned-exception boundary** — in `src`/`models`/`runtimes`/`agents`, no
@@ -297,15 +302,20 @@ print but never fail the build.
   `-` prefix of its own, and `exit 1`. A target annotated on two rules must carry
   one label on both, since make merges them. The `make_targets` block
   itself is validated: `gate_effects` must hold `local` and must not hold `tree`
-  or `write`, and `gate_vars` may not name make's own control variables,
-  `WRITE_GUARD` or an unattended variable. With `area_dir` set, each `<area>.mk` is included, opens with one
+  or `write`, `gate_vars` may not name make's own control variables,
+  `WRITE_GUARD` or an unattended variable, and each
+  `empty_test_selections` key must be a bare marker carrying a reason. An
+  `empty_test_selections` key that no recipe selects with `pytest -m <key>` is
+  an error reading `stale:`; the recipes are parsed for that, never a list of
+  tier names. With `area_dir` set, each `<area>.mk` is included, opens with one
   `##@ <area>` header, and prefixes its public targets `<area>-`. A recursion it
   cannot resolve (`$(MAKE) -C`, a variable target) is a WARN reading
   *unverified*. Measured over keel at landing: 37 annotated targets, 32
   `[local]`, 5 carrying `tree`. The label is a static claim; the runtime half is
   `tests/integration/test_make_target_effects.py`, which runs every `[local]`
   target through `scripts/run_make_target.py` and fails one that changed the
-  tree. See [`docs/adr/keel/K-0011-make-target-effect-labels.md`](../adr/keel/K-0011-make-target-effect-labels.md).
+  tree; `run` and `smoke` are in that sweep, and only the targets
+  `make_targets.effect_proof_skip` names, each with its reason, are not. See [`docs/adr/keel/K-0011-make-target-effect-labels.md`](../adr/keel/K-0011-make-target-effect-labels.md).
 - **X. Child processes get an allowlisted environment** — every `subprocess`
   (`run`, `Popen`, `call`, `check_call`, `check_output`) or `asyncio`
   (`create_subprocess_exec`, `create_subprocess_shell`) spawn passes `env=`

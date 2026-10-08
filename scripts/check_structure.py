@@ -146,6 +146,7 @@ import json
 import os
 import posixpath
 import re
+import shlex
 import sys
 import tokenize
 from urllib.parse import unquote
@@ -950,6 +951,66 @@ def _expect(val, typ, label, default):
     return val
 
 
+def composition_root(app, root):
+    """config/project.json `layers.app` -> (problems, import_root).
+
+    `app` is the declared value (not None: null means "no composition root" and
+    is the caller's to handle). It must be an object with a string `path` --
+    a package carrying `__main__.py`, or a `.py` file -- and a string `module`
+    that is the dotted form of that path's trailing components; the leading
+    components are the import root a runner puts on sys.path. Each problem
+    names its key. scripts/run_app.py runs what this accepts, so the gate and
+    the runner cannot disagree about what is runnable.
+    """
+    if not isinstance(app, dict):
+        return (
+            ['layers.app must be an object {"path", "module"} or null'],
+            None,
+        )
+    problems = []
+    path = app.get("path")
+    module = app.get("module")
+    if not isinstance(path, str) or not path.strip("/"):
+        problems.append("layers.app.path must be a non-empty string")
+    if not isinstance(module, str) or not module:
+        problems.append("layers.app.module must be a non-empty dotted module name")
+    if problems:
+        return problems, None
+    parts = [p for p in path.split("/") if p]
+    full = os.path.join(root, *parts)
+    if os.path.isdir(full):
+        if not os.path.isfile(os.path.join(full, "__main__.py")):
+            return (
+                [
+                    "layers.app.path '%s' is a package without __main__.py -- "
+                    "nothing runs it as a program" % path
+                ],
+                None,
+            )
+    elif os.path.isfile(full) and parts[-1].endswith(".py"):
+        parts[-1] = parts[-1][: -len(".py")]
+    else:
+        return (
+            [
+                "layers.app.path '%s' does not exist as a package or a .py file "
+                "-- a project with no composition root sets layers.app to null, "
+                "with the two make_targets declarations CONVENTIONS.md section 15 "
+                "names under layers.app" % path
+            ],
+            None,
+        )
+    dotted = module.split(".")
+    if len(dotted) > len(parts) or parts[len(parts) - len(dotted) :] != dotted:
+        return (
+            [
+                "layers.app.module '%s' is not the dotted form of the end of "
+                "layers.app.path '%s'" % (module, path)
+            ],
+            None,
+        )
+    return [], os.path.join(root, *parts[: len(parts) - len(dotted)])
+
+
 def check_H():
     """Project facts in config/project.json agree with the tree.
 
@@ -986,6 +1047,12 @@ def check_H():
                 "config/project.json: layers.backend.python '%s' != pyproject "
                 "requires-python '%s'" % (bpy, have)
             )
+
+    # Absent stays silent: a project generated before the key gets it through
+    # `copier update`. Null declares that the project has no composition root.
+    if layers.get("app") is not None:
+        for problem in composition_root(layers["app"], ROOT)[0]:
+            err("config/project.json: " + problem)
 
     frontend = _expect(layers.get("frontend"), dict, "layers.frontend", {})
     froot = frontend.get("root")
@@ -3939,6 +4006,7 @@ _POLICY_KEYS = (
     "write_shapes",
     "area_dir",
     "effect_proof_skip",
+    "empty_test_selections",
     "gate_vars",
 )
 # make's own control variables and the guard: a gate run that let a caller set
@@ -3965,6 +4033,9 @@ _RESERVED_MAKE_VARS = (
 _GATE_MUST_HOLD = "local"
 _GATE_MUST_NOT_HOLD = ("tree", "write")
 _MAKE_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+# A pytest marker a test tier selects with `-m`: one bare identifier. An
+# expression (`smoke and not slow`) is a selection too, but never a declarable one.
+_MARKER_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _WRITE_SHAPE = re.compile(r"^-[a-z0-9][a-z0-9-]*$")
 _AREA_DIR_NAME = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]*$")
 _KEBAB = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -4416,6 +4487,26 @@ def make_targets_policy(manifest):
                     "why the target cannot run unattended"
                     % ", ".join("`%s`" % k for k in bad)
                 )
+    if "empty_test_selections" in block:
+        empty = block["empty_test_selections"]
+        if not isinstance(empty, dict):
+            errs.append(
+                where + "empty_test_selections must be an object of pytest marker "
+                "-> the reason that selection may run zero tests"
+            )
+        else:
+            for key in sorted(empty):
+                if not _MARKER_NAME.match(key):
+                    errs.append(
+                        where + "empty_test_selections.%s is not a bare pytest "
+                        "marker name -- only a `-m <marker>` selection can be "
+                        "declared empty" % key
+                    )
+                elif not isinstance(empty[key], str) or not empty[key].strip():
+                    errs.append(
+                        where + "empty_test_selections.%s carries no reason -- a "
+                        "declaration says why the selection may run zero tests" % key
+                    )
     if "gate_vars" in block:
         gate_vars = block["gate_vars"]
         if not _is_name_list(gate_vars):
@@ -4447,6 +4538,48 @@ def make_targets_policy(manifest):
     if errs:
         return None, errs
     return {k: block[k] for k in _POLICY_KEYS}, []
+
+
+def _pytest_selection(command):
+    """One recipe command -> (True, the `-m` expression or None) when it runs
+    pytest, else (False, None). Only a `-m` after the pytest word counts:
+    `$(PY) -m pytest` is itself a `-m`."""
+    try:
+        words = shlex.split(command)
+    except ValueError:
+        words = command.split()
+    at = None
+    for i, word in enumerate(words):
+        if word == "pytest" or word.endswith("/pytest"):
+            at = i
+            break
+    if at is None:
+        return False, None
+    rest = words[at + 1 :]
+    for i, word in enumerate(rest):
+        if word == "-m" and i + 1 < len(rest):
+            return True, rest[i + 1]
+        if word.startswith("-m") and len(word) > 2 and not word.startswith("--"):
+            return True, word[2:].lstrip("=")
+    return True, None
+
+
+def pytest_selections(makefiles):
+    """{target: `-m` expression or None} for every rule over [(relpath, text)]
+    whose recipe runs pytest; None means the whole suite. The first pytest line
+    of a recipe is its selection. Read from the recipes, so a project's own
+    tier is found without a list of tier names."""
+    out = {}
+    for _, text in makefiles:
+        for rule in make_target_rules(text):
+            if rule.target in out:
+                continue
+            for command in rule.recipe:
+                runs, marker = _pytest_selection(command)
+                if runs:
+                    out[rule.target] = marker
+                    break
+    return out
 
 
 def _rule_index(makefiles):
@@ -4855,6 +4988,14 @@ def _effect_findings(makefiles, policy):
         "which no make target defines -- drop the stale entry" % key
         for key in sorted(policy["effect_proof_skip"])
         if key not in index
+    )
+    markers = {m for m in pytest_selections(makefiles).values() if m}
+    errs.extend(
+        "config/project.json: stale: make_targets.empty_test_selections.%s names "
+        "no pytest -m recipe -- no make target selects that marker, so drop the "
+        "entry" % key
+        for key in sorted(policy["empty_test_selections"])
+        if key not in markers
     )
     errs.extend(_area_findings(makefiles, by_file, policy["area_dir"]))
     return errs, warns

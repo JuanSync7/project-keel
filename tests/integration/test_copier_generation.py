@@ -35,6 +35,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "jobs")
 
 import review_docs  # noqa: E402
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
+
+from child_env import build_child_env  # noqa: E402
+
 _ROOT = Path(__file__).resolve().parents[2]
 
 # Self-neutralising downstream. `_exclude` prunes these modules at GENERATION, but
@@ -854,14 +858,19 @@ def test_meta_tests_neutralise_themselves_in_a_project_that_still_has_them(tmp_p
         env=env,
     )
 
-    assert r.returncode == 0, (
+    # Every meta-test skips, so this run of those modules alone executes zero
+    # tests, and tests/selection_guard.py turns that into exit 5 by design. CI
+    # runs them inside the whole suite, where the project's own tests run too;
+    # what this asserts is that none of them FAILS or errors.
+    summary = r.stdout.strip().splitlines()[-1] if r.stdout.strip() else ""
+    assert r.returncode == 5 and "zero tests ran" in r.stdout, (
         "keel's template meta-tests FAIL inside a generated project that still "
         "carries them, so any descendant predating the prune goes red on its next "
         "`copier update`:\n" + r.stdout[-4000:] + r.stderr[-2000:]
     )
-    assert "skipped" in r.stdout, (
-        "expected the meta-tests to skip themselves in a non-template tree:\n"
-        + r.stdout[-2000:]
+    assert re.fullmatch(r"\d+ skipped in [0-9.]+s(?: \([0-9:]+\))?", summary), (
+        "expected the meta-tests to skip themselves in a non-template tree, "
+        "and nothing else:\n" + r.stdout[-2000:]
     )
 
 
@@ -1083,6 +1092,96 @@ def test_a_generated_project_passes_its_own_suite(tmp_path, answers):
             answers or "the default answers",
             suite.stdout[-4000:] + suite.stderr[-2000:],
         )
+    )
+
+
+def _make_in(project, target):
+    """`make <target>` in a generated project, as a newcomer's clean shell runs it.
+
+    Plain make, not the gate runner: a freshly generated tree has no git, and the
+    runner refuses a tree it cannot snapshot. The allowlisted environment drops
+    PYTHONPATH and the outer make's flags, which is the condition `make run`
+    failed under."""
+    return subprocess.run(
+        ["make", "--no-print-directory", "PY=" + sys.executable, target],
+        cwd=str(project),
+        env=build_child_env(),
+        capture_output=True,
+        text=True,
+        timeout=600,
+    )
+
+
+_PASSED = re.compile(r"\b(\d+) passed\b")
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
+@pytest.mark.parametrize(
+    "answers",
+    _ANSWER_MATRIX
+    + [
+        pytest.param(
+            {"frontend_stack": "none", "showcase": False}, id="showcase-declined"
+        )
+    ],
+)
+def test_a_generated_project_runs_and_smokes(tmp_path, answers):
+    """Slice CMP-3.S1 held downstream: `make run` reached a module the recipe
+    named literally and failed `No module named app` under every answer set, and
+    `make smoke` selected no test. Both must be green on arrival, and the smoke
+    run must have run something."""
+    dest = tmp_path / "proj"
+    _generate(dest, project_name="demo_proj", **answers)
+    ran = _make_in(dest, "run")
+    assert ran.returncode == 0, ran.stdout[-2000:] + ran.stderr[-2000:]
+    smoke = _make_in(dest, "smoke")
+    assert smoke.returncode == 0, smoke.stdout[-3000:] + smoke.stderr[-2000:]
+    passed = _PASSED.search(smoke.stdout)
+    assert passed and int(passed.group(1)) >= 1, smoke.stdout[-3000:]
+
+
+_APP_DELETE_ADVICE = re.compile(r"\*\*Delete this dir\*\*(.*?)(?:\n\n|\Z)", re.DOTALL)
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
+def test_following_src_apps_delete_advice_leaves_a_green_gate(tmp_path):
+    """src/app/README.md tells a client-server project to delete the composition
+    root. Doing exactly that must leave the structure gate and `make smoke` green:
+    the README names the manifest edits (layers.app null, smoke declared empty,
+    run kept out of the effect sweep) that go with the deletion, src/app/AGENT.md
+    names the same three, and this test applies them from the README's own words."""
+    dest = tmp_path / "proj"
+    _generate(dest, project_name="demo_proj", frontend_stack="none")
+    advice = _APP_DELETE_ADVICE.search((dest / "src" / "app" / "README.md").read_text())
+    assert advice, (
+        "src/app/README.md no longer carries the 'Delete this dir' advice this "
+        "test follows; re-derive it rather than deleting the pin"
+    )
+    # The agent rules give the same advice, and an agent reads those first: a
+    # bare "delete this dir" there turns the gate red when followed.
+    rules = (dest / "src" / "app" / "AGENT.md").read_text(encoding="utf-8")
+    for named in ("layers.app", "empty_test_selections", "effect_proof_skip"):
+        assert named in advice.group(1), (named, advice.group(1))
+        assert named in rules, ("src/app/AGENT.md", named)
+
+    shutil.rmtree(str(dest / "src" / "app"))
+    path = dest / "config" / "project.json"
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    manifest["layers"]["app"] = None
+    targets = manifest["make_targets"]
+    targets["empty_test_selections"]["smoke"] = "no composition root to smoke"
+    targets["effect_proof_skip"]["run"] = "no composition root (layers.app is null)"
+    path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+
+    r = _structure_gate(dest)
+    assert r.returncode == 0, r.stdout + r.stderr
+    smoke = _make_in(dest, "smoke")
+    assert smoke.returncode == 0, smoke.stdout[-3000:] + smoke.stderr[-2000:]
+    assert "no composition root to smoke" in smoke.stdout, smoke.stdout[-3000:]
+    ran = _make_in(dest, "run")
+    # Loud, not silent: run names why it has nothing to start.
+    assert ran.returncode != 0 and "no composition root" in ran.stderr, (
+        ran.stdout + ran.stderr
     )
 
 

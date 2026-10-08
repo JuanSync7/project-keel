@@ -28,6 +28,62 @@ version rather than a bare commit:
   id's shape is a stated skip (a prose line such as `slice: split the parser`
   is not judged). Registered as the gate practice `work-naming`.
 
+### Changed
+- **`run` and `smoke` left `make_targets.effect_proof_skip`, so
+  `tests/integration/test_make_target_effects.py` now runs both.** The `run`
+  reason ("serves until stopped") was false: the composition root runs once and
+  exits. The `smoke` reason (an empty selection) is gone, because smoke now
+  ships a test. A project that kept either entry gets it removed by
+  `copier update`; one that still needs to skip `run`, because it declares
+  `layers.app` null, re-adds the entry with that reason.
+
+### Fixed
+- **`make run` runs the composition root config/project.json `layers.app`
+  declares.** The recipe was `$(PY) -m app` with no `PYTHONPATH`, so it worked
+  only when the caller's environment already had `src` on the path and failed
+  with `No module named app` everywhere else, including every generated
+  project's clean shell. It now sets `PYTHONPATH` as the test tiers do and runs
+  `scripts/run_app.py`, which reads the new `layers.app`
+  (`{"language", "path", "module"}`, or `null` for a project with no
+  composition root). An absent or null `layers.app` exits 2 with a message
+  naming which. `check_H` errors on a `layers.app` whose path is not a package
+  with `__main__.py` or a `.py` file, or whose module is not that path's dotted
+  form. An absent key stays silent, so a project generated earlier gets it
+  through `copier update` before anything judges it. `scripts/run_app.py
+  --help` (or `-h`) describes the runner and runs nothing; the app's own
+  arguments go after `--` when the first of them is one of those.
+- **`copier update` keeps a project that deleted `src/app` green.** Such a
+  project receives `"app": {"path": "src/app", ...}` from the update, and
+  `check_H` errors on the absent path. The new migration
+  `scripts/jobs/declare_no_app.py` acts only when the declared path is absent
+  and the pre-update manifest had no `layers.app`: it sets `layers.app` to
+  null, declares the smoke test's marker in
+  `make_targets.empty_test_selections` and adds the target that runs
+  `scripts/run_app.py` to `make_targets.effect_proof_skip`, names the edits on
+  stderr, and changes no other byte of config/project.json. A project that
+  declared `layers.app` itself is left to `check_H`, whose error now names the
+  null remedy. A project that deletes `src/app` after the update makes the
+  same three edits by hand, as `src/app/AGENT.md` and `src/app/README.md` say.
+- **A make target that runs pytest fails when zero tests ran.** pytest exits 5
+  only when nothing is collected, and a selection whose every test skipped
+  exited 0, so `make smoke` could pass with no assertion executed.
+  `tests/conftest.py` now counts the tests that ran (passed, failed or xfail)
+  and `tests/selection_guard.py` fails a run of zero, naming the selection. A
+  bare `-m <marker>` selection may be declared empty in the new
+  `make_targets.empty_test_selections` (`{marker: reason}`); that run exits 0
+  and prints the reason, and the entry goes stale, failing the run, once a test
+  of that marker runs. `check_W` also errors on an entry no `pytest -m` recipe
+  selects. A run narrowed by a path or `-k` is named as given and is never
+  exempt, since only a bare `-m <marker>` run can be declared; `--collect-only`,
+  `--setup-plan` and `--setup-only` run no test and are left alone. Breaking
+  for a project with a pytest tier that selects only skipped tests, and for a
+  single test file run alone whose tests all skip: either now exits 5.
+- **`make smoke` ships a real test.** `tests/smoke/test_app_runs.py` runs
+  `make run` with the allowlisted environment and requires exit 0, so the
+  tier proves the composition root starts instead of selecting nothing. It
+  skips when `layers.app` is null; such a project declares `smoke` in
+  `make_targets.empty_test_selections`, as `src/app/README.md` says.
+
 ## [0.2.0] — 2026-10-07
 
 ### Added

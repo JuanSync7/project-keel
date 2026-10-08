@@ -395,9 +395,9 @@ Found during the slices and deliberately not started:
   installed dependencies in that stack.
 - **`make run` needs `PYTHONPATH`** to find `src/` outside the test harness;
   the sweep skips it as a server, so nothing exercises the composition root's
-  import path.
+  import path. Fixed by CMP-3.S1.
 - **`make smoke` exits 5** because it selects no tests today, so the sweep skips
-  it by reason instead of proving it.
+  it by reason instead of proving it. Fixed by CMP-3.S1.
 - **ADR numbers.** CMP-1.S3's ADR took keel's next free number, 0011; the queued
   number-space item above still decides how template and project ADRs coexist.
   Fixed by CMP-2.S5.
@@ -935,7 +935,7 @@ lands. The cap is five slices, each one commit on a green `make verify`.
 
 | Slice | Defect | Status |
 |-------|--------|--------|
-| CMP-3.S1 | `make smoke` passes over zero tests, and `make run` fails with `No module named app` | planned |
+| CMP-3.S1 | `make smoke` passes over zero tests, and `make run` fails with `No module named app` | done — `make verify` green (1517 passed); 5 review findings confirmed and fixed |
 | CMP-3.S2 | Every document's `updated:` line conflicts on `copier update` when both sides touched it | planned |
 | CMP-3.S3 | A project can add a check only by editing `scripts/check_structure.py`, so its next `copier update` conflicts in the module the restamp task imports | planned |
 | CMP-3.S4 | The `GIT_CONFIG_COUNT`/`GIT_CONFIG_PARAMETERS` variables reach a child, copier's own git calls bypass `build_child_env`, and a bare token or `Authorization` value is not recognised as a credential | planned |
@@ -944,6 +944,72 @@ lands. The cap is five slices, each one commit on a green `make verify`.
 CMP-3.S3 is the bedrock blocker measured in CMP-2.S3's rehearsal: a real
 `copier update` of bedrock-platform left 120 files conflicted and failed in the
 restamp task.
+
+
+### Slice CMP-3.S1 — a tier that ran zero tests fails, and `make run` runs
+
+**Measured.** In a clean shell, `make run` exited 2 with `No module named app`:
+the recipe was `$(PY) -m app` with no `PYTHONPATH`, so it worked only where the
+caller had already put `src` on the path. `make smoke` exited 5 over 1437
+deselected tests, and the effect sweep skipped both targets by reason, the
+`run` reason ("serves until stopped") being false. A smoke test that skipped
+made `make smoke` exit 0, because pytest exits 5 only when nothing is
+collected. A project generated at 28772f1 showed the same two failures.
+
+**The rule.** `make run` sets `PYTHONPATH` and runs `scripts/run_app.py`,
+which runs the module config/project.json `layers.app` names. An absent or
+null `layers.app` exits 2 naming which. check_H holds `layers.app` to a
+package with `__main__.py` or a `.py` file and to a module that is that path's
+dotted form; `check_structure.composition_root` is the one rule both apply.
+`tests/conftest.py` counts the tests that ran (passed, failed or xfail), and
+`tests/selection_guard.py` fails a session where none did, unless its one bare
+`-m` marker is in the new `make_targets.empty_test_selections`, read through
+`make_targets_policy`. A declared marker whose tests ran fails as stale, and
+check_W errors on an entry no `pytest -m` recipe selects, parsing the recipes
+rather than listing tiers. `tests/smoke/test_app_runs.py` runs `make run` with
+the allowlisted environment, so smoke has a real test. `run` and `smoke` left
+`effect_proof_skip`. `src/app/README.md` says what to change when the
+directory is deleted, and `test_following_src_apps_delete_advice_leaves_a_green_gate`
+follows that advice in a generated project.
+
+**Proof.** The selection guard, check_H's `layers.app` rule, check_W's stale
+rule and `scripts/run_app.py` each have unit tests, and
+`tests/integration/test_empty_selection.py` runs every pytest tier the
+Makefile declares in a scratch project with nothing to select. Breaking the
+guard's zero check, the stale check or the module match, or reverting the
+recipe to `$(PY) -m app`, each turned a named test red. Projects generated
+from this tree (defaults, and no frontend without the showcase) pass `make run` and `make smoke` with one smoke
+test. A real `copier update` of a 7f0a68b project and of a 28772f1 project
+conflicts nowhere, removes `run` and `smoke` from `effect_proof_skip`, brings
+`layers.app` and `empty_test_selections`, and leaves both targets green;
+`make audit-project` on the 7f0a68b copy owes 0 errors.
+
+**Review.** Five findings were confirmed and fixed. `--setup-plan` and
+`--setup-only` run no test and are left alone, as `--collect-only` is. A run
+narrowed by a path or `-k` is named as given and is never exempt, so the
+declare-a-marker advice appears only where it can apply. A project that
+deleted `src/app` before `layers.app` existed is settled on `copier update`
+by the migration `scripts/jobs/declare_no_app.py`, which acts only when the
+declared path is absent and the pre-update manifest had no `layers.app`;
+check_H's error for an absent path names the null remedy. `src/app/AGENT.md`
+names the three manifest edits, pinned by the delete-advice test.
+`scripts/run_app.py --help` describes the runner, and `--` passes the app's
+own arguments.
+
+**Residual risk.**
+- A test file run alone whose tests all skip now exits 5.
+  `test_meta_tests_neutralise_themselves_in_a_project_that_still_has_them`
+  expects that exit for keel's meta-tests in a generated project.
+- `make run` is one-shot. A project that turns its composition root into a
+  server must give its smoke test a readiness probe and skip `run` by reason;
+  `src/app/README.md` says so, and nothing checks it. A socket-level e2e is
+  CMP-4.S3.
+- `pytest_selections` takes the first pytest command in a recipe. A recipe that
+  runs pytest twice with different `-m` markers is judged by the first.
+- ADR-K-0011 still lists `run` among the targets the effect sweep skips. That
+  stopped being true here, since `make run` now exits and the sweep runs it. The
+  ADR is accepted and is not edited; `config/project.json`
+  `make_targets.effect_proof_skip` is the current list.
 
 ## CMP-4 — keel enforces what it claims, and emits evidence jarvis can read
 

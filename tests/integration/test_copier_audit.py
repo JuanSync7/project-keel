@@ -673,8 +673,9 @@ def test_a_pre_c2_2_project_receives_credentialed_values_as_an_arrival_and_owes_
 ):
     """The key is optional, so an older project owes nothing for lacking it: the
     audit reports it as a config key the update brings, at its empty default,
-    and no X error. The `adr` block (CONVENTIONS §19) and the `work_naming`
-    block (CONVENTIONS §20) arrive beside it."""
+    and no X error. The `adr` block (CONVENTIONS §19), the `work_naming`
+    block (CONVENTIONS §20), `layers.app` and
+    `make_targets.empty_test_selections` (CONVENTIONS §15) arrive beside it."""
     project, _env = pre_c2_2
     before = _tree(project)
     systmp = tmp_path / "systmp"
@@ -693,6 +694,8 @@ def test_a_pre_c2_2_project_receives_credentialed_values_as_an_arrival_and_owes_
     assert {f["key"] for f in arrived} == {
         "adr",
         "child_env.credentialed_values",
+        "layers.app",
+        "make_targets.empty_test_selections",
         "work_naming",
     }, arrived
     values = [f for f in arrived if f["key"] == "child_env.credentialed_values"]

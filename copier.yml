@@ -330,6 +330,15 @@ _migrations:
   # merely stop shipping. Named exactly — `docs/design/` itself must survive.
   - command: "rm -f docs/design/keel-hardening-plan.md"
     when: "{{ _stage == 'after' }}"
+  # Not answer-driven: `layers.app` arrived in config/project.json with a value
+  # (src/app) that a project which deleted src/app, as the template's README then
+  # advised, does not have, and check_H errors on it. The job acts only when the
+  # path is absent AND the pre-update commit's manifest had no `layers.app`: it
+  # sets it null and declares the smoke marker and the run target a project with
+  # no composition root needs. A project that declared `layers.app` itself is
+  # left to check_H. A list, so no shell. Before the restamp, which stays LAST.
+  - command: ["{{ _copier_python }}", "scripts/jobs/declare_no_app.py"]
+    when: "{{ _stage == 'after' }}"
   # LAST on purpose: restamp every document the update changed, after every
   # other migration has finished changing the tree. In the `after` stage the
   # project is a git work tree whose HEAD is the pre-update commit, so the

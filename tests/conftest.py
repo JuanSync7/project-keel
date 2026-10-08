@@ -1,6 +1,6 @@
 """
-title: Shared pytest fixtures + the hermetic git environment
-summary: Repo-wide fixtures, and the one place the suite's git environment is neutralised and the parent's git repository context removed (see tests/hermetic_git.py for what is neutralised and why).
+title: Shared pytest fixtures + the hermetic git environment + the zero-tests guard
+summary: Repo-wide fixtures; the one place the suite's git environment is neutralised and the parent's git repository context removed (see tests/hermetic_git.py for what is neutralised and why); and the end-of-session guard that fails a run in which zero tests ran (see tests/selection_guard.py for the verdict).
 
 Shared pytest fixtures live here.
 
@@ -19,6 +19,7 @@ import tempfile
 import pytest
 
 import hermetic_git
+import selection_guard
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -89,3 +90,50 @@ def real_corpus():
             % (job, result.stdout, result.stderr)
         )
     return path
+
+
+# The zero-tests guard. pytest exits 5 only when nothing is collected; a run
+# whose every selected test skipped exits 0 having executed no assertion. So
+# count the tests that ran and let tests/selection_guard.py judge the session.
+_RAN = []
+
+
+def pytest_runtest_logreport(report):
+    if report.when == "call" and (
+        report.passed or report.failed or hasattr(report, "wasxfail")
+    ):
+        _RAN.append(report.nodeid)
+
+
+@pytest.hookimpl(trylast=True)
+def pytest_sessionfinish(session, exitstatus):
+    config = session.config
+    if (
+        config.option.collectonly
+        or getattr(config.option, "setupplan", False)
+        or getattr(config.option, "setuponly", False)
+        or hasattr(config, "workerinput")
+    ):
+        # A listing, --setup-plan and --setup-only execute no test by design;
+        # an xdist worker's controller judges.
+        return
+    if exitstatus not in (0, 5):
+        return  # a failure, an interrupt or a usage error already says why
+    # Paths count only when the caller gave them, not pyproject's testpaths.
+    source = getattr(config, "args_source", None)
+    paths = list(config.args) if getattr(source, "name", "") == "ARGS" else []
+    code, message = selection_guard.verdict(
+        len(_RAN),
+        config.option.markexpr,
+        selection_guard.declared_empty(),
+        keyword=config.option.keyword,
+        paths=paths,
+    )
+    if code is None:
+        return
+    session.exitstatus = code
+    reporter = config.pluginmanager.get_plugin("terminalreporter")
+    if reporter is not None:
+        reporter.write_line(message)
+    else:
+        sys.stderr.write(message + "\n")
