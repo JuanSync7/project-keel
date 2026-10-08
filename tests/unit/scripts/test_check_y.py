@@ -2,11 +2,12 @@
 title: Unit — check_structure check_Y (template and project ADRs live in separate number spaces)
 kind: tests
 layer: n/a
-summary: check_Y's rule, pinned: config/project.json `adr` names the project space, the template space, the template prefix and the digit count, and a missing or malformed block fails closed naming the key. An ADR in the project space is NNNN-<slug>.md and never carries the template prefix; an ADR in the template space is <prefix>NNNN-<slug>.md, and an unprefixed one is an error naming the project space as where it belongs. A number is unique within its space (both paths named), and the same number once in each space is clean. A template-space file is one `template_adrs` lists and every listed name is a file there, so a project's decision under a free K- number fails. A `kind: adr` document anywhere but directly in one of the two spaces fails, and a `.MD` name is judged. The block's path, unknown-key, bool-digit and list guards each fail closed. An ADR has kind adr and a title that begins ADR-<prefix?>NNNN: naming its own file. Both spaces empty is a warning, never silence. Keel's own tree is clean and the check sees every template ADR in it.
+summary: check_Y's rule, pinned: config/project.json `adr` names the project space, the template space, the template prefix and the digit count, and a missing or malformed block fails closed naming the key. An ADR in the project space is NNNN-<slug>.md and never carries the template prefix; an ADR in the template space is <prefix>NNNN-<slug>.md, and an unprefixed one is an error naming the project space as where it belongs. A number is unique within its space (both paths named), and the same number once in each space is clean. A template-space file is one `template_adrs` lists and every listed name is a file there, so a project's decision under a free K- number fails. A `kind: adr` document anywhere but directly in one of the two spaces fails, and a `.MD` name is judged. The block's path, unknown-key, bool-digit and list guards each fail closed. An ADR has kind adr and a title that begins ADR-<prefix?>NNNN: naming its own file. Both spaces empty is a warning, never silence. Keel's own tree is clean and the check sees every ADR in each space as config/project.json names them, never a keel-only fact: the same assertion passes on a tree that records a project ADR, and fails when the inventory loses one.
 """
 
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -79,28 +80,60 @@ def _rerun(monkeypatch, root):
     return _ys()
 
 
-def test_keel_tree_is_y_clean_and_sees_every_template_adr(monkeypatch):
-    """The real tree: zero Y findings, and the inventory check_Y judges holds
-    every K- file a plain listing finds, as many as config/project.json
-    `adr.template_adrs` names -- a pass over zero ADRs would be vacuous."""
-    _isolate(monkeypatch, _ROOT)
+def _tree_inventory_holds(monkeypatch, root):
+    """The tree at *root*: zero Y findings, and the inventory check_Y judges
+    equals an independent listing of each space config/project.json `adr`
+    names. Every value comes from root's own config, never a keel-only fact, so
+    the same assertion holds in a project that records ADRs of its own. The
+    template space must be non-empty and as long as `template_adrs` -- a pass
+    over zero ADRs would be vacuous."""
+    _isolate(monkeypatch, root)
     errs, warns = _ys()
     assert errs == [] and warns == [], (errs, warns)
-    listed = sorted(
-        "docs/adr/keel/" + n
-        for n in os.listdir(str(_ROOT / "docs" / "adr" / "keel"))
-        if n.startswith("K-") and n.endswith(".md")
-    )
-    with open(str(_ROOT / "config" / "project.json"), encoding="utf-8") as fh:
+    with open(str(root / "config" / "project.json"), encoding="utf-8") as fh:
         config = json.load(fh)
-    assert listed and len(listed) == len(config["adr"]["template_adrs"]), listed
     policy, perrs = cs.adr_policy(config)
     assert perrs == [], perrs
+    tdir, pdir = policy["template_dir"], policy["project_dir"]
+    listed = sorted(
+        tdir + "/" + n
+        for n in os.listdir(str(root / tdir))
+        if n.startswith(policy["template_prefix"]) and n.endswith(".md")
+    )
+    assert listed and len(listed) == len(policy["template_adrs"]), listed
+    project_name = re.compile(r"^\d{%d}-.+\.md$" % policy["number_digits"])
+    project_listed = []
+    if os.path.isdir(str(root / pdir)):
+        project_listed = sorted(
+            pdir + "/" + n
+            for n in os.listdir(str(root / pdir))
+            if project_name.match(n) and os.path.isfile(str(root / pdir / n))
+        )
     spaces = cs.adr_inventory(policy)
     assert sorted(rel for _num, rel in spaces["template"]) == listed
-    assert spaces["project"] == []
+    assert sorted(rel for _num, rel in spaces["project"]) == project_listed
+    assert all(num is not None for num, _rel in spaces["project"]), spaces
     # The ownership list is the same set: every file the template ships.
-    assert sorted("docs/adr/keel/" + n for n in policy["template_adrs"]) == listed
+    assert sorted(tdir + "/" + n for n in policy["template_adrs"]) == listed
+
+
+def test_keel_tree_is_y_clean_and_sees_every_template_adr(monkeypatch):
+    """The real tree. In keel the project space is empty, so its half of the
+    assertion is vacuous here; test_the_tree_check_sees_a_project_adr is its
+    non-vacuity proof."""
+    _tree_inventory_holds(monkeypatch, _ROOT)
+
+
+def test_the_tree_check_sees_a_project_adr(repo, monkeypatch):
+    """The same check on a tree that records an ADR of its own passes, and an
+    inventory that loses the project space fails it (mutation proof)."""
+    _tree_inventory_holds(monkeypatch, repo)
+    real = cs.adr_inventory
+    monkeypatch.setattr(
+        cs, "adr_inventory", lambda policy: dict(real(policy), project=[])
+    )
+    with pytest.raises(AssertionError):
+        _tree_inventory_holds(monkeypatch, repo)
 
 
 def test_the_fixture_tree_is_clean(repo):

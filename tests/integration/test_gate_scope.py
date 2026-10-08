@@ -17,6 +17,8 @@ from pathlib import Path
 
 import pytest
 
+import makefile_copy
+
 _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT / "scripts"))
 
@@ -677,7 +679,8 @@ def _old_python3():
 def test_needy_targets_fail_with_the_floor_message_on_an_old_python3(tmp_path):
     """The belt to the derivation above: on a host with an old python3, every
     needy target, run with PY pointed at it, stops on the floor's message -- never
-    a traceback. In a scratch copy of the Makefile, pyproject.toml and scripts/, so
+    a traceback. In a scratch copy of the Makefile (with every makefile it
+    includes), pyproject.toml and scripts/, so
     nothing a recipe would do can touch this checkout. A target whose every needy
     command runs a script this checkout lacks is a keel-only doer copier left
     out of a generated project: its stub answers before any interpreter runs,
@@ -686,8 +689,8 @@ def test_needy_targets_fail_with_the_floor_message_on_an_old_python3(tmp_path):
     old = _old_python3()
     if old is None:
         pytest.skip("no python3 below requires-python on this host")
-    for name in ("Makefile", "pyproject.toml"):
-        shutil.copy(str(_ROOT / name), str(tmp_path / name))
+    makefile_copy.copy_makefiles(tmp_path, _ROOT)
+    shutil.copy(str(_ROOT / "pyproject.toml"), str(tmp_path / "pyproject.toml"))
     shutil.copytree(
         str(_ROOT / "scripts"),
         str(tmp_path / "scripts"),
@@ -724,7 +727,7 @@ def test_needy_targets_fail_with_the_floor_message_on_an_old_python3(tmp_path):
 def test_py_defaults_to_the_project_venv_when_present(tmp_path):
     """A project with a .venv is run by it without anyone setting PY; without one,
     the default is python3; a caller's PY always wins."""
-    shutil.copy(str(_ROOT / "Makefile"), str(tmp_path / "Makefile"))
+    makefile_copy.copy_makefiles(tmp_path, _ROOT)
     env = {k: v for k, v in os.environ.items() if k not in ("PY", "MAKEFLAGS")}
 
     def check_line(*overrides):

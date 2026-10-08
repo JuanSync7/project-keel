@@ -27,6 +27,11 @@ _POLICY = {
     "write_shapes": [],
     "area_dir": None,
     "effect_proof_skip": {},
+    "effect_proof_kept_dirs": {
+        "XDG_CACHE_HOME": ".cache",
+        "XDG_CONFIG_HOME": ".config",
+        "XDG_DATA_HOME": ".local/share",
+    },
     "write_shape_exempt": {},
     "empty_test_selections": {},
     "gate_vars": ["PY"],
@@ -564,6 +569,49 @@ def test_every_policy_key_is_required(key):
         ({"area_dir": 3}, "area_dir"),
         ({"effect_proof_skip": ["run"]}, "effect_proof_skip"),
         ({"effect_proof_skip": {"run": ""}}, "run"),
+        ({"effect_proof_kept_dirs": ["XDG_CACHE_HOME"]}, "effect_proof_kept_dirs"),
+        ({"effect_proof_kept_dirs": {"xdg_cache": ".cache"}}, "xdg_cache"),
+        ({"effect_proof_kept_dirs": {"HOME": "."}}, "effect_proof_kept_dirs.HOME"),
+        (
+            {"effect_proof_kept_dirs": {"XDG_CACHE_HOME": ""}},
+            "effect_proof_kept_dirs.XDG_CACHE_HOME",
+        ),
+        (
+            {"effect_proof_kept_dirs": {"XDG_CACHE_HOME": "/abs"}},
+            "effect_proof_kept_dirs.XDG_CACHE_HOME",
+        ),
+        (
+            {"effect_proof_kept_dirs": {"XDG_CACHE_HOME": "../up"}},
+            "effect_proof_kept_dirs.XDG_CACHE_HOME",
+        ),
+        (
+            {"effect_proof_kept_dirs": {"XDG_CACHE_HOME": "a/../../b"}},
+            "effect_proof_kept_dirs.XDG_CACHE_HOME",
+        ),
+        (
+            {"effect_proof_kept_dirs": {"XDG_CONFIG_HOME": "."}},
+            "effect_proof_kept_dirs.XDG_CONFIG_HOME",
+        ),
+        (
+            {"effect_proof_kept_dirs": {"XDG_CACHE_HOME": "a/.."}},
+            "effect_proof_kept_dirs.XDG_CACHE_HOME",
+        ),
+        (
+            {"effect_proof_kept_dirs": {"XDG_CACHE_HOME": "./"}},
+            "effect_proof_kept_dirs.XDG_CACHE_HOME",
+        ),
+        (
+            {"effect_proof_kept_dirs": {"XDG_CACHE_HOME": "~/.cache"}},
+            "effect_proof_kept_dirs.XDG_CACHE_HOME",
+        ),
+        (
+            {"effect_proof_kept_dirs": {"XDG_CACHE_HOME": "$HOME/.cache"}},
+            "effect_proof_kept_dirs.XDG_CACHE_HOME",
+        ),
+        (
+            {"effect_proof_kept_dirs": {"XDG_CACHE_HOME": 3}},
+            "effect_proof_kept_dirs.XDG_CACHE_HOME",
+        ),
         ({"write_shape_exempt": ["doc-review-apply"]}, "write_shape_exempt"),
         ({"write_shape_exempt": {"doc-review-apply": "  "}}, "doc-review-apply"),
         ({"write_shape_exempt": {"doc-review-apply": 3}}, "doc-review-apply"),
@@ -584,6 +632,15 @@ def test_every_policy_key_is_required(key):
 def test_a_malformed_policy_value_is_an_error(over, expect):
     errs = _policy_errors(_policy(**over))
     assert len(errs) == 1 and expect in errs[0], errs
+
+
+def test_the_shipped_kept_dirs_validate_clean():
+    """config/project.json's own effect_proof_kept_dirs passes the rule the bad
+    values above fail, so the table is not rejecting every value."""
+    shipped = json.loads((_ROOT / "config" / "project.json").read_text("utf-8"))
+    kept = shipped["make_targets"]["effect_proof_kept_dirs"]
+    assert kept, "the shipped value keeps no directory"
+    assert _policy_errors(_policy(effect_proof_kept_dirs=kept)) == []
 
 
 @pytest.mark.parametrize("value", ["x", [], None])

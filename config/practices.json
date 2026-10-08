@@ -644,7 +644,7 @@
       "tier": "gate",
       "status": "on",
       "title": "Every make target declares its effect, and a gate runs only a read-only one",
-      "mechanism": "check_structure.py check_W -- every `## ` target opens its help with a label from local/tree/read/cost/write, a composite covers what its prerequisites reach, and a [write] recipe opens with $(WRITE_GUARD); scripts/run_make_target.py refuses a target outside config/project.json make_targets.gate_effects and fails a run that changed the tree; tests/integration/test_make_target_effects.py runs every [local] target that way (docs/adr/keel/K-0011-make-target-effect-labels.md)",
+      "mechanism": "check_structure.py check_W -- every `## ` target opens its help with a label from local/tree/read/cost/write, a composite covers what its prerequisites reach, and a [write] recipe opens with $(WRITE_GUARD); scripts/run_make_target.py refuses a target outside config/project.json make_targets.gate_effects and fails a run that changed the tree; tests/integration/test_make_target_effects.py runs every [local] target that way, each under a fresh empty HOME it must leave empty (docs/adr/keel/K-0011-make-target-effect-labels.md)",
       "subject": "code",
       "enforced_by": [
         "check:W",

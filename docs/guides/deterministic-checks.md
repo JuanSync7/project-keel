@@ -324,7 +324,13 @@ print but never fail the build.
   `[local]`, 5 carrying `tree`. The label is a static claim; the runtime half is
   `tests/integration/test_make_target_effects.py`, which runs every `[local]`
   target through `scripts/run_make_target.py` and fails one that changed the
-  tree; `run` and `smoke` are in that sweep, and only the targets
+  tree or wrote the fresh empty `HOME` it runs under. Each target gets its own
+  `HOME`, so a verdict does not depend on the dotfiles of the host or user that
+  runs it; `make_targets.effect_proof_kept_dirs` names the XDG base dirs kept
+  beside it (the caller's absolute value, else that path under the caller's
+  `HOME`, else unset), and the sweep does not see writes there. Before the
+  first target the sweep checks that `scripts/child_env.py` hands make that
+  `HOME` and each kept value, and raises if it does not. `run` and `smoke` are in that sweep, and only the targets
   `make_targets.effect_proof_skip` names, each with its reason, are not. See [`docs/adr/keel/K-0011-make-target-effect-labels.md`](../adr/keel/K-0011-make-target-effect-labels.md) and, for the exemption and the converse, [`docs/adr/keel/K-0015-write-shape-exemptions-and-guarded-recipe-converse.md`](../adr/keel/K-0015-write-shape-exemptions-and-guarded-recipe-converse.md).
 - **X. Child processes get an allowlisted environment** — every `subprocess`
   (`run`, `Popen`, `call`, `check_call`, `check_output`) or `asyncio`

@@ -260,7 +260,7 @@ the agent working in it is told the rule before it writes the tenth doer.
 | A procedure lands the same state from any starting point | — | judged |
 | A Makefile recipe that writes has a read-only check riding the gate | `make fmt` ← `fmt-check` | gate, per recipe |
 | A make target's label says what it touches, and a composite's covers its prerequisites | `check_W` | gate |
-| A `[local]` target leaves what git sees unchanged | `tests/integration/test_make_target_effects.py` (every `[local]` target not in `make_targets.effect_proof_skip`) | gate |
+| A `[local]` target leaves what git sees, and the fresh empty `HOME` it runs under, unchanged | `tests/integration/test_make_target_effects.py` (every `[local]` target not in `make_targets.effect_proof_skip`; writes under the `make_targets.effect_proof_kept_dirs` XDG dirs are not seen) | gate |
 | A gate run never rewrites the tree or changes shared state | `scripts/run_make_target.py` (refuses by label, fails a dirty run) and `$(WRITE_GUARD)` | gate |
 | Two writers on one artifact agree which is authoritative | — | judged |
 | A doer's default output path is tracked or ignored | — | judged |

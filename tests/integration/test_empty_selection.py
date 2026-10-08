@@ -13,6 +13,8 @@ from pathlib import Path
 
 import pytest
 
+import makefile_copy
+
 _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT / "scripts"))
 
@@ -24,11 +26,11 @@ pytestmark = [
     pytest.mark.skipif(shutil.which("make") is None, reason="make not installed"),
 ]
 
-# What a test-tier recipe needs to run in a project of its own: the Makefile and
-# pytest's configuration, the suite's conftest and the helpers it imports, the
+# What a test-tier recipe needs to run in a project of its own, beside the
+# Makefile and every makefile it includes (tests/makefile_copy.py): pytest's
+# configuration, the suite's conftest and the helpers it imports, the
 # scripts those reach, and the manifest they read.
 _SHIPPED = (
-    "Makefile",
     "pyproject.toml",
     "config/project.json",
     "tests/conftest.py",
@@ -59,6 +61,8 @@ def _scratch(tmp_path, selections=None):
     """A project carrying the test tiers and nothing to test; `selections`
     replaces make_targets.empty_test_selections."""
     root = tmp_path / "proj"
+    root.mkdir(parents=True)
+    makefile_copy.copy_makefiles(root, _ROOT)
     for rel in _SHIPPED:
         (root / rel).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(str(_ROOT / rel), str(root / rel))

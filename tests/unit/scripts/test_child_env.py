@@ -429,16 +429,51 @@ def test_the_default_root_is_the_project_this_module_ships_in(parent):
     assert not set(_SECRETS) & set(env)
 
 
-def test_keels_own_policy_is_valid_and_never_lists_a_secret():
-    manifest = json.loads((_ROOT / "config" / "project.json").read_text("utf-8"))
+def _own_policy_holds(manifest):
+    """The policy *manifest* states is valid, lists no planted secret as a name,
+    and mirrors what the manifest declares: each model adapter's credential
+    names and the credentialed_values opt-ins. Read from the manifest, never a
+    keel-only fact, so a project that opts a variable in passes the same check
+    (that keel ships credentialed_values empty is pinned by the copier-excluded
+    tests/integration/test_copier_generation.py)."""
     policy, errs = child_env.child_env_policy(manifest)
     assert policy is not None and errs == [], errs
     assert not set(_SECRETS) & set(policy.names)
-    assert "ANTHROPIC_API_KEY" in policy.credentials["claude-code-headless"]
-    # Keel opts no variable in: the key ships, empty, so a project sees where an
-    # authenticating proxy's opt-in goes without receiving one.
-    assert manifest["child_env"]["credentialed_values"] == {}
-    assert policy.credentialed == ()
+    declared = manifest["models"].get("credential_env", {})
+    assert policy.credentials == {
+        adapter: tuple(sorted(names)) for adapter, names in declared.items()
+    }, policy.credentials
+    opted = manifest["child_env"].get("credentialed_values", {})
+    assert policy.credentialed == tuple(sorted(opted)), policy.credentialed
+
+
+def test_keels_own_policy_is_valid_and_never_lists_a_secret():
+    _own_policy_holds(
+        json.loads((_ROOT / "config" / "project.json").read_text("utf-8"))
+    )
+
+
+def _opt_in_name(manifest):
+    """A name *manifest* itself allowlists, to opt in as a credentialed value:
+    a proxy variable (a name ending `_proxy` in any case) when it lists one,
+    the case an authenticating proxy brings, else its first allowlisted name --
+    never a fixed name, because a project may drop the proxy names."""
+    names = sorted(manifest["child_env"].get("names", []))
+    proxies = [n for n in names if n.lower().endswith("_proxy")]
+    if not (proxies or names):
+        pytest.skip("config/project.json child_env.names allowlists no variable")
+    return (proxies or names)[0]
+
+
+def test_the_policy_check_holds_for_a_project_that_opts_a_variable_in():
+    """The same check on this project's manifest with one of its allowlisted
+    variables opted in, as an authenticating proxy is: a project that records
+    one must not fail keel's own test."""
+    manifest = json.loads((_ROOT / "config" / "project.json").read_text("utf-8"))
+    manifest["child_env"]["credentialed_values"] = {
+        _opt_in_name(manifest): "the project's proxy authenticates every request"
+    }
+    _own_policy_holds(manifest)
 
 
 def _keel_policy():

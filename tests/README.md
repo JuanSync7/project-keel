@@ -47,3 +47,30 @@ the whole suite. Once a test of a declared marker runs, the declaration is
 stale and the run exits 1 until it is removed. `--collect-only`,
 `--setup-plan` and `--setup-only` (which execute no test by design), a run
 that already failed, and an xdist worker are left alone.
+
+## A copied Makefile carries its includes
+
+A test that runs make in a scratch copy of a project copies the root Makefile
+with `makefile_copy.copy_makefiles`, never alone. It copies every makefile
+`scripts/check_structure.py` `walk_makefiles` says make reads (an area's
+`<area>.mk`, any `include`), each at its own path, because a generated project
+that adds an area otherwise fails a correct test with `No such file or
+directory`. It raises, naming the include, only where a copy would differ
+from the source in a way it can see: a required include named through a
+variable or wildcard, an optional wildcard that matches a file, or a path
+leaving the root. An include the gate only WARNs about otherwise stays as make
+sees it: an absent `-include`, an optional include named through a variable,
+and a required include naming no file (behind a false conditional or not) are
+left out, so make gives the copy the verdict it gives the source. It copies makefiles only: the scripts and config a recipe needs are
+the calling test's to copy. `tests/integration/test_makefile_copy.py` proves
+each case and that a second copy changes nothing.
+
+## A test reads the project's own facts
+
+A test that runs in keel and in every generated project reads a list from the
+project's config, never keel's value of it: the ADR files from the
+config/project.json `adrs` block, the credential opt-ins from
+`child_env.credentialed_values`. `tests/unit/scripts/test_check_y.py` and
+`tests/unit/scripts/test_child_env.py` each run their check once on keel's tree
+and once on a fixture that adds what a project adds, so an assertion that only
+keel's facts satisfy goes red in keel too.

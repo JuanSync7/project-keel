@@ -15,6 +15,8 @@ from pathlib import Path
 
 import pytest
 
+import makefile_copy
+
 _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT / "scripts"))
 sys.path.insert(0, str(_ROOT))
@@ -79,19 +81,47 @@ def test_a_gate_run_child_sees_no_planted_secret(tmp_path, monkeypatch):
     assert "PATH" in _names(out) and "\nRALPH=1\n" in "\n" + out, out
 
 
+def _uncredentialed_proxy_name():
+    """An allowlisted proxy variable (a name a proxy reader takes: one ending
+    `_proxy` in any case) that this project's child_env.credentialed_values does
+    not opt in, read from the policy the runner itself loads -- never a fixed
+    name, because a project that opts its proxy in legitimately exempts it.
+    Skips, naming why, when there is none: a project that allowlists no proxy
+    variable never copies one to a child, and one that opts every proxy in has
+    recorded that each carries a credential."""
+    import child_env
+
+    policy = child_env.load_policy()
+    proxies = sorted(n for n in policy.names if n.lower().endswith("_proxy"))
+    if not proxies:
+        pytest.skip(
+            "config/project.json child_env.names allowlists no proxy variable, "
+            "so none reaches a child to carry a credential"
+        )
+    names = [n for n in proxies if n not in policy.credentialed]
+    if not names:
+        pytest.skip(
+            "config/project.json child_env.credentialed_values opts in every "
+            "allowlisted proxy variable: %s" % ", ".join(proxies)
+        )
+    return names[0]
+
+
 def test_a_credentialed_proxy_never_reaches_a_gate_run_child(tmp_path, monkeypatch):
     """Through real make and git: a proxy URL carrying a password is an
     allowlisted name with a credential in its value. The run is refused by
     name, the password appears nowhere in the result, and the same probe
     without the variable runs (the control). The opt-in is not exercised: the
-    runner builds the environment from keel's own config, not the probe's."""
+    runner builds the environment from this project's own config, not the
+    probe's, and the variable is one that config does not opt in."""
     repo = _probe_repo(tmp_path)
-    monkeypatch.delenv("HTTPS_PROXY", raising=False)
+    name = _uncredentialed_proxy_name()
+    monkeypatch.delenv(name, raising=False)
     assert rmt.run_target("probe", cwd=str(repo))["ok"] is True
-    monkeypatch.setenv("HTTPS_PROXY", "http://alice:s3cr3t-pw@127.0.0.1:9")
+    monkeypatch.setenv(name, "http://alice:s3cr3t-pw@127.0.0.1:9")
     res = rmt.run_target("probe", cwd=str(repo))
     assert res["ok"] is False and res["refused"], res
-    assert "HTTPS_PROXY" in res["refused"], res
+    assert name in res["refused"], res
     assert "s3cr3t-pw" not in json.dumps(res), "the result carries the password"
 
 
@@ -122,7 +152,7 @@ def test_the_write_guard_survives_a_python_hop(tmp_path):
     """RALPH reaches the hop's environment the way a gate run puts it there; the
     nested make is started by Python with the allowlisted environment, and the
     guard still refuses."""
-    shutil.copy(str(_ROOT / "Makefile"), str(tmp_path / "Makefile"))
+    makefile_copy.copy_makefiles(tmp_path, _ROOT)
     (tmp_path / "demo.mk").write_text(_DEMO, encoding="utf-8")
     parent = {k: v for k, v in os.environ.items() if k not in _MAKE_INHERITANCE}
     parent["RALPH"] = "1"

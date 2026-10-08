@@ -4082,6 +4082,7 @@ _POLICY_KEYS = (
     "write_shapes",
     "area_dir",
     "effect_proof_skip",
+    "effect_proof_kept_dirs",
     "write_shape_exempt",
     "empty_test_selections",
     "gate_vars",
@@ -4115,6 +4116,12 @@ _MAKE_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _MARKER_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _WRITE_SHAPE = re.compile(r"^-[a-z0-9][a-z0-9-]*$")
 _AREA_DIR_NAME = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]*$")
+# An environment variable the effect sweep keeps beside its sandbox HOME: an
+# upper-case name, as the XDG base-dir variables are.
+_KEPT_DIR_NAME = re.compile(r"^[A-Z_][A-Z0-9_]*$")
+# The variable the sweep replaces with a fresh empty directory: keeping it would
+# undo the sandbox. POSIX's name for the home directory, not a project fact.
+_SANDBOXED_HOME = "HOME"
 _KEBAB = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 AREA_HEADER = re.compile(r"^##@\s+(\S+)(?:\s+(.*?))?\s*$")
 # The guard's name is the contract between the Makefile and this check, as
@@ -4447,6 +4454,46 @@ def _is_name_list(value):
     return isinstance(value, list) and all(isinstance(v, str) for v in value)
 
 
+def _kept_dirs_errors(kept, where):
+    """make_targets.effect_proof_kept_dirs -> errs. Each key is an upper-case
+    variable name other than HOME; each value the directory's path under HOME,
+    used when the caller leaves the variable unset: relative, strictly inside
+    HOME (not HOME itself, which `.` or `a/..` would name and so undo the
+    sandbox as keeping HOME would), and literal (no `~` or `$`, which nothing
+    here expands)."""
+    key_path = where + "effect_proof_kept_dirs"
+    if not isinstance(kept, dict):
+        return [
+            key_path + " must be an object of environment variable -> its path "
+            "under HOME"
+        ]
+    errs = []
+    for key in sorted(kept):
+        value = kept[key]
+        name = "%s.%s" % (key_path, key)
+        if not _KEPT_DIR_NAME.match(key):
+            errs.append(name + " is not an upper-case environment variable name")
+        elif key == _SANDBOXED_HOME:
+            errs.append(
+                name + " keeps HOME itself, which the sweep replaces with a fresh "
+                "empty directory -- keeping it would undo the sandbox"
+            )
+        elif not isinstance(value, str) or not value.strip():
+            errs.append(name + " must be a non-empty path under HOME")
+        elif (
+            value.startswith("/")
+            or "~" in value
+            or "$" in value
+            or posixpath.normpath(value).split("/")[0] in ("..", ".")
+        ):
+            errs.append(
+                name + " must be a literal relative path strictly inside HOME (no "
+                "leading `/`, no `~` or `$`, no `..` leaving it, not HOME itself), "
+                "got %s" % json.dumps(value)
+            )
+    return errs
+
+
 def make_targets_policy(manifest):
     """config/project.json's make_targets block -> (policy, errs). Pure.
 
@@ -4569,6 +4616,8 @@ def make_targets_policy(manifest):
                     "why the target cannot run unattended"
                     % ", ".join("`%s`" % k for k in bad)
                 )
+    if "effect_proof_kept_dirs" in block:
+        errs.extend(_kept_dirs_errors(block["effect_proof_kept_dirs"], where))
     if "write_shape_exempt" in block:
         exempt = block["write_shape_exempt"]
         if not isinstance(exempt, dict):

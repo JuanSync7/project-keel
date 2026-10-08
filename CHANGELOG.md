@@ -73,6 +73,23 @@ version rather than a bare commit:
   variables in the whole environment matched. The four keys follow
   `child_env._comment`, away from the `credentialed_values` and `prefixes`
   lines a project edits, so `copier update` does not conflict on them.
+- **`make_targets.effect_proof_kept_dirs` — the XDG base dirs the effect
+  sweep keeps beside its sandbox `HOME`.** The new required
+  `config/project.json` key maps each kept variable to its path under `HOME`;
+  keel ships `XDG_CACHE_HOME`, `XDG_CONFIG_HOME` and `XDG_DATA_HOME`. check_W
+  errors on a name that is not upper case, on `HOME` itself, and on a path that
+  is absolute, holds `~` or `$`, leaves `HOME` through `..`, or names `HOME`
+  itself, as `.` and `a/..` do. A project's
+  manifest gains the key on update, on the line after `write_shape_exempt`; a
+  project that edited that line resolves one conflict there.
+- **`tests/makefile_copy.py` — a test copies a Makefile with every makefile it
+  includes.** `copy_makefiles` copies the include closure
+  `scripts/check_structure.py` `walk_makefiles` reports, each at its own path.
+  It raises, naming the include, only where a copy would differ from the
+  source in a way it can see: a required include through a variable or
+  wildcard, an optional wildcard that matches a file, or an include outside
+  the root. An include the gate only WARNs about otherwise stays as make sees
+  it.
 
 ### Changed
 - **`run` and `smoke` left `make_targets.effect_proof_skip`, so
@@ -86,6 +103,17 @@ version rather than a bare commit:
   and `scripts/run_make_target.py` add `matched: NAME=label` to the message
   and still never quote the value. A gate value such as `PY=tok_...` that only
   a pattern catches is refused before make runs.
+- **The effect sweep runs each `[local]` target under a fresh empty `HOME`.**
+  `tests/integration/test_make_target_effects.py` gives every target its own
+  empty `HOME` in the test's scratch, keeps the
+  `make_targets.effect_proof_kept_dirs` variables (the caller's absolute value,
+  else that path under the caller's `HOME`, else unset), and fails a target
+  that writes that `HOME`, as well as one that is red or changes what git sees.
+  Before the first target it checks that `scripts/child_env.py` hands make the
+  sandbox `HOME` and each kept value, and raises if it does not. Measured on
+  keel: 26 targets ran and none wrote its `HOME`. A FIFO, socket or device a
+  target leaves in that `HOME` is recorded by its type and never opened, so it
+  fails the target instead of hanging or crashing the sweep.
 
 ### Fixed
 - **A guarded recipe under a narrower label is a check_W error.** A labelled
@@ -180,6 +208,19 @@ version rather than a bare commit:
   tier proves the composition root starts instead of selecting nothing. It
   skips when `layers.app` is null; such a project declares `smoke` in
   `make_targets.empty_test_selections`, as `src/app/README.md` says.
+- **keel's own tests give the same verdict in a generated project.** In a
+  project that adds an area makefile, a project ADR and a credentialed proxy,
+  18 keel tests were red on a correct tree. `tests/integration/test_write_guard.py`,
+  `test_child_process_environment.py`, `test_gate_scope.py` and
+  `test_empty_selection.py` copied the root Makefile without the makefiles it
+  includes, and now copy them with `tests/makefile_copy.py`.
+  `tests/unit/scripts/test_check_y.py` asserted that a project has no ADR of
+  its own, and `tests/unit/scripts/test_child_env.py` asserted keel's empty
+  `child_env.credentialed_values`; each now reads the project's own config and
+  also runs on a fixture that adds what a project adds. The credentialed-proxy
+  case of `test_child_process_environment.py` planted `HTTPS_PROXY`, which a
+  project may opt in, and now plants a `*_proxy` variable its config does not,
+  skipping with the reason when none is left.
 
 ### Security
 - **A child process no longer inherits a parent's `git -c` settings.**

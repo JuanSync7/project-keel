@@ -15,6 +15,8 @@ from pathlib import Path
 
 import pytest
 
+import makefile_copy
+
 _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT / "scripts"))
 
@@ -39,7 +41,7 @@ _DEMO = (
 
 @pytest.fixture
 def guarded(tmp_path):
-    shutil.copy(str(_ROOT / "Makefile"), str(tmp_path / "Makefile"))
+    makefile_copy.copy_makefiles(tmp_path, _ROOT)
     (tmp_path / "demo.mk").write_text(_DEMO, encoding="utf-8")
     return tmp_path
 
@@ -92,7 +94,7 @@ def _gate_repo(tmp_path):
         + _DEMO.replace("include Makefile\n", "include keel.mk\n"),
         encoding="utf-8",
     )
-    shutil.copy(str(_ROOT / "Makefile"), str(tmp_path / "keel.mk"))
+    makefile_copy.copy_makefiles(tmp_path, _ROOT, as_name="keel.mk")
     for argv in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "fixture"]):
         r = subprocess.run(["git"] + argv, cwd=str(tmp_path), capture_output=True)
         assert r.returncode == 0, r.stderr

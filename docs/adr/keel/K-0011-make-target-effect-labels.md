@@ -103,7 +103,8 @@ the gate runner needs to know that a target leaves the tree alone.
 5. **The labels are tested by running them.**
    `tests/integration/test_make_target_effects.py` runs every target whose
    closed label is exactly `[local]` through the runner, in a hermetic clone of
-   the working tree, and fails any that is red or changed the tree. A target
+   the working tree (each under a fresh empty HOME; see
+   docs/guides/deterministic-checks.md), and fails any that is red or changed the tree. A target
    that cannot run unattended is skipped only by name and reason in
    `make_targets.effect_proof_skip`. A skip that names no `[local]` target is
    stale and fails. A planted target that writes a file proves the sweep can go

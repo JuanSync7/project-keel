@@ -58,6 +58,7 @@ _POLICY = {
     "write_shapes": [],
     "area_dir": None,
     "effect_proof_skip": {},
+    "effect_proof_kept_dirs": {"XDG_CONFIG_HOME": ".config"},
     "write_shape_exempt": {},
     "empty_test_selections": {},
     "gate_vars": ["PY"],

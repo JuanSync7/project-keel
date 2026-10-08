@@ -722,10 +722,11 @@ def test_a_pre_c2_2_project_receives_the_new_child_env_keys_as_arrivals_and_owes
     patterns are required, so the project as it stands fails X for each, and
     the update resolves every one: nothing is owed. The `adr` block
     (CONVENTIONS §19), the `work_naming` block (CONVENTIONS §20), `layers.app`
-    and `make_targets.empty_test_selections` and `write_shape_exempt`
-    (CONVENTIONS §15) arrive beside them. `structure.project_checks` does
-    not: the template never ships it, because a key beside `extra_toplevel`
-    would conflict with every project that declared one."""
+    and `make_targets.empty_test_selections`, `write_shape_exempt` and
+    `effect_proof_kept_dirs` (CONVENTIONS §15) arrive beside them.
+    `structure.project_checks` does not: the template never ships it, because a
+    key beside `extra_toplevel` would conflict with every project that declared
+    one."""
     project, _env = pre_c2_2
     before = _tree(project)
     systmp = tmp_path / "systmp"
@@ -759,6 +760,7 @@ def test_a_pre_c2_2_project_receives_the_new_child_env_keys_as_arrivals_and_owes
         "child_env.credentialed_values",
         "child_env.login_name_schemes",
         "layers.app",
+        "make_targets.effect_proof_kept_dirs",
         "make_targets.empty_test_selections",
         "make_targets.write_shape_exempt",
         "work_naming",

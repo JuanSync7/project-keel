@@ -617,7 +617,12 @@ It is keyed **by layer/concern, never one global `language`**:
   an entry naming a target no makefile defines, no suffix matches, no label
   annotates or that is already `[write]`), `area_dir` (the directory of `<area>.mk` files, or
   `null`), `effect_proof_skip` (a `[local]` target the runtime sweep cannot
-  run unattended, with the reason), `empty_test_selections` (a bare pytest
+  run unattended, with the reason), `effect_proof_kept_dirs` (the XDG base-dir
+  variables the sweep keeps while it runs each target under a fresh empty
+  `HOME`, each valued with its path under `HOME`, used when the caller leaves
+  the variable unset; `check_W` errors on a name that is not upper case, on
+  `HOME` itself and on a path that is absolute, holds `~` or `$`, leaves
+  `HOME` through `..`, or names `HOME` itself, as `.` does), `empty_test_selections` (a bare pytest
   marker a `-m <marker>` recipe may run zero tests of, with the reason; not for
   a compound expression, the whole suite or a run narrowed by `-k` or a path,
   which `tests/selection_guard.py` never exempts, and not a way to quiet a tier that has tests: an entry is

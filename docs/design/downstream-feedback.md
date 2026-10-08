@@ -931,7 +931,8 @@ CMP-4 below, not worked here.
 ## CMP-3 — what blocks bedrock-platform's next update
 
 The maintainer approved this campaign on 2026-10-07, to start once CMP-2.S4
-lands. The cap is five slices, each one commit on a green `make verify`.
+lands. The cap is five slices, each one commit on a green `make verify`. CMP-3.S6 is one slice past that cap, by the
+maintainer's decision, to finish bedrock-platform's adoption before Campaign 4.
 
 | Slice | Defect | Status |
 |-------|--------|--------|
@@ -940,6 +941,7 @@ lands. The cap is five slices, each one commit on a green `make verify`.
 | CMP-3.S3 | A project can add a check only by editing `scripts/check_structure.py`, so its next `copier update` conflicts in the module the restamp task imports | done — `make verify` green (1614 passed); 6 review findings confirmed and fixed; ADR-K-0014 accepted |
 | CMP-3.S4 | The `GIT_CONFIG_COUNT`/`GIT_CONFIG_PARAMETERS` variables reach a child, copier's own git calls bypass `build_child_env`, and a bare token or `Authorization` value is not recognised as a credential | done — `make verify` green (1659 passed); 5 review findings confirmed and fixed |
 | CMP-3.S5 | Four defects bedrock-platform hit adopting 0.2.0: `make audit-project` under the default `PY=python3` (3.6) dies with a `SyntaxError` (K1); the audit exits 2 when the update's restamp refuses over a conflicted import (K2); a project's `write_shapes` cannot include `-apply` because keel's own `doc-review-apply` is a non-write (K3); and check_W passes a recipe that opens with `$(WRITE_GUARD)` under a non-`[write]` label (K4) | done — `make verify` green (1700 passed); 3 review findings confirmed and fixed; ADR-K-0015 proposed |
+| CMP-3.S6 | Three keel tests whose verdict depends on where they run: `tests/integration/test_write_guard.py` copies the `Makefile` without the `make_targets.area_dir` directory it includes (K5); `tests/unit/scripts/test_check_y.py` asserts a project has no ADRs of its own, which fails in any project that records one (K6); and `tests/integration/test_make_target_effects.py` runs each `[local]` target with the caller's `HOME`, so a target that reads it passes on one host and fails on another, and one that writes it is never seen (K7) | done — `make verify` green (1738 passed); 6 of 7 review findings confirmed and fixed |
 
 CMP-3.S3 is the bedrock blocker measured in CMP-2.S3's rehearsal: a real
 `copier update` of bedrock-platform left 120 files conflicted and failed in the
@@ -1382,6 +1384,92 @@ an independent refuter and each fixed. The first two were one defect.
   package install from an index reads a remote service, which check_W's
   vocabulary calls `[read]`. Adopting it needs the install list in config,
   the installer behind an adapter, and a label that covers the download.
+
+### Slice CMP-3.S6 — keel's own tests give the same verdict anywhere
+
+**Measured before a line changed.** A project generated from keel before this
+slice's changes gained what bedrock-platform has: an area makefile (`mk/demo.mk`,
+`make_targets.area_dir` set to `mk`), a project ADR (`docs/adr/0001-...`) and a
+`child_env.credentialed_values` entry for `HTTPS_PROXY`. Its
+`scripts/check_structure.py` reported 0 errors. keel's test files that copy a Makefile
+or read a project list, run there, gave 18 failed and 354 passed:
+- K5: 15 failures, every one a scratch copy of the root Makefile without the
+  `mk/demo.mk` it includes (`tests/integration/test_write_guard.py` 8,
+  `test_empty_selection.py` 4, `test_gate_scope.py` 2,
+  `test_child_process_environment.py` 1).
+- K6: 3 failures, each a keel-only fact asserted of the project.
+  `tests/unit/scripts/test_check_y.py` asserted the project ADR space is
+  empty, `tests/unit/scripts/test_child_env.py` asserted keel's empty
+  `credentialed_values`, and the credentialed-proxy case of
+  `tests/integration/test_child_process_environment.py` planted `HTTPS_PROXY`,
+  which the project had opted in.
+- K7: `tests/integration/test_make_target_effects.py` ran every target with the
+  caller's `HOME` and compared only what git sees.
+
+**Rule.**
+- K5: a test copies a Makefile with `tests/makefile_copy.py` `copy_makefiles`,
+  which copies the include closure `scripts/check_structure.py`
+  `walk_makefiles` reports. It raises, naming the include, only where a copy
+  would differ from the source in a way it can see: a required include through
+  a variable or wildcard, an optional wildcard that matches a file, or an
+  include outside the root. An include the gate only WARNs about otherwise
+  stays as make sees it, so make gives the copy the source's verdict.
+- K6: a test reads a list from the project's own config, never keel's value of
+  it, and runs once on keel's tree and once on a fixture that adds what a
+  project adds.
+- K7: the sweep runs each `[local]` target under its own fresh empty `HOME`
+  and fails a target that writes it. The new required key
+  `make_targets.effect_proof_kept_dirs` names the XDG base dirs kept beside it
+  (the caller's absolute value, else that path under the caller's `HOME`, else
+  unset); check_W validates it. Before the first target, the sweep checks that
+  `scripts/child_env.py` hands make the sandbox `HOME` and each kept value.
+
+**Proof.**
+- Those files, with `tests/integration/test_makefile_copy.py` and the
+  fixture cases of `test_make_target_effects.py`, in a project generated the
+  same way after the change: 404 passed. The sweep there ran 27 targets (keel's 26 and
+  `demo-hello`) and none wrote its `HOME`; with a planted `demo-poke` target
+  writing `$HOME/x` it failed on exactly that target, `home_changed: ["x"]`.
+- keel's own sweep ran 26 targets, each under a fresh `HOME`, all green.
+- Mutations, each red and then restored byte-identical: dropping the `HOME`
+  comparison (2 tests red), one `HOME` shared by every target (1), no
+  derivation under the caller's `HOME` (2), no child cross-check (2), following
+  links in the `HOME` snapshot (1), `copy_makefiles` ignoring an unresolved
+  include (3) or copying the root alone (4), check_W accepting `..` (2) or
+  `HOME` as a kept name (1), `test_check_y.py` not comparing the project
+  listing (1), and `test_child_env.py` taking keel's empty opt-ins (1).
+- The downstream run caught one more case of K5's class in this slice's own new
+  test, which built its source from keel's root Makefile; it now copies the
+  project's own makefiles first.
+- Review found four more cases of the class, each now red-then-green:
+  `copy_makefiles` raised on an include the gate only WARNs about (an optional
+  include through a variable, and a required include behind a false
+  conditional; 4 cases red, the source and the copy now give make one
+  verdict); the `HOME` snapshot opened a FIFO a target left and blocked with no
+  timeout, and raised on a socket (1 red, now each is recorded by its type and
+  fails the target); check_W accepted `.` and `a/..` as a kept dir, which name
+  `HOME` itself (3 red); and the `test_child_env.py` opt-in and the
+  credentialed-proxy case named a proxy variable a project may not allowlist
+  (red on a manifest with the proxy names dropped; the opt-in now takes a name
+  the manifest allowlists, and the proxy case skips, naming why, when none is
+  left).
+
+**Residual risk.**
+- A target that reads a kept XDG dir still sees the caller's files there, so a
+  verdict can depend on the host through a cache or a config file under them.
+- The gate runner itself does not sandbox `HOME`: only the sweep does.
+- `_tiers()` in `tests/integration/test_empty_selection.py` and `_floor_report`
+  in `tests/integration/test_gate_scope.py` parse the root Makefile alone, so a
+  tier target an area defines is not seen.
+- `copy_makefiles` does not copy an optional include named through a variable,
+  so a copy runs without that makefile when the source has it; a required
+  include named that way raises instead.
+
+**Queued.**
+- bedrock-platform's `keel_known_failures` entries for K5 and K6 become XPASS
+  once it updates, and come out then.
+- npm writes `~/.npm`, which is not an XDG dir: a `[local]` target that runs npm
+  under the sweep would be failed for its cache. None does in keel today.
 
 ## CMP-4 — keel enforces what it claims, and emits evidence jarvis can read
 
