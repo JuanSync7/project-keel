@@ -2,7 +2,7 @@
 title: Test helper — a git environment that ignores the developer's machine
 kind: tests
 layer: n/a
-summary: One canonical hermetic git config for every test that shells out to git or lets copier do it. Neutralises global + system config AND `core.excludesFile`, whose default value git reads from $XDG_CONFIG_HOME/git/ignore with no config entry at all — so GIT_CONFIG_GLOBAL/SYSTEM alone do not reach it and a single `*.yml` line on someone's laptop fails a correct tree. The hermetic environment is also free of the parent's repository context: `repo_context_names` reads config/project.json `child_env.repo_context_names` through scripts/child_env.py, and `git_env` drops every one, so a test started from a git hook never runs git against the repository being committed.
+summary: One canonical hermetic git config for every test that shells out to git or lets copier do it. Neutralises global + system config AND `core.excludesFile`, whose default value git reads from $XDG_CONFIG_HOME/git/ignore with no config entry at all — so GIT_CONFIG_GLOBAL/SYSTEM alone do not reach it and a single `*.yml` line on someone's laptop fails a correct tree. The hermetic environment is also free of the parent's repository context: `repo_context_names` reads config/project.json `child_env.repo_context_names` through scripts/child_env.py, and `git_env` drops every one, so a test started from a git hook never runs git against the repository being committed. Nor does it carry a parent's injected git configuration: `config_injection` reads `child_env.config_injection_names` and `config_injection_prefixes` the same way, and `drop_config_injection` (called by `git_env` and by tests/conftest.py at import) removes every member.
 """
 
 import json
@@ -50,11 +50,11 @@ def git_env_vars(work_dir):
     }
 
 
-def repo_context_names(root):
-    """config/project.json `child_env.repo_context_names` under *root*, validated.
+def _policy(root):
+    """scripts/child_env.py's policy for *root*'s config/project.json.
 
-    Read through scripts/child_env.py's own policy, so the suite strips exactly
-    what build_child_env holds back. A manifest the policy refuses is an
+    Read through child_env's own validator, so the suite strips exactly what
+    build_child_env holds back. A manifest the policy refuses is an
     AssertionError naming why: a broken key must not quietly strip nothing."""
     scripts = os.path.join(str(root), "scripts")
     if scripts not in sys.path:
@@ -66,7 +66,28 @@ def repo_context_names(root):
     ) as fh:
         policy, errs = child_env.child_env_policy(json.load(fh))
     assert policy is not None, "config/project.json child_env: " + "; ".join(errs)
-    return policy.repo_context
+    return policy
+
+
+def repo_context_names(root):
+    """config/project.json `child_env.repo_context_names` under *root*, validated."""
+    return _policy(root).repo_context
+
+
+def config_injection(root):
+    """(names, prefixes): config/project.json `child_env.config_injection_names`
+    and `config_injection_prefixes` under *root*, validated."""
+    policy = _policy(root)
+    return policy.config_injection, policy.config_injection_prefixes
+
+
+def drop_config_injection(env, root):
+    """Remove from the mapping *env*, in place, every configuration-injection
+    variable *root*'s policy names (GIT_CONFIG_PARAMETERS, GIT_CONFIG_KEY_<n>,
+    ...): a parent's `git -c` settings override the hermetic GIT_CONFIG_GLOBAL."""
+    names, prefixes = config_injection(root)
+    for key in [k for k in env if k in names or k.startswith(tuple(prefixes))]:
+        del env[key]
 
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -74,9 +95,11 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 def git_env(work_dir):
     """The current environment minus the parent's repository context, plus
-    `git_env_vars` — ready for subprocess `env=`."""
+    `git_env_vars`, and minus any configuration a parent injected through
+    GIT_CONFIG_* — ready for subprocess `env=`."""
     dropped = set(repo_context_names(_REPO_ROOT))
     env = {k: v for k, v in os.environ.items() if k not in dropped}
+    drop_config_injection(env, _REPO_ROOT)
     env.update(git_env_vars(work_dir))
     return env
 

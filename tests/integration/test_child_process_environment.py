@@ -239,3 +239,68 @@ def test_the_test_suite_drops_the_parent_repository_at_import(tmp_path, monkeypa
     env = hermetic_git.git_env(tmp_path)
     assert not set(hook) & set(env), sorted(set(hook) & set(env))
     assert set(hermetic_git.repo_context_names(_ROOT)) >= set(hook)
+
+
+# Synthetic: the shape a `git -c` parent (a hook under `git -c`, a CI wrapper)
+# exports. The names are git's; the values point at nothing.
+_INJECTED = {
+    "GIT_CONFIG": "/decoy/config",
+    "GIT_CONFIG_COUNT": "1",
+    "GIT_CONFIG_KEY_0": "core.hooksPath",
+    "GIT_CONFIG_VALUE_0": "/decoy/hooks",
+    "GIT_CONFIG_KEY_7": "core.fsmonitor",
+    "GIT_CONFIG_PARAMETERS": "'core.hookspath'='/decoy/hooks'",
+}
+
+
+def _injection_family(root):
+    import hermetic_git
+
+    names, prefixes = hermetic_git.config_injection(root)
+    assert names and prefixes, "a family of zero members is a vacuous strip"
+    return lambda key: key in names or any(key.startswith(p) for p in prefixes)
+
+
+def test_the_test_suite_drops_git_config_injection_at_import():
+    """A pytest started under `git -c` inherits the parent's configuration in
+    GIT_CONFIG_*; copier's git (through plumbum's import-time snapshot) and
+    hermetic_git would honour it over the hermetic GIT_CONFIG_GLOBAL. conftest
+    strips the family config/project.json names, at import."""
+    import child_env
+
+    in_family = _injection_family(_ROOT)
+    assert all(in_family(k) for k in _INJECTED), sorted(_INJECTED)
+    tests = _ROOT / "tests"
+    pythonpath = os.pathsep.join(str(p) for p in (tests, _ROOT / "scripts", _ROOT))
+    r = subprocess.run(
+        [
+            sys.executable,
+            "-B",
+            "-c",
+            "import conftest, os, json; print(json.dumps(sorted(os.environ)))",
+        ],
+        cwd=str(tests),
+        env=child_env.build_child_env(extra=dict(_INJECTED, PYTHONPATH=pythonpath)),
+        capture_output=True,
+        text=True,
+    )
+    assert r.returncode == 0, r.stderr
+    seen = json.loads(r.stdout)
+    assert not [k for k in seen if in_family(k)], [k for k in seen if in_family(k)]
+    assert "GIT_CONFIG_GLOBAL" in seen, seen  # the hermetic update still ran
+
+
+def test_hermetic_git_env_carries_no_config_injection(tmp_path, monkeypatch):
+    """git_env() is the environment the suite's own clones run with; a planted
+    family member must not reach it, whatever the parent exported after import."""
+    import hermetic_git
+
+    in_family = _injection_family(_ROOT)
+    for key, value in _INJECTED.items():
+        monkeypatch.setenv(key, value)
+    env = hermetic_git.git_env(tmp_path)
+    assert not [k for k in env if in_family(k)], sorted(env)
+    assert env["GIT_CONFIG_GLOBAL"], env
+    dropped = dict(_INJECTED, KEEP_ME="1")
+    hermetic_git.drop_config_injection(dropped, _ROOT)
+    assert dropped == {"KEEP_ME": "1"}, dropped

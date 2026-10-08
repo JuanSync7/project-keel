@@ -70,7 +70,8 @@ unresolvable receiver would not be in it (see Consequences).
    environment (a copied value that carries user information is refused
    unless `child_env.credentialed_values` names it, keel slice project_keel:CMP-2.S2 in
    `docs/design/downstream-feedback.md`). make's own control names (`MAKEFLAGS`, `MAKEFILES`,
-   `MAKELEVEL`, `MAKEOVERRIDES`, `MFLAGS`) are refused in any list.
+   `MAKELEVEL`, `MAKEOVERRIDES`, `MFLAGS`) are refused in any list
+   (the config-injection family and value patterns: CONVENTIONS §15 `child_env`).
 3. **check_X holds every spawn to the helper, with no waiver.** Every
    `subprocess` or `asyncio` spawn in a `.py` at the root or under any
    top-level directory except `tests/` passes `env=` built by the helper,

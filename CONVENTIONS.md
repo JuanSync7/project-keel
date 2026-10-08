@@ -259,7 +259,7 @@ pre-commit hook) fails the build if the conventions above drift:
 | Policy reachability | a practice enforced BY a document names that document within one hop of the root `AGENT.md` — named there, or named in a document named there — so a rule an agent never reads cannot be declared enforced |
 | Writer rerun declaration (§7) | a module that writes to the filesystem declares `effect: writes` and what a second run does (`rerun:` — `fixed-point`, `append-only` or `unsafe`); a `fixed-point` claim names a `rerun_proof:` in the same grammar as `enforced_by` above. The detector resolves each call's base (`os.replace`, never `str.replace`), so it under-reports rather than over-reports: a declared write it cannot see is a stated WARN, never a pass. See [`docs/guides/idempotency.md`](docs/guides/idempotency.md) |
 | Make-target effect labels (§7) | every `## `-annotated Makefile target opens its help with one bracketed effect label — `local`, `tree`, `read`, `cost`, `write`, comma-separated in that order, `local` alone; a target annotated twice carries one label; a composite's label covers what its prerequisites and `$(MAKE)` calls reach; a `[write]` target (or one whose name ends in a `make_targets.write_shapes` suffix) opens its recipe with `$(WRITE_GUARD)` and no `-` prefix, and the guard (make comments stripped) tests exactly the `make_targets.unattended_vars` names, has no `-` prefix of its own, and exits 1; the `make_targets` policy in `config/project.json` is well-formed. A recursion the check cannot resolve is a stated WARN. See [`docs/adr/keel/K-0011-make-target-effect-labels.md`](docs/adr/keel/K-0011-make-target-effect-labels.md) |
-| Child-process environment (§7) | every subprocess/asyncio spawn in a `.py` at the root or under any top-level directory but `tests/` passes `env=` built by `build_child_env` (`scripts/child_env.py`), directly or through a name bound only to it and afterwards only read; `os.system`/`popen`/`exec*`/`spawn*`, `pty.spawn` and `subprocess.getoutput` are errors, as is a spawn API referenced without a call and a spawn name bound two ways in one scope; names resolve per Python scope; the helper's arguments never carry `os.environ`/`os.getenv`, directly or through a name within the module; `config/project.json` `child_env` and `models.credential_env` are well-formed, no allowlist source admits a `child_env.repo_context_names` variable, and `child_env.credentialed_values` names only a variable the allowlist copies, each with a reason. A spawn through an unresolvable receiver, and a parent value crossing a function parameter, are not seen. See [docs/adr/keel/K-0012-child-process-environment-allowlist.md](docs/adr/keel/K-0012-child-process-environment-allowlist.md) |
+| Child-process environment (§7) | every subprocess/asyncio spawn in a `.py` at the root or under any top-level directory but `tests/` passes `env=` built by `build_child_env` (`scripts/child_env.py`), directly or through a name bound only to it and afterwards only read; `os.system`/`popen`/`exec*`/`spawn*`, `pty.spawn` and `subprocess.getoutput` are errors, as is a spawn API referenced without a call and a spawn name bound two ways in one scope; names resolve per Python scope; the helper's arguments never carry `os.environ`/`os.getenv`, directly or through a name within the module; `config/project.json` `child_env` and `models.credential_env` are well-formed, no allowlist source admits a `child_env.repo_context_names` variable or a configuration-injection variable (`child_env.config_injection_names`, or a name under a `child_env.config_injection_prefixes` entry, a prefix covering one included), no name is both, `child_env.credential_value_patterns` is a non-empty map of label to a regular expression that compiles with no late global flag (an error names the label, never the pattern), `child_env.login_name_schemes` lists lower-case URL schemes, and `child_env.credentialed_values` names only a variable the allowlist copies, each with a reason. A spawn through an unresolvable receiver, and a parent value crossing a function parameter, are not seen. See [docs/adr/keel/K-0012-child-process-environment-allowlist.md](docs/adr/keel/K-0012-child-process-environment-allowlist.md) |
 | ADR number spaces (§19) | `config/project.json` `adr` is well-formed once the tree holds a `kind: adr` document; an ADR in the project space is `NNNN-<slug>.md` and never carries the template prefix; an ADR in the template space is `<prefix>NNNN-<slug>.md` and is one `adr.template_adrs` lists, and every listed name is a file there; a `kind: adr` document lives directly in one of the two spaces; a number is unique within its space (once in each space is clean); an ADR's frontmatter `kind` is `adr` and its `title` begins `ADR-NNNN:` or `ADR-<prefix>NNNN:` for its own file. Both spaces empty is a WARN. A kept copy of a retired template ADR shares its `id:` with the template's file, which check_A reports. See [docs/adr/keel/K-0013-template-and-project-adr-number-spaces.md](docs/adr/keel/K-0013-template-and-project-adr-number-spaces.md) |
 | Work naming (§20) | `config/project.json` `work_naming` is well-formed once the tree holds a plan doc; every first cell of a plan doc's slice table is a slice id; a slice table sits under exactly one campaign heading, its rows name that campaign and run from `S1` in document order (a duplicate names both lines, a gap names the missing slice); a campaign is declared by one heading across all plan docs, and campaigns run from 1 with no gap; a mention in any Markdown prose, bare or with the project's own `name:` prefix, names a declared campaign or slice, and an id-shaped token outside the grammar (`CMP-1.S02`) is an error, not a mention of its campaign. A plan doc that declares no slice is a WARN. `tests/integration/test_work_trailers.py` judges the `Slice:` and `Backlog:` commit trailers, because check_structure does not read git |
 
@@ -340,11 +340,21 @@ and never from `os.environ`. git's repository-context variables
 (`child_env.repo_context_names`, such as a hook's `GIT_DIR` and `GIT_INDEX_FILE`)
 never reach a child unless the call passes `repo_context=True`, so a child that
 runs git in another directory acts on that directory's repository, and `check_X`
-refuses a manifest whose allowlist admits one. A copied value that carries
-user information is a credential (`carries_credential`: a user part in a URL
-authority, a whole value `user[:password]@host:port`, or, in a variable whose
-name ends `_proxy`, any user part urllib's proxy parser finds), so the helper raises
-`ChildEnvError` naming the variable, never the value, unless
+refuses a manifest whose allowlist admits one. The configuration-injection
+family (`child_env.config_injection_names` and `config_injection_prefixes`:
+git's `GIT_CONFIG_PARAMETERS`, `GIT_CONFIG_COUNT` with its numbered
+`GIT_CONFIG_KEY_<n>`/`GIT_CONFIG_VALUE_<n>`, and `GIT_CONFIG`) carries a
+parent's `git -c` settings, which override `GIT_CONFIG_GLOBAL` and reach every
+hook; the helper never copies a member from the parent, and `check_X` refuses
+an allowlist that admits one. A copied value that carries user information is
+a credential (`carries_credential`: a user part in a URL authority, a whole
+value `user[:password]@host:port`, or, in a variable whose name ends `_proxy`,
+any user part urllib's proxy parser finds); so is one a
+`child_env.credential_value_patterns` regular expression matches (a header, a
+JWT, an opaque token, a private key). In a `child_env.login_name_schemes` URL
+(`ssh://git@host`) a user part is a login name and counts only with a
+password. The helper raises `ChildEnvError` naming the variable and the label
+it matched, never the value, unless
 `child_env.credentialed_values` names it with a reason; a value the caller
 replaces through `extra=` and an adapter's own `models.credential_env` name are
 not judged. A missing or malformed manifest is an error,
@@ -625,7 +635,19 @@ It is keyed **by layer/concern, never one global `language`**:
   copied variable mapped to the reason this project's children may receive
   the user information its value carries; `build_child_env` refuses any
   other copied value that carries it, and an entry no allowlist source copies
-  is an error). make's own control names (`MAKEFLAGS`, `MAKEFILES`, `MAKELEVEL`,
+  is an error), `config_injection_names` and `config_injection_prefixes`
+  (required, non-empty: the variables through which a parent hands git
+  configuration, never copied from the parent; none may appear in `names`,
+  under a `prefixes` entry (either prefix covering the other), in the
+  `make_targets` variables, in `models.credential_env` or in
+  `repo_context_names`; a prefix may hold inner underscores and ends in `_`),
+  `credential_value_patterns` (required, non-empty: a lower-case label mapped
+  to a regular expression searched in every copied value and every gate value,
+  under the `credentialed_values` exemptions; a refusal names the label, never
+  the value or the pattern; a global inline flag is allowed only at the
+  pattern's start) and `login_name_schemes` (optional, default `[]`: the
+  lower-case URL schemes whose user part is a login name, counted as a
+  credential only with a password; empty means every user part counts). make's own control names (`MAKEFLAGS`, `MAKEFILES`, `MAKELEVEL`,
   `MAKEOVERRIDES`, `MFLAGS`) are reserved and refused. `check_X` validates the
   block through `child_env.child_env_policy` and errors when it is missing or
   malformed.

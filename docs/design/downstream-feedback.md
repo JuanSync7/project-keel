@@ -938,7 +938,7 @@ lands. The cap is five slices, each one commit on a green `make verify`.
 | CMP-3.S1 | `make smoke` passes over zero tests, and `make run` fails with `No module named app` | done — `make verify` green (1517 passed); 5 review findings confirmed and fixed |
 | CMP-3.S2 | A document whose only conflict on `copier update` is its `updated:` line is left conflicted for a person to resolve | done — `make verify` green (1562 passed); 1 of 2 review findings confirmed and fixed |
 | CMP-3.S3 | A project can add a check only by editing `scripts/check_structure.py`, so its next `copier update` conflicts in the module the restamp task imports | done — `make verify` green (1614 passed); 6 review findings confirmed and fixed; ADR-K-0014 proposed |
-| CMP-3.S4 | The `GIT_CONFIG_COUNT`/`GIT_CONFIG_PARAMETERS` variables reach a child, copier's own git calls bypass `build_child_env`, and a bare token or `Authorization` value is not recognised as a credential | planned |
+| CMP-3.S4 | The `GIT_CONFIG_COUNT`/`GIT_CONFIG_PARAMETERS` variables reach a child, copier's own git calls bypass `build_child_env`, and a bare token or `Authorization` value is not recognised as a credential | done — `make verify` green (1659 passed); 5 review findings confirmed and fixed |
 | CMP-3.S5 | — | free |
 
 CMP-3.S3 is the bedrock blocker measured in CMP-2.S3's rehearsal: a real
@@ -1163,6 +1163,131 @@ the same planted link the template's own check did.
 - Reject a duplicate key in `config/project.json`.
 - Extend the guard to a conflicted `config/project.json` in
   `keep_edited_retired` and `declare_no_app`, naming the rerun.
+
+### Slice CMP-3.S4 — the child_env residuals CMP-2.S1 and CMP-2.S2 left open
+
+**Measured.** The row named three defects; each was measured before a line
+changed.
+- The `GIT_CONFIG_*` family through `build_child_env`: 0 members copied, so
+  the row's first claim is false through the helper. The real gaps were three:
+  a manifest could admit a member (`names`, a `GIT_` prefix, a make variable,
+  a credential list) and no check refused it; `tests/conftest.py` and
+  `tests/hermetic_git.py` stripped the repository variables but not this
+  family, so a parent's `git -c` reached the suite's own git and copier; and
+  the unit test listed the family in code rather than reading it from config.
+- copier's own git calls under `make audit-project`: `scripts/audit_project.py`
+  already starts copier through `build_child_env`, so the second claim is false
+  for the audit path. The new test is a guard against a regression, not a fix.
+- A credential that is not a URL user part: of 9 shapes (an `Authorization`
+  header, a bare `Bearer`/`Basic`/`token` value, a JWT, an opaque token, a PEM
+  private key), 0 were refused. The row said 4 of 9 were caught; the
+  measurement says 0.
+
+**Rule.** `config/project.json` `child_env` gains four keys, read by
+`scripts/child_env.py` and nowhere else.
+- `config_injection_names` and `config_injection_prefixes` (required,
+  non-empty) name the family. `build_child_env` never copies a member, even
+  under `repo_context=True` or when a policy admits one, and check_X refuses
+  every allowlist source that would admit one, a prefix matching when either
+  covers the other.
+- `credential_value_patterns` (required, non-empty) maps a label to a regular
+  expression searched in every copied value and every gate value. A refusal
+  names the variable and the label, never the value; a validation error names
+  the label, never the pattern.
+- `login_name_schemes` (optional, default `[]`) makes a URL user part a login
+  name, refused only with a password. It is scoped to login schemes because
+  `https://token@host` must stay refused.
+
+**Proof.**
+- RED before the change: 129 of 319 unit tests failed for the stated reasons
+  (unknown keys, a shaped value not refused, a refused gate value that had
+  still snapshotted the tree). GREEN after: 319 passed; the two integration
+  files, 27 passed.
+- False positives, counts only: 0 of 7 allowlisted variables and 0 of 83 in a
+  whole interactive environment matched a pattern; the scan took under 1 ms.
+- Four mutations each turned a named test red and were restored
+  byte-identical: no conftest strip, `audit_project._child` handing copier
+  `os.environ`, the `http-authorization` look-ahead removed (the ordinary values
+  `basic authentication` and `token placeholderstring` were then refused), and
+  the copy-path skip deleted together with the policy refusal.
+- Downstream, in a project generated from the working tree: `make check` and
+  the Python 3.6 gate exit 0; `GIT_CONFIG_PARAMETERS` in `names` is one X error
+  naming the fix, `GIT_` in `prefixes` is one X error listing the family it
+  admits; `run_make_target.py check PY=tok_...` exits 2 naming `PY` and
+  `opaque-token`, the value absent; an `ssh://git@` value is copied and an
+  `https://user@` value refused.
+- `copier update` of projects generated at 29e45f0 and 7f0a68b: exit 0, 0
+  unmerged paths, 0 files with conflict markers, the four keys equal to the
+  template's, `make check` exit 0.
+- `make audit-project` of a 7f0a68b project: 0 errors owed, 13 resolved by the
+  update. Again with a `git` shim first on `PATH` and the family planted in the
+  environment: 2128 git calls, none of which saw a family member, and the
+  same verdict.
+
+**Review.** An adversarial review confirmed four defects, each reproduced by
+an independent refuter and each fixed test-first.
+- `authorization-header` read a colon-joined list as a header: a `PATH`
+  entry that is a directory named `authorization` (`/opt/sso/authorization:`)
+  matched, and since `PATH` is in every allowlist, every `build_child_env`
+  call failed closed. The pattern now needs whitespace after the colon, or a
+  scheme word and whitespace (`Authorization:Bearer <token>`), so a list's
+  next entry is never read as a header value.
+- `opaque-token` caught a token with a trailing newline (Python's `$` matches
+  before one) but not one padded with a space or a tab. Its anchors now allow
+  whitespace, and the leading run cannot backtrack (`(?![\s_~+=-])`), so a
+  value of 100 kB of spaces still scans in linear time.
+- The four new keys sat on the lines directly above `credentialed_values`.
+  git merges adjacent edits as one hunk, so a project that had recorded a
+  credentialed value got a conflict in `config/project.json`; the manifest
+  then failed to parse and the update's own task refused to start a child,
+  leaving the update half applied. The keys now follow the `_comment` line,
+  which no project edits; `git merge-file` over the 7dbcc0c layout gives 0
+  conflicts for an edited `credentialed_values`, `prefixes`, first name or
+  last name, where the old placement conflicted on `credentialed_values`.
+- This note did not say which paths stay out of reach; the residual list
+  below now does.
+
+Measured after the fixes: 0 of 7 allowlisted variables and 0 of 84 in a whole
+interactive environment matched a pattern, counts only. Each fix's test was
+red before it and green after (`tests/unit/scripts/test_child_env.py`: three
+`PATH` cases, the ordinary-value control with five colon-list values, two
+padded tokens; `tests/integration/test_copier_audit.py`: a 7dbcc0c project with
+its own `credentialed_values` and `prefixes` updates with nothing unmerged and
+audits with no X error owed; red before the move with the update's task
+failing on the unparseable manifest). Six pattern mutations each turned a named
+test red and were restored byte-identical: the old `authorization-header`, it
+without the scheme-word branch, it with an optional space after the colon, the
+old `opaque-token` anchors at either end, and a leading run that can backtrack
+(the linear-time test failed after 387 s). `make audit-project` on the
+reviewer's case (a 7dbcc0c project whose `credentialed_values` names
+`HTTPS_PROXY`): exit 0, 0 errors owed, 3 resolved by the update, 0 conflicted
+files; on a 7f0a68b project: exit 0, 0 owed, 13 resolved.
+
+**Residual risk.**
+- Patterns do not give full coverage. A low-entropy token and a standard base64
+  secret holding `/` pass, as does any shape no pattern names.
+- `extra=` is the call site's literal and is honoured verbatim, so a call that
+  passes a family member on purpose still sends it.
+- A `_proxy` variable's user part counts even in a login scheme, because the
+  proxy reader sends it.
+- Only `audit_project`'s copier is constrained. `make new` runs copier from the
+  caller's shell, and a person's own `copier update` runs in theirs, so
+  copier's git, run through plumbum, inherits that whole environment,
+  `GIT_CONFIG_*` included. keel cannot reach a process it does not start.
+- A make recipe a hook starts directly gets the environment the agent tool
+  gives the hook, not `build_child_env`'s. keel's shipped hook is a Python
+  doer whose own children go through the helper; a project that wires a hook
+  to `make` takes this on.
+- A same-user child can still read its parent's environment from
+  `/proc/$PPID/environ`; the allowlist cannot close that, as
+  `docs/adr/keel/K-0012-child-process-environment-allowlist.md` records.
+- A list entry such as `authorization:Service bin` (a scheme-shaped word, a
+  space, then more text) still matches `authorization-header`; no such value
+  was found.
+
+**Queued.**
+- Measure the patterns against a second site's environment before adding
+  more; each new pattern is a false-positive risk on every child.
 
 ## CMP-4 — keel enforces what it claims, and emits evidence jarvis can read
 

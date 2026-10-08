@@ -5,6 +5,7 @@ layer: n/a
 summary: build_child_env starts from an empty dict and copies only what config/project.json allows — `child_env.names`, a name under a `child_env.prefixes` entry, the `make_targets` unattended and gate variables, and, for a named model adapter, that adapter's `models.credential_env` — then adds the caller's `extra` last. A planted secret such as AWS_SECRET_ACCESS_KEY or GITHUB_TOKEN never reaches the result unless declared, a declared name the parent lacks stays absent rather than empty, and a missing, unreadable or malformed manifest is a ChildEnvError, never a fall-back to the parent's environment. A `child_env.repo_context_names` variable reaches the result only when the call passes `repo_context=True`, and child_env_policy refuses an allowlist source that admits one, naming the source and the fix. A copied value carrying user information (a user part in a URL authority, a scheme-relative `//user@host` and a space in the password included; a whole value `user[:password]@host:port`; or, in a `*_proxy` variable, any user part urllib's proxy parser reads, `#`, `?` or `/` in the password and a scheme-less `token@proxy` included) is a ChildEnvError naming every such variable and never the value, whatever allowlist source copied it, unless `child_env.credentialed_values` names it, the called adapter declares it, or `extra` replaces it; child_env_policy refuses a credentialed_values entry that is malformed or that no allowlist source copies. A glibc locale list such as `LANGUAGE=sr_RS:sr@latin`, `name@domain`, and a non-proxy URL with an `@` after its host are copied verbatim. child_env_policy states the same rule without touching disk.
 """
 
+import base64
 import copy
 import json
 import os
@@ -28,6 +29,12 @@ _MANIFEST = {
         "names": ["PATH", "HOME"],
         "prefixes": [],
         "repo_context_names": ["GIT_DIR", "GIT_INDEX_FILE", "GIT_WORK_TREE"],
+        # Synthetic, not keel's: the rule must come from config, so a test that
+        # passed only because the code knew git's names would fail here.
+        "config_injection_names": ["TOOL_CONFIG_COUNT", "TOOL_CONFIG_PARAMETERS"],
+        "config_injection_prefixes": ["TOOL_CONFIG_KEY_", "TOOL_CONFIG_VALUE_"],
+        "credential_value_patterns": {"synthetic-token": "^SYNTH-[0-9]{6}$"},
+        "login_name_schemes": ["vcs+login"],
     },
     "make_targets": {"unattended_vars": ["CI", "RALPH"], "gate_vars": ["PY"]},
     "models": {
@@ -434,19 +441,20 @@ def test_keels_own_policy_is_valid_and_never_lists_a_secret():
     assert policy.credentialed == ()
 
 
-# git's own `--local-env-vars` list also carries these three. They hold the
-# parent's `-c` settings, not a repository location, and keel's names never
-# list them, so the allowlist already drops them (config/project.json says why).
-_CONFIG_INJECTION = {"GIT_CONFIG", "GIT_CONFIG_COUNT", "GIT_CONFIG_PARAMETERS"}
+def _keel_policy():
+    """Keel's own policy, read the way every consumer reads it."""
+    manifest = json.loads((_ROOT / "config" / "project.json").read_text("utf-8"))
+    policy, errs = child_env.child_env_policy(manifest)
+    assert policy is not None and errs == [], errs
+    return policy
 
 
 @pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
 def test_keels_policy_holds_back_every_repository_variable_git_names(monkeypatch):
-    """Keel's list is git's own, so a git that adds a location variable reds
-    this test rather than leaking it to a child."""
-    manifest = json.loads((_ROOT / "config" / "project.json").read_text("utf-8"))
-    policy, errs = child_env.child_env_policy(manifest)
-    assert policy is not None and errs == [], errs
+    """Keel's two lists are git's own: every name `--local-env-vars` prints is
+    either repository context or configuration injection, never both, so a git
+    that adds a variable reds this test rather than leaking it to a child."""
+    policy = _keel_policy()
     r = subprocess.run(
         ["git", "rev-parse", "--local-env-vars"],
         capture_output=True,
@@ -454,15 +462,184 @@ def test_keels_policy_holds_back_every_repository_variable_git_names(monkeypatch
         env=child_env.build_child_env(),
     )
     assert r.returncode == 0, r.stderr
-    gits = set(r.stdout.split()) - _CONFIG_INJECTION
+    gits = set(r.stdout.split())
     assert len(gits) >= 10, r.stdout  # a pass over an empty listing is a failure
-    assert gits <= set(policy.repo_context), sorted(gits - set(policy.repo_context))
+    held = set(policy.repo_context) | set(policy.config_injection)
+    assert gits <= held, sorted(gits - held)
+    assert not set(policy.repo_context) & set(policy.config_injection)
     assert {"GIT_NAMESPACE", "GIT_QUARANTINE_PATH"} <= set(policy.repo_context)
-    assert not _CONFIG_INJECTION & set(policy.repo_context)
+    # GIT_CONFIG is honoured by `git config` alone and is absent from the
+    # listing on some git versions, so it is held by config, not by git's word.
+    assert "GIT_CONFIG" in policy.config_injection
     for key in policy.repo_context:
         monkeypatch.setenv(key, "/planted")
     env = child_env.build_child_env(root=str(_ROOT))
     assert not set(policy.repo_context) & set(env), sorted(env)
+
+
+# --- configuration injected through the environment -----------------------------------
+
+_FAMILY = {
+    "TOOL_CONFIG_COUNT": "1",
+    "TOOL_CONFIG_KEY_0": "core.synthetic",
+    "TOOL_CONFIG_VALUE_0": "/synthetic",
+    "TOOL_CONFIG_KEY_17": "core.other",
+    "TOOL_CONFIG_PARAMETERS": "'core.synthetic'='/synthetic2'",
+}
+
+
+def _in_family(key, policy):
+    return key in policy.config_injection or any(
+        key.startswith(p) for p in policy.config_injection_prefixes
+    )
+
+
+_ADMITS = [
+    (
+        "names",
+        {"child_env__names": ["PATH", "HOME", "TOOL_CONFIG_PARAMETERS"]},
+        "child_env.names",
+        "TOOL_CONFIG_PARAMETERS",
+    ),
+    (
+        "names-by-prefix",
+        {"child_env__names": ["PATH", "HOME", "TOOL_CONFIG_KEY_0"]},
+        "child_env.names",
+        "TOOL_CONFIG_KEY_0",
+    ),
+    (
+        "prefix-covers",
+        {"child_env__prefixes": ["TOOL_"]},
+        "child_env.prefixes",
+        "TOOL_",
+    ),
+    (
+        "prefix-overlaps",
+        {"child_env__prefixes": ["TOOL_CONFIG_"]},
+        "child_env.prefixes",
+        "TOOL_CONFIG_",
+    ),
+    (
+        "unattended",
+        {"make_targets__unattended_vars": ["CI", "TOOL_CONFIG_COUNT"]},
+        "make_targets.unattended_vars",
+        "TOOL_CONFIG_COUNT",
+    ),
+    (
+        "gate",
+        {"make_targets__gate_vars": ["PY", "TOOL_CONFIG_COUNT"]},
+        "make_targets.gate_vars",
+        "TOOL_CONFIG_COUNT",
+    ),
+    (
+        "credential",
+        {"models__credential_env": {"a": ["A_KEY", "TOOL_CONFIG_PARAMETERS"]}},
+        "models.credential_env.a",
+        "TOOL_CONFIG_PARAMETERS",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ("over", "source", "what"),
+    [(o, s, w) for _, o, s, w in _ADMITS],
+    ids=[i for i, _, _, _ in _ADMITS],
+)
+def test_a_policy_that_admits_a_config_injection_variable_is_refused_naming_the_source(
+    tmp_path, parent, over, source, what
+):
+    """Every allowlist source that could copy a configuration-injection variable
+    is refused, once, naming the source and the variable or prefix."""
+    manifest = _manifest(**over)
+    policy, errs = child_env.child_env_policy(manifest)
+    assert policy is None and len(errs) == 1, errs
+    assert source in errs[0] and what in errs[0], errs
+    with pytest.raises(child_env.ChildEnvError):
+        child_env.build_child_env(root=_root(tmp_path, manifest))
+    assert child_env.child_env_policy(_MANIFEST)[1] == []
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "config_injection_names",
+        "config_injection_prefixes",
+        "credential_value_patterns",
+    ],
+)
+def test_a_missing_config_injection_key_is_one_error_naming_the_fix(key):
+    _, errs = child_env.child_env_policy(_manifest(**{"child_env__" + key: _DROP}))
+    assert len(errs) == 1, errs
+    assert "child_env." + key in errs[0] and "CONVENTIONS §15" in errs[0], errs
+    empty = {} if key == "credential_value_patterns" else []
+    _, errs = child_env.child_env_policy(_manifest(**{"child_env__" + key: empty}))
+    assert len(errs) == 1 and "must not be empty" in errs[0], errs
+
+
+def test_a_config_injection_prefix_may_hold_inner_underscores_and_must_end_in_one():
+    for good in (["TOOL_CONFIG_KEY_"], ["Z_"]):
+        policy, errs = child_env.child_env_policy(
+            _manifest(child_env__config_injection_prefixes=good)
+        )
+        assert errs == [] and policy.config_injection_prefixes == tuple(good), errs
+    for bad in ("TOOL_CONFIG_KEY", "_X_", "1A_", "A-B_"):
+        _, errs = child_env.child_env_policy(
+            _manifest(child_env__config_injection_prefixes=["TOOL_CONFIG_VALUE_", bad])
+        )
+        assert len(errs) == 1 and "`%s`" % bad in errs[0], (bad, errs)
+    _, errs = child_env.child_env_policy(
+        _manifest(child_env__config_injection_prefixes=["Z_", "Z_"])
+    )
+    assert len(errs) == 1 and "Z_" in errs[0] and "twice" in errs[0], errs
+    # The allowlist's own prefixes keep their stricter grammar.
+    _, errs = child_env.child_env_policy(
+        _manifest(child_env__prefixes=["TOOL_CONFIG_KEY_"])
+    )
+    assert len(errs) == 1 and "child_env.prefixes" in errs[0], errs
+
+
+@pytest.mark.parametrize("entry", ["TOOL_CONFIG_COUNT", "TOOL_CONFIG_KEY_X"])
+def test_a_config_injection_entry_overlapping_repository_context_is_refused(entry):
+    _, errs = child_env.child_env_policy(
+        _manifest(child_env__repo_context_names=["GIT_DIR", "GIT_INDEX_FILE", entry])
+    )
+    assert len(errs) == 1, errs
+    assert "child_env.repo_context_names" in errs[0] and entry in errs[0], errs
+
+
+def test_the_config_injection_family_never_reaches_a_child(
+    tmp_path, parent, monkeypatch
+):
+    """However the call is shaped, no member of the family is copied, and a
+    count is never sent without its keys. extra= is the call site's literal and
+    is honoured verbatim."""
+    for key, value in _FAMILY.items():
+        parent.setenv(key, value)
+    root = _root(tmp_path, _MANIFEST)
+    policy, _ = child_env.child_env_policy(_MANIFEST)
+    for kwargs in ({}, {"repo_context": True}, {"credentials_for": "a"}):
+        env = child_env.build_child_env(root=root, **kwargs)
+        assert not [k for k in env if _in_family(k, policy)], (kwargs, sorted(env))
+    env = child_env.build_child_env(root=root, extra={"TOOL_CONFIG_COUNT": "0"})
+    assert env["TOOL_CONFIG_COUNT"] == "0"
+    assert [k for k in env if _in_family(k, policy)] == ["TOOL_CONFIG_COUNT"]
+    # Defence in depth: even a policy that admitted the family (one the
+    # validator would refuse) copies none of it.
+    widened = policy._replace(
+        names=tuple(sorted(set(policy.names) | set(_FAMILY))),
+        prefixes=("TOOL_",),
+    )
+    monkeypatch.setattr(child_env, "load_policy", lambda root=None: widened)
+    env = child_env.build_child_env(root=root)
+    assert not [k for k in env if _in_family(k, policy)], sorted(env)
+
+
+def test_an_unknown_child_env_key_names_every_known_key():
+    _, errs = child_env.child_env_policy(_manifest(child_env__bogus=1))
+    assert len(errs) == 1 and "bogus" in errs[0], errs
+    manifest = json.loads((_ROOT / "config" / "project.json").read_text("utf-8"))
+    for key in set(manifest["child_env"]) | {"_comment"}:
+        assert "`%s`" % key in errs[0].split("(the keys are", 1)[1], (key, errs)
 
 
 # --- a credential carried inside an allowlisted value ---------------------------------
@@ -707,3 +884,334 @@ def test_carries_credential_is_the_rule_build_child_env_applies():
     assert not child_env.carries_credential("PY", _PROXY_ONLY["bare-token"])
     assert not child_env.carries_credential("LANGUAGE", "sr_RS:sr@latin")
     assert not child_env.carries_credential("PY", "C:/x+y@z,w~1")
+
+
+# --- a credential recognised by the shape of its value --------------------------------
+
+
+def _segment(raw):
+    """One base64url JWT segment, unpadded, as a token issuer writes it."""
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+# A synthetic JWT, assembled at import: header, claims, a fake signature.
+_JWT = ".".join(
+    [_segment(b'{"alg":"HS256"}'), _segment(b'{"sub":"1234"}'), "Sf1Kx" * 4]
+)
+
+# Every literal is assembled from parts so no scanner reads this file as holding
+# a credential, and no 12-character run of one may surface in an error, save a
+# run of the label itself (a header's name is the label's word, not a secret).
+_SHAPED = {
+    "bearer": ("Bear" + "er " + "aB3dE5" * 4, "http-authorization"),
+    "basic": (
+        "Bas" + "ic " + "QWxhZGRp" + "bjpvcGVu" + "IHNlc2FtZQ==",
+        "http-authorization",
+    ),
+    "token-scheme": ("tok" + "en " + "Zq9" * 6, "http-authorization"),
+    "authorization-header": (
+        "Author" + "ization: Bearer " + "aB3dE5" * 4,
+        "authorization-header",
+    ),
+    "proxy-authorization-header": (
+        "Proxy-Author" + "ization: Basic " + "QWxhZGRp" + "bjpvcGVu",
+        "authorization-header",
+    ),
+    "jwt": (
+        _JWT,
+        "json-web-token",
+    ),
+    "prefixed-opaque": ("tok" + "_" + "aB3" * 12, "opaque-token"),
+    "dashed-opaque": ("s" + "k-" + "Qr7" * 12, "opaque-token"),
+    # `export X=" $(cat tokenfile)"` pads a token; a newline alone was caught
+    # before, so a space or tab must be too.
+    "space-padded-opaque": (" " + "aB3" * 12 + " ", "opaque-token"),
+    "tab-padded-opaque": ("\t" + "Qr7" * 12, "opaque-token"),
+    "authorization-header-no-space": (
+        "Author" + "ization:Bearer " + "aB3dE5" * 4,
+        "authorization-header",
+    ),
+    "pem": ("-----BEG" + "IN RSA PRIV" + "ATE KEY-----", "private-key"),
+}
+
+
+def _keel_manifest(**names):
+    """Keel's own manifest, with extra allowlisted names, so the patterns under
+    test are the ones keel ships."""
+    manifest = json.loads((_ROOT / "config" / "project.json").read_text("utf-8"))
+    manifest["child_env"]["names"] = sorted(
+        set(manifest["child_env"]["names"]) | set(names.get("add", ()))
+    )
+    manifest["child_env"]["credentialed_values"] = names.get("credentialed", {})
+    return manifest
+
+
+def _runs(value, n=12):
+    return {value[i : i + n] for i in range(max(1, len(value) - n + 1))}
+
+
+@pytest.mark.parametrize("form", sorted(_SHAPED))
+def test_a_credential_shaped_value_is_refused_naming_the_variable_and_label_never_the_value(
+    tmp_path, parent, form
+):
+    """A value shaped like a header, a token or a key is refused by keel's
+    shipped patterns, naming the variable and the label that matched; no
+    rendering of the error carries any 12-character run of the value. The same
+    exemptions apply as for user information."""
+    value, label = _SHAPED[form]
+    root = _root(tmp_path, _keel_manifest(add=["SVC_VALUE"]))
+    parent.setenv("SVC_VALUE", value)
+    with pytest.raises(child_env.ChildEnvError) as caught:
+        child_env.build_child_env(root=root)
+    exc = caught.value
+    assert "SVC_VALUE=%s" % label in str(exc), exc
+    assert "child_env.credentialed_values" in str(exc), exc
+    for text in _texts(exc):
+        carried = [r for r in _runs(value) if r in text and r.lower() not in label]
+        assert not carried, "the error carries the value"
+    assert exc.__cause__ is None and exc.__context__ is None
+    assert (
+        child_env.carries_credential("SVC_VALUE", value, child_env.load_policy(root))
+        == label
+    )
+    (tmp_path / "exempt").mkdir()
+    exempt = _root(
+        tmp_path / "exempt",
+        _keel_manifest(add=["SVC_VALUE"], credentialed={"SVC_VALUE": "a reason"}),
+    )
+    assert child_env.build_child_env(root=exempt)["SVC_VALUE"] == value
+    parent.delenv("SVC_VALUE")
+    env = child_env.build_child_env(root=root, extra={"SVC_VALUE": value})
+    assert env["SVC_VALUE"] == value
+
+
+# Each is a value some real environment holds; together they are the false-
+# positive control for keel's patterns. "basic authentication" and "token
+# placeholderstring" are the shapes only the http-authorization lookahead keeps.
+_ORDINARY = {
+    "SHA": "3f" + "a9c1e4b7d2" * 3 + "0b6e9d1a",
+    "UUID": "123e4567-e89b-12d3-a456-426614174000",
+    "PROSE": "basic authentication",
+    "PLACEHOLDER": "token placeholderstring",
+    "WORD": "Bearer",
+    "CAMEL": "ThisIsALongCamelCaseIdentifierNameForTheBuild",
+    "VERSION": "Python-3.11.4+local.build.20261008",
+    "CERT": "-----BEGIN CERTIFICATE-----",
+    "ONE_SEGMENT": _segment(b'{"alg":"HS256"}'),
+    "LS_COLORS": "rs=0:di=01;34:ln=01;36:mh=00:pi=40;33",
+    "MODULEPATH": "/etc/modulefiles:/usr/share/Modules/modulefiles",
+    "HEADER_NAME": "X-Authorization-Mode",
+    "SSH_URL": "ssh://git@host.example/org/repo",
+    "SCP_URL": "git@host.example:org/repo.git",
+    "UPPER_HEX": "ABCDEF0123456789ABCDEF0123456789AB",
+    "PATH_LIKE": "/opt/toolchain-AB12cd34EF56gh78IJ90kl12MN34op/bin",
+    # A colon-joined list whose entry is a directory named like the header: the
+    # list's `:` is not a header colon, so none of these is a credential.
+    "AUTHZ_DIR_LIST": "/opt/sso/authorization:/usr/bin:/bin",
+    "AUTHZ_DIR_MIXED": "/home/u/.venvs/Authorization:Service/bin",
+    "AUTHZ_DIR_FIRST": "authorization:/usr/bin",
+    "AUTHZ_DIR_RELATIVE": "Proxy-Authorization:lib",
+    "AUTHZ_HOST_PORT": "localhost,authorization:8080",
+}
+
+
+def test_an_ordinary_value_is_not_mistaken_for_a_credential(tmp_path, parent):
+    values = dict(_ORDINARY)
+    values.update({k: v for k, v in _CLEAN.items() if k != "PATH"})
+    root = _root(tmp_path, _keel_manifest(add=sorted(values)))
+    for key, value in values.items():
+        parent.setenv(key, value)
+    env = child_env.build_child_env(root=root)
+    assert {k: env.get(k) for k in values} == values
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/opt/sso/authorization:/usr/bin:/bin",
+        "/usr/local/bin:/home/u/src/Authorization:/usr/bin",
+        "authorization:/usr/bin",
+    ],
+)
+def test_a_path_holding_a_directory_named_authorization_still_starts_a_child(
+    tmp_path, parent, path
+):
+    """PATH is in every allowlist, so a pattern that read its `:` separator as a
+    header colon would refuse every child the host starts; keel's shipped
+    patterns copy such a PATH unchanged."""
+    parent.setenv("PATH", path)
+    root = _root(tmp_path, _keel_manifest())
+    assert child_env.carries_credential("PATH", path, _keel_policy()) is None
+    assert child_env.build_child_env(root=root)["PATH"] == path
+
+
+def test_credential_value_patterns_are_validated_without_echoing_a_pattern():
+    """A malformed pattern map is one error naming the key and the label; a
+    pattern itself never appears in the error, since a project may write one
+    that embeds a fragment of the secret it hunts."""
+    literal = "SYNTH_LITERAL"
+    cases = [
+        (["^x$"], "child_env.credential_value_patterns must be an object"),
+        ({"Bad_Label": "^x$"}, "Bad_Label"),
+        ({"synthetic-token": 1}, "synthetic-token"),
+        ({"synthetic-token": literal + "("}, "synthetic-token"),
+        ({"synthetic-token": literal + "(?i)x"}, "synthetic-token"),
+        ({"synthetic-token": "^x$", "other": literal + "[z-a]"}, "other"),
+    ]
+    for value, expected in cases:
+        policy, errs = child_env.child_env_policy(
+            _manifest(child_env__credential_value_patterns=value)
+        )
+        assert policy is None and len(errs) == 1, (value, errs)
+        assert expected in errs[0], (value, errs)
+        assert literal not in errs[0], errs
+    _, errs = child_env.child_env_policy(
+        _manifest(
+            child_env__credential_value_patterns={"synthetic-token": literal + "(?i)x"}
+        )
+    )
+    assert "global flag" in errs[0], errs
+
+
+def test_the_value_patterns_come_from_config_not_code(tmp_path, parent):
+    """The synthetic manifest's one pattern is the whole rule: its token is
+    refused under its label, and keel's shapes pass, so nothing about them is
+    written into the module."""
+    root = _root(tmp_path, _manifest(child_env__names=["PATH", "HOME", "SVC_VALUE"]))
+    parent.setenv("SVC_VALUE", "SYNTH-" + "123456")
+    with pytest.raises(child_env.ChildEnvError) as caught:
+        child_env.build_child_env(root=root)
+    assert "SVC_VALUE=synthetic-token" in str(caught.value), caught.value
+    for value, _ in _SHAPED.values():
+        parent.setenv("SVC_VALUE", value)
+        assert child_env.build_child_env(root=root)["SVC_VALUE"] == value
+    source = (_ROOT / "scripts" / "child_env.py").read_text("utf-8")
+    keel = _keel_manifest()["child_env"]["credential_value_patterns"]
+    assert len(keel) >= 1
+    for label, pattern in keel.items():
+        assert label not in source and pattern not in source, label
+
+
+def test_keels_value_patterns_scan_adversarial_values_in_linear_time():
+    """Every inherited value meets every pattern, so a pattern that backtracks
+    would stall each child start; 100 kB of each shape that tempts one must
+    scan in well under two seconds."""
+    import time
+
+    policy = _keel_policy()
+    assert policy.value_patterns, "a pass over zero patterns is a failure"
+    n = 100000
+    hostile = [
+        "a" * n,
+        " " * n,
+        "Bearer " + " " * n + "x",
+        "Bearer " + "a" * n + "!",
+        "Bearer " + "A" * n + " x",
+        "eyJ" + "a" * n,
+        ".eyJ" * (n // 4),
+        ".eyJaaaaaaaa" * (n // 12),
+        "authorization" * (n // 13),
+        "authorization:" + " " * n,
+        "authorization:" + "a" * n,
+        "/authorization:" * (n // 15),
+        " " * n + "aB1",
+        "\t" * n + "x",
+        "aB" * (n // 2) + "1",
+        "A1" * (n // 2),
+        "-" * n,
+        "-----BEGIN " + "A" * n,
+        "x:" * (n // 2),
+        "@" * n,
+        "//" + "a:" * (n // 2),
+    ]
+    start = time.perf_counter()
+    for value in hostile:
+        child_env.carries_credential("SVC_VALUE", value, policy)
+        child_env.carries_credential("https_proxy", value, policy)
+    assert time.perf_counter() - start < 2.0
+
+
+# --- a login name is not a credential in a login scheme -------------------------------
+
+
+def test_a_login_name_alone_in_a_login_scheme_url_is_not_a_credential(tmp_path, parent):
+    """In a listed scheme the user part is the account to log in as: it counts
+    as a credential only with a non-empty password. Elsewhere, and in a proxy
+    variable, the user part still counts."""
+    root = _root(
+        tmp_path,
+        _manifest(child_env__names=["PATH", "HOME", "SVC_URL", "https_proxy"]),
+    )
+    policy = child_env.load_policy(root)
+    copied = [
+        "vcs+login://git@host.example/org/repo",
+        "VCS+LOGIN://git@host.example/org/repo",
+        "repo=vcs+login://git@host.example/x",
+        "vcs+login://git:@host.example/x",
+    ]
+    refused = [
+        "vcs+login://git:" + "pw@host.example/x",
+        "https://" + "tokenvalue@host.example/x",
+        "xvcs+login://git@host.example/x",
+        "login://git@host.example/x",
+    ]
+    for value in copied:
+        assert child_env.carries_credential("SVC_URL", value, policy) is None, value
+        parent.setenv("SVC_URL", value)
+        assert child_env.build_child_env(root=root)["SVC_URL"] == value
+    for value in refused:
+        assert child_env.carries_credential("SVC_URL", value, policy), value
+        parent.setenv("SVC_URL", value)
+        with pytest.raises(child_env.ChildEnvError):
+            child_env.build_child_env(root=root)
+    parent.delenv("SVC_URL")
+    assert child_env.carries_credential("https_proxy", copied[0], policy)
+    keel = _keel_policy()
+    for scheme in ("ssh", "git+ssh", "ssh+git", "sftp"):
+        value = scheme + "://git@host.example/org/repo"
+        assert child_env.carries_credential("SVC_URL", value, keel) is None, value
+        assert child_env.carries_credential(
+            "SVC_URL", value.replace("git@", "git:" + "pw@"), keel
+        )
+
+
+def test_login_name_schemes_default_to_none_and_are_validated():
+    policy, errs = child_env.child_env_policy(
+        _manifest(child_env__login_name_schemes=_DROP)
+    )
+    assert errs == [] and policy.login_schemes == frozenset(), errs
+    assert (
+        child_env.carries_credential(
+            "SVC_URL", "vcs+login://git@host.example/x", policy
+        )
+        == "url-userinfo"
+    )
+    for bad, expected in (
+        ("ssh", "must be a list"),
+        (["SSH"], "SSH"),
+        (["1x"], "1x"),
+        ([1], "child_env.login_name_schemes"),
+        (["ssh", "ssh"], "twice"),
+    ):
+        _, errs = child_env.child_env_policy(
+            _manifest(child_env__login_name_schemes=bad)
+        )
+        assert len(errs) == 1 and expected in errs[0], (bad, errs)
+        assert "child_env.login_name_schemes" in errs[0], errs
+
+
+def test_carries_credential_without_a_policy_keeps_its_structural_rules():
+    """No policy means no patterns and no login schemes: the call answers with
+    the structural label alone, so a value it once refused is still refused."""
+    assert (
+        child_env.carries_credential("SVC_URL", "ssh://git@host.example/x")
+        == "url-userinfo"
+    )
+    assert (
+        child_env.carries_credential("SVC_URL", "u:" + "p@proxy:3128")
+        == "bare-authority"
+    )
+    assert child_env.carries_credential("https_proxy", "tok@proxy") == "proxy-userinfo"
+    assert child_env.carries_credential("SVC_VALUE", _SHAPED["jwt"][0]) is None
+    assert child_env.carries_credential("SVC_VALUE", "SYNTH-123456") is None
+    assert child_env.carries_credential("PY", "C:/x+y@z,w~1") is None

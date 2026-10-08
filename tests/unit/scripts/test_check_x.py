@@ -27,6 +27,9 @@ _GOOD_MANIFEST = {
         "names": ["PATH", "HOME"],
         "prefixes": ["LC_"],
         "repo_context_names": ["GIT_DIR"],
+        "config_injection_names": ["TOOL_CONFIG_COUNT"],
+        "config_injection_prefixes": ["TOOL_CONFIG_KEY_"],
+        "credential_value_patterns": {"synthetic-token": "^SYNTH-[0-9]{6}$"},
     },
     "make_targets": {"unattended_vars": ["CI", "RALPH"], "gate_vars": ["PY"]},
 }
@@ -561,11 +564,9 @@ def test_a_malformed_policy_is_reported_with_the_manifest_prefix(repo):
         repo,
         dict(
             _GOOD_MANIFEST,
-            child_env={
-                "names": ["MAKEFLAGS"],
-                "prefixes": [],
-                "repo_context_names": ["GIT_DIR"],
-            },
+            child_env=dict(
+                _GOOD_MANIFEST["child_env"], names=["MAKEFLAGS"], prefixes=[]
+            ),
         ),
     )
     _module(

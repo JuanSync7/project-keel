@@ -9,7 +9,7 @@ tags: [tool, gate, make, verify]
 summary: Run one make target a gate may run (by its effect label) and report a structured pass/fail that also fails a run which changed the tree — the refactor loop's gate.
 id: tool-run-make-target
 created: 2026-07-07
-updated: 2026-10-07
+updated: 2026-10-08
 visibility: internal
 canonical: true
 tool_command: python3 scripts/run_make_target.py verify --json
@@ -33,9 +33,11 @@ cannot point make at another makefile), a variable that
 `MAKEFLAGS`, `SHELL`, `WRITE_GUARD` or an unattended variable) or whose value is
 not one path-like word or carries a credential (`carries_credential` in
 `scripts/child_env.py`, which judges user information such as
-`http://user:password@host`), an allowlist `scripts/child_env.py` cannot build
+`http://user:password@host` and any value a `child_env.credential_value_patterns`
+regular expression matches, such as a bearer header or a JWT), an allowlist `scripts/child_env.py` cannot build
 or that would copy a value carrying a credential, and a tree without git. Every
-refusal names the variable and never quotes its value. It passes the
+refusal names the variable, and the pattern label it matched, and never quotes
+its value. It passes the
 `make_targets.gate_runner_var` variable (`RALPH=1` in keel) last, so a `[write]`
 recipe's `$(WRITE_GUARD)` refuses whatever the caller supplied. It snapshots
 what git lists before and after the run, each path's status and content, and a

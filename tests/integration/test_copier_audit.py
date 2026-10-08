@@ -2,11 +2,12 @@
 title: Integration — the downstream audit judges a generated project and writes nothing
 kind: tests
 layer: n/a
-summary: `scripts/audit_project.py` run against projects copier generates from this template. The audit judges the tree a real `copier update` leaves, built in a scratch copy; the parity test runs that update itself, on an independent clone of each old project against `hermetic_git.clone_including_worktree`, and holds the audit's owed and warned letter findings equal to `check_structure.py --root` on the result; for a 7f0a68b project whose own `.PHONY` edit makes copier conflict on the Makefile, the result is resolved both ways by git's `merge-file --ours/--theirs` over copier's index stages, and the audit's judged findings equal what both resolutions have outside the conflicted file, with nothing owed. A project generated from the working tree audits with no letter error, no config arrival and no conflict; the same project with four planted defects (an undeclared top-level directory, an unlabelled make target, a bare subprocess call, an unstamped doc edit) reports exactly those four under B, W, X and freshness, and its whole tree — `.git` included, bytes and modes, plus `.git/index`'s mtime — is identical after two audits whose JSON is byte-identical, with no `keel-audit-*` scratch left behind. A project generated at 7f0a68b, before the downstream-feedback campaign, owes nothing: every W/X error it has today is absent from the tree the update leaves, and the config keys the update brings are reported. A project generated at a70a7b5, before slice CMP-2.S1 moved git's repository variables out of `child_env.names`, owes no X error whether or not it added its own allowlist name, and the config group calls that list an update or a merge from copier's own merge. A project generated at 29e45f0, before slice CMP-2.S2, receives `child_env.credentialed_values` as an info arrival with the template default `{}` and owes no X error. The template checkout's index is never refreshed by an audit. A generated project's own `make audit-project` is a stub that names the template checkout. Keel-only: copier's `tests/integration/test_copier_*.py` glob prunes it.
+summary: `scripts/audit_project.py` run against projects copier generates from this template. The audit judges the tree a real `copier update` leaves, built in a scratch copy; the parity test runs that update itself, on an independent clone of each old project against `hermetic_git.clone_including_worktree`, and holds the audit's owed and warned letter findings equal to `check_structure.py --root` on the result; for a 7f0a68b project whose own `.PHONY` edit makes copier conflict on the Makefile, the result is resolved both ways by git's `merge-file --ours/--theirs` over copier's index stages, and the audit's judged findings equal what both resolutions have outside the conflicted file, with nothing owed. A project generated from the working tree audits with no letter error, no config arrival and no conflict; the same project with four planted defects (an undeclared top-level directory, an unlabelled make target, a bare subprocess call, an unstamped doc edit) reports exactly those four under B, W, X and freshness, and its whole tree — `.git` included, bytes and modes, plus `.git/index`'s mtime — is identical after two audits whose JSON is byte-identical, with no `keel-audit-*` scratch left behind. A project generated at 7f0a68b, before the downstream-feedback campaign, owes nothing: every W/X error it has today is absent from the tree the update leaves, and the config keys the update brings are reported. A project generated at a70a7b5, before slice CMP-2.S1 moved git's repository variables out of `child_env.names`, owes no X error whether or not it added its own allowlist name, and the config group calls that list an update or a merge from copier's own merge. A project generated at 29e45f0, before slice CMP-2.S2, receives `child_env.credentialed_values` as an info arrival with the template default `{}` and owes no X error. A project generated at 7dbcc0c, before slice CMP-3.S4, that recorded its own `child_env.credentialed_values` and `prefixes` keeps both through a real update with nothing unmerged, and its audit owes no X error. The template checkout's index is never refreshed by an audit. A generated project's own `make audit-project` is a stub that names the template checkout. Keel-only: copier's `tests/integration/test_copier_*.py` glob prunes it.
 """
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -37,6 +38,9 @@ _PRE_CAMPAIGN = "7f0a68b"
 _PRE_C2_1 = "a70a7b5"
 # The last commit before slice CMP-2.S2 added child_env.credentialed_values.
 _PRE_C2_2 = "29e45f0"
+# The last commit before slice CMP-3.S4 added four child_env keys beside the
+# credentialed_values line a project customises.
+_PRE_C3_4 = "7dbcc0c"
 _ANSWERS = {"project_name": "demo_proj", "frontend_stack": "none"}
 
 pytestmark = [
@@ -393,6 +397,12 @@ def pre_c2_2(tmp_path_factory):
     yield from _generated_at(tmp_path_factory, _PRE_C2_2)
 
 
+@pytest.fixture(scope="module")
+def pre_c3_4(tmp_path_factory):
+    """A project generated at 7dbcc0c, whose child_env ends in credentialed_values."""
+    yield from _generated_at(tmp_path_factory, _PRE_C3_4)
+
+
 def _customise(dest, env):
     """Add the project's own allowlist name to a pre-CMP-2.S1 manifest, on its own
     line where a person adds one, so the file keeps its layout; committed."""
@@ -668,17 +678,19 @@ def test_a_pre_c2_1_project_owes_no_x_error_for_the_moved_git_names(
         assert "GIT_DIR" in names[0]["message"], names
 
 
-def test_a_pre_c2_2_project_receives_credentialed_values_as_an_arrival_and_owes_no_x_error(
+def test_a_pre_c2_2_project_receives_the_new_child_env_keys_as_arrivals_and_owes_no_x_error(
     pre_c2_2, tmp_path
 ):
-    """The key is optional, so an older project owes nothing for lacking it: the
-    audit reports it as a config key the update brings, at its empty default,
-    and no X error. The `adr` block (CONVENTIONS §19), the `work_naming`
-    block (CONVENTIONS §20), `layers.app` and
-    `make_targets.empty_test_selections` (CONVENTIONS §15) arrive beside it.
-    `structure.project_checks` does not: the template never ships it, because
-    a key beside `extra_toplevel` would conflict with every project that
-    declared one."""
+    """credentialed_values and login_name_schemes are optional, so an older
+    project owes nothing for lacking them: the audit reports each as a config
+    key the update brings. The configuration-injection lists and the value
+    patterns are required, so the project as it stands fails X for each, and
+    the update resolves every one: nothing is owed. The `adr` block
+    (CONVENTIONS §19), the `work_naming` block (CONVENTIONS §20), `layers.app`
+    and `make_targets.empty_test_selections` (CONVENTIONS §15) arrive beside
+    them. `structure.project_checks` does not: the template never ships it,
+    because a key beside `extra_toplevel` would conflict with every project
+    that declared one."""
     project, _env = pre_c2_2
     before = _tree(project)
     systmp = tmp_path / "systmp"
@@ -688,7 +700,17 @@ def test_a_pre_c2_2_project_receives_credentialed_values_as_an_arrival_and_owes_
     assert _scratch_left(systmp) == []
     report = json.loads(r.stdout)
     assert report["base"]["resolved"], "29e45f0 must resolve in the template"
-    assert _errors(report, "X") == [], report["groups"]["X"]
+    assert _owed(report, "X") == [], report["groups"]["X"]
+    required = (
+        "child_env.config_injection_names",
+        "child_env.config_injection_prefixes",
+        "child_env.credential_value_patterns",
+    )
+    resolved = _errors(report, "X")
+    assert sorted(k for f in resolved for k in required if k in f["message"]) == sorted(
+        required
+    ), resolved
+    assert all(f["resolved_by"].startswith("copier update") for f in resolved), resolved
     arrived = [
         f
         for f in report["groups"]["config"]
@@ -696,7 +718,11 @@ def test_a_pre_c2_2_project_receives_credentialed_values_as_an_arrival_and_owes_
     ]
     assert {f["key"] for f in arrived} == {
         "adr",
+        "child_env.config_injection_names",
+        "child_env.config_injection_prefixes",
+        "child_env.credential_value_patterns",
         "child_env.credentialed_values",
+        "child_env.login_name_schemes",
         "layers.app",
         "make_targets.empty_test_selections",
         "work_naming",
@@ -704,6 +730,111 @@ def test_a_pre_c2_2_project_receives_credentialed_values_as_an_arrival_and_owes_
     values = [f for f in arrived if f["key"] == "child_env.credentialed_values"]
     assert "template default: {}" in values[0]["message"], arrived
     assert {f["tier"] for f in arrived} == {"info"}, arrived
+
+
+def test_an_update_keeps_a_projects_own_child_env_lines_without_a_conflict(
+    pre_c3_4, tmp_path
+):
+    """credentialed_values and prefixes are where a project records its own
+    allowlist decisions, so the template's new child_env keys must not land on
+    a line next to either: git merges adjacent edits as one conflicting hunk,
+    the manifest stops parsing, and the update's own tasks then refuse to start
+    a child. Both customisations survive the update, nothing is unmerged, and
+    the audit of the customised project produces a report owing no X error."""
+    project, env = pre_c3_4
+    path = project / "config" / "project.json"
+    text = path.read_text(encoding="utf-8")
+    edits = (
+        ('"credentialed_values": {}', '"credentialed_values": {"HTTPS_PROXY": "r"}'),
+        ('"prefixes": ["LC_"]', '"prefixes": ["LC_", "SLURM_"]'),
+    )
+    for old, new in edits:
+        assert text.count(old) == 1, old
+        text = text.replace(old, new)
+    path.write_text(text, encoding="utf-8")
+    _git(project, "commit", "-qam", "own child_env decisions", env=env)
+    day = doc_stamps.newest_stamp(_ROOT)
+    upd, unmerged = _real_update(project, tmp_path, day, env)
+    assert unmerged == [], unmerged
+    block = json.loads((upd / "config" / "project.json").read_text("utf-8"))[
+        "child_env"
+    ]
+    assert block["credentialed_values"] == {"HTTPS_PROXY": "r"}, block
+    assert block["prefixes"] == ["LC_", "SLURM_"], block
+    keel = json.loads((_ROOT / "config" / "project.json").read_text("utf-8"))
+    for key in (
+        "config_injection_names",
+        "config_injection_prefixes",
+        "credential_value_patterns",
+        "login_name_schemes",
+    ):
+        assert block[key] == keel["child_env"][key], key
+    systmp = tmp_path / "systmp"
+    systmp.mkdir()
+    r = _audit(project, day, tmpdir=systmp)
+    assert r.returncode == 0, r.stdout + r.stderr
+    report = json.loads(r.stdout)
+    assert _owed(report, "X") == [], report["groups"]["X"]
+    assert report["summary"]["conflicts"] == 0, report["groups"]["conflict"]
+
+
+# Resolved once, before any test puts a shim first on PATH.
+_REAL_GIT = shutil.which("git")
+
+
+def test_copiers_own_git_sees_no_config_injection_or_repository_variable(
+    pre_c2_2, tmp_path, monkeypatch
+):
+    """The audit runs `copier update` as a child through build_child_env, so
+    copier's git (and every other git the audit starts) inherits neither a
+    parent's `git -c` configuration nor its repository. A shim first on PATH
+    logs the NAMES each git call sees, never a value, then runs the real git."""
+    import child_env
+
+    project, _env = pre_c2_2
+    policy = child_env.load_policy(str(_ROOT))
+    shim_dir = tmp_path / "shim"
+    shim_dir.mkdir()
+    log = tmp_path / "git-env-names.log"
+    shim = shim_dir / "git"
+    shim.write_text(
+        "#!/bin/sh\n"
+        "echo '--call' >> '%s'\n"
+        "awk 'BEGIN { for (k in ENVIRON) print k }' >> '%s'\n"
+        "exec '%s' \"$@\"\n" % (log, log, _REAL_GIT),
+        encoding="utf-8",
+    )
+    shim.chmod(0o755)
+    planted = {
+        "GIT_DIR": str(tmp_path / "decoy.git"),
+        "GIT_INDEX_FILE": str(tmp_path / "decoy.index"),
+    }
+    for name in policy.config_injection:
+        planted[name] = "1" if name.endswith("COUNT") else str(tmp_path / "decoy")
+    for prefix in policy.config_injection_prefixes:
+        planted[prefix + "0"] = "core.synthetic"
+    held = set(policy.config_injection) | set(policy.repo_context)
+    for name, value in planted.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setenv("PATH", str(shim_dir) + os.pathsep + os.environ["PATH"])
+
+    systmp = tmp_path / "systmp"
+    systmp.mkdir()
+    r = _audit(project, doc_stamps.newest_stamp(_ROOT), tmpdir=systmp)
+    lines = log.read_text(encoding="utf-8").splitlines() if log.exists() else []
+    calls = lines.count("--call")
+    assert calls > 0, "no git call went through the shim: the guard is vacuous"
+    leaked = sorted(
+        {
+            n
+            for n in lines
+            if n in held
+            or any(n.startswith(p) for p in policy.config_injection_prefixes)
+        }
+    )
+    assert leaked == [], leaked
+    assert r.returncode in (0, 1), r.stdout + r.stderr
+    assert json.loads(r.stdout)["base"]["resolved"], r.stdout
 
 
 def test_the_audit_never_refreshes_the_template_index(pre_c2_2, tmp_path):

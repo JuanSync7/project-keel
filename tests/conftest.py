@@ -1,6 +1,6 @@
 """
 title: Shared pytest fixtures + the hermetic git environment + the zero-tests guard
-summary: Repo-wide fixtures; the one place the suite's git environment is neutralised and the parent's git repository context removed (see tests/hermetic_git.py for what is neutralised and why); and the end-of-session guard that fails a run in which zero tests ran (see tests/selection_guard.py for the verdict).
+summary: Repo-wide fixtures; the one place the suite's git environment is neutralised and the parent's git repository context and injected git configuration removed (see tests/hermetic_git.py for what is neutralised and why); and the end-of-session guard that fails a run in which zero tests ran (see tests/selection_guard.py for the verdict).
 
 Shared pytest fixtures live here.
 
@@ -56,6 +56,8 @@ os.environ.update(hermetic_git.git_env_vars(_GITCONFIG_DIR))
 # child_env.repo_context_names, the list build_child_env holds back.
 for _name in hermetic_git.repo_context_names(_ROOT):
     os.environ.pop(_name, None)
+# A parent's `git -c` settings (GIT_CONFIG_PARAMETERS, GIT_CONFIG_COUNT/KEY_n/VALUE_n) override the hermetic GIT_CONFIG_GLOBAL, so they go too, before plumbum snapshots.
+hermetic_git.drop_config_injection(os.environ, _ROOT)
 
 
 @pytest.fixture(scope="session")

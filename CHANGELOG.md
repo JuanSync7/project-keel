@@ -46,6 +46,23 @@ version rather than a bare commit:
   there, and a history with no `Slice:` or `Backlog:` line whose value has an
   id's shape is a stated skip (a prose line such as `slice: split the parser`
   is not judged). Registered as the gate practice `work-naming`.
+- **`child_env.credential_value_patterns` and `child_env.login_name_schemes`
+  — a copied value is judged by its shape as well as its user part.** The
+  required pattern map names, per lower-case label, a regular expression
+  `carries_credential` searches in every copied value and every gate value:
+  keel ships `authorization-header`, `http-authorization`, `json-web-token`,
+  `opaque-token` and `private-key`. `check_X` refuses an empty map, a bad
+  label, a pattern that does not compile and a global inline flag after the
+  pattern's start, naming the label and never the pattern. The optional
+  scheme list (keel: `ssh`, `git+ssh`, `ssh+git`, `sftp`) makes a URL's
+  user part a login name, refused only with a password, so `ssh://git@host`
+  is copied and `https://token@host` is still refused. A header needs
+  whitespace or a scheme word after its colon, so a `PATH` entry named
+  `authorization` is not read as one, and a token padded with whitespace is
+  still caught. Measured on this host: 0 of 7 allowlisted values and 0 of 84
+  variables in the whole environment matched. The four keys follow
+  `child_env._comment`, away from the `credentialed_values` and `prefixes`
+  lines a project edits, so `copier update` does not conflict on them.
 
 ### Changed
 - **`run` and `smoke` left `make_targets.effect_proof_skip`, so
@@ -55,6 +72,10 @@ version rather than a bare commit:
   ships a test. A project that kept either entry gets it removed by
   `copier update`; one that still needs to skip `run`, because it declares
   `layers.app` null, re-adds the entry with that reason.
+- **A credential refusal names the pattern it matched.** `build_child_env`
+  and `scripts/run_make_target.py` add `matched: NAME=label` to the message
+  and still never quote the value. A gate value such as `PY=tok_...` that only
+  a pattern catches is refused before make runs.
 
 ### Fixed
 - **A `copier update` over a conflicted module stops with its name, not a
@@ -127,6 +148,27 @@ version rather than a bare commit:
   tier proves the composition root starts instead of selecting nothing. It
   skips when `layers.app` is null; such a project declares `smoke` in
   `make_targets.empty_test_selections`, as `src/app/README.md` says.
+
+### Security
+- **A child process no longer inherits a parent's `git -c` settings.**
+  `build_child_env` never copies `config/project.json`
+  `child_env.config_injection_names` (`GIT_CONFIG`, `GIT_CONFIG_COUNT`,
+  `GIT_CONFIG_PARAMETERS`) or a name under `config_injection_prefixes`
+  (`GIT_CONFIG_KEY_`, `GIT_CONFIG_VALUE_`), even under `repo_context=True`;
+  these override `GIT_CONFIG_GLOBAL` and reach every hook. `check_X` refuses an
+  allowlist that admits one, through `names`, a prefix that covers or is
+  covered by one, the `make_targets` variables, `models.credential_env` or
+  `repo_context_names`. `tests/conftest.py` and `tests/hermetic_git.py` strip
+  the family too, because the suite's own git and copier do not start through
+  the helper. A credential that is not a URL user part (a bearer header, a JWT,
+  an opaque token, a PEM private key) is now refused by
+  `credential_value_patterns`; before this change 0 of 9 such forms were
+  caught. Patterns do not cover every secret: a low-entropy token and a
+  standard base64 secret holding `/` pass. Upgrading: an older project's
+  `make check` names `child_env.config_injection_names` and
+  `child_env.credential_value_patterns` as missing until `copier update` brings
+  the four keys, which arrive beside `repo_context_names` without a conflict;
+  a project that allowlisted a `GIT_CONFIG` name removes it.
 
 ## [0.2.0] — 2026-10-07
 

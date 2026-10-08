@@ -365,6 +365,24 @@ print but never fail the build.
   would show it. A project generated before keel slice project_keel:CMP-2.S1 of
   `docs/design/downstream-feedback.md` fails with `child_env.repo_context_names
   is missing` until `copier update` brings the key.
+  `child_env.config_injection_names` and `config_injection_prefixes` are
+  required and non-empty: they list the variables through which a parent
+  hands git configuration (`GIT_CONFIG_PARAMETERS` from `git -c`,
+  `GIT_CONFIG_COUNT` with `GIT_CONFIG_KEY_<n>`/`GIT_CONFIG_VALUE_<n>`, and
+  `GIT_CONFIG`), which override `GIT_CONFIG_GLOBAL` and reach every hook.
+  `build_child_env` never copies a member, even under `repo_context=True`, and
+  the check refuses the same allowlist sources as for `repo_context_names`, a
+  prefix matching when either covers the other, and a name in both lists.
+  `child_env.credential_value_patterns` is required and maps a lower-case
+  label to a regular expression; the check refuses an empty map, a label
+  outside `[a-z][a-z0-9-]*`, a pattern that does not compile, and a global
+  inline flag after the pattern's start (Python 3.11 refuses it, 3.6 only
+  warns), and an error names the label, never the pattern.
+  `child_env.login_name_schemes` is optional, defaults to `[]`, and must list
+  lower-case URL schemes. A project generated before keel slice
+  project_keel:CMP-3.S4 of `docs/design/downstream-feedback.md` fails with
+  `child_env.config_injection_names is missing` (and the pattern key) until
+  `copier update` brings the keys.
   `child_env.credentialed_values` is optional and maps a copied variable to
   the reason its value may carry user information. The check refuses an
   entry that is not a variable name, has an empty reason, or names a
@@ -372,7 +390,10 @@ print but never fail the build.
   message. The value itself is judged at run time, not here, because the gate
   never sees the environment a child will get: `build_child_env` raises
   `ChildEnvError` with `build_child_env: HTTPS_PROXY holds user information`
-  and the fix, and never the value. This opt-in is config, not a
+  and the fix, and never the value; a value one of
+  `credential_value_patterns` matches is refused the same way, the message
+  naming the variable and the label
+  (`matched: HTTP_HEADER=authorization-header`). This opt-in is config, not a
   keyword, because an authenticating proxy is a property of the site that
   every child crosses, not of one call.
   It under-reports, never over-reports, in two places: a spawn through a

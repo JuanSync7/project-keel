@@ -5,6 +5,7 @@ layer: n/a
 summary: run_target runs a make target only when its effect label, closed over its prerequisites, falls inside config/project.json `make_targets.gate_effects`; it refuses an unknown, unlabelled or wider target, an extra argument that is not a NAME=VALUE variable, a variable outside `make_targets.gate_vars` (make's control variables, the guard and the unattended variables among them), a value that is not one path-like word, a tree without git and a project without the policy, all without calling the runner. It passes the gate-runner variable last, so the Makefile's WRITE_GUARD refuses whatever the caller supplied, and fails a green run that changed the tree, naming the paths. A `make_targets.gate_vars` value found in the runner's own environment is forwarded on make's command line under the same one-word rule, an explicit one wins, and a bad one is refused before make runs. make and git get the allowlisted environment from scripts/child_env.py, never the runner's own. An allowlist that cannot be built, or that would copy a gate variable carrying a credential, is a refusal before anything runs and before any message could quote the value; a gate value, explicit or forwarded, that carries a credential is refused by name even when opted in, and no refusal quotes a value; and a ChildEnvError during the run or a tree that cannot be re-read afterwards is red, never a traceback. The runner and the snapshot are injected, so no make or git process runs here.
 """
 
+import base64
 import json
 import os
 import sys
@@ -390,6 +391,50 @@ def test_an_opted_in_gate_variable_still_never_reaches_makes_command_line(
     res = rmt.run_target("check", cwd=str(proj), runner=runner, snapshot=_never)
     assert res["refused"] and "PY" in res["refused"], res
     assert "s3cr3t-pw" not in json.dumps(res), "the refusal carries the value"
+    assert runner.calls == []
+
+
+def _segment(raw):
+    """One base64url JWT segment, unpadded, as a token issuer writes it."""
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+# A synthetic JWT, assembled at import: header, claims, a fake signature.
+_JWT = ".".join(
+    [_segment(b'{"alg":"HS256"}'), _segment(b'{"sub":"1234"}'), "Sf1Kx" * 4]
+)
+
+# Assembled from parts so no scanner reads this file as holding a credential.
+_SHAPED_GATE_VALUES = {
+    "opaque-token": "tok_" + "aB3" * 12,
+    "json-web-token": _JWT,
+}
+
+
+@pytest.mark.parametrize("label", sorted(_SHAPED_GATE_VALUES))
+@pytest.mark.parametrize("source", ["explicit", "environment"])
+def test_a_gate_value_matching_a_credential_pattern_is_refused_naming_only_the_variable(
+    proj, monkeypatch, source, label
+):
+    """A one-word value is let through by the gate grammar, so a token shaped
+    like keel's credential_value_patterns would ride make's command line; it is
+    refused naming PY and the label, and no 12-character run of it survives."""
+    value = _SHAPED_GATE_VALUES[label]
+    extra = []
+    if source == "explicit":
+        extra = ["PY=" + value]
+    else:
+        monkeypatch.setenv("PY", value)
+    runner = _fake(0)
+    res = rmt.run_target(
+        "check", cwd=str(proj), extra=extra, runner=runner, snapshot=_never
+    )
+    assert res["refused"] and "PY" in res["refused"], res
+    assert label in res["refused"], res
+    text = json.dumps(res)
+    assert not [
+        value[i : i + 12] for i in range(len(value) - 11) if value[i : i + 12] in text
+    ]
     assert runner.calls == []
 
 
