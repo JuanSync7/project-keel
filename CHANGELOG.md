@@ -11,6 +11,16 @@ version rather than a bare commit:
 ## [Unreleased]
 
 ### Added
+- **`make_targets.write_shape_exempt` — a write-shaped target that is not a
+  write keeps its label under a named reason.** check_W no longer demands
+  `[write]` or `$(WRITE_GUARD)` of a target the new `config/project.json` key
+  names, such as bedrock-platform's `[cost]` `doc-review-apply`; an entry
+  naming a target no makefile defines, no `write_shapes` suffix matches, no
+  label annotates or that is already `[write]` is an error. The key is
+  required, and keel ships it empty: a project's manifest gains
+  `"write_shape_exempt": {}` on update
+  (`docs/adr/keel/K-0015-write-shape-exemptions-and-guarded-recipe-converse.md`,
+  proposed).
 - **`structure.project_checks` — a project adds structure checks without
   editing `scripts/check_structure.py`.** The new `config/project.json` key is
   absent or null (off), or a directory already in `structure.extra_toplevel`.
@@ -78,6 +88,28 @@ version rather than a bare commit:
   a pattern catches is refused before make runs.
 
 ### Fixed
+- **A guarded recipe under a narrower label is a check_W error.** A labelled
+  target whose recipe calls `$(WRITE_GUARD)` anywhere in any line, chained
+  (`$(WRITE_GUARD) && cmd`) or trailed by blanks, must be `[write]`: the gate
+  runner admitted a `[read]` one and the guard then killed it. A `$$`-escaped
+  `$$(WRITE_GUARD)` is text make hands the shell, so it is not a call.
+- **`make audit-project` under an old `python3` names the floor.** `PY` now
+  defaults to `.venv/bin/python` when it exists, and every target whose recipe
+  needs the project interpreter reaches `check-python` first (a prerequisite,
+  or in `audit-project` the line after its usage checks), so a 3.6 host
+  python3 stops on the `requires-python` message instead of a SyntaxError in
+  `scripts/audit_project.py`. `tests/integration/test_gate_scope.py` derives
+  the needy targets from the recipes.
+- **`make audit-project` predicts a migration that refuses over the update's
+  own conflicts.** It exited 2 when an `after` migration stopped on a module
+  the update left conflicted (bedrock-platform's edited
+  `scripts/check_structure.py` stopped the restamp). The real update stops
+  there too, so the audit now judges the tree copier leaves, names the
+  migration and every one after it under not checked with the rerun, and,
+  when the restamp is among them, names `make restamp-docs` in the freshness
+  and restamp groups. A refusal over a file the update did not conflict is
+  still exit 2. `scripts/jobs/conflict_guard.py` gains `REFUSAL` and
+  `read_refusals`, the parser for its own refusal line.
 - **A `copier update` over a conflicted module stops with its name, not a
   traceback.** Every `after` migration (`keep_edited_retired`,
   `declare_no_app`, `resolve_stamp_conflicts`, `restamp_docs`) now follows its

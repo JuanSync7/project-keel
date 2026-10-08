@@ -508,6 +508,244 @@ def test_precommit_python3_entries_actually_execute_on_an_old_interpreter():
     assert r.returncode == 0, "child_env does not run under %s:\n%s" % (old, r.stderr)
 
 
+# --- the interpreter floor: a target that needs the project interpreter checks it first
+
+# The Makefile target whose recipe is the floor check (scripts/check_python_version.py
+# reads requires-python and names it). Every other fact below is read from the
+# Makefile, .pre-commit-config.yaml and the scripts the recipes run.
+_FLOOR_TARGET = "check-python"
+_PY_CALL = re.compile(r"\$[({]PY[)}]")
+_SHELL_SPLIT = re.compile(r"\|\||&&|;|\|")
+
+
+def _precommit_python3_commands():
+    """Each `entry: python3 <script> [args]` in .pre-commit-config.yaml, whole:
+    the commands a `language: system` hook already runs under the old python3."""
+    text = (_ROOT / ".pre-commit-config.yaml").read_text()
+    return [
+        " ".join(m.split())
+        for m in re.findall(r"^\s*entry:\s*(python3\s+\S.*?)\s*$", text, re.MULTILINE)
+    ]
+
+
+def _imported_names(path):
+    """(top-level name, is relative) for every import anywhere in *path*."""
+    tree = ast.parse(path.read_text(), str(path))
+    out = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            out.extend((a.name.split(".")[0], False) for a in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            out.append(((node.module or "").split(".")[0], node.level > 0))
+    return out
+
+
+def _old_python_safe(path, seen=None):
+    """True when *path* and every keel module it imports by bare name parse under
+    PRECOMMIT_PYTHON_FLOOR and import nothing but the standard library and each
+    other: a script the floor would only delay, never protect."""
+    seen = set() if seen is None else seen
+    if path in seen:
+        return True
+    seen.add(path)
+    if not path.is_file() or _too_new_syntax(path):
+        return False
+    local = {p.stem: p for p in _local_imports(path)}
+    for name, relative in _imported_names(path):
+        if relative:
+            return False
+        if name in local:
+            if not _old_python_safe(local[name], seen):
+                return False
+        elif name not in sys.stdlib_module_names and name != "__future__":
+            return False
+    return True
+
+
+def _py_commands(rule):
+    """(recipe line index, the `$(PY) ...` command) for each shell command of
+    *rule*'s recipe that runs the selected interpreter."""
+    out = []
+    for i, line in enumerate(rule.recipe):
+        for part in _SHELL_SPLIT.split(line):
+            m = _PY_CALL.search(part)
+            if m:
+                out.append((i, "python3 " + " ".join(part[m.end() :].split())))
+    return out
+
+
+def _floor_exempt(command, precommit, floor_command):
+    """Why *command* (spelled `python3 ...`) runs safely without the floor, or None."""
+    words = command.split()
+    if command == floor_command:
+        return "is the floor check"
+    if len(words) > 2 and words[1] == "-m":
+        if words[2] in sys.stdlib_module_names:
+            return "runs a standard-library module"
+        return None
+    if command in precommit:
+        return "is a pre-commit `python3` entry, held to the old interpreter"
+    if len(words) > 1 and _old_python_safe(_ROOT / words[1]):
+        return "parses on the old interpreter and imports only the stdlib and keel"
+    return None
+
+
+def _floor_report():
+    """({target: [needy command]}, {target: reason it is floor-free}) for every
+    target of keel's Makefile, and the targets missing the floor."""
+    rules = {}
+    for rule in cs.make_target_rules((_ROOT / "Makefile").read_text()):
+        rules.setdefault(rule.target, rule)
+    floor = rules[_FLOOR_TARGET]
+    (floor_command,) = [c for _i, c in _py_commands(floor)]
+    precommit = set(_precommit_python3_commands())
+
+    def closure(name):
+        seen, stack = set(), [name]
+        while stack:
+            for child in rules[stack.pop()].prereqs:
+                if child in rules and child not in seen:
+                    seen.add(child)
+                    stack.append(child)
+        return seen
+
+    needy, safe, missing = {}, {}, []
+    for name in sorted(rules):
+        rule = rules[name]
+        commands = _py_commands(rule)
+        need = [
+            (i, c)
+            for i, c in commands
+            if _floor_exempt(c, precommit, floor_command) is None
+        ]
+        if not commands:
+            continue
+        if not need:
+            safe[name] = sorted(
+                {_floor_exempt(c, precommit, floor_command) for _i, c in commands}
+            )
+            continue
+        needy[name] = [c for _i, c in need]
+        first = need[0][0]
+        guarded_line = any(floor_command == c for i, c in commands if i < first)
+        if _FLOOR_TARGET not in closure(name) and not guarded_line:
+            missing.append(name)
+    return needy, safe, missing
+
+
+def test_every_target_that_needs_the_project_interpreter_checks_it_first():
+    """`make audit-project` under the default PY (a host python3 3.6) died on a
+    SyntaxError in scripts/audit_project.py instead of check-python's message
+    naming requires-python (bedrock-platform, docs/design/downstream-feedback.md).
+    A target that runs a module or script the old interpreter cannot run must
+    reach the floor first: as a prerequisite, or as an earlier recipe line where a
+    prerequisite would run before the recipe's own usage checks. Derived from the
+    recipes: a command is floor-free only when it runs a standard-library module,
+    is a pre-commit `python3` entry (held to the old interpreter by the tests
+    above), or is a script that parses there and imports nothing outside the
+    stdlib and keel's own 3.6-safe modules."""
+    needy, safe, missing = _floor_report()
+    assert missing == [], (
+        "these targets run the project interpreter without `%s` first: %s\n%s"
+        % (
+            _FLOOR_TARGET,
+            missing,
+            "\n".join("  %s: %s" % (t, needy[t]) for t in missing),
+        )
+    )
+    # Non-vacuity: the two cases that motivated the rule are seen as needy, and
+    # the gate itself stays floor-free (it must run on the old interpreter).
+    assert {"audit-project", "unit", "test"} <= set(needy), sorted(needy)
+    assert {"check", "help", "check-docs", _FLOOR_TARGET} <= set(safe), sorted(safe)
+
+
+def _old_python3():
+    """A host python3 below requires-python, or None."""
+    for cand in ("/usr/bin/python3", "/usr/bin/python3.6"):
+        if not os.path.exists(cand):
+            continue
+        r = subprocess.run(
+            [cand, "-c", "import sys; print('%d %d' % sys.version_info[:2])"],
+            capture_output=True,
+            text=True,
+        )
+        if r.returncode == 0 and tuple(int(x) for x in r.stdout.split()) < (3, 10):
+            return cand
+    return None
+
+
+def test_needy_targets_fail_with_the_floor_message_on_an_old_python3(tmp_path):
+    """The belt to the derivation above: on a host with an old python3, every
+    needy target, run with PY pointed at it, stops on the floor's message -- never
+    a traceback. In a scratch copy of the Makefile, pyproject.toml and scripts/, so
+    nothing a recipe would do can touch this checkout. A target whose every needy
+    command runs a script this checkout lacks is a keel-only doer copier left
+    out of a generated project: its stub answers before any interpreter runs,
+    so it is held only to failing without a traceback. Opportunistic: a host with
+    no old python3 skips, which is why it is never the only assertion."""
+    old = _old_python3()
+    if old is None:
+        pytest.skip("no python3 below requires-python on this host")
+    for name in ("Makefile", "pyproject.toml"):
+        shutil.copy(str(_ROOT / name), str(tmp_path / name))
+    shutil.copytree(
+        str(_ROOT / "scripts"),
+        str(tmp_path / "scripts"),
+        ignore=shutil.ignore_patterns("__pycache__"),
+    )
+    needy, _safe, _missing = _floor_report()
+    assert needy
+    env = {k: v for k, v in os.environ.items() if k not in ("PY", "MAKEFLAGS")}
+    held = []
+    for target in sorted(needy):
+        r = subprocess.run(
+            ["make", "-s", target, "PY=" + old, "DEST=" + str(tmp_path / "nowhere")],
+            cwd=str(tmp_path),
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=120,
+        )
+        out = r.stdout + r.stderr
+        assert r.returncode != 0, (target, out)
+        assert "Traceback" not in out and "SyntaxError" not in out, (target, out)
+        scripts = [c.split()[1] for c in needy[target] if c.split()[1] != "-m"]
+        stub = len(scripts) == len(needy[target]) and not any(
+            (_ROOT / s).exists() for s in scripts
+        )
+        if not stub:
+            assert "requires Python >=" in out, (target, out)
+            held.append(target)
+    # Non-vacuity: the stub exception never covers the targets that motivated
+    # the floor, in keel or in a generated project.
+    assert {"unit", "test"} <= set(held), sorted(held)
+
+
+def test_py_defaults_to_the_project_venv_when_present(tmp_path):
+    """A project with a .venv is run by it without anyone setting PY; without one,
+    the default is python3; a caller's PY always wins."""
+    shutil.copy(str(_ROOT / "Makefile"), str(tmp_path / "Makefile"))
+    env = {k: v for k, v in os.environ.items() if k not in ("PY", "MAKEFLAGS")}
+
+    def check_line(*overrides):
+        r = subprocess.run(
+            ["make", "-n", "-s", "check"] + list(overrides),
+            cwd=str(tmp_path),
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert r.returncode == 0, r.stdout + r.stderr
+        return r.stdout.strip()
+
+    assert check_line() == "python3 scripts/check_structure.py"
+    venv_python = tmp_path / ".venv" / "bin" / "python"
+    venv_python.parent.mkdir(parents=True)
+    venv_python.write_text("")
+    assert check_line() == ".venv/bin/python scripts/check_structure.py"
+    assert check_line("PY=python3.99") == "python3.99 scripts/check_structure.py"
+
+
 # --- scope: a dependency CI installs must never degrade into a silent skip ----
 #
 # The same shape as every scope pin above, applied to the test suite's own

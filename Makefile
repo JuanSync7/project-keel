@@ -1,6 +1,11 @@
 # Task runner. `make help` lists targets.
 .DEFAULT_GOAL := help
-PY ?= python3
+# The project's own venv when it exists, else the host python3: a host whose
+# python3 is older than requires-python (3.6 on the shared hosts) still runs the
+# 3.6-safe gate, and every target that needs more checks the floor first
+# (check-python), so it stops on a message naming requires-python, never a
+# SyntaxError. Override with PY=... as before.
+PY ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 # Make src/ importable as top-level packages for ad-hoc runs (tests set their own
 # sys.path too; this just means `PY -c 'import backend'` works from the repo root).
 PYTHONPATH ?= src:.
@@ -71,7 +76,7 @@ VCS_REF ?= HEAD
 # --trust: copier.yml's `_tasks` stamp the new project's documents, and copier
 # refuses a template that runs tasks without it
 # (docs/adr/keel/K-0010-generation-needs-trust-to-stamp-docs.md).
-new: ## [local] Generate a NEW project from this template into DEST (interactive Q&A). Needs the 'template' extra.
+new: check-python ## [local] Generate a NEW project from this template into DEST (interactive Q&A). Needs the 'template' extra.
 	@test -n "$(DEST)" || { echo "usage: make new DEST=../my-new-project"; exit 2; }
 	@git rev-parse --git-dir >/dev/null 2>&1 || { \
 		echo "refusing: this keel is not a git checkout, so copier records no _commit"; \
@@ -87,9 +92,13 @@ new: ## [local] Generate a NEW project from this template into DEST (interactive
 # exit, and DEST's files are data, never imported, made or hooked. Keel-only
 # doer (copier.yml `_exclude`); in a generated project this target only says
 # where the template checkout is (docs/design/downstream-feedback.md, CMP-1.S5).
+# The floor is a recipe line after the stub and usage lines, not a
+# prerequisite: a prerequisite would run first, so a generated project's stub,
+# or a call without DEST, would answer with the interpreter's version instead.
 audit-project: ## [local] Report what DEST, another keel project, would fail under this template's current gates after `copier update`, judged on a real update of a scratch copy; never writes DEST
 	@[ -f scripts/audit_project.py ] || { echo "audit-project runs from the template checkout: make -C <the _src_path in .copier-answers.yml> audit-project DEST=$(abspath $(or $(DEST),$(CURDIR)))"; exit 2; }
 	@test -n "$(DEST)" || { echo "usage: make audit-project DEST=../my-project"; exit 2; }
+	$(PY) scripts/check_python_version.py
 	$(PY) scripts/audit_project.py "$(DEST)"
 
 check: ## [local] Validate structure + frontmatter (3.6-safe)
@@ -110,11 +119,11 @@ check-docs: check ## [local] The structure gate + strict doc freshness: what eve
 restamp-docs: ## [tree] Set a stale `updated:` to today on every changed, new or committed-stale doc (the fix check-docs names)
 	$(PY) scripts/jobs/restamp_docs.py
 
-doc-review: ## [local] Review the docs (dry-run: findings, rules, baseline; no model, writes nothing)
+doc-review: check-python ## [local] Review the docs (dry-run: findings, rules, baseline; no model, writes nothing)
 	$(PY) scripts/doc_review.py
-doc-review-apply: ## [tree,cost] Review the docs and APPLY one gated edit per finding (model from models/; rolled back if check-docs goes red)
+doc-review-apply: check-python ## [tree,cost] Review the docs and APPLY one gated edit per finding (model from models/; rolled back if check-docs goes red)
 	$(PY) scripts/doc_review.py --execute
-advise: ## [local] Advisory: overfitting / answer-key + coding-practice smells, unowned corpus nodes, stale doc stamps (CONVENTIONS §18; never fails the build)
+advise: check-python ## [local] Advisory: overfitting / answer-key + coding-practice smells, unowned corpus nodes, stale doc stamps (CONVENTIONS §18; never fails the build)
 	-$(PY) scripts/check_generic.py
 	-$(PY) scripts/check_practices.py
 	-$(PY) scripts/accountability_report.py
@@ -126,17 +135,17 @@ verify: check-all lint typecheck test ## [local] Run all gates (all checks + lin
 test: check-python ## [local] Run the whole test suite
 	PYTHONPATH=$(PYTHONPATH) $(PY) -m pytest
 
-unit: ## [local] Run unit tests only
+unit: check-python ## [local] Run unit tests only
 	PYTHONPATH=$(PYTHONPATH) $(PY) -m pytest -m unit
-integration: ## [local] Run integration tests
+integration: check-python ## [local] Run integration tests
 	PYTHONPATH=$(PYTHONPATH) $(PY) -m pytest -m integration
-e2e: ## [local] Run end-to-end tests
+e2e: check-python ## [local] Run end-to-end tests
 	PYTHONPATH=$(PYTHONPATH) $(PY) -m pytest -m e2e
-smoke: ## [local] Run smoke tests
+smoke: check-python ## [local] Run smoke tests
 	PYTHONPATH=$(PYTHONPATH) $(PY) -m pytest -m smoke
 
 lint: lint-py fmt-check lint-fe ## [local] Lint everything (Python + frontend + formatting)
-lint-py: ## [local] Lint Python (ruff, via the selected interpreter)
+lint-py: check-python ## [local] Lint Python (ruff, via the selected interpreter)
 	$(PY) -m ruff check $(PY_ROOTS)
 # Each recipe LINE is its own shell, so a bare `... || exit 0` guard on its own line
 # ends only that shell and make happily runs the loop below it — the guard printed
@@ -153,21 +162,21 @@ lint-fe: ## [local] Lint frontend apps (ESLint) — generic to any FE framework
 		else echo "skip $$app (no node_modules — run 'make fe-install')"; fi; \
 	done
 
-fmt: ## [tree] Format Python (ruff, via the selected interpreter)
+fmt: check-python ## [tree] Format Python (ruff, via the selected interpreter)
 	$(PY) -m ruff format $(PY_ROOTS)
 # The gate half of `fmt`. Formatting is the one readability rule a machine can
 # decide with no judgment at all, so it belongs in `lint` rather than in review;
 # a fix-it command nobody is required to run is decorative (measured: 109 files
 # had drifted while `make verify` stayed green). Read-only ON PURPOSE — a check
 # that writes is not a check, and CI must report drift, not silently repair it.
-fmt-check: ## [local] Check Python formatting without writing (rides `make lint`)
+fmt-check: check-python ## [local] Check Python formatting without writing (rides `make lint`)
 	$(PY) -m ruff format --check $(PY_ROOTS)
 
 typecheck: typecheck-py typecheck-fe ## [local] Type-check everything (Python + frontend)
 # No paths on the command line ON PURPOSE: an explicit path argument OVERRIDES
 # `[tool.mypy] files`, so passing `src` here would silently re-narrow the gate to
 # `src` no matter how wide the config's scope (and its ratchet) got.
-typecheck-py: ## [local] Type-check Python (mypy, scope from pyproject [tool.mypy] files)
+typecheck-py: check-python ## [local] Type-check Python (mypy, scope from pyproject [tool.mypy] files)
 	$(PY) -m mypy
 # Same one-logical-line guard as lint-fe above; see the comment there.
 typecheck-fe: ## [local] Type-check frontend apps (tsc / astro check)
@@ -187,7 +196,7 @@ run: check-python ## [local] Run the composition root config/project.json layers
 # three of the four agents read it — so it is built in every project. llms.txt renders
 # the showcase READ MODEL, so its renderer is pruned along with the showcase
 # (copier.yml `showcase`), and this says so instead of dying on a missing script.
-site-data: ## [local] Rebuild the corpus (+ agent llms.txt where the showcase ships)
+site-data: check-python ## [local] Rebuild the corpus (+ agent llms.txt where the showcase ships)
 	$(PY) scripts/jobs/build_corpus.py
 	$(PY) scripts/jobs/link_corpus.py
 	@if [ -f scripts/jobs/build_llms_txt.py ]; then $(PY) scripts/jobs/build_llms_txt.py; \
@@ -203,7 +212,7 @@ site-static: site-data ## [local] Snapshot the showcase to static files (no back
 		$(PY) scripts/jobs/export_showcase_static.py --base-url "$(BASE_URL)" \
 			$(if $(strip $(FE_APPS)),--out-dir "$(firstword $(FE_APPS))public"); \
 	else echo "skip static snapshot (this project declined the showcase)"; fi
-run-api: ## [local] Serve the showcase REST API (uvicorn :8000; needs the project interpreter)
+run-api: check-python ## [local] Serve the showcase REST API (uvicorn :8000; needs the project interpreter)
 	$(PY) -m uvicorn app:app --app-dir api/rest_fastapi --reload --port 8000
 # The frontend directory is DISCOVERED (FE_APPS), never named: copier prunes the
 # un-chosen stack, so a literal `src/frontend/astro` here was ENOENT in every
@@ -212,7 +221,7 @@ run-api: ## [local] Serve the showcase REST API (uvicorn :8000; needs the projec
 run-web: ## [local] Serve the showcase frontend (dev server); proxies /api to the backend
 	@test -n "$(strip $(FE_APPS))" || { echo "no frontend app under src/frontend (backend-only project)"; exit 2; }
 	cd $(firstword $(FE_APPS)) && API_PROXY_TARGET=$${API_PROXY_TARGET:-http://localhost:8000} npm run dev
-demo: ## [local] Run the demo
+demo: check-python ## [local] Run the demo
 	$(PY) demo/run_demo.py
-agent-surface-schema: ## [tree] Regenerate the committed AAD JSON Schema from the model
+agent-surface-schema: check-python ## [tree] Regenerate the committed AAD JSON Schema from the model
 	$(PY) scripts/agent_surface/generate_aad_schema.py

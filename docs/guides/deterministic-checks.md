@@ -63,7 +63,7 @@ everything and therefore expect the project interpreter.
 | Check | Script | Gate? | Interpreter | What it guarantees |
 |-------|--------|:-----:|-------------|--------------------|
 | Structure & frontmatter | `scripts/check_structure.py` | error | 3.6-safe | Labels, taxonomy, package boundaries, tool/agent governance, project facts, agent-rules symlinks, owned-exception & frozen-config boundaries, naked-tensor domain warn, lint/type ruleset parity, template twin parity, Makefile help parity, cross-reference resolution, check-catalogue parity, rosters, practice mechanisms, policy reachability, writer rerun declarations, make-target effect labels, child-process environment, ADR number spaces, work naming (checks A–Z), then the project's own checks (`structure.project_checks`) |
-| Interpreter floor | `scripts/check_python_version.py` | error | any | `$(PY)` satisfies `pyproject.toml`'s `requires-python`, said plainly before a newer-syntax check fails with a traceback — runs before every check that needs the project interpreter (`check-corpus`, `test`) |
+| Interpreter floor | `scripts/check_python_version.py` | error | any | `$(PY)` satisfies `pyproject.toml`'s `requires-python`, said plainly before a newer-syntax check fails with a traceback — runs first in every target whose recipe needs the project interpreter, as a prerequisite or, in `audit-project`, as the recipe line after its usage checks; `tests/integration/test_gate_scope.py` derives which targets need it from the recipes and fails one that does not reach it. `PY` defaults to `.venv/bin/python` when it exists, else `python3` |
 | Corpus integrity | `scripts/jobs/check_corpus.py` | error | ≥3.7 | the fresh build is a valid, acyclic, reproducible graph whose edge kinds are from the closed set (`keyword`, `link`, `citation`, `mention`, `semantic`) **and** the local `wiki/corpus.json` (what agents query) is current when present — absent is a loud pass, stale is an error naming `make site-data` (ADR-K-0008) |
 | OpenAPI drift | `api/rest_fastapi/export_openapi.py --check` | error | FastAPI | Committed `openapi.json` matches the live routes |
 | AAD schema drift | `scripts/agent_surface/generate_aad_schema.py --check` | error | pydantic | Committed AAD JSON Schema matches the model |
@@ -300,7 +300,14 @@ print but never fail the build.
   prerequisite. A `[write]` target, or one whose name ends in a
   `config/project.json` `make_targets.write_shapes` suffix, opens its recipe
   with `$(WRITE_GUARD)` and no `-` prefix (make would ignore the guard's
-  failure), and the guard's definition, read as make stores it (a `#` comment
+  failure). A shaped target that is not a write keeps its label only when
+  `make_targets.write_shape_exempt` names it with a reason; an entry naming a
+  target no makefile defines, no suffix matches, no label annotates or that is
+  already `[write]` is an error, so an exemption cannot outlive its target.
+  Conversely, a labelled target whose recipe calls `$(WRITE_GUARD)` anywhere
+  in any line (`$(WRITE_GUARD) && cmd` included; a `$$`-escaped reference is
+  text, not a call) must be `[write]`: the gate runner would admit a `[read]`
+  one and the guard would then kill it. The guard's definition, read as make stores it (a `#` comment
   cut off), must test exactly the `make_targets.unattended_vars` names, carry no
   `-` prefix of its own, and `exit 1`. A target annotated on two rules must carry
   one label on both, since make merges them. The `make_targets` block
@@ -313,12 +320,12 @@ print but never fail the build.
   tier names. With `area_dir` set, each `<area>.mk` is included, opens with one
   `##@ <area>` header, and prefixes its public targets `<area>-`. A recursion it
   cannot resolve (`$(MAKE) -C`, a variable target) is a WARN reading
-  *unverified*. Measured over keel at landing: 37 annotated targets, 32
+  *unverified*. Measured over keel's Makefile: 38 annotated targets, 33
   `[local]`, 5 carrying `tree`. The label is a static claim; the runtime half is
   `tests/integration/test_make_target_effects.py`, which runs every `[local]`
   target through `scripts/run_make_target.py` and fails one that changed the
   tree; `run` and `smoke` are in that sweep, and only the targets
-  `make_targets.effect_proof_skip` names, each with its reason, are not. See [`docs/adr/keel/K-0011-make-target-effect-labels.md`](../adr/keel/K-0011-make-target-effect-labels.md).
+  `make_targets.effect_proof_skip` names, each with its reason, are not. See [`docs/adr/keel/K-0011-make-target-effect-labels.md`](../adr/keel/K-0011-make-target-effect-labels.md) and, for the exemption and the converse, [`docs/adr/keel/K-0015-write-shape-exemptions-and-guarded-recipe-converse.md`](../adr/keel/K-0015-write-shape-exemptions-and-guarded-recipe-converse.md).
 - **X. Child processes get an allowlisted environment** — every `subprocess`
   (`run`, `Popen`, `call`, `check_call`, `check_output`) or `asyncio`
   (`create_subprocess_exec`, `create_subprocess_shell`) spawn passes `env=`
@@ -680,7 +687,8 @@ not-checked section names them. The freshness judge
 (`scripts/jobs/restamp_docs.py`) run on DEST itself. Each freshness finding
 carries `resolved_by`, because the update's last `_migrations` step runs
 `restamp_docs` and clears it; the `pending` list names the stamps that
-migration will rewrite.
+migration will rewrite. When the update stops before that step (below), both
+name `make restamp-docs` instead, to run once the conflicts are resolved.
 
 **The predicted tree.** The tree after the update is copier's own merge, so
 the audit merges nothing itself. The update's `_migrations` include
@@ -758,7 +766,28 @@ section. It lists:
   same step the project's own update runs;
 - each path it could not copy as it is: a symlink leaving DEST (copied as its
   target's bytes, or dropped when it dangles), a submodule, an untracked
-  symlink in this checkout.
+  symlink in this checkout;
+- a migration that refused, and every migration after it (below).
+
+**A migration that refuses over the update's own conflicts.** Every keel
+`after` migration first runs `scripts/jobs/conflict_guard.py`, which stops it,
+exit 2, when a module it imports holds a conflict hunk, and names the job,
+each file and line, and the command to rerun. copier stops at the first
+failed migration, so the update exits non-zero. The audit reads that line
+back (`conflict_guard.read_refusals`). When the update's stderr holds exactly
+one refusal and every file it names is one the update left unmerged (`git
+ls-files -u`), the real update of DEST will stop the same way: the audit
+judges the tree copier leaves, adds a not-checked item `migration <job> and
+every migration after it` with the files and the rerun, and exits on its
+findings. The migrations never reached are read from the snapshot's
+`copier.yml` `_migrations`, in order; when the restamp is among them, or the
+list cannot be read, the freshness and restamp groups name `make
+restamp-docs`. A refusal over a file the update did not conflict (markers
+DEST committed itself), more than one refusal, or any other failure is still
+exit 2. Update with `--conflict inline`, as the audit does: under `--conflict
+rej` copier writes no markers and leaves no unmerged path, so the migrations
+run over the unmerged edits sitting in `.rej` files and this prediction does
+not describe that update.
 
 The confirmation is the real `copier update` in the project, then
 `make verify` there.
@@ -794,7 +823,8 @@ gate finds on the real update resolved both ways (git's own `merge-file
 - 2: a usage error, a refusal (DEST is not a keel project), a template render
   error (DEST's answers included, when one has the wrong type), a failed
   `copier update` of the scratch copy (copier's last lines, the scratch path
-  shown as `<scratch>`), or a missing `template` extra.
+  shown as `<scratch>`) other than a migration refusing over conflicts the
+  update leaves, or a missing `template` extra.
 
 DEST is a keel project when every one of these holds:
 - it is a directory, and not this checkout;

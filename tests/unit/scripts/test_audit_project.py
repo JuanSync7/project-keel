@@ -2,13 +2,14 @@
 title: Unit — audit_project (another project judged by this template's gates)
 kind: tests
 layer: n/a
-summary: scripts/audit_project.py pinned against a small fake template (a git history of a base and a newer commit, or uncommitted edits) and a keel-shaped DEST in a scratch directory. It refuses, exit 2 and naming each missing item, whatever is not a keel project; with a base it judges the tree a real `copier update` leaves on a scratch copy of DEST: an error the update brings a fix for is resolved, an error the update leaves is owed even in a file the project never edited, a key the update brings is judged with the file that uses it, and a file copier would conflict on is reported in the conflict group and its findings not judged, while the rest of the tree is judged with every conflict hunk the project's way and the template's way, never beside DEST's pre-update bytes: a cross-file finding both resolutions have is owed, one only one has is not judged (`resolve_conflict` keeps one side of each hunk, the diff3 base dropped, and refuses markers copier does not write); an update copier would refuse (DEST outside git, or uncommitted changes, each named) is an `update-refused` config warning with no exit change; `classify` names what the update did to each config key (arrives, updates, merges, removed-upstream; a list is one value; inputs never mutated); without a base nothing is predicted and DEST is judged as it stands; a failed update is exit 2 with the scratch path masked; a symlink leaving DEST is never written through; the scratch tree is removed on every path. The update's base config is rendered in memory from the template's twin with DEST's answers and copier.yml's derived defaults; findings are grouped A..Z then conflict, config, freshness and restamp, sorted, and the --json output is canonical and byte-identical across runs; an unreadable file has unknown origin, and malformed or wrongly typed answers are a refusal, not a traceback; a not-checked section is always present; and DEST's code, Makefile, git hooks and the commands its git config names (fsmonitor, a clean filter) are never run and its files never written. Excluded from generated projects with the doer.
+summary: scripts/audit_project.py pinned against a small fake template (a git history of a base and a newer commit, or uncommitted edits) and a keel-shaped DEST in a scratch directory. It refuses, exit 2 and naming each missing item, whatever is not a keel project; with a base it judges the tree a real `copier update` leaves on a scratch copy of DEST: an error the update brings a fix for is resolved, an error the update leaves is owed even in a file the project never edited, a key the update brings is judged with the file that uses it, and a file copier would conflict on is reported in the conflict group and its findings not judged, while the rest of the tree is judged with every conflict hunk the project's way and the template's way, never beside DEST's pre-update bytes: a cross-file finding both resolutions have is owed, one only one has is not judged (`resolve_conflict` keeps one side of each hunk, the diff3 base dropped, and refuses markers copier does not write); an update copier would refuse (DEST outside git, or uncommitted changes, each named) is an `update-refused` config warning with no exit change; `classify` names what the update did to each config key (arrives, updates, merges, removed-upstream; a list is one value; inputs never mutated); without a base nothing is predicted and DEST is judged as it stands; a failed update is exit 2 with the scratch path masked, unless it is an `after` migration refusing over files the update itself leaves conflicted, which the real update will do too: that is named under not checked with its rerun, the tree copier leaves is judged, and when the refused migration is the restamp or one before it the freshness and restamp groups name `make restamp-docs` instead of claiming the update rewrites the stamps, while a refusal naming a file the update did not conflict is still exit 2; a symlink leaving DEST is never written through; the scratch tree is removed on every path. The update's base config is rendered in memory from the template's twin with DEST's answers and copier.yml's derived defaults; findings are grouped A..Z then conflict, config, freshness and restamp, sorted, and the --json output is canonical and byte-identical across runs; an unreadable file has unknown origin, and malformed or wrongly typed answers are a refusal, not a traceback; a not-checked section is always present; and DEST's code, Makefile, git hooks and the commands its git config names (fsmonitor, a clean filter) are never run and its files never written. Excluded from generated projects with the doer.
 """
 
 import copy
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -57,6 +58,7 @@ _POLICY = {
     "write_shapes": [],
     "area_dir": None,
     "effect_proof_skip": {},
+    "write_shape_exempt": {},
     "empty_test_selections": {},
     "gate_vars": ["PY"],
 }
@@ -1029,6 +1031,194 @@ def test_a_failed_update_is_exit_2_and_leaves_no_scratch(tmp_path, template, cap
     assert str(tmp_path / "systmp") not in err, err
     assert _scratch_left(tmp_path) == []
     assert _snapshot(dest) == before
+
+
+# --- a migration that refuses over a conflicted import ----------------------------
+
+# A fake `after` migration: the guard every keel job runs first, then the import
+# it guards. *job* and *rerun* are what it names; *body* what it imports.
+_JOB = """\
+import os
+import sys
+
+_JOBS = os.path.dirname(os.path.abspath(__file__))
+sys.path[:0] = [_JOBS, os.path.dirname(_JOBS)]
+import conflict_guard  # noqa: E402
+
+conflict_guard.exit_if_conflicted(
+    __file__, os.getcwd(), %r, %r, search_path=[_JOBS, os.path.dirname(_JOBS)]
+)
+%s
+"""
+
+
+def _migrating_template(template, jobs, theirs):
+    """The fake template with one `after` migration per (stem, rerun, imports
+    dep) in *jobs*, in order, the real conflict_guard beside them, and
+    scripts/dep.py; the base tagged v0.1.0 and *theirs* committed over it as
+    v0.2.0 (copier runs migrations only between two versions). Returns the
+    base's tag, which a generated DEST records as its `_commit`."""
+    migrations = "".join(
+        '  - command: ["{{ _copier_python }}", "scripts/jobs/%s.py"]\n'
+        "    when: \"{{ _stage == 'after' }}\"\n" % stem
+        for stem, _rerun, _dep in jobs
+    )
+    base = {
+        "copier.yml": _COPIER_YML + "_migrations:\n" + migrations,
+        "config/project.json.jinja": _TWIN,
+        "scripts/dep.py": "VALUE = 1\n",
+        "scripts/jobs/conflict_guard.py": (
+            _ROOT / "scripts" / "jobs" / "conflict_guard.py"
+        ).read_text(encoding="utf-8"),
+    }
+    for stem, rerun, dep in jobs:
+        base["scripts/jobs/%s.py" % stem] = _JOB % (
+            stem,
+            rerun,
+            "import dep  # noqa: E402,F401" if dep else "",
+        )
+    sha = _template_commits(template, base, {})
+    _git(template, "tag", "v0.1.0", sha)
+    for rel, text in theirs.items():
+        (template / rel).write_text(text, encoding="utf-8")
+    _git(template, "add", "-A")
+    _git(template, "commit", "-q", "-m", "theirs")
+    _git(template, "tag", "v0.2.0")
+    return "v0.1.0"
+
+
+def _refused(report):
+    return [i for i in report["not_checked"] if i["item"].startswith("migration ")]
+
+
+def test_a_migration_refusing_over_a_conflict_the_update_leaves_is_not_checked(
+    tmp_path, template, capsys
+):
+    """copier stops at the first `after` migration that refuses, and the real
+    update of this project will refuse the same way: the audit reports the tree
+    copier leaves, names the job and its rerun under not checked, and exits on
+    the findings, never 2 (bedrock-platform's restamp over its edited
+    check_structure.py, docs/design/downstream-feedback.md)."""
+    tag = _migrating_template(
+        template, [("job", "make job", True)], {"scripts/dep.py": "VALUE = 2\n"}
+    )
+    dest = _generated(tmp_path, template, tag)
+    (dest / "scripts" / "dep.py").write_text("VALUE = 3\n", encoding="utf-8")
+
+    code, out, err = _run([str(dest), "--today", TODAY, "--json"], capsys)
+    assert code in (0, 1), err
+    report = json.loads(out)
+    assert code == report["exit"]
+    assert [f["path"] for f in report["groups"]["conflict"]] == ["scripts/dep.py"]
+    assert _refused(report) == [
+        {
+            "item": "migration job and every migration after it",
+            "reason": "it refused over conflicted scripts/dep.py exactly as the real "
+            "update will (copier stops at the first failed migration); resolve "
+            "those files, then run `make job`",
+        }
+    ], report["not_checked"]
+    _c, text, _e = _run([str(dest), "--today", TODAY], capsys)
+    assert "  - migration job and every migration after it: it refused" in text
+    assert _scratch_left(tmp_path) == []
+
+
+def test_a_refusal_naming_a_file_the_update_did_not_conflict_is_exit_2(
+    tmp_path, template, capsys
+):
+    """The project committed markers of its own: the update leaves no conflict
+    there, so the refusal is not the update's prediction but a broken project.
+    The audit cannot tell what the update would leave: exit 2, as any failed
+    update."""
+    tag = _migrating_template(
+        template, [("job", "make job", True)], {"scripts/other.py": "X = 1\n"}
+    )
+    dest = _generated(tmp_path, template, tag)
+    (dest / "scripts" / "dep.py").write_text(
+        "%s mine\nVALUE = 3\n%s\nVALUE = 1\n%s theirs\n" % ("<" * 7, "=" * 7, ">" * 7),
+        encoding="utf-8",
+    )
+
+    code, out, err = _run([str(dest), "--today", TODAY], capsys)
+    assert code == 2, out + err
+    assert out == ""
+    assert "copier update of <scratch>" in err and "failed" in err, err
+    assert "scripts/dep.py (line 1)" in err, err
+    assert _scratch_left(tmp_path) == []
+
+
+@pytest.mark.parametrize(
+    "jobs, restamped",
+    [
+        # The restamp itself refuses: no stamp is rewritten.
+        ([("restamp_docs", "make restamp-docs", True)], False),
+        # A job before it refuses: copier never reaches the restamp.
+        (
+            [("job", "make job", True), ("restamp_docs", "make restamp-docs", False)],
+            False,
+        ),
+        # The restamp ran before the job that refused: the stamps are rewritten.
+        (
+            [("restamp_docs", "make restamp-docs", False), ("job", "make job", True)],
+            True,
+        ),
+    ],
+    ids=["restamp-refuses", "earlier-job-refuses", "restamp-ran-first"],
+)
+def test_a_refused_restamp_does_not_claim_the_update_rewrites_stamps(
+    tmp_path, template, capsys, jobs, restamped
+):
+    tag = _migrating_template(template, jobs, {"scripts/dep.py": "VALUE = 2\n"})
+    dest = _generated(tmp_path, template, tag)
+    (dest / "scripts" / "dep.py").write_text("VALUE = 3\n", encoding="utf-8")
+    _commit_dest(dest)
+    readme = dest / "docs" / "README.md"
+    readme.write_text(readme.read_text() + "\nedited\n")
+
+    code, out, err = _run([str(dest), "--today", TODAY, "--json"], capsys)
+    assert code in (0, 1), err
+    report = json.loads(out)
+    fresh = report["groups"]["freshness"]
+    stamps = report["groups"]["restamp"]
+    assert [f["path"] for f in fresh] == ["docs/README.md"], fresh
+    assert [f["path"] for f in stamps] == ["docs/README.md"], stamps
+    if restamped:
+        assert fresh[0]["resolved_by"] == ap.FRESHNESS_RESOLVED_BY
+        assert "will rewrite this stamp" in stamps[0]["message"]
+    else:
+        assert fresh[0]["resolved_by"] != ap.FRESHNESS_RESOLVED_BY
+        assert "`%s`" % ap.RESTAMP_RERUN in fresh[0]["resolved_by"], fresh
+        assert "will rewrite" not in stamps[0]["message"], stamps
+        assert "`%s`" % ap.RESTAMP_RERUN in stamps[0]["message"], stamps
+    # Warning-tier: what names the remedy changes, not what is counted.
+    assert report["summary"]["counts"]["freshness"]["resolved_by_update"] == 0
+
+
+def test_the_restamp_rerun_the_audit_names_is_the_one_the_restamp_prints(tmp_path):
+    """RESTAMP_RERUN is not a second copy of a fact: it is read back from what
+    scripts/jobs/restamp_docs.py prints when it refuses."""
+    proj = tmp_path / "proj"
+    shutil.copytree(
+        str(_ROOT / "scripts"),
+        str(proj / "scripts"),
+        ignore=shutil.ignore_patterns("__pycache__"),
+    )
+    target = proj / "scripts" / "check_structure.py"
+    target.write_text(
+        target.read_text(encoding="utf-8")
+        + "%s a\nx\n%s\ny\n%s b\n" % ("<" * 7, "=" * 7, ">" * 7),
+        encoding="utf-8",
+    )
+    proc = subprocess.run(
+        [sys.executable, "scripts/jobs/restamp_docs.py", "--quiet"],
+        cwd=str(proj),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        universal_newlines=True,
+    )
+    assert proc.returncode == 2, proc.stderr
+    (refusal,) = ap.conflict_guard.read_refusals(proc.stderr)
+    assert (refusal[0], refusal[2]) == (ap.RESTAMP_JOB, ap.RESTAMP_RERUN)
 
 
 def test_a_symlink_leaving_dest_is_never_written_through(tmp_path, template, capsys):

@@ -939,7 +939,7 @@ lands. The cap is five slices, each one commit on a green `make verify`.
 | CMP-3.S2 | A document whose only conflict on `copier update` is its `updated:` line is left conflicted for a person to resolve | done — `make verify` green (1562 passed); 1 of 2 review findings confirmed and fixed |
 | CMP-3.S3 | A project can add a check only by editing `scripts/check_structure.py`, so its next `copier update` conflicts in the module the restamp task imports | done — `make verify` green (1614 passed); 6 review findings confirmed and fixed; ADR-K-0014 accepted |
 | CMP-3.S4 | The `GIT_CONFIG_COUNT`/`GIT_CONFIG_PARAMETERS` variables reach a child, copier's own git calls bypass `build_child_env`, and a bare token or `Authorization` value is not recognised as a credential | done — `make verify` green (1659 passed); 5 review findings confirmed and fixed |
-| CMP-3.S5 | Four defects bedrock-platform hit adopting 0.2.0: `make audit-project` under the default `PY=python3` (3.6) dies with a `SyntaxError` (K1); the audit exits 2 when the update's restamp refuses over a conflicted import (K2); a project's `write_shapes` cannot include `-apply` because keel's own `doc-review-apply` is a non-write (K3); and check_W passes a recipe that opens with `$(WRITE_GUARD)` under a non-`[write]` label (K4) | planned |
+| CMP-3.S5 | Four defects bedrock-platform hit adopting 0.2.0: `make audit-project` under the default `PY=python3` (3.6) dies with a `SyntaxError` (K1); the audit exits 2 when the update's restamp refuses over a conflicted import (K2); a project's `write_shapes` cannot include `-apply` because keel's own `doc-review-apply` is a non-write (K3); and check_W passes a recipe that opens with `$(WRITE_GUARD)` under a non-`[write]` label (K4) | done — `make verify` green (1700 passed); 3 review findings confirmed and fixed; ADR-K-0015 proposed |
 
 CMP-3.S3 is the bedrock blocker measured in CMP-2.S3's rehearsal: a real
 `copier update` of bedrock-platform left 120 files conflicted and failed in the
@@ -1158,7 +1158,7 @@ the same planted link the template's own check did.
 
 **Queued.**
 - Upstream the converse `[write]` rule into check_W, so bedrock-platform can
-  drop `checks/guarded_write.py`.
+  drop `checks/guarded_write.py`. CMP-3.S5 delivers it (K4 below).
 - A config key for directories the walk ignores, for project-jarvis's `.claude`.
 - Reject a duplicate key in `config/project.json`.
 - Extend the guard to a conflicted `config/project.json` in
@@ -1288,6 +1288,100 @@ files; on a 7f0a68b project: exit 0, 0 owed, 13 resolved.
 **Queued.**
 - Measure the patterns against a second site's environment before adding
   more; each new pattern is a false-positive risk on every child.
+
+### Slice CMP-3.S5 — four defects bedrock-platform hit adopting 0.2.0
+
+**Measured before a line changed.** Each defect was reproduced at b950d25 on a
+scratch clone; bedrock-platform itself was only read.
+- K1: `make audit-project` in a keel checkout with no `.venv` (so `PY=python3`,
+  3.6.8 on the shared hosts) exits 2 on `SyntaxError: future feature
+  annotations is not defined` from `scripts/audit_project.py`.
+- K2: the audit of a scratch clone of bedrock-platform at its HEAD (c70efc9)
+  exits 2, and so does the audit of a project generated at 7f0a68b with an
+  edited `scripts/check_structure.py`. In both, the update's restamp
+  migration refused over a conflicted `scripts/check_structure.py`, and the
+  audit stopped there, judging nothing.
+- K3: keel ships `doc-review-apply: ## [tree,cost]`, so a project whose
+  `write_shapes` holds `-apply` gets a check_W error on a target that is
+  not a write, with no way to say so.
+- K4: `platform-look: ## [read] Look` with a recipe that opens with
+  `$(WRITE_GUARD)` passes check_W; under `RALPH=1` the gate runner admits it
+  and the guard then refuses it.
+
+**Rule.**
+- K1: `PY` defaults to `.venv/bin/python` when it exists, else `python3`.
+  Every target whose recipe needs the project interpreter reaches
+  `check-python` first, and `tests/integration/test_gate_scope.py` derives
+  those targets from the recipes.
+- K2: an `after` migration that refuses over the update's own conflicts is
+  named under not checked, with every migration after it and the command to
+  rerun; the audit judges the tree copier leaves and exits by the owed-errors
+  verdict. The project README says to keep `--conflict inline`, because
+  `--conflict rej` leaves no markers and no unmerged file.
+- K3 and K4 are
+  `docs/adr/keel/K-0015-write-shape-exemptions-and-guarded-recipe-converse.md`
+  (proposed); `docs/adr/keel/K-0011-make-target-effect-labels.md` gains only a
+  cross-reference. `make_targets.write_shape_exempt` maps a target to its
+  reason, and an entry that matches nothing is a stale error. keel ships it
+  empty: its `write_shapes` default is `[]`, so `doc-review-apply` needs no
+  exemption in keel itself. A labelled recipe that calls `$(WRITE_GUARD)`
+  anywhere in any line must be `[write]`.
+
+**Proof.**
+- K1 after, in a scratch snapshot of the working tree with no `.venv`: the
+  same command exits 2 on `this project requires Python >=3.10; /bin/python3
+  is 3.6`, naming `PY=` and `.venv` as the fixes.
+- K2 trajectory, the same two trees, the template a snapshot of the working
+  tree:
+
+  | Tree | Exit before | Exit after | Owed | Resolved by the update | Conflicted, not judged |
+  |------|-------------|------------|------|------------------------|------------------------|
+  | bedrock-platform at c70efc9 | 2 | 1 | 26 | 12 | 17 |
+  | 7f0a68b project, `scripts/check_structure.py` edited | 2 | 0 | 0 | 13 | 1 |
+
+  bedrock-platform's adoption report counted 121 conflicted files, 103 of
+  them only on `updated:`. The audit now leaves 17. None of the 26 owed
+  errors is a K1 to K4 rule: they are bedrock's own adoption work, such as
+  `mk/` areas with `make_targets.area_dir` null, project ADRs outside
+  `docs/adr`, and `subprocess.run` calls with no `env=`.
+- K2, `--conflict rej` on the 7f0a68b project: 1 `.rej` file
+  (`scripts/check_structure.py.rej`), 0 unmerged paths and 0 files with
+  conflict markers. The restamp migration ran, over a module that silently
+  holds keel's version.
+- K4 on a project generated from the working tree, under host python3 3.6.8:
+  `$(WRITE_GUARD)` with a trailing blank, `$(WRITE_GUARD); true` and
+  `$(WRITE_GUARD) && true` under `[read]` are each one check_W error;
+  `@echo '$$(WRITE_GUARD)'` is none.
+
+**Review.** An adversarial review confirmed three findings, each reproduced by
+an independent refuter and each fixed. The first two were one defect.
+- The converse compared whole recipe lines with `$(WRITE_GUARD)`, so
+  `$(WRITE_GUARD) && cmd`, `$(WRITE_GUARD); cmd` and a guard with a trailing
+  blank passed under `[read]`; make still ran the guard (`make look RALPH=1`
+  printed `refusing look`, rc 2). check_W now searches each recipe command for
+  a guard reference, skipping a `$$`-escaped one. Five new cases in
+  `tests/unit/scripts/test_check_w.py` were red before the change. Two
+  mutations were each red and then restored byte-identical: whole-line
+  equality turned the five red, and a plain substring search turned the two
+  escaped-reference controls red.
+- This note did not exist, so the measurements and the `make setup` decision
+  were recorded nowhere.
+
+**Residual risk.**
+- A guard in an unlabelled prerequisite's recipe is not a converse error. check_W
+  warns that the prerequisite has a recipe and no label, and stops there.
+- A guard reached through a `$(MAKE)` recursion, or through a variable that
+  expands to `$(WRITE_GUARD)`, is not read as a call.
+
+**Queued.**
+- bedrock-platform's `make setup` (`scripts/setup_venv.py`) is not adopted.
+  Only its `PY` default is. As it stands, it is not generic: its install list
+  names bedrock's `api/rest_fastapi/requirements.txt`, which a keel project
+  has only when that transport is chosen. It names uv in the doer instead of
+  behind an adapter. Its `[local]` label is narrower than what it does: a
+  package install from an index reads a remote service, which check_W's
+  vocabulary calls `[read]`. Adopting it needs the install list in config,
+  the installer behind an adapter, and a label that covers the download.
 
 ## CMP-4 — keel enforces what it claims, and emits evidence jarvis can read
 

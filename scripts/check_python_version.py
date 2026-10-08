@@ -44,8 +44,8 @@ def main():
     if current < minimum:
         sys.stderr.write(
             "ERROR: this project requires Python >=%d.%d; %s is %d.%d.\n"
-            "Point PY at a newer interpreter, e.g. `make PY=python3.11 test` "
-            "(or activate the project venv).\n"
+            "Point PY at a newer interpreter, e.g. `make PY=python3.11 test`, "
+            "or create .venv (make picks up .venv/bin/python by itself).\n"
             % (minimum[0], minimum[1], sys.executable, current[0], current[1])
         )
         return 1

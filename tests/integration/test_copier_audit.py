@@ -2,7 +2,7 @@
 title: Integration — the downstream audit judges a generated project and writes nothing
 kind: tests
 layer: n/a
-summary: `scripts/audit_project.py` run against projects copier generates from this template. The audit judges the tree a real `copier update` leaves, built in a scratch copy; the parity test runs that update itself, on an independent clone of each old project against `hermetic_git.clone_including_worktree`, and holds the audit's owed and warned letter findings equal to `check_structure.py --root` on the result; for a 7f0a68b project whose own `.PHONY` edit makes copier conflict on the Makefile, the result is resolved both ways by git's `merge-file --ours/--theirs` over copier's index stages, and the audit's judged findings equal what both resolutions have outside the conflicted file, with nothing owed. A project generated from the working tree audits with no letter error, no config arrival and no conflict; the same project with four planted defects (an undeclared top-level directory, an unlabelled make target, a bare subprocess call, an unstamped doc edit) reports exactly those four under B, W, X and freshness, and its whole tree — `.git` included, bytes and modes, plus `.git/index`'s mtime — is identical after two audits whose JSON is byte-identical, with no `keel-audit-*` scratch left behind. A project generated at 7f0a68b, before the downstream-feedback campaign, owes nothing: every W/X error it has today is absent from the tree the update leaves, and the config keys the update brings are reported. A project generated at a70a7b5, before slice CMP-2.S1 moved git's repository variables out of `child_env.names`, owes no X error whether or not it added its own allowlist name, and the config group calls that list an update or a merge from copier's own merge. A project generated at 29e45f0, before slice CMP-2.S2, receives `child_env.credentialed_values` as an info arrival with the template default `{}` and owes no X error. A project generated at 7dbcc0c, before slice CMP-3.S4, that recorded its own `child_env.credentialed_values` and `prefixes` keeps both through a real update with nothing unmerged, and its audit owes no X error. The template checkout's index is never refreshed by an audit. A generated project's own `make audit-project` is a stub that names the template checkout. Keel-only: copier's `tests/integration/test_copier_*.py` glob prunes it.
+summary: `scripts/audit_project.py` run against projects copier generates from this template. The audit judges the tree a real `copier update` leaves, built in a scratch copy; the parity test runs that update itself, on an independent clone of each old project against `hermetic_git.clone_including_worktree`, and holds the audit's owed and warned letter findings equal to `check_structure.py --root` on the result; for a 7f0a68b project whose own `.PHONY` edit makes copier conflict on the Makefile, the result is resolved both ways by git's `merge-file --ours/--theirs` over copier's index stages, and the audit's judged findings equal what both resolutions have outside the conflicted file, with nothing owed; for a 7f0a68b project that edited its own scripts/check_structure.py, copier conflicts on it and the restamp migration refuses in the real update and in the audit alike, which names the migration under not checked, exits on the findings (none owed) and never 2. A project generated from the working tree audits with no letter error, no config arrival and no conflict; the same project with four planted defects (an undeclared top-level directory, an unlabelled make target, a bare subprocess call, an unstamped doc edit) reports exactly those four under B, W, X and freshness, and its whole tree — `.git` included, bytes and modes, plus `.git/index`'s mtime — is identical after two audits whose JSON is byte-identical, with no `keel-audit-*` scratch left behind. A project generated at 7f0a68b, before the downstream-feedback campaign, owes nothing: every W/X error it has today is absent from the tree the update leaves, and the config keys the update brings are reported. A project generated at a70a7b5, before slice CMP-2.S1 moved git's repository variables out of `child_env.names`, owes no X error whether or not it added its own allowlist name, and the config group calls that list an update or a merge from copier's own merge. A project generated at 29e45f0, before slice CMP-2.S2, receives `child_env.credentialed_values` as an info arrival with the template default `{}` and owes no X error. A project generated at 7dbcc0c, before slice CMP-3.S4, that recorded its own `child_env.credentialed_values` and `prefixes` keeps both through a real update with nothing unmerged, and its audit owes no X error. The template checkout's index is never refreshed by an audit. A generated project's own `make audit-project` is a stub that names the template checkout. Keel-only: copier's `tests/integration/test_copier_*.py` glob prunes it.
 """
 
 import json
@@ -427,7 +427,20 @@ def _edit_phony(dest, env):
     _git(dest, "commit", "-qam", "the project's own target", env=env)
 
 
-_CUSTOMISE = {"own-name": _customise, "phony": _edit_phony}
+def _edit_gate(dest, env):
+    """Rewrite the `summary:` line of the project's own scripts/check_structure.py,
+    a line every later template commit also changes, as bedrock-platform did:
+    copier leaves the file conflicted, and the restamp migration, which imports
+    it, refuses. Committed."""
+    path = dest / "scripts" / "check_structure.py"
+    lines = path.read_text(encoding="utf-8").splitlines(True)
+    assert lines[3].startswith("summary: "), lines[3]
+    lines[3] = "summary: The project's own structure gate, edited for its own checks.\n"
+    path.write_text("".join(lines), encoding="utf-8")
+    _git(dest, "commit", "-qam", "own gate summary", env=env)
+
+
+_CUSTOMISE = {"own-name": _customise, "phony": _edit_phony, "gate": _edit_gate}
 
 
 def _resolved_gate(upd, conflicted, side, env):
@@ -459,7 +472,9 @@ def _real_update(dest, work, day, env):
     """What a real `copier update` leaves: an independent clone of *dest*
     updated in-process against `clone_including_worktree(_ROOT)` (not the
     audit's own snapshot), on *day*. Returns (the updated clone, the paths it
-    leaves unmerged)."""
+    leaves unmerged, the failed task's CalledProcessError or None): an `after`
+    migration that refuses stops copier there, and the tree it leaves is still
+    the one to compare."""
     template = work / "template"
     hermetic_git.clone_including_worktree(_ROOT, template, work)
     upd = work / "updated"
@@ -473,6 +488,7 @@ def _real_update(dest, work, day, env):
     for var, value in hermetic_git.git_env_vars(work).items():
         mp.setenv(var, value)
     mp.setenv("COPIER_CACHE_DIR", str(work / "copier-cache"))
+    failed = None
     try:
         with plumbum.local.env(SOURCE_DATE_EPOCH=str(doc_stamps.epoch_of(day))):
             copier.run_update(
@@ -485,11 +501,13 @@ def _real_update(dest, work, day, env):
                 unsafe=True,
                 quiet=True,
             )
+    except subprocess.CalledProcessError as exc:
+        failed = exc
     finally:
         mp.undo()
     out = _git(upd, "ls-files", "-u", "-z", env=env)
     unmerged = sorted({e.split("\t", 1)[1] for e in out.split("\0") if "\t" in e})
-    return upd, unmerged
+    return upd, unmerged, failed
 
 
 def _token(message):
@@ -504,6 +522,7 @@ def _token(message):
         ("pre_c2_1", None),
         ("pre_c2_1", "own-name"),
         ("pre_c2_2", None),
+        ("pre_campaign", "gate"),
     ],
     ids=[
         "7f0a68b",
@@ -511,6 +530,7 @@ def _token(message):
         "a70a7b5-as-rendered",
         "a70a7b5-own-name",
         "29e45f0",
+        "7f0a68b-edited-gate",
     ],
 )
 def test_predicted_findings_equal_check_structure_on_a_real_update(
@@ -524,7 +544,10 @@ def test_predicted_findings_equal_check_structure_on_a_real_update(
     and every hunk the template's way: what the audit judges is what both
     have, outside the conflicted file (the 7f0a68b project that names its own
     target on the `.PHONY` line owes nothing; a pre-update Makefile beside the
-    post-update manifest owed the `audit-project` entry)."""
+    post-update manifest owed the `audit-project` entry). When a migration
+    refuses over a file the update conflicts, the real update stops there
+    too, and the audit names that migration under not checked instead of
+    failing (the 7f0a68b project that edited its own check_structure.py)."""
     project, env = request.getfixturevalue(fixture)
     dest = tmp_path / "dest"
     _git(tmp_path, "clone", "-q", "--no-hardlinks", str(project), str(dest), env=env)
@@ -541,8 +564,20 @@ def test_predicted_findings_equal_check_structure_on_a_real_update(
 
     work = tmp_path / "real"
     work.mkdir()
-    upd, unmerged = _real_update(dest, work, day, env)
+    upd, unmerged, failed = _real_update(dest, work, day, env)
     assert [f["path"] for f in report["groups"]["conflict"]] == unmerged
+    refused = [i for i in report["not_checked"] if i["item"].startswith("migration ")]
+    assert len(refused) == (failed is not None), (refused, failed)
+    if failed is not None:
+        job = refused[0]["item"].split()[1]
+        assert "scripts/jobs/%s.py" % job in [str(w) for w in failed.cmd], failed
+    if customise == "gate":
+        # Non-vacuous: the restamp refuses over the conflicted gate, as it did
+        # on bedrock-platform, and the audit says so instead of exit 2.
+        assert unmerged == ["scripts/check_structure.py"], unmerged
+        assert refused and refused[0]["item"].startswith("migration restamp_docs ")
+        assert "scripts/check_structure.py" in refused[0]["reason"], refused
+        assert report["summary"]["errors"] == 0, report["summary"]
     if customise == "phony":
         # Non-vacuous: the case this fixture exists for has a conflict.
         assert unmerged == ["Makefile"], unmerged
@@ -687,10 +722,10 @@ def test_a_pre_c2_2_project_receives_the_new_child_env_keys_as_arrivals_and_owes
     patterns are required, so the project as it stands fails X for each, and
     the update resolves every one: nothing is owed. The `adr` block
     (CONVENTIONS §19), the `work_naming` block (CONVENTIONS §20), `layers.app`
-    and `make_targets.empty_test_selections` (CONVENTIONS §15) arrive beside
-    them. `structure.project_checks` does not: the template never ships it,
-    because a key beside `extra_toplevel` would conflict with every project
-    that declared one."""
+    and `make_targets.empty_test_selections` and `write_shape_exempt`
+    (CONVENTIONS §15) arrive beside them. `structure.project_checks` does
+    not: the template never ships it, because a key beside `extra_toplevel`
+    would conflict with every project that declared one."""
     project, _env = pre_c2_2
     before = _tree(project)
     systmp = tmp_path / "systmp"
@@ -725,6 +760,7 @@ def test_a_pre_c2_2_project_receives_the_new_child_env_keys_as_arrivals_and_owes
         "child_env.login_name_schemes",
         "layers.app",
         "make_targets.empty_test_selections",
+        "make_targets.write_shape_exempt",
         "work_naming",
     }, arrived
     values = [f for f in arrived if f["key"] == "child_env.credentialed_values"]
@@ -754,8 +790,8 @@ def test_an_update_keeps_a_projects_own_child_env_lines_without_a_conflict(
     path.write_text(text, encoding="utf-8")
     _git(project, "commit", "-qam", "own child_env decisions", env=env)
     day = doc_stamps.newest_stamp(_ROOT)
-    upd, unmerged = _real_update(project, tmp_path, day, env)
-    assert unmerged == [], unmerged
+    upd, unmerged, failed = _real_update(project, tmp_path, day, env)
+    assert (unmerged, failed) == ([], None), (unmerged, failed)
     block = json.loads((upd / "config" / "project.json").read_text("utf-8"))[
         "child_env"
     ]
@@ -901,7 +937,7 @@ def test_the_shipped_audit_target_points_back_at_the_template(generated):
 
 # --- ADR number spaces: an update moves keel's ADRs to docs/adr/keel ------------
 
-_KEEL_ADRS = 14
+_KEEL_ADRS = 15
 
 
 def _own_adr(number, slug, title):
@@ -955,13 +991,13 @@ def adr_update(pre_campaign, tmp_path_factory):
     try:
         with open(str(sink), "wb") as fh:
             os.dup2(fh.fileno(), 2)
-            upd, unmerged = _real_update(
+            upd, unmerged, failed = _real_update(
                 dest, real, doc_stamps.newest_stamp(_ROOT), env
             )
     finally:
         os.dup2(saved, 2)
         os.close(saved)
-    assert unmerged == [], unmerged
+    assert (unmerged, failed) == ([], None), (unmerged, failed)
     yield dest, upd, sink.read_text(encoding="utf-8", errors="replace"), env
 
 

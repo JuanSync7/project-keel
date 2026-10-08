@@ -39,7 +39,8 @@
       "K-0011-make-target-effect-labels.md",
       "K-0012-child-process-environment-allowlist.md",
       "K-0013-template-and-project-adr-number-spaces.md",
-      "K-0014-project-owned-structure-checks.md"
+      "K-0014-project-owned-structure-checks.md",
+      "K-0015-write-shape-exemptions-and-guarded-recipe-converse.md"
     ]
   },
   "work_naming": {
@@ -54,7 +55,8 @@
     "adoption_boundary": null
   },
   "make_targets": {
-    "_comment": "Every annotated make target opens its `## ` help with an effect label from the closed vocabulary [local] [tree] [read] [cost] [write] (docs/adr/keel/K-0011-make-target-effect-labels.md). scripts/check_structure.py check_W validates this block and the labels; scripts/run_make_target.py runs only a target whose label falls inside gate_effects, sets gate_runner_var=1 last so WRITE_GUARD refuses a [write] target, accepts only the gate_vars as NAME=VALUE variables (each value one path-like word), and fails a run that changed what git sees. unattended_vars are the variables WRITE_GUARD refuses under; write_shapes are target-name suffixes that must be [write]; area_dir is the directory of <area>.mk makefiles (null: areas off); effect_proof_skip keeps a [local] target out of tests/integration/test_make_target_effects.py, by name and reason only; empty_test_selections names a pytest marker a `-m <marker>` recipe may run zero tests of, with the reason as the value (tests/selection_guard.py fails any other run of zero tests, and a run of that marker that ran a test makes the entry stale).",
+    "_comment": "Every annotated make target opens its `## ` help with an effect label from the closed vocabulary [local] [tree] [read] [cost] [write] (docs/adr/keel/K-0011-make-target-effect-labels.md). scripts/check_structure.py check_W validates this block and the labels; scripts/run_make_target.py runs only a target whose label falls inside gate_effects, sets gate_runner_var=1 last so WRITE_GUARD refuses a [write] target, accepts only the gate_vars as NAME=VALUE variables (each value one path-like word), and fails a run that changed what git sees. unattended_vars are the variables WRITE_GUARD refuses under; write_shapes are target-name suffixes that must be [write]; write_shape_exempt maps a write-shaped target that is not a write to the reason it keeps its label, and an entry naming a target no makefile defines, no write shape matches, no label annotates or that is already [write] is stale (docs/adr/keel/K-0015-write-shape-exemptions-and-guarded-recipe-converse.md); area_dir is the directory of <area>.mk makefiles (null: areas off); effect_proof_skip keeps a [local] target out of tests/integration/test_make_target_effects.py, by name and reason only; empty_test_selections names a pytest marker a `-m <marker>` recipe may run zero tests of, with the reason as the value (tests/selection_guard.py fails any other run of zero tests, and a run of that marker that ran a test makes the entry stale).",
+    "write_shape_exempt": {},
     "unattended_vars": ["CI", "RALPH"],
     "gate_runner_var": "RALPH",
     "gate_effects": ["local", "read"],

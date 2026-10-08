@@ -2,7 +2,7 @@
 title: Unit — check_structure check_W (every make target declares its effect)
 kind: tests
 layer: n/a
-summary: check_W's rule, pinned: an annotated make target opens its help with an effect label from the closed EFFECT_LABELS vocabulary, written as comma-separated words in canonical order, the same label on every rule that annotates one target; a composite target's label covers what its prerequisites and `$(MAKE)` recursions reach; a [write] target, and any target named with a configured write shape, opens its recipe with `$(WRITE_GUARD)` behind no `-` prefix, and the guard, read as make stores it (a `#` comment cut off), tests exactly the configured unattended variables, carries no `-` prefix and exits 1. The policy is read from config/project.json `make_targets` and validated before it is used. Area makefiles are held to their header, prefix and include only when the policy names an area directory. Keel's own Makefile passes, and so does the bedrock-platform shape that the rule was ported from.
+summary: check_W's rule, pinned: an annotated make target opens its help with an effect label from the closed EFFECT_LABELS vocabulary, written as comma-separated words in canonical order, the same label on every rule that annotates one target; a composite target's label covers what its prerequisites and `$(MAKE)` recursions reach; a [write] target, and any target named with a configured write shape, opens its recipe with `$(WRITE_GUARD)` behind no `-` prefix unless config names it in `write_shape_exempt` with a reason (an exemption that matches nothing, an unshaped, unlabelled or [write] target is stale), a labelled recipe that calls the guard anywhere in any line (a `$$`-escaped reference is text) must be [write], and the guard, read as make stores it (a `#` comment cut off), tests exactly the configured unattended variables, carries no `-` prefix and exits 1. The policy is read from config/project.json `make_targets` and validated before it is used. Area makefiles are held to their header, prefix and include only when the policy names an area directory. Keel's own Makefile passes, and so does the bedrock-platform shape that the rule was ported from.
 """
 
 import copy
@@ -27,6 +27,7 @@ _POLICY = {
     "write_shapes": [],
     "area_dir": None,
     "effect_proof_skip": {},
+    "write_shape_exempt": {},
     "empty_test_selections": {},
     "gate_vars": ["PY"],
 }
@@ -268,6 +269,157 @@ def test_with_shapes_configured_a_write_target_must_be_shaped(repo):
     assert len(errs) == 1 and "-apply" in errs[0] and "-destroy" in errs[0], errs
 
 
+# --- the converse: a recipe that calls the guard is a write ------------------------
+
+
+@pytest.mark.parametrize(
+    "recipe",
+    [
+        "\t$(WRITE_GUARD)\n\tlook\n",
+        "\techo first\n\t@$(WRITE_GUARD)\n",
+        "\t${WRITE_GUARD}\n\tlook\n",
+        "\t$(WRITE_GUARD) && look\n",
+        "\t$(WRITE_GUARD); look\n",
+        "\t$(WRITE_GUARD) \n\tlook\n",
+        "\tlook && ${WRITE_GUARD}\n",
+        "\t$$$(WRITE_GUARD)\n",
+    ],
+    ids=[
+        "first-line",
+        "later-line",
+        "brace-spelling",
+        "and-chained",
+        "semicolon-chained",
+        "trailing-blank",
+        "after-a-command",
+        "escaped-dollar-then-call",
+    ],
+)
+def test_a_guarded_recipe_must_be_labelled_write(repo, recipe):
+    """The guard refuses CI and gate runs, so a [read] target that calls it is a
+    target the gate runner admits and the guard then kills: the label lies."""
+    errs, _ = _run(repo, _GUARD + "platform-look: ## [read] Look\n" + recipe)
+    assert len(errs) == 1, errs
+    assert errs[0].startswith("Makefile:2: `platform-look` runs $(WRITE_GUARD)")
+    assert "labelled [read]" in errs[0] and "[write]" in errs[0], errs
+
+
+@pytest.mark.parametrize(
+    "recipe",
+    ["\t@echo '$$(WRITE_GUARD)'\n", "\t@echo $$$$(WRITE_GUARD)\n"],
+    ids=["escaped", "twice-escaped"],
+)
+def test_an_escaped_guard_reference_is_text_not_a_call(repo, recipe):
+    """make turns `$$` into a literal `$`, so `$$(WRITE_GUARD)` reaches the shell
+    as text and the guard never runs: no write to label."""
+    assert _run(repo, _GUARD + "platform-look: ## [read] Look\n" + recipe) == ([], [])
+
+
+def test_an_unlabelled_guarded_recipe_is_this_checks_label_rule_not_the_converse(repo):
+    """With no annotation there is no label to contradict."""
+    assert _run(repo, _GUARD + "look:\n\t$(WRITE_GUARD)\n\tlook\n") == ([], [])
+
+
+# --- write_shape_exempt: a write-shaped target that is not a write -----------------
+
+_EXEMPT_REASON = "rewrites the working tree from a paid review, never shared state"
+
+
+def test_without_an_exemption_a_shaped_non_write_target_errors(repo):
+    errs, _ = _run(
+        repo,
+        _GUARD + "doc-review-apply: ## [tree,cost] Apply the review\n\tx\n",
+        _policy(write_shapes=["-apply"]),
+    )
+    assert any("named like a write" in e for e in errs), errs
+
+
+def test_an_exemption_lets_a_named_target_keep_its_label(repo):
+    errs, warns = _run(
+        repo,
+        _GUARD + "doc-review-apply: ## [tree,cost] Apply the review\n\tx\n",
+        _policy(
+            write_shapes=["-apply"],
+            write_shape_exempt={"doc-review-apply": _EXEMPT_REASON},
+        ),
+    )
+    assert errs == [] and warns == []
+
+
+def test_an_exemption_is_per_target_not_per_shape(repo):
+    errs, _ = _run(
+        repo,
+        _GUARD
+        + "doc-review-apply: ## [tree,cost] Apply the review\n\tx\n"
+        + "db-apply: ## [tree] Apply\n\tx\n",
+        _policy(
+            write_shapes=["-apply"],
+            write_shape_exempt={"doc-review-apply": _EXEMPT_REASON},
+        ),
+    )
+    assert errs and all("`db-apply`" in e for e in errs), errs
+
+
+def test_a_guarded_exempt_target_is_still_an_error(repo):
+    """An exemption says the target is not a write; a guard says it is."""
+    errs, _ = _run(
+        repo,
+        _GUARD + "doc-review-apply: ## [tree,cost] Apply\n\t$(WRITE_GUARD)\n\tx\n",
+        _policy(
+            write_shapes=["-apply"],
+            write_shape_exempt={"doc-review-apply": _EXEMPT_REASON},
+        ),
+    )
+    assert len(errs) == 1 and "runs $(WRITE_GUARD)" in errs[0], errs
+    assert "labelled [tree,cost]" in errs[0], errs
+
+
+@pytest.mark.parametrize(
+    "makefile, name, tail",
+    [
+        ("check: ## [local] c\n\tc\n", "gone-apply", "which no makefile defines"),
+        (
+            "check: ## [local] c\n\tc\n",
+            "check",
+            "which no write_shapes suffix matches",
+        ),
+        ("db-apply:\n\tx\n", "db-apply", "which carries no effect label"),
+        (
+            "db-apply: ## [write] Apply\n\t$(WRITE_GUARD)\n\tx\n",
+            "db-apply",
+            "which is already [write]",
+        ),
+    ],
+    ids=["undefined", "unshaped", "unlabelled", "already-write"],
+)
+def test_a_stale_exemption_is_an_error(repo, makefile, name, tail):
+    errs, _ = _run(
+        repo,
+        _GUARD + makefile,
+        _policy(write_shapes=["-apply"], write_shape_exempt={name: _EXEMPT_REASON}),
+    )
+    head = "config/project.json: make_targets.write_shape_exempt names `%s`" % name
+    stale = [e for e in errs if e.startswith(head)]
+    assert len(stale) == 1 and tail in stale[0], errs
+
+
+def test_stale_exemptions_are_reported_sorted_by_name(repo):
+    errs, _ = _run(
+        repo,
+        _GUARD + "check: ## [local] c\n\tc\n",
+        _policy(
+            write_shapes=["-apply"],
+            write_shape_exempt={"zz-apply": "r", "check": "r", "aa-apply": "r"},
+        ),
+    )
+    named = [
+        re.search(r"write_shape_exempt names `([^`]+)`", e).group(1)
+        for e in errs
+        if "write_shape_exempt names" in e
+    ]
+    assert named == ["aa-apply", "check", "zz-apply"], errs
+
+
 @pytest.mark.parametrize(
     "guard, missing",
     [
@@ -412,6 +564,9 @@ def test_every_policy_key_is_required(key):
         ({"area_dir": 3}, "area_dir"),
         ({"effect_proof_skip": ["run"]}, "effect_proof_skip"),
         ({"effect_proof_skip": {"run": ""}}, "run"),
+        ({"write_shape_exempt": ["doc-review-apply"]}, "write_shape_exempt"),
+        ({"write_shape_exempt": {"doc-review-apply": "  "}}, "doc-review-apply"),
+        ({"write_shape_exempt": {"doc-review-apply": 3}}, "doc-review-apply"),
         ({"empty_test_selections": ["smoke"]}, "empty_test_selections"),
         ({"empty_test_selections": {"smoke": ""}}, "empty_test_selections.smoke"),
         ({"empty_test_selections": {"smoke": 3}}, "empty_test_selections.smoke"),
@@ -593,8 +748,13 @@ def test_the_bedrock_platform_shape_passes(repo):
         repo,
         "##@ repo  gates\n"
         "help: ## [local] List tasks\n\t@echo\n" + _GUARD + "include mk/guardrail.mk\n"
-        "lint: guardrail-lint ## [local] Lint\n\truff check\n",
-        _policy(write_shapes=["-apply", "-drill", "-destroy"], area_dir="mk"),
+        "lint: guardrail-lint ## [local] Lint\n\truff check\n"
+        "doc-review-apply: ## [cost] Apply a paid doc review\n\tapply\n",
+        _policy(
+            write_shapes=["-apply", "-drill", "-destroy"],
+            area_dir="mk",
+            write_shape_exempt={"doc-review-apply": _EXEMPT_REASON},
+        ),
         mk__guardrail_mk="##@ guardrail  who may call what\n"
         "guardrail-lint: ## [local] Lint guardrail\n\tlint\n"
         "guardrail-caps-plan: ## [read] Plan\n\tplan\n"

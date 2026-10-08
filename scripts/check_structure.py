@@ -94,7 +94,10 @@ Checks:
      annotates the target; a composite covers what its prerequisites and
      `$(MAKE)` calls reach; a [write] target, or one whose name ends in a
      config/project.json `make_targets.write_shapes` suffix, opens its recipe
-     with $(WRITE_GUARD) and no `-` prefix; the guard, read as make stores it,
+     with $(WRITE_GUARD) and no `-` prefix, unless `write_shape_exempt` names
+     it with a reason (an entry naming no defined, shaped, labelled,
+     non-[write] target is stale); a labelled recipe that calls the guard on
+     any line is [write]; the guard, read as make stores it,
      tests exactly the `unattended_vars` names, has no `-` prefix and exits 1;
      with an `area_dir`, each <area>.mk there is included, opens with one
      `##@ <area>` header and prefixes its public targets `<area>-`. A
@@ -4079,6 +4082,7 @@ _POLICY_KEYS = (
     "write_shapes",
     "area_dir",
     "effect_proof_skip",
+    "write_shape_exempt",
     "empty_test_selections",
     "gate_vars",
 )
@@ -4117,6 +4121,11 @@ AREA_HEADER = re.compile(r"^##@\s+(\S+)(?:\s+(.*?))?\s*$")
 # `help` is check_P's: the ADR names it, the Makefile defines it.
 _GUARD_NAME = "WRITE_GUARD"
 _GUARD_CALLS = ("$(WRITE_GUARD)", "${WRITE_GUARD}")
+# A guard reference anywhere in a recipe command: make expands it wherever it
+# sits, so `$(WRITE_GUARD) && cmd` or a trailing blank still runs the guard
+# (measured: `make look RALPH=1` -> `refusing look`, rc 2). The `$$` pairs in
+# front are make's escape for a literal `$`, so `$$(WRITE_GUARD)` is text.
+_GUARD_REF = re.compile(r"(?:^|[^$])(?:\$\$)*\$(?:\(WRITE_GUARD\)|\{WRITE_GUARD\})")
 _GUARD_DEF = re.compile(
     r"^\s*(?:override\s+)?WRITE_GUARD\s*[:?]?=\s*(.*?)\s*$", re.MULTILINE
 )
@@ -4558,6 +4567,23 @@ def make_targets_policy(manifest):
                 errs.append(
                     where + "effect_proof_skip: %s carries no reason -- a skip says "
                     "why the target cannot run unattended"
+                    % ", ".join("`%s`" % k for k in bad)
+                )
+    if "write_shape_exempt" in block:
+        exempt = block["write_shape_exempt"]
+        if not isinstance(exempt, dict):
+            errs.append(
+                where + "write_shape_exempt must be an object of target -> "
+                "non-empty reason"
+            )
+        else:
+            bad = sorted(
+                k for k, v in exempt.items() if not isinstance(v, str) or not v.strip()
+            )
+            if bad:
+                errs.append(
+                    where + "write_shape_exempt: %s carries no reason -- an "
+                    "exemption says why a write-shaped name is not a write"
                     % ", ".join("`%s`" % k for k in bad)
                 )
     if "empty_test_selections" in block:
@@ -5012,6 +5038,18 @@ def _effect_findings(makefiles, policy):
     shapes = policy["write_shapes"]
     guard_in, guard_errs = _guard_findings(makefiles, policy["unattended_vars"])
     errs.extend(guard_errs)
+    exempt = policy["write_shape_exempt"]
+    stale_exempt = {}
+    for name in sorted(exempt):
+        labels = labels_of.get(name)
+        if name not in first:
+            stale_exempt[name] = "which no makefile defines"
+        elif not any(name.endswith(s) for s in shapes):
+            stale_exempt[name] = "which no write_shapes suffix matches"
+        elif labels is None:
+            stale_exempt[name] = "which carries no effect label"
+        elif "write" in labels:
+            stale_exempt[name] = "which is already [write]"
     needs_guard = []
     for name in sorted(first):
         relpath, at = first[name]
@@ -5019,7 +5057,22 @@ def _effect_findings(makefiles, policy):
         labels = labels_of.get(name)
         is_write = labels is not None and "write" in labels
         shaped = [s for s in shapes if name.endswith(s)]
+        if name in exempt and name not in stale_exempt:
+            # A named, reasoned exemption: the name is a write's, the target
+            # is not one, and its label stands (K-0015).
+            shaped = []
         where = "%s:%d: `%s`" % (relpath, at.lineno, name)
+        if (
+            labels is not None
+            and not is_write
+            and not shaped
+            and any(_GUARD_REF.search(cmd) for cmd in rule.recipe)
+        ):
+            errs.append(
+                "%s runs $(%s) but is labelled [%s] -- a guarded recipe is a "
+                "write: label it [write] or drop the guard"
+                % (where, _GUARD_NAME, ",".join(labels))
+            )
         if shaped and not is_write and (rule.help is None or labels is not None):
             errs.append(
                 "%s is named like a write (`%s`) but %s -- label it [write]"
@@ -5057,6 +5110,11 @@ def _effect_findings(makefiles, policy):
             % (_GUARD_NAME, ", ".join("`%s`" % n for n in needs_guard))
         )
     errs.extend(
+        "config/project.json: make_targets.write_shape_exempt names `%s`, %s -- "
+        "drop the stale entry" % (name, stale_exempt[name])
+        for name in sorted(stale_exempt)
+    )
+    errs.extend(
         "config/project.json: make_targets.effect_proof_skip names `%s`, "
         "which no make target defines -- drop the stale entry" % key
         for key in sorted(policy["effect_proof_skip"])
@@ -5077,8 +5135,9 @@ def _effect_findings(makefiles, policy):
 def check_W():
     """ERROR when an annotated make target has no well-formed effect label or
     two different ones, a composite's label misses what it reaches, a [write] or
-    write-shaped target does not open with `$(WRITE_GUARD)` or opens with it
-    behind a `-`, the guard misses a configured unattended variable, tests one
+    write-shaped target that config does not exempt does not open with
+    `$(WRITE_GUARD)` or opens with it behind a `-`, a labelled non-[write]
+    recipe calls the guard, an exemption is stale, the guard misses a configured unattended variable, tests one
     the config omits, or ignores its own failure, the make_targets policy is malformed or stale, or (with
     areas on) an area makefile breaks its header, prefix or include. WARN where
     a recursion or an unlabelled recipe hides an effect. Silent without a

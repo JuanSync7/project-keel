@@ -81,8 +81,8 @@ def _rerun(monkeypatch, root):
 
 def test_keel_tree_is_y_clean_and_sees_every_template_adr(monkeypatch):
     """The real tree: zero Y findings, and the inventory check_Y judges holds
-    every K- file a plain listing finds (14 of them) -- a pass over zero ADRs
-    would be vacuous."""
+    every K- file a plain listing finds, as many as config/project.json
+    `adr.template_adrs` names -- a pass over zero ADRs would be vacuous."""
     _isolate(monkeypatch, _ROOT)
     errs, warns = _ys()
     assert errs == [] and warns == [], (errs, warns)
@@ -91,9 +91,10 @@ def test_keel_tree_is_y_clean_and_sees_every_template_adr(monkeypatch):
         for n in os.listdir(str(_ROOT / "docs" / "adr" / "keel"))
         if n.startswith("K-") and n.endswith(".md")
     )
-    assert len(listed) == 14, listed
     with open(str(_ROOT / "config" / "project.json"), encoding="utf-8") as fh:
-        policy, perrs = cs.adr_policy(json.load(fh))
+        config = json.load(fh)
+    assert listed and len(listed) == len(config["adr"]["template_adrs"]), listed
+    policy, perrs = cs.adr_policy(config)
     assert perrs == [], perrs
     spaces = cs.adr_inventory(policy)
     assert sorted(rel for _num, rel in spaces["template"]) == listed

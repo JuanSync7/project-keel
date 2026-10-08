@@ -8,7 +8,7 @@ tags: [adr, make, effect-labels, gate, ralph, idempotency, check-w]
 summary: "Every `## `-annotated make target opens its help with one bracketed effect label of one or more words from a closed vocabulary (local, tree, read, cost, write), comma-separated in that order, `local` only alone. check_W in scripts/check_structure.py holds the labels, a composite's label must cover what its prerequisites and `$(MAKE)` calls reach, and a [write] target opens its recipe with `$(WRITE_GUARD)`. scripts/run_make_target.py, the gate runner agents use, runs only a target inside config/project.json `make_targets.gate_effects` and fails a green run that changed what git sees. Adapted from bedrock-platform's ADR-0010, with a `tree` label that bedrock folded into `local`."
 id: docs-adr-0011-make-target-effect-labels
 created: 2026-10-06
-updated: 2026-10-07
+updated: 2026-10-08
 visibility: internal
 canonical: true
 ---
@@ -82,7 +82,7 @@ the gate runner needs to know that a target leaves the tree alone.
    prefix, on the guard's call in the recipe or at the head of its definition,
    is an error: make would ignore the guard's `exit 1` and run the recipe. A target whose name ends in a `make_targets.write_shapes` suffix
    needs the guard even if its label forgot `write`; keel ships no shapes, and
-   bedrock's are `-apply`, `-drill` and `-destroy`.
+   bedrock's are `-apply`, `-drill` and `-destroy` (a write-shaped target's exemption and the guarded-recipe converse are K-0015, docs/adr/keel/K-0015-write-shape-exemptions-and-guarded-recipe-converse.md).
 4. **The gate runner runs only what a gate may run.**
    `scripts/run_make_target.py` closes the target's label over its
    prerequisites and refuses it, without running make, unless every word is in

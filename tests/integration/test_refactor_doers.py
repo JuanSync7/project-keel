@@ -150,6 +150,7 @@ _GATE_POLICY = {
     "write_shapes": [],
     "area_dir": None,
     "effect_proof_skip": {},
+    "write_shape_exempt": {},
     "empty_test_selections": {},
     "gate_vars": ["PY"],
 }

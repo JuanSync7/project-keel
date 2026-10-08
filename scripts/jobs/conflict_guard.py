@@ -2,7 +2,7 @@
 title: conflict_guard — a job never runs over a conflicted import
 kind: script
 layer: n/a
-summary: The merge-conflict marker grammar copier's inline update writes, and the guard every `after` migration runs before it imports anything from the project. copier 9.x leaves a file both sides changed with `git merge-file` markers in it, and a job that then imports that module died on a SyntaxError traceback that named neither the file nor the remedy (a project's own edit to scripts/check_structure.py stopped the restamp so, measured on two downstream projects). `conflict_lines` finds each hunk: an opening marker line, then a separator line, then a closing marker line, labels allowed after the outer two and a diff3 base section allowed between, so a lone separator (a Markdown setext underline) and marker characters inside a line are not conflicts. `conflicted_imports` follows `import` and `from ... import` (packages, submodules and relative imports) from an entry file through each module it resolves on a search path under the project root, never into one outside it, scanning each for hunks before parsing it; `exit_if_conflicted` names the job, each conflicted file and line, and the command to rerun on stderr and exits 2, with no traceback. It imports nothing from the project, so its own import cannot be the one that fails, and it spawns nothing; scripts/jobs/resolve_stamp_conflicts.py reads its marker constants from here.
+summary: The merge-conflict marker grammar copier's inline update writes, and the guard every `after` migration runs before it imports anything from the project. copier 9.x leaves a file both sides changed with `git merge-file` markers in it, and a job that then imports that module died on a SyntaxError traceback that named neither the file nor the remedy (a project's own edit to scripts/check_structure.py stopped the restamp so, measured on two downstream projects). `conflict_lines` finds each hunk: an opening marker line, then a separator line, then a closing marker line, labels allowed after the outer two and a diff3 base section allowed between, so a lone separator (a Markdown setext underline) and marker characters inside a line are not conflicts. `conflicted_imports` follows `import` and `from ... import` (packages, submodules and relative imports) from an entry file through each module it resolves on a search path under the project root, never into one outside it, scanning each for hunks before parsing it; `exit_if_conflicted` names the job, each conflicted file and line, and the command to rerun on stderr in one line built on `REFUSAL` and exits 2, with no traceback; `read_refusals` parses that line back, which is how scripts/audit_project.py tells a migration's refusal from any other failed update. It imports nothing from the project, so its own import cannot be the one that fails, and it spawns nothing; scripts/jobs/resolve_stamp_conflicts.py reads its marker constants from here.
 effect: read-only
 """
 
@@ -10,6 +10,7 @@ effect: read-only
 # under its own interpreter in a project that may have no virtualenv yet.
 import ast
 import os
+import re
 import shlex
 import sys
 
@@ -18,6 +19,7 @@ __all__ = [
     "CLOSE",
     "MARKER_SIZE",
     "OPEN",
+    "REFUSAL",
     "SPLIT",
     "conflict_line",
     "conflict_lines",
@@ -25,6 +27,7 @@ __all__ = [
     "exit_if_conflicted",
     "has_conflict",
     "marker",
+    "read_refusals",
     "rerun_command",
 ]
 
@@ -37,6 +40,17 @@ OPEN = "<" * MARKER_SIZE
 BASE = "|" * MARKER_SIZE
 SPLIT = "=" * MARKER_SIZE
 CLOSE = ">" * MARKER_SIZE
+
+# The words between a job's name and its files in the one line
+# exit_if_conflicted writes; read_refusals reads that line back by them.
+REFUSAL = "cannot run while modules it imports are conflicted"
+_REFUSAL_LINE = re.compile(
+    r"^(?P<job>[\w.-]+): "
+    + re.escape(REFUSAL)
+    + r": (?P<items>.+); resolve them, then run `(?P<rerun>[^`]+)`$",
+    re.MULTILINE,
+)
+_REFUSAL_ITEM = re.compile(r"^(?P<path>.+) \(line (?P<line>\d+)\)$")
 
 
 def marker(line, mark):
@@ -194,8 +208,26 @@ def exit_if_conflicted(entry_file, root, job, rerun, search_path=None):
     if not found:
         return
     sys.stderr.write(
-        "%s: cannot run while modules it imports are conflicted: %s; resolve "
-        "them, then run `%s`\n"
-        % (job, ", ".join("%s (line %d)" % pair for pair in found), rerun)
+        "%s: %s: %s; resolve them, then run `%s`\n"
+        % (job, REFUSAL, ", ".join("%s (line %d)" % pair for pair in found), rerun)
     )
     raise SystemExit(2)
+
+
+def read_refusals(text):
+    """[(job, [(path, line)], rerun)] for each line of *text* that is exactly a
+    refusal exit_if_conflicted writes, in order. A line whose file list holds
+    an item without its `(line N)` is not a refusal: a reader that guessed
+    would name a file the guard never named."""
+    out = []
+    for match in _REFUSAL_LINE.finditer(text):
+        items = []
+        for item in match.group("items").split(", "):
+            found = _REFUSAL_ITEM.match(item)
+            if found is None:
+                items = None
+                break
+            items.append((found.group("path"), int(found.group("line"))))
+        if items:
+            out.append((match.group("job"), items, match.group("rerun")))
+    return out

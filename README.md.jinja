@@ -96,15 +96,23 @@ changed. The one before it settles a conflict whose only difference is a
 document's `updated:` date, taking the later date
 (`scripts/jobs/resolve_stamp_conflicts.py`); every other conflict keeps copier's
 markers and is named on stderr (`left <path>: <reason>`). Changing an answer deletes that directory, so commit your work first;
-`git checkout -- <path>` brings it back.
+`git checkout -- <path>` brings it back. A migration that imports a file the update left
+conflicted stops there, exit 2, naming each file and the command to run once they are
+resolved, and copier runs no migration after it; `make restamp-docs` is the restamp's.
+Keep copier's default `--conflict inline`: `--conflict rej` leaves no markers and no
+unmerged file, so the migrations run over edits that are still waiting in `.rej` files.
 
 Before you update, preview what the project would fail under the newer template's
 gates: from a checkout of the template, run `make audit-project DEST=<your project>`
 (inside the project, `make audit-project` prints that command with your project's
 path filled in). It runs a real `copier update` on a scratch copy of the project,
 judges the tree that update leaves, never writes the project itself, and lists
-what it did not check. Confirm with the real `copier update --trust` in the
-project, then `make verify` there.
+what it did not check, including a migration that will refuse over the update's own
+conflicts and every migration after it. Confirm with the real `copier update --trust`
+in the project, then `make verify` there. The Makefile runs `.venv/bin/python` when the
+project has one, else `python3`; a target that needs a newer interpreter than the one
+it found stops on a message naming `requires-python`, and `make PY=python3.11 <target>`
+chooses another.
 
 The template's own ADRs live in `docs/adr/keel/` as `K-NNNN-<slug>.md`, cited as
 `ADR-K-NNNN`; `docs/adr/` holds only your project's ADRs, numbered from `0001`
