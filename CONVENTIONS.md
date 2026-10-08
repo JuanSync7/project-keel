@@ -864,7 +864,10 @@ is the decision; this section is the rule.
   the template's new file, so `check_A` errors until the project resolves it as
   `docs/adr/README.md` describes. A later `rm` migration still deletes the
   path it names, so `make audit-project`'s `retired` group names each edited
-  file the update would delete before it runs.
+  file the update would delete before it runs. A template ADR that conflicts
+  on update only in its `updated:` stamp is settled to the later date by
+  `scripts/jobs/resolve_stamp_conflicts.py`; any other conflict keeps its
+  markers.
 
 `check_Y` holds every ADR file in either space to this rule (§6). The spaces are
 configuration (§15), not code: a project that keeps its decisions elsewhere

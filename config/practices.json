@@ -509,12 +509,14 @@
       "tier": "gate",
       "status": "on",
       "title": "`updated:` means touched: never earlier than the last commit, today when modified",
-      "mechanism": "scripts/jobs/review_docs.py, gated by tests/integration/test_doc_freshness.py; scripts/jobs/restamp_docs.py is the fix it names and runs at generation and update",
+      "mechanism": "scripts/jobs/review_docs.py, gated by tests/integration/test_doc_freshness.py; scripts/jobs/restamp_docs.py is the fix it names and runs at generation and update; on update, scripts/jobs/resolve_stamp_conflicts.py first settles a conflict that is only the updated: stamp to the later date",
       "subject": "docs",
       "enforced_by": [
+        "script:scripts/jobs/resolve_stamp_conflicts.py",
         "script:scripts/jobs/restamp_docs.py",
         "script:scripts/jobs/review_docs.py",
-        "test:tests/integration/test_doc_freshness.py"
+        "test:tests/integration/test_doc_freshness.py",
+        "test:tests/integration/test_stamp_conflicts.py"
       ]
     },
     {

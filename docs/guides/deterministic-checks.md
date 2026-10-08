@@ -624,7 +624,10 @@ carries `resolved_by`, because the update's last `_migrations` step runs
 migration will rewrite.
 
 **The predicted tree.** The tree after the update is copier's own merge, so
-the audit merges nothing itself. A path copier leaves conflicted (`git
+the audit merges nothing itself. The update's `_migrations` include
+`scripts/jobs/resolve_stamp_conflicts.py`, which settles a conflict that is
+only a document's `updated:` stamp, so a path that conflicted on its stamp
+alone is not in this group. A path copier leaves conflicted (`git
 ls-files -u` in the copy) is reported as a warning in the `[conflict]` group,
 and its letter findings are marked `unjudged: conflict`. The tree after the
 update is then checked twice: once with every conflict hunk as the project had

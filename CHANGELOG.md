@@ -64,6 +64,17 @@ version rather than a bare commit:
   declared `layers.app` itself is left to `check_H`, whose error now names the
   null remedy. A project that deletes `src/app` after the update makes the
   same three edits by hand, as `src/app/AGENT.md` and `src/app/README.md` say.
+- **`copier update` no longer stops on a document whose only conflict is its
+  `updated:` stamp.** A project generated before generation stamped documents
+  on arrival, or one rendered across midnight without `SOURCE_DATE_EPOCH`,
+  carries stamps the template never had, so an update that moved the
+  template's stamp conflicted on that one line in every such document. The new
+  migration `scripts/jobs/resolve_stamp_conflicts.py` runs just before the
+  restamp: a Markdown document whose markers make one hunk, each side the
+  frontmatter `updated:` line and nothing else, takes the later date and is
+  marked merged. Every other conflict keeps copier's markers and is named on
+  stderr (`left <path>: <reason>`), as is a stamp that is not a date. A git or
+  write failure exits 2.
 - **A make target that runs pytest fails when zero tests ran.** pytest exits 5
   only when nothing is collected, and a selection whose every test skipped
   exited 0, so `make smoke` could pass with no assertion executed.

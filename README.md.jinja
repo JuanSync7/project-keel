@@ -8,7 +8,7 @@ tags: [template, scaffold, {{ project_slug }}]
 summary: A generic, polyglot-aware, agent-friendly project skeleton that stays honest.
 id: readme
 created: 2026-06-17
-updated: 2026-10-07
+updated: 2026-10-08
 visibility: internal
 canonical: true
 ---
@@ -92,7 +92,10 @@ own freshness gate on its first commit (`scripts/jobs/restamp_docs.py`;
 re-answering a question has to *remove* what you declined (the showcase demo, the
 frontend stack you switched away from, a transport you turned off), and copier can
 only delete through `_migrations`; the last one restamps the documents the update
-changed. Changing an answer deletes that directory, so commit your work first;
+changed. The one before it settles a conflict whose only difference is a
+document's `updated:` date, taking the later date
+(`scripts/jobs/resolve_stamp_conflicts.py`); every other conflict keeps copier's
+markers and is named on stderr (`left <path>: <reason>`). Changing an answer deletes that directory, so commit your work first;
 `git checkout -- <path>` brings it back.
 
 Before you update, preview what the project would fail under the newer template's

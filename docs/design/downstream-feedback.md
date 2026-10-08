@@ -936,7 +936,7 @@ lands. The cap is five slices, each one commit on a green `make verify`.
 | Slice | Defect | Status |
 |-------|--------|--------|
 | CMP-3.S1 | `make smoke` passes over zero tests, and `make run` fails with `No module named app` | done — `make verify` green (1517 passed); 5 review findings confirmed and fixed |
-| CMP-3.S2 | Every document's `updated:` line conflicts on `copier update` when both sides touched it | planned |
+| CMP-3.S2 | A document whose only conflict on `copier update` is its `updated:` line is left conflicted for a person to resolve | done — `make verify` green (1562 passed); 1 of 2 review findings confirmed and fixed |
 | CMP-3.S3 | A project can add a check only by editing `scripts/check_structure.py`, so its next `copier update` conflicts in the module the restamp task imports | planned |
 | CMP-3.S4 | The `GIT_CONFIG_COUNT`/`GIT_CONFIG_PARAMETERS` variables reach a child, copier's own git calls bypass `build_child_env`, and a bare token or `Authorization` value is not recognised as a credential | planned |
 | CMP-3.S5 | — | free |
@@ -1010,6 +1010,48 @@ own arguments.
   stopped being true here, since `make run` now exits and the sweep runs it. The
   ADR is accepted and is not edited; `config/project.json`
   `make_targets.effect_proof_skip` is the current list.
+
+### Slice CMP-3.S2 — a conflict on the `updated:` line alone resolves itself
+
+**Measured.** A stamp-only conflict needs the two sides' stamps to differ from
+the base. A project generated before `3bc2f8a` (the first commit fresh on
+arrival) has that shape. A toy generated at v0.2.0 had no stamp conflicts. A
+real `copier update` of the bedrock-platform replica at `22f1bad` left 111
+paths unmerged. Of those, 95 were stamp-only, 7 were a stamp plus content, and
+9 were content only. The CMP-2.S3 note's figure of 120 was measured on an
+earlier template.
+
+**Decision.** `scripts/jobs/resolve_stamp_conflicts.py` runs as a copier
+after-migration before the restamp migration. A conflicted Markdown document
+whose only hunk is one `updated:` line on each side gets the later of the two
+ISO dates, because `updated:` means touched and both sides touched it. Any
+other conflict keeps its markers and is named on stderr. A git merge driver
+was rejected: copier merges with `git apply --reject` and `git merge-file`,
+which never consult `.gitattributes`, and a template cannot register a driver
+in `.git/config`. The date grammar comes from `review_docs.updated_span`, the
+reader check_Q and the restamp already use, so no config key was added.
+
+**Trajectory.**
+
+| Rehearsal | Unmerged before | Unmerged after | Left by the job |
+|-----------|-----------------|----------------|-----------------|
+| bedrock-platform replica | 111 | 16 | 7 with more than one hunk, 9 not Markdown |
+| project-jarvis replica | 111 | 54 | 15 with more than one hunk, 2 with a multi-line side, 37 not Markdown |
+| toy generated at 7f0a68b | 5 | 3 | 3 with more than one hunk |
+| toy generated at v0.2.0 | 2 | 2 | none; both are content conflicts |
+
+Every stamp-only path resolved to the before text with the later date. A
+second run left the work tree, the index and its mtime byte-identical.
+
+**Residual risk.**
+- Both replica updates still exit 1, because the restamp imports a conflicted
+  `scripts/check_structure.py`. That is CMP-3.S3. Until it lands,
+  `make audit-project` on those replicas also exits 2, so the audit cannot show
+  the 111-to-16 drop; the rehearsal above is the evidence.
+- A stamp hunk that sits next to a content hunk is left for a person.
+- The restamp migration rewrites the project's stamp inside a document that
+  still has a content conflict. Fixing that changes `restamp_docs.py` and
+  belongs with CMP-3.S3.
 
 ## CMP-4 — keel enforces what it claims, and emits evidence jarvis can read
 

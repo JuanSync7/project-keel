@@ -308,6 +308,39 @@ def test_the_restamp_runs_one_way_wherever_copier_runs_it():
     assert len(argv) == 1, "restamp invocations differ: %s" % sorted(argv)
 
 
+def _migrations(used):
+    """[(command, when)] of copier.yml's `_migrations`, in order, read as text
+    (this module imports nothing optional, so no yaml)."""
+    lines = used.splitlines()
+    start = lines.index("_migrations:")
+    entries = []
+    for ln in lines[start + 1 :]:
+        if ln and not ln.startswith(" "):
+            break
+        stripped = ln.strip()
+        if stripped.startswith("- command:"):
+            entries.append([stripped[len("- command:") :].strip(), None])
+        elif stripped.startswith("when:") and entries:
+            entries[-1][1] = stripped[len("when:") :].strip()
+    return [tuple(e) for e in entries]
+
+
+def test_the_stamp_resolver_runs_after_the_merge_and_just_before_the_restamp():
+    """copier writes conflict markers in `_apply_update`, after every `_tasks`
+    run, so only an `after` migration sees them. The resolver must precede the
+    restamp migration: the restamp rewrites the project side of a conflicted
+    document's stamp (an identical-sides conflict no reader resolves, measured
+    on a 7f0a68b project) and, on a project whose check_structure.py conflicts,
+    crashes before anything after it runs. The restamp stays last."""
+    entries = _migrations(_yaml_keys_and_values((_ROOT / "copier.yml").read_text()))
+    assert len(entries) >= 2
+    assert "restamp_docs.py" in entries[-1][0], entries[-1]
+    command, when = entries[-2]
+    assert "scripts/jobs/resolve_stamp_conflicts.py" in command, entries[-2]
+    assert when == "\"{{ _stage == 'after' }}\"", when
+    assert sum("resolve_stamp_conflicts.py" in c for c, _ in entries) == 1
+
+
 def test_declared_copier_floor_covers_every_feature_the_template_uses():
     """`_min_copier_version` must be >= the newest copier feature copier.yml relies
     on. A floor that admits a copier which then crashes is worse than no floor: the

@@ -726,3 +726,145 @@ def test_the_noop_update_leaves_the_recorded_revision_alone(unmoved):
     """The other half: a no-op must not quietly advance `_commit` either, or the
     next real update starts from a revision this project never received."""
     assert _answers(unmoved)["_commit"], "the answers file lost its revision"
+
+
+# ---- a stamp-only conflict, resolved by the update's own migration ----------
+# A toy template, not a keel clone, so the test owns every date it asserts and
+# runs in seconds. v1 has no restamp task, as keel before 3bc2f8a had none, so
+# the base, the project and v2 each carry their own stamp, which is the shape
+# that conflicts. The resolver and the two modules it imports are copied from
+# this working tree, so the job under test is the one being edited.
+_TOY_JOB = "scripts/jobs/resolve_stamp_conflicts.py"
+_TOY_SHIPPED = (
+    _TOY_JOB,
+    "scripts/jobs/review_docs.py",
+    "scripts/child_env.py",
+    "config/project.json",
+)
+_TOY_MIGRATION = (
+    "_migrations:\n"
+    '  - command: ["{{ _copier_python }}", "%s", "--quiet"]\n'
+    "    when: \"{{ _stage == 'after' }}\"\n" % _TOY_JOB
+)
+
+
+def _toy_doc(date, body="body line"):
+    return (
+        "---\ntitle: t\nowner: TBD\nupdated: %s\n---\n\n# t\n\n"
+        "First paragraph.\n\nSecond paragraph.\n\nThird paragraph.\n\n"
+        "%s\n" % (date, body)
+    )
+
+
+@pytest.fixture
+def stamp_conflicted(tmp_path, monkeypatch):
+    """(project, env): a toy project generated at v1, whose own commit moved
+    docs/a.md's stamp (only) and docs/b.md's stamp and body line, updated with
+    `conflict="inline"` to a v2 that moved the same lines its own way."""
+    work = tmp_path / "work"
+    work.mkdir()
+    git_vars = hermetic_git.git_env_vars(work)
+    for var, value in git_vars.items():
+        monkeypatch.setenv(var, value)
+    monkeypatch.setenv("COPIER_CACHE_DIR", str(work / "copier-cache"))
+    template = tmp_path / "toy-template"
+    template.mkdir()
+    (template / "copier.yml").write_text("project_name:\n  type: str\n  default: toy\n")
+    (template / "{{ _copier_conf.answers_file }}.jinja").write_text(
+        "{{ _copier_answers|to_nice_yaml -}}\n"
+    )
+    for rel in _TOY_SHIPPED:
+        dest = template / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(str(_ROOT / rel), str(dest))
+    (template / "docs").mkdir()
+    (template / "docs/a.md").write_text(_toy_doc("2026-01-01"))
+    (template / "docs/b.md").write_text(_toy_doc("2026-01-01"))
+    _git("init", "--quiet", "-b", "main", cwd=template)
+    _git("add", "-A", cwd=template)
+    _git("commit", "--quiet", "-m", "v1", cwd=template)
+    _git("tag", "v1", cwd=template)
+
+    (template / "docs/a.md").write_text(_toy_doc("2026-02-02"))
+    (template / "docs/b.md").write_text(
+        _toy_doc("2026-02-02", "body line, the template's way")
+    )
+    with (template / "copier.yml").open("a") as fh:
+        fh.write(_TOY_MIGRATION)
+    _git("commit", "--quiet", "-am", "v2", cwd=template)
+    _git("tag", "v2", cwd=template)
+
+    project = tmp_path / "toy-project"
+    with plumbum.local.env(**git_vars):
+        copier.run_copy(
+            str(template), str(project), defaults=True, vcs_ref="v1", quiet=True
+        )
+    _git("init", "--quiet", "-b", "main", cwd=project)
+    _git("add", "-A", cwd=project)
+    _git("commit", "--quiet", "-m", "generated at v1", cwd=project)
+    (project / "docs/a.md").write_text(_toy_doc("2026-03-03"))
+    (project / "docs/b.md").write_text(
+        _toy_doc("2026-03-03", "body line, the project's way")
+    )
+    _git("commit", "--quiet", "-am", "the project touches both", cwd=project)
+
+    with plumbum.local.env(**git_vars):
+        copier.run_update(
+            str(project),
+            vcs_ref="v2",
+            conflict="inline",
+            unsafe=True,
+            defaults=True,
+            overwrite=True,
+            quiet=True,
+        )
+    return project, hermetic_git.git_env(work)
+
+
+def test_a_real_update_resolves_a_stamp_only_conflict_and_keeps_a_content_one(
+    stamp_conflicted,
+):
+    """The migration is wired into copier.yml's shape and runs after copier's
+    merge: a document that conflicts only on its stamp ends merged at the later
+    date, one that also conflicts on content keeps copier's markers, and a
+    second run of the job in the project changes nothing."""
+    project, env = stamp_conflicted
+    a = (project / "docs/a.md").read_text()
+    assert not [
+        ln for ln in a.splitlines() if ln.startswith(("<<<<<<<", "=======", ">>>>>>>"))
+    ], a
+    assert "\nupdated: 2026-03-03\n" in a, a
+    unmerged = sorted(
+        {
+            ln.split("\t", 1)[1]
+            for ln in _git("ls-files", "-u", cwd=project).splitlines()
+        }
+    )
+    assert unmerged == ["docs/b.md"], unmerged
+    b = (project / "docs/b.md").read_text()
+    assert "<<<<<<< before updating\nbody line, the project's way\n" in b, b
+    assert ">>>>>>> after updating\n" in b, b
+
+    index = project / ".git" / "index"
+    before = (
+        a,
+        b,
+        index.read_bytes(),
+        index.stat().st_mtime_ns,
+    )
+    again = subprocess.run(
+        [sys.executable, _TOY_JOB, "--quiet"],
+        cwd=str(project),
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert again.returncode == 0, again.stderr
+    assert again.stderr == "left docs/b.md: more than one hunk\n", again.stderr
+    after = (
+        (project / "docs/a.md").read_text(),
+        (project / "docs/b.md").read_text(),
+        index.read_bytes(),
+        index.stat().st_mtime_ns,
+    )
+    assert after == before
