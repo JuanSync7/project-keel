@@ -24,6 +24,9 @@ if _SCRIPTS not in sys.path:
 import child_env  # noqa: E402
 
 ROOT = os.path.dirname(_SCRIPTS)
+# Every file this judge reads is found at run time (the Markdown walk); the
+# one path literal is a basename it looks for in each directory.
+PROJECT_PATHS_NOT_READ = (("README.md", "a worklist basename, not a fixed read"),)
 # `[ \t]*`, not `\s*`: `\s` spans the newline, so an empty `updated:` read the
 # NEXT line's first token as its date.
 _UPDATED = re.compile(r"^updated:[ \t]*(\S+)", re.MULTILINE)

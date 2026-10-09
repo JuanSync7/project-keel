@@ -1053,15 +1053,49 @@ conflict_guard.exit_if_conflicted(
 """
 
 
-def _migrating_template(template, jobs, theirs):
+# A fake `after` migration that reads the manifest, as every keel job that
+# starts git does: it declares the read, and under an update (`--finish-with`)
+# names the finish command, exactly as the real jobs build it.
+_READING_JOB = """\
+import os
+import sys
+
+_JOBS = os.path.dirname(os.path.abspath(__file__))
+sys.path[:0] = [_JOBS, os.path.dirname(_JOBS)]
+import conflict_guard  # noqa: E402
+
+PROJECT_READS = ("config/project.json",)
+
+conflict_guard.exit_if_conflicted(
+    __file__,
+    os.getcwd(),
+    %r,
+    conflict_guard.job_rerun(
+        __file__,
+        os.getcwd(),
+        sys.argv[1:],
+        conflict_guard.finish_with_arg(sys.argv[1:]),
+    ),
+    search_path=[_JOBS, os.path.dirname(_JOBS)],
+)
+"""
+
+
+def _migrating_template(template, jobs, theirs, readers=()):
     """The fake template with one `after` migration per (stem, rerun, imports
     dep) in *jobs*, in order, the real conflict_guard beside them, and
     scripts/dep.py; the base tagged v0.1.0 and *theirs* committed over it as
-    v0.2.0 (copier runs migrations only between two versions). Returns the
-    base's tag, which a generated DEST records as its `_commit`."""
+    v0.2.0 (copier runs migrations only between two versions). A stem in
+    *readers* is a `_READING_JOB` run with `--finish-with`, as copier.yml runs
+    keel's own jobs. Returns the base's tag, which a generated DEST records as
+    its `_commit`."""
     migrations = "".join(
-        '  - command: ["{{ _copier_python }}", "scripts/jobs/%s.py"]\n'
-        "    when: \"{{ _stage == 'after' }}\"\n" % stem
+        '  - command: ["{{ _copier_python }}", "scripts/jobs/%s.py"%s]\n'
+        "    when: \"{{ _stage == 'after' }}\"\n"
+        % (
+            stem,
+            ', "--finish-with", "{{ _copier_python }}"' if stem in readers else "",
+        )
         for stem, _rerun, _dep in jobs
     )
     base = {
@@ -1073,6 +1107,9 @@ def _migrating_template(template, jobs, theirs):
         ).read_text(encoding="utf-8"),
     }
     for stem, rerun, dep in jobs:
+        if stem in readers:
+            base["scripts/jobs/%s.py" % stem] = _READING_JOB % stem
+            continue
         base["scripts/jobs/%s.py" % stem] = _JOB % (
             stem,
             rerun,
@@ -1116,11 +1153,49 @@ def test_a_migration_refusing_over_a_conflict_the_update_leaves_is_not_checked(
             "item": "migration job and every migration after it",
             "reason": "it refused over conflicted scripts/dep.py exactly as the real "
             "update will (copier stops at the first failed migration); resolve "
-            "those files, then run `make job`",
+            "those files, then run `make job` to finish the update",
         }
     ], report["not_checked"]
     _c, text, _e = _run([str(dest), "--today", TODAY], capsys)
     assert "  - migration job and every migration after it: it refused" in text
+    assert _scratch_left(tmp_path) == []
+
+
+def test_the_audit_predicts_a_data_file_refusal_and_names_the_finish(
+    tmp_path, template, capsys
+):
+    """A migration that reads config/project.json refuses over the conflict the
+    update leaves there, as the real update of this project will (a downstream
+    project's update died on that manifest with a JSON error instead): the
+    audit names the manifest, the jobs never reached, and the command that
+    finishes the update, with no scratch path in it."""
+    tag = _migrating_template(
+        template,
+        [("reader", None, False), ("later", "make later", False)],
+        {"config/project.json.jinja": _twin(gate_effects=["local", "read", "cost"])},
+        readers=("reader",),
+    )
+    dest = _generated(tmp_path, template, tag)
+    manifest = dest / "config" / "project.json"
+    text = manifest.read_text(encoding="utf-8")
+    ours = json.dumps(dict(_POLICY, gate_effects=["local", "tree"]))
+    assert json.dumps(_POLICY) in text
+    manifest.write_text(text.replace(json.dumps(_POLICY), ours), encoding="utf-8")
+    _commit_dest(dest)
+
+    code, out, err = _run([str(dest), "--today", TODAY, "--json"], capsys)
+    assert code in (0, 1), err
+    report = json.loads(out)
+    assert [f["path"] for f in report["groups"]["conflict"]] == ["config/project.json"]
+    (refused,) = _refused(report)
+    assert refused["item"] == "migration reader and every migration after it"
+    reason = refused["reason"]
+    assert "it refused over conflicted config/project.json exactly as" in reason
+    assert reason.endswith(
+        "then run `python scripts/jobs/finish_update.py` to finish the update"
+    ), reason
+    assert "keel-audit-" not in out and ap.SCRATCH_MASK not in reason
+    assert ap.jobs_not_run(["reader", None, "later"], "reader") == ["reader", "later"]
     assert _scratch_left(tmp_path) == []
 
 
@@ -1195,16 +1270,25 @@ def test_a_refused_restamp_does_not_claim_the_update_rewrites_stamps(
     assert report["summary"]["counts"]["freshness"]["resolved_by_update"] == 0
 
 
-def test_the_restamp_rerun_the_audit_names_is_the_one_the_restamp_prints(tmp_path):
+@pytest.mark.parametrize(
+    "conflicted", ["scripts/jobs/review_docs.py", "config/project.json"]
+)
+def test_the_restamp_rerun_the_audit_names_is_the_one_the_restamp_prints(
+    tmp_path, conflicted
+):
     """RESTAMP_RERUN is not a second copy of a fact: it is read back from what
-    scripts/jobs/restamp_docs.py prints when it refuses."""
+    scripts/jobs/restamp_docs.py prints when it refuses, over a module it
+    imports or over the manifest it reads, outside an update (no
+    `--finish-with`, as copier's `_tasks` runs it)."""
     proj = tmp_path / "proj"
     shutil.copytree(
         str(_ROOT / "scripts"),
         str(proj / "scripts"),
         ignore=shutil.ignore_patterns("__pycache__"),
     )
-    target = proj / "scripts" / "check_structure.py"
+    (proj / "config").mkdir()
+    shutil.copy(str(_ROOT / "config" / "project.json"), str(proj / "config"))
+    target = proj / conflicted
     target.write_text(
         target.read_text(encoding="utf-8")
         + "%s a\nx\n%s\ny\n%s b\n" % ("<" * 7, "=" * 7, ">" * 7),
@@ -1220,6 +1304,7 @@ def test_the_restamp_rerun_the_audit_names_is_the_one_the_restamp_prints(tmp_pat
     assert proc.returncode == 2, proc.stderr
     (refusal,) = ap.conflict_guard.read_refusals(proc.stderr)
     assert (refusal[0], refusal[2]) == (ap.RESTAMP_JOB, ap.RESTAMP_RERUN)
+    assert [path for path, _line in refusal[1]] == [conflicted]
 
 
 def test_a_symlink_leaving_dest_is_never_written_through(tmp_path, template, capsys):

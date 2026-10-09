@@ -5,7 +5,7 @@ layer: n/a
 status: template
 owner: TBD
 tags: [copier, generate, update, migrations, adoption, guide]
-summary: How a project is generated from keel, what arrives and what never does, what `make new` refuses, how to adopt keel into an existing repository, and how `copier update` pulls template changes — with one checklist row per task and migration an update runs.
+summary: How a project is generated from keel, what arrives and what never does, what `make new` refuses, how to adopt keel into an existing repository, and how `copier update` pulls template changes — with one checklist row per task and migration an update runs, and how to finish an update a migration stopped.
 id: docs-guides-generate-and-upgrade
 created: 2026-10-09
 updated: 2026-10-09
@@ -171,7 +171,8 @@ the `_commit` the project records
 
 Keep copier's default `--conflict inline`. It writes conflict markers into a
 file both sides changed, and the migrations refuse to run over a conflicted
-file they import. `--conflict rej` writes `.rej` files instead, and the
+file they import or a fixed project file they read, such as
+`config/project.json`. `--conflict rej` writes `.rej` files instead, and the
 migrations then run over edits that are still waiting there.
 
 `.copier-answers.yml` is tracked. Never edit it by hand; change an answer by
@@ -193,7 +194,7 @@ brings back a file a step removed, as long as you committed it first.
 | Step | When | Effect | Exit | Recovery |
 |------|------|--------|------|----------|
 | task: `scripts/jobs/restamp_docs.py` | every generation and every update | stamps with the day the `updated:` of every document git would commit (every document where there is no git), in each copy copier renders | 0, 1, 2 | `make restamp-docs` |
-| `scripts/jobs/keep_edited_retired.py` | every update | keeps an edited copy of a template file the update retires or moves, and names it on stderr | 0, 2 | resolve each file it names, then rerun the command it prints |
+| `scripts/jobs/keep_edited_retired.py` | every update | keeps an edited copy of a template file the update retires or moves, and names it on stderr | 0, 2 | on 2, resolve each file it names, then run the command it prints, which finishes the update |
 | `rm -rf src/frontend/react-vite` | `frontend_stack` is not `react-vite` | removes that stack | none | `git checkout -- src/frontend/react-vite` |
 | `rm -rf src/frontend/astro` | `frontend_stack` is not `astro` | removes that stack | none | `git checkout -- src/frontend/astro` |
 | `rm -rf src/frontend` | `frontend_stack` is `none` | removes the frontend | none | `git checkout -- src/frontend` |
@@ -205,10 +206,50 @@ brings back a file a step removed, as long as you committed it first.
 | `rm -f wiki/llms.txt` `wiki/llms-full.txt` | `showcase` is off | removes the agent front door | none | `make site-data` |
 | `rm -f tests/integration/test_copier_generation.py` `tests/integration/test_copier_generator_contract.py` `tests/integration/test_copier_update.py` | every update | removes tests of the template a project generated before they were excluded still has | none | none needed |
 | `rm -f docs/design/keel-hardening-plan.md` | every update | removes the template's plan from a project that still has it | none | none needed |
-| `scripts/jobs/declare_no_app.py` | every update | when the update introduces `layers.app` for a composition root the project removed, sets it to `null` and declares the smoke marker and run target that need it | 0, 1, 2 | on 1, make the edits its message names by hand; on 2, git could not read the pre-update manifest |
-| `scripts/jobs/resolve_stamp_conflicts.py` | every update | settles a conflict whose only difference is a document's `updated:` date, taking the later one, and names every other conflict on stderr | 0, 2 | resolve each conflict it names |
-| `scripts/jobs/restamp_docs.py` | every update | restamps the documents the update changed | 0, 1, 2 | `make restamp-docs` once the conflicts are resolved |
+| `scripts/jobs/declare_no_app.py` | every update | when the update introduces `layers.app` for a composition root the project removed, sets it to `null` and declares the smoke marker and run target that need it | 0, 1, 2 | on 1, make the edits its message names by hand; on 2 over a conflicted file, resolve each file it names, then run the command it prints, which finishes the update; on 2 otherwise, git could not read the pre-update manifest |
+| `scripts/jobs/resolve_stamp_conflicts.py` | every update | settles a conflict whose only difference is a document's `updated:` date, taking the later one, and names every other conflict on stderr | 0, 2 | on 0, resolve each conflict it names; on 2, resolve each file it names, then run the command it prints, which finishes the update |
+| `scripts/jobs/restamp_docs.py` | every update | restamps the documents the update changed | 0, 1, 2 | on 1, fix each stamp it names, then `make restamp-docs`; on 2, resolve each file it names, then run the command it prints, which finishes the update |
 
-Every after-migration that is a script first checks the files it imports for
-conflict markers, and stops with exit 2 naming each one and the command to rerun;
-copier runs no migration after it.
+Every after-migration that is a script first checks the files it imports, and
+the fixed project files those modules declare reading (`PROJECT_READS`, read by
+`scripts/jobs/conflict_guard.py`), for conflict markers, and stops with exit 2
+naming each one and the command that finishes the update; copier runs no
+migration after it.
+
+## Finish an update that stopped
+
+When a migration stops over a conflicted file, copier has already written the
+new files and the new `_commit` into `.copier-answers.yml`, and it runs no later
+migration. The project is half updated, and its tree is dirty. The refusal ends
+with the command that finishes the update, under the interpreter copier runs
+with, which has the YAML and Jinja libraries the command needs:
+
+```bash
+/path/to/copiers/python scripts/jobs/finish_update.py
+```
+
+1. Resolve each file the refusal names, by hand, and `git add` it.
+2. Run the command the refusal prints. It reads the answers file in your tree
+   and at `HEAD`, checks out the template at the commit the update reached, and
+   runs that version's after-migrations in the update checklist's order, as
+   copier would. Pass `--template <path to a clone of the template>` when the
+   `_src_path` the answers record no longer resolves; it refuses until you do.
+   `--dry-run` lists the commands and runs none.
+3. A step that still fails stops it with exit 2, naming the step: fix what that
+   step names, then run the command again. Running it twice changes nothing
+   the first run did not.
+4. Review the changes, then commit them. The command never stages, commits or
+   edits the answers file.
+
+Do not commit and run `copier update` again instead. The commit records the
+new `_commit`, so copier sees nothing left to update and never runs the
+migrations it skipped. If you already committed, undo that commit and keep its
+changes with `git reset --soft HEAD~1`, then run the command.
+
+The command exits 2 without running any step when there is no update to
+finish (the answers file records the commit `HEAD` does) and when the template
+uses something it cannot replay as copier does: `_envops`,
+`_jinja_extensions`, another answers file, a migration key other than
+`command` and `when`, or a name the migration renders that it does not supply.
+In those cases, run the migrations by hand from the template's `copier.yml`.
+`tests/integration/test_finish_update.py` holds each of these to its exit.

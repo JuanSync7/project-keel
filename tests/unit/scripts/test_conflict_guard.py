@@ -1,8 +1,8 @@
 """
-title: Unit — conflict_guard (a job never runs over a conflicted import)
+title: Unit — conflict_guard (a job never runs over a conflicted file it reads)
 kind: tests
 layer: n/a
-summary: scripts/jobs/conflict_guard.py pinned. The grammar: a hunk is an opening marker line, then a separator line, then a closing marker line, labels allowed on the outer two and a diff3 base section between; a lone separator (a Markdown setext underline), marker characters inside a line, and an opening marker with no close are not conflicts. `conflicted_imports` follows `import` and `from ... import` (packages, submodules and relative imports included) from an entry file through every module it resolves under the root, terminates on a cycle, ignores what resolves outside the root or nowhere (the standard library), and returns each conflicted file with the line of each hunk. `exit_if_conflicted` is silent over a clean closure and otherwise names the job, the files and lines and the command to rerun on stderr and exits 2, with no traceback.
+summary: scripts/jobs/conflict_guard.py pinned. The grammar: a hunk is an opening marker line, then a separator line, then a closing marker line, labels allowed on the outer two and a diff3 base section between; a lone separator (a Markdown setext underline), marker characters inside a line, and an opening marker with no close are not conflicts. `conflicted_imports` follows `import` and `from ... import` (packages, submodules and relative imports included) from an entry file through every module it resolves under the root, terminates on a cycle, ignores what resolves outside the root or nowhere (the standard library), and returns each conflicted file with the line of each hunk. `exit_if_conflicted` is silent over a clean closure and otherwise names the job, the files and lines and the command to rerun on stderr and exits 2, with no traceback. Beyond the imports, each module in that closure may declare the fixed project files it reads in a module-level `PROJECT_READS` tuple of root-relative POSIX literals: the guard collects those by AST, never by import, names a conflicted one with its hunk line, skips an absent one, and refuses a declaration it cannot read (a name, an absolute or `..` path, a backslash) as a GuardConfigError naming the module and line. Under an update the rerun is the finish command, `<python> scripts/jobs/finish_update.py`, shell-quoted.
 """
 
 import shutil
@@ -220,13 +220,132 @@ def test_read_refusals_reads_every_hunk_in_order(tmp_path, capsys):
         "restamp_docs: cannot start git: config/project.json line 3; resolve it, "
         "then run `make restamp-docs`\n",
         # An item without its line: the whole line is not a refusal.
-        "job: cannot run while modules it imports are conflicted: scripts/dep.py; "
-        "resolve them, then run `make job`\n",
-        "job: cannot run while modules it imports are conflicted: a.py (line 3), "
-        "b.py; resolve them, then run `make job`\n",
+        "job: %s: scripts/dep.py; resolve them, then run `make job`\n"
+        % conflict_guard.REFUSAL,
+        "job: %s: a.py (line 3), b.py; resolve them, then run `make job`\n"
+        % conflict_guard.REFUSAL,
         "",
     ],
     ids=["noise", "manifest-refusal", "no-line", "one-item-without-line", "empty"],
 )
 def test_read_refusals_ignores_lines_that_are_not_a_refusal(text):
     assert conflict_guard.read_refusals(text) == []
+
+
+def test_a_conflicted_declared_read_is_named_with_its_line(tmp_path, capsys):
+    """A data file the job's module declares reading is guarded like an
+    import: a hunk in it refuses the job by file and line."""
+    root = tmp_path / "proj"
+    entry = _write(
+        root, "scripts/jobs/job.py", "PROJECT_READS = ('config/project.json',)\n"
+    )
+    _write(root, "config/project.json", '{\n  "a": 1,\n' + _merge()[2:] + "}\n")
+    found = conflict_guard.conflicted_inputs(str(entry), str(root))
+    assert found == [("config/project.json", 3)]
+
+    with pytest.raises(SystemExit) as stop:
+        conflict_guard.exit_if_conflicted(str(entry), str(root), "job", "make job")
+    assert stop.value.code == 2
+    err = capsys.readouterr().err
+    assert err.count("\n") == 1, err
+    assert conflict_guard.read_refusals(err) == [
+        ("job", [("config/project.json", 3)], "make job")
+    ]
+
+    # A setext underline is not a hunk, so a Markdown-shaped read passes.
+    _write(root, "config/project.json", "Title\n%s\n\nBody\n" % _SPLIT)
+    assert conflict_guard.conflicted_inputs(str(entry), str(root)) == []
+    # An absent declared read cannot be conflicted: not reported, not an error.
+    (root / "config" / "project.json").unlink()
+    assert conflict_guard.conflicted_inputs(str(entry), str(root)) == []
+    assert (
+        conflict_guard.exit_if_conflicted(str(entry), str(root), "job", "make job")
+        is None
+    )
+
+
+def test_a_declared_read_that_is_not_utf8_is_still_scanned(tmp_path):
+    """The marker grammar is ASCII, so a read that does not decode is scanned
+    as bytes rather than skipped or crashed on."""
+    root = tmp_path / "proj"
+    entry = _write(root, "job.py", "PROJECT_READS = ('data.bin',)\n")
+    (root / "data.bin").write_bytes(b"\xff\xfe\n" + _merge().encode("ascii"))
+    assert conflict_guard.conflicted_inputs(str(entry), str(root)) == [("data.bin", 3)]
+
+
+@pytest.mark.parametrize(
+    "declaration, needle",
+    [
+        ("WHERE = 'x'\nPROJECT_READS = (WHERE,)\n", "not a string literal"),
+        ("PROJECT_READS = ('/etc/passwd',)\n", "absolute"),
+        ("PROJECT_READS = ('config/../../x.json',)\n", ".."),
+        ("PROJECT_READS = ('config\\\\project.json',)\n", "backslash"),
+        ("PROJECT_READS = ('',)\n", "empty"),
+        ("PROJECT_READS = sorted(['a'])\n", "tuple of string literals"),
+    ],
+    ids=["name", "absolute", "dotdot", "backslash", "empty", "call"],
+)
+def test_a_declaration_the_guard_cannot_read_fails_closed(
+    tmp_path, capsys, declaration, needle
+):
+    """A declaration the guard cannot read is a bug, never a silent skip: it
+    raises naming the module and the line, and the job refuses, exit 2."""
+    root = tmp_path / "proj"
+    entry = _write(root, "job.py", "import os\n" + declaration)
+    with pytest.raises(conflict_guard.GuardConfigError) as bad:
+        conflict_guard.conflicted_inputs(str(entry), str(root))
+    message = str(bad.value)
+    assert "job.py" in message and needle in message, message
+    line = declaration.count("\n") + 1
+    assert ":%d:" % line in message, message
+
+    with pytest.raises(SystemExit) as stop:
+        conflict_guard.exit_if_conflicted(str(entry), str(root), "job", "make job")
+    assert stop.value.code == 2
+    err = capsys.readouterr().err
+    assert err.startswith("job: ") and "job.py" in err
+    assert "Traceback" not in err
+
+
+def test_a_read_declared_by_an_imported_module_guards_the_job(tmp_path, capsys):
+    """The declaration is collected along the import walk: the entry does not
+    read the file itself, its helper does, and the refusal names the file."""
+    root = tmp_path / "proj"
+    entry = _write(root, "scripts/jobs/job.py", "import helper\n")
+    _write(root, "scripts/helper.py", "PROJECT_READS = ('Makefile',)\n")
+    _write(root, "Makefile", "all:\n" + _merge())
+    search = [str(root / "scripts" / "jobs"), str(root / "scripts")]
+    assert conflict_guard.job_closure(str(entry), str(root), search) == [
+        ("scripts/helper.py", str((root / "scripts" / "helper.py").resolve())),
+        ("scripts/jobs/job.py", str(entry.resolve())),
+    ]
+    with pytest.raises(SystemExit):
+        conflict_guard.exit_if_conflicted(
+            str(entry), str(root), "job", "make job", search_path=search
+        )
+    ((job, files, rerun),) = conflict_guard.read_refusals(capsys.readouterr().err)
+    assert (job, files, rerun) == ("job", [("Makefile", 3)], "make job")
+    # The import-only view still sees no conflicted module.
+    assert conflict_guard.conflicted_imports(str(entry), str(root), search) == []
+
+
+def test_under_an_update_the_rerun_is_the_finish_command(tmp_path):
+    """Copier stops at the first failed migration, so under an update the
+    command a refusal names finishes the update rather than rerunning one job."""
+    root = tmp_path / "proj"
+    entry = _write(root, "scripts/jobs/job.py", "")
+    argv = ["--quiet", "--from", "v1"]
+    finish = conflict_guard.job_rerun(
+        str(entry), str(root), argv, finish_with="/opt/py 3/bin/python"
+    )
+    assert finish == "'/opt/py 3/bin/python' scripts/jobs/finish_update.py"
+    assert finish == conflict_guard.finish_rerun("/opt/py 3/bin/python")
+    assert conflict_guard.job_rerun(str(entry), str(root), argv) == (
+        conflict_guard.rerun_command(str(entry), str(root), argv)
+    )
+    # The flag is read before argparse runs, in both spellings.
+    assert (
+        conflict_guard.finish_with_arg(["--quiet", "--finish-with", "/p y"]) == "/p y"
+    )
+    assert conflict_guard.finish_with_arg(["--finish-with=/py"]) == "/py"
+    assert conflict_guard.finish_with_arg(["--quiet"]) is None

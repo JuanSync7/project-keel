@@ -300,11 +300,15 @@ def test_the_restamp_runs_one_way_wherever_copier_runs_it():
     on one invocation and not the others made their stamp lines disagree: one
     `.rej` per governed document under `--conflict rej`, and 105 of 113
     documents stale when generating into a repository with history (both
-    measured). So every invocation of the writer carries the same arguments."""
+    measured). So every invocation of the writer carries the same arguments,
+    except the migration's `--finish-with` pair: it changes only the command a
+    refusal names, never a byte the writer writes, and a copy has no update to
+    finish (tests/integration/test_copier_job_conflict_refusal.py)."""
     used = _yaml_keys_and_values((_ROOT / "copier.yml").read_text())
     calls = [ln.strip() for ln in used.splitlines() if "restamp_docs.py" in ln]
     assert len(calls) >= 2, "the copy task and the update migration both restamp"
-    argv = {re.sub(r"^(- )?(command: )?", "", c) for c in calls}
+    finish = ', "--finish-with", "{{ _copier_python }}"'
+    argv = {re.sub(r"^(- )?(command: )?", "", c).replace(finish, "") for c in calls}
     assert len(argv) == 1, "restamp invocations differ: %s" % sorted(argv)
 
 

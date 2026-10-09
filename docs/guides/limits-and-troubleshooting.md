@@ -149,8 +149,11 @@ decision in the tree, so a reviewer sees it.
 check_X (every Python spawn goes through `build_child_env`) and check_D
 (private imports) have no waiver; what `build_child_env` lets through is set by
 the `child_env` keys above. An edit to `scripts/check_structure.py` itself conflicts on the next
-`copier update`, and every after-migration then stops with exit 2
-([ADR-K-0014](../adr/keel/K-0014-project-owned-structure-checks.md)). So a
+`copier update`. No migration reads that module, so the update finishes and
+leaves the conflict markers in it, and `make verify` cannot run the gate
+until you resolve them
+([ADR-K-0014](../adr/keel/K-0014-project-owned-structure-checks.md);
+`tests/integration/test_copier_project_checks.py`). So a
 project adds its own checks under `structure.project_checks`, and proposes a
 change to a template check upstream as an issue or a pull request.
 
@@ -188,6 +191,8 @@ Three more codes come from the tools around these scripts:
 | `make check-docs` names a stale `updated:` | a document changed without its stamp | `make restamp-docs` |
 | `make new` refuses | no `DEST`, the template is not a git checkout, or its tree is dirty | see `generate-and-upgrade.md`; `ALLOW_DIRTY=1` overrides the dirty tree only |
 | a test target exits 5 | it selected zero tests | add tests, or name its marker in `make_targets.empty_test_selections` |
-| `copier update` stops with exit 2 naming files | a migration found conflict markers in a file it imports | resolve each named file, then run the command the message prints |
+| `copier update` stops with exit 2 naming files | a migration found conflict markers in a file it imports, or in a fixed project file one of its modules declares reading (`config/project.json`, the `Makefile`) | resolve each named file, then run the command the message prints: under an update it is `<python> scripts/jobs/finish_update.py`, which runs the migrations copier never reached |
+| a command stops with `config/project.json holds a merge-conflict hunk at line N` | an update left the manifest conflicted, so `scripts/child_env.py` has no allowlist and lets no child start | resolve the hunk, then finish the update as `generate-and-upgrade.md` says |
+| a job stops on `Expecting property name enclosed in double quotes` after `copier update` | the update went to a template release whose migrations read `config/project.json` without checking it for conflict markers, and the manifest was conflicted; copier ran no later migration, and that release has no `scripts/jobs/finish_update.py` | resolve the file and `git add` it; copy `scripts/jobs/finish_update.py` from a newer keel checkout into the project, run `python scripts/jobs/finish_update.py --template <that keel checkout>`, delete the copied script (that release's `scripts/jobs/README.md` roster does not name it, so `check_structure.py` fails on it), then review and commit. On a release that has the check, the same conflict stops with the refusal row above instead, and `tests/integration/test_copier_job_conflict_refusal.py` keeps it so |
 | `copier update` refuses the ref you named | it is older than the project's recorded `_commit` | update to a newer tag ([ADR-K-0009](../adr/keel/K-0009-release-identity-and-the-tag-ordering-rule.md)) |
 | `make check-corpus` fails after you added documents | the local corpus is stale | `make site-data` |

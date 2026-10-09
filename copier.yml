@@ -266,6 +266,12 @@ profiles:
 # comparing old to new, so a project that never had the path just runs a harmless
 # no-op `rm`.
 _migrations:
+  # Each script migration below passes `--finish-with` and copier's interpreter:
+  # copier stops at the first migration that fails, so a job that refuses over
+  # a conflicted file it reads (scripts/jobs/conflict_guard.py) names the
+  # command that finishes the update, never a rerun of itself alone. `_tasks`
+  # runs on a copy too, where there is no update to finish, so it passes none.
+  #
   # FIRST on purpose: copier's `_remove_old_files` has already deleted every file
   # the old render had and the new one lacks -- edited or not (copier 9.17,
   # measured) -- before any migration runs. This job puts back each one the
@@ -277,7 +283,7 @@ _migrations:
   # so no shell; `--from` is the commit the project was generated from. copier
   # runs it for a `_commit` with no tag ancestry too: dunamai versions such a
   # commit `0.0.0.postN.devM` (project-jarvis's 72fd224, measured).
-  - command: ["{{ _copier_python }}", "scripts/jobs/keep_edited_retired.py", "--quiet", "--template", "{{ _copier_conf.src_path }}", "--from", "{{ _version_from }}"]
+  - command: ["{{ _copier_python }}", "scripts/jobs/keep_edited_retired.py", "--quiet", "--template", "{{ _copier_conf.src_path }}", "--from", "{{ _version_from }}", "--finish-with", "{{ _copier_python }}"]
     when: "{{ _stage == 'after' }}"
   # Mirrors the frontend-stack prunes.
   - command: "rm -rf src/frontend/react-vite"
@@ -337,7 +343,7 @@ _migrations:
   # sets it null and declares the smoke marker and the run target a project with
   # no composition root needs. A project that declared `layers.app` itself is
   # left to check_H. A list, so no shell. Before the restamp, which stays LAST.
-  - command: ["{{ _copier_python }}", "scripts/jobs/declare_no_app.py"]
+  - command: ["{{ _copier_python }}", "scripts/jobs/declare_no_app.py", "--finish-with", "{{ _copier_python }}"]
     when: "{{ _stage == 'after' }}"
   # Resolve each conflict whose only hunk is a document's frontmatter `updated:`
   # line to the later date; every other conflict keeps copier's markers and is
@@ -346,10 +352,11 @@ _migrations:
   # see them). Second to last, right BEFORE the restamp, for two measured
   # reasons: the restamp rewrites the project side of a conflicted document's
   # stamp, which on a 7f0a68b project turned a stamp-only conflict into one
-  # whose two sides are identical; and the restamp imports check_structure, so
-  # a project whose check_structure.py conflicts stops there and nothing after
-  # it would run. This job imports neither. A list, so no shell.
-  - command: ["{{ _copier_python }}", "scripts/jobs/resolve_stamp_conflicts.py", "--quiet"]
+  # whose two sides are identical; and the restamp refuses over a conflicted
+  # file it reads (once that held check_structure.py, which it imported), and
+  # copier runs no migration after one that stops. Neither job imports
+  # check_structure now. A list, so no shell.
+  - command: ["{{ _copier_python }}", "scripts/jobs/resolve_stamp_conflicts.py", "--quiet", "--finish-with", "{{ _copier_python }}"]
     when: "{{ _stage == 'after' }}"
   # LAST on purpose: restamp every document the update changed, after every
   # other migration has finished changing the tree. In the `after` stage the
@@ -358,5 +365,5 @@ _migrations:
   # committed stale). A no-op update on a later day therefore leaves the tree
   # clean: a document neither this update nor the project changed is not in
   # the worklist, so it keeps its stamp.
-  - command: ["{{ _copier_python }}", "scripts/jobs/restamp_docs.py", "--quiet"]
+  - command: ["{{ _copier_python }}", "scripts/jobs/restamp_docs.py", "--quiet", "--finish-with", "{{ _copier_python }}"]
     when: "{{ _stage == 'after' }}"

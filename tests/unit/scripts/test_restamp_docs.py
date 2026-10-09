@@ -20,6 +20,8 @@ sys.path.insert(0, str(_ROOT / "scripts" / "jobs"))
 sys.path.insert(0, str(_ROOT / "scripts"))
 
 import check_structure  # noqa: E402
+import child_env  # noqa: E402
+import conflict_guard  # noqa: E402
 import restamp_docs  # noqa: E402
 import review_docs  # noqa: E402
 
@@ -155,7 +157,9 @@ def test_the_no_git_walk_includes_wiki_and_dot_dirs_and_skips_ignore_dirs(
 ):
     """review_docs' own walk drops `wiki/` and every dot-dir; three of keel's
     governed documents live there, so the writer walks check_structure's
-    IGNORE_DIRS instead — imported, so the two lists cannot drift apart."""
+    IGNORE_DIRS instead — a copy, pinned equal here, so the two lists cannot
+    drift apart (an import made the guard refuse the restamp over every file
+    the checks read)."""
     assert restamp_docs.WALK_SKIP_DIRS == check_structure.IGNORE_DIRS
     monkeypatch.setattr(restamp_docs, "_inside_work_tree", lambda root: False)
     kept = ["wiki/README.md", ".claude/README.md", "README.md"]
@@ -498,9 +502,9 @@ def test_a_doc_with_markers_is_skipped_without_git(tmp_path, monkeypatch, capsys
 
 
 def test_conflicted_import_exits_2_cleanly(tmp_path):
-    """copier runs the restamp last, in a project whose check_structure.py may
-    itself be conflicted: a SyntaxError traceback named neither the file nor
-    what to do. The job now refuses before the import, exit 2, naming both."""
+    """copier runs the restamp last, in a project where a module it imports
+    may itself be conflicted: a SyntaxError traceback named neither the file
+    nor what to do. The job refuses before the import, exit 2, naming both."""
     proj = tmp_path / "proj"
     shutil.copytree(
         str(_ROOT / "scripts"),
@@ -510,7 +514,7 @@ def test_conflicted_import_exits_2_cleanly(tmp_path):
     (proj / "docs").mkdir()
     doc = proj / "docs" / "a.md"
     doc.write_text(_doc("2026-01-01"), encoding="utf-8")
-    target = proj / "scripts" / "check_structure.py"
+    target = proj / "scripts" / "jobs" / "review_docs.py"
     target.write_text(
         target.read_text(encoding="utf-8")
         + "%s ours\nX = 1\n%s\nX = 2\n%s theirs\n" % (_OPEN, _SPLIT, _CLOSE),
@@ -525,18 +529,76 @@ def test_conflicted_import_exits_2_cleanly(tmp_path):
         universal_newlines=True,
     )
     assert proc.returncode == 2, proc.stdout + proc.stderr
-    assert "scripts/check_structure.py (line" in proc.stderr
+    assert "scripts/jobs/review_docs.py (line" in proc.stderr
     assert "`make restamp-docs`" in proc.stderr
     assert "Traceback" not in proc.stderr and "SyntaxError" not in proc.stderr
     assert "updated: 2026-01-01" in doc.read_text(encoding="utf-8")
+
+
+def _conflict_at_line_2(path):
+    lines = path.read_text(encoding="utf-8").split("\n")
+    hunk = "%s ours\n%s\n%s theirs" % (_OPEN, _SPLIT, _CLOSE)
+    path.write_text("\n".join(lines[:1] + [hunk] + lines[1:]), encoding="utf-8")
+
+
+def test_a_conflict_in_a_file_the_restamp_never_reads_does_not_stop_it(tmp_path):
+    """The restamp refuses over the files it reads, not over every file a
+    module it once imported for two constants reads. It imported
+    check_structure for IGNORE_DIRS and the twin suffix, so the guard refused
+    it over check_structure's own source and over each file the checks open
+    (a conflicted Makefile stopped the last migration of an update that used
+    to finish, measured). Each such file, conflicted, now leaves the restamp
+    to run: the stale document is restamped, a conflicted Markdown file is
+    left alone as any conflicted document is, and the exit is 0."""
+    proj = tmp_path / "proj"
+    shutil.copytree(
+        str(_ROOT / "scripts"),
+        str(proj / "scripts"),
+        ignore=shutil.ignore_patterns("__pycache__"),
+    )
+    (proj / "config").mkdir()
+    shutil.copy2(
+        str(_ROOT / "config" / "project.json"), str(proj / "config" / "project.json")
+    )
+    own = set(restamp_docs.PROJECT_READS) | set(child_env.PROJECT_READS)
+    unread = ["scripts/check_structure.py"] + [
+        rel for rel in check_structure.PROJECT_READS if rel not in own
+    ]
+    assert len(unread) > 1, "check_structure declares no read the restamp lacks"
+    before = {}
+    for rel in unread:
+        target = proj / rel
+        if not target.exists():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(str(_ROOT / rel), str(target))
+        _conflict_at_line_2(target)
+        before[rel] = target.read_bytes()
+    doc = proj / "docs" / "a.md"
+    doc.parent.mkdir(exist_ok=True)
+    doc.write_text(_doc("2026-01-01"), encoding="utf-8")
+    proc = subprocess.run(
+        [sys.executable, str(proj / "scripts" / "jobs" / "restamp_docs.py")]
+        + ["--root", str(proj), "--today", TODAY.isoformat()],
+        cwd=str(proj),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        universal_newlines=True,
+    )
+    assert conflict_guard.read_refusals(proc.stderr) == [], proc.stderr
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "Traceback" not in proc.stderr, proc.stderr
+    assert "updated: %s" % TODAY.isoformat() in doc.read_text(encoding="utf-8")
+    for rel, data in sorted(before.items()):
+        assert (proj / rel).read_bytes() == data, rel
 
 
 @pytest.mark.parametrize("check", [False, True], ids=["write", "check"])
 def test_conflicted_manifest_exits_2_cleanly(tmp_path, check):
     """A project whose config/project.json is conflicted has no allowlist, so
     the job may start no git; that raised a ChildEnvError traceback out of the
-    worklist. It now names the manifest and the rerun command, exit 2, and
-    writes nothing."""
+    worklist. It now refuses with conflict_guard's one line, naming the
+    manifest, the hunk's line and the rerun command, exit 2, and writes
+    nothing."""
     proj = tmp_path / "proj"
     shutil.copytree(
         str(_ROOT / "scripts"),
@@ -566,9 +628,8 @@ def test_conflicted_manifest_exits_2_cleanly(tmp_path, check):
         universal_newlines=True,
     )
     assert proc.returncode == 2, proc.stdout + proc.stderr
-    assert proc.stderr.startswith("restamp_docs: "), proc.stderr
-    assert "config/project.json" in proc.stderr, proc.stderr
-    assert "conflict hunk at line 2" in proc.stderr, proc.stderr
-    assert "`make restamp-docs`" in proc.stderr, proc.stderr
+    assert conflict_guard.read_refusals(proc.stderr) == [
+        ("restamp_docs", [("config/project.json", 2)], "make restamp-docs")
+    ], proc.stderr
     assert "Traceback" not in proc.stderr, proc.stderr
     assert "updated: 2026-01-01" in doc.read_text(encoding="utf-8")

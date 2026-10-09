@@ -779,15 +779,21 @@ section. It lists:
 
 **A migration that refuses over the update's own conflicts.** Every keel
 `after` migration first runs `scripts/jobs/conflict_guard.py`, which stops it,
-exit 2, when a module it imports holds a conflict hunk, and names the job,
-each file and line, and the command to rerun. copier stops at the first
+exit 2, when a module it imports, or a fixed project file one of those modules
+declares reading in `PROJECT_READS`, holds a conflict hunk, and names the job,
+each file and line, and the command to rerun: under an update, the command
+that finishes it. `tests/integration/test_copier_job_conflict_refusal.py`
+holds those declarations complete: every path literal a job's modules name
+that the template ships is declared or exempted with a reason, and an open
+trace of each job finds no read the declarations miss. copier stops at the first
 failed migration, so the update exits non-zero. The audit reads that line
 back (`conflict_guard.read_refusals`). When the update's stderr holds exactly
 one refusal and every file it names is one the update left unmerged (`git
 ls-files -u`), the real update of DEST will stop the same way: the audit
 judges the tree copier leaves, adds a not-checked item `migration <job> and
-every migration after it` with the files and the rerun, and exits on its
-findings. The migrations never reached are read from the snapshot's
+every migration after it` with the files and the rerun (a finish command
+reads `python scripts/jobs/finish_update.py`, whatever interpreter copier
+ran it under), and exits on its findings. The migrations never reached are read from the snapshot's
 `copier.yml` `_migrations`, in order; when the restamp is among them, or the
 list cannot be read, the freshness and restamp groups name `make
 restamp-docs`. A refusal over a file the update did not conflict (markers

@@ -176,6 +176,30 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # default must stay the template whatever an earlier run judged.
 _OWN_ROOT = ROOT
 
+# The fixed project files the checks open by path, declared for
+# scripts/jobs/conflict_guard.py: a copier job whose imports reach this module
+# refuses, naming the file, when an update leaves one conflicted.
+# tests/integration/test_copier_job_conflict_refusal.py holds every path
+# literal here to this pair.
+PROJECT_READS = (
+    ".pre-commit-config.yaml",
+    "CONVENTIONS.md",
+    "Makefile",
+    "config/practices.json",
+    "config/project.json",
+    "docs/guides/deterministic-checks.md",
+    "pyproject.toml",
+)
+PROJECT_PATHS_NOT_READ = (
+    ("AGENT.md", "looked up by name in the Markdown walk, never opened at the root"),
+    ("CLAUDE.md", "a label-file basename every directory is checked for"),
+    ("README.md", "a label-file basename every directory is checked for"),
+    (
+        "docs/adr/keel/K-0012-child-process-environment-allowlist.md",
+        "cited in check_X's messages, never opened",
+    ),
+)
+
 IGNORE_DIRS = {
     ".git",
     "__pycache__",

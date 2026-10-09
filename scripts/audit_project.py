@@ -50,6 +50,10 @@ RESTAMP_JOB = os.path.splitext(os.path.basename(restamp_docs.__file__))[0]
 # What scripts/jobs/restamp_docs.py tells its owner to run when it refuses;
 # tests/unit/scripts/test_audit_project.py reads it back from that refusal.
 RESTAMP_RERUN = "make restamp-docs"
+# The finish command a migration names under an update carries copier's own
+# interpreter, which in a prediction is this audit's, not the operator's: it is
+# reported with the interpreter word an operator types in the project instead.
+FINISH_RERUN = "python " + conflict_guard.FINISH_SCRIPT
 # A letter finding in the tree before the update that the tree the update
 # leaves does not have: the update itself resolves it.
 UPDATE_RESOLVES = "copier update (absent from the tree the update leaves)"
@@ -730,6 +734,16 @@ def _child(argv, cwd, extra, scratch, what):
     return proc.stdout
 
 
+def _operator_rerun(rerun):
+    """*rerun* as the operator runs it: a finish command (an interpreter, then
+    conflict_guard.FINISH_SCRIPT) becomes FINISH_RERUN; any other is as named."""
+    try:
+        words = shlex.split(rerun)
+    except ValueError:
+        return rerun
+    return FINISH_RERUN if words[1:] == [conflict_guard.FINISH_SCRIPT] else rerun
+
+
 def migration_refusal(stderr, conflicts):
     """{"job", "files", "rerun"} when *stderr* holds exactly one
     conflict_guard refusal and every file it names is in *conflicts* (the
@@ -1039,7 +1053,7 @@ def predict(dest, yaml, scratch, today, not_checked):
         refused = migration_refusal(update.stderr, conflicts)
         if refused is None:
             raise _failure("copier update of %s" % root, update, scratch)
-        refused["rerun"] = _mask(refused["rerun"], scratch)
+        refused["rerun"] = _operator_rerun(_mask(refused["rerun"], scratch))
         refused["not_run"] = jobs_not_run(migration_jobs(snap, yaml), refused["job"])
     # Never a conflicted file put back to DEST's bytes beside the update's
     # other files: a check that reads it and reports against another file
@@ -1214,7 +1228,7 @@ def _judged_after_update(
                 % pred.refused["job"],
                 "reason": "it refused over conflicted %s exactly as the real "
                 "update will (copier stops at the first failed migration); "
-                "resolve those files, then run `%s`"
+                "resolve those files, then run `%s` to finish the update"
                 % (", ".join(pred.refused["files"]), pred.refused["rerun"]),
             }
         )

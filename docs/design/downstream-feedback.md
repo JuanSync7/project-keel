@@ -1005,7 +1005,7 @@ own arguments.
 - `make run` is one-shot. A project that turns its composition root into a
   server must give its smoke test a readiness probe and skip `run` by reason;
   `src/app/README.md` says so, and nothing checks it. A socket-level e2e is
-  CMP-4.S5.
+  CMP-4.S6.
 - `pytest_selections` takes the first pytest command in a recipe. A recipe that
   runs pytest twice with different `-m` markers is judged by the first.
 - ADR-K-0011 still lists `run` among the targets the effect sweep skips. That
@@ -1495,46 +1495,61 @@ a keel check that jarvis reads; a feature that needs history, a schedule or a
 database is jarvis's. jarvis monitors keel's own development by tracking keel as
 one of its projects, not by keel carrying the spine.
 
-**Cap.** Seven slices, each one commit on a green `make verify`, in this order.
-The two documentation slices, S1 and S2, were added at the maintainer's request
-to audit documentation before Campaign 4's enforcement work.
+**Cap.** Eight slices, each one commit on a green `make verify`, in this order.
+The two documentation slices, S1 and S3, were added at the maintainer's request
+to audit documentation before Campaign 4's enforcement work. The maintainer
+chose to insert S2 to fix a defect a downstream project hit updating to 0.2.1,
+to be released as 0.2.2.
 
 | Slice | Gap | Status |
 |-------|-----|--------|
 | CMP-4.S1 | A newcomer cannot learn what keel offers, its limits, or how to adopt and upgrade it from docs that cannot silently drift | done — `make verify` green (1771 passed); 11 of 12 review findings confirmed and fixed |
-| CMP-4.S2 | No catalogue lists every feature and no reference lists every setting, so a newcomer cannot see what exists or how to configure it | planned |
-| CMP-4.S3 | `make verify` reports only an exit code and log text, so nothing outside the repo can read which gate ran, on which commit, with what result | planned |
-| CMP-4.S4 | A frontend has no test runner, so it ships with zero tests and the gate is green | planned |
-| CMP-4.S5 | The e2e scenarios call the app in process, and nothing checks that a route has a scenario | planned |
-| CMP-4.S6 | Nothing calls a real model or a running server and judges what comes back | planned |
-| CMP-4.S7 | A spec's requirements are not tied to tests, so an uncovered requirement passes the gate | planned — approved by the maintainer |
+| CMP-4.S2 | An update whose config/project.json holds a merge conflict stops with a JSON error from the first migration, and no later migration runs | done — `make verify` green (1822 passed); 3 of 4 review findings confirmed and fixed |
+| CMP-4.S3 | No catalogue lists every feature and no reference lists every setting, so a newcomer cannot see what exists or how to configure it | planned |
+| CMP-4.S4 | `make verify` reports only an exit code and log text, so nothing outside the repo can read which gate ran, on which commit, with what result | planned |
+| CMP-4.S5 | A frontend has no test runner, so it ships with zero tests and the gate is green | planned |
+| CMP-4.S6 | The e2e scenarios call the app in process, and nothing checks that a route has a scenario | planned |
+| CMP-4.S7 | Nothing calls a real model or a running server and judges what comes back | planned |
+| CMP-4.S8 | A spec's requirements are not tied to tests, so an uncovered requirement passes the gate | planned — approved by the maintainer |
 
 - **CMP-4.S1, documentation truth.** Every stale claim the documentation audit
   verified is fixed in place, and a drift test refuses a shipped document that
   names a slice id, a host-specific phrase, an undeclared loopback port, or a
   document the template never ships. The README is reworked for a newcomer.
-- **CMP-4.S2, the feature catalogue and settings reference.**
+- **CMP-4.S2, a conflicted manifest stops an update by name, and the update
+  can be finished.** Every copier job refuses over a conflict hunk in a fixed
+  project file its modules declare reading, naming the file, the line and the
+  command that finishes the update; `scripts/jobs/finish_update.py` is that
+  command, replaying the after-migrations copier never reached. The
+  downstream update is replayed end to end in a template-only test, and the
+  finish command's `--dry-run` is checked against the migrations copier runs.
+  Review found the guard's union over a job's imports refused the restamp
+  over files only check_structure reads (a conflicted Makefile stopped the
+  last migration); the restamp no longer imports check_structure, and a test
+  fails a job whose imports hold a reading module it takes only constants
+  from.
+- **CMP-4.S3, the feature catalogue and settings reference.**
   `docs/reference/features.md` lists every feature and
   `docs/reference/settings.md` every setting, each held to the tree by a drift
   test.
-- **CMP-4.S3, the evidence contract.** `make verify` writes a canonical JSON
+- **CMP-4.S4, the evidence contract.** `make verify` writes a canonical JSON
   record next to its exit: commit, gate targets run, per-target result, test
   counts, check letters and their findings. It is written under an ignored path
   and is byte-identical on a second run of the same commit. The schema is typed
   and versioned, and a test holds the record to it. This is the format
   project-jarvis ingests; the ingest itself is jarvis work.
-- **CMP-4.S4, frontend tests.** Each shipped stack gets a unit runner (Vitest)
+- **CMP-4.S5, frontend tests.** Each shipped stack gets a unit runner (Vitest)
   and a browser journey (Playwright, run headless against the built site),
   wired into the gate behind the existing `node_modules` skip. A stack with a
   runner and zero tests fails the gate.
-- **CMP-4.S5, Python e2e over a socket.** One scenario starts the real server on
+- **CMP-4.S6, Python e2e over a socket.** One scenario starts the real server on
   a free loopback port, drives it over HTTP and stops it. A check fails when a
   route or transport endpoint has no scenario naming it (CONVENTIONS §17).
-- **CMP-4.S6, evals that judge actual responses.** A dataset format, a scorer
+- **CMP-4.S7, evals that judge actual responses.** A dataset format, a scorer
   and a threshold gate in `evals/`. The default mode replays recorded responses,
   so `make verify` needs no network and no credential; a `[cost]` target runs it
   live through `models/` and the `child_env` allowlist.
-- **CMP-4.S7, spec-to-test traceability.** A generic requirement-id grammar and
+- **CMP-4.S8, spec-to-test traceability.** A generic requirement-id grammar and
   a check that every requirement in `docs/specs/` is named by a test or by a
   documented gap, lifted from project-jarvis's `scripts/traceability_matrix.py`.
   jarvis's own copy is then retired in favour of keel's on update; that is a
@@ -1549,7 +1564,7 @@ to audit documentation before Campaign 4's enforcement work.
 - The agent and playbook contract, the seed of keel-lite: a design document
   and an ADR before any code.
 - project-jarvis side, in jarvis's repository: register keel as a tracked
-  project and ingest CMP-4.S3's record and the `Slice:` trailers.
+  project and ingest CMP-4.S4's record and the `Slice:` trailers.
 - The D0 decisions the documentation audit left open: each dead key is wired
   or deleted; the manifest defaults (`runtimes.default`, `models.default`)
   drive the registries or stay declarative; the example TOMLs are labelled as

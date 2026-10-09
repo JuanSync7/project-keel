@@ -3,7 +3,7 @@
 title: keep_edited_retired — puts back a file the template retired but the project edited
 kind: script
 layer: n/a
-summary: Copier's first `after` migration on update. copier's `_remove_old_files` deletes every file the old render had and the new one lacks before any migration runs, whether the project edited it or not (measured on copier 9.17), so an edit to a file the template retired or moved -- an ADR that became docs/adr/keel/K-NNNN-<slug>.md -- would be lost without a word. This job lists the files the update deleted (`git diff-index --name-only --diff-filter=D HEAD` in the project, read-only: plumbing that writes no index, `--no-optional-locks`, filters off through review_docs' `git_argv`) and compares each one's HEAD bytes with the template's blob at `--from` (the commit the project was generated from). `is_edited` calls a copy unedited only when the two differ in nothing but the frontmatter `updated:` value, read through review_docs' `updated_span`; an edited copy is put back from HEAD with HEAD's mode (an executable, a symlink) and named on stderr with its successor in the template where a rename says so. A file the template renders from `<path>.jinja` cannot be judged byte for byte, so it is put back and named; so is a path the template does not hold at `--from`. The index is never written. An unresolvable `--from` or a git failure puts back every deleted file and exits 2, because without a base nothing may stay deleted. scripts/audit_project.py's `retired` group imports `is_edited`, so the guard and the audit cannot disagree. It runs before the answer-driven `rm` migrations, which still win, and before the restamp, which stays last. Run as a script, it first asks scripts/jobs/conflict_guard.py whether a module it imports from the project holds a conflict hunk, and if one does it names each file and the rerun command and exits 2 instead of dying on the import.
+summary: Copier's first `after` migration on update. copier's `_remove_old_files` deletes every file the old render had and the new one lacks before any migration runs, whether the project edited it or not (measured on copier 9.17), so an edit to a file the template retired or moved -- an ADR that became docs/adr/keel/K-NNNN-<slug>.md -- would be lost without a word. This job lists the files the update deleted (`git diff-index --name-only --diff-filter=D HEAD` in the project, read-only: plumbing that writes no index, `--no-optional-locks`, filters off through review_docs' `git_argv`) and compares each one's HEAD bytes with the template's blob at `--from` (the commit the project was generated from). `is_edited` calls a copy unedited only when the two differ in nothing but the frontmatter `updated:` value, read through review_docs' `updated_span`; an edited copy is put back from HEAD with HEAD's mode (an executable, a symlink) and named on stderr with its successor in the template where a rename says so. A file the template renders from `<path>.jinja` cannot be judged byte for byte, so it is put back and named; so is a path the template does not hold at `--from`. The index is never written. An unresolvable `--from` or a git failure puts back every deleted file and exits 2, because without a base nothing may stay deleted. scripts/audit_project.py's `retired` group imports `is_edited`, so the guard and the audit cannot disagree. It runs before the answer-driven `rm` migrations, which still win, and before the restamp, which stays last. Run as a script, it first asks scripts/jobs/conflict_guard.py whether a module it imports from the project, or a fixed project file those modules declare reading in `PROJECT_READS`, holds a conflict hunk, and if one does it names each file and the rerun command (run as a migration with `--finish-with`, the command that finishes the update) and exits 2 instead of dying on the import or the read.
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/integration/test_edited_retired_files.py
@@ -40,7 +40,12 @@ if __name__ == "__main__":
         __file__,
         os.path.dirname(_SCRIPTS),
         "keep_edited_retired",
-        conflict_guard.rerun_command(__file__, os.path.dirname(_SCRIPTS), sys.argv[1:]),
+        conflict_guard.job_rerun(
+            __file__,
+            os.path.dirname(_SCRIPTS),
+            sys.argv[1:],
+            conflict_guard.finish_with_arg(sys.argv[1:]),
+        ),
         search_path=(_JOBS, _SCRIPTS),
     )
 
@@ -310,6 +315,14 @@ def main(argv=None):
         help="the ref the project was generated from",
     )
     parser.add_argument("--quiet", action="store_true", help="no summary on stdout")
+    parser.add_argument(
+        conflict_guard.FINISH_FLAG,
+        dest="finish_with",
+        metavar="PYTHON",
+        default=None,
+        help="run as a copier update migration: a refusal names the command "
+        "that finishes the update under this interpreter",
+    )
     args = parser.parse_args(argv)
     project = os.getcwd()
     src = os.path.abspath(args.template)

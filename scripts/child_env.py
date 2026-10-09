@@ -2,7 +2,7 @@
 title: child_env — the environment a child process inherits
 kind: script
 layer: n/a
-summary: Builds the environment keel's code hands a process it starts. It starts from an empty dict and copies from os.environ only what config/project.json allows — a `child_env.names` entry, a name under a `child_env.prefixes` entry, a `make_targets` unattended or gate variable, and, for a named model adapter, that adapter's `models.credential_env` names — then adds the caller's `extra`. git's repository context (`child_env.repo_context_names`: the variables git binds to the repository it started a process in, such as a hook's GIT_DIR and GIT_INDEX_FILE) is never copied unless the call passes `repo_context=True`, and no allowlist source may list one; the opt-in is a keyword because it is one call's decision, visible where the child starts, not a project-wide setting. A copied value that carries user information is a credential whatever its variable is called: a user part in a URL's authority (after `scheme://` or a leading `//`, read as RFC 3986 reads it), a whole value that is a scheme-less `user[:password]@host:port`, or, in a variable a proxy reader takes (a name ending `_proxy` in any case), any user part urllib's proxy parser finds. carries_credential states that rule, and build_child_env refuses such a value with a ChildEnvError that names the variable and never the value, unless `child_env.credentialed_values` names it with a reason, the chosen adapter's `models.credential_env` declares it, or the call's `extra` replaces it; the same holds for a value matching a `child_env.credential_value_patterns` regular expression (the error names the variable and the pattern's label), and in a `child_env.login_name_schemes` URL (ssh, say) a user part with no password is a login name, not a credential. The configuration-injection family (`child_env.config_injection_names` and `config_injection_prefixes`: the variables through which a parent hands git its `-c` settings) is never copied from the parent, and child_env_policy refuses any allowlist source that admits a member. A missing, unreadable or malformed manifest is a ChildEnvError, never a fall-back to the parent's environment. It reads config/project.json on every call and writes nothing. scripts/check_structure.py check_X holds every spawn under the code roots to this helper. Defence-in-depth, not a sandbox (docs/adr/keel/K-0012-child-process-environment-allowlist.md).
+summary: Builds the environment keel's code hands a process it starts. It starts from an empty dict and copies from os.environ only what config/project.json allows — a `child_env.names` entry, a name under a `child_env.prefixes` entry, a `make_targets` unattended or gate variable, and, for a named model adapter, that adapter's `models.credential_env` names — then adds the caller's `extra`. git's repository context (`child_env.repo_context_names`: the variables git binds to the repository it started a process in, such as a hook's GIT_DIR and GIT_INDEX_FILE) is never copied unless the call passes `repo_context=True`, and no allowlist source may list one; the opt-in is a keyword because it is one call's decision, visible where the child starts, not a project-wide setting. A copied value that carries user information is a credential whatever its variable is called: a user part in a URL's authority (after `scheme://` or a leading `//`, read as RFC 3986 reads it), a whole value that is a scheme-less `user[:password]@host:port`, or, in a variable a proxy reader takes (a name ending `_proxy` in any case), any user part urllib's proxy parser finds. carries_credential states that rule, and build_child_env refuses such a value with a ChildEnvError that names the variable and never the value, unless `child_env.credentialed_values` names it with a reason, the chosen adapter's `models.credential_env` declares it, or the call's `extra` replaces it; the same holds for a value matching a `child_env.credential_value_patterns` regular expression (the error names the variable and the pattern's label), and in a `child_env.login_name_schemes` URL (ssh, say) a user part with no password is a login name, not a credential. The configuration-injection family (`child_env.config_injection_names` and `config_injection_prefixes`: the variables through which a parent hands git its `-c` settings) is never copied from the parent, and child_env_policy refuses any allowlist source that admits a member. A missing, unreadable or malformed manifest is a ChildEnvError, never a fall-back to the parent's environment; a manifest that does not parse because an update left a merge-conflict hunk in it is named as that conflict, with the hunk's line and the step that finishes the update, using the grammar of scripts/jobs/conflict_guard.py, loaded by path only then (when it cannot load, the parse error stands and says the markers were not checked). It reads config/project.json on every call, declares that read in `PROJECT_READS` so a copier job whose imports reach it refuses over a conflicted manifest, and writes nothing. scripts/check_structure.py check_X holds every spawn under the code roots to this helper. Defence-in-depth, not a sandbox (docs/adr/keel/K-0012-child-process-environment-allowlist.md).
 """
 
 # NB: stdlib only, no `from __future__ import annotations`, no f-strings, no walrus,
@@ -13,6 +13,7 @@ summary: Builds the environment keel's code hands a process it starts. It starts
 # It does not import check_structure: check_structure imports it, and a gate
 # runner child must not pay for the whole gate to build an environment.
 
+import importlib.util
 import json
 import os
 import re
@@ -37,6 +38,16 @@ __all__ = [
 ]
 
 _MANIFEST = os.path.join("config", "project.json")
+# The fixed project file this module reads, declared for scripts/jobs/
+# conflict_guard.py: a copier job whose imports reach here refuses, naming the
+# file, when an update leaves it conflicted.
+PROJECT_READS = ("config/project.json",)
+# The merge-conflict grammar, loaded by path only when the manifest does not
+# parse: importing it would put scripts/jobs on every caller's import path.
+_GRAMMAR = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "jobs", "conflict_guard.py"
+)
+_FINISH_DOC = "docs/guides/generate-and-upgrade.md, 'Finish an update that stopped'"
 _BLOCK = "child_env"
 _BLOCK_KEYS = (
     "_comment",
@@ -789,6 +800,43 @@ def child_env_policy(manifest: object) -> Tuple[Optional[Policy], List[str]]:
     )
 
 
+def _hunk_line(path: str) -> Optional[int]:
+    """The line of the first merge-conflict hunk in *path*, or None; raises
+    whatever loading the grammar or reading the file raises."""
+    spec = importlib.util.spec_from_file_location("_keel_conflict_grammar", _GRAMMAR)
+    if spec is None or spec.loader is None:
+        raise ImportError("no loader for %s" % _GRAMMAR)
+    grammar = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(grammar)
+    with open(path, "rb") as fh:
+        text = fh.read().decode("utf-8", "replace")
+    line = grammar.conflict_line(text)
+    return None if line is None else int(line)
+
+
+def _unparsed(path: str, exc: ValueError) -> str:
+    """The message for a manifest that does not parse: the conflict an update
+    left in it when there is one, else the parse error itself. A grammar that
+    cannot load leaves the parse error standing and says so."""
+    unchecked = ""
+    try:
+        line = _hunk_line(path)
+    except Exception as why:  # noqa: BLE001 -- any failure keeps the parse error
+        line = None
+        unchecked = " (conflict markers not checked: %s)" % why
+    if line is not None:
+        return (
+            "%s holds a merge-conflict hunk at line %d, so no child may start "
+            "without an allowlist; resolve it, then finish the update (%s)"
+            % (_MANIFEST, line, _FINISH_DOC)
+        )
+    return "%s cannot be read (%s), so no child may start without an allowlist%s" % (
+        _MANIFEST,
+        exc,
+        unchecked,
+    )
+
+
 def load_policy(root: Optional[str] = None) -> Policy:
     """The policy *root*'s config/project.json states (default: the project
     this module ships in), or ChildEnvError naming every fault. Reads; writes
@@ -799,11 +847,13 @@ def load_policy(root: Optional[str] = None) -> Policy:
     try:
         with open(path, encoding="utf-8") as fh:
             manifest = json.load(fh)
-    except (OSError, ValueError) as exc:
+    except OSError as exc:
         raise ChildEnvError(
             "%s cannot be read (%s), so no child may start without an allowlist"
             % (_MANIFEST, exc)
         ) from exc
+    except ValueError as exc:
+        raise ChildEnvError(_unparsed(path, exc)) from exc
     policy, errs = child_env_policy(manifest)
     if policy is None:
         raise ChildEnvError("; ".join(_located(e) for e in errs))

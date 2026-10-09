@@ -2,7 +2,7 @@
 title: Unit — child_env (the environment a child process inherits)
 kind: tests
 layer: n/a
-summary: build_child_env starts from an empty dict and copies only what config/project.json allows — `child_env.names`, a name under a `child_env.prefixes` entry, the `make_targets` unattended and gate variables, and, for a named model adapter, that adapter's `models.credential_env` — then adds the caller's `extra` last. A planted secret such as AWS_SECRET_ACCESS_KEY or GITHUB_TOKEN never reaches the result unless declared, a declared name the parent lacks stays absent rather than empty, and a missing, unreadable or malformed manifest is a ChildEnvError, never a fall-back to the parent's environment. A `child_env.repo_context_names` variable reaches the result only when the call passes `repo_context=True`, and child_env_policy refuses an allowlist source that admits one, naming the source and the fix. A copied value carrying user information (a user part in a URL authority, a scheme-relative `//user@host` and a space in the password included; a whole value `user[:password]@host:port`; or, in a `*_proxy` variable, any user part urllib's proxy parser reads, `#`, `?` or `/` in the password and a scheme-less `token@proxy` included) is a ChildEnvError naming every such variable and never the value, whatever allowlist source copied it, unless `child_env.credentialed_values` names it, the called adapter declares it, or `extra` replaces it; child_env_policy refuses a credentialed_values entry that is malformed or that no allowlist source copies. A glibc locale list such as `LANGUAGE=sr_RS:sr@latin`, `name@domain`, and a non-proxy URL with an `@` after its host are copied verbatim. child_env_policy states the same rule without touching disk.
+summary: build_child_env starts from an empty dict and copies only what config/project.json allows — `child_env.names`, a name under a `child_env.prefixes` entry, the `make_targets` unattended and gate variables, and, for a named model adapter, that adapter's `models.credential_env` — then adds the caller's `extra` last. A planted secret such as AWS_SECRET_ACCESS_KEY or GITHUB_TOKEN never reaches the result unless declared, a declared name the parent lacks stays absent rather than empty, and a missing, unreadable or malformed manifest is a ChildEnvError, never a fall-back to the parent's environment; a manifest an update left holding a merge-conflict hunk is named as that conflict, with its line and the step that finishes the update, not as a JSON parse error. A `child_env.repo_context_names` variable reaches the result only when the call passes `repo_context=True`, and child_env_policy refuses an allowlist source that admits one, naming the source and the fix. A copied value carrying user information (a user part in a URL authority, a scheme-relative `//user@host` and a space in the password included; a whole value `user[:password]@host:port`; or, in a `*_proxy` variable, any user part urllib's proxy parser reads, `#`, `?` or `/` in the password and a scheme-less `token@proxy` included) is a ChildEnvError naming every such variable and never the value, whatever allowlist source copied it, unless `child_env.credentialed_values` names it, the called adapter declares it, or `extra` replaces it; child_env_policy refuses a credentialed_values entry that is malformed or that no allowlist source copies. A glibc locale list such as `LANGUAGE=sr_RS:sr@latin`, `name@domain`, and a non-proxy URL with an `@` after its host are copied verbatim. child_env_policy states the same rule without touching disk.
 """
 
 import base64
@@ -408,6 +408,60 @@ def test_an_unreadable_manifest_fails_closed(tmp_path, parent):
     with pytest.raises(child_env.ChildEnvError) as caught:
         child_env.build_child_env(root=str(tmp_path))
     assert "config/project.json" in str(caught.value)
+
+
+def test_a_conflicted_manifest_is_named_as_a_conflict_not_a_json_error(
+    tmp_path, parent
+):
+    """An update that leaves config/project.json conflicted must not surface as
+    a JSON parse error: the operator is told the file, the hunk's line and how
+    to finish the update (a downstream project's update died on the parse error
+    and never ran its later migrations)."""
+    open_, split, close = "<" * 7, "=" * 7, ">" * 7
+    lines = ["{"] + ['  "k%d": %d,' % (n, n) for n in range(68)] + ['  "z": 0,']
+    lines += [
+        open_ + " before updating",
+        '  "ours": 1',
+        split,
+        '  "theirs": 2',
+        close + " after updating",
+        "}",
+    ]
+    assert lines.index(open_ + " before updating") + 1 == 71
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "project.json").write_text(
+        "\n".join(lines) + "\n", encoding="utf-8"
+    )
+    with pytest.raises(child_env.ChildEnvError) as caught:
+        child_env.load_policy(str(tmp_path))
+    message = str(caught.value)
+    assert "config/project.json" in message
+    assert "line 71" in message and "merge-conflict" in message
+    assert "Finish an update that stopped" in message
+    assert "Expecting property name" not in message
+    assert "cannot be read" not in message
+
+    # Malformed JSON with no hunk keeps the parse error, which is the true cause.
+    (tmp_path / "config" / "project.json").write_text("{not json", encoding="utf-8")
+    with pytest.raises(child_env.ChildEnvError) as caught:
+        child_env.load_policy(str(tmp_path))
+    assert "cannot be read (Expecting property name" in str(caught.value)
+    assert "merge-conflict" not in str(caught.value)
+
+
+def test_a_conflicted_manifest_falls_back_when_the_grammar_cannot_load(
+    tmp_path, parent, monkeypatch
+):
+    """The hunk reader is loaded lazily from the sibling jobs/conflict_guard.py;
+    when that cannot load, the parse error stands and says the markers were
+    not checked, never a different exception type."""
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "project.json").write_text("{not json", encoding="utf-8")
+    monkeypatch.setattr(child_env, "_GRAMMAR", str(tmp_path / "absent.py"))
+    with pytest.raises(child_env.ChildEnvError) as caught:
+        child_env.load_policy(str(tmp_path))
+    assert "cannot be read" in str(caught.value)
+    assert "conflict markers not checked" in str(caught.value)
 
 
 def test_a_manifest_that_is_not_an_object_fails_closed():

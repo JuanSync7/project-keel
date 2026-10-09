@@ -3,7 +3,7 @@
 title: declare_no_app — a project whose composition root is gone stays green across copier update
 kind: script
 layer: n/a
-summary: A copier `after` migration on `copier update`. A project generated before config/project.json carried `layers.app`, and that deleted src/app as the template then advised, receives `"app": {"path": "src/app", ...}` from the update, and check_H errors on a path that does not exist. When the declared path is absent from the tree and the pre-update manifest (`git cat-file blob HEAD:config/project.json`, read-only, through review_docs' `git_argv` and the allowlisted environment) had no `layers.app`, this job makes the three edits src/app/README.md names for a project with no composition root: `layers.app` becomes null; each bare marker of the smoke test that needs the composition root (tests/smoke/test_app_runs.py `pytestmark`) is declared in `make_targets.empty_test_selections`; each Makefile target whose recipe runs scripts/run_app.py is added to `make_targets.effect_proof_skip`. It names what it did on stderr. config/project.json is edited as text, so no other byte moves, and an edit that does not parse back to exactly the intended manifest is refused: nothing is written, the edits are named on stderr, exit 1. A project that declared `layers.app` itself is left to check_H. A manifest that is not JSON (an update conflict) is a stated skip, exit 0; a git failure exits 2. Run as a script, it first asks scripts/jobs/conflict_guard.py whether a module it imports from the project holds a conflict hunk, and if one does it names each file and the rerun command and exits 2 instead of dying on the import.
+summary: A copier `after` migration on `copier update`. A project generated before config/project.json carried `layers.app`, and that deleted src/app as the template then advised, receives `"app": {"path": "src/app", ...}` from the update, and check_H errors on a path that does not exist. When the declared path is absent from the tree and the pre-update manifest (`git cat-file blob HEAD:config/project.json`, read-only, through review_docs' `git_argv` and the allowlisted environment) had no `layers.app`, this job makes the three edits src/app/README.md names for a project with no composition root: `layers.app` becomes null; each bare marker of the smoke test that needs the composition root (tests/smoke/test_app_runs.py `pytestmark`) is declared in `make_targets.empty_test_selections`; each Makefile target whose recipe runs scripts/run_app.py is added to `make_targets.effect_proof_skip`. It names what it did on stderr. config/project.json is edited as text, so no other byte moves, and an edit that does not parse back to exactly the intended manifest is refused: nothing is written, the edits are named on stderr, exit 1. A project that declared `layers.app` itself is left to check_H. A manifest that holds a conflict hunk is refused with conflict_guard's line, exit 2, and one that is not JSON for another reason is a stated skip, exit 0; a git failure exits 2. Run as a script, it first asks scripts/jobs/conflict_guard.py whether a module it imports from the project, or a fixed project file those modules declare reading in `PROJECT_READS`, holds a conflict hunk, and if one does it names each file and the rerun command (run as a migration with `--finish-with`, the command that finishes the update) and exits 2 instead of dying on the import or the read.
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/integration/test_update_without_app.py
@@ -41,7 +41,12 @@ if __name__ == "__main__":
         __file__,
         os.path.dirname(_SCRIPTS),
         "declare_no_app",
-        conflict_guard.rerun_command(__file__, os.path.dirname(_SCRIPTS), sys.argv[1:]),
+        conflict_guard.job_rerun(
+            __file__,
+            os.path.dirname(_SCRIPTS),
+            sys.argv[1:],
+            conflict_guard.finish_with_arg(sys.argv[1:]),
+        ),
         search_path=(_JOBS, _SCRIPTS),
     )
 
@@ -54,6 +59,13 @@ MANIFEST = os.path.join("config", "project.json")
 # must declare. The names inside them are read, never restated here.
 RUNNER = "scripts/run_app.py"
 SMOKE_TEST = os.path.join("tests", "smoke", "test_app_runs.py")
+# The fixed project files this job reads, declared for conflict_guard, which
+# refuses the job when an update leaves one conflicted. The runner is only a
+# recipe token it matches, so it is named here and never read.
+PROJECT_READS = ("config/project.json", "Makefile", "tests/smoke/test_app_runs.py")
+PROJECT_PATHS_NOT_READ = (
+    ("scripts/run_app.py", "a recipe token it matches, never opened"),
+)
 # The reasons src/app/README.md gives a project to write.
 SMOKE_REASON = "no composition root to smoke (layers.app is null)"
 RUN_REASON = "no composition root (layers.app is null)"
@@ -268,6 +280,14 @@ def main(argv=None):
         )
     )
     parser.add_argument("--root", default=".", help="the project (default: .)")
+    parser.add_argument(
+        conflict_guard.FINISH_FLAG,
+        dest="finish_with",
+        metavar="PYTHON",
+        default=None,
+        help="run as a copier update migration: a refusal names the command "
+        "that finishes the update under this interpreter",
+    )
     args = parser.parse_args(argv)
     root = os.path.abspath(args.root)
     text = _read(root, MANIFEST)
@@ -276,6 +296,23 @@ def main(argv=None):
     try:
         manifest = json.loads(text)
     except ValueError:
+        line = conflict_guard.conflict_line(text)
+        if line is not None:
+            # The guard names this read before main runs when --root is the
+            # job's own project; another --root is refused the same way here.
+            sys.stderr.write(
+                conflict_guard.refusal(
+                    "declare_no_app",
+                    [("config/project.json", line)],
+                    conflict_guard.job_rerun(
+                        __file__,
+                        os.path.dirname(_SCRIPTS),
+                        sys.argv[1:] if argv is None else argv,
+                        args.finish_with,
+                    ),
+                )
+            )
+            return 2
         _say("config/project.json is not JSON (an update conflict?); not judged")
         return 0
     try:

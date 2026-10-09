@@ -2,7 +2,7 @@
 title: Integration — a project's own checks survive `copier update`
 kind: tests
 layer: n/a
-summary: The reason `structure.project_checks` exists, exercised against the REAL template. A toy project generated from a clone of keel declares a `checks/` directory, adds a check there (the converse guarded-recipe rule one downstream project wrote into its own copy of scripts/check_structure.py), and commits; the template then changes scripts/check_structure.py; a real `copier update --trust --defaults --vcs-ref HEAD` exits 0, leaves that module merged and byte-identical to the new template's, and the toy's gate reports the planted violation from the project check and nothing from it once fixed. The old way, a project edit to check_structure.py on the line the template changes, still conflicts there, and the update now stops with the after-migration job's exit 2 naming the file and the rerun command, with no traceback from the job and no conflicted document's stamp rewritten. The template's shipped manifest, rendered and `.jinja` twin, never carries the key, not even as null. Excluded from generated projects with the other `test_copier_*.py` meta-tests, which is where that last pin belongs: a project that adopts the extension point declares the key.
+summary: The reason `structure.project_checks` exists, exercised against the REAL template. A toy project generated from a clone of keel declares a `checks/` directory, adds a check there (the converse guarded-recipe rule one downstream project wrote into its own copy of scripts/check_structure.py), and commits; the template then changes scripts/check_structure.py; a real `copier update --trust --defaults --vcs-ref HEAD` exits 0, leaves that module merged and byte-identical to the new template's, and the toy's gate reports the planted violation from the project check and nothing from it once fixed. The old way, a project edit to check_structure.py on the line the template changes, still conflicts there; no copier job imports or reads that module (scripts/jobs/conflict_guard.py refuses a job only over the files it reads), so the update runs every migration, exits 0 and leaves the hunk for the merge, with no refusal, no traceback and no conflicted document's stamp rewritten. The same edit to a module the jobs do import (scripts/child_env.py) stops the update at the first migration with exit 2, the refusal naming that file and the command that finishes the update, and no traceback. The template's shipped manifest, rendered and `.jinja` twin, never carries the key, not even as null. Excluded from generated projects with the other `test_copier_*.py` meta-tests, which is where that last pin belongs: a project that adopts the extension point declares the key.
 """
 
 import json
@@ -24,6 +24,9 @@ optional_deps.importorskip("copier.errors", extra="template")
 plumbum = optional_deps.importorskip("plumbum", extra="template")
 
 _ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(_ROOT / "scripts" / "jobs"))
+import conflict_guard  # noqa: E402
+
 pytestmark = [
     pytest.mark.integration,
     pytest.mark.skipif(
@@ -150,13 +153,41 @@ def cycle(tmp_path, monkeypatch):
     return template, project, update
 
 
-def _template_edits_check_structure(template, old, new):
-    path = template / _CS
+def _template_edits(template, rel, old, new):
+    path = template / rel
     text = path.read_text(encoding="utf-8")
     assert text.count(old) == 1, old
     path.write_text(text.replace(old, new), encoding="utf-8")
-    _git(template, "commit", "--quiet", "-am", "template changes check_structure")
+    _git(template, "commit", "--quiet", "-am", "template changes %s" % rel)
     return path.read_bytes()
+
+
+def _template_edits_check_structure(template, old, new):
+    return _template_edits(template, _CS, old, new)
+
+
+def _both_sides_edit(template, project, rel, old):
+    """The project and then the template each edit the one line *old* of
+    *rel*, differently, so an update conflicts there."""
+    path = project / rel
+    text = path.read_text(encoding="utf-8")
+    assert text.count(old) == 1, old
+    path.write_text(text.replace(old, old.rstrip() + "  # mine\n"), encoding="utf-8")
+    _git(project, "commit", "--quiet", "-am", "the project edits %s" % rel)
+    _template_edits(template, rel, old, old.rstrip() + "  # theirs\n")
+
+
+def _assert_no_conflicted_stamp_rewritten(project):
+    unmerged_docs = {
+        line.split("\t", 1)[1]
+        for line in _git(project, "ls-files", "-u").splitlines()
+        if line.endswith(".md")
+    }
+    for rel in unmerged_docs:
+        ours = _git(project, "show", ":2:%s" % rel)
+        text = (project / rel).read_text(encoding="utf-8")
+        stamp = [ln for ln in ours.splitlines() if ln.startswith("updated:")][:1]
+        assert not stamp or stamp[0] in text, rel
 
 
 def test_project_check_survives_copier_update(cycle):
@@ -200,35 +231,46 @@ def test_project_check_survives_copier_update(cycle):
     assert code == base_code, out
 
 
-def test_update_over_conflicted_check_structure_stops_cleanly(cycle):
+def test_update_over_conflicted_check_structure_finishes_and_leaves_it(cycle):
+    # No copier job imports or reads the gate, so its conflict is the
+    # operator's to merge like any other file's, and stops no migration.
     template, project, update = cycle
-    old = "_OWN_ROOT = ROOT\n"
-    path = project / _CS
-    path.write_text(
-        path.read_text(encoding="utf-8").replace(old, old.rstrip() + "  # mine\n"),
-        encoding="utf-8",
+    _both_sides_edit(template, project, _CS, "_OWN_ROOT = ROOT\n")
+
+    proc = update()
+    out = proc.stdout + proc.stderr
+
+    assert proc.returncode == 0, out
+    assert _CS in _git(project, "ls-files", "-u")
+    assert conflict_guard.conflict_lines((project / _CS).read_text(encoding="utf-8")), (
+        _CS
     )
-    _git(project, "commit", "--quiet", "-am", "the old way: edit the gate")
-    _template_edits_check_structure(template, old, old.rstrip() + "  # theirs\n")
+    assert conflict_guard.read_refusals(out) == [], out
+    assert "Traceback" not in out and "SyntaxError" not in out, out
+    _assert_no_conflicted_stamp_rewritten(project)
+
+
+def test_update_over_a_conflicted_module_the_jobs_import_stops_cleanly(cycle):
+    template, project, update = cycle
+    rel = "scripts/child_env.py"
+    _both_sides_edit(
+        template, project, rel, 'PROJECT_READS = ("config/project.json",)\n'
+    )
 
     proc = update()
     out = proc.stdout + proc.stderr
 
     assert proc.returncode != 0, out
-    assert _CS in _git(project, "ls-files", "-u")
-    assert "restamp_docs: " in out and "%s (line" % _CS in out, out
-    assert "`make restamp-docs`" in out, out
+    assert rel in _git(project, "ls-files", "-u")
     assert "Traceback" not in out and "SyntaxError" not in out, out
-    unmerged_docs = {
-        line.split("\t", 1)[1]
-        for line in _git(project, "ls-files", "-u").splitlines()
-        if line.endswith(".md")
-    }
-    for rel in unmerged_docs:
-        ours = _git(project, "show", ":2:%s" % rel)
-        text = (project / rel).read_text(encoding="utf-8")
-        stamp = [ln for ln in ours.splitlines() if ln.startswith("updated:")][:1]
-        assert not stamp or stamp[0] in text, rel
+    found = conflict_guard.read_refusals(proc.stderr)
+    assert len(found) == 1, out
+    _job, items, rerun = found[0]
+    assert [path for path, _line in items] == [rel], out
+    lines = (project / rel).read_text(encoding="utf-8").split("\n")
+    assert conflict_guard.marker(lines[items[0][1] - 1], conflict_guard.OPEN)
+    assert rerun == conflict_guard.finish_rerun(sys.executable), out
+    _assert_no_conflicted_stamp_rewritten(project)
 
 
 @pytest.mark.parametrize("name", ["config/project.json", "config/project.json.jinja"])

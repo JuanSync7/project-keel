@@ -1,8 +1,8 @@
 """
-title: conflict_guard — a job never runs over a conflicted import
+title: conflict_guard — a job never runs over a conflicted file it reads
 kind: script
 layer: n/a
-summary: The merge-conflict marker grammar copier's inline update writes, and the guard every `after` migration runs before it imports anything from the project. copier 9.x leaves a file both sides changed with `git merge-file` markers in it, and a job that then imports that module died on a SyntaxError traceback that named neither the file nor the remedy (a project's own edit to scripts/check_structure.py stopped the restamp so, measured on two downstream projects). `conflict_lines` finds each hunk: an opening marker line, then a separator line, then a closing marker line, labels allowed after the outer two and a diff3 base section allowed between, so a lone separator (a Markdown setext underline) and marker characters inside a line are not conflicts. `conflicted_imports` follows `import` and `from ... import` (packages, submodules and relative imports) from an entry file through each module it resolves on a search path under the project root, never into one outside it, scanning each for hunks before parsing it; `exit_if_conflicted` names the job, each conflicted file and line, and the command to rerun on stderr in one line built on `REFUSAL` and exits 2, with no traceback; `read_refusals` parses that line back, which is how scripts/audit_project.py tells a migration's refusal from any other failed update. It imports nothing from the project, so its own import cannot be the one that fails, and it spawns nothing; scripts/jobs/resolve_stamp_conflicts.py reads its marker constants from here.
+summary: The merge-conflict marker grammar copier's inline update writes, and the guard every `after` migration runs before it imports anything from the project. copier 9.x leaves a file both sides changed with `git merge-file` markers in it, and a job that then imports that module died on a SyntaxError traceback that named neither the file nor the remedy (a project's own edit to scripts/check_structure.py stopped the restamp so, measured on two downstream projects); a job whose module then read a conflicted data file died on a JSON parse error the same way. `conflict_lines` finds each hunk: an opening marker line, then a separator line, then a closing marker line, labels allowed after the outer two and a diff3 base section allowed between, so a lone separator (a Markdown setext underline) and marker characters inside a line are not conflicts. `job_closure` follows `import` and `from ... import` (packages, submodules and relative imports) from an entry file through each module it resolves on a search path under the project root, never into one outside it, scanning each for hunks before parsing it. Each module in that closure may declare the fixed project files it reads in a module-level `PROJECT_READS` tuple of root-relative POSIX literals, and exempt a path literal it never opens in `PROJECT_PATHS_NOT_READ` as (path, reason) pairs; `declared_reads` collects the first by AST, never by import, and raises GuardConfigError, naming the module and line, on a declaration it cannot read. `conflicted_inputs` names each conflicted module and each conflicted declared read with its hunk lines, skipping an absent read; `exit_if_conflicted` writes the job, each file and line, and the command to rerun on stderr in one line built on `REFUSAL` and exits 2, with no traceback, and exits 2 naming the declaration when it cannot check. Under an update a job is run with `--finish-with PYTHON` (`finish_with_arg`), and its rerun is the command that finishes the update (`finish_rerun`, scripts/jobs/finish_update.py), because copier stops at the first failed migration; `read_refusals` parses the line back, which is how scripts/audit_project.py tells a migration's refusal from any other failed update. It imports nothing from the project, so its own import cannot be the one that fails, and it spawns nothing; scripts/jobs/resolve_stamp_conflicts.py reads its marker constants from here, and tests/integration/test_copier_job_conflict_refusal.py proves every job's declarations complete. The union is over every module the job imports, so a job imports only a module whose code it runs: one kept for a constant hands the job each of its reads (restamp_docs importing check_structure was refused over a conflicted Makefile it never opens), and the same test fails a job's closure that holds a reading module from which nothing but literals is taken.
 effect: read-only
 """
 
@@ -17,19 +17,47 @@ import sys
 __all__ = [
     "BASE",
     "CLOSE",
+    "FINISH_FLAG",
+    "FINISH_SCRIPT",
+    "GuardConfigError",
     "MARKER_SIZE",
+    "NOT_READ_NAME",
     "OPEN",
+    "READS_NAME",
     "REFUSAL",
     "SPLIT",
     "conflict_line",
     "conflict_lines",
     "conflicted_imports",
+    "conflicted_inputs",
+    "declared_reads",
     "exit_if_conflicted",
+    "finish_rerun",
+    "finish_with_arg",
     "has_conflict",
+    "job_closure",
+    "job_rerun",
     "marker",
     "read_refusals",
+    "refusal",
     "rerun_command",
 ]
+
+# The module-level names a job's module declares its fixed project reads in,
+# and the path literals it names but never opens (with a reason each).
+READS_NAME = "PROJECT_READS"
+NOT_READ_NAME = "PROJECT_PATHS_NOT_READ"
+
+# The command that finishes an update a migration stopped, and the flag that
+# hands a migration the interpreter to name in it.
+FINISH_SCRIPT = "scripts/jobs/finish_update.py"
+FINISH_FLAG = "--finish-with"
+
+# This module names the finish script only to print it. A literal, not
+# FINISH_SCRIPT: a declaration is read by AST, never by running the module.
+PROJECT_PATHS_NOT_READ = (
+    ("scripts/jobs/finish_update.py", "the command a refusal names, never opened"),
+)
 
 # `git merge-file` markers at its default size, any label (copier 9.x passes
 # "before updating" / "last update" / "after updating"; nothing here depends on
@@ -43,7 +71,7 @@ CLOSE = ">" * MARKER_SIZE
 
 # The words between a job's name and its files in the one line
 # exit_if_conflicted writes; read_refusals reads that line back by them.
-REFUSAL = "cannot run while modules it imports are conflicted"
+REFUSAL = "cannot run while files it reads are conflicted"
 _REFUSAL_LINE = re.compile(
     r"^(?P<job>[\w.-]+): "
     + re.escape(REFUSAL)
@@ -147,46 +175,164 @@ def _imports(tree, path):
     return out
 
 
-def conflicted_imports(entry_file, root, search_path=None):
-    """Sorted (root-relative path, hunk line) for every conflict hunk in
-    *entry_file* and each module it imports, transitively, that resolves to a
-    file under *root*. *search_path* is where an absolute import is looked up
-    (default: the entry file's own directory); a name it does not resolve, or
-    resolves outside *root*, is not followed. A conflicted file is reported and
-    not parsed, so the imports inside it are not followed either; a file that
-    does not parse for any other reason is not followed (its job's own import
-    reports that)."""
+class GuardConfigError(ValueError):
+    """A `PROJECT_READS` declaration the guard cannot read, or a declared read
+    that exists and cannot be opened: the guard cannot vouch for the job."""
+
+
+def _string(node):
+    # 3.6 and 3.7 parse a string as ast.Str, later ones as ast.Constant; the
+    # name is compared rather than ast.Str touched, which 3.12 deprecates.
+    if type(node).__name__ == "Constant" and isinstance(node.value, str):
+        return node.value
+    if type(node).__name__ == "Str":
+        return node.s
+    return None
+
+
+def _assigned(stmt, name):
+    """The value *stmt* binds to *name* at module level, or None."""
+    if isinstance(stmt, ast.Assign):
+        if any(isinstance(t, ast.Name) and t.id == name for t in stmt.targets):
+            return stmt.value
+    elif (
+        isinstance(stmt, ast.AnnAssign)
+        and isinstance(stmt.target, ast.Name)
+        and stmt.target.id == name
+    ):
+        return stmt.value
+    return None
+
+
+def declared_reads(tree, path):
+    """The root-relative POSIX paths the module *tree* (from *path*) declares
+    in its module-level `PROJECT_READS`, in order; [] when it declares none.
+    A value that is not a tuple or list of string literals, or an entry that
+    is empty, absolute, holds a backslash or a `..` part, raises
+    GuardConfigError as `<path>:<line>: ...`."""
+    out = []
+    for stmt in tree.body:
+        value = _assigned(stmt, READS_NAME)
+        if value is None:
+            continue
+        if not isinstance(value, (ast.Tuple, ast.List)):
+            raise GuardConfigError(
+                "%s:%d: %s must be a tuple of string literals"
+                % (path, stmt.lineno, READS_NAME)
+            )
+        for element in value.elts:
+            text = _string(element)
+            where = "%s:%d: %s entry" % (path, element.lineno, READS_NAME)
+            if text is None:
+                raise GuardConfigError("%s is not a string literal" % where)
+            if not text:
+                raise GuardConfigError("%s is empty" % where)
+            if "\\" in text:
+                raise GuardConfigError("%s %r holds a backslash" % (where, text))
+            if text.startswith("/"):
+                raise GuardConfigError("%s %r is absolute" % (where, text))
+            if ".." in text.split("/"):
+                raise GuardConfigError("%s %r climbs out with .." % (where, text))
+            out.append(text)
+    return out
+
+
+def _decode(raw):
+    # The marker grammar is ASCII; latin-1 decodes any byte, so a read that is
+    # not UTF-8 is still scanned rather than skipped.
+    try:
+        return raw.decode("utf-8")
+    except ValueError:
+        return raw.decode("latin-1")
+
+
+def _walk(entry_file, root, search_path):
+    """(modules, reads): {realpath: hunk lines} for every module the import
+    walk from *entry_file* reaches under *root*, and the sorted set of the
+    reads those modules declare. A conflicted module is not parsed, so neither
+    its imports nor its declaration are followed; a module that does not
+    decode or parse for any other reason is not followed either (its job's
+    own import reports that)."""
     root = os.path.realpath(root)
     entry = os.path.realpath(entry_file)
     search = [os.path.realpath(p) for p in (search_path or [os.path.dirname(entry)])]
-    found = []
-    seen = set()
+    modules = {}
+    reads = set()
     queue = [entry]
     while queue:
         path = queue.pop()
-        if path in seen or not _under(path, root):
+        if path in modules or not _under(path, root):
             continue
-        seen.add(path)
+        modules[path] = []
         try:
             with open(path, "rb") as fh:
                 text = fh.read().decode("utf-8")
         except (OSError, ValueError):
             continue
-        rel = os.path.relpath(path, root).replace(os.sep, "/")
         lines = conflict_lines(text)
         if lines:
-            found.extend((rel, line) for line in lines)
+            modules[path] = lines
             continue
         try:
             tree = ast.parse(text, path)
         except (SyntaxError, ValueError):
             continue
+        rel = os.path.relpath(path, root).replace(os.sep, "/")
+        reads.update(declared_reads(tree, rel))
         queue.extend(
             os.path.realpath(target)
             for dotted, where in _imports(tree, path)
             for target in _resolve(dotted, where or search)
         )
-    return sorted(found)
+    return modules, sorted(reads)
+
+
+def _rel(path, root):
+    return os.path.relpath(path, os.path.realpath(root)).replace(os.sep, "/")
+
+
+def job_closure(entry_file, root, search_path=None):
+    """Sorted (root-relative path, real path) of *entry_file* and every module
+    it imports, transitively, that resolves to a file under *root* — the
+    modules whose declarations guard the job. *search_path* is where an
+    absolute import is looked up (default: the entry file's directory)."""
+    modules, _reads = _walk(entry_file, root, search_path)
+    return sorted((_rel(path, root), path) for path in modules)
+
+
+def conflicted_imports(entry_file, root, search_path=None):
+    """Sorted (root-relative path, hunk line) for every conflict hunk in
+    *entry_file* and each module it imports, transitively, that resolves to a
+    file under *root*; a name the search path does not resolve, or resolves
+    outside *root*, is not followed. A conflicted file is reported and not
+    parsed, so the imports inside it are not followed either."""
+    modules, _reads = _walk(entry_file, root, search_path)
+    return sorted(
+        (_rel(path, root), line) for path, lines in modules.items() for line in lines
+    )
+
+
+def conflicted_inputs(entry_file, root, search_path=None):
+    """conflicted_imports, and each conflict hunk in a fixed project file a
+    module of that closure declares reading. An absent read is skipped (it
+    cannot be conflicted); one that exists and cannot be read, or a
+    declaration the guard cannot read, raises GuardConfigError."""
+    modules, reads = _walk(entry_file, root, search_path)
+    found = [
+        (_rel(path, root), line) for path, lines in modules.items() for line in lines
+    ]
+    base = os.path.realpath(root)
+    for rel in reads:
+        path = os.path.join(base, *rel.split("/"))
+        if not os.path.lexists(path):
+            continue
+        try:
+            with open(path, "rb") as fh:
+                text = _decode(fh.read())
+        except OSError as exc:
+            raise GuardConfigError("%s cannot be read: %s" % (rel, exc)) from exc
+        found.extend((rel, line) for line in conflict_lines(text))
+    return sorted(set(found))
 
 
 def rerun_command(entry_file, root, argv):
@@ -198,19 +344,58 @@ def rerun_command(entry_file, root, argv):
     return " ".join(shlex.quote(word) for word in words)
 
 
+def finish_rerun(python):
+    """The shell line that finishes an update a migration stopped, under the
+    interpreter copier ran the migration with."""
+    return shlex.quote(python) + " " + FINISH_SCRIPT
+
+
+def finish_with_arg(argv):
+    """The interpreter `--finish-with PYTHON` (or `--finish-with=PYTHON`) in
+    *argv* names, or None: read before argparse, so a refusal over a module
+    argparse's own job imports still names the finish command."""
+    argv = list(argv)
+    for i, word in enumerate(argv):
+        if word == FINISH_FLAG and i + 1 < len(argv):
+            return argv[i + 1]
+        if word.startswith(FINISH_FLAG + "="):
+            return word[len(FINISH_FLAG) + 1 :]
+    return None
+
+
+def job_rerun(entry_file, root, argv, finish_with=None):
+    """The command a refusal names: the finish command under an update
+    (*finish_with* is copier's interpreter), else rerun_command."""
+    if finish_with:
+        return finish_rerun(finish_with)
+    return rerun_command(entry_file, root, argv)
+
+
+def refusal(job, found, rerun):
+    """The one line exit_if_conflicted writes for *found* (path, line) pairs."""
+    return "%s: %s: %s; resolve them, then run `%s`\n" % (
+        job,
+        REFUSAL,
+        ", ".join("%s (line %d)" % pair for pair in found),
+        rerun,
+    )
+
+
 def exit_if_conflicted(entry_file, root, job, rerun, search_path=None):
-    """Return None when nothing *entry_file* imports under *root* holds a
-    conflict hunk. Otherwise write one message to stderr — *job*, each file
-    and line, and *rerun*, the command to run once they are resolved — and
-    raise SystemExit(2), so the caller stops before the import that would
-    raise a SyntaxError."""
-    found = conflicted_imports(entry_file, root, search_path)
+    """Return None when nothing *entry_file* imports under *root*, and no
+    file those modules declare reading, holds a conflict hunk. Otherwise write
+    one line to stderr — *job*, each file and line, and *rerun*, the command
+    to run once they are resolved — and raise SystemExit(2), so the caller
+    stops before the import or read that would fail. A declaration the guard
+    cannot read also exits 2, naming it: the guard fails closed."""
+    try:
+        found = conflicted_inputs(entry_file, root, search_path)
+    except GuardConfigError as exc:
+        sys.stderr.write("%s: cannot check the files it reads: %s\n" % (job, exc))
+        raise SystemExit(2) from None
     if not found:
         return
-    sys.stderr.write(
-        "%s: %s: %s; resolve them, then run `%s`\n"
-        % (job, REFUSAL, ", ".join("%s (line %d)" % pair for pair in found), rerun)
-    )
+    sys.stderr.write(refusal(job, found, rerun))
     raise SystemExit(2)
 
 

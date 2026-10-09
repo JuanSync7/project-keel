@@ -56,6 +56,35 @@ version rather than a bare commit:
   `CONTRIBUTING.md` gains a `Release` section with the new order.
 
 ### Fixed
+- **An update that a conflicted `config/project.json` stopped now says so, and
+  can be finished.** A downstream project that had edited its manifest updated
+  to 0.2.1: the first migration died on `Expecting property name enclosed in
+  double quotes`, and copier ran no later migration, so the update was left
+  half done with nothing naming the conflict or the way out. Every copier job
+  now refuses, exit 2, over a conflict hunk in a fixed project file one of its
+  modules declares reading (`PROJECT_READS`, collected by
+  `scripts/jobs/conflict_guard.py` along the job's imports; `child_env.py`
+  declares the manifest), naming the file, the hunk's line and, under an
+  update, the command that finishes it. `scripts/child_env.py` names a
+  conflicted manifest as that conflict instead of a parse error. The new
+  `scripts/jobs/finish_update.py` is that command: once the named files are
+  resolved, it checks out the template at the commit the update reached and
+  runs its after-migrations in order, as copier renders them, and never
+  stages or commits; `docs/guides/generate-and-upgrade.md` gains "Finish an
+  update that stopped". A project already stopped this way on 0.2.1 copies
+  that script in and runs it with `--template` (see the troubleshooting
+  guide). `keep_edited_retired.py`'s own rerun line also no longer names
+  copier's temporary template clone, which is gone by the time anyone reads
+  it. `make audit-project` predicts the refusal and names the finish command.
+  `tests/integration/test_copier_finish_update.py` replays the downstream
+  update end to end and checks `--dry-run` against the migrations copier
+  itself runs. `restamp_docs.py` no longer imports
+  `scripts/check_structure.py`, from which it took two constants: the guard
+  refuses a job over every read of each module it imports, so a conflict in
+  that module, or in a file only the checks read (the Makefile among them),
+  stopped the last migration of an update that otherwise finished. A test now
+  fails any job whose imports hold a reading module it takes only constants
+  from.
 - **Stale claims in the shipped docs, found by a documentation audit.**
   - *Wrong facts:* the `adr` key (not `adrs`) in `tests/README.md`; the unit
     mirror rule in `tests/unit/README.md`; `make test` is plain pytest over the

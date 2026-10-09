@@ -3,7 +3,7 @@
 title: restamp_docs — the writer that keeps `updated:` true
 kind: script
 layer: n/a
-summary: Sets the frontmatter `updated:` of every governed Markdown document that needs it to the date the judge will demand, and changes no other byte. scripts/jobs/review_docs.py is the judge of the freshness rule; this is the writer that clears its findings, reading the stamp through the judge's own `updated_span` and today through the judge's own `resolve_today` (`--today`, else SOURCE_DATE_EPOCH read in UTC, else the local clock), so the two cannot disagree on what a stamp is or what day it is. The worklist in a git work tree is what git would commit: the untracked documents, the ones changed against HEAD (every tracked one before the first commit, else review_docs' `modified_paths`, which reads `git --no-optional-locks status` and so never rewrites .git/index), and the ones already committed stale; with no git it is every Markdown file outside check_structure's IGNORE_DIRS. The target is today, raised to the date of the document's last commit when that is later, because the judge reads that date from git, not from a clock. A document's template twin (`<doc>.jinja`, check_N's suffix) is restamped with it, so the parity gate never sees the two stamps differ. A stamp is never moved backwards, and a stamp that is not an ISO date, or a document that cannot be read, is named on stderr and left alone (exit 1) while the rest are still written; a malformed date source exits 2. `--check` lists and writes nothing, the index included; `pending` is the same list as data (path, current stamp, target), for a caller such as scripts/audit_project.py. A document git lists as unmerged, or one whose text holds a conflict hunk (scripts/jobs/conflict_guard.py's grammar), is left for the merge with its twin and named on stderr, and the exit code is unchanged: rewriting the project's stamp inside an unresolved conflict would decide half of it. Run as a script, it first refuses, exit 2 naming each file and `make restamp-docs`, when a module it imports from the project holds a conflict hunk. A config/project.json it cannot read (one an update left conflicted) gives no child an allowlist, so no git may start: the run names the manifest, its hunk's line and `make restamp-docs` and exits 2, listing and writing nothing. Run by `make restamp-docs`, by copier's `_tasks` on every render (copy, and the scratch renders an update diffs), and by the last `after` migration on update.
+summary: Sets the frontmatter `updated:` of every governed Markdown document that needs it to the date the judge will demand, and changes no other byte. scripts/jobs/review_docs.py is the judge of the freshness rule; this is the writer that clears its findings, reading the stamp through the judge's own `updated_span` and today through the judge's own `resolve_today` (`--today`, else SOURCE_DATE_EPOCH read in UTC, else the local clock), so the two cannot disagree on what a stamp is or what day it is. The worklist in a git work tree is what git would commit: the untracked documents, the ones changed against HEAD (every tracked one before the first commit, else review_docs' `modified_paths`, which reads `git --no-optional-locks status` and so never rewrites .git/index), and the ones already committed stale; with no git it is every Markdown file outside check_structure's IGNORE_DIRS (a copy, `WALK_SKIP_DIRS`, that its unit test pins equal). The target is today, raised to the date of the document's last commit when that is later, because the judge reads that date from git, not from a clock. A document's template twin (`<doc>.jinja`, check_N's suffix) is restamped with it, so the parity gate never sees the two stamps differ. A stamp is never moved backwards, and a stamp that is not an ISO date, or a document that cannot be read, is named on stderr and left alone (exit 1) while the rest are still written; a malformed date source exits 2. `--check` lists and writes nothing, the index included; `pending` is the same list as data (path, current stamp, target), for a caller such as scripts/audit_project.py. A document git lists as unmerged, or one whose text holds a conflict hunk (scripts/jobs/conflict_guard.py's grammar), is left for the merge with its twin and named on stderr, and the exit code is unchanged: rewriting the project's stamp inside an unresolved conflict would decide half of it. Run as a script, it first refuses, exit 2 naming each file and `make restamp-docs`, when a module it imports from the project holds a conflict hunk. A config/project.json an update left conflicted gives no child an allowlist, so no git may start: scripts/jobs/conflict_guard.py refuses the run over it (and over any other fixed project file a module it imports declares reading in `PROJECT_READS`), naming each file, its hunk's line and `make restamp-docs`, or under an update (`--finish-with`) the command that finishes it, and exits 2, listing and writing nothing; a manifest it cannot read for another reason is named the same way. It imports nothing from check_structure, so a conflict in that module, or in a file only the checks read (the Makefile, pyproject.toml), never stops it: the guard refuses a job over every read of each module it imports. Run by `make restamp-docs`, by copier's `_tasks` on every render (copy, and the scratch renders an update diffs), and by the last `after` migration on update.
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/integration/test_idempotence.py
@@ -39,28 +39,60 @@ import conflict_guard  # noqa: E402
 # where a module it imports may hold conflict markers, and that import
 # would die on a SyntaxError traceback naming neither the file nor the
 # remedy. Only when run as a script: an importer's imports are its own.
+# The make target reruns the task; under an update (`--finish-with`, which
+# copier.yml passes the migration) the rerun is the step that finishes it.
+_RERUN = "make restamp-docs"
+
+
+def rerun(finish_with):
+    """The command a refusal names: the finish command under an update."""
+    return conflict_guard.finish_rerun(finish_with) if finish_with else _RERUN
+
+
 if __name__ == "__main__":
     conflict_guard.exit_if_conflicted(
         __file__,
         os.path.dirname(_SCRIPTS),
         "restamp_docs",
-        "make restamp-docs",
+        rerun(conflict_guard.finish_with_arg(sys.argv[1:])),
         search_path=(_JOBS, _SCRIPTS),
     )
 
-import check_structure  # noqa: E402
 import child_env  # noqa: E402
 import review_docs  # noqa: E402
 
 ROOT = os.path.dirname(_SCRIPTS)
-# The directories no walk descends into, owned by check_structure so the
-# writer's notion of "the tree" and the gate's cannot drift apart. Not
-# review_docs' list: that one also drops `wiki/` and every dot-dir, and
-# governed documents live there.
-WALK_SKIP_DIRS = check_structure.IGNORE_DIRS
-# A document's template twin is `<doc>` plus this suffix. It is check_N's own
-# constant, so the writer moves exactly the twins the parity gate compares.
-TWIN_SUFFIX = check_structure._TWIN_SUFFIX
+# The fixed project file this job reads itself (to name its hunk), declared
+# for conflict_guard; child_env declares it too, for the git it starts.
+PROJECT_READS = ("config/project.json",)
+# The directories no walk descends into: check_structure's IGNORE_DIRS, so
+# the writer's notion of "the tree" and the gate's agree;
+# tests/unit/scripts/test_restamp_docs.py pins the two equal. Not review_docs'
+# list: that one also drops `wiki/` and every dot-dir, and governed documents
+# live there. A copy, not an import: conflict_guard refuses a job over every
+# file a module it imports reads, and importing check_structure for two
+# constants made a conflicted Makefile stop the restamp (measured).
+WALK_SKIP_DIRS = {
+    ".git",
+    "__pycache__",
+    "node_modules",
+    ".venv",
+    "venv",
+    "dist",
+    "build",
+    ".astro",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".tox",
+    ".nox",
+    ".eggs",
+    "htmlcov",
+}
+# A document's template twin is `<doc>` plus this suffix: check_N's own
+# `_TWIN_SUFFIX` (pinned equal by the same test), so the writer moves exactly
+# the twins the parity gate compares.
+TWIN_SUFFIX = ".jinja"
 _EPOCH = re.compile(r"^[0-9]+$")
 
 
@@ -343,25 +375,23 @@ def _restamp_file(full, today, check):
     return True, None
 
 
-def _no_allowlist(exc):
+def _no_allowlist(exc, root, command):
     """The stderr line for a ChildEnvError: no child may start, so no git runs
     and nothing is listed or written. A manifest an update left conflicted is
-    the likely cause, and it is named with its hunk's line when it is one."""
+    the likely cause; then the line is conflict_guard's refusal, naming the
+    manifest and its hunk's line, so an audit reads it as the guard's own."""
     manifest = os.path.join("config", "project.json")
-    hunk = ""
     try:
-        with open(os.path.join(ROOT, manifest), "rb") as fh:
+        with open(os.path.join(root, manifest), "rb") as fh:
             line = conflict_guard.conflict_line(fh.read().decode("utf-8"))
-        if line is not None:
-            hunk = "; %s holds a conflict hunk at line %d" % (
-                manifest.replace(os.sep, "/"),
-                line,
-            )
     except (OSError, ValueError):
-        pass  # the ChildEnvError itself already says the manifest is unreadable
-    return (
-        "restamp_docs: cannot start git: %s%s; resolve it, then run "
-        "`make restamp-docs`" % (exc, hunk)
+        line = None  # the ChildEnvError itself already says it is unreadable
+    if line is not None:
+        found = [(manifest.replace(os.sep, "/"), line)]
+        return conflict_guard.refusal("restamp_docs", found, command).rstrip("\n")
+    return "restamp_docs: cannot start git: %s; resolve it, then run `%s`" % (
+        exc,
+        command,
     )
 
 
@@ -385,6 +415,14 @@ def main(argv=None):
     ap.add_argument(
         "--quiet", action="store_true", help="do not list the files written"
     )
+    ap.add_argument(
+        conflict_guard.FINISH_FLAG,
+        dest="finish_with",
+        metavar="PYTHON",
+        default=None,
+        help="run as a copier update migration: a refusal names the command "
+        "that finishes the update under this interpreter",
+    )
     args = ap.parse_args(argv)
     try:
         today = resolve_today(args.today, os.environ)
@@ -406,7 +444,10 @@ def main(argv=None):
             print("restamp_docs: %s" % exc, file=sys.stderr)
             return 2
         except child_env.ChildEnvError as exc:
-            print(_no_allowlist(exc), file=sys.stderr)
+            print(
+                _no_allowlist(exc, root, rerun(args.finish_with)),
+                file=sys.stderr,
+            )
             return 2
         for target, reason in skipped:
             print("restamp_docs: %s: %s" % (target, reason), file=sys.stderr)
@@ -421,7 +462,10 @@ def main(argv=None):
         print("restamp_docs: %s" % exc, file=sys.stderr)
         return 2
     except child_env.ChildEnvError as exc:
-        print(_no_allowlist(exc), file=sys.stderr)
+        print(
+            _no_allowlist(exc, root, rerun(args.finish_with)),
+            file=sys.stderr,
+        )
         return 2
     for target, reason in skipped:
         print("restamp_docs: %s: %s" % (target, reason), file=sys.stderr)

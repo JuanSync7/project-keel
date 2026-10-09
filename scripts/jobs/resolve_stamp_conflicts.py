@@ -3,7 +3,7 @@
 title: resolve_stamp_conflicts — resolves a copier conflict whose only hunk is a document's updated: stamp
 kind: script
 layer: n/a
-summary: Copier's `after` migration on update, run after every other migration but before the restamp, which stays last. copier's inline update leaves a document conflicted when the project and the template both moved its frontmatter `updated:` value since the project's `_commit` (projects generated before every render was fresh on arrival, and renders that straddled midnight with no SOURCE_DATE_EPOCH: 95 of bedrock-platform's 111 conflicts, measured). `updated:` means touched and both sides touched it, so such a conflict has one right answer: the later date. This job reads `git ls-files -u` (through review_docs' `git_argv`) and, for each unmerged `*.md` path that is a regular file with a project stage (2) and a template stage (3), hands its bytes to `resolve_stamp_conflict`. That resolves only when copier's markers (read with any label) make exactly one hunk, each side of it is one line, that line is the frontmatter `updated:` value on both sides as review_docs' `updated_span` reads it, the two sides differ in nothing else, and both values are real calendar dates; the diff3 base section is ignored. The file is then written atomically (mode kept) as the project's text with the later date, and one `git update-index --index-info` puts its index entry back to stage 0 at stage 2's mode and sha, so it shows as a cleanly merged ` M` file. Every other unmerged path keeps its bytes and its stages and is named on stderr with a reason from the closed vocabulary `REASONS`; a file that is not unmerged is never opened. Exit 0 when every unmerged path was resolved or left with a reason, 2 on a git or write failure. It does not import check_structure, whose copy in a project mid-update may itself be conflicted, and before importing review_docs it asks scripts/jobs/conflict_guard.py whether a module it imports holds a hunk: if one does, it names the files and the rerun command and exits 2.
+summary: Copier's `after` migration on update, run after every other migration but before the restamp, which stays last. copier's inline update leaves a document conflicted when the project and the template both moved its frontmatter `updated:` value since the project's `_commit` (projects generated before every render was fresh on arrival, and renders that straddled midnight with no SOURCE_DATE_EPOCH: 95 of bedrock-platform's 111 conflicts, measured). `updated:` means touched and both sides touched it, so such a conflict has one right answer: the later date. This job reads `git ls-files -u` (through review_docs' `git_argv`) and, for each unmerged `*.md` path that is a regular file with a project stage (2) and a template stage (3), hands its bytes to `resolve_stamp_conflict`. That resolves only when copier's markers (read with any label) make exactly one hunk, each side of it is one line, that line is the frontmatter `updated:` value on both sides as review_docs' `updated_span` reads it, the two sides differ in nothing else, and both values are real calendar dates; the diff3 base section is ignored. The file is then written atomically (mode kept) as the project's text with the later date, and one `git update-index --index-info` puts its index entry back to stage 0 at stage 2's mode and sha, so it shows as a cleanly merged ` M` file. Every other unmerged path keeps its bytes and its stages and is named on stderr with a reason from the closed vocabulary `REASONS`; a file that is not unmerged is never opened. Exit 0 when every unmerged path was resolved or left with a reason, 2 on a git or write failure. It does not import check_structure, whose copy in a project mid-update may itself be conflicted, and before importing review_docs it asks scripts/jobs/conflict_guard.py whether a module it imports, or a fixed project file those modules declare reading (child_env's config/project.json), holds a hunk: if one does, it names the files and the rerun command (run as a migration with `--finish-with`, the command that finishes the update) and exits 2.
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/integration/test_stamp_conflicts.py
@@ -42,7 +42,12 @@ if __name__ == "__main__":
         __file__,
         os.path.dirname(_SCRIPTS),
         "resolve_stamp_conflicts",
-        conflict_guard.rerun_command(__file__, os.path.dirname(_SCRIPTS), sys.argv[1:]),
+        conflict_guard.job_rerun(
+            __file__,
+            os.path.dirname(_SCRIPTS),
+            sys.argv[1:],
+            conflict_guard.finish_with_arg(sys.argv[1:]),
+        ),
         search_path=(_JOBS, _SCRIPTS),
     )
 
@@ -267,8 +272,8 @@ def _skip(root, rel, stages):
 
 def _write_atomic(path, data):
     """Replace *path* with *data* in one rename, keeping its mode, so a reader
-    or a crash never sees half a document (restamp_docs' shape, restated:
-    restamp_docs imports check_structure)."""
+    or a crash never sees half a document (restamp_docs' shape, restated so
+    neither job imports the other)."""
     fd, tmp = tempfile.mkstemp(
         dir=os.path.dirname(path),
         prefix="." + os.path.basename(path) + ".",
@@ -344,6 +349,14 @@ def main(argv=None):
     )
     parser.add_argument(
         "--quiet", action="store_true", help="no resolved count; left paths still named"
+    )
+    parser.add_argument(
+        conflict_guard.FINISH_FLAG,
+        dest="finish_with",
+        metavar="PYTHON",
+        default=None,
+        help="run as a copier update migration: a refusal names the command "
+        "that finishes the update under this interpreter",
     )
     args = parser.parse_args(argv)
     root = os.path.abspath(args.root or os.getcwd())

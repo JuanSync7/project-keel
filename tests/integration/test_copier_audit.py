@@ -2,7 +2,7 @@
 title: Integration — the downstream audit judges a generated project and writes nothing
 kind: tests
 layer: n/a
-summary: `scripts/audit_project.py` run against projects copier generates from this template. The audit judges the tree a real `copier update` leaves, built in a scratch copy; the parity test runs that update itself, on an independent clone of each old project against `hermetic_git.clone_including_worktree`, and holds the audit's owed and warned letter findings equal to `check_structure.py --root` on the result; for a 7f0a68b project whose own `.PHONY` edit makes copier conflict on the Makefile, the result is resolved both ways by git's `merge-file --ours/--theirs` over copier's index stages, and the audit's judged findings equal what both resolutions have outside the conflicted file, with nothing owed; for a 7f0a68b project that edited its own scripts/check_structure.py, copier conflicts on it and the restamp migration refuses in the real update and in the audit alike, which names the migration under not checked, exits on the findings (none owed) and never 2. A project generated from the working tree audits with no letter error, no config arrival and no conflict; the same project with four planted defects (an undeclared top-level directory, an unlabelled make target, a bare subprocess call, an unstamped doc edit) reports exactly those four under B, W, X and freshness, and its whole tree — `.git` included, bytes and modes, plus `.git/index`'s mtime — is identical after two audits whose JSON is byte-identical, with no `keel-audit-*` scratch left behind. A project generated at 7f0a68b, before the downstream-feedback campaign, owes nothing: every W/X error it has today is absent from the tree the update leaves, and the config keys the update brings are reported. A project generated at a70a7b5, before slice CMP-2.S1 moved git's repository variables out of `child_env.names`, owes no X error whether or not it added its own allowlist name, and the config group calls that list an update or a merge from copier's own merge. A project generated at 29e45f0, before slice CMP-2.S2, receives `child_env.credentialed_values` as an info arrival with the template default `{}` and owes no X error. A project generated at 7dbcc0c, before slice CMP-3.S4, that recorded its own `child_env.credentialed_values` and `prefixes` keeps both through a real update with nothing unmerged, and its audit owes no X error. The template checkout's index is never refreshed by an audit. A generated project's own `make audit-project` is a stub that names the template checkout. Keel-only: copier's `tests/integration/test_copier_*.py` glob prunes it.
+summary: `scripts/audit_project.py` run against projects copier generates from this template. The audit judges the tree a real `copier update` leaves, built in a scratch copy; the parity test runs that update itself, on an independent clone of each old project against `hermetic_git.clone_including_worktree`, and holds the audit's owed and warned letter findings equal to `check_structure.py --root` on the result; for a 7f0a68b project whose own `.PHONY` edit makes copier conflict on the Makefile, the result is resolved both ways by git's `merge-file --ours/--theirs` over copier's index stages, and the audit's judged findings equal what both resolutions have outside the conflicted file, with nothing owed; for a 7f0a68b project that edited its own scripts/check_structure.py, copier conflicts on it and every migration still runs, because none reads it (the restamp, which once imported it for two constants, refused there); for one that edited its own scripts/jobs/review_docs.py, the first migration, which imports it, refuses in the real update and in the audit alike, which names the migration under not checked, exits on the findings (none owed) and never 2. A project generated from the working tree audits with no letter error, no config arrival and no conflict; the same project with four planted defects (an undeclared top-level directory, an unlabelled make target, a bare subprocess call, an unstamped doc edit) reports exactly those four under B, W, X and freshness, and its whole tree — `.git` included, bytes and modes, plus `.git/index`'s mtime — is identical after two audits whose JSON is byte-identical, with no `keel-audit-*` scratch left behind. A project generated at 7f0a68b, before the downstream-feedback campaign, owes nothing: every W/X error it has today is absent from the tree the update leaves, and the config keys the update brings are reported. A project generated at a70a7b5, before slice CMP-2.S1 moved git's repository variables out of `child_env.names`, owes no X error whether or not it added its own allowlist name, and the config group calls that list an update or a merge from copier's own merge. A project generated at 29e45f0, before slice CMP-2.S2, receives `child_env.credentialed_values` as an info arrival with the template default `{}` and owes no X error. A project generated at 7dbcc0c, before slice CMP-3.S4, that recorded its own `child_env.credentialed_values` and `prefixes` keeps both through a real update with nothing unmerged, and its audit owes no X error. The template checkout's index is never refreshed by an audit. A generated project's own `make audit-project` is a stub that names the template checkout. Keel-only: copier's `tests/integration/test_copier_*.py` glob prunes it.
 """
 
 import json
@@ -427,20 +427,38 @@ def _edit_phony(dest, env):
     _git(dest, "commit", "-qam", "the project's own target", env=env)
 
 
-def _edit_gate(dest, env):
-    """Rewrite the `summary:` line of the project's own scripts/check_structure.py,
-    a line every later template commit also changes, as bedrock-platform did:
-    copier leaves the file conflicted, and the restamp migration, which imports
-    it, refuses. Committed."""
-    path = dest / "scripts" / "check_structure.py"
+def _edit_summary(dest, env, rel):
+    """Rewrite the `summary:` line of the project's own *rel*, a line every
+    later template commit also changes, so copier leaves the file conflicted.
+    Committed."""
+    path = dest / rel
     lines = path.read_text(encoding="utf-8").splitlines(True)
-    assert lines[3].startswith("summary: "), lines[3]
-    lines[3] = "summary: The project's own structure gate, edited for its own checks.\n"
+    (at,) = [i for i, line in enumerate(lines[:12]) if line.startswith("summary: ")]
+    lines[at] = "summary: The project's own copy, edited for its own needs.\n"
     path.write_text("".join(lines), encoding="utf-8")
-    _git(dest, "commit", "-qam", "own gate summary", env=env)
+    _git(dest, "commit", "-qam", "own summary of %s" % rel, env=env)
 
 
-_CUSTOMISE = {"own-name": _customise, "phony": _edit_phony, "gate": _edit_gate}
+def _edit_gate(dest, env):
+    """The project's own scripts/check_structure.py, as bedrock-platform edited
+    it. No migration reads it any more: the restamp, which once imported it,
+    was refused over it and over every file the checks read."""
+    _edit_summary(dest, env, "scripts/check_structure.py")
+
+
+def _edit_review(dest, env):
+    """The project's own scripts/jobs/review_docs.py, a module the first
+    migration (keep_edited_retired) imports: it refuses, and the update stops
+    there."""
+    _edit_summary(dest, env, "scripts/jobs/review_docs.py")
+
+
+_CUSTOMISE = {
+    "own-name": _customise,
+    "phony": _edit_phony,
+    "gate": _edit_gate,
+    "review": _edit_review,
+}
 
 
 def _resolved_gate(upd, conflicted, side, env):
@@ -523,6 +541,7 @@ def _token(message):
         ("pre_c2_1", "own-name"),
         ("pre_c2_2", None),
         ("pre_campaign", "gate"),
+        ("pre_campaign", "review"),
     ],
     ids=[
         "7f0a68b",
@@ -531,6 +550,7 @@ def _token(message):
         "a70a7b5-own-name",
         "29e45f0",
         "7f0a68b-edited-gate",
+        "7f0a68b-edited-review-docs",
     ],
 )
 def test_predicted_findings_equal_check_structure_on_a_real_update(
@@ -547,7 +567,8 @@ def test_predicted_findings_equal_check_structure_on_a_real_update(
     post-update manifest owed the `audit-project` entry). When a migration
     refuses over a file the update conflicts, the real update stops there
     too, and the audit names that migration under not checked instead of
-    failing (the 7f0a68b project that edited its own check_structure.py)."""
+    failing (the 7f0a68b project that edited its own review_docs.py; one that
+    edited its own check_structure.py is refused by no migration)."""
     project, env = request.getfixturevalue(fixture)
     dest = tmp_path / "dest"
     _git(tmp_path, "clone", "-q", "--no-hardlinks", str(project), str(dest), env=env)
@@ -572,11 +593,19 @@ def test_predicted_findings_equal_check_structure_on_a_real_update(
         job = refused[0]["item"].split()[1]
         assert "scripts/jobs/%s.py" % job in [str(w) for w in failed.cmd], failed
     if customise == "gate":
-        # Non-vacuous: the restamp refuses over the conflicted gate, as it did
-        # on bedrock-platform, and the audit says so instead of exit 2.
+        # Non-vacuous: the gate is conflicted, as on bedrock-platform, and no
+        # migration reads it, so the update finishes (the restamp refused
+        # over it while it imported the gate for two constants).
         assert unmerged == ["scripts/check_structure.py"], unmerged
-        assert refused and refused[0]["item"].startswith("migration restamp_docs ")
-        assert "scripts/check_structure.py" in refused[0]["reason"], refused
+        assert failed is None and refused == [], (failed, refused)
+        assert report["summary"]["errors"] == 0, report["summary"]
+    if customise == "review":
+        # Non-vacuous: the first migration refuses over the conflicted module
+        # it imports, and the audit says so instead of exit 2.
+        assert unmerged == ["scripts/jobs/review_docs.py"], unmerged
+        assert refused, refused
+        assert refused[0]["item"].startswith("migration keep_edited_retired ")
+        assert "scripts/jobs/review_docs.py" in refused[0]["reason"], refused
         assert report["summary"]["errors"] == 0, report["summary"]
     if customise == "phony":
         # Non-vacuous: the case this fixture exists for has a conflict.
