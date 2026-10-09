@@ -17,7 +17,7 @@ _templates_suffix: ".jinja"
 #          `_copier_operation` is NOT used: it is newer than this floor.
 # Raise it whenever a newer feature is used;
 # tests/integration/test_copier_generator_contract.py pins the two together.
-# Generate a NAMED version, not a bare SHA:  copier copy --trust --vcs-ref v0.2.1 ...
+# Generate a NAMED version, not a bare SHA:  copier copy --trust --vcs-ref v0.2.2 ...
 _min_copier_version: "9.3.0"
 # Keel uses CLAUDE.md -> AGENT.md symlinks throughout (enforced by check_I); recreate
 # them as symlinks in the generated project instead of dereferencing to regular files.
