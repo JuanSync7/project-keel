@@ -8,7 +8,7 @@ tags: [adr, make, effect-labels, gate, ralph, idempotency, check-w]
 summary: "Every `## `-annotated make target opens its help with one bracketed effect label of one or more words from a closed vocabulary (local, tree, read, cost, write), comma-separated in that order, `local` only alone. check_W in scripts/check_structure.py holds the labels, a composite's label must cover what its prerequisites and `$(MAKE)` calls reach, and a [write] target opens its recipe with `$(WRITE_GUARD)`. scripts/run_make_target.py, the gate runner agents use, runs only a target inside config/project.json `make_targets.gate_effects` and fails a green run that changed what git sees. Adapted from bedrock-platform's ADR-0010, with a `tree` label that bedrock folded into `local`."
 id: docs-adr-0011-make-target-effect-labels
 created: 2026-10-06
-updated: 2026-10-08
+updated: 2026-10-09
 visibility: internal
 canonical: true
 ---
@@ -146,7 +146,8 @@ the gate runner needs to know that a target leaves the tree alone.
   running its attended cases through the runner.
 - **Some `[local]` targets are not proven by running.** The sweep skips `test`,
   `verify`, `integration`, `run` and the servers by reason; their prerequisites
-  are proven, and the skip list is tested for staleness.
+  are proven, and the skip list is tested for staleness (the skip list is now
+  data: `make_targets.effect_proof_skip`, CONVENTIONS §15).
 
 ## Alternatives considered
 

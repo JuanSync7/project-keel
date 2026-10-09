@@ -9,7 +9,7 @@ tags: [showcase, wiki, docs, frontend]
 summary: Type-strict Astro 5 + Tailwind v4 docs/wiki site that renders the template live from the backend.
 id: src-frontend-astro-readme
 created: 2026-06-17
-updated: 2026-09-02
+updated: 2026-10-09
 visibility: internal
 canonical: true
 ---
@@ -33,8 +33,9 @@ make run-web      # Astro on :4321; proxies /api to the backend
 
 Same-origin by default: the client fetches relative `/api` and the dev server
 proxies it to the backend, so nothing host-specific is baked into the bundle.
-Env knobs — `API_PROXY_TARGET` (proxy destination, default
-`http://localhost:8000`), `ASTRO_ALLOWED_HOSTS` (open the dev server by FQDN),
+Env knobs — `API_PROXY_TARGET` (proxy destination; `make run-web` defaults it to
+`http://localhost:8000`, and `astro.config.mjs` falls back to `http://127.0.0.1:8000`
+when `npm run dev` is started without it), `ASTRO_ALLOWED_HOSTS` (open the dev server by FQDN),
 and `PUBLIC_API_BASE` (only to hit a cross-origin API directly, bypassing the
 proxy).
 
@@ -42,6 +43,8 @@ proxy).
 
 - `index.astro` — overview: live stats, the load-bearing conventions, layers/transports.
 - `features.astro` — the product features.
+- `architecture.astro` — architecture: one source, two audiences.
+- `conventions.astro` — the conventions every file, package, and agent obeys.
 - `checks.astro` — the deterministic-check catalogue (the "template linter").
 - `wiki.astro` — browse the corpus: directory tree, search, node detail (deep-linkable via `?id=`).
 - `setup.astro` — "use it in your own project".
@@ -50,6 +53,8 @@ proxy).
 
 - `api.ts` — the typed FE↔BE contract (interfaces mirror the backend payload) + fetch client.
 - `dom.ts` / `components.ts` — small, XSS-safe client-render helpers (no framework).
+- `links.ts` — prefixes internal paths with the site base, so links work at `/` or `/<repo>/`.
+- `md.ts` — renders a Markdown string to sanitized HTML for the wiki node view.
 
 - **Type-strict:** extends `astro/tsconfigs/strict`, plus
   `noUncheckedIndexedAccess` / `noImplicitOverride`. Commands:

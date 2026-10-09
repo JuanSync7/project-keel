@@ -8,7 +8,7 @@ tags: [adr, release, versioning, copier, upgrade, tags, changelog]
 summary: "keel's first release is the current main tip, not the 2026-08-04 commit its CHANGELOG named in anticipation. A version heading may only exist for a tag that exists, and a tag may only name a commit that no already-generated descendant is ahead of — because copier resolves an untagged template to a `.postN.devM` version that compares GREATER than the tag, and refuses to update downwards. Tagging the older commit would have broken `copier update` for every project generated from main."
 id: docs-adr-0009-release-identity-and-the-tag-ordering-rule
 created: 2026-09-02
-updated: 2026-10-07
+updated: 2026-10-09
 visibility: internal
 canonical: true
 ---
@@ -84,7 +84,7 @@ passed, per the absent-vs-broken split of [ADR-K-0007](K-0007-optional-showcase-
 Rotate `[Unreleased]` into a dated heading and open a fresh empty one; run the
 gate; tag the resulting commit; push the commit *and* the tag. Pushing matters:
 every documented command resolves against `origin`, so a local-only tag fixes
-none of the five references.
+none of the five references (amended by [ADR-K-0016](K-0016-release-order-tag-before-verify.md), proposed).
 
 ## What is deliberately NOT decided here
 

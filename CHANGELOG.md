@@ -10,6 +10,82 @@ version rather than a bare commit:
 
 ## [Unreleased]
 
+### Added
+- **`doc_drift` — a shipped document cannot silently drift into history or
+  one host's facts.** The new `config/project.json` block names
+  `history_paths` (the changelog, ADRs and plan docs, where a slice id or a
+  dated measurement belongs) and `forbidden_phrases` (each a regular
+  expression with the reason it is refused). `tests/integration/test_doc_drift.py`
+  reads it and refuses, in the prose of every other `.md` (and `.md.jinja`
+  twin), a concrete campaign or slice id, a forbidden phrase, a loopback port no
+  non-Markdown file declares, and, in the template, a citation of a document
+  `copier.yml` never ships. A missing or malformed block fails the test rather
+  than skipping it. Code spans and fences are exempt, so a command or a quoted
+  example still reads. A project's own shipped docs that name a slice id or a
+  host phrase in prose go red on update until the text moves under
+  `doc_drift.history_paths` or is reworded.
+- **The newcomer documents are held to the tree.** `doc_drift` gains
+  `one_hop`, `layout_heading`, `roster`, `audiences`, `limits_guide`,
+  `upgrade_guide` and `gate_target`, and `tests/integration/test_doc_drift.py`
+  refuses: an entry document that stops linking a document it must reach in
+  one hop; a README layout tree that misses a top-level directory that ships;
+  a guide roster row with no audience, or audiences out of order; a waiver the
+  checkers, the child-process allowlist or the drift test grant, or an exit
+  code of a script `make verify` runs, that the limits guide does not name;
+  and, in the template, a copier task or migration without a row of its own in
+  copier's order, an exclusion the upgrade guide does not name, or a copier
+  version floor it does not state. Only a dot-directory git tracks counts as
+  shipping, and the upgrade guide's prose is read for never-shipped citations
+  like any other document's. Each rule has a twin test that removes one item
+  and asserts the rule goes red.
+- **Two guides.** `docs/guides/limits-and-troubleshooting.md` says what
+  adopting costs, the risks the rails leave open, the checks that pass by
+  skipping, every waiver, every exit code and the common fixes;
+  `docs/guides/generate-and-upgrade.md` covers generation, what arrives,
+  `make new`, adopting into an existing repository, `copier update`, and one
+  checklist row per update step with its exit codes and recovery. The guide
+  roster gains an `Audience` column.
+- **A README for a newcomer.** It says who keel is for and what it is not,
+  lists the prerequisites with the file that owns each, gives a quickstart
+  from `copier copy` to `make verify`, points update details to the upgrade
+  guide, and ends with where to read next. A generated project's README shows
+  the `run-web` line of its own frontend stack, and none for `none`.
+- **ADR-K-0016 (proposed): tag locally before the release verify, push only on
+  green.** It replaces the order in decision 4 of ADR-K-0009, which cannot
+  reach a green verify because the heading test fails until the tag exists.
+  `CONTRIBUTING.md` gains a `Release` section with the new order.
+
+### Fixed
+- **Stale claims in the shipped docs, found by a documentation audit.**
+  - *Wrong facts:* the `adr` key (not `adrs`) in `tests/README.md`; the unit
+    mirror rule in `tests/unit/README.md`; `make test` is plain pytest over the
+    whole suite; only `fmt` has a rerun proof target, and `fe-install`'s
+    lockfile write is unproven; a profile's `tags` and `activates` gate
+    nothing; `Showcase.llms_index` and `llms_full` are methods; both
+    `API_PROXY_TARGET` defaults are stated; the Astro `:4321` port holds for
+    the astro stack only; the `wiki/` directory is read by `mcp/` and the
+    agents, so the README no longer advises deleting it; the Q&A lists
+    `backend_python`; `rebuild_index.py` has no schedule adapter; check_H's
+    paragraph lists everything it validates.
+  - *Promises with no code behind them:* the example TOMLs, `config/README.md`
+    and the §8 table say no loader ships; `config/practices.json` names its two
+    keys with no reader; `runtimes.default` and `models.default` are stated as
+    declarative; `evals/README_run.md` says it is a placeholder; the generated
+    README no longer offers `make new`.
+  - *History in a shipped doc:* landing measurements and slice ids leave
+    `docs/guides/deterministic-checks.md`, and the stale ADR-K-0008 grace note
+    leaves the CONVENTIONS catalogue, where the module-contract row folds into
+    the module-header row.
+  - *One host's facts:* a leaked dev port, "this repo's python is 3.6", and a
+    vendor name in the README's opening line.
+  - *Dangling or missing links:* the guides roster no longer cites a
+    never-shipped design doc; `docs/architecture/README.md` links
+    `transports.md`; the frontend READMEs name every page and helper and say
+    copier prunes the unchosen stack; the README layout tree adds `runtimes/`,
+    `.github/` and `.claude/`.
+  - *Accepted ADRs* K-0004, K-0011 and K-0012 each gain a one-clause pointer
+    to what narrowed them since; their decisions are unchanged.
+
 ## [0.2.1] — 2026-10-09
 
 ### Added

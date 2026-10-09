@@ -2,7 +2,7 @@
 title: Integration — copier generates a structurally valid, tailored project
 kind: tests
 layer: n/a
-summary: `copier` renders keel's root template into a new project — the manifest is tailored to the answers, the un-chosen frontend stack is pruned, CLAUDE.md->AGENT.md symlinks are preserved, keel's own template meta-tests are pruned, and check_structure passes; an undeclared top-level directory reds the project until it is declared and labelled. A bare `subprocess.run` reds a generated project through check_X until it passes `env=build_child_env()`, and the project's helper passes an adapter's declared credential and no planted secret. A credentialed proxy (a `#` in the password included) fails the project's doc judge by name and never by value, while a `LANGUAGE=sr_RS:sr@latin` locale list does not, until `child_env.credentialed_values` names it, and a stale entry there reds the gate. A generated project carries keel's `work_naming` block and no plan doc, so check_Z is silent until the project writes one; a slice row that is not a slice id then reds the gate and a well-formed one does not. Skipped on a bare local clone without the optional `template` extra; CI installs `.[dev,template]` and declares the surface required (KEEL_REQUIRED_EXTRAS), so there a missing copier is a hard failure instead of a silent skip.
+summary: `copier` renders keel's root template into a new project — the manifest is tailored to the answers, the un-chosen frontend stack is pruned, CLAUDE.md->AGENT.md symlinks are preserved, keel's own template meta-tests are pruned, and check_structure passes; an undeclared top-level directory reds the project until it is declared and labelled. A bare `subprocess.run` reds a generated project through check_X until it passes `env=build_child_env()`, and the project's helper passes an adapter's declared credential and no planted secret. A credentialed proxy (a `#` in the password included) fails the project's doc judge by name and never by value, while a `LANGUAGE=sr_RS:sr@latin` locale list does not, until `child_env.credentialed_values` names it, and a stale entry there reds the gate. A generated project carries keel's `work_naming` block and no plan doc, so check_Z is silent until the project writes one; a slice row that is not a slice id then reds the gate and a well-formed one does not. A generated project runs its own doc-drift tests green, every skip there a template-only test naming why, and a prose slice id planted in its CONTRIBUTING.md reds them; its README names no `make new`, and its `run-web` line names Astro and its port only for the astro stack and is absent with no frontend. Skipped on a bare local clone without the optional `template` extra; CI installs `.[dev,template]` and declares the surface required (KEEL_REQUIRED_EXTRAS), so there a missing copier is a hard failure instead of a silent skip.
 """
 
 import json
@@ -2003,3 +2003,111 @@ def test_a_generated_projects_children_never_receive_a_credentialed_proxy(tmp_pa
     manifest.write_text(shipped, encoding="utf-8")
     r = _structure_gate(dest)
     assert r.returncode == 0, r.stdout + r.stderr
+
+
+_DOC_DRIFT = "tests/integration/test_doc_drift.py"
+# The same reason every template-only test states, test_doc_drift.py's included.
+_TEMPLATE_ONLY_REASON = pytestmark[1].kwargs["reason"]
+_SKIPPED = re.compile(r"\b(\d+) skipped\b")
+_COLLECTED = re.compile(r"\b(\d+) tests? collected\b")
+
+
+def _doc_drift_in(project, *flags):
+    """Run the generated project's own doc-drift tests, from its root, in an
+    allowlisted environment; return the CompletedProcess."""
+    return subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "-q",
+            "-p",
+            "no:cacheprovider",
+            *flags,
+            _DOC_DRIFT,
+        ],
+        cwd=str(project),
+        env=build_child_env(),
+        capture_output=True,
+        text=True,
+        timeout=600,
+    )
+
+
+@pytest.mark.parametrize(
+    "answers",
+    [
+        pytest.param({}, id="defaults"),
+        pytest.param(
+            {"frontend_stack": "none", "showcase": False}, id="no-frontend-no-showcase"
+        ),
+    ],
+)
+def test_the_doc_drift_tests_run_and_judge_a_generated_project(tmp_path, answers):
+    """The doc-drift gate ships, runs, and still bites in a generated project.
+
+    Every collected test either passes or skips, and every skip is a
+    template-only test naming why; a project's own drift then reds the run.
+    The expected counts come from the project's own collection, not from here."""
+    dest = tmp_path / "proj"
+    _generate(dest, project_name="demo_proj", **answers)
+
+    collected = _doc_drift_in(dest, "--collect-only")
+    assert collected.returncode == 0, collected.stdout + collected.stderr
+    hit = _COLLECTED.search(collected.stdout)
+    assert hit, collected.stdout
+    total = int(hit.group(1))
+
+    run = _doc_drift_in(dest, "-rs")
+    out = run.stdout + run.stderr
+    assert run.returncode == 0, out[-4000:]
+    passed = (
+        int(_PASSED.search(run.stdout).group(1)) if _PASSED.search(run.stdout) else 0
+    )
+    skipped = (
+        int(_SKIPPED.search(run.stdout).group(1)) if _SKIPPED.search(run.stdout) else 0
+    )
+    assert passed >= 1, (
+        "the doc-drift run passed zero tests in a generated project:\n" + out
+    )
+    assert skipped >= 1, (
+        "no template-only test skipped in a generated project, so the copier.yml "
+        "tests no longer tell a project from the template:\n" + out
+    )
+    assert passed + skipped == total, (passed, skipped, total, out)
+    skip_lines = [ln for ln in run.stdout.splitlines() if ln.startswith("SKIPPED")]
+    assert skip_lines, out
+    assert all(_TEMPLATE_ONLY_REASON in ln for ln in skip_lines), skip_lines
+
+    contributing = dest / "CONTRIBUTING.md"
+    contributing.write_text(
+        contributing.read_text(encoding="utf-8") + "\nThis change finishes CMP-1.S1.\n",
+        encoding="utf-8",
+    )
+    red = _doc_drift_in(dest)
+    assert red.returncode == 1, red.stdout[-4000:] + red.stderr
+    assert "CONTRIBUTING.md" in red.stdout, red.stdout[-4000:]
+
+
+@pytest.mark.parametrize("stack", ["react-vite", "astro", "none"])
+def test_the_generated_readme_names_no_keel_only_command_and_the_chosen_dev_server(
+    tmp_path, stack
+):
+    """A generated README offers only what the project can run.
+
+    `make new` needs a template checkout, so the project's README never names
+    it; the showcase's `run-web` line describes the stack that shipped, names
+    Astro and its port only for astro, and is absent with no frontend."""
+    dest = tmp_path / "proj"
+    _generate(dest, project_name="demo_proj", frontend_stack=stack, showcase=True)
+    readme = (dest / "README.md").read_text(encoding="utf-8")
+
+    assert "make new" not in readme, "the generated README offers keel's `make new`"
+    run_web = [ln for ln in readme.splitlines() if ln.startswith("make run-web")]
+    is_astro = stack == "astro"
+    assert ("Astro" in readme) is is_astro, readme
+    assert (":4321" in readme) is is_astro, readme
+    if stack == "none":
+        assert not run_web, run_web
+    else:
+        assert len(run_web) == 1, run_web

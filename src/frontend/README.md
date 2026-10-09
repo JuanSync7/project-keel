@@ -6,21 +6,23 @@ status: template
 owner: TBD
 public_api: each app's src/index.ts barrel
 tags: []
-summary: UI / client code. Two reference apps — keep one, delete the other.
+summary: UI / client code. Two reference apps; generation keeps the one you choose.
 id: src-frontend-readme
 created: 2026-06-17
-updated: 2026-09-02
+updated: 2026-10-09
 visibility: internal
 canonical: true
 ---
 
 # Frontend
 
-UI / client code. Two reference apps — keep one, delete the other.
+UI / client code. Two reference apps; generation keeps the one you choose.
 
 UI only — no domain/server logic (that lives in `backend/`, shared
 contracts in `shared/`). Two complete, type-strict reference apps
-ship here; a real project keeps **one** and deletes the other:
+ship in the template. Copier's `frontend_stack` answer keeps **one** and prunes
+the other (or both, for `none`), and it refuses `astro` without the showcase,
+because the astro app is the showcase UI:
 
 | App | Use it for | Stack |
 |-----|-----------|-------|

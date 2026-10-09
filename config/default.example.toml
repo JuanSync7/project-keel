@@ -1,4 +1,6 @@
 # Committed example config. Copy to default.local.toml and edit.
+# No loader ships: this file is a pattern for the one your app writes, and
+# nothing in the template reads it.
 [app]
 name = "my_project"
 log_level = "info"

@@ -503,8 +503,9 @@ CHECKS: tuple[Check, ...] = (
 SETUP_STEPS: tuple[Step, ...] = (
     Step(
         title="Generate your project",
-        body="One command runs an interactive Q&A (name, frontend stack, transports, "
-        "domain profiles) and writes a tailored skeleton: the chosen stack, a "
+        body="One command runs an interactive Q&A (name, whether to keep the showcase "
+        "demo, frontend stack, the backend's minimum Python (backend_python), "
+        "transports, domain profiles) and writes a tailored skeleton: the chosen stack, a "
         "filled-in config/project.json, and a .copier-answers.yml so you can pull "
         "future template improvements later. The template URL is whatever this "
         "project recorded as `_src_path` in .copier-answers.yml. Needs copier "
@@ -520,7 +521,7 @@ SETUP_STEPS: tuple[Step, ...] = (
         # `models/`, so the two shipped surfaces gave opposite advice and this one
         # broke the newcomer's first command.
         body="Rename src/backend/example_feature/ to your first real package and delete "
-        "any optional dirs you don't need (wiki/, evals/, containers/). Removing "
+        "any optional dirs you don't need (evals/, containers/). Removing "
         "models/ also means removing its adapters from config/project.json, or "
         "`make check` will report the manifest claiming what is gone.",
         command="",

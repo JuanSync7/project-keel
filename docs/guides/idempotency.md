@@ -8,7 +8,7 @@ tags: [idempotency, writers, fixed-point, determinism, guide]
 summary: How a doer that writes into the tree is built so that running it twice changes nothing the first run did not, and how that is declared and proven here — the `effect:` / `rerun:` / `rerun_proof:` header check_V gates, the recipe for reaching a fixed point, the ladder of proofs, and the honest declarations for the writers that cannot reach one. The code twin of doc-style.md §6, which governs how the claim is written down rather than how it is made true.
 id: docs-guides-idempotency
 created: 2026-09-12
-updated: 2026-10-08
+updated: 2026-10-09
 visibility: internal
 canonical: true
 ---
@@ -93,10 +93,10 @@ error, because the honest declaration must not be the one that fails the build.
 
 It also sees only **Python modules**. A Makefile recipe that writes by running
 another program is outside it: `make fmt` rewrites source with a formatter, and
-`make fe-install` writes a lockfile. Those are proven the same way but by their
-own targets — `fmt` by `fmt-check` riding `make verify`, which is the strongest
-proof available anywhere here, because a green gate means re-running the
-formatter changes zero bytes. When you add a recipe that writes, say so in its
+`make fe-install` writes a lockfile. Only `fmt` has a proof target: `fmt-check`
+rides `make verify`, which is the strongest proof available anywhere here,
+because a green gate means re-running the formatter changes zero bytes.
+`fe-install`'s lockfile write has no such target, so its rerun is unproven. When you add a recipe that writes, say so in its
 `## ` annotation and give it a read-only check that rides the gate.
 
 ## 3. Building a writer that reaches a fixed point

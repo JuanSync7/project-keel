@@ -9,7 +9,7 @@ tags: []
 summary: OPTIONAL single-process composition root. Delete it for client-server web apps, and set config/project.json layers.app to null with it.
 id: src-app-readme
 created: 2026-06-17
-updated: 2026-10-08
+updated: 2026-10-09
 visibility: internal
 canonical: true
 ---
@@ -31,9 +31,8 @@ Two archetypes decide whether you need it:
 | **Client-server web** (separate FE build + BE server) | FE = its own build; BE = its server (`api/`/`backend/`) | **No** — nothing imports both in one process. Delete this dir. |
 | **Single-process** (CLI, service, library) | one `__main__`/`bin` that wires everything | **Yes** — that wiring *is* this dir. |
 
-genbuild is the single-process kind (a CLI, no `frontend/`), so it
-has an `app/`-equivalent in `bin/`. A React+API product is the first
-kind, so it has no `app/`.
+A CLI with no `frontend/` is the single-process kind, so its wiring
+lives here. A React+API product is the first kind, so it has no `app/`.
 
 `make run` runs the module config/project.json `layers.app` names
 (`scripts/run_app.py`), here `{"path": "src/app", "module": "app"}`, and

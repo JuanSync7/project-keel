@@ -8,7 +8,7 @@ tags: [practices, gate, advisory, ruff, mypy, types, llm, cuda, langgraph, guide
 summary: The catalogue of good-Python practices Keel promotes for general and LLM/CUDA/LangGraph code — each sorted onto the gate/advisory/doc line, sourced from config/practices.json.
 id: docs-guides-coding-practices
 created: 2026-07-06
-updated: 2026-10-07
+updated: 2026-10-09
 visibility: internal
 canonical: true
 ---
@@ -53,9 +53,11 @@ default. A handful are **domain-specific** (tensors, CUDA, LangGraph state);
 those ship *defined but off*, behind a profile in `config/practices.json`. A
 consuming repo turns one on with `project.json` → `practices.profiles`
 (e.g. `{"cuda": true}`); until then the domain checks never fire, so the core
-template stays domain-neutral. A profile's `tags` scope its checks to corpus
-nodes carrying those tags — the knowledge graph tells the checker *where* a
-domain rule is even relevant.
+template stays domain-neutral. A domain check fires when its practice's own
+`profile` is enabled (`scripts/check_practices.py`); a profile's `tags` do not
+scope it. Only `agents/practice_refactor/_brain.py` reads `tags`, to rank
+related corpus nodes, and a profile's `activates` list is display-only: the
+showcase shows it (`src/backend/showcase/_repo.py`) and nothing gates on it.
 
 ## The catalogue
 
@@ -158,7 +160,7 @@ finding can be waived with `# practice-ok: <reason>`:
 The documentation practices (`subject: "docs"` in the registry — rosters, the
 citation grammar, freshness, the tool-spec body, the check catalogue) are
 catalogued the same way; their judgment half is `doc-style.md` and their gates
-are checks P–T plus `scripts/review_docs.py`. Every entry, code or docs, names
+are checks P–U plus `scripts/jobs/review_docs.py`. Every entry, code or docs, names
 its mechanism twice: `mechanism` as prose and `enforced_by` in the closed
 grammar `check_T` resolves.
 
@@ -216,6 +218,8 @@ python3 scripts/refactor_practice.py <practice-id> --execute --json  # apply, ga
 ## Extending the catalogue
 
 Add or retrank a practice by editing `config/practices.json` (a data change),
-then wiring its mechanism: a ruff/mypy flag in `pyproject.toml`, a `check_*`
-in `check_structure.py`, or a smell in `check_practices.py`. Enabling a domain
+then wiring its mechanism: a ruff/mypy flag in `pyproject.toml`, a project
+check declared in `config/project.json` `structure.project_checks`
+(ADR-K-0014), or a smell in `check_practices.py`. A lettered `check_*` in
+`check_structure.py` is the template maintainer's to add, not a project's. Enabling a domain
 profile is a one-line flag in `config/project.json`.

@@ -9,7 +9,7 @@ tags: []
 summary: Unit tests mirror src/; integration/e2e/smoke go by scenario.
 id: tests-readme
 created: 2026-06-17
-updated: 2026-10-08
+updated: 2026-10-09
 visibility: internal
 canonical: true
 ---
@@ -69,7 +69,7 @@ each case and that a second copy changes nothing.
 
 A test that runs in keel and in every generated project reads a list from the
 project's config, never keel's value of it: the ADR files from the
-config/project.json `adrs` block, the credential opt-ins from
+config/project.json `adr` block, the credential opt-ins from
 `child_env.credentialed_values`. `tests/unit/scripts/test_check_y.py` and
 `tests/unit/scripts/test_child_env.py` each run their check once on keel's tree
 and once on a fixture that adds what a project adds, so an assertion that only

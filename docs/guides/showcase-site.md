@@ -8,7 +8,7 @@ tags: [showcase, demo, frontend, astro, fastapi, wiki, guide]
 summary: How the docs/wiki frontend presents the template as a product and stays in sync with the backend.
 id: docs-guides-showcase-site
 created: 2026-06-19
-updated: 2026-10-06
+updated: 2026-10-09
 visibility: internal
 canonical: true
 ---
@@ -68,8 +68,8 @@ the [`llms.txt` convention](https://llmstxt.org):
 - **`/llms-full.txt`** — every document's body inlined, so an agent can ingest the
   whole corpus in one fetch.
 
-Both are rendered from the same corpus the wiki uses (`backend.showcase.llms_index`
-/ `llms_full`), served live, and also written to `wiki/llms.txt` /
+Both are rendered from the same corpus the wiki uses (the `Showcase.llms_index`
+and `Showcase.llms_full` methods), served live, and also written to `wiki/llms.txt` /
 `wiki/llms-full.txt` by `make site-data` (job: `scripts/jobs/build_llms_txt.py`) for
 static hosting. This is the "build the wiki for humans **and** agents" split: the
 Astro pages are the human projection; `llms.txt` + the `/api/*` JSON + `corpus.json`
@@ -83,13 +83,18 @@ make run-api      # FastAPI on :8000  (run under the project interpreter / venv)
 make run-web      # Astro dev on :4321; proxies /api to the backend
 ```
 
+The `:4321` port holds for the `astro` frontend stack, which is the one that
+carries the showcase pages; `react-vite` serves on its own dev port.
+
 **Same-origin by default — nothing host-specific is baked in.** The client
 fetches *relative* `/api/...`, and the dev server proxies those to the backend,
 so the browser only ever talks to the Astro origin (no cross-port/CORS/firewall
 surprises). The knobs, all via the environment:
 
-- `API_PROXY_TARGET` — where the dev server forwards `/api` and `/health`
-  (default `http://localhost:8000`). For the ports used above: `API_PROXY_TARGET=http://127.0.0.1:50004`.
+- `API_PROXY_TARGET` — where the dev server forwards `/api` and `/health`.
+  `make run-web` defaults it to `http://localhost:8000` (the Makefile), and
+  `src/frontend/astro/astro.config.mjs` falls back to `http://127.0.0.1:8000`
+  when the dev server is started without it; both name the `make run-api` port.
 - `ASTRO_ALLOWED_HOSTS` — comma-separated hostnames allowed to reach the dev
   server (or `true` for any); needed to open it by FQDN rather than localhost.
 - `PUBLIC_API_BASE` — set this only to point the browser *directly* at a

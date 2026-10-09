@@ -7,7 +7,7 @@ owner: TBD
 summary: System-level shape: components, boundaries, data flow, tech choices.
 id: docs-architecture-readme
 created: 2026-06-17
-updated: 2026-09-02
+updated: 2026-10-09
 visibility: internal
 canonical: true
 ---
@@ -15,3 +15,6 @@ canonical: true
 # Architecture
 
 System-level shape: components, boundaries, data flow, tech choices.
+
+- [`transports.md`](transports.md) — which transports a project ships, why REST
+  and MCP always do, and how each stays thin over `src/`.

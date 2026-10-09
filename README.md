@@ -15,12 +15,80 @@ canonical: true
 # Project Keel
 
 Project Keel is a generic project skeleton with a strict, documented structure
-that is friendly to both humans and coding agents (Claude Code). Every top-level
-directory, and every directory directly under `agents/`, carries a `README.md` (what +
-frontmatter labels) and a `CLAUDE.md` (local rules); a top-level directory
-outside the taxonomy must be declared in `config/project.json`. The single source of truth for the labeling scheme and
-the directory taxonomy is **[`CONVENTIONS.md`](CONVENTIONS.md)** — read
-it first.
+that is friendly to both humans and coding agents. It comes from the keel
+template, which gives it three things. A structure gate:
+`scripts/check_structure.py` runs checks A to Z, plus any checks the project
+adds under `structure.project_checks`, on every commit and in `make verify`.
+Agent-safety rails: every make target is labelled with its effect, a gate runner
+refuses a target outside the labels it allows, and every child process starts
+from an allowlisted environment. An update channel: `copier update` brings the
+template's later fixes into the project. The source of truth for the labels and
+the directory taxonomy is **[`CONVENTIONS.md`](CONVENTIONS.md)**; read it first.
+
+## Who it is for
+
+- **For** a team, with or without coding agents, that wants a Python backend
+  whose layout, documents and make targets are checked by machine on every
+  commit, and that will take the template's fixes as `copier update` delivers
+  them.
+- **Not for** a project with no Python, or one that cannot keep a fixed
+  top-level layout; [the limits guide](docs/guides/limits-and-troubleshooting.md)
+  says what adopting costs.
+
+## What keel is not
+
+- **Not a sandbox.** The child-process allowlist and the effect labels are
+  defence in depth: a child still runs as your user
+  ([ADR-K-0012](docs/adr/keel/K-0012-child-process-environment-allowlist.md),
+  [ADR-K-0011](docs/adr/keel/K-0011-make-target-effect-labels.md)).
+- **Not code review.** A green gate says the structure, the documents and the
+  tests hold; it does not say the change is right.
+- **Not a host.** keel generates and checks a repository; it does not deploy or
+  run your service.
+- **Not a requirements tracker.** Which requirement is met right now belongs
+  in a companion ledger system; keel holds the code and the documents.
+
+## Prerequisites
+
+- GNU make, bash and git, on Linux or macOS (`Makefile`).
+- A bare `python3` on the path: pre-commit runs the gate with it
+  (`.pre-commit-config.yaml`).
+- The project interpreter, at the version `pyproject.toml` `requires-python`
+  sets.
+- Node, at the version `.github/workflows/ci.yml` installs, for a frontend app;
+  `make fe-install` installs its packages.
+- copier, at the version floor
+  [generate-and-upgrade.md](docs/guides/generate-and-upgrade.md) states, to
+  generate or update a project.
+
+## Quickstart
+
+```bash
+pipx install copier
+copier copy --trust gh:JuanSync7/project-keel my-project
+cd my-project
+python3 -m venv .venv
+.venv/bin/pip install -e ".[dev]"     # pytest, ruff and mypy: the gate's tools
+.venv/bin/pip install pre-commit && .venv/bin/pre-commit install
+make check                            # the structure gate
+make verify                           # every gate: checks, lint, types, tests
+```
+
+copier accepts any git URL or local path in place of
+`gh:JuanSync7/project-keel`. With no `--vcs-ref`, copier resolves the **newest
+tag**, so the command above gives you the latest named release. Pin a specific
+one with `--vcs-ref v0.2.1` when you need two projects generated from the same
+keel.
+
+In a checkout of keel, `make new DEST=../my-project` runs the same generation
+against the checkout; it needs the `template` extra
+(`pip install -e ".[dev,template]"`), and
+[generate-and-upgrade.md](docs/guides/generate-and-upgrade.md) says what it
+records and when it refuses.
+
+If your system `python3` predates the project floor, pass the
+interpreter explicitly — `make PY=.venv/bin/python verify` — which is what
+`check_python_version.py` is telling you when it refuses.
 
 ## Top-level layout
 
@@ -37,7 +105,7 @@ it first.
 ├── agents/         # autonomous/LLM agents
 ├── mcp/            # Model Context Protocol servers (tool gateways)
 ├── api/            # transports: REST/OpenAPI (FastAPI), gRPC, nginx edge
-├── wiki/           # (optional) browsable knowledge/index site
+├── wiki/           # generated knowledge/index site (read by mcp/ and agents/)
 ├── scripts/        # dev + CI automation (deterministic checks, corpus jobs)
 ├── config/         # configuration (committed defaults + examples)
 ├── demo/           # runnable demos / examples
@@ -45,6 +113,9 @@ it first.
 ├── evals/          # eval suites (esp. for agents/models)
 ├── ops/            # deploy, IaC, runbooks, observability
 ├── models/         # model backends the agents/app run on (adapters + registry)
+├── runtimes/       # agent control flow: a neutral Plan, engines as adapters
+├── .github/        # CI definitions (workflows)
+├── .claude/        # agent config shared with the team (settings, skills)
 ├── pyproject.toml  # Python src-layout packaging + tool config
 ├── Makefile        # task runner (test, lint, fmt, run, ...)
 └── CONVENTIONS.md  # frontmatter schema + taxonomy (READ FIRST)
@@ -61,89 +132,13 @@ it first.
 3. **Tests mirror only where it helps.** `tests/unit/` mirrors `src/`
    1:1; integration/e2e/smoke are organized by scenario.
 
-## Getting started
+## Making it yours
 
-Generate a **tailored** project in one command — an interactive Q&A (name, whether
-to keep the bundled showcase demo, frontend stack, transports, domain profiles)
-writes only the parts you chose, fills in
-`config/project.json`, and records your answers so you can pull future template
-improvements with `copier update --trust`:
-
-```bash
-pipx install copier                                         # once
-copier copy --trust gh:JuanSync7/project-keel my-project    # interactive Q&A -> tailored skeleton
-```
-
-With no `--vcs-ref`, copier resolves the **newest tag** — so the command above
-gives you the latest named release, which is what you want. Pin a specific one
-with `--vcs-ref v0.2.1` when you need two projects generated from the same keel.
-
-Later, from inside the generated project, pull template improvements:
-
-```bash
-copier update --trust    # re-runs the Q&A with your recorded answers as defaults
-```
-
-`--trust` is required on both commands, not optional politeness: copier refuses a
-template that runs commands unless you pass it. Generation runs one, which stamps
-every document's `updated:` with the day you generated it, so the project passes its
-own freshness gate on its first commit (`scripts/jobs/restamp_docs.py`;
-`docs/adr/keel/K-0010-generation-needs-trust-to-stamp-docs.md`). An update runs more:
-re-answering a question has to *remove* what you declined (the showcase demo, the
-frontend stack you switched away from, a transport you turned off), and copier can
-only delete through `_migrations`; the last one restamps the documents the update
-changed. The one before it settles a conflict whose only difference is a
-document's `updated:` date, taking the later date
-(`scripts/jobs/resolve_stamp_conflicts.py`); every other conflict keeps copier's
-markers and is named on stderr (`left <path>: <reason>`). Changing an answer deletes that directory, so commit your work first;
-`git checkout -- <path>` brings it back. A migration that imports a file the update left
-conflicted stops there, exit 2, naming each file and the command to run once they are
-resolved, and copier runs no migration after it; `make restamp-docs` is the restamp's.
-Keep copier's default `--conflict inline`: `--conflict rej` leaves no markers and no
-unmerged file, so the migrations run over edits that are still waiting in `.rej` files.
-
-Before you update, preview what the project would fail under the newer template's
-gates: from a checkout of the template, run `make audit-project DEST=<your project>`
-(inside the project, `make audit-project` prints that command with your project's
-path filled in). It runs a real `copier update` on a scratch copy of the project,
-judges the tree that update leaves, never writes the project itself, and lists
-what it did not check, including a migration that will refuse over the update's own
-conflicts and every migration after it. Confirm with the real `copier update --trust`
-in the project, then `make verify` there. The Makefile runs `.venv/bin/python` when the
-project has one, else `python3`; a target that needs a newer interpreter than the one
-it found stops on a message naming `requires-python`, and `make PY=python3.11 <target>`
-chooses another.
-
-The template's own ADRs live in `docs/adr/keel/` as `K-NNNN-<slug>.md`, cited as
-`ADR-K-NNNN`; `docs/adr/` holds only your project's ADRs, numbered from `0001`
-(CONVENTIONS §19, held by `check_Y`). When an update retires or moves a template
-file you edited, such as a template ADR that moved into `docs/adr/keel/`,
-`scripts/jobs/keep_edited_retired.py` keeps your edited copy and names it on
-stderr (`kept <path>: ...`); `docs/adr/README.md` says how to resolve a kept ADR.
-A later migration that deletes a named path still wins over that job, so run
-`make audit-project` before an update: its `retired` group names each edited
-file the update would delete.
-
-In a checkout of this repo you can also run `make new DEST=../my-project` — but note
-that records the template's **absolute local path** as the update origin, so
-`copier update` then works on that machine only. Generate from `gh:JuanSync7/project-keel`
-(as above) for a project you intend to share. Then:
-
-```bash
-python3 -m venv .venv                     # the gate's tools live in the `dev` extra:
-.venv/bin/pip install -e ".[dev]"         # pytest, ruff and mypy. Without it, `make
-. .venv/bin/activate                      # verify` fails on the first missing tool.
-make help          # list tasks
-make check         # fast structural gate (or: make verify)
-```
-
-Add `.[template]` too (`pip install -e ".[dev,template]"`) if you want `make new`,
-which needs `copier`. If your system `python3` predates the project floor, pass the
-interpreter explicitly — `make PY=.venv/bin/python verify` — which is what
-`check_python_version.py` is telling you when it refuses.
-
-Delete any optional dirs you don't need (`wiki/`, `evals/`, `containers/`) and
-rename `src/backend/example_feature/` to your first real package.
+Delete any optional dirs you don't need (`evals/`, `containers/`) and
+rename `src/backend/example_feature/` to your first real package. Then drop
+each deleted directory's line from the tree under Top-level layout:
+`tests/integration/test_doc_drift.py` fails while the tree lists a directory
+that does not exist.
 
 `models/` is the exception: `config/project.json` **declares** the adapters that live
 there, so deleting the directory alone leaves the manifest claiming adapters that no
@@ -155,6 +150,20 @@ and line, so you can unlink or reword each one. That second step is the same for
 directory you remove — the gate holds every link to a target that exists. Project
 generation is `copier`-based (see [ADR-K-0004](docs/adr/keel/K-0004-project-templating-copier.md)).
 
+## Updating
+
+From inside the project, with your work committed, pull the template's changes:
+
+```bash
+copier update --trust    # re-runs the Q&A with your recorded answers as defaults
+```
+
+An update removes what you declined, restamps the documents it changed, and
+stops on a conflict it cannot settle.
+[generate-and-upgrade.md](docs/guides/generate-and-upgrade.md) lists each step
+it runs, with its exit codes and how to recover, and says how to preview an
+update with `make audit-project` first.
+
 ## Showcase demo (synced docs site)
 
 A minimalist docs/wiki site presents this template as a product and
@@ -165,7 +174,20 @@ doc/module/script:
 ```bash
 make site-data   # build the wiki corpus the site reads
 make run-api     # FastAPI on :8000  (project interpreter / venv)
-make run-web     # Astro on :4321, pointed at the API
+make run-web     # the dev server of the first app under src/frontend (it prints its URL)
 ```
 
 See [`docs/guides/showcase-site.md`](docs/guides/showcase-site.md).
+
+## Where to read next
+
+- [docs/README.md](docs/README.md) says how the documentation is organised.
+- [The guide index](docs/guides/README.md) lists every guide and who it is for.
+- [CONTRIBUTING.md](CONTRIBUTING.md) is the steps for one change, and how a
+  release is cut.
+- [AGENT.md](AGENT.md) is the rules every coding agent here follows.
+- [Generate and upgrade](docs/guides/generate-and-upgrade.md) covers
+  generation, adoption and `copier update`.
+- [Limits and troubleshooting](docs/guides/limits-and-troubleshooting.md) says
+  where keel stops, every waiver and every exit code.
+- [CONVENTIONS.md](CONVENTIONS.md) defines the labels and the taxonomy.

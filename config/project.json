@@ -40,8 +40,41 @@
       "K-0012-child-process-environment-allowlist.md",
       "K-0013-template-and-project-adr-number-spaces.md",
       "K-0014-project-owned-structure-checks.md",
-      "K-0015-write-shape-exemptions-and-guarded-recipe-converse.md"
+      "K-0015-write-shape-exemptions-and-guarded-recipe-converse.md",
+      "K-0016-release-order-tag-before-verify.md"
     ]
+  },
+  "doc_drift": {
+    "_comment": "What a shipped document may not say (docs/guides/doc-style.md, CONVENTIONS section 15). A shipped document is any Markdown file, or its .md.jinja twin, whose path starts with none of history_paths; history_paths are the prefixes whose Markdown is history (a changelog, decisions, plans) and may name a campaign, a slice or a moment. forbidden_phrases maps a regular expression to the reason it is refused: a phrase true of one machine or one person, never a literal host, port or path. tests/integration/test_doc_drift.py reads both: in a shipped document's prose (code spans and fences are illustrations) it refuses a concrete work id in the work_naming grammar, any forbidden phrase, a loopback port that no non-Markdown file declares, and a citation of a document copier.yml never ships. The other keys name the documents a newcomer reads and what each must say, and the same test holds them: one_hop maps an entry document to the documents it links to directly; layout_heading is the README section whose tree lists every top-level directory that ships; roster is the guide index, whose rows each name their audiences from audiences, in that order; limits_guide names every waiver the checkers, the child-process allowlist and this test grant, and every exit code of a script make gate_target runs; upgrade_guide gives every copier task and migration its own row in copier's order, names every exclusion and states the copier version floor (template only). A missing or malformed block fails that test.",
+    "history_paths": ["CHANGELOG.md", "docs/adr/", "docs/design/"],
+    "forbidden_phrases": {
+      "(?i)\\bon this host\\b": "a claim about one machine; name the condition instead",
+      "(?i)\\bthis host's\\b": "a claim about one machine; name the condition instead",
+      "(?:^|[\\s(`'\"])/home/[^/\\s]+/": "a personal home-directory path; name the directory's role instead"
+    },
+    "one_hop": {
+      "README.md": [
+        "AGENT.md",
+        "CONTRIBUTING.md",
+        "CONVENTIONS.md",
+        "docs/README.md",
+        "docs/guides/README.md",
+        "docs/guides/limits-and-troubleshooting.md",
+        "docs/guides/generate-and-upgrade.md"
+      ],
+      "docs/README.md": [
+        "docs/guides/README.md",
+        "docs/adr/README.md",
+        "docs/adr/keel/README.md",
+        "CONVENTIONS.md"
+      ]
+    },
+    "layout_heading": "Top-level layout",
+    "roster": "docs/guides/README.md",
+    "audiences": ["adopter", "contributor"],
+    "limits_guide": "docs/guides/limits-and-troubleshooting.md",
+    "upgrade_guide": "docs/guides/generate-and-upgrade.md",
+    "gate_target": "verify"
   },
   "work_naming": {
     "_comment": "How a campaign and a slice are named (CONVENTIONS section 20). campaign_id and slice_id are the id templates: <n> is the campaign number and <m> the slice number, each a positive integer with no leading zero, and slice_id is campaign_id plus a literal separator. A plan doc is a Markdown document whose frontmatter kind is in plan_kinds and that holds a table whose first header cell is slice_column. A cross-repository reference prefixes an id with the other project's `name` and a colon. A delivering commit carries one slice_trailer trailer with a bare slice id and may carry a backlog_trailer trailer whose value matches the backlog_id pattern. adoption_boundary is a commit before which trailers are not judged (null: every commit). scripts/check_structure.py check_Z holds the plan docs' Slice cells, campaign headings, slice order and prose mentions to this block; tests/integration/test_work_trailers.py holds commit trailers to it; a missing block is an error once the tree has a plan doc, and a malformed one always is.",
@@ -168,6 +201,7 @@
     }
   },
   "runtimes": {
+    "_comment": "Agent control-flow engines this project makes available (registered in runtimes/registry.py, CONVENTIONS section 16). 'default' is declarative: check_H requires it to be in 'available' and each engine's directory to exist, but runtimes/registry.py DEFAULT_RUNTIME decides what get_runtime() returns with no name, and nothing ties the two together.",
     "default": "inprocess",
     "available": {
       "inprocess": "runtimes",
@@ -175,7 +209,7 @@
     }
   },
   "models": {
-    "_comment": "Model/provider adapters this project makes available (registered in models/registry.py). 'default' is the registry default; the showcase surfaces this list. credential_env names, per adapter that starts a process, the environment variables that process needs on top of child_env (scripts/child_env.py build_child_env(credentials_for=<adapter>)); an adapter absent from it gets the base allowlist only. Add a name here, not in code, when a CLI needs one more (for example a cloud provider's region).",
+    "_comment": "Model/provider adapters this project makes available (registered in models/registry.py). 'default' is declarative: check_H requires it to be in 'available' and the showcase marks it, but models/registry.py DEFAULT_MODEL decides what get_model() returns with no name, and nothing ties the two together; the showcase surfaces this list. credential_env names, per adapter that starts a process, the environment variables that process needs on top of child_env (scripts/child_env.py build_child_env(credentials_for=<adapter>)); an adapter absent from it gets the base allowlist only. Add a name here, not in code, when a CLI needs one more (for example a cloud provider's region).",
     "default": "claude-code-headless",
     "available": {
       "claude-code-headless": "models",

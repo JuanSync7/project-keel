@@ -1,4 +1,6 @@
 # RAG knobs — copy to rag.local.toml and tune. NO secrets here (use .env).
+# No loader ships: this file is a pattern for the one your app writes, and
+# nothing in the template reads it.
 [retrieval]
 top_k = 8
 reranker = "bge-reranker-v2-m3"   # adapter selected in models/config/
@@ -15,5 +17,5 @@ overlap_tokens = 64
 
 [service]
 host = "0.0.0.0"
-port = 8000                        # the container/app reads this, not a copy
+port = 8000                        # read by the loader you write; none ships
 request_timeout_s = 30

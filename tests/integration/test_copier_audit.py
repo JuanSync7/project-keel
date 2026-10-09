@@ -723,7 +723,8 @@ def test_a_pre_c2_2_project_receives_the_new_child_env_keys_as_arrivals_and_owes
     the update resolves every one: nothing is owed. The `adr` block
     (CONVENTIONS §19), the `work_naming` block (CONVENTIONS §20), `layers.app`
     and `make_targets.empty_test_selections`, `write_shape_exempt` and
-    `effect_proof_kept_dirs` (CONVENTIONS §15) arrive beside them.
+    `effect_proof_kept_dirs` (CONVENTIONS §15) and the `doc_drift` block
+    (docs/guides/doc-style.md) arrive beside them.
     `structure.project_checks` does not: the template never ships it, because a
     key beside `extra_toplevel` would conflict with every project that declared
     one."""
@@ -759,6 +760,7 @@ def test_a_pre_c2_2_project_receives_the_new_child_env_keys_as_arrivals_and_owes
         "child_env.credential_value_patterns",
         "child_env.credentialed_values",
         "child_env.login_name_schemes",
+        "doc_drift",
         "layers.app",
         "make_targets.effect_proof_kept_dirs",
         "make_targets.empty_test_selections",
@@ -939,7 +941,14 @@ def test_the_shipped_audit_target_points_back_at_the_template(generated):
 
 # --- ADR number spaces: an update moves keel's ADRs to docs/adr/keel ------------
 
-_KEEL_ADRS = 15
+# How many ADRs the template ships, read from the list that owns the fact
+# (config/project.json `adr.template_adrs`, which check_Y holds equal to the
+# files) -- a literal here had to be bumped by hand with every new ADR.
+_KEEL_ADRS = len(
+    json.loads((_ROOT / "config" / "project.json").read_text(encoding="utf-8"))["adr"][
+        "template_adrs"
+    ]
+)
 
 
 def _own_adr(number, slug, title):
@@ -1018,6 +1027,7 @@ def test_an_update_from_7f0a68b_moves_template_adrs_and_keeps_the_projects_own(
     they are, in the number space the project owns."""
     _dest, upd, _err, _env = adr_update
     keel = _adr_names(upd, "keel")
+    assert _KEEL_ADRS > 0, "config/project.json adr.template_adrs is empty"
     assert len(keel) == _KEEL_ADRS and all(n.startswith("K-") for n in keel), keel
     assert keel == sorted(
         n

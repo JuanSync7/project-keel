@@ -8,7 +8,7 @@ tags: [adr, template, scaffold, copier, generator, jinja2]
 summary: Keel's repo root is a copier template — one command runs a Q&A and writes a tailored project; copier coexists with scaffold.py until a parity harness proves no loss, then scaffold.py is retired.
 id: docs-adr-0004-project-templating-copier
 created: 2026-07-16
-updated: 2026-10-07
+updated: 2026-10-09
 visibility: internal
 canonical: true
 ---
@@ -55,7 +55,9 @@ template** (`_subdirectory: "."`).
   (`api/grpc`, `api/edge_nginx`) are pruned via answer-driven `_exclude`; REST + MCP
   always ship (they back the bundled showcase/AAD reference impl). `_preserve_symlinks`
   keeps keel's `CLAUDE.md → AGENT.md` links (else `check_I` fails).
-- **Optional dependency.** `template = ["copier>=9"]` — the default install, CI, and
+- **Optional dependency.** `template = ["copier>=9"]` (the floor is now copier.yml
+  `_min_copier_version` and `--trust` is required:
+  [ADR-K-0010](K-0010-generation-needs-trust-to-stamp-docs.md)) — the default install, CI, and
   pre-commit stay dependency-free (same pattern as the `langgraph` runtime extra).
 
 ## Coexistence, then gated retirement

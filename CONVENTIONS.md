@@ -8,7 +8,7 @@ tags: [conventions, frontmatter, taxonomy]
 summary: Single source of truth for labeling (frontmatter) and the directory taxonomy.
 id: conventions
 created: 2026-06-17
-updated: 2026-10-08
+updated: 2026-10-09
 visibility: internal
 canonical: true
 ---
@@ -120,9 +120,9 @@ Note: `scripts/` holds two importable modules by exception, and only these two.
 `scripts/check_structure.py` is the gate the tests and jobs import, and
 `scripts/child_env.py` builds the allowlisted environment every child process
 starts with (`docs/adr/keel/K-0012-child-process-environment-allowlist.md`). Both must
-import under the bare `python3` that `.pre-commit-config.yaml` hooks run (3.6.8
-on this host), which cannot import `src/`; that is why they live here and not
-in `src/`. `models/`, `agents/` and `mcp/` import the second as
+import under the bare `python3` that `.pre-commit-config.yaml` hooks run (the
+oldest python3 a supported host ships), which cannot import `src/`; that is
+why they live here and not in `src/`. `models/`, `agents/` and `mcp/` import the second as
 `scripts.child_env`. Any other reused code still belongs in `src/`.
 
 Note: `agents/<name>/` holds **all** files for one agent — its
@@ -237,8 +237,8 @@ pre-commit hook) fails the build if the conventions above drift:
 | Closed taxonomy (§2) | every non-hidden top-level directory is a §2 row or declared in `config/project.json` `structure.extra_toplevel`; a declared name exists and is not already a row; every top-level directory and every directory directly under `agents/` (each `agents/<name>/` and `agents/tools/`) has both `README.md` and `CLAUDE.md`; an undeclared symlinked directory warns; `structure.project_checks` is absent, null or a declared name, and a declared project-checks directory holds at least one module |
 | Package boundary (§3) | every `src/` dir with `.py` has an `__init__.py` that defines `__all__` |
 | `__init__` is the API (§3) | no absolute import of another package's `_private` module |
-| Authored coverage (error) | every `__all__`-exported symbol defined in-file has a one-line docstring (warn until ADR-K-0008) |
-| Module header (error) | every code-root module docstring carries explicit `title:` + `summary:` — the corpus's input contract (ADR-K-0008) |
+| Authored coverage (error) | every `__all__`-exported symbol defined in-file has a one-line docstring |
+| Module header (error) | every `.py` under the code roots opens with a docstring carrying explicit, non-empty `title:` and `summary:` lines — the grammar the corpus reads, its input contract (ADR-K-0008) |
 | Tool specs governed (error) | `agents/**/*.tool.md` carry valid `kind: tool` frontmatter + a resolvable `public_api` + a valid `tool_effect` |
 | Accountability (warn) | tool/agent docs name a real `owner` (not missing or `TBD`) |
 | Tool/agent binding (error) | each agent `tools.md` ↔ each spec's `## Used by` agree (both ways); `tool_command` invokes `public_api` |
@@ -249,7 +249,6 @@ pre-commit hook) fails the build if the conventions above drift:
 | Naked-tensor domain (warn) | only when the `cuda` profile is enabled (`project.json` `practices.profiles`), a parameter annotated with a bare tensor base type (`tokens.tensor_base_types`) and no shape comment **warns** — an advisory heuristic, never an error |
 | Ruleset parity (§15) | `pyproject.toml` must not silently loosen the declared policy — every ruff `extend_select` family and mypy flag in `config/practices.json` `rulesets` is enforced, no `deferred` (policy-off) family is selected, every `per-file-ignores` pattern is declared, and a `[[tool.mypy.overrides]]` relaxing a declared flag (or `ignore_errors`) is declared per module |
 | Template twin parity (§15) | every `*.jinja` twin is declared in `config/project.json` `template.twins` as `parity`, `divergence` or `generated`, and matches that declaration — a `parity` twin carries no non-templated line the plain file has lost, a `divergence` twin actually differs, a `generated` twin has no plain sibling. Render-free, so it runs in the 3.6 gate; silent in a generated project, which has no twins |
-| Module contract (§16) | every `.py` under the code roots opens with a docstring carrying explicit, non-empty `title:` and `summary:` lines — the grammar the corpus reads — and every `__all__`-exported symbol defined in-file has a docstring |
 | Help parity | every `## `-annotated Makefile target is one the `help` recipe's own grep pattern lists (read from the recipe, never restated), so no target is documented-but-invisible to `make help`; a recipe the check cannot read is a stated WARN |
 | Cross-references | every relative Markdown link in prose (file, directory, `#anchor`) names something that exists, and every `§N` citation names a numbered section: a bare `§N` always cites this file, a section of any other document is cited by naming it (`docs/guides/python-style.md §3`). Read from prose and from code/config; links inside code are illustrations and are not read |
 | Check catalogue | `docs/guides/deterministic-checks.md` and the triggers agree on one membership: every catalogued script exists, an error-tier row is reachable from `make check-all`, a report row is run by some target, every script `check-all` reaches is catalogued, and the hooks table names exactly the hooks `.pre-commit-config.yaml` declares |
@@ -262,6 +261,7 @@ pre-commit hook) fails the build if the conventions above drift:
 | Child-process environment (§7) | every subprocess/asyncio spawn in a `.py` at the root or under any top-level directory but `tests/` passes `env=` built by `build_child_env` (`scripts/child_env.py`), directly or through a name bound only to it and afterwards only read; `os.system`/`popen`/`exec*`/`spawn*`, `pty.spawn` and `subprocess.getoutput` are errors, as is a spawn API referenced without a call and a spawn name bound two ways in one scope; names resolve per Python scope; the helper's arguments never carry `os.environ`/`os.getenv`, directly or through a name within the module; `config/project.json` `child_env` and `models.credential_env` are well-formed, no allowlist source admits a `child_env.repo_context_names` variable or a configuration-injection variable (`child_env.config_injection_names`, or a name under a `child_env.config_injection_prefixes` entry, a prefix covering one included), no name is both, `child_env.credential_value_patterns` is a non-empty map of label to a regular expression that compiles with no late global flag (an error names the label, never the pattern), `child_env.login_name_schemes` lists lower-case URL schemes, and `child_env.credentialed_values` names only a variable the allowlist copies, each with a reason. A spawn through an unresolvable receiver, and a parent value crossing a function parameter, are not seen. See [docs/adr/keel/K-0012-child-process-environment-allowlist.md](docs/adr/keel/K-0012-child-process-environment-allowlist.md) |
 | ADR number spaces (§19) | `config/project.json` `adr` is well-formed once the tree holds a `kind: adr` document; an ADR in the project space is `NNNN-<slug>.md` and never carries the template prefix; an ADR in the template space is `<prefix>NNNN-<slug>.md` and is one `adr.template_adrs` lists, and every listed name is a file there; a `kind: adr` document lives directly in one of the two spaces; a number is unique within its space (once in each space is clean); an ADR's frontmatter `kind` is `adr` and its `title` begins `ADR-NNNN:` or `ADR-<prefix>NNNN:` for its own file. Both spaces empty is a WARN. A kept copy of a retired template ADR shares its `id:` with the template's file, which check_A reports. See [docs/adr/keel/K-0013-template-and-project-adr-number-spaces.md](docs/adr/keel/K-0013-template-and-project-adr-number-spaces.md) |
 | Work naming (§20) | `config/project.json` `work_naming` is well-formed once the tree holds a plan doc; every first cell of a plan doc's slice table is a slice id; a slice table sits under exactly one campaign heading, its rows name that campaign and run from `S1` in document order (a duplicate names both lines, a gap names the missing slice); a campaign is declared by one heading across all plan docs, and campaigns run from 1 with no gap; a mention in any Markdown prose, bare or with the project's own `name:` prefix, names a declared campaign or slice, and an id-shaped token outside the grammar (`CMP-1.S02`) is an error, not a mention of its campaign. A plan doc that declares no slice is a WARN. `tests/integration/test_work_trailers.py` judges the `Slice:` and `Backlog:` commit trailers, because check_structure does not read git |
+| Shipped-doc drift (§15) | a shipped document (any Markdown outside `doc_drift.history_paths`, and its `.md.jinja` twin) names in prose no concrete campaign or slice id in the `work_naming` grammar, whatever its prefix, and no `doc_drift.forbidden_phrases` pattern; a loopback port it names, fenced or not, is declared by some non-Markdown file (a git-ignored file is not read, since generated views copy Markdown text); and it cites no document copier.yml `_exclude`s unconditionally (template only). Code spans and fences are illustrations. Not in `check_structure.py`: `tests/integration/test_doc_drift.py` is a pytest gate under `make verify` and `make test`, not pre-commit, because it reads copier.yml through yaml and the file list through git. The same test holds the newcomer documents `doc_drift` names: the entry documents' direct links, the README layout tree, each guide's audience, the limits guide's waivers and exit codes, and the upgrade guide's copier steps |
 
 Missing `owner` is a warning, not a failure. If you change the scheme
 (KINDS / LAYERS / STATUSES / VISIBILITIES) or a check, update **both**
@@ -372,7 +372,7 @@ tune:
 
 | Kind of value | Example | Home |
 |---------------|---------|------|
-| runtime, app-wide, language-neutral | RAG chunk size, top-k, max context, ports, timeouts | `config/` — committed `default.*` / `*.example.*`, grouped by concern (e.g. `config/rag.toml`) |
+| runtime, app-wide, language-neutral | RAG chunk size, top-k, max context, ports, timeouts | `config/` — committed `default.*` / `*.example.*`, grouped by concern (e.g. `config/rag.example.toml`, copied to an untracked `config/rag.local.toml` for local values); no loader ships, so the reader is code you write |
 | model-backend selection / launch | which embedding model or reranker adapter + flags | `models/config/` — next to the registry that picks by name |
 | build-time, component-coupled | frontend font, colours, footer (design tokens) | with the frontend package (`src/frontend/<app>/src/styles` / theme) — the build is the consumer |
 | secret | API keys, tokens | the environment / `.env` (gitignored) — **never** `config/` |
@@ -683,6 +683,28 @@ It is keyed **by layer/concern, never one global `language`**:
   commit whose trailers are not judged, or `null` to judge every commit). Every key
   is required and an unknown key is an error. `check_Z` validates the block and
   errors when it is missing in a tree that holds a plan doc, or malformed.
+- `doc_drift` — what a shipped document may not say (`docs/guides/doc-style.md`):
+  `history_paths` (the path prefixes whose Markdown is history and may name a
+  campaign, a slice or a moment: `CHANGELOG.md`, `docs/adr/`, `docs/design/`;
+  every other Markdown file, and its `.md.jinja` twin, is a shipped document)
+  and `forbidden_phrases` (a regular expression mapped to the reason it is
+  refused: a phrase true of one machine or one person, never a literal host,
+  port or path). `tests/integration/test_doc_drift.py` reads both; in a shipped
+  document's prose (code spans and fences are illustrations) it refuses a
+  concrete `work_naming` id with any prefix, a forbidden phrase, a loopback
+  port that no non-Markdown file declares, and a citation of a document
+  copier.yml never ships. It fails when the block is missing or malformed.
+  A project moves its own dated prose under a history prefix, or adds one.
+  The same block names the documents a newcomer reads, and the same test holds
+  each: `one_hop` (an entry document mapped to the documents it must link to
+  directly), `layout_heading` (the root README section whose tree lists every
+  top-level directory that ships), `roster` and `audiences` (the guide index,
+  whose rows each name their readers from that vocabulary, in its order),
+  `limits_guide` (the guide that names every waiver the checkers, the
+  child-process allowlist and this test grant, and every exit code of a script
+  that `make <gate_target>` runs) and `upgrade_guide` (the guide that gives every
+  copier task and migration its own row in copier's order, names every
+  exclusion and states the copier version floor; template only).
 
 - `template.twins` (template repos only) — keel is itself a copier template, so
   every `*.jinja` file is declared here with what it is FOR: `parity` (must
@@ -700,7 +722,16 @@ It is keyed **by layer/concern, never one global `language`**:
 `backend.python` that disagrees with `pyproject.toml`'s `requires-python`) and
 **warns** on an *undeclared leftover* — a stack dir under the frontend `root`,
 or a transport dir under `api/`, that the manifest doesn't list. So a stack you
-forgot to record (or meant to delete) is surfaced, not blocked.
+forgot to record (or meant to delete) is surfaced, not blocked. It validates
+the three optional blocks the same way: a `runtimes.default` or
+`models.default` that is not in its block's `available` map, and an engine or
+adapter whose directory does not exist, are errors; a non-boolean
+`practices.profiles` flag is an error and an enabled flag naming no profile
+`config/practices.json` defines is a warning. The two `default` keys are
+declarative: `runtimes/registry.py` `DEFAULT_RUNTIME` and `models/registry.py`
+`DEFAULT_MODEL` decide what code gets when it names no engine or adapter, and
+no check ties each pair together. A missing `config/project.json` is a warning,
+not an error.
 
 Why JSON here, and why this and not prose: a manifest is read by **code** (a
 deterministic gate), whereas `AGENT.md` prose is read by a **model**

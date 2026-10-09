@@ -8,7 +8,7 @@ tags: [adr, environment, credentials, subprocess, check-x]
 summary: "Every process keel's code starts gets `env=build_child_env(...)` from scripts/child_env.py, which starts from an empty dict and copies only the variable names config/project.json `child_env` declares, plus the `make_targets` unattended and gate variables and, for a model adapter, that adapter's `models.credential_env` names. A missing or malformed manifest is an error, never a fall-back to the parent's environment. check_X in scripts/check_structure.py holds every spawn under the code roots to the helper, with no waiver. It is defence-in-depth, not a sandbox."
 id: docs-adr-0012-child-process-environment-allowlist
 created: 2026-10-06
-updated: 2026-10-08
+updated: 2026-10-09
 visibility: internal
 canonical: true
 ---
@@ -114,7 +114,9 @@ forwards its own environment no longer carries every credential with it.
   adds them to `models.credential_env.<adapter>`. Neither is a code change.
 - A project's own spawn without `env=build_child_env(...)` fails `make check`.
 - A proxy URL that embeds credentials (`https://user:pass@proxy`) is still
-  passed, because the proxy names are allowlisted. That is a residual risk.
+  passed, because the proxy names are allowlisted. That is a residual risk
+  (narrowed since: a credentialed proxy value is refused unless
+  `child_env.credentialed_values` names it, CONVENTIONS §7).
 - check_X resolves a call through the import that binds its name in the
   scope Python would look it up in, so a spawn through an unresolvable
   receiver (`self.runner(...)`, `loop.subprocess_exec`,

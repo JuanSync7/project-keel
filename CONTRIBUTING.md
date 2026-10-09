@@ -7,7 +7,7 @@ owner: TBD
 summary: How to add code/tests/docs without breaking the structure.
 id: contributing
 created: 2026-06-17
-updated: 2026-10-06
+updated: 2026-10-09
 visibility: internal
 canonical: true
 ---
@@ -39,3 +39,24 @@ steps below are that discipline applied to one change:
    an intentional literal is annotated `# generic-ok: <reason>`. (CONVENTIONS §18.)
 7. Run `make verify` (the full gate) — or at least `make lint test` — before
    pushing; treat green as the definition of done, not your own assessment.
+
+When a gate refuses you, `docs/guides/limits-and-troubleshooting.md` lists every
+waiver, every exit code the gate's scripts return and the common fixes; when you
+generate, adopt or update a project, `docs/guides/generate-and-upgrade.md` lists
+each step `copier update` runs and how to recover from it.
+
+## Release
+
+A release follows [ADR-K-0016](docs/adr/keel/K-0016-release-order-tag-before-verify.md)
+(proposed), which replaces the order in decision 4 of
+[ADR-K-0009](docs/adr/keel/K-0009-release-identity-and-the-tag-ordering-rule.md).
+`tests/integration/test_release_identity.py` fails `make verify` while a dated
+version heading in `CHANGELOG.md` has no matching tag, so the tag comes first:
+
+1. Rotate `[Unreleased]` in `CHANGELOG.md` into a dated `## [<version>]`
+   heading, update every line that tells a reader which version to check out,
+   and commit. ADR-K-0016 lists those lines for the keel template itself.
+2. Tag that commit locally: `git tag -a v<version> -m "v<version>"`.
+3. Run `make verify`.
+4. On green, push both together: `git push --atomic origin main v<version>`.
+5. On red, `git tag -d v<version>`, fix, commit, and go back to step 2.

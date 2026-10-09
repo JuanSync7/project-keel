@@ -8,7 +8,7 @@ tags: [documentation, style, rosters, citations, freshness, guide]
 summary: The canonical statement of how documentation is written in this repo — the judgment half above the gated floor. What a document is for, one claim per sentence, the discriminator between siblings (rosters and NOT lines), the citation grammar, freshness as a fact, the plain imperative over BCP 14, idempotency stated and proven, and what the gate checks versus what a reviewer must judge. The twin of python-style.md.
 id: docs-guides-doc-style
 created: 2026-09-02
-updated: 2026-10-06
+updated: 2026-10-09
 visibility: internal
 canonical: true
 ---
@@ -190,6 +190,11 @@ edit that leaves the decision untouched, and that edit restamps `updated:`.
 | `updated:` no earlier than the last commit; today when modified | `scripts/jobs/review_docs.py`, `tests/integration/test_doc_freshness.py`; fixed by `scripts/jobs/restamp_docs.py` | gate |
 | Every practice's `enforced_by` names a mechanism that exists | `check_T` | gate |
 | A practice enforced by a document names it where an agent reads it | `check_U` | gate |
+| No concrete campaign or slice id, host-specific phrase, undeclared loopback port, or citation of a never-shipped document in a shipped document's prose | `tests/integration/test_doc_drift.py` (CONVENTIONS §15, `doc_drift`) | gate |
+| The README and `docs/README.md` link directly to each document `doc_drift.one_hop` names; the README layout tree lists every top-level directory that ships | `tests/integration/test_doc_drift.py` (`doc_drift.one_hop`, `layout_heading`) | gate |
+| Every guide roster row names its audiences from `doc_drift.audiences`, in that order | `tests/integration/test_doc_drift.py` (`doc_drift.roster`, `audiences`) | gate |
+| The limits guide names every waiver the checkers, the child-process allowlist and the drift test grant, and every exit code of a script `make verify` runs | `tests/integration/test_doc_drift.py` (`doc_drift.limits_guide`, `gate_target`) | gate |
+| The upgrade guide gives every copier task and migration its own row in copier's order, names every exclusion, states the copier version floor, and gives each script's exit codes (template only) | `tests/integration/test_doc_drift.py` (`doc_drift.upgrade_guide`) | gate |
 | A backticked path that resolves to nothing | `scripts/jobs/review_docs.py` under `make advise` | advisory |
 | A `Not for` cell that is true; a `- NOT` line that names the right sibling | this guide, a reviewer, `agents/doc_reviewer` (`make doc-review`) | judgment |
 | One claim per sentence; the mechanism named; measurements dated | this guide | judgment |

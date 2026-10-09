@@ -1,4 +1,6 @@
 # Per-model defaults. Copy to default.local.toml. NO secrets here.
+# No loader ships: models/registry.py DEFAULT_MODEL picks the model, and
+# nothing in the template reads this file; it is a pattern for one you write.
 default_model = "claude-code-headless"
 
 [claude-code-headless]

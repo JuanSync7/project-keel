@@ -8,7 +8,7 @@ tags: [checks, ci, linter, determinism, pre-commit, hooks, guide]
 summary: Catalogue of every deterministic check that keeps a project-template repo honest — purpose, when to run, and how to wire as a hook.
 id: docs-guides-deterministic-checks
 created: 2026-06-19
-updated: 2026-10-08
+updated: 2026-10-09
 visibility: internal
 canonical: true
 ---
@@ -43,8 +43,8 @@ pip install pre-commit && pre-commit install   # run the fast checks on every co
 
 ## Two interpreters, on purpose
 
-The host's pre-commit `python3` may be **old** (this repo's is 3.6), so the
-checks split in two:
+The host's pre-commit `python3` may be **old** (as old as 3.6 on a supported
+host), so the checks split in two:
 
 - **3.6-safe, stdlib-only** — run on *every commit* via pre-commit and need no
   dependencies: `check_structure.py`. It never uses
@@ -109,10 +109,7 @@ print but never fail the build.
   opening with the word for the declared effect (`READ-ONLY` / `WRITES` /
   `MODEL-CALL` — the body and the frontmatter are read by different agents and
   must not disagree), and at least one `- NOT ...` bullet under `## When to
-  use` — the negative-scope line that names the sibling this tool is not. Six
-  of seven specs carried it by discipline; the rule makes every later one carry
-  it too. Lands as an error: the one spec without it was fixed in the landing
-  commit.
+  use` — the negative-scope line that names the sibling this tool is not.
 - **G. Tool↔agent binding** — `tools.md` ↔ each spec's `## Used by` agree.
 - **H. Project facts** — `config/project.json` agrees with the tree (§15).
   Among those facts, `layers.app` (the composition root `make run` runs) must
@@ -183,9 +180,7 @@ print but never fail the build.
   hiding a target on purpose). Everything else — a grep without `-E` (basic
   regex, which Python cannot run), `-F`, a second selecting grep, a variable or
   wildcard include, a pattern variable it cannot expand — is a WARN that says
-  *unverified*, never a pass. Silent without a `help` target. Lands as an error, not a
-  release-long warning (the ADR-K-0008 grace rule), because the tree complied the
-  moment the recipe was widened — there was nothing to give anyone time for.
+  *unverified*, never a pass. Silent without a `help` target.
 - **Q. Cross-references resolve** — every relative Markdown link in prose
   (`[text](path)`, `![alt](path)`, a directory, a `#anchor`) names something
   that exists, and every `§N` citation names a numbered `## N.` heading. The
@@ -227,12 +222,10 @@ print but never fail the build.
   a short row is an error, not a skip. The Makefile is read as make reads it
   (continuations unfolded, conditionals transparent, `$(MAKE) target` followed,
   shell comments ignored); catalogued checks are `.py` paths, so a check in
-  another language is reached through a `.py` adapter (CONVENTIONS §9). The
-  live instance this closed: the cdmon row claimed the error tier for as long
-  as it existed while `check-all` never ran it. Silent without this file; a
-  checks table or Makefile it cannot read is a WARN that says *unverified*.
-  Lands as an error, not the ADR-K-0008 release-long WARN: the four rows it found
-  were made true in the landing commit.
+  another language is reached through a `.py` adapter (CONVENTIONS §9). It
+  catches a row that claims the error tier while `check-all` never runs it.
+  Silent without this file; a checks table or Makefile it cannot read is a
+  WARN that says *unverified*.
 - **S. Roster parity** — a README that declares `## What ships here` is held
   to its directory: a pipe table follows the heading, its first column is
   `Member` (each cell a backticked path relative to the README's directory,
@@ -249,8 +242,7 @@ print but never fail the build.
   which is the corpus and which is a README list). A member that ships only
   under a copier answer has its row inside `{% if %}` in the README's `.jinja`
   twin, so a generated project's roster matches its pruned tree — the
-  generation tests run this check inside every generated project. Lands as an
-  error: every roster was written in the landing commit.
+  generation tests run this check inside every generated project.
 - **T. Practice mechanisms resolve** — every `config/practices.json` entry
   carries `enforced_by`, a list in a closed grammar (`check:<LETTER>`,
   `script:<path>`, `test:<path>`, `make:<target>`, `doc:<path>[ §N]`,
@@ -259,7 +251,7 @@ print but never fail the build.
   the make target is a rule. `ruff:`/`mypy:` codes are accepted as written —
   the tools themselves reject an unknown one. `mechanism` stays as prose for a
   reader; this is the same claim a machine can hold. Silent without a
-  registry. Lands as an error: every entry was annotated in the landing commit.
+  registry.
 - **U. Policy documents are reachable** — a practice whose mechanism IS a
   document (`doc:<path>` in `enforced_by`) must name that document within one
   hop of the root `AGENT.md`: named there, or named in a document named there.
@@ -375,9 +367,9 @@ print but never fail the build.
   opt-in is a keyword, not a config name, because it is one call's decision,
   visible where that child starts. A name in config would hand the parent's
   repository to every child the project starts, and nothing at the call site
-  would show it. A project generated before keel slice project_keel:CMP-2.S1 of
-  `docs/design/downstream-feedback.md` fails with `child_env.repo_context_names
-  is missing` until `copier update` brings the key.
+  would show it. A project generated before the key existed fails with
+  `child_env.repo_context_names is missing` until `copier update` brings the
+  key.
   `child_env.config_injection_names` and `config_injection_prefixes` are
   required and non-empty: they list the variables through which a parent
   hands git configuration (`GIT_CONFIG_PARAMETERS` from `git -c`,
@@ -392,10 +384,9 @@ print but never fail the build.
   inline flag after the pattern's start (Python 3.11 refuses it, 3.6 only
   warns), and an error names the label, never the pattern.
   `child_env.login_name_schemes` is optional, defaults to `[]`, and must list
-  lower-case URL schemes. A project generated before keel slice
-  project_keel:CMP-3.S4 of `docs/design/downstream-feedback.md` fails with
-  `child_env.config_injection_names is missing` (and the pattern key) until
-  `copier update` brings the keys.
+  lower-case URL schemes. A project generated before these keys existed
+  fails with `child_env.config_injection_names is missing` (and the pattern
+  key) until `copier update` brings the keys.
   `child_env.credentialed_values` is optional and maps a copied variable to
   the reason its value may carry user information. The check refuses an
   entry that is not a variable name, has an empty reason, or names a
@@ -412,8 +403,7 @@ print but never fail the build.
   It under-reports, never over-reports, in two places: a spawn through a
   receiver it cannot resolve (`self.runner(...)`, `loop.subprocess_exec`,
   `sp = subprocess; sp.run`), and a parent-environment value that reaches the
-  helper across a function parameter. Measured over keel at landing: 11 spawn
-  calls in 10 modules, all converted. It is defence-in-depth, not a sandbox: a
+  helper across a function parameter. It is defence-in-depth, not a sandbox: a
   same-user child can still read the parent's environment from
   `/proc/$PPID/environ`. See
   [`docs/adr/keel/K-0012-child-process-environment-allowlist.md`](../adr/keel/K-0012-child-process-environment-allowlist.md).
@@ -435,8 +425,7 @@ print but never fail the build.
   count) is always an error naming the key. Both spaces empty is a WARN. A
   template ADR the project edited and `copier update` retired is kept by
   `scripts/jobs/keep_edited_retired.py`; the kept copy shares its `id:` with
-  the template's file, which check_A reports as a duplicate id. Measured over
-  keel at landing: 13 template ADRs, 0 project ADRs, 0 findings. See
+  the template's file, which check_A reports as a duplicate id. See
   [`docs/adr/keel/K-0013-template-and-project-adr-number-spaces.md`](../adr/keel/K-0013-template-and-project-adr-number-spaces.md).
 - **Z. Work naming** — a campaign is `CMP-<n>` and a slice `CMP-<n>.S<m>`
   (CONVENTIONS §20), with the grammar read from `config/project.json`
@@ -461,8 +450,7 @@ print but never fail the build.
   that does not extend `campaign_id`, a `backlog_id` that does not compile) is
   always an error naming the key. A plan doc that declares no slice is a WARN.
   Commit trailers are judged by `tests/integration/test_work_trailers.py`,
-  because check_structure reads no git (ADR-K-0009). Measured over keel at
-  landing: 1 plan doc, 4 campaigns, 20 slices, 0 findings.
+  because check_structure reads no git (ADR-K-0009).
 
 **The project's own checks.** After the last letter, the gate runs each
 top-level `*.py` module in the directory config/project.json
@@ -488,15 +476,17 @@ when it holds a conflict hunk:
 
 The template's findings are complete before the first module loads, and each
 module runs against fresh `errors` and `warnings` lists, so a project check
-can only add findings. Measured at landing: keel declares none.
+can only add findings. The template itself declares none.
 
 **When to run.** Every commit (pre-commit) and in CI; any time you add a
 directory, package, doc, tool, or agent.
 
 **Run.** `make check` · `python3 scripts/check_structure.py`
 
-**Changing it.** If you change the scheme or a check, update **both** this
-script and `CONVENTIONS.md`.
+**Changing it.** A project adds a rule through `structure.project_checks`
+(above), never by editing this script. Only the template's maintainer changes
+the scheme or a lettered check, and then updates **both** this script and
+`CONVENTIONS.md`.
 
 ### 2. Corpus integrity & reproducibility — `scripts/jobs/check_corpus.py`
 
@@ -567,8 +557,9 @@ can rank by recency without git (CONVENTIONS §1). The remedy is always one
 line, the report says which, and every stale finding names `make restamp-docs`.
 That target runs `scripts/jobs/restamp_docs.py`, the writer half of this rule.
 It reads the stamp through the same grammar (`review_docs.updated_span`) and
-never moves a stamp backwards. Copier runs it at generation and as the last
-update migration (`docs/adr/keel/K-0010-generation-needs-trust-to-stamp-docs.md`).
+never moves a stamp backwards. Copier runs it as a task in every render, at
+generation and in every update, and again as the last update migration
+(`docs/adr/keel/K-0010-generation-needs-trust-to-stamp-docs.md`).
 
 **Tier.** A *report* under `make advise` (exit 0). The same rule is a **gate**
 in `tests/integration/test_doc_freshness.py`, beside the release-identity test
@@ -576,8 +567,19 @@ and for the same reason (ADR-K-0009): a check that shells to git does not belong
 in the 3.6 pre-commit hook. The work-naming rule has the same git half:
 `tests/integration/test_work_trailers.py` judges each commit's `Slice:` and
 `Backlog:` trailers after `work_naming.adoption_boundary`, and check_Z judges
-the plan docs. Landed with every stale stamp normalised in the same
-commit — 91 of 117 governed documents — so the tree complied on arrival.
+the plan docs. The shipped-doc rule has a pytest half too:
+`tests/integration/test_doc_drift.py` refuses, in a shipped document's prose,
+a concrete campaign or slice id, a `doc_drift.forbidden_phrases` pattern, a
+loopback port no non-Markdown file declares, and a citation of a document
+copier.yml never ships (CONVENTIONS §15, `doc_drift`). The same test holds the
+newcomer documents `doc_drift` names: each `one_hop` entry document links
+directly to its listed documents, the README tree under `layout_heading` lists
+every top-level directory that ships, each `roster` row names its audiences,
+the `limits_guide` names every waiver and every exit code of the scripts
+`gate_target` runs, and the `upgrade_guide` gives every copier task and
+migration its own row in copier's order, every exclusion a row, and the copier
+version floor. It reads copier.yml through yaml and the file list through git,
+so it runs under `make verify` and `make test`, not in pre-commit.
 
 **Run.** `python scripts/jobs/review_docs.py [--json] [--strict] [--today YYYY-MM-DD]`
 · `make advise`
