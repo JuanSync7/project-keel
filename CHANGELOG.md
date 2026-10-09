@@ -5,10 +5,12 @@ All notable changes. Format: Keep a Changelog.
 Generated projects record the template ref they came from in
 `.copier-answers.yml` (tracked, not ignored — see 0.1.0). Generate a **named**
 version rather than a bare commit:
-`copier copy --trust --vcs-ref v0.2.0 gh:JuanSync7/project-keel my-project`
-(`--trust` since Unreleased, below).
+`copier copy --trust --vcs-ref v0.2.1 gh:JuanSync7/project-keel my-project`
+(`--trust` since 0.2.0, below).
 
 ## [Unreleased]
+
+## [0.2.1] — 2026-10-09
 
 ### Added
 - **`make_targets.write_shape_exempt` — a write-shaped target that is not a
@@ -20,7 +22,7 @@ version rather than a bare commit:
   required, and keel ships it empty: a project's manifest gains
   `"write_shape_exempt": {}` on update
   (`docs/adr/keel/K-0015-write-shape-exemptions-and-guarded-recipe-converse.md`,
-  proposed).
+  accepted).
 - **`structure.project_checks` — a project adds structure checks without
   editing `scripts/check_structure.py`.** The new `config/project.json` key is
   absent or null (off), or a directory already in `structure.extra_toplevel`.

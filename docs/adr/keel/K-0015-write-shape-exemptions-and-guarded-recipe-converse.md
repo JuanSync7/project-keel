@@ -2,20 +2,20 @@
 title: "ADR-K-0015: A write-shaped target is exempted by a named reason, and a guarded recipe is a write"
 kind: adr
 layer: n/a
-status: proposed
+status: accepted
 owner: TBD
 tags: [adr, make, effect-labels, check-w]
 summary: "config/project.json `make_targets.write_shape_exempt` maps a target whose name ends in a `write_shapes` suffix but that is not a write to the reason it keeps its label; check_W then neither demands [write] of it nor demands `$(WRITE_GUARD)`, and an entry that names no defined, shaped, labelled, non-[write] target is a stale ERROR. Conversely, a labelled recipe that calls `$(WRITE_GUARD)` anywhere in any line, a `$$`-escaped reference excepted, must be labelled [write]. Neither rule changes which labels exist or what the gate runner admits."
 id: docs-adr-0015-write-shape-exemptions-and-guarded-recipe-converse
 created: 2026-10-08
-updated: 2026-10-08
+updated: 2026-10-09
 visibility: internal
 canonical: true
 ---
 
 # ADR-K-0015: Write-shape exemptions and the guarded-recipe converse
 
-**Status:** proposed 2026-10-08.
+**Status:** accepted 2026-10-09 by the maintainer.
 
 ## Context
 

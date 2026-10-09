@@ -9,7 +9,7 @@ tags: [adr, decisions, template]
 summary: The architecture decisions the template ships into every project, numbered in their own space as K-NNNN-<slug>.md and cited as ADR-K-NNNN.
 id: docs-adr-keel-readme
 created: 2026-10-07
-updated: 2026-10-08
+updated: 2026-10-09
 visibility: internal
 canonical: true
 ---
@@ -45,4 +45,4 @@ copy the update names, as the parent README describes.
 | `K-0012-child-process-environment-allowlist.md` | Every child process gets an allowlisted environment built by `scripts/child_env.py`. | What a make target may change: `K-0011-make-target-effect-labels.md`. |
 | `K-0013-template-and-project-adr-number-spaces.md` | Template and project ADRs live in separate number spaces, guarded by check_Y and kept on update by `scripts/jobs/keep_edited_retired.py`. | Whether an ADR's decision is still in force: its own `status:` says that. |
 | `K-0014-project-owned-structure-checks.md` | A project adds structure checks as modules in a directory it owns, named by `structure.project_checks`, never as an edit to `scripts/check_structure.py`; every `after` migration stops with exit 2 over a conflicted import. | Waiving or narrowing a template check: no key does that, and the disagreement belongs upstream. |
-| `K-0015-write-shape-exemptions-and-guarded-recipe-converse.md` | A write-shaped target that is not a write keeps its label under a named reason in `make_targets.write_shape_exempt`, and a labelled recipe that calls `$(WRITE_GUARD)` must be `[write]` (proposed). | Which effect labels exist or what the gate runner admits: `K-0011-make-target-effect-labels.md` decides that. |
+| `K-0015-write-shape-exemptions-and-guarded-recipe-converse.md` | A write-shaped target that is not a write keeps its label under a named reason in `make_targets.write_shape_exempt`, and a labelled recipe that calls `$(WRITE_GUARD)` must be `[write]`. | Which effect labels exist or what the gate runner admits: `K-0011-make-target-effect-labels.md` decides that. |
