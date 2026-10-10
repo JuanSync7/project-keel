@@ -651,6 +651,90 @@ schedule runs the doer, never the doc-review agent: a nightly judgment has no
 one to read it, while a nightly list of stale stamps and dangling mentions
 does.
 
+## The gate's evidence record
+
+`make verify` leaves one file saying what it judged: which gate ran, on which
+commit, with what result. Something outside the repository, such as
+project-jarvis, can read that file instead of scraping a log. The verify
+recipe runs `scripts/gate_evidence.py`, which runs each goal (`check-all`,
+`lint`, `typecheck`, `test`) as its own make, in order. The writer then
+writes the record to `<evidence.dir>/<gate>.json`: `.evidence/verify.json`,
+with config/project.json `evidence.dir` = `.evidence`.
+
+**What it holds.** `config/evidence/gate-record.schema.json` (config/project.json
+`evidence.schema`) defines every field and describes each one, and
+`tests/integration/test_gate_evidence_record.py` validates a real record against
+it.
+
+| Field | What it says |
+|-------|--------------|
+| `schema`, `schema_version` | The schema the record follows, and its version. The schema's `schema_version.const` is the version's only owner. |
+| `gate` | The gate's name, as `--gate` gave it. |
+| `result`, `reasons` | `pass` exactly when the writer exits 0. A `fail` lists its reasons from a closed vocabulary: `target-failed`, `zero-targets`, `no-test-report`, `zero-tests`, `tests-failed`, `tree-changed`, `checks-unavailable`, `incomplete`, `writer-error`. |
+| `source` | `commit` (HEAD's sha), `dirty` (git listed any path before the goals ran), `tree_digest` (a sha256 over what git listed, each path's status and content, from `scripts/git_tree.py`), and `tree_changed` (what git lists differed after the goals). |
+| `targets` | Each goal in run order, with `result` (`pass`, `fail` or `not-run`), its `returncode` and its test counts. |
+| `tests` | `passed`, `failed`, `skipped` and `errors`, summed from pytest's own junit report, each test case counted once. |
+| `checks` | Every `scripts/check_structure.py` check letter, and each project check that reported, with its sorted errors and warnings, the repository root stripped from each message. |
+
+**Why it is ignored.** The record is one tree's verdict, derived on every
+run, so it never belongs in a commit. `.gitignore` names `.evidence`. The
+writer runs `git check-ignore` before any goal, and refuses with exit 2 a
+record path that git would list. So `make verify` keeps its `[local]` label:
+`scripts/run_make_target.py` still sees an unchanged tree.
+
+**Why it is derived and canonical.** Every byte comes from:
+
+- the commit and what git lists
+- each goal's exit code
+- pytest's junit report
+- the checks
+
+The record holds no clock, duration, host, user or absolute path. It is
+written whole, as sorted-key JSON with a two-space indent and one trailing
+newline, through a rename. So two runs on the same tree with the same outcome
+write identical bytes. `tests/integration/test_gate_evidence_record.py` runs a
+real gate twice and compares them.
+
+**How it gets red.** The writer never makes the gate greener.
+
+- **A failing goal.** Its exit code passes through, and the goals after it are
+  `not-run` unless make runs with `-k`.
+- **Evidence missing although every goal passed.** These make the record red
+  and the writer exit 3:
+  - zero tests ran (an all-skipped suite counts as zero)
+  - pytest's report counts a failed or errored test although its goal
+    exited 0 (under `make -i`, or a test recipe that ignores pytest's exit)
+  - pytest wrote no report
+  - the tree changed during the run
+  - the checks could not run
+  - the writer itself crashed
+- **An interrupted run.** A red placeholder (`incomplete`) is written before
+  the first goal, so an interrupted run never leaves an earlier green record
+  standing.
+
+An unknown value is `null`, never `0`. Outside git, `commit`, `dirty` and
+`tree_digest` are null, and the goals alone decide the result. Under
+`make -n` the writer passes the dry run to each goal and writes nothing.
+
+**What it is not.** It keeps no history: each run replaces the file whole, and
+the ledger across runs and repositories is a consumer's, such as
+project-jarvis, which ingests the record
+(`docs/adr/keel/K-0017-gate-evidence-record.md`). It is unsigned and sits in a writable directory, so it is evidence, not
+attestation (`docs/guides/limits-and-troubleshooting.md`). CI runs the four goals as
+separate steps, so CI writes no record.
+
+**How a consumer reads it.**
+
+- **Refuse a `schema_version` you do not know.** The format changed.
+- **Refuse a null `commit`.** The record cannot be tied to a commit.
+- **Refuse a record whose `dirty` is true.** It judged uncommitted files. Its
+  `tree_digest` names that tree, but no commit holds it.
+- **Match `source.commit` to the commit you are asking about.** A record from
+  another commit says nothing about yours.
+
+`docs/adr/keel/K-0017-gate-evidence-record.md` records why the record is built
+this way.
+
 ## Adding a new deterministic check
 
 A generated project that wants one more structure rule writes a module in its

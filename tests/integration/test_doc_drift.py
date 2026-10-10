@@ -717,7 +717,14 @@ def gate_scripts(root, target):
     rules = cs._make_rules("\n".join(text for _path, text in makefiles))
     if target not in rules:
         raise DocDriftConfigError("the Makefile has no `%s` target" % target)
-    return sorted(cs._scripts_reachable_from(rules, target))
+    unresolved = []
+    scripts = cs._scripts_reachable_from(rules, target, unresolved)
+    if unresolved:
+        raise DocDriftConfigError(
+            "`make %s` reaches `$(MAKE)` call(s) this gate cannot follow: %s"
+            % (target, "; ".join(unresolved))
+        )
+    return sorted(scripts)
 
 
 def _code_cell_findings(guide, cell, script, codes, passes):

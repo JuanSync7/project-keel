@@ -262,6 +262,32 @@ def test_make_recursion_is_followed():
     assert _find(makefile=mk) == ([], [])
 
 
+_DRIVER_RULES = {
+    "v": ([], ["$(PY) scripts/d.py --gate $@ -- $(MAKE) a b"]),
+    "a": ([], ["$(PY) scripts/x.py"]),
+    "b": (["c"], []),
+    "c": ([], ["$(PY) scripts/y.py"]),
+}
+
+
+def test_scripts_reachable_from_follows_every_goal_of_a_make_recursion():
+    """A gate whose recipe is a driver over `$(MAKE) a b` reaches what a and b
+    run, not only the driver: the doc-drift exit-code table is derived from
+    this set, so a smaller one would be a vacuous pass."""
+    got = cs._scripts_reachable_from(_DRIVER_RULES, "v")
+    assert got == {"scripts/d.py", "scripts/x.py", "scripts/y.py"}, got
+
+
+def test_a_recursion_this_check_cannot_follow_is_collected_not_dropped():
+    rules = dict(_DRIVER_RULES)
+    rules["v"] = ([], ["$(PY) scripts/d.py -- $(MAKE) -C sub a", "$(MAKE) $(GOAL)"])
+    unresolved = []
+    got = cs._scripts_reachable_from(rules, "v", unresolved)
+    assert got == {"scripts/d.py"}, got
+    assert len(unresolved) == 2 and "-C sub" in unresolved[0], unresolved
+    assert "$(GOAL)" in unresolved[1], unresolved
+
+
 def test_every_error_carries_a_remedy():
     cat = _CATALOGUE.replace(
         "| Advisor |",

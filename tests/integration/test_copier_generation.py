@@ -1712,6 +1712,78 @@ def test_a_generated_project_gates_only_on_targets_that_leave_its_tree_alone(
     assert "fmt" in listed_targets and "check-docs" not in listed_targets, listed.stdout
 
 
+# --- the gate's evidence record, downstream ------------------------------------
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
+def test_a_generated_project_ships_the_gate_evidence_writer(tmp_path):
+    """Slice CMP-4.S4 held downstream: a generated project gets the writer, the
+    stdlib siblings it imports, its schema, the `evidence` block and the ignore
+    line, and its own `verify` recipe runs the driver. A reduced gate (the
+    project's own `check` and `test`) run twice through the driver exits 0,
+    writes byte-identical records naming HEAD, and leaves what git lists alone.
+    Reduced, not the whole `verify`: lint and typecheck add minutes and nothing
+    the record's derivation depends on."""
+    dest = tmp_path / "proj"
+    _generate(dest, project_name="demo_proj")
+    keel = json.loads((_ROOT / "config" / "project.json").read_text())
+    shipped = json.loads((dest / "config" / "project.json").read_text())
+    assert shipped["evidence"] == keel["evidence"], shipped.get("evidence")
+    evidence = shipped["evidence"]
+    for rel in ("scripts/gate_evidence.py", "scripts/git_tree.py", evidence["schema"]):
+        assert (dest / rel).is_file(), rel
+    makefile = (dest / "Makefile").read_text()
+    assert "scripts/gate_evidence.py --gate $@ -- $(MAKE)" in makefile
+
+    env = _hermetic_git_env(tmp_path)
+    for argv in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "generated"]):
+        g = subprocess.run(
+            ["git"] + argv, cwd=str(dest), env=env, capture_output=True, text=True
+        )
+        assert g.returncode == 0, g.stderr
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=str(dest),
+        env=env,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    # PY reaches each goal as a gate variable (config/project.json
+    # make_targets.gate_vars), the way a caller's environment sets it.
+    run_env = dict(env, PY=sys.executable)
+    for key in ("MAKEFLAGS", "MFLAGS", "MAKELEVEL", "MAKEOVERRIDES"):
+        run_env.pop(key, None)
+    record = dest / evidence["dir"] / "verify.json"
+    seen = []
+    for _ in range(2):
+        ran = subprocess.run(
+            [sys.executable, "scripts/gate_evidence.py", "--gate", "verify", "--"]
+            + ["make", "check", "test"],
+            cwd=str(dest),
+            env=run_env,
+            capture_output=True,
+            text=True,
+            timeout=900,
+        )
+        assert ran.returncode == 0, ran.stdout[-3000:] + ran.stderr[-3000:]
+        status = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=str(dest),
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        assert status.stdout == "", status.stdout
+        seen.append(record.read_bytes())
+    assert seen[0] and seen[0] == seen[1]
+    rec = json.loads(seen[0].decode("utf-8"))
+    assert rec["result"] == "pass" and rec["source"]["commit"] == head, rec
+    assert rec["source"]["dirty"] is False and rec["tests"]["passed"] > 0, rec
+    jsonschema = optional_deps.importorskip("jsonschema", extra="dev")
+    schema = json.loads((dest / evidence["schema"]).read_text())
+    jsonschema.Draft202012Validator(schema).validate(rec)
+
+
 _ROGUE_HEADER = (
     '"""\ntitle: Rogue spawn probe\nkind: demo\nlayer: n/a\n'
     'summary: Starts a child process, the way a project module would.\n"""\n\n'

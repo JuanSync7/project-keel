@@ -3234,10 +3234,14 @@ def _make_rules(text):
     return rules
 
 
-def _scripts_reachable_from(rules, target):
-    """Every `*.py` path a recipe command mentions, over `target` and its
-    prerequisites transitively (a missing prerequisite is make's error, not
-    this check's)."""
+def _scripts_reachable_from(rules, target, unresolved=None):
+    """Every `*.py` path a recipe command mentions, over `target`, its
+    prerequisites and every goal of a `$(MAKE)` call in its recipe,
+    transitively (a missing prerequisite is make's error, not this check's).
+    A recipe can hold the goals a gate runs (`make verify` runs its goals
+    through a driver's `$(MAKE)` line), so following prerequisites alone would
+    shrink the set. A call this cannot follow is appended to *unresolved*
+    when the caller passes a list."""
     seen, stack, scripts = set(), [target], set()
     while stack:
         t = stack.pop()
@@ -3248,6 +3252,10 @@ def _scripts_reachable_from(rules, target):
         stack.extend(prereqs)
         for cmd in recipe:
             scripts.update(_PY_SCRIPT.findall(cmd))
+            goals, cannot = _recursions(cmd)
+            stack.extend(goals)
+            if unresolved is not None:
+                unresolved.extend(cannot)
     return scripts
 
 

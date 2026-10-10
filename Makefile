@@ -130,10 +130,23 @@ advise: check-python ## [local] Advisory: overfitting / answer-key + coding-prac
 	-$(PY) scripts/jobs/review_docs.py
 check-generic: advise ## [local] Alias for `advise` (the generic-solution + practice advisor)
 
-verify: check-all lint typecheck test ## [local] Run all gates (all checks + lint + types + tests)
+# The goals sit on the driver's `$(MAKE)` line, not on the prerequisite list: make
+# stops at a failed prerequisite and never runs the recipe, so a red gate would
+# leave an earlier green record standing. scripts/gate_evidence.py runs each goal,
+# passes the first failing code through and writes the record to config/project.json
+# evidence.dir (an ignored path, so [local] stays true). check_W reads the goals of
+# this `$(MAKE)` line, so the label still closes over all four. make runs a
+# `$(MAKE)` line even under -n; the driver reads -n/-q/-t from MAKEFLAGS and writes
+# nothing then. It runs the goals in sequence, so -j does not parallelise them.
+verify: ## [local] Run all gates (all checks + lint + types + tests) and write their evidence record to config/project.json evidence.dir
+	$(PY) scripts/gate_evidence.py --gate $@ -- $(MAKE) check-all lint typecheck test
 
+# JUNIT_XML is empty unless scripts/gate_evidence.py sets it per goal: pytest then
+# writes its own junit report, the only source of the evidence record's test
+# counts (never the terminal). A make variable, not PYTEST_ADDOPTS: pytest never
+# reads it, so the nested pytest runs under tests/ write no report of their own.
 test: check-python ## [local] Run the whole test suite
-	PYTHONPATH=$(PYTHONPATH) $(PY) -m pytest
+	PYTHONPATH=$(PYTHONPATH) $(PY) -m pytest $(if $(JUNIT_XML),--junitxml=$(JUNIT_XML))
 
 unit: check-python ## [local] Run unit tests only
 	PYTHONPATH=$(PYTHONPATH) $(PY) -m pytest -m unit

@@ -3,13 +3,12 @@
 title: Run make target (the read-only gate runner)
 kind: script
 layer: n/a
-summary: Deterministic doer — run a make target as a gate and report a structured pass/fail, but only a target whose effect label, closed over what it runs, falls inside config/project.json `make_targets.gate_effects`. It refuses an unknown, unlabelled or wider target, an extra argument that is not a NAME=VALUE variable named in `make_targets.gate_vars` with a one-word path-like value, a tree without git, and an allowlist scripts/child_env.py cannot build or that would copy a value carrying a credential, all before make runs; it forwards a `make_targets.gate_vars` variable found in its own environment onto make's command line under the same one-word rule (an explicit one wins), and refuses any gate value, explicit or forwarded, that carries a credential by scripts/child_env.py's carries_credential under the project's child_env policy (user information, or a `child_env.credential_value_patterns` match, named by its label), even one `child_env.credentialed_values` opts in, because make's command line reaches every recipe; every refusal names the variable and never quotes a value; because make and git get the allowlisted environment from scripts/child_env.py, never this one; it sets the gate-runner variable last so WRITE_GUARD refuses a [write] target; and it snapshots what git lists before and after (each path's porcelain status and content), failing a green run that changed it and naming the paths, and one whose tree cannot be re-read afterwards. The refactor loop (agents/practice_refactor, scripts/apply_refactor.py) and tests/integration/test_make_target_effects.py gate through it. Vendor-neutral, stdlib; it writes nothing itself.
+summary: Deterministic doer — run a make target as a gate and report a structured pass/fail, but only a target whose effect label, closed over what it runs, falls inside config/project.json `make_targets.gate_effects`. It refuses an unknown, unlabelled or wider target, an extra argument that is not a NAME=VALUE variable named in `make_targets.gate_vars` with a one-word path-like value, a tree without git, and an allowlist scripts/child_env.py cannot build or that would copy a value carrying a credential, all before make runs; it forwards a `make_targets.gate_vars` variable found in its own environment onto make's command line under the same one-word rule (an explicit one wins), and refuses any gate value, explicit or forwarded, that carries a credential by scripts/child_env.py's carries_credential under the project's child_env policy (user information, or a `child_env.credential_value_patterns` match, named by its label), even one `child_env.credentialed_values` opts in, because make's command line reaches every recipe; every refusal names the variable and never quotes a value; because make and git get the allowlisted environment from scripts/child_env.py, never this one; it sets the gate-runner variable last so WRITE_GUARD refuses a [write] target; and it snapshots what git lists before and after (each path's porcelain status and content, by scripts/git_tree.py), failing a green run that changed it and naming the paths, and one whose tree cannot be re-read afterwards. The refactor loop (agents/practice_refactor, scripts/apply_refactor.py) and tests/integration/test_make_target_effects.py gate through it. Vendor-neutral, stdlib; it writes nothing itself.
 """
 
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import re
@@ -21,6 +20,15 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import check_structure  # noqa: E402 — the one owner of the label grammar and policy
 import child_env  # noqa: E402 — the environment make and git inherit
+
+# One definition of what git lists, shared with scripts/gate_evidence.py. `_git`
+# is re-exported, not used here: tests/unit/scripts/test_run_make_target.py proves
+# through it that git, like make, runs with the allowlisted environment.
+from git_tree import (  # noqa: E402
+    NoGitError,
+    _git,  # noqa: F401
+    tree_snapshot,
+)
 
 # A make target is a plain token — reject anything that could be a shell
 # injection (the target reaches `make` as an argv element, never a shell string,
@@ -43,11 +51,6 @@ _MANIFEST = os.path.join("config", "project.json")
 Runner = Callable[[Sequence[str], "str | None", int], "tuple[int, str]"]
 # root -> {repo-relative path: digest} — what git lists, and each entry's content.
 Snapshot = Callable[[str], "dict[str, str]"]
-
-
-class NoGitError(Exception):
-    """The directory is not inside a git work tree, so no before/after
-    comparison of what git lists is possible and a read-only claim is unproven."""
 
 
 def is_safe_target(name: str) -> bool:
@@ -73,70 +76,6 @@ def _default_runner(
         env=child_env.build_child_env(),
     )
     return proc.returncode, proc.stdout
-
-
-def _git(root: str, *argv: str) -> bytes:
-    # The developer's global excludes file is ignored ON PURPOSE: a stray file a
-    # personal ignore hides is still a change this machine's checkout would carry.
-    try:
-        proc = subprocess.run(  # noqa: S603 — argv list, never a shell string
-            ["git", "-c", "core.excludesFile=" + os.devnull, *argv],
-            cwd=root,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            env=child_env.build_child_env(),
-        )
-    except OSError as exc:
-        raise NoGitError("git is not runnable here (%s)" % exc) from exc
-    if proc.returncode != 0:
-        raise NoGitError(
-            proc.stderr.decode("utf-8", "replace").strip()
-            or "git exited %d" % proc.returncode
-        )
-    return proc.stdout
-
-
-def _digest(path: str) -> str:
-    if os.path.islink(path):
-        return "link:" + os.readlink(path)
-    if os.path.isfile(path):
-        sha = hashlib.sha256()
-        with open(path, "rb") as fh:
-            for chunk in iter(lambda: fh.read(1 << 16), b""):
-                sha.update(chunk)
-        return "sha:" + sha.hexdigest()
-    if os.path.isdir(path):
-        return "dir"  # a nested repository git lists as one entry
-    return "absent"
-
-
-def tree_snapshot(root: str) -> dict[str, str]:
-    """{repo-relative path: state} for every path `git status` lists under root
-    (modified, staged, deleted, untracked — never ignored). The state is the
-    two-letter porcelain status joined to the sha256 of the content, so a second
-    edit to an already-dirty file and a change to the index alone both show.
-
-    Raises NoGitError when root is not inside a git work tree."""
-    top = _git(root, "rev-parse", "--show-toplevel").decode("utf-8").strip()
-    raw = _git(top, "status", "--porcelain=v1", "-z", "--untracked-files=all")
-    fields = raw.decode("utf-8", "surrogateescape").split("\0")
-    codes: dict[str, str] = {}
-    i = 0
-    while i < len(fields):
-        entry = fields[i]
-        i += 1
-        if len(entry) < 4:
-            continue
-        code, path = entry[:2], entry[3:]
-        codes[path] = code
-        # A rename/copy carries its source as the next field, in either column:
-        # ` R` is a worktree rename (an intent-to-add file), `R ` a staged one.
-        if "R" in code or "C" in code:
-            codes[fields[i]] = code + "<"
-            i += 1
-    return {
-        p: "%s|%s" % (codes[p], _digest(os.path.join(top, p))) for p in sorted(codes)
-    }
 
 
 def _refusal(target: str, why: str, effects: Sequence[str] = ()) -> dict[str, object]:

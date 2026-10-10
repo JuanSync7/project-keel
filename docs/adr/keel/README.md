@@ -9,7 +9,7 @@ tags: [adr, decisions, template]
 summary: The architecture decisions the template ships into every project, numbered in their own space as K-NNNN-<slug>.md and cited as ADR-K-NNNN.
 id: docs-adr-keel-readme
 created: 2026-10-07
-updated: 2026-10-09
+updated: 2026-10-10
 visibility: internal
 canonical: true
 ---
@@ -47,3 +47,4 @@ copy the update names, as the parent README describes.
 | `K-0014-project-owned-structure-checks.md` | A project adds structure checks as modules in a directory it owns, named by `structure.project_checks`, never as an edit to `scripts/check_structure.py`; every `after` migration stops with exit 2 over a conflicted import. | Waiving or narrowing a template check: no key does that, and the disagreement belongs upstream. |
 | `K-0015-write-shape-exemptions-and-guarded-recipe-converse.md` | A write-shaped target that is not a write keeps its label under a named reason in `make_targets.write_shape_exempt`, and a labelled recipe that calls `$(WRITE_GUARD)` must be `[write]`. | Which effect labels exist or what the gate runner admits: `K-0011-make-target-effect-labels.md` decides that. |
 | `K-0016-release-order-tag-before-verify.md` | Proposed: tag locally before the release verify; push main and the tag only on green. | Whether a version heading needs a tag: `K-0009-release-identity-and-the-tag-ordering-rule.md` decision 3. |
+| `K-0017-gate-evidence-record.md` | Proposed: `make verify` runs its goals through `scripts/gate_evidence.py` and writes one canonical, schema-versioned evidence record to config/project.json `evidence.dir`. | Keeping a history of runs: each run replaces the record, and the ledger is project-jarvis's. |

@@ -632,6 +632,14 @@ It is keyed **by layer/concern, never one global `language`**:
   control variables such as `MAKEFILES` or `MAKEFLAGS`, `SHELL`, `WRITE_GUARD`
   or an `unattended_vars` name). `check_W` validates the block and errors when
   it is missing or malformed.
+- `evidence` — where a gate leaves its evidence record: `dir` (a
+  repo-relative directory `.gitignore` ignores; the record is
+  `<dir>/<gate>.json` and each goal's junit report is `<dir>/junit/<goal>.xml`) and `schema`
+  (the repo-relative path of the record's JSON Schema, whose
+  `schema_version.const` is the version the record carries).
+  `scripts/gate_evidence.py` reads the block and refuses, with exit 2 and no
+  record, a missing block, a path that is absolute or climbs out with `..`, an
+  unreadable schema, and a record or report path git would list.
 - `child_env` — the environment a child process inherits (§7): `names` (the
   variables copied from the parent when present, e.g. `PATH`, `HOME`, the
   proxy and CA-bundle names), `prefixes` (letter-led and ending in `_`, e.g.

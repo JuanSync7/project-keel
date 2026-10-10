@@ -35,6 +35,9 @@ wiki/.runtime/
 # update at all. (Keel's own .gitignore ignores its copy: keel is the template.)
 .coverage
 coverage.xml
+# the gate's evidence record and its junit reports (config/project.json evidence.dir):
+# derived on every `make verify`, one commit's verdict, never committed
+.evidence
 # local config / secrets
 config/*.local.*
 models/config/*.local.*

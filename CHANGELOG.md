@@ -11,6 +11,25 @@ version rather than a bare commit:
 ## [Unreleased]
 
 ### Added
+- **A typed evidence record for every gate run.** `make verify` now runs its
+  goals through `scripts/gate_evidence.py` and writes `.evidence/verify.json`
+  (config/project.json `evidence.dir`, an ignored directory). The record names
+  the commit, whether the tree was dirty and a digest of what git lists, each
+  goal's result and exit code, pytest's own junit counts and every
+  `scripts/check_structure.py` finding. It follows `config/evidence/gate-record.schema.json`,
+  the only owner of `schema_version`, and holds no clock, host, user or absolute
+  path, so a rerun of the same tree writes the same bytes. A red goal, zero
+  tests, a missing test report, a tree that changed during the run or a writer
+  that crashed leaves a red record, never the previous green one; the driver
+  writes a red placeholder before the first goal. The gate is stricter in
+  four ways: zero tests (an all-skipped suite counts as zero), a missing junit
+  report, a tree changed during the run, and a junit report counting a failed
+  or errored test whose goal exited 0 anyway now fail it (under `make -i` the
+  exit stays 0, as `-i` asks, and the record is red). `KEEL_REQUIRED_EXTRAS`
+  joins config/project.json `child_env.names`, so a declared surface still
+  fails rather than skips under the driver. The record keeps no history, is
+  unsigned, and under `make -j` the goals still run in sequence.
+  `docs/adr/keel/K-0017-gate-evidence-record.md` records the decision.
 - **The feature catalogue and the settings reference.** `docs/reference/settings.md`
   lists every setting keel reads: each key path of `config/project.json` and
   `config/practices.json`, each copier question, make variable, environment

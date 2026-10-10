@@ -1506,7 +1506,7 @@ to be released as 0.2.2.
 | CMP-4.S1 | A newcomer cannot learn what keel offers, its limits, or how to adopt and upgrade it from docs that cannot silently drift | done — `make verify` green (1771 passed); 11 of 12 review findings confirmed and fixed |
 | CMP-4.S2 | An update whose config/project.json holds a merge conflict stops with a JSON error from the first migration, and no later migration runs | done — `make verify` green (1822 passed); 3 of 4 review findings confirmed and fixed |
 | CMP-4.S3 | No catalogue lists every feature and no reference lists every setting, so a newcomer cannot see what exists or how to configure it | done — `make verify` green (1841 passed); 10 of 10 review findings confirmed and fixed |
-| CMP-4.S4 | `make verify` reports only an exit code and log text, so nothing outside the repo can read which gate ran, on which commit, with what result | planned |
+| CMP-4.S4 | `make verify` reports only an exit code and log text, so nothing outside the repo can read which gate ran, on which commit, with what result | done — `make verify` green (1906 passed); 6 of 6 review findings confirmed and fixed (two reviewers found the same defect) |
 | CMP-4.S5 | A frontend has no test runner, so it ships with zero tests and the gate is green | planned |
 | CMP-4.S6 | The e2e scenarios call the app in process, and nothing checks that a route has a scenario | planned |
 | CMP-4.S7 | Nothing calls a real model or a running server and judges what comes back | planned |
@@ -1555,6 +1555,16 @@ to be released as 0.2.2.
   jarvis's own copy is then retired in favour of keel's on update; that is a
   jarvis change and needs the maintainer's yes. The live status of each
   requirement stays in jarvis's ledger.
+  The maintainer narrowed S8 to requirement-level coverage, with ids ready for
+  acceptance criteria. An id is `<requirement-id>` or
+  `<requirement-id>#AC-<n>`, where `n` is a positive integer with no leading
+  zero. A spec defines a criterion with a line `- AC-<n>: <text>`. A bare id does
+  not cover a requirement that has numbered criteria: each criterion needs its
+  own test marker or a gap row. Which prefixes name a requirement comes from a
+  `traceability.id_prefixes` registry in config/project.json; an unlisted
+  prefix fails closed and the longest prefix wins. keel copies the registry's
+  key and family list from project-jarvis, which lands it first. Coverage
+  statuses, a requirement hierarchy and mutation evidence are out of S8.
 
 **Queued for Campaign 5.**
 - `make new-test MODULE=` writes a mirror test that fails until it is filled in.

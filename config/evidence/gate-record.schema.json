@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "gate-record.schema.json",
+  "title": "Gate evidence record",
+  "description": "What one run of a gate target (make verify) wrote to config/project.json evidence.dir as <gate>.json: which gate ran, on which commit and tree, each goal's result, pytest's own test counts and every structure check's findings. scripts/gate_evidence.py writes it as canonical JSON (sorted keys, two-space indent, one trailing newline) holding no clock, duration, host, user or absolute path, so two runs on the same tree with the same outcome write identical bytes. An unknown value is null, never 0. It is one commit's verdict and keeps no history.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "checks",
+    "gate",
+    "reasons",
+    "result",
+    "schema",
+    "schema_version",
+    "source",
+    "targets",
+    "tests"
+  ],
+  "properties": {
+    "schema": {
+      "description": "The repo-relative path of the schema this record follows: config/project.json evidence.schema.",
+      "type": "string"
+    },
+    "schema_version": {
+      "description": "The record format's version. This const is its only owner: scripts/gate_evidence.py reads it from here, and a consumer rejects a version it does not know.",
+      "const": 1
+    },
+    "gate": {
+      "description": "The gate token the driver was given with --gate (the make target's name); also the record's file name.",
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*$"
+    },
+    "result": {
+      "description": "pass exactly when the driver exited 0: every goal passed and no reason below applies.",
+      "enum": ["pass", "fail"]
+    },
+    "reasons": {
+      "description": "Why the result is fail, sorted; empty on a pass. A closed vocabulary.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/reason"}
+    },
+    "source": {
+      "description": "What the record judged: the commit and the state of what git lists. All four are null outside a git work tree.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commit", "dirty", "tree_changed", "tree_digest"],
+      "properties": {
+        "commit": {
+          "description": "The full sha of HEAD, or null when there is no git or no commit yet: such a record is unattributable.",
+          "type": ["string", "null"],
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "dirty": {
+          "description": "true when git listed any path (modified, staged, deleted or untracked; never ignored) before the goals ran; null without git.",
+          "type": ["boolean", "null"]
+        },
+        "tree_digest": {
+          "description": "sha256 over what git listed before the goals ran, each path's status and content digest (scripts/git_tree.py), so a dirty run is still identified; null without git.",
+          "type": ["string", "null"],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "tree_changed": {
+          "description": "true when what git lists differed after the goals ran; the reason tree-changed then makes the record red. null without git.",
+          "type": ["boolean", "null"]
+        }
+      }
+    },
+    "targets": {
+      "description": "Each goal the gate runs, in the order it ran them.",
+      "type": "array",
+      "minItems": 0,
+      "items": {"$ref": "#/$defs/target"}
+    },
+    "tests": {
+      "description": "The sum of every goal's counts, or null when no goal produced a test report.",
+      "oneOf": [{"$ref": "#/$defs/counts"}, {"type": "null"}]
+    },
+    "checks": {
+      "description": "scripts/check_structure.py run_checks on the tree: every check letter, plus each project:<stem> that reported (<stem> is the check module's file name without .py: any name check_structure runs, so it may hold '-' or '.'), mapped to its sorted, root-relative errors and warnings; null when the checks could not run.",
+      "oneOf": [
+        {
+          "type": "object",
+          "propertyNames": {"pattern": "^([A-Z]|project:[^./][^/]*)$"},
+          "additionalProperties": {"$ref": "#/$defs/findings"}
+        },
+        {"type": "null"}
+      ]
+    }
+  },
+  "$defs": {
+    "reason": {
+      "description": "target-failed: a goal exited non-zero. zero-targets: the gate named no goal. no-test-report: no goal wrote a readable junit report. zero-tests: no test passed, failed or errored. tests-failed: the summed counts hold a failed or errored test, even when every goal exited 0 (make -i, a '-' recipe line). tree-changed: what git lists changed during the run. checks-unavailable: run_checks raised. incomplete: the run did not finish (the placeholder written before the first goal). writer-error: the driver itself failed.",
+      "enum": [
+        "checks-unavailable",
+        "incomplete",
+        "no-test-report",
+        "target-failed",
+        "tests-failed",
+        "tree-changed",
+        "writer-error",
+        "zero-targets",
+        "zero-tests"
+      ]
+    },
+    "counts": {
+      "description": "pytest's own junit report, each testcase counted once: error before failure before skipped before passed.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["errors", "failed", "passed", "skipped"],
+      "properties": {
+        "passed": {"description": "Testcases with no error, failure or skipped element.", "type": "integer", "minimum": 0},
+        "failed": {"description": "Testcases with a failure element and no error element.", "type": "integer", "minimum": 0},
+        "skipped": {"description": "Testcases with a skipped element (xfail included) and no error or failure.", "type": "integer", "minimum": 0},
+        "errors": {"description": "Testcases with an error element (a teardown error after a failure included).", "type": "integer", "minimum": 0}
+      }
+    },
+    "target": {
+      "description": "One goal of the gate.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "result", "returncode", "tests"],
+      "properties": {
+        "name": {"description": "The make goal.", "type": "string"},
+        "result": {"description": "pass on exit 0, fail otherwise, not-run when an earlier goal failed or the run stopped first.", "enum": ["pass", "fail", "not-run"]},
+        "returncode": {"description": "The goal's own exit code; null when it did not run.", "type": ["integer", "null"]},
+        "tests": {
+          "description": "The counts from this goal's junit report, or null when it wrote none.",
+          "oneOf": [{"$ref": "#/$defs/counts"}, {"type": "null"}]
+        }
+      }
+    },
+    "findings": {
+      "description": "One check's findings, each list sorted.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["errors", "warnings"],
+      "properties": {
+        "errors": {"description": "Error messages, root-relative.", "type": "array", "items": {"type": "string"}},
+        "warnings": {"description": "Warning messages, root-relative.", "type": "array", "items": {"type": "string"}}
+      }
+    }
+  }
+}

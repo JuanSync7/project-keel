@@ -62,6 +62,18 @@ own limits, is a row of the [feature catalogue](../reference/features.md).
 - **The gate runner sees only what git lists.** `scripts/run_make_target.py`
   fails a run that changed a tracked or untracked-and-unignored file; a write
   to an ignored path, or outside the work tree, passes.
+- **The evidence record is evidence, not attestation.** `make verify` writes
+  `.evidence/verify.json` (config/project.json `evidence.dir`) unsigned, in a
+  directory any process of the same user can write. A consumer should match its
+  `source.commit` and `source.tree_digest` to the tree it asks about. Three
+  kinds of run leave an earlier record standing, because the latest run wrote
+  none:
+  - a run refused with exit 2 before any goal: a usage error, a malformed
+    `--gate` or goal, a bad `evidence` block, or a record or report path git
+    would list;
+  - a dry run (`make -n`, `-q` or `-t`), which writes nothing by design;
+  - a run whose interpreter cannot parse the driver at all
+    (`scripts/gate_evidence.py` parses at Python 3.6).
 
 ## Checks that pass when they skip
 
@@ -172,6 +184,7 @@ The scripts `make verify` runs, and what each exit code means.
 | `scripts/agent_surface/generate_aad_schema.py` | 0, 1 | 0: the committed schema matches the model, or pydantic is absent. 1: it is stale or unreadable |
 | `scripts/jobs/check_corpus.py` | 0, 1 | 0: the corpus is well-formed and its build is reproducible. 1: it is not, and each error is printed |
 | `scripts/cdmon_sync.py` | 0, passes through | 0: cdmon or its config is absent. Otherwise cdmon's own code passes through |
+| `scripts/gate_evidence.py` | 0, 2, 3, 130, passes through | 0: every goal passed and the record is green. 2: refused before any goal ran: a malformed `--gate` or goal, zero goals, a bad `evidence` block, or a record path git does not ignore. 3: every goal passed but the record is red: zero tests, a failed or errored test in the junit report of a goal that exited 0, no junit report, the tree changed during the run, the checks could not run, or the writer crashed. 130: interrupted, and the red placeholder record stays. Otherwise the first failing goal's code passes through |
 
 Three more codes come from the tools around these scripts:
 
@@ -199,3 +212,5 @@ Three more codes come from the tools around these scripts:
 | a job stops on `Expecting property name enclosed in double quotes` after `copier update` | the update went to a template release whose migrations read `config/project.json` without checking it for conflict markers, and the manifest was conflicted; copier ran no later migration, and that release has no `scripts/jobs/finish_update.py` | resolve the file and `git add` it; copy `scripts/jobs/finish_update.py` from a newer keel checkout into the project, run `python scripts/jobs/finish_update.py --template <that keel checkout>`, delete the copied script (that release's `scripts/jobs/README.md` roster does not name it, so `check_structure.py` fails on it), then review and commit. On a release that has the check, the same conflict stops with the refusal row above instead, and `tests/integration/test_copier_job_conflict_refusal.py` keeps it so |
 | `copier update` refuses the ref you named | it is older than the project's recorded `_commit` | update to a newer tag ([ADR-K-0009](../adr/keel/K-0009-release-identity-and-the-tag-ordering-rule.md)) |
 | `make check-corpus` fails after you added documents | the local corpus is stale | `make site-data` |
+| `make verify` fails with `Error 3` though every goal passed | the evidence record is red for a reason no goal's exit reports: zero tests ran, pytest's report counts a failed or errored test that the test recipe ignored, pytest wrote no report, the tree changed during the run, or the checks or the writer crashed | read `reasons` in `.evidence/verify.json` (config/project.json `evidence.dir`) and fix what it names |
+| `make verify` stops before any goal, naming `.gitignore` | git would list the evidence record, so writing it would change the tree | add config/project.json `evidence.dir` (`.evidence`) to `.gitignore` |
