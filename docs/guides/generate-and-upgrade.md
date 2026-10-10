@@ -8,7 +8,7 @@ tags: [copier, generate, update, migrations, adoption, guide]
 summary: How a project is generated from keel, what arrives and what never does, what `make new` refuses, how to adopt keel into an existing repository, and how `copier update` pulls template changes — with one checklist row per task and migration an update runs, and how to finish an update a migration stopped.
 id: docs-guides-generate-and-upgrade
 created: 2026-10-09
-updated: 2026-10-09
+updated: 2026-10-10
 visibility: internal
 canonical: true
 ---
@@ -154,10 +154,24 @@ tests yet, and `make_targets.effect_proof_skip` for a target the effect sweep
 cannot run. `agents/practice_refactor/` brings existing code toward one named
 practice at a time. `limits-and-troubleshooting.md` lists every waiver.
 
+If you keep your own `README.md`, as most projects do after its first update
+conflict, `tests/integration/test_doc_drift.py` holds it to keel's rules, and
+three of them usually fail together:
+
+- it must link every document `config/project.json` `doc_drift.one_hop` lists
+  under `README.md`; edit that list, not the test, to drop a target;
+- it must carry the heading `doc_drift.layout_heading` names, `## Top-level
+  layout`, over a fenced tree that names every shipping top-level directory;
+- the guide `doc_drift.limits_guide` names must give an exit-code row for each
+  of your own gate scripts that `make verify` reaches (`doc_drift.gate_target`).
+
 ## Update
 
 Commit your work first: copier refuses to update a project whose tree is dirty,
-and an update needs git.
+and an update needs git. An untracked file counts as dirty too, so commit it or
+ignore it before you update. git treats a symlink as a file, so a `.gitignore`
+pattern with a trailing slash, such as `.venv/`, does not ignore a `.venv`
+symlink.
 
 ```bash
 copier update --trust

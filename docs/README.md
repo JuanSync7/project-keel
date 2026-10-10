@@ -9,7 +9,7 @@ tags: []
 summary: Documentation organized by purpose and audience, not by source file.
 id: docs-readme
 created: 2026-06-17
-updated: 2026-10-09
+updated: 2026-10-10
 visibility: internal
 canonical: true
 ---
@@ -26,6 +26,10 @@ Where to start:
   [the template's own ADRs](adr/keel/README.md) are cited as `ADR-K-NNNN`.
 - [CONVENTIONS.md](../CONVENTIONS.md) is the source of truth for labels and the
   directory taxonomy.
+- [The settings reference](reference/settings.md) lists every setting keel
+  reads, with its default and what changing it does.
+- [The feature catalogue](reference/features.md) lists every feature keel
+  ships, with how to run it, its limits and which projects receive it.
 
 | Subdir | Audience | Content |
 |--------|----------|---------|
@@ -33,7 +37,7 @@ Where to start:
 | `specs/` | builders/QA | requirements + acceptance criteria |
 | `design/` | builders | per-feature design, task breakdown, contracts |
 | `guides/` | adopters and contributors (each guide's row says which) | user guides, engineering guides, how-tos |
-| `reference/` | everyone | per-module reference (the only part that thinly mirrors `src/`) |
+| `reference/` | everyone | per-module reference (the only part that thinly mirrors `src/`); the settings reference, `reference/settings.md`; and the feature catalogue, `reference/features.md` |
 | `adr/` | builders | Architecture Decision Records (numbered, immutable) |
 
 Before writing anything here, read **[doc-style](guides/doc-style.md)** — how

@@ -39,6 +39,8 @@ _LOOPBACK_PORT = re.compile(r"\b(?:localhost|127\.0\.0\.1):([0-9]{2,5})\b")
 # copier.yml's `_exclude` entries carry jinja conditionals; an entry with one
 # is answer-driven, an entry without one never ships.
 _JINJA_TAG = re.compile(r"\{%.*?%\}")
+# The condition of one such entry's `{% if <condition> %}` tag.
+_JINJA_IF = re.compile(r"\{%-?\s*if\s+(.*?)\s*-?%\}")
 # One entry of the README's layout tree: a box-drawing branch, then a name
 # with a trailing slash (a directory; files carry none).
 _TREE_DIR = re.compile(r"^[├└]── (\S+)/")
@@ -188,6 +190,8 @@ def entry_policy(manifest):
     for key in ("layout_heading", "roster", "limits_guide", "upgrade_guide"):
         policy[key] = _nonempty_str(block, key)
     policy["gate_target"] = _nonempty_str(block, "gate_target")
+    policy["settings_reference"] = _nonempty_str(block, "settings_reference")
+    policy["features_reference"] = _nonempty_str(block, "features_reference")
     return policy
 
 
@@ -797,13 +801,29 @@ def _command_items(command):
     )
 
 
+def _exclude_condition(entry):
+    """The jinja condition an `_exclude` entry ships under: "" for an entry
+    with no tag, the `if` conditions joined by ` and ` otherwise. An entry
+    carrying a tag that is not an `if`/`endif` cannot be read, so it raises."""
+    tags = _JINJA_TAG.findall(entry)
+    conditions = [m.group(1) for m in map(_JINJA_IF.match, tags) if m]
+    other = [t for t in tags if not _JINJA_IF.match(t) and "endif" not in t]
+    if other or (tags and not conditions):
+        raise DocDriftConfigError(
+            "copier.yml: an `_exclude` entry this gate cannot read: %r" % (entry,)
+        )
+    return " and ".join(conditions)
+
+
 def copier_inventory(root):
-    """{"scripts", "checklist", "steps", "exclusions", "min_copier_version"}
-    read from copier.yml, or None when *root* is not the template: the
-    scripts the tasks and migrations run, those plus every path a migration
-    removes, every task then every migration as (kind, items) in the order
-    copier runs them, every `_exclude` entry with its jinja stripped, and the
-    copier version floor."""
+    """{"scripts", "checklist", "steps", "exclusions", "exclude_conditions",
+    "migration_conditions", "min_copier_version"} read from copier.yml, or
+    None when *root* is not the template: the scripts the tasks and
+    migrations run, those plus every path a migration removes, every task
+    then every migration as (kind, items) in the order copier runs them,
+    every `_exclude` entry with its jinja stripped, that entry mapped to its
+    raw jinja condition ("" when it never ships), every path a migration
+    removes mapped to its raw `when` text, and the copier version floor."""
     copier_yml = Path(root) / "copier.yml"
     if not copier_yml.is_file():
         return None
@@ -811,7 +831,7 @@ def copier_inventory(root):
     cfg = yaml.safe_load(copier_yml.read_text(encoding="utf-8"))
     if not isinstance(cfg, dict):
         raise DocDriftConfigError("copier.yml: top level is not a mapping")
-    scripts, removed, steps = [], [], []
+    scripts, removed, steps, migration_conditions = [], [], [], {}
     # Every migration here is an `after` one, and copier runs `_tasks` while
     # it renders, before them: so tasks first, then migrations in file order.
     for key, kind in (("_tasks", "task"), ("_migrations", "migration")):
@@ -823,10 +843,18 @@ def copier_inventory(root):
             scripts.extend(ran)
             removed.extend(gone)
             steps.append((kind, tuple(ran + gone)))
+            when = entry.get("when", "") if isinstance(entry, dict) else ""
+            for path in gone:
+                migration_conditions[path] = str(when)
     excludes = cfg.get("_exclude")
     if not isinstance(excludes, list) or not excludes:
         raise DocDriftConfigError("copier.yml: `_exclude` is missing or empty")
     exclusions = [_JINJA_TAG.sub("", e).strip() for e in excludes if isinstance(e, str)]
+    exclude_conditions = {
+        _JINJA_TAG.sub("", e).strip(): _exclude_condition(e)
+        for e in excludes
+        if isinstance(e, str) and _JINJA_TAG.sub("", e).strip()
+    }
     floor = cfg.get("_min_copier_version")
     if not isinstance(floor, str) or not floor.strip():
         raise DocDriftConfigError("copier.yml: `_min_copier_version` is missing")
@@ -835,6 +863,8 @@ def copier_inventory(root):
         "checklist": scripts + removed,
         "steps": steps,
         "exclusions": [e for e in exclusions if e],
+        "exclude_conditions": exclude_conditions,
+        "migration_conditions": migration_conditions,
         "min_copier_version": floor.strip(),
     }
 
@@ -1063,7 +1093,14 @@ def test_a_missing_or_malformed_doc_drift_block_fails_closed(manifest):
     bad = dict(manifest, doc_drift={"history_paths": [], "forbidden_phrases": {}})
     with pytest.raises(DocDriftConfigError, match="history_paths"):
         drift_policy(bad)
-    for key in ("one_hop", "audiences", "limits_guide", "gate_target"):
+    for key in (
+        "one_hop",
+        "audiences",
+        "limits_guide",
+        "gate_target",
+        "settings_reference",
+        "features_reference",
+    ):
         missing = dict(manifest, doc_drift=dict(manifest.get(_BLOCK) or {}))
         missing[_BLOCK].pop(key, None)
         with pytest.raises(DocDriftConfigError, match=key):

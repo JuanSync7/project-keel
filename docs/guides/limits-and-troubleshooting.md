@@ -8,7 +8,7 @@ tags: [limits, waivers, exit-codes, troubleshooting, guide]
 summary: What adopting keel costs, the risks its rails leave open, the checks that pass by skipping, what no gate can see, every waiver a project may use, every exit code the gate's scripts return, and the symptom-to-fix list for the failures a newcomer meets first.
 id: docs-guides-limits-and-troubleshooting
 created: 2026-10-09
-updated: 2026-10-09
+updated: 2026-10-10
 visibility: internal
 canonical: true
 ---
@@ -19,6 +19,9 @@ This guide says where keel stops. Read it before you adopt keel, and again when
 a gate refuses you. `tests/integration/test_doc_drift.py` holds two of its
 sections to the code: the waiver table names every waiver the checkers grant,
 and the exit-code table names every code a script in `make verify` returns.
+Every setting a gate reads, with its default and its valid values, is a row of
+the [settings reference](../reference/settings.md). Every feature, with its
+own limits, is a row of the [feature catalogue](../reference/features.md).
 
 ## What adopting costs
 

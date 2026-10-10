@@ -7,7 +7,7 @@ owner: TBD
 summary: How to add code/tests/docs without breaking the structure.
 id: contributing
 created: 2026-06-17
-updated: 2026-10-09
+updated: 2026-10-10
 visibility: internal
 canonical: true
 ---
@@ -37,7 +37,15 @@ steps below are that discipline applied to one change:
    test's expected value and hardcoded in `src/`); it never fails the build —
    the gate stays `make verify`. Genuine data belongs in a `*_data.py` registry;
    an intentional literal is annotated `# generic-ok: <reason>`. (CONVENTIONS §18.)
-7. Run `make verify` (the full gate) — or at least `make lint test` — before
+7. New setting (a JSON key, copier question, make variable, environment
+   variable or command-line flag) → add its row to
+   `docs/reference/settings.md` in the same change;
+   `tests/integration/test_reference_drift.py` fails until it has one.
+   A new feature of a derived shape (a check letter, make target, checker
+   script, copier job, agent, MCP server, model or runtime adapter, workflow
+   or skill) gets its row, with its limits, in `docs/reference/features.md`;
+   the same test fails until it has one.
+8. Run `make verify` (the full gate) — or at least `make lint test` — before
    pushing; treat green as the definition of done, not your own assessment.
 
 When a gate refuses you, `docs/guides/limits-and-troubleshooting.md` lists every

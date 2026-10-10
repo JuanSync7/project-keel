@@ -10,6 +10,31 @@ version rather than a bare commit:
 
 ## [Unreleased]
 
+### Added
+- **The feature catalogue and the settings reference.** `docs/reference/settings.md`
+  lists every setting keel reads: each key path of `config/project.json` and
+  `config/practices.json`, each copier question, make variable, environment
+  variable and command-line flag, with its type, default, valid values,
+  reader, effect, what it is not for, and which projects receive it. The new
+  `config/project.json` key `doc_drift.settings_reference` names the page, and
+  `tests/integration/test_reference_drift.py` derives every expected set from
+  the code and fails on a setting with no row, a row the code no longer reads,
+  or a literal default that differs from the code's. A generated project gets
+  the page and the test; the copier-question checks skip there with a stated
+  reason. A project whose own code adds a JSON key, an environment variable, a
+  make variable or a flag goes red on update until the page has its row.
+  `docs/reference/features.md` lists every feature keel ships, one row each,
+  with what it does and why, how to run it, the settings it reads, its limits,
+  its guide and which projects receive it. The new `config/project.json` key
+  `doc_drift.features_reference` names the page, and the same test derives
+  every check letter, make target and its effect label, checker script,
+  copier job, agent, MCP server, model and runtime adapter, workflow and skill
+  from the tree, fails on one with no row, and fails on a row with an empty
+  Limits cell. `tests/unit/backend/test_showcase.py` holds the showcase's
+  curated features equal to the page's pillar table. A project whose own code
+  adds a make target, an agent or a checker goes red on update until the page
+  has its row.
+
 ## [0.2.2] — 2026-10-09
 
 ### Added

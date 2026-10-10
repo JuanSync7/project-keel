@@ -1,0 +1,339 @@
+---
+title: Settings reference
+kind: doc
+layer: n/a
+status: template
+owner: TBD
+summary: Every setting keel reads, with its type, default, valid values, reader, effect, what it is not for, and which projects receive it. The rows are derived-equal to the code by tests/integration/test_reference_drift.py.
+id: docs-reference-settings
+created: 2026-10-09
+updated: 2026-10-10
+visibility: internal
+canonical: true
+---
+
+# Settings reference
+
+This page lists every setting keel reads: each key of `config/project.json`
+and `config/practices.json`, each copier question, each make variable, each
+environment variable and each command-line flag. `config/project.json`
+`doc_drift.settings_reference` names this page, and
+`tests/integration/test_reference_drift.py` fails when a setting the code reads
+has no row, when a row names a setting the code no longer reads, or when a
+literal default here differs from the code's. Each section's table has the
+same eight columns; the `## Conventions` section at the end says how a key is
+spelled and what the Ships column means.
+
+## config/project.json
+
+The project manifest: `scripts/check_structure.py` validates it (check_H and
+the checks named per row), and CONVENTIONS §15 says what it is for.
+
+| Key | Type | Default | Valid values | Read by | What changing it does | Not for | Ships |
+|-----|------|---------|--------------|---------|-----------------------|---------|-------|
+| `name` | string | the copier answer `project_slug`: `my_project` by default, `project_keel` in keel | a slug: copier lowercases `project_name` and turns each space and hyphen into `_`; no check validates it further | `src/backend/shared/__init__.py` `project_identity`, which falls back to the checkout directory's name when the key is absent; check_Z, which reads it as the `<name>:` prefix of a work id from another project | Renames the project's identity and the prefix other projects put before its campaign and slice ids. | the Python distribution name: `pyproject.toml` `[project] name` | always |
+| `template.twins.<path>` | string | one entry per `.jinja` file of keel | `parity`, `divergence`, `generated` | check_N; `scripts/jobs/restamp_docs.py` | Declares what a `.jinja` twin is for; a twin with no entry is a check_N error. | a generated project, which has no `.jinja` files and gets no `template` block | keel maintainers only |
+| `structure.extra_toplevel` | list of strings | `[]` | names of top-level directories outside the CONVENTIONS §2 taxonomy, each holding a `README.md` and a `CLAUDE.md` | check_B | Lets a listed top-level directory past check_B; a listed name that does not exist or is already in the taxonomy is an error. | a nested directory, which check_B does not require to be declared | always |
+| `adr.project_dir` | string | `docs/adr` | a directory path | check_Y | Moves where this project's own ADRs, `NNNN-<slug>.md`, are judged. | the template's ADRs: `adr.template_dir` | always |
+| `adr.template_dir` | string | `docs/adr/keel` | a directory path | check_Y | Moves where the template's ADRs are judged. | this project's ADRs: `adr.project_dir` | always |
+| `adr.template_prefix` | string | `K-` | a file-name prefix | check_Y | Changes the prefix a template ADR's file name carries; it is cited as `ADR-K-NNNN`. | this project's ADR numbering, which has no prefix | always |
+| `adr.number_digits` | integer | `4` | a positive integer | check_Y | Changes how many digits an ADR number has, in both number spaces. | the number itself: each space counts from one on its own | always |
+| `adr.template_adrs` | list of strings | every ADR file the template ships | file names in `adr.template_dir` | check_Y | A file in `adr.template_dir` that is not listed, or a listed file that is missing, is a check_Y error; `copier update` rewrites the list. | a project's own decision: write it in `adr.project_dir` | always |
+| `doc_drift.history_paths` | list of strings | `["CHANGELOG.md", "docs/adr/", "docs/design/"]` | path prefixes | `tests/integration/test_doc_drift.py` | Markdown under a listed prefix is history and may name a campaign, a slice or a moment. | a shipped guide, which must not | always |
+| `doc_drift.forbidden_phrases.<regex>` | string | three phrases true of one machine or one person | a Python regular expression, mapped to the reason it is refused | `tests/integration/test_doc_drift.py` | Shipped prose that matches a listed expression fails the test with that reason. | a literal host, port or path: refuse the phrase that introduces it | always |
+| `doc_drift.one_hop.<doc>` | list of strings | entries for `README.md` and `docs/README.md` | documents the entry document links to directly | `tests/integration/test_doc_drift.py` | An entry document that stops linking a listed document fails the test. | a document's full reading order | always |
+| `doc_drift.layout_heading` | string | `Top-level layout` | a `## ` heading of `README.md` | `tests/integration/test_doc_drift.py` | Names the README section whose tree must list every top-level directory that ships. | the CONVENTIONS §2 taxonomy, which check_B holds | always |
+| `doc_drift.roster` | string | `docs/guides/README.md` | a Markdown path | `tests/integration/test_doc_drift.py` | Names the guide index whose rows each name their audiences. | a directory roster: a README's `## What ships here` table, which check_S holds | always |
+| `doc_drift.audiences` | list of strings | `["adopter", "contributor"]` | audience words, in the order a roster row names them | `tests/integration/test_doc_drift.py` | Changes the audience vocabulary a guide index row may use. | a document's `kind` | always |
+| `doc_drift.limits_guide` | string | `docs/guides/limits-and-troubleshooting.md` | a Markdown path | `tests/integration/test_doc_drift.py` | Names the guide that must list every waiver and every exit code of a script the gate runs. | the upgrade steps: `doc_drift.upgrade_guide` | always |
+| `doc_drift.upgrade_guide` | string | `docs/guides/generate-and-upgrade.md` | a Markdown path | `tests/integration/test_doc_drift.py` | Names the guide that gives every copier task and migration its own row, judged in the template only. | waivers and exit codes: `doc_drift.limits_guide` | always |
+| `doc_drift.gate_target` | string | `verify` | a make target | `tests/integration/test_doc_drift.py` | Names the target whose scripts' exit codes the limits guide must list. | the targets the gate runner allows: `make_targets.gate_effects` | always |
+| `doc_drift.settings_reference` | string | `docs/reference/settings.md` | a Markdown path | `tests/integration/test_reference_drift.py`; `tests/integration/test_doc_drift.py` | Names this page, whose rows the reference-drift test holds to the code. | the guide index: `doc_drift.roster` | always |
+| `doc_drift.features_reference` | string | `docs/reference/features.md` | a Markdown path | `tests/integration/test_reference_drift.py`; `tests/integration/test_doc_drift.py`; `tests/unit/backend/test_showcase.py` | Names the feature catalogue, whose rows the reference-drift test holds to every feature the tree declares and whose pillar table the showcase test holds to the showcase's curated features. | a setting: `doc_drift.settings_reference` names the page that lists those | always |
+| `work_naming.plan_kinds` | list of strings | `["design"]` | frontmatter `kind` values | check_Z | A Markdown document of a listed kind that holds a slice table is a plan doc. | an ADR, which check_Y holds | always |
+| `work_naming.slice_column` | string | `Slice` | a table header cell | check_Z | Changes the first header cell that marks a plan doc's slice table. | the commit trailer: `work_naming.slice_trailer` | always |
+| `work_naming.campaign_id` | string | `CMP-<n>` | a template with one `<n>` | check_Z; `tests/integration/test_work_trailers.py` | Changes how a campaign is named. | a slice: `work_naming.slice_id` | always |
+| `work_naming.slice_id` | string | `CMP-<n>.S<m>` | `work_naming.campaign_id` plus a literal separator and `<m>` | check_Z; `tests/integration/test_work_trailers.py` | Changes how a slice is named. | a backlog item: `work_naming.backlog_id` | always |
+| `work_naming.backlog_id` | string | `^[A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)*-[1-9][0-9]*$`: an upper-case prefix, a hyphen and a number | a Python regular expression | `tests/integration/test_work_trailers.py` | Changes which values the backlog trailer accepts. | a slice id: `work_naming.slice_id` | always |
+| `work_naming.slice_trailer` | string | `Slice` | a git trailer key | `tests/integration/test_work_trailers.py` | Changes the trailer a delivering commit carries its slice id in. | the plan doc's column: `work_naming.slice_column` | always |
+| `work_naming.backlog_trailer` | string | `Backlog` | a git trailer key | `tests/integration/test_work_trailers.py` | Changes the optional trailer that carries a backlog id. | the slice trailer: `work_naming.slice_trailer` | always |
+| `work_naming.adoption_boundary` | string or null | `null` | a commit, or `null` for every commit | check_Z; `tests/integration/test_work_trailers.py` | Commits before the boundary are not judged for trailers. | plan docs, which are judged whatever their age | always |
+| `make_targets.write_shape_exempt.<target>` | string | `{}` | a write-shaped target that is not a write, mapped to the reason it keeps its label | check_W | Lets the named target keep a label narrower than `[write]`; an entry naming no such target is stale. | a target that writes: label it `[write]` | always |
+| `make_targets.effect_proof_kept_dirs.<variable>` | string | `XDG_CACHE_HOME`, `XDG_CONFIG_HOME` and `XDG_DATA_HOME` | an environment variable mapped to a relative path strictly inside HOME | check_W; `tests/integration/test_make_target_effects.py` | The effect sweep keeps writes under these directories when it runs each target under a fresh HOME. | the skip list: `make_targets.effect_proof_skip` | always |
+| `make_targets.unattended_vars` | list of strings | `["CI", "RALPH"]` | environment variable names | check_W; the Makefile `WRITE_GUARD`; `scripts/child_env.py` | `WRITE_GUARD` refuses a `[write]` target when any listed variable is set, and the child allowlist copies them. | the gate runner's own marker: `make_targets.gate_runner_var` | always |
+| `make_targets.gate_runner_var` | string | `RALPH` | one of `make_targets.unattended_vars` | check_W; `scripts/run_make_target.py` | The gate runner sets this variable to 1, last, so `WRITE_GUARD` refuses a `[write]` target. | CI: `make_targets.unattended_vars` | always |
+| `make_targets.gate_effects` | list of strings | `["local", "read"]` | effect labels: `local`, `tree`, `read`, `cost`, `write` | check_W; `scripts/run_make_target.py` | Widens or narrows which targets the gate runner will run. | the labels themselves, which K-0011 fixes | always |
+| `make_targets.write_shapes` | list of strings | `[]` | target-name suffixes | check_W | A target whose name ends in a listed suffix must be labelled `[write]`. | an exemption: `make_targets.write_shape_exempt` | always |
+| `make_targets.area_dir` | string or null | `null` | a directory of `<area>.mk` makefiles, or `null` for areas off | check_W; `scripts/make_help.py` | Turns `##@` help areas on, which `make help AREA=` filters by. | effect filtering: `make help EFFECT=` | always |
+| `make_targets.effect_proof_skip.<target>` | string | seven targets that never exit, need input or would run the sweep itself | a target mapped to the reason it is skipped | check_W; `tests/integration/test_make_target_effects.py` | Keeps a `[local]` target out of the effect sweep. | a target that writes: label it `[write]` | always |
+| `make_targets.empty_test_selections.<marker>` | string | `{}` | a pytest marker mapped to the reason a run of it may select zero tests | check_W; `tests/selection_guard.py` | Lets a `-m <marker>` recipe run zero tests; an entry whose run selected a test is stale. | any other selection, which fails on zero tests | always |
+| `make_targets.gate_vars` | list of strings | `["PY"]` | make variable names | check_W; `scripts/run_make_target.py`; `scripts/child_env.py` | The gate runner accepts only these as `NAME=VALUE`, each value one path-like word. | the environment a child inherits: `child_env.names` | always |
+| `child_env.config_injection_names` | list of strings | git's three configuration-injection names | environment variable names | `scripts/child_env.py` (check_X) | `build_child_env` never copies a listed name, and an allowlist that admits one is a check_X error. | repository context: `child_env.repo_context_names` | always |
+| `child_env.config_injection_prefixes` | list of strings | `["GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_"]` | name prefixes | `scripts/child_env.py` (check_X) | Same as `child_env.config_injection_names`, for the numbered names. | the copied prefixes: `child_env.prefixes` | always |
+| `child_env.credential_value_patterns.<label>` | string | five patterns: an Authorization header, an HTTP authorization value, a JWT, an opaque token and a PEM private key | a label mapped to a Python regular expression | `scripts/child_env.py`; `scripts/run_make_target.py` | A copied value matching a pattern is refused, naming the variable and the label, never the value. | a credential a child needs: `child_env.credentialed_values` | always |
+| `child_env.login_name_schemes` | list of strings | `["git+ssh", "sftp", "ssh", "ssh+git"]` | URL schemes | `scripts/child_env.py`; `scripts/run_make_target.py` | In a listed scheme a URL user part counts as a credential only with a password. | any other scheme, where every user part counts | always |
+| `child_env.names` | list of strings | the tools, locale, proxy, CA-bundle, git-configuration, scratch, cache and reproducibility names | environment variable names | `scripts/child_env.py` (check_X) | `build_child_env` copies a listed name from the parent to every child. | a credential: `models.credential_env` | always |
+| `child_env.prefixes` | list of strings | `["LC_"]` | name prefixes | `scripts/child_env.py` (check_X) | `build_child_env` copies every name starting with a listed prefix. | single names: `child_env.names` | always |
+| `child_env.repo_context_names` | list of strings | the variables git binds to its repository | environment variable names | `scripts/child_env.py` (check_X) | `build_child_env` drops them unless a call passes `repo_context=True`, and an allowlist that admits one is a check_X error. | configuration injection: `child_env.config_injection_names` | always |
+| `child_env.credentialed_values.<variable>` | string | `{}` | a copied variable mapped to why a child may receive the credential in its value | `scripts/child_env.py` (check_X); `scripts/run_make_target.py` | Lets that variable's user information reach children; an entry no allowlist source copies is a check_X error. | an adapter's credential: `models.credential_env` | always |
+| `layers.frontend.stack` | string | the copier answer `frontend_stack`: `react-vite` by default; `null` in keel, which ships both stacks | one of `layers.frontend.available` | check_H | Names the frontend whose directory under `layers.frontend.root` must exist. | the backend: `layers.backend` | when `frontend_stack` is not `none` |
+| `layers.frontend.language` | string | `typescript` | a language name | the showcase only (`src/backend/showcase/_repo.py`) | Changes the language the showcase displays for the frontend. | any check, which does not read it | when `frontend_stack` is not `none` |
+| `layers.frontend.root` | string | `src/frontend` | a directory path | check_H | Moves where the stack directories are looked for. | the backend path: `layers.backend.path` | when `frontend_stack` is not `none` |
+| `layers.frontend.available` | list of strings | the copier answer `frontend_stack` (`["react-vite", "astro"]` in keel) | stack directory names under `layers.frontend.root` | check_H | A listed stack with no directory warns, and a stack directory not listed warns. | choosing the stack: `layers.frontend.stack` | when `frontend_stack` is not `none` |
+| `layers.backend.language` | string | `python` | a language name | the showcase only (`src/backend/showcase/_repo.py`) | Changes the language the showcase displays for the backend. | any check, which does not read it | always |
+| `layers.backend.python` | string | the copier answer `backend_python` (`>=3.10`) | a version specifier equal to `pyproject.toml` `requires-python` | check_H | A value that differs from `requires-python` is a check_H error. | the interpreter make runs: the make variable `PY` | always |
+| `layers.backend.path` | string | `src/backend` | an existing directory | check_H | Moves where the backend is looked for; a missing directory is an error. | the composition root: `layers.app.path` | always |
+| `layers.app` | object or null | the block below | an object with `path` and `module`, or `null` for no composition root | check_H; `scripts/run_app.py`; `scripts/jobs/declare_no_app.py`, which writes `null` | `null` declares that the project has no composition root, and `make run` then exits 2 saying so. | the backend library: `layers.backend` | always |
+| `layers.app.language` | string | `python` | a language name | the showcase only (`src/backend/showcase/_repo.py`) | Changes the language the showcase displays for the app. | any check, which does not read it | always |
+| `layers.app.path` | string | `src/app` | an existing directory | check_H; `scripts/run_app.py` | Moves the composition root. | the backend: `layers.backend.path` | always |
+| `layers.app.module` | string | `app` | an importable module | check_H; `scripts/run_app.py` | Changes the module `make run` runs as `__main__`. | an API server: `make run-api` | always |
+| `transports.enabled` | list of strings | `["rest", "mcp"]` plus the copier answer `transports` | keys of `transports.available`: a closed set | check_H; the showcase | An entry not in `transports.available`, or whose directory is missing, is an error. | adding a transport: it needs a directory and an `available` entry first | always |
+| `transports.available.<transport>` | string | `rest` and `mcp`, plus `grpc` and `edge_nginx` when answered | a transport name mapped to its directory | check_H; the showcase | Declares a transport and its directory; an `api/` subdirectory not declared warns. | enabling it: `transports.enabled` | always |
+| `runtimes.default` | string | `inprocess` | a key of `runtimes.available` | check_H only: declarative | Nothing at run time: `runtimes.registry.DEFAULT_RUNTIME` (`inprocess`) decides what `get_runtime()` returns with no name, and nothing ties the two together. | choosing the runtime: change `runtimes/registry.py` | always |
+| `runtimes.available.<runtime>` | string | `inprocess` and `langgraph`, both in `runtimes` | a runtime name mapped to its directory | check_H | Declares an engine; a missing directory is an error. | registering it: `runtimes/registry.py` | always |
+| `models.default` | string | `claude-code-headless` | a key of `models.available` | check_H; the showcase, which marks it | Nothing at run time: `models.registry.DEFAULT_MODEL` (`claude-code-headless`) decides what `get_model()` returns with no name, and nothing ties the two together. | choosing the model: change `models/registry.py` | always |
+| `models.available.<adapter>` | string | `claude-code-headless`, `openai-compatible` and `fake`, all in `models` | an adapter name mapped to its directory | check_H; the showcase | Declares an adapter; a missing directory is an error. | registering it: `models/registry.py` | always |
+| `models.credential_env.<adapter>` | list of strings | `claude-code-headless` gets `ANTHROPIC_API_KEY` and `CLAUDE_CONFIG_DIR` | an adapter mapped to the variables its child process needs | `scripts/child_env.py` (`build_child_env(credentials_for=...)`); check_X | Adds variables to that adapter's child only; an adapter not listed gets the base allowlist. | every child: `child_env.names` | always |
+| `practices.profiles.<profile>` | boolean | `false` for `ai`, `cuda` and `langgraph`, or `true` for each copier `profiles` answer | `true` or `false`; a profile defined in `config/practices.json` `profiles` | check_H; check_L; `scripts/check_practices.py` | `true` turns that domain profile's checks on; a non-boolean is an error and a name with no defined profile warns. | defining a profile: `config/practices.json` | always |
+
+## config/practices.json
+
+The practice registry: data read by path, never imported.
+`scripts/check_structure.py`, `scripts/check_practices.py` and
+`agents/practice_refactor/` read it.
+
+| Key | Type | Default | Valid values | Read by | What changing it does | Not for | Ships |
+|-----|------|---------|--------------|---------|-----------------------|---------|-------|
+| `schema_version` | integer | `1` | an integer | nothing: a dead key, queued and not wired | Nothing. | versioning the corpus, which has its own `schema_version` | always |
+| `rulesets.ruff.extend_select` | list of strings | the ruff rule families keel selects | ruff rule codes or families | check_M | A listed family missing from `pyproject.toml` is a check_M error, so the lint policy cannot silently loosen. | a family kept off: `rulesets.ruff.deferred` | always |
+| `rulesets.ruff.deferred.<code>` | string | `E501`, `RUF022`, `RUF100` and `UP`, each with its reason | a ruff code mapped to why it stays off | check_M | A listed code selected in `pyproject.toml` is a check_M error. | a per-file waiver: `rulesets.ruff.per_file_ignores` | always |
+| `rulesets.ruff.per_file_ignores.<glob>` | list of strings | the mirror of `pyproject.toml` per-file ignores | a file glob mapped to ruff codes | check_M | Declares a per-file waiver that `pyproject.toml` must mirror. | a project-wide waiver: `rulesets.ruff.deferred` | always |
+| `rulesets.mypy.flags` | list of strings | `["strict", "warn_unreachable"]` | mypy configuration flags | check_M | A listed flag off in `pyproject.toml` `[tool.mypy]` is a check_M error. | where mypy runs: `rulesets.mypy.scope` | always |
+| `rulesets.mypy.scope` | list of strings | the code roots mypy checks | code roots | `tests/integration/test_gate_scope.py` | Changes which code roots are type-checked; with `rulesets.mypy.ratchet` it must partition the code roots. | a relaxed root: `rulesets.mypy.ratchet` | always |
+| `rulesets.mypy.overrides.<module>` | list of strings | entries for `aad`, `aad.*`, `agents.*`, `demo.*`, `models.*` and `runtimes.*` | a module pattern mapped to the mypy settings relaxed for it | check_M | Declares a per-module relaxation that `pyproject.toml` must mirror. | a whole code root left out: `rulesets.mypy.ratchet` | always |
+| `rulesets.mypy.ratchet.<root>.errors` | integer | the measured error count of each root outside `scope` | a non-negative integer | `tests/integration/test_gate_scope.py` | Sets how many mypy errors that root may hold; the test fails when it holds more. | a root in `scope`, which holds zero | always |
+| `rulesets.mypy.ratchet.<root>.removed_when` | string | the condition under which the root joins `scope` | prose | `tests/integration/test_gate_scope.py` | States when the ratchet entry is removed. | the count: `rulesets.mypy.ratchet.<root>.errors` | always |
+| `practices[].id` | string | one per practice | a unique slug | `scripts/check_practices.py`; `agents/practice_refactor/` | Renames the practice that `scripts/refactor_practice.py` takes as its argument. | the display title: `practices[].title` | always |
+| `practices[].row` | integer | the practice's row number | a positive integer | the showcase only | Changes the row the showcase displays. | ordering a check | always |
+| `practices[].scope` | string | `universal` or `domain` | `universal`, `domain` | the showcase only | Changes how the showcase groups the practice. | enabling a domain practice: `practices[].profile` | always |
+| `practices[].tier` | string | `gate`, `advisory` or `doc` | `gate`, `advisory`, `doc` | `scripts/check_practices.py`; `agents/practice_refactor/`; the showcase | `scripts/check_practices.py` runs only the `advisory` practices; a `gate` practice is carried by a check and a `doc` practice by a guide. | the enforcing mechanism: `practices[].enforced_by` | always |
+| `practices[].status` | string | `on` or `deferred` | `on`, `deferred` | `scripts/check_practices.py` | `deferred` keeps an advisory from firing. | the tier: `practices[].tier` | always |
+| `practices[].title` | string | one per practice | prose | the showcase; `agents/practice_refactor/` | Changes the practice's display title. | its id: `practices[].id` | always |
+| `practices[].mechanism` | string | one per practice | prose | the showcase only | Changes the prose a reader sees for how the practice is enforced. | the checked claim: `practices[].enforced_by` | always |
+| `practices[].subject` | string | `code` or `docs` | `code`, `docs` | `scripts/check_practices.py`, which reads only `code` | Says what the practice is about. | the tier: `practices[].tier` | always |
+| `practices[].enforced_by` | list of strings | one or more references per practice | the closed mechanism grammar `check:`, `script:`, `test:`, `make:`, `doc:`, `ruff:`, `mypy:` | check_T | A reference that does not resolve is a check_T error. | prose: `practices[].mechanism` | always |
+| `practices[].profile` | string or null | absent or `null` for a universal practice | a profile defined under `profiles` | `scripts/check_practices.py` | Ties a domain practice to a profile, so it fires only when `config/project.json` `practices.profiles` enables that profile. | enabling the profile: `config/project.json` `practices.profiles.<profile>` | always |
+| `tokens.provider_constructors` | list of strings | model-provider client class names | class names | `scripts/check_practices.py` | Changes which constructor calls the dependency-injection advisory reports. | the model adapters: `models/` | always |
+| `tokens.tensor_base_types` | list of strings | `Tensor`, `ndarray` and four more | type names | check_L | Changes which bare annotations check_L warns about; an empty list silences check_L, with no fallback. | exception modules: `tokens.stdlib_exception_modules` | always |
+| `tokens.acquire_apis` | list of strings | resource-acquiring calls such as `open` and `connect` | dotted call names | `scripts/check_practices.py` | Changes which calls the resource-context-manager advisory expects inside `with`. | tensor types: `tokens.tensor_base_types` | always |
+| `tokens.stdlib_exception_modules` | list of strings | standard-library module names | module names | check_J | Changes which modules' exceptions check_J treats as foreign; absent or empty, check_J falls back to a built-in list. | tensor types: `tokens.tensor_base_types`, which has no fallback | always |
+| `tokens.config_marker` | string | `practice: frozen-config` | a comment marker | check_K | Changes the marker that opts a config class into the frozen-config check. | the owned-error marker: `tokens.owned_error_marker` | always |
+| `tokens.owned_error_marker` | string | `practice: owned-error-base` | a comment marker | nothing: a dead key, queued and not wired | Nothing. | the frozen-config marker: `tokens.config_marker` | always |
+| `profiles.<profile>.tags` | list of strings | corpus tags per profile | corpus node tags | `agents/practice_refactor/` | Scopes the profile's checks to corpus nodes carrying a listed tag. | enabling the profile: `config/project.json` `practices.profiles.<profile>` | always |
+| `profiles.<profile>.activates` | list of strings | the practice ids the profile turns on | practice ids | the showcase only: display | Changes what the showcase says the profile activates; no check reads it. | the practice's own link: `practices[].profile` | always |
+
+## copier questions
+
+`copier.yml` asks these when a project is generated or updated. Every row
+ships always, because the answers file records every answer.
+
+| Key | Type | Default | Valid values | Read by | What changing it does | Not for | Ships |
+|-----|------|---------|--------------|---------|-----------------------|---------|-------|
+| `project_name` | string | `my_project` | any name | copier, which derives `project_slug` and `project_title` from it | Renames the project in its docs and, through `project_slug`, in `config/project.json` `name`. | the distribution name in `pyproject.toml`, which uses `project_slug` | always |
+| `project_slug` | string, not asked | computed: `project_name` lowercased, each space and hyphen turned into `_` | derived only | copier, rendering `config/project.json` `name` and `pyproject.toml` | Nothing directly: change `project_name`. | display text: `project_title` | always |
+| `project_title` | string, not asked | computed: `project_name` with `_` and `-` turned into spaces, title-cased | derived only | copier, rendering the docs' titles | Nothing directly: change `project_name`. | identifiers: `project_slug` | always |
+| `showcase` | boolean | `true` | `true`, `false` | copier `_exclude` and `_migrations` | `false` drops the showcase demo: `src/backend/showcase`, `api/rest_fastapi/showcase_api.py`, `scripts/jobs/export_showcase_static.py`, `scripts/jobs/build_llms_txt.py`, `tests/unit/backend/test_showcase.py`, `tests/integration/test_showcase_repo.py`, `tests/integration/test_showcase_api.py`, `tests/e2e/test_showcase_journey.py` and `docs/guides/showcase-site.md`, and an update removes `wiki/llms.txt` and `wiki/llms-full.txt`. | the frontend: `frontend_stack` | always |
+| `frontend_stack` | string | `react-vite` | `react-vite`, `astro`, `none`; `astro` is refused with `showcase` false, because it is the showcase's UI | copier `_exclude` and `_migrations`; `config/project.json.jinja` | Keeps one stack: another answer drops `src/frontend/react-vite` or `src/frontend/astro`, `none` drops `src/frontend` and the `layers.frontend` block, and any answer but `astro` drops `.github/workflows/pages.yml`. | the backend: `backend_python` | always |
+| `backend_python` | string | `>=3.10` | a version specifier | copier, rendering `config/project.json` `layers.backend.python` and `pyproject.toml` | Changes the minimum Python the project declares; check_H holds the two equal. | the interpreter make runs: the make variable `PY` | always |
+| `transports` | list of strings | `[]` | any of `grpc`, `edge_nginx`; REST and MCP always ship | copier `_exclude` and `_migrations`; `config/project.json.jinja` | Keeps the listed add-on transports: an unlisted one drops `api/grpc` or `api/edge_nginx` and its `transports` entries. | REST and MCP, which every project keeps | always |
+| `profiles` | list of strings | `[]` | any of `ai`, `cuda`, `langgraph` | `config/project.json.jinja` | Sets each listed profile's `practices.profiles` flag to `true`. | defining a profile: `config/practices.json` `profiles` | always |
+
+## Make variables
+
+The Makefile assigns or reads these. Pass one on the command line, as in
+`make new DEST=../my-project`; the gate runner accepts only those in
+`config/project.json` `make_targets.gate_vars`.
+
+| Key | Type | Default | Valid values | Read by | What changing it does | Not for | Ships |
+|-----|------|---------|--------------|---------|-----------------------|---------|-------|
+| `.DEFAULT_GOAL` | target name | `help` | a target | make | Changes what a bare `make` runs. | filtering help: `EFFECT` and `AREA` | always |
+| `ALLOW_DIRTY` | flag | unset | any non-empty value | `make new` | Lets `make new` generate from a checkout with uncommitted changes, for template authors iterating. | a checkout with no commit, which `make new` refuses regardless | always |
+| `AREA` | string | unset | a `##@` area name | `make help`, through `scripts/make_help.py --area` | Keeps one help area; with `make_targets.area_dir` null there are no areas, and naming one is an error. | effect filtering: `EFFECT` | always |
+| `BASE_URL` | URL | unset | an absolute site base, or empty for relative links | `make site-static` | Sets the base the static export's links use. | the dev server's API target: the environment variable `API_PROXY_TARGET` | always |
+| `CI` | flag | unset | any non-empty value | `WRITE_GUARD` | Makes every `[write]` target refuse to run. | the gate runner's marker: `RALPH` | always |
+| `CODE_ROOTS` | word list | `src tests api models mcp agents demo scripts runtimes` | directory names | the lint and type-check recipes | Changes which roots the recipes scan; `scripts/check_structure.py` `CODE_ROOTS` must agree. | the roots that exist: `PY_ROOTS` | always |
+| `CURDIR` | path | make's working directory | set by make | `make audit-project` | Nothing to set: make provides it. | the project to audit: `DEST` | always |
+| `DEST` | path | unset | a directory | `make new`, `make audit-project` | Names the project to generate into, or the project to audit. | the template ref: `VCS_REF` | always |
+| `EFFECT` | string | unset | an effect label word | `make help`, through `scripts/make_help.py --effect` | Keeps the targets whose label holds this word. | area filtering: `AREA` | always |
+| `FE_APPS` | word list | the directories under `src/frontend` holding a `package.json` | computed | the frontend recipes | Nothing to set: it is computed from the tree. | the declared stack: `config/project.json` `layers.frontend.stack` | always |
+| `MAKEFILE_LIST` | word list | the makefiles make read | set by make | `make help` | Nothing to set: make provides it. | the area directory: `config/project.json` `make_targets.area_dir` | always |
+| `PY` | path | `$(if $(wildcard .venv/bin/python),.venv/bin/python,python3)` | a Python interpreter | every Python recipe; the gate runner passes it through | Runs the recipes under another interpreter. | the declared minimum: `config/project.json` `layers.backend.python` | always |
+| `PYTHONPATH` | path list | `src:.` | colon-separated directories | every Python recipe | Changes where the recipes import from. | a child's environment, which gets it only when a caller passes it | always |
+| `PY_ROOTS` | word list | the entries of `CODE_ROOTS` that exist | computed | the lint and type-check recipes | Nothing to set: change `CODE_ROOTS`. | the declared list: `CODE_ROOTS` | always |
+| `RALPH` | flag | unset; the gate runner sets `1` | any non-empty value | `WRITE_GUARD` | Makes every `[write]` target refuse to run. | CI: `CI` | always |
+| `VCS_REF` | git ref | `HEAD` | a commit, tag or branch | `make new` | Generates from another ref, for example a release tag. | the destination: `DEST` | always |
+| `WRITE_GUARD` | recipe line | a test that exits 1 when `CI` or `RALPH` is set | not set by a caller | every `[write]` recipe, which opens with it | Nothing to set: check_W requires every `[write]` recipe to open with it. | a read-only target, which does not need it | always |
+
+## Environment variables
+
+The code reads these from its environment. A Ships cell that starts with
+`when` names the copier answer that keeps the readers.
+
+| Key | Type | Default | Valid values | Read by | What changing it does | Not for | Ships |
+|-----|------|---------|--------------|---------|-----------------------|---------|-------|
+| `ANTHROPIC_API_KEY` | string, a credential | unset | an API key | the `claude-code-headless` adapter's child, through `config/project.json` `models.credential_env` | Authenticates the model CLI that adapter starts. | any other child, which the allowlist never gives it | always |
+| `API_PROXY_TARGET` | URL | `http://localhost:8000` from `make run-web`, and `http://127.0.0.1:8000` in the Astro config when unset | a backend URL | the Makefile `run-web` recipe; `src/frontend/astro/astro.config.mjs` | Points the Astro dev server's `/api` and `/health` proxy at another backend. The react-vite app's `vite.config.ts` has no proxy and reads no setting, so under `frontend_stack` `react-vite` the recipe exports the variable and nothing reads it. | a static build's API base: `PUBLIC_API_BASE` | always |
+| `ASTRO_ALLOWED_HOSTS` | string | unset: localhost only | comma-separated host names, or `true` for any host | `src/frontend/astro/astro.config.mjs` | Lets the Astro dev server answer requests for the listed hosts. | the proxy target: `API_PROXY_TARGET` | when `frontend_stack` is `astro` |
+| `BASE_URL` | URL | set by the build: the site base path | a base path | `.github/workflows/pages.yml`; the Astro app's links and API client | Changes the base every internal link and asset respects. | the configured base: `PUBLIC_BASE_PATH` | when `frontend_stack` is `astro` |
+| `CI` | flag | unset | any non-empty value | the Makefile, through `config/project.json` `make_targets.unattended_vars` | Makes every `[write]` target refuse to run. | the gate runner's marker: `RALPH` | always |
+| `CLAUDE_CONFIG_DIR` | path | unset | a directory | the `claude-code-headless` adapter's child, through `config/project.json` `models.credential_env` | Points the model CLI at another configuration directory. | any other child | always |
+| `KEEL_MCP_MODEL` | string | unset: the registry default | a model name from `models/` | `mcp/qa_server.py` | Chooses the model the question-answering MCP server answers with. | the hooks' model: their `--model` flag | always |
+| `KEEL_REQUIRED_EXTRAS` | string | unset; CI sets `template,dev,transport` | comma-separated surfaces from `tests/optional_deps.py` `SURFACES` | `tests/optional_deps.py`; `.github/workflows/ci.yml` | Turns a listed surface's skip into a hard failure, so a broken install cannot pass. | a surface kept optional on purpose, such as `langgraph` | always |
+| `OPENAI_API_KEY` | string, a credential; dynamic | unset | an API key | `models/openai_compatible.py`, through its `api_key_env` argument, whose default this is | Authenticates the OpenAI-compatible adapter; a caller may name another variable. | the headless adapter's key: `ANTHROPIC_API_KEY` | always |
+| `PUBLIC_<name>` | string; dynamic | unset | any | Astro, which exposes a variable with this prefix to the browser code | Makes a value visible to the frontend at build time. | a secret, which must never carry this prefix | when `frontend_stack` is `astro` |
+| `VITE_<name>` | string; dynamic | unset | any | Vite, which exposes a variable with this prefix to the browser code | Makes a value visible to the react-vite frontend at build time. | a secret, which must never carry this prefix | when `frontend_stack` is `react-vite` |
+| `PUBLIC_API_BASE` | URL | `''`: same origin | an API base URL | `src/frontend/astro/src/lib/api.ts` | Points the Astro app's API calls at another origin. | the dev proxy: `API_PROXY_TARGET` | when `frontend_stack` is `astro` |
+| `PUBLIC_BASE_PATH` | path | `/` | a base path | `src/frontend/astro/astro.config.mjs`; `.github/workflows/pages.yml` | Serves the site under a sub-path, as a project Pages site needs. | link building at run time: `BASE_URL` | when `frontend_stack` is `astro` |
+| `PUBLIC_DATA_MODE` | string | unset: live API; the Pages workflow sets `static` | `static`, or unset | `src/frontend/astro/src/layouts/Layout.astro`; `src/frontend/astro/src/lib/api.ts`; `.github/workflows/pages.yml` | `static` makes the app read exported JSON instead of calling the API. | the API origin: `PUBLIC_API_BASE` | when `frontend_stack` is `astro` |
+| `RALPH` | flag | unset; the gate runner sets `1` | any non-empty value | the Makefile, through `config/project.json` `make_targets.unattended_vars` | Makes every `[write]` target refuse to run. | CI: `CI` | always |
+| `REPO_NAME` | string | set by the Pages workflow from the repository | a repository name | `.github/workflows/pages.yml` | Decides whether the site is served at the root or under the repository's name. | the base path itself: `PUBLIC_BASE_PATH` | when `frontend_stack` is `astro` |
+| `SOURCE_DATE_EPOCH` | integer seconds | unset: the local clock | seconds since the epoch | `scripts/jobs/review_docs.py`, whose `resolve_today` `scripts/jobs/restamp_docs.py` shares | Pins the date the doc review and the restamper call today, read in UTC. | the date flag: `--today` | always |
+
+## Command-line flags
+
+Each row is one `add_argument` in the code roots, keyed as the script's path
+and then its flag or positional name. A Default cell in code is the Python
+source of a literal default; `—` means the flag has no default.
+
+| Key | Type | Default | Valid values | Read by | What changing it does | Not for | Ships |
+|-----|------|---------|--------------|---------|-----------------------|---------|-------|
+| `api/rest_fastapi/export_openapi.py --out` | string | `api/rest_fastapi/openapi.json` | any | `api/rest_fastapi/export_openapi.py` | Output path (default: openapi.json next to app.py). | the AAD schema: `scripts/agent_surface/generate_aad_schema.py` | always |
+| `api/rest_fastapi/export_openapi.py --check` | switch | — | `true` when given | `api/rest_fastapi/export_openapi.py` | Exit 1 if the committed openapi.json is stale (CI / pre-commit). | the AAD schema: `scripts/agent_surface/generate_aad_schema.py` | always |
+| `demo/aad_reference_agent/app.py --host` | string | `'127.0.0.1'` | any | `demo/aad_reference_agent/app.py` | The address the reference agent binds. | the project's own API: `make run-api` | always |
+| `demo/aad_reference_agent/app.py --port` | integer | `51000` | a whole number | `demo/aad_reference_agent/app.py` | The port the reference agent listens on. | the project's own API: `make run-api` | always |
+| `scripts/accountability_report.py --corpus` | string | `wiki/corpus.json` | any | `scripts/accountability_report.py` | Corpus path (default: wiki/corpus.json). | building the corpus: `scripts/jobs/build_corpus.py` | always |
+| `scripts/accountability_report.py --json` | switch | — | `true` when given | `scripts/accountability_report.py` | Emit JSON instead of text. | building the corpus: `scripts/jobs/build_corpus.py` | always |
+| `scripts/apply_refactor.py --spec` | string | `'-'` | any | `scripts/apply_refactor.py` | Path to the JSON edit spec, or '-' for stdin (default). | choosing the edit: `scripts/refactor_practice.py` | always |
+| `scripts/apply_refactor.py --root` | string | `'.'` | any | `scripts/apply_refactor.py` | Repo root the edit paths are relative to. | choosing the edit: `scripts/refactor_practice.py` | always |
+| `scripts/apply_refactor.py --gate` | string | `None` | any | `scripts/apply_refactor.py` | Make target to gate on (default: spec.gate or 'verify'; 'none' to skip). | choosing the edit: `scripts/refactor_practice.py` | always |
+| `scripts/apply_refactor.py --timeout` | integer | `1800` | a whole number | `scripts/apply_refactor.py` | Gate timeout in seconds. | choosing the edit: `scripts/refactor_practice.py` | always |
+| `scripts/apply_refactor.py --dry-run` | switch | — | `true` when given | `scripts/apply_refactor.py` | Validate + show the planned files, write nothing. | choosing the edit: `scripts/refactor_practice.py` | always |
+| `scripts/apply_refactor.py --json` | switch | — | `true` when given | `scripts/apply_refactor.py` | Emit the result as JSON. | choosing the edit: `scripts/refactor_practice.py` | always |
+| `scripts/audit_project.py dest` | positional string | — | any | `scripts/audit_project.py` | The keel project to audit (read only). | updating the project: `copier update` | keel maintainers only |
+| `scripts/audit_project.py --json` | switch | — | `true` when given | `scripts/audit_project.py` | Canonical JSON (sort_keys) on stdout. | updating the project: `copier update` | keel maintainers only |
+| `scripts/audit_project.py --today` | string | — | any | `scripts/audit_project.py` | The date freshness calls today (default: SOURCE_DATE_EPOCH, else the clock). | updating the project: `copier update` | keel maintainers only |
+| `scripts/cdmon_sync.py mode` | positional string | `'lint'` | `lint`, `heal`, `build` | `scripts/cdmon_sync.py` | The cdmon subcommand to run. | the doc gate: `make check-docs` | always |
+| `scripts/cdmon_sync.py --check` | switch | — | `true` when given | `scripts/cdmon_sync.py` | Alias for `lint` (used by pre-commit). | the doc gate: `make check-docs` | always |
+| `scripts/cdmon_sync.py --config` | string | `config/cdmon/cdmon.yaml` | any | `scripts/cdmon_sync.py` | The cdmon config file. | the doc gate: `make check-docs` | always |
+| `scripts/check_generic.py --json` | switch | — | `true` when given | `scripts/check_generic.py` | Emit findings as JSON. | structure: `scripts/check_structure.py` | always |
+| `scripts/check_generic.py --strict` | switch | — | `true` when given | `scripts/check_generic.py` | Experimental: lower the string threshold and include 4+ digit numbers (noisier; not wired into any make target). | structure: `scripts/check_structure.py` | always |
+| `scripts/check_practices.py --json` | switch | — | `true` when given | `scripts/check_practices.py` | Emit active findings as JSON. | the gate tier: `scripts/check_structure.py` | always |
+| `scripts/check_structure.py --root` | string | this checkout | any | `scripts/check_structure.py` | The tree to judge (default: this checkout). | advisories: `scripts/check_practices.py` | always |
+| `scripts/doc_review.py --execute` | switch | — | `true` when given | `scripts/doc_review.py` | Propose + apply gated edits (default: dry-run). | code practices: `scripts/refactor_practice.py` | always |
+| `scripts/doc_review.py --model` | string | `None` | any | `scripts/doc_review.py` | Model name from the models/ registry. | code practices: `scripts/refactor_practice.py` | always |
+| `scripts/doc_review.py --gate` | string | `'check-docs'` | any | `scripts/doc_review.py` | Make target every edit is gated on (default: check-docs). | code practices: `scripts/refactor_practice.py` | always |
+| `scripts/doc_review.py --max-chunks` | integer | `8` | a whole number | `scripts/doc_review.py` | Chunks to review per run. | code practices: `scripts/refactor_practice.py` | always |
+| `scripts/doc_review.py --root` | string | `None` | any | `scripts/doc_review.py` | Repo root to review (default: this repo). | code practices: `scripts/refactor_practice.py` | always |
+| `scripts/doc_review.py --json` | switch | — | `true` when given | `scripts/doc_review.py` | Emit the report as JSON. | code practices: `scripts/refactor_practice.py` | always |
+| `scripts/make_help.py --effect` | string | `''` | any | `scripts/make_help.py` | Keep targets whose label holds this word. | running a target: `scripts/run_make_target.py` | always |
+| `scripts/make_help.py --area` | string | `''` | any | `scripts/make_help.py` | Keep one `##@` area. | running a target: `scripts/run_make_target.py` | always |
+| `scripts/make_help.py makefiles` | positional strings | — | any | `scripts/make_help.py` | The makefiles make read, passed as `$(MAKEFILE_LIST)`, for the area headers. | running a target: `scripts/run_make_target.py` | always |
+| `scripts/query_corpus.py question` | positional string | — | any | `scripts/query_corpus.py` | The question / keywords to retrieve for. | building the corpus: `scripts/jobs/build_corpus.py` | always |
+| `scripts/query_corpus.py --corpus` | string | `wiki/corpus.json` | any | `scripts/query_corpus.py` | Corpus path (default: wiki/corpus.json). | building the corpus: `scripts/jobs/build_corpus.py` | always |
+| `scripts/query_corpus.py --max-nodes` | integer | `8` | a whole number | `scripts/query_corpus.py` | Max candidate nodes. | building the corpus: `scripts/jobs/build_corpus.py` | always |
+| `scripts/refactor_practice.py practice` | positional string | — | any | `scripts/refactor_practice.py` | The config/practices.json practice id to apply. | documents: `scripts/doc_review.py` | always |
+| `scripts/refactor_practice.py --execute` | switch | — | `true` when given | `scripts/refactor_practice.py` | Actually propose + apply gated edits (default: dry-run preview). | documents: `scripts/doc_review.py` | always |
+| `scripts/refactor_practice.py --model` | string | `None` | any | `scripts/refactor_practice.py` | Model name from the models/ registry. | documents: `scripts/doc_review.py` | always |
+| `scripts/refactor_practice.py --gate` | string | `'verify'` | any | `scripts/refactor_practice.py` | Make target every edit is gated on (default: verify). | documents: `scripts/doc_review.py` | always |
+| `scripts/refactor_practice.py --max-nodes` | integer | `8` | a whole number | `scripts/refactor_practice.py` | The knowledge-graph neighbourhood budget (chunks to walk). | documents: `scripts/doc_review.py` | always |
+| `scripts/refactor_practice.py --corpus` | string | `None` | any | `scripts/refactor_practice.py` | Corpus path (default: <root>/wiki/corpus.json). | documents: `scripts/doc_review.py` | always |
+| `scripts/refactor_practice.py --root` | string | `None` | any | `scripts/refactor_practice.py` | Repo root to refactor (default: this repo). | documents: `scripts/doc_review.py` | always |
+| `scripts/refactor_practice.py --runtime` | string | `None` | any | `scripts/refactor_practice.py` | Runtime engine name (default: inprocess). | documents: `scripts/doc_review.py` | always |
+| `scripts/refactor_practice.py --json` | switch | — | `true` when given | `scripts/refactor_practice.py` | Emit the report as JSON. | documents: `scripts/doc_review.py` | always |
+| `scripts/run_make_target.py target` | positional string | — | any | `scripts/run_make_target.py` | Make target (e.g. verify, check, lint, test). | listing targets: `scripts/make_help.py` | always |
+| `scripts/run_make_target.py --json` | switch | — | `true` when given | `scripts/run_make_target.py` | Emit the result as JSON. | listing targets: `scripts/make_help.py` | always |
+| `scripts/run_make_target.py --dir` | string | `None` | any | `scripts/run_make_target.py` | Run in this directory (default: cwd). | listing targets: `scripts/make_help.py` | always |
+| `scripts/run_make_target.py --timeout` | integer | `1800` | a whole number | `scripts/run_make_target.py` | Seconds before giving up. | listing targets: `scripts/make_help.py` | always |
+| `scripts/run_make_target.py --make-arg` | string, repeatable | `[]` | any | `scripts/run_make_target.py` | Extra make variable, repeatable (e.g. PY=.venv/bin/python). | listing targets: `scripts/make_help.py` | always |
+| `scripts/jobs/build_corpus.py --root` | string | this checkout | any | `scripts/jobs/build_corpus.py` | Tree to index (default: repo root). | checking a corpus: `scripts/jobs/check_corpus.py` | always |
+| `scripts/jobs/build_corpus.py --out` | string | `wiki/corpus.json` | any | `scripts/jobs/build_corpus.py` | Output path (default: wiki/corpus.json). | checking a corpus: `scripts/jobs/check_corpus.py` | always |
+| `scripts/jobs/build_llms_txt.py --root` | string | this checkout | any | `scripts/jobs/build_llms_txt.py` | Repo root (default: this repo). | the static site: `scripts/jobs/export_showcase_static.py` | when `showcase` is true |
+| `scripts/jobs/build_llms_txt.py --out-dir` | string | `wiki` | any | `scripts/jobs/build_llms_txt.py` | Output directory (default: wiki/). | the static site: `scripts/jobs/export_showcase_static.py` | when `showcase` is true |
+| `scripts/jobs/build_llms_txt.py --base-url` | string | `''` | any | `scripts/jobs/build_llms_txt.py` | Absolute site base for links (default: relative). | the static site: `scripts/jobs/export_showcase_static.py` | when `showcase` is true |
+| `scripts/jobs/check_corpus.py --root` | string | this checkout | any | `scripts/jobs/check_corpus.py` | Tree to index (default: repo root). | writing the corpus: `scripts/jobs/build_corpus.py` | always |
+| `scripts/jobs/check_corpus.py --corpus` | string | `None` | any | `scripts/jobs/check_corpus.py` | Validate this existing corpus file instead of a fresh build; also warns if it is stale vs a fresh build. | writing the corpus: `scripts/jobs/build_corpus.py` | always |
+| `scripts/jobs/check_corpus.py --max-links` | integer | `8` | a whole number | `scripts/jobs/check_corpus.py` | Max edges per node. | writing the corpus: `scripts/jobs/build_corpus.py` | always |
+| `scripts/jobs/declare_no_app.py --root` | string | `'.'` | any | `scripts/jobs/declare_no_app.py` | The project (default: .). | finishing a stopped update: `scripts/jobs/finish_update.py` | always |
+| `scripts/jobs/declare_no_app.py --finish-with` | string | `None` | any | `scripts/jobs/declare_no_app.py` | Run as a copier update migration: a refusal names the command that finishes the update under this interpreter. | finishing a stopped update: `scripts/jobs/finish_update.py` | always |
+| `scripts/jobs/export_showcase_static.py --root` | string | this checkout | any | `scripts/jobs/export_showcase_static.py` | Repo root (default: this repo). | llms.txt alone: `scripts/jobs/build_llms_txt.py` | when `showcase` is true |
+| `scripts/jobs/export_showcase_static.py --out-dir` | string | `None` | any | `scripts/jobs/export_showcase_static.py` | Output dir = the frontend's static assets (default: the public/ dir of the frontend declared in config/project.json layers.frontend). | llms.txt alone: `scripts/jobs/build_llms_txt.py` | when `showcase` is true |
+| `scripts/jobs/export_showcase_static.py --base-url` | string | `''` | any | `scripts/jobs/export_showcase_static.py` | Site base for llms.txt links (e.g. /my-project); default: relative. | llms.txt alone: `scripts/jobs/build_llms_txt.py` | when `showcase` is true |
+| `scripts/jobs/finish_update.py --template` | string | `None` | any | `scripts/jobs/finish_update.py` | A clone of the template (default: the answers' _src_path). | starting an update: `copier update` | always |
+| `scripts/jobs/finish_update.py --dry-run` | switch | — | `true` when given | `scripts/jobs/finish_update.py` | Print each command it would run as one JSON line; run nothing. | starting an update: `copier update` | always |
+| `scripts/jobs/keep_edited_retired.py --template` | string | — | any | `scripts/jobs/keep_edited_retired.py` | The template checkout. | finishing a stopped update: `scripts/jobs/finish_update.py` | always |
+| `scripts/jobs/keep_edited_retired.py --from` | string | — | any | `scripts/jobs/keep_edited_retired.py` | The ref the project was generated from. | finishing a stopped update: `scripts/jobs/finish_update.py` | always |
+| `scripts/jobs/keep_edited_retired.py --quiet` | switch | — | `true` when given | `scripts/jobs/keep_edited_retired.py` | No summary on stdout. | finishing a stopped update: `scripts/jobs/finish_update.py` | always |
+| `scripts/jobs/keep_edited_retired.py --finish-with` | string | `None` | any | `scripts/jobs/keep_edited_retired.py` | Run as a copier update migration: a refusal names the command that finishes the update under this interpreter. | finishing a stopped update: `scripts/jobs/finish_update.py` | always |
+| `scripts/jobs/link_corpus.py --corpus` | string | `wiki/corpus.json` | any | `scripts/jobs/link_corpus.py` | Corpus path (default: wiki/corpus.json). | building nodes: `scripts/jobs/build_corpus.py` | always |
+| `scripts/jobs/link_corpus.py --max-links` | integer | `8` | a whole number | `scripts/jobs/link_corpus.py` | Max edges per node. | building nodes: `scripts/jobs/build_corpus.py` | always |
+| `scripts/jobs/rebuild_index.py --root` | string | this checkout | any | `scripts/jobs/rebuild_index.py` | Tree to index (default: repo root). | the corpus: `scripts/jobs/build_corpus.py` | always |
+| `scripts/jobs/rebuild_index.py --out` | string | `'-'` | any | `scripts/jobs/rebuild_index.py` | Output file, or '-' for stdout. | the corpus: `scripts/jobs/build_corpus.py` | always |
+| `scripts/jobs/resolve_stamp_conflicts.py --root` | string | `None` | any | `scripts/jobs/resolve_stamp_conflicts.py` | The project (default: the current directory). | restamping: `scripts/jobs/restamp_docs.py` | always |
+| `scripts/jobs/resolve_stamp_conflicts.py --quiet` | switch | — | `true` when given | `scripts/jobs/resolve_stamp_conflicts.py` | No resolved count; left paths still named. | restamping: `scripts/jobs/restamp_docs.py` | always |
+| `scripts/jobs/resolve_stamp_conflicts.py --finish-with` | string | `None` | any | `scripts/jobs/resolve_stamp_conflicts.py` | Run as a copier update migration: a refusal names the command that finishes the update under this interpreter. | restamping: `scripts/jobs/restamp_docs.py` | always |
+| `scripts/jobs/restamp_docs.py --root` | string | this checkout | any | `scripts/jobs/restamp_docs.py` | Repository root (default: this checkout). | a conflicted stamp: `scripts/jobs/resolve_stamp_conflicts.py` | always |
+| `scripts/jobs/restamp_docs.py --today` | string | `None` | any | `scripts/jobs/restamp_docs.py` | The date to stamp (default: SOURCE_DATE_EPOCH in UTC, else today). | a conflicted stamp: `scripts/jobs/resolve_stamp_conflicts.py` | always |
+| `scripts/jobs/restamp_docs.py --check` | switch | — | `true` when given | `scripts/jobs/restamp_docs.py` | List what would be restamped, write nothing, exit 1 if anything would be. | a conflicted stamp: `scripts/jobs/resolve_stamp_conflicts.py` | always |
+| `scripts/jobs/restamp_docs.py --quiet` | switch | — | `true` when given | `scripts/jobs/restamp_docs.py` | Do not list the files written. | a conflicted stamp: `scripts/jobs/resolve_stamp_conflicts.py` | always |
+| `scripts/jobs/restamp_docs.py --finish-with` | string | `None` | any | `scripts/jobs/restamp_docs.py` | Run as a copier update migration: a refusal names the command that finishes the update under this interpreter. | a conflicted stamp: `scripts/jobs/resolve_stamp_conflicts.py` | always |
+| `scripts/jobs/review_docs.py --root` | string | this checkout | any | `scripts/jobs/review_docs.py` | Repository root (default: this checkout). | rewriting stamps: `scripts/jobs/restamp_docs.py` | always |
+| `scripts/jobs/review_docs.py --json` | switch | — | `true` when given | `scripts/jobs/review_docs.py` | Emit findings as JSON. | rewriting stamps: `scripts/jobs/restamp_docs.py` | always |
+| `scripts/jobs/review_docs.py --strict` | switch | — | `true` when given | `scripts/jobs/review_docs.py` | Exit 1 when there is any finding (gate mode). | rewriting stamps: `scripts/jobs/restamp_docs.py` | always |
+| `scripts/jobs/review_docs.py --today` | string | `None` | any | `scripts/jobs/review_docs.py` | The date a modified file must carry (default: SOURCE_DATE_EPOCH in UTC, else today; tests pin it). | rewriting stamps: `scripts/jobs/restamp_docs.py` | always |
+| `scripts/hooks/on_stop_doc_review.py payload` | positional string | `'-'` | any | `scripts/hooks/on_stop_doc_review.py` | Event payload, or '-' to read stdin (ignored: the review is of the tree). | an on-demand review: `make doc-review` | always |
+| `scripts/hooks/on_stop_doc_review.py --execute` | switch | — | `true` when given | `scripts/hooks/on_stop_doc_review.py` | Also propose + apply gated edits (default: dry-run). | an on-demand review: `make doc-review` | always |
+| `scripts/hooks/on_stop_doc_review.py --model` | string | `None` | any | `scripts/hooks/on_stop_doc_review.py` | Model name from the models/ registry. | an on-demand review: `make doc-review` | always |
+| `scripts/hooks/on_stop_triage.py payload` | positional string | `'-'` | any | `scripts/hooks/on_stop_triage.py` | Event payload, or '-' to read stdin. | the doc review hook: `scripts/hooks/on_stop_doc_review.py` | always |
+| `scripts/hooks/on_stop_triage.py --execute` | switch | — | `true` when given | `scripts/hooks/on_stop_triage.py` | Actually run the model (default: dry-run preview). | the doc review hook: `scripts/hooks/on_stop_doc_review.py` | always |
+| `scripts/hooks/on_stop_triage.py --model` | string | `None` | any | `scripts/hooks/on_stop_triage.py` | Model name from models/ registry. | the doc review hook: `scripts/hooks/on_stop_doc_review.py` | always |
+| `scripts/agent_surface/generate_aad_schema.py --out` | string | `config/agent_surface/aad-v1.0.schema.json` | any | `scripts/agent_surface/generate_aad_schema.py` | Output path (default: the schema file under config/agent_surface/). | the REST contract: `api/rest_fastapi/export_openapi.py` | always |
+| `scripts/agent_surface/generate_aad_schema.py --check` | switch | — | `true` when given | `scripts/agent_surface/generate_aad_schema.py` | Exit 1 if the committed schema is stale (CI / pre-commit). | the REST contract: `api/rest_fastapi/export_openapi.py` | always |
+
+## Illustrative examples
+
+These files show the shape of a configuration a project may add. No code
+loads them, so they have no rows above: `config/default.example.toml`,
+`config/rag.example.toml`, `models/config/default.example.toml` and
+`config/cdmon/cdmon.example.yaml`. Copy one without the `.example` part of
+its name to start a real file, and add its rows here when code reads it.
+
+## Conventions
+
+- **`_comment`.** A `_comment` key at any depth of a JSON file is prose for
+  the reader; no code reads it, and it has no row. The blocks
+  `make_targets`, `adr`, `work_naming` and `child_env` refuse any other key
+  they do not know, and tolerate `_comment`.
+- **Key syntax.** A JSON key is its dotted path. `<name>` stands for one key
+  of a map whose keys the project chooses, such as `<target>` or `<adapter>`.
+  `[]` stands for each element of a list of objects, as in `practices[].id`.
+  A command-line key is the script's path, a space, and the flag or
+  positional name.
+- **Ships.** `always` means every generated project receives the setting.
+  `when ...` names the copier answer that keeps the files that read it.
+  `keel maintainers only` means only the template checkout has it.
+- **`dynamic`.** An environment variable whose name the code builds or takes
+  as an argument, instead of spelling it, carries `dynamic` in its Type cell;
+  `tests/integration/test_reference_drift.py` does not look for a reader of
+  it.
+- **Values held in code.** A make, environment or command-line Default is
+  a literal in the file its Read by cell names, not a config key: a project
+  changes it by passing the variable or flag, or by editing that file. Three
+  installed values have no setting at all: the REST API's port `8000`, which
+  the Makefile `run-api` and `run-web` recipes spell out; the Astro dev
+  proxy's fallback target in `src/frontend/astro/astro.config.mjs`; and the
+  model and runtime a caller gets by default, `models.registry.DEFAULT_MODEL`
+  and `runtimes.registry.DEFAULT_RUNTIME`, which `models.default` and
+  `runtimes.default` above do not drive.
+- **Defaults.** A JSON row's Default is the value keel ships; a copier,
+  make or command-line Default in code is the literal the code holds, and the
+  test compares it character for character.

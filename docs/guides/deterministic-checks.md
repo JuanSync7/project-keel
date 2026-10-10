@@ -8,7 +8,7 @@ tags: [checks, ci, linter, determinism, pre-commit, hooks, guide]
 summary: Catalogue of every deterministic check that keeps a project-template repo honest — purpose, when to run, and how to wire as a hook.
 id: docs-guides-deterministic-checks
 created: 2026-06-19
-updated: 2026-10-09
+updated: 2026-10-10
 visibility: internal
 canonical: true
 ---
@@ -579,7 +579,17 @@ the `limits_guide` names every waiver and every exit code of the scripts
 `gate_target` runs, and the `upgrade_guide` gives every copier task and
 migration its own row in copier's order, every exclusion a row, and the copier
 version floor. It reads copier.yml through yaml and the file list through git,
-so it runs under `make verify` and `make test`, not in pre-commit.
+so it runs under `make verify` and `make test`, not in pre-commit. Its sibling
+`tests/integration/test_reference_drift.py` holds the settings reference that
+`doc_drift.settings_reference` names: the reference has one row for each JSON
+key path, copier question, make variable, environment variable and
+command-line flag the code reads, and each literal default it states is the
+code's, character for character. The same test holds the feature catalogue
+that `doc_drift.features_reference` names: it has one row for each check
+letter, make target, checker script, copier job, agent, MCP server, model and
+runtime adapter, workflow and skill the tree declares, each make target's row
+carries the effect label its help opens with, and every row's Limits cell is
+non-empty.
 
 **Run.** `python scripts/jobs/review_docs.py [--json] [--strict] [--today YYYY-MM-DD]`
 · `make advise`
@@ -659,6 +669,13 @@ new script with its own make target.
    automatically (copier ships the real `scripts/` tree — see
    [ADR-K-0004](../adr/keel/K-0004-project-templating-copier.md)).
 4. Document it in this file.
+5. If the check reads a new setting (a JSON key, an environment variable, a
+   make variable or a command-line flag), add its row to
+   `docs/reference/settings.md` in the same change;
+   `tests/integration/test_reference_drift.py` fails until the row exists.
+6. Add the check's row, and its make target's row, with their limits to
+   `docs/reference/features.md` in the same change; the same test fails until
+   both exist.
 
 ## Auditing another project against this template
 

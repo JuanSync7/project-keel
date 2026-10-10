@@ -2,7 +2,7 @@
 title: Integration — copier generates a structurally valid, tailored project
 kind: tests
 layer: n/a
-summary: `copier` renders keel's root template into a new project — the manifest is tailored to the answers, the un-chosen frontend stack is pruned, CLAUDE.md->AGENT.md symlinks are preserved, keel's own template meta-tests are pruned, and check_structure passes; an undeclared top-level directory reds the project until it is declared and labelled. A bare `subprocess.run` reds a generated project through check_X until it passes `env=build_child_env()`, and the project's helper passes an adapter's declared credential and no planted secret. A credentialed proxy (a `#` in the password included) fails the project's doc judge by name and never by value, while a `LANGUAGE=sr_RS:sr@latin` locale list does not, until `child_env.credentialed_values` names it, and a stale entry there reds the gate. A generated project carries keel's `work_naming` block and no plan doc, so check_Z is silent until the project writes one; a slice row that is not a slice id then reds the gate and a well-formed one does not. A generated project runs its own doc-drift tests green, every skip there a template-only test naming why, and a prose slice id planted in its CONTRIBUTING.md reds them; its README names no `make new`, and its `run-web` line names Astro and its port only for the astro stack and is absent with no frontend. Skipped on a bare local clone without the optional `template` extra; CI installs `.[dev,template]` and declares the surface required (KEEL_REQUIRED_EXTRAS), so there a missing copier is a hard failure instead of a silent skip.
+summary: `copier` renders keel's root template into a new project — the manifest is tailored to the answers, the un-chosen frontend stack is pruned, CLAUDE.md->AGENT.md symlinks are preserved, keel's own template meta-tests are pruned, and check_structure passes; an undeclared top-level directory reds the project until it is declared and labelled. A bare `subprocess.run` reds a generated project through check_X until it passes `env=build_child_env()`, and the project's helper passes an adapter's declared credential and no planted secret. A credentialed proxy (a `#` in the password included) fails the project's doc judge by name and never by value, while a `LANGUAGE=sr_RS:sr@latin` locale list does not, until `child_env.credentialed_values` names it, and a stale entry there reds the gate. A generated project carries keel's `work_naming` block and no plan doc, so check_Z is silent until the project writes one; a slice row that is not a slice id then reds the gate and a well-formed one does not. A generated project runs its own doc-drift tests green, every skip there a template-only test naming why, and a prose slice id planted in its CONTRIBUTING.md reds them, and so does a row dropped from its settings reference or from its feature catalogue; its README names no `make new`, and its `run-web` line names Astro and its port only for the astro stack and is absent with no frontend. Skipped on a bare local clone without the optional `template` extra; CI installs `.[dev,template]` and declares the surface required (KEEL_REQUIRED_EXTRAS), so there a missing copier is a hard failure instead of a silent skip.
 """
 
 import json
@@ -2005,8 +2005,11 @@ def test_a_generated_projects_children_never_receive_a_credentialed_proxy(tmp_pa
     assert r.returncode == 0, r.stdout + r.stderr
 
 
-_DOC_DRIFT = "tests/integration/test_doc_drift.py"
-# The same reason every template-only test states, test_doc_drift.py's included.
+_DOC_DRIFT = (
+    "tests/integration/test_doc_drift.py",
+    "tests/integration/test_reference_drift.py",
+)
+# The same reason every template-only test states, the drift files' included.
 _TEMPLATE_ONLY_REASON = pytestmark[1].kwargs["reason"]
 _SKIPPED = re.compile(r"\b(\d+) skipped\b")
 _COLLECTED = re.compile(r"\b(\d+) tests? collected\b")
@@ -2024,7 +2027,7 @@ def _doc_drift_in(project, *flags):
             "-p",
             "no:cacheprovider",
             *flags,
-            _DOC_DRIFT,
+            *_DOC_DRIFT,
         ],
         cwd=str(project),
         env=build_child_env(),
@@ -2041,14 +2044,23 @@ def _doc_drift_in(project, *flags):
         pytest.param(
             {"frontend_stack": "none", "showcase": False}, id="no-frontend-no-showcase"
         ),
+        pytest.param(
+            {
+                "frontend_stack": "astro",
+                "transports": ["grpc", "edge_nginx"],
+                "profiles": ["ai", "cuda", "langgraph"],
+            },
+            id="every-add-on",
+        ),
     ],
 )
 def test_the_doc_drift_tests_run_and_judge_a_generated_project(tmp_path, answers):
     """The doc-drift gate ships, runs, and still bites in a generated project.
 
     Every collected test either passes or skips, and every skip is a
-    template-only test naming why; a project's own drift then reds the run.
-    The expected counts come from the project's own collection, not from here."""
+    template-only test naming why; a project's own drift then reds the run,
+    in its prose, its settings reference and its feature catalogue alike. The
+    expected counts come from the project's own collection, not from here."""
     dest = tmp_path / "proj"
     _generate(dest, project_name="demo_proj", **answers)
 
@@ -2087,6 +2099,35 @@ def test_the_doc_drift_tests_run_and_judge_a_generated_project(tmp_path, answers
     red = _doc_drift_in(dest)
     assert red.returncode == 1, red.stdout[-4000:] + red.stderr
     assert "CONTRIBUTING.md" in red.stdout, red.stdout[-4000:]
+
+    contributing.write_text(
+        contributing.read_text(encoding="utf-8").replace(
+            "\nThis change finishes CMP-1.S1.\n", ""
+        ),
+        encoding="utf-8",
+    )
+    settings = dest / "docs" / "reference" / "settings.md"
+    text = settings.read_text(encoding="utf-8")
+    kept = [ln for ln in text.splitlines(True) if not ln.startswith("| `PY` |")]
+    assert len(kept) == len(text.splitlines(True)) - 1, "no `PY` row to drop"
+    settings.write_text("".join(kept), encoding="utf-8")
+    drifted = _doc_drift_in(dest)
+    assert drifted.returncode == 1, drifted.stdout[-4000:] + drifted.stderr
+    assert "settings.md" in drifted.stdout, drifted.stdout[-4000:]
+    assert "CONTRIBUTING.md" not in drifted.stdout, drifted.stdout[-4000:]
+
+    settings.write_text(text, encoding="utf-8")
+    policy = json.loads((dest / "config" / "project.json").read_text(encoding="utf-8"))
+    features = dest / policy["doc_drift"]["features_reference"]
+    rows = features.read_text(encoding="utf-8")
+    gate_row = "| `make %s` " % policy["doc_drift"]["gate_target"]
+    kept = [ln for ln in rows.splitlines(True) if not ln.startswith(gate_row)]
+    assert len(kept) == len(rows.splitlines(True)) - 1, "no %r row to drop" % gate_row
+    features.write_text("".join(kept), encoding="utf-8")
+    unlisted = _doc_drift_in(dest)
+    assert unlisted.returncode == 1, unlisted.stdout[-4000:] + unlisted.stderr
+    assert features.name in unlisted.stdout, unlisted.stdout[-4000:]
+    assert "settings.md" not in unlisted.stdout, unlisted.stdout[-4000:]
 
 
 @pytest.mark.parametrize("stack", ["react-vite", "astro", "none"])

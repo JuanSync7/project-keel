@@ -8,7 +8,7 @@ tags: [plan, template, downstream, freshness, taxonomy, effects, credentials, au
 summary: The bounded-convergence record for the defects bedrock-platform, the first real project generated from keel, reported back — a red gate on arrival, unknown directories the gate never sees, make targets whose effect nobody declares, and child processes that inherit every credential — plus the command that checks any keel-generated project for all of them. One slice per defect, five passes, each landed as one commit on a green `make verify`.
 id: docs-design-downstream-feedback
 created: 2026-10-06
-updated: 2026-10-09
+updated: 2026-10-10
 visibility: internal
 canonical: true
 ---
@@ -1505,7 +1505,7 @@ to be released as 0.2.2.
 |-------|-----|--------|
 | CMP-4.S1 | A newcomer cannot learn what keel offers, its limits, or how to adopt and upgrade it from docs that cannot silently drift | done — `make verify` green (1771 passed); 11 of 12 review findings confirmed and fixed |
 | CMP-4.S2 | An update whose config/project.json holds a merge conflict stops with a JSON error from the first migration, and no later migration runs | done — `make verify` green (1822 passed); 3 of 4 review findings confirmed and fixed |
-| CMP-4.S3 | No catalogue lists every feature and no reference lists every setting, so a newcomer cannot see what exists or how to configure it | planned |
+| CMP-4.S3 | No catalogue lists every feature and no reference lists every setting, so a newcomer cannot see what exists or how to configure it | done — `make verify` green (1841 passed); 10 of 10 review findings confirmed and fixed |
 | CMP-4.S4 | `make verify` reports only an exit code and log text, so nothing outside the repo can read which gate ran, on which commit, with what result | planned |
 | CMP-4.S5 | A frontend has no test runner, so it ships with zero tests and the gate is green | planned |
 | CMP-4.S6 | The e2e scenarios call the app in process, and nothing checks that a route has a scenario | planned |
@@ -1574,3 +1574,14 @@ to be released as 0.2.2.
   to copy.
 - The release order while ADR-K-0016 is proposed: whether the next tag waits
   for its acceptance.
+- Every installed value comes from config, and a doc states it beside its
+  key: the REST port the Makefile `run-api` and `run-web` recipes spell out,
+  the Astro proxy fallback, and the registry defaults move into
+  `config/project.json`; a drift test reds a reference default with no source.
+- Lane and gate tooling ships from keel: clone the commit, run the gate
+  through a neutral batch-scheduler adapter (local by default; the farm's
+  submit command and limits in config), and merge fast-forward only on a
+  green gate of that exact commit, off unless a project turns it on.
+- conflict_guard precision (a union over the import closure); finish_update
+  gaps (StrictUndefined, `_jinja_extensions`, private-remote credentials); a
+  conflicted entry module or conflict_guard itself still tracebacks.

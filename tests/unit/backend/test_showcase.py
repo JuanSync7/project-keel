@@ -2,12 +2,14 @@
 title: Unit — backend.showcase
 kind: tests
 layer: backend
-summary: Mirrors src/backend/showcase/. Exercises the read model via the public API, no disk.
+summary: Mirrors src/backend/showcase/. Exercises the read model via the public API with no disk, except the two agreement tests, which read the document each curated table must agree with: the catalogue of deterministic checks for CHECKS, and the feature catalogue config/project.json `doc_drift.features_reference` names for FEATURES.
 """
+
+import re
 
 import pytest
 
-from backend.showcase import CHECKS, Showcase, to_jsonable
+from backend.showcase import CHECKS, FEATURES, Showcase, to_jsonable
 
 pytestmark = pytest.mark.unit
 
@@ -154,6 +156,80 @@ def test_checks_mirror_the_catalogue_row_for_row():
     col = header.index("script")
     catalogued = {cs._BACKTICKED.search(r[col]).group(1).split()[0] for r in rows}
     assert {c.script for c in CHECKS} == catalogued
+
+
+# The feature catalogue's pillar table: the columns it carries, read by the
+# gate's own table reader, and the cell a row key opens.
+_PILLAR_COLUMNS = ("Pillar slug", "Title", "Rows")
+
+
+def _pillar_findings(text, features, table):
+    """Each FEATURES entry is one pillar row with its slug and title, every
+    pillar row is a FEATURES entry, and each key its Rows cell names opens a
+    row of the catalogue."""
+    import check_structure as cs  # noqa: PLC0415 -- the reader is the gate's own
+
+    header, rows = table
+    at = [header.index(c.lower()) for c in _PILLAR_COLUMNS]
+    pillars = {}
+    findings = []
+    for raw in rows:
+        cells = [raw[i] if i < len(raw) else "" for i in at]
+        slug = cs._BACKTICKED.search(cells[0])
+        if slug is None:
+            findings.append("a pillar row names no slug: %r" % cells[0])
+            continue
+        pillars[slug.group(1)] = cells
+    curated = {f.slug: f for f in features}
+    for slug in sorted(set(curated) | set(pillars)):
+        if slug not in pillars:
+            findings.append("FEATURES `%s` has no pillar row" % slug)
+            continue
+        if slug not in curated:
+            findings.append("pillar `%s` is no FEATURES entry" % slug)
+            continue
+        if pillars[slug][1] != curated[slug].title:
+            findings.append(
+                "pillar `%s` is titled %r; FEATURES says %r"
+                % (slug, pillars[slug][1], curated[slug].title)
+            )
+        keys = cs._BACKTICKED.findall(pillars[slug][2])
+        if not keys:
+            findings.append("pillar `%s` names no catalogue row" % slug)
+        findings.extend(
+            "pillar `%s` names `%s`, which opens no row" % (slug, key)
+            for key in keys
+            if not re.search(r"^\|\s*`%s`" % re.escape(key), text, re.MULTILINE)
+        )
+    return findings
+
+
+def test_features_mirror_the_catalogue_pillars():
+    """The showcase home page's feature cards and the feature catalogue must
+    describe one product: each card is a pillar row with its title, and each
+    pillar names the catalogue rows that deliver it. A pillar dropped from
+    either side is one finding."""
+    import json
+    import sys as _sys
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[3]
+    _sys.path.insert(0, str(root / "scripts"))
+    import check_structure as cs  # noqa: PLC0415 -- the reader is the gate's own
+
+    manifest = json.loads(
+        (root / "config" / "project.json").read_text(encoding="utf-8")
+    )
+    rel = manifest["doc_drift"]["features_reference"]
+    text = (root / rel).read_text(encoding="utf-8")
+    table = cs._pipe_table(text, _PILLAR_COLUMNS)
+    assert table is not None, "%s holds no pillar table" % rel
+    assert FEATURES, "FEATURES is empty -- zero items"
+    findings = _pillar_findings(text, FEATURES, table)
+    assert not findings, "\n".join(findings)
+    header, rows = table
+    assert len(_pillar_findings(text, FEATURES, (header, rows[1:]))) == 1
+    assert len(_pillar_findings(text, FEATURES[1:], table)) == 1
 
 
 def test_checks_present_flag_reflects_disk():
