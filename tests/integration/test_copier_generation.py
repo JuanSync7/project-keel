@@ -2,7 +2,7 @@
 title: Integration — copier generates a structurally valid, tailored project
 kind: tests
 layer: n/a
-summary: `copier` renders keel's root template into a new project — the manifest is tailored to the answers, the un-chosen frontend stack is pruned, CLAUDE.md->AGENT.md symlinks are preserved, keel's own template meta-tests are pruned, and check_structure passes; an undeclared top-level directory reds the project until it is declared and labelled. A bare `subprocess.run` reds a generated project through check_X until it passes `env=build_child_env()`, and the project's helper passes an adapter's declared credential and no planted secret. A credentialed proxy (a `#` in the password included) fails the project's doc judge by name and never by value, while a `LANGUAGE=sr_RS:sr@latin` locale list does not, until `child_env.credentialed_values` names it, and a stale entry there reds the gate. A generated project carries keel's `work_naming` block and no plan doc, so check_Z is silent until the project writes one; a slice row that is not a slice id then reds the gate and a well-formed one does not. A generated project runs its own doc-drift tests green, every skip there a template-only test naming why, and a prose slice id planted in its CONTRIBUTING.md reds them, and so does a row dropped from its settings reference or from its feature catalogue; its README names no `make new`, and its `run-web` line names Astro and its port only for the astro stack and is absent with no frontend. Skipped on a bare local clone without the optional `template` extra; CI installs `.[dev,template]` and declares the surface required (KEEL_REQUIRED_EXTRAS), so there a missing copier is a hard failure instead of a silent skip.
+summary: `copier` renders keel's root template into a new project — the manifest is tailored to the answers, the un-chosen frontend stack is pruned, CLAUDE.md->AGENT.md symlinks are preserved, keel's own template meta-tests are pruned, and check_structure passes; an undeclared top-level directory reds the project until it is declared and labelled. A bare `subprocess.run` reds a generated project through check_X until it passes `env=build_child_env()`, and the project's helper passes an adapter's declared credential and no planted secret. A credentialed proxy (a `#` in the password included) fails the project's doc judge by name and never by value, while a `LANGUAGE=sr_RS:sr@latin` locale list does not, until `child_env.credentialed_values` names it, and a stale entry there reds the gate. A generated project carries keel's `work_naming` block and no plan doc, so check_Z is silent until the project writes one; a slice row that is not a slice id then reds the gate and a well-formed one does not. A generated project runs its own doc-drift tests green, every skip there a template-only test naming why, and a prose slice id planted in its CONTRIBUTING.md reds them, and so does a row dropped from its settings reference or from its feature catalogue; its README names no `make new`, and its `run-web` line names Astro and its port only for the astro stack and is absent with no frontend. A project with a frontend carries keel's `layers.frontend.journey` keys and passes its own frontend-suite contract tests statically; one without has no frontend keys, its wiring test skips with a reason, and `make test-fe` exits 0 silently. Skipped on a bare local clone without the optional `template` extra; CI installs `.[dev,template]` and declares the surface required (KEEL_REQUIRED_EXTRAS), so there a missing copier is a hard failure instead of a silent skip.
 """
 
 import json
@@ -1710,6 +1710,59 @@ def test_a_generated_project_gates_only_on_targets_that_leave_its_tree_alone(
         line.split()[0] for line in listed.stdout.splitlines() if line.startswith("  ")
     }
     assert "fmt" in listed_targets and "check-docs" not in listed_targets, listed.stdout
+
+
+# --- the frontend suites, downstream -------------------------------------------
+
+# The project's own contract tests for the frontend suites (tests/integration/
+# test_gate_scope.py): run in the generated tree, so the project judges itself.
+_FE_SUITE_CONTRACT = (
+    "tests/integration/test_gate_scope.py::test_every_frontend_app_wires_both_suites",
+    "tests/integration/test_gate_scope.py::test_verify_reaches_the_frontend_suites",
+)
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
+@pytest.mark.parametrize("stack", ["astro", "react-vite", "none"])
+def test_generated_frontend_carries_its_suites(stack, tmp_path):
+    """CMP-4.S5 held downstream, statically (npm never runs here). A project
+    with a frontend gets keel's `layers.frontend.journey` keys, and its own
+    contract tests pass over its one app: both npm scripts, both runner configs,
+    a unit file and a journey, the journey reading every key, the browser runner
+    pinned, and `make verify` reaching the suites. A project without one gets no
+    frontend keys, its wiring test skips with a reason rather than passing over
+    zero apps, and `make test-fe` exits 0 and says nothing."""
+    dest = tmp_path / "proj"
+    _generate(dest, project_name="demo_proj", frontend_stack=stack)
+    keel = json.loads((_ROOT / "config" / "project.json").read_text())
+    shipped = json.loads((dest / "config" / "project.json").read_text())
+    ran = subprocess.run(
+        [sys.executable, "-m", "pytest", "-q", "-rs", "-p", "no:cacheprovider"]
+        + list(_FE_SUITE_CONTRACT),
+        cwd=str(dest),
+        env=dict(os.environ, PYTHONPATH="src:tests:."),
+        capture_output=True,
+        text=True,
+    )
+    assert ran.returncode == 0, ran.stdout[-3000:] + ran.stderr[-2000:]
+    suites = _make_in(dest, "test-fe")
+    assert suites.returncode == 0, suites.stdout + suites.stderr
+    if stack == "none":
+        assert "frontend" not in shipped["layers"], shipped["layers"]
+        assert not (dest / "src" / "frontend").exists()
+        assert "1 passed, 1 skipped" in ran.stdout, ran.stdout
+        assert "backend-only project" in ran.stdout, ran.stdout
+        assert suites.stdout.strip() == "", suites.stdout
+        return
+    assert (
+        shipped["layers"]["frontend"]["journey"]
+        == keel["layers"]["frontend"]["journey"]
+    ), shipped["layers"]["frontend"]
+    assert "2 passed" in ran.stdout, ran.stdout
+    # No node_modules in a fresh project (nor npm, on some hosts): each of the
+    # two suites takes its named skip.
+    skip = "no node_modules" if shutil.which("npm") else "npm not found"
+    assert suites.stdout.count(skip) == 2, suites.stdout
 
 
 # --- the gate's evidence record, downstream ------------------------------------

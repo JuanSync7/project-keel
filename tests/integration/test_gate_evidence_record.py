@@ -23,6 +23,7 @@ sys.path.insert(0, str(_ROOT / "scripts"))
 sys.path.insert(0, str(_ROOT / "tests"))
 
 import check_structure as cs  # noqa: E402
+import gate_evidence  # noqa: E402
 import git_tree  # noqa: E402
 
 import hermetic_git  # noqa: E402
@@ -288,7 +289,7 @@ def test_keels_verify_recipe_runs_the_driver_over_the_goals_check_w_reads():
     (cmd,) = rule.recipe
     assert cmd.startswith("$(PY) scripts/gate_evidence.py --gate $@ -- $(MAKE) "), cmd
     goals, unresolved = cs._recursions(cmd)
-    assert goals == ["check-all", "lint", "typecheck", "test"], goals
+    assert goals == ["check-all", "lint", "typecheck", "test", "test-fe"], goals
     assert unresolved == [], unresolved
     assert rule.recursions == goals, rule.recursions
     assert cs.target_effects(str(_ROOT))["verify"] == (("local",), None)
@@ -298,6 +299,65 @@ def test_keels_verify_recipe_runs_the_driver_over_the_goals_check_w_reads():
         if r.target == "test"
     ]
     assert any("$(JUNIT_XML)" in line for line in test_rule.recipe), test_rule.recipe
+
+
+# A goal list a document spells beside `make verify`: a `(`- or `#`-led run of
+# make-target names joined by `+`, backticked or bare, across a line break.
+_DOC_GOAL_LIST = re.compile(
+    r"make verify`?[ \t]*(?:\(|#)\s*(`?[\w-]+`?(?:\s*\+\s*`?[\w-]+`?)+)"
+)
+
+
+def test_every_document_that_spells_the_verify_goals_spells_the_makefiles():
+    """CMP-4.S5 added `test-fe` to verify while CONVENTIONS.md and two guides
+    still listed four goals. Every document that writes verify's goals out as
+    `make verify (a + b + ...)` or `make verify  # a + b + ...` must name
+    exactly the goals keel's recipe runs, in its order. The tree is walked as
+    check_structure walks it, not listed by git: a generated project runs this
+    suite before it has a repository."""
+    goals, _unresolved = cs._recursions(_keel_verify().recipe[0])
+    seen, stale = 0, []
+    for dirpath, _dirs, files in sorted(cs.walk(str(_ROOT))):
+        for name in sorted(files):
+            if not name.endswith((".md", ".md.jinja")):
+                continue
+            path = Path(dirpath) / name
+            text = path.read_text("utf-8")
+            for m in _DOC_GOAL_LIST.finditer(text):
+                seen += 1
+                named = [g.strip().strip("`") for g in m.group(1).split("+")]
+                if named != goals:
+                    line = text.count("\n", 0, m.start()) + 1
+                    stale.append(
+                        "%s:%d lists %s" % (path.relative_to(_ROOT), line, named)
+                    )
+    assert seen, "no document spells verify's goals: the pattern matches nothing"
+    assert stale == [], "verify runs %s, but\n%s" % (goals, "\n".join(stale))
+
+
+def _goal(name, counts):
+    return {"name": name, "result": "pass", "returncode": 0, "tests": counts}
+
+
+def test_a_goal_without_a_report_adds_no_counts_and_no_red():
+    """`make verify` runs the frontend suites as their own goal, which writes no
+    junit report, so its `tests` is null. That null adds nothing to the counts
+    and is not by itself `no-test-report` while pytest's goal reported; with
+    pytest's report missing the record is still red. A change that read a null
+    as zeros would turn that red reason into `zero-tests` and fail here."""
+    counts = {"passed": 5, "failed": 0, "skipped": 1, "errors": 0}
+    targets = [_goal("test", counts), _goal("test-fe", None)]
+    tests = gate_evidence._sum_counts(targets)
+    assert tests == counts, tests
+    assert gate_evidence.overall(targets, tests, False, True) == ("pass", [])
+
+    targets = [_goal("test", None), _goal("test-fe", None)]
+    tests = gate_evidence._sum_counts(targets)
+    assert tests is None, tests
+    assert gate_evidence.overall(targets, tests, False, True) == (
+        "fail",
+        ["no-test-report"],
+    )
 
 
 # A writer that crashes, planted into the scratch copy: the check pass inside the

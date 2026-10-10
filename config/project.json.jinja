@@ -150,6 +150,7 @@
       "NODE_EXTRA_CA_CERTS",
       "NO_PROXY",
       "PATH",
+      "PLAYWRIGHT_BROWSERS_PATH",
       "REQUESTS_CA_BUNDLE",
       "SOURCE_DATE_EPOCH",
       "SSL_CERT_DIR",
@@ -194,7 +195,14 @@
       "stack": "{{ frontend_stack }}",
       "language": "typescript",
       "root": "src/frontend",
-      "available": ["{{ frontend_stack }}"]
+      "available": ["{{ frontend_stack }}"],
+      "journey": {
+        "_comment": "The browser journey each frontend app's playwright.config.ts reads (`make test-fe-e2e`): it builds the site, serves it with the stack's own preview server on http://<host>:<port> (an IPv6 host is written without brackets), and waits server_timeout_ms for it before the run fails. A port another process holds fails the run rather than reusing that server. browser_executable null uses the runner's own browser cache, located by PLAYWRIGHT_BROWSERS_PATH when set (child_env.names passes it to every make verify goal); a path launches that browser instead. Nothing here downloads a browser.",
+        "host": "127.0.0.1",
+        "port": 4391,
+        "server_timeout_ms": 120000,
+        "browser_executable": null
+      }
     },
 {%- endif %}
     "backend": {

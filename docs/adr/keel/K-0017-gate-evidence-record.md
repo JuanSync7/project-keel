@@ -30,7 +30,7 @@ leave a green record standing.
 
 1. **A driver in the recipe, not a writer after the prerequisites.** `verify`
    has no prerequisites. Its one recipe line is
-   `$(PY) scripts/gate_evidence.py --gate $@ -- $(MAKE) check-all lint typecheck test`.
+   `$(PY) scripts/gate_evidence.py --gate $@ -- $(MAKE) check-all lint typecheck test test-fe`.
    make stops at the first failed prerequisite and never runs the recipe, so
    a writer placed after the prerequisites could not record a red run, and
    the previous green record would stand. The driver runs each goal itself.

@@ -2,7 +2,7 @@
 title: Integration — the gate's scope is the whole corpus, not a hand-written subset
 kind: tests
 layer: n/a
-summary: Pass 3's contract, read off the REAL Makefile recipes, the REAL pyproject and the REAL .pre-commit-config.yaml. (1) `lint-py` and `fmt` must cover every entry of `CODE_ROOTS` — imported from scripts/check_structure.py, never re-typed here, so the three scope lists cannot drift. (2) mypy's scope must ACCOUNT for every code root: each is either inside `[tool.mypy] files` or a declared, reasoned entry in config/practices.json rulesets.mypy.ratchet — a root may not simply be unmentioned. (3) ruff must actually be clean over that scope. (4) The FE gates must SKIP, not hard-fail, when npm is absent (`command -v npm || exit 0` exits only its own recipe sub-shell). (5) Every bare-`python3` pre-commit entry must be legal under the documented old interpreter, since pre-commit `language: system` hooks exec the ambient python3. (6) The tools whose output IS the gate's verdict — ruff, mypy — must be pinned exactly in the `dev` extra, and pre-commit must run the SAME ruff, or the same tree gets different verdicts in different places. Imports nothing optional: this pin must never itself skip.
+summary: Pass 3's contract, read off the REAL Makefile recipes, the REAL pyproject and the REAL .pre-commit-config.yaml. (1) `lint-py` and `fmt` must cover every entry of `CODE_ROOTS` — imported from scripts/check_structure.py, never re-typed here, so the three scope lists cannot drift. (2) mypy's scope must ACCOUNT for every code root: each is either inside `[tool.mypy] files` or a declared, reasoned entry in config/practices.json rulesets.mypy.ratchet — a root may not simply be unmentioned. (3) ruff must actually be clean over that scope. (4) The FE gates must SKIP, not hard-fail, when npm is absent (`command -v npm || exit 0` exits only its own recipe sub-shell). (5) Every bare-`python3` pre-commit entry must be legal under the documented old interpreter, since pre-commit `language: system` hooks exec the ambient python3. (6) The tools whose output IS the gate's verdict — ruff, mypy — must be pinned exactly in the `dev` extra, and pre-commit must run the SAME ruff, or the same tree gets different verdicts in different places. (7) Every frontend app the Makefile's FE_APPS glob finds wires a unit runner and a browser journey that `make verify` reaches and `make test` does not: each npm script the test-fe recipes run is defined, the unit config refuses zero tests and a focused test and never collects the journeys, the journey config refuses a focused test, both suites hold at least one file, the journey config reads every config/project.json `layers.frontend.journey` key and spells no port, and the browser runner is pinned to one exact version every app and lockfile agree on. Imports nothing optional: this pin must never itself skip.
 """
 
 import ast
@@ -23,6 +23,7 @@ _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT / "scripts"))
 
 import check_structure as cs  # noqa: E402
+import child_env  # noqa: E402
 
 pytestmark = pytest.mark.integration
 
@@ -216,6 +217,16 @@ def test_typecheck_py_takes_its_scope_from_the_config():
 # --- the FE gates skip, not fail, without npm -------------------------------
 
 
+# Every per-app frontend gate and the npm script it runs in each app.
+_FE_GATE_SCRIPTS = [
+    ("lint-fe", "lint"),
+    ("typecheck-fe", "typecheck"),
+    ("test-fe-unit", "test:unit"),
+    ("test-fe-e2e", "test:e2e"),
+]
+_FE_GATES = [target for target, _script in _FE_GATE_SCRIPTS]
+
+
 def _fe_app(tmp_path):
     """A minimal FE app the Makefile's FE_APPS shape can point at."""
     app = tmp_path / "fe" / "webapp"
@@ -225,7 +236,12 @@ def _fe_app(tmp_path):
             {
                 "name": "probe",
                 "private": True,
-                "scripts": {"lint": "true", "typecheck": "true"},
+                "scripts": {
+                    "lint": "true",
+                    "typecheck": "true",
+                    "test:unit": "true",
+                    "test:e2e": "true",
+                },
             }
         )
     )
@@ -245,7 +261,7 @@ def _run_make(target, fe_apps, path_env):
 
 
 @pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
-@pytest.mark.parametrize("target", ["lint-fe", "typecheck-fe"])
+@pytest.mark.parametrize("target", _FE_GATES)
 def test_fe_gate_skips_when_npm_is_absent(tmp_path, target):
     """`command -v npm >/dev/null || { echo skipping; exit 0; }` is its OWN shell: the
     `exit 0` ends that line, and make runs the loop on the next line anyway, which
@@ -267,7 +283,7 @@ def test_fe_gate_skips_when_npm_is_absent(tmp_path, target):
 
 
 @pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
-@pytest.mark.parametrize("target", ["lint-fe", "typecheck-fe"])
+@pytest.mark.parametrize("target", _FE_GATES)
 def test_fe_gate_is_silent_on_a_repo_with_no_frontend(tmp_path, target):
     """copier.yml prunes src/frontend entirely for `frontend_stack: none`, so
     FE_APPS-empty is a real downstream shape. It must exit 0 AND say nothing about
@@ -285,21 +301,320 @@ def test_fe_gate_is_silent_on_a_repo_with_no_frontend(tmp_path, target):
     shutil.which("make") is None or shutil.which("npm") is None,
     reason="needs make and npm",
 )
-@pytest.mark.parametrize(
-    "target,script", [("lint-fe", "lint"), ("typecheck-fe", "typecheck")]
-)
-def test_fe_gate_still_fails_on_a_real_frontend_failure(tmp_path, target, script):
+@pytest.mark.parametrize("target,script", _FE_GATE_SCRIPTS)
+@pytest.mark.parametrize("fault", ["fails", "missing"])
+def test_fe_gate_still_fails_on_a_real_frontend_failure(
+    tmp_path, target, script, fault
+):
     """The non-regression half: making the guard skip must not make the gate toothless.
-    With npm present and the app's script exiting non-zero, the target must fail."""
+    With npm present and the app's script exiting non-zero, the target must fail; and
+    an app that does not define the script at all fails too (npm's "Missing script"),
+    so an app without the contract is red rather than skipped."""
     app = Path(_fe_app(tmp_path))
-    pkg = json.loads((app / "package.json").read_text())
-    pkg["scripts"][script] = "false"
-    (app / "package.json").write_text(json.dumps(pkg))
     npm_dir = str(Path(shutil.which("npm")).parent)
+    # The control: the intact app passes, so the red below is the script's own
+    # and not make refusing an unknown target.
+    control = _run_make(target, str(app) + "/", npm_dir + ":/usr/bin:/bin")
+    assert control.returncode == 0, control.stdout + control.stderr
+    pkg = json.loads((app / "package.json").read_text())
+    if fault == "fails":
+        pkg["scripts"][script] = "false"
+    else:
+        del pkg["scripts"][script]
+    (app / "package.json").write_text(json.dumps(pkg))
     r = _run_make(target, str(app) + "/", npm_dir + ":/usr/bin:/bin")
     assert r.returncode != 0, (
         "`make %s` passed despite the app's %s script failing:\n%s"
         % (target, script, r.stdout + r.stderr)
+    )
+
+
+# --- every frontend app wires a unit runner and a browser journey -----------
+
+# The tools the shipped stacks chose for the two suites, by the files they read
+# and the package whose version fixes the browser revision the shared cache must
+# hold (docs/guides/dev-loops.md, "End-to-end coverage"). Everything else is read
+# off its owner: the apps off the Makefile's FE_APPS glob, the npm scripts off
+# the test-fe recipes, the journey keys off config/project.json.
+_UNIT_CONFIG = "vitest.config.ts"
+_JOURNEY_CONFIG = "playwright.config.ts"
+_BROWSER_RUNNER = "@playwright/test"
+_FE_SUITE_TARGETS = ("test-fe-unit", "test-fe-e2e")
+_FE_SUITES = "test-fe"
+_EXACT_VERSION = re.compile(r"^\d+\.\d+\.\d+$")
+# The variable the browser runner reads for its browser cache's location: a
+# fact of the runner, like _BROWSER_RUNNER, not of this project.
+_BROWSER_CACHE_ENV = "PLAYWRIGHT_BROWSERS_PATH"
+# A TCP port a config could spell instead of reading the key: the registered and
+# dynamic ranges, where every loopback port keel uses sits.
+_PORT_RANGE = range(1024, 65536)
+
+
+def _merged_rules():
+    """{target: (prereqs, recursions)} over keel's Makefile, a target's rules
+    merged the way make merges them."""
+    out = {}
+    for rule in cs.make_target_rules((_ROOT / "Makefile").read_text("utf-8")):
+        prereqs, recursions = out.setdefault(rule.target, ([], []))
+        prereqs.extend(rule.prereqs)
+        recursions.extend(rule.recursions)
+    return out
+
+
+def _reach(rules, name):
+    """Every target *name* reaches through prerequisites and `$(MAKE)` goals."""
+    seen, stack = set(), [name]
+    while stack:
+        prereqs, recursions = rules.get(stack.pop(), ([], []))
+        for child in prereqs + recursions:
+            if child not in seen:
+                seen.add(child)
+                stack.append(child)
+    return seen
+
+
+def _fe_app_dirs():
+    """The app directories the Makefile's own FE_APPS glob finds in this tree."""
+    text = (_ROOT / "Makefile").read_text("utf-8")
+    m = re.search(
+        r"^FE_APPS\s*:?=\s*\$\(dir \$\(wildcard ([^)\s]+)\)\)\s*$", text, re.MULTILINE
+    )
+    assert m, "the Makefile no longer discovers FE_APPS by a package.json glob"
+    return sorted(p.parent for p in _ROOT.glob(m.group(1)))
+
+
+def _suite_scripts():
+    """{gate target: the npm script its recipe runs in each app}."""
+    rules = {}
+    for rule in cs.make_target_rules((_ROOT / "Makefile").read_text("utf-8")):
+        rules.setdefault(rule.target, rule)
+    out = {}
+    for target in _FE_SUITE_TARGETS:
+        assert target in rules, "the Makefile has no `%s` target" % target
+        scripts = set(
+            re.findall(
+                r"\bnpm run (?:-\S+ )*([\w:.-]+)", " ".join(rules[target].recipe)
+            )
+        )
+        assert len(scripts) == 1, (target, sorted(scripts))
+        (out[target],) = scripts
+    return out
+
+
+def _quoted(text):
+    return re.findall(r"""['"]([^'"]+)['"]""", text)
+
+
+def _option(source, key):
+    """The value text of `key: <value>` in a config's source, or None."""
+    m = re.search(r"\b%s\s*:\s*(\[[^\]]*\]|'[^']*'|\"[^\"]*\"|\w+)" % key, source)
+    return m.group(1) if m else None
+
+
+def _expand(pattern):
+    """A glob with at most one `{a,b}` group, as the plain globs it stands for."""
+    m = re.search(r"\{([^}]*)\}", pattern)
+    if not m:
+        return [pattern]
+    return [
+        pattern[: m.start()] + alt + pattern[m.end() :] for alt in m.group(1).split(",")
+    ]
+
+
+def _journey_keys():
+    """The keys config/project.json declares under layers.frontend.journey, or
+    None when the project has no frontend layer."""
+    manifest = json.loads((_ROOT / "config" / "project.json").read_text("utf-8"))
+    frontend = (manifest.get("layers") or {}).get("frontend")
+    if frontend is None:
+        return None
+    journey = frontend.get("journey")
+    assert isinstance(journey, dict) and journey, (
+        "config/project.json layers.frontend has no `journey` block"
+    )
+    return sorted(k for k in journey if not k.startswith("_"))
+
+
+def _locked_family(lock, name, pin, seen=None):
+    """[(package, locked version)] for *name* and every dependency it pins to
+    *pin*, transitively: the packages whose versions together fix the browser
+    revision."""
+    seen = set() if seen is None else seen
+    if name in seen:
+        return []
+    seen.add(name)
+    entry = (lock.get("packages") or {}).get("node_modules/" + name)
+    if entry is None:
+        return [(name, None)]
+    out = [(name, entry.get("version"))]
+    for dep, spec in sorted((entry.get("dependencies") or {}).items()):
+        if spec == pin:
+            out.extend(_locked_family(lock, dep, pin, seen))
+    return out
+
+
+def test_every_frontend_app_wires_both_suites():
+    """CMP-4.S5: a frontend shipped with no test runner, so it had zero tests and
+    the gate was green. Every app the gate discovers must define each npm script
+    the gate runs; its unit runner must refuse zero tests and never collect the
+    journeys; each suite must hold a file; its journey must take every
+    `layers.frontend.journey` key from config/project.json and spell no port of
+    its own; and the browser runner must be pinned exactly, to one version across
+    apps and lockfiles, because that version fixes the browser revision the cache
+    must hold and no browser is downloaded under the gate."""
+    keys = _journey_keys()
+    apps = _fe_app_dirs()
+    if not apps:
+        assert keys is None, (
+            "config/project.json declares layers.frontend but the Makefile finds "
+            "no frontend app: a pass over zero apps is not a pass"
+        )
+        pytest.skip("no frontend app and no layers.frontend: a backend-only project")
+    assert keys, "frontend apps exist but config/project.json has no layers.frontend"
+    scripts = _suite_scripts()
+    problems, pins = [], {}
+    for app in apps:
+        rel = app.relative_to(_ROOT)
+        pkg = json.loads((app / "package.json").read_text("utf-8"))
+        defined = pkg.get("scripts") or {}
+        for target, script in sorted(scripts.items()):
+            if script not in defined:
+                problems.append(
+                    "%s: no npm script %r (`make %s`)" % (rel, script, target)
+                )
+
+        journey_cfg = app / _JOURNEY_CONFIG
+        unit_cfg = app / _UNIT_CONFIG
+        problems.extend(
+            "%s: no %s" % (rel, cfg.name)
+            for cfg in (unit_cfg, journey_cfg)
+            if not cfg.is_file()
+        )
+        if not (unit_cfg.is_file() and journey_cfg.is_file()):
+            continue
+        journey_src = journey_cfg.read_text("utf-8")
+        unit_src = unit_cfg.read_text("utf-8")
+
+        test_dir = _option(journey_src, "testDir")
+        test_match = _option(journey_src, "testMatch")
+        if not test_dir or not test_match:
+            problems.append(
+                "%s: %s sets no testDir/testMatch" % (rel, journey_cfg.name)
+            )
+            continue
+        (test_dir,), (test_match,) = _quoted(test_dir), _quoted(test_match)
+
+        if (_option(unit_src, "passWithNoTests") or "") != "false":
+            problems.append(
+                "%s: %s does not set passWithNoTests: false" % (rel, unit_cfg.name)
+            )
+        # A focused test (`.only`) skips the rest of the suite and still exits 0;
+        # the unit runner allows one whenever CI is unset, which is how verify
+        # runs on a workstation. The journey side is forbidOnly, pinned below.
+        if (_option(unit_src, "allowOnly") or "") != "false":
+            problems.append(
+                "%s: %s does not set allowOnly: false" % (rel, unit_cfg.name)
+            )
+        if (_option(journey_src, "forbidOnly") or "") != "true":
+            problems.append(
+                "%s: %s does not set forbidOnly: true" % (rel, journey_cfg.name)
+            )
+        include = _quoted(_option(unit_src, "include") or "")
+        if not include:
+            problems.append(
+                "%s: %s has no explicit include list" % (rel, unit_cfg.name)
+            )
+        for pattern in include:
+            top = pattern.split("/", 1)[0]
+            if top == test_dir or any(c in top for c in "*?[{"):
+                problems.append(
+                    "%s: unit include %r can collect the journeys under %s/"
+                    % (rel, pattern, test_dir)
+                )
+        units = [p for pat in include for g in _expand(pat) for p in app.glob(g)]
+        journeys = list((app / test_dir).rglob(test_match))
+        if not units:
+            problems.append("%s: the unit runner's include matches no file" % rel)
+        if not journeys:
+            problems.append(
+                "%s: no journey matches %s/%s" % (rel, test_dir, test_match)
+            )
+
+        ports = sorted(
+            {
+                int(n)
+                for n in re.findall(r"\b\d+\b", journey_src)
+                if int(n) in _PORT_RANGE
+            }
+        )
+        if ports:
+            problems.append(
+                "%s: %s spells port-like literals %s" % (rel, journey_cfg.name, ports)
+            )
+        if "journey" not in journey_src:
+            problems.append(
+                "%s: %s never reads layers.frontend.journey" % (rel, journey_cfg.name)
+            )
+        # Read as a property (`journey.port`), not merely named: the loader's
+        # own validation names every key, so a key it checks and then never
+        # uses would otherwise pass.
+        problems.extend(
+            "%s: %s never reads layers.frontend.journey.%s"
+            % (rel, journey_cfg.name, key)
+            for key in keys
+            if not re.search(r"\.%s\b" % re.escape(key), journey_src)
+        )
+
+        pin = (pkg.get("devDependencies") or {}).get(_BROWSER_RUNNER)
+        if pin is None or not _EXACT_VERSION.match(pin):
+            problems.append(
+                "%s: %s is %r, not one exact version" % (rel, _BROWSER_RUNNER, pin)
+            )
+            continue
+        pins[str(rel)] = pin
+        lock = app / "package-lock.json"
+        if lock.is_file():
+            for name, version in _locked_family(
+                json.loads(lock.read_text("utf-8")), _BROWSER_RUNNER, pin
+            ):
+                if version != pin:
+                    problems.append(
+                        "%s: package-lock.json resolves %s to %r, not %s"
+                        % (rel, name, version, pin)
+                    )
+    if len(set(pins.values())) > 1:
+        problems.append(
+            "the apps pin different %s versions: %s" % (_BROWSER_RUNNER, pins)
+        )
+    assert problems == [], "\n".join(problems)
+
+
+def test_verify_reaches_the_frontend_suites():
+    """`make verify` must run both frontend suites, and `make test` must not: CI
+    runs `make test` with no browser cache, and JUNIT_XML is pytest's report, the
+    evidence record's only source of counts."""
+    rules = _merged_rules()
+    for target in _FE_SUITE_TARGETS + (_FE_SUITES,):
+        assert target in rules, "the Makefile has no `%s` target" % target
+    verify = _reach(rules, "verify")
+    missing = sorted(set(_FE_SUITE_TARGETS) - verify)
+    assert missing == [], "`make verify` never reaches %s" % missing
+    leaked = sorted(set(_FE_SUITE_TARGETS + (_FE_SUITES,)) & _reach(rules, "test"))
+    assert leaked == [], "`make test` reaches %s; it must stay pytest's alone" % leaked
+
+
+def test_the_browser_cache_location_reaches_every_verify_goal(monkeypatch):
+    """`make verify` starts each goal with the child allowlist
+    (scripts/gate_evidence.py), while a direct `make test-fe` inherits the
+    caller's environment. A browser cache located by the runner's own variable
+    must reach both, or the journey passes alone and goes red under verify."""
+    if _journey_keys() is None:
+        pytest.skip("no layers.frontend: no browser journey to locate a cache for")
+    monkeypatch.setenv(_BROWSER_CACHE_ENV, "/browser-cache-probe")
+    env = child_env.build_child_env(root=str(_ROOT))
+    assert env.get(_BROWSER_CACHE_ENV) == "/browser-cache-probe", (
+        "config/project.json child_env.names drops %s, so the browser journey "
+        "under `make verify` sees only the runner's default cache" % _BROWSER_CACHE_ENV
     )
 
 

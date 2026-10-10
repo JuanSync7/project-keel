@@ -71,7 +71,7 @@ python3 -m venv .venv
 .venv/bin/pip install -e ".[dev]"     # pytest, ruff and mypy: the gate's tools
 .venv/bin/pip install pre-commit && .venv/bin/pre-commit install
 make check                            # the structure gate
-make verify                           # every gate: checks, lint, types, tests
+make verify                           # every gate: checks, lint, types, tests, frontend tests
 ```
 
 copier accepts any git URL or local path in place of

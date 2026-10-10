@@ -1507,7 +1507,7 @@ to be released as 0.2.2.
 | CMP-4.S2 | An update whose config/project.json holds a merge conflict stops with a JSON error from the first migration, and no later migration runs | done — `make verify` green (1822 passed); 3 of 4 review findings confirmed and fixed |
 | CMP-4.S3 | No catalogue lists every feature and no reference lists every setting, so a newcomer cannot see what exists or how to configure it | done — `make verify` green (1841 passed); 10 of 10 review findings confirmed and fixed |
 | CMP-4.S4 | `make verify` reports only an exit code and log text, so nothing outside the repo can read which gate ran, on which commit, with what result | done — `make verify` green (1906 passed); 6 of 6 review findings confirmed and fixed (two reviewers found the same defect) |
-| CMP-4.S5 | A frontend has no test runner, so it ships with zero tests and the gate is green | planned |
+| CMP-4.S5 | A frontend has no test runner, so it ships with zero tests and the gate is green | done — `make verify` green (1924 passed); 6 of 7 review findings confirmed and fixed |
 | CMP-4.S6 | The e2e scenarios call the app in process, and nothing checks that a route has a scenario | planned |
 | CMP-4.S7 | Nothing calls a real model or a running server and judges what comes back | planned |
 | CMP-4.S8 | A spec's requirements are not tied to tests, so an uncovered requirement passes the gate | planned — approved by the maintainer |
@@ -1588,6 +1588,13 @@ to be released as 0.2.2.
   key: the REST port the Makefile `run-api` and `run-web` recipes spell out,
   the Astro proxy fallback, and the registry defaults move into
   `config/project.json`; a drift test reds a reference default with no source.
+- Left by CMP-4.S5. A frontend suite whose tests are all skipped exits 0,
+  because neither runner reports a count the gate reads. CI runs no
+  `test-fe`. Whether a missing browser stays red, rather than a stated skip, is
+  the maintainer's call. react-vite ships no lockfile, so its resolved versions
+  float within its ranges. A copier copy from a dirty tree also copies
+  untracked files, such as a stray symlink at the repo root, into the
+  generated project.
 - Lane and gate tooling ships from keel: clone the commit, run the gate
   through a neutral batch-scheduler adapter (local by default; the farm's
   submit command and limits in config), and merge fast-forward only on a

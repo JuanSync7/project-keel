@@ -75,6 +75,19 @@ own limits, is a row of the [feature catalogue](../reference/features.md).
   - a run whose interpreter cannot parse the driver at all
     (`scripts/gate_evidence.py` parses at Python 3.6).
 
+- **The frontend suites count no test themselves.** `make test-fe-unit` and
+  `make test-fe-e2e` judge by their runners' exit codes alone. A runner that
+  finds zero tests exits non-zero, but a suite whose every test is skipped
+  exits 0 in both runners, and the evidence record lists `test-fe` with
+  `tests: null`, so nothing counts those skips. CI runs `make test`, which
+  does not reach `make test-fe`, so a broken frontend suite does not fail CI.
+- **The browser runner's version fixes the browser.** Each app pins
+  `@playwright/test` exactly, and that version names the chromium revision the
+  browser cache must hold. `tests/integration/test_gate_scope.py` holds every
+  app, and each committed lockfile, to one exact pin; a bump to
+  a version whose revision is not in the cache shows only when the journey
+  runs, as the missing-browser row below.
+
 ## Checks that pass when they skip
 
 Each item below exits 0 when the thing it judges is absent. Each is queued for
@@ -88,9 +101,11 @@ a decision on whether it should fail instead.
   decision.
 - check_K is silent when `config/practices.json` declares no
   `tokens.config_marker`. Queued for a decision.
-- `make lint-fe` and `make typecheck-fe` exit 0 when no frontend app is
-  found, when `npm` is not installed, or when an app has no `node_modules`.
-  Queued for a decision.
+- `make lint-fe`, `make typecheck-fe`, `make test-fe-unit` and
+  `make test-fe-e2e` exit 0 when no frontend app is found, when `npm` is not
+  installed, or when an app has no `node_modules`. Queued for a decision.
+  With `node_modules` installed, a browser missing from the cache is red, not
+  a skip.
 - `make check-openapi` and `make check-aad` skip when FastAPI or pydantic is
   not installed. Queued for a decision.
 - `scripts/cdmon_sync.py` exits 0 when the `cdmon` program or its config is
@@ -214,3 +229,10 @@ Three more codes come from the tools around these scripts:
 | `make check-corpus` fails after you added documents | the local corpus is stale | `make site-data` |
 | `make verify` fails with `Error 3` though every goal passed | the evidence record is red for a reason no goal's exit reports: zero tests ran, pytest's report counts a failed or errored test that the test recipe ignored, pytest wrote no report, the tree changed during the run, or the checks or the writer crashed | read `reasons` in `.evidence/verify.json` (config/project.json `evidence.dir`) and fix what it names |
 | `make verify` stops before any goal, naming `.gitignore` | git would list the evidence record, so writing it would change the tree | add config/project.json `evidence.dir` (`.evidence`) to `.gitignore` |
+| `make test-fe-unit` fails with `No test files found, exiting with code 1` | the app's unit runner found no test under its `include` list; this is the intended red for a stack with zero tests | add a test of the app's own code under `src/`, named `*.test.ts` (`*.test.tsx` in react-vite) |
+| `make test-fe-unit` fails with `Unexpected .only modifier` | a unit test is focused with `.only`, which would skip the rest of the suite; the app's `vitest.config.ts` sets `allowOnly: false`, and the journey's `forbidOnly: true` refuses the same in `e2e/` | remove the `.only` |
+| `make test-fe-e2e` fails with `Error: No tests found` | the app's journey directory holds no `*.spec.ts`; this is the intended red for a stack with zero journeys | add a journey under the app's `e2e/` |
+| `make test-fe-e2e` fails with `browserType.launch: Executable doesn't exist at ...` and a box saying `npx playwright install` | the browser cache lacks the chromium revision the pinned `@playwright/test` expects, or config/project.json `layers.frontend.journey.browser_executable` names a path that does not exist; a cache that `PLAYWRIGHT_BROWSERS_PATH` relocates reaches each `make verify` goal only while config/project.json `child_env.names` lists that variable | outside the gate, run `npx playwright install chromium` in the app (it downloads into the user's browser cache, not the tree), or set `layers.frontend.journey.browser_executable` (`null` as shipped) to a chromium on the host |
+| `make test-fe-e2e` fails with `http://<host>:<port> is already used` | another process holds config/project.json `layers.frontend.journey.port` (`4391` as shipped); the journey refuses to test a server it did not start | stop that process, or set `layers.frontend.journey.port` to a free port |
+| `make test-fe-e2e` fails with `Timed out waiting <n>ms from config.webServer` | the build or the preview server took longer than config/project.json `layers.frontend.journey.server_timeout_ms` (`120000` as shipped), or never answered on the journey's URL | run the app's `npm run build` and `npm run preview` by hand to see why, or raise `layers.frontend.journey.server_timeout_ms` |
+| `make test-fe-e2e` fails naming `layers.frontend.journey.<key> must be ...` | config/project.json lacks that key or holds the wrong type for it | restore the key; [settings.md](../reference/settings.md) gives each key's type and shipped default |

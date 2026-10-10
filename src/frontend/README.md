@@ -9,7 +9,7 @@ tags: []
 summary: UI / client code. Two reference apps; generation keeps the one you choose.
 id: src-frontend-readme
 created: 2026-06-17
-updated: 2026-10-09
+updated: 2026-10-10
 visibility: internal
 canonical: true
 ---
@@ -36,3 +36,14 @@ Both are wired to be **type-strict** (`strict` + `noUncheckedIndexedAccess`
 other code imports from the barrel, never from deep paths. The
 React app shows importing the FE-side mirror of the backend `shared`
 contract (`src/types.ts`).
+
+Each app carries two test suites, which `make test-fe` runs and `make verify`
+runs as its `test-fe` goal. The unit runner is the npm script `test:unit`
+(Vitest, `vitest.config.ts`) over the app's `src/**/*.test.ts` files. The
+browser journey is the npm script `test:e2e` (Playwright,
+`playwright.config.ts`) over `e2e/*.spec.ts`: it builds the app, serves it on
+config/project.json `layers.frontend.journey` `host` and `port`, and drives it
+in headless chromium. A suite with zero tests fails, and an app without
+`node_modules` skips both. `tests/integration/test_gate_scope.py` holds every
+app to both scripts, both configs and a file in each suite. `docs/guides/dev-loops.md`
+says where these suites sit beside the backend's `tests/e2e/`.

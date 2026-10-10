@@ -11,6 +11,29 @@ version rather than a bare commit:
 ## [Unreleased]
 
 ### Added
+- **Frontend unit tests and a browser journey in the gate.** Each shipped
+  frontend app (`astro`, `react-vite`) now carries a unit runner, the npm
+  script `test:unit` (Vitest over `src/**/*.test.ts`, and `.tsx` in
+  react-vite), and a browser journey, the npm script `test:e2e` (Playwright
+  builds the app, serves it with its own preview server and drives it in
+  headless chromium over `e2e/*.spec.ts`). `make test-fe-unit`,
+  `make test-fe-e2e` and `make test-fe` run them, and `make verify` gains a
+  fifth goal, `test-fe`, recorded in `.evidence/verify.json` with its result and
+  `tests: null`. A suite with zero tests fails, a focused (`.only`) test fails
+  in either suite, a red test fails the gate, and with `node_modules`
+  installed a missing browser is red; an app without
+  `node_modules`, or a host without `npm`, still skips as `make lint-fe` does.
+  The journey's server reads the new config/project.json keys
+  `layers.frontend.journey.host`, `port`, `server_timeout_ms` and
+  `browser_executable`, and refuses a busy port rather than reuse whatever
+  answers there; an IPv6 host is written bare and bracketed in the URL.
+  `PLAYWRIGHT_BROWSERS_PATH` joins config/project.json `child_env.names`, so
+  a relocated browser cache reaches the journey under `make verify` as it does
+  under `make test-fe`. `tests/integration/test_gate_scope.py` fails an app
+  missing either script, either config, a test file, the shared runner pin, a
+  journey key or the refusal of a focused test. No browser is downloaded under the gate. A generated project
+  with a frontend receives both suites and the keys; a `none` project receives
+  neither.
 - **A typed evidence record for every gate run.** `make verify` now runs its
   goals through `scripts/gate_evidence.py` and writes `.evidence/verify.json`
   (config/project.json `evidence.dir`, an ignored directory). The record names

@@ -9,7 +9,7 @@ tags: [showcase, wiki, docs, frontend]
 summary: Type-strict Astro 5 + Tailwind v4 docs/wiki site that renders the template live from the backend.
 id: src-frontend-astro-readme
 created: 2026-06-17
-updated: 2026-10-09
+updated: 2026-10-10
 visibility: internal
 canonical: true
 ---
@@ -58,6 +58,10 @@ proxy).
 
 - **Type-strict:** extends `astro/tsconfigs/strict`, plus
   `noUncheckedIndexedAccess` / `noImplicitOverride`. Commands:
-  `npm run dev | build | preview | lint | typecheck`.
+  `npm run dev | build | preview | lint | typecheck | test:unit | test:e2e`.
+- **Tests:** `test:unit` runs Vitest over `src/**/*.test.ts` (`src/lib/links.test.ts`
+  holds `links.ts` to its base-path rule); `test:e2e` builds the site, serves
+  it with `astro preview` under its base path and checks the home page in
+  headless chromium (`e2e/home.spec.ts`). Both fail on zero tests.
 - **Tailwind v4:** via `@tailwindcss/vite`; `@import "tailwindcss"` in `src/styles/global.css`.
 - **Client islands are explicit:** the live data fetch is genuine interactivity, done in small `<script>` islands that call `src/lib/api.ts`.

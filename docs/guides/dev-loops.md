@@ -33,7 +33,7 @@ Every loop below ends each pass at the **same gate**, and "done" means the gate 
 green — never a self-assessment:
 
 ```
-make verify   # check-all + lint + typecheck + test   (the full bar)
+make verify   # check-all + lint + typecheck + test + test-fe   (the full bar)
 make test     # plain pytest over the whole suite (tiers: unit · integration · e2e · smoke)
 make check    # fast, 3.6-safe structural gate (runs in pre-commit)
 ```
@@ -181,6 +181,26 @@ import it. Don't defer it:
 author the e2e scenario alongside the change, so the flow is covered the moment it
 ships. Name e2e/integration/smoke tests by the **scenario**, not by a source file
 (only `tests/unit/` mirrors `src/` 1:1).
+
+A project with a frontend also gives each app under `src/frontend/` two suites
+of its own, and `make verify` runs both as its `test-fe` goal (`make test-fe`).
+The **unit runner** is the app's npm script `test:unit` (Vitest in the shipped
+stacks) over `src/**/*.test.ts` (`*.test.tsx` too in react-vite); it fails on
+zero tests, because its config sets `passWithNoTests: false`, and on a focused
+test (`.only`), because it sets `allowOnly: false`; the journey's config sets
+`forbidOnly: true` for the same reason. The **browser journey** is the app's npm script `test:e2e` (Playwright in the shipped
+stacks) over `e2e/*.spec.ts`: it builds the site, serves it with the stack's
+own preview server and drives it in headless chromium, asserting what a
+visitor sees. Each journey config reads config/project.json
+`layers.frontend.journey`: `host` (`127.0.0.1`), `port` (`4391`),
+`server_timeout_ms` (`120000`) and `browser_executable` (`null`, the runner's
+own browser cache, at `PLAYWRIGHT_BROWSERS_PATH` when that is set, which
+config/project.json `child_env.names` passes to each `make verify` goal). No
+browser is downloaded under the gate. An app without `node_modules` skips both
+suites, as `make lint-fe` does.
+`tests/integration/test_gate_scope.py` holds every app to both scripts, both
+configs and a file in each suite. These suites are not for the backend: its
+routes and transport endpoints are `tests/e2e/` scenarios.
 
 ## Stop conditions & caps at a glance
 

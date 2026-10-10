@@ -833,7 +833,7 @@ govern *how you work*; their executable analog — a loop a program runs unatten
   endpoint) gets a `tests/e2e/` scenario that exercises it through its public
   surface; name it by scenario, not by a source file.
 - **The gate is the judge.** "Done" means `make verify` (`check-all` + `lint` +
-  `typecheck` + `test`) is green; step transitions and completion gate on the
+  `typecheck` + `test` + `test-fe`) is green; step transitions and completion gate on the
   real exit code, never on a model's self-report. A loop runs its gate through
   `scripts/run_make_target.py`, which runs only a target labelled inside
   `make_targets.gate_effects` and fails one that changed the tree (§7).

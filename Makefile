@@ -41,6 +41,7 @@ WRITE_GUARD = @if [ -n "$(CI)$(RALPH)" ]; then echo "refusing '$@': a [write] ta
 
 .PHONY: help new audit-project check-python check check-all check-corpus check-openapi check-aad check-cdmon advise check-generic verify test unit integration e2e smoke \
         lint lint-py lint-fe fmt fmt-check typecheck typecheck-py typecheck-fe \
+        test-fe test-fe-unit test-fe-e2e \
         fe-install run run-api run-web site-data site-static demo agent-surface-schema check-docs restamp-docs doc-review doc-review-apply
 
 # `make help EFFECT=tree` lists only what rewrites the tree; `AREA=` filters by a
@@ -135,11 +136,11 @@ check-generic: advise ## [local] Alias for `advise` (the generic-solution + prac
 # leave an earlier green record standing. scripts/gate_evidence.py runs each goal,
 # passes the first failing code through and writes the record to config/project.json
 # evidence.dir (an ignored path, so [local] stays true). check_W reads the goals of
-# this `$(MAKE)` line, so the label still closes over all four. make runs a
+# this `$(MAKE)` line, so the label still closes over all five. make runs a
 # `$(MAKE)` line even under -n; the driver reads -n/-q/-t from MAKEFLAGS and writes
 # nothing then. It runs the goals in sequence, so -j does not parallelise them.
-verify: ## [local] Run all gates (all checks + lint + types + tests) and write their evidence record to config/project.json evidence.dir
-	$(PY) scripts/gate_evidence.py --gate $@ -- $(MAKE) check-all lint typecheck test
+verify: ## [local] Run all gates (all checks + lint + types + tests + frontend tests) and write their evidence record to config/project.json evidence.dir
+	$(PY) scripts/gate_evidence.py --gate $@ -- $(MAKE) check-all lint typecheck test test-fe
 
 # JUNIT_XML is empty unless scripts/gate_evidence.py sets it per goal: pytest then
 # writes its own junit report, the only source of the evidence record's test
@@ -197,6 +198,30 @@ typecheck-fe: ## [local] Type-check frontend apps (tsc / astro check)
 	command -v npm >/dev/null 2>&1 || { echo "npm not found; skipping frontend typecheck"; exit 0; }; \
 	for app in $(FE_APPS); do \
 		if [ -d "$$app/node_modules" ]; then echo "typecheck: $$app"; (cd $$app && npm run --silent typecheck) || exit 1; \
+		else echo "skip $$app (no node_modules — run 'make fe-install')"; fi; \
+	done
+
+# The frontend suites: a unit runner over each app's own modules and a browser
+# journey against its BUILT site, each app's npm scripts test:unit and test:e2e.
+# Same one-logical-line guard as lint-fe above. A verify goal of their own, never
+# under `test`: CI runs `make test` with no browser cache, and JUNIT_XML is
+# pytest's report alone, so the evidence record lists test-fe with `tests: null`.
+# Zero tests, a missing script, a browser missing from the cache and a busy
+# journey port each fail; the host, port, timeout and browser come from
+# config/project.json layers.frontend.journey, read by each app's runner config.
+test-fe: test-fe-unit test-fe-e2e ## [local] Run every frontend test suite (unit runner + browser journey)
+test-fe-unit: ## [local] Run each frontend app's unit tests (npm script test:unit)
+	@test -n "$(strip $(FE_APPS))" || exit 0; \
+	command -v npm >/dev/null 2>&1 || { echo "npm not found; skipping frontend unit tests"; exit 0; }; \
+	for app in $(FE_APPS); do \
+		if [ -d "$$app/node_modules" ]; then echo "unit tests: $$app"; (cd $$app && npm run --silent test:unit) || exit 1; \
+		else echo "skip $$app (no node_modules — run 'make fe-install')"; fi; \
+	done
+test-fe-e2e: ## [local] Run each frontend app's browser journey headless against its built site (npm script test:e2e)
+	@test -n "$(strip $(FE_APPS))" || exit 0; \
+	command -v npm >/dev/null 2>&1 || { echo "npm not found; skipping frontend browser journeys"; exit 0; }; \
+	for app in $(FE_APPS); do \
+		if [ -d "$$app/node_modules" ]; then echo "browser journey: $$app"; (cd $$app && npm run --silent test:e2e) || exit 1; \
 		else echo "skip $$app (no node_modules — run 'make fe-install')"; fi; \
 	done
 
