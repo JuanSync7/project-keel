@@ -171,7 +171,8 @@ Commit your work first: copier refuses to update a project whose tree is dirty,
 and an update needs git. An untracked file counts as dirty too, so commit it or
 ignore it before you update. git treats a symlink as a file, so a `.gitignore`
 pattern with a trailing slash, such as `.venv/`, does not ignore a `.venv`
-symlink.
+symlink; keel's `.gitignore` names each directory without one, and
+`tests/integration/test_ignore_patterns.py` keeps it so.
 
 ```bash
 copier update --trust

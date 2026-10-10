@@ -35,6 +35,16 @@ version rather than a bare commit:
   adds a make target, an agent or a checker goes red on update until the page
   has its row.
 
+### Fixed
+- **A symlinked `.venv` is ignored like a real one.** `.gitignore` named
+  `.venv/`, `venv/`, `node_modules/` and the other tool directories with a
+  trailing slash, which git matches only against a directory; a `.venv`
+  symlink to a shared environment was committed by `git add -A`, and as an
+  untracked file it blocked `copier update`. Every plain directory name now
+  carries no slash, and `tests/integration/test_ignore_patterns.py` plants a
+  symlink for each name in both `.gitignore` and its template twin and asks
+  git whether it is ignored.
+
 ## [0.2.2] — 2026-10-09
 
 ### Added

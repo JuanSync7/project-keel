@@ -1,21 +1,21 @@
-__pycache__/
+__pycache__
 *.py[cod]
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.venv/
-venv/
-dist/
-build/
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.venv
+venv
+dist
+build
 *.egg-info/
-node_modules/
-.astro/
+node_modules
+.astro
 *.tsbuildinfo
 # generated gRPC stubs
 api/grpc/*_pb2.py
 api/grpc/*_pb2_grpc.py
 # code-doc-monitor (cdmon) generated state — review log, coverage cache
-.cdmon/
+.cdmon
 # generated wiki corpus + agent front door (views over the repo, never sources of truth)
 wiki/corpus.json
 wiki/llms.txt
