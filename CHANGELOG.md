@@ -29,6 +29,25 @@ version rather than a bare commit:
   2), failed (1) and absent (3) stay distinct, and zero cases is refused.
   The `triage` function in `agents/triage` now also accepts an injected
   `backend=`.
+- **The `openai-compatible` adapter refuses a credential variable config does
+  not declare.** Its `api_key_env` argument picks which environment variable
+  is sent to `base_url` as the bearer token, and `evals.live.model_options`
+  forwards config to it, so config could name any variable and any host. The
+  adapter now accepts only a name listed in config/project.json
+  `models.credential_env.openai-compatible` (shipped: `OPENAI_API_KEY`) and
+  only an http or https `base_url` with a host and no user part; either
+  refusal is a `ValueError` at construction and exit 2 from `make eval-live`,
+  before any request. It describes an unexpected response body by its keys
+  instead of quoting it, and a live eval report replaces the value of each
+  declared credential variable with `<hidden>` in its case details.
+  `scripts/run_evals.py` refuses a report path that resolves through a
+  symlink before it writes or deletes anything.
+- **Upgrading: the `openai-compatible` credential is declared in config.**
+  `copier update` brings `models.credential_env.openai-compatible`, listing
+  `OPENAI_API_KEY`, into `config/project.json`
+  (`tests/integration/test_copier_audit.py`). A project that passes another
+  variable as `api_key_env` adds that name to the list; without the entry, or
+  without the name, every construction of the adapter is refused.
 - **End-to-end scenarios over a real socket, and a gate that every endpoint
   has one.** The REST scenarios in `tests/e2e/` now drive the real app under
   uvicorn on a loopback port the OS picks (`tests/live_server.py`, the

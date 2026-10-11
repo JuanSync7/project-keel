@@ -2,7 +2,7 @@
 title: Integration — the replayed eval gate, run as a real CLI over a scratch repository
 kind: tests
 layer: n/a
-summary: A scratch git repository carrying keel's evals/, models/, agents/triage, the eval CLI and its script siblings, config/ and .gitignore runs scripts/run_evals.py --mode replay as a child process. Two runs on the same tree exit 0 and write byte-identical reports with result pass under config/project.json `evals.report_dir`, and leave what git lists unchanged (the writer's rerun_proof). The shipped dataset uses every scorer in evals.SCORERS and every doer in evals.DOERS. Each red twin is red with its own exit code: a recorded response that fails its scorer or a prompt that changed is a fail (exit 1); a stale response hash, an empty dataset, no dataset file, an unknown scorer, an id repeated across two suites and a stray file in the dataset directory are refused (exit 2). A report_dir git does not ignore is refused before anything is written, a red run replaces an earlier green report, and a refused `evals` block (a bad value or an unknown key) removes the earlier report, twice over, rather than leave it reading pass.
+summary: A scratch git repository carrying keel's evals/, models/, agents/triage, the eval CLI and its script siblings, config/ and .gitignore runs scripts/run_evals.py --mode replay as a child process. Two runs on the same tree exit 0 and write byte-identical reports with result pass under config/project.json `evals.report_dir`, and leave what git lists unchanged (the writer's rerun_proof). The shipped dataset uses every scorer in evals.SCORERS and every doer in evals.DOERS. Each red twin is red with its own exit code: a recorded response that fails its scorer or a prompt that changed is a fail (exit 1); a stale response hash, an empty dataset, no dataset file, an unknown scorer, an id repeated across two suites and a stray file in the dataset directory are refused (exit 2). A report_dir git does not ignore is refused before anything is written, as is one whose first component is a symlink to a directory outside the project (in replay and live mode, with and without git, and when the `evals` block is itself refused) and a report temporary file that is a symlink, each leaving the outside files as they were, a red run replaces an earlier green report, and a refused `evals` block (a bad value or an unknown key) removes the earlier report, twice over, rather than leave it reading pass.
 @covers scripts/run_evals.py
 """
 
@@ -287,3 +287,56 @@ def test_an_unusable_report_dir_says_the_old_report_may_stand(tmp_path):
     out = run_cli(repo, env)
     assert out.returncode == 2, out.stdout
     assert "may still stand" in out.stdout, out.stdout
+
+
+def _outside(tmp_path):
+    """A directory beside the project holding a file the run must not touch."""
+    outside = tmp_path / "outside"
+    candidates = outside / "evals" / "live-candidates"
+    candidates.mkdir(parents=True)
+    (candidates / "keep.txt").write_text("precious\n", encoding="utf-8")
+    return outside
+
+
+def _tree(path):
+    return sorted(str(p.relative_to(path)) for p in path.rglob("*"))
+
+
+@pytest.mark.parametrize("git", [True, False], ids=["git", "no-git"])
+@pytest.mark.parametrize("mode", ["replay", "live"])
+@pytest.mark.parametrize("refused_config", [False, True], ids=["run", "refused-config"])
+def test_a_report_dir_through_a_symlink_writes_and_deletes_nothing(
+    tmp_path, git, mode, refused_config
+):
+    """`evals.report_dir` is judged as text by the config and by git's ignore
+    rule; a symlinked component points the report, and the live run's delete,
+    somewhere neither of them looked."""
+    repo, env = build_scratch(tmp_path)
+    if not git:
+        shutil.rmtree(str(repo / ".git"))
+    outside = _outside(tmp_path)
+    before = _tree(outside)
+    link = repo / Path(_CONFIG.report_dir).parts[0]
+    assert not link.exists()
+    link.symlink_to(outside, target_is_directory=True)
+    if refused_config:
+        _set_manifest(repo, "threshold", 0)
+    out = run_cli(repo, env, mode=mode)
+    assert out.returncode == 2, out.stdout
+    assert "evals.report_dir" in out.stdout and "symlink" in out.stdout, out.stdout
+    assert _tree(outside) == before, out.stdout
+    assert (outside / "evals" / "live-candidates" / "keep.txt").read_text(
+        "utf-8"
+    ) == "precious\n"
+
+
+def test_a_report_file_that_is_a_symlink_is_not_written_through(tmp_path):
+    repo, env = build_scratch(tmp_path)
+    target = tmp_path / "victim.txt"
+    target.write_text("precious\n", encoding="utf-8")
+    report = report_path(repo)
+    report.parent.mkdir(parents=True)
+    (report.parent / (report.name + ".tmp")).symlink_to(target)
+    out = run_cli(repo, env)
+    assert out.returncode == 2, out.stdout
+    assert target.read_text("utf-8") == "precious\n"

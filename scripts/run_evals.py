@@ -3,7 +3,7 @@
 title: Run evals — replay the eval suites, or run them live under the spend cap, and write the report
 kind: script
 layer: n/a
-summary: The command line `make eval` (--mode replay) and `make eval-live` (--mode live) run; it calls the evals package and holds no judging logic. It reads config/project.json `evals`, refuses a report_dir git does not ignore before writing anything, writes a red placeholder report first so a crash never leaves an earlier green one standing, and removes the earlier report (and, live, the earlier candidates) when the `evals` block is refused, since a refused block cannot say how to write one, then judges every suite and replaces `<evals.report_dir>/<mode>.json` whole with the canonical report. A live run first deletes `<evals.report_dir>/live-candidates/`, then writes one candidate file per suite there, one canonical case line per answered case; it never edits the tracked dataset. Exit 0 when every suite passed, 1 on any fail, 2 when the run was refused (config, dataset, the call cap, a null or unknown model, an unignored report_dir), and 3 when the live backend is absent. It starts no process itself; a model adapter does, through scripts/child_env.py.
+summary: The command line `make eval` (--mode replay) and `make eval-live` (--mode live) run; it calls the evals package and holds no judging logic. It reads config/project.json `evals`, refuses, before writing or deleting anything, a report_dir that reaches its report, its temporary file or the live candidates through a symlink (git's ignore rule and the config's path check both judge the text of the path, not where it leads) and a report_dir git does not ignore, writes a red placeholder report first so a crash never leaves an earlier green one standing, and removes the earlier report (and, live, the earlier candidates) when the `evals` block is refused, since a refused block cannot say how to write one, then judges every suite and replaces `<evals.report_dir>/<mode>.json` whole with the canonical report. A live run first deletes `<evals.report_dir>/live-candidates/`, then writes one candidate file per suite there, one canonical case line per answered case; it never edits the tracked dataset. Exit 0 when every suite passed, 1 on any fail, 2 when the run was refused (config, dataset, the call cap, a null or unknown model, an unignored report_dir), and 3 when the live backend is absent. It starts no process itself; a model adapter does, through scripts/child_env.py.
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/integration/test_evals_gate.py
@@ -17,6 +17,7 @@ import os
 import shutil
 import sys
 from collections.abc import Sequence
+from pathlib import PurePosixPath
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO = os.path.dirname(_HERE)
@@ -78,11 +79,35 @@ def _report(
     )
 
 
+def _through_symlink(root: str, paths: Sequence[str]) -> list[str]:
+    """The project-relative *paths* that do not resolve to themselves under
+    *root*: some component, or the path itself, is a symlink. A path that does
+    not exist yet resolves to itself."""
+    real_root = os.path.realpath(root)
+    return [
+        p
+        for p in paths
+        if os.path.realpath(os.path.join(root, p))
+        != os.path.join(real_root, *PurePosixPath(p).parts)
+    ]
+
+
+def _refuse_symlinks(report_dir: str, linked: Sequence[str]) -> None:
+    print(
+        "run_evals: config/project.json `evals.report_dir` %r reaches %s through "
+        "a symlink; a report or a delete there could land outside the project, "
+        "so nothing was written or removed" % (report_dir, ", ".join(linked)),
+        file=sys.stderr,
+    )
+
+
 def _unignored(root: str, paths: Sequence[str]) -> list[str]:
     try:
         return [p for p in paths if not git_tree.is_ignored(root, p)]
     except git_tree.NoGitError:
-        # No git, no tracked tree to dirty: nothing for the guard to protect.
+        # No git, no tracked tree to dirty. This guard is only about dirtying
+        # the tree; staying inside the project is _through_symlink's, which
+        # needs no git and has already run.
         return []
 
 
@@ -120,6 +145,10 @@ def _remove_stale(root: str, report_dir: str | None, mode: str) -> None:
     stale = ["%s/%s.json" % (report_dir, mode)]
     if mode == "live":
         stale.append("%s/%s" % (report_dir, _CANDIDATES))
+    linked = _through_symlink(root, stale)
+    if linked:
+        _refuse_symlinks(report_dir, linked)
+        return
     probes = [p if p.endswith(".json") else p + "/x.jsonl" for p in stale]
     if _unignored(root, probes):
         return
@@ -154,6 +183,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     rel = "%s/%s.json" % (cfg.report_dir, mode)
     candidates_dir = "%s/%s" % (cfg.report_dir, _CANDIDATES)
     guarded = [rel, rel + ".tmp"]
+    linked = _through_symlink(
+        root, guarded + ([candidates_dir] if mode == "live" else [])
+    )
+    if linked:
+        _refuse_symlinks(cfg.report_dir, linked)
+        return 2
     if mode == "live":
         guarded.append(candidates_dir + "/x.jsonl")
     loose = _unignored(root, guarded)

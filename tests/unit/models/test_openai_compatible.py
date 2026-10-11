@@ -2,7 +2,7 @@
 title: Unit — OpenAI-compatible model backend
 kind: tests
 layer: backend
-summary: The adapter builds a correct chat-completions request and parses the reply, with no network.
+summary: The adapter builds a correct chat-completions request and parses the reply, with no network. It refuses at construction an `api_key_env` config/project.json `models.credential_env` does not declare for it and a `base_url` that is not an http or https URL with a host and no user part, naming the argument and never a value, and it describes an unexpected response body by its keys without quoting it.
 """
 
 import sys
@@ -131,3 +131,59 @@ def test_an_endpoint_that_answers_with_an_error_is_broken_not_absent(monkeypatch
     with pytest.raises(Exception) as caught:
         mod._post_json("http://h/v1/chat/completions", {}, {}, 1.0)
     assert not isinstance(caught.value, ModelUnavailable)
+
+
+# --- what config may not choose: the credential variable and the destination ----
+
+
+def _refusing_transport(url, payload, headers, timeout):
+    raise AssertionError("a refused adapter must not send a request")
+
+
+def test_an_undeclared_credential_variable_is_refused(monkeypatch):
+    """`api_key_env` picks which environment variable leaves the process as a
+    bearer token, so only a name config/project.json `models.credential_env`
+    declares for this adapter is accepted."""
+    monkeypatch.setenv("UNRELATED_SECRET", "canary-not-a-model-key")
+    with pytest.raises(ValueError) as info:
+        get_model(
+            "openai-compatible",
+            api_key_env="UNRELATED_SECRET",
+            transport=_refusing_transport,
+        )
+    assert "models.credential_env" in str(info.value)
+    assert "UNRELATED_SECRET" in str(info.value)
+    assert "canary-not-a-model-key" not in str(info.value)
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "file:///etc/passwd",
+        "ftp://llm.example/v1",
+        "llm.example/v1",
+        "https:///v1",
+        "https://user:pw@llm.example/v1",
+        "https://token@llm.example/v1",
+    ],
+)
+def test_a_base_url_that_is_not_a_plain_http_endpoint_is_refused(base_url):
+    with pytest.raises(ValueError) as info:
+        get_model("openai-compatible", base_url=base_url, transport=_refusing_transport)
+    assert "base_url" in str(info.value)
+    assert "pw" not in str(info.value) and "token" not in str(info.value)
+
+
+def test_an_unexpected_response_is_described_by_shape_never_quoted(monkeypatch):
+    """An endpoint may echo the request's credential in its error body; the
+    exception a report records names the body's keys, not its content."""
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-canary")
+
+    def echoing(url, payload, headers, timeout):
+        return {"error": "bad", "echo": headers["Authorization"]}
+
+    backend = get_model("openai-compatible", transport=echoing)
+    with pytest.raises(RuntimeError) as info:
+        backend.run("ping")
+    assert "sk-canary" not in str(info.value)
+    assert "echo" in str(info.value) and "error" in str(info.value)

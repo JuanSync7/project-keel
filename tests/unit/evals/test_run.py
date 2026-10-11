@@ -2,7 +2,7 @@
 title: Unit — eval replay and the capped live run
 kind: tests
 layer: n/a
-summary: replay drives each case's real doer against a recording backend, so a case whose prompt hash matches is scored, a case whose prompt changed is stale with the new hash named, and a doer that calls the model twice is an error; run_live refuses a null model and a case count above evals.live.max_calls before the backend factory runs, turns an unknown model name or a bad option into a config refusal, stops at an absent backend and marks the rest not-run, so a later suite is absent too, records any other exception as that case's error, and raises SpendCapExceeded when a doer breaches the cap mid-run. No disk, no network: backends are small in-memory classes.
+summary: replay drives each case's real doer against a recording backend, so a case whose prompt hash matches is scored, a case whose prompt changed is stale with the new hash named, and a doer that calls the model twice is an error; run_live refuses a null model and a case count above evals.live.max_calls before the backend factory runs, turns an unknown model name or a bad option into a config refusal, stops at an absent backend and marks the rest not-run, so a later suite is absent too, records any other exception as that case's error, and raises SpendCapExceeded when a doer breaches the cap mid-run. An option the adapter refuses with a ValueError is a config refusal, and a case detail has each passed secret, or by default the value of each credential variable declared for the model, replaced by `<hidden>`. No disk, no network: backends are small in-memory classes.
 """
 
 import hashlib
@@ -234,3 +234,41 @@ def test_live_absent_stops_and_marks_the_rest_not_run():
         )
     assert info.value.calls == 3
     assert len(backend.prompts) == 3
+
+
+def test_live_turns_an_option_the_adapter_refuses_into_a_config_refusal():
+    factory = _Factory(exc=ValueError("api_key_env is not declared"))
+    with pytest.raises(ConfigError) as info:
+        run_live(_three(), _config(), backend_factory=factory)
+    assert "evals.live.model_options" in str(info.value)
+
+
+def test_live_details_never_carry_a_declared_credential_value(monkeypatch):
+    """A backend's exception text reaches the report; the value of a variable
+    config/project.json `models.credential_env` declares for the model is cut
+    from it first."""
+    backend = _Scripted(
+        [RuntimeError("server said Bearer canary-key"), ModelUnavailable("canary-key")]
+    )
+    run = run_live(
+        _three(),
+        _config(),
+        backend_factory=_Factory(backend),
+        secrets=("canary-key",),
+    )
+    details = [o.detail for o in run.results[0].cases]
+    assert [o.outcome for o in run.results[0].cases][:2] == ["error", "absent"]
+    assert all("canary-key" not in d for d in details), details
+    assert "<hidden>" in details[0] and "<hidden>" in details[1], details
+
+    # With no secrets passed, the values come from the names declared for the
+    # configured model.
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-declared-canary")
+    backend = _Scripted([RuntimeError("echo sk-declared-canary"), "ACK", "ACK"])
+    run = run_live(
+        _three(),
+        _config(model="openai-compatible"),
+        backend_factory=_Factory(backend),
+    )
+    detail = {o.id: o for o in run.results[0].cases}["a"].detail
+    assert "sk-declared-canary" not in detail and "<hidden>" in detail, detail

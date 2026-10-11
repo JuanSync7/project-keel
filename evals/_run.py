@@ -2,15 +2,17 @@
 title: Eval runs — replay recorded responses, or a capped live run through the model registry
 layer: n/a
 public_api: no
-summary: replay drives every case's real doer against a backend that answers with the case's recorded response, so the prompt the code sends today is hashed and compared with the recording (a mismatch is stale, never scored) and no model is called. run_live checks the null model and the call cap before it constructs a backend, builds the one config/project.json `evals.live` names through models.get_model, counts every call and stops at the cap, marks the rest of the run not-run once the backend is absent, records any other exception as that case's error, and returns a candidate case line for each answer; it never edits a dataset.
+summary: replay drives every case's real doer against a backend that answers with the case's recorded response, so the prompt the code sends today is hashed and compared with the recording (a mismatch is stale, never scored) and no model is called. run_live checks the null model and the call cap before it constructs a backend, builds the one config/project.json `evals.live` names through models.get_model, counts every call and stops at the cap, marks the rest of the run not-run once the backend is absent, records any other exception as that case's error, and returns a candidate case line for each answer; it never edits a dataset. An option the adapter refuses (a ValueError, such as a credential variable config/project.json `models.credential_env` does not declare) is a config refusal before any call, and the value of each variable declared there for the model is replaced by `<hidden>` in every live case detail, since a backend's exception text may echo it.
 """
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 
 from models import ModelBackend, ModelUnavailable, get_model
+from scripts.child_env import load_policy
 
 from ._config import ConfigError, EvalConfig
 from ._dataset import Case, Suite
@@ -23,6 +25,8 @@ __all__ = ["LiveRun", "SpendCapExceeded", "replay", "run_live"]
 # An exception message is cut to this many characters in a case detail: enough
 # to name the failure, short enough that one stack of HTML cannot fill a report.
 _DETAIL = 200
+# What stands in a case detail where a credential's value was.
+_HIDDEN = "<hidden>"
 
 BackendFactory = Callable[..., ModelBackend]
 
@@ -88,9 +92,25 @@ class _Counting(ModelBackend):
         return self.inner.run(prompt, **opts)
 
 
-def _error(case: Case, exc: BaseException) -> Outcome:
-    detail = "%s: %s" % (type(exc).__name__, str(exc)[:_DETAIL])
+def _error(case: Case, exc: BaseException, secrets: Sequence[str] = ()) -> Outcome:
+    detail = "%s: %s" % (type(exc).__name__, _detail(exc, secrets))
     return Outcome(case.id, "error", case.scorer_name, detail, None)
+
+
+def _detail(exc: BaseException, secrets: Sequence[str]) -> str:
+    # Cut before truncating, so a value split by the cut cannot survive as a
+    # prefix; longest first, so one value inside another leaves no remainder.
+    text = str(exc)
+    for secret in sorted(secrets, key=len, reverse=True):
+        text = text.replace(secret, _HIDDEN)
+    return text[:_DETAIL]
+
+
+def _declared_secrets(model: str) -> tuple[str, ...]:
+    """The values this process holds for the credential variables
+    config/project.json `models.credential_env` declares for *model*."""
+    names = load_policy().credentials.get(model, ())
+    return tuple(v for v in (os.environ.get(n) for n in names) if v)
 
 
 def _scored(case: Case, response: str) -> Outcome:
@@ -186,7 +206,9 @@ def _backend(cfg: EvalConfig, model: str, factory: BackendFactory) -> ModelBacke
             "config/project.json: `evals.live.model` %r is not a registered model (%s)"
             % (model, exc)
         ) from exc
-    except TypeError as exc:
+    except (TypeError, ValueError) as exc:
+        # TypeError: an option the adapter does not take. ValueError: one it
+        # takes and refuses, such as an undeclared credential variable.
         raise ConfigError(
             "config/project.json: `evals.live.model_options` do not fit %r (%s)"
             % (model, exc)
@@ -199,11 +221,14 @@ def run_live(
     *,
     backend_factory: BackendFactory = get_model,
     doers: Mapping[str, Doer] = DOERS,
+    secrets: Sequence[str] | None = None,
 ) -> LiveRun:
     """Run every case on the model config/project.json `evals.live` names.
     Raises ConfigError for a null, unknown or misconfigured model and
     SpendCapExceeded for a run above `evals.live.max_calls`, the count check
-    happening before any backend is built."""
+    happening before any backend is built. *secrets* are the values cut from
+    every case detail (default: what the environment holds for the model's
+    declared credential variables)."""
     model = cfg.live_model
     if model is None:
         raise ConfigError(
@@ -215,6 +240,8 @@ def run_live(
     counting = _Counting(
         _backend(cfg, model, backend_factory), total, cfg.live_max_calls
     )
+    if secrets is None:
+        secrets = _declared_secrets(model)
     results: list[SuiteResult] = []
     candidates: list[tuple[str, list[dict[str, object]]]] = []
     absent = False
@@ -243,12 +270,16 @@ def run_live(
                 absent = True
                 outcomes.append(
                     Outcome(
-                        case.id, "absent", case.scorer_name, str(exc)[:_DETAIL], None
+                        case.id,
+                        "absent",
+                        case.scorer_name,
+                        _detail(exc, secrets),
+                        None,
                     )
                 )
                 continue
             except Exception as exc:  # noqa: BLE001 — any other failure is this case's error
-                outcomes.append(_error(case, exc))
+                outcomes.append(_error(case, exc, secrets))
                 continue
             outcomes.append(_scored(case, response))
             lines.append(_candidate(case, response, prompt, model, cfg.schema_version))

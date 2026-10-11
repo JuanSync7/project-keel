@@ -269,7 +269,7 @@
     }
   },
   "models": {
-    "_comment": "Model/provider adapters this project makes available (registered in models/registry.py). 'default' is declarative: check_H requires it to be in 'available' and the showcase marks it, but models/registry.py DEFAULT_MODEL decides what get_model() returns with no name, and nothing ties the two together; the showcase surfaces this list. credential_env names, per adapter that starts a process, the environment variables that process needs on top of child_env (scripts/child_env.py build_child_env(credentials_for=<adapter>)); an adapter absent from it gets the base allowlist only. Add a name here, not in code, when a CLI needs one more (for example a cloud provider's region).",
+    "_comment": "Model/provider adapters this project makes available (registered in models/registry.py). 'default' is declarative: check_H requires it to be in 'available' and the showcase marks it, but models/registry.py DEFAULT_MODEL decides what get_model() returns with no name, and nothing ties the two together; the showcase surfaces this list. credential_env names, per adapter, the credential environment variables it may use: for an adapter that starts a process, what that process gets on top of child_env (scripts/child_env.py build_child_env(credentials_for=<adapter>)), an adapter absent from it getting the base allowlist only; for openai-compatible, which sends a credential itself, the only names its api_key_env argument accepts. Add a name here, not in code, when a CLI needs one more (for example a cloud provider's region).",
     "default": "claude-code-headless",
     "available": {
       "claude-code-headless": "models",
@@ -277,7 +277,8 @@
       "fake": "models"
     },
     "credential_env": {
-      "claude-code-headless": ["ANTHROPIC_API_KEY", "CLAUDE_CONFIG_DIR"]
+      "claude-code-headless": ["ANTHROPIC_API_KEY", "CLAUDE_CONFIG_DIR"],
+      "openai-compatible": ["OPENAI_API_KEY"]
     }
   },
   "practices": {

@@ -222,6 +222,18 @@ change to a template check upstream as an issue or a pull request.
   `evals.report_dir` itself is the refused key, it cannot find the report and
   says the earlier one may still stand; trust the exit code, not that file.
   `tests/integration/test_evals_gate.py` holds both cases.
+- **The eval config chooses where the model key goes.** `openai-compatible`
+  accepts only an `api_key_env` that config/project.json
+  `models.credential_env.openai-compatible` lists, so
+  `evals.live.model_options` cannot name another variable to send. It still
+  chooses `base_url`: whoever can edit `config/project.json` can direct the
+  declared key to a host of their choosing, and nothing here holds a list of
+  allowed hosts. `scripts/run_evals.py` refuses a report path that resolves
+  through a symlink, and it checks once, before it writes: a symlink planted
+  during the run is not seen. Outside a git work tree it does not check the
+  ignore rule, because there is no tree to dirty.
+  `tests/unit/models/test_openai_compatible.py` and
+  `tests/integration/test_evals_gate.py` hold the refusals.
 - **The live cap counts calls, not money.** config/project.json
   `evals.live.max_calls` bounds how many cases one live run may send; the price
   of one call depends on the model, the endpoint and the prompt, and nothing
@@ -274,6 +286,8 @@ Three more codes come from the tools around these scripts:
 | `make eval` fails with `stale-recording` and a case detail `prompt is now sha256:…, recorded sha256:…` | the doer now sends a different prompt than the one the case's response was recorded for, so the recorded answer no longer judges the code | re-record the case: run `make eval-live` and promote its candidate, or, for an authored case, copy the new hash from the detail into `recorded.prompt_sha256` after checking the response still fits (`evals/README_run.md`) |
 | `make eval` refuses with exit 2 naming `path:line` | a dataset line breaks `config/evals/eval-case.schema.json` or a rule it cannot state: a repeated key or id, or a `recorded.sha256` that does not match the response | fix that line; compute hashes with `evals.prompt_sha256` and `evals.sha256_text`, never by hand |
 | `make eval` or `make eval-live` refuses naming `evals.report_dir` and `is not git-ignored` | git would list the report, so writing it would change the tree | add config/project.json `evals.report_dir` (`.evidence/evals`) to `.gitignore` |
+| `make eval` or `make eval-live` refuses naming `evals.report_dir` and `through a symlink` | the report, its temporary file or `live-candidates/` resolves through a symlink, so a write or the live run's delete could land outside the project | replace the symlink under config/project.json `evals.report_dir` (`.evidence/evals`) with a real directory |
+| `make eval-live` refuses naming `models.credential_env` | `evals.live.model_options.api_key_env` names a variable the adapter is not declared to use, and the adapter would send that variable's value to `base_url` | name a variable listed in config/project.json `models.credential_env.openai-compatible` (`OPENAI_API_KEY`), or add the name there |
 | `make eval-live` refuses naming `evals.live.model` or `evals.live.max_calls` | the shipped model is `null` and the shipped cap is `0`, so no live run is approved | set both, and `evals.live.model_options`, as `evals/README_run.md` says; the cap must be at least the number of cases |
 | `make test-fe-unit` fails with `No test files found, exiting with code 1` | the app's unit runner found no test under its `include` list; this is the intended red for a stack with zero tests | add a test of the app's own code under `src/`, named `*.test.ts` (`*.test.tsx` in react-vite) |
 | `make test-fe-unit` fails with `Unexpected .only modifier` | a unit test is focused with `.only`, which would skip the rest of the suite; the app's `vitest.config.ts` sets `allowOnly: false`, and the journey's `forbidOnly: true` refuses the same in `e2e/` | remove the `.only` |

@@ -77,7 +77,14 @@ Before the first live run, set three keys:
 1. `evals.live.model`: a name from `models.list_models()` (default `null`, which
    refuses the run).
 2. `evals.live.model_options`: keyword arguments for that adapter, such as
-   `base_url` and `model` for `openai-compatible`.
+   `base_url` and `model` for `openai-compatible`. These options choose where
+   the adapter's credential is sent, so `openai-compatible` refuses (exit 2,
+   before any call) an `api_key_env` that config/project.json
+   `models.credential_env.openai-compatible` does not list, and a `base_url`
+   that is not an http or https URL with a host and no user part. Anyone who
+   can edit `config/project.json` can still point `base_url` at a host of
+   their choosing and receive the declared key: review a change to this block
+   as you would a change to a credential.
 3. `evals.live.max_calls`: at least the number of cases. The default is `0`,
    which approves no calls. The cap is checked before any call, and a run that
    would exceed it is refused (exit 2).
@@ -88,7 +95,10 @@ endpoint and the prompt length. The report counts the calls made in `calls`.
 A live run deletes `<evals.report_dir>/live-candidates/` and then writes one
 candidate line per answered case to
 `<evals.report_dir>/live-candidates/<suite>.jsonl`. It never edits the
-dataset.
+dataset. A case detail in the report has the value of each variable
+`models.credential_env` lists for the model replaced by `<hidden>`; a
+candidate line holds the model's response whole, so read it before you share
+it.
 
 ## Promoting a live answer
 

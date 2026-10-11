@@ -2,7 +2,7 @@
 title: Integration — the live eval path against a stub model server over a real socket
 kind: tests
 layer: n/a
-summary: scripts/run_evals.py --mode live runs every shipped case through models.registry.get_model with the openai-compatible adapter pointed, by config/project.json `evals.live.model_options`, at tests/stub_model_server.py on a loopback port the OS assigns, so the real HTTP path is proven with no paid call. With replies that pass, it exits 0, counts one call per case, sends exactly one request per case, writes one candidate per case under `evals.report_dir` whose hashes match the reply and the prompt the server received, leaves the tracked dataset unchanged, and a candidate promoted by hand over its case replays green. Each red path keeps its own exit: a reply that fails its scorer or an HTTP 500 is a fail (1); a case count above `evals.live.max_calls` or a null model is refused (2) before any request; a port with nothing listening is absent (3), the first case absent and the rest not run; and a refused or absent run leaves no candidate from an earlier run behind.
+summary: scripts/run_evals.py --mode live runs every shipped case through models.registry.get_model with the openai-compatible adapter pointed, by config/project.json `evals.live.model_options`, at tests/stub_model_server.py on a loopback port the OS assigns, so the real HTTP path is proven with no paid call. With replies that pass, it exits 0, counts one call per case, sends exactly one request per case, writes one candidate per case under `evals.report_dir` whose hashes match the reply and the prompt the server received, leaves the tracked dataset unchanged, and a candidate promoted by hand over its case replays green. Each red path keeps its own exit: a reply that fails its scorer or an HTTP 500 is a fail (1); a case count above `evals.live.max_calls` or a null model is refused (2) before any request; a port with nothing listening is absent (3), the first case absent and the rest not run; and a refused or absent run leaves no candidate from an earlier run behind. An `evals.live.model_options.api_key_env` that `models.credential_env` does not declare for the adapter is refused (2) with no request sent, and the variable's value appears in neither the output nor the report.
 @covers scripts/run_evals.py
 """
 
@@ -190,3 +190,32 @@ def test_live_red_paths_over_a_real_socket(
         assert _candidates(repo) == []
     else:
         assert seen == len(cases)
+
+
+def test_live_refuses_a_credential_variable_config_does_not_declare(tmp_path):
+    """`evals.live.model_options` reaches the adapter as keyword arguments, so
+    it could name any environment variable to send as the bearer token; one
+    `models.credential_env` does not declare for the adapter is refused before
+    a request is made."""
+    repo, env = build_scratch(tmp_path)
+    cases = _shipped_cases(repo)
+    canary = "canary-not-a-model-key"
+    with stub_chat_server(_ROOT, [c["recorded"]["response"] for c in cases]) as (
+        base,
+        requests,
+    ):
+        _configure(repo, base + "/v1")
+        manifest = _manifest(repo)
+        manifest["evals"]["live"]["model_options"]["api_key_env"] = "UNRELATED_SECRET"
+        (repo / "config" / "project.json").write_text(
+            json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
+        )
+        live_env = dict(_live_env(env), UNRELATED_SECRET=canary)
+        out = run_cli(repo, live_env, mode="live")
+        assert out.returncode == 2, out.stdout
+        assert len(requests) == 0
+    report = read_report(repo, "live")
+    assert (report["result"], report["reasons"]) == ("refused", ["refused"]), report
+    assert "models.credential_env" in report["detail"], report
+    assert canary not in out.stdout and canary not in json.dumps(report)
+    assert _candidates(repo) == []
