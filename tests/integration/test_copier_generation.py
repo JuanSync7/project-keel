@@ -2,7 +2,7 @@
 title: Integration — copier generates a structurally valid, tailored project
 kind: tests
 layer: n/a
-summary: `copier` renders keel's root template into a new project — the manifest is tailored to the answers, the un-chosen frontend stack is pruned, CLAUDE.md->AGENT.md symlinks are preserved, keel's own template meta-tests are pruned, and check_structure passes; an undeclared top-level directory reds the project until it is declared and labelled. A bare `subprocess.run` reds a generated project through check_X until it passes `env=build_child_env()`, and the project's helper passes an adapter's declared credential and no planted secret. A credentialed proxy (a `#` in the password included) fails the project's doc judge by name and never by value, while a `LANGUAGE=sr_RS:sr@latin` locale list does not, until `child_env.credentialed_values` names it, and a stale entry there reds the gate. A generated project carries keel's `work_naming` block and no plan doc, so check_Z is silent until the project writes one; a slice row that is not a slice id then reds the gate and a well-formed one does not. A generated project runs its own doc-drift tests green, every skip there a template-only test naming why, and a prose slice id planted in its CONTRIBUTING.md reds them, and so does a row dropped from its settings reference or from its feature catalogue; its README names no `make new`, and its `run-web` line names Astro and its port only for the astro stack and is absent with no frontend. Under every transport answer, and without the showcase, a generated project's e2e coverage gate and its scenarios pass with nothing skipped, and a grpc project whose exemption is dropped is red naming the method. A project with a frontend carries keel's `layers.frontend.journey` keys and passes its own frontend-suite contract tests statically; one without has no frontend keys, its wiring test skips with a reason, and `make test-fe` exits 0 silently. Skipped on a bare local clone without the optional `template` extra; CI installs `.[dev,template]` and declares the surface required (KEEL_REQUIRED_EXTRAS), so there a missing copier is a hard failure instead of a silent skip.
+summary: `copier` renders keel's root template into a new project — the manifest is tailored to the answers, the un-chosen frontend stack is pruned, CLAUDE.md->AGENT.md symlinks are preserved, keel's own template meta-tests are pruned, and check_structure passes; an undeclared top-level directory reds the project until it is declared and labelled. A bare `subprocess.run` reds a generated project through check_X until it passes `env=build_child_env()`, and the project's helper passes an adapter's declared credential and no planted secret. A credentialed proxy (a `#` in the password included) fails the project's doc judge by name and never by value, while a `LANGUAGE=sr_RS:sr@latin` locale list does not, until `child_env.credentialed_values` names it, and a stale entry there reds the gate. A generated project carries keel's `work_naming` block and no plan doc, so check_Z is silent until the project writes one; a slice row that is not a slice id then reds the gate and a well-formed one does not. A generated project runs its own doc-drift tests green, every skip there a template-only test naming why, and a prose slice id planted in its CONTRIBUTING.md reds them, and so does a row dropped from its settings reference or from its feature catalogue; its README names no `make new`, and its `run-web` line names Astro and its port only for the astro stack and is absent with no frontend. Under every transport answer, and without the showcase, a generated project's e2e coverage gate and its scenarios pass with nothing skipped, and a grpc project whose exemption is dropped is red naming the method. A project with a frontend carries keel's `layers.frontend.journey` keys and passes its own frontend-suite contract tests statically; one without has no frontend keys, its wiring test skips with a reason, and `make test-fe` exits 0 silently. Under every answer set, `make eval` in a committed generated project replays its shipped eval dataset, which uses every scorer, green twice with the same report bytes and leaves what git lists alone, and the README's delete advice no longer offers evals/. Skipped on a bare local clone without the optional `template` extra; CI installs `.[dev,template]` and declares the surface required (KEEL_REQUIRED_EXTRAS), so there a missing copier is a hard failure instead of a silent skip.
 """
 
 import json
@@ -559,6 +559,9 @@ def test_the_readmes_delete_advice_leaves_a_green_gate(tmp_path):
     _generate(dest, project_name="demo_proj", frontend_stack="none")
     deletable = _readme_deletable_dirs(dest)
     assert deletable, "the delete-advice sentence lists no directories"
+    # evals/ holds a verify goal's dataset and harness: deleting it reddens
+    # `make eval`, which check_structure alone would not show.
+    assert "evals" not in deletable, deletable
 
     for name in deletable:
         assert (dest / name).exists(), (
@@ -1138,6 +1141,65 @@ def test_a_generated_project_runs_and_smokes(tmp_path, answers):
     assert smoke.returncode == 0, smoke.stdout[-3000:] + smoke.stderr[-2000:]
     passed = _PASSED.search(smoke.stdout)
     assert passed and int(passed.group(1)) >= 1, smoke.stdout[-3000:]
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
+@pytest.mark.parametrize(
+    "answers",
+    _ANSWER_MATRIX
+    + [
+        pytest.param(
+            {"frontend_stack": "none", "showcase": False}, id="showcase-declined"
+        )
+    ],
+)
+def test_a_generated_project_replays_its_evals(tmp_path, answers):
+    """Slice CMP-4.S7 held downstream: every answer set ships keel's `evals`
+    block, the harness, the triage doer it drives and a dataset that uses every
+    shipped scorer, and `make eval` run twice in the committed project exits 0,
+    writes the same passing report both times and leaves what git lists alone.
+    agents/triage is never pruned, so no answer set may skip this."""
+    sys.path.insert(0, str(_ROOT))
+    from evals import SCORERS
+
+    dest = tmp_path / "proj"
+    _generate(dest, project_name="demo_proj", **answers)
+    keel = json.loads((_ROOT / "config" / "project.json").read_text())
+    shipped = json.loads((dest / "config" / "project.json").read_text())
+    assert shipped["evals"] == keel["evals"], shipped.get("evals")
+    block = shipped["evals"]
+    assert (dest / "agents" / "triage" / "__init__.py").is_file()
+    cases = [
+        json.loads(line)
+        for path in sorted((dest / block["dataset_dir"]).iterdir())
+        for line in path.read_text().splitlines()
+    ]
+    assert {c["scorer"]["name"] for c in cases} == set(SCORERS)
+
+    env = _hermetic_git_env(tmp_path)
+    for argv in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "generated"]):
+        g = subprocess.run(
+            ["git"] + argv, cwd=str(dest), env=env, capture_output=True, text=True
+        )
+        assert g.returncode == 0, g.stderr
+    report = dest / block["report_dir"] / "replay.json"
+    seen = []
+    for _ in range(2):
+        ran = _make_in(dest, "eval")
+        assert ran.returncode == 0, ran.stdout[-3000:] + ran.stderr[-3000:]
+        status = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=str(dest),
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        assert status.stdout == "", status.stdout
+        seen.append(report.read_bytes())
+    assert seen[0] and seen[0] == seen[1]
+    rec = json.loads(seen[0].decode("utf-8"))
+    assert (rec["result"], rec["mode"]) == ("pass", "replay"), rec
+    assert sum(s["total"] for s in rec["suites"]) == len(cases), rec
 
 
 _APP_DELETE_ADVICE = re.compile(r"\*\*Delete this dir\*\*(.*?)(?:\n\n|\Z)", re.DOTALL)

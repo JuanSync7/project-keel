@@ -40,3 +40,6 @@ jobs:
       - run: make test
         env:
           KEEL_REQUIRED_EXTRAS: "template,dev,transport"
+      # Replays every eval suite against its recorded responses: no network, no
+      # credential (config/project.json evals; scripts/run_evals.py).
+      - run: make eval

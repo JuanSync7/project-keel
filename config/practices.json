@@ -62,7 +62,8 @@
         "src",
         "models",
         "demo",
-        "agents"
+        "agents",
+        "evals"
       ],
       "overrides": {
         "_comment": "Declared mirror of every [[tool.mypy.overrides]] block in pyproject.toml: which module pattern may relax which flags. Until pass 3.6 check_M read only `tool.mypy.<flag>`, while _toml_targets normalises override blocks to `tool.mypy.overrides.<flag>` — so a per-module `strict = false`, an `ignore_errors = true`, or (the real case here) switching off strict's COMPONENTS was a loosening the parity gate could not see, and the blocks aliased onto one dotted key so only the last would have been read anyway. Now enforced, with a bound worth stating plainly: check_M errors on an undeclared per-module relaxation of a flag THIS ruleset declares (`strict`, the twelve components `--strict` expands to, `warn_unreachable`) or of `ignore_errors`. Keys outside that set are recorded here but NOT read by the gate — `ignore_missing_imports` on `aad` scopes import resolution rather than type strictness — so they are declared for completeness and judged by review, not by exit code. The removal condition for each lives beside the block in pyproject.toml — deleting a flag from both files is the ratchet step.",

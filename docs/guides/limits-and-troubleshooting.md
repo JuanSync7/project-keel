@@ -201,6 +201,33 @@ until you resolve them
 project adds its own checks under `structure.project_checks`, and proposes a
 change to a template check upstream as an issue or a pull request.
 
+- **A replayed eval judges recorded answers, not today's model.** `make eval`
+  runs the real doer and fails a case whose prompt changed, but it scores the
+  response stored in the case. Whether the model still answers that way shows
+  only in `make eval-live`, which is not a `make verify` goal. A case whose
+  `recorded.source` is `authored` was written by a person, not answered by a
+  model.
+- **A crash before the eval config is read leaves the last report standing.**
+  `scripts/run_evals.py` writes its `incomplete` placeholder only after it has
+  imported the harness and read config/project.json `evals`. A doer that fails
+  to import, such as a syntax error in `agents/triage`, ends the run with
+  Python's exit 1, the same code as a failing suite, and the previous
+  `<evals.report_dir>/<mode>.json` is not replaced. The gate still fails;
+  read the traceback, not the report.
+- **A refused `evals` block removes the last report instead of replacing it.**
+  When config/project.json `evals` is refused (exit 2), `scripts/run_evals.py`
+  cannot write a report, because the schema it would follow is part of what
+  was refused. It deletes `<evals.report_dir>/<mode>.json`, and in live mode
+  `<evals.report_dir>/live-candidates/`, when that path is git-ignored. When
+  `evals.report_dir` itself is the refused key, it cannot find the report and
+  says the earlier one may still stand; trust the exit code, not that file.
+  `tests/integration/test_evals_gate.py` holds both cases.
+- **The live cap counts calls, not money.** config/project.json
+  `evals.live.max_calls` bounds how many cases one live run may send; the price
+  of one call depends on the model, the endpoint and the prompt, and nothing
+  here measures it. The evidence record lists `eval` with `tests: null`: its
+  case counts are in `<evals.report_dir>/replay.json`, not in the record.
+
 ## Exit codes
 
 The scripts `make verify` runs, and what each exit code means.
@@ -214,6 +241,7 @@ The scripts `make verify` runs, and what each exit code means.
 | `scripts/jobs/check_corpus.py` | 0, 1 | 0: the corpus is well-formed and its build is reproducible. 1: it is not, and each error is printed |
 | `scripts/cdmon_sync.py` | 0, passes through | 0: cdmon or its config is absent. Otherwise cdmon's own code passes through |
 | `scripts/gate_evidence.py` | 0, 2, 3, 130, passes through | 0: every goal passed and the record is green. 2: refused before any goal ran: a malformed `--gate` or goal, zero goals, a bad `evidence` block, or a record path git does not ignore. 3: every goal passed but the record is red: zero tests, a failed or errored test in the junit report of a goal that exited 0, no junit report, the tree changed during the run, the checks could not run, or the writer crashed. 130: interrupted, and the red placeholder record stays. Otherwise the first failing goal's code passes through |
+| `scripts/run_evals.py` | 0, 1, 2, 3 | 0: every suite passed. 1: a suite failed: below `evals.threshold`, an errored case or a stale recording. 2: refused: a bad `evals` block, a malformed or empty dataset, a live run over `evals.live.max_calls`, a null or unknown `evals.live.model`, or an `evals.report_dir` git does not ignore. 3: the live backend is absent; the first case is `absent` and the rest `not-run` |
 
 Three more codes come from the tools around these scripts:
 
@@ -243,6 +271,10 @@ Three more codes come from the tools around these scripts:
 | `make check-corpus` fails after you added documents | the local corpus is stale | `make site-data` |
 | `make verify` fails with `Error 3` though every goal passed | the evidence record is red for a reason no goal's exit reports: zero tests ran, pytest's report counts a failed or errored test that the test recipe ignored, pytest wrote no report, the tree changed during the run, or the checks or the writer crashed | read `reasons` in `.evidence/verify.json` (config/project.json `evidence.dir`) and fix what it names |
 | `make verify` stops before any goal, naming `.gitignore` | git would list the evidence record, so writing it would change the tree | add config/project.json `evidence.dir` (`.evidence`) to `.gitignore` |
+| `make eval` fails with `stale-recording` and a case detail `prompt is now sha256:…, recorded sha256:…` | the doer now sends a different prompt than the one the case's response was recorded for, so the recorded answer no longer judges the code | re-record the case: run `make eval-live` and promote its candidate, or, for an authored case, copy the new hash from the detail into `recorded.prompt_sha256` after checking the response still fits (`evals/README_run.md`) |
+| `make eval` refuses with exit 2 naming `path:line` | a dataset line breaks `config/evals/eval-case.schema.json` or a rule it cannot state: a repeated key or id, or a `recorded.sha256` that does not match the response | fix that line; compute hashes with `evals.prompt_sha256` and `evals.sha256_text`, never by hand |
+| `make eval` or `make eval-live` refuses naming `evals.report_dir` and `is not git-ignored` | git would list the report, so writing it would change the tree | add config/project.json `evals.report_dir` (`.evidence/evals`) to `.gitignore` |
+| `make eval-live` refuses naming `evals.live.model` or `evals.live.max_calls` | the shipped model is `null` and the shipped cap is `0`, so no live run is approved | set both, and `evals.live.model_options`, as `evals/README_run.md` says; the cap must be at least the number of cases |
 | `make test-fe-unit` fails with `No test files found, exiting with code 1` | the app's unit runner found no test under its `include` list; this is the intended red for a stack with zero tests | add a test of the app's own code under `src/`, named `*.test.ts` (`*.test.tsx` in react-vite) |
 | `make test-fe-unit` fails with `Unexpected .only modifier` | a unit test is focused with `.only`, which would skip the rest of the suite; the app's `vitest.config.ts` sets `allowOnly: false`, and the journey's `forbidOnly: true` refuses the same in `e2e/` | remove the `.only` |
 | `make test-fe-e2e` fails with `Error: No tests found` | the app's journey directory holds no `*.spec.ts`; this is the intended red for a stack with zero journeys | add a journey under the app's `e2e/` |

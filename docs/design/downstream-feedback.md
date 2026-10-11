@@ -1509,7 +1509,7 @@ to be released as 0.2.2.
 | CMP-4.S4 | `make verify` reports only an exit code and log text, so nothing outside the repo can read which gate ran, on which commit, with what result | done — `make verify` green (1906 passed); 6 of 6 review findings confirmed and fixed (two reviewers found the same defect) |
 | CMP-4.S5 | A frontend has no test runner, so it ships with zero tests and the gate is green | done — `make verify` green (1924 passed); 6 of 7 review findings confirmed and fixed |
 | CMP-4.S6 | The e2e scenarios call the app in process, and nothing checks that a route has a scenario | done — `make verify` green (1973 passed); 4 of 5 review findings confirmed and fixed |
-| CMP-4.S7 | Nothing calls a real model or a running server and judges what comes back | planned |
+| CMP-4.S7 | Nothing calls a real model or a running server and judges what comes back | done — `make verify` green (2149 passed); 5 of 5 review findings confirmed and fixed |
 | CMP-4.S8 | A spec's requirements are not tied to tests, so an uncovered requirement passes the gate | planned — approved by the maintainer |
 
 - **CMP-4.S1, documentation truth.** Every stale claim the documentation audit

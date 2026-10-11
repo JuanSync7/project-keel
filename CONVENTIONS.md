@@ -640,6 +640,18 @@ It is keyed **by layer/concern, never one global `language`**:
   `scripts/gate_evidence.py` reads the block and refuses, with exit 2 and no
   record, a missing block, a path that is absolute or climbs out with `..`, an
   unreadable schema, and a record or report path git would list.
+- `evals` — the eval harness (`evals/`, `scripts/run_evals.py`):
+  `case_schema` (`config/evals/eval-case.schema.json`) and `report_schema`
+  (`config/evals/eval-report.schema.json`), each the only owner of its format's
+  `schema_version.const`; `dataset_dir` (`evals/datasets`, one `<suite>.jsonl`
+  per suite); `report_dir` (`.evidence/evals`, which `.gitignore` must ignore:
+  the run is refused with exit 2 otherwise); `threshold` (`1.0`, with
+  0 < threshold <= 1: a suite passes when passed/total >= threshold, compared
+  exactly); and `live`, holding `model` (`null`: `make eval-live` is refused),
+  `max_calls` (`0`: the approved call cap, checked before any call) and
+  `model_options` (`{}`: keyword arguments for the adapter `model` names).
+  `evals/_config.py` refuses, naming the dotted key, a missing, unknown or
+  ill-typed key and a path that is absolute or climbs out with `..`.
 - `child_env` — the environment a child process inherits (§7): `names` (the
   variables copied from the parent when present, e.g. `PATH`, `HOME`, the
   proxy and CA-bundle names), `prefixes` (letter-led and ending in `_`, e.g.
@@ -833,7 +845,7 @@ govern *how you work*; their executable analog — a loop a program runs unatten
   endpoint) gets a `tests/e2e/` scenario that exercises it through its public
   surface; name it by scenario, not by a source file.
 - **The gate is the judge.** "Done" means `make verify` (`check-all` + `lint` +
-  `typecheck` + `test` + `test-fe`) is green; step transitions and completion gate on the
+  `typecheck` + `test` + `eval` + `test-fe`) is green; step transitions and completion gate on the
   real exit code, never on a model's self-report. A loop runs its gate through
   `scripts/run_make_target.py`, which runs only a target labelled inside
   `make_targets.gate_effects` and fails one that changed the tree (§7).

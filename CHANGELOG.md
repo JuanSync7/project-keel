@@ -11,6 +11,24 @@ version rather than a bare commit:
 ## [Unreleased]
 
 ### Added
+- **Evals that judge actual responses, replayed in `make verify`.** `evals/` is
+  now a harness, not a placeholder. A suite is one `evals/datasets/<suite>.jsonl`
+  file, one canonical case per line, held to
+  `config/evals/eval-case.schema.json`. Each case names a doer (`prompt`, or
+  the `triage` agent's real `triage` function), a deterministic scorer
+  (`exact`, `contains`, `regex`, `json_fields`) and a recorded response with its hash and the hash of
+  the prompt it answered. `make eval` (`[local]`, a `make verify` goal and a CI
+  step) runs each doer against a backend that replays the recording. It fails a
+  case whose prompt has changed as `stale-recording`, and a suite below config/project.json
+  `evals.threshold` (`1.0`), compared as exact fractions. It writes a canonical
+  report to `.evidence/evals/replay.json` under
+  `config/evals/eval-report.schema.json`. `make eval-live` (`[read,cost]`) sends
+  the same cases to `evals.live.model` under `evals.live.max_calls`, which
+  defaults to `0` and is checked before any backend is built. It writes
+  candidates for a person to promote and never edits the dataset. Refused (exit
+  2), failed (1) and absent (3) stay distinct, and zero cases is refused.
+  The `triage` function in `agents/triage` now also accepts an injected
+  `backend=`.
 - **End-to-end scenarios over a real socket, and a gate that every endpoint
   has one.** The REST scenarios in `tests/e2e/` now drive the real app under
   uvicorn on a loopback port the OS picks (`tests/live_server.py`, the

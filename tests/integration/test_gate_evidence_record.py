@@ -289,7 +289,7 @@ def test_keels_verify_recipe_runs_the_driver_over_the_goals_check_w_reads():
     (cmd,) = rule.recipe
     assert cmd.startswith("$(PY) scripts/gate_evidence.py --gate $@ -- $(MAKE) "), cmd
     goals, unresolved = cs._recursions(cmd)
-    assert goals == ["check-all", "lint", "typecheck", "test", "test-fe"], goals
+    assert goals == ["check-all", "lint", "typecheck", "test", "eval", "test-fe"], goals
     assert unresolved == [], unresolved
     assert rule.recursions == goals, rule.recursions
     assert cs.target_effects(str(_ROOT))["verify"] == (("local",), None)

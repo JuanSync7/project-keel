@@ -31,7 +31,7 @@ CI) call them. Each script is self-describing (`--help`) and safe to re-run.
 ```bash
 make check        # fast structural gate — runs anywhere, incl. Python 3.6
 make check-all    # the full deterministic suite (needs the project interpreter)
-make verify       # check-all + lint + typecheck + test + test-fe (the everything gate)
+make verify       # check-all + lint + typecheck + test + eval + test-fe (the everything gate)
 ```
 
 Wire them once and forget:
@@ -639,6 +639,34 @@ is not installed is skipped locally and red in CI
 
 ---
 
+### 10. Replayed evals — `scripts/run_evals.py`
+
+**Purpose.** A gate run by `make eval`, a `make verify` goal of its own, not by
+`make check-all`, so it has no row in the table above. It judges actual
+responses: every case in config/project.json `evals.dataset_dir`
+(`evals/datasets`) runs its real doer against a backend that answers with the
+response recorded in the case, and the recorded answer is scored by a
+deterministic scorer. A suite passes when passed/total >= `evals.threshold`
+(`1.0`, so every case must pass), compared exactly. A case whose prompt
+changed since it was recorded is stale and fails its suite, because its
+answer was judged against a prompt the code no longer sends. A malformed
+dataset, zero cases, or a report directory git does not ignore is refused
+(exit 2), never a pass.
+
+**Why replay.** It makes no model call and reads no credential, so it is
+deterministic, free, and safe to run on every commit. `make eval-live` sends
+the same cases to a real model under the call cap `evals.live.max_calls`
+(`0`), and is never part of `make verify`.
+
+**What it does not prove.** That a model would still give the recorded answer
+today: only `make eval-live` asks. That the scorers capture quality: a
+deterministic scorer checks a shape or a substring, and review judges whether
+the cases are the right ones (`evals/README.md`).
+
+**Run.** `make eval` · `make eval-live` · `evals/README_run.md`
+
+---
+
 ## How the hooks are wired
 
 ### Pre-commit (event trigger)
@@ -666,6 +694,7 @@ Enable once: `pip install pre-commit && pre-commit install`.
 - run: make lint
 - run: make typecheck
 - run: make test
+- run: make eval        # replay every eval suite; no network, no credential
 ```
 
 ### Scheduled (time trigger)
@@ -684,7 +713,7 @@ does.
 commit, with what result. Something outside the repository, such as
 project-jarvis, can read that file instead of scraping a log. The verify
 recipe runs `scripts/gate_evidence.py`, which runs each goal (`check-all`,
-`lint`, `typecheck`, `test`, `test-fe`) as its own make, in order. The writer then
+`lint`, `typecheck`, `test`, `eval`, `test-fe`) as its own make, in order. The writer then
 writes the record to `<evidence.dir>/<gate>.json`: `.evidence/verify.json`,
 with config/project.json `evidence.dir` = `.evidence`.
 
@@ -700,7 +729,7 @@ it.
 | `result`, `reasons` | `pass` exactly when the writer exits 0. A `fail` lists its reasons from a closed vocabulary: `target-failed`, `zero-targets`, `no-test-report`, `zero-tests`, `tests-failed`, `tree-changed`, `checks-unavailable`, `incomplete`, `writer-error`. |
 | `source` | `commit` (HEAD's sha), `dirty` (git listed any path before the goals ran), `tree_digest` (a sha256 over what git listed, each path's status and content, from `scripts/git_tree.py`), and `tree_changed` (what git lists differed after the goals). |
 | `targets` | Each goal in run order, with `result` (`pass`, `fail` or `not-run`), its `returncode` and its test counts. |
-| `tests` | `passed`, `failed`, `skipped` and `errors`, summed from pytest's own junit report, each test case counted once. A goal that writes no junit report, such as `test-fe`, adds no counts: its exit code alone sets its `result`. |
+| `tests` | `passed`, `failed`, `skipped` and `errors`, summed from pytest's own junit report, each test case counted once. A goal that writes no junit report, such as `eval` or `test-fe`, adds no counts: its exit code alone sets its `result`. |
 | `checks` | Every `scripts/check_structure.py` check letter, and each project check that reported, with its sorted errors and warnings, the repository root stripped from each message. |
 
 **Why it is ignored.** The record is one tree's verdict, derived on every
@@ -748,7 +777,7 @@ the ledger across runs and repositories is a consumer's, such as
 project-jarvis, which ingests the record
 (`docs/adr/keel/K-0017-gate-evidence-record.md`). It is unsigned and sits in a writable directory, so it is evidence, not
 attestation (`docs/guides/limits-and-troubleshooting.md`). CI runs `check-all`, `lint`,
-`typecheck` and `test` as separate steps and never `test-fe`
+`typecheck`, `test` and `eval` as separate steps and never `test-fe`
 (`.github/workflows/ci.yml`), so CI writes no record and runs no frontend suite.
 
 **How a consumer reads it.**

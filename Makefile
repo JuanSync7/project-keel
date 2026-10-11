@@ -21,7 +21,7 @@ FE_APPS := $(dir $(wildcard src/frontend/*/package.json))
 # lint/format scope narrower than it is how `make verify` came to report green
 # over most of the repo; tests/integration/test_gate_scope.py imports the list
 # from check_structure.py and fails if these two drift apart.
-CODE_ROOTS := src tests api models mcp agents demo scripts runtimes
+CODE_ROOTS := src tests api models mcp agents demo scripts runtimes evals
 # ...filtered to what actually exists: ruff exits 1 with `E902 No such file or
 # directory` on a missing path, and copier prunes directories from a generated
 # project (frontend stack, add-on transports), so a literal list would hard-fail
@@ -39,7 +39,7 @@ PY_ROOTS := $(wildcard $(CODE_ROOTS))
 # Keel ships no [write] target; a project that adds one inherits the guard.
 WRITE_GUARD = @if [ -n "$(CI)$(RALPH)" ]; then echo "refusing '$@': a [write] target never runs under CI or a Ralph loop (docs/adr/keel/K-0011-make-target-effect-labels.md)" >&2; exit 1; fi
 
-.PHONY: help new audit-project check-python check check-all check-corpus check-openapi check-aad check-cdmon advise check-generic verify test unit integration e2e smoke \
+.PHONY: help new audit-project check-python check check-all check-corpus check-openapi check-aad check-cdmon advise check-generic verify test eval eval-live unit integration e2e smoke \
         lint lint-py lint-fe fmt fmt-check typecheck typecheck-py typecheck-fe \
         test-fe test-fe-unit test-fe-e2e \
         fe-install run run-api run-web site-data site-static demo agent-surface-schema check-docs restamp-docs doc-review doc-review-apply
@@ -136,11 +136,11 @@ check-generic: advise ## [local] Alias for `advise` (the generic-solution + prac
 # leave an earlier green record standing. scripts/gate_evidence.py runs each goal,
 # passes the first failing code through and writes the record to config/project.json
 # evidence.dir (an ignored path, so [local] stays true). check_W reads the goals of
-# this `$(MAKE)` line, so the label still closes over all five. make runs a
+# this `$(MAKE)` line, so the label still closes over all six. make runs a
 # `$(MAKE)` line even under -n; the driver reads -n/-q/-t from MAKEFLAGS and writes
 # nothing then. It runs the goals in sequence, so -j does not parallelise them.
-verify: ## [local] Run all gates (all checks + lint + types + tests + frontend tests) and write their evidence record to config/project.json evidence.dir
-	$(PY) scripts/gate_evidence.py --gate $@ -- $(MAKE) check-all lint typecheck test test-fe
+verify: ## [local] Run all gates (all checks + lint + types + tests + evals + frontend tests) and write their evidence record to config/project.json evidence.dir
+	$(PY) scripts/gate_evidence.py --gate $@ -- $(MAKE) check-all lint typecheck test eval test-fe
 
 # JUNIT_XML is empty unless scripts/gate_evidence.py sets it per goal: pytest then
 # writes its own junit report, the only source of the evidence record's test
@@ -148,6 +148,17 @@ verify: ## [local] Run all gates (all checks + lint + types + tests + frontend t
 # reads it, so the nested pytest runs under tests/ write no report of their own.
 test: check-python ## [local] Run the whole test suite
 	PYTHONPATH=$(PYTHONPATH) $(PY) -m pytest $(if $(JUNIT_XML),--junitxml=$(JUNIT_XML))
+
+# The eval gate replays recorded responses through the real doers: no network,
+# no credential, so it is [local] and sits in verify. eval-live is the paid path,
+# refused before any call unless config/project.json evals.live.max_calls covers
+# every case; neither is [write], so neither opens with WRITE_GUARD, and both
+# write only under evals.report_dir, which scripts/run_evals.py refuses unless
+# git ignores it.
+eval: check-python ## [local] Replay every eval suite in config/project.json evals.dataset_dir against its recorded responses and gate on evals.threshold (no network, no credential)
+	PYTHONPATH=$(PYTHONPATH) $(PY) scripts/run_evals.py --mode replay
+eval-live: check-python ## [read,cost] Run every eval case through the model named in config/project.json evals.live.model, refusing before any call when the cases exceed evals.live.max_calls
+	PYTHONPATH=$(PYTHONPATH) $(PY) scripts/run_evals.py --mode live
 
 unit: check-python ## [local] Run unit tests only
 	PYTHONPATH=$(PYTHONPATH) $(PY) -m pytest -m unit

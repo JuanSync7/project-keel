@@ -7,7 +7,7 @@ owner: TBD
 summary: Local agent rules inside scripts/.
 id: scripts-agent
 created: 2026-06-17
-updated: 2026-10-10
+updated: 2026-10-11
 visibility: internal
 canonical: true
 ---
@@ -28,7 +28,7 @@ These rules are **local and authoritative** for this directory. They inherit fro
   anything else from the project, to refuse a job over a conflicted module it
   imports and the data files the job's modules declare reading.
   `git_tree.py` is the one definition of what git lists, imported by
-  `run_make_target.py` and `gate_evidence.py`; it stays 3.6-safe so the
+  `run_make_target.py`, `gate_evidence.py` and `run_evals.py`; it stays 3.6-safe so the
   evidence writer can import it under an interpreter older than
   requires-python and still leave a red record.
 - Each script is self-describing (`--help`) and safe to run twice — which

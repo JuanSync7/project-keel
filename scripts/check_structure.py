@@ -296,6 +296,7 @@ CODE_ROOTS = [
     "demo",
     "scripts",
     "runtimes",
+    "evals",
 ]
 
 # check_V's scope: the code that runs AS the product. CODE_ROOTS minus `tests`,

@@ -1,0 +1,250 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "eval-case.schema.json",
+  "title": "eval case",
+  "description": "One line of an eval suite in config/project.json evals.dataset_dir: what to run, how to judge the answer, and the answer recorded for replay. evals/_dataset.py parse_cases holds every rule here by hand, plus two a schema cannot state (a repeated JSON key, and recorded.sha256 not matching recorded.response); tests/integration/test_evals_schema.py holds the two in step.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "id",
+    "input",
+    "scorer",
+    "recorded"
+  ],
+  "properties": {
+    "schema_version": {
+      "description": "The case format's version. This const is its only owner: evals/_config.py reads it from here, and parse_cases refuses any other value.",
+      "const": 1
+    },
+    "id": {
+      "description": "The case's name, unique across every suite (parse_cases and load_suites refuse a repeat, naming both lines). Each pattern in this schema ends (?!\\n)$ because Python's re, which the jsonschema validator uses, also matches a bare $ before a final newline.",
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,63}(?!\\n)$"
+    },
+    "input": {
+      "description": "What the case runs: a doer from evals.DOERS and the text it is given.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "doer",
+        "text"
+      ],
+      "properties": {
+        "doer": {
+          "description": "The code path the case drives; the closed registry evals/_doers.py DOERS.",
+          "enum": [
+            "prompt",
+            "triage"
+          ]
+        },
+        "text": {
+          "description": "The doer's input; parse_cases refuses an empty one.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "scorer": {
+      "description": "How the answer is judged: one branch per scorer in evals/_scorers.py SCORERS, each with exactly that scorer's params (Scorer.check_params).",
+      "oneOf": [
+        {
+          "description": "The stripped response equals expected.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "params"
+          ],
+          "properties": {
+            "name": {
+              "const": "exact"
+            },
+            "params": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "expected"
+              ],
+              "properties": {
+                "expected": {
+                  "description": "The whole answer, after stripping surrounding whitespace from the response; non-empty and without surrounding whitespace of its own, or it could never match.",
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "^\\S(?:[\\s\\S]*\\S)?(?!\\n)$"
+                }
+              }
+            }
+          }
+        },
+        {
+          "description": "The response contains substring.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "params"
+          ],
+          "properties": {
+            "name": {
+              "const": "contains"
+            },
+            "params": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "substring"
+              ],
+              "properties": {
+                "substring": {
+                  "description": "A case-sensitive substring the response must contain; non-empty.",
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        },
+        {
+          "description": "re.search(pattern, response) finds a match.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "params"
+          ],
+          "properties": {
+            "name": {
+              "const": "regex"
+            },
+            "params": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "pattern"
+              ],
+              "properties": {
+                "pattern": {
+                  "description": "A Python regular expression searched for in the response; non-empty, and parse_cases refuses one that does not compile.",
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        },
+        {
+          "description": "The response is a JSON object holding each field with exactly that value (compared as canonical JSON, so true is not 1).",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "params"
+          ],
+          "properties": {
+            "name": {
+              "const": "json_fields"
+            },
+            "params": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "fields"
+              ],
+              "properties": {
+                "fields": {
+                  "description": "Field name -> the JSON value it must hold; at least one field.",
+                  "type": "object",
+                  "minProperties": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "recorded": {
+      "description": "The answer replay judges and where it came from.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "response",
+        "sha256",
+        "prompt_sha256",
+        "source",
+        "model"
+      ],
+      "properties": {
+        "response": {
+          "description": "The recorded answer text; may be empty.",
+          "type": "string"
+        },
+        "sha256": {
+          "description": "sha256: and the hex digest of response's UTF-8 bytes; parse_cases refuses a mismatch, naming the actual hash.",
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}(?!\\n)$"
+        },
+        "prompt_sha256": {
+          "description": "The hash of the prompt the doer sent when the answer was recorded (evals.prompt_sha256 computes it by running the doer); replay marks the case stale when today's prompt hashes differently.",
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}(?!\\n)$"
+        },
+        "source": {
+          "description": "authored: written by hand; model: a live candidate promoted by hand.",
+          "enum": [
+            "authored",
+            "model"
+          ]
+        },
+        "model": {
+          "description": "The registry name of the model that answered: null when source is authored, a non-empty string when source is model.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "source": {
+                "const": "authored"
+              }
+            },
+            "required": [
+              "source"
+            ]
+          },
+          "then": {
+            "properties": {
+              "model": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "source": {
+                "const": "model"
+              }
+            },
+            "required": [
+              "source"
+            ]
+          },
+          "then": {
+            "properties": {
+              "model": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

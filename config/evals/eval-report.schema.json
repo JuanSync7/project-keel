@@ -1,0 +1,199 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "eval-report.schema.json",
+  "title": "eval report",
+  "description": "What one run of scripts/run_evals.py wrote to config/project.json evals.report_dir as <mode>.json. evals/_report.py render writes it as canonical JSON (sorted keys, two-space indent, one trailing newline) holding no clock, host, user or absolute path, so two runs over the same tree write identical bytes. It is one run's verdict and keeps no history: the dataset in git is the history.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "schema_version",
+    "mode",
+    "model",
+    "threshold",
+    "calls",
+    "result",
+    "reasons",
+    "detail",
+    "suites"
+  ],
+  "properties": {
+    "schema": {
+      "description": "The repo-relative path of this schema: config/project.json evals.report_schema.",
+      "type": "string"
+    },
+    "schema_version": {
+      "description": "The report format's version. This const is its only owner: evals/_config.py reads it from here.",
+      "const": 1
+    },
+    "mode": {
+      "description": "replay: recorded answers, no model call; live: the model evals.live.model names.",
+      "enum": [
+        "replay",
+        "live"
+      ]
+    },
+    "model": {
+      "description": "The registry name of the live model; null in replay and when the run was refused before one was chosen.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "threshold": {
+      "description": "evals.threshold: a suite passes when passed/total >= threshold, compared exactly.",
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "maximum": 1
+    },
+    "calls": {
+      "description": "Model calls made; 0 in replay.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "result": {
+      "description": "pass only when every suite passed; incomplete is the placeholder written before judging starts, so a crash leaves a red report.",
+      "enum": [
+        "pass",
+        "fail",
+        "absent",
+        "refused",
+        "incomplete"
+      ]
+    },
+    "reasons": {
+      "description": "Why the result is not pass: the sorted union of the suites' reasons, or the run's own. A closed vocabulary.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "below-threshold",
+          "case-error",
+          "stale-recording",
+          "backend-absent",
+          "cap-exceeded",
+          "refused",
+          "incomplete"
+        ]
+      }
+    },
+    "detail": {
+      "description": "Why a run was refused or incomplete, in one line; null otherwise.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "suites": {
+      "description": "Each suite's result, sorted by name; empty when the run was refused.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "dataset",
+          "total",
+          "passed",
+          "result",
+          "reasons",
+          "cases"
+        ],
+        "properties": {
+          "name": {
+            "description": "The suite name: its file's stem.",
+            "type": "string"
+          },
+          "dataset": {
+            "description": "The suite file's project-relative path.",
+            "type": "string"
+          },
+          "total": {
+            "description": "Cases in the suite.",
+            "type": "integer",
+            "minimum": 1
+          },
+          "passed": {
+            "description": "Cases whose outcome is pass.",
+            "type": "integer",
+            "minimum": 0
+          },
+          "result": {
+            "description": "The suite's verdict (evals/_report.py verdict).",
+            "enum": [
+              "pass",
+              "fail",
+              "absent",
+              "refused"
+            ]
+          },
+          "reasons": {
+            "description": "Why the result is not pass, sorted.",
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "enum": [
+                "below-threshold",
+                "case-error",
+                "stale-recording",
+                "backend-absent",
+                "cap-exceeded",
+                "refused",
+                "incomplete"
+              ]
+            }
+          },
+          "cases": {
+            "description": "Every case's outcome, sorted by id.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "outcome",
+                "scorer",
+                "detail",
+                "response_sha256"
+              ],
+              "properties": {
+                "id": {
+                  "description": "The case id.",
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9-]{0,63}(?!\\n)$"
+                },
+                "outcome": {
+                  "description": "pass/fail: scored; stale: the prompt changed since recording, not scored; error: the doer or backend raised; absent: the backend could not run here; not-run: skipped after an absent backend.",
+                  "enum": [
+                    "pass",
+                    "fail",
+                    "stale",
+                    "error",
+                    "absent",
+                    "not-run"
+                  ]
+                },
+                "scorer": {
+                  "description": "The scorer name the case uses.",
+                  "type": "string"
+                },
+                "detail": {
+                  "description": "One line on why: the scorer's detail, the new prompt hash, or the exception's type and message.",
+                  "type": "string"
+                },
+                "response_sha256": {
+                  "description": "The hash of the response judged; null when no response was judged.",
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "pattern": "^sha256:[0-9a-f]{64}(?!\\n)$"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

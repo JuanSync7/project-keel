@@ -116,7 +116,7 @@ extend-select = [
 # tests/integration/test_gate_scope.py fails if a code root is in neither place, so a
 # root can never again be silently unmentioned.
 [tool.mypy]
-files = ["src", "models", "demo", "agents"]
+files = ["src", "models", "demo", "agents", "evals"]
 # Prerequisites for any root beyond src/: agents/ has no __init__.py while its children
 # do, so mypy dies with "Source file found twice under different module names" without
 # explicit_package_bases; and the sibling modules injected via sys.path (backend, ...)

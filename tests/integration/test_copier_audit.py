@@ -755,7 +755,8 @@ def test_a_pre_c2_2_project_receives_the_new_child_env_keys_as_arrivals_and_owes
     `effect_proof_kept_dirs` (CONVENTIONS §15), the `evidence` block that
     `make verify`'s record reads (CONVENTIONS §15), the `e2e` block that
     tests/integration/test_e2e_coverage.py and tests/live_server.py read
-    (CONVENTIONS §17) and the `doc_drift` block
+    (CONVENTIONS §17), the `evals` block that `make eval` and
+    scripts/run_evals.py read (CONVENTIONS §15) and the `doc_drift` block
     (docs/guides/doc-style.md) arrive beside them.
     `structure.project_checks` does not: the template never ships it, because a
     key beside `extra_toplevel` would conflict with every project that declared
@@ -794,6 +795,7 @@ def test_a_pre_c2_2_project_receives_the_new_child_env_keys_as_arrivals_and_owes
         "child_env.login_name_schemes",
         "doc_drift",
         "e2e",
+        "evals",
         "evidence",
         "layers.app",
         "make_targets.effect_proof_kept_dirs",

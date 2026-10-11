@@ -8,7 +8,7 @@ tags: [template, scaffold, {{ project_slug }}]
 summary: A generic, polyglot-aware, agent-friendly project skeleton that stays honest.
 id: readme
 created: 2026-06-17
-updated: 2026-10-10
+updated: 2026-10-11
 visibility: internal
 canonical: true
 ---
@@ -104,7 +104,7 @@ interpreter explicitly — `make PY=.venv/bin/python verify` — which is what
 ├── config/         # configuration (committed defaults + examples)
 ├── demo/           # runnable demos / examples
 ├── containers/     # Dockerfiles, compose, image build context
-├── evals/          # eval suites (esp. for agents/models)
+├── evals/          # eval harness and suites; `make verify` replays them
 ├── ops/            # deploy, IaC, runbooks, observability
 ├── models/         # model backends the agents/app run on (adapters + registry)
 ├── runtimes/       # agent control flow: a neutral Plan, engines as adapters
@@ -128,7 +128,7 @@ interpreter explicitly — `make PY=.venv/bin/python verify` — which is what
 
 ## Making it yours
 
-Delete any optional dirs you don't need (`evals/`, `containers/`) and
+Delete any optional dirs you don't need (`containers/`) and
 rename `src/backend/example_feature/` to your first real package. Then drop
 each deleted directory's line from the tree under Top-level layout:
 `tests/integration/test_doc_drift.py` fails while the tree lists a directory

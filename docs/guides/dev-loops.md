@@ -33,7 +33,7 @@ Every loop below ends each pass at the **same gate**, and "done" means the gate 
 green — never a self-assessment:
 
 ```
-make verify   # check-all + lint + typecheck + test + test-fe   (the full bar)
+make verify   # check-all + lint + typecheck + test + eval + test-fe   (the full bar)
 make test     # plain pytest over the whole suite (tiers: unit · integration · e2e · smoke)
 make check    # fast, 3.6-safe structural gate (runs in pre-commit)
 ```
@@ -234,6 +234,27 @@ suites, as `make lint-fe` does.
 configs and a file in each suite. These suites are not for the backend: its
 routes and transport endpoints are `tests/e2e/` scenarios.
 
+## The prompt-change loop (evals)
+
+A change to a prompt an eval case drives (a doer in `evals/_doers.py`, such as
+`agents/triage`) makes `make eval` fail with `stale-recording`. The recorded
+answer was given to the old prompt, so replay no longer judges it, and the
+stale case's detail names the new prompt hash. One pass:
+
+1. Change the prompt. `make eval` exits 1 and names each stale case.
+2. Set three config/project.json keys, then run `make eval-live`.
+   `evals.live.model` names a model from `models.list_models()`; its default
+   `null` refuses the run (exit 2). `evals.live.model_options` holds that
+   adapter's keyword arguments (`{}`). `evals.live.max_calls` must be at least
+   the case count; its default `0` refuses the run before any call (exit 2), so
+   raising it is the spend approval.
+3. Promote by hand: copy each candidate line from
+   `.evidence/evals/live-candidates/<suite>.jsonl` over its case line in
+   `evals/datasets/<suite>.jsonl`, and review the one-line diff.
+4. Run `make eval`. The loop stops when it exits 0.
+
+`evals/README_run.md` gives each step in full.
+
 ## Stop conditions & caps at a glance
 
 | Loop | One pass does | Stops when |
@@ -241,6 +262,7 @@ routes and transport endpoints are `tests/e2e/` scenarios.
 | TDD | red → green → refactor for one behavior | the behavior is covered and the suite is green |
 | Convergence | the next single unit + `make verify` + commit | done-condition holds, or the pass cap is hit |
 | E2E | adds/extends one scenario through the public surface | the flow is exercised end to end and green |
+| Live eval spend | one `make eval-live` run: one model call per case | `evals.live.model` is `null` (its default), or `evals.live.max_calls` (`0`) is below the case count: refused before any call (exit 2) |
 
 ## See also
 
