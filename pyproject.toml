@@ -52,6 +52,7 @@ markers = [
   "integration: 2+ real components",
   "e2e: full-system journeys",
   "smoke: liveness checks",
+  "endpoint(id): names the transport endpoint this e2e scenario drives (tests/integration/test_e2e_coverage.py)",
 ]
 
 [tool.ruff]

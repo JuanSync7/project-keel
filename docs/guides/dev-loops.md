@@ -8,7 +8,7 @@ tags: [tdd, bounded-convergence, ralph-loop, testing, e2e, workflow, agents, gui
 summary: The default working loops any human or LLM follows in this repo — test-first, bounded convergence, and end-to-end coverage — all gated by `make verify`.
 id: docs-guides-dev-loops
 created: 2026-06-22
-updated: 2026-10-10
+updated: 2026-10-11
 visibility: internal
 canonical: true
 ---
@@ -181,6 +181,38 @@ import it. Don't defer it:
 author the e2e scenario alongside the change, so the flow is covered the moment it
 ships. Name e2e/integration/smoke tests by the **scenario**, not by a source file
 (only `tests/unit/` mirrors `src/` 1:1).
+
+`make test` holds every backend endpoint to a scenario:
+`tests/integration/test_e2e_coverage.py` fails when an endpoint an enabled
+transport serves is named by no scenario. A scenario names one with
+`@pytest.mark.endpoint("<transport> <id>")`, the id spelled per transport:
+`rest GET /health`, `mcp keel-wiki-qa/wiki_answer`,
+`grpc /thing.v1.ThingService/CreateThing`. The gate derives the endpoints from
+the code, as config/project.json `e2e.sources` says per transport: `openapi`
+runs the REST app's exporter (`e2e.openapi_exporter`) and reads its
+OpenAPI document, after a child walks every route the app serves and fails
+one the document cannot list (anything but an API route in the schema, bar
+the documentation routes the app's own settings name), `mcp-stdio` asks each `__main__`-guarded MCP server for
+`tools/list` over its stdio, `proto` reads each `.proto` service's `rpc`
+lines, and `none` declares a transport with no endpoint of its own. Each
+child a derivation or a scenario starts is killed after `e2e.list_timeout_s`
+(`30`) seconds. A REST scenario takes the `rest_server` fixture of
+`tests/e2e/conftest.py`, which starts the real app under uvicorn on
+`e2e.server.host` (`127.0.0.1`) at a port the OS picks, so there is no port
+key and two runs never collide. It is ready when `e2e.server.probe_path`
+(`/health`) answers 200 within `e2e.server.ready_timeout_s` (`30`), polled
+every `e2e.server.probe_interval_s` (`0.1`); each request is bounded by
+`e2e.server.request_timeout_s` (`30`); and its process group gets SIGTERM, then
+SIGKILL after `e2e.server.stop_timeout_s` (`10`), even when the scenario
+fails, and when SIGTERM or SIGHUP ends the test run itself. An MCP scenario takes `mcp_session`, which speaks JSON-RPC to the real
+server over its stdio with `e2e.mcp_env` added to its environment. A marker
+counts only on a test pytest collects or in a `pytestmark`; one anywhere
+else is red. An endpoint
+no scenario can reach yet goes in `e2e.exempt` with the reason; an entry that
+names no endpoint, that a scenario makes redundant, or whose reason is blank is
+red. The gate checks that a scenario names each endpoint, not that it asserts
+something meaningful, and `make run-api`'s fixed port is a separate value from
+any of these.
 
 A project with a frontend also gives each app under `src/frontend/` two suites
 of its own, and `make verify` runs both as its `test-fe` goal (`make test-fe`).

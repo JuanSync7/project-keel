@@ -8,7 +8,7 @@ tags: [conventions, frontmatter, taxonomy]
 summary: Single source of truth for labeling (frontmatter) and the directory taxonomy.
 id: conventions
 created: 2026-06-17
-updated: 2026-10-10
+updated: 2026-10-11
 visibility: internal
 canonical: true
 ---
@@ -841,7 +841,13 @@ govern *how you work*; their executable analog — a loop a program runs unatten
 These are conventions an agent follows, not gated by a structural check today: no
 check verifies the test mirror, that a test came first, or that it exercises the
 code. The real gate is `make verify` (a red suite fails it); TDD itself is a
-behavioral discipline, not something a static check can certify.
+behavioral discipline, not something a static check can certify. One part of
+end-to-end coverage is gated: `tests/integration/test_e2e_coverage.py`, run by
+`make test`, derives every endpoint an enabled transport serves from the code
+and fails when one is named by no `@pytest.mark.endpoint` scenario under
+`tests/e2e/` and is not exempt with a reason in `config/project.json`
+`e2e.exempt`. It checks the naming, not that the scenario asserts anything
+meaningful; a page is not an endpoint it derives.
 
 ## 18. Generic solutions (solve the class, not the case)
 

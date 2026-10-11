@@ -221,6 +221,32 @@
       "mcp": "mcp"
     }
   },
+  "e2e": {
+    "_comment": "End-to-end coverage (CONVENTIONS section 17): every endpoint an enabled transport serves is named by a scenario under scenario_dir with @pytest.mark.<marker>(\"<transport> <id>\"), or exempt here with a reason. tests/integration/test_e2e_coverage.py derives the endpoints from the code, never from a list: sources maps a transport to how (openapi: the app's OpenAPI document, written by openapi_exporter inside the REST transport directory; mcp-stdio: each __main__-guarded server asked over its stdio, with mcp_env added to its environment; proto: the transport's .proto service methods; none: the transport serves no endpoint of its own). list_timeout_s bounds each child a derivation or a scenario starts: the walk over the routes the REST app serves, the exporter, and each MCP server. exempt maps an endpoint id to the reason it has no scenario; a stale, redundant or reasonless entry is red. server is how tests/live_server.py starts the REST app for a scenario: uvicorn serving app on host, ready when probe_path answers 200 within ready_timeout_s (polled every probe_interval_s), each request bounded by request_timeout_s, and stopped by SIGTERM then SIGKILL after stop_timeout_s. There is no port: the OS assigns a free one. make run-api's fixed port is a separate value.",
+    "scenario_dir": "tests/e2e",
+    "marker": "endpoint",
+    "sources": {
+      "edge_nginx": "none",
+      "grpc": "proto",
+      "mcp": "mcp-stdio",
+      "rest": "openapi"
+    },
+    "openapi_exporter": "export_openapi.py",
+    "list_timeout_s": 30,
+    "mcp_env": {
+      "KEEL_MCP_MODEL": "fake"
+    },
+    "exempt": {},
+    "server": {
+      "host": "127.0.0.1",
+      "app": "app:app",
+      "probe_path": "/health",
+      "ready_timeout_s": 30,
+      "probe_interval_s": 0.1,
+      "request_timeout_s": 30,
+      "stop_timeout_s": 10
+    }
+  },
   "runtimes": {
     "_comment": "Agent control-flow engines this project makes available (registered in runtimes/registry.py, CONVENTIONS section 16). 'default' is declarative: check_H requires it to be in 'available' and each engine's directory to exist, but runtimes/registry.py DEFAULT_RUNTIME decides what get_runtime() returns with no name, and nothing ties the two together.",
     "default": "inprocess",

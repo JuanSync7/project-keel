@@ -8,7 +8,7 @@ tags: [checks, ci, linter, determinism, pre-commit, hooks, guide]
 summary: Catalogue of every deterministic check that keeps a project-template repo honest — purpose, when to run, and how to wire as a hook.
 id: docs-guides-deterministic-checks
 created: 2026-06-19
-updated: 2026-10-10
+updated: 2026-10-11
 visibility: internal
 canonical: true
 ---
@@ -609,6 +609,33 @@ never gates.
 pass; advisory and outside `make verify`.
 
 **Run.** `make advise` · `python3 scripts/check_generic.py [--json] [--strict]`
+
+### 9. End-to-end coverage — `tests/integration/test_e2e_coverage.py`
+
+**Purpose.** A gate run by `make test`, not by `make check-all`: it fails when
+an endpoint an enabled transport serves is named by no scenario. It derives the
+endpoints from the code, never from a list: the REST app's OpenAPI document
+(written by the exporter `config/project.json` `e2e.openapi_exporter` names),
+each `__main__`-guarded MCP server's `tools/list` asked over its stdio, and each
+`rpc` of a `.proto` service. `e2e.sources` in `config/project.json` maps each
+transport to one of those kinds, or to `none`. A scenario under
+`e2e.scenario_dir` names an endpoint with `@pytest.mark.endpoint("<id>")`, and
+`e2e.exempt` maps an endpoint id to the reason it has no scenario. A marker or
+an exemption that names no endpoint, an exemption a scenario makes redundant,
+an exemption with a blank reason, a marker that applies to no collected test,
+and a route the app serves that its OpenAPI document cannot list (a websocket,
+a mount, a plain Starlette route, a route hidden from the schema, wherever it
+is defined) are each red. The last is an allowlist over the routes the app
+loads, walked in a child: only an API route in the schema, or a documentation
+route the app's own settings name, passes. Every rule
+has a fault-injection twin in the same module.
+
+**What it does not prove.** That a scenario asserts anything meaningful: the
+gate reads markers, and review judges the assertions. A transport whose extra
+is not installed is skipped locally and red in CI
+([limits-and-troubleshooting.md](limits-and-troubleshooting.md)).
+
+**Run.** `make test` · `pytest tests/integration/test_e2e_coverage.py tests/e2e`
 
 ---
 

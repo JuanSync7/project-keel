@@ -2,7 +2,7 @@
 title: Integration — copier generates a structurally valid, tailored project
 kind: tests
 layer: n/a
-summary: `copier` renders keel's root template into a new project — the manifest is tailored to the answers, the un-chosen frontend stack is pruned, CLAUDE.md->AGENT.md symlinks are preserved, keel's own template meta-tests are pruned, and check_structure passes; an undeclared top-level directory reds the project until it is declared and labelled. A bare `subprocess.run` reds a generated project through check_X until it passes `env=build_child_env()`, and the project's helper passes an adapter's declared credential and no planted secret. A credentialed proxy (a `#` in the password included) fails the project's doc judge by name and never by value, while a `LANGUAGE=sr_RS:sr@latin` locale list does not, until `child_env.credentialed_values` names it, and a stale entry there reds the gate. A generated project carries keel's `work_naming` block and no plan doc, so check_Z is silent until the project writes one; a slice row that is not a slice id then reds the gate and a well-formed one does not. A generated project runs its own doc-drift tests green, every skip there a template-only test naming why, and a prose slice id planted in its CONTRIBUTING.md reds them, and so does a row dropped from its settings reference or from its feature catalogue; its README names no `make new`, and its `run-web` line names Astro and its port only for the astro stack and is absent with no frontend. A project with a frontend carries keel's `layers.frontend.journey` keys and passes its own frontend-suite contract tests statically; one without has no frontend keys, its wiring test skips with a reason, and `make test-fe` exits 0 silently. Skipped on a bare local clone without the optional `template` extra; CI installs `.[dev,template]` and declares the surface required (KEEL_REQUIRED_EXTRAS), so there a missing copier is a hard failure instead of a silent skip.
+summary: `copier` renders keel's root template into a new project — the manifest is tailored to the answers, the un-chosen frontend stack is pruned, CLAUDE.md->AGENT.md symlinks are preserved, keel's own template meta-tests are pruned, and check_structure passes; an undeclared top-level directory reds the project until it is declared and labelled. A bare `subprocess.run` reds a generated project through check_X until it passes `env=build_child_env()`, and the project's helper passes an adapter's declared credential and no planted secret. A credentialed proxy (a `#` in the password included) fails the project's doc judge by name and never by value, while a `LANGUAGE=sr_RS:sr@latin` locale list does not, until `child_env.credentialed_values` names it, and a stale entry there reds the gate. A generated project carries keel's `work_naming` block and no plan doc, so check_Z is silent until the project writes one; a slice row that is not a slice id then reds the gate and a well-formed one does not. A generated project runs its own doc-drift tests green, every skip there a template-only test naming why, and a prose slice id planted in its CONTRIBUTING.md reds them, and so does a row dropped from its settings reference or from its feature catalogue; its README names no `make new`, and its `run-web` line names Astro and its port only for the astro stack and is absent with no frontend. Under every transport answer, and without the showcase, a generated project's e2e coverage gate and its scenarios pass with nothing skipped, and a grpc project whose exemption is dropped is red naming the method. A project with a frontend carries keel's `layers.frontend.journey` keys and passes its own frontend-suite contract tests statically; one without has no frontend keys, its wiring test skips with a reason, and `make test-fe` exits 0 silently. Skipped on a bare local clone without the optional `template` extra; CI installs `.[dev,template]` and declares the surface required (KEEL_REQUIRED_EXTRAS), so there a missing copier is a hard failure instead of a silent skip.
 """
 
 import json
@@ -2277,3 +2277,80 @@ def test_the_generated_readme_names_no_keel_only_command_and_the_chosen_dev_serv
         assert not run_web, run_web
     else:
         assert len(run_web) == 1, run_web
+
+
+_E2E_GATE = ("tests/integration/test_e2e_coverage.py", "tests/e2e")
+# The transport answer whose one method ships exempt; the method itself is read
+# from the generated manifest, never typed here.
+_GRPC_TRANSPORT = "grpc"
+
+
+def _e2e_gate(project, *paths):
+    """The generated project's e2e coverage gate and its scenarios, run as its
+    `make test` recipe runs pytest (PYTHONPATH=src:.), with the `transport`
+    extra declared required as CI declares it, so a missing uvicorn is a
+    failure and not a quiet skip."""
+    return subprocess.run(
+        [sys.executable, "-m", "pytest", "-v", "-rs", "-p", "no:cacheprovider"]
+        + list(paths or _E2E_GATE),
+        cwd=str(project),
+        env=build_child_env(
+            root=str(project),
+            extra={"PYTHONPATH": "src:.", optional_deps.ENV_VAR: "transport"},
+        ),
+        capture_output=True,
+        text=True,
+        timeout=900,
+    )
+
+
+@pytest.mark.parametrize(
+    "answers",
+    [
+        {"transports": ["grpc"]},
+        {"transports": ["edge_nginx"]},
+        {"showcase": False},
+    ],
+    ids=["grpc", "edge_nginx", "no-showcase"],
+)
+def test_each_transport_choice_passes_the_e2e_coverage_gate(answers, tmp_path):
+    """CMP-4.S6 held downstream. Whatever the answers ship, every endpoint
+    the project serves is named by a scenario or exempt with a reason, the
+    REST scenarios pass over a real socket, and nothing skips: a `grpc` project
+    judges its one method through the exemption the twin renders, an
+    `edge_nginx` project's `none` source derives nothing, and a project without
+    the showcase serves none of its routes and keeps none of its scenarios."""
+    dest = tmp_path / "proj"
+    _generate(dest, project_name="demo_proj", **answers)
+    shipped = json.loads((dest / "config" / "project.json").read_text())
+    ran = _e2e_gate(dest)
+    assert ran.returncode == 0, ran.stdout[-6000:] + ran.stderr[-2000:]
+    assert "SKIPPED" not in ran.stdout, ran.stdout[-6000:]
+    for transport in shipped["transports"]["enabled"]:
+        assert shipped["e2e"]["sources"].get(transport), (transport, shipped["e2e"])
+        assert "is_named_or_exempt[%s] PASSED" % transport in ran.stdout, ran.stdout[
+            -6000:
+        ]
+    exempt = shipped["e2e"]["exempt"]
+    if _GRPC_TRANSPORT in answers.get("transports", []):
+        assert [k.split(" ", 1)[0] for k in exempt] == [_GRPC_TRANSPORT], exempt
+    else:
+        assert exempt == {}, exempt
+    if answers.get("showcase") is False:
+        assert not (dest / "tests" / "e2e" / "test_showcase_journey.py").exists()
+
+
+def test_a_generated_grpc_project_without_its_exemption_is_red(tmp_path):
+    """The other half: the grpc exemption is load-bearing. Dropped, the
+    project's gate names the method no scenario calls."""
+    dest = tmp_path / "proj"
+    _generate(dest, project_name="demo_proj", transports=[_GRPC_TRANSPORT])
+    manifest_path = dest / "config" / "project.json"
+    manifest = json.loads(manifest_path.read_text())
+    (method,) = manifest["e2e"]["exempt"]
+    manifest["e2e"]["exempt"] = {}
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
+    ran = _e2e_gate(dest, _E2E_GATE[0])
+    assert ran.returncode == 1, ran.stdout[-6000:] + ran.stderr[-2000:]
+    assert "is_named_or_exempt[%s] FAILED" % _GRPC_TRANSPORT in ran.stdout, ran.stdout
+    assert method in ran.stdout, ran.stdout[-6000:]

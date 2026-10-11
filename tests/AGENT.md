@@ -7,7 +7,7 @@ owner: TBD
 summary: Local agent rules inside tests/.
 id: tests-agent
 created: 2026-06-17
-updated: 2026-06-24
+updated: 2026-10-11
 visibility: internal
 canonical: true
 ---
@@ -19,7 +19,7 @@ These rules are **local and authoritative** for this directory. They inherit fro
 ## Rules
 
 - A new `src/<pkg>/<mod>.py` REQUIRES a mirrored `tests/unit/<pkg>/test_<mod>.py`.
-- A new user-facing flow (route, page, or transport endpoint) gets a `tests/e2e/` scenario that drives it through the public surface — author it alongside the change, not later (CONVENTIONS §17).
+- A new user-facing flow (route, page, or transport endpoint) gets a `tests/e2e/` scenario that drives it through the public surface — author it alongside the change, not later (CONVENTIONS §17). Name each endpoint the scenario drives with `@pytest.mark.endpoint("<transport> <id>")`: `tests/integration/test_e2e_coverage.py` fails an endpoint no scenario names unless `config/project.json` `e2e.exempt` gives the reason.
 - A fixture or golden value is an EXAMPLE of the contract, not the contract itself — assert the general behavior across edge/empty/boundary cases and keep golden values in the test or a fixture, so a hardcoded answer in `src/` cannot pass the suite (an answer key in `src/` is the overfit smell `scripts/check_generic.py` flags; CONVENTIONS §18).
 - Do NOT mirror integration/e2e/smoke to source files — name them by the scenario under test.
 - Unit tests touch no network/disk/process. If you need those, it's an integration test.

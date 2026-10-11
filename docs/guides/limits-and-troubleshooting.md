@@ -8,7 +8,7 @@ tags: [limits, waivers, exit-codes, troubleshooting, guide]
 summary: What adopting keel costs, the risks its rails leave open, the checks that pass by skipping, what no gate can see, every waiver a project may use, every exit code the gate's scripts return, and the symptom-to-fix list for the failures a newcomer meets first.
 id: docs-guides-limits-and-troubleshooting
 created: 2026-10-09
-updated: 2026-10-10
+updated: 2026-10-11
 visibility: internal
 canonical: true
 ---
@@ -118,6 +118,12 @@ a decision on whether it should fail instead.
 - `tests/integration/test_release_identity.py` and
   `tests/integration/test_work_trailers.py` skip without git. Queued for a
   decision.
+- The REST half of `tests/integration/test_e2e_coverage.py`, and every
+  scenario that uses the `rest_server` fixture in `tests/e2e/conftest.py`,
+  skip when FastAPI or uvicorn is not installed; the MCP half still judges.
+  CI turns the skip into a failure, because `tests/optional_deps.py` fails a
+  surface named in `KEEL_REQUIRED_EXTRAS`, and CI names `transport`. Queued for
+  a decision.
 
 ## What the gates cannot see
 
@@ -134,6 +140,13 @@ a decision on whether it should fail instead.
   `config/project.json` are checked for shape; the constants the code falls
   back to, `DEFAULT_MODEL` in `models/registry.py` and `DEFAULT_RUNTIME` in
   `runtimes/registry.py`, are not compared with them.
+- **What an e2e scenario asserts.** `tests/integration/test_e2e_coverage.py`
+  proves that a scenario names each endpoint with the `endpoint` marker. It
+  does not prove the scenario asserts anything about the endpoint's result.
+- **A server left behind by a killed run.** `tests/live_server.py` stops the
+  REST server in a `finally`, and from a handler when SIGTERM or SIGHUP ends
+  the run. A pytest killed by SIGKILL, or by the out-of-memory killer, runs
+  neither, so its uvicorn process survives; find it with `ps -eo pid,args | grep uvicorn`.
 - **Example settings files with no loader.** `config/default.example.toml`,
   `config/rag.example.toml` and `models/config/default.example.toml` are read
   by no code; a typo in a copy of one goes unnoticed.
@@ -167,6 +180,7 @@ decision in the tree, so a reviewer sees it.
 | `structure.project_checks` | `config/project.json` | nothing: it adds the project's own checks |
 | `work_naming.adoption_boundary` | `config/project.json` | check of commit trailers before the named commit |
 | `doc_drift.history_paths` | `config/project.json` | every rule of `tests/integration/test_doc_drift.py` for a Markdown file under a listed prefix |
+| `exempt` | `config/project.json` `e2e` | lets one named endpoint through `tests/integration/test_e2e_coverage.py` with no scenario, with the reason; a stale, redundant or reasonless entry is red |
 | `child_env.names` | `config/project.json` | the allowlist for a named variable: every child of `scripts/child_env.py` receives it |
 | `child_env.prefixes` | `config/project.json` | the allowlist for every variable that starts with a listed prefix |
 | `child_env.credentialed_values` | `config/project.json` | the credential refusal for a named variable, with the reason its value may carry a user part |

@@ -7,7 +7,7 @@ owner: TBD
 summary: Every feature keel ships, with what it does and why, how to run it, the settings it reads, where it stops and what it is not for, the guide that explains it, and which projects receive it. The rows of the shapes the tree declares are derived-equal to the tree by tests/integration/test_reference_drift.py.
 id: docs-reference-features
 created: 2026-10-09
-updated: 2026-10-10
+updated: 2026-10-11
 visibility: internal
 canonical: true
 ---
@@ -175,6 +175,7 @@ A provider is a thin adapter behind a registry, so no doer names a vendor.
 | `REST CORS default` | The REST app allows any origin, `GET` only, so a browser frontend can read it in development. | `make run-api` | — | Not a production policy: narrow the origins before you deploy. | [limits-and-troubleshooting.md](../guides/limits-and-troubleshooting.md) | always |
 | `gRPC transport` | A gRPC edge over the same `src/` logic. | see `api/grpc/` | [`transports`](settings.md#copier-questions) | Present only when the project chose it. | `api/grpc/` | when transports=grpc |
 | `edge nginx` | An nginx edge in front of the REST app. | see `api/edge_nginx/` | [`transports`](settings.md#copier-questions) | Present only when the project chose it; a config, not a hardened deployment. | `api/edge_nginx/` | when transports=edge_nginx |
+| `e2e endpoint coverage` | `tests/integration/test_e2e_coverage.py` derives every endpoint an enabled transport serves from its code (the REST app's OpenAPI document, each MCP server's `tools/list` over stdio, each `.proto` service method) and fails when one is named by no `@pytest.mark.endpoint` scenario and not exempt with a reason; the REST scenarios drive the real app under uvicorn on a loopback port the OS picks. | `make test` | [`e2e.sources.<transport>`](settings.md#configprojectjson) | It proves a scenario names each endpoint, not that the scenario asserts anything meaningful; a transport whose extra is not installed is skipped locally and red in CI. | [dev-loops.md](../guides/dev-loops.md) | always |
 | `.github/workflows/ci.yml` | Runs `make check-all`, lint, types, `make site-data` and the tests on every push and pull request. | push or open a pull request | — | One runner image and one Python version. | [deterministic-checks.md](../guides/deterministic-checks.md) | always |
 | `.github/workflows/scheduled.yml` | Runs the doc review nightly and uploads its JSON as an artifact, the same doer `ops/scheduled/` runs from cron. | the schedule, or a manual run | — | Reports only: it changes nothing in the repository. | [deterministic-checks.md](../guides/deterministic-checks.md) | always |
 | `.github/workflows/pages.yml` | Builds the static showcase and deploys it to GitHub Pages on a push to `main`. | push to `main` | [`frontend_stack`](settings.md#copier-questions) | Present only with the astro stack, and only useful with the showcase. | `docs/guides/showcase-site.md` | when frontend_stack=astro |

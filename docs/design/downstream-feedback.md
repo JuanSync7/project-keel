@@ -8,7 +8,7 @@ tags: [plan, template, downstream, freshness, taxonomy, effects, credentials, au
 summary: The bounded-convergence record for the defects bedrock-platform, the first real project generated from keel, reported back — a red gate on arrival, unknown directories the gate never sees, make targets whose effect nobody declares, and child processes that inherit every credential — plus the command that checks any keel-generated project for all of them. One slice per defect, five passes, each landed as one commit on a green `make verify`.
 id: docs-design-downstream-feedback
 created: 2026-10-06
-updated: 2026-10-10
+updated: 2026-10-11
 visibility: internal
 canonical: true
 ---
@@ -1508,7 +1508,7 @@ to be released as 0.2.2.
 | CMP-4.S3 | No catalogue lists every feature and no reference lists every setting, so a newcomer cannot see what exists or how to configure it | done — `make verify` green (1841 passed); 10 of 10 review findings confirmed and fixed |
 | CMP-4.S4 | `make verify` reports only an exit code and log text, so nothing outside the repo can read which gate ran, on which commit, with what result | done — `make verify` green (1906 passed); 6 of 6 review findings confirmed and fixed (two reviewers found the same defect) |
 | CMP-4.S5 | A frontend has no test runner, so it ships with zero tests and the gate is green | done — `make verify` green (1924 passed); 6 of 7 review findings confirmed and fixed |
-| CMP-4.S6 | The e2e scenarios call the app in process, and nothing checks that a route has a scenario | planned |
+| CMP-4.S6 | The e2e scenarios call the app in process, and nothing checks that a route has a scenario | done — `make verify` green (1973 passed); 4 of 5 review findings confirmed and fixed |
 | CMP-4.S7 | Nothing calls a real model or a running server and judges what comes back | planned |
 | CMP-4.S8 | A spec's requirements are not tied to tests, so an uncovered requirement passes the gate | planned — approved by the maintainer |
 
@@ -1595,6 +1595,13 @@ to be released as 0.2.2.
   float within its ranges. A copier copy from a dirty tree also copies
   untracked files, such as a stray symlink at the repo root, into the
   generated project.
+- Left by CMP-4.S6. A generated project with the `grpc` transport ships
+  `grpc /thing.v1.ThingService/CreateThing` in `e2e.exempt`, because no gate
+  generates the gRPC stubs or installs `grpcio`; a gate that does both, a
+  scenario that calls the method, and deleting the exemption close it. A
+  test run killed by SIGKILL still orphans its uvicorn server, because only
+  SIGTERM and SIGHUP are caught and nothing asks the kernel to end the server
+  with its parent.
 - Lane and gate tooling ships from keel: clone the commit, run the gate
   through a neutral batch-scheduler adapter (local by default; the farm's
   submit command and limits in config), and merge fast-forward only on a

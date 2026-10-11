@@ -26,6 +26,7 @@ sys.path.insert(0, str(_ROOT / "scripts" / "jobs"))
 import check_structure as cs  # noqa: E402
 import review_docs  # noqa: E402
 from child_env import build_child_env  # noqa: E402
+from test_e2e_coverage import EXEMPT_KEY  # noqa: E402
 
 pytestmark = pytest.mark.integration
 
@@ -542,8 +543,9 @@ def derived_waivers(root):
     code and registry that grant it: a pragma a checker compiles at module
     level, a gate-runner policy key, the mypy kill switch, a dict-valued
     ruleset key in config/practices.json, a practice status that is not the
-    active one, every key of the child-process allowlist's block, and the
-    history prefixes this gate exempts."""
+    active one, every key of the child-process allowlist's block, the
+    history prefixes this gate exempts, and the end-to-end gate's endpoint
+    exemptions (tests/integration/test_e2e_coverage.py `EXEMPT_KEY`, by leaf)."""
     root = Path(root)
     found = set()
     checkers = sorted(root.glob(_CHECKER_GLOB))
@@ -565,6 +567,7 @@ def derived_waivers(root):
     found.add(cs._OVERRIDE_KILL_SWITCH)
     found.update(child_env_keys(root))
     found.add("%s.%s" % (_BLOCK, _HISTORY_KEY))
+    found.add(EXEMPT_KEY.rsplit(".", 1)[-1])
     registry_path = root / "config" / "practices.json"
     if not registry_path.is_file():
         raise DocDriftConfigError("config/practices.json is missing")

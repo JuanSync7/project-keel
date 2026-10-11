@@ -1542,8 +1542,9 @@ def rendered_findings(doc, heading, rows, questions, source):
     """Against *source* rendered under every answer set copier.yml allows:
     each path some render holds matches exactly one row; a row matching no
     rendered path ships to keel maintainers only, and a row that does not
-    says so; a row matching a path of every render ships always; any other
-    ships `when ...`, with a claim that holds for the render under each answer
+    says so; a row matching a path of every render (not necessarily the same
+    path: an open map may be empty in one and keyed in another) ships always;
+    any other ships `when ...`, with a claim that holds for the render under each answer
     it names and excludes (`ships_value_findings`)."""
     renders = manifest_renders(questions, source)
     full = set().union(*(paths for _answers, paths in renders))
@@ -1558,7 +1559,12 @@ def rendered_findings(doc, heading, rows, questions, source):
     for row in rows:
         segs = row_segments(row["key"])
         in_full = any(row_covers(segs, p) for p in full)
-        in_minimal = any(row_covers(segs, p) for p in minimal)
+        # Per render, not over the intersection: an open map empty under one
+        # answer (`e2e.exempt`) and keyed under another holds no path common
+        # to both, yet its `<name>` row matches a path of every render.
+        in_minimal = all(
+            any(row_covers(segs, p) for p in paths) for _answers, paths in renders
+        )
         want = _ALWAYS if in_minimal else (_WHEN if in_full else _MAINTAINERS)
         cell = _ships(row)
         if (want == _WHEN and not cell.startswith(_WHEN)) or (

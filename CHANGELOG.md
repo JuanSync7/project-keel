@@ -11,6 +11,26 @@ version rather than a bare commit:
 ## [Unreleased]
 
 ### Added
+- **End-to-end scenarios over a real socket, and a gate that every endpoint
+  has one.** The REST scenarios in `tests/e2e/` now drive the real app under
+  uvicorn on a loopback port the OS picks (`tests/live_server.py`, the
+  `rest_server` fixture), and the MCP scenarios speak JSON-RPC to the real
+  servers over their stdio (`mcp_session`); no scenario uses an in-process
+  client. The new gate `tests/integration/test_e2e_coverage.py`, run by
+  `make test`, derives every endpoint an enabled transport serves from the code
+  (the REST app's OpenAPI document, each MCP server's `tools/list`, each
+  `.proto` service method) and fails when one is named by no
+  `@pytest.mark.endpoint` scenario and not exempt with a reason. A marker or
+  exemption naming no endpoint, a redundant or reasonless exemption, an
+  unreadable marker, a marker on no collected test, and a served route the
+  OpenAPI document cannot list are each red; the last is an allowlist over a
+  walk of the routes the app loads, so a route form nobody anticipated is red
+  too. The server is ready within `e2e.server.ready_timeout_s`, each request
+  and each child is bounded, and the server's process group is killed even
+  when a scenario fails or SIGTERM or SIGHUP ends the test run. The settings live in the new config/project.json `e2e`
+  block; a generated project with `grpc` ships its one method exempt, because
+  no gate builds the gRPC stubs yet. The gate checks naming, not what a
+  scenario asserts.
 - **Frontend unit tests and a browser journey in the gate.** Each shipped
   frontend app (`astro`, `react-vite`) now carries a unit runner, the npm
   script `test:unit` (Vitest over `src/**/*.test.ts`, and `.tsx` in

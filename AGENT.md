@@ -7,7 +7,7 @@ owner: TBD
 summary: Global rules for any agent working in this repo.
 id: agent
 created: 2026-06-17
-updated: 2026-10-08
+updated: 2026-10-11
 visibility: internal
 canonical: true
 ---
@@ -107,7 +107,10 @@ of truth for labeling and the directory taxonomy. Each directory's own
   (CONVENTIONS §20, check_Z, tests/integration/test_work_trailers.py).
 - **Cover user-facing flows end to end.** A new route, page, or transport
   endpoint gets a `tests/e2e/` scenario that drives it through its public
-  surface. (The loops above are disciplines for *you*; the playbook is
+  surface, and names each endpoint it drives with `@pytest.mark.endpoint`;
+  `tests/integration/test_e2e_coverage.py` fails an endpoint no scenario names
+  and `config/project.json` `e2e.exempt` does not excuse with a reason. (The
+  loops above are disciplines for *you*; the playbook is
   `docs/guides/dev-loops.md`, the rule is CONVENTIONS §17.)
 - **Solve the class of inputs, not the example.** When a spec ships an eval, a
   golden set, or one failing case, build the capability that *computes* the right
