@@ -1563,7 +1563,9 @@ to be released as 0.2.2.
   own test marker or a gap row. Which prefixes name a requirement comes from a
   `traceability.id_prefixes` registry in config/project.json; an unlisted
   prefix fails closed and the longest prefix wins. keel copies the registry's
-  key and family list from project-jarvis, which lands it first. Coverage
+  key and family list from project-jarvis, which lands it first. A test file
+  names a requirement and is never itself evidence that the requirement is
+  built, and each requirement gets exactly one verdict. Coverage
   statuses, a requirement hierarchy and mutation evidence are out of S8.
 
 **Queued for Campaign 5.**
@@ -1609,3 +1611,35 @@ to be released as 0.2.2.
 - conflict_guard precision (a union over the import closure); finish_update
   gaps (StrictUndefined, `_jinja_extensions`, private-remote credentials); a
   conflicted entry module or conflict_guard itself still tracebacks.
+- Left by CMP-4.S7. The shipped recordings are hand-authored
+  (`recorded.source: authored`); no model output is recorded until the
+  maintainer approves a first paid `make eval-live` run and promotes its
+  candidates by hand. One threshold, `evals.threshold`, governs replay and
+  live; a separate live threshold has no consumer until that run. A
+  JSON-Schema scorer and a model-as-judge scorer are not built. ADR-K-0017
+  (proposed) lists the verify goals without `eval`. A refused `evals.report_dir`
+  cannot be given a red placeholder report, so an earlier report can stand
+  beside a red gate.
+- The maintainer's coding rules get a kernel and checks, in this order: one
+  config loader every value comes through (a default applies only when a key
+  is not set and prints one `[using default]` line naming the key and the
+  config file; a key that is set and wrong fails; a secret, a host or a
+  live-store path has no default); one exit helper with a closed list of
+  codes and a table held equal to it; checks for what a helper cannot carry
+  (text matching as a last resort with a stated reason, the import boundary,
+  a bare `except`, a comment that reports a change); typed inputs read once
+  at the edge and a log helper that writes fields. The existing pattern
+  matches are listed in config and that list may only shrink.
+- Proposed by project-jarvis from its own lanes and reviews. A write path
+  never migrates a store: it refuses one below the current schema and names
+  the migrate step, and a test holds the store's bytes unchanged on every
+  refused or failed write. Every list of guarded things has a test that fails
+  when an entry is removed. A module docstring's claim about behaviour is
+  asserted by a named test. Every persisted field is a closed list, an open
+  list or a validated format. A grammar with one home is imported, never
+  copied. Time bounds in tests take their load margin from config. A
+  git-ignored config the gate needs ships as an example, and the gate's first
+  step names the copy command. A tool resolves lane placeholders at land and
+  merges the changelog and the ledger without conflict (with the lane and gate
+  tooling above). The template `.gitignore` covers the directory a browser
+  automation server leaves at the repo root.
