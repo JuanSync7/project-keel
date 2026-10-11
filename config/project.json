@@ -256,6 +256,24 @@
       "stop_timeout_s": 10
     }
   },
+  "traceability": {
+    "_comment": "Requirement traceability (CONVENTIONS section 17): every requirement a `kind: spec` document under specs_root defines is named by a test under tests_root with @pytest.mark.<marker>(\"<id>\"), or excused in gaps with a reason. scripts/trace_requirements.py (make trace) judges it and writes the matrix to matrix_path, whose shape, version and length caps matrix_schema fixes; matrix_path must be git-ignored. id_prefixes is the closed registry of id prefixes: an id is <prefix> then exactly digits ASCII digits, optionally followed by #AC-<n> for one numbered criterion; the longest listed prefix wins and an unlisted prefix is refused. family requirement is what a test covers; family goal is recognised and never traced. source self means a spec here defines the ids; source spine means another system does, so a spec here may not. gaps maps a unit's id (a criterion, or a requirement that has none) to the reason no test names it; a gap for a covered, undefined or malformed id is red. no_requirements is null, or the reason this project has no requirement yet: with zero requirements and null the gate is red, and the reason is red once a requirement or a marker exists.",
+    "id_prefixes": [
+      {
+        "prefix": "REQ-",
+        "family": "requirement",
+        "digits": 4,
+        "source": "self"
+      }
+    ],
+    "specs_root": "docs/specs",
+    "tests_root": "tests",
+    "marker": "req",
+    "gaps": {},
+    "no_requirements": null,
+    "matrix_path": ".evidence/traceability/matrix.json",
+    "matrix_schema": "config/traceability/matrix.schema.json"
+  },
   "runtimes": {
     "_comment": "Agent control-flow engines this project makes available (registered in runtimes/registry.py, CONVENTIONS section 16). 'default' is declarative: check_H requires it to be in 'available' and each engine's directory to exist, but runtimes/registry.py DEFAULT_RUNTIME decides what get_runtime() returns with no name, and nothing ties the two together.",
     "default": "inprocess",

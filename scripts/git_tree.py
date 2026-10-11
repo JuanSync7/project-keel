@@ -2,7 +2,7 @@
 title: git_tree — what git lists, and a digest of it
 kind: script
 layer: n/a
-summary: The one definition of "what git lists" in a work tree. tree_snapshot maps every path `git status` reports (modified, staged, deleted, untracked; never an ignored one) to its two-letter porcelain status joined to a digest of its content, and raises NoGitError when the directory is not inside a git work tree or git cannot run; snapshot_digest reduces a snapshot to one `sha256:` value over its canonical JSON. is_ignored answers whether git would list a path that may not exist yet, and head_commit names HEAD's sha or None when there is no commit. git runs with the allowlisted environment from scripts/child_env.py and with the developer's global excludes file switched off. Stdlib and 3.6-safe, so scripts/gate_evidence.py can import it under the old interpreter. It decides nothing about what runs or passes (scripts/run_make_target.py and scripts/gate_evidence.py do), and it writes nothing.
+summary: The one definition of "what git lists" in a work tree. tree_snapshot maps every path `git status` reports (modified, staged, deleted, untracked; never an ignored one) to its two-letter porcelain status joined to a digest of its content, and raises NoGitError when the directory is not inside a git work tree or git cannot run; snapshot_digest reduces a snapshot to one `sha256:` value over its canonical JSON. is_ignored answers whether git would list a path that may not exist yet, and head_commit names HEAD's sha or None when there is no commit. through_symlink names the project-relative paths that reach their file through a symlink, which needs no git and is what a writer asks before it writes or deletes at a path read from config. git runs with the allowlisted environment from scripts/child_env.py and with the developer's global excludes file switched off. Stdlib and 3.6-safe, so scripts/gate_evidence.py can import it under the old interpreter. It decides nothing about what runs or passes (scripts/run_make_target.py and scripts/gate_evidence.py do), and it writes nothing.
 """
 
 # NB: stdlib only, no `from __future__ import annotations`, no f-strings, no walrus,
@@ -26,6 +26,7 @@ __all__ = [
     "head_commit",
     "is_ignored",
     "snapshot_digest",
+    "through_symlink",
     "tree_snapshot",
 ]
 
@@ -136,3 +137,19 @@ def head_commit(root):
     except NoGitError:
         return None
     return out.decode("ascii", "replace").strip() or None
+
+
+def through_symlink(root, paths):
+    """The project-relative POSIX *paths* that do not resolve to themselves
+    under *root*: some component, or the path itself, is a symlink, wherever it
+    points. A path that does not exist yet resolves to itself, and *root* itself
+    may be reached through a link. Needs no git."""
+    real_root = os.path.realpath(root)
+    return [
+        p
+        for p in paths
+        if os.path.realpath(os.path.join(root, p))
+        != os.path.join(
+            real_root, *[part for part in p.split("/") if part not in ("", ".")]
+        )
+    ]

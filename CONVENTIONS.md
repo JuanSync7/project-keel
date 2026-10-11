@@ -262,6 +262,7 @@ pre-commit hook) fails the build if the conventions above drift:
 | ADR number spaces (§19) | `config/project.json` `adr` is well-formed once the tree holds a `kind: adr` document; an ADR in the project space is `NNNN-<slug>.md` and never carries the template prefix; an ADR in the template space is `<prefix>NNNN-<slug>.md` and is one `adr.template_adrs` lists, and every listed name is a file there; a `kind: adr` document lives directly in one of the two spaces; a number is unique within its space (once in each space is clean); an ADR's frontmatter `kind` is `adr` and its `title` begins `ADR-NNNN:` or `ADR-<prefix>NNNN:` for its own file. Both spaces empty is a WARN. A kept copy of a retired template ADR shares its `id:` with the template's file, which check_A reports. See [docs/adr/keel/K-0013-template-and-project-adr-number-spaces.md](docs/adr/keel/K-0013-template-and-project-adr-number-spaces.md) |
 | Work naming (§20) | `config/project.json` `work_naming` is well-formed once the tree holds a plan doc; every first cell of a plan doc's slice table is a slice id; a slice table sits under exactly one campaign heading, its rows name that campaign and run from `S1` in document order (a duplicate names both lines, a gap names the missing slice); a campaign is declared by one heading across all plan docs, and campaigns run from 1 with no gap; a mention in any Markdown prose, bare or with the project's own `name:` prefix, names a declared campaign or slice, and an id-shaped token outside the grammar (`CMP-1.S02`) is an error, not a mention of its campaign. A plan doc that declares no slice is a WARN. `tests/integration/test_work_trailers.py` judges the `Slice:` and `Backlog:` commit trailers, because check_structure does not read git |
 | Shipped-doc drift (§15) | a shipped document (any Markdown outside `doc_drift.history_paths`, and its `.md.jinja` twin) names in prose no concrete campaign or slice id in the `work_naming` grammar, whatever its prefix, and no `doc_drift.forbidden_phrases` pattern; a loopback port it names, fenced or not, is declared by some non-Markdown file (a git-ignored file is not read, since generated views copy Markdown text); and it cites no document copier.yml `_exclude`s unconditionally (template only). Code spans and fences are illustrations. Not in `check_structure.py`: `tests/integration/test_doc_drift.py` is a pytest gate under `make verify` and `make test`, not pre-commit, because it reads copier.yml through yaml and the file list through git. The same test holds the newcomer documents `doc_drift` names: the entry documents' direct links, the README layout tree, each guide's audience, the limits guide's waivers and exit codes, and the upgrade guide's copier steps. `tests/integration/test_reference_drift.py`, also a pytest gate under `make verify` and `make test`, holds the two reference documents `doc_drift` names: the settings reference's rows equal every setting the tree reads, each with its literal default, and the feature catalogue's rows equal every feature the tree declares, each stating its limits and a Ships cell that copier.yml `_exclude` agrees with under every answer set copier.yml allows |
+| Requirement traceability (§17) | not a `check_structure.py` letter: `scripts/trace_requirements.py` (`make trace`, a `make verify` goal) and `tests/integration/test_requirement_traceability.py` (`make test`) fail when a requirement or numbered criterion a `kind: spec` document under `traceability.specs_root` defines is named by no `@pytest.mark.req` on a collected test and by no `traceability.gaps` row with a reason; a marker or gap naming no defined unit, a gap for a covered unit, an id under a prefix `traceability.id_prefixes` does not list, and zero requirements with no `traceability.no_requirements` reason are red too |
 
 Missing `owner` is a warning, not a failure. If you change the scheme
 (KINDS / LAYERS / STATUSES / VISIBILITIES) or a check, update **both**
@@ -652,6 +653,22 @@ It is keyed **by layer/concern, never one global `language`**:
   `model_options` (`{}`: keyword arguments for the adapter `model` names).
   `evals/_config.py` refuses, naming the dotted key, a missing, unknown or
   ill-typed key and a path that is absolute or climbs out with `..`.
+- `traceability` — requirement traceability (§17; `scripts/traceability.py`,
+  `scripts/trace_requirements.py`): `id_prefixes` (the closed list of id
+  prefixes, each row a `prefix` such as `REQ-`, a `family` from `requirement`
+  and `goal`, the exact count of `digits` that follow, and a `source` from
+  `self` and `spine`); `specs_root` (`docs/specs`) and `tests_root` (`tests`),
+  the two directories read; `marker` (`req`, registered in `pyproject.toml`);
+  `gaps` (`{}`: a unit's id mapped to the reason no test names it);
+  `no_requirements` (`null`, or the reason the project has no requirement
+  yet); `matrix_path` (`.evidence/traceability/matrix.json`, which `.gitignore`
+  must ignore: the run is refused with exit 2 otherwise); and `matrix_schema`
+  (`config/traceability/matrix.schema.json`, the only owner of the matrix's
+  `schema_version.const` and of its two length caps).
+  `scripts/traceability.py` refuses, naming the dotted key, a missing, unknown
+  or ill-typed key, a blank reason and a path that is absolute or climbs out
+  with `..`; `scripts/trace_requirements.py` refuses one that resolves through
+  a symlink.
 - `child_env` — the environment a child process inherits (§7): `names` (the
   variables copied from the parent when present, e.g. `PATH`, `HOME`, the
   proxy and CA-bundle names), `prefixes` (letter-led and ending in `_`, e.g.
@@ -844,8 +861,14 @@ govern *how you work*; their executable analog — a loop a program runs unatten
 - **End-to-end coverage.** A new user-facing flow (route, page, transport
   endpoint) gets a `tests/e2e/` scenario that exercises it through its public
   surface; name it by scenario, not by a source file.
+- **Requirement traceability.** A requirement a `kind: spec` document states
+  is named by a test or is a documented gap. A requirement is a heading that
+  opens with an id (`REQ-0001`), and a numbered criterion is a
+  `- AC-<n>: <text>` line below it. A test names its unit with
+  `@pytest.mark.req("REQ-0001#AC-1")`. A bare requirement id never covers a
+  requirement that has numbered criteria.
 - **The gate is the judge.** "Done" means `make verify` (`check-all` + `lint` +
-  `typecheck` + `test` + `eval` + `test-fe`) is green; step transitions and completion gate on the
+  `typecheck` + `test` + `trace` + `eval` + `test-fe`) is green; step transitions and completion gate on the
   real exit code, never on a model's self-report. A loop runs its gate through
   `scripts/run_make_target.py`, which runs only a target labelled inside
   `make_targets.gate_effects` and fails one that changed the tree (§7).
@@ -860,6 +883,20 @@ and fails when one is named by no `@pytest.mark.endpoint` scenario under
 `tests/e2e/` and is not exempt with a reason in `config/project.json`
 `e2e.exempt`. It checks the naming, not that the scenario asserts anything
 meaningful; a page is not an endpoint it derives.
+
+Requirement traceability is gated too: `scripts/trace_requirements.py`, run by
+`make trace` as a `make verify` goal, gives every criterion, and every
+requirement that has none, one verdict from `covered`, `gap` and `uncovered`,
+and writes them to `config/project.json` `traceability.matrix_path`. It exits
+1 on an `uncovered` unit, on a marker or a `traceability.gaps` key that names
+no defined unit, on a gap for a covered unit, and on zero requirements with no
+`traceability.no_requirements` reason; it exits 2 when it cannot judge.
+`scripts/traceability.py` holds the one parser of an id, and
+`traceability.id_prefixes` is the closed list of prefixes it accepts: an
+unlisted prefix is refused, never guessed at.
+`tests/integration/test_requirement_traceability.py`, run by `make test`,
+judges the same tree with the same code. It checks that a test names a
+requirement, not that the test asserts what the requirement says.
 
 ## 18. Generic solutions (solve the class, not the case)
 

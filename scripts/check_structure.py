@@ -2904,13 +2904,15 @@ def _frontmatter_end(lines):
     return 0
 
 
-def _unfenced_lines(text):
-    """The document's lines with fenced code blocks and HTML comments blanked,
-    numbering kept. A fence closes only on the same character, at least as
-    long (CommonMark), so a ```` block may show a ``` fence as content."""
-    out, fence = [], None
+def _fence_scan(text):
+    """(lines, open_line): the document's lines with fenced code blocks and
+    HTML comments blanked, numbering kept, and the 1-based line of a fence that
+    is still open when the document ends, else 0. A fence closes only on the
+    same character, at least as long (CommonMark), so a ```` block may show a
+    ``` fence as content."""
+    out, fence, opened = [], None, 0
     text = _HTML_COMMENT.sub(lambda m: "\n" * m.group(0).count("\n"), text)
-    for line in text.split("\n"):
+    for number, line in enumerate(text.split("\n"), 1):
         m = _FENCE.match(line)
         closes = (
             m
@@ -2920,10 +2922,18 @@ def _unfenced_lines(text):
         )
         if m and (fence is None or closes):
             fence = m.group(1) if fence is None else None
+            opened = number if fence is not None else 0
             out.append("")
             continue
         out.append("" if fence is not None else line)
-    return out
+    return out, opened
+
+
+def _unfenced_lines(text):
+    """The document's lines with fenced code blocks and HTML comments blanked,
+    numbering kept (_fence_scan). A fence left open blanks every line after
+    it, as a renderer shows it."""
+    return _fence_scan(text)[0]
 
 
 def _prose_lines(text):

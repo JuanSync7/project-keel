@@ -756,7 +756,9 @@ def test_a_pre_c2_2_project_receives_the_new_child_env_keys_as_arrivals_and_owes
     `make verify`'s record reads (CONVENTIONS §15), the `e2e` block that
     tests/integration/test_e2e_coverage.py and tests/live_server.py read
     (CONVENTIONS §17), the `evals` block that `make eval` and
-    scripts/run_evals.py read (CONVENTIONS §15), the `doc_drift` block
+    scripts/run_evals.py read (CONVENTIONS §15), the `traceability` block that
+    `make trace` and scripts/trace_requirements.py read (CONVENTIONS §17), the
+    `doc_drift` block
     (docs/guides/doc-style.md) and `models.credential_env.openai-compatible`,
     the only names models/openai_compatible.py accepts as `api_key_env`, arrive
     beside them.
@@ -804,6 +806,7 @@ def test_a_pre_c2_2_project_receives_the_new_child_env_keys_as_arrivals_and_owes
         "make_targets.empty_test_selections",
         "make_targets.write_shape_exempt",
         "models.credential_env.openai-compatible",
+        "traceability",
         "work_naming",
     }, arrived
     values = [f for f in arrived if f["key"] == "child_env.credentialed_values"]

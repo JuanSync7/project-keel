@@ -2,7 +2,7 @@
 title: Integration — copier generates a structurally valid, tailored project
 kind: tests
 layer: n/a
-summary: `copier` renders keel's root template into a new project — the manifest is tailored to the answers, the un-chosen frontend stack is pruned, CLAUDE.md->AGENT.md symlinks are preserved, keel's own template meta-tests are pruned, and check_structure passes; an undeclared top-level directory reds the project until it is declared and labelled. A bare `subprocess.run` reds a generated project through check_X until it passes `env=build_child_env()`, and the project's helper passes an adapter's declared credential and no planted secret. A credentialed proxy (a `#` in the password included) fails the project's doc judge by name and never by value, while a `LANGUAGE=sr_RS:sr@latin` locale list does not, until `child_env.credentialed_values` names it, and a stale entry there reds the gate. A generated project carries keel's `work_naming` block and no plan doc, so check_Z is silent until the project writes one; a slice row that is not a slice id then reds the gate and a well-formed one does not. A generated project runs its own doc-drift tests green, every skip there a template-only test naming why, and a prose slice id planted in its CONTRIBUTING.md reds them, and so does a row dropped from its settings reference or from its feature catalogue; its README names no `make new`, and its `run-web` line names Astro and its port only for the astro stack and is absent with no frontend. Under every transport answer, and without the showcase, a generated project's e2e coverage gate and its scenarios pass with nothing skipped, and a grpc project whose exemption is dropped is red naming the method. A project with a frontend carries keel's `layers.frontend.journey` keys and passes its own frontend-suite contract tests statically; one without has no frontend keys, its wiring test skips with a reason, and `make test-fe` exits 0 silently. Under every answer set, `make eval` in a committed generated project replays its shipped eval dataset, which uses every scorer, green twice with the same report bytes and leaves what git lists alone, and the README's delete advice no longer offers evals/. Skipped on a bare local clone without the optional `template` extra; CI installs `.[dev,template]` and declares the surface required (KEEL_REQUIRED_EXTRAS), so there a missing copier is a hard failure instead of a silent skip.
+summary: `copier` renders keel's root template into a new project — the manifest is tailored to the answers, the un-chosen frontend stack is pruned, CLAUDE.md->AGENT.md symlinks are preserved, keel's own template meta-tests are pruned, and check_structure passes; an undeclared top-level directory reds the project until it is declared and labelled. A bare `subprocess.run` reds a generated project through check_X until it passes `env=build_child_env()`, and the project's helper passes an adapter's declared credential and no planted secret. A credentialed proxy (a `#` in the password included) fails the project's doc judge by name and never by value, while a `LANGUAGE=sr_RS:sr@latin` locale list does not, until `child_env.credentialed_values` names it, and a stale entry there reds the gate. A generated project carries keel's `work_naming` block and no plan doc, so check_Z is silent until the project writes one; a slice row that is not a slice id then reds the gate and a well-formed one does not. A generated project runs its own doc-drift tests green, every skip there a template-only test naming why, and a prose slice id planted in its CONTRIBUTING.md reds them, and so does a row dropped from its settings reference or from its feature catalogue; its README names no `make new`, and its `run-web` line names Astro and its port only for the astro stack and is absent with no frontend. Under every transport answer, and without the showcase, a generated project's e2e coverage gate and its scenarios pass with nothing skipped, and a grpc project whose exemption is dropped is red naming the method. A project with a frontend carries keel's `layers.frontend.journey` keys and passes its own frontend-suite contract tests statically; one without has no frontend keys, its wiring test skips with a reason, and `make test-fe` exits 0 silently. Under every answer set, `make eval` in a committed generated project replays its shipped eval dataset, which uses every scorer, green twice with the same report bytes and leaves what git lists alone, and the README's delete advice no longer offers evals/. Under every answer set, `make trace` in a committed generated project writes the same passing matrix twice and leaves what git lists alone, and a requirement added to its spec with no test turns `make trace` and the project's own traceability gate test red naming it. Skipped on a bare local clone without the optional `template` extra; CI installs `.[dev,template]` and declares the surface required (KEEL_REQUIRED_EXTRAS), so there a missing copier is a hard failure instead of a silent skip.
 """
 
 import json
@@ -37,6 +37,7 @@ import review_docs  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 
+import check_structure  # noqa: E402
 from child_env import build_child_env  # noqa: E402
 
 _ROOT = Path(__file__).resolve().parents[2]
@@ -1200,6 +1201,126 @@ def test_a_generated_project_replays_its_evals(tmp_path, answers):
     rec = json.loads(seen[0].decode("utf-8"))
     assert (rec["result"], rec["mode"]) == ("pass", "replay"), rec
     assert sum(s["total"] for s in rec["suites"]) == len(cases), rec
+
+
+_TRACE_GATE = "tests/integration/test_requirement_traceability.py"
+_TRACE_GATE_TEST = "test_every_requirement_is_covered_or_a_documented_gap"
+
+
+def _unnamed_requirement(project, block):
+    """Append to the project's first spec a requirement no test names, built
+    from the project's own first id-prefix row; returns the id."""
+    row = block["id_prefixes"][0]
+    planted = "%s%s" % (row["prefix"], "9" * row["digits"])
+    specs = sorted(
+        path
+        for path in (project / block["specs_root"]).rglob("*.md")
+        if (check_structure.parse_frontmatter(str(path)) or {}).get("kind") == "spec"
+    )
+    assert specs, "the generated project ships no spec -- zero items"
+    with specs[0].open("a", encoding="utf-8") as fh:
+        fh.write("\n## %s A requirement no test names\n\nPlanted.\n" % planted)
+    return planted
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
+@pytest.mark.parametrize(
+    "answers",
+    _ANSWER_MATRIX
+    + [
+        pytest.param(
+            {"frontend_stack": "none", "showcase": False}, id="showcase-declined"
+        )
+    ],
+)
+def test_a_generated_project_traces_its_requirements(tmp_path, answers):
+    """Requirement traceability held downstream: every answer set ships keel's
+    `traceability` block, the matrix schema, a spec and the tests that name its
+    requirements, and `make trace` run twice in the committed project exits 0,
+    writes the same passing matrix both times and leaves what git lists alone.
+    A requirement then added to the spec with no test turns `make trace` red
+    naming it, and the matrix says fail."""
+    dest = tmp_path / "proj"
+    _generate(dest, project_name="demo_proj", **answers)
+    keel = json.loads((_ROOT / "config" / "project.json").read_text())
+    shipped = json.loads((dest / "config" / "project.json").read_text())
+    assert shipped["traceability"] == keel["traceability"], shipped.get("traceability")
+    block = shipped["traceability"]
+    assert (dest / block["matrix_schema"]).is_file()
+
+    env = _hermetic_git_env(tmp_path)
+    for argv in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "generated"]):
+        g = subprocess.run(
+            ["git"] + argv, cwd=str(dest), env=env, capture_output=True, text=True
+        )
+        assert g.returncode == 0, g.stderr
+    matrix = dest / block["matrix_path"]
+    seen = []
+    for _ in range(2):
+        ran = _make_in(dest, "trace")
+        assert ran.returncode == 0, ran.stdout[-3000:] + ran.stderr[-3000:]
+        status = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=str(dest),
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        assert status.stdout == "", status.stdout
+        seen.append(matrix.read_bytes())
+    assert seen[0] and seen[0] == seen[1]
+    rec = json.loads(seen[0].decode("utf-8"))
+    assert (rec["result"], rec["state"]) == ("pass", "traced"), rec
+    units = [u for r in rec["requirements"] for u in r["units"]]
+    assert units, "the matrix judges no requirement -- zero items"
+    assert {u["verdict"] for u in units} == {"covered"}, units
+
+    planted = _unnamed_requirement(dest, block)
+    red = _make_in(dest, "trace")
+    assert red.returncode != 0, red.stdout[-3000:]
+    assert planted in red.stderr, red.stderr[-3000:]
+    after = json.loads(matrix.read_text(encoding="utf-8"))
+    assert after["result"] == "fail", after
+    assert [
+        u["id"]
+        for r in after["requirements"]
+        for u in r["units"]
+        if u["verdict"] == "uncovered"
+    ] == [planted], after["requirements"]
+
+
+def _trace_gate(project):
+    """The generated project's traceability gate file, run as its `make test`
+    recipe runs pytest (PYTHONPATH=src:.)."""
+    return subprocess.run(
+        [sys.executable, "-m", "pytest", "-v", "-rs", "-p", "no:cacheprovider"]
+        + [_TRACE_GATE],
+        cwd=str(project),
+        env=build_child_env(root=str(project), extra={"PYTHONPATH": "src:."}),
+        capture_output=True,
+        text=True,
+        timeout=900,
+    )
+
+
+def test_the_traceability_gate_test_runs_and_judges_a_generated_project(tmp_path):
+    """The gate test ships and runs in a generated project: every test in its
+    file passes there with nothing skipped, so its planted faults and symlink
+    refusals hold on a project's tree and not only keel's. A requirement added
+    to the project's spec with no test then fails the gate test naming it."""
+    dest = tmp_path / "proj"
+    _generate(dest, project_name="demo_proj")
+    block = json.loads((dest / "config" / "project.json").read_text())["traceability"]
+    ran = _trace_gate(dest)
+    assert ran.returncode == 0, ran.stdout[-6000:] + ran.stderr[-2000:]
+    assert "SKIPPED" not in ran.stdout, ran.stdout[-6000:]
+    assert "%s PASSED" % _TRACE_GATE_TEST in ran.stdout, ran.stdout[-6000:]
+
+    planted = _unnamed_requirement(dest, block)
+    red = _trace_gate(dest)
+    assert red.returncode == 1, red.stdout[-6000:] + red.stderr[-2000:]
+    assert "%s FAILED" % _TRACE_GATE_TEST in red.stdout, red.stdout[-6000:]
+    assert planted in red.stdout, red.stdout[-6000:]
 
 
 _APP_DELETE_ADVICE = re.compile(r"\*\*Delete this dir\*\*(.*?)(?:\n\n|\Z)", re.DOTALL)

@@ -123,3 +123,45 @@ def test_head_commit_is_the_sha_or_none(repo, tmp_path):
     empty.mkdir()
     _git(empty, hermetic_git.git_env(tmp_path / "work"), "init", "-q")
     assert git_tree.head_commit(str(empty)) is None
+
+
+def test_through_symlink_judges_a_path_by_where_it_resolves(tmp_path):
+    root = tmp_path / "proj"
+    outside = tmp_path / "outside"
+    (root / "out" / "deep").mkdir(parents=True)
+    outside.mkdir()
+    (root / "out" / "file.json").write_text("{}", encoding="utf-8")
+    plain = ["out", "out/deep", "out/file.json", "out/absent.json", "absent/a/b"]
+    assert git_tree.through_symlink(str(root), plain) == []
+
+    (root / "linked").symlink_to(outside, target_is_directory=True)
+    (root / "out" / "leaf.json").symlink_to(outside / "leaf.json")
+    (root / "out" / "inside.json").symlink_to("file.json")
+    paths = plain + [
+        "linked",
+        "linked/x/matrix.json",
+        "out/leaf.json",
+        "out/inside.json",
+    ]
+    # A dangling link and a link that stays inside the project are both links:
+    # the question is whether the path is the file it names, not where it lands.
+    assert git_tree.through_symlink(str(root), paths) == [
+        "linked",
+        "linked/x/matrix.json",
+        "out/leaf.json",
+        "out/inside.json",
+    ]
+
+    # The project root itself may be reached through a link; only what lies
+    # below it is judged.
+    alias = tmp_path / "alias"
+    alias.symlink_to(root, target_is_directory=True)
+    assert git_tree.through_symlink(str(alias), plain) == []
+    assert git_tree.through_symlink(str(alias), ["linked/x"]) == ["linked/x"]
+
+
+def test_run_evals_reads_the_one_symlink_check():
+    import run_evals
+
+    assert not hasattr(run_evals, "_through_symlink")
+    assert "through_symlink" in git_tree.__all__

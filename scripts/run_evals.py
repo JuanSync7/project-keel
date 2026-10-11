@@ -17,7 +17,6 @@ import os
 import shutil
 import sys
 from collections.abc import Sequence
-from pathlib import PurePosixPath
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO = os.path.dirname(_HERE)
@@ -79,19 +78,6 @@ def _report(
     )
 
 
-def _through_symlink(root: str, paths: Sequence[str]) -> list[str]:
-    """The project-relative *paths* that do not resolve to themselves under
-    *root*: some component, or the path itself, is a symlink. A path that does
-    not exist yet resolves to itself."""
-    real_root = os.path.realpath(root)
-    return [
-        p
-        for p in paths
-        if os.path.realpath(os.path.join(root, p))
-        != os.path.join(real_root, *PurePosixPath(p).parts)
-    ]
-
-
 def _refuse_symlinks(report_dir: str, linked: Sequence[str]) -> None:
     print(
         "run_evals: config/project.json `evals.report_dir` %r reaches %s through "
@@ -106,7 +92,7 @@ def _unignored(root: str, paths: Sequence[str]) -> list[str]:
         return [p for p in paths if not git_tree.is_ignored(root, p)]
     except git_tree.NoGitError:
         # No git, no tracked tree to dirty. This guard is only about dirtying
-        # the tree; staying inside the project is _through_symlink's, which
+        # the tree; staying inside the project is git_tree.through_symlink's, which
         # needs no git and has already run.
         return []
 
@@ -145,7 +131,7 @@ def _remove_stale(root: str, report_dir: str | None, mode: str) -> None:
     stale = ["%s/%s.json" % (report_dir, mode)]
     if mode == "live":
         stale.append("%s/%s" % (report_dir, _CANDIDATES))
-    linked = _through_symlink(root, stale)
+    linked = git_tree.through_symlink(root, stale)
     if linked:
         _refuse_symlinks(report_dir, linked)
         return
@@ -183,7 +169,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     rel = "%s/%s.json" % (cfg.report_dir, mode)
     candidates_dir = "%s/%s" % (cfg.report_dir, _CANDIDATES)
     guarded = [rel, rel + ".tmp"]
-    linked = _through_symlink(
+    linked = git_tree.through_symlink(
         root, guarded + ([candidates_dir] if mode == "live" else [])
     )
     if linked:

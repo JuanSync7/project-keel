@@ -31,7 +31,7 @@ CI) call them. Each script is self-describing (`--help`) and safe to re-run.
 ```bash
 make check        # fast structural gate — runs anywhere, incl. Python 3.6
 make check-all    # the full deterministic suite (needs the project interpreter)
-make verify       # check-all + lint + typecheck + test + eval + test-fe (the everything gate)
+make verify       # check-all + lint + typecheck + test + trace + eval + test-fe (the everything gate)
 ```
 
 Wire them once and forget:
@@ -667,6 +667,49 @@ the cases are the right ones (`evals/README.md`).
 
 ---
 
+### 11. Requirement traceability — `scripts/trace_requirements.py`
+
+**Purpose.** A gate run by `make trace`, a `make verify` goal of its own, not
+by `make check-all`, so it has no row in the table above. It fails when a
+requirement a spec states is named by no test and excused by no gap. It reads
+every `kind: spec` document under config/project.json `traceability.specs_root`
+(`docs/specs`): a heading whose first word is an id defines a requirement, and
+a `- AC-<n>: <text>` line below it defines a numbered criterion. It reads
+every `@pytest.mark.req("<id>")` call, the marker `traceability.marker` names,
+from the test files pytest collects under `traceability.tests_root` (`tests`),
+and counts a marker only on a definition pytest collects: not one a later
+definition of the same name replaces, not one in a class pytest refuses, and
+not one below a directory `norecursedirs` skips. The gate test compares that
+reading with a child `pytest --collect-only` and fails when they differ.
+Each unit, a criterion or a requirement that has none, gets one verdict:
+`covered`, `gap` (a `traceability.gaps` row with a reason) or `uncovered`. A
+bare requirement id never covers a requirement that has numbered criteria.
+`scripts/traceability.py` holds the one parser of an id and the verdict rule;
+`traceability.id_prefixes` is the closed list of prefixes it accepts, and an
+unlisted prefix is refused rather than guessed at.
+
+**What it writes.** One file, `traceability.matrix_path`
+(`.evidence/traceability/matrix.json`), replaced whole by each run:
+every requirement, its units, verdicts and naming tests, the findings, and a
+`result` from `pass`, `fail`, `incomplete` and `refused`.
+`config/traceability/matrix.schema.json` (`traceability.matrix_schema`) fixes
+its shape, its version and the length caps on a cited id and a gap reason.
+The command writes an `incomplete` matrix before it reads a spec, so a run
+that stops leaves no earlier `pass` standing. It refuses, before any read or
+write, a `matrix_path`, `specs_root`, `tests_root` or `matrix_schema` reached
+through a symlink, and a `matrix_path` git does not ignore.
+
+**What it does not prove.** That a test asserts what its requirement says: the
+gate reads marker calls from source and imports no test, and review judges the
+assertions. That a spec states the right requirements. `make trace` alone does
+not see a marker reached through a name other than `pytest.mark` or an
+imported `mark`, or one built at run time; the gate test's comparison with
+pytest's collection does.
+
+**Run.** `make trace` · `pytest tests/integration/test_requirement_traceability.py`
+
+---
+
 ## How the hooks are wired
 
 ### Pre-commit (event trigger)
@@ -694,6 +737,7 @@ Enable once: `pip install pre-commit && pre-commit install`.
 - run: make lint
 - run: make typecheck
 - run: make test
+- run: make trace       # every requirement is named by a test or a documented gap
 - run: make eval        # replay every eval suite; no network, no credential
 ```
 
@@ -713,7 +757,7 @@ does.
 commit, with what result. Something outside the repository, such as
 project-jarvis, can read that file instead of scraping a log. The verify
 recipe runs `scripts/gate_evidence.py`, which runs each goal (`check-all`,
-`lint`, `typecheck`, `test`, `eval`, `test-fe`) as its own make, in order. The writer then
+`lint`, `typecheck`, `test`, `trace`, `eval`, `test-fe`) as its own make, in order. The writer then
 writes the record to `<evidence.dir>/<gate>.json`: `.evidence/verify.json`,
 with config/project.json `evidence.dir` = `.evidence`.
 
@@ -729,7 +773,7 @@ it.
 | `result`, `reasons` | `pass` exactly when the writer exits 0. A `fail` lists its reasons from a closed vocabulary: `target-failed`, `zero-targets`, `no-test-report`, `zero-tests`, `tests-failed`, `tree-changed`, `checks-unavailable`, `incomplete`, `writer-error`. |
 | `source` | `commit` (HEAD's sha), `dirty` (git listed any path before the goals ran), `tree_digest` (a sha256 over what git listed, each path's status and content, from `scripts/git_tree.py`), and `tree_changed` (what git lists differed after the goals). |
 | `targets` | Each goal in run order, with `result` (`pass`, `fail` or `not-run`), its `returncode` and its test counts. |
-| `tests` | `passed`, `failed`, `skipped` and `errors`, summed from pytest's own junit report, each test case counted once. A goal that writes no junit report, such as `eval` or `test-fe`, adds no counts: its exit code alone sets its `result`. |
+| `tests` | `passed`, `failed`, `skipped` and `errors`, summed from pytest's own junit report, each test case counted once. A goal that writes no junit report, such as `trace`, `eval` or `test-fe`, adds no counts: its exit code alone sets its `result`. |
 | `checks` | Every `scripts/check_structure.py` check letter, and each project check that reported, with its sorted errors and warnings, the repository root stripped from each message. |
 
 **Why it is ignored.** The record is one tree's verdict, derived on every
@@ -777,7 +821,7 @@ the ledger across runs and repositories is a consumer's, such as
 project-jarvis, which ingests the record
 (`docs/adr/keel/K-0017-gate-evidence-record.md`). It is unsigned and sits in a writable directory, so it is evidence, not
 attestation (`docs/guides/limits-and-troubleshooting.md`). CI runs `check-all`, `lint`,
-`typecheck`, `test` and `eval` as separate steps and never `test-fe`
+`typecheck`, `test`, `trace` and `eval` as separate steps and never `test-fe`
 (`.github/workflows/ci.yml`), so CI writes no record and runs no frontend suite.
 
 **How a consumer reads it.**

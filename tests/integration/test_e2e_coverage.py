@@ -6,7 +6,6 @@ summary: The CONVENTIONS section 17 end-to-end gate. It derives each enabled tra
 """
 
 import ast
-import fnmatch
 import functools
 import json
 import os
@@ -19,6 +18,8 @@ from pathlib import Path
 
 import pytest
 from scripts.child_env import build_child_env
+from scripts.pytest_markers import attached_markers, collection_rule
+from scripts.pytest_markers import is_marker as _is_marker
 
 import live_server
 import optional_deps
@@ -458,15 +459,6 @@ def derive_endpoints(root, transport):
 # -------------------------------------------------------------------- markers
 
 
-def _is_marker(node, marker):
-    return (
-        isinstance(node, ast.Attribute)
-        and node.attr == marker
-        and isinstance(node.value, ast.Attribute)
-        and node.value.attr == "mark"
-    )
-
-
 def id_errors(endpoint, e2e, transports):
     """Why *endpoint* is not a well-formed id of an available transport."""
     match = _ID.match(endpoint)
@@ -485,60 +477,6 @@ def id_errors(endpoint, e2e, transports):
             "`%s` is not an id the %r source (%s) derives" % (endpoint, transport, kind)
         ]
     return []
-
-
-def _collected(name, patterns):
-    """True when pytest collects *name* under *patterns*: each is a prefix, or
-    a glob when it holds a glob character, as pytest's own matcher reads it."""
-    return any(
-        name.startswith(p) or (any(c in p for c in "*?[") and fnmatch.fnmatch(name, p))
-        for p in patterns
-    )
-
-
-def attached_markers(tree, marker, rule):
-    """ids of the `<marker>(...)` calls that apply to a test pytest collects:
-    a decorator of a collected test function or class, or an item of a
-    module- or class-level `pytestmark`. Anything else marks nothing that runs."""
-    functions, classes = rule
-    attached = set()
-
-    def take(nodes):
-        attached.update(
-            id(n)
-            for n in nodes
-            if isinstance(n, ast.Call) and _is_marker(n.func, marker)
-        )
-
-    def visit(body):
-        for stmt in body:
-            if isinstance(stmt, ast.Assign) and any(
-                isinstance(t, ast.Name) and t.id == "pytestmark" for t in stmt.targets
-            ):
-                value = stmt.value
-                take(
-                    value.elts if isinstance(value, (ast.List, ast.Tuple)) else [value]
-                )
-            elif isinstance(
-                stmt, (ast.FunctionDef, ast.AsyncFunctionDef)
-            ) and _collected(stmt.name, functions):
-                take(stmt.decorator_list)
-            elif isinstance(stmt, ast.ClassDef) and _collected(stmt.name, classes):
-                take(stmt.decorator_list)
-                visit(stmt.body)
-
-    visit(tree.body)
-    return attached
-
-
-def collection_rule(config):
-    """(python_functions, python_classes): the names pytest collects as tests,
-    read from the running session's ini so a project that renames them is
-    judged by its own rule."""
-    return (
-        tuple(config.getini("python_functions")),
-        tuple(config.getini("python_classes")),
-    )
 
 
 def scan_markers(root, rule):

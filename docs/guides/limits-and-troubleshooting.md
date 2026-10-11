@@ -143,6 +143,34 @@ a decision on whether it should fail instead.
 - **What an e2e scenario asserts.** `tests/integration/test_e2e_coverage.py`
   proves that a scenario names each endpoint with the `endpoint` marker. It
   does not prove the scenario asserts anything about the endpoint's result.
+- **What a test that names a requirement asserts.** `make trace`
+  (`scripts/trace_requirements.py`) proves that a collected test carries the
+  `req` marker with a unit's id. It reads the marker from source and imports
+  no test, so it does not prove the test asserts what the requirement says,
+  and a skipped or always-passing test still covers its unit.
+- **A marker `make trace` cannot see.** `scripts/pytest_markers.py` reads a
+  marker call written as `<name>.mark.req(...)` or, after
+  `from pytest import mark`, as `mark.req(...)`, on a collected test, a
+  collected class or in a `pytestmark`. One reached through any other name
+  (`m = pytest.mark`, `covers = pytest.mark.req`) or added at run time is not
+  read by `make trace`, which neither counts nor reports it. A call it does
+  see that sits on no collected test, a `pytest.param(..., marks=...)`
+  included, is the finding `marker-unattached`.
+- **What only pytest can decide about collection.** `make trace` reads source,
+  so it does not see a class that inherits `__init__`, a `collect_ignore` in a
+  `conftest.py`, an `--ignore` option or a collection hook.
+  `tests/integration/test_requirement_traceability.py` does: it asks a child
+  `pytest --collect-only` which collected tests carry which id and fails when
+  that differs from what the reader found, an unseen alias included. That
+  comparison runs in `make test`, not in `make trace`.
+- **A refused `traceability` block leaves the last matrix standing.** The
+  block names the matrix path, so when config/project.json `traceability` is
+  refused (exit 2) `scripts/trace_requirements.py` writes and removes nothing
+  and says so on stderr. The exit code is the verdict, not that file.
+- **The traceability matrix is evidence, not attestation.** It is unsigned and
+  sits in a writable, git-ignored directory, as the gate's evidence record
+  does. The evidence record lists `trace` with `tests: null`: the verdict
+  counts are in `traceability.matrix_path`, not in the record.
 - **A server left behind by a killed run.** `tests/live_server.py` stops the
   REST server in a `finally`, and from a handler when SIGTERM or SIGHUP ends
   the run. A pytest killed by SIGKILL, or by the out-of-memory killer, runs
@@ -181,6 +209,8 @@ decision in the tree, so a reviewer sees it.
 | `work_naming.adoption_boundary` | `config/project.json` | check of commit trailers before the named commit |
 | `doc_drift.history_paths` | `config/project.json` | every rule of `tests/integration/test_doc_drift.py` for a Markdown file under a listed prefix |
 | `exempt` | `config/project.json` `e2e` | lets one named endpoint through `tests/integration/test_e2e_coverage.py` with no scenario, with the reason; a stale, redundant or reasonless entry is red |
+| `gaps` | `config/project.json` `traceability` | lets one named unit, a criterion or a requirement that has none, through `make trace` with no test, with the reason; an entry for a covered, undefined or malformed id is red, and a blank reason is refused |
+| `no_requirements` | `config/project.json` `traceability` | lets a project with zero requirements through `make trace`, with the reason; red once a requirement or a `req` marker exists |
 | `child_env.names` | `config/project.json` | the allowlist for a named variable: every child of `scripts/child_env.py` receives it |
 | `child_env.prefixes` | `config/project.json` | the allowlist for every variable that starts with a listed prefix |
 | `child_env.credentialed_values` | `config/project.json` | the credential refusal for a named variable, with the reason its value may carry a user part |
@@ -254,6 +284,7 @@ The scripts `make verify` runs, and what each exit code means.
 | `scripts/cdmon_sync.py` | 0, passes through | 0: cdmon or its config is absent. Otherwise cdmon's own code passes through |
 | `scripts/gate_evidence.py` | 0, 2, 3, 130, passes through | 0: every goal passed and the record is green. 2: refused before any goal ran: a malformed `--gate` or goal, zero goals, a bad `evidence` block, or a record path git does not ignore. 3: every goal passed but the record is red: zero tests, a failed or errored test in the junit report of a goal that exited 0, no junit report, the tree changed during the run, the checks could not run, or the writer crashed. 130: interrupted, and the red placeholder record stays. Otherwise the first failing goal's code passes through |
 | `scripts/run_evals.py` | 0, 1, 2, 3 | 0: every suite passed. 1: a suite failed: below `evals.threshold`, an errored case or a stale recording. 2: refused: a bad `evals` block, a malformed or empty dataset, a live run over `evals.live.max_calls`, a null or unknown `evals.live.model`, or an `evals.report_dir` git does not ignore. 3: the live backend is absent; the first case is `absent` and the rest `not-run` |
+| `scripts/trace_requirements.py` | 0, 1, 2 | 0: every unit is `covered` or a `traceability.gaps` row, and there is no finding. 1: at least one finding, each one stderr line: an `uncovered` unit, a marker or gap id that is malformed or undefined, an unreadable or unattached marker, a redundant gap, or zero requirements with no reason. 2: it could not judge: a bad `traceability` block, a path reached through a symlink, a `matrix_path` git does not ignore, a repository git cannot read, an unreadable schema, spec or test file, a spec line that does not parse, a document under the specs root that defines a requirement without `kind: spec`, or a collection rule pytest could not give; or it could not write the matrix at `traceability.matrix_path` |
 
 Three more codes come from the tools around these scripts:
 
@@ -290,6 +321,19 @@ Three more codes come from the tools around these scripts:
 | `make eval-live` refuses naming `models.credential_env` | `evals.live.model_options.api_key_env` names a variable the adapter is not declared to use, and the adapter would send that variable's value to `base_url` | name a variable listed in config/project.json `models.credential_env.openai-compatible` (`OPENAI_API_KEY`), or add the name there |
 | `make eval-live` refuses naming `evals.live.model` or `evals.live.max_calls` | the shipped model is `null` and the shipped cap is `0`, so no live run is approved | set both, and `evals.live.model_options`, as `evals/README_run.md` says; the cap must be at least the number of cases |
 | `make test-fe-unit` fails with `No test files found, exiting with code 1` | the app's unit runner found no test under its `include` list; this is the intended red for a stack with zero tests | add a test of the app's own code under `src/`, named `*.test.ts` (`*.test.tsx` in react-vite) |
+| `make trace` prints `trace: uncovered: 'REQ-0001#AC-2' (docs/specs/<spec>.md:<line>)` | no collected test carries `@pytest.mark.req` with that unit's id; a marker naming the bare `REQ-0001` does not cover a requirement that has numbered criteria | write the test and mark it with the unit's id, or add the id to config/project.json `traceability.gaps` with the reason |
+| `make trace` prints `trace: marker-undefined-id` or `marker-malformed-id` with a test file and line | the marker names an id no spec defines, or text that is not `<prefix><digits>` or `<prefix><digits>#AC-<n>` under a prefix `traceability.id_prefixes` lists | correct the id; [`docs/specs/README.md`](../specs/README.md) gives the grammar |
+| `make trace` prints `trace: marker-unattached` | the marker call sits where pytest reads it on no collected test: a helper, a test a later definition of the same name replaces, a class pytest does not collect (its name does not match, it defines `__init__` or `__new__`, or `__test__` is false), a `pytestmark` in a scope with no test, or a `pytest.param` | move the marker onto the test function or class pytest collects; rename a duplicated test |
+| `make trace` prints `trace: marker-unreadable` | a marker argument is not a string literal (a name, an f-string, a keyword), or the marker is used with no call | pass each id as a string literal |
+| `make trace` prints `trace: gap-redundant`, `gap-undefined-id` or `gap-malformed-id` | a `traceability.gaps` key names a unit a test now covers, a unit no spec defines (a bare requirement id over numbered criteria included), or text that does not parse | delete or correct that key |
+| `make trace` prints `trace: no-requirements` or `stale-no-requirements` | no `kind: spec` document under `traceability.specs_root` defines a requirement and `traceability.no_requirements` is `null`; or it holds a reason while a requirement or a marker exists | write the first requirement, or set the reason; set it back to `null` once a requirement exists |
+| `make trace` exits 2 naming a spec `file:line` | a heading opens with something written like an id that does not parse (an unlisted prefix, a wrong digit count); a heading names a requirement id that is not its bare first word, or is indented or underlined; a list item that opens with `AC-` is not exactly `- AC-<n>: <text>` at the left margin, sits above any requirement or repeats; a fenced block is never closed; or a requirement is defined twice or inside another's section | fix that line as [`docs/specs/README.md`](../specs/README.md) writes it; add the prefix to `traceability.id_prefixes` if the id is meant |
+| `make trace` exits 2 saying a document's `frontmatter says kind '<kind>'` | a document under `traceability.specs_root` whose `kind` is not `spec` would define a requirement if read as one, so that requirement would never be traced | set `kind: spec`, put the example in a fenced block, or move the document out of `traceability.specs_root` |
+| `make trace` exits 2 saying `traceability.matrix_path` `cannot be written` | the filesystem refused the write: a directory sits at the matrix path, a file sits where its directory goes, or the directory is not writable | remove what is in the way, or point `traceability.matrix_path` at a git-ignored path that can be written |
+| `uncovered` for a unit whose test carries the marker | the test file sits below a directory pytest does not enter (`norecursedirs`, a virtual environment, `__pycache__`), so pytest never runs it | move the test file to a directory pytest collects |
+| `make trace` exits 2 naming `through a symlink` | `traceability.matrix_path`, its temporary file, `specs_root`, `tests_root` or `matrix_schema` resolves through a symlink, so a read or a write could land outside the project | replace the symlink with a real directory or file inside the project |
+| `make trace` exits 2 naming `traceability.matrix_path` and `is not git-ignored` | git would list the matrix, so writing it would change the tree | add the directory of `traceability.matrix_path` (`.evidence/traceability/matrix.json`) to `.gitignore` |
+| `make trace` exits 2 with `pytest read its ini from outside the project` | the project has no pytest configuration of its own, so pytest took a parent directory's and its collection rule is another project's | give the project its own `[tool.pytest.ini_options]` in `pyproject.toml` |
 | `make test-fe-unit` fails with `Unexpected .only modifier` | a unit test is focused with `.only`, which would skip the rest of the suite; the app's `vitest.config.ts` sets `allowOnly: false`, and the journey's `forbidOnly: true` refuses the same in `e2e/` | remove the `.only` |
 | `make test-fe-e2e` fails with `Error: No tests found` | the app's journey directory holds no `*.spec.ts`; this is the intended red for a stack with zero journeys | add a journey under the app's `e2e/` |
 | `make test-fe-e2e` fails with `browserType.launch: Executable doesn't exist at ...` and a box saying `npx playwright install` | the browser cache lacks the chromium revision the pinned `@playwright/test` expects, or config/project.json `layers.frontend.journey.browser_executable` names a path that does not exist; a cache that `PLAYWRIGHT_BROWSERS_PATH` relocates reaches each `make verify` goal only while config/project.json `child_env.names` lists that variable | outside the gate, run `npx playwright install chromium` in the app (it downloads into the user's browser cache, not the tree), or set `layers.frontend.journey.browser_executable` (`null` as shipped) to a chromium on the host |

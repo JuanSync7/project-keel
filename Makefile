@@ -39,7 +39,7 @@ PY_ROOTS := $(wildcard $(CODE_ROOTS))
 # Keel ships no [write] target; a project that adds one inherits the guard.
 WRITE_GUARD = @if [ -n "$(CI)$(RALPH)" ]; then echo "refusing '$@': a [write] target never runs under CI or a Ralph loop (docs/adr/keel/K-0011-make-target-effect-labels.md)" >&2; exit 1; fi
 
-.PHONY: help new audit-project check-python check check-all check-corpus check-openapi check-aad check-cdmon advise check-generic verify test eval eval-live unit integration e2e smoke \
+.PHONY: help new audit-project check-python check check-all check-corpus check-openapi check-aad check-cdmon advise check-generic verify test trace eval eval-live unit integration e2e smoke \
         lint lint-py lint-fe fmt fmt-check typecheck typecheck-py typecheck-fe \
         test-fe test-fe-unit test-fe-e2e \
         fe-install run run-api run-web site-data site-static demo agent-surface-schema check-docs restamp-docs doc-review doc-review-apply
@@ -136,11 +136,11 @@ check-generic: advise ## [local] Alias for `advise` (the generic-solution + prac
 # leave an earlier green record standing. scripts/gate_evidence.py runs each goal,
 # passes the first failing code through and writes the record to config/project.json
 # evidence.dir (an ignored path, so [local] stays true). check_W reads the goals of
-# this `$(MAKE)` line, so the label still closes over all six. make runs a
+# this `$(MAKE)` line, so the label still closes over all seven. make runs a
 # `$(MAKE)` line even under -n; the driver reads -n/-q/-t from MAKEFLAGS and writes
 # nothing then. It runs the goals in sequence, so -j does not parallelise them.
-verify: ## [local] Run all gates (all checks + lint + types + tests + evals + frontend tests) and write their evidence record to config/project.json evidence.dir
-	$(PY) scripts/gate_evidence.py --gate $@ -- $(MAKE) check-all lint typecheck test eval test-fe
+verify: ## [local] Run all gates (all checks + lint + types + tests + traceability + evals + frontend tests) and write their evidence record to config/project.json evidence.dir
+	$(PY) scripts/gate_evidence.py --gate $@ -- $(MAKE) check-all lint typecheck test trace eval test-fe
 
 # JUNIT_XML is empty unless scripts/gate_evidence.py sets it per goal: pytest then
 # writes its own junit report, the only source of the evidence record's test
@@ -148,6 +148,11 @@ verify: ## [local] Run all gates (all checks + lint + types + tests + evals + fr
 # reads it, so the nested pytest runs under tests/ write no report of their own.
 test: check-python ## [local] Run the whole test suite
 	PYTHONPATH=$(PYTHONPATH) $(PY) -m pytest $(if $(JUNIT_XML),--junitxml=$(JUNIT_XML))
+
+# The traceability gate reads specs and test files and runs no test, so it is
+# [local]. Its matrix lands on a git-ignored path, which is why it is not [tree].
+trace: check-python ## [local] Judge every requirement under config/project.json traceability.specs_root as covered by a test, a documented gap or uncovered, and write the matrix to traceability.matrix_path
+	$(PY) scripts/trace_requirements.py
 
 # The eval gate replays recorded responses through the real doers: no network,
 # no credential, so it is [local] and sits in verify. eval-live is the paid path,

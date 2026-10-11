@@ -1510,7 +1510,7 @@ to be released as 0.2.2.
 | CMP-4.S5 | A frontend has no test runner, so it ships with zero tests and the gate is green | done — `make verify` green (1924 passed); 6 of 7 review findings confirmed and fixed |
 | CMP-4.S6 | The e2e scenarios call the app in process, and nothing checks that a route has a scenario | done — `make verify` green (1973 passed); 4 of 5 review findings confirmed and fixed |
 | CMP-4.S7 | Nothing calls a real model or a running server and judges what comes back | done — `make verify` green (2149 passed); 5 of 5 review findings confirmed and fixed |
-| CMP-4.S8 | A spec's requirements are not tied to tests, so an uncovered requirement passes the gate | planned — approved by the maintainer |
+| CMP-4.S8 | A spec's requirements are not tied to tests, so an uncovered requirement passes the gate | done — `make verify` green (2465 passed); 13 of 13 review findings confirmed and fixed |
 
 - **CMP-4.S1, documentation truth.** Every stale claim the documentation audit
   verified is fixed in place, and a drift test refuses a shipped document that
@@ -1620,6 +1620,21 @@ to be released as 0.2.2.
   (proposed) lists the verify goals without `eval`. A refused `evals.report_dir`
   cannot be given a red placeholder report, so an earlier report can stand
   beside a red gate.
+- Left by CMP-4.S8. A requirement heading with a colon after its id
+  (`## REQ-0001: Title`) is refused with exit 2; whether the one parser takes
+  an optional colon is the maintainer's call. `make trace` reads what pytest
+  collects from source, so `collect_ignore`, `--ignore` and a collection hook
+  are seen only by the comparison in `make test`. A refused `traceability`
+  block leaves an earlier matrix standing, because the command cannot know
+  the matrix path. `docs/specs/example-feature.md` arrives on `copier update`
+  and reds `make trace` in a project that deleted the example test.
+  project-jarvis holds its own `traceability` block with a `kind_evidence`
+  key this loader refuses, so sharing one registry waits for a mapping
+  decision. `scripts/gate_evidence.py` writes under `evidence.dir` without the
+  symlink check `scripts/git_tree.py` now holds, and `scripts/run_evals.py`
+  takes its `--help` text from the wrong docstring line. ADR-K-0017
+  (proposed) lists the verify goals without `trace`. The mutation proof is
+  hand-written mutants, not a mutation runner.
 - The maintainer's coding rules get a kernel and checks, in this order: one
   config loader every value comes through (a default applies only when a key
   is not set and prints one `[using default]` line naming the key and the

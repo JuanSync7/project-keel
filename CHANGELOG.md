@@ -11,6 +11,34 @@ version rather than a bare commit:
 ## [Unreleased]
 
 ### Added
+- **Requirement traceability, judged in `make verify`.** A `kind: spec`
+  document under config/project.json `traceability.specs_root` (`docs/specs`)
+  defines a requirement with a heading that opens with an id, and a numbered
+  criterion with a `- AC-<n>: <text>` line beneath it. An id is
+  `<prefix><digits>` or `<prefix><digits>#AC-<n>`, under a prefix
+  `traceability.id_prefixes` lists (shipped: `REQ-`, four digits); an unlisted
+  prefix is refused and there is no fallback. A test names what it is evidence
+  for with `@pytest.mark.req("REQ-0001#AC-1")`. `make trace` (`[local]`, a
+  `make verify` goal and a CI step) runs `scripts/trace_requirements.py`,
+  which gives every criterion, and every requirement that has none, one
+  verdict: `covered`, `gap` (a reason under `traceability.gaps`) or
+  `uncovered`. A bare requirement id never covers a requirement that has
+  numbered criteria. It writes the canonical matrix to
+  `.evidence/traceability/matrix.json` under
+  `config/traceability/matrix.schema.json` and exits 0, 1 for a finding or 2
+  when it could not judge. A marker that names no defined unit, a marker on
+  nothing pytest collects, a gap for a covered unit and a project with no
+  requirement and no `traceability.no_requirements` reason are findings.
+  `tests/integration/test_requirement_traceability.py` judges the same tree
+  in the suite, and fails when a child `pytest --collect-only` disagrees with
+  the reader about which collected test carries which id. An id or a
+  criterion written in a form the grammar does not read, and a document under
+  the specs root that defines a requirement without `kind: spec`, are refused
+  (exit 2), never skipped. It shows that a test names a requirement, not that the test
+  proves it. `docs/specs/example-feature.md` and the markers in
+  `tests/unit/backend/test_example_feature.py` are the worked example; a
+  project that removed that test and takes this update must remove the spec
+  or name its requirements.
 - **Evals that judge actual responses, replayed in `make verify`.** `evals/` is
   now a harness, not a placeholder. A suite is one `evals/datasets/<suite>.jsonl`
   file, one canonical case per line, held to

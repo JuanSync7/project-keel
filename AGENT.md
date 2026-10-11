@@ -112,6 +112,14 @@ of truth for labeling and the directory taxonomy. Each directory's own
   and `config/project.json` `e2e.exempt` does not excuse with a reason. (The
   loops above are disciplines for *you*; the playbook is
   `docs/guides/dev-loops.md`, the rule is CONVENTIONS §17.)
+- **Name the requirement a test is evidence for.** A requirement is a heading
+  in a `kind: spec` document under `docs/specs/` that opens with an id, and a
+  numbered criterion is a `- AC-<n>: <text>` line below it. Mark the test with
+  `@pytest.mark.req("<id>")`, one criterion at a time: a bare requirement id
+  never covers numbered criteria. `make trace`
+  (`scripts/trace_requirements.py`) fails a unit no test names and
+  `config/project.json` `traceability.gaps` does not excuse with a reason
+  (`docs/specs/README.md`, CONVENTIONS §17).
 - **Solve the class of inputs, not the example.** When a spec ships an eval, a
   golden set, or one failing case, build the capability that *computes* the right
   answer across the whole input space — name the general rule before you

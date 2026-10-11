@@ -48,3 +48,13 @@ result, reason and outcome enums are held equal to the vocabularies in
 `evals/_report.py` by `tests/integration/test_evals_schema.py`, and its
 `schema_version.const` is the only owner of the report format's version. It
 is written by hand.
+
+`traceability/matrix.schema.json` is the shape of the matrix
+`scripts/trace_requirements.py` writes to `project.json`
+`traceability.matrix_path`; the command finds it through
+`traceability.matrix_schema`. Its verdict, finding-kind, state and result
+enums are held equal to the vocabularies in `scripts/traceability.py` by
+`tests/integration/test_requirement_traceability.py`, and its
+`schema_version.const` and string bounds are the only owners of the matrix
+format's version and of how long an id or a reason may be: the command reads
+them from here. It is written by hand.

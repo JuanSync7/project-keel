@@ -33,7 +33,7 @@ Every loop below ends each pass at the **same gate**, and "done" means the gate 
 green — never a self-assessment:
 
 ```
-make verify   # check-all + lint + typecheck + test + eval + test-fe   (the full bar)
+make verify   # check-all + lint + typecheck + test + trace + eval + test-fe   (the full bar)
 make test     # plain pytest over the whole suite (tiers: unit · integration · e2e · smoke)
 make check    # fast, 3.6-safe structural gate (runs in pre-commit)
 ```
@@ -234,6 +234,51 @@ suites, as `make lint-fe` does.
 configs and a file in each suite. These suites are not for the backend: its
 routes and transport endpoints are `tests/e2e/` scenarios.
 
+## Requirement traceability
+
+A requirement a spec states is named by a test, or it is a documented gap.
+`make verify` runs `make trace` as a goal, and `make trace` runs
+`scripts/trace_requirements.py`. The command reads every `kind: spec` document
+under config/project.json `traceability.specs_root` (`docs/specs`) and every
+test file pytest collects under `traceability.tests_root` (`tests`), entering
+no directory pytest's `norecursedirs` skips.
+[`docs/specs/README.md`](../specs/README.md) gives the grammar of an id and of
+a criterion line.
+
+One pass for a new requirement:
+
+1. Write the requirement as a heading in a spec, with a `- AC-<n>: <text>`
+   line per acceptance criterion. `make trace` exits 1 and names each
+   `uncovered` unit.
+2. Write the failing test and mark it with the unit's id:
+   `@pytest.mark.req("REQ-0001#AC-1")`. The marker name is
+   `traceability.marker` (`req`), and its arguments are string literals.
+3. Make the test pass. `make trace` exits 0 once every unit is `covered`.
+
+A requirement with numbered criteria is covered criterion by criterion: a
+marker that names the bare requirement id covers none of them. A unit no test
+can name yet goes in `traceability.gaps`, keyed by its id, with the reason. A
+gap row whose id does not parse, names nothing a spec defines or names a unit
+a test already covers is a finding (exit 1); a blank reason is refused
+(exit 2). A marker that names an undefined or malformed id, that pytest reads
+on no collected test, or whose arguments are not string literals is a finding.
+`tests/integration/test_requirement_traceability.py` also asks pytest's own
+collection which test carries which id, and fails when the reader disagrees.
+
+A project with no requirement yet states why in
+`traceability.no_requirements` (`null` as shipped, since the template ships a
+spec). Zero requirements under `null` is a finding, and so is a reason left in
+place once a requirement or a marker exists.
+
+The command writes one file, `traceability.matrix_path`
+(`.evidence/traceability/matrix.json`): every requirement, its units, each
+unit's verdict and the tests that name it.
+`tests/integration/test_requirement_traceability.py` judges the same tree
+inside `make test`, so a run of the suite alone still fails an uncovered
+requirement. The gate reads marker calls from source and imports no test: it
+checks that a test names a requirement, not that the test asserts what the
+requirement says.
+
 ## The prompt-change loop (evals)
 
 A change to a prompt an eval case drives (a doer in `evals/_doers.py`, such as
@@ -262,6 +307,7 @@ stale case's detail names the new prompt hash. One pass:
 | TDD | red → green → refactor for one behavior | the behavior is covered and the suite is green |
 | Convergence | the next single unit + `make verify` + commit | done-condition holds, or the pass cap is hit |
 | E2E | adds/extends one scenario through the public surface | the flow is exercised end to end and green |
+| Requirement traceability | one requirement: its spec heading, its criteria, a marked test per unit | `make trace` exits 0: every unit is `covered` or a `traceability.gaps` row with a reason |
 | Live eval spend | one `make eval-live` run: one model call per case | `evals.live.model` is `null` (its default), or `evals.live.max_calls` (`0`) is below the case count: refused before any call (exit 2) |
 
 ## See also

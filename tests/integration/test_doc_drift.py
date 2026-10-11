@@ -25,6 +25,7 @@ sys.path.insert(0, str(_ROOT / "scripts" / "jobs"))
 
 import check_structure as cs  # noqa: E402
 import review_docs  # noqa: E402
+import traceability  # noqa: E402
 from child_env import build_child_env  # noqa: E402
 from test_e2e_coverage import EXEMPT_KEY  # noqa: E402
 
@@ -544,8 +545,11 @@ def derived_waivers(root):
     level, a gate-runner policy key, the mypy kill switch, a dict-valued
     ruleset key in config/practices.json, a practice status that is not the
     active one, every key of the child-process allowlist's block, the
-    history prefixes this gate exempts, and the end-to-end gate's endpoint
-    exemptions (tests/integration/test_e2e_coverage.py `EXEMPT_KEY`, by leaf)."""
+    history prefixes this gate exempts, the end-to-end gate's endpoint
+    exemptions (tests/integration/test_e2e_coverage.py `EXEMPT_KEY`, by leaf),
+    and the two keys that excuse a requirement or a whole project from
+    requirement traceability (scripts/traceability.py `GAPS_KEY` and
+    `EMPTY_KEY`, by leaf)."""
     root = Path(root)
     found = set()
     checkers = sorted(root.glob(_CHECKER_GLOB))
@@ -568,6 +572,8 @@ def derived_waivers(root):
     found.update(child_env_keys(root))
     found.add("%s.%s" % (_BLOCK, _HISTORY_KEY))
     found.add(EXEMPT_KEY.rsplit(".", 1)[-1])
+    for key in (traceability.GAPS_KEY, traceability.EMPTY_KEY):
+        found.add(key.rsplit(".", 1)[-1])
     registry_path = root / "config" / "practices.json"
     if not registry_path.is_file():
         raise DocDriftConfigError("config/practices.json is missing")
@@ -640,14 +646,37 @@ def waiver_findings(guide, text, waivers):
     ]
 
 
-def _int_constants(node):
-    """The int literals *node* can evaluate to: a literal, or either branch
-    of a conditional expression. Anything else yields none."""
+def _int_constants(node, named=None):
+    """The int literals *node* can evaluate to: a literal, a name *named*
+    maps to its literals, or either branch of a conditional expression.
+    Anything else yields none."""
     if isinstance(node, ast.Constant) and type(node.value) is int:
         return {node.value}
+    if isinstance(node, ast.Name):
+        return set((named or {}).get(node.id, ()))
     if isinstance(node, ast.IfExp):
-        return _int_constants(node.body) | _int_constants(node.orelse)
+        return _int_constants(node.body, named) | _int_constants(node.orelse, named)
     return set()
+
+
+def _assign_ints(node, assigned):
+    """Record into *assigned* the int literals an assignment gives each name:
+    `a = 1`, and `a, b = 1, 2` pairwise when both sides are same-length tuples."""
+    for target in node.targets:
+        if isinstance(target, ast.Name):
+            assigned.setdefault(target.id, set()).update(
+                _int_constants(node.value, assigned)
+            )
+        elif (
+            isinstance(target, ast.Tuple)
+            and isinstance(node.value, ast.Tuple)
+            and len(target.elts) == len(node.value.elts)
+        ):
+            for name, value in zip(target.elts, node.value.elts, strict=True):
+                if isinstance(name, ast.Name):
+                    assigned.setdefault(name.id, set()).update(
+                        _int_constants(value, assigned)
+                    )
 
 
 def _own_nodes(func):
@@ -674,9 +703,9 @@ def _is_exit(func):
 def exit_codes(path):
     """(codes, passes_through) for the script at *path*: the int literals its
     `main` returns (through a name, the literals assigned to that name in
-    `main`) and every int literal handed to `sys.exit`, `SystemExit` or an
-    argparse `.exit`. A `main` that returns a call's or an attribute's value
-    passes a child's code through."""
+    `main` or at module level) and every int literal handed to `sys.exit`,
+    `SystemExit` or an argparse `.exit`. A `main` that returns a call's or an
+    attribute's value passes a child's code through."""
     tree = ast.parse(Path(path).read_text(encoding="utf-8"))
     codes, passes = set(), False
     main = next(
@@ -686,22 +715,16 @@ def exit_codes(path):
     if main is not None:
         assigned = {}
         nodes = list(_own_nodes(main))
-        for node in nodes:
+        for node in tree.body + nodes:
             if isinstance(node, ast.Assign):
-                for target in node.targets:
-                    if isinstance(target, ast.Name):
-                        assigned.setdefault(target.id, set()).update(
-                            _int_constants(node.value)
-                        )
+                _assign_ints(node, assigned)
         for node in nodes:
             if not isinstance(node, ast.Return) or node.value is None:
                 continue
-            if isinstance(node.value, ast.Name):
-                codes |= assigned.get(node.value.id, set())
-            elif isinstance(node.value, (ast.Call, ast.Attribute)):
+            if isinstance(node.value, (ast.Call, ast.Attribute)):
                 passes = True
             else:
-                codes |= _int_constants(node.value)
+                codes |= _int_constants(node.value, assigned)
     for node in ast.walk(tree):
         if isinstance(node, ast.Call) and _is_exit(node.func) and node.args:
             codes |= _int_constants(node.args[0])
@@ -1270,6 +1293,26 @@ def test_removing_a_waiver_or_an_exit_code_from_the_limits_guide_reds_it(
     findings = judge(planted)
     assert len(findings) == 1, findings
     assert target in findings[0], findings
+
+
+def test_exit_codes_follows_a_named_code_and_reads_no_code_from_an_unknown_name(
+    tmp_path,
+):
+    """A script that names its exit codes at module level is read through the
+    names, tuple assignment included; a returned name nothing assigns yields no
+    code, which exit_code_findings reports as zero items rather than passing."""
+    script = tmp_path / "named.py"
+    script.write_text(
+        "OK, BAD = 0, 1\nREFUSED = 2\n"
+        "def main(flag):\n"
+        "    if flag:\n        return REFUSED\n"
+        "    return OK if flag is None else BAD\n"
+    )
+    assert exit_codes(script) == ({0, 1, 2}, False)
+    script.write_text("def main():\n    return UNKNOWN\n")
+    assert exit_codes(script) == (set(), False)
+    script.write_text("def main():\n    code = 3\n    return code\n")
+    assert exit_codes(script) == ({3}, False)
 
 
 # --- rule (d): the upgrade guide (template only) ----------------------------------

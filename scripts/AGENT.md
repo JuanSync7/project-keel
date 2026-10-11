@@ -28,9 +28,18 @@ These rules are **local and authoritative** for this directory. They inherit fro
   anything else from the project, to refuse a job over a conflicted module it
   imports and the data files the job's modules declare reading.
   `git_tree.py` is the one definition of what git lists, imported by
-  `run_make_target.py`, `gate_evidence.py` and `run_evals.py`; it stays 3.6-safe so the
+  `run_make_target.py`, `gate_evidence.py`, `run_evals.py` and
+  `trace_requirements.py`; it stays 3.6-safe so the
   evidence writer can import it under an interpreter older than
   requires-python and still leave a red record.
+  `traceability.py` is the fifth and `pytest_markers.py` the sixth; neither is
+  ever run. `traceability.py` is the one home of the requirement-id grammar
+  and the verdict rule, imported by `trace_requirements.py` and
+  `tests/integration/test_requirement_traceability.py` so the command and the
+  gate test cannot judge by different rules. `pytest_markers.py` is the one
+  reader of marker calls from test source, imported by `traceability.py` and
+  `tests/integration/test_e2e_coverage.py`. Both need the project interpreter
+  and are not 3.6-safe. A second parser of an id anywhere else is a defect.
 - Each script is self-describing (`--help`) and safe to run twice — which
   here means declared: `effect: writes` plus a `rerun:` its header can be held
   to (check_V), built and proven as `docs/guides/idempotency.md` sets out.

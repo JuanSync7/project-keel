@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "config/traceability/matrix.schema.json",
+  "title": "Requirement traceability matrix",
+  "description": "What scripts/trace_requirements.py writes to config/project.json `traceability.matrix_path`: each requirement a spec defines, each unit a test must name (a numbered criterion, or a requirement that has none) with its one verdict, and each finding. The writer reads `schema_version` and the two length caps from this file. A count is null when nothing was counted, which is not zero. No machine, user, time or spec text is recorded.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "schema_version", "state", "result", "counts", "requirements", "findings"],
+  "properties": {
+    "schema": {"type": "string", "description": "The project-relative path of this schema, as config names it."},
+    "schema_version": {"const": 1},
+    "state": {
+      "enum": ["traced", "no-requirements", "incomplete", "refused"],
+      "description": "traced: requirements were judged. no-requirements: the specs define none. incomplete: written before a run that did not finish. refused: an input could not be read."
+    },
+    "result": {
+      "enum": ["pass", "fail", "incomplete", "refused"],
+      "description": "pass only when there is no finding; anything else is red."
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["covered", "gap", "uncovered"],
+      "properties": {
+        "covered": {"$ref": "#/$defs/count"},
+        "gap": {"$ref": "#/$defs/count"},
+        "uncovered": {"$ref": "#/$defs/count"}
+      }
+    },
+    "requirements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "spec", "whole_requirement_tests", "units"],
+        "properties": {
+          "id": {"$ref": "#/$defs/cited_id"},
+          "spec": {"$ref": "#/$defs/where"},
+          "whole_requirement_tests": {
+            "description": "Tests that name the bare id of a requirement that has numbered criteria. They cover no criterion.",
+            "type": "array",
+            "items": {"type": "string"}
+          },
+          "units": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "criterion", "spec", "verdict", "tests", "gap"],
+              "properties": {
+                "id": {"$ref": "#/$defs/cited_id"},
+                "criterion": {"type": ["integer", "null"], "minimum": 1},
+                "spec": {"$ref": "#/$defs/where"},
+                "verdict": {"enum": ["covered", "gap", "uncovered"]},
+                "tests": {"type": "array", "items": {"type": "string"}},
+                "gap": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/reason"}]}
+              }
+            }
+          }
+        }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "where", "id"],
+        "properties": {
+          "kind": {
+            "enum": [
+              "uncovered",
+              "marker-malformed-id",
+              "marker-undefined-id",
+              "marker-unreadable",
+              "marker-unattached",
+              "gap-malformed-id",
+              "gap-undefined-id",
+              "gap-redundant",
+              "no-requirements",
+              "stale-no-requirements"
+            ]
+          },
+          "where": {"$ref": "#/$defs/where"},
+          "id": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/cited_id"}]}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "count": {"type": ["integer", "null"], "minimum": 0},
+    "where": {"type": "string", "description": "A project-relative `file:line`, or the config key a finding is about."},
+    "cited_id": {
+      "type": "string",
+      "maxLength": 120,
+      "description": "An id as written in a spec, a marker or a gap row, cut to this length: a marker or gap may hold any text."
+    },
+    "reason": {
+      "type": "string",
+      "maxLength": 400,
+      "description": "A `traceability.gaps` reason, cut to this length."
+    }
+  }
+}
