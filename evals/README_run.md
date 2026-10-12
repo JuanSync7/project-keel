@@ -81,7 +81,7 @@ Before the first live run, set three keys:
    the adapter's credential is sent, so `openai-compatible` refuses (exit 2,
    before any call) an `api_key_env` that config/project.json
    `models.credential_env.openai-compatible` does not list, and a `base_url`
-   that is not an http or https URL with a host and no user part, query or fragment. Anyone who
+   that is not an http or https URL with a host and no user part, query or fragment, written without a space, a control character, a backslash or a non-ASCII letter. Anyone who
    can edit `config/project.json` can still point `base_url` at a host of
    their choosing and receive the declared key: review a change to this block
    as you would a change to a credential.

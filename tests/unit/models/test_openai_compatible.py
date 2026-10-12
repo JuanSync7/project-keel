@@ -2,7 +2,7 @@
 title: Unit — OpenAI-compatible model backend
 kind: tests
 layer: backend
-summary: The adapter builds a correct chat-completions request and parses the reply, with no network. It refuses at construction an `api_key_env` config/project.json `models.credential_env` does not declare for it and a `base_url` that is not an http or https URL with a host and no user part, query or fragment, naming the argument and never a value. It describes an unexpected response body by its keys without quoting it, and names an endpoint in an error by scheme, host and port, never by its path.
+summary: The adapter builds a correct chat-completions request and parses the reply, with no network. It refuses at construction an `api_key_env` config/project.json `models.credential_env` does not declare for it and a `base_url` that is not an http or https URL with a host and no user part, query or fragment, naming the argument and never a value. It describes an unexpected response body by its keys without quoting it, and names an endpoint in an error by scheme, host and port, never by its path. It requests the URL rebuilt from the parts it checked, and a refusal by urllib or a reply that is not JSON keeps neither the path nor the body.
 """
 
 import sys
@@ -169,6 +169,14 @@ def test_an_undeclared_credential_variable_is_refused(monkeypatch):
         "https://llm.example/v1#token",
         "https://token@[llm.example/v1",
         "https://llm.example:token/v1",
+        "https://llm.example/v1?",
+        "https://llm.example/v1#",
+        "https://llm.example/v1/to ken",
+        "https://llm.example\t/v1/token",
+        " https://llm.example/v1/token",
+        "https://llm.example/v1/\x7ftoken",
+        "https://llm.example/v1/tok\u00e9n",
+        "https://llm.example\\@token.example/v1",
     ],
 )
 def test_a_base_url_that_is_not_a_plain_http_endpoint_is_refused(base_url):
@@ -232,3 +240,67 @@ def test_a_refused_base_url_leaves_no_parser_text_on_the_exception_chain():
     with pytest.raises(ValueError) as info:
         get_model("openai-compatible", base_url="https://token@[llm.example/v1")
     assert info.value.__cause__ is None and info.value.__suppress_context__
+
+
+def test_the_url_requested_is_built_from_the_parts_that_were_checked():
+    """What is checked and what is sent are one reading of the URL: the
+    adapter requests the scheme, host, port and path the check saw."""
+    captured = {}
+    backend = get_model(
+        "openai-compatible",
+        base_url="HTTPS://LLM.Example:8443/v1/",
+        transport=_captured_transport(captured),
+    )
+    backend.run("ping")
+    assert captured["url"] == "https://llm.example:8443/v1/chat/completions"
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        "invalid-url",
+        "value-error",
+    ],
+)
+def test_a_url_urllib_refuses_is_named_without_its_path(monkeypatch, error):
+    """urllib's own refusal quotes the path it rejected."""
+    import http.client
+
+    from models import openai_compatible as mod
+
+    raised = {
+        "invalid-url": http.client.InvalidURL("can't contain '/v1/keys/path-canary'"),
+        "value-error": ValueError("unknown url type: '/v1/keys/path-canary'"),
+    }[error]
+
+    def refuse(req, timeout):
+        raise raised
+
+    monkeypatch.setattr(mod.urllib.request, "urlopen", refuse)
+    with pytest.raises(RuntimeError) as caught:
+        mod._post_json(_KEYED_URL + "/chat/completions", {}, {}, 1.0)
+    assert "path-canary" not in str(caught.value)
+    assert "https://llm.example:8443" in str(caught.value)
+    assert caught.value.__cause__ is None and caught.value.__suppress_context__
+
+
+def test_a_reply_that_is_not_json_is_broken_and_keeps_no_copy_of_the_body(monkeypatch):
+    """The JSON parser's error holds the whole document it could not read,
+    and an endpoint may echo the request's credential in it."""
+    import io
+
+    from models import ModelUnavailable
+    from models import openai_compatible as mod
+
+    monkeypatch.setattr(
+        mod.urllib.request,
+        "urlopen",
+        lambda req, timeout: io.BytesIO(b"<html>sk-canary</html>"),
+    )
+    with pytest.raises(RuntimeError) as caught:
+        mod._post_json(_KEYED_URL + "/chat/completions", {}, {}, 1.0)
+    assert not isinstance(caught.value, ModelUnavailable)
+    assert "sk-canary" not in str(caught.value) and "path-canary" not in str(
+        caught.value
+    )
+    assert caught.value.__cause__ is None and caught.value.__suppress_context__

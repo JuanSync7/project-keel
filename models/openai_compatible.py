@@ -2,13 +2,15 @@
 title: OpenAI-compatible model backend
 layer: backend
 public_api: no
-summary: Adapter for any HTTP endpoint speaking the OpenAI chat-completions API. It is built only for a `base_url` that is an http or https URL with a host and no user part, query or fragment, and only for an `api_key_env` that config/project.json `models.credential_env` declares for this adapter (scripts/child_env.py load_policy), so no caller, and no config a caller forwards, can choose another environment variable to send as the bearer token; either refusal is a ValueError that names the argument and never a value. An unreachable endpoint is ModelUnavailable (absent); an endpoint that answers with an error, or with a body that is not a chat completion, is broken, and that body is described by its keys, never quoted. An error names the endpoint by scheme, host and port, never by its path.
+summary: Adapter for any HTTP endpoint speaking the OpenAI chat-completions API. It is built only for a `base_url` that is an http or https URL with a host and no user part, query or fragment, written in unreserved URL characters, and only for an `api_key_env` that config/project.json `models.credential_env` declares for this adapter (scripts/child_env.py load_policy), so no caller, and no config a caller forwards, can choose another environment variable to send as the bearer token; either refusal is a ValueError that names the argument and never a value. An unreachable endpoint is ModelUnavailable (absent); an endpoint that answers with an error, or with a body that is not a chat completion, is broken, and that body is described by its keys, never quoted. An error names the endpoint by scheme, host and port, never by its path.
 """
 
 from __future__ import annotations
 
+import http.client
 import json
 import os
+import string
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -28,12 +30,26 @@ Transport = Callable[[str, dict, dict, float], dict]
 # not an endpoint this adapter talks to.
 _SCHEMES = ("http", "https")
 _MANIFEST_KEY = "models.credential_env"
+# A base_url is refused unless every character is one of these. urlsplit drops
+# a tab, a newline and leading whitespace and urllib then refuses or re-reads
+# them, so a URL holding one is read one way by the check and another way by
+# the request; a backslash is a path separator to some readers and not others.
+# `?` and `#` are absent because the adapter appends its own path.
+_URL_CHARS = frozenset(string.ascii_letters + string.digits + "-._~:/[]%@!$&'()*+,;=")
 
 
 def _checked_base_url(base_url: str) -> str:
     """*base_url* without its trailing slash, or ValueError when it is not an
     http(s) URL with a host and no user part, query or fragment. The message
-    never quotes the URL, since the part refused may be a credential."""
+    never quotes the URL, since the part refused may be a credential. The
+    value returned is rebuilt from the parts that were checked, so the request
+    cannot go anywhere the check did not see."""
+    if not base_url or not _URL_CHARS.issuperset(base_url):
+        raise ValueError(
+            "base_url must be written in unreserved URL characters only: no "
+            "space, control character, backslash, `?`, `#` or non-ASCII letter; "
+            "percent-encode a path segment that needs one"
+        )
     try:
         parts = urllib.parse.urlsplit(base_url)
         host, user, password = parts.hostname, parts.username, parts.password
@@ -60,7 +76,9 @@ def _checked_base_url(base_url: str) -> str:
             "base_url must not carry a user part; the credential is read from "
             "the environment variable `api_key_env` names"
         )
-    return base_url.rstrip("/")
+    # netloc is host[:port] here (no user part); the host is lowercased the way
+    # `hostname` reads it, so the text sent is the host that was checked.
+    return "%s://%s%s" % (parts.scheme, parts.netloc.lower(), parts.path.rstrip("/"))
 
 
 def _checked_key_env(adapter: str, api_key_env: str) -> str:
@@ -105,6 +123,19 @@ def _post_json(url: str, payload: dict, headers: dict, timeout: float) -> dict:
     except urllib.error.URLError as exc:
         # No route, refused, unknown host: the endpoint is not here to run.
         raise ModelUnavailable(f"cannot reach {_endpoint(url)}: {exc.reason}") from exc
+    except json.JSONDecodeError:
+        # `from None`: the parser's error holds the whole body it could not
+        # read, and an endpoint may echo the request's credential there.
+        raise RuntimeError(
+            "the reply from %s is not JSON; check that base_url names a "
+            "chat-completions endpoint" % _endpoint(url)
+        ) from None
+    except (http.client.InvalidURL, ValueError):
+        # `from None`: urllib's refusal quotes the path it rejected.
+        raise RuntimeError(
+            "urllib cannot build a request for %s; check base_url's path for a "
+            "character a URL cannot carry" % _endpoint(url)
+        ) from None
 
 
 class OpenAICompatible(ModelBackend):

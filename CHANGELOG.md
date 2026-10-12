@@ -80,9 +80,12 @@ version rather than a bare commit:
   adapter now accepts only a name listed in config/project.json
   `models.credential_env.openai-compatible` (shipped: `OPENAI_API_KEY`) and
   only an http or https `base_url` with a host and no user part, query or
-  fragment; either refusal is a `ValueError` at construction and exit 2 from
+  fragment, written in URL characters only (no space, control character,
+  backslash or non-ASCII character), and it requests the URL rebuilt from the
+  parts it checked; either refusal is a `ValueError` at construction and exit 2 from
   `make eval-live`, before any request. It describes an unexpected response
-  body by its keys instead of quoting it, names an endpoint in an error by
+  body by its keys instead of quoting it, reports a reply that is not JSON
+  without a copy of it, names an endpoint in an error by
   scheme, host and port and never by its path, and a live eval report replaces the value of each
   declared credential variable with `<hidden>` in its case details.
   `scripts/run_evals.py` refuses a report path that resolves through a
