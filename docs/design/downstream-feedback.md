@@ -1657,18 +1657,17 @@ to be released as 0.2.2.
 
 ## CMP-5 — the coding rules move from text an agent reads into code the gate runs
 
-Campaign 4 delivered its eight slices. This campaign is proposed, not yet
-approved as a whole: the maintainer asked for CMP-5.S1 first, and the order and
-cut below are a recommendation for the maintainer to change. The cap is five
-slices, each one commit on a green `make verify`.
+Campaign 4 delivered its eight slices. The maintainer approved this campaign's
+order on 2026-10-12. The cap is five slices, each one commit on a green
+`make verify`.
 
 | Slice | Gap | Status |
 |-------|-----|--------|
 | CMP-5.S1 | A script exits with a bare integer from any line, so nothing holds the rule that every exit has a code from one closed list and a message saying what failed, on which input and what to do next | done |
-| CMP-5.S2 | `scripts/gate_evidence.py` writes under `evidence.dir` without the symlink check `scripts/git_tree.py` holds; `scripts/run_evals.py` reads any git failure as "no git"; a full verify on a dirty tree turns red when the date changes during the run | planned |
-| CMP-5.S3 | A module reads config, the environment and its own defaults directly, so no one place applies a default, reports it, or refuses a wrong value | planned |
+| CMP-5.S2 | `scripts/gate_evidence.py` writes under `evidence.dir` without the symlink check `scripts/git_tree.py` holds; `scripts/run_evals.py` reads any git failure as "no git"; a full verify on a dirty tree turns red when the date changes during the run; exit code 3 has one name for two meanings; the `openai-compatible` adapter sends a credential to any host config names; a project's own scripts that call `sys.exit` are rewritten by hand after an update | planned |
+| CMP-5.S3 | A long script runs wherever it is called, so on a shared host it takes the CPU other people are using; nothing in the tree submits it to a job farm or limits it | planned |
 | CMP-5.S4 | The rules a helper cannot carry (the import boundary, a bare `except`, text matching without a stated reason, a comment that reports a change) are held by review alone | planned |
-| CMP-5.S5 | Inputs that are not config are parsed where they are used, and a script reports with `print` | planned |
+| CMP-5.S5 | A module reads config, the environment and its own defaults directly, so no one place applies a default, reports it, or refuses a wrong value | planned |
 
 **CMP-5.S1, the exit helper.** A closed enum of exit codes, one helper that is
 the only place a process exits with an error, the exit-code table in
@@ -1701,14 +1700,40 @@ Left by CMP-5.S1:
   arrives as a failure or as a warning for one release is the maintainer's
   decision before the release that ships it.
 
-**CMP-5.S2, the gate residuals.** Small, and ranked second because two of the
-three are security findings the Campaign 4 reviews left open.
+**CMP-5.S2, the gate residuals.** Ranked second because three of its parts are
+security findings. It closes the three residuals in its row. It splits exit
+code 3 into two members, one for a red evidence record and one for an absent
+live backend, each with its own number; neither script that returns 3 is in a
+released version, so no released caller reads the number. A test drives each
+script through its command line and reads the exit status and the message. It
+adds a host allowlist for the adapter's `base_url` in config, where an empty
+list refuses every host. It adds a rewriter that moves a script whose entry
+line is `sys.exit(main())` to the helper, and lists by file and line the exits
+it cannot move. Whether a project's remaining exits fail on arrival or warn
+first is still the maintainer's decision; the slice keeps the failure.
 
-**CMP-5.S3 to S5** are the config loader, the tree-wide checks, and typed
-inputs with a log helper, in the order the queue above gives.
+**CMP-5.S3, the launcher.** One neutral launcher in `scripts/` decides where a
+long script runs: on a host that is one person's own it runs as normal; on a
+shared host it submits to a job farm through an adapter, sized from config; a
+full farm means wait, or run on the shared host only when that host has spare
+compute; with no farm it runs limited. It says in one line what it decided and
+why. Which scripts are long comes from a list in the repo, a search script
+that proposes entries, and the recorded duration of each script's last run.
+This is the "neutral batch-scheduler adapter" of the lane and gate tooling
+item in the Campaign 4 queue, without the lane and merge parts. Open for the
+maintainer: how a host is known to be shared without a host name in the repo,
+and which scripts are local only because they need a credential, a network
+route or a lock the farm does not have.
 
-**Cut from this campaign.** Everything else in the Campaign 4 queue stays
-queued: the lane and gate tooling, the frontend backlog, the mutation runner,
+**CMP-5.S4 and S5** are the tree-wide checks and then the config loader. The
+checks come first because they count the direct config reads the loader has to
+replace. S4 also takes one rule from CMP-5.S1: a shipped gate test or a shared
+helper module with no row of its own in `docs/reference/features.md` is red.
+
+**Cut from this campaign.** Typed inputs with a log helper, planned here
+before, is queued again to make room for the launcher. Everything else in the
+Campaign 4 queue stays queued: the lane and merge parts of the lane and gate
+tooling, the frontend backlog, the mutation runner,
 `make new-test`, the agent and playbook contract, the D0 decisions,
 project-jarvis's proposals, and the residuals of CMP-4.S5 to S8 not named in
 CMP-5.S2. A header field per code file is proposed in the vault and is not
