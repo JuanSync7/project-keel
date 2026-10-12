@@ -18,6 +18,9 @@ import sys
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 _OUT = os.path.join("config", "agent_surface", "aad-v1.0.schema.json")
+sys.path.insert(0, os.path.join(_ROOT, "scripts"))
+
+from exit_codes import ExitCode, finish, report  # noqa: E402
 
 # The ONLY reasons this check may no-op: the host interpreter cannot parse the
 # adapter (SyntaxError — the documented old pre-commit `python3`), or pydantic /
@@ -70,20 +73,26 @@ def main(argv=None) -> int:
         detail = "%s: %s" % (type(exc).__name__, exc)
         if opts.check:
             sys.stderr.write("AAD schema check skipped (%s)\n" % detail)
-            return 0
-        sys.stderr.write("AAD schema cannot be generated (%s)\n" % detail)
-        return 1
+            return ExitCode.SUCCESS
+        return report(
+            ExitCode.FAILURE,
+            "AAD schema cannot be generated",
+            detail,
+            "run it under the project interpreter, with the project's "
+            "dependencies installed",
+        )
     except Exception as exc:  # noqa: BLE001 — the model itself is broken
         # The environment DID run it and building the schema failed, so the
         # committed contract is unverifiable. Reporting 0 here would make the
         # drift guard green while checking nothing; report the failure in BOTH
         # modes instead. Deliberately broad: any new pydantic/model failure mode
         # must land in this branch, never in the skip above.
-        sys.stderr.write(
-            "AAD schema cannot be built from the model (%s: %s)\n"
-            % (type(exc).__name__, exc)
+        return report(
+            ExitCode.FAILURE,
+            "AAD schema cannot be built from the model",
+            "%s: %s" % (type(exc).__name__, exc),
+            "fix the model in api/rest_fastapi/aad; do not edit the schema",
         )
-        return 1
     path = os.path.join(_ROOT, opts.out)
     if opts.check:
         try:
@@ -92,20 +101,21 @@ def main(argv=None) -> int:
         except FileNotFoundError:
             current = ""
         if current != text:
-            sys.stderr.write(
-                "AAD schema is stale; regenerate with "
-                "`python scripts/agent_surface/generate_aad_schema.py`\n"
+            return report(
+                ExitCode.FAILURE,
+                "AAD schema is stale",
+                opts.out,
+                "regenerate with `python scripts/agent_surface/generate_aad_schema.py`",
             )
-            return 1
         print("AAD schema up to date")
-        return 0
+        return ExitCode.SUCCESS
 
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as fh:
         fh.write(text)
     print("wrote", opts.out)
-    return 0
+    return ExitCode.SUCCESS
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    finish(main())

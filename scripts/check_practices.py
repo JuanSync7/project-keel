@@ -17,6 +17,8 @@ import tokenize
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+from exit_codes import ExitCode, finish  # noqa: E402
+
 # The doer/domain code an advisory should look at. Transport adapters (api/, mcp/)
 # and tests/ are intentionally excluded - speaking a framework's dialect there is
 # correct, and test code is not a boundary.
@@ -370,14 +372,14 @@ def main(argv=None):
     if args.json:
         json.dump(active, sys.stdout, indent=2, sort_keys=True)
         sys.stdout.write("\n")
-        return 0
+        return ExitCode.SUCCESS
 
     for loc in empty_pragmas:
         print("coding-practices: suppression with no reason at %s" % loc)
 
     if not active:
         print("coding-practices: no smells found.  (advisory)")
-        return 0
+        return ExitCode.SUCCESS
 
     print(
         "coding-practices: scanning for practice smells "
@@ -391,8 +393,8 @@ def main(argv=None):
         "coding-practices: %d smell(s); %d suppressed.  "
         "(advisory - review, don't obey)" % (len(active), len(findings) - len(active))
     )
-    return 0
+    return ExitCode.SUCCESS
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    finish(main())

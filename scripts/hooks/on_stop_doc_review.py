@@ -14,7 +14,9 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, ROOT)  # make top-level `agents`/`models` importable
+sys.path.insert(0, os.path.join(ROOT, "scripts"))
 
+import exit_codes  # noqa: E402
 from agents.doc_reviewer import review  # noqa: E402
 from models import ModelUnavailable  # noqa: E402
 
@@ -42,7 +44,7 @@ def main(argv=None):
         report = review(execute=args.execute, model=args.model)
     except ModelUnavailable as exc:
         print("on_stop_doc_review: model unavailable (%s); skipping" % exc)
-        return 0
+        return exit_codes.ExitCode.SUCCESS
     print(
         "on_stop_doc_review: %d stale stamp(s), %d unresolved mention(s), %d roster row(s); "
         "%d chunk(s) queued%s"
@@ -58,8 +60,8 @@ def main(argv=None):
         print(
             "  next: `make doc-review` for the list, `make advise` for every advisory"
         )
-    return 0
+    return exit_codes.ExitCode.SUCCESS
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    exit_codes.finish(main())

@@ -31,7 +31,7 @@ _CONFIG = load_config(_ROOT)
 # What the CLI imports when it runs in a project: the harness, the doers and
 # backends it drives, the CLI and the stdlib siblings git_tree needs.
 _TREES = ("evals", "models", "agents/triage", "config")
-_SCRIPTS = ("run_evals.py", "git_tree.py", "child_env.py")
+_SCRIPTS = ("run_evals.py", "git_tree.py", "child_env.py", "exit_codes.py")
 _IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc")
 
 

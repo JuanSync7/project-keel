@@ -164,6 +164,7 @@ if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 
 import child_env  # noqa: E402
+import exit_codes  # noqa: E402
 
 # Run as a script this module is `__main__`; a project check's `import
 # check_structure` must get THIS module (its live ROOT and helpers), not load a
@@ -7063,7 +7064,12 @@ def main(argv=None):
     )
     args = ap.parse_args([] if argv is None else argv)
     if not os.path.isdir(args.root):
-        ap.exit(2, "check_structure: --root %s is not a directory\n" % args.root)
+        return exit_codes.report(
+            exit_codes.ExitCode.USAGE,
+            "check_structure: --root is not a directory",
+            args.root,
+            "name the directory of the tree to judge",
+        )
     found = run_checks(args.root)
     for _letter, tier, m in found:
         if tier == "warning":
@@ -7080,8 +7086,15 @@ def main(argv=None):
         "next: `make advise` reports what this gate does not fail on; "
         "`make doc-review` runs the doc reviewer (dry-run)"
     )
-    return 1 if n_err else 0
+    if not n_err:
+        return exit_codes.ExitCode.SUCCESS
+    return exit_codes.report(
+        exit_codes.ExitCode.FAILURE,
+        "check_structure: the tree breaks the conventions",
+        "%d error(s) in %s" % (n_err, args.root),
+        "fix each ERROR line above and run it again",
+    )
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    exit_codes.finish(main(sys.argv[1:]))

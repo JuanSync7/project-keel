@@ -1105,6 +1105,9 @@ def _migrating_template(template, jobs, theirs, readers=()):
         "scripts/jobs/conflict_guard.py": (
             _ROOT / "scripts" / "jobs" / "conflict_guard.py"
         ).read_text(encoding="utf-8"),
+        "scripts/exit_codes.py": (_ROOT / "scripts" / "exit_codes.py").read_text(
+            encoding="utf-8"
+        ),
     }
     for stem, rerun, dep in jobs:
         if stem in readers:

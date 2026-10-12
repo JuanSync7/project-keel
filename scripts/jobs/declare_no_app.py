@@ -52,6 +52,7 @@ if __name__ == "__main__":
 
 import child_env  # noqa: E402
 import review_docs  # noqa: E402
+from exit_codes import ExitCode, finish, report  # noqa: E402
 
 MANIFEST = os.path.join("config", "project.json")
 # The runner `make run` calls and the test that needs a composition root: the
@@ -292,7 +293,7 @@ def main(argv=None):
     root = os.path.abspath(args.root)
     text = _read(root, MANIFEST)
     if not text:
-        return 0
+        return ExitCode.SUCCESS
     try:
         manifest = json.loads(text)
     except ValueError:
@@ -300,43 +301,46 @@ def main(argv=None):
         if line is not None:
             # The guard names this read before main runs when --root is the
             # job's own project; another --root is refused the same way here.
-            sys.stderr.write(
-                conflict_guard.refusal(
-                    "declare_no_app",
-                    [("config/project.json", line)],
-                    conflict_guard.job_rerun(
-                        __file__,
-                        os.path.dirname(_SCRIPTS),
-                        sys.argv[1:] if argv is None else argv,
-                        args.finish_with,
-                    ),
-                )
+            what, on, next_step = conflict_guard.refusal_parts(
+                "declare_no_app",
+                [("config/project.json", line)],
+                conflict_guard.job_rerun(
+                    __file__,
+                    os.path.dirname(_SCRIPTS),
+                    sys.argv[1:] if argv is None else argv,
+                    args.finish_with,
+                ),
             )
-            return 2
+            return report(ExitCode.USAGE, what, on, next_step)
         _say("config/project.json is not JSON (an update conflict?); not judged")
-        return 0
+        return ExitCode.SUCCESS
     try:
         before = head_manifest(root)
     except GitError as e:
-        _say(str(e))
-        return 2
+        return report(
+            ExitCode.USAGE,
+            "declare_no_app: git could not show the manifest before the update",
+            str(e),
+            "repair the repository, then run the job again",
+        )
     if not needs_settling(manifest, before, root):
-        return 0
+        return ExitCode.SUCCESS
     path = manifest["layers"]["app"]["path"]
     markers = module_markers(_read(root, SMOKE_TEST) or "")
     targets = runner_targets(_read(root, "Makefile"))
     try:
         out = settle(text, markers, targets)
     except SettleError as e:
-        _say(
-            "%s is absent and this update introduced layers.app, but "
-            "config/project.json could not be edited (%s). Edit it by hand: "
-            "set layers.app to null, declare %s in "
+        return report(
+            ExitCode.FAILURE,
+            "declare_no_app: %s is absent and this update introduced layers.app, "
+            "but config/project.json could not be edited" % path,
+            str(e),
+            "edit it by hand: set layers.app to null, declare %s in "
             "make_targets.empty_test_selections and add %s to "
             "make_targets.effect_proof_skip"
-            % (path, e, markers or "no marker", targets or "no target")
+            % (markers or "no marker", targets or "no target"),
         )
-        return 1
     if out != text:
         with open(os.path.join(root, MANIFEST), "w", encoding="utf-8") as fh:
             fh.write(out)
@@ -346,8 +350,8 @@ def main(argv=None):
             "make_targets.effect_proof_skip (no composition root)"
             % (path, markers, targets)
         )
-    return 0
+    return ExitCode.SUCCESS
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    finish(main())

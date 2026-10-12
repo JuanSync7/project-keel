@@ -277,6 +277,7 @@ source of a literal default; `—` means the flag has no default.
 | `scripts/doc_review.py --max-chunks` | integer | `8` | a whole number | `scripts/doc_review.py` | Chunks to review per run. | code practices: `scripts/refactor_practice.py` | always |
 | `scripts/doc_review.py --root` | string | `None` | any | `scripts/doc_review.py` | Repo root to review (default: this repo). | code practices: `scripts/refactor_practice.py` | always |
 | `scripts/doc_review.py --json` | switch | — | `true` when given | `scripts/doc_review.py` | Emit the report as JSON. | code practices: `scripts/refactor_practice.py` | always |
+| `scripts/exit_code_table.py --check` | switch | — | `true` when given | `scripts/exit_code_table.py` | Write nothing; exit 1 if the table in the guide is stale. | choosing the guide: `doc_drift.limits_guide` | always |
 | `scripts/make_help.py --effect` | string | `''` | any | `scripts/make_help.py` | Keep targets whose label holds this word. | running a target: `scripts/run_make_target.py` | always |
 | `scripts/make_help.py --area` | string | `''` | any | `scripts/make_help.py` | Keep one `##@` area. | running a target: `scripts/run_make_target.py` | always |
 | `scripts/make_help.py makefiles` | positional strings | — | any | `scripts/make_help.py` | The makefiles make read, passed as `$(MAKEFILE_LIST)`, for the area headers. | running a target: `scripts/run_make_target.py` | always |

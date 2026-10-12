@@ -34,7 +34,13 @@ pytestmark = pytest.mark.integration
 _MANIFEST = json.loads((_ROOT / "config" / "project.json").read_text("utf-8"))
 _EVIDENCE = _MANIFEST["evidence"]
 # The writer and the stdlib siblings it imports: what a generated project runs.
-_SCRIPTS = ("gate_evidence.py", "git_tree.py", "child_env.py", "check_structure.py")
+_SCRIPTS = (
+    "gate_evidence.py",
+    "git_tree.py",
+    "child_env.py",
+    "check_structure.py",
+    "exit_codes.py",
+)
 # A test run under the gate runner carries the outer make's state; a scratch make
 # must start from none of it.
 _MAKE_INHERITANCE = ("MAKEFLAGS", "MFLAGS", "MAKELEVEL", "MAKEOVERRIDES", "RALPH")

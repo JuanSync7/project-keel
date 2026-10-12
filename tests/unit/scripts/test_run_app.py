@@ -15,6 +15,7 @@ _ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(_ROOT / "scripts"))
 
 import run_app  # noqa: E402
+from exit_codes import PassedThrough  # noqa: E402
 
 pytestmark = pytest.mark.unit
 
@@ -59,6 +60,22 @@ def test_run_app_runs_the_declared_module_and_refuses_an_undeclared_one(project)
     _root_module(project, "demo_root", "raise SystemExit(7)\n")
     _declare(project, {"path": "src/demo_root", "module": "demo_root"})
     assert _exit_code(lambda: run_app.main([], root=str(project))) == 7
+
+
+@pytest.mark.parametrize(
+    ("raised", "status"),
+    [("-1", 255), ("-2", 254), ("-9", 247), ("0", 0), ("3", 3), ("300", 44)],
+)
+def test_the_app_s_status_is_the_one_python_itself_would_exit_with(
+    project, raised, status
+):
+    """A SystemExit code from the app is not a child's return code: a negative
+    one is no signal, and Python exits with its low eight bits."""
+    _root_module(project, "edge_root", "raise SystemExit(%s)\n" % raised)
+    _declare(project, {"path": "src/edge_root", "module": "edge_root"})
+    result = run_app.main([], root=str(project))
+    assert int(result) == status
+    assert isinstance(result, PassedThrough)
 
 
 def test_arguments_reach_the_module(project, capsys):

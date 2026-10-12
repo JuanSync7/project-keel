@@ -454,6 +454,17 @@ CHECKS: tuple[Check, ...] = (
         "tool; optional).",
     ),
     Check(
+        slug="exit-codes",
+        name="Exit-code table",
+        script="scripts/exit_code_table.py",
+        gate="error",
+        interpreter=">=3.10",
+        command="make check-exit-codes",
+        when="When an exit code or a gate script changes; in CI",
+        purpose="The exit-code table in the limits guide is what the ExitCode "
+        "enum and the scripts the gate runs say.",
+    ),
+    Check(
         slug="doc-freshness",
         name="Doc freshness",
         script="scripts/jobs/review_docs.py",

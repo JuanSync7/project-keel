@@ -51,6 +51,7 @@ if __name__ == "__main__":
 
 import child_env  # noqa: E402
 import review_docs  # noqa: E402
+from exit_codes import ExitCode, finish, report  # noqa: E402
 
 # git tree modes this job can put back. Any other mode (a submodule, 160000)
 # is not a file the template ships, so it is a stated failure, never a guess.
@@ -329,8 +330,12 @@ def main(argv=None):
     try:
         kept, gone, failed = judge(project, src, args.ref)
     except GuardError as e:
-        sys.stderr.write("keep_edited_retired: %s\n" % e)
-        return 2
+        return report(
+            ExitCode.USAGE,
+            "keep_edited_retired: cannot judge the files the update deleted",
+            str(e),
+            "fix what it names, then finish the update",
+        )
     for rel, reason in kept:
         sys.stderr.write("kept %s: %s\n" % (rel, reason))
     for message in failed:
@@ -341,8 +346,15 @@ def main(argv=None):
             "keep_edited_retired: %d deleted by the update, %d kept, %d left "
             "deleted, %d failed\n" % (total, len(kept), len(gone), len(failed))
         )
-    return 2 if failed else 0
+    if not failed:
+        return ExitCode.SUCCESS
+    return report(
+        ExitCode.USAGE,
+        "keep_edited_retired: an edited file the update deleted was not put back",
+        "%d file(s), each named above" % len(failed),
+        "restore each from git by hand, then finish the update",
+    )
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    finish(main())

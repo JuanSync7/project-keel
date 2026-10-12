@@ -15,7 +15,9 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)  # make top-level `agents`/`models` importable
+sys.path.insert(0, os.path.join(ROOT, "scripts"))
 
+import exit_codes  # noqa: E402
 from agents.doc_reviewer import review  # noqa: E402
 from models import ModelUnavailable  # noqa: E402
 
@@ -68,7 +70,7 @@ def main(argv=None):
     except ModelUnavailable as exc:
         # Absent, not broken: say so, write nothing, exit 0.
         sys.stdout.write("doc_review: model unavailable (%s); skipping\n" % exc)
-        return 0
+        return exit_codes.ExitCode.SUCCESS
     if args.json:
         json.dump(_as_dict(report), sys.stdout, indent=2, sort_keys=True)
         sys.stdout.write("\n")
@@ -92,8 +94,8 @@ def main(argv=None):
             sys.stdout.write(
                 "  next: `make doc-review-apply` (or `--execute`) to propose and apply gated edits\n"
             )
-    return 0
+    return exit_codes.ExitCode.SUCCESS
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    exit_codes.finish(main())

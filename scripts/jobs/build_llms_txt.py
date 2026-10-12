@@ -20,6 +20,9 @@ ROOT = os.path.dirname(os.path.dirname(_HERE))
 # The rendering logic lives in the domain (src/backend/showcase), reused by both
 # the API (live) and this job (static files) — one source of truth.
 sys.path.insert(0, os.path.join(ROOT, "src"))
+sys.path.insert(0, os.path.join(ROOT, "scripts"))
+
+from exit_codes import ExitCode, finish  # noqa: E402
 
 
 def main(argv=None) -> int:
@@ -48,7 +51,7 @@ def main(argv=None) -> int:
         sys.stderr.write(
             "build_llms_txt skipped (backend.showcase unavailable: %s)\n" % exc
         )
-        return 0
+        return ExitCode.SUCCESS
 
     sc = load_showcase(args.root)
     out_dir = (
@@ -68,8 +71,8 @@ def main(argv=None) -> int:
         "wrote %s/llms.txt (%d bytes) + %s/llms-full.txt (%d bytes)"
         % (rel, len(index), rel, len(full))
     )
-    return 0
+    return ExitCode.SUCCESS
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    finish(main())

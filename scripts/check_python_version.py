@@ -17,6 +17,8 @@ import os
 import re
 import sys
 
+from exit_codes import ExitCode, finish, report
+
 _FALLBACK = (3, 10)
 
 
@@ -42,19 +44,19 @@ def main():
     minimum = required_min(root)
     current = sys.version_info[:2]
     if current < minimum:
-        sys.stderr.write(
-            "ERROR: this project requires Python >=%d.%d; %s is %d.%d.\n"
-            "Point PY at a newer interpreter, e.g. `make PY=python3.11 test`, "
-            "or create .venv (make picks up .venv/bin/python by itself).\n"
-            % (minimum[0], minimum[1], sys.executable, current[0], current[1])
+        return report(
+            ExitCode.FAILURE,
+            "check_python_version: this project requires Python >=%d.%d" % minimum,
+            "%s is %d.%d" % (sys.executable, current[0], current[1]),
+            "point PY at a newer interpreter, e.g. `make PY=python3.11 test`, "
+            "or create .venv (make picks up .venv/bin/python by itself)",
         )
-        return 1
     sys.stdout.write(
         "check_python_version: %s (%d.%d) satisfies >=%d.%d\n"
         % (sys.executable, current[0], current[1], minimum[0], minimum[1])
     )
-    return 0
+    return ExitCode.SUCCESS
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    finish(main())

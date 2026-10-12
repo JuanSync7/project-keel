@@ -1668,7 +1668,7 @@ slices, each one commit on a green `make verify`.
 
 | Slice | Gap | Status |
 |-------|-----|--------|
-| CMP-5.S1 | A script exits with a bare integer from any line, so nothing holds the rule that every exit has a code from one closed list and a message saying what failed, on which input and what to do next | planned |
+| CMP-5.S1 | A script exits with a bare integer from any line, so nothing holds the rule that every exit has a code from one closed list and a message saying what failed, on which input and what to do next | done |
 | CMP-5.S2 | `scripts/gate_evidence.py` writes under `evidence.dir` without the symlink check `scripts/git_tree.py` holds; `scripts/run_evals.py` reads any git failure as "no git"; a full verify on a dirty tree turns red when the date changes during the run | planned |
 | CMP-5.S3 | A module reads config, the environment and its own defaults directly, so no one place applies a default, reports it, or refuses a wrong value | planned |
 | CMP-5.S4 | The rules a helper cannot carry (the import boundary, a bare `except`, text matching without a stated reason, a comment that reports a change) are held by review alone | planned |
@@ -1679,12 +1679,31 @@ the only place a process exits with an error, the exit-code table in
 `docs/guides/limits-and-troubleshooting.md` generated from the enum, and two
 gate checks that read the syntax tree: an exit outside the helper is red, and
 an enum member the table does not name is red. It reuses the per-script
-exit-code reader in `tests/integration/test_doc_drift.py`. Three points are
-open for the maintainer: how a script that returns a wrapped tool's own code
-states that; whether `main` returning an enum member through the helper is the
-rule for all 34 exit sites under `scripts/`; and whether the two checks are a
-gate test or new structure-gate letters. The helper is stdlib-only and runs
-under the old interpreter `scripts/gate_evidence.py` supports.
+exit-code reader in `tests/integration/test_doc_drift.py`. The slice chose three
+points the maintainer can still change: a script that returns a wrapped tool's
+own code says so with `passthrough(...)`; `main` returns an `ExitCode` member
+and the entry line is `finish(main())`, for every script; and the two checks are
+the gate test `tests/integration/test_exit_gate.py`, not structure-gate letters.
+The helper is stdlib-only and runs under the old interpreter
+`scripts/gate_evidence.py` supports.
+
+Left by CMP-5.S1:
+
+- The gate test does not reach an exit through `getattr`, `os.abort`, `os.kill`
+  or an uncaught exception, argparse's own `--help` and usage exits in a script
+  that does not catch them, or a `python -c` line in a makefile.
+- The hand-written `| Script | When |` table below the generated region of the
+  limits guide is compared with nothing.
+- The gate test fails a blank message part, not a useless one, and the migrated
+  messages were not read one by one for advice repeated between `on` and
+  `next_step`.
+- A conflict in `scripts/exit_codes.py` itself ends an update-finishing job with
+  exit 1 on a `SyntaxError`, not the one-line exit 2 every other conflicted
+  file gets.
+- A project's own script that calls `sys.exit` is red after `copier update`
+  until it ends through the helper, and no migration rewrites it. Whether that
+  arrives as a failure or as a warning for one release is the maintainer's
+  decision before the release that ships it.
 
 **CMP-5.S2, the gate residuals.** Small, and ranked second because two of the
 three are security findings the Campaign 4 reviews left open.

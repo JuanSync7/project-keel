@@ -740,6 +740,7 @@ _TOY_SHIPPED = (
     "scripts/jobs/conflict_guard.py",
     "scripts/jobs/review_docs.py",
     "scripts/child_env.py",
+    "scripts/exit_codes.py",
     "config/project.json",
 )
 _TOY_MIGRATION = (

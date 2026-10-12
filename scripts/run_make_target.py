@@ -20,6 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import check_structure  # noqa: E402 — the one owner of the label grammar and policy
 import child_env  # noqa: E402 — the environment make and git inherit
+from exit_codes import ExitCode, finish, report  # noqa: E402
 
 # One definition of what git lists, shared with scripts/gate_evidence.py. `_git`
 # is re-exported, not used here: tests/unit/scripts/test_run_make_target.py proves
@@ -317,8 +318,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     if not is_safe_target(args.target):
-        sys.stderr.write("run_make_target: unsafe target %r\n" % args.target)
-        return 2
+        return report(
+            ExitCode.USAGE,
+            "run_make_target: not a make target token",
+            repr(args.target),
+            "name one target `make help` lists",
+        )
     result = run_target(
         args.target, cwd=args.dir, timeout=args.timeout, extra=args.make_args
     )
@@ -340,9 +345,26 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         )
     if result["refused"]:
-        return 2
-    return 0 if result["ok"] else 1
+        return report(
+            ExitCode.USAGE,
+            "run_make_target: refused, and make was never run",
+            "`make %s`: %s" % (result["target"], result["refused"]),
+            "run a target config/project.json `make_targets.gate_effects` allows",
+        )
+    if result["ok"]:
+        return ExitCode.SUCCESS
+    return report(
+        ExitCode.FAILURE,
+        "run_make_target: the gate is red",
+        "`make %s` (rc=%s%s)"
+        % (
+            result["target"],
+            result["returncode"],
+            ", and it changed the tree" if result["changed"] else "",
+        ),
+        "read the output above, fix what it names and run it again",
+    )
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    finish(main())

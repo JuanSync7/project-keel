@@ -14,6 +14,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import check_structure  # noqa: E402 — the one owner of the label vocabulary
+from exit_codes import ExitCode, finish, report  # noqa: E402
 
 _GREP_LINE = re.compile(r"^([^:]+):([A-Za-z0-9_.-]+):.*?##\s(.*)$")
 _ROW = "  %-22s %-12s %s"
@@ -125,11 +126,15 @@ def main(argv=None):
             sys.stdin.readlines(), headers, args.area.strip(), args.effect.strip()
         )
     except (OSError, ValueError) as exc:
-        sys.stderr.write("make help: %s\n" % exc)
-        return 2
+        return report(
+            ExitCode.USAGE,
+            "make help: cannot render the help",
+            str(exc),
+            "name an area or an effect `make help` lists, or restore the makefile",
+        )
     sys.stdout.write(render(groups))
-    return 0
+    return ExitCode.SUCCESS
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    finish(main())

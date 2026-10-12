@@ -60,6 +60,7 @@ if __name__ == "__main__":
 
 import child_env  # noqa: E402
 import review_docs  # noqa: E402
+from exit_codes import ExitCode, finish, report  # noqa: E402
 
 ROOT = os.path.dirname(_SCRIPTS)
 # The fixed project file this job reads itself (to name its hunk), declared
@@ -376,7 +377,7 @@ def _restamp_file(full, today, check):
 
 
 def _no_allowlist(exc, root, command):
-    """The stderr line for a ChildEnvError: no child may start, so no git runs
+    """Write the stderr line for a ChildEnvError and return its exit code: no child may start, so no git runs
     and nothing is listed or written. A manifest an update left conflicted is
     the likely cause; then the line is conflict_guard's refusal, naming the
     manifest and its hunk's line, so an audit reads it as the guard's own."""
@@ -388,11 +389,21 @@ def _no_allowlist(exc, root, command):
         line = None  # the ChildEnvError itself already says it is unreadable
     if line is not None:
         found = [(manifest.replace(os.sep, "/"), line)]
-        return conflict_guard.refusal("restamp_docs", found, command).rstrip("\n")
-    return "restamp_docs: cannot start git: %s; resolve it, then run `%s`" % (
-        exc,
-        command,
-    )
+        what, on, next_step = conflict_guard.refusal_parts(
+            "restamp_docs", found, command
+        )
+    else:
+        what, on, next_step = (
+            "restamp_docs: cannot start git",
+            str(exc),
+            "resolve it, then run `%s`" % command,
+        )
+    return report(ExitCode.USAGE, what, on, next_step)
+
+
+def _refused(on, next_step="correct it and run the job again"):
+    """The line a run that could not judge ends on, and its exit code."""
+    return report(ExitCode.USAGE, "restamp_docs: refused", on, next_step)
 
 
 def main(argv=None):
@@ -427,12 +438,12 @@ def main(argv=None):
     try:
         today = resolve_today(args.today, os.environ)
     except RestampError as exc:
-        print("restamp_docs: %s" % exc, file=sys.stderr)
-        return 2
+        return _refused(str(exc), "pass --today YYYY-MM-DD, or correct the clock")
     root = os.path.abspath(args.root)
     if not os.path.isdir(root):
-        print("restamp_docs: --root %s is not a directory" % root, file=sys.stderr)
-        return 2
+        return _refused(
+            "--root %s is not a directory" % root, "name the project's directory"
+        )
     # A skip is named, never a failure: an ordinary content conflict in a
     # governed document must not fail the `copier update` that left it.
     skipped = []
@@ -441,32 +452,29 @@ def main(argv=None):
         try:
             rows = pending(root, today, errors, skipped)
         except RestampError as exc:
-            print("restamp_docs: %s" % exc, file=sys.stderr)
-            return 2
+            return _refused(str(exc))
         except child_env.ChildEnvError as exc:
-            print(
-                _no_allowlist(exc, root, rerun(args.finish_with)),
-                file=sys.stderr,
-            )
-            return 2
+            return _no_allowlist(exc, root, rerun(args.finish_with))
         for target, reason in skipped:
             print("restamp_docs: %s: %s" % (target, reason), file=sys.stderr)
         for target, reason in errors:
             print("restamp_docs: %s: %s" % (target, reason), file=sys.stderr)
         for target, _current, _target_day in rows:
             print(target)
-        return 1 if errors or rows else 0
+        if not errors and not rows:
+            return ExitCode.SUCCESS
+        return report(
+            ExitCode.FAILURE,
+            "restamp_docs: a document's `updated:` stamp is stale or unreadable",
+            "%d to restamp, %d unreadable, each named above" % (len(rows), len(errors)),
+            "run `%s`" % rerun(None),
+        )
     try:
         work = worklist(root, today, skipped)
     except RestampError as exc:
-        print("restamp_docs: %s" % exc, file=sys.stderr)
-        return 2
+        return _refused(str(exc))
     except child_env.ChildEnvError as exc:
-        print(
-            _no_allowlist(exc, root, rerun(args.finish_with)),
-            file=sys.stderr,
-        )
-        return 2
+        return _no_allowlist(exc, root, rerun(args.finish_with))
     for target, reason in skipped:
         print("restamp_docs: %s: %s" % (target, reason), file=sys.stderr)
     changed, failed = [], False
@@ -486,8 +494,15 @@ def main(argv=None):
     if args.check or not args.quiet:
         for rel in changed:
             print(rel)
-    return 1 if failed or (args.check and changed) else 0
+    if not failed:
+        return ExitCode.SUCCESS
+    return report(
+        ExitCode.FAILURE,
+        "restamp_docs: a document could not be restamped",
+        "each is named above",
+        "make it writable, then run `%s`" % rerun(None),
+    )
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    finish(main())

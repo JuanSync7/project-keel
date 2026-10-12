@@ -16,8 +16,10 @@ import sys
 # The trigger is a thin adapter that only says "run this on event X".
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, ROOT)  # make top-level `agents`/`models` importable
+sys.path.insert(0, os.path.join(ROOT, "scripts"))
 
 from agents.triage import triage  # noqa: E402  (after sys.path setup)
+from exit_codes import ExitCode, finish  # noqa: E402
 from models import ModelUnavailable  # noqa: E402
 
 
@@ -40,8 +42,8 @@ def main(argv: list[str] | None = None) -> int:
         # Absent, not broken: a hook that fires where no model runs must say so
         # and step aside (exit 0), never fail the event it was attached to.
         print(f"on_stop_triage: model unavailable ({exc}); skipping")
-    return 0
+    return ExitCode.SUCCESS
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    finish(main())

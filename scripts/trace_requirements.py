@@ -26,15 +26,21 @@ import check_structure  # noqa: E402 — the one reader of a module header
 import git_tree  # noqa: E402 — the one definition of what git ignores
 import pytest_markers  # noqa: E402
 import traceability  # noqa: E402
+from exit_codes import ExitCode, finish, report  # noqa: E402
 
 _NAME = "trace"
-EXIT_PASS, EXIT_FINDINGS, EXIT_REFUSED = 0, 1, 2
+
 # How much of git's own complaint a refusal quotes.
 _GIT_ERROR_MAX = 200
 
 
 def _say(text: str) -> None:
     print("%s: %s" % (_NAME, text), file=sys.stderr)
+
+
+def _refused(on: str, next_step: str) -> ExitCode:
+    """The line a run that could not judge ends on, and its exit code."""
+    return report(ExitCode.USAGE, "%s: could not judge" % _NAME, on, next_step)
 
 
 def _write(root: str, rel: str, text: str) -> None:
@@ -173,51 +179,53 @@ def main(argv: Sequence[str] | None = None) -> int:
         try:
             policy = _load_policy(root)
         except traceability.TraceError as exc:
-            _say(str(exc))
             _say(
                 "the `%s` block is what names the matrix, so nothing was written or "
                 "removed and an earlier matrix may still stand; trust this exit "
                 "code, not that file" % traceability.BLOCK
             )
-            return EXIT_REFUSED
+            return _refused(
+                str(exc),
+                "correct %s `%s` and run it again"
+                % (traceability.MANIFEST, traceability.BLOCK),
+            )
 
         rel = policy.matrix_path
         guarded = [rel, rel + ".tmp"]
         read = [policy.specs_root, policy.tests_root, policy.matrix_schema]
         linked = git_tree.through_symlink(root, guarded + read)
         if linked:
-            _say(
+            return _refused(
                 "%s `%s` reaches %s through a symlink; a read or a write there "
                 "could land outside the project, so nothing was read or written"
-                % (traceability.MANIFEST, traceability.BLOCK, ", ".join(linked))
+                % (traceability.MANIFEST, traceability.BLOCK, ", ".join(linked)),
+                "point the block at real paths inside the project",
             )
-            return EXIT_REFUSED
 
         try:
             loose = [p for p in guarded if not git_tree.is_ignored(root, p)]
         except git_tree.NoGitError as exc:
             if _inside_a_repository(root):
-                _say(
+                return _refused(
                     "git could not say whether %r is ignored (%s); a failure is "
                     "not an answer, so nothing was written"
-                    % (rel, str(exc)[:_GIT_ERROR_MAX])
+                    % (rel, str(exc)[:_GIT_ERROR_MAX]),
+                    "repair the repository and run it again",
                 )
-                return EXIT_REFUSED
             # No repository, so no tracked tree a matrix could dirty. Staying
             # inside the project was through_symlink's question, already answered.
             loose = []
         if loose:
-            _say(
+            return _refused(
                 "%s `%s.matrix_path` %r is not git-ignored (%s); a matrix there "
                 "would dirty the tree, so nothing was written"
-                % (traceability.MANIFEST, traceability.BLOCK, rel, ", ".join(loose))
+                % (traceability.MANIFEST, traceability.BLOCK, rel, ", ".join(loose)),
+                "add the path to .gitignore, or name an ignored one",
             )
-            return EXIT_REFUSED
 
         try:
             bounds = _read_bounds(root, policy)
         except traceability.TraceError as exc:
-            _say(str(exc))
             # Without the schema's version no matrix can be written, so an earlier
             # one goes rather than stand green beside this run. The path was
             # accepted above: inside the project and ignored.
@@ -228,7 +236,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 except OSError as gone:
                     raise _Unwritable(rel, gone) from None
                 _say("removed the earlier %s" % rel)
-            return EXIT_REFUSED
+            return _refused(
+                str(exc), "restore the matrix schema the block names and run it again"
+            )
 
         _write(
             root,
@@ -248,9 +258,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                     traceability.stopped_matrix(policy, bounds, "refused")
                 ),
             )
-            _say(str(exc))
             print("%s: refused -> %s" % (_NAME, rel))
-            return EXIT_REFUSED
+            return _refused(
+                str(exc), "correct the spec or the test file it names and run it again"
+            )
 
         matrix = traceability.build_matrix(policy, bounds, catalogue, judgement)
         _write(root, rel, traceability.render(matrix))
@@ -260,12 +271,20 @@ def main(argv: Sequence[str] | None = None) -> int:
                 % (found["kind"], _shown(found["id"], bounds), found["where"])
             )
         _summary(rel, judgement, policy)
-        return EXIT_PASS if judgement.result == "pass" else EXIT_FINDINGS
+        if judgement.result == "pass":
+            return ExitCode.SUCCESS
+        return report(
+            ExitCode.FAILURE,
+            "%s: a requirement is not covered, or a marker names no requirement"
+            % _NAME,
+            "%d finding(s), listed above and in %s" % (len(judgement.findings), rel),
+            "mark a test with `@pytest.mark.req`, or record the gap with its "
+            "reason in %s `%s.gaps`" % (traceability.MANIFEST, traceability.BLOCK),
+        )
 
     except _Unwritable as exc:
-        _say(str(exc))
-        return EXIT_REFUSED
+        return _refused(str(exc), "make the matrix path writable and run it again")
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    finish(main())

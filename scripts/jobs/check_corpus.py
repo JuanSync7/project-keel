@@ -18,7 +18,10 @@ ROOT = os.path.dirname(os.path.dirname(_HERE))
 if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 
+sys.path.insert(0, os.path.join(ROOT, "scripts"))
+
 from build_corpus import build_corpus  # noqa: E402
+from exit_codes import ExitCode, finish, report  # noqa: E402
 from link_corpus import link_corpus  # noqa: E402
 
 # Allowed enum values for the corpus contract (CONVENTIONS section 11/12).
@@ -216,6 +219,17 @@ def _fresh(root: str, max_links: int) -> dict:
     return link_corpus(build_corpus(root), max_links=max_links)
 
 
+def _invalid(what, count):
+    """The line a red run ends on, after its ERROR lines."""
+    return report(
+        ExitCode.FAILURE,
+        "check_corpus: the corpus is not valid",
+        "%s (%d ERROR line(s) above)" % (what, count),
+        "fix what each ERROR line names; a stale corpus is regenerated with "
+        "`make site-data`",
+    )
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(
         description="Validate corpus integrity and build reproducibility "
@@ -231,7 +245,8 @@ def main(argv=None) -> int:
     ap.add_argument("--max-links", type=int, default=8, help="max edges per node")
     args = ap.parse_args(argv)
 
-    rc = 0
+    # How many ERROR lines were written; the last line of a red run counts them.
+    problems = 0
     if args.corpus:
         path = (
             args.corpus
@@ -239,18 +254,23 @@ def main(argv=None) -> int:
             else os.path.join(args.root, args.corpus)
         )
         if not os.path.exists(path):
-            sys.stderr.write("ERROR check_corpus: no corpus at %s\n" % args.corpus)
-            return 1
+            return report(
+                ExitCode.FAILURE,
+                "check_corpus: no corpus at the path --corpus names",
+                args.corpus,
+                "build one with `make site-data`, or correct the path",
+            )
         corpus, why = _load_corpus(path)
         if why:
-            sys.stderr.write(
-                "ERROR check_corpus: %s could not be read (%s)\n" % (args.corpus, why)
+            return report(
+                ExitCode.FAILURE,
+                "check_corpus: the corpus could not be read",
+                "%s (%s)" % (args.corpus, why),
+                "regenerate it with `make site-data`",
             )
-            return 1
         errs = validate(corpus)
         for m in errs:
             sys.stderr.write("ERROR check_corpus: %s\n" % m)
-        rc = 1 if errs else 0
         # Manual-inspection mode keeps staleness a warning; the DEFAULT mode
         # (the gate) errors on it — see the local-corpus block in main(). Same
         # projection as the gate, or every legitimately enriched corpus would
@@ -264,26 +284,26 @@ def main(argv=None) -> int:
                 "WARN check_corpus: %s is stale vs a fresh build "
                 "(regenerate with `make site-data`)" % args.corpus
             )
-        if rc == 0:
-            print(
-                "check_corpus: %s valid (%d nodes)"
-                % (args.corpus, len(corpus.get("nodes", [])))
-            )
-        return rc
+        if errs:
+            return _invalid(args.corpus, len(errs))
+        print(
+            "check_corpus: %s valid (%d nodes)"
+            % (args.corpus, len(corpus.get("nodes", [])))
+        )
+        return ExitCode.SUCCESS
 
     # Default: build fresh, validate integrity, then prove reproducibility.
     first = _fresh(args.root, args.max_links)
     errs = validate(first)
     for m in errs:
         sys.stderr.write("ERROR check_corpus: %s\n" % m)
-    if errs:
-        rc = 1
+    problems += len(errs)
     second = _fresh(args.root, args.max_links)
     if _dumps(first) != _dumps(second):
         sys.stderr.write(
             "ERROR check_corpus: build is NOT deterministic (two builds differ)\n"
         )
-        rc = 1
+        problems += 1
 
     # The LOCAL corpus is what the agents actually query (wiki/corpus.json, a
     # gitignored generated view) — and until ADR-K-0008 nothing here ever read it,
@@ -311,12 +331,12 @@ def main(argv=None) -> int:
                 "ERROR check_corpus: wiki/corpus.json could not be read (%s) -- "
                 "regenerate with `make site-data`\n" % why
             )
-            rc = 1
+            problems += 1
         else:
             shape_errs = validate(committed)
             for m in shape_errs:
                 sys.stderr.write("ERROR check_corpus: wiki/corpus.json: %s\n" % m)
-                rc = 1
+                problems += 1
             if not shape_errs and _dumps(
                 _deterministic_projection(committed)
             ) != _dumps(first):
@@ -325,18 +345,19 @@ def main(argv=None) -> int:
                     "-- the corpus the agents query is not the project they "
                     "are in; regenerate with `make site-data`\n"
                 )
-                rc = 1
+                problems += 1
 
-    if rc == 0:
-        print(
-            "check_corpus: fresh build valid + deterministic (%d nodes, %d edges)"
-            % (
-                len(first["nodes"]),
-                sum(len(n.get("links", [])) for n in first["nodes"]),
-            )
+    if problems:
+        return _invalid("a fresh build of %s" % args.root, problems)
+    print(
+        "check_corpus: fresh build valid + deterministic (%d nodes, %d edges)"
+        % (
+            len(first["nodes"]),
+            sum(len(n.get("links", [])) for n in first["nodes"]),
         )
-    return rc
+    )
+    return ExitCode.SUCCESS
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    finish(main())

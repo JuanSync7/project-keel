@@ -2,9 +2,10 @@
 title: Integration — copier generates a structurally valid, tailored project
 kind: tests
 layer: n/a
-summary: `copier` renders keel's root template into a new project — the manifest is tailored to the answers, the un-chosen frontend stack is pruned, CLAUDE.md->AGENT.md symlinks are preserved, keel's own template meta-tests are pruned, and check_structure passes; an undeclared top-level directory reds the project until it is declared and labelled. A bare `subprocess.run` reds a generated project through check_X until it passes `env=build_child_env()`, and the project's helper passes an adapter's declared credential and no planted secret. A credentialed proxy (a `#` in the password included) fails the project's doc judge by name and never by value, while a `LANGUAGE=sr_RS:sr@latin` locale list does not, until `child_env.credentialed_values` names it, and a stale entry there reds the gate. A generated project carries keel's `work_naming` block and no plan doc, so check_Z is silent until the project writes one; a slice row that is not a slice id then reds the gate and a well-formed one does not. A generated project runs its own doc-drift tests green, every skip there a template-only test naming why, and a prose slice id planted in its CONTRIBUTING.md reds them, and so does a row dropped from its settings reference or from its feature catalogue; its README names no `make new`, and its `run-web` line names Astro and its port only for the astro stack and is absent with no frontend. Under every transport answer, and without the showcase, a generated project's e2e coverage gate and its scenarios pass with nothing skipped, and a grpc project whose exemption is dropped is red naming the method. A project with a frontend carries keel's `layers.frontend.journey` keys and passes its own frontend-suite contract tests statically; one without has no frontend keys, its wiring test skips with a reason, and `make test-fe` exits 0 silently. Under every answer set, `make eval` in a committed generated project replays its shipped eval dataset, which uses every scorer, green twice with the same report bytes and leaves what git lists alone, and the README's delete advice no longer offers evals/. Under every answer set, `make trace` in a committed generated project writes the same passing matrix twice and leaves what git lists alone, and a requirement added to its spec with no test turns `make trace` and the project's own traceability gate test red naming it. Skipped on a bare local clone without the optional `template` extra; CI installs `.[dev,template]` and declares the surface required (KEEL_REQUIRED_EXTRAS), so there a missing copier is a hard failure instead of a silent skip.
+summary: `copier` renders keel's root template into a new project — the manifest is tailored to the answers, the un-chosen frontend stack is pruned, CLAUDE.md->AGENT.md symlinks are preserved, keel's own template meta-tests are pruned, and check_structure passes; an undeclared top-level directory reds the project until it is declared and labelled. A bare `subprocess.run` reds a generated project through check_X until it passes `env=build_child_env()`, and the project's helper passes an adapter's declared credential and no planted secret. A credentialed proxy (a `#` in the password included) fails the project's doc judge by name and never by value, while a `LANGUAGE=sr_RS:sr@latin` locale list does not, until `child_env.credentialed_values` names it, and a stale entry there reds the gate. A generated project carries keel's `work_naming` block and no plan doc, so check_Z is silent until the project writes one; a slice row that is not a slice id then reds the gate and a well-formed one does not. A generated project runs its own doc-drift tests green, every skip there a template-only test naming why, and a prose slice id planted in its CONTRIBUTING.md reds them, and so does a row dropped from its settings reference or from its feature catalogue; its README names no `make new`, and its `run-web` line names Astro and its port only for the astro stack and is absent with no frontend. Under every transport answer, and without the showcase, a generated project's e2e coverage gate and its scenarios pass with nothing skipped, and a grpc project whose exemption is dropped is red naming the method. A project with a frontend carries keel's `layers.frontend.journey` keys and passes its own frontend-suite contract tests statically; one without has no frontend keys, its wiring test skips with a reason, and `make test-fe` exits 0 silently. Under every answer set, `make eval` in a committed generated project replays its shipped eval dataset, which uses every scorer, green twice with the same report bytes and leaves what git lists alone, and the README's delete advice no longer offers evals/. Under every answer set, `make trace` in a committed generated project writes the same passing matrix twice and leaves what git lists alone, and a requirement added to its spec with no test turns `make trace` and the project's own traceability gate test red naming it. Skipped on a bare local clone without the optional `template` extra; CI installs `.[dev,template]` and declares the surface required (KEEL_REQUIRED_EXTRAS), so there a missing copier is a hard failure instead of a silent skip. A generated project passes its exit gate file with nothing skipped and holds a current exit-code table; a script ending on `sys.exit(main())` fails the gate test naming its line, an enum member added without regenerating fails `make check-exit-codes`, and `make exit-codes` run twice writes the same guide.
 """
 
+import ast
 import json
 import os
 import re
@@ -1321,6 +1322,117 @@ def test_the_traceability_gate_test_runs_and_judges_a_generated_project(tmp_path
     assert red.returncode == 1, red.stdout[-6000:] + red.stderr[-2000:]
     assert "%s FAILED" % _TRACE_GATE_TEST in red.stdout, red.stdout[-6000:]
     assert planted in red.stdout, red.stdout[-6000:]
+
+
+_EXIT_GATE = "tests/integration/test_exit_gate.py"
+_EXIT_GATE_TEST = "test_no_process_in_the_tree_ends_outside_the_helper"
+_EXIT_HELPER = "scripts/exit_codes.py"
+_EXIT_ENUM = "ExitCode"
+
+
+def _exit_gate(project):
+    """The generated project's exit gate file, run as its `make test` recipe
+    runs pytest (PYTHONPATH=src:.)."""
+    return subprocess.run(
+        [sys.executable, "-m", "pytest", "-v", "-rs", "-p", "no:cacheprovider"]
+        + [_EXIT_GATE],
+        cwd=str(project),
+        env=build_child_env(root=str(project), extra={"PYTHONPATH": "src:."}),
+        capture_output=True,
+        text=True,
+        timeout=900,
+    )
+
+
+def _plant_exit_member(project):
+    """Append a member to the project's exit-code enum, one past its highest
+    value, and return its name."""
+    path = project / _EXIT_HELPER
+    text = path.read_text(encoding="utf-8")
+    enum = next(
+        node
+        for node in ast.parse(text).body
+        if isinstance(node, ast.ClassDef) and node.name == _EXIT_ENUM
+    )
+    values = [
+        node.value.elts[0].value
+        for node in enum.body
+        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Tuple)
+    ]
+    assert values, "the generated project's enum has no member -- zero items"
+    lines = text.splitlines(True)
+    lines.insert(
+        enum.end_lineno,
+        "    PLANTED = (%d, 'it was planted', 'nothing')\n" % (max(values) + 1),
+    )
+    path.write_text("".join(lines), encoding="utf-8")
+    return "PLANTED"
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
+@pytest.mark.parametrize(
+    "answers",
+    _ANSWER_MATRIX
+    + [
+        pytest.param(
+            {"frontend_stack": "none", "showcase": False}, id="showcase-declined"
+        )
+    ],
+)
+def test_a_generated_project_ends_every_process_through_the_exit_helper(
+    tmp_path, answers
+):
+    """The exit helper held downstream: every answer set ships the helper, the
+    generator and the gate test; the gate file passes there with nothing
+    skipped and `make check-exit-codes` finds the shipped table current. A
+    project script that ends on `sys.exit(main())` then fails the gate test
+    naming its line. A member added to the enum fails `make check-exit-codes`
+    naming it, `make exit-codes` writes its row, and a second run leaves the
+    guide byte-identical."""
+    dest = tmp_path / "proj"
+    _generate(dest, project_name="demo_proj", **answers)
+    guide = (
+        dest
+        / json.loads((dest / "config" / "project.json").read_text())["doc_drift"][
+            "limits_guide"
+        ]
+    )
+    ran = _exit_gate(dest)
+    assert ran.returncode == 0, ran.stdout[-6000:] + ran.stderr[-2000:]
+    assert "SKIPPED" not in ran.stdout, ran.stdout[-6000:]
+    assert "%s PASSED" % _EXIT_GATE_TEST in ran.stdout, ran.stdout[-6000:]
+    current = _make_in(dest, "check-exit-codes")
+    assert current.returncode == 0, current.stdout[-3000:] + current.stderr[-3000:]
+
+    rogue = dest / "scripts" / "rogue_exit.py"
+    rogue.write_text(
+        "import sys\n\n\ndef main():\n    return 1\n\n\n"
+        'if __name__ == "__main__":\n    sys.exit(main())\n',
+        encoding="utf-8",
+    )
+    red = _exit_gate(dest)
+    assert red.returncode == 1, red.stdout[-6000:] + red.stderr[-2000:]
+    assert "%s FAILED" % _EXIT_GATE_TEST in red.stdout, red.stdout[-6000:]
+    assert "scripts/rogue_exit.py:9" in red.stdout, red.stdout[-6000:]
+    rogue.unlink()
+
+    shipped = guide.read_bytes()
+    planted = _plant_exit_member(dest)
+    stale = _make_in(dest, "check-exit-codes")
+    assert stale.returncode != 0, stale.stdout[-3000:]
+    assert "names no member `%s`" % planted in stale.stderr, stale.stderr[-3000:]
+    assert guide.read_bytes() == shipped, "the check wrote the guide"
+    seen = []
+    for _ in range(2):
+        wrote = _make_in(dest, "exit-codes")
+        assert wrote.returncode == 0, wrote.stdout[-3000:] + wrote.stderr[-3000:]
+        seen.append(guide.read_bytes())
+    assert seen[0] != shipped and seen[0] == seen[1]
+    assert ("`%s`" % planted).encode("utf-8") in seen[0]
+    again = _make_in(dest, "check-exit-codes")
+    assert again.returncode == 0, again.stdout[-3000:] + again.stderr[-3000:]
+    green = _exit_gate(dest)
+    assert green.returncode == 0, green.stdout[-6000:] + green.stderr[-2000:]
 
 
 _APP_DELETE_ADVICE = re.compile(r"\*\*Delete this dir\*\*(.*?)(?:\n\n|\Z)", re.DOTALL)

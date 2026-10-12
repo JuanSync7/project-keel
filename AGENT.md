@@ -7,7 +7,7 @@ owner: TBD
 summary: Global rules for any agent working in this repo.
 id: agent
 created: 2026-06-17
-updated: 2026-10-11
+updated: 2026-10-12
 visibility: internal
 canonical: true
 ---
@@ -64,6 +64,14 @@ of truth for labeling and the directory taxonomy. Each directory's own
   an adapter's credential in `models.credential_env`, never in code (check_X).
   `docs/adr/keel/K-0012-child-process-environment-allowlist.md` is the decision; it
   is defence-in-depth, not a sandbox.
+- **End every process through the exit helper.** A script's entry line is
+  `finish(main())`, and `main` returns a member of `ExitCode` from
+  `scripts/exit_codes.py`: `report(member, what failed, on which input, what
+  to do next)` for a failure, `passthrough(...)` for a wrapped tool's status.
+  `tests/integration/test_exit_gate.py` fails any other exit and a blank
+  message part. `make exit-codes` regenerates the exit-code table in
+  `docs/guides/limits-and-troubleshooting.md`, and `make check-exit-codes`
+  fails a stale one.
 - **Respect the `__init__.py` boundary.** Import a package's public
   symbols from the package, never from its private (`_*`) submodules.
   When you add a public symbol, add it to `__all__` and re-export it.

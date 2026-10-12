@@ -198,9 +198,7 @@ def test_main_root_flag_prints_the_same_report_shape_and_exit_code(
     assert cs.main(["--root", str(clean)]) == 0
     assert "check_structure: 0 error(s), 0 warning(s)" in capsys.readouterr().out
 
-    with pytest.raises(SystemExit) as exc:
-        cs.main(["--root", str(tmp_path / "nonexistent")])
-    assert exc.value.code == 2
+    assert cs.main(["--root", str(tmp_path / "nonexistent")]) == 2
     assert "nonexistent" in capsys.readouterr().err
 
 

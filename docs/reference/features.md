@@ -7,7 +7,7 @@ owner: TBD
 summary: Every feature keel ships, with what it does and why, how to run it, the settings it reads, where it stops and what it is not for, the guide that explains it, and which projects receive it. The rows of the shapes the tree declares are derived-equal to the tree by tests/integration/test_reference_drift.py.
 id: docs-reference-features
 created: 2026-10-09
-updated: 2026-10-11
+updated: 2026-10-12
 visibility: internal
 canonical: true
 ---
@@ -69,6 +69,7 @@ Each script below is one row of the checks catalogue or is reached from
 | `scripts/jobs/check_corpus.py` | Proves a fresh corpus build is valid, acyclic and reproducible, and that a local `wiki/corpus.json` is current. | `make check-corpus` | — | Passes when no local corpus has been built; it then judges a fresh build only. | [deterministic-checks.md](../guides/deterministic-checks.md) | always |
 | `api/rest_fastapi/export_openapi.py` | Fails when the committed `openapi.json` differs from the live routes, and writes it without `--check`. | `make check-openapi` | [`api/rest_fastapi/export_openapi.py --check`](settings.md#command-line-flags) | Skips when FastAPI is not installed. A missing `openapi.json` means no contract is published yet. | [deterministic-checks.md](../guides/deterministic-checks.md) | always |
 | `scripts/agent_surface/generate_aad_schema.py` | Fails when the committed AAD JSON Schema differs from the model, and writes it without `--check`. | `make check-aad` | [`scripts/agent_surface/generate_aad_schema.py --check`](settings.md#command-line-flags) | Skips when pydantic is not installed. | [agent-surface.md](../guides/agent-surface.md) | always |
+| `scripts/exit_code_table.py` | Fails when the exit-code table in the limits guide differs from the `ExitCode` enum and from what each script `make verify` runs can return, and writes it without `--check`. | `make check-exit-codes` | [`scripts/exit_code_table.py --check`](settings.md#command-line-flags) | Does not hold exits to the helper: `tests/integration/test_exit_gate.py` does. Does not write the hand-written table below the generated region. | [limits-and-troubleshooting.md](../guides/limits-and-troubleshooting.md) | always |
 | `scripts/cdmon_sync.py` | Runs the external cdmon code-to-doc drift check, as the worked example of a thin adapter over an external tool. | `make check-cdmon` | — | A stated skip until `cdmon` is on PATH and `config/cdmon/cdmon.yaml` exists; cdmon is not on PyPI. | [deterministic-checks.md](../guides/deterministic-checks.md) | always |
 | `scripts/accountability_report.py` | Lists corpus nodes that resolve to no owner. | `make advise` | — | Informational: it never fails the build. | [deterministic-checks.md](../guides/deterministic-checks.md) | always |
 | `scripts/jobs/review_docs.py` | Judges every governed document's `updated:` stamp against its last commit, and lists backticked paths that resolve to nothing. | `make check-docs` | [`scripts/jobs/review_docs.py --strict`](settings.md#command-line-flags) | Stale stamps fail only under `--strict`; unresolved mentions stay advisory. No git is a stated skip. | [doc-style.md](../guides/doc-style.md) | always |
@@ -91,6 +92,7 @@ help` lists them; `make help EFFECT=<word>` filters by label.
 | `make check-corpus` `[local]` | Proves the corpus build is valid and reproducible. | `make check-corpus` | — | Passes when no local corpus exists. | [deterministic-checks.md](../guides/deterministic-checks.md) | always |
 | `make check-openapi` `[local]` | Fails when `openapi.json` differs from the live routes. | `make check-openapi` | — | Skips without FastAPI. | [deterministic-checks.md](../guides/deterministic-checks.md) | always |
 | `make check-aad` `[local]` | Fails when the AAD schema differs from the model. | `make check-aad` | — | Skips without pydantic. | [agent-surface.md](../guides/agent-surface.md) | always |
+| `make check-exit-codes` `[local]` | Fails when the exit-code table in the limits guide is stale. | `make check-exit-codes` | — | Writes nothing; `make exit-codes` is the fix. | [limits-and-troubleshooting.md](../guides/limits-and-troubleshooting.md) | always |
 | `make check-cdmon` `[local]` | Runs the cdmon code-to-doc drift check. | `make check-cdmon` | — | A stated skip until cdmon and its config exist. | [deterministic-checks.md](../guides/deterministic-checks.md) | always |
 | `make check-docs` `[local]` | Runs the structure gate and the strict freshness review, which every doc-review edit is gated on. | `make check-docs` | — | Judges stamps and structure, not prose quality. | [doc-style.md](../guides/doc-style.md) | always |
 | `make restamp-docs` `[tree]` | Sets a stale `updated:` to today on each document that needs it, the fix `make check-docs` names. | `make restamp-docs` | [`scripts/jobs/restamp_docs.py --today`](settings.md#command-line-flags) | Changes the stamp only; it does not review the change. | [idempotency.md](../guides/idempotency.md) | always |
@@ -126,6 +128,7 @@ help` lists them; `make help EFFECT=<word>` filters by label.
 | `make run-web` `[local]` | Serves the first frontend app's dev server; the Astro app's dev server proxies `/api` and `/health` to the REST API. | `make run-web` | [`API_PROXY_TARGET`](settings.md#environment-variables) | Refuses a project with no frontend app. The react-vite app, the default `frontend_stack`, makes no API call and its `vite.config.ts` has no `/api` proxy, although the target's `## ` help says it proxies for every stack. | [generate-and-upgrade.md](../guides/generate-and-upgrade.md) | always |
 | `make demo` `[local]` | Runs the demo in `demo/`. | `make demo` | — | An illustration, not a test. | [agent-runtimes.md](../guides/agent-runtimes.md) | always |
 | `make agent-surface-schema` `[tree]` | Regenerates the committed AAD JSON Schema from the model. | `make agent-surface-schema` | — | Writes the tree; `make check-aad` is the gate. | [agent-surface.md](../guides/agent-surface.md) | always |
+| `make exit-codes` `[tree]` | Regenerates the exit-code table in the limits guide from `scripts/exit_codes.py` and the scripts `make verify` runs. | `make exit-codes` | — | Writes the tree; `make check-exit-codes` is the gate. | [limits-and-troubleshooting.md](../guides/limits-and-troubleshooting.md) | always |
 
 ## Copier jobs
 

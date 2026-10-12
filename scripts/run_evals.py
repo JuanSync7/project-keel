@@ -23,6 +23,8 @@ _REPO = os.path.dirname(_HERE)
 sys.path.insert(0, _HERE)
 sys.path.insert(0, _REPO)
 
+# The module, not its names: `report` here is the eval report.
+import exit_codes  # noqa: E402
 import git_tree  # noqa: E402 — the one definition of what git ignores
 from evals import (  # noqa: E402
     ConfigError,
@@ -162,9 +164,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         cfg = load_config(root)
     except ConfigError as exc:
-        print("run_evals: %s" % exc, file=sys.stderr)
         _remove_stale(root, exc.report_dir, mode)
-        return 2
+        return exit_codes.report(
+            exit_codes.ExitCode.USAGE,
+            "run_evals: the evals config was refused",
+            str(exc),
+            "correct config/project.json `evals` and run it again",
+        )
 
     rel = "%s/%s.json" % (cfg.report_dir, mode)
     candidates_dir = "%s/%s" % (cfg.report_dir, _CANDIDATES)
@@ -173,19 +179,26 @@ def main(argv: Sequence[str] | None = None) -> int:
         root, guarded + ([candidates_dir] if mode == "live" else [])
     )
     if linked:
-        _refuse_symlinks(cfg.report_dir, linked)
-        return 2
+        return exit_codes.report(
+            exit_codes.ExitCode.USAGE,
+            "run_evals: config/project.json `evals.report_dir` reaches its files "
+            "through a symlink; a report or a delete there could land outside "
+            "the project, so nothing was written or removed",
+            "%r reaches %s" % (cfg.report_dir, ", ".join(linked)),
+            "point config/project.json `evals.report_dir` at a real directory "
+            "inside the project",
+        )
     if mode == "live":
         guarded.append(candidates_dir + "/x.jsonl")
     loose = _unignored(root, guarded)
     if loose:
-        print(
-            "run_evals: config/project.json `evals.report_dir` %r is not git-ignored "
-            "(%s); a report there would dirty the tree, so nothing was written"
-            % (cfg.report_dir, ", ".join(loose)),
-            file=sys.stderr,
+        return exit_codes.report(
+            exit_codes.ExitCode.USAGE,
+            "run_evals: config/project.json `evals.report_dir` is not git-ignored, "
+            "and a report there would dirty the tree, so nothing was written",
+            "%r (%s)" % (cfg.report_dir, ", ".join(loose)),
+            "add the directory to .gitignore, or name an ignored one",
         )
-        return 2
 
     placeholder = _report(
         cfg, mode, "incomplete", ["incomplete"], detail="the run did not finish"
@@ -202,7 +215,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         report = _report(cfg, mode, "refused", ["refused"], detail=str(exc))
         _write(root, rel, render(report))
         _summary(rel, report)
-        return 2
+        return exit_codes.report(
+            exit_codes.ExitCode.USAGE,
+            "run_evals: a dataset was refused",
+            str(exc),
+            "correct the dataset and run it again",
+        )
 
     if mode == "replay":
         results = replay(suites, cfg.threshold)
@@ -214,14 +232,25 @@ def main(argv: Sequence[str] | None = None) -> int:
             report = _report(cfg, mode, "refused", ["refused"], detail=str(exc))
             _write(root, rel, render(report))
             _summary(rel, report)
-            return 2
+            return exit_codes.report(
+                exit_codes.ExitCode.USAGE,
+                "run_evals: the live run was refused",
+                str(exc),
+                "correct config/project.json `evals` and run it again",
+            )
         except SpendCapExceeded as exc:
             report = _report(
                 cfg, mode, "refused", ["cap-exceeded"], calls=exc.calls, detail=str(exc)
             )
             _write(root, rel, render(report))
             _summary(rel, report)
-            return 2
+            return exit_codes.report(
+                exit_codes.ExitCode.USAGE,
+                "run_evals: the live run would exceed its call cap",
+                str(exc),
+                "raise config/project.json `evals.live.max_calls` on purpose, or "
+                "run fewer cases",
+            )
         results, calls = run.results, run.calls
         for suite_name, lines in run.candidates:
             _write(
@@ -235,13 +264,30 @@ def main(argv: Sequence[str] | None = None) -> int:
     _write(root, rel, render(report))
     _summary(rel, report)
     if result == "pass":
-        return 0
+        return exit_codes.ExitCode.SUCCESS
+    reasons_text = ", ".join(report.reasons) or result
     if result == "fail":
-        return 1
+        return exit_codes.report(
+            exit_codes.ExitCode.FAILURE,
+            "run_evals: a suite scored below the threshold",
+            "%s (%s)" % (rel, reasons_text),
+            "read the suite lines above and the report, then fix the capability "
+            "or the dataset",
+        )
     if result == "absent":
-        return 3
-    return 2
+        return exit_codes.report(
+            exit_codes.ExitCode.UNAVAILABLE,
+            "run_evals: the live backend is absent, so nothing was judged",
+            "%s (%s)" % (rel, reasons_text),
+            "configure the model config/project.json `evals` names, then run it again",
+        )
+    return exit_codes.report(
+        exit_codes.ExitCode.USAGE,
+        "run_evals: the run was refused",
+        "%s (%s)" % (rel, reasons_text),
+        "read the report's detail, correct what it names and run it again",
+    )
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    exit_codes.finish(main())

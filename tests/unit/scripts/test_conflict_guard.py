@@ -128,6 +128,27 @@ def test_exit_if_conflicted_message(tmp_path, capsys):
     assert capsys.readouterr() == ("", "")
 
 
+def test_a_refusal_survives_an_exit_helper_that_cannot_be_imported(
+    tmp_path, capsys, monkeypatch
+):
+    """The exit helper is a project file and can be the conflicted one. The
+    guard still names the files and the remedy in a line `read_refusals`
+    parses; the import error then ends the process, so the status is 1."""
+    root = tmp_path / "proj"
+    entry = _write(root, "scripts/jobs/job.py", "import dep\n")
+    _write(root, "scripts/dep.py", "import os\n" + _merge())
+    search = [str(root / "scripts" / "jobs"), str(root / "scripts")]
+    # None in sys.modules makes `import exit_codes` raise ImportError.
+    monkeypatch.setitem(sys.modules, "exit_codes", None)
+
+    with pytest.raises(ImportError):
+        conflict_guard.exit_if_conflicted(
+            str(entry), str(root), "job", "make job", search_path=search
+        )
+    refusals = conflict_guard.read_refusals(capsys.readouterr().err)
+    assert refusals == [("job", [("scripts/dep.py", 3)], "make job")]
+
+
 @pytest.mark.parametrize(
     "job, rerun",
     [

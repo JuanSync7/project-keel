@@ -18,7 +18,9 @@ import sys
 # lives in agents/, the model in models/ — no provider name here.
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)  # make top-level `agents`/`models`/`runtimes` importable
+sys.path.insert(0, os.path.join(ROOT, "scripts"))
 
+import exit_codes  # noqa: E402
 from agents.practice_refactor import refactor  # noqa: E402  (after sys.path setup)
 from models import ModelUnavailable  # noqa: E402
 
@@ -83,7 +85,7 @@ def main(argv=None):
         # Absent, not broken: say so, write nothing, exit 0. A present model
         # that fails still raises -- that is a defect, not a missing tool.
         sys.stdout.write("refactor_practice: model unavailable (%s); skipping\n" % exc)
-        return 0
+        return exit_codes.ExitCode.SUCCESS
 
     if args.json:
         json.dump(_as_dict(report), sys.stdout, indent=2, sort_keys=True)
@@ -107,8 +109,8 @@ def main(argv=None):
                 "  (no corpus nodes matched — is the practice id right and the "
                 "corpus built? try `make site-data`)\n"
             )
-    return 0
+    return exit_codes.ExitCode.SUCCESS
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    exit_codes.finish(main())

@@ -39,7 +39,7 @@ PY_ROOTS := $(wildcard $(CODE_ROOTS))
 # Keel ships no [write] target; a project that adds one inherits the guard.
 WRITE_GUARD = @if [ -n "$(CI)$(RALPH)" ]; then echo "refusing '$@': a [write] target never runs under CI or a Ralph loop (docs/adr/keel/K-0011-make-target-effect-labels.md)" >&2; exit 1; fi
 
-.PHONY: help new audit-project check-python check check-all check-corpus check-openapi check-aad check-cdmon advise check-generic verify test trace eval eval-live unit integration e2e smoke \
+.PHONY: help new audit-project check-python check check-all check-corpus check-openapi check-aad check-cdmon check-exit-codes exit-codes advise check-generic verify test trace eval eval-live unit integration e2e smoke \
         lint lint-py lint-fe fmt fmt-check typecheck typecheck-py typecheck-fe \
         test-fe test-fe-unit test-fe-e2e \
         fe-install run run-api run-web site-data site-static demo agent-surface-schema check-docs restamp-docs doc-review doc-review-apply
@@ -105,7 +105,7 @@ audit-project: ## [local] Report what DEST, another keel project, would fail und
 check: ## [local] Validate structure + frontmatter (3.6-safe)
 	$(PY) scripts/check_structure.py
 
-check-all: check check-corpus check-openapi check-aad check-cdmon ## [local] All deterministic checks (project interpreter; see docs/guides/deterministic-checks.md)
+check-all: check check-corpus check-openapi check-aad check-cdmon check-exit-codes ## [local] All deterministic checks (project interpreter; see docs/guides/deterministic-checks.md)
 check-corpus: check-python ## [local] Corpus integrity + build determinism (needs the project interpreter)
 	$(PY) scripts/jobs/check_corpus.py
 check-openapi: ## [local] Committed openapi.json in sync with the app (skips if FastAPI absent)
@@ -114,6 +114,8 @@ check-aad: ## [local] Committed AAD schema in sync with the model (skips if pyda
 	$(PY) scripts/agent_surface/generate_aad_schema.py --check
 check-cdmon: ## [local] cdmon code-doc drift (a stated skip until cdmon and config/cdmon/cdmon.yaml exist)
 	$(PY) scripts/cdmon_sync.py --check
+check-exit-codes: check-python ## [local] The exit-code table in the limits guide is what scripts/exit_codes.py and the gate's scripts say (needs the project interpreter)
+	$(PY) scripts/exit_code_table.py --check
 check-docs: check ## [local] The structure gate + strict doc freshness: what every doc-review edit is gated on
 	$(PY) scripts/jobs/review_docs.py --strict
 
@@ -279,3 +281,5 @@ demo: check-python ## [local] Run the demo
 	$(PY) demo/run_demo.py
 agent-surface-schema: check-python ## [tree] Regenerate the committed AAD JSON Schema from the model
 	$(PY) scripts/agent_surface/generate_aad_schema.py
+exit-codes: check-python ## [tree] Regenerate the exit-code table in the limits guide from scripts/exit_codes.py and the gate's scripts
+	$(PY) scripts/exit_code_table.py

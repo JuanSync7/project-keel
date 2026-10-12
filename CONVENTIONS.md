@@ -8,7 +8,7 @@ tags: [conventions, frontmatter, taxonomy]
 summary: Single source of truth for labeling (frontmatter) and the directory taxonomy.
 id: conventions
 created: 2026-06-17
-updated: 2026-10-11
+updated: 2026-10-12
 visibility: internal
 canonical: true
 ---
@@ -263,6 +263,7 @@ pre-commit hook) fails the build if the conventions above drift:
 | Work naming (§20) | `config/project.json` `work_naming` is well-formed once the tree holds a plan doc; every first cell of a plan doc's slice table is a slice id; a slice table sits under exactly one campaign heading, its rows name that campaign and run from `S1` in document order (a duplicate names both lines, a gap names the missing slice); a campaign is declared by one heading across all plan docs, and campaigns run from 1 with no gap; a mention in any Markdown prose, bare or with the project's own `name:` prefix, names a declared campaign or slice, and an id-shaped token outside the grammar (`CMP-1.S02`) is an error, not a mention of its campaign. A plan doc that declares no slice is a WARN. `tests/integration/test_work_trailers.py` judges the `Slice:` and `Backlog:` commit trailers, because check_structure does not read git |
 | Shipped-doc drift (§15) | a shipped document (any Markdown outside `doc_drift.history_paths`, and its `.md.jinja` twin) names in prose no concrete campaign or slice id in the `work_naming` grammar, whatever its prefix, and no `doc_drift.forbidden_phrases` pattern; a loopback port it names, fenced or not, is declared by some non-Markdown file (a git-ignored file is not read, since generated views copy Markdown text); and it cites no document copier.yml `_exclude`s unconditionally (template only). Code spans and fences are illustrations. Not in `check_structure.py`: `tests/integration/test_doc_drift.py` is a pytest gate under `make verify` and `make test`, not pre-commit, because it reads copier.yml through yaml and the file list through git. The same test holds the newcomer documents `doc_drift` names: the entry documents' direct links, the README layout tree, each guide's audience, the limits guide's waivers and exit codes, and the upgrade guide's copier steps. `tests/integration/test_reference_drift.py`, also a pytest gate under `make verify` and `make test`, holds the two reference documents `doc_drift` names: the settings reference's rows equal every setting the tree reads, each with its literal default, and the feature catalogue's rows equal every feature the tree declares, each stating its limits and a Ships cell that copier.yml `_exclude` agrees with under every answer set copier.yml allows |
 | Requirement traceability (§17) | not a `check_structure.py` letter: `scripts/trace_requirements.py` (`make trace`, a `make verify` goal) and `tests/integration/test_requirement_traceability.py` (`make test`) fail when a requirement or numbered criterion a `kind: spec` document under `traceability.specs_root` defines is named by no `@pytest.mark.req` on a collected test and by no `traceability.gaps` row with a reason; a marker or gap naming no defined unit, a gap for a covered unit, an id under a prefix `traceability.id_prefixes` does not list, and zero requirements with no `traceability.no_requirements` reason are red too |
+| Exit helper (`docs/guides/python-style.md`) | not a `check_structure.py` letter: `tests/integration/test_exit_gate.py` (`make test`) reads every Python file's syntax tree and fails an exit written outside `scripts/exit_codes.py` (`sys.exit`, `os._exit`, an argparse `.exit(...)`, `raise SystemExit`, a SystemExit subclass, the builtins `exit` and `quit`, each of those reached through `builtins`, and an import that renames one), an entry block whose `finish(...)` is handed anything that cannot be read as an `ExitCode` member returned through `report(...)` or a wrapped tool's status returned through `passthrough(...)`, a returned name bound by anything but a plain assignment, an entry block that calls a function of its module and drops the value it returns, and a `report` or `fail` call with a missing or blank-literal message part or a code that is not a failure member; `scripts/exit_code_table.py --check` (`make check-exit-codes`, from `make check-all`) fails when the exit-code table in the `doc_drift.limits_guide` document is not what the enum and the scripts `make <doc_drift.gate_target>` runs say, in either direction. Neither sees an exit reached through `getattr`, `os.abort`, `os.kill` or an uncaught exception, argparse's own `--help` and usage exits, a status dropped by another callable (`asyncio.run(main())`), or whether a message part is useful |
 
 Missing `owner` is a warning, not a failure. If you change the scheme
 (KINDS / LAYERS / STATUSES / VISIBILITIES) or a check, update **both**
@@ -738,8 +739,9 @@ It is keyed **by layer/concern, never one global `language`**:
   top-level directory that ships), `roster` and `audiences` (the guide index,
   whose rows each name their readers from that vocabulary, in its order),
   `limits_guide` (the guide that names every waiver the checkers, the
-  child-process allowlist and this test grant, and every exit code of a script
-  that `make <gate_target>` runs) and `upgrade_guide` (the guide that gives every
+  child-process allowlist and this test grant, and holds the exit-code table
+  `scripts/exit_code_table.py` generates for every script `make <gate_target>`
+  runs) and `upgrade_guide` (the guide that gives every
   copier task and migration its own row in copier's order, names every
   exclusion and states the copier version floor; template only).
   The block also names the two reference documents, and

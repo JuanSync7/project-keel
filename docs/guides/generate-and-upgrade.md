@@ -8,7 +8,7 @@ tags: [copier, generate, update, migrations, adoption, guide]
 summary: How a project is generated from keel, what arrives and what never does, what `make new` refuses, how to adopt keel into an existing repository, and how `copier update` pulls template changes — with one checklist row per task and migration an update runs, and how to finish an update a migration stopped.
 id: docs-guides-generate-and-upgrade
 created: 2026-10-09
-updated: 2026-10-10
+updated: 2026-10-12
 visibility: internal
 canonical: true
 ---
@@ -162,8 +162,11 @@ three of them usually fail together:
   under `README.md`; edit that list, not the test, to drop a target;
 - it must carry the heading `doc_drift.layout_heading` names, `## Top-level
   layout`, over a fenced tree that names every shipping top-level directory;
-- the guide `doc_drift.limits_guide` names must give an exit-code row for each
-  of your own gate scripts that `make verify` reaches (`doc_drift.gate_target`).
+- the guide `doc_drift.limits_guide` names must hold the two marker lines
+  `<!-- exit-codes:begin -->` and `<!-- exit-codes:end -->`. `make exit-codes`
+  (`scripts/exit_code_table.py`) writes the exit-code tables between them,
+  with a row for each of your own gate scripts that `make verify` reaches
+  (`doc_drift.gate_target`); never write a row there by hand.
 
 ## Update
 
@@ -198,6 +201,39 @@ update: it runs a real `copier update` on a scratch copy of the project, judges
 the result, never writes the project, and names each edited file the update
 would delete. Inside a project, `make audit-project` prints that command.
 
+### Your own scripts end through the exit helper
+
+`tests/integration/test_exit_gate.py`, part of `make test`, reads every Python
+file the structure gate walks, and that includes the scripts you wrote. It
+fails, naming the file and line, a `sys.exit`, a `raise SystemExit`, an
+`os._exit`, the builtins `exit` and `quit`, and an argparse `.exit(...)`. No
+setting waives a file. A project whose scripts end on `sys.exit(main())` is
+therefore red after the update that brings `scripts/exit_codes.py`, until each
+script is moved:
+
+1. Import the helper by its bare name, with `scripts/` on `sys.path`:
+   `from exit_codes import ExitCode, finish, passthrough, report`.
+2. Make the entry line `finish(main())`.
+3. Return `ExitCode.SUCCESS` from `main` where it returned `0`, and
+   `report(ExitCode.<MEMBER>, <what failed>, <on which input>, <what to do next>)`
+   where it returned another number. Keep each number: the first generated
+   table in `limits-and-troubleshooting.md` gives every member's value.
+4. Return `passthrough(<status>)` where `main` returned the status of a tool
+   it ran.
+5. Call `fail(...)`, with the four arguments of `report`, where code outside
+   `main` called `sys.exit`.
+6. Give a module that has no status to report, such as an app's `__main__`,
+   a `main` that returns nothing, and leave its entry line as `main()`.
+7. Run `make exit-codes` when `make verify` runs the script, so the generated
+   table gains its row.
+
+The last stderr line of a failure is now `<what failed>: <on which input>;
+<what to do next>`, so a caller of yours that matched the old text of a keel
+script must match the new. To exit with a code the list does not hold, add a
+member to `ExitCode` in `scripts/exit_codes.py` and run `make exit-codes`. A
+later update that changes the same lines conflicts in that file, and
+`limits-and-troubleshooting.md` has the row for what you then see.
+
 ## Update checklist
 
 An update runs the steps below in this order. The task runs while copier renders
@@ -229,7 +265,9 @@ Every after-migration that is a script first checks the files it imports, and
 the fixed project files those modules declare reading (`PROJECT_READS`, read by
 `scripts/jobs/conflict_guard.py`), for conflict markers, and stops with exit 2
 naming each one and the command that finishes the update; copier runs no
-migration after it.
+migration after it. The one exception is a conflict in `scripts/exit_codes.py`
+itself: the migration names it the same way and then stops with exit 1 on the
+helper's `SyntaxError`, because the helper is what would have exited 2.
 
 ## Finish an update that stopped
 

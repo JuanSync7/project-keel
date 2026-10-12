@@ -17,6 +17,8 @@ import tokenize
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+from exit_codes import ExitCode, finish  # noqa: E402
+
 # Directories we never descend into.
 IGNORE_DIRS = {
     ".git",
@@ -377,14 +379,14 @@ def main(argv=None):
     if args.json:
         json.dump(findings, sys.stdout, indent=2, sort_keys=True)
         sys.stdout.write("\n")
-        return 0
+        return ExitCode.SUCCESS
 
     for loc in empty_pragmas:
         print("generic-solution: suppression with no reason at %s" % loc)
 
     if not findings:
         print("generic-solution: no hardcoded answer keys found.  (advisory)")
-        return 0
+        return ExitCode.SUCCESS
 
     print(
         "generic-solution: scanning for hardcoded answer keys "
@@ -408,8 +410,8 @@ def main(argv=None):
         "%d suppressed.  (advisory - a static check cannot prove code is generic; "
         "review, don't obey)" % (len(findings), len(files), suppressed)
     )
-    return 0
+    return ExitCode.SUCCESS
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    finish(main())

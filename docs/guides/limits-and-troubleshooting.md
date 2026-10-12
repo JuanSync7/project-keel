@@ -8,7 +8,7 @@ tags: [limits, waivers, exit-codes, troubleshooting, guide]
 summary: What adopting keel costs, the risks its rails leave open, the checks that pass by skipping, what no gate can see, every waiver a project may use, every exit code the gate's scripts return, and the symptom-to-fix list for the failures a newcomer meets first.
 id: docs-guides-limits-and-troubleshooting
 created: 2026-10-09
-updated: 2026-10-11
+updated: 2026-10-12
 visibility: internal
 canonical: true
 ---
@@ -18,7 +18,8 @@ canonical: true
 This guide says where keel stops. Read it before you adopt keel, and again when
 a gate refuses you. `tests/integration/test_doc_drift.py` holds two of its
 sections to the code: the waiver table names every waiver the checkers grant,
-and the exit-code table names every code a script in `make verify` returns.
+and the exit-code table is the one `scripts/exit_code_table.py` generates from
+the `ExitCode` enum and the scripts `make verify` runs.
 Every setting a gate reads, with its default and its valid values, is a row of
 the [settings reference](../reference/settings.md). Every feature, with its
 own limits, is a row of the [feature catalogue](../reference/features.md).
@@ -272,19 +273,59 @@ change to a template check upstream as an issue or a pull request.
 
 ## Exit codes
 
-The scripts `make verify` runs, and what each exit code means.
+Every keel script ends through `scripts/exit_codes.py`: `main` returns a member
+of its `ExitCode` enum and the entry line is `finish(main())`.
+`tests/integration/test_exit_gate.py` fails an exit written anywhere else.
+`scripts/exit_code_table.py` writes the two tables between the marker lines
+below. The first has one row per member, read from the enum. The second has one
+row per script `make verify` runs, read from what that script's `main` can
+return. `make exit-codes` regenerates both, and `make check-exit-codes`, a
+prerequisite of `make check-all`, fails when either is stale. Do not edit
+between the markers.
 
-| Script | Exit | Meaning |
-|--------|------|---------|
-| `scripts/check_structure.py` | 0, 1, 2 | 0: no error. 1: at least one error, each printed. 2: a bad `--root` |
-| `scripts/check_python_version.py` | 0, 1 | 0: the interpreter meets `requires-python`. 1: it does not, and the message names the floor |
-| `api/rest_fastapi/export_openapi.py` | 0, 1 | 0: the committed `openapi.json` matches the app, or FastAPI is absent. 1: it is stale or unreadable |
-| `scripts/agent_surface/generate_aad_schema.py` | 0, 1 | 0: the committed schema matches the model, or pydantic is absent. 1: it is stale or unreadable |
-| `scripts/jobs/check_corpus.py` | 0, 1 | 0: the corpus is well-formed and its build is reproducible. 1: it is not, and each error is printed |
-| `scripts/cdmon_sync.py` | 0, passes through | 0: cdmon or its config is absent. Otherwise cdmon's own code passes through |
-| `scripts/gate_evidence.py` | 0, 2, 3, 130, passes through | 0: every goal passed and the record is green. 2: refused before any goal ran: a malformed `--gate` or goal, zero goals, a bad `evidence` block, or a record path git does not ignore. 3: every goal passed but the record is red: zero tests, a failed or errored test in the junit report of a goal that exited 0, no junit report, the tree changed during the run, the checks could not run, or the writer crashed. 130: interrupted, and the red placeholder record stays. Otherwise the first failing goal's code passes through |
-| `scripts/run_evals.py` | 0, 1, 2, 3 | 0: every suite passed. 1: a suite failed: below `evals.threshold`, an errored case or a stale recording. 2: refused: a bad `evals` block, a malformed or empty dataset, a live run over `evals.live.max_calls`, a null or unknown `evals.live.model`, or an `evals.report_dir` git does not ignore. 3: the live backend is absent; the first case is `absent` and the rest `not-run` |
-| `scripts/trace_requirements.py` | 0, 1, 2 | 0: every unit is `covered` or a `traceability.gaps` row, and there is no finding. 1: at least one finding, each one stderr line: an `uncovered` unit, a marker or gap id that is malformed or undefined, an unreadable or unattached marker, a redundant gap, or zero requirements with no reason. 2: it could not judge: a bad `traceability` block, a path reached through a symlink, a `matrix_path` git does not ignore, a repository git cannot read, an unreadable schema, spec or test file, a spec line that does not parse, a document under the specs root that defines a requirement without `kind: spec`, or a collection rule pytest could not give; or it could not write the matrix at `traceability.matrix_path` |
+<!-- exit-codes:begin -->
+| Exit | Name | Meaning | What to do |
+|------|------|---------|------------|
+| 0 | `SUCCESS` | it ran and found nothing wrong, or it skipped and said why | nothing |
+| 1 | `FAILURE` | it ran and the answer is no: a check found something, or the work did not succeed | read the last stderr line, fix what it names, and run it again |
+| 2 | `USAGE` | it refused before judging: wrong usage, bad config, or an input it could not read | correct the call or the input the last stderr line names, and run it again |
+| 3 | `UNAVAILABLE` | it ran to the end, and a result it needs is missing or cannot be trusted | read the last stderr line for what is missing, supply it, and run it again |
+| 130 | `INTERRUPTED` | it was interrupted before it finished | run it again; what it had written so far is not a result |
+
+| Script | Exit |
+|--------|------|
+| `api/rest_fastapi/export_openapi.py` | 0, 1 |
+| `scripts/agent_surface/generate_aad_schema.py` | 0, 1 |
+| `scripts/cdmon_sync.py` | 0, passes through |
+| `scripts/check_python_version.py` | 0, 1 |
+| `scripts/check_structure.py` | 0, 1, 2 |
+| `scripts/exit_code_table.py` | 0, 1, 2 |
+| `scripts/gate_evidence.py` | 0, 2, 3, 130, passes through |
+| `scripts/jobs/check_corpus.py` | 0, 1 |
+| `scripts/run_evals.py` | 0, 1, 2, 3 |
+| `scripts/trace_requirements.py` | 0, 1, 2 |
+<!-- exit-codes:end -->
+
+A failing script's last stderr line has three parts: `<what failed>: <on which
+input>; <what to do next>`. `scripts/exit_codes.py` `report` refuses a blank
+part. `passes through` means the script exits with the status of the tool it
+wraps, which need not be a row of the first table.
+
+The table below is written by hand and no test compares it with the code. It
+says when each script returns each code.
+
+| Script | When |
+|--------|------|
+| `api/rest_fastapi/export_openapi.py` | 0: the committed `openapi.json` matches the app, or FastAPI is absent. 1: it is stale or unreadable |
+| `scripts/agent_surface/generate_aad_schema.py` | 0: the committed schema matches the model, or pydantic is absent. 1: it is stale or unreadable |
+| `scripts/cdmon_sync.py` | 0: cdmon or its config is absent. Otherwise cdmon's own code passes through |
+| `scripts/check_python_version.py` | 0: the interpreter meets `requires-python`. 1: it does not, and the message names the floor |
+| `scripts/check_structure.py` | 0: no error. 1: at least one error, each printed. 2: a bad `--root` |
+| `scripts/exit_code_table.py` | 0: the exit-code table between the markers is current. 1: it is stale, and each differing row is one stderr line. 2: it could not build the table: a missing or repeated marker, a bad `doc_drift` block, a guide reached through a symlink, or a script whose returns it cannot read |
+| `scripts/gate_evidence.py` | 0: every goal passed and the record is green. 2: refused before any goal ran: a malformed `--gate` or goal, zero goals, a bad `evidence` block, or a record path git does not ignore. 3: every goal passed but the record is red: zero tests, a failed or errored test in the junit report of a goal that exited 0, no junit report, the tree changed during the run, the checks could not run, or the writer crashed. 130: interrupted, and the red placeholder record stays. Otherwise the first failing goal's code passes through |
+| `scripts/jobs/check_corpus.py` | 0: the corpus is well-formed and its build is reproducible. 1: it is not, and each error is printed |
+| `scripts/run_evals.py` | 0: every suite passed. 1: a suite failed: below `evals.threshold`, an errored case or a stale recording. 2: refused: a bad `evals` block, a malformed or empty dataset, a live run over `evals.live.max_calls`, a null or unknown `evals.live.model`, or an `evals.report_dir` git does not ignore. 3: the live backend is absent; the first case is `absent` and the rest `not-run` |
+| `scripts/trace_requirements.py` | 0: every unit is `covered` or a `traceability.gaps` row, and there is no finding. 1: at least one finding, each one stderr line: an `uncovered` unit, a marker or gap id that is malformed or undefined, an unreadable or unattached marker, a redundant gap, or zero requirements with no reason. 2: it could not judge: a bad `traceability` block, a path reached through a symlink, a `matrix_path` git does not ignore, a repository git cannot read, an unreadable schema, spec or test file, a spec line that does not parse, a document under the specs root that defines a requirement without `kind: spec`, or a collection rule pytest could not give; or it could not write the matrix at `traceability.matrix_path` |
 
 Three more codes come from the tools around these scripts:
 
@@ -308,6 +349,7 @@ Three more codes come from the tools around these scripts:
 | `make new` refuses | no `DEST`, the template is not a git checkout, or its tree is dirty | see `generate-and-upgrade.md`; `ALLOW_DIRTY=1` overrides the dirty tree only |
 | a test target exits 5 | it selected zero tests | add tests, or name its marker in `make_targets.empty_test_selections` |
 | `copier update` stops with exit 2 naming files | a migration found conflict markers in a file it imports, or in a fixed project file one of its modules declares reading (`config/project.json`, the `Makefile`) | resolve each named file, then run the command the message prints: under an update it is `<python> scripts/jobs/finish_update.py`, which runs the migrations copier never reached |
+| a migration names `scripts/exit_codes.py` as conflicted and then stops with exit 1 on a `SyntaxError` traceback, or `scripts/check_structure.py` stops on that traceback alone | the conflicted file is the exit helper itself, which every script imports to end with a chosen status, so nothing can exit 2; a project that added its own `ExitCode` member is the one an update conflicts here | resolve the hunk in `scripts/exit_codes.py`, keeping your members and the template's, run `make exit-codes`, then run the command the refusal line prints |
 | a command stops with `config/project.json holds a merge-conflict hunk at line N` | an update left the manifest conflicted, so `scripts/child_env.py` has no allowlist and lets no child start | resolve the hunk, then finish the update as `generate-and-upgrade.md` says |
 | a job stops on `Expecting property name enclosed in double quotes` after `copier update` | the update went to a template release whose migrations read `config/project.json` without checking it for conflict markers, and the manifest was conflicted; copier ran no later migration, and that release has no `scripts/jobs/finish_update.py` | resolve the file and `git add` it; copy `scripts/jobs/finish_update.py` from a newer keel checkout into the project, run `python scripts/jobs/finish_update.py --template <that keel checkout>`, delete the copied script (that release's `scripts/jobs/README.md` roster does not name it, so `check_structure.py` fails on it), then review and commit. On a release that has the check, the same conflict stops with the refusal row above instead, and `tests/integration/test_copier_job_conflict_refusal.py` keeps it so |
 | `copier update` refuses the ref you named | it is older than the project's recorded `_commit` | update to a newer tag ([ADR-K-0009](../adr/keel/K-0009-release-identity-and-the-tag-ordering-rule.md)) |

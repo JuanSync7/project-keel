@@ -53,6 +53,7 @@ if __name__ == "__main__":
 
 import child_env  # noqa: E402
 import review_docs  # noqa: E402
+from exit_codes import ExitCode, finish, report  # noqa: E402
 
 # The closed vocabulary of outcomes. RESOLVED is the only one that writes.
 RESOLVED = "resolved"
@@ -363,16 +364,27 @@ def main(argv=None):
     try:
         resolved, left, failed = run(root)
     except JobError as e:
-        sys.stderr.write("resolve_stamp_conflicts: %s\n" % e)
-        return 2
+        return report(
+            ExitCode.USAGE,
+            "resolve_stamp_conflicts: cannot read the update's conflicts",
+            str(e),
+            "fix what it names, then finish the update",
+        )
     if not args.quiet and (resolved or left or failed):
         sys.stderr.write("resolved %d stamp-only conflict(s)\n" % len(resolved))
     for rel, reason in left:
         sys.stderr.write("left %s: %s\n" % (rel, reason))
     for message in failed:
         sys.stderr.write("resolve_stamp_conflicts: %s\n" % message)
-    return 2 if failed else 0
+    if not failed:
+        return ExitCode.SUCCESS
+    return report(
+        ExitCode.USAGE,
+        "resolve_stamp_conflicts: a stamp-only conflict could not be resolved",
+        "%d file(s), each named above" % len(failed),
+        "resolve each by hand, then finish the update",
+    )
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    finish(main())

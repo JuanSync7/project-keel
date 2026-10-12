@@ -697,6 +697,21 @@
         "test:tests/integration/test_work_trailers.py"
       ]
     }
+,
+    {
+      "id": "exit-through-the-helper",
+      "row": 41,
+      "scope": "universal",
+      "tier": "gate",
+      "status": "on",
+      "title": "A process ends through one helper, with a code from one closed list and a message in three parts",
+      "mechanism": "tests/integration/test_exit_gate.py -- every Python file's syntax tree: an exit outside scripts/exit_codes.py (sys.exit, os._exit, an argparse .exit, raise SystemExit, exit, quit) is red, an entry block ends on finish(main()) with main returning an ExitCode member through report(member, what failed, on which input, what to do next) or a wrapped tool's status through passthrough, and a missing or blank-literal message part is red; scripts/exit_code_table.py --check (make check-exit-codes) holds the generated exit-code table in docs/guides/limits-and-troubleshooting.md to the enum in both directions",
+      "subject": "code",
+      "enforced_by": [
+        "test:tests/integration/test_exit_gate.py",
+        "make:check-exit-codes"
+      ]
+    }
   ],
   "tokens": {
     "_comment": "DATA the future AST checks/advisories match against. Listing a vendor's class name here is data, not a baked-in dependency — the checks stay vendor-neutral by reading this list (CONVENTIONS section 18). Extend per project.",

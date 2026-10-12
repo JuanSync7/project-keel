@@ -32,6 +32,9 @@ for _dir in (_SCRIPTS, os.path.join(_SCRIPTS, "jobs")):
 import check_structure  # noqa: E402
 import child_env  # noqa: E402
 import conflict_guard  # noqa: E402
+
+# The module, not its names: `report` here is the audit's own result.
+import exit_codes  # noqa: E402
 import keep_edited_retired  # noqa: E402
 import restamp_docs  # noqa: E402
 import review_docs  # noqa: E402
@@ -1587,38 +1590,65 @@ def main(argv=None):
     try:
         _extras()
     except ImportError as exc:
-        print("audit_project: %s: %s" % (EXTRA_HINT, exc), file=sys.stderr)
-        return 2
+        return exit_codes.report(
+            exit_codes.ExitCode.USAGE,
+            "audit_project: an optional dependency is missing",
+            str(exc),
+            EXTRA_HINT,
+        )
     try:
         today = review_docs.resolve_today(args.today, os.environ)
     except review_docs.DateSourceError as exc:
-        print("audit_project: %s" % exc, file=sys.stderr)
-        return 2
+        return exit_codes.report(
+            exit_codes.ExitCode.USAGE,
+            "audit_project: cannot tell what today is",
+            str(exc),
+            "pass --today YYYY-MM-DD, or correct SOURCE_DATE_EPOCH",
+        )
 
     dest = os.path.realpath(args.dest)
     if not os.path.isdir(dest):
-        print("audit_project: DEST %s is not a directory" % args.dest, file=sys.stderr)
-        return 2
-    if dest == os.path.realpath(TEMPLATE):
-        print(
-            "audit_project: DEST %s is the template itself; audit a project "
-            "generated from it" % args.dest,
-            file=sys.stderr,
+        return exit_codes.report(
+            exit_codes.ExitCode.USAGE,
+            "audit_project: DEST is not a directory",
+            args.dest,
+            "name the directory of a keel project",
         )
-        return 2
+    if dest == os.path.realpath(TEMPLATE):
+        return exit_codes.report(
+            exit_codes.ExitCode.USAGE,
+            "audit_project: DEST is the template itself",
+            args.dest,
+            "audit a project generated from it",
+        )
     try:
         report = audit(dest, today)
     except _Refusal as exc:
-        print("audit_project: %s is not a keel project:" % args.dest, file=sys.stderr)
-        for problem in exc.problems:
-            print("  - %s" % problem, file=sys.stderr)
-        return 2
+        return exit_codes.report(
+            exit_codes.ExitCode.USAGE,
+            "audit_project: DEST is not a keel project",
+            "%s (%s)" % (args.dest, "; ".join(exc.problems)),
+            "name a project generated from this template",
+        )
     except AuditError as exc:
-        print("audit_project: %s" % exc, file=sys.stderr)
-        return 2
+        return exit_codes.report(
+            exit_codes.ExitCode.USAGE,
+            "audit_project: the audit could not be completed",
+            str(exc),
+            "fix what it names and run the audit again",
+        )
     sys.stdout.write(render_json(report) if args.json else render_text(report))
-    return report["exit"]
+    summary = report["summary"]
+    if not report["exit"]:
+        return exit_codes.ExitCode.SUCCESS
+    return exit_codes.report(
+        exit_codes.ExitCode.FAILURE,
+        "audit_project: the project owes work once the update has landed",
+        "%s (%d owed error(s) over %d file(s) seen)"
+        % (args.dest, summary["errors"], summary["files_seen"]),
+        "fix each finding the report marks owed, then audit again",
+    )
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    exit_codes.finish(main())

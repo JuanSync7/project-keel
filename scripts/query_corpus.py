@@ -15,6 +15,9 @@ import re
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+from exit_codes import ExitCode, finish  # noqa: E402
+
 DEFAULT_CORPUS = os.path.join("wiki", "corpus.json")
 _WORD_RE = re.compile(r"[A-Za-z][A-Za-z0-9_]{1,}")
 
@@ -124,14 +127,14 @@ def main(argv=None) -> int:
     )
     if not os.path.exists(path):
         print("[]")  # graceful: empty retrieval when no corpus yet
-        return 0
+        return ExitCode.SUCCESS
     with open(path, encoding="utf-8") as fh:
         corpus = json.load(fh)
     hits = query(corpus, args.question, max_nodes=args.max_nodes)
     json.dump(hits, sys.stdout, indent=2, sort_keys=True)
     sys.stdout.write("\n")
-    return 0
+    return ExitCode.SUCCESS
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    finish(main())

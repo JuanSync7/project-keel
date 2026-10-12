@@ -32,6 +32,7 @@ _SHIPPED = (
     "scripts/jobs/conflict_guard.py",
     "scripts/jobs/review_docs.py",
     "scripts/child_env.py",
+    "scripts/exit_codes.py",
     "config/project.json",
 )
 
@@ -290,7 +291,10 @@ def test_a_failing_step_stops_the_run_and_is_named(tmp_path):
     r = _finish(project, env)
     assert r.returncode == 2, r.stdout + r.stderr
     assert "step says no" in r.stderr
-    assert "finish_update: step 2 of 3 exited 3: " in r.stderr, r.stderr
+    last = r.stderr.splitlines()[-1]
+    assert last.startswith("finish_update: the update was not finished: "), last
+    assert "step 2 of 3 exited 3: " in last, last
+    assert last.endswith("; fix what it names, then run this command again"), last
     assert _read(project, "out/a.txt") == "sweet\n"
     assert not (project / "out" / "late.txt").exists()
 

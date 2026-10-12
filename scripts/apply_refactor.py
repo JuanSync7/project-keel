@@ -20,6 +20,7 @@ from collections.abc import Callable, Sequence
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import run_make_target  # noqa: E402 — the read-only gate runner; tests patch it here
+from exit_codes import ExitCode, finish, report  # noqa: E402
 
 # gate_runner(gate, cwd, timeout) -> (ok, combined_output)
 GateRunner = Callable[[str, str, int], "tuple[bool, str]"]
@@ -202,30 +203,37 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.json:
             json.dump({"error": str(exc)}, sys.stdout, indent=2, sort_keys=True)
             sys.stdout.write("\n")
-        else:
-            sys.stderr.write("apply_refactor: %s\n" % exc)
-        return 2
+        return report(
+            ExitCode.USAGE,
+            "apply_refactor: the edit spec was refused and nothing was changed",
+            str(exc),
+            "correct the spec and run it again",
+        )
 
+    # Joined once so the pragma sits ON the line it silences: `ruff format`
+    # carried both of these off their expressions during the corpus
+    # reformat, and RUF100 is deferred, so nothing reported the orphans.
+    files = ", ".join(result["files"])  # type: ignore[arg-type]
     if args.json:
         json.dump(result, sys.stdout, indent=2, sort_keys=True)
         sys.stdout.write("\n")
+    elif result.get("dry_run"):
+        sys.stdout.write("apply_refactor: would edit %s\n" % files)
     else:
-        # Joined once so the pragma sits ON the line it silences: `ruff format`
-        # carried both of these off their expressions during the corpus
-        # reformat, and RUF100 is deferred, so nothing reported the orphans.
-        files = ", ".join(result["files"])  # type: ignore[arg-type]
-        if result.get("dry_run"):
-            sys.stdout.write("apply_refactor: would edit %s\n" % files)
-        else:
-            verb = "applied" if result["applied"] else "ROLLED BACK (gate failed)"
-            sys.stdout.write(
-                "apply_refactor: %s [%s] gate=%s -> %s\n"
-                % (files, result["practice"], result["gate"], verb)
-            )
-    if result.get("dry_run"):
-        return 0
-    return 0 if result["applied"] else 1
+        verb = "applied" if result["applied"] else "ROLLED BACK (gate failed)"
+        sys.stdout.write(
+            "apply_refactor: %s [%s] gate=%s -> %s\n"
+            % (files, result["practice"], result["gate"], verb)
+        )
+    if result.get("dry_run") or result["applied"]:
+        return ExitCode.SUCCESS
+    return report(
+        ExitCode.FAILURE,
+        "apply_refactor: the gate failed and every edit was rolled back",
+        "`make %s` after editing %s" % (result["gate"], files),
+        "read the gate's output, correct the spec and run it again",
+    )
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    finish(main())

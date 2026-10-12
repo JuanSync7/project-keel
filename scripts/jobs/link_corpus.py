@@ -17,6 +17,10 @@ import os
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.join(ROOT, "scripts"))
+
+from exit_codes import ExitCode, finish  # noqa: E402
+
 DEFAULT_CORPUS = os.path.join("wiki", "corpus.json")
 
 
@@ -91,7 +95,7 @@ def main(argv=None) -> int:
     )
     if not os.path.exists(path):
         print("no corpus at %s; run build_corpus.py first (skipping)." % args.corpus)
-        return 0
+        return ExitCode.SUCCESS
     with open(path, encoding="utf-8") as fh:
         corpus = json.load(fh)
     link_corpus(corpus, max_links=args.max_links)
@@ -103,8 +107,8 @@ def main(argv=None) -> int:
         "linked %s: %d edges across %d nodes"
         % (args.corpus, edges, len(corpus.get("nodes", [])))
     )
-    return 0
+    return ExitCode.SUCCESS
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    finish(main())

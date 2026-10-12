@@ -14,6 +14,9 @@ import os
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+from exit_codes import ExitCode, finish  # noqa: E402
+
 DEFAULT_CORPUS = os.path.join("wiki", "corpus.json")
 
 
@@ -38,7 +41,7 @@ def main(argv=None) -> int:
     )
     if not os.path.exists(path):
         print("no corpus at %s; run build_corpus.py first." % args.corpus)
-        return 0
+        return ExitCode.SUCCESS
     with open(path, encoding="utf-8") as fh:
         corpus = json.load(fh)
     gaps = unowned(corpus)
@@ -53,13 +56,13 @@ def main(argv=None) -> int:
             sort_keys=True,
         )
         sys.stdout.write("\n")
-        return 0
+        return ExitCode.SUCCESS
     total = len(corpus.get("nodes", []))
     print("accountability: %d of %d nodes have no resolved owner" % (len(gaps), total))
     for n in sorted(gaps, key=lambda n: n["node_id"]):
         print("  %-9s %s  (%s)" % (n["kind"], n["node_id"], n["path"]))
-    return 0
+    return ExitCode.SUCCESS
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    finish(main())

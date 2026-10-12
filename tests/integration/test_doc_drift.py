@@ -24,6 +24,7 @@ sys.path.insert(0, str(_ROOT / "scripts"))
 sys.path.insert(0, str(_ROOT / "scripts" / "jobs"))
 
 import check_structure as cs  # noqa: E402
+import exit_code_table  # noqa: E402
 import review_docs  # noqa: E402
 import traceability  # noqa: E402
 from child_env import build_child_env  # noqa: E402
@@ -646,111 +647,20 @@ def waiver_findings(guide, text, waivers):
     ]
 
 
-def _int_constants(node, named=None):
-    """The int literals *node* can evaluate to: a literal, a name *named*
-    maps to its literals, or either branch of a conditional expression.
-    Anything else yields none."""
-    if isinstance(node, ast.Constant) and type(node.value) is int:
-        return {node.value}
-    if isinstance(node, ast.Name):
-        return set((named or {}).get(node.id, ()))
-    if isinstance(node, ast.IfExp):
-        return _int_constants(node.body, named) | _int_constants(node.orelse, named)
-    return set()
-
-
-def _assign_ints(node, assigned):
-    """Record into *assigned* the int literals an assignment gives each name:
-    `a = 1`, and `a, b = 1, 2` pairwise when both sides are same-length tuples."""
-    for target in node.targets:
-        if isinstance(target, ast.Name):
-            assigned.setdefault(target.id, set()).update(
-                _int_constants(node.value, assigned)
-            )
-        elif (
-            isinstance(target, ast.Tuple)
-            and isinstance(node.value, ast.Tuple)
-            and len(target.elts) == len(node.value.elts)
-        ):
-            for name, value in zip(target.elts, node.value.elts, strict=True):
-                if isinstance(name, ast.Name):
-                    assigned.setdefault(name.id, set()).update(
-                        _int_constants(value, assigned)
-                    )
-
-
-def _own_nodes(func):
-    """Every node of *func*'s body, not descending into a nested function."""
-    stack = list(func.body)
-    while stack:
-        node = stack.pop()
-        yield node
-        stack.extend(
-            child
-            for child in ast.iter_child_nodes(node)
-            if not isinstance(
-                child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)
-            )
-        )
-
-
-def _is_exit(func):
-    return (isinstance(func, ast.Name) and func.id == "SystemExit") or (
-        isinstance(func, ast.Attribute) and func.attr == "exit"
-    )
-
-
-def exit_codes(path):
-    """(codes, passes_through) for the script at *path*: the int literals its
-    `main` returns (through a name, the literals assigned to that name in
-    `main` or at module level) and every int literal handed to `sys.exit`,
-    `SystemExit` or an argparse `.exit`. A `main` that returns a call's or an
-    attribute's value passes a child's code through."""
-    tree = ast.parse(Path(path).read_text(encoding="utf-8"))
-    codes, passes = set(), False
-    main = next(
-        (n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "main"),
-        None,
-    )
-    if main is not None:
-        assigned = {}
-        nodes = list(_own_nodes(main))
-        for node in tree.body + nodes:
-            if isinstance(node, ast.Assign):
-                _assign_ints(node, assigned)
-        for node in nodes:
-            if not isinstance(node, ast.Return) or node.value is None:
-                continue
-            if isinstance(node.value, (ast.Call, ast.Attribute)):
-                passes = True
-            else:
-                codes |= _int_constants(node.value, assigned)
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Call) and _is_exit(node.func) and node.args:
-            codes |= _int_constants(node.args[0])
-    return codes, passes
+def exit_codes(path, root=_ROOT):
+    """(codes, passes_through) for the script at *path*, by the ExitCode enum
+    of *root*. scripts/exit_code_table.py is the one reader of what a script
+    can exit with; this gate and the generated table share it."""
+    return exit_code_table.exit_codes(path, root)
 
 
 def gate_scripts(root, target):
     """Every `*.py` a recipe reachable from make *target* runs. A makefile
-    this gate cannot read fully is a finding, never a smaller set."""
-    warns = []
-    makefiles = cs.walk_makefiles(str(root), warns.append)
-    if warns:
-        raise DocDriftConfigError("; ".join(warns))
-    if not makefiles:
-        raise DocDriftConfigError("no Makefile -- zero items")
-    rules = cs._make_rules("\n".join(text for _path, text in makefiles))
-    if target not in rules:
-        raise DocDriftConfigError("the Makefile has no `%s` target" % target)
-    unresolved = []
-    scripts = cs._scripts_reachable_from(rules, target, unresolved)
-    if unresolved:
-        raise DocDriftConfigError(
-            "`make %s` reaches `$(MAKE)` call(s) this gate cannot follow: %s"
-            % (target, "; ".join(unresolved))
-        )
-    return sorted(scripts)
+    the reader cannot read fully is a finding, never a smaller set."""
+    try:
+        return exit_code_table.gate_scripts(root, target)
+    except exit_code_table.TableError as exc:
+        raise DocDriftConfigError(str(exc)) from exc
 
 
 def _code_cell_findings(guide, cell, script, codes, passes):
@@ -799,7 +709,7 @@ def exit_code_findings(guide, text, root, scripts):
                 "%s: the gate runs %s, which does not exist" % (guide, script)
             )
             continue
-        codes, passes = exit_codes(path)
+        codes, passes = exit_codes(path, root)
         if not codes and not passes:
             findings.append("%s: no exit code derived -- zero items" % script)
             continue
@@ -958,7 +868,7 @@ def checklist_findings(guide, table, root, inventory):
         for item in items:
             if item not in inventory["scripts"]:
                 continue
-            codes, passes = exit_codes(Path(root) / item)
+            codes, passes = exit_codes(Path(root) / item, root)
             if not codes and not passes:
                 findings.append("%s: no exit code derived -- zero items" % item)
             findings.extend(_code_cell_findings(guide, cell, item, codes, passes))
@@ -1282,7 +1192,12 @@ def test_removing_a_waiver_or_an_exit_code_from_the_limits_guide_reds_it(
             return exit_code_findings(guide, t, _ROOT, scripts)
 
         lines = text.split("\n")
-        rows = [i for i, ln in enumerate(lines) if ln.startswith("| `%s` |" % target)]
+        # The generated table's row, not the hand-written one below the region.
+        begin = lines.index(exit_code_table.BEGIN)
+        end = lines.index(exit_code_table.END)
+        rows = [
+            i for i in range(begin, end) if lines[i].startswith("| `%s` |" % target)
+        ]
         assert len(rows) == 1, rows
         cells = lines[rows[0]].split("|")
         cells[2] = re.sub(r",?\s*\b2\b", "", cells[2])
@@ -1295,24 +1210,36 @@ def test_removing_a_waiver_or_an_exit_code_from_the_limits_guide_reds_it(
     assert target in findings[0], findings
 
 
-def test_exit_codes_follows_a_named_code_and_reads_no_code_from_an_unknown_name(
+def test_exit_codes_follows_a_named_member_and_reads_no_code_from_an_unknown_name(
     tmp_path,
 ):
-    """A script that names its exit codes at module level is read through the
-    names, tuple assignment included; a returned name nothing assigns yields no
-    code, which exit_code_findings reports as zero items rather than passing."""
+    """A script is read through the names it binds its members to; a returned
+    name nothing binds, or an int literal, yields no code, which
+    exit_code_findings reports as zero items rather than passing."""
     script = tmp_path / "named.py"
+    head = "from exit_codes import ExitCode, passthrough, report\n"
     script.write_text(
-        "OK, BAD = 0, 1\nREFUSED = 2\n"
-        "def main(flag):\n"
-        "    if flag:\n        return REFUSED\n"
-        "    return OK if flag is None else BAD\n"
+        head + "def main(flag):\n"
+        "    code = report(ExitCode.USAGE, 'a', 'b', 'c')\n"
+        "    if flag:\n        return code\n"
+        "    kind = ExitCode.FAILURE if flag is None else ExitCode.UNAVAILABLE\n"
+        "    if flag == 0:\n        return report(kind, 'a', 'b', 'c')\n"
+        "    return ExitCode.SUCCESS\n"
     )
-    assert exit_codes(script) == ({0, 1, 2}, False)
-    script.write_text("def main():\n    return UNKNOWN\n")
+    assert exit_codes(script) == ({0, 2}, False)
+    script.write_text(
+        head + "def main(flag):\n"
+        "    return report(\n"
+        "        ExitCode.FAILURE if flag else ExitCode.UNAVAILABLE, 'a', 'b', 'c'\n"
+        "    )\n"
+    )
+    assert exit_codes(script) == ({1, 3}, False)
+    script.write_text(head + "def main():\n    return UNKNOWN\n")
     assert exit_codes(script) == (set(), False)
-    script.write_text("def main():\n    code = 3\n    return code\n")
-    assert exit_codes(script) == ({3}, False)
+    script.write_text(head + "def main():\n    code = 3\n    return code\n")
+    assert exit_codes(script) == (set(), False)
+    script.write_text(head + "def main(child):\n    return passthrough(child)\n")
+    assert exit_codes(script) == (set(), True)
 
 
 # --- rule (d): the upgrade guide (template only) ----------------------------------

@@ -43,6 +43,7 @@ from check_structure import (  # noqa: E402
     _resolve_link,
     _unfenced_lines,
 )
+from exit_codes import ExitCode, finish, report  # noqa: E402
 
 # A backticked span that is a repository path, not a phrase: slashes or a code
 # or doc suffix, no spaces. `docs/guides/x.md`, `scripts/`, `src/thing.py`.
@@ -647,8 +648,12 @@ def main(argv=None) -> int:
     corpus = build_corpus(args.root)
     dups = _duplicate_ids(corpus["nodes"])
     if dups:  # node_id is the corpus primary key — fail loudly, never silently collapse
-        sys.stderr.write("ERROR build_corpus: duplicate node_id(s): %s\n" % dups)
-        return 1
+        return report(
+            ExitCode.FAILURE,
+            "build_corpus: two nodes share a node_id, the corpus's primary key",
+            ", ".join(dups),
+            "give each its own id, then build again; nothing was written",
+        )
     out = args.out if os.path.isabs(args.out) else os.path.join(args.root, args.out)
     os.makedirs(os.path.dirname(out), exist_ok=True)
     with open(out, "w", encoding="utf-8") as fh:
@@ -660,8 +665,8 @@ def main(argv=None) -> int:
         "wrote %s: %d nodes (%d summary gaps, %d unowned)"
         % (_rel(out, args.root), len(corpus["nodes"]), gaps, unowned)
     )
-    return 0
+    return ExitCode.SUCCESS
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    finish(main())

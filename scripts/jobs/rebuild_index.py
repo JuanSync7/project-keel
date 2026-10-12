@@ -16,6 +16,9 @@ import os
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.join(ROOT, "scripts"))
+
+from exit_codes import ExitCode, finish  # noqa: E402
 
 
 def _title_of(md_path: str) -> str:
@@ -64,8 +67,8 @@ def main(argv: list[str] | None = None) -> int:
         with open(args.out, "w", encoding="utf-8") as fh:
             fh.write(index)
         print("wrote %s" % args.out)
-    return 0
+    return ExitCode.SUCCESS
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    finish(main())

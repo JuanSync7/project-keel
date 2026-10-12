@@ -16,9 +16,9 @@ import argparse
 import os
 import shutil
 import subprocess
-import sys
 
 import child_env
+from exit_codes import ExitCode, finish, passthrough
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_CONFIG = os.path.join("config", "cdmon", "cdmon.yaml")
@@ -42,18 +42,21 @@ def main(argv=None) -> int:
     if shutil.which("cdmon") is None:
         # No-op so the hook/CI stays green where cdmon isn't installed.
         print("cdmon not installed; skipping (install it to enable drift checks).")
-        return 0
+        return ExitCode.SUCCESS
     if not os.path.exists(os.path.join(ROOT, args.config)):
         print(f"no cdmon config at {args.config}; skipping.")
-        return 0
+        return ExitCode.SUCCESS
 
     mode = "lint" if args.check else args.mode
-    return subprocess.run(
-        ["cdmon", mode, "--config", args.config],
-        cwd=ROOT,
-        env=child_env.build_child_env(),
-    ).returncode
+    # cdmon's own status is the answer: this wrapper adds no judgement to it.
+    return passthrough(
+        subprocess.run(
+            ["cdmon", mode, "--config", args.config],
+            cwd=ROOT,
+            env=child_env.build_child_env(),
+        ).returncode
+    )
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    finish(main())

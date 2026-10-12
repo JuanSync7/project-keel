@@ -20,6 +20,7 @@ _ROOT = os.path.dirname(_HERE)
 
 sys.path.insert(0, _HERE)
 from check_structure import composition_root  # noqa: E402
+from exit_codes import ExitCode, finish, passthrough, report  # noqa: E402
 
 del sys.path[0]
 
@@ -27,6 +28,8 @@ _ABSENT = (
     'config/project.json layers.app is not declared; declare {"path","module"} or null'
 )
 _NULL = "no composition root declared (layers.app is null)"
+# A process's exit status is one byte.
+_STATUS_BITS = 0xFF
 _USAGE = """usage: run_app.py [-h] [--] [ARG ...]
 
 Run the composition root config/project.json layers.app declares (its
@@ -40,8 +43,25 @@ is -h, --help or --; any other first argument is passed through as it is.
 
 
 def _refuse(message):
-    sys.stderr.write("run_app: %s\n" % message)
-    return 2
+    return report(
+        ExitCode.USAGE,
+        "run_app: no composition root to run",
+        message,
+        'declare config/project.json layers.app as {"path", "module"}',
+    )
+
+
+def _app_status(code):
+    """The exit status Python gives a SystemExit carrying *code*: none is 0, an
+    int is its low eight bits, and anything else is printed to stderr and is 1."""
+    if code is None:
+        return 0
+    if type(code) is int:
+        # The app ran in this process, so a negative code is not a child
+        # killed by a signal, which is how `passthrough` would read it.
+        return code & _STATUS_BITS
+    sys.stderr.write("%s\n" % (code,))
+    return 1
 
 
 def main(argv=None, root=None):
@@ -50,7 +70,7 @@ def main(argv=None, root=None):
     argv = sys.argv[1:] if argv is None else list(argv)
     if argv and argv[0] in ("-h", "--help"):
         sys.stdout.write(_USAGE)
-        return 0
+        return ExitCode.SUCCESS
     if argv and argv[0] == "--":
         argv = argv[1:]
     with open(os.path.join(root, "config", "project.json"), encoding="utf-8") as fh:
@@ -71,10 +91,13 @@ def main(argv=None, root=None):
     sys.path.insert(0, import_root)
     module = app["module"]
     sys.argv = [module] + argv
-    # A SystemExit the module raises propagates: its code is the process's.
-    runpy.run_module(module, run_name="__main__", alter_sys=True)
-    return 0
+    try:
+        runpy.run_module(module, run_name="__main__", alter_sys=True)
+    except SystemExit as stop:
+        # The app's own status is the process's: this launcher adds no verdict.
+        return passthrough(_app_status(stop.code))
+    return ExitCode.SUCCESS
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    finish(main())

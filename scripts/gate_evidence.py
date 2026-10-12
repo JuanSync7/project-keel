@@ -30,6 +30,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import check_structure  # noqa: E402 — the one owner of the check list
 import child_env  # noqa: E402 — the environment every goal inherits
 import git_tree  # noqa: E402 — the one definition of what git lists
+from exit_codes import ExitCode, finish, passthrough, report  # noqa: E402
 
 _MANIFEST = os.path.join("config", "project.json")
 # The gate names the record's file, so it may never climb out of evidence.dir.
@@ -57,9 +58,6 @@ _DRY_LETTERS = "nqt"
 # sub-make handed them would warn and run serially anyway.
 _JOBSERVER = ("--jobserver-auth=", "--jobserver-fds=")
 # The record's exit when every goal passed but the evidence is red.
-_RED_EVIDENCE = 3
-_REFUSED = 2
-_INTERRUPTED = 130
 
 
 class EvidenceConfigError(Exception):
@@ -342,17 +340,21 @@ def _sum_counts(targets):
     }
 
 
-def _exit_status(code):
-    # A goal killed by a signal reports -N; the shell's spelling is 128+N, and a
-    # negative status would wrap to a value that hides the signal.
-    return 128 - code if code < 0 else code
-
-
-def _exit_code(targets, result):
+def _exit_code(targets, result, where):
+    """The status the run ends with: the first failing goal's own, else
+    SUCCESS for a green record, else UNAVAILABLE, with *where* naming the
+    record that is red."""
     for target in targets or ():
         if target["result"] == "fail":
-            return _exit_status(target["returncode"])
-    return 0 if result == "pass" else _RED_EVIDENCE
+            return passthrough(target["returncode"])
+    if result == "pass":
+        return ExitCode.SUCCESS
+    return report(
+        ExitCode.UNAVAILABLE,
+        "gate_evidence: the evidence record is red though no goal failed",
+        where,
+        "read the record's `reasons`, fix what they name and run the gate again",
+    )
 
 
 def _source(root):
@@ -419,30 +421,37 @@ def _parse(argv):
     return ap.parse_args(argv), command
 
 
-def _refuse(message):
-    sys.stderr.write("gate_evidence: %s\n" % message)
-    return _REFUSED
+def _refuse(message, next_step):
+    return report(
+        ExitCode.USAGE, "gate_evidence: refused before any goal ran", message, next_step
+    )
 
 
 def main(argv=None, runner=None):
     """Run the gate and write its record; the exit status, which the record's
     `result` always agrees with. *runner* stands in for subprocess.run."""
+    usage = "call it as `gate_evidence.py --gate <token> -- <make> <goal>...`"
     try:
         args, command = _parse(sys.argv[1:] if argv is None else argv)
     except SystemExit as exc:
-        # argparse's own exit: 2 for a usage error, 0 for --help.
-        return exc.code
+        # argparse ends the process itself: status 0 after --help, and a
+        # usage error it has already written to stderr otherwise.
+        if not exc.code:
+            return ExitCode.SUCCESS
+        return _refuse("argparse refused the arguments above", usage)
     root = os.getcwd()
     if not _GATE.match(args.gate):
-        return _refuse("--gate %r is not a gate token ([a-z0-9][a-z0-9-]*)" % args.gate)
+        return _refuse(
+            "--gate %r is not a gate token ([a-z0-9][a-z0-9-]*)" % args.gate, usage
+        )
     make, goals = (command[0], command[1:]) if command else (None, [])
     bad = [g for g in goals if not _GOAL.match(g)]
     if bad:
-        return _refuse("goal(s) %s are not make target tokens" % ", ".join(bad))
+        return _refuse("goal(s) %s are not make target tokens" % ", ".join(bad), usage)
     try:
         policy = load_policy(root)
     except EvidenceConfigError as exc:
-        return _refuse(str(exc))
+        return _refuse(str(exc), "correct config/project.json `evidence`")
     rel = policy["dir"] + "/" + args.gate + ".json"
     junit_dir = policy["dir"] + "/junit"
     makeflags = os.environ.get("MAKEFLAGS", "")
@@ -452,19 +461,19 @@ def main(argv=None, runner=None):
         # make -n/-q/-t still runs a `$(MAKE)` recipe line: run each goal under
         # the same flag, so it only prints, and write nothing.
         if not goals:
-            return _refuse("no goal to run after `-- <make>`")
+            return _refuse("no goal to run after `-- <make>`", usage)
         done = run_goals(
             make, goals, root, junit_dir, keep_going, forward, runner, dry_run=True
         )
-        return _exit_code(done, "pass")
+        return _exit_code(done, "pass", rel)
     listed = _unignored(
         root, [rel, rel + ".tmp"] + [_junit_path(junit_dir, g) for g in goals]
     )
     if listed:
         return _refuse(
-            "git would list %s: add config/project.json evidence.dir (%s) to "
-            ".gitignore, so a gate run never changes what git lists"
-            % (", ".join(listed), policy["dir"])
+            "git would list %s" % ", ".join(listed),
+            "add config/project.json evidence.dir (%s) to .gitignore, so a gate "
+            "run never changes what git lists" % policy["dir"],
         )
     before, source = _source(root)
 
@@ -485,7 +494,7 @@ def main(argv=None, runner=None):
         write_record(
             root, rel, render(record([], None, None, "fail", ["zero-targets"]))
         )
-        return _refuse("no goal to run after `-- <make>`: the record is red")
+        return _refuse("no goal to run after `-- <make>`: the record is red", usage)
     targets = None
     try:
         placeholder = [_not_run(g) for g in goals]
@@ -511,12 +520,14 @@ def main(argv=None, runner=None):
             sys.stderr.write(
                 "gate_evidence: %s is red: %s\n" % (rel, ", ".join(reasons))
             )
-        return _exit_code(targets, result)
+        return _exit_code(targets, result, "%s (%s)" % (rel, ", ".join(reasons)))
     except KeyboardInterrupt:
-        sys.stderr.write(
-            "gate_evidence: interrupted; %s stays red (incomplete)\n" % rel
+        return report(
+            ExitCode.INTERRUPTED,
+            "gate_evidence: interrupted",
+            "%s stays red (incomplete)" % rel,
+            "run the gate again",
         )
-        return _INTERRUPTED
     except Exception:  # noqa: BLE001 — the writer failing must never read as a pass
         traceback.print_exc()
         done = targets or [_not_run(g) for g in goals]
@@ -534,8 +545,8 @@ def main(argv=None, runner=None):
             )
         except Exception:  # noqa: BLE001 — the placeholder on disk is already red
             traceback.print_exc()
-        return _exit_code(targets, "fail")
+        return _exit_code(targets, "fail", "%s (writer-error)" % rel)
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    finish(main())

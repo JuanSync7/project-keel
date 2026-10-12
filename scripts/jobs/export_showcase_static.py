@@ -22,6 +22,9 @@ ROOT = os.path.dirname(os.path.dirname(_HERE))
 # API (api/rest_fastapi/showcase_api.py) and this static export — one source of
 # truth, so the snapshot matches the live JSON byte-for-byte in shape.
 sys.path.insert(0, os.path.join(ROOT, "src"))
+sys.path.insert(0, os.path.join(ROOT, "scripts"))
+
+from exit_codes import ExitCode, finish  # noqa: E402
 
 
 def _declared_frontend_public(root: str) -> str | None:
@@ -81,7 +84,7 @@ def main(argv=None) -> int:
         sys.stderr.write(
             "export_showcase_static skipped (backend.showcase unavailable: %s)\n" % exc
         )
-        return 0
+        return ExitCode.SUCCESS
 
     out_dir = args.out_dir or _declared_frontend_public(args.root)
     if out_dir is None:
@@ -91,7 +94,7 @@ def main(argv=None) -> int:
             "export_showcase_static skipped "
             "(no frontend declared in config/project.json)\n"
         )
-        return 0
+        return ExitCode.SUCCESS
 
     sc = load_showcase(args.root)
     out = out_dir if os.path.isabs(out_dir) else os.path.join(args.root, out_dir)
@@ -155,8 +158,8 @@ def main(argv=None) -> int:
         "wrote static showcase -> %s/ (overview/features/principles/models/practices/profiles/checks/setup/tree + "
         "%d nodes in wiki/nodes.json + llms.txt/llms-full.txt)" % (rel, len(nodes))
     )
-    return 0
+    return ExitCode.SUCCESS
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    finish(main())

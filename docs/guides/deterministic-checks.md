@@ -8,7 +8,7 @@ tags: [checks, ci, linter, determinism, pre-commit, hooks, guide]
 summary: Catalogue of every deterministic check that keeps a project-template repo honest — purpose, when to run, and how to wire as a hook.
 id: docs-guides-deterministic-checks
 created: 2026-06-19
-updated: 2026-10-11
+updated: 2026-10-12
 visibility: internal
 canonical: true
 ---
@@ -68,6 +68,7 @@ everything and therefore expect the project interpreter.
 | OpenAPI drift | `api/rest_fastapi/export_openapi.py --check` | error | FastAPI | Committed `openapi.json` matches the live routes |
 | AAD schema drift | `scripts/agent_surface/generate_aad_schema.py --check` | error | pydantic | Committed AAD JSON Schema matches the model |
 | Code-doc drift | `scripts/cdmon_sync.py --check` | error* | any | cdmon code↔doc drift — the CONVENTIONS §9 worked example of a thin adapter over an external tool (*a stated skip, exit 0, until `cdmon` is on PATH **and** `config/cdmon/cdmon.yaml` exists; cdmon is not on PyPI). Reached from `check-all` via `make check-cdmon` |
+| Exit-code table | `scripts/exit_code_table.py --check` | error | ≥3.10 | The exit-code table in `docs/guides/limits-and-troubleshooting.md` is what `scripts/exit_codes.py` `ExitCode` and the scripts `make verify` runs say: a member with no row, a row with no member and a script row naming other codes each fail it. Reached from `check-all` via `make check-exit-codes`; `make exit-codes` regenerates |
 | Accountability | `scripts/accountability_report.py` | report | ≥3.7 | Lists corpus nodes that resolve to no owner (informational; rides `make advise`) |
 | Doc review | `scripts/jobs/review_docs.py` | report | any (git) | Freshness — every governed document's `updated:` is no earlier than its last commit, and a document modified in the working tree carries today's date (gated by `tests/integration/test_doc_freshness.py`, `--strict`) — and the advisory that stays advisory: backticked repository paths that resolve to nothing. No git is a stated skip. The fix it names is `make restamp-docs` (`scripts/jobs/restamp_docs.py`) |
 | Generic-solution advisor | `scripts/check_generic.py` | report | 3.6-safe | Distinctive literals asserted as golden in tests **and** hardcoded in `src/` logic (the "answer-key" overfit smell, §18). Advisory only — never fails the build |
@@ -707,6 +708,36 @@ imported `mark`, or one built at run time; the gate test's comparison with
 pytest's collection does.
 
 **Run.** `make trace` · `pytest tests/integration/test_requirement_traceability.py`
+
+---
+
+### 12. Exit helper and exit-code table — `scripts/exit_code_table.py --check`
+
+**Purpose.** Two gates hold one rule: a process ends through
+`scripts/exit_codes.py`, with a code from its `ExitCode` enum.
+`tests/integration/test_exit_gate.py` reads the syntax tree of every Python
+file `scripts/check_structure.py` walks. It fails `sys.exit`, `os._exit`, an
+argparse `.exit(...)`, `raise SystemExit`, a SystemExit subclass, the builtins
+`exit` and `quit`, and an import that renames one of them, anywhere but in the
+helper. It fails an entry block whose `finish(...)` is handed anything
+`scripts/exit_code_table.py` `read_script` cannot follow to a member: a bare
+integer, a failure member returned without `report`, a function that can
+reach its end without returning. It fails a `report` or `fail` call that
+lacks one of the three message parts or holds a blank literal one.
+`scripts/exit_code_table.py --check` compares the region between the
+`<!-- exit-codes:begin -->` and `<!-- exit-codes:end -->` lines of
+`docs/guides/limits-and-troubleshooting.md` with what it would write: one row
+per enum member, and one row per script a recipe reachable from `make verify`
+runs.
+
+**What it does not prove.** That a message part helps its reader: the gate
+sees a blank literal, not a vague one, and `report` refuses a blank value at
+run time. It does not see an exit reached through `getattr`, `os.abort`,
+`os.kill` or an uncaught exception, argparse's own `--help` (exit 0) and
+usage (exit 2) exits, or a `python -c` line in a makefile. The hand-written
+table below the generated region is compared with nothing.
+
+**Run.** `make check-exit-codes` · `make exit-codes` · `pytest tests/integration/test_exit_gate.py`
 
 ---
 

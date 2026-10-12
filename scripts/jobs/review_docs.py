@@ -22,6 +22,7 @@ if _SCRIPTS not in sys.path:
     sys.path.insert(0, _SCRIPTS)
 
 import child_env  # noqa: E402
+from exit_codes import ExitCode, finish, report  # noqa: E402
 
 ROOT = os.path.dirname(_SCRIPTS)
 # Every file this judge reads is found at run time (the Markdown walk); the
@@ -440,13 +441,17 @@ def main(argv=None):
     try:
         today = resolve_today(args.today, os.environ).isoformat()
     except DateSourceError as exc:
-        print("review_docs: %s" % exc, file=sys.stderr)
-        return 2
+        return report(
+            ExitCode.USAGE,
+            "review_docs: cannot tell what today is",
+            str(exc),
+            "pass --today YYYY-MM-DD, or correct SOURCE_DATE_EPOCH",
+        )
     records = collect(args.root)
     if records is None:
         # Absent, not broken: no git, or not a repository. Say so, exit 0.
         print("review_docs: no git repository to compare against; freshness unverified")
-        return 0
+        return ExitCode.SUCCESS
     findings = stale_findings(records, today)
     mentions = unresolved_mentions(args.root)
     if args.json:
@@ -473,8 +478,15 @@ def main(argv=None):
             % (len(records), len(findings), len(mentions))
         )
     # --strict gates freshness only; mentions are advisory in every mode.
-    return 1 if (args.strict and findings) else 0
+    if not (args.strict and findings):
+        return ExitCode.SUCCESS
+    return report(
+        ExitCode.FAILURE,
+        "review_docs: a governed document changed without its `updated:` stamp",
+        "%d stale document(s), each a STALE line above" % len(findings),
+        "run `make restamp-docs`",
+    )
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    finish(main())

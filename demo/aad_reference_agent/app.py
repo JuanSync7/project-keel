@@ -85,7 +85,7 @@ DESCRIPTOR: dict = card_to_aad(EchoSurface().card())
 app = build_app()
 
 
-def main() -> int:
+def main() -> None:
     """Run the agent with uvicorn; then POST /agents/discover its base URL."""
     ap = argparse.ArgumentParser(description="AAD reference agent")
     ap.add_argument("--host", default="127.0.0.1")
@@ -94,8 +94,7 @@ def main() -> int:
     import uvicorn
 
     uvicorn.run(app, host=opts.host, port=opts.port)
-    return 0
 
 
 if __name__ == "__main__":  # pragma: no cover
-    raise SystemExit(main())
+    main()

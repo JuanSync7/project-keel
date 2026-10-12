@@ -47,6 +47,9 @@ if __name__ == "__main__":
     )
 
 import child_env  # noqa: E402
+
+# The module, not its names: `finish` here is this job's own function.
+import exit_codes  # noqa: E402
 import review_docs  # noqa: E402
 
 # copier's default answers file. A template that names another is refused
@@ -334,8 +337,8 @@ def run_steps(root, commands):
             raise FinishError("step %d of %d: %s" % (i, len(commands), e)) from e
         if code != 0:
             raise FinishError(
-                "step %d of %d exited %d: %s; fix what it names, then run this "
-                "again" % (i, len(commands), code, json.dumps(command))
+                "step %d of %d exited %d: %s"
+                % (i, len(commands), code, json.dumps(command))
             )
 
 
@@ -392,18 +395,22 @@ def main(argv=None):
     try:
         commands = finish(root, args.template, args.dry_run)
     except FinishError as e:
-        sys.stderr.write("finish_update: %s\n" % e)
-        return 2
+        return exit_codes.report(
+            exit_codes.ExitCode.USAGE,
+            "finish_update: the update was not finished",
+            str(e),
+            "fix what it names, then run this command again",
+        )
     if args.dry_run:
         for command in commands:
             sys.stdout.write(json.dumps(command) + "\n")
-        return 0
+        return exit_codes.ExitCode.SUCCESS
     sys.stderr.write(
         "finish_update: update finished (%d steps ran); review the changes "
         "and commit them\n" % len(commands)
     )
-    return 0
+    return exit_codes.ExitCode.SUCCESS
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    exit_codes.finish(main())

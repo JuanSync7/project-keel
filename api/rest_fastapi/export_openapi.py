@@ -20,6 +20,10 @@ import sys
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _OUT = os.path.join(_HERE, "openapi.json")
+# The exit helper lives with the scripts, two directories up from this adapter.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(_HERE)), "scripts"))
+
+from exit_codes import ExitCode, finish, report  # noqa: E402
 
 # The ONLY reasons this check may no-op: the host interpreter cannot parse the app
 # (SyntaxError — the documented old pre-commit `python3`), or FastAPI / the app is
@@ -71,19 +75,25 @@ def main(argv=None) -> int:
         detail = "%s: %s" % (type(exc).__name__, exc)
         if opts.check:
             sys.stderr.write("OpenAPI check skipped (%s)\n" % detail)
-            return 0
-        sys.stderr.write("OpenAPI cannot be generated (%s)\n" % detail)
-        return 1
+            return ExitCode.SUCCESS
+        return report(
+            ExitCode.FAILURE,
+            "OpenAPI cannot be generated",
+            detail,
+            "run it under the project interpreter, with the project's "
+            "dependencies installed",
+        )
     except Exception as exc:  # noqa: BLE001 — the app itself is broken
         # The environment DID run it and building the spec failed, so the
         # committed contract is unverifiable. Reporting 0 here would make the
         # drift guard report success while checking nothing.
-        sys.stderr.write(
-            "OpenAPI cannot be generated from the live app (%s: %s) — the "
-            "contract is unverifiable; fix the app, do not edit openapi.json\n"
-            % (type(exc).__name__, exc)
+        return report(
+            ExitCode.FAILURE,
+            "OpenAPI cannot be generated from the live app, so the contract is "
+            "unverifiable",
+            "%s: %s" % (type(exc).__name__, exc),
+            "fix the app; do not edit openapi.json",
         )
-        return 1
 
     if opts.check:
         try:
@@ -102,21 +112,22 @@ def main(argv=None) -> int:
                 "no committed openapi.json yet — publish this project's REST "
                 "contract with `python %s`\n" % os.path.relpath(__file__)
             )
-            return 0
+            return ExitCode.SUCCESS
         if current != text:
-            sys.stderr.write(
-                "openapi.json is stale; regenerate with "
-                "`python api/rest_fastapi/export_openapi.py`\n"
+            return report(
+                ExitCode.FAILURE,
+                "openapi.json is stale",
+                opts.out,
+                "regenerate with `python api/rest_fastapi/export_openapi.py`",
             )
-            return 1
         print("openapi.json up to date")
-        return 0
+        return ExitCode.SUCCESS
 
     with open(opts.out, "w", encoding="utf-8") as fh:
         fh.write(text)
     print("wrote", opts.out)
-    return 0
+    return ExitCode.SUCCESS
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    finish(main())

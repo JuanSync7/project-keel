@@ -8,7 +8,7 @@ tags: [idempotency, writers, fixed-point, determinism, guide]
 summary: How a doer that writes into the tree is built so that running it twice changes nothing the first run did not, and how that is declared and proven here — the `effect:` / `rerun:` / `rerun_proof:` header check_V gates, the recipe for reaching a fixed point, the ladder of proofs, and the honest declarations for the writers that cannot reach one. The code twin of doc-style.md §6, which governs how the claim is written down rather than how it is made true.
 id: docs-guides-idempotency
 created: 2026-09-12
-updated: 2026-10-09
+updated: 2026-10-12
 visibility: internal
 canonical: true
 ---
@@ -155,7 +155,8 @@ signature command runs.
 Pick the cheapest rung that actually proves the claim:
 
 1. **A `--check` mode and a `make` target**, when the output is a committed
-   artifact. `make check-openapi` and `make check-aad` re-render and compare
+   artifact. `make check-openapi`, `make check-aad` and `make check-exit-codes`
+   re-render and compare
    against what is committed, which is the fixed point stated over the
    repository's own state. This is the strongest rung because CI runs it on
    every push.
@@ -252,7 +253,7 @@ the agent working in it is told the rule before it writes the tenth doer.
 | `effect:` / `rerun:` are in the closed vocabularies | `check_V` | gate |
 | A `rerun: fixed-point` claim names a proof that resolves | `check_V` | gate |
 | Every module naming `test_idempotence.py` as its proof is actually re-run there | `tests/integration/test_idempotence.py` | gate |
-| The declared fixed points really are fixed points | `make check-corpus`, `make check-openapi`, `make check-aad`, `tests/integration/test_idempotence.py` | gate |
+| The declared fixed points really are fixed points | `make check-corpus`, `make check-openapi`, `make check-aad`, `make check-exit-codes`, `tests/integration/test_idempotence.py` | gate |
 | Generating twice, and re-generating over a project, changes nothing | `tests/integration/test_copier_generation.py` | gate |
 | Updating a project already on the template revision changes nothing | `tests/integration/test_copier_update.py` | gate |
 | A write reached through `subprocess` is declared | — | judged (the detector cannot see it; `check_V` says *unverified*) |

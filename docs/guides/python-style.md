@@ -8,7 +8,7 @@ tags: [practices, style, readability, robustness, docstrings, comments, agents, 
 summary: The canonical statement of how Python is written in this project — readability and loud failure modes outrank speed; the machine-readable module header; comment and docstring discipline; and how a code agent works here. The provable floor is gated (check_O/E, ruff, mypy); this guide is the judgment above it.
 id: docs-guides-python-style
 created: 2026-08-18
-updated: 2026-10-07
+updated: 2026-10-12
 visibility: internal
 canonical: true
 ---
@@ -140,8 +140,14 @@ Every rule here exists because one of those was found and measured:
   message, as `scripts/run_make_target.py` does.
   (Gated: check_X.)
 - **Exit codes are the contract for scripts.** `0` = clean, non-zero = act.
-  Print *what to do*, not just what is wrong: `regenerate with make site-data`
-  beats `stale`.
+  A script ends on the line `finish(main())`, and `main` returns a member of
+  `ExitCode` from `scripts/exit_codes.py`, the closed list of codes. A
+  failure is `return report(ExitCode.<MEMBER>, what, on, next_step)`: what
+  failed, on which input, and what to do next, written as one stderr line.
+  `regenerate with make site-data` beats `stale`. A script that wraps a tool
+  returns `passthrough(<the tool's status>)`.
+  (Gated: `tests/integration/test_exit_gate.py`; whether the three parts help
+  the reader is review's.)
 
 For a script wrapping an external tool (an EDA flow, a license query, a farm
 submission), assume the tool **will** misbehave: check the return code, check
