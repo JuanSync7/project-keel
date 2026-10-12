@@ -8,7 +8,7 @@ tags: [plan, template, downstream, freshness, taxonomy, effects, credentials, au
 summary: The bounded-convergence record for the defects bedrock-platform, the first real project generated from keel, reported back — a red gate on arrival, unknown directories the gate never sees, make targets whose effect nobody declares, and child processes that inherit every credential — plus the command that checks any keel-generated project for all of them. One slice per defect, five passes, each landed as one commit on a green `make verify`.
 id: docs-design-downstream-feedback
 created: 2026-10-06
-updated: 2026-10-11
+updated: 2026-10-12
 visibility: internal
 canonical: true
 ---
@@ -1658,3 +1658,43 @@ to be released as 0.2.2.
   merges the changelog and the ledger without conflict (with the lane and gate
   tooling above). The template `.gitignore` covers the directory a browser
   automation server leaves at the repo root.
+
+## CMP-5 — the coding rules move from text an agent reads into code the gate runs
+
+Campaign 4 delivered its eight slices. This campaign is proposed, not yet
+approved as a whole: the maintainer asked for CMP-5.S1 first, and the order and
+cut below are a recommendation for the maintainer to change. The cap is five
+slices, each one commit on a green `make verify`.
+
+| Slice | Gap | Status |
+|-------|-----|--------|
+| CMP-5.S1 | A script exits with a bare integer from any line, so nothing holds the rule that every exit has a code from one closed list and a message saying what failed, on which input and what to do next | planned |
+| CMP-5.S2 | `scripts/gate_evidence.py` writes under `evidence.dir` without the symlink check `scripts/git_tree.py` holds; `scripts/run_evals.py` reads any git failure as "no git"; a full verify on a dirty tree turns red when the date changes during the run | planned |
+| CMP-5.S3 | A module reads config, the environment and its own defaults directly, so no one place applies a default, reports it, or refuses a wrong value | planned |
+| CMP-5.S4 | The rules a helper cannot carry (the import boundary, a bare `except`, text matching without a stated reason, a comment that reports a change) are held by review alone | planned |
+| CMP-5.S5 | Inputs that are not config are parsed where they are used, and a script reports with `print` | planned |
+
+**CMP-5.S1, the exit helper.** A closed enum of exit codes, one helper that is
+the only place a process exits with an error, the exit-code table in
+`docs/guides/limits-and-troubleshooting.md` generated from the enum, and two
+gate checks that read the syntax tree: an exit outside the helper is red, and
+an enum member the table does not name is red. It reuses the per-script
+exit-code reader in `tests/integration/test_doc_drift.py`. Three points are
+open for the maintainer: how a script that returns a wrapped tool's own code
+states that; whether `main` returning an enum member through the helper is the
+rule for all 34 exit sites under `scripts/`; and whether the two checks are a
+gate test or new structure-gate letters. The helper is stdlib-only and runs
+under the old interpreter `scripts/gate_evidence.py` supports.
+
+**CMP-5.S2, the gate residuals.** Small, and ranked second because two of the
+three are security findings the Campaign 4 reviews left open.
+
+**CMP-5.S3 to S5** are the config loader, the tree-wide checks, and typed
+inputs with a log helper, in the order the queue above gives.
+
+**Cut from this campaign.** Everything else in the Campaign 4 queue stays
+queued: the lane and gate tooling, the frontend backlog, the mutation runner,
+`make new-test`, the agent and playbook contract, the D0 decisions,
+project-jarvis's proposals, and the residuals of CMP-4.S5 to S8 not named in
+CMP-5.S2. A header field per code file is proposed in the vault and is not
+accepted, so it is not planned here.
