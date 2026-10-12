@@ -2,7 +2,7 @@
 title: Unit — OpenAI-compatible model backend
 kind: tests
 layer: backend
-summary: The adapter builds a correct chat-completions request and parses the reply, with no network. It refuses at construction an `api_key_env` config/project.json `models.credential_env` does not declare for it and a `base_url` that is not an http or https URL with a host and no user part, naming the argument and never a value, and it describes an unexpected response body by its keys without quoting it.
+summary: The adapter builds a correct chat-completions request and parses the reply, with no network. It refuses at construction an `api_key_env` config/project.json `models.credential_env` does not declare for it and a `base_url` that is not an http or https URL with a host and no user part, query or fragment, naming the argument and never a value. It describes an unexpected response body by its keys without quoting it, and names an endpoint in an error by scheme, host and port, never by its path.
 """
 
 import sys
@@ -165,6 +165,10 @@ def test_an_undeclared_credential_variable_is_refused(monkeypatch):
         "https:///v1",
         "https://user:pw@llm.example/v1",
         "https://token@llm.example/v1",
+        "https://llm.example/v1?api_key=token",
+        "https://llm.example/v1#token",
+        "https://token@[llm.example/v1",
+        "https://llm.example:token/v1",
     ],
 )
 def test_a_base_url_that_is_not_a_plain_http_endpoint_is_refused(base_url):
@@ -187,3 +191,44 @@ def test_an_unexpected_response_is_described_by_shape_never_quoted(monkeypatch):
         backend.run("ping")
     assert "sk-canary" not in str(info.value)
     assert "echo" in str(info.value) and "error" in str(info.value)
+
+
+# --- an error names the endpoint by scheme, host and port, never by its path ----
+
+_KEYED_URL = "https://llm.example:8443/v1/keys/path-canary"
+
+
+def test_an_unreachable_endpoint_is_named_without_its_path(monkeypatch):
+    """A gateway may issue a per-caller URL whose path is itself the key, and
+    this message reaches logs and the eval report."""
+    import urllib.error
+
+    from models import ModelUnavailable
+    from models import openai_compatible as mod
+
+    def refuse(req, timeout):
+        raise urllib.error.URLError("connection refused")
+
+    monkeypatch.setattr(mod.urllib.request, "urlopen", refuse)
+    with pytest.raises(ModelUnavailable) as caught:
+        mod._post_json(_KEYED_URL + "/chat/completions", {}, {}, 1.0)
+    assert "path-canary" not in str(caught.value)
+    assert "https://llm.example:8443" in str(caught.value)
+
+
+def test_an_unexpected_response_names_the_endpoint_without_its_path():
+    backend = get_model(
+        "openai-compatible", base_url=_KEYED_URL, transport=lambda *a: {"error": "x"}
+    )
+    with pytest.raises(RuntimeError) as info:
+        backend.run("ping")
+    assert "path-canary" not in str(info.value)
+    assert "https://llm.example:8443" in str(info.value)
+
+
+def test_a_refused_base_url_leaves_no_parser_text_on_the_exception_chain():
+    """The URL parser's own error can quote the text it rejected, and a
+    traceback prints a chained cause."""
+    with pytest.raises(ValueError) as info:
+        get_model("openai-compatible", base_url="https://token@[llm.example/v1")
+    assert info.value.__cause__ is None and info.value.__suppress_context__

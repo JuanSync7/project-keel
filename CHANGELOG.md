@@ -63,10 +63,11 @@ version rather than a bare commit:
   forwards config to it, so config could name any variable and any host. The
   adapter now accepts only a name listed in config/project.json
   `models.credential_env.openai-compatible` (shipped: `OPENAI_API_KEY`) and
-  only an http or https `base_url` with a host and no user part; either
-  refusal is a `ValueError` at construction and exit 2 from `make eval-live`,
-  before any request. It describes an unexpected response body by its keys
-  instead of quoting it, and a live eval report replaces the value of each
+  only an http or https `base_url` with a host and no user part, query or
+  fragment; either refusal is a `ValueError` at construction and exit 2 from
+  `make eval-live`, before any request. It describes an unexpected response
+  body by its keys instead of quoting it, names an endpoint in an error by
+  scheme, host and port and never by its path, and a live eval report replaces the value of each
   declared credential variable with `<hidden>` in its case details.
   `scripts/run_evals.py` refuses a report path that resolves through a
   symlink before it writes or deletes anything.

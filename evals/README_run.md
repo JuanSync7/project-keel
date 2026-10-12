@@ -7,7 +7,7 @@ owner: TBD
 summary: How to replay the eval suites, run them live under the call cap, read the report, author a case with its hashes, and promote a live answer into the dataset.
 id: evals-readme-run
 created: 2026-06-17
-updated: 2026-10-11
+updated: 2026-10-12
 visibility: internal
 canonical: true
 ---
@@ -81,7 +81,7 @@ Before the first live run, set three keys:
    the adapter's credential is sent, so `openai-compatible` refuses (exit 2,
    before any call) an `api_key_env` that config/project.json
    `models.credential_env.openai-compatible` does not list, and a `base_url`
-   that is not an http or https URL with a host and no user part. Anyone who
+   that is not an http or https URL with a host and no user part, query or fragment. Anyone who
    can edit `config/project.json` can still point `base_url` at a host of
    their choosing and receive the declared key: review a change to this block
    as you would a change to a credential.
