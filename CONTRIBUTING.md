@@ -7,7 +7,7 @@ owner: TBD
 summary: How to add code/tests/docs without breaking the structure.
 id: contributing
 created: 2026-06-17
-updated: 2026-10-10
+updated: 2026-10-12
 visibility: internal
 canonical: true
 ---
@@ -55,8 +55,8 @@ each step `copier update` runs and how to recover from it.
 
 ## Release
 
-A release follows [ADR-K-0016](docs/adr/keel/K-0016-release-order-tag-before-verify.md)
-(proposed), which replaces the order in decision 4 of
+A release follows [ADR-K-0016](docs/adr/keel/K-0016-release-order-tag-before-verify.md),
+which replaces the order in decision 4 of
 [ADR-K-0009](docs/adr/keel/K-0009-release-identity-and-the-tag-ordering-rule.md).
 `tests/integration/test_release_identity.py` fails `make verify` while a dated
 version heading in `CHANGELOG.md` has no matching tag, so the tag comes first:

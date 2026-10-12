@@ -2,20 +2,20 @@
 title: "ADR-K-0017: make verify writes a derived, typed evidence record through a driver in its recipe"
 kind: adr
 layer: n/a
-status: proposed
+status: accepted
 owner: TBD
 tags: [adr, gate, evidence, verify, idempotency]
 summary: "make verify runs its goals through scripts/gate_evidence.py on its one recipe line, and the driver writes one canonical JSON record per gate to config/project.json evidence.dir. The record follows a JSON Schema that alone owns the version. The Makefile owns the list of goals. Test counts come from pytest's own junit report, and check findings from check_structure.run_checks in process. The record keeps no history, is not signed, and the goals run in sequence."
 id: docs-adr-0017-gate-evidence-record
 created: 2026-10-10
-updated: 2026-10-10
+updated: 2026-10-12
 visibility: internal
 canonical: true
 ---
 
 # ADR-K-0017: make verify writes a derived, typed evidence record through a driver in its recipe
 
-**Status:** proposed 2026-10-10.
+**Status:** accepted 2026-10-12 by the maintainer.
 
 ## Context
 
@@ -30,7 +30,7 @@ leave a green record standing.
 
 1. **A driver in the recipe, not a writer after the prerequisites.** `verify`
    has no prerequisites. Its one recipe line is
-   `$(PY) scripts/gate_evidence.py --gate $@ -- $(MAKE) check-all lint typecheck test test-fe`.
+   `$(PY) scripts/gate_evidence.py --gate $@ -- $(MAKE) check-all lint typecheck test trace eval test-fe`.
    make stops at the first failed prerequisite and never runs the recipe, so
    a writer placed after the prerequisites could not record a red run, and
    the previous green record would stand. The driver runs each goal itself.

@@ -1584,8 +1584,6 @@ to be released as 0.2.2.
   stays a stated skip; check_D's scope, and whether it takes a waiver.
 - `make new` is not refused in a generated project, where it has no template
   to copy.
-- The release order while ADR-K-0016 is proposed: whether the next tag waits
-  for its acceptance.
 - Every installed value comes from config, and a doc states it beside its
   key: the REST port the Makefile `run-api` and `run-web` recipes spell out,
   the Astro proxy fallback, and the registry defaults move into
@@ -1616,8 +1614,7 @@ to be released as 0.2.2.
   maintainer approves a first paid `make eval-live` run and promotes its
   candidates by hand. One threshold, `evals.threshold`, governs replay and
   live; a separate live threshold has no consumer until that run. A
-  JSON-Schema scorer and a model-as-judge scorer are not built. ADR-K-0017
-  (proposed) lists the verify goals without `eval`. A refused `evals.report_dir`
+  JSON-Schema scorer and a model-as-judge scorer are not built. A refused `evals.report_dir`
   cannot be given a red placeholder report, so an earlier report can stand
   beside a red gate.
 - Left by CMP-4.S8. A requirement heading with a colon after its id
@@ -1632,8 +1629,7 @@ to be released as 0.2.2.
   key this loader refuses, so sharing one registry waits for a mapping
   decision. `scripts/gate_evidence.py` writes under `evidence.dir` without the
   symlink check `scripts/git_tree.py` now holds, and `scripts/run_evals.py`
-  takes its `--help` text from the wrong docstring line. ADR-K-0017
-  (proposed) lists the verify goals without `trace`. The mutation proof is
+  takes its `--help` text from the wrong docstring line. The mutation proof is
   hand-written mutants, not a mutation runner.
 - The maintainer's coding rules get a kernel and checks, in this order: one
   config loader every value comes through (a default applies only when a key

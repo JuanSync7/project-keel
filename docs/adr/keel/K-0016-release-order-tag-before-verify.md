@@ -2,20 +2,20 @@
 title: "ADR-K-0016: Tag locally before the release verify, push only on green"
 kind: adr
 layer: n/a
-status: proposed
+status: accepted
 owner: TBD
 tags: [adr, release, tags]
 summary: "A release rotates the changelog, updates the pin sites and commits; then it creates an annotated tag locally, runs the full make verify, and only on green pushes main and the tag together with git push --atomic. On red it deletes the local tag, fixes, commits and tags again. This replaces decision 4 of ADR-K-0009, whose verify-then-tag order cannot pass: the release verify runs a test that fails while a dated version heading has no tag."
 id: docs-adr-0016-release-order-tag-before-verify
 created: 2026-10-09
-updated: 2026-10-09
+updated: 2026-10-12
 visibility: internal
 canonical: true
 ---
 
 # ADR-K-0016: Tag locally before the release verify, push only on green
 
-**Status:** proposed 2026-10-09 — supersedes decision 4 of [ADR-K-0009](K-0009-release-identity-and-the-tag-ordering-rule.md) only; decisions 1–3 stand.
+**Status:** accepted 2026-10-12 by the maintainer — supersedes decision 4 of [ADR-K-0009](K-0009-release-identity-and-the-tag-ordering-rule.md) only; decisions 1–3 stand.
 
 ## Context
 

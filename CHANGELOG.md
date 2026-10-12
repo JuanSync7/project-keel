@@ -10,6 +10,11 @@ version rather than a bare commit:
 
 ## [Unreleased]
 
+- **ADR-K-0016 and ADR-K-0017 are accepted.** A release tags locally, runs
+  the full gate, and pushes only on green; `make verify` writes its evidence
+  record through `scripts/gate_evidence.py`. ADR-K-0017 names the goals the
+  recipe runs today, `trace` and `eval` included.
+
 ### Added
 - **One exit helper and a closed list of exit codes.** `scripts/exit_codes.py`
   holds `ExitCode` (`SUCCESS` 0, `FAILURE` 1, `USAGE` 2, `UNAVAILABLE` 3,
