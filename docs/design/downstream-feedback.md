@@ -8,7 +8,7 @@ tags: [plan, template, downstream, freshness, taxonomy, effects, credentials, au
 summary: The bounded-convergence record for the defects bedrock-platform, the first real project generated from keel, reported back — a red gate on arrival, unknown directories the gate never sees, make targets whose effect nobody declares, and child processes that inherit every credential — plus the command that checks any keel-generated project for all of them. One slice per defect, five passes, each landed as one commit on a green `make verify`.
 id: docs-design-downstream-feedback
 created: 2026-10-06
-updated: 2026-10-13
+updated: 2026-10-14
 visibility: internal
 canonical: true
 ---
@@ -1664,7 +1664,7 @@ order on 2026-10-12. The cap is five slices, each one commit on a green
 | Slice | Gap | Status |
 |-------|-----|--------|
 | CMP-5.S1 | A script exits with a bare integer from any line, so nothing holds the rule that every exit has a code from one closed list and a message saying what failed, on which input and what to do next | done |
-| CMP-5.S2 | `scripts/gate_evidence.py` writes under `evidence.dir` without the symlink check `scripts/git_tree.py` holds; `scripts/run_evals.py` reads any git failure as "no git"; a full verify on a dirty tree turns red when the date changes during the run; exit code 3 has one name for two meanings; the `openai-compatible` adapter sends a credential to any host config names; a project's own scripts that call `sys.exit` are rewritten by hand after an update | done |
+| CMP-5.S2 | `scripts/gate_evidence.py` writes under `evidence.dir` without the symlink check `scripts/git_tree.py` holds; `scripts/run_evals.py` reads any git failure as "no git"; a full verify on a dirty tree turns red when the date changes during the run; exit code 3 has one name for two meanings; the `openai-compatible` adapter sends a credential to any host config names; a project's own scripts that call `sys.exit` are rewritten by hand after an update | done, except the rewriter, which is queued (below) |
 | CMP-5.S3 | A long script runs wherever it is called, so on a shared host it takes the CPU other people are using; nothing in the tree submits it to a job farm or limits it | done |
 | CMP-5.S4 | The rules a helper cannot carry (the import boundary, a bare `except`, text matching without a stated reason, a comment that reports a change) are held by review alone | planned |
 | CMP-5.S5 | A module reads config, the environment and its own defaults directly, so no one place applies a default, reports it, or refuses a wrong value | planned |
@@ -1893,3 +1893,167 @@ The slice must also decide these points, and say what it chose:
   example table, with a row for each of its ids. An empty table would fail
   DT-3 on the first run of `make verify`. `docs/design/README.md` would show
   the table's shape inside a fenced block, which no check reads as a table.
+
+## Rulings recorded after CMP-5.S3
+
+The maintainer asked for the vault's recommendations to be acted on. These
+are settled:
+
+- **The rewriter is option (a).** It rewrites `return 0`, a bare `return` and
+  falling off the end of `main` to `SUCCESS`, and lists every other return for
+  a person to judge. It never guesses what a return meant.
+- **"Nothing judged" gets its own `ExitCode` member, still non-zero.** A pass
+  over zero records is a failure, and exit 1 cannot tell it from "a key is
+  proposed". This lands in CMP-5.S4, so it costs no full verify of its own.
+- **KEEL-DOC-1 holds keel to its own rule.** keel's three `kind: design`
+  documents get defence tables, with no exemption for older documents. A
+  project's older documents follow the same warn-then-fail as B1.
+- **CMP-5.S4 waits** for the B1 date, a ruling on ADRs K-0018, K-0019 and
+  K-0020, and the push.
+
+Open for the maintainer:
+
+- **B1, the warning period.** The ruling of 2026-10-12 says a project's own
+  code that exits directly warns first and fails after a set date. The date
+  is not chosen. It lives in config, the warning prints it, and a test turns
+  the warning red once the date has passed.
+- **The three extra file-header fields** (touches, tests, docs as requirement
+  ids), and merging "description" with "purpose" into one field.
+
+## Open items
+
+Every leftover the two plan documents recorded (the residual, queued, "left
+by" and cut lists here, and the deferred, non-goal and release lists in
+`docs/design/keel-hardening-plan.md`) was checked against the tree at
+`55ded1d`. A read-only audit found 143 distinct items: 108 open, 5 unknown,
+25 closed and 5 superseded. A closed or superseded item is not repeated; its
+commit is the record. The two high items "make -i defeats the write guard"
+and "a frontend suite that skips exits 0" were reproduced by hand; the rest
+are the audit's reading of the code. Severity is a judgement, not a
+measurement. A low item is often a limit recorded on purpose; its kind says
+so.
+
+| # | Item | Kind | Severity | Evidence |
+|---|------|------|----------|----------|
+| 1 | `make -i` or a `.IGNORE` target lets a `[write]` recipe run past `$(WRITE_GUARD)` under CI or a Ralph loop | defect | high | reproduced: the guard's `exit 1` is ignored and the write runs, exit 0 |
+| 2 | `test-fe` exits 0 when npm or an app's `node_modules` is missing, and CI never runs `test-fe` | missing-check | high | `Makefile` `test-fe-unit`, `test-fe-e2e`; `.github/workflows/ci.yml` |
+| 3 | KEEL-TEST-1: nothing stops a test reaching a live store | feature | high | queued first in Campaign 6 |
+| 4 | KEEL-SEC-1: nothing scans the tree for a committed secret | missing-check | high | queued second in Campaign 6 |
+| 5 | `credential_value_patterns` covers five token forms | missing-check | medium | `config/project.json` |
+| 6 | A process keel does not start (`make new`'s copier, a hook calling make) gets the caller's whole environment | defect | medium | `Makefile` `new` target |
+| 7 | A same-user child can read `/proc/$PPID/environ` | decision | medium | outside keel; K-0012 says defence in depth |
+| 8 | The gate runner judges the child environment against keel's config, not the `--dir` project's | defect | medium | `scripts/run_make_target.py` calls `build_child_env()` and `load_policy()` with no root |
+| 9 | The gate runner keeps `HOME` and the XDG directories, so host state leaks into a run | defect | medium | `scripts/run_make_target.py` |
+| 10 | `test_exit_gate` accepts `finish(passthrough(main()))` over a `main` that returns integers | missing-check | medium | queued for CMP-5.S4 |
+| 11 | A project's own `sys.exit` turns red after an update and no rewriter exists | decision | medium | rewriter ruled (a) above; B1 date open |
+| 12 | `structure.extra_toplevel` directories, the project-checks directory among them, are outside `CODE_ROOTS` | missing-check | medium | `scripts/check_structure.py` `CODE_ROOTS` |
+| 13 | check_X misses a receiver it cannot resolve, a value passed through a parameter, and a spawn in a shell script | missing-check | medium | stated in `scripts/check_structure.py` |
+| 14 | A duplicate key in `config/project.json` is not refused | defect | medium | no `object_pairs_hook` in the tree |
+| 15 | An `rm` migration in `copier.yml` deletes after the keep-edited guard runs | defect | medium | `copier.yml` `_migrations` |
+| 16 | The optional surfaces (wiki, evals, containers) have no copier question, and a deleted one returns on update | feature | medium | `copier.yml` questions |
+| 17 | `react-vite` ships no lockfile | defect | medium | only astro has `package-lock.json` |
+| 18 | `docs/specs/example-feature.md` arrives on update and turns `make trace` red | defect | medium | unchanged |
+| 19 | `api/grpc/Makefile` is outside the effect-label walk | missing-check | medium | its `gen` target has no label |
+| 20 | The `PY` gate variable names a program | defect | medium | `make_targets.gate_vars` |
+| 21 | No mutation runner; mutants are written by hand | feature | medium | queued since Campaign 4 |
+| 22 | CMP-5.S4, the tree-wide checks and the features-row rule | feature | medium | planned |
+| 23 | CMP-5.S5, the config loader with a default marker | feature | medium | planned |
+| 24 | KEEL-DOC-1, the defence table | feature | medium | queued third in Campaign 6 |
+| 25 | pre-commit is not run in CI | missing-check | medium | `.github/workflows/ci.yml` |
+| 26 | The coverage floor is not re-measured, so it can fall | missing-check | medium | `tests/integration/test_gate_scope.py` |
+| 27 | `review_docs` and `restamp_docs` each keep a skip-directory list | defect | low | `_SKIP_DIRS`, `WALK_SKIP_DIRS` |
+| 28 | `ALLOW_DIRTY` copies untracked files | defect | low | `Makefile` `new` |
+| 29 | The copier 9.3.0 floor is checked statically, never run | missing-check | low | `tests/integration/test_copier_generator_contract.py` |
+| 30 | `FE_APPS` is not sorted, and a target takes its first word | defect | low | `Makefile` |
+| 31 | Nothing pins `TAXONOMY` to the CONVENTIONS §2 table | missing-check | low | |
+| 32 | `copier.yml` `_exclude` names a root `tmp` | defect | low | |
+| 33 | A `TAXONOMY` directory that is a symlink passes check_B | missing-check | low | |
+| 34 | Ignored tool output (`site`, `logs`, `out`) turns a local check red | defect | low | `IGNORE_DIRS` |
+| 35 | `models/config/default.example.toml` has no reader | decision | low | a D0 decision |
+| 36 | ADR-0005 overlaps `child_env`, and its first slice is not built | decision | low | |
+| 37 | `src/` cannot import `child_env` | decision | low | nothing in `src/` spawns today |
+| 38 | `BASH_FUNC_*` and `PYTHONPATH` never reach a child | decision | low | by design |
+| 39 | `hermetic_git.clone_including_worktree` replays only `git diff HEAD` | defect | low | an untracked file is silently missing |
+| 40 | check_N reports at most five stale entries | defect | low | |
+| 41 | A filtered file with stale stat data reads as modified | defect | low | |
+| 42 | `audit-project` has no tool card under `agents/tools/` | doc-drift | low | |
+| 43 | `audit_project` `origin_of` ignores `_exclude` and does not discount `updated:` | defect | low | |
+| 44 | Restamp moves `updated:` in every ADR an update touches | defect | low | |
+| 45 | A proxy value with `@` after its host is refused | decision | low | deliberate |
+| 46 | The audit mixes hunks | defect | low | |
+| 47 | The audit does not normalise a line number an update shifts | defect | low | |
+| 48 | The audit gives no partial report when an update fails | feature | low | narrowed by CMP-3.S5, CMP-4.S2 |
+| 49 | The audit does not judge ignored files | missing-check | low | |
+| 50 | The audit does not handle links or submodules | missing-check | low | |
+| 51 | The slice-name rule does not cover a foreign prefix or a requirement id | missing-check | low | |
+| 52 | A `.jinja` file is put back without being judged | missing-check | low | |
+| 53 | A bare ADR mention is not checked | missing-check | low | check_Y reads links only |
+| 54 | A project can edit `adr.template_adrs` | defect | low | |
+| 55 | A test file run alone whose tests all skip exits 5 | decision | low | accepted |
+| 56 | `make run` readiness is not checked | missing-check | low | |
+| 57 | `pytest_selections` reads only the first pytest line of a recipe | defect | low | |
+| 58 | K-0011 lists `run` among the skipped targets; config skips `run-api` and `run-web` | doc-drift | low | K-0011 is accepted: a one-clause fix |
+| 59 | A stamp hunk next to a content hunk is left for a person | defect | low | |
+| 60 | A project check is trusted code | decision | low | accepted |
+| 61 | A document that quotes a conflict hunk is never restamped | defect | low | |
+| 62 | The `structure` `_comment` conflicts in every adopting project | defect | low | |
+| 63 | The `.claude` ignore has no config key | defect | low | |
+| 64 | `build_child_env(extra=...)` is honoured verbatim | decision | low | |
+| 65 | `authorization:Service bin` is a false positive | defect | low | |
+| 66 | check_W misses a guard in an unlabelled prerequisite, a `$(MAKE)` call or a variable | missing-check | low | |
+| 67 | `make setup` is not adopted | feature | low | |
+| 68 | `_tiers` and `_floor_report` read only the root Makefile | defect | low | |
+| 69 | `copy_makefiles` does not follow an include named by a variable | defect | low | `tests/makefile_copy.py` |
+| 70 | npm writes to `~/.npm` | defect | low | |
+| 71 | `make new-test` is absent | feature | low | |
+| 72 | The agent and playbook contract has no design document | doc-drift | low | |
+| 73 | The D0 decisions are not made | decision | low | |
+| 74 | `make new` is not refused inside a generated project | defect | low | |
+| 75 | Port 8000 is written in the `Makefile`, not read from config | defect | low | |
+| 76 | Whether a missing browser stays red | decision | low | |
+| 77 | The grpc exemption | decision | low | `config/project.json.jinja` |
+| 78 | A SIGKILL orphans the uvicorn test server | defect | low | `tests/live_server.py` |
+| 79 | The lane and merge tooling | feature | low | the launcher part is built |
+| 80 | `conflict_guard` is imprecise, and a conflicted `scripts/exit_codes.py` ends in a traceback | defect | low | |
+| 81 | The evals: authored recordings, one threshold, exact and regex scorers only, a stale report left by a refused `report_dir` | feature | low | |
+| 82 | Whether a colon may follow a requirement id | decision | low | |
+| 83 | `make trace` collects from source | defect | low | |
+| 84 | A refused `traceability` block leaves the earlier matrix standing | defect | low | |
+| 85 | jarvis `kind_evidence` | decision | low | |
+| 86 | `run_evals.py --help` prints the header's `kind:` line | defect | low | reproduced by the audit |
+| 87 | Typed inputs and the log helper | feature | low | cut from Campaign 5 |
+| 88 | The pattern-match allowlist may only shrink | missing-check | low | CMP-5.S4 scope |
+| 89 | jarvis's proposals (store migration, removal tests, docstring claims named by a test, closed lists, one home per grammar, load margin in config, an example for an ignored config, lane placeholders, the browser-automation ignore) | feature | low | none built |
+| 90 | The exit gate cannot see `getattr`, `os.abort`, `os.kill`, an uncaught exception or argparse's own exits | missing-check | low | |
+| 91 | The hand-written `\| Script \| When \|` table is compared with nothing | missing-check | low | |
+| 92 | A useless message part passes; only a blank one fails | missing-check | low | |
+| 93 | `trace_requirements` refuses a missing git; `gate_evidence` and `run_evals` take the no-git path | defect | low | |
+| 94 | The suite's commits share one moment | decision | low | accepted |
+| 95 | The run date across a daylight-saving change is not tested | missing-check | low | |
+| 96 | A gate longer than `evidence.run_date.max_age_days` refuses | defect | low | |
+| 97 | A Ctrl-C run replaces a long record | defect | low | |
+| 98 | CONVENTIONS §2 says `scripts/` has two importable modules | doc-drift | low | the tree has more |
+| 99 | K-0020's recorded limits: a reserved farm status, last writer wins, queue time in the seconds | decision | low | |
+| 100 | K-0018, K-0019 and K-0020 are proposed | decision | low | the maintainer's |
+| 101 | `__all__` built with `+=` is not read | missing-check | low | |
+| 102 | mypy covers five of nine code roots | decision | low | `pyproject.toml` |
+| 103 | One slice id on several commits is not detected | missing-check | low | CMP-4.S7 is on four commits, CMP-5.S2 on two |
+| 104 | The query-corpus token cost has no budget | feature | low | |
+| 105 | The vault's frontend backlog items | feature | unknown | outside this repo |
+| 106 | jarvis ingest and registration | feature | unknown | outside this repo |
+| 107 | bedrock-platform's known failures list | defect | unknown | outside this repo |
+| 108 | The documentation-quality system, phases 4 to 8 | feature | unknown | `docs/design/documentation-quality.md` not read |
+| 109 | Whether a release tag is on the remote | decision | unknown | not checked over the network |
+
+Contradictions the audit found, each settled here or listed above:
+
+- The CMP-5.S2 row named the `sys.exit` rewrite, which is not built. The row
+  now says so.
+- The grace-tier wording differed: `docs/design/keel-hardening-plan.md` and
+  K-0008/K-0009 say "warn one release", CMP-5.S1 and S2 kept the failure, and
+  KEEL-DOC-1 says "warn, then fail". The ruling is warn, then fail after a set
+  date (B1 above).
+- The CMP-3.S4 row is done, but its residual says only the audit's copier is
+  constrained: item 6.
+- CMP-1.S1 to CMP-2.S3 and CMP-2.S5 predate the `Slice:` trailer rule, so
+  their commits carry no trailer, and `work_naming.adoption_boundary` is null.
