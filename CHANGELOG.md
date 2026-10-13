@@ -16,6 +16,40 @@ version rather than a bare commit:
   recipe runs today, `trace` and `eval` included.
 
 ### Added
+- **`scripts/launch.py` decides where a long script runs, and says why in one
+  line.** It reads three facts: the host kind, the script length and the farm.
+  A host is `own` only when a pattern in the git-ignored file
+  config/project.json `launcher.own_hosts_file` names matches it; with no such
+  file every host is `shared` (`config/own-hosts.example.json` is the
+  placeholder twin). A script is long when `launcher.long_scripts` lists it or
+  its last recorded run took more than `launcher.long_after_seconds` (`600`),
+  and unknown, which counts as long, until a recorded success proves it short.
+  The farm is the `launcher.farm.adapters` entry `launcher.farm.adapter`
+  names; it ships as `none`, with a Slurm argv adapter as one option. A farm
+  job, an own host or a short script runs here; a long or unknown script on a
+  shared host runs here at `os.nice(launcher.limited.niceness)` when there is
+  no farm or `launcher.local_only` names it, and is submitted otherwise. The
+  command starts from `build_child_env`, so a farm job receives the allowlist,
+  the `models.credential_env` names of the model adapter the launch key's
+  `launcher.credentials` entry names, and the adapter's rendered env, and a
+  launch whose environment holds an unlisted credential name is
+  refused before anything runs. The command's status passes through. A farm
+  that does not start it within `launcher.farm.wait_seconds` hands it back to
+  a spare host, and otherwise the launch ends with `ExitCode.NO_CAPACITY` (12)
+  and runs nothing. Each run is written whole to the git-ignored
+  `launcher.durations_file`: the outcome, whole seconds, the status and where
+  it ran. A full farm on a busy host, and a launch killed while its command
+  runs, never replace a measured run over `launcher.long_after_seconds`, so
+  `make long-scripts` still proposes it. `--dry-run` prints the decision line and runs nothing.
+- **`make long-scripts` proposes the scripts to list as long.**
+  `scripts/long_scripts.py` reads the durations file and prints a `propose:`
+  line for each launch key whose last run took longer than
+  `launcher.long_after_seconds` and that `launcher.long_scripts` does not
+  list. It edits nothing, and a file with no measured run fails, because
+  judging nothing is not "none is long"; it is in neither `make check-all`
+  nor `make verify` for that reason. `docs/adr/keel/K-0020-shared-compute-launcher.md` is the
+  proposed decision; it is defence in depth for shared compute, not a
+  scheduler.
 - **The `openai-compatible` adapter sends its credential only to a host
   config lists.** config/project.json `models.allowed_hosts` maps an adapter
   to `host` or `host:port` entries, matched exactly on the host and port of
@@ -67,11 +101,12 @@ version rather than a bare commit:
   failed three goals on committed-stale documents (measured).
 - **One exit helper and a closed list of exit codes.** `scripts/exit_codes.py`
   holds `ExitCode` (`SUCCESS` 0, `FAILURE` 1, `USAGE` 2, `RED_RECORD` 10,
-  `BACKEND_ABSENT` 11, `INTERRUPTED` 130) and the one `sys.exit` in the tree.
+  `BACKEND_ABSENT` 11, `NO_CAPACITY` 12, `INTERRUPTED` 130) and the one
+  `sys.exit` in the tree.
   One number carries one fact: `scripts/gate_evidence.py` exits `RED_RECORD`
   when every goal passed and the record is red, and `scripts/run_evals.py`
-  exits `BACKEND_ABSENT` when the live backend did not answer. 10 and 11 are
-  values no shell, argparse, make, pytest, `sysexits.h` or signal status
+  exits `BACKEND_ABSENT` when the live backend did not answer. 10, 11 and 12
+  are values no shell, argparse, make, pytest, `sysexits.h` or signal status
   uses, so `make: Error 10` cannot be read as pytest's internal error (3).
   `tests/integration/test_exit_codes_cli.py` starts each script as a child
   process and reads the status and the three message parts. A script's entry line

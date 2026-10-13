@@ -44,7 +44,8 @@
       "K-0016-release-order-tag-before-verify.md",
       "K-0017-gate-evidence-record.md",
       "K-0018-model-endpoint-host-allowlist.md",
-      "K-0019-one-date-per-gate-run.md"
+      "K-0019-one-date-per-gate-run.md",
+      "K-0020-shared-compute-launcher.md"
     ]
   },
   "doc_drift": {
@@ -112,6 +113,7 @@
       "run-web": "a dev server that never exits and needs npm",
       "test": "runs the whole suite, which holds this sweep, so it would run itself; tests/integration/test_write_guard.py runs its make-driving cases through the gate runner",
       "integration": "runs the integration suite, which holds this proof",
+      "long-scripts": "judges recorded runs, and .launch/durations.json is git-ignored so a fresh clone has none, which is red by design (a pass over zero runs fails); tests/integration/test_launcher.py proves it read-only with a whole-tree digest",
       "verify": "runs `test`, which holds this proof"
     },
     "empty_test_selections": {},
@@ -125,6 +127,36 @@
       "max_age_days": 1
     },
     "schema": "config/evidence/gate-record.schema.json"
+  },
+  "launcher": {
+    "_comment": "Where a long script runs; read by scripts/launch.py, which decides, and scripts/long_scripts.py, which proposes long_scripts entries (docs/adr/keel/K-0020-shared-compute-launcher.md). own_hosts_file is a git-ignored JSON file of fnmatch patterns for the hosts that are one person's own (config/own-hosts.example.json is its shipped twin); absent, unreadable or matching nothing means the host is shared. durations_file is the git-ignored record of each script's last run, keyed by the launch key. A script is long when long_scripts lists it, when its last recorded run took more than long_after_seconds, or when nothing is recorded; long_scripts and default_size give the farm size (cpus, mem_gb, minutes). local_only maps a launch key to the reason it never goes to the farm. credentials maps a launch key to {model_adapter, names}: the only credential names its process may receive. limited.niceness is what running here limited means (os.nice, nothing else). spare.max_load_per_cpu: after the farm did not allocate, this host runs it only when max(load1, load5) / cpus is at most this. farm.adapter names the farm in farm.adapters; the default is none (no farm); an argv adapter submits through its submit argv, with its own bounded wait of wait_seconds, and its reserved not_allocated_status and farm_error_status (1 to 254, not 126, 127 or 130).",
+    "own_hosts_file": "config/own-hosts.local.json",
+    "durations_file": ".launch/durations.json",
+    "long_after_seconds": 600,
+    "long_scripts": {
+      "make verify": {"cpus": 8, "mem_gb": 16, "minutes": 180},
+      "make test": {"cpus": 8, "mem_gb": 16, "minutes": 120}
+    },
+    "default_size": {"cpus": 4, "mem_gb": 8, "minutes": 120},
+    "local_only": {},
+    "credentials": {},
+    "limited": {"niceness": 10},
+    "spare": {"max_load_per_cpu": 0.25},
+    "farm": {
+      "adapter": "none",
+      "wait_seconds": 900,
+      "adapters": {
+        "none": {"kind": "none"},
+        "slurm": {
+          "kind": "argv",
+          "submit": ["srun", "--export=ALL", "--immediate={wait_seconds}", "--cpus-per-task={cpus}", "--mem={mem_gb}G", "--time={minutes}", "--"],
+          "env": {"SLURM_EXIT_IMMEDIATE": "{not_allocated_status}", "SLURM_EXIT_ERROR": "{farm_error_status}"},
+          "not_allocated_status": 251,
+          "farm_error_status": 252,
+          "inside_env": ["SLURM_JOB_ID"]
+        }
+      }
+    }
   },
   "evals": {
     "_comment": "Eval harness (evals/, scripts/run_evals.py). threshold: a suite passes when passed/total >= threshold. live.max_calls is the approved spend cap, checked before any call; 0 approves none. live.model null refuses make eval-live.",

@@ -13,6 +13,7 @@ import os
 import shutil
 import subprocess
 import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -287,6 +288,60 @@ def test_apply_refactor_leaves_the_tree_alone_on_a_second_apply(tmp_path):
     with pytest.raises(apply_refactor.RefactorError):
         apply_refactor.apply_and_gate(spec, str(tmp_path), gate="none")
     assert target.read_bytes() == after_first, "the refused second apply still wrote"
+
+
+def test_launch_records_a_fixed_point(tmp_path, monkeypatch):
+    """@covers scripts/launch.py
+
+    In process, over a scratch repository holding keel's config and .gitignore,
+    with the clock, the command and the priority change injected: the run's
+    seconds come from the clock, so two launches of the same command write the
+    same durations bytes, one entry per key, and a second key adds one entry.
+    """
+    _require("scripts/launch.py")
+    import launch
+
+    sys.path.insert(0, str(_ROOT / "tests"))
+    import hermetic_git
+
+    repo = tmp_path / "repo"
+    (repo / "config").mkdir(parents=True)
+    shutil.copy(str(_ROOT / "config" / "project.json"), str(repo / "config"))
+    shutil.copy(str(_ROOT / ".gitignore"), str(repo / ".gitignore"))
+    work = tmp_path / "work"
+    work.mkdir()
+    subprocess.run(
+        ["git", "init", "-q"], cwd=str(repo), env=hermetic_git.git_env(work), check=True
+    )
+    manifest = json.loads((repo / "config" / "project.json").read_text("utf-8"))
+    for adapter in manifest["launcher"]["farm"]["adapters"].values():
+        for name in adapter.get("inside_env", []):
+            monkeypatch.delenv(name, raising=False)
+    monkeypatch.chdir(str(repo))
+    out = repo / os.path.dirname(manifest["launcher"]["durations_file"])
+
+    def run():
+        ticks = iter([100.0, 107.5])
+        rc = launch.main(
+            ["--root", str(repo), "--", "make", "lint"],
+            runner=lambda argv, cwd, env: types.SimpleNamespace(returncode=0),
+            clock=lambda: next(ticks),
+            nicer=lambda n: None,
+        )
+        assert int(rc) == 0, rc
+
+    _assert_second_run_changes_nothing(out, run)
+    records = json.loads(
+        (repo / manifest["launcher"]["durations_file"]).read_text("utf-8")
+    )
+    assert records == {
+        "make lint": {
+            "outcome": "succeeded",
+            "seconds": 8,
+            "status": 0,
+            "where": "shared-host",
+        }
+    }, records
 
 
 # --- the same property, one level up: generation itself -------------------------

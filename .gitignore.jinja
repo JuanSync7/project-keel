@@ -38,7 +38,11 @@ coverage.xml
 # the gate's evidence record and its junit reports (config/project.json evidence.dir):
 # derived on every `make verify`, one commit's verdict, never committed
 .evidence
-# local config / secrets
+# the launcher's recorded durations (config/project.json launcher.durations_file):
+# one person's run history on one host, rewritten on every launch, never committed
+.launch
+# local config / secrets; config/own-hosts.local.json (launcher.own_hosts_file)
+# lists the hosts that are one person's own, and host names are never committed
 config/*.local.*
 models/config/*.local.*
 .env

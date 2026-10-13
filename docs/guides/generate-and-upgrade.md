@@ -239,10 +239,13 @@ alone. `scripts/gate_evidence.py` exits `RED_RECORD` (10) when every goal
 passed and the record is red, and `scripts/run_evals.py` exits
 `BACKEND_ABSENT` (11) when the live backend did not answer. No keel script
 exits 3: a wrapper that tested `$? -eq 3` after either script must test 10 or
-11. `ExitCode` refuses two members with one value when the module is
-imported (`enum.unique`), so every script that imports the helper stops with
-a `ValueError` naming both members if a member you added holds 10 or 11.
-Give yours another value, then run `make exit-codes`.
+11. `scripts/launch.py` exits `NO_CAPACITY` (12) when the farm did not start
+the command and the host had no spare compute. `ExitCode` refuses two members
+with one value when the module is imported (`enum.unique`), so every script
+that imports the helper stops with a `ValueError` naming both members if a
+member you added holds a value keel's members hold: 10, 11 or 12 today, and
+the generated table in `docs/guides/limits-and-troubleshooting.md` lists every
+one. Give yours another value, then run `make exit-codes`.
 
 ### A gate run has one date, and a git failure stops it
 

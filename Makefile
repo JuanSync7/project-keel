@@ -39,7 +39,7 @@ PY_ROOTS := $(wildcard $(CODE_ROOTS))
 # Keel ships no [write] target; a project that adds one inherits the guard.
 WRITE_GUARD = @if [ -n "$(CI)$(RALPH)" ]; then echo "refusing '$@': a [write] target never runs under CI or a Ralph loop (docs/adr/keel/K-0011-make-target-effect-labels.md)" >&2; exit 1; fi
 
-.PHONY: help new audit-project check-python check check-all check-corpus check-openapi check-aad check-cdmon check-exit-codes exit-codes advise check-generic verify test trace eval eval-live unit integration e2e smoke \
+.PHONY: help new audit-project check-python check check-all check-corpus check-openapi check-aad check-cdmon check-exit-codes exit-codes advise check-generic long-scripts verify test trace eval eval-live unit integration e2e smoke \
         lint lint-py lint-fe fmt fmt-check typecheck typecheck-py typecheck-fe \
         test-fe test-fe-unit test-fe-e2e \
         fe-install run run-api run-web site-data site-static demo agent-surface-schema check-docs restamp-docs doc-review doc-review-apply
@@ -132,6 +132,12 @@ advise: check-python ## [local] Advisory: overfitting / answer-key + coding-prac
 	-$(PY) scripts/accountability_report.py
 	-$(PY) scripts/jobs/review_docs.py
 check-generic: advise ## [local] Alias for `advise` (the generic-solution + practice advisor)
+
+# Reads the run records scripts/launch.py writes and edits no config, so a person
+# decides from its proposals. Not in check-all or verify: its exit 1 is "propose"
+# or "nothing recorded yet", advice about this host's history, not a broken tree.
+long-scripts: ## [local] Propose the scripts whose last run recorded by scripts/launch.py took longer than config/project.json launcher.long_after_seconds and that launcher.long_scripts does not list
+	$(PY) scripts/long_scripts.py
 
 # The goals sit on the driver's `$(MAKE)` line, not on the prerequisite list: make
 # stops at a failed prerequisite and never runs the recipe, so a red gate would

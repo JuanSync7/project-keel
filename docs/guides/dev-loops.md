@@ -8,7 +8,7 @@ tags: [tdd, bounded-convergence, ralph-loop, testing, e2e, workflow, agents, gui
 summary: The default working loops any human or LLM follows in this repo — test-first, bounded convergence, and end-to-end coverage — all gated by `make verify`.
 id: docs-guides-dev-loops
 created: 2026-06-22
-updated: 2026-10-11
+updated: 2026-10-13
 visibility: internal
 canonical: true
 ---
@@ -55,6 +55,19 @@ and the full `make verify` before declaring a task complete. A loop that advance
 on the model's claim of success rather than a real exit code is unsafe — gate on
 the exit code, always (see the deterministic-checks catalogue:
 [deterministic-checks.md](deterministic-checks.md)).
+
+On a host other people share, start the full gate through the launcher:
+`python3 scripts/launch.py -- make verify`. It prints one line saying where the
+command runs and why, then runs it here, here at a lower CPU priority
+(config/project.json `launcher.limited.niceness`), or on the farm
+`launcher.farm.adapter` names, and passes the gate's own exit status through.
+The shipped adapter is `none`, so on a shared host a long script runs here at
+the lower priority until a project names a farm. `--dry-run` prints the line and
+runs nothing. Exit 12 (`NO_CAPACITY`) means the farm did not start the command
+in time and this host was busy, so nothing ran; it is not the gate's verdict.
+The launcher records each run's seconds, and `make long-scripts` proposes the
+scripts that took longer than `launcher.long_after_seconds` and are not yet
+listed (`CONVENTIONS.md` §7, "Where a long script runs").
 
 ## Slice work vertically
 

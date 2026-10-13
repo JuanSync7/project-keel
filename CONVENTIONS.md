@@ -366,6 +366,32 @@ under `HOME`, use the network, and read the parent's environment from
 `/proc/$PPID/environ`. The decision is
 [`docs/adr/keel/K-0012-child-process-environment-allowlist.md`](docs/adr/keel/K-0012-child-process-environment-allowlist.md).
 
+### Where a long script runs
+
+A long script on a host other people share takes their CPU and memory, so
+`scripts/launch.py` is the one place that decides where a script runs:
+`scripts/launch.py -- make verify`. It reads the `launcher` block of
+`config/project.json` (§15) and prints one stderr line naming the decision and
+its three reasons, the host kind, the script length and the farm, never a host
+name. A farm job, a host the git-ignored `launcher.own_hosts_file` lists as one
+person's own, or a script whose last recorded run succeeded within
+`launcher.long_after_seconds` runs here. A listed, recorded-long or unknown
+script on a shared host runs here at `os.nice(launcher.limited.niceness)` when
+`launcher.local_only` names it or `launcher.farm.adapter` is `none`, the
+shipped default, and goes to the farm otherwise. A farm that does not allocate
+within `launcher.farm.wait_seconds` hands the command back to this host only
+when its load per CPU is at most `launcher.spare.max_load_per_cpu`; otherwise
+the launcher stops with exit 12 (`NO_CAPACITY`) and runs nothing. The command
+starts with `build_child_env`, so a farm job receives the allowlist, the
+`models.credential_env` names of the model adapter the launch key's
+`launcher.credentials` entry names, and the adapter's rendered env; a launch
+whose environment holds a credential name that entry does not list is refused.
+Each run is recorded whole in the git-ignored `launcher.durations_file`, and
+`make long-scripts` (`scripts/long_scripts.py`, read-only) proposes the keys
+whose last run was long and that `launcher.long_scripts` does not list. It is
+defence in depth for shared compute, not a scheduler. The decision is
+[`docs/adr/keel/K-0020-shared-compute-launcher.md`](docs/adr/keel/K-0020-shared-compute-launcher.md).
+
 ## 8. Configuration: where tunable values live
 
 Configuration is **data the app reads**, never logic. Collate it by
@@ -711,6 +737,20 @@ It is keyed **by layer/concern, never one global `language`**:
   A missing key allows no host. `check_X` errors on an adapter that is not in
   `models.available`, an entry in any other form and a duplicate. Defence in
   depth, not a sandbox (docs/adr/keel/K-0018-model-endpoint-host-allowlist.md).
+- `launcher` — where a long script runs (§7; `scripts/launch.py`,
+  `scripts/long_scripts.py`): `own_hosts_file` and `durations_file` (state
+  paths, both git-ignored; a path reached through a symlink or one git would
+  list is refused), `long_after_seconds` (default 600), `long_scripts` (a
+  launch key mapped to its farm size `{cpus, mem_gb, minutes}`),
+  `default_size`, `local_only` (a launch key mapped to the reason it never goes
+  to the farm), `credentials` (a launch key mapped to `{model_adapter, names}`,
+  the only credential names its process may receive), `limited.niceness`
+  (default 10), `spare.max_load_per_cpu` (default 0.25) and `farm` (`adapter`,
+  default `none`; `wait_seconds`, default 900; `adapters`, each of kind `none`
+  or `argv` with a `submit` argv, an `env`, an `inside_env` list and its two
+  reserved statuses). `load_launcher_config` refuses an unknown key, a missing
+  one and a malformed value, and both scripts stop with exit 2 before reading
+  anything else.
 - `adr` — the two ADR number spaces (§19): `project_dir` (the project's own
   ADRs, `docs/adr`), `template_dir` (the ADRs the template ships,
   `docs/adr/keel`; it must differ from `project_dir`), `template_prefix` (the

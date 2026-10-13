@@ -94,6 +94,22 @@ def test_the_red_record_and_the_absent_backend_are_two_members_with_their_own_va
     assert red.action != absent.action
 
 
+def test_no_capacity_is_its_own_member_outside_the_taken_bands():
+    """A launch that did not run because the farm did not start it within the
+    wait and this host had no spare compute is a fact of its own: neither a
+    failure of the command nor a backend that did not answer."""
+    assert "NO_CAPACITY" in ExitCode.__members__, sorted(ExitCode.__members__)
+    member = ExitCode.NO_CAPACITY
+    others = [m for m in ExitCode if m is not member]
+    assert others, "no other member -- zero items"
+    assert all(int(member) != int(other) for other in others), member
+    taken = [band for band in _TAKEN_BANDS if band[0] <= int(member) <= band[1]]
+    assert taken == [], (member, taken)
+    assert member.meaning.strip() and member.action.strip(), member
+    assert member.meaning != ExitCode.BACKEND_ABSENT.meaning
+    assert member.action != ExitCode.BACKEND_ABSENT.action
+
+
 def test_report_writes_one_line_and_returns_the_member(capsys):
     buf = io.StringIO()
     assert report(ExitCode.FAILURE, "a", "b", "c", stream=buf) is ExitCode.FAILURE

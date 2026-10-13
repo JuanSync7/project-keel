@@ -2,7 +2,7 @@
 title: Integration — copier generates a structurally valid, tailored project
 kind: tests
 layer: n/a
-summary: `copier` renders keel's root template into a new project — the manifest is tailored to the answers, the un-chosen frontend stack is pruned, CLAUDE.md->AGENT.md symlinks are preserved, keel's own template meta-tests are pruned, and check_structure passes; an undeclared top-level directory reds the project until it is declared and labelled. A bare `subprocess.run` reds a generated project through check_X until it passes `env=build_child_env()`, and the project's helper passes an adapter's declared credential and no planted secret. A credentialed proxy (a `#` in the password included) fails the project's doc judge by name and never by value, while a `LANGUAGE=sr_RS:sr@latin` locale list does not, until `child_env.credentialed_values` names it, and a stale entry there reds the gate. A generated project carries keel's `work_naming` block and no plan doc, so check_Z is silent until the project writes one; a slice row that is not a slice id then reds the gate and a well-formed one does not. A generated project runs its own doc-drift tests green, every skip there a template-only test naming why, and a prose slice id planted in its CONTRIBUTING.md reds them, and so does a row dropped from its settings reference or from its feature catalogue; its README names no `make new`, and its `run-web` line names Astro and its port only for the astro stack and is absent with no frontend. Under every transport answer, and without the showcase, a generated project's e2e coverage gate and its scenarios pass with nothing skipped, and a grpc project whose exemption is dropped is red naming the method. A project with a frontend carries keel's `layers.frontend.journey` keys and passes its own frontend-suite contract tests statically; one without has no frontend keys, its wiring test skips with a reason, and `make test-fe` exits 0 silently. Under every answer set, `make eval` in a committed generated project replays its shipped eval dataset, which uses every scorer, green twice with the same report bytes and leaves what git lists alone, and the README's delete advice no longer offers evals/. Under every answer set, `make trace` in a committed generated project writes the same passing matrix twice and leaves what git lists alone, and a requirement added to its spec with no test turns `make trace` and the project's own traceability gate test red naming it. Skipped on a bare local clone without the optional `template` extra; CI installs `.[dev,template]` and declares the surface required (KEEL_REQUIRED_EXTRAS), so there a missing copier is a hard failure instead of a silent skip. A generated project passes its exit gate file with nothing skipped and holds a current exit-code table; a script ending on `sys.exit(main())` fails the gate test naming its line, an enum member added without regenerating fails `make check-exit-codes`, and `make exit-codes` run twice writes the same guide.
+summary: `copier` renders keel's root template into a new project — the manifest is tailored to the answers, the un-chosen frontend stack is pruned, CLAUDE.md->AGENT.md symlinks are preserved, keel's own template meta-tests are pruned, and check_structure passes; an undeclared top-level directory reds the project until it is declared and labelled. A bare `subprocess.run` reds a generated project through check_X until it passes `env=build_child_env()`, and the project's helper passes an adapter's declared credential and no planted secret. A credentialed proxy (a `#` in the password included) fails the project's doc judge by name and never by value, while a `LANGUAGE=sr_RS:sr@latin` locale list does not, until `child_env.credentialed_values` names it, and a stale entry there reds the gate. A generated project carries keel's `work_naming` block and no plan doc, so check_Z is silent until the project writes one; a slice row that is not a slice id then reds the gate and a well-formed one does not. A generated project runs its own doc-drift tests green, every skip there a template-only test naming why, and a prose slice id planted in its CONTRIBUTING.md reds them, and so does a row dropped from its settings reference or from its feature catalogue; its README names no `make new`, and its `run-web` line names Astro and its port only for the astro stack and is absent with no frontend. Under every transport answer, and without the showcase, a generated project's e2e coverage gate and its scenarios pass with nothing skipped, and a grpc project whose exemption is dropped is red naming the method. A project with a frontend carries keel's `layers.frontend.journey` keys and passes its own frontend-suite contract tests statically; one without has no frontend keys, its wiring test skips with a reason, and `make test-fe` exits 0 silently. Under every answer set, `make eval` in a committed generated project replays its shipped eval dataset, which uses every scorer, green twice with the same report bytes and leaves what git lists alone, and the README's delete advice no longer offers evals/. Under every answer set, `make trace` in a committed generated project writes the same passing matrix twice and leaves what git lists alone, and a requirement added to its spec with no test turns `make trace` and the project's own traceability gate test red naming it. Skipped on a bare local clone without the optional `template` extra; CI installs `.[dev,template]` and declares the surface required (KEEL_REQUIRED_EXTRAS), so there a missing copier is a hard failure instead of a silent skip. A generated project passes its exit gate file with nothing skipped and holds a current exit-code table; a script ending on `sys.exit(main())` fails the gate test naming its line, an enum member added without regenerating fails `make check-exit-codes`, and `make exit-codes` run twice writes the same guide. A default project ships scripts/launch.py and scripts/long_scripts.py with keel's `launcher` block, the `none` farm, the placeholder own-hosts twin and no local file; committed, its `make long-scripts` finds no recorded runs, its launcher says its own `make verify` runs here limited on a shared host, a real launch runs here limited and records the run in an ignored file with one entry per key, a failing command is recorded as failed, and its own launcher tests pass with nothing skipped.
 """
 
 import ast
@@ -1557,6 +1557,129 @@ def test_a_default_project_ships_the_slice_and_stays_green(tmp_path):
     assert {path for path, _test, _outcome in outcomes} == residual_files
     named = {node.split("::")[1] for node in _GATE_RESIDUAL_TESTS if "::" in node}
     assert named <= {test.split("[")[0] for _file, test, _outcome in outcomes}, outcomes
+
+
+_LAUNCHER_TESTS = (
+    "tests/unit/scripts/test_launch.py",
+    "tests/unit/scripts/test_long_scripts.py",
+    "tests/integration/test_launcher.py",
+)
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
+@pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
+def test_a_default_project_launches_here_limited_and_records_the_run(tmp_path):
+    """A project generated with default answers ships scripts/launch.py and
+    scripts/long_scripts.py, the placeholder own-hosts twin and no local
+    own-hosts file, carries the `launcher` block as the template states it, with
+    the `none` farm, and ignores the launcher's state directory. Committed, its
+    `make long-scripts` finds no recorded runs, its script exits 1 and make
+    fails the goal; its launcher, asked where its own `make verify` runs, says
+    here limited on a shared host with no farm; a first real launch runs an
+    unrecorded command here limited, records it in an ignored file that leaves
+    `git status` clean, and a second launch, deciding from that record, runs it
+    here unlimited as short and keeps one entry; `make long-scripts` then exits 0; a failing command is recorded as failed;
+    and its own launcher tests pass with nothing skipped."""
+    dest = tmp_path / "proj"
+    _generate(dest, project_name="demo_proj")
+    template = json.loads((_ROOT / "config" / "project.json").read_text("utf-8"))
+    manifest = json.loads((dest / "config" / "project.json").read_text("utf-8"))
+    launcher = manifest["launcher"]
+    assert launcher == template["launcher"], launcher
+    adapter = launcher["farm"]["adapters"][launcher["farm"]["adapter"]]
+    assert adapter["kind"] == "none", adapter
+    assert (dest / "scripts" / "launch.py").is_file()
+    assert (dest / "scripts" / "long_scripts.py").is_file()
+    assert (dest / "config" / "own-hosts.example.json").is_file()
+    assert not (dest / launcher["own_hosts_file"]).exists()
+    state_dir = launcher["durations_file"].split("/")[0]
+    assert state_dir in _gitignore_lines(dest / ".gitignore"), state_dir
+
+    env = _hermetic_git_env(tmp_path)
+    for argv in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "generated"]):
+        g = subprocess.run(
+            ["git"] + argv, cwd=str(dest), env=env, capture_output=True, text=True
+        )
+        assert g.returncode == 0, g.stderr
+
+    def status():
+        return subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=str(dest),
+            env=env,
+            capture_output=True,
+            text=True,
+        ).stdout
+
+    def launch(*argv):
+        return subprocess.run(
+            [sys.executable, "scripts/launch.py"] + list(argv),
+            cwd=str(dest),
+            env=build_child_env(root=str(dest)),
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+
+    long = _make_in(dest, "long-scripts")
+    # make exits 2 for any failed recipe, so the script's own status is read
+    # from the line make prints, which names the recipe's exit status.
+    assert long.returncode == 2, long.stdout + long.stderr
+    assert "long-scripts] Error 1" in long.stderr, long.stderr
+    assert "no recorded runs" in long.stderr, long.stderr
+
+    ran = launch("--dry-run", "--", "make", "verify")
+    assert ran.returncode == 0, ran.stderr
+    assert ran.stderr == (
+        "launch: run here limited (nice %d): host shared (no own-hosts file); "
+        'script "make verify" long-listed (listed in launcher.long_scripts); '
+        "farm none (no farm configured)\n" % launcher["limited"]["niceness"]
+    ), ran.stderr
+    assert not (dest / state_dir).exists(), "a dry run wrote state"
+
+    durations = dest / launcher["durations_file"]
+    # The first launch has no record, so the length is unknown and it runs
+    # limited; the second reads the first's record and runs here as short.
+    expected = (
+        "launch: run here limited (nice %d): " % launcher["limited"]["niceness"],
+        "launch: run here: ",
+    )
+    for opening in expected:
+        ran = launch("--", "python3", "-c", "pass")
+        assert ran.returncode == 0, ran.stderr
+        lines = ran.stderr.splitlines()
+        assert len(lines) == 1 and lines[0].startswith(opening), ran.stderr
+        records = json.loads(durations.read_text("utf-8"))
+        assert sorted(records) == ["python3 -c pass"], records
+        assert records["python3 -c pass"]["outcome"] == "succeeded", records
+        assert status() == "", status()
+    ignored = subprocess.run(
+        ["git", "check-ignore", "-q", launcher["durations_file"]],
+        cwd=str(dest),
+        env=env,
+    )
+    assert ignored.returncode == 0, "the durations file is not ignored"
+
+    long = _make_in(dest, "long-scripts")
+    assert long.returncode == 0, long.stdout + long.stderr
+    assert "judged 1 recorded run(s)" in long.stdout, long.stdout
+
+    ran = launch("--", "python3", "-c", "import sys; sys.exit(3)")
+    assert ran.returncode == 3, ran.stderr
+    record = json.loads(durations.read_text("utf-8"))[
+        "python3 -c import sys; sys.exit(3)"
+    ]
+    assert (record["outcome"], record["status"]) == ("failed", 3), record
+    assert status() == "", status()
+
+    for path in _LAUNCHER_TESTS:
+        assert (dest / path).is_file(), path
+    ran = _project_tests(dest, _LAUNCHER_TESTS)
+    assert ran.returncode == 0, ran.stdout[-8000:] + ran.stderr[-2000:]
+    outcomes = _TEST_OUTCOME.findall(ran.stdout)
+    assert outcomes, "the project's launcher tests ran no test -- zero items"
+    assert {outcome for _file, _test, outcome in outcomes} == {"PASSED"}, outcomes
+    assert {path for path, _test, _outcome in outcomes} == set(_LAUNCHER_TESTS)
 
 
 _APP_DELETE_ADVICE = re.compile(r"\*\*Delete this dir\*\*(.*?)(?:\n\n|\Z)", re.DOTALL)

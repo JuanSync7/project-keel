@@ -1,0 +1,7 @@
+{
+  "_comment": "Copy to the path config/project.json launcher.own_hosts_file names (config/own-hosts.local.json, git-ignored) and list fnmatch patterns for the hosts that are yours alone; scripts/launch.py lower-cases the host name and each pattern and drops a trailing dot before it matches. A host no pattern matches, or a file that is absent, unreadable or malformed, counts as shared. The names below are placeholders: never commit a real host name.",
+  "own_hosts": [
+    "my-laptop.example.com",
+    "workstation-*.example.com"
+  ]
+}

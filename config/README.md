@@ -9,7 +9,7 @@ tags: []
 summary: Committed configuration defaults and examples (no secrets).
 id: config-readme
 created: 2026-06-17
-updated: 2026-10-11
+updated: 2026-10-13
 visibility: internal
 canonical: true
 ---
@@ -48,6 +48,14 @@ result, reason and outcome enums are held equal to the vocabularies in
 `evals/_report.py` by `tests/integration/test_evals_schema.py`, and its
 `schema_version.const` is the only owner of the report format's version. It
 is written by hand.
+
+`own-hosts.example.json` is the twin of the git-ignored file
+`project.json` `launcher.own_hosts_file` names (`config/own-hosts.local.json`):
+a copy lists fnmatch patterns for the hosts that are one person's own, and
+`scripts/launch.py` runs a long script as normal only on a host one of them
+matches. It ships placeholder names only, because a host name is never
+committed; with no local copy every host counts as shared
+(`docs/adr/keel/K-0020-shared-compute-launcher.md`).
 
 `traceability/matrix.schema.json` is the shape of the matrix
 `scripts/trace_requirements.py` writes to `project.json`

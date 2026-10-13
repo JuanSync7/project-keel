@@ -1665,7 +1665,7 @@ order on 2026-10-12. The cap is five slices, each one commit on a green
 |-------|-----|--------|
 | CMP-5.S1 | A script exits with a bare integer from any line, so nothing holds the rule that every exit has a code from one closed list and a message saying what failed, on which input and what to do next | done |
 | CMP-5.S2 | `scripts/gate_evidence.py` writes under `evidence.dir` without the symlink check `scripts/git_tree.py` holds; `scripts/run_evals.py` reads any git failure as "no git"; a full verify on a dirty tree turns red when the date changes during the run; exit code 3 has one name for two meanings; the `openai-compatible` adapter sends a credential to any host config names; a project's own scripts that call `sys.exit` are rewritten by hand after an update | done |
-| CMP-5.S3 | A long script runs wherever it is called, so on a shared host it takes the CPU other people are using; nothing in the tree submits it to a job farm or limits it | planned |
+| CMP-5.S3 | A long script runs wherever it is called, so on a shared host it takes the CPU other people are using; nothing in the tree submits it to a job farm or limits it | done |
 | CMP-5.S4 | The rules a helper cannot carry (the import boundary, a bare `except`, text matching without a stated reason, a comment that reports a change) are held by review alone | planned |
 | CMP-5.S5 | A module reads config, the environment and its own defaults directly, so no one place applies a default, reports it, or refuses a wrong value | planned |
 
@@ -1768,6 +1768,36 @@ item in the Campaign 4 queue, without the lane and merge parts. Open for the
 maintainer: how a host is known to be shared without a host name in the repo,
 and which scripts are local only because they need a credential, a network
 route or a lock the farm does not have.
+
+As built, a host is shared unless a pattern in a git-ignored local file
+matches it, and `launcher.local_only` ships empty: a project lists its own
+local-only scripts with a reason. The farm adapter ships as `none`, so a
+generated project runs a long script here at a lower CPU priority until it
+names a farm. Recorded residuals are in
+`docs/adr/keel/K-0020-shared-compute-launcher.md` "Consequences": a command
+that exits a reserved farm status is read as the farm's, the run record is
+last writer wins, and a farm job's seconds include its queue time.
+
+Left by CMP-5.S3:
+
+- A run interrupted with Ctrl-C (exit 130) is a measured run, so a short
+  interrupted run replaces an earlier long record and `make long-scripts`
+  stops proposing that key until it runs long again. A farm that never starts
+  the job and a killed run keep the earlier long record.
+- `make long-scripts` exits 1 when it judged no run, the same code as "it
+  proposes a key", because a pass over zero records is not a pass. Whether
+  "nothing judged" deserves its own member of `ExitCode` is open for the
+  maintainer.
+- The CONVENTIONS §2 note says `scripts/` holds two importable modules and
+  only these two, while the tree now imports more shared modules from
+  `scripts/` (the exit helper, `git_tree.py`, `run_date.py` and the launcher).
+  The note and the list in `scripts/AGENT.md` are not reconciled.
+- `tests/hermetic_git.py` `clone_including_worktree` replays only
+  `git diff HEAD`, so a new file not added with `git add -N` is missing from
+  the clone the copier audit tests read, and those tests fail on a fresh
+  branch until it is.
+- `KEEL-TEST-1` (a test cannot reach a live store) and `KEEL-SEC-1` (a secrets
+  scan) head Campaign 6; the choice of scanner is the maintainer's.
 
 **CMP-5.S4 and S5** are the tree-wide checks and then the config loader. The
 checks come first because they count the direct config reads the loader has to

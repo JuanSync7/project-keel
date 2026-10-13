@@ -53,6 +53,11 @@ These rules are **local and authoritative** for this directory. They inherit fro
   check X reads its `policy` before any run. It stays stdlib-only and
   3.6-safe for the reason `git_tree.py` does. A second reader of the variable
   config/project.json `evidence.run_date.env` names anywhere else is a defect.
+  `launch.py` is the one place that decides where a long script runs and
+  the one writer of `launcher.durations_file`; `long_scripts.py` imports its
+  config loader and record reader, so the proposal and the decision cannot
+  read the block by different rules. A second reader of the `launcher` block
+  anywhere else is a defect. Both stay stdlib-only and 3.6-safe.
 - End every script through `exit_codes.py`. The entry line is
   `finish(main())`. `main` returns `ExitCode.SUCCESS`, or
   `report(<member>, <what failed>, <on which input>, <what to do next>)` for a
