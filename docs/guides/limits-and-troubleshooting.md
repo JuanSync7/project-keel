@@ -276,8 +276,8 @@ change to a template check upstream as an issue or a pull request.
   redirect is refused, so the endpoint cannot move the key elsewhere. That
   list is defence in depth, not a sandbox: whoever can edit
   `config/project.json` can list a host of their choosing, an `http://`
-  base_url sends the key in clear text, and a listed name is trusted to
-  resolve where DNS says
+  base_url is admitted only to a loopback address, and a listed name is
+  trusted to resolve where DNS says
   ([ADR-K-0018](../adr/keel/K-0018-model-endpoint-host-allowlist.md)).
   `scripts/run_evals.py` refuses a report path that resolves
   through a symlink, and it checks once, before it writes: a symlink planted
@@ -406,6 +406,7 @@ Three more codes come from the tools around these scripts:
 | `make trace` exits 2 naming `traceability.matrix_path` and `is not git-ignored` | git would list the matrix, so writing it would change the tree | add the directory of `traceability.matrix_path` (`.evidence/traceability/matrix.json`) to `.gitignore` |
 | `make trace` exits 2 with `pytest read its ini from outside the project` | the project has no pytest configuration of its own, so pytest took a parent directory's and its collection rule is another project's | give the project its own `[tool.pytest.ini_options]` in `pyproject.toml` |
 | `make test-fe-unit` fails with `Unexpected .only modifier` | a unit test is focused with `.only`, which would skip the rest of the suite; the app's `vitest.config.ts` sets `allowOnly: false`, and the journey's `forbidOnly: true` refuses the same in `e2e/` | remove the `.only` |
+| `make eval-live` refuses, or `get_model("openai-compatible", ...)` raises `ValueError`, saying `base_url` uses `http` to a host that is not a loopback address | the adapter would send its credential in clear text over a network; http is admitted only to a loopback address literal, 127.0.0.0/8 or `[::1]`, and a name such as `localhost` is refused because it resolves through DNS or a hosts file | use https, or for a server on this machine write its address, `http://127.0.0.1:<port>` or `http://[::1]:<port>`, and list that `host:port` in `models.allowed_hosts.openai-compatible` |
 | `make test-fe-e2e` fails with `Error: No tests found` | the app's journey directory holds no `*.spec.ts`; this is the intended red for a stack with zero journeys | add a journey under the app's `e2e/` |
 | `make test-fe-e2e` fails with `browserType.launch: Executable doesn't exist at ...` and a box saying `npx playwright install` | the browser cache lacks the chromium revision the pinned `@playwright/test` expects, or config/project.json `layers.frontend.journey.browser_executable` names a path that does not exist; a cache that `PLAYWRIGHT_BROWSERS_PATH` relocates reaches each `make verify` goal only while config/project.json `child_env.names` lists that variable | outside the gate, run `npx playwright install chromium` in the app (it downloads into the user's browser cache, not the tree), or set `layers.frontend.journey.browser_executable` (`null` as shipped) to a chromium on the host |
 | `make test-fe-e2e` fails with `http://<host>:<port> is already used` | another process holds config/project.json `layers.frontend.journey.port` (`4391` as shipped); the journey refuses to test a server it did not start | stop that process, or set `layers.frontend.journey.port` to a free port |

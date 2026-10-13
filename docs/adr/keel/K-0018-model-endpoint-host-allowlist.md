@@ -5,7 +5,7 @@ layer: n/a
 status: proposed
 owner: TBD
 tags: [adr, models, credentials, allowlist, redirect, child-env]
-summary: "models/openai_compatible.py sent its bearer token to whatever host base_url named, and urllib re-sent it to whatever host a 301, 302 or 303 named. Now config/project.json models.allowed_hosts lists, per adapter, the `host` or `host:port` entries it may send its credential to, compared exactly in one canonical form that scripts/child_env.py canonical_host_entry defines; an entry with no port matches only the scheme's default port. The list ships empty, so every host, the adapter's default one included, is refused until a project lists it. The check runs at construction, before any request is built and before the credential variable is read, and any redirect is refused rather than followed. Defence in depth, not a sandbox."
+summary: "models/openai_compatible.py sent its bearer token to whatever host base_url named, and urllib re-sent it to whatever host a 301, 302 or 303 named. Now config/project.json models.allowed_hosts lists, per adapter, the `host` or `host:port` entries it may send its credential to, compared exactly in one canonical form that scripts/child_env.py canonical_host_entry defines; an entry with no port matches only the scheme's default port, and http is refused unless the host is a loopback address literal. The list ships empty, so every host, the adapter's default one included, is refused until a project lists it. The check runs at construction, before any request is built and before the credential variable is read, and any redirect is refused rather than followed. Defence in depth, not a sandbox."
 id: docs-adr-0018-model-endpoint-host-allowlist
 created: 2026-10-12
 updated: 2026-10-13
@@ -57,9 +57,9 @@ may leave the process. Nothing decided *where* it may go.
    and IPv6 compression are canonicalised.
 4. **The port rule.** An entry `host` matches only the default port of the
    URL's scheme (80 for http, 443 for https). An entry `host:port` matches
-   only that port. So `llm.example` admits `https://llm.example` and
-   `http://llm.example`, and not `https://llm.example:8443` or
-   `http://llm.example:443`.
+   only that port. So `llm.example` admits `https://llm.example`, and not
+   `https://llm.example:8443`; `127.0.0.1` admits `http://127.0.0.1`, and not
+   `http://127.0.0.1:443`.
 5. **The check runs first.** The adapter checks the URL's shape, then its
    host, then `api_key_env`, all at construction. An unlisted host is refused
    before any request is built and before the credential variable is read,
@@ -72,6 +72,17 @@ may leave the process. Nothing decided *where* it may go.
    `Location`.
 7. **The shipped list is empty.** `openai-compatible` ships with `[]`, so its
    default `base_url` is refused until a project lists that host.
+8. **http only to a loopback address.** An `http` base_url is refused unless
+   its host is a loopback address literal: 127.0.0.0/8 or `::1`, as the
+   stdlib `ipaddress` module's `is_loopback` reads the host's
+   `canonical_host_entry` form. A name is refused, `localhost` included,
+   because a name resolves through DNS or a hosts file, which this rule does
+   not trust; the refusal says to write `http://127.0.0.1` or `http://[::1]`.
+   A host with no canonical form (`2130706433`, an IPv4-mapped address) is
+   not a loopback address either. The check is part of the URL-shape check,
+   so it runs before the host list is read and before the credential variable
+   is read. Its `ValueError` names the scheme and the host, and says to use
+   https or a loopback address; it never names the path or the credential.
 
 ## Consequences
 
@@ -91,9 +102,11 @@ may leave the process. Nothing decided *where* it may go.
   can list any host. The rule stops a forwarded argument, a stray
   `model_options` value or a redirect from choosing the destination; it does
   not stop the project's own author.
-- **The scheme is not pinned.** An entry admits http and https alike on the
-  default port of each, so an `http://` base_url sends the bearer token in
-  clear text. Refusing http for a non-loopback host is not decided here.
+- **A plain-http server on another machine needs TLS in front of it.** A
+  local Ollama or vLLM server on loopback works over http; the same server on
+  another host is reached over https or not at all. The bearer token
+  crosses a network only encrypted, though a request to a loopback port still
+  reaches whichever local process holds that port.
 - **A proxy sees the request.** urllib honours the proxy variables of the
   process the adapter runs in, and a proxy sees the Authorization header of an
   http request. The allowlist names the endpoint, not the route.

@@ -30,7 +30,10 @@ version rather than a bare commit:
   form, a duplicate, and an adapter not in `models.available`. The adapter
   also refuses every redirect: urllib re-sent a POST answered 301, 302 or 303
   as a GET with the Authorization header to the host the `Location` named.
-  Defence in depth, not a sandbox;
+  An `http` base_url is refused unless its host is a loopback address
+  literal (127.0.0.0/8 or `::1`; the name `localhost` is refused), so the
+  credential never crosses a network in clear text. Defence in depth, not a
+  sandbox;
   `docs/adr/keel/K-0018-model-endpoint-host-allowlist.md` is the proposed
   decision. **Action required:** a project that calls `openai-compatible`
   adds its endpoint's host to the list after `copier update`, as the upgrade

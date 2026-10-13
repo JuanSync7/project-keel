@@ -1739,11 +1739,10 @@ helper" in `docs/guides/generate-and-upgrade.md` are the upgrade path.
 
 Left by CMP-5.S2:
 
-- `models.allowed_hosts` admits a listed host over `http` as well as `https`,
-  so an `http://` base_url sends the credential unencrypted. Whether `http` is
-  refused for every host that is not a loopback address is the maintainer's
-  decision, recorded as open in
-  `docs/adr/keel/K-0018-model-endpoint-host-allowlist.md`.
+- `models.allowed_hosts` admitted a listed host over `http` as well as
+  `https`. Decided since: `http` is refused unless the host is a loopback
+  address literal, `docs/adr/keel/K-0018-model-endpoint-host-allowlist.md`
+  Decision 8.
 - `tests/integration/test_exit_gate.py` accepts `finish(passthrough(main()))`
   over a `main` that returns a script's own integers, so a script can pass the
   gate without returning members. Queued for the CMP-5.S4 tree-wide checks.

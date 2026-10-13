@@ -82,8 +82,12 @@ writes:
   Authorization header, to the host the endpoint names. The adapter follows
   no redirect, and raises a `RuntimeError` naming the endpoint by scheme,
   host and port and the status, never the `Location`.
-- **The scheme is not pinned.** `llm.example` admits `http://llm.example` as
-  well, and an http request carries the bearer token in clear text.
+- **http goes only to a loopback address.** An `http` base_url is refused
+  with a `ValueError` unless its host is a loopback address literal,
+  `127.0.0.0/8` or `[::1]`, so the bearer token never crosses a network in
+  clear text. A name is refused, `localhost` included, since it resolves
+  through DNS or a hosts file: write `http://127.0.0.1:8080/v1` for a local
+  server. Any other host needs https.
 
 Defence in depth, not a sandbox: whoever can edit config/project.json can
 list any host, and the check trusts DNS. The decision and its limits are

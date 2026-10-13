@@ -2,7 +2,7 @@
 title: Unit — OpenAI-compatible model backend
 kind: tests
 layer: backend
-summary: The adapter builds a correct chat-completions request and parses the reply, with no network. It refuses at construction an `api_key_env` config/project.json `models.credential_env` does not declare for it and a `base_url` that is not an http or https URL with a host and no user part, query or fragment, naming the argument and never a value. It describes an unexpected response body by its keys without quoting it, and names an endpoint in an error by scheme, host and port, never by its path. It requests the URL rebuilt from the parts it checked, and a refusal by urllib or a reply that is not JSON keeps neither the path nor the body. It sends the credential only to a base_url whose host and port config/project.json `models.allowed_hosts.openai-compatible` lists exactly (an entry with no port only on the scheme's default port; no prefix, suffix, subdomain, trailing dot, numeric respelling, IPv4-mapped address or zone id), refusing every other one before any request and before the credential variable is read, with a message naming the key and the entry to add and never the path or the key; the default base_url is refused until listed, and base_url is read-only after the check.
+summary: The adapter builds a correct chat-completions request and parses the reply, with no network. It refuses at construction an `api_key_env` config/project.json `models.credential_env` does not declare for it and a `base_url` that is not an http or https URL with a host and no user part, query or fragment, naming the argument and never a value. It describes an unexpected response body by its keys without quoting it, and names an endpoint in an error by scheme, host and port, never by its path. It requests the URL rebuilt from the parts it checked, and a refusal by urllib or a reply that is not JSON keeps neither the path nor the body. It sends the credential only to a base_url whose host and port config/project.json `models.allowed_hosts.openai-compatible` lists exactly (an entry with no port only on the scheme's default port; no prefix, suffix, subdomain, trailing dot, numeric respelling, IPv4-mapped address or zone id), refusing every other one before any request and before the credential variable is read, with a message naming the key and the entry to add and never the path or the key. It sends http only to a loopback address literal (127.0.0.0/8 or ::1), refusing a listed name, localhost included with the address to write instead, a private or unspecified address and a numeric respelling, before the credential variable is read and with the same message whether it is set or not, naming the scheme and host and never the path or the key; https to any listed host is unaffected. The default base_url is refused until listed, and base_url is read-only after the check.
 """
 
 import sys
@@ -357,8 +357,8 @@ _ADMITTED = [
     ),
     ("http://127.0.0.1:8080" + _PATH, ["127.0.0.1:8080"], "http://127.0.0.1:8080"),
     ("http://[::1]:8080" + _PATH, ["[::1]:8080"], "http://[::1]:8080"),
-    # An entry pins a host and port, not a scheme: http on 80 is admitted.
-    ("http://llm.example" + _PATH, ["llm.example"], "http://llm.example"),
+    # An entry with no port matches http's default port too, on a loopback host.
+    ("http://127.0.0.1" + _PATH, ["127.0.0.1"], "http://127.0.0.1"),
 ]
 # (base_url, entries, or None when the adapter is not named at all).
 _REFUSED = {
@@ -366,18 +366,18 @@ _REFUSED = {
     "missing-key": ("https://llm.example" + _PATH, None),
     "entry-without-port-vs-8443": ("https://llm.example:8443" + _PATH, ["llm.example"]),
     "entry-8443-vs-default": ("https://llm.example" + _PATH, ["llm.example:8443"]),
-    "https-default-on-http": ("http://llm.example:443" + _PATH, ["llm.example"]),
+    "https-default-on-http": ("http://127.0.0.1:443" + _PATH, ["127.0.0.1"]),
     "prefix": ("https://evil-llm.example" + _PATH, ["llm.example"]),
     "suffix": ("https://llm.example.evil.example" + _PATH, ["llm.example"]),
     "subdomain": ("https://sub.llm.example" + _PATH, ["llm.example"]),
     "trailing-dot": ("https://llm.example." + _PATH, ["llm.example"]),
-    "integer-host": ("http://2130706433" + _PATH, ["127.0.0.1"]),
-    "short-quad": ("http://127.1" + _PATH, ["127.0.0.1"]),
-    "hex-quad": ("http://0x7f.0.0.1" + _PATH, ["127.0.0.1"]),
-    "octal-quad": ("http://0177.0.0.1" + _PATH, ["127.0.0.1"]),
-    "ipv4-mapped": ("http://[::ffff:127.0.0.1]" + _PATH, ["127.0.0.1"]),
-    "zone-id": ("http://[fe80::1%25eth0]:8080" + _PATH, ["[fe80::1]:8080"]),
-    "port-zero": ("http://llm.example:0" + _PATH, ["llm.example"]),
+    "integer-host": ("https://2130706433" + _PATH, ["127.0.0.1"]),
+    "short-quad": ("https://127.1" + _PATH, ["127.0.0.1"]),
+    "hex-quad": ("https://0x7f.0.0.1" + _PATH, ["127.0.0.1"]),
+    "octal-quad": ("https://0177.0.0.1" + _PATH, ["127.0.0.1"]),
+    "ipv4-mapped": ("https://[::ffff:127.0.0.1]" + _PATH, ["127.0.0.1"]),
+    "zone-id": ("https://[fe80::1%25eth0]:8080" + _PATH, ["[fe80::1]:8080"]),
+    "port-zero": ("https://llm.example:0" + _PATH, ["llm.example"]),
 }
 
 
@@ -472,3 +472,141 @@ def test_the_checked_base_url_cannot_be_replaced_after_construction(monkeypatch)
     with pytest.raises(AttributeError):
         backend.base_url = "https://elsewhere.example/v1"
     assert backend.base_url == _URL
+
+
+# --- http only to a loopback address: the bearer token is never sent in clear --
+# --- text over a network -----------------------------------------------------
+
+# (base_url, entry listed): http to a loopback address literal, 127.0.0.0/8 or
+# ::1, is admitted once listed.
+_HTTP_LOOPBACK = [
+    ("http://127.0.0.1:8080" + _PATH, "127.0.0.1:8080"),
+    ("http://127.5.6.7:8080" + _PATH, "127.5.6.7:8080"),
+    ("http://[::1]:8080" + _PATH, "[::1]:8080"),
+]
+# (base_url, entry listed): every host is listed, so the scheme rule, not the
+# allowlist, is what refuses each one.
+_HTTP_REFUSED = {
+    "name": ("http://llm.example" + _PATH, "llm.example"),
+    "localhost": ("http://localhost:8080" + _PATH, "localhost:8080"),
+    "private-ipv4": ("http://10.0.0.5:8080" + _PATH, "10.0.0.5:8080"),
+    "private-ipv4-192": ("http://192.168.1.10" + _PATH, "192.168.1.10"),
+    "private-ipv6": ("http://[fd00::1]:8080" + _PATH, "[fd00::1]:8080"),
+    "unspecified": ("http://0.0.0.0:8080" + _PATH, "0.0.0.0:8080"),
+    "numeric-respelling": ("http://2130706433" + _PATH, "127.0.0.1"),
+    "ipv4-mapped": ("http://[::ffff:127.0.0.1]:8080" + _PATH, "127.0.0.1:8080"),
+}
+
+
+@pytest.mark.parametrize("base_url, entry", _HTTP_LOOPBACK)
+def test_http_to_a_loopback_address_is_admitted(monkeypatch, base_url, entry):
+    allowing(monkeypatch, entry)
+    monkeypatch.setenv("OPENAI_API_KEY", _KEY_CANARY)
+    captured: dict = {}
+    backend = get_model(
+        "openai-compatible", base_url=base_url, transport=_captured_transport(captured)
+    )
+    backend.run("ping")
+    assert captured["url"] == base_url + "/chat/completions"
+    assert captured["headers"]["Authorization"] == "Bearer " + _KEY_CANARY
+
+
+@pytest.mark.parametrize("case", sorted(_HTTP_REFUSED))
+def test_http_to_a_host_that_is_not_a_loopback_address_is_refused(monkeypatch, case):
+    base_url, entry = _HTTP_REFUSED[case]
+    allowing(monkeypatch, entry)
+    monkeypatch.setenv("OPENAI_API_KEY", _KEY_CANARY)
+    with pytest.raises(ValueError) as info:
+        get_model("openai-compatible", base_url=base_url, transport=_refusing_transport)
+    message = str(info.value)
+    assert "base_url" in message and "`http`" in message, message
+    assert "loopback" in message and "use https" in message, message
+    assert "allowed_hosts" not in message, message
+    assert "path-canary" not in message and _KEY_CANARY not in message, message
+    assert info.value.__cause__ is None
+
+
+def test_the_http_refusal_names_the_host():
+    from models.openai_compatible import _checked_base_url
+
+    with pytest.raises(ValueError) as info:
+        _checked_base_url("http://llm.example:8080" + _PATH)
+    assert "`llm.example`" in str(info.value)
+
+
+def test_http_to_localhost_is_refused_with_the_address_to_write(monkeypatch):
+    """`localhost` is a name, resolved through DNS or a hosts file, which the
+    allowlist does not trust; the refusal says to write the address."""
+    allowing(monkeypatch, "localhost:8080")
+    with pytest.raises(ValueError) as info:
+        get_model(
+            "openai-compatible",
+            base_url="http://localhost:8080/v1",
+            transport=_refusing_transport,
+        )
+    assert "`http://127.0.0.1`" in str(info.value)
+
+
+def test_https_to_a_host_that_is_not_a_loopback_address_is_unaffected(monkeypatch):
+    allowing(monkeypatch, "10.0.0.5:8443")
+    captured: dict = {}
+    backend = get_model(
+        "openai-compatible",
+        base_url="https://10.0.0.5:8443/v1",
+        transport=_captured_transport(captured),
+    )
+    backend.run("ping")
+    assert captured["url"] == "https://10.0.0.5:8443/v1/chat/completions"
+
+
+def test_the_http_refusal_comes_before_the_credential_variable_is_read(monkeypatch):
+    """The host is listed and the variable undeclared: the scheme refuses
+    first, and the environment is not read for any credential."""
+    from models import openai_compatible as mod
+
+    allowing(monkeypatch, "llm.example")
+    read = []
+
+    class Spy(dict):
+        def get(self, key, default=None):
+            read.append(key)
+            return super().get(key, default)
+
+        def __getitem__(self, key):
+            read.append(key)
+            return super().__getitem__(key)
+
+    monkeypatch.setattr(mod.os, "environ", Spy(UNRELATED_SECRET="canary"))
+    with pytest.raises(ValueError) as info:
+        get_model(
+            "openai-compatible",
+            base_url="http://llm.example/v1",
+            api_key_env="UNRELATED_SECRET",
+            transport=_refusing_transport,
+        )
+    assert "loopback" in str(info.value)
+    assert "models.credential_env" not in str(info.value)
+    assert read == []
+
+
+def test_the_http_refusal_is_the_same_with_the_credential_set_or_unset(monkeypatch):
+    allowing(monkeypatch, "llm.example")
+    messages = []
+    for value in (_KEY_CANARY, None):
+        if value is None:
+            monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        else:
+            monkeypatch.setenv("OPENAI_API_KEY", value)
+        with pytest.raises(ValueError) as info:
+            get_model(
+                "openai-compatible",
+                base_url="http://llm.example/v1",
+                transport=_refusing_transport,
+            )
+        messages.append(str(info.value))
+    assert messages[0] == messages[1] and "loopback" in messages[0]
+
+
+def test_both_http_tables_ran():
+    """A pass over zero cases would prove nothing."""
+    assert len(_HTTP_LOOPBACK) >= 3 and len(_HTTP_REFUSED) >= 3

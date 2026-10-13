@@ -2,13 +2,14 @@
 title: OpenAI-compatible model backend
 layer: backend
 public_api: no
-summary: Adapter for any HTTP endpoint speaking the OpenAI chat-completions API. It is built only for a `base_url` that is an http or https URL with a host and no user part, query or fragment, written in unreserved URL characters, and only for an `api_key_env` that config/project.json `models.credential_env` declares for this adapter (scripts/child_env.py load_policy), so no caller, and no config a caller forwards, can choose another environment variable to send as the bearer token; either refusal is a ValueError that names the argument and never a value. Between the two, the base_url's host and port must be listed in config/project.json `models.allowed_hosts` for this adapter, compared exactly in scripts/child_env.py canonical_host_entry's one form (an entry `host` matches only the scheme's default port, `host:port` only that port, nothing by suffix, prefix or wildcard); the shipped list is empty, so every host, the default one included, is refused until a project lists it, and the refusal names that key and the entry to add, never the path, before the credential variable is read. base_url is read-only after that check. A redirect is never followed: urllib's default handler would re-send a 301, 302 or 303 as a GET with the Authorization header to a host nobody listed, so any 3xx is a RuntimeError naming the endpoint and the status, never the Location. Defence in depth, not a sandbox (docs/adr/keel/K-0018-model-endpoint-host-allowlist.md). An unreachable endpoint is ModelUnavailable (absent); an endpoint that answers with an error, or with a body that is not a chat completion, is broken, and that body is described by its keys, never quoted. An error names the endpoint by scheme, host and port, never by its path.
+summary: Adapter for any HTTP endpoint speaking the OpenAI chat-completions API. It is built only for a `base_url` that is an http or https URL with a host and no user part, query or fragment, written in unreserved URL characters, and, for http, only when the host is a loopback address literal (127.0.0.0/8 or ::1 by the stdlib ipaddress module, read through scripts/child_env.py canonical_host_entry; the name localhost is refused, since a name resolves through DNS or a hosts file), so the bearer token never crosses a network in clear text; and only for an `api_key_env` that config/project.json `models.credential_env` declares for this adapter (scripts/child_env.py load_policy), so no caller, and no config a caller forwards, can choose another environment variable to send as the bearer token; either refusal is a ValueError that names the argument and never a value. Between the two, the base_url's host and port must be listed in config/project.json `models.allowed_hosts` for this adapter, compared exactly in scripts/child_env.py canonical_host_entry's one form (an entry `host` matches only the scheme's default port, `host:port` only that port, nothing by suffix, prefix or wildcard); the shipped list is empty, so every host, the default one included, is refused until a project lists it, and the refusal names that key and the entry to add, never the path, before the credential variable is read. base_url is read-only after that check. A redirect is never followed: urllib's default handler would re-send a 301, 302 or 303 as a GET with the Authorization header to a host nobody listed, so any 3xx is a RuntimeError naming the endpoint and the status, never the Location. Defence in depth, not a sandbox (docs/adr/keel/K-0018-model-endpoint-host-allowlist.md). An unreachable endpoint is ModelUnavailable (absent); an endpoint that answers with an error, or with a body that is not a chat completion, is broken, and that body is described by its keys, never quoted. An error names the endpoint by scheme, host and port, never by its path.
 """
 
 from __future__ import annotations
 
 import email.message
 import http.client
+import ipaddress
 import json
 import os
 import string
@@ -30,6 +31,9 @@ Transport = Callable[[str, dict, dict, float], dict]
 # The wire format is HTTP; any other scheme urllib can open (file:, ftp:) is
 # not an endpoint this adapter talks to.
 _SCHEMES = ("http", "https")
+# The scheme that carries the bearer token unencrypted, admitted only to a
+# loopback address, where the request never reaches a network.
+_CLEAR_SCHEME = "http"
 # The port a URL with no written port is sent to, per scheme: an allowlist entry
 # with no port matches only this one.
 _DEFAULT_PORTS = {"http": 80, "https": 443}
@@ -45,7 +49,8 @@ _URL_CHARS = frozenset(string.ascii_letters + string.digits + "-._~:/[]%@!$&'()*
 
 def _checked_base_url(base_url: str) -> urllib.parse.SplitResult:
     """*base_url*'s parts, or ValueError when it is not an http(s) URL with a
-    host and no user part, query or fragment. The message never quotes the
+    host and no user part, query or fragment, or when it is http to a host
+    that is not a loopback address. The message never quotes the
     URL, since the part refused may be a credential. The caller rebuilds the
     URL it requests from these parts, so the request cannot go anywhere the
     check did not see."""
@@ -81,7 +86,37 @@ def _checked_base_url(base_url: str) -> urllib.parse.SplitResult:
             "base_url must not carry a user part; the credential is read from "
             "the environment variable `api_key_env` names"
         )
+    if parts.scheme == _CLEAR_SCHEME and not _is_loopback(host):
+        raise ValueError(
+            "base_url uses `%s` to host `%s`, which is not a loopback address, "
+            "so the credential would cross the network in clear text; use "
+            "https, or a loopback address for a local server, written as an "
+            "address (`http://127.0.0.1` or `http://[::1]`): a name such as "
+            "localhost resolves through DNS or a hosts file, which is not "
+            "trusted" % (parts.scheme, host)
+        )
     return parts
+
+
+def _written(host: str) -> str:
+    """*host* as an allowlist entry writes it: urlsplit strips an IPv6
+    literal's brackets, and an entry keeps them."""
+    return "[%s]" % host if ":" in host else host
+
+
+def _is_loopback(host: str) -> bool:
+    """Whether *host*, as urlsplit reads it, is a loopback address literal:
+    127.0.0.0/8 or ::1, by the stdlib's definition. A name is not one, since
+    it resolves through DNS or a hosts file; neither is a host with no single
+    form in canonical_host_entry (a numeric respelling, an IPv4-mapped
+    address, a zone id), so the address tested is the one the allowlist
+    compares."""
+    try:
+        canonical = canonical_host_entry(_written(host))
+        address = ipaddress.ip_address(canonical.strip("[]"))
+    except ValueError:
+        return False
+    return address.is_loopback
 
 
 def _checked_host(
@@ -97,8 +132,7 @@ def _checked_host(
     other than a dotted quad) is refused, not rewritten. The message names
     the key and the entry to add, never the URL's path."""
     effective = _DEFAULT_PORTS[scheme] if port is None else port
-    # urlsplit strips an IPv6 literal's brackets; an entry keeps them.
-    written = "[%s]" % host if ":" in host else host
+    written = _written(host)
     key = "config/project.json `%s.%s`" % (_HOSTS_KEY, adapter)
     try:
         bare = canonical_host_entry(written)
@@ -223,8 +257,9 @@ class OpenAICompatible(ModelBackend):
     from the environment (``api_key_env``), never from config or constructor
     args; a keyless local server simply gets no Authorization header.
     ``api_key_env`` must be a name config/project.json ``models.credential_env``
-    declares for this adapter, and ``base_url`` an http(s) URL with a host and
-    no user part, query or fragment, whose host and port
+    declares for this adapter, and ``base_url`` an https URL, or an http URL
+    to a loopback address literal, with a host and no user part, query or
+    fragment, whose host and port
     ``models.allowed_hosts`` lists for this adapter; anything else is a
     ValueError at construction, checked in that order, so an unlisted host is
     refused before the credential variable is looked at. The shipped list is
