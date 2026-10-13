@@ -1812,3 +1812,84 @@ tooling, the frontend backlog, the mutation runner,
 project-jarvis's proposals, and the residuals of CMP-4.S5 to S8 not named in
 CMP-5.S2. A header field per code file is proposed in the vault and is not
 accepted, so it is not planned here.
+
+## Queued for Campaign 6
+
+Campaign 6 is not planned or approved. Until it is, this list is its queue,
+in order. A queue id becomes a `CMP-6.S<m>` name only when an approved slice
+table gives it one (CONVENTIONS §20).
+
+| Position | Queue id | Gap |
+|----------|----------|-----|
+| 1 | KEEL-TEST-1 | A test can reach a live store; nothing in the suite refuses it |
+| 2 | KEEL-SEC-1 | Nothing scans the tree for a committed secret; the scanner is the maintainer's choice |
+| 3 | KEEL-DOC-1 | A design or spec document can describe itself without meeting its features; nothing records which questions it answers and which it leaves open |
+
+**KEEL-DOC-1, the defence table.** This holds the maintainer's document rule
+R-DOC-15: before a design is planned, it answers hard questions on behalf of
+every feature it must serve, and records each answer. The table is a section
+of the design or spec document. It has one row per question, with five
+columns: Feature, Question, Answered in, Verdict, and Change or cut. Feature is
+a requirement id, or a feature name in a design document, which has no ids.
+Answered in is a heading in the same document. Verdict is one of `defended`,
+`partly` or `gap`. Beside the requirements sits a "Will not do" list: each
+entry is a scope cut with its reason. A gap is closed by a design change or by
+an entry in that list. The schema in this paragraph is proposed; the slice
+fixes it.
+
+Requirements, in EARS form, for the check the slice builds:
+
+- **DT-1** (ubiquitous): The check shall read every document under `docs/`
+  whose frontmatter says `kind: design` or `kind: spec`, through the repo's
+  Markdown reader, and never by matching text.
+- **DT-2** (unwanted): If such a document has no defence table, then the check
+  shall be red, naming the file.
+- **DT-3** (event-driven): When a `kind: spec` document defines a requirement
+  id, the check shall be red unless the table has a row whose Feature is that
+  id. Ids are read by `scripts/traceability.py` `read_specs`, the only parser
+  of an id; the slice builds no second one.
+- **DT-4** (unwanted): If a row's Answered in is empty or names a heading the
+  document does not have, then the check shall be red, naming the file, the
+  row and the heading.
+- **DT-5** (unwanted): If a row's Verdict is empty or not one of the three
+  words, then the check shall be red.
+- **DT-6** (unwanted): If a row's Verdict is `gap`, and its Change or cut cell
+  names neither a design change nor an entry in the "Will not do" list, then
+  the check shall be red.
+- **DT-7** (ubiquitous): The check's documentation shall say that it cannot
+  judge whether a question is a good one, or whether an answer holds. Review
+  holds that, and `make doc-review` is where it is asked.
+
+How it is built, in order:
+
+1. The failing test first. One fixture document per rule DT-2 to DT-6 breaks
+   that rule, and the check is shown red on each, then green on a fixture that
+   keeps them all.
+2. The check is a gate test under `tests/integration/`, the CMP-5.S1
+   precedent, since the structure gate's letters A to Z are all used. If the
+   repo has a way by then to add a check without a letter, the slice uses it
+   and says why.
+3. A mutation proof by hand: each rule's comparison is broken in turn, and the
+   suite must go red for each. The slice reports which mutations it ran.
+4. Docs grounded in code: `docs/guides/doc-style.md` gains the rule and the
+   table's shape. `docs/specs/README.md` says where the table goes and what it
+   does not judge. `docs/reference/features.md` gains the check's row. Each
+   claim names the test that holds it.
+
+The slice must also decide these points, and say what it chose:
+
+- **keel's own design documents.** keel has three `kind: design` documents
+  under `docs/design/`, and none has a table. The slice either writes their
+  tables, or the check applies only to documents created after it lands. The
+  first follows "fail closed"; the second leaves keel's own plans unchecked.
+- **A project's documents on arrival.** After `copier update`, a project's own
+  design and spec documents have no table, so they turn red. This is the same
+  question as B1 for a project's own `sys.exit` scripts, and takes the same
+  answer: warn, then fail.
+- **What the template ships.** A generated project gets no `kind: design`
+  document, only the labelled `docs/design/README.md`, so there is no design
+  stub to give an empty table to. It does get `docs/specs/example-feature.md`,
+  a spec with requirement ids. The proposal is to give that spec a filled
+  example table, with a row for each of its ids. An empty table would fail
+  DT-3 on the first run of `make verify`. `docs/design/README.md` would show
+  the table's shape inside a fenced block, which no check reads as a table.
