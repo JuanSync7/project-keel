@@ -340,3 +340,101 @@ def test_a_report_file_that_is_a_symlink_is_not_written_through(tmp_path):
     out = run_cli(repo, env)
     assert out.returncode == 2, out.stdout
     assert target.read_text("utf-8") == "precious\n"
+
+
+# --- three answers from git: not installed, no repository, ran and failed ------
+
+
+def _run_apart(repo, env, mode="replay"):
+    """run_cli with stderr kept apart, so the helper's one line can be read."""
+    return subprocess.run(
+        [
+            sys.executable,
+            str(repo / "scripts" / "run_evals.py"),
+            "--mode",
+            mode,
+            "--root",
+            str(repo),
+        ],
+        cwd=str(repo),
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        universal_newlines=True,
+    )
+
+
+def _head_names_nothing(repo):
+    (repo / ".git" / "HEAD").write_text("garbage\n", encoding="utf-8")
+
+
+def _gitdir_is_gone(repo):
+    shutil.rmtree(str(repo / ".git"))
+    (repo / ".git").write_text("gitdir: %s\n" % (repo / "gone"), encoding="utf-8")
+
+
+@pytest.mark.parametrize("mode", ["replay", "live"])
+@pytest.mark.parametrize(
+    "break_it", [_head_names_nothing, _gitdir_is_gone], ids=["head", "gitdir"]
+)
+@pytest.mark.parametrize("stale", [False, True], ids=["first-run", "stale-green"])
+def test_a_git_that_ran_and_failed_is_refused_and_names_its_status(
+    tmp_path, break_it, mode, stale
+):
+    """A repository git cannot read is not "no git": whether the report path is
+    ignored is unknown, so the run writes nothing. git exits 128 for this and
+    for "not a repository" alike; the `.git` entry on disk tells them apart."""
+    repo, env = build_scratch(tmp_path)
+    env = dict(env, GIT_CEILING_DIRECTORIES=str(tmp_path))
+    if stale:
+        assert run_cli(repo, env).returncode == 0
+    before = _tree(repo / _CONFIG.report_dir) if stale else None
+    green = report_path(repo).read_bytes() if stale else None
+    break_it(repo)
+    out = _run_apart(repo, env, mode)
+    assert out.returncode == 2, out.stderr
+    line = out.stderr.strip().splitlines()[-1]
+    assert line.startswith("run_evals: git "), line
+    assert "evals.report_dir" in line and "git exited 128" in line, line
+    assert "Traceback" not in out.stderr, out.stderr
+    if stale:
+        assert _tree(repo / _CONFIG.report_dir) == before
+        assert report_path(repo).read_bytes() == green
+    else:
+        assert not (repo / Path(_CONFIG.report_dir).parts[0]).exists()
+
+
+def test_a_git_that_fails_under_a_refused_config_removes_nothing(tmp_path):
+    """The refused-config path deletes the earlier report only where git says
+    the path is ignored; a git that cannot say is not a yes."""
+    repo, env = build_scratch(tmp_path)
+    env = dict(env, GIT_CEILING_DIRECTORIES=str(tmp_path))
+    assert run_cli(repo, env).returncode == 0
+    _set_manifest(repo, "threshold", 2)
+    _head_names_nothing(repo)
+    out = _run_apart(repo, env)
+    assert out.returncode == 2, out.stderr
+    assert "git exited 128" in out.stderr and "may still stand" in out.stderr
+    assert "Traceback" not in out.stderr, out.stderr
+    assert report_path(repo).exists()
+
+
+def _no_git_on_path(tmp_path, env):
+    bare = tmp_path / "no-tools"
+    bare.mkdir()
+    return dict(env, PATH=str(bare))
+
+
+@pytest.mark.parametrize("absent", ["no-repository", "git-not-installed", "both"])
+def test_no_git_and_no_repository_still_run_and_write_the_report(tmp_path, absent):
+    """The two "no git" answers keep their path: with nothing tracked there is
+    no tree to dirty, so the ignore rule has nothing to protect."""
+    repo, env = build_scratch(tmp_path)
+    env = dict(env, GIT_CEILING_DIRECTORIES=str(tmp_path))
+    if absent in ("no-repository", "both"):
+        shutil.rmtree(str(repo / ".git"))
+    if absent in ("git-not-installed", "both"):
+        env = _no_git_on_path(tmp_path, env)
+    out = _run_apart(repo, env)
+    assert out.returncode == 0, out.stderr
+    assert read_report(repo)["result"] == "pass"

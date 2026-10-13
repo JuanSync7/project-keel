@@ -7,7 +7,7 @@ owner: TBD
 summary: How to replay the eval suites, run them live under the call cap, read the report, author a case with its hashes, and promote a live answer into the dataset.
 id: evals-readme-run
 created: 2026-06-17
-updated: 2026-10-12
+updated: 2026-10-13
 visibility: internal
 canonical: true
 ---
@@ -30,7 +30,10 @@ each case's doer against its recorded response, and writes the report to
 model call and reads no credential. `make verify` runs it after `test`.
 
 It refuses to run (exit 2) when `evals.report_dir` is a path git does not
-ignore, because a report there would dirty the tree.
+ignore, because a report there would dirty the tree. Where git is not
+installed, or no repository holds the project, there is no tree to dirty and
+it runs. A git command that ran and failed is neither: it refuses with exit 2
+and quotes git's status and stderr.
 
 ## Reading the report
 
@@ -72,7 +75,7 @@ the new hash from the stale case's detail.
 make eval-live       # scripts/run_evals.py --mode live
 ```
 
-Before the first live run, set three keys:
+Before the first live run, set four keys:
 
 1. `evals.live.model`: a name from `models.list_models()` (default `null`, which
    refuses the run).
@@ -81,11 +84,17 @@ Before the first live run, set three keys:
    the adapter's credential is sent, so `openai-compatible` refuses (exit 2,
    before any call) an `api_key_env` that config/project.json
    `models.credential_env.openai-compatible` does not list, and a `base_url`
-   that is not an http or https URL with a host and no user part, query or fragment, written without a space, a control character, a backslash or a non-ASCII letter. Anyone who
-   can edit `config/project.json` can still point `base_url` at a host of
-   their choosing and receive the declared key: review a change to this block
-   as you would a change to a credential.
-3. `evals.live.max_calls`: at least the number of cases. The default is `0`,
+   that is not an http or https URL with a host and no user part, query or fragment, written without a space, a control character, a backslash or a non-ASCII letter.
+3. `models.allowed_hosts.openai-compatible`: list the host of that
+   `base_url`, as `host`, or `host:port` for a port other than the scheme's
+   default (`models/README.md` gives the form). The list ships empty, so the
+   adapter refuses every host (exit 2, before any call) until you list one,
+   and it refuses a redirect rather than follow it. Anyone who can edit
+   `config/project.json` can still list a host of their choosing and receive
+   the declared key: review a change to this list or to `model_options` as
+   you would a change to a credential. The list is defence in depth, not a
+   sandbox.
+4. `evals.live.max_calls`: at least the number of cases. The default is `0`,
    which approves no calls. The cap is checked before any call, and a run that
    would exceed it is refused (exit 2).
 
@@ -113,5 +122,5 @@ it.
 |------|---------|
 | 0 | Every suite passed |
 | 1 | A suite failed: `below-threshold`, `case-error` or `stale-recording` |
-| 2 | Refused: bad config, a malformed or empty dataset, the call cap, a null or unknown model, or a `evals.report_dir` git does not ignore |
-| 3 | The live backend is absent (live only) |
+| 2 | Refused: bad config, a malformed or empty dataset, the call cap, a null or unknown model, a `evals.report_dir` git does not ignore, or a git command that ran and failed |
+| 11 | The live backend is absent (live only): `BACKEND_ABSENT` |

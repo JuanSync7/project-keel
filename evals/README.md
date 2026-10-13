@@ -9,7 +9,7 @@ tags: []
 summary: The eval harness — typed JSONL cases, deterministic scorers, replay of recorded responses as a verify gate, and a live run capped by config.
 id: evals-readme
 created: 2026-06-17
-updated: 2026-10-11
+updated: 2026-10-13
 visibility: internal
 canonical: true
 ---
@@ -64,7 +64,7 @@ to 0. `README_run.md` is the how-to.
   call, and it only proposes candidates; a person promotes one into the dataset
   by hand.
 - **Absent, failed and refused stay distinct.** A backend that cannot run here
-  is `absent` (exit 3); an answer that does not pass is `fail` (exit 1); input
+  is `absent` (exit 11, `BACKEND_ABSENT`); an answer that does not pass is `fail` (exit 1); input
   the harness cannot judge, such as bad config, a malformed dataset or an
   over-cap run, is `refused` (exit 2). Zero cases is refused, never a pass.
 - **The report is per run.** `<evals.report_dir>/<mode>.json` is replaced whole

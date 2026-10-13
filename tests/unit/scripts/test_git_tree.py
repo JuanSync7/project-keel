@@ -165,3 +165,146 @@ def test_run_evals_reads_the_one_symlink_check():
 
     assert not hasattr(run_evals, "_through_symlink")
     assert "through_symlink" in git_tree.__all__
+
+
+# --- three answers: git is not installed, no repository, git failed -----------
+
+
+def _empty_head(repo):
+    """A repository whose HEAD names nothing git can read."""
+    (repo / ".git" / "HEAD").write_text("garbage\n", encoding="utf-8")
+
+
+def _missing_gitdir(repo):
+    """A work tree whose `.git` file names a git directory that is not there."""
+    import shutil
+
+    shutil.rmtree(str(repo / ".git"))
+    (repo / ".git").write_text("gitdir: %s\n" % (repo / "gone"), encoding="utf-8")
+
+
+_BREAKS = {"head-is-garbage": _empty_head, "gitdir-is-missing": _missing_gitdir}
+_ASKS = {
+    "tree_snapshot": lambda root: git_tree.tree_snapshot(root),
+    "is_ignored": lambda root: git_tree.is_ignored(root, "ignored.txt"),
+    "head_commit": lambda root: git_tree.head_commit(root),
+}
+
+
+def test_a_git_that_is_not_installed_is_NoGitError(repo, tmp_path, monkeypatch):
+    """git_tree hands git the allowlisted environment, PATH included, so a PATH
+    that holds no git is the spawn failing: the first of the two "no git"
+    answers, even inside a repository."""
+    bare = tmp_path / "no-tools"
+    bare.mkdir()
+    monkeypatch.setenv("PATH", str(bare))
+    for name in ("tree_snapshot", "is_ignored"):
+        with pytest.raises(git_tree.NoGitError) as caught:
+            _ASKS[name](str(repo))
+        assert "not installed" in str(caught.value), name
+    assert git_tree.head_commit(str(repo)) is None
+
+
+@pytest.mark.parametrize("ask", sorted(_ASKS))
+@pytest.mark.parametrize("broken", sorted(_BREAKS))
+def test_a_git_that_ran_and_failed_is_GitFailedError_never_NoGitError(
+    repo, tmp_path, monkeypatch, broken, ask
+):
+    """A repository git cannot read is unknown, not absent. git exits 128 for
+    this and for "not a git repository" alike, so the status cannot tell them
+    apart: the `.git` entry on disk does."""
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path))
+    _BREAKS[broken](repo)
+    with pytest.raises(git_tree.GitFailedError) as caught:
+        _ASKS[ask](str(repo))
+    exc = caught.value
+    assert isinstance(exc.returncode, int) and exc.returncode != 0, exc.returncode
+    assert exc.stderr.strip(), "git's own complaint is missing"
+    assert "git exited %d" % exc.returncode in str(exc) and exc.stderr in str(exc)
+    assert len(exc.stderr) <= git_tree.STDERR_MAX
+    assert not isinstance(exc, git_tree.NoGitError)
+    assert not issubclass(git_tree.GitFailedError, git_tree.NoGitError)
+    assert not issubclass(git_tree.NoGitError, git_tree.GitFailedError)
+
+
+def test_a_git_that_cannot_be_started_for_another_reason_is_GitFailedError(
+    repo, tmp_path, monkeypatch
+):
+    """A git binary the process may not execute is not "not installed"."""
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    (tools / "git").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    (tools / "git").chmod(0o644)
+    monkeypatch.setenv("PATH", str(tools))
+    with pytest.raises(git_tree.GitFailedError) as caught:
+        git_tree.tree_snapshot(str(repo))
+    assert caught.value.returncode is None
+    assert "could not be started" in str(caught.value)
+
+
+def test_inside_a_repository_stops_where_git_stops(repo, tmp_path, monkeypatch):
+    """The walk answers "is there a repository git would look for here": it
+    climbs to a `.git` entry and stops below a directory
+    GIT_CEILING_DIRECTORIES names, as git's own discovery does."""
+    monkeypatch.delenv("GIT_CEILING_DIRECTORIES", raising=False)
+    deep = repo / "a" / "b"
+    deep.mkdir(parents=True)
+    assert git_tree.inside_a_repository(str(repo)) is True
+    assert git_tree.inside_a_repository(str(deep)) is True
+    # The ceiling is the repository's own directory: git, started in a/b, looks
+    # in a/b and a and never climbs into the directory that holds .git.
+    assert (
+        git_tree.inside_a_repository(str(deep), {"GIT_CEILING_DIRECTORIES": str(repo)})
+        is False
+    )
+    with_ceiling = {"GIT_CEILING_DIRECTORIES": "%s:%s" % (tmp_path / "x", repo)}
+    assert git_tree.inside_a_repository(str(deep), with_ceiling) is False
+    # A ceiling is never the start directory itself, and one above the
+    # repository hides nothing.
+    assert (
+        git_tree.inside_a_repository(str(repo), {"GIT_CEILING_DIRECTORIES": str(repo)})
+        is True
+    )
+    assert (
+        git_tree.inside_a_repository(
+            str(deep), {"GIT_CEILING_DIRECTORIES": str(tmp_path)}
+        )
+        is True
+    )
+    # The default environment is the one git is given: the allowlisted one.
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(repo))
+    assert git_tree.inside_a_repository(str(deep)) is False
+    lone = tmp_path / "lone"
+    lone.mkdir()
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path))
+    assert git_tree.inside_a_repository(str(lone)) is False
+
+
+def test_inside_a_repository_does_not_cross_a_filesystem(repo, monkeypatch):
+    """git does not look for a repository on another filesystem than the one it
+    started on, so a `.git` above a mount point is not this directory's."""
+    monkeypatch.delenv("GIT_CEILING_DIRECTORIES", raising=False)
+    deep = repo / "a"
+    deep.mkdir()
+    real_stat = git_tree.os.stat
+    start = real_stat(str(deep)).st_dev
+
+    class Other:
+        st_dev = start + 1
+
+    def stat(path, *args, **kwargs):
+        if str(path) == str(repo):
+            return Other()
+        return real_stat(path, *args, **kwargs)
+
+    monkeypatch.setattr(git_tree.os, "stat", stat)
+    assert git_tree.inside_a_repository(str(deep), {}) is False
+    # Told to cross filesystems, git would find it, so the walk must too.
+    crossing = {"GIT_DISCOVERY_ACROSS_FILESYSTEM": "1"}
+    assert git_tree.inside_a_repository(str(deep), crossing) is True
+
+
+def test_the_gate_runner_re_exports_both_git_errors():
+    assert rmt.GitFailedError is git_tree.GitFailedError
+    for name in ("GitFailedError", "NoGitError", "inside_a_repository"):
+        assert name in git_tree.__all__, name

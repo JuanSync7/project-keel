@@ -1304,3 +1304,121 @@ def test_carries_credential_without_a_policy_keeps_its_structural_rules():
     assert child_env.carries_credential("SVC_VALUE", _SHAPED["jwt"][0]) is None
     assert child_env.carries_credential("SVC_VALUE", "SYNTH-123456") is None
     assert child_env.carries_credential("PY", "C:/x+y@z,w~1") is None
+
+
+# --- models.allowed_hosts: where an adapter may send its credential ------------
+
+# Entries the grammar accepts as written: each is its own canonical form.
+_CANONICAL_HOSTS = [
+    "llm.example",
+    "llm.example:8443",
+    "127.0.0.1:8080",
+    "[::1]:8080",
+    "[2001:db8::1]",
+    "xn--bcher-kva.example",
+    "my_gateway.example",
+]
+# (entry, why it is refused): not canonical, or not a host this grammar can
+# compare in one form.
+_NOT_CANONICAL_HOSTS = [
+    ("LLM.Example", "upper case"),
+    ("*.example", "wildcard"),
+    (".example", "leading dot"),
+    ("llm.example.", "trailing dot"),
+    ("https://llm.example", "scheme"),
+    ("llm.example/v1", "path"),
+    ("user@llm.example", "user part"),
+    ("llm.example:0", "port 0"),
+    ("llm.example:080", "leading zero"),
+    ("llm.example:65536", "port too large"),
+    ("llm.example:", "empty port"),
+    ("bücher.example", "non-ASCII label"),
+    ("127.1", "short numeric host"),
+    ("2130706433", "integer host"),
+    ("0x7f.0.0.1", "hex host"),
+    ("0177.0.0.1", "octal host"),
+    ("::1", "unbracketed IPv6"),
+    ("[::1%25eth0]", "zone id"),
+    ("[0:0::1]", "IPv6 not compressed"),
+    ("[::ffff:127.0.0.1]", "IPv4-mapped IPv6"),
+    ("", "empty"),
+    ("llm..example", "empty label"),
+]
+
+
+@pytest.mark.parametrize("entry", _CANONICAL_HOSTS)
+def test_a_canonical_host_entry_is_its_own_canonical_form(entry):
+    assert child_env.canonical_host_entry(entry) == entry
+
+
+@pytest.mark.parametrize(
+    "written, canonical",
+    [
+        ("LLM.Example", "llm.example"),
+        ("[0:0::1]:8080", "[::1]:8080"),
+        ("[2001:DB8::1]", "[2001:db8::1]"),
+    ],
+)
+def test_a_host_written_in_another_case_or_spelling_has_one_canonical_form(
+    written, canonical
+):
+    """The adapter canonicalises the host it parsed from base_url with the
+    same function the config validator uses, so the two compare one form."""
+    assert child_env.canonical_host_entry(written) == canonical
+
+
+# Written in another spelling of a host that has one: the validator refuses
+# them as written, and canonical_host_entry names the form to write instead.
+_RESPELLED = ("LLM.Example", "[0:0::1]")
+
+
+@pytest.mark.parametrize(
+    "entry", [e for e, _ in _NOT_CANONICAL_HOSTS if e not in _RESPELLED]
+)
+def test_a_host_with_no_single_canonical_form_is_refused(entry):
+    with pytest.raises(ValueError):
+        child_env.canonical_host_entry(entry)
+
+
+def test_allowed_hosts_absent_is_no_error_and_an_empty_mapping():
+    """A project generated before the key existed owes no check_X error for
+    lacking it, and an absent list allows no host."""
+    policy, errs = child_env.child_env_policy(_MANIFEST)
+    assert errs == [] and policy.allowed_hosts == {}, errs
+
+
+def test_allowed_hosts_are_parsed_per_adapter():
+    policy, errs = child_env.child_env_policy(
+        _manifest(models__allowed_hosts={"a": list(_CANONICAL_HOSTS), "b": []})
+    )
+    assert errs == [], errs
+    assert policy.allowed_hosts == {"a": tuple(_CANONICAL_HOSTS), "b": ()}
+
+
+@pytest.mark.parametrize(
+    "entry, why", _NOT_CANONICAL_HOSTS, ids=[w for _, w in _NOT_CANONICAL_HOSTS]
+)
+def test_an_allowed_host_entry_that_is_not_canonical_is_an_error_naming_its_index(
+    entry, why
+):
+    _, errs = child_env.child_env_policy(
+        _manifest(models__allowed_hosts={"a": ["llm.example", entry]})
+    )
+    assert len(errs) == 1, (why, errs)
+    assert "models.allowed_hosts.a[1]" in errs[0], errs
+
+
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        (["llm.example"], "models.allowed_hosts must map"),
+        ({"a": "llm.example"}, "models.allowed_hosts.a must be a list"),
+        ({"a": [1]}, "models.allowed_hosts.a[0]"),
+        ({"a": ["llm.example", "llm.example"]}, "models.allowed_hosts.a[1]"),
+        ({"nope": []}, "`nope`, which is not in models.available"),
+    ],
+    ids=["not-a-map", "not-a-list", "not-a-string", "duplicate", "unknown-adapter"],
+)
+def test_a_malformed_allowed_hosts_block_is_an_error(value, expected):
+    _, errs = child_env.child_env_policy(_manifest(models__allowed_hosts=value))
+    assert len(errs) == 1 and expected in errs[0], errs

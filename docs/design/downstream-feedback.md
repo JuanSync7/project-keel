@@ -8,7 +8,7 @@ tags: [plan, template, downstream, freshness, taxonomy, effects, credentials, au
 summary: The bounded-convergence record for the defects bedrock-platform, the first real project generated from keel, reported back — a red gate on arrival, unknown directories the gate never sees, make targets whose effect nobody declares, and child processes that inherit every credential — plus the command that checks any keel-generated project for all of them. One slice per defect, five passes, each landed as one commit on a green `make verify`.
 id: docs-design-downstream-feedback
 created: 2026-10-06
-updated: 2026-10-12
+updated: 2026-10-13
 visibility: internal
 canonical: true
 ---
@@ -1664,7 +1664,7 @@ order on 2026-10-12. The cap is five slices, each one commit on a green
 | Slice | Gap | Status |
 |-------|-----|--------|
 | CMP-5.S1 | A script exits with a bare integer from any line, so nothing holds the rule that every exit has a code from one closed list and a message saying what failed, on which input and what to do next | done |
-| CMP-5.S2 | `scripts/gate_evidence.py` writes under `evidence.dir` without the symlink check `scripts/git_tree.py` holds; `scripts/run_evals.py` reads any git failure as "no git"; a full verify on a dirty tree turns red when the date changes during the run; exit code 3 has one name for two meanings; the `openai-compatible` adapter sends a credential to any host config names; a project's own scripts that call `sys.exit` are rewritten by hand after an update | planned |
+| CMP-5.S2 | `scripts/gate_evidence.py` writes under `evidence.dir` without the symlink check `scripts/git_tree.py` holds; `scripts/run_evals.py` reads any git failure as "no git"; a full verify on a dirty tree turns red when the date changes during the run; exit code 3 has one name for two meanings; the `openai-compatible` adapter sends a credential to any host config names; a project's own scripts that call `sys.exit` are rewritten by hand after an update | done |
 | CMP-5.S3 | A long script runs wherever it is called, so on a shared host it takes the CPU other people are using; nothing in the tree submits it to a job farm or limits it | planned |
 | CMP-5.S4 | The rules a helper cannot carry (the import boundary, a bare `except`, text matching without a stated reason, a comment that reports a change) are held by review alone | planned |
 | CMP-5.S5 | A module reads config, the environment and its own defaults directly, so no one place applies a default, reports it, or refuses a wrong value | planned |
@@ -1711,6 +1711,51 @@ list refuses every host. It adds a rewriter that moves a script whose entry
 line is `sys.exit(main())` to the helper, and lists by file and line the exits
 it cannot move. Whether a project's remaining exits fail on arrival or warn
 first is still the maintainer's decision; the slice keeps the failure.
+
+**The rewriter is not built in CMP-5.S2, and is queued on its own.** Rewriting
+`sys.exit(main())` to `finish(main())` does not preserve what a script exits
+with. A script that has not adopted the helper returns bare integers or `None`
+from `main`, and `finish` in `scripts/exit_codes.py` exits 2 for any value that
+is not an `ExitCode` member: `finish(0)`, `finish(1)` and `finish(None)` each
+exit 2, measured on the working tree. The rewrite also leaves the gate red:
+`tests/integration/test_exit_gate.py` reports `finish(main())` over a
+`main` that returns `0` as "returns a value that is not an exit code", so the
+finding only moves from the entry line to the `return`. A rewriter limited to
+the scripts whose every return is already a member would move almost none of
+the 37 plain-form exits measured in one generated project. The shape
+`finish(passthrough(main()))` passes the gate and exits 0 for a `0`, but it
+labels a script's own status as a wrapped tool's, and it exits 1 with a
+traceback when `main` returns `None`. Building it needs one decision first:
+(a) also rewrite `return 0`, a bare `return` and falling off the end to
+`ExitCode.SUCCESS`, and list every other return, because no tool can write the
+three message parts of a failure; (b) give the helper a bridge for a legacy
+integer, which weakens the contract CMP-5.S1 gated; or (c) accept the
+`passthrough` shape and its mislabel. Its make targets are `[tree]` for the
+writer and `[local]` for the check, not `[write]`: it changes only working-tree
+files, like `make exit-codes`, and
+`docs/adr/keel/K-0011-make-target-effect-labels.md` reserves `[write]` for
+shared remote state. Until it lands, the steps under "Your own scripts end through the exit
+helper" in `docs/guides/generate-and-upgrade.md` are the upgrade path.
+
+Left by CMP-5.S2:
+
+- `models.allowed_hosts` admits a listed host over `http` as well as `https`,
+  so an `http://` base_url sends the credential unencrypted. Whether `http` is
+  refused for every host that is not a loopback address is the maintainer's
+  decision, recorded as open in
+  `docs/adr/keel/K-0018-model-endpoint-host-allowlist.md`.
+- `tests/integration/test_exit_gate.py` accepts `finish(passthrough(main()))`
+  over a `main` that returns a script's own integers, so a script can pass the
+  gate without returning members. Queued for the CMP-5.S4 tree-wide checks.
+- `scripts/trace_requirements.py` refuses a missing `git` inside a repository,
+  while `scripts/gate_evidence.py` and `scripts/run_evals.py` take the no-git
+  path. The two readings are not unified.
+- Every commit the test suite makes inside one gate run carries the same
+  moment, so a test that needs commits in date order sets its own dates.
+- The behaviour of the run date's local offset across a daylight-saving change
+  is not tested.
+- A gate that runs longer than `evidence.run_date.max_age_days` (1 day in
+  `config/project.json`) has its later checks refuse with exit 2.
 
 **CMP-5.S3, the launcher.** One neutral launcher in `scripts/` decides where a
 long script runs: on a host that is one person's own it runs as normal; on a

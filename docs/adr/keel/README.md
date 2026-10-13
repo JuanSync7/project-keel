@@ -9,7 +9,7 @@ tags: [adr, decisions, template]
 summary: The architecture decisions the template ships into every project, numbered in their own space as K-NNNN-<slug>.md and cited as ADR-K-NNNN.
 id: docs-adr-keel-readme
 created: 2026-10-07
-updated: 2026-10-12
+updated: 2026-10-13
 visibility: internal
 canonical: true
 ---
@@ -48,3 +48,5 @@ copy the update names, as the parent README describes.
 | `K-0015-write-shape-exemptions-and-guarded-recipe-converse.md` | A write-shaped target that is not a write keeps its label under a named reason in `make_targets.write_shape_exempt`, and a labelled recipe that calls `$(WRITE_GUARD)` must be `[write]`. | Which effect labels exist or what the gate runner admits: `K-0011-make-target-effect-labels.md` decides that. |
 | `K-0016-release-order-tag-before-verify.md` | Tag locally before the release verify; push main and the tag only on green. | Whether a version heading needs a tag: `K-0009-release-identity-and-the-tag-ordering-rule.md` decision 3. |
 | `K-0017-gate-evidence-record.md` | `make verify` runs its goals through `scripts/gate_evidence.py` and writes one canonical, schema-versioned evidence record to config/project.json `evidence.dir`. | Keeping a history of runs: each run replaces the record, and the ledger is project-jarvis's. |
+| `K-0018-model-endpoint-host-allowlist.md` | Proposed: a model adapter sends its credential only to a `host` or `host:port` config/project.json `models.allowed_hosts` lists for it, matched exactly in one canonical form; the list ships empty, and a redirect is refused. | Which variable an adapter may send: `K-0012-child-process-environment-allowlist.md`. |
+| `K-0019-one-date-per-gate-run.md` | Proposed: a gate run reads the clock once and hands that date to every goal in the variable config/project.json `evidence.run_date.env` names; a git command that ran and failed is refused, never read as no git; the driver refuses an evidence path reached through a symlink. | What the record holds or where it is written: `K-0017-gate-evidence-record.md`. Which variables a child inherits: `K-0012-child-process-environment-allowlist.md`. |

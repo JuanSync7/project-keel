@@ -6,6 +6,7 @@ summary: A scratch git repository carrying the evidence writer, its siblings, ke
 @covers scripts/gate_evidence.py
 """
 
+import datetime
 import getpass
 import json
 import os
@@ -40,6 +41,7 @@ _SCRIPTS = (
     "child_env.py",
     "check_structure.py",
     "exit_codes.py",
+    "run_date.py",
 )
 # A test run under the gate runner carries the outer make's state; a scratch make
 # must start from none of it.
@@ -410,7 +412,7 @@ def test_a_crashing_writer_keeps_the_gate_red_and_replaces_the_green_record(
         text += plant
     path.write_text(text, encoding="utf-8")
     out = _verify(repo, env)
-    # The driver exits 3 (every goal passed, the evidence is red); make reports
+    # The driver exits RED_RECORD (every goal passed, the evidence is red); make reports
     # its failed recipe as 2. Never 0.
     assert out.returncode == 2, out.stdout
     assert "planted" in out.stdout, out.stdout
@@ -436,6 +438,110 @@ def test_the_test_policy_variable_reaches_the_goal_through_the_driver(tmp_path):
     assert out.returncode == 0, out.stdout
     rec = json.loads(_record_path(repo).read_text("utf-8"))
     assert rec["tests"]["passed"] == 3, rec
+
+
+# --- a record path through a symlink ------------------------------------------
+
+
+def _listing(path):
+    return sorted(
+        (str(p.relative_to(path)), p.read_bytes() if p.is_file() else None)
+        for p in path.rglob("*")
+    )
+
+
+@pytest.mark.parametrize("where", ["outside-the-tree", "inside-the-tree"])
+def test_a_real_gate_refuses_an_evidence_dir_that_is_a_symlink(tmp_path, where):
+    """`evidence.dir` is checked as text and against git's ignore rule, and a
+    symlink there points the record and the report a goal's stale copy is
+    deleted from at a directory neither looked at. The real driver, started by
+    the real recipe, writes and removes nothing and no goal runs."""
+    repo, env = _build(tmp_path)
+    target = tmp_path / "elsewhere" if where == "outside-the-tree" else repo / "kept"
+    (target / "junit").mkdir(parents=True)
+    (target / "verify.json").write_text('{"result": "pass"}\n', encoding="utf-8")
+    (target / "junit" / "test.xml").write_text("<stale/>\n", encoding="utf-8")
+    before = _listing(target)
+    (repo / _EVIDENCE["dir"]).symlink_to(target, target_is_directory=True)
+    out = _verify(repo, env)
+    assert out.returncode != 0, out.stdout
+    assert "evidence.dir" in out.stdout and "symlink" in out.stdout, out.stdout
+    assert "refused before any goal ran" in out.stdout, out.stdout
+    assert "passed" not in out.stdout, out.stdout
+    assert _listing(target) == before
+    assert (repo / _EVIDENCE["dir"]).is_symlink()
+    assert not (repo / ".pytest_cache").exists()
+
+
+# --- one date for every goal of a run -----------------------------------------
+
+_RUN_DATE = _EVIDENCE.get("run_date", {})
+_DAY = datetime.timedelta(days=1)
+
+# A goal's test writes the date it was handed where the run leaves it: pytest's
+# own environment is the last link of driver -> make -> recipe -> pytest.
+_TEST_SEES_THE_DATE = """import os
+
+
+def test_the_run_date_reached_this_goal():
+    with open("seen-run-date.txt", "w") as fh:
+        fh.write(os.environ.get(%r, "<unset>"))
+"""
+
+
+def _date_gate(base):
+    assert _RUN_DATE, "config/project.json has no evidence.run_date"
+    repo, env = _build(base)
+    (repo / "tests" / "test_date.py").write_text(
+        _TEST_SEES_THE_DATE % _RUN_DATE["env"], encoding="utf-8"
+    )
+    with (repo / ".gitignore").open("a", encoding="utf-8") as fh:
+        fh.write("seen-run-date.txt\n")
+    for argv in (("add", "-A"), ("commit", "-q", "-m", "date")):
+        assert _run(repo, env, "git", *argv).returncode == 0
+    env = dict(env)
+    env.pop(_RUN_DATE["env"], None)
+    return repo, env
+
+
+def test_every_goal_of_a_run_is_handed_the_date_the_driver_read(tmp_path):
+    repo, env = _date_gate(tmp_path)
+    seen = repo / "seen-run-date.txt"
+    for _attempt in range(2):
+        before = datetime.date.today()
+        out = _verify(repo, env)
+        if datetime.date.today() == before:
+            break
+    assert out.returncode == 0, out.stdout
+    assert seen.read_text("utf-8") == before.isoformat()
+    # A run started inside an outer run keeps the outer run's date: it began
+    # yesterday and is still going.
+    outer = (datetime.date.today() - _DAY * _RUN_DATE["max_age_days"]).isoformat()
+    out = _verify(repo, dict(env, **{_RUN_DATE["env"]: outer}))
+    assert out.returncode == 0, out.stdout
+    assert seen.read_text("utf-8") == outer
+
+
+@pytest.mark.parametrize(
+    "supplied",
+    ["too-old", "tomorrow", "not-a-date", ""],
+)
+def test_a_real_gate_refuses_a_supplied_date_before_any_goal(tmp_path, supplied):
+    """The bound is config's, so the oldest refused date is computed from it; a
+    day of slack either side keeps the case true if the clock passes midnight
+    between this line and the driver's read."""
+    repo, env = _date_gate(tmp_path)
+    today = datetime.date.today()
+    value = {
+        "too-old": (today - _DAY * (_RUN_DATE["max_age_days"] + 2)).isoformat(),
+        "tomorrow": (today + _DAY * 2).isoformat(),
+    }.get(supplied, supplied)
+    out = _verify(repo, dict(env, **{_RUN_DATE["env"]: value}))
+    assert out.returncode != 0, out.stdout
+    assert "refused before any goal ran" in out.stdout, out.stdout
+    assert _RUN_DATE["env"] in out.stdout, out.stdout
+    assert not (repo / "seen-run-date.txt").exists()
+    assert not (repo / _EVIDENCE["dir"]).exists()
 
 
 # --- the guide's section on the record, held equal to the files that own it ----

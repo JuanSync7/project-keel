@@ -732,7 +732,7 @@ def test_the_noop_update_leaves_the_recorded_revision_alone(unmoved):
 # A toy template, not a keel clone, so the test owns every date it asserts and
 # runs in seconds. v1 has no restamp task, as keel before 3bc2f8a had none, so
 # the base, the project and v2 each carry their own stamp, which is the shape
-# that conflicts. The resolver and the two modules it imports are copied from
+# that conflicts. The resolver and the modules it imports are copied from
 # this working tree, so the job under test is the one being edited.
 _TOY_JOB = "scripts/jobs/resolve_stamp_conflicts.py"
 _TOY_SHIPPED = (
@@ -741,6 +741,7 @@ _TOY_SHIPPED = (
     "scripts/jobs/review_docs.py",
     "scripts/child_env.py",
     "scripts/exit_codes.py",
+    "scripts/run_date.py",
     "config/project.json",
 )
 _TOY_MIGRATION = (

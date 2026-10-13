@@ -2,10 +2,12 @@
 title: Unit — models registry + backend conformance
 kind: tests
 layer: backend
-summary: Every registered ModelBackend conforms to the contract; the fake backend is deterministic.
+summary: Every registered ModelBackend conforms to the contract, the HTTP adapter with the host of its own default base_url listed for the test because the shipped `models.allowed_hosts` list is empty; the fake backend is deterministic.
 """
 
+import inspect
 import sys
+import urllib.parse
 from pathlib import Path
 
 import pytest
@@ -25,11 +27,40 @@ def test_registry_lists_the_default_and_more():
     assert "fake" in names  # the deterministic test/dev backend
 
 
+@pytest.fixture
+def adapters_listing_their_own_default_hosts(monkeypatch):
+    """A policy whose `models.allowed_hosts` lists, for the HTTP adapter, the
+    host of its own default base_url.
+
+    The shipped list is empty, so that adapter refuses its own default
+    endpoint until a project lists a host (fail closed,
+    docs/adr/keel/K-0018-model-endpoint-host-allowlist.md);
+    tests/unit/models/test_openai_compatible.py pins that refusal. Conformance
+    is about the shape of each backend, not a project's choice of hosts, so
+    this test lists the default host instead of shipping it in config. The
+    host is read from the adapter's signature, so no endpoint is written here.
+    """
+    from models import openai_compatible as mod
+    from scripts.child_env import canonical_host_entry, load_policy
+
+    default = inspect.signature(mod.OpenAICompatible).parameters["base_url"].default
+    parts = urllib.parse.urlsplit(default)
+    written = parts.hostname or ""
+    if parts.port is not None:
+        written = "%s:%d" % (written, parts.port)
+    policy = load_policy()._replace(
+        allowed_hosts={mod.OpenAICompatible.name: (canonical_host_entry(written),)}
+    )
+    monkeypatch.setattr(mod, "load_policy", lambda root=None: policy)
+
+
+@pytest.mark.usefixtures("adapters_listing_their_own_default_hosts")
 def test_every_registered_backend_satisfies_the_contract():
     """Structural conformance: instantiate each by name with safe defaults and
     check it IS a ModelBackend with a string name and a callable run(). We never
     call run() on real adapters (they'd hit a network/subprocess) — the fake
     covers behaviour below; this pins the shape for the whole registry."""
+    assert list_models(), "a pass over no backend proves nothing"
     for name in list_models():
         backend = get_model(name)
         assert isinstance(backend, ModelBackend), name

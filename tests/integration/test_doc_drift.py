@@ -1218,25 +1218,32 @@ def test_exit_codes_follows_a_named_member_and_reads_no_code_from_an_unknown_nam
     exit_code_findings reports as zero items rather than passing."""
     script = tmp_path / "named.py"
     head = "from exit_codes import ExitCode, passthrough, report\n"
+    values = {m.name: m.value for m in exit_code_table.read_members(str(_ROOT))}
+
+    def member(name):
+        return values[name]
+
     script.write_text(
         head + "def main(flag):\n"
         "    code = report(ExitCode.USAGE, 'a', 'b', 'c')\n"
         "    if flag:\n        return code\n"
-        "    kind = ExitCode.FAILURE if flag is None else ExitCode.UNAVAILABLE\n"
+        "    kind = ExitCode.FAILURE if flag is None else ExitCode.RED_RECORD\n"
         "    if flag == 0:\n        return report(kind, 'a', 'b', 'c')\n"
         "    return ExitCode.SUCCESS\n"
     )
-    assert exit_codes(script) == ({0, 2}, False)
+    assert exit_codes(script) == ({member("SUCCESS"), member("USAGE")}, False)
     script.write_text(
         head + "def main(flag):\n"
         "    return report(\n"
-        "        ExitCode.FAILURE if flag else ExitCode.UNAVAILABLE, 'a', 'b', 'c'\n"
+        "        ExitCode.FAILURE if flag else ExitCode.RED_RECORD, 'a', 'b', 'c'\n"
         "    )\n"
     )
-    assert exit_codes(script) == ({1, 3}, False)
+    assert exit_codes(script) == ({member("FAILURE"), member("RED_RECORD")}, False)
     script.write_text(head + "def main():\n    return UNKNOWN\n")
     assert exit_codes(script) == (set(), False)
-    script.write_text(head + "def main():\n    code = 3\n    return code\n")
+    script.write_text(
+        head + "def main():\n    code = %d\n    return code\n" % member("RED_RECORD")
+    )
     assert exit_codes(script) == (set(), False)
     script.write_text(head + "def main(child):\n    return passthrough(child)\n")
     assert exit_codes(script) == (set(), True)

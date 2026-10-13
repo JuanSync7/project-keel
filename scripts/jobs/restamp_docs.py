@@ -3,7 +3,7 @@
 title: restamp_docs — the writer that keeps `updated:` true
 kind: script
 layer: n/a
-summary: Sets the frontmatter `updated:` of every governed Markdown document that needs it to the date the judge will demand, and changes no other byte. scripts/jobs/review_docs.py is the judge of the freshness rule; this is the writer that clears its findings, reading the stamp through the judge's own `updated_span` and today through the judge's own `resolve_today` (`--today`, else SOURCE_DATE_EPOCH read in UTC, else the local clock), so the two cannot disagree on what a stamp is or what day it is. The worklist in a git work tree is what git would commit: the untracked documents, the ones changed against HEAD (every tracked one before the first commit, else review_docs' `modified_paths`, which reads `git --no-optional-locks status` and so never rewrites .git/index), and the ones already committed stale; with no git it is every Markdown file outside check_structure's IGNORE_DIRS (a copy, `WALK_SKIP_DIRS`, that its unit test pins equal). The target is today, raised to the date of the document's last commit when that is later, because the judge reads that date from git, not from a clock. A document's template twin (`<doc>.jinja`, check_N's suffix) is restamped with it, so the parity gate never sees the two stamps differ. A stamp is never moved backwards, and a stamp that is not an ISO date, or a document that cannot be read, is named on stderr and left alone (exit 1) while the rest are still written; a malformed date source exits 2. `--check` lists and writes nothing, the index included; `pending` is the same list as data (path, current stamp, target), for a caller such as scripts/audit_project.py. A document git lists as unmerged, or one whose text holds a conflict hunk (scripts/jobs/conflict_guard.py's grammar), is left for the merge with its twin and named on stderr, and the exit code is unchanged: rewriting the project's stamp inside an unresolved conflict would decide half of it. Run as a script, it first refuses, exit 2 naming each file and `make restamp-docs`, when a module it imports from the project holds a conflict hunk. A config/project.json an update left conflicted gives no child an allowlist, so no git may start: scripts/jobs/conflict_guard.py refuses the run over it (and over any other fixed project file a module it imports declares reading in `PROJECT_READS`), naming each file, its hunk's line and `make restamp-docs`, or under an update (`--finish-with`) the command that finishes it, and exits 2, listing and writing nothing; a manifest it cannot read for another reason is named the same way. It imports nothing from check_structure, so a conflict in that module, or in a file only the checks read (the Makefile, pyproject.toml), never stops it: the guard refuses a job over every read of each module it imports. Run by `make restamp-docs`, by copier's `_tasks` on every render (copy, and the scratch renders an update diffs), and by the last `after` migration on update.
+summary: Sets the frontmatter `updated:` of every governed Markdown document that needs it to the date the judge will demand, and changes no other byte. scripts/jobs/review_docs.py is the judge of the freshness rule; this is the writer that clears its findings, reading the stamp through the judge's own `updated_span` and today through the judge's own `resolve_today` (`--today`, else SOURCE_DATE_EPOCH read in UTC, else the date of the gate run this process is part of, else the local clock), so the two cannot disagree on what a stamp is or what day it is. The worklist in a git work tree is what git would commit: the untracked documents, the ones changed against HEAD (every tracked one before the first commit, else review_docs' `modified_paths`, which reads `git --no-optional-locks status` and so never rewrites .git/index), and the ones already committed stale; with no git it is every Markdown file outside check_structure's IGNORE_DIRS (a copy, `WALK_SKIP_DIRS`, that its unit test pins equal). The target is today, raised to the date of the document's last commit when that is later, because the judge reads that date from git, not from a clock. A document's template twin (`<doc>.jinja`, check_N's suffix) is restamped with it, so the parity gate never sees the two stamps differ. A stamp is never moved backwards, and a stamp that is not an ISO date, or a document that cannot be read, is named on stderr and left alone (exit 1) while the rest are still written; a malformed date source exits 2. `--check` lists and writes nothing, the index included; `pending` is the same list as data (path, current stamp, target), for a caller such as scripts/audit_project.py. A document git lists as unmerged, or one whose text holds a conflict hunk (scripts/jobs/conflict_guard.py's grammar), is left for the merge with its twin and named on stderr, and the exit code is unchanged: rewriting the project's stamp inside an unresolved conflict would decide half of it. Run as a script, it first refuses, exit 2 naming each file and `make restamp-docs`, when a module it imports from the project holds a conflict hunk. A config/project.json an update left conflicted gives no child an allowlist, so no git may start: scripts/jobs/conflict_guard.py refuses the run over it (and over any other fixed project file a module it imports declares reading in `PROJECT_READS`), naming each file, its hunk's line and `make restamp-docs`, or under an update (`--finish-with`) the command that finishes it, and exits 2, listing and writing nothing; a manifest it cannot read for another reason is named the same way. It imports nothing from check_structure, so a conflict in that module, or in a file only the checks read (the Makefile, pyproject.toml), never stops it: the guard refuses a job over every read of each module it imports. Run by `make restamp-docs`, by copier's `_tasks` on every render (copy, and the scratch renders an update diffs), and by the last `after` migration on update.
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/integration/test_idempotence.py
@@ -98,7 +98,12 @@ _EPOCH = re.compile(r"^[0-9]+$")
 
 
 class RestampError(Exception):
-    """A stamp or a date source this writer refuses to guess about."""
+    """A stamp or a date source this writer refuses to guess about. *remedy*,
+    when set, is the next step a caller reports in place of its own."""
+
+    def __init__(self, message, remedy=None):
+        Exception.__init__(self, message)
+        self.remedy = remedy
 
 
 def restamp_text(text, today):
@@ -122,13 +127,14 @@ def restamp_text(text, today):
 
 def resolve_today(argv_today, environ):
     """The writer's today: the judge's own resolver (scripts/jobs/review_docs.py
-    `resolve_today` — `--today`, else SOURCE_DATE_EPOCH in UTC, else the local
-    clock), so the two can never stand on different days. A malformed source is
-    a RestampError, never a silent fallback to the clock."""
+    `resolve_today` — `--today`, else SOURCE_DATE_EPOCH in UTC, else the gate
+    run's date, else the local clock), so the two can never stand on different
+    days. A malformed or refused source is a RestampError, never a silent
+    fallback to the clock."""
     try:
         return review_docs.resolve_today(argv_today, environ)
     except review_docs.DateSourceError as exc:
-        raise RestampError(str(exc)) from exc
+        raise RestampError(str(exc), exc.remedy) from exc
 
 
 def target_date(today, last_commit):
@@ -416,7 +422,8 @@ def main(argv=None):
     ap.add_argument(
         "--today",
         default=None,
-        help="the date to stamp (default: SOURCE_DATE_EPOCH in UTC, else today)",
+        help="the date to stamp (default: SOURCE_DATE_EPOCH in UTC, else the gate "
+        "run's date, else today)",
     )
     ap.add_argument(
         "--check",
@@ -438,7 +445,7 @@ def main(argv=None):
     try:
         today = resolve_today(args.today, os.environ)
     except RestampError as exc:
-        return _refused(str(exc), "pass --today YYYY-MM-DD, or correct the clock")
+        return _refused(str(exc), exc.remedy)
     root = os.path.abspath(args.root)
     if not os.path.isdir(root):
         return _refused(

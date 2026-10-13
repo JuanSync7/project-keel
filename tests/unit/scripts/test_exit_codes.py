@@ -36,6 +36,22 @@ pytestmark = pytest.mark.unit
 
 _HELPER = _ROOT / "scripts" / "exit_codes.py"
 _PARTS = ("what", "on", "next_step")
+# Statuses another program already gives a meaning, as inclusive (first, last)
+# bands; a member a script chooses for a fact of its own stays outside them, so
+# a caller that reads the number alone cannot take one for the other.
+_TAKEN_BANDS = (
+    # 0 and 1 are the shell's, 2 is argparse's and make's, 1 to 5 are pytest's.
+    (0, 5),
+    # sysexits.h.
+    (64, 78),
+    # timeout(1), `git bisect` skip, not executable, not found, then 128+signal.
+    (124, 165),
+    # What a shell reports for an exit status out of range.
+    (255, 255),
+)
+# The two facts one number used to carry, and the member that no longer exists.
+_SPLIT_MEMBERS = ("RED_RECORD", "BACKEND_ABSENT")
+_RETIRED_MEMBER = "UNAVAILABLE"
 
 
 def test_the_enum_is_closed_unique_and_every_member_says_what_it_means_and_what_to_do():
@@ -56,6 +72,26 @@ def test_the_enum_is_closed_unique_and_every_member_says_what_it_means_and_what_
         ["BlankMessagePart", "ExitCode", "PassedThrough", "fail", "finish"]
         + ["passthrough", "report"]
     )
+
+
+def test_the_red_record_and_the_absent_backend_are_two_members_with_their_own_value_meaning_and_action():
+    """One number carries one fact: a red evidence record and a backend that
+    did not answer each have a member, and neither value is one a shell,
+    argparse, make, pytest, sysexits.h or a signal already uses."""
+    names = set(ExitCode.__members__)
+    assert _RETIRED_MEMBER not in names
+    assert set(_SPLIT_MEMBERS) <= names, sorted(names)
+    red, absent = (ExitCode[name] for name in _SPLIT_MEMBERS)
+    assert int(red) != int(absent)
+    others = [m for m in ExitCode if m not in (red, absent)]
+    assert others, "no other member -- zero items"
+    for member in (red, absent):
+        assert all(int(member) != int(other) for other in others), member
+        taken = [band for band in _TAKEN_BANDS if band[0] <= int(member) <= band[1]]
+        assert taken == [], (member, taken)
+        assert member.meaning.strip() and member.action.strip(), member
+    assert red.meaning != absent.meaning
+    assert red.action != absent.action
 
 
 def test_report_writes_one_line_and_returns_the_member(capsys):
@@ -138,10 +174,13 @@ def test_the_helper_runs_on_an_old_host_interpreter_when_there_is_one():
     old = gate_scope._old_python3()
     if old is None:
         pytest.skip("no python3 below requires-python on this host")
+    # The highest status a script chooses for a fact of its own: one a bare
+    # interpreter never exits with by itself.
+    member = max(m for m in ExitCode if m is not ExitCode.INTERRUPTED)
     code = (
         "import sys; sys.path.insert(0, %r); import exit_codes as e; "
-        "e.finish(e.report(e.ExitCode.UNAVAILABLE, 'a', 'b', 'c'))"
-        % os.path.join(str(_ROOT), "scripts")
+        "e.finish(e.report(e.ExitCode.%s, 'a', 'b', 'c'))"
+        % (os.path.join(str(_ROOT), "scripts"), member.name)
     )
     done = subprocess.run(
         [old, "-c", code],
@@ -149,5 +188,5 @@ def test_the_helper_runs_on_an_old_host_interpreter_when_there_is_one():
         stderr=subprocess.PIPE,
         env=build_child_env(),
     )
-    assert done.returncode == ExitCode.UNAVAILABLE, done.stderr
+    assert done.returncode == member, done.stderr
     assert done.stderr == b"a: b; c\n" and done.stdout == b""

@@ -42,7 +42,9 @@
       "K-0014-project-owned-structure-checks.md",
       "K-0015-write-shape-exemptions-and-guarded-recipe-converse.md",
       "K-0016-release-order-tag-before-verify.md",
-      "K-0017-gate-evidence-record.md"
+      "K-0017-gate-evidence-record.md",
+      "K-0018-model-endpoint-host-allowlist.md",
+      "K-0019-one-date-per-gate-run.md"
     ]
   },
   "doc_drift": {
@@ -116,8 +118,12 @@
     "gate_vars": ["PY"]
   },
   "evidence": {
-    "_comment": "Where make verify writes its evidence record and which schema it follows; read by scripts/gate_evidence.py. dir must be a path .gitignore ignores.",
+    "_comment": "Where make verify writes its evidence record and which schema it follows; read by scripts/gate_evidence.py. dir must be a path .gitignore ignores and no part of it may be a symlink. run_date: the one date a whole gate run calls today (scripts/run_date.py). env names the variable the driver hands every goal, and must be listed in child_env.names; max_age_days is how many days before the clock a date found in that variable may be, which is how long a run may last. Remove run_date and every check reads the clock again.",
     "dir": ".evidence",
+    "run_date": {
+      "env": "KEEL_GATE_RUN_DATE",
+      "max_age_days": 1
+    },
     "schema": "config/evidence/gate-record.schema.json"
   },
   "evals": {
@@ -150,6 +156,7 @@
       "HOME",
       "HTTPS_PROXY",
       "HTTP_PROXY",
+      "KEEL_GATE_RUN_DATE",
       "KEEL_REQUIRED_EXTRAS",
       "LANG",
       "LANGUAGE",
@@ -283,12 +290,15 @@
     }
   },
   "models": {
-    "_comment": "Model/provider adapters this project makes available (registered in models/registry.py). 'default' is declarative: check_H requires it to be in 'available' and the showcase marks it, but models/registry.py DEFAULT_MODEL decides what get_model() returns with no name, and nothing ties the two together; the showcase surfaces this list. credential_env names, per adapter, the credential environment variables it may use: for an adapter that starts a process, what that process gets on top of child_env (scripts/child_env.py build_child_env(credentials_for=<adapter>)), an adapter absent from it getting the base allowlist only; for openai-compatible, which sends a credential itself, the only names its api_key_env argument accepts. Add a name here, not in code, when a CLI needs one more (for example a cloud provider's region).",
+    "_comment": "Model/provider adapters this project makes available (registered in models/registry.py). 'default' is declarative: check_H requires it to be in 'available' and the showcase marks it, but models/registry.py DEFAULT_MODEL decides what get_model() returns with no name, and nothing ties the two together; the showcase surfaces this list. credential_env names, per adapter, the credential environment variables it may use: for an adapter that starts a process, what that process gets on top of child_env (scripts/child_env.py build_child_env(credentials_for=<adapter>)), an adapter absent from it getting the base allowlist only; for openai-compatible, which sends a credential itself, the only names its api_key_env argument accepts. Add a name here, not in code, when a CLI needs one more (for example a cloud provider's region). allowed_hosts names, per adapter that sends a credential itself, the `host` or `host:port` entries it may send it to, each in its one canonical form (scripts/child_env.py canonical_host_entry: a lower-case ASCII name, a dotted-quad IPv4 address or a bracketed compressed IPv6 address); `host` matches only the scheme's default port and nothing matches by suffix, prefix or wildcard. It ships empty, so openai-compatible refuses every base_url, its default included, until the project lists the endpoint's host; an adapter absent from it may send its credential nowhere. Defence in depth, not a sandbox (docs/adr/keel/K-0018-model-endpoint-host-allowlist.md).",
     "default": "claude-code-headless",
     "available": {
       "claude-code-headless": "models",
       "openai-compatible": "models",
       "fake": "models"
+    },
+    "allowed_hosts": {
+      "openai-compatible": []
     },
     "credential_env": {
       "claude-code-headless": ["ANTHROPIC_API_KEY", "CLAUDE_CONFIG_DIR"],

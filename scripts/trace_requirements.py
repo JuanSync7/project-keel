@@ -87,20 +87,6 @@ class _Unwritable(Exception):
         )
 
 
-def _inside_a_repository(root: str) -> bool:
-    """True when *root* or a directory above it holds a `.git` entry. Asked
-    only after git has failed, to tell "no repository here" (nothing a matrix
-    could dirty) from "a repository git could not read" (unknown)."""
-    folder = os.path.realpath(root)
-    while True:
-        if os.path.lexists(os.path.join(folder, ".git")):
-            return True
-        parent = os.path.dirname(folder)
-        if parent == folder:
-            return False
-        folder = parent
-
-
 def _load_policy(root: str) -> traceability.Policy:
     path = os.path.join(root, *traceability.MANIFEST.split("/"))
     try:
@@ -204,8 +190,13 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         try:
             loose = [p for p in guarded if not git_tree.is_ignored(root, p)]
-        except git_tree.NoGitError as exc:
-            if _inside_a_repository(root):
+        except (git_tree.NoGitError, git_tree.GitFailedError) as exc:
+            # "No git" is an answer only where there is no repository. Inside
+            # one, a git that failed and a git that is not installed both leave
+            # the ignore rule unread, and a matrix there could dirty the tree.
+            if isinstance(exc, git_tree.GitFailedError) or git_tree.inside_a_repository(
+                root
+            ):
                 return _refused(
                     "git could not say whether %r is ignored (%s); a failure is "
                     "not an answer, so nothing was written"

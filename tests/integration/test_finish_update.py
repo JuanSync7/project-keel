@@ -26,13 +26,14 @@ optional_deps.importorskip("jinja2", extra="template")
 _ROOT = Path(__file__).resolve().parents[2]
 _FINISH = "scripts/jobs/finish_update.py"
 # What finish_update needs from the project to run there: itself, the modules
-# it imports and the manifest child_env reads its allowlist from.
+# it imports and the manifest child_env and run_date read.
 _SHIPPED = (
     _FINISH,
     "scripts/jobs/conflict_guard.py",
     "scripts/jobs/review_docs.py",
     "scripts/child_env.py",
     "scripts/exit_codes.py",
+    "scripts/run_date.py",
     "config/project.json",
 )
 

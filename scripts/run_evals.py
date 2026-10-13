@@ -3,7 +3,7 @@
 title: Run evals — replay the eval suites, or run them live under the spend cap, and write the report
 kind: script
 layer: n/a
-summary: The command line `make eval` (--mode replay) and `make eval-live` (--mode live) run; it calls the evals package and holds no judging logic. It reads config/project.json `evals`, refuses, before writing or deleting anything, a report_dir that reaches its report, its temporary file or the live candidates through a symlink (git's ignore rule and the config's path check both judge the text of the path, not where it leads) and a report_dir git does not ignore, writes a red placeholder report first so a crash never leaves an earlier green one standing, and removes the earlier report (and, live, the earlier candidates) when the `evals` block is refused, since a refused block cannot say how to write one, then judges every suite and replaces `<evals.report_dir>/<mode>.json` whole with the canonical report. A live run first deletes `<evals.report_dir>/live-candidates/`, then writes one candidate file per suite there, one canonical case line per answered case; it never edits the tracked dataset. Exit 0 when every suite passed, 1 on any fail, 2 when the run was refused (config, dataset, the call cap, a null or unknown model, an unignored report_dir), and 3 when the live backend is absent. It starts no process itself; a model adapter does, through scripts/child_env.py.
+summary: The command line `make eval` (--mode replay) and `make eval-live` (--mode live) run; it calls the evals package and holds no judging logic. It reads config/project.json `evals`, refuses, before writing or deleting anything, a report_dir that reaches its report, its temporary file or the live candidates through a symlink (git's ignore rule and the config's path check both judge the text of the path, not where it leads) and a report_dir git does not ignore, and refuses a git that ran and failed when asked (scripts/git_tree.py GitFailedError, naming git's exit status and stderr: only a git that is not installed, or no repository, means there is no tracked tree to dirty), writes a red placeholder report first so a crash never leaves an earlier green one standing, and removes the earlier report (and, live, the earlier candidates) when the `evals` block is refused, since a refused block cannot say how to write one, then judges every suite and replaces `<evals.report_dir>/<mode>.json` whole with the canonical report. A live run first deletes `<evals.report_dir>/live-candidates/`, then writes one candidate file per suite there, one canonical case line per answered case; it never edits the tracked dataset. Exit 0 when every suite passed, 1 on any fail, 2 when the run was refused (config, dataset, the call cap, a null or unknown model, an unignored report_dir, a git that failed), and BACKEND_ABSENT (scripts/exit_codes.py) when the live backend is absent. It starts no process itself; a model adapter does, through scripts/child_env.py.
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/integration/test_evals_gate.py
@@ -93,9 +93,11 @@ def _unignored(root: str, paths: Sequence[str]) -> list[str]:
     try:
         return [p for p in paths if not git_tree.is_ignored(root, p)]
     except git_tree.NoGitError:
-        # No git, no tracked tree to dirty. This guard is only about dirtying
-        # the tree; staying inside the project is git_tree.through_symlink's, which
-        # needs no git and has already run.
+        # git is not installed, or there is no repository: no tracked tree to
+        # dirty. This guard is only about dirtying the tree; staying inside the
+        # project is git_tree.through_symlink's, which needs no git and has
+        # already run. A git that ran and failed is not caught here on purpose:
+        # git_tree.GitFailedError reaches the caller, which refuses.
         return []
 
 
@@ -138,7 +140,17 @@ def _remove_stale(root: str, report_dir: str | None, mode: str) -> None:
         _refuse_symlinks(report_dir, linked)
         return
     probes = [p if p.endswith(".json") else p + "/x.jsonl" for p in stale]
-    if _unignored(root, probes):
+    try:
+        loose = _unignored(root, probes)
+    except git_tree.GitFailedError as exc:
+        print(
+            "run_evals: git could not say whether `evals.report_dir` %r is "
+            "ignored (%s), so an earlier report was not removed and may still "
+            "stand; trust this exit code, not that file" % (report_dir, exc),
+            file=sys.stderr,
+        )
+        return
+    if loose:
         return
     for rel in stale:
         path = os.path.join(root, rel)
@@ -190,7 +202,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     if mode == "live":
         guarded.append(candidates_dir + "/x.jsonl")
-    loose = _unignored(root, guarded)
+    try:
+        loose = _unignored(root, guarded)
+    except git_tree.GitFailedError as exc:
+        return exit_codes.report(
+            exit_codes.ExitCode.USAGE,
+            "run_evals: git could not say whether config/project.json "
+            "`evals.report_dir` is ignored, and a failure is not an answer, so "
+            "nothing was written",
+            "%r (%s)" % (cfg.report_dir, exc),
+            "repair the repository git reads here and run it again",
+        )
     if loose:
         return exit_codes.report(
             exit_codes.ExitCode.USAGE,
@@ -276,7 +298,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     if result == "absent":
         return exit_codes.report(
-            exit_codes.ExitCode.UNAVAILABLE,
+            exit_codes.ExitCode.BACKEND_ABSENT,
             "run_evals: the live backend is absent, so nothing was judged",
             "%s (%s)" % (rel, reasons_text),
             "configure the model config/project.json `evals` names, then run it again",

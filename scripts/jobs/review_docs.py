@@ -3,7 +3,7 @@
 title: review_docs — the deterministic documentation review
 kind: script
 layer: n/a
-summary: The deterministic documentation review, the doc reviewer's first tool. Reports documentation facts a rule can decide but check_structure does not gate. Freshness (gated elsewhere): a governed document's `updated:` is never earlier than the date of its last commit, and a document modified in the working tree carries today's date or later; this is the judge, and scripts/jobs/restamp_docs.py is the writer that clears a finding, reading the stamp through the same `updated_span` grammar. Report tier (always exit 0) under `make advise`; `--strict` exits 1 on any finding, which is how tests/integration/test_doc_freshness.py turns the same rule into a gate. Today is `--today`, else SOURCE_DATE_EPOCH read in UTC, else the local clock, through `resolve_today`, the one clock the writer also reads; a malformed source exits 2. Changed paths come from `modified_paths`, which reads `git --no-optional-locks status` and strips the root's prefix: read-only against the repository it judges (`git diff HEAD` and plain `git status` rewrite .git/index, measured), and a root below the repository top is judged on its own documents. Every git call goes through `git_argv`, which switches off each command a repository's own config can make a read run (fsmonitor, every configured clean/smudge/process filter driver, the `log.showSignature` verifier), so judging another project's tree runs none of them; when git will not list the filter drivers the call is not made. Also the advisory that stays advisory: a backticked repository path that resolves to nothing (most are bare basenames used as nouns, hence never a gate). And, with --json, every roster row, for the agent to judge. No model, no network; git is the only tool it shells to, and no git is a stated skip.
+summary: The deterministic documentation review, the doc reviewer's first tool. Reports documentation facts a rule can decide but check_structure does not gate. Freshness (gated elsewhere): a governed document's `updated:` is never earlier than the date of its last commit, and a document modified in the working tree carries today's date or later; this is the judge, and scripts/jobs/restamp_docs.py is the writer that clears a finding, reading the stamp through the same `updated_span` grammar. Report tier (always exit 0) under `make advise`; `--strict` exits 1 on any finding, which is how tests/integration/test_doc_freshness.py turns the same rule into a gate. Today is `--today`, else SOURCE_DATE_EPOCH read in UTC, else the date of the gate run this process is part of (the variable config/project.json `evidence.run_date.env` names, set by scripts/gate_evidence.py and checked by scripts/run_date.py against the clock and `evidence.run_date.max_age_days`), else the local clock, through `resolve_today`, the one clock the writer also reads; a malformed or refused source exits 2 and is never replaced by the clock. Changed paths come from `modified_paths`, which reads `git --no-optional-locks status` and strips the root's prefix: read-only against the repository it judges (`git diff HEAD` and plain `git status` rewrite .git/index, measured), and a root below the repository top is judged on its own documents. Every git call goes through `git_argv`, which switches off each command a repository's own config can make a read run (fsmonitor, every configured clean/smudge/process filter driver, the `log.showSignature` verifier), so judging another project's tree runs none of them; when git will not list the filter drivers the call is not made. Also the advisory that stays advisory: a backticked repository path that resolves to nothing (most are bare basenames used as nouns, hence never a gate). And, with --json, every roster row, for the agent to judge. No model, no network; git is the only tool it shells to, and no git is a stated skip.
 """
 
 # 3.6-safe on purpose: `make advise` runs this under $(PY), but the rule it
@@ -22,6 +22,7 @@ if _SCRIPTS not in sys.path:
     sys.path.insert(0, _SCRIPTS)
 
 import child_env  # noqa: E402
+import run_date  # noqa: E402
 from exit_codes import ExitCode, finish, report  # noqa: E402
 
 ROOT = os.path.dirname(_SCRIPTS)
@@ -36,18 +37,40 @@ _BOM = "\ufeff"
 _EPOCH = re.compile(r"^[0-9]+$")
 
 
+# What a refused date source is answered with. The run date's variable is not
+# named here: config names it, and the refusal's own text carries the name.
+_DATE_REMEDY = (
+    "pass --today YYYY-MM-DD, or correct SOURCE_DATE_EPOCH, or unset the gate "
+    "run's date variable the message names"
+)
+
+
 class DateSourceError(ValueError):
-    """A date source (`--today`, SOURCE_DATE_EPOCH) this script refuses to guess
-    about. A ValueError so a caller that only knows the stdlib still catches it."""
+    """A date source (`--today`, SOURCE_DATE_EPOCH, the gate run's date) this
+    script refuses to guess about. A ValueError so a caller that only knows the
+    stdlib still catches it. *remedy* is the next step a caller reports: a
+    fault in config/project.json carries its own, since no other date clears
+    it."""
+
+    def __init__(self, message, remedy=_DATE_REMEDY):
+        ValueError.__init__(self, message)
+        self.remedy = remedy
 
 
-def resolve_today(argv_today, environ):
+def resolve_today(argv_today, environ, root=None, clock=datetime.date.today):
     """The date the freshness rule calls today: *argv_today* when given, else
     SOURCE_DATE_EPOCH read in UTC (the reproducible-builds convention, so a
-    pinned build agrees with itself on every host), else the local clock. The
-    one clock: scripts/jobs/restamp_docs.py calls this too, because a writer and
-    a judge on two clocks disagree about what "fresh" means (measured). A
-    malformed source raises DateSourceError, never a silent fallback."""
+    pinned build agrees with itself on every host), else the date of the gate
+    run this process is part of, else the local clock. The run's date is read
+    by scripts/run_date.py from the variable <root>/config/project.json
+    `evidence.run_date.env` names (*root* defaults to this checkout), so every
+    check of one `make verify` judges by the day the run began; it comes after
+    the two pins because each is a caller's explicit choice of day and the
+    run's date only stands in for the clock. The one clock:
+    scripts/jobs/restamp_docs.py calls this too, because a writer and a judge
+    on two clocks disagree about what "fresh" means (measured). A malformed or
+    refused source raises DateSourceError, never a silent fallback. *clock*
+    stands in for datetime.date.today."""
     if argv_today is not None:
         if not ISO_DATE.match(argv_today):
             raise DateSourceError("--today %r is not an ISO date" % argv_today)
@@ -71,7 +94,12 @@ def resolve_today(argv_today, environ):
                 "SOURCE_DATE_EPOCH=%r is not a representable date" % raw
             ) from exc
         return moment.date()
-    return datetime.date.today()
+    try:
+        return run_date.today(environ, run_date.load(root or ROOT), clock)
+    except run_date.RunDateConfigError as exc:
+        raise DateSourceError(str(exc), exc.remedy) from exc
+    except run_date.RunDateError as exc:
+        raise DateSourceError(str(exc)) from exc
 
 
 # Prepended to every git call. `--no-optional-locks`: a status that may not
@@ -435,7 +463,8 @@ def main(argv=None):
         "--today",
         default=None,
         help="the date a modified file must carry "
-        "(default: SOURCE_DATE_EPOCH in UTC, else today; tests pin it)",
+        "(default: SOURCE_DATE_EPOCH in UTC, else the gate run's date, else "
+        "today; tests pin it)",
     )
     args = ap.parse_args(argv)
     try:
@@ -445,7 +474,7 @@ def main(argv=None):
             ExitCode.USAGE,
             "review_docs: cannot tell what today is",
             str(exc),
-            "pass --today YYYY-MM-DD, or correct SOURCE_DATE_EPOCH",
+            exc.remedy,
         )
     records = collect(args.root)
     if records is None:

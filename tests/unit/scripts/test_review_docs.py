@@ -6,6 +6,7 @@ summary: The pure half of scripts/review_docs.py, pinned: `updated:` must be an 
 """
 
 import datetime
+import json
 import os
 import subprocess
 import sys
@@ -164,6 +165,111 @@ def test_the_judge_resolves_today_from_source_date_epoch_then_the_clock():
     env = {"SOURCE_DATE_EPOCH": "86399"}  # one second before midnight UTC
     assert review_docs.resolve_today(None, env) == datetime.date(1970, 1, 1)
     assert review_docs.resolve_today(None, {}) == datetime.date.today()
+
+
+_RUN_DATE = "A_RUN_DATE"
+_CLOCK = datetime.date(2031, 3, 1)
+
+
+def _run_date_root(tmp_path, max_age_days=1):
+    """A project root whose config names a run-date variable and allowlists it."""
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "project.json").write_text(
+        json.dumps(
+            {
+                "evidence": {
+                    "run_date": {"env": _RUN_DATE, "max_age_days": max_age_days}
+                },
+                "child_env": {"names": [_RUN_DATE]},
+            }
+        ),
+        encoding="utf-8",
+    )
+    return str(tmp_path)
+
+
+def test_today_is_the_gate_runs_date_before_the_clock_and_after_the_pins(tmp_path):
+    """A gate run that crosses midnight read two days from the clock: a document
+    stamped when the run began turned stale before the run ended. The driver's
+    one date sits between the two explicit pins and the clock."""
+    root = _run_date_root(tmp_path)
+    yesterday = _CLOCK - datetime.timedelta(days=1)
+
+    def today(argv_today, env):
+        return review_docs.resolve_today(argv_today, env, root, lambda: _CLOCK)
+
+    run = {_RUN_DATE: yesterday.isoformat()}
+    assert today(None, {}) == _CLOCK
+    assert today(None, run) == yesterday
+    pinned = dict(run, SOURCE_DATE_EPOCH="86399")
+    assert today(None, pinned) == datetime.date(1970, 1, 1)
+    assert today("2030-05-06", pinned) == datetime.date(2030, 5, 6)
+    # An explicit pin is never judged by the run date's rule, even a bad one.
+    assert today("2030-05-06", {_RUN_DATE: "not-a-date"}) == datetime.date(2030, 5, 6)
+
+
+@pytest.mark.parametrize(
+    "days_from_the_clock, names",
+    [(-2, "evidence.run_date.max_age_days"), (1, "later"), (None, "YYYY-MM-DD")],
+    ids=["too-old", "tomorrow", "not-a-date"],
+)
+def test_a_run_date_the_run_could_not_have_is_a_named_error(
+    tmp_path, days_from_the_clock, names
+):
+    """A caller cannot hold the freshness rule to a day of its choosing: the
+    variable is accepted only as far from the clock as a run can last."""
+    root = _run_date_root(tmp_path)
+    raw = "not-a-date"
+    if days_from_the_clock is not None:
+        raw = (_CLOCK + datetime.timedelta(days=days_from_the_clock)).isoformat()
+    with pytest.raises(review_docs.DateSourceError) as caught:
+        review_docs.resolve_today(None, {_RUN_DATE: raw}, root, lambda: _CLOCK)
+    assert _RUN_DATE in str(caught.value) and names in str(caught.value)
+
+
+def test_a_root_without_the_block_reads_the_clock(tmp_path):
+    env = {_RUN_DATE: "not-a-date"}
+    assert review_docs.resolve_today(None, env, str(tmp_path), lambda: _CLOCK) == _CLOCK
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "project.json").write_text("{ not json", encoding="utf-8")
+    with pytest.raises(review_docs.DateSourceError) as caught:
+        review_docs.resolve_today(None, env, str(tmp_path), lambda: _CLOCK)
+    assert "config/project.json" in str(caught.value)
+
+
+def test_the_judge_exits_2_naming_a_refused_run_date(monkeypatch, capsys, tmp_path):
+    """Through the command: the checkout's own config names the variable."""
+    import run_date
+
+    name = run_date.load(review_docs.ROOT).env
+    monkeypatch.delenv("SOURCE_DATE_EPOCH", raising=False)
+    monkeypatch.setenv(name, "not-a-date")
+    assert review_docs.main(["--root", str(tmp_path)]) is review_docs.ExitCode.USAGE
+    line = capsys.readouterr().err.strip().splitlines()[-1]
+    assert line.startswith("review_docs: cannot tell what today is: "), line
+    assert name in line and "YYYY-MM-DD" in line, line
+    assert "unset the gate run's date variable" in line.rsplit("; ", 1)[1], line
+
+
+def test_a_run_date_config_fault_is_answered_with_the_config_fix(
+    monkeypatch, capsys, tmp_path
+):
+    """A variable `child_env.names` does not list is a config fault: passing
+    --today or unsetting the variable would not clear it, so the next step
+    names the two edits that do."""
+    root = tmp_path / "project"
+    root.mkdir()
+    _run_date_root(root)
+    manifest = json.loads((root / "config" / "project.json").read_text("utf-8"))
+    manifest["child_env"]["names"] = ["PATH"]
+    (root / "config" / "project.json").write_text(json.dumps(manifest), "utf-8")
+    monkeypatch.setattr(review_docs, "ROOT", str(root))
+    monkeypatch.delenv("SOURCE_DATE_EPOCH", raising=False)
+    assert review_docs.main(["--root", str(root)]) is review_docs.ExitCode.USAGE
+    line = capsys.readouterr().err.strip().splitlines()[-1]
+    next_step = line.rsplit("; ", 1)[1]
+    assert "child_env.names" in next_step and _RUN_DATE in next_step, line
+    assert "--today" not in next_step, line
 
 
 @pytest.mark.parametrize(

@@ -112,7 +112,9 @@ Checks:
      scope are errors, as is a helper call whose arguments carry os.environ,
      directly or through a name within the module; and config/project.json
      `child_env` (with `credentialed_values` naming only a variable the
-     allowlist copies) and `models.credential_env` are well-formed. Names resolve
+     allowlist copies), `models.credential_env` and `models.allowed_hosts`
+     are well-formed, as is `evidence.run_date` (scripts/run_date.py
+     `policy`), whose variable `child_env.names` must list. Names resolve
      with Python's scope rules; a spawn through an unresolvable receiver
      (`self.runner(...)`, an alias of the module) or a parent value crossing a
      function parameter is under-reported, never over-reported
@@ -165,6 +167,7 @@ if _HERE not in sys.path:
 
 import child_env  # noqa: E402
 import exit_codes  # noqa: E402
+import run_date  # noqa: E402
 
 # Run as a script this module is `__main__`; a project check's `import
 # check_structure` must get THIS module (its live ROOT and helpers), not load a
@@ -5887,6 +5890,14 @@ def check_X():
                 if m.startswith("config/project.json")
                 else "config/project.json: " + m
             )
+    if manifest is not None:
+        # The gate run's date reaches each goal through the allowlist, so a
+        # variable `child_env.names` drops is an allowlist fault; the driver
+        # refuses it too, but only once a run has started.
+        try:
+            run_date.policy(manifest)
+        except run_date.RunDateError as exc:
+            err(str(exc))
     for m in findings:
         err(m)
 

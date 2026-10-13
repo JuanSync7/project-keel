@@ -26,6 +26,7 @@ from exit_codes import ExitCode, finish, report  # noqa: E402
 # is re-exported, not used here: tests/unit/scripts/test_run_make_target.py proves
 # through it that git, like make, runs with the allowlisted environment.
 from git_tree import (  # noqa: E402
+    GitFailedError,
     NoGitError,
     _git,  # noqa: F401
     tree_snapshot,
@@ -237,6 +238,13 @@ def run_target(
             "(%s)" % (root, exc),
             labels,
         )
+    except GitFailedError as exc:
+        return _refusal(
+            target,
+            "cannot prove a read-only run: git could not list the tree at %s (%s)"
+            % (root, exc),
+            labels,
+        )
     cmd = ["make", target, *extra, "%s=1" % policy["gate_runner_var"]]
     try:
         code, output = (runner or _default_runner)(cmd, root, timeout)
@@ -260,7 +268,7 @@ def run_target(
         )
     try:
         after = snap(root)
-    except (NoGitError, child_env.ChildEnvError) as exc:
+    except (NoGitError, GitFailedError, child_env.ChildEnvError) as exc:
         # The run may have broken git or the allowlist itself; either way its
         # read-only claim is unproven, so the verdict is red, never a crash.
         return {

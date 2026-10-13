@@ -8,7 +8,7 @@ tags: [template, scaffold, project_keel]
 summary: A generic, polyglot-aware, agent-friendly project skeleton that stays honest.
 id: readme
 created: 2026-06-17
-updated: 2026-10-11
+updated: 2026-10-13
 visibility: internal
 canonical: true
 ---
@@ -143,9 +143,9 @@ that does not exist.
 `models/` is the exception: `config/project.json` **declares** the adapters that live
 there, so deleting the directory alone leaves the manifest claiming adapters that no
 longer exist and `make check` correctly reports one error per adapter. To drop it, clear
-`models.available` and `models.credential_env` to `{}` and set `models.default` to
-`null` in the same commit (a credential declaration for an adapter that is not
-available is itself an error), then run `make check` once more: it lists every doc that still links into `models/`, by file
+`models.available`, `models.credential_env` and `models.allowed_hosts` to `{}`
+and set `models.default` to `null` in the same commit (a credential declaration or
+a host list for an adapter that is not available is itself an error), then run `make check` once more: it lists every doc that still links into `models/`, by file
 and line, so you can unlink or reword each one. That second step is the same for any
 directory you remove — the gate holds every link to a target that exists. Project
 generation is `copier`-based (see [ADR-K-0004](docs/adr/keel/K-0004-project-templating-copier.md)).

@@ -43,6 +43,7 @@ _SCRIPTS = (
     "child_env.py",
     "check_structure.py",
     "exit_codes.py",
+    "run_date.py",
 )
 _IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc")
 _GAPS_WHERE = "%s %s" % (tr.MANIFEST, tr.GAPS_KEY)

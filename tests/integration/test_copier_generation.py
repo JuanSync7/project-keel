@@ -620,6 +620,7 @@ def test_deleting_a_manifest_declared_dir_is_caught_and_the_documented_fix_works
     data = json.loads(manifest.read_text())
     data["models"]["available"] = {}
     data["models"]["credential_env"] = {}
+    data["models"]["allowed_hosts"] = {}
     data["models"]["default"] = None
     manifest.write_text(json.dumps(data, indent=2) + "\n")
 
@@ -1433,6 +1434,129 @@ def test_a_generated_project_ends_every_process_through_the_exit_helper(
     assert again.returncode == 0, again.stdout[-3000:] + again.stderr[-3000:]
     green = _exit_gate(dest)
     assert green.returncode == 0, green.stdout[-6000:] + green.stderr[-2000:]
+
+
+# The tests that drive a script to each of its exit codes through its command
+# line, and the gate that holds every exit to the helper: what a generated
+# project runs to know a status still means one fact.
+_EXIT_CODE_TESTS = ("tests/integration/test_exit_codes_cli.py", _EXIT_GATE)
+_EXIT_CLI_CASE = "test_each_script_reaches_each_code_as_a_child_process"
+_RED_FACT_MEMBERS = ("RED_RECORD", "BACKEND_ABSENT")
+# The gate residuals a generated project holds: its own date module and git
+# reader, and one real-process scenario for each rule the gate gained (one date
+# for a run that crosses midnight, a symlinked evidence path, a git command
+# that ran and failed).
+_GATE_RESIDUAL_TESTS = (
+    "tests/unit/scripts/test_run_date.py",
+    "tests/unit/scripts/test_git_tree.py",
+    "tests/integration/test_gate_evidence_record.py"
+    "::test_every_goal_of_a_run_is_handed_the_date_the_driver_read",
+    "tests/integration/test_gate_evidence_record.py"
+    "::test_a_real_gate_refuses_an_evidence_dir_that_is_a_symlink",
+    "tests/integration/test_doc_freshness.py"
+    "::test_a_doc_stamped_on_the_run_date_stays_fresh_after_the_clock_passes_midnight",
+    "tests/integration/test_evals_gate.py"
+    "::test_a_git_that_ran_and_failed_is_refused_and_names_its_status",
+    # The model adapter's host allowlist, read from the project's own config.
+    "tests/unit/models/test_openai_compatible.py",
+)
+# The file part is lazy: a file path holds no `::`, and a parametrize id may
+# (an IPv6 literal such as `[::1]`).
+_TEST_OUTCOME = re.compile(
+    r"^(\S+?)::(\S+) (PASSED|FAILED|ERROR|SKIPPED)", re.MULTILINE
+)
+
+
+def _project_tests(project, paths):
+    """The generated project's own copies of *paths*, run by its interpreter as
+    its `make test` recipe runs pytest (PYTHONPATH=src:.)."""
+    return subprocess.run(
+        [sys.executable, "-m", "pytest", "-v", "-rs", "-p", "no:cacheprovider"]
+        + list(paths),
+        cwd=str(project),
+        env=build_child_env(root=str(project), extra={"PYTHONPATH": "src:."}),
+        capture_output=True,
+        text=True,
+        timeout=900,
+    )
+
+
+def _project_members(project):
+    """{name: value} of the generated project's own exit-code enum, read by a
+    child of its interpreter from its own helper."""
+    code = (
+        "import json, sys; sys.path.insert(0, 'scripts'); import exit_codes; "
+        "print(json.dumps({m.name: int(m) for m in exit_codes.%s}))" % _EXIT_ENUM
+    )
+    out = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=str(project),
+        env=build_child_env(root=str(project)),
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert out.returncode == 0, out.stderr[-2000:]
+    return json.loads(out.stdout)
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
+def test_a_default_project_ships_the_slice_and_stays_green(tmp_path):
+    """A project generated with default answers holds one member for a red
+    evidence record and one for an absent backend, with different values; its
+    own command-line test drives its own copies of both scripts to every code
+    with nothing skipped, its exit gate passes, and its generated exit-code
+    table names both members and is current. Its config carries the run-date
+    channel and the model adapter's host allowlist as the template states
+    them, and its own tests of the one-date rule, the symlink refusal, the
+    three-way git answer and the host allowlist pass."""
+    dest = tmp_path / "proj"
+    _generate(dest, project_name="demo_proj")
+    members = _project_members(dest)
+    assert set(_RED_FACT_MEMBERS) <= set(members), sorted(members)
+    values = [members[name] for name in _RED_FACT_MEMBERS]
+    assert len(set(values)) == len(values), members
+    assert len(set(members.values())) == len(members), members
+
+    for path in _EXIT_CODE_TESTS:
+        assert (dest / path).is_file(), path
+    ran = _project_tests(dest, _EXIT_CODE_TESTS)
+    assert ran.returncode == 0, ran.stdout[-8000:] + ran.stderr[-2000:]
+    outcomes = _TEST_OUTCOME.findall(ran.stdout)
+    assert outcomes, "the project's exit-code tests ran no test -- zero items"
+    assert {outcome for _file, _test, outcome in outcomes} == {"PASSED"}, outcomes
+    assert {path for path, _test, _outcome in outcomes} == set(_EXIT_CODE_TESTS)
+    cases = [test for _file, test, _outcome in outcomes if _EXIT_CLI_CASE in test]
+    # Each of the two scripts at success, a usage refusal and its own red fact.
+    assert len(cases) == len(_RED_FACT_MEMBERS) * 3, cases
+
+    current = _make_in(dest, "check-exit-codes")
+    assert current.returncode == 0, current.stdout[-3000:] + current.stderr[-3000:]
+    manifest = json.loads((dest / "config" / "project.json").read_text("utf-8"))
+    guide = (dest / manifest["doc_drift"]["limits_guide"]).read_text("utf-8")
+    for name in _RED_FACT_MEMBERS:
+        assert "| %d | `%s` |" % (members[name], name) in guide, name
+
+    # The run-date channel arrives as the template states it, on the allowlist
+    # that carries it below the driver, and the project's own copies of the
+    # residual tests pass with nothing skipped.
+    template = json.loads((_ROOT / "config" / "project.json").read_text("utf-8"))
+    channel = manifest["evidence"]["run_date"]
+    assert channel == template["evidence"]["run_date"], channel
+    assert channel["env"] in manifest["child_env"]["names"], channel
+    hosts = manifest["models"]["allowed_hosts"]
+    assert hosts == template["models"]["allowed_hosts"], hosts
+    residual_files = {node.split("::")[0] for node in _GATE_RESIDUAL_TESTS}
+    for path in sorted(residual_files):
+        assert (dest / path).is_file(), path
+    ran = _project_tests(dest, _GATE_RESIDUAL_TESTS)
+    assert ran.returncode == 0, ran.stdout[-8000:] + ran.stderr[-2000:]
+    outcomes = _TEST_OUTCOME.findall(ran.stdout)
+    assert outcomes, "the project's gate-residual tests ran no test -- zero items"
+    assert {outcome for _file, _test, outcome in outcomes} == {"PASSED"}, outcomes
+    assert {path for path, _test, _outcome in outcomes} == residual_files
+    named = {node.split("::")[1] for node in _GATE_RESIDUAL_TESTS if "::" in node}
+    assert named <= {test.split("[")[0] for _file, test, _outcome in outcomes}, outcomes
 
 
 _APP_DELETE_ADVICE = re.compile(r"\*\*Delete this dir\*\*(.*?)(?:\n\n|\Z)", re.DOTALL)

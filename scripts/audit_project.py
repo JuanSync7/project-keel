@@ -1583,7 +1583,8 @@ def main(argv=None):
     ap.add_argument(
         "--today",
         metavar="YYYY-MM-DD",
-        help="the date freshness calls today (default: SOURCE_DATE_EPOCH, else the clock)",
+        help="the date freshness calls today (default: SOURCE_DATE_EPOCH, else the "
+        "gate run's date, else the clock)",
     )
     args = ap.parse_args(sys.argv[1:] if argv is None else argv)
 
@@ -1603,7 +1604,7 @@ def main(argv=None):
             exit_codes.ExitCode.USAGE,
             "audit_project: cannot tell what today is",
             str(exc),
-            "pass --today YYYY-MM-DD, or correct SOURCE_DATE_EPOCH",
+            exc.remedy,
         )
 
     dest = os.path.realpath(args.dest)

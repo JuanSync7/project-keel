@@ -2,7 +2,7 @@
 title: Test helper — a git environment that ignores the developer's machine
 kind: tests
 layer: n/a
-summary: One canonical hermetic git config for every test that shells out to git or lets copier do it. Neutralises global + system config AND `core.excludesFile`, whose default value git reads from $XDG_CONFIG_HOME/git/ignore with no config entry at all — so GIT_CONFIG_GLOBAL/SYSTEM alone do not reach it and a single `*.yml` line on someone's laptop fails a correct tree. The hermetic environment is also free of the parent's repository context: `repo_context_names` reads config/project.json `child_env.repo_context_names` through scripts/child_env.py, and `git_env` drops every one, so a test started from a git hook never runs git against the repository being committed. Nor does it carry a parent's injected git configuration: `config_injection` reads `child_env.config_injection_names` and `config_injection_prefixes` the same way, and `drop_config_injection` (called by `git_env` and by tests/conftest.py at import) removes every member.
+summary: One canonical hermetic git config for every test that shells out to git or lets copier do it. Neutralises global + system config AND `core.excludesFile`, whose default value git reads from $XDG_CONFIG_HOME/git/ignore with no config entry at all — so GIT_CONFIG_GLOBAL/SYSTEM alone do not reach it and a single `*.yml` line on someone's laptop fails a correct tree. The hermetic environment is also free of the parent's repository context: `repo_context_names` reads config/project.json `child_env.repo_context_names` through scripts/child_env.py, and `git_env` drops every one, so a test started from a git hook never runs git against the repository being committed. Nor does it carry a parent's injected git configuration: `config_injection` reads `child_env.config_injection_names` and `config_injection_prefixes` the same way, and `drop_config_injection` (called by `git_env` and by tests/conftest.py at import) removes every member. Inside a gate run, whose date arrives in the variable config/project.json `evidence.run_date.env` names, `git_env_vars` also dates every commit by that run through scripts/run_date.py `git_dates`, so a tree the suite commits after midnight is not dated a day past the `updated:` stamps the run wrote, which the freshness judge would call committed stale.
 """
 
 import json
@@ -38,16 +38,36 @@ def git_env_vars(work_dir):
     Returned as a plain dict so a caller can either splice it into a subprocess
     `env=` (see `git_env`) or feed it to `monkeypatch.setenv` when the git calls
     are made by a library — copier shells out to git itself, so the
-    neutralisation has to be the environment, not `git -c`.
+    neutralisation has to be the environment, not `git -c`. Inside a gate run
+    it also carries `commit_dates`, read from os.environ when called.
     """
     cfg = os.path.join(str(work_dir), "gitconfig")
     with open(cfg, "w", encoding="utf-8") as fh:
         fh.write(HERMETIC_GITCONFIG)
-    return {
+    env = {
         "GIT_CONFIG_GLOBAL": cfg,
         "GIT_CONFIG_SYSTEM": os.devnull,
         "GIT_CONFIG_NOSYSTEM": "1",
     }
+    env.update(commit_dates(os.environ))
+    return env
+
+
+def commit_dates(environ):
+    """GIT_AUTHOR_DATE and GIT_COMMITTER_DATE for a commit a test makes inside
+    the gate run *environ* carries: scripts/run_date.py `git_dates` under this
+    checkout's config/project.json, {} outside a run. A run date that cannot
+    be the run's raises RunDateError, as every reader of it does."""
+    _scripts_on_path(_REPO_ROOT)
+    import run_date
+
+    return run_date.git_dates(environ, run_date.load(_REPO_ROOT))
+
+
+def _scripts_on_path(root):
+    scripts = os.path.join(str(root), "scripts")
+    if scripts not in sys.path:
+        sys.path.insert(0, scripts)
 
 
 def _policy(root):
@@ -56,9 +76,7 @@ def _policy(root):
     Read through child_env's own validator, so the suite strips exactly what
     build_child_env holds back. A manifest the policy refuses is an
     AssertionError naming why: a broken key must not quietly strip nothing."""
-    scripts = os.path.join(str(root), "scripts")
-    if scripts not in sys.path:
-        sys.path.insert(0, scripts)
+    _scripts_on_path(root)
     import child_env
 
     with open(

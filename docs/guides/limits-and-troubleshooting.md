@@ -8,7 +8,7 @@ tags: [limits, waivers, exit-codes, troubleshooting, guide]
 summary: What adopting keel costs, the risks its rails leave open, the checks that pass by skipping, what no gate can see, every waiver a project may use, every exit code the gate's scripts return, and the symptom-to-fix list for the failures a newcomer meets first.
 id: docs-guides-limits-and-troubleshooting
 created: 2026-10-09
-updated: 2026-10-12
+updated: 2026-10-13
 visibility: internal
 canonical: true
 ---
@@ -253,18 +253,40 @@ change to a template check upstream as an issue or a pull request.
   `evals.report_dir` itself is the refused key, it cannot find the report and
   says the earlier one may still stand; trust the exit code, not that file.
   `tests/integration/test_evals_gate.py` holds both cases.
+- **The gate run's date trusts its caller, within a bound.**
+  `scripts/gate_evidence.py` hands every goal the date the run began in
+  `KEEL_GATE_RUN_DATE` (config/project.json `evidence.run_date.env`), and
+  `scripts/jobs/review_docs.py` judges a touched document by it. Whoever sets
+  that variable for a check can move the check's today back by
+  `evidence.run_date.max_age_days` (`1`) days and never forward, so a document
+  touched today and stamped yesterday passes that check. A committed
+  document's stamp is still compared with its commit date, which the variable
+  does not move. `SOURCE_DATE_EPOCH` moves today back without a bound
+  ([ADR-K-0019](../adr/keel/K-0019-one-date-per-gate-run.md)).
+- **A gate longer than the bound refuses, it does not guess.** A `make verify`
+  that runs past `evidence.run_date.max_age_days` (`1`) days after it began has
+  every later date check exit 2 naming the key. Raise the bound to fit the
+  run; `tests/unit/scripts/test_run_date.py` holds the rule.
 - **The eval config chooses where the model key goes.** `openai-compatible`
   accepts only an `api_key_env` that config/project.json
   `models.credential_env.openai-compatible` lists, so
   `evals.live.model_options` cannot name another variable to send. It still
-  chooses `base_url`: whoever can edit `config/project.json` can direct the
-  declared key to a host of their choosing, and nothing here holds a list of
-  allowed hosts. `scripts/run_evals.py` refuses a report path that resolves
+  chooses `base_url`, but only among the hosts config/project.json
+  `models.allowed_hosts.openai-compatible` lists, which ships empty; a
+  redirect is refused, so the endpoint cannot move the key elsewhere. That
+  list is defence in depth, not a sandbox: whoever can edit
+  `config/project.json` can list a host of their choosing, an `http://`
+  base_url sends the key in clear text, and a listed name is trusted to
+  resolve where DNS says
+  ([ADR-K-0018](../adr/keel/K-0018-model-endpoint-host-allowlist.md)).
+  `scripts/run_evals.py` refuses a report path that resolves
   through a symlink, and it checks once, before it writes: a symlink planted
-  during the run is not seen. Outside a git work tree it does not check the
-  ignore rule, because there is no tree to dirty.
-  `tests/unit/models/test_openai_compatible.py` and
-  `tests/integration/test_evals_gate.py` hold the refusals.
+  during the run is not seen. Where git is not installed, or no repository
+  holds the project, it does not check the ignore rule, because there is no
+  tree to dirty. A git command that ran and failed is refused with exit 2.
+  `tests/unit/models/test_openai_compatible.py`,
+  `tests/integration/test_evals_gate.py` and
+  `tests/integration/test_evals_live_stub.py` hold the refusals.
 - **The live cap counts calls, not money.** config/project.json
   `evals.live.max_calls` bounds how many cases one live run may send; the price
   of one call depends on the model, the endpoint and the prompt, and nothing
@@ -289,7 +311,8 @@ between the markers.
 | 0 | `SUCCESS` | it ran and found nothing wrong, or it skipped and said why | nothing |
 | 1 | `FAILURE` | it ran and the answer is no: a check found something, or the work did not succeed | read the last stderr line, fix what it names, and run it again |
 | 2 | `USAGE` | it refused before judging: wrong usage, bad config, or an input it could not read | correct the call or the input the last stderr line names, and run it again |
-| 3 | `UNAVAILABLE` | it ran to the end, and a result it needs is missing or cannot be trusted | read the last stderr line for what is missing, supply it, and run it again |
+| 10 | `RED_RECORD` | every step it ran passed, and the record it wrote of the run says fail | read `reasons` in the record the last stderr line names, fix what they name, and run it again |
+| 11 | `BACKEND_ABSENT` | the backend it was told to use did not answer, so nothing was judged | start or configure the backend the last stderr line names, and run it again |
 | 130 | `INTERRUPTED` | it was interrupted before it finished | run it again; what it had written so far is not a result |
 
 | Script | Exit |
@@ -300,9 +323,9 @@ between the markers.
 | `scripts/check_python_version.py` | 0, 1 |
 | `scripts/check_structure.py` | 0, 1, 2 |
 | `scripts/exit_code_table.py` | 0, 1, 2 |
-| `scripts/gate_evidence.py` | 0, 2, 3, 130, passes through |
+| `scripts/gate_evidence.py` | 0, 2, 10, 130, passes through |
 | `scripts/jobs/check_corpus.py` | 0, 1 |
-| `scripts/run_evals.py` | 0, 1, 2, 3 |
+| `scripts/run_evals.py` | 0, 1, 2, 11 |
 | `scripts/trace_requirements.py` | 0, 1, 2 |
 <!-- exit-codes:end -->
 
@@ -322,9 +345,9 @@ says when each script returns each code.
 | `scripts/check_python_version.py` | 0: the interpreter meets `requires-python`. 1: it does not, and the message names the floor |
 | `scripts/check_structure.py` | 0: no error. 1: at least one error, each printed. 2: a bad `--root` |
 | `scripts/exit_code_table.py` | 0: the exit-code table between the markers is current. 1: it is stale, and each differing row is one stderr line. 2: it could not build the table: a missing or repeated marker, a bad `doc_drift` block, a guide reached through a symlink, or a script whose returns it cannot read |
-| `scripts/gate_evidence.py` | 0: every goal passed and the record is green. 2: refused before any goal ran: a malformed `--gate` or goal, zero goals, a bad `evidence` block, or a record path git does not ignore. 3: every goal passed but the record is red: zero tests, a failed or errored test in the junit report of a goal that exited 0, no junit report, the tree changed during the run, the checks could not run, or the writer crashed. 130: interrupted, and the red placeholder record stays. Otherwise the first failing goal's code passes through |
+| `scripts/gate_evidence.py` | 0: every goal passed and the record is green. 2: refused before any goal ran: a malformed `--gate` or goal, zero goals, a bad `evidence` block, a record or report path that resolves through a symlink or that git does not ignore, a git command that ran and failed, or a date in the `evidence.run_date.env` variable that is not a date, is later than the clock or is older than `evidence.run_date.max_age_days` allows. 10: every goal passed but the record is red: zero tests, a failed or errored test in the junit report of a goal that exited 0, no junit report, the tree changed during the run, the checks could not run, or the writer crashed. 130: interrupted, and the red placeholder record stays. Otherwise the first failing goal's code passes through |
 | `scripts/jobs/check_corpus.py` | 0: the corpus is well-formed and its build is reproducible. 1: it is not, and each error is printed |
-| `scripts/run_evals.py` | 0: every suite passed. 1: a suite failed: below `evals.threshold`, an errored case or a stale recording. 2: refused: a bad `evals` block, a malformed or empty dataset, a live run over `evals.live.max_calls`, a null or unknown `evals.live.model`, or an `evals.report_dir` git does not ignore. 3: the live backend is absent; the first case is `absent` and the rest `not-run` |
+| `scripts/run_evals.py` | 0: every suite passed. 1: a suite failed: below `evals.threshold`, an errored case or a stale recording. 2: refused: a bad `evals` block, a malformed or empty dataset, a live run over `evals.live.max_calls`, a null or unknown `evals.live.model`, an `evals.report_dir` git does not ignore, or a git command that ran and failed. 11: the live backend is absent; the first case is `absent` and the rest `not-run` |
 | `scripts/trace_requirements.py` | 0: every unit is `covered` or a `traceability.gaps` row, and there is no finding. 1: at least one finding, each one stderr line: an `uncovered` unit, a marker or gap id that is malformed or undefined, an unreadable or unattached marker, a redundant gap, or zero requirements with no reason. 2: it could not judge: a bad `traceability` block, a path reached through a symlink, a `matrix_path` git does not ignore, a repository git cannot read, an unreadable schema, spec or test file, a spec line that does not parse, a document under the specs root that defines a requirement without `kind: spec`, or a collection rule pytest could not give; or it could not write the matrix at `traceability.matrix_path` |
 
 Three more codes come from the tools around these scripts:
@@ -354,13 +377,19 @@ Three more codes come from the tools around these scripts:
 | a job stops on `Expecting property name enclosed in double quotes` after `copier update` | the update went to a template release whose migrations read `config/project.json` without checking it for conflict markers, and the manifest was conflicted; copier ran no later migration, and that release has no `scripts/jobs/finish_update.py` | resolve the file and `git add` it; copy `scripts/jobs/finish_update.py` from a newer keel checkout into the project, run `python scripts/jobs/finish_update.py --template <that keel checkout>`, delete the copied script (that release's `scripts/jobs/README.md` roster does not name it, so `check_structure.py` fails on it), then review and commit. On a release that has the check, the same conflict stops with the refusal row above instead, and `tests/integration/test_copier_job_conflict_refusal.py` keeps it so |
 | `copier update` refuses the ref you named | it is older than the project's recorded `_commit` | update to a newer tag ([ADR-K-0009](../adr/keel/K-0009-release-identity-and-the-tag-ordering-rule.md)) |
 | `make check-corpus` fails after you added documents | the local corpus is stale | `make site-data` |
-| `make verify` fails with `Error 3` though every goal passed | the evidence record is red for a reason no goal's exit reports: zero tests ran, pytest's report counts a failed or errored test that the test recipe ignored, pytest wrote no report, the tree changed during the run, or the checks or the writer crashed | read `reasons` in `.evidence/verify.json` (config/project.json `evidence.dir`) and fix what it names |
+| `make verify` fails with `Error 10` though every goal passed | the evidence record is red for a reason no goal's exit reports: zero tests ran, pytest's report counts a failed or errored test that the test recipe ignored, pytest wrote no report, the tree changed during the run, or the checks or the writer crashed | read `reasons` in `.evidence/verify.json` (config/project.json `evidence.dir`) and fix what it names |
 | `make verify` stops before any goal, naming `.gitignore` | git would list the evidence record, so writing it would change the tree | add config/project.json `evidence.dir` (`.evidence`) to `.gitignore` |
+| `make verify` stops before any goal, naming `evidence.dir` and `through a symlink` | the record, its temporary file or a goal's junit report resolves through a symlink, so a write or the delete of a stale report could land outside the project | replace the symlink under config/project.json `evidence.dir` (`.evidence`) with a real directory inside the project |
+| `make verify`, `make eval`, `make trace` or the gate runner stops with exit 2 quoting `git exited` and a status | git ran and failed: a corrupt repository, one git refuses as unsafe because another user owns it, or a broken git configuration. That is not "no git", so nothing was written | run `git status` in the project, repair what it names, and run the command again |
+| `make verify` stops before any goal, or `make check-docs` exits 2, naming `KEEL_GATE_RUN_DATE` | the variable config/project.json `evidence.run_date.env` names holds a value that is not a date written `YYYY-MM-DD`, is later than the clock, or is more than `evidence.run_date.max_age_days` (`1`) days before it: a stale export in your shell, or a gate that ran longer than the bound | `unset KEEL_GATE_RUN_DATE` and run again; for a gate that outlasts the bound, raise `evidence.run_date.max_age_days` |
+| `make verify` refuses naming `evidence.run_date.env` and `child_env.names` | the variable the run's date travels in is not on the child-environment allowlist, so no check below the driver would receive it | add the name to config/project.json `child_env.names`, or remove `evidence.run_date` to make every check read the clock |
 | `make eval` fails with `stale-recording` and a case detail `prompt is now sha256:…, recorded sha256:…` | the doer now sends a different prompt than the one the case's response was recorded for, so the recorded answer no longer judges the code | re-record the case: run `make eval-live` and promote its candidate, or, for an authored case, copy the new hash from the detail into `recorded.prompt_sha256` after checking the response still fits (`evals/README_run.md`) |
 | `make eval` refuses with exit 2 naming `path:line` | a dataset line breaks `config/evals/eval-case.schema.json` or a rule it cannot state: a repeated key or id, or a `recorded.sha256` that does not match the response | fix that line; compute hashes with `evals.prompt_sha256` and `evals.sha256_text`, never by hand |
 | `make eval` or `make eval-live` refuses naming `evals.report_dir` and `is not git-ignored` | git would list the report, so writing it would change the tree | add config/project.json `evals.report_dir` (`.evidence/evals`) to `.gitignore` |
 | `make eval` or `make eval-live` refuses naming `evals.report_dir` and `through a symlink` | the report, its temporary file or `live-candidates/` resolves through a symlink, so a write or the live run's delete could land outside the project | replace the symlink under config/project.json `evals.report_dir` (`.evidence/evals`) with a real directory |
 | `make eval-live` refuses naming `models.credential_env` | `evals.live.model_options.api_key_env` names a variable the adapter is not declared to use, and the adapter would send that variable's value to `base_url` | name a variable listed in config/project.json `models.credential_env.openai-compatible` (`OPENAI_API_KEY`), or add the name there |
+| `make eval-live` refuses, or `get_model("openai-compatible", ...)` raises `ValueError`, naming `models.allowed_hosts.openai-compatible` | the host and port of `base_url` match no entry in that list, which ships empty; the adapter sends its credential there, so it refuses before any request and before the credential is read | add the entry the message names (`host`, or `host:port` for a port other than the scheme's default) to config/project.json `models.allowed_hosts.openai-compatible`, as `models/README.md` describes |
+| a live case fails with `answered with a redirect (HTTP 301)` (or another 3xx) | the endpoint at `base_url` redirects, and following it would send the Authorization header to a host the list never named | point `base_url` at the URL the endpoint serves from, and list that host if it differs |
 | `make eval-live` refuses naming `evals.live.model` or `evals.live.max_calls` | the shipped model is `null` and the shipped cap is `0`, so no live run is approved | set both, and `evals.live.model_options`, as `evals/README_run.md` says; the cap must be at least the number of cases |
 | `make test-fe-unit` fails with `No test files found, exiting with code 1` | the app's unit runner found no test under its `include` list; this is the intended red for a stack with zero tests | add a test of the app's own code under `src/`, named `*.test.ts` (`*.test.tsx` in react-vite) |
 | `make trace` prints `trace: uncovered: 'REQ-0001#AC-2' (docs/specs/<spec>.md:<line>)` | no collected test carries `@pytest.mark.req` with that unit's id; a marker naming the bare `REQ-0001` does not cover a requirement that has numbered criteria | write the test and mark it with the unit's id, or add the id to config/project.json `traceability.gaps` with the reason |

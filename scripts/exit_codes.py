@@ -59,10 +59,20 @@ class ExitCode(enum.IntEnum):
         "could not read",
         "correct the call or the input the last stderr line names, and run it again",
     )
-    UNAVAILABLE = (
-        3,
-        "it ran to the end, and a result it needs is missing or cannot be trusted",
-        "read the last stderr line for what is missing, supply it, and run it again",
+    # 10 and 11 are numbers no tool in a gate's path already uses: the shell
+    # owns 0 and 1, argparse and make 2, pytest 1 to 5, sysexits.h 64 to 78,
+    # timeout and the shell 124 to 127, a signal 128 and up, and 255 is an
+    # out-of-range status. A caller can then act on the number alone.
+    RED_RECORD = (
+        10,
+        "every step it ran passed, and the record it wrote of the run says fail",
+        "read `reasons` in the record the last stderr line names, fix what they "
+        "name, and run it again",
+    )
+    BACKEND_ABSENT = (
+        11,
+        "the backend it was told to use did not answer, so nothing was judged",
+        "start or configure the backend the last stderr line names, and run it again",
     )
     INTERRUPTED = (
         130,

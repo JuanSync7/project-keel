@@ -2,7 +2,7 @@
 title: Integration — the downstream audit judges a generated project and writes nothing
 kind: tests
 layer: n/a
-summary: `scripts/audit_project.py` run against projects copier generates from this template. The audit judges the tree a real `copier update` leaves, built in a scratch copy; the parity test runs that update itself, on an independent clone of each old project against `hermetic_git.clone_including_worktree`, and holds the audit's owed and warned letter findings equal to `check_structure.py --root` on the result; for a 7f0a68b project whose own `.PHONY` edit makes copier conflict on the Makefile, the result is resolved both ways by git's `merge-file --ours/--theirs` over copier's index stages, and the audit's judged findings equal what both resolutions have outside the conflicted file, with nothing owed; for a 7f0a68b project that edited its own scripts/check_structure.py, copier conflicts on it and every migration still runs, because none reads it (the restamp, which once imported it for two constants, refused there); for one that edited its own scripts/jobs/review_docs.py, the first migration, which imports it, refuses in the real update and in the audit alike, which names the migration under not checked, exits on the findings (none owed) and never 2. A project generated from the working tree audits with no letter error, no config arrival and no conflict; the same project with four planted defects (an undeclared top-level directory, an unlabelled make target, a bare subprocess call, an unstamped doc edit) reports exactly those four under B, W, X and freshness, and its whole tree — `.git` included, bytes and modes, plus `.git/index`'s mtime — is identical after two audits whose JSON is byte-identical, with no `keel-audit-*` scratch left behind. A project generated at 7f0a68b, before the downstream-feedback campaign, owes nothing: every W/X error it has today is absent from the tree the update leaves, and the config keys the update brings are reported. A project generated at a70a7b5, before slice CMP-2.S1 moved git's repository variables out of `child_env.names`, owes no X error whether or not it added its own allowlist name, and the config group calls that list an update or a merge from copier's own merge. A project generated at 29e45f0, before slice CMP-2.S2, receives `child_env.credentialed_values` as an info arrival with the template default `{}` and owes no X error. A project generated at 7dbcc0c, before slice CMP-3.S4, that recorded its own `child_env.credentialed_values` and `prefixes` keeps both through a real update with nothing unmerged, and its audit owes no X error. The template checkout's index is never refreshed by an audit. A generated project's own `make audit-project` is a stub that names the template checkout. Keel-only: copier's `tests/integration/test_copier_*.py` glob prunes it.
+summary: `scripts/audit_project.py` run against projects copier generates from this template. The audit judges the tree a real `copier update` leaves, built in a scratch copy; the parity test runs that update itself, on an independent clone of each old project against `hermetic_git.clone_including_worktree`, and holds the audit's owed and warned letter findings equal to `check_structure.py --root` on the result; for a 7f0a68b project whose own `.PHONY` edit makes copier conflict on the Makefile, the result is resolved both ways by git's `merge-file --ours/--theirs` over copier's index stages, and the audit's judged findings equal what both resolutions have outside the conflicted file, with nothing owed; for a 7f0a68b project that edited its own scripts/check_structure.py, copier conflicts on it and every migration still runs, because none reads it (the restamp, which once imported it for two constants, refused there); for one that edited its own scripts/jobs/review_docs.py, the first migration, which imports it, refuses in the real update and in the audit alike, which names the migration under not checked, exits on the findings (none owed) and never 2. A project generated from the working tree audits with no letter error, no config arrival and no conflict; the same project with four planted defects (an undeclared top-level directory, an unlabelled make target, a bare subprocess call, an unstamped doc edit) reports exactly those four under B, W, X and freshness, and its whole tree — `.git` included, bytes and modes, plus `.git/index`'s mtime — is identical after two audits whose JSON is byte-identical, with no `keel-audit-*` scratch left behind. A project generated at 7f0a68b, before the downstream-feedback campaign, owes nothing: every W/X error it has today is absent from the tree the update leaves, and the config keys the update brings are reported. A project generated at a70a7b5, before slice CMP-2.S1 moved git's repository variables out of `child_env.names`, owes no X error whether or not it added its own allowlist name, and the config group calls that list an update or a merge from copier's own merge. A project generated at 29e45f0, before slice CMP-2.S2, receives `child_env.credentialed_values` as an info arrival with the template default `{}` and owes no X error. A project generated at 7dbcc0c, before slice CMP-3.S4, that recorded its own `child_env.credentialed_values` and `prefixes` keeps both through a real update with nothing unmerged, and its audit owes no X error. A project generated at ef79551, before slice CMP-5.S2, receives `evidence.run_date` and `models.allowed_hosts` as its only manifest arrivals and the run date's variable in `child_env.names`, owes no X error, and after a real update holds the template's run date block with its variable allowlisted; one that added its own name to `models.credential_env.openai-compatible` keeps it through a real update with nothing unmerged, and the host list arrives as the template ships it. The template checkout's index is never refreshed by an audit. A generated project's own `make audit-project` is a stub that names the template checkout. Keel-only: copier's `tests/integration/test_copier_*.py` glob prunes it.
 """
 
 import json
@@ -41,6 +41,9 @@ _PRE_C2_2 = "29e45f0"
 # The last commit before slice CMP-3.S4 added four child_env keys beside the
 # credentialed_values line a project customises.
 _PRE_C3_4 = "7dbcc0c"
+# The last commit before slice CMP-5.S2 added models.allowed_hosts beside the
+# models.credential_env line a project customises.
+_PRE_C5_2 = "ef79551"
 _ANSWERS = {"project_name": "demo_proj", "frontend_stack": "none"}
 
 pytestmark = [
@@ -403,6 +406,12 @@ def pre_c3_4(tmp_path_factory):
     yield from _generated_at(tmp_path_factory, _PRE_C3_4)
 
 
+@pytest.fixture(scope="module")
+def pre_c5_2(tmp_path_factory):
+    """A project generated at ef79551, whose models block ends in credential_env."""
+    yield from _generated_at(tmp_path_factory, _PRE_C5_2)
+
+
 def _customise(dest, env):
     """Add the project's own allowlist name to a pre-CMP-2.S1 manifest, on its own
     line where a person adds one, so the file keeps its layout; committed."""
@@ -760,7 +769,8 @@ def test_a_pre_c2_2_project_receives_the_new_child_env_keys_as_arrivals_and_owes
     `make trace` and scripts/trace_requirements.py read (CONVENTIONS §17), the
     `doc_drift` block
     (docs/guides/doc-style.md) and `models.credential_env.openai-compatible`,
-    the only names models/openai_compatible.py accepts as `api_key_env`, arrive
+    the only names models/openai_compatible.py accepts as `api_key_env`, and
+    `models.allowed_hosts`, the hosts it may send that credential to, arrive
     beside them.
     `structure.project_checks` does not: the template never ships it, because a
     key beside `extra_toplevel` would conflict with every project that declared
@@ -805,6 +815,7 @@ def test_a_pre_c2_2_project_receives_the_new_child_env_keys_as_arrivals_and_owes
         "make_targets.effect_proof_kept_dirs",
         "make_targets.empty_test_selections",
         "make_targets.write_shape_exempt",
+        "models.allowed_hosts",
         "models.credential_env.openai-compatible",
         "traceability",
         "work_naming",
@@ -858,6 +869,80 @@ def test_an_update_keeps_a_projects_own_child_env_lines_without_a_conflict(
     report = json.loads(r.stdout)
     assert _owed(report, "X") == [], report["groups"]["X"]
     assert report["summary"]["conflicts"] == 0, report["groups"]["conflict"]
+
+
+def test_an_update_keeps_a_projects_own_credential_name_beside_the_new_host_list(
+    pre_c5_2, tmp_path
+):
+    """A project that sends its own variable as `api_key_env` adds the name to
+    models.credential_env.openai-compatible, the last line of the models block.
+    The update brings models.allowed_hosts, which must not touch a line next to
+    that one: git merges adjacent edits as one conflicting hunk, and the
+    manifest would stop parsing. The name survives, nothing is unmerged, and
+    the host list arrives as the template ships it."""
+    project, env = pre_c5_2
+    path = project / "config" / "project.json"
+    text = path.read_text(encoding="utf-8")
+    old = '"openai-compatible": ["OPENAI_API_KEY"]'
+    assert text.count(old) == 1, old
+    path.write_text(
+        text.replace(old, '"openai-compatible": ["OPENAI_API_KEY", "MY_GATEWAY_KEY"]'),
+        encoding="utf-8",
+    )
+    _git(project, "commit", "-qam", "own credential name", env=env)
+    day = doc_stamps.newest_stamp(_ROOT)
+    upd, unmerged, failed = _real_update(project, tmp_path, day, env)
+    assert (unmerged, failed) == ([], None), (unmerged, failed)
+    models = json.loads((upd / "config" / "project.json").read_text("utf-8"))["models"]
+    assert models["credential_env"]["openai-compatible"] == [
+        "OPENAI_API_KEY",
+        "MY_GATEWAY_KEY",
+    ], models
+    keel = json.loads((_ROOT / "config" / "project.json").read_text("utf-8"))
+    assert models["allowed_hosts"] == keel["models"]["allowed_hosts"], models
+
+
+def test_a_pre_c5_2_project_receives_the_run_date_and_host_list_as_arrivals(
+    pre_c5_2, tmp_path
+):
+    """An ef79551 project already has the `evidence` and `models` blocks, so
+    what the update brings is two keys inside them, `evidence.run_date` and
+    `models.allowed_hosts`, and one more name in `child_env.names`: the
+    variable the run date travels in, without which scripts/child_env.py
+    would drop it before any goal saw it. The audit reports exactly those two
+    keys as arrivals and the list as changed, owes no X error, and a real
+    update leaves the run date block as the template ships it with its
+    variable on the allowlist."""
+    project, env = pre_c5_2
+    dest = tmp_path / "dest"
+    _git(tmp_path, "clone", "-q", "--no-hardlinks", str(project), str(dest), env=env)
+    keel = json.loads((_ROOT / "config" / "project.json").read_text("utf-8"))
+    variable = keel["evidence"]["run_date"]["env"]
+    old = json.loads((dest / "config" / "project.json").read_text("utf-8"))
+    assert "run_date" not in old["evidence"], "ef79551 must predate the run date"
+    assert variable not in old["child_env"]["names"], old["child_env"]["names"]
+
+    day = doc_stamps.newest_stamp(_ROOT)
+    systmp = tmp_path / "systmp"
+    systmp.mkdir()
+    r = _audit(dest, day, tmpdir=systmp)
+    report = json.loads(r.stdout)
+    assert report["base"]["resolved"], "ef79551 must resolve in the template"
+    assert _scratch_left(systmp) == []
+    assert _owed(report, "X") == [], report["groups"]["X"]
+    manifest = [
+        f for f in report["groups"]["config"] if f.get("file") == "config/project.json"
+    ]
+    arrived = {f["key"] for f in manifest if f["kind"] == "arrives"}
+    assert arrived == {"evidence.run_date", "models.allowed_hosts"}, manifest
+    names = [f for f in manifest if f["key"] == "child_env.names"]
+    assert len(names) == 1 and variable in names[0]["message"], manifest
+
+    upd, unmerged, failed = _real_update(dest, tmp_path, day, env)
+    assert (unmerged, failed) == ([], None), (unmerged, failed)
+    new = json.loads((upd / "config" / "project.json").read_text("utf-8"))
+    assert new["evidence"]["run_date"] == keel["evidence"]["run_date"], new["evidence"]
+    assert variable in new["child_env"]["names"], new["child_env"]["names"]
 
 
 # Resolved once, before any test puts a shim first on PATH.

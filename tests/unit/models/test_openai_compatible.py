@@ -2,7 +2,7 @@
 title: Unit — OpenAI-compatible model backend
 kind: tests
 layer: backend
-summary: The adapter builds a correct chat-completions request and parses the reply, with no network. It refuses at construction an `api_key_env` config/project.json `models.credential_env` does not declare for it and a `base_url` that is not an http or https URL with a host and no user part, query or fragment, naming the argument and never a value. It describes an unexpected response body by its keys without quoting it, and names an endpoint in an error by scheme, host and port, never by its path. It requests the URL rebuilt from the parts it checked, and a refusal by urllib or a reply that is not JSON keeps neither the path nor the body.
+summary: The adapter builds a correct chat-completions request and parses the reply, with no network. It refuses at construction an `api_key_env` config/project.json `models.credential_env` does not declare for it and a `base_url` that is not an http or https URL with a host and no user part, query or fragment, naming the argument and never a value. It describes an unexpected response body by its keys without quoting it, and names an endpoint in an error by scheme, host and port, never by its path. It requests the URL rebuilt from the parts it checked, and a refusal by urllib or a reply that is not JSON keeps neither the path nor the body. It sends the credential only to a base_url whose host and port config/project.json `models.allowed_hosts.openai-compatible` lists exactly (an entry with no port only on the scheme's default port; no prefix, suffix, subdomain, trailing dot, numeric respelling, IPv4-mapped address or zone id), refusing every other one before any request and before the credential variable is read, with a message naming the key and the entry to add and never the path or the key; the default base_url is refused until listed, and base_url is read-only after the check.
 """
 
 import sys
@@ -14,8 +14,25 @@ _ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(_ROOT))
 
 from models import get_model  # noqa: E402
+from scripts.child_env import load_policy  # noqa: E402
 
 pytestmark = pytest.mark.unit
+
+_ADAPTER = "openai-compatible"
+_URL = "https://llm.example/v1"
+
+
+def allowing(monkeypatch, *entries, listed=True):
+    """Have the adapter read a policy whose `models.allowed_hosts` lists
+    *entries* for it (or, with listed=False, does not name it at all), so a
+    test states the hosts it relies on instead of inheriting the shipped list,
+    which is empty."""
+    from models import openai_compatible as mod
+
+    hosts = {_ADAPTER: tuple(entries)} if listed else {}
+    policy = load_policy()._replace(allowed_hosts=hosts)
+    monkeypatch.setattr(mod, "load_policy", lambda root=None: policy)
+    return policy
 
 
 def _captured_transport(captured, reply="hi there"):
@@ -32,6 +49,7 @@ def _captured_transport(captured, reply="hi there"):
 
 
 def test_run_posts_chat_completions_and_returns_the_message(monkeypatch):
+    allowing(monkeypatch, "llm.example")
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test-123")
     captured: dict = {}
     backend = get_model(
@@ -54,6 +72,7 @@ def test_run_posts_chat_completions_and_returns_the_message(monkeypatch):
 
 
 def test_base_url_trailing_slash_is_normalised(monkeypatch):
+    allowing(monkeypatch, "llm.example")
     monkeypatch.setenv("OPENAI_API_KEY", "sk-x")
     captured: dict = {}
     backend = get_model(
@@ -70,29 +89,36 @@ def test_base_url_trailing_slash_is_normalised(monkeypatch):
 def test_missing_api_key_means_no_auth_header(monkeypatch):
     """A keyless endpoint (e.g. a local Ollama/vLLM server) is valid: send no
     Authorization header rather than 'Bearer None'."""
+    allowing(monkeypatch, "llm.example")
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     captured: dict = {}
-    backend = get_model("openai-compatible", transport=_captured_transport(captured))
+    backend = get_model(
+        "openai-compatible", base_url=_URL, transport=_captured_transport(captured)
+    )
     backend.run("ping")
     assert "Authorization" not in captured["headers"]
 
 
 def test_optional_params_pass_through(monkeypatch):
+    allowing(monkeypatch, "llm.example")
     monkeypatch.setenv("OPENAI_API_KEY", "sk-x")
     captured: dict = {}
-    backend = get_model("openai-compatible", transport=_captured_transport(captured))
+    backend = get_model(
+        "openai-compatible", base_url=_URL, transport=_captured_transport(captured)
+    )
     backend.run("ping", temperature=0.0, max_tokens=16)
     assert captured["payload"]["temperature"] == 0.0
     assert captured["payload"]["max_tokens"] == 16
 
 
 def test_unexpected_response_shape_raises(monkeypatch):
+    allowing(monkeypatch, "llm.example")
     monkeypatch.setenv("OPENAI_API_KEY", "sk-x")
 
     def bad_transport(url, payload, headers, timeout):
         return {"error": {"message": "nope"}}  # no 'choices'
 
-    backend = get_model("openai-compatible", transport=bad_transport)
+    backend = get_model("openai-compatible", base_url=_URL, transport=bad_transport)
     with pytest.raises(RuntimeError):
         backend.run("ping")
 
@@ -109,7 +135,7 @@ def test_an_unreachable_endpoint_is_unavailable(monkeypatch):
     def refuse(req, timeout):
         raise urllib.error.URLError("connection refused")
 
-    monkeypatch.setattr(mod.urllib.request, "urlopen", refuse)
+    monkeypatch.setattr(mod, "_urlopen", refuse)
     with pytest.raises(ModelUnavailable) as caught:
         mod._post_json("http://localhost:1/v1/chat/completions", {}, {}, 1.0)
     assert "connection refused" in str(caught.value)
@@ -125,7 +151,7 @@ def test_an_endpoint_that_answers_with_an_error_is_broken_not_absent(monkeypatch
     def fail(req, timeout):
         raise urllib.error.HTTPError(req.full_url, 500, "boom", {}, None)
 
-    monkeypatch.setattr(mod.urllib.request, "urlopen", fail)
+    monkeypatch.setattr(mod, "_urlopen", fail)
     with pytest.raises(urllib.error.HTTPError):
         mod._post_json("http://h/v1/chat/completions", {}, {}, 1.0)
     with pytest.raises(Exception) as caught:
@@ -144,10 +170,12 @@ def test_an_undeclared_credential_variable_is_refused(monkeypatch):
     """`api_key_env` picks which environment variable leaves the process as a
     bearer token, so only a name config/project.json `models.credential_env`
     declares for this adapter is accepted."""
+    allowing(monkeypatch, "llm.example")
     monkeypatch.setenv("UNRELATED_SECRET", "canary-not-a-model-key")
     with pytest.raises(ValueError) as info:
         get_model(
             "openai-compatible",
+            base_url=_URL,
             api_key_env="UNRELATED_SECRET",
             transport=_refusing_transport,
         )
@@ -179,22 +207,26 @@ def test_an_undeclared_credential_variable_is_refused(monkeypatch):
         "https://llm.example\\@token.example/v1",
     ],
 )
-def test_a_base_url_that_is_not_a_plain_http_endpoint_is_refused(base_url):
+def test_a_base_url_that_is_not_a_plain_http_endpoint_is_refused(monkeypatch, base_url):
+    # The host is listed, so the URL's own shape is what refuses each one.
+    allowing(monkeypatch, "llm.example", "llm.example:8443")
     with pytest.raises(ValueError) as info:
         get_model("openai-compatible", base_url=base_url, transport=_refusing_transport)
     assert "base_url" in str(info.value)
+    assert "allowed_hosts" not in str(info.value)
     assert "pw" not in str(info.value) and "token" not in str(info.value)
 
 
 def test_an_unexpected_response_is_described_by_shape_never_quoted(monkeypatch):
     """An endpoint may echo the request's credential in its error body; the
     exception a report records names the body's keys, not its content."""
+    allowing(monkeypatch, "llm.example")
     monkeypatch.setenv("OPENAI_API_KEY", "sk-canary")
 
     def echoing(url, payload, headers, timeout):
         return {"error": "bad", "echo": headers["Authorization"]}
 
-    backend = get_model("openai-compatible", transport=echoing)
+    backend = get_model("openai-compatible", base_url=_URL, transport=echoing)
     with pytest.raises(RuntimeError) as info:
         backend.run("ping")
     assert "sk-canary" not in str(info.value)
@@ -217,14 +249,15 @@ def test_an_unreachable_endpoint_is_named_without_its_path(monkeypatch):
     def refuse(req, timeout):
         raise urllib.error.URLError("connection refused")
 
-    monkeypatch.setattr(mod.urllib.request, "urlopen", refuse)
+    monkeypatch.setattr(mod, "_urlopen", refuse)
     with pytest.raises(ModelUnavailable) as caught:
         mod._post_json(_KEYED_URL + "/chat/completions", {}, {}, 1.0)
     assert "path-canary" not in str(caught.value)
     assert "https://llm.example:8443" in str(caught.value)
 
 
-def test_an_unexpected_response_names_the_endpoint_without_its_path():
+def test_an_unexpected_response_names_the_endpoint_without_its_path(monkeypatch):
+    allowing(monkeypatch, "llm.example:8443")
     backend = get_model(
         "openai-compatible", base_url=_KEYED_URL, transport=lambda *a: {"error": "x"}
     )
@@ -234,17 +267,19 @@ def test_an_unexpected_response_names_the_endpoint_without_its_path():
     assert "https://llm.example:8443" in str(info.value)
 
 
-def test_a_refused_base_url_leaves_no_parser_text_on_the_exception_chain():
+def test_a_refused_base_url_leaves_no_parser_text_on_the_exception_chain(monkeypatch):
     """The URL parser's own error can quote the text it rejected, and a
     traceback prints a chained cause."""
+    allowing(monkeypatch, "llm.example")
     with pytest.raises(ValueError) as info:
         get_model("openai-compatible", base_url="https://token@[llm.example/v1")
     assert info.value.__cause__ is None and info.value.__suppress_context__
 
 
-def test_the_url_requested_is_built_from_the_parts_that_were_checked():
+def test_the_url_requested_is_built_from_the_parts_that_were_checked(monkeypatch):
     """What is checked and what is sent are one reading of the URL: the
     adapter requests the scheme, host, port and path the check saw."""
+    allowing(monkeypatch, "llm.example:8443")
     captured = {}
     backend = get_model(
         "openai-compatible",
@@ -276,7 +311,7 @@ def test_a_url_urllib_refuses_is_named_without_its_path(monkeypatch, error):
     def refuse(req, timeout):
         raise raised
 
-    monkeypatch.setattr(mod.urllib.request, "urlopen", refuse)
+    monkeypatch.setattr(mod, "_urlopen", refuse)
     with pytest.raises(RuntimeError) as caught:
         mod._post_json(_KEYED_URL + "/chat/completions", {}, {}, 1.0)
     assert "path-canary" not in str(caught.value)
@@ -293,8 +328,8 @@ def test_a_reply_that_is_not_json_is_broken_and_keeps_no_copy_of_the_body(monkey
     from models import openai_compatible as mod
 
     monkeypatch.setattr(
-        mod.urllib.request,
-        "urlopen",
+        mod,
+        "_urlopen",
         lambda req, timeout: io.BytesIO(b"<html>sk-canary</html>"),
     )
     with pytest.raises(RuntimeError) as caught:
@@ -304,3 +339,136 @@ def test_a_reply_that_is_not_json_is_broken_and_keeps_no_copy_of_the_body(monkey
         caught.value
     )
     assert caught.value.__cause__ is None and caught.value.__suppress_context__
+
+
+# --- where the credential may go: config/project.json models.allowed_hosts -----
+
+_KEY_CANARY = "sk-host-canary"
+_PATH = "/v1/path-canary"
+# (base_url, entries listed, URL requested): the host and effective port match
+# an entry exactly, in one canonical form.
+_ADMITTED = [
+    ("https://llm.example" + _PATH, ["llm.example"], "https://llm.example"),
+    ("HTTPS://LLM.Example:443" + _PATH, ["llm.example"], "https://llm.example:443"),
+    (
+        "https://llm.example:8443" + _PATH,
+        ["llm.example:8443"],
+        "https://llm.example:8443",
+    ),
+    ("http://127.0.0.1:8080" + _PATH, ["127.0.0.1:8080"], "http://127.0.0.1:8080"),
+    ("http://[::1]:8080" + _PATH, ["[::1]:8080"], "http://[::1]:8080"),
+    # An entry pins a host and port, not a scheme: http on 80 is admitted.
+    ("http://llm.example" + _PATH, ["llm.example"], "http://llm.example"),
+]
+# (base_url, entries, or None when the adapter is not named at all).
+_REFUSED = {
+    "empty-list": ("https://llm.example" + _PATH, []),
+    "missing-key": ("https://llm.example" + _PATH, None),
+    "entry-without-port-vs-8443": ("https://llm.example:8443" + _PATH, ["llm.example"]),
+    "entry-8443-vs-default": ("https://llm.example" + _PATH, ["llm.example:8443"]),
+    "https-default-on-http": ("http://llm.example:443" + _PATH, ["llm.example"]),
+    "prefix": ("https://evil-llm.example" + _PATH, ["llm.example"]),
+    "suffix": ("https://llm.example.evil.example" + _PATH, ["llm.example"]),
+    "subdomain": ("https://sub.llm.example" + _PATH, ["llm.example"]),
+    "trailing-dot": ("https://llm.example." + _PATH, ["llm.example"]),
+    "integer-host": ("http://2130706433" + _PATH, ["127.0.0.1"]),
+    "short-quad": ("http://127.1" + _PATH, ["127.0.0.1"]),
+    "hex-quad": ("http://0x7f.0.0.1" + _PATH, ["127.0.0.1"]),
+    "octal-quad": ("http://0177.0.0.1" + _PATH, ["127.0.0.1"]),
+    "ipv4-mapped": ("http://[::ffff:127.0.0.1]" + _PATH, ["127.0.0.1"]),
+    "zone-id": ("http://[fe80::1%25eth0]:8080" + _PATH, ["[fe80::1]:8080"]),
+    "port-zero": ("http://llm.example:0" + _PATH, ["llm.example"]),
+}
+
+
+@pytest.mark.parametrize("base_url, entries, origin", _ADMITTED)
+def test_a_base_url_host_is_sent_the_credential_only_when_config_lists_it(
+    monkeypatch, base_url, entries, origin
+):
+    allowing(monkeypatch, *entries)
+    monkeypatch.setenv("OPENAI_API_KEY", _KEY_CANARY)
+    captured: dict = {}
+    backend = get_model(
+        "openai-compatible", base_url=base_url, transport=_captured_transport(captured)
+    )
+    backend.run("ping")
+    assert captured["url"] == origin + _PATH + "/chat/completions"
+    assert captured["headers"]["Authorization"] == "Bearer " + _KEY_CANARY
+
+
+@pytest.mark.parametrize("case", sorted(_REFUSED))
+def test_a_base_url_host_config_does_not_list_is_refused_before_any_request(
+    monkeypatch, case
+):
+    base_url, entries = _REFUSED[case]
+    allowing(monkeypatch, *(entries or ()), listed=entries is not None)
+    monkeypatch.setenv("OPENAI_API_KEY", _KEY_CANARY)
+    with pytest.raises(ValueError) as info:
+        get_model("openai-compatible", base_url=base_url, transport=_refusing_transport)
+    message = str(info.value)
+    assert "models.allowed_hosts.openai-compatible" in message, message
+    assert "path-canary" not in message and _KEY_CANARY not in message, message
+    assert info.value.__cause__ is None
+
+
+def test_the_refusal_names_the_host_and_port_to_list():
+    """The message says what to add, in the form an entry is written."""
+    from models.openai_compatible import _checked_host
+
+    with pytest.raises(ValueError) as info:
+        _checked_host(_ADAPTER, "https", "llm.example", 8443, ())
+    assert "`llm.example:8443`" in str(info.value)
+
+
+def test_both_tables_ran():
+    """A pass over zero cases would prove nothing."""
+    assert len(_ADMITTED) >= 1 and len(_REFUSED) >= 1
+
+
+def test_the_default_base_url_is_refused_until_its_host_is_listed(monkeypatch):
+    """The adapter's default endpoint is one vendor's; a project lists it
+    before the adapter will send a credential there."""
+    allowing(monkeypatch)
+    with pytest.raises(ValueError) as info:
+        get_model("openai-compatible", transport=_refusing_transport)
+    assert "models.allowed_hosts.openai-compatible" in str(info.value)
+
+
+def test_the_host_is_checked_before_the_credential_variable(monkeypatch):
+    """With an unlisted host and an undeclared variable, the host refuses
+    first, and the environment is not read for any credential."""
+    from models import openai_compatible as mod
+
+    allowing(monkeypatch)
+    read = []
+
+    class Spy(dict):
+        def get(self, key, default=None):
+            read.append(key)
+            return super().get(key, default)
+
+        def __getitem__(self, key):
+            read.append(key)
+            return super().__getitem__(key)
+
+    monkeypatch.setattr(mod.os, "environ", Spy(UNRELATED_SECRET="canary"))
+    with pytest.raises(ValueError) as info:
+        get_model(
+            "openai-compatible",
+            base_url=_URL,
+            api_key_env="UNRELATED_SECRET",
+            transport=_refusing_transport,
+        )
+    assert "models.allowed_hosts" in str(info.value)
+    assert "models.credential_env" not in str(info.value)
+    assert read == []
+
+
+def test_the_checked_base_url_cannot_be_replaced_after_construction(monkeypatch):
+    allowing(monkeypatch, "llm.example")
+    backend = get_model(
+        "openai-compatible", base_url=_URL, transport=_refusing_transport
+    )
+    with pytest.raises(AttributeError):
+        backend.base_url = "https://elsewhere.example/v1"
+    assert backend.base_url == _URL

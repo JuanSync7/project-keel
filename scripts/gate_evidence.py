@@ -3,7 +3,7 @@
 title: Gate evidence — run a gate's goals and write its evidence record
 kind: script
 layer: n/a
-summary: The driver a gate recipe runs as `gate_evidence.py --gate <token> -- <make> <goal>...`. It runs each goal as its own make, in order, with the allowlisted environment from scripts/child_env.py and the outer make's flags and command-line variables as argv; stops at the first failing goal unless MAKEFLAGS carries k; and writes one canonical JSON record to `<config/project.json evidence.dir>/<gate>.json`, shaped by the JSON Schema `evidence.schema` names, which alone owns `schema_version`. The record names the commit, whether the tree was dirty and a digest of what git lists (scripts/git_tree.py), each goal's result and exit code, the test counts from pytest's own junit report, and every scripts/check_structure.py finding. It holds no clock, duration, host, user or absolute path, so a rerun on the same tree writes the same bytes. It fails closed: a red placeholder is written before the first goal, so an interrupted run never leaves an earlier green record standing; a failing goal's exit code passes through; zero tests, no report, a failed or errored test in pytest's report (a goal that exited 0 anyway, as under `make -i`), a tree changed during the run, checks that could not run and a crash of the writer itself are each a red record and exit 3; zero goals, a malformed gate or goal, a bad evidence block and a record or report path git does not ignore are refused with exit 2 before any goal runs; an interrupt exits 130. Under `make -n`, `-q` or `-t` it runs the goals with that flag and writes nothing. It is not a general gate runner (scripts/run_make_target.py is) and keeps no history: each run replaces the file whole.
+summary: The driver a gate recipe runs as `gate_evidence.py --gate <token> -- <make> <goal>...`. It runs each goal as its own make, in order, with the allowlisted environment from scripts/child_env.py and the outer make's flags and command-line variables as argv; when config/project.json `evidence.run_date` is present it reads the clock once before the first goal (or keeps a valid date an outer run already set) and hands that one date to every goal in the variable the block names, through scripts/run_date.py, so a check late in a run that crossed midnight judges by the day the run began; stops at the first failing goal unless MAKEFLAGS carries k; and writes one canonical JSON record to `<config/project.json evidence.dir>/<gate>.json`, shaped by the JSON Schema `evidence.schema` names, which alone owns `schema_version`. The record names the commit, whether the tree was dirty and a digest of what git lists (scripts/git_tree.py), each goal's result and exit code, the test counts from pytest's own junit report, and every scripts/check_structure.py finding. The record holds no clock, date, duration, host, user or absolute path, so a rerun on the same tree writes the same bytes. It fails closed: a red placeholder is written before the first goal, so an interrupted run never leaves an earlier green record standing; a failing goal's exit code passes through; zero tests, no report, a failed or errored test in pytest's report (a goal that exited 0 anyway, as under `make -i`), a tree changed during the run, checks that could not run and a crash of the writer itself are each a red record and exit RED_RECORD (scripts/exit_codes.py); zero goals, a malformed gate or goal, a bad evidence block, a supplied run date that is not a date or is further from the clock than `evidence.run_date.max_age_days` allows, a record, temporary or report path that reaches its file through a symlink (scripts/git_tree.py `through_symlink`, asked once before the first write or removal and not again during the run), a record or report path git does not ignore, and a git that ran and failed when asked (an unreadable repository is unknown, not absent) are refused with exit 2 before any goal runs; an interrupt exits 130. Under `make -n`, `-q` or `-t` it runs the goals with that flag and writes nothing. It is not a general gate runner (scripts/run_make_target.py is) and keeps no history: each run replaces the file whole.
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/integration/test_gate_evidence_record.py
@@ -11,12 +11,14 @@ rerun_proof: test:tests/integration/test_gate_evidence_record.py
 
 # NB: stdlib only, no `from __future__ import annotations`, no f-strings, no walrus,
 # no evaluated `list[str]` or `X | None` annotations, and only bare scripts/
-# siblings that keep the same rule (check_structure, child_env, git_tree). A `make
-# verify` whose PY is older than requires-python must still run this writer, so the
-# record it leaves is red rather than an earlier green one
+# siblings that keep the same rule (check_structure, child_env, git_tree, run_date).
+# A `make
+# verify` whose PY is older than requires-python must still run this writer, so
+# the record it leaves is red rather than an earlier green one
 # (tests/integration/test_gate_scope.py `_old_python_safe`).
 
 import argparse
+import datetime
 import json
 import os
 import re
@@ -30,6 +32,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import check_structure  # noqa: E402 — the one owner of the check list
 import child_env  # noqa: E402 — the environment every goal inherits
 import git_tree  # noqa: E402 — the one definition of what git lists
+import run_date  # noqa: E402 — the one date a whole run calls today
 from exit_codes import ExitCode, finish, passthrough, report  # noqa: E402
 
 _MANIFEST = os.path.join("config", "project.json")
@@ -65,9 +68,11 @@ class EvidenceConfigError(Exception):
 
 
 def load_policy(root):
-    """{dir, schema, schema_version} from config/project.json `evidence`, the
-    version read from the schema's `properties.schema_version.const`, its only
-    owner. Raises EvidenceConfigError naming the key at fault."""
+    """{dir, schema, schema_version, run_date} from config/project.json
+    `evidence`, the version read from the schema's
+    `properties.schema_version.const`, its only owner, and run_date the
+    scripts/run_date.py policy or None when the block has no `run_date`. Raises
+    EvidenceConfigError naming the key at fault."""
     try:
         with open(os.path.join(root, _MANIFEST), encoding="utf-8") as fh:
             manifest = json.load(fh)
@@ -108,7 +113,12 @@ def load_policy(root):
             "%s: has no integer properties.schema_version.const, the record "
             "version's only owner" % block["schema"]
         )
+    try:
+        date_policy = run_date.policy(manifest)
+    except run_date.RunDateError as exc:
+        raise EvidenceConfigError(str(exc)) from exc
     return {
+        "run_date": date_policy,
         "dir": block["dir"].replace("\\", "/").rstrip("/"),
         "schema": block["schema"],
         "schema_version": version,
@@ -208,16 +218,28 @@ def _junit_path(junit_dir, goal):
 
 
 def run_goals(
-    make, goals, root, junit_dir, keep_going, forward=(), runner=None, dry_run=False
+    make,
+    goals,
+    root,
+    junit_dir,
+    keep_going,
+    forward=(),
+    runner=None,
+    dry_run=False,
+    extra=None,
 ):
     """[{name, result, returncode, tests: None}] for each goal, run in order as
     `make <forward> <goal> JUNIT_XML=<junit_dir>/<goal>.xml` in *root* with the
-    allowlisted environment. A stale report is deleted before its goal, so a
+    allowlisted environment plus *extra* (the run's date, under the name config
+    gives it). A stale report is deleted before its goal, so a
     goal that never reaches pytest is never credited with old counts; a
     *dry_run* deletes nothing. Output streams through. After the first failure
     the rest are not-run, unless *keep_going*."""
     targets = []
     stopped = False
+    # No `extra=` at all when there is nothing to add: the helper then states,
+    # at this call, that the child gets the allowlist and nothing else.
+    added = {"extra": extra} if extra else {}
     for goal in goals:
         if stopped:
             targets.append(_not_run(goal))
@@ -230,10 +252,10 @@ def run_goals(
         argv = [make] + list(forward) + [goal, "JUNIT_XML=" + junit]
         if runner is None:
             proc = subprocess.run(  # noqa: S603 — argv list, never a shell string
-                argv, cwd=root, env=child_env.build_child_env()
+                argv, cwd=root, env=child_env.build_child_env(**added)
             )
         else:
-            proc = runner(argv, cwd=root, env=child_env.build_child_env())
+            proc = runner(argv, cwd=root, env=child_env.build_child_env(**added))
         code = proc.returncode
         targets.append(
             {
@@ -342,7 +364,7 @@ def _sum_counts(targets):
 
 def _exit_code(targets, result, where):
     """The status the run ends with: the first failing goal's own, else
-    SUCCESS for a green record, else UNAVAILABLE, with *where* naming the
+    SUCCESS for a green record, else RED_RECORD, with *where* naming the
     record that is red."""
     for target in targets or ():
         if target["result"] == "fail":
@@ -350,7 +372,7 @@ def _exit_code(targets, result, where):
     if result == "pass":
         return ExitCode.SUCCESS
     return report(
-        ExitCode.UNAVAILABLE,
+        ExitCode.RED_RECORD,
         "gate_evidence: the evidence record is red though no goal failed",
         where,
         "read the record's `reasons`, fix what they name and run the gate again",
@@ -383,15 +405,17 @@ def _changed(root, before):
         return None
     try:
         return git_tree.tree_snapshot(root) != before
-    except git_tree.NoGitError:
-        # Readable before and not after: what the goals did cannot be shown
-        # harmless, so it counts as a change.
+    except (git_tree.NoGitError, git_tree.GitFailedError):
+        # Readable before and not after, whether the repository is gone or git
+        # now fails on it: what the goals did cannot be shown harmless, so it
+        # counts as a change.
         return True
 
 
 def _unignored(root, paths):
-    """The paths git would list, or None when root is not in a git work tree
-    (nothing is listed there, so nothing needs ignoring)."""
+    """The paths git would list, or None when there is no git or no repository
+    (nothing is listed there, so nothing needs ignoring). A git that ran and
+    failed raises git_tree.GitFailedError: it has not said the paths are safe."""
     try:
         return [p for p in paths if not git_tree.is_ignored(root, p)]
     except git_tree.NoGitError:
@@ -427,9 +451,19 @@ def _refuse(message, next_step):
     )
 
 
-def main(argv=None, runner=None):
+def _git_refusal(policy, exc):
+    return _refuse(
+        "git could not say whether config/project.json evidence.dir %r is ignored "
+        "or what the tree holds, and a failure is not an answer, so nothing was "
+        "written (%s)" % (policy["dir"], exc),
+        "repair the repository git reads here and run the gate again",
+    )
+
+
+def main(argv=None, runner=None, clock=None):
     """Run the gate and write its record; the exit status, which the record's
-    `result` always agrees with. *runner* stands in for subprocess.run."""
+    `result` always agrees with. *runner* stands in for subprocess.run and
+    *clock* for datetime.date.today."""
     usage = "call it as `gate_evidence.py --gate <token> -- <make> <goal>...`"
     try:
         args, command = _parse(sys.argv[1:] if argv is None else argv)
@@ -457,25 +491,67 @@ def main(argv=None, runner=None):
     makeflags = os.environ.get("MAKEFLAGS", "")
     dry_run, keep_going = make_mode(makeflags)
     forward = make_args(makeflags)
+    dated = None
+    if policy["run_date"] is not None:
+        # Read here, before the dry-run branch and before any goal: one answer
+        # for the whole run, a dry run's goals included.
+        try:
+            name, value = run_date.for_run(
+                os.environ, policy["run_date"], clock or datetime.date.today
+            )
+        except run_date.RunDateError as exc:
+            return _refuse(
+                str(exc),
+                "unset %s, or set it to the date this run began"
+                % policy["run_date"].env,
+            )
+        dated = {name: value}
     if dry_run:
         # make -n/-q/-t still runs a `$(MAKE)` recipe line: run each goal under
         # the same flag, so it only prints, and write nothing.
         if not goals:
             return _refuse("no goal to run after `-- <make>`", usage)
         done = run_goals(
-            make, goals, root, junit_dir, keep_going, forward, runner, dry_run=True
+            make,
+            goals,
+            root,
+            junit_dir,
+            keep_going,
+            forward,
+            runner,
+            dry_run=True,
+            extra=dated,
         )
         return _exit_code(done, "pass", rel)
-    listed = _unignored(
-        root, [rel, rel + ".tmp"] + [_junit_path(junit_dir, g) for g in goals]
-    )
+    # Every path this run writes or removes: the record, the file it is written
+    # beside, and each goal's report, whose stale copy is deleted before the goal.
+    guarded = [rel, rel + ".tmp"] + [_junit_path(junit_dir, g) for g in goals]
+    # Before the ignore rule, which like the config check judges the path as
+    # text: a symlinked component leads somewhere neither of them looked.
+    linked = git_tree.through_symlink(root, guarded)
+    if linked:
+        return _refuse(
+            "config/project.json evidence.dir %r reaches %s through a symlink, "
+            "and a record written or a report removed there could land outside "
+            "the project, so nothing was written or removed and an earlier "
+            "record may still stand" % (policy["dir"], ", ".join(linked)),
+            "replace the symlink with a real directory inside the project, or "
+            "point config/project.json evidence.dir at one",
+        )
+    try:
+        listed = _unignored(root, guarded)
+    except git_tree.GitFailedError as exc:
+        return _git_refusal(policy, exc)
     if listed:
         return _refuse(
             "git would list %s" % ", ".join(listed),
             "add config/project.json evidence.dir (%s) to .gitignore, so a gate "
             "run never changes what git lists" % policy["dir"],
         )
-    before, source = _source(root)
+    try:
+        before, source = _source(root)
+    except git_tree.GitFailedError as exc:
+        return _git_refusal(policy, exc)
 
     def record(targets, tests, checks, result, reasons):
         return {
@@ -501,7 +577,9 @@ def main(argv=None, runner=None):
         write_record(
             root, rel, render(record(placeholder, None, None, "fail", ["incomplete"]))
         )
-        targets = run_goals(make, goals, root, junit_dir, keep_going, forward, runner)
+        targets = run_goals(
+            make, goals, root, junit_dir, keep_going, forward, runner, extra=dated
+        )
         for target in targets:
             if target["result"] != "not-run":
                 target["tests"] = junit_counts(

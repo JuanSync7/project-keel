@@ -583,6 +583,34 @@ def test_a_malformed_policy_is_reported_with_the_manifest_prefix(repo):
     ), cs.errors
 
 
+def test_a_run_date_variable_the_allowlist_drops_fails_check_x(repo):
+    """A gate run's date travels to each goal in the variable
+    `evidence.run_date.env` names; one `child_env.names` does not list never
+    arrives. scripts/gate_evidence.py refuses that at run time; this is the
+    same rule read before any run."""
+    block = {"run_date": {"env": "A_RUN_DATE", "max_age_days": 1}}
+    _manifest(repo, dict(_GOOD_MANIFEST, evidence=block))
+    _module(
+        repo,
+        "scripts/a.py",
+        "import subprocess\nfrom child_env import build_child_env\n"
+        "subprocess.run(['true'], env=build_child_env())\n",
+    )
+    cs.check_X()
+    assert len(cs.errors) == 1, cs.errors
+    assert cs.errors[0].startswith("config/project.json: "), cs.errors
+    assert "A_RUN_DATE" in cs.errors[0] and "child_env.names" in cs.errors[0]
+
+    cs.errors[:] = []
+    names = _GOOD_MANIFEST["child_env"]["names"] + ["A_RUN_DATE"]
+    child = dict(_GOOD_MANIFEST["child_env"], names=names)
+    _manifest(repo, dict(_GOOD_MANIFEST, evidence=block, child_env=child))
+    # check_structure reads a config file once per run; this is a second run.
+    cs._CONFIG_READ.clear()
+    cs.check_X()
+    assert cs.errors == []
+
+
 def test_a_manifest_allowlisting_a_repository_variable_fails_check_x_with_the_fix(
     repo,
 ):

@@ -257,6 +257,23 @@ def test_without_git_the_run_is_refused(proj):
     assert runner.calls == []
 
 
+def test_a_git_that_ran_and_failed_is_refused_naming_its_status_before_make(proj):
+    """A failed git is not "no git": the refusal says git could not list the
+    tree and carries git's own status and stderr, and make never starts."""
+
+    def failed(root):
+        raise rmt.GitFailedError(128, "fatal: bad object HEAD")
+
+    runner = _fake(0)
+    res = rmt.run_target("check", cwd=str(proj), runner=runner, snapshot=failed)
+    assert res["ok"] is False and res["returncode"] is None, res
+    assert res["refused"].startswith("cannot prove a read-only run: git could not")
+    assert "without git" not in res["refused"], res
+    assert "git exited 128" in res["refused"], res
+    assert "bad object HEAD" in res["refused"], res
+    assert runner.calls == []
+
+
 @pytest.mark.parametrize(
     "manifest",
     [{"name": "x"}, {"make_targets": dict(_POLICY, gate_effects=["read"])}, None],
@@ -518,8 +535,9 @@ def test_a_child_env_error_during_the_run_is_red_and_still_checks_the_tree(proj)
     [
         rmt.child_env.ChildEnvError("child_env.names: bad"),
         rmt.NoGitError("not a git work tree"),
+        rmt.GitFailedError(128, "fatal: bad object HEAD"),
     ],
-    ids=["child-env-error", "no-git"],
+    ids=["child-env-error", "no-git", "git-failed"],
 )
 def test_a_tree_that_cannot_be_reread_after_the_run_is_red(proj, exc):
     """A green run whose after-snapshot fails has an unproven read-only claim."""

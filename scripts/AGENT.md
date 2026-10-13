@@ -7,7 +7,7 @@ owner: TBD
 summary: Local agent rules inside scripts/.
 id: scripts-agent
 created: 2026-06-17
-updated: 2026-10-12
+updated: 2026-10-13
 visibility: internal
 canonical: true
 ---
@@ -29,7 +29,10 @@ These rules are **local and authoritative** for this directory. They inherit fro
   imports and the data files the job's modules declare reading.
   `git_tree.py` is the one definition of what git lists, imported by
   `run_make_target.py`, `gate_evidence.py`, `run_evals.py` and
-  `trace_requirements.py`; it stays 3.6-safe so the
+  `trace_requirements.py`. It raises `NoGitError` only when git is not
+  installed or there is no repository, and `GitFailedError` for every other
+  git failure: catch the first to take a no-git path, and never catch the
+  second to take one. It stays 3.6-safe so the
   evidence writer can import it under an interpreter older than
   requires-python and still leave a red record.
   `traceability.py` is the fifth and `pytest_markers.py` the sixth; neither is
@@ -44,6 +47,12 @@ These rules are **local and authoritative** for this directory. They inherit fro
   codes (`ExitCode`) and the one place a process ends. Import it by its bare
   name, never as `scripts.exit_codes`; it stays stdlib-only and 3.6-safe,
   because the hook interpreter runs scripts that import it.
+  `run_date.py` is the eighth, and is never run: the one definition of the
+  date a gate run calls today, imported by `gate_evidence.py`, which fixes it,
+  `jobs/review_docs.py`, which reads it, and `check_structure.py`, whose
+  check X reads its `policy` before any run. It stays stdlib-only and
+  3.6-safe for the reason `git_tree.py` does. A second reader of the variable
+  config/project.json `evidence.run_date.env` names anywhere else is a defect.
 - End every script through `exit_codes.py`. The entry line is
   `finish(main())`. `main` returns `ExitCode.SUCCESS`, or
   `report(<member>, <what failed>, <on which input>, <what to do next>)` for a

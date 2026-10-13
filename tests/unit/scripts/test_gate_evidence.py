@@ -5,6 +5,7 @@ layer: n/a
 summary: The driver's parts and its fail-closed main. junit_counts classifies each testcase once (error before failure before skipped) and ignores the suite attributes; a missing or unparseable report is null, never 0; zero tests and an all-skipped suite are red; a failed or errored test is red even when every goal exited 0; every project-check stem check_structure runs is a checks key the schema admits; render is canonical. run_goals runs each goal in order with the allowlisted environment and the outer make's flags and command-line variables as argv, stops at the first failure unless MAKEFLAGS carries k, and make_mode reads only MAKEFLAGS' single-letter word. main passes a failing goal's code through, never returns 0 when the writer crashes, refuses zero goals, a record path git does not ignore and a bad evidence block with exit 2, leaves a red placeholder when interrupted, writes nothing on a dry run, and strips the absolute root from check messages. The writer and git_tree parse and import at the old-python floor.
 """
 
+import datetime
 import json
 import os
 import re
@@ -341,9 +342,10 @@ def test_main_passes_a_failing_goal_code_through_and_writes_a_red_record(repo):
 
 def test_a_goal_that_exits_0_over_failing_tests_writes_a_red_record(repo):
     """Every goal exits 0, yet its own junit report counts a failure and an
-    error: the record is red and the driver exits 3, never 0."""
+    error: the record is red and the driver exits RED_RECORD, never 0."""
     runner = _Runner(report=_JUNIT)
-    assert ge.main(["--gate", "verify", "--", "make", "test"], runner) == 3
+    code = ge.main(["--gate", "verify", "--", "make", "test"], runner)
+    assert code is ge.ExitCode.RED_RECORD
     rec = _record(repo)
     assert rec["result"] == "fail" and rec["reasons"] == ["tests-failed"], rec
     assert rec["targets"][0]["result"] == "pass"
@@ -355,7 +357,8 @@ def test_main_never_returns_zero_when_the_writer_crashes(repo, monkeypatch, caps
         raise RuntimeError("planted check failure")
 
     monkeypatch.setattr(ge, "check_findings", boom)
-    assert ge.main(["--gate", "verify", "--", "make", "test"], _Runner()) == 3
+    code = ge.main(["--gate", "verify", "--", "make", "test"], _Runner())
+    assert code is ge.ExitCode.RED_RECORD
     assert "planted check failure" in capsys.readouterr().err
     rec = _record(repo)
     assert rec["result"] == "fail"
@@ -503,7 +506,8 @@ def test_a_goal_that_changes_what_git_lists_is_red(repo):
             (Path(cwd) / "stray.txt").write_text("x\n", encoding="utf-8")
             return _Runner.__call__(self, argv, cwd, env)
 
-    assert ge.main(["--gate", "verify", "--", "make", "test"], Writes()) == 3
+    code = ge.main(["--gate", "verify", "--", "make", "test"], Writes())
+    assert code is ge.ExitCode.RED_RECORD
     rec = _record(repo)
     assert rec["reasons"] == ["tree-changed"]
     assert rec["source"]["tree_changed"] is True
@@ -556,6 +560,343 @@ def test_a_rerun_writes_identical_bytes(repo):
     assert (repo / ".evidence" / "verify.json").read_bytes() == first
 
 
+# --- a record or report path through a symlink ----------------------------------
+
+
+def _snapshot(path):
+    """{relative name: bytes, or the link's target} for everything under *path*."""
+    out = {}
+    for item in sorted(Path(str(path)).rglob("*")):
+        rel = str(item.relative_to(path))
+        if rel.split(os.sep)[0] == ".git":
+            continue
+        if item.is_symlink():
+            out[rel] = "link:" + os.readlink(str(item))
+        elif item.is_file():
+            out[rel] = item.read_bytes()
+        else:
+            out[rel] = "dir"
+    return out
+
+
+def _victim(tmp_path, name="victim"):
+    """A directory beside the project holding an earlier green record and a
+    stale report, neither of which a refused run may change."""
+    victim = tmp_path / name
+    (victim / "junit").mkdir(parents=True)
+    (victim / "verify.json").write_text('{"result": "pass"}\n', encoding="utf-8")
+    (victim / "verify.json.tmp").write_text("precious\n", encoding="utf-8")
+    (victim / "junit" / "test.xml").write_text(_PASSING, encoding="utf-8")
+    return victim
+
+
+def _dir_is_a_symlink(repo, victim):
+    (repo / ".evidence").symlink_to(victim, target_is_directory=True)
+    return ".evidence"
+
+
+def _parent_is_a_symlink(repo, victim):
+    _write_manifest(repo, _evidence_block(dir="out/evidence"))
+    (repo / ".gitignore").write_text("out\n", encoding="utf-8")
+    (victim / "evidence").mkdir()
+    (repo / "out").symlink_to(victim, target_is_directory=True)
+    return "out/evidence"
+
+
+def _record_file_is_a_symlink(repo, victim):
+    (repo / ".evidence").mkdir()
+    (repo / ".evidence" / "verify.json").symlink_to(victim / "verify.json")
+    return ".evidence/verify.json"
+
+
+def _tmp_file_is_a_symlink(repo, victim):
+    (repo / ".evidence").mkdir()
+    (repo / ".evidence" / "verify.json.tmp").symlink_to(victim / "verify.json.tmp")
+    return ".evidence/verify.json.tmp"
+
+
+def _report_file_is_a_symlink(repo, victim):
+    (repo / ".evidence" / "junit").mkdir(parents=True)
+    (repo / ".evidence" / "junit" / "test.xml").symlink_to(
+        victim / "junit" / "test.xml"
+    )
+    return ".evidence/junit/test.xml"
+
+
+def _report_dir_is_a_symlink(repo, victim):
+    (repo / ".evidence").mkdir()
+    (repo / ".evidence" / "junit").symlink_to(
+        victim / "junit", target_is_directory=True
+    )
+    return ".evidence/junit/test.xml"
+
+
+def _a_link_that_stays_inside_the_tree(repo, victim):
+    """Where the link points is not asked: git's ignore rule judged the path as
+    text, so a link to a tracked directory is as wrong as one that leaves."""
+    inside = repo / "docs"
+    inside.mkdir()
+    (inside / "kept.txt").write_text("tracked\n", encoding="utf-8")
+    (repo / ".evidence").symlink_to(inside, target_is_directory=True)
+    return ".evidence"
+
+
+_LINKS = {
+    "dir-is-a-symlink": _dir_is_a_symlink,
+    "parent-is-a-symlink": _parent_is_a_symlink,
+    "record-file-is-a-symlink": _record_file_is_a_symlink,
+    "tmp-file-is-a-symlink": _tmp_file_is_a_symlink,
+    "report-file-is-a-symlink": _report_file_is_a_symlink,
+    "report-dir-is-a-symlink": _report_dir_is_a_symlink,
+    "link-inside-the-tree": _a_link_that_stays_inside_the_tree,
+}
+
+
+def _refusal(capsys):
+    """The helper's line, the last on stderr: what failed, on which input,
+    and after the last `; ` what to do next."""
+    line = capsys.readouterr().err.strip().splitlines()[-1]
+    assert line.startswith("gate_evidence: refused before any goal ran: "), line
+    assert line.count("; ") == 1, line
+    return line
+
+
+# A report path exists only for a goal, so with no goal the two report plants
+# guard nothing and are left out rather than run to no purpose.
+_LINK_CASES = [(plant, ["test"]) for plant in sorted(_LINKS)] + [
+    (plant, []) for plant in sorted(_LINKS) if not plant.startswith("report-")
+]
+
+
+@pytest.mark.parametrize(
+    "plant, goals",
+    _LINK_CASES,
+    ids=["%s-%d-goal" % (plant, len(goals)) for plant, goals in _LINK_CASES],
+)
+def test_a_record_or_report_path_through_a_symlink_is_refused_before_any_write(
+    repo, tmp_path, capsys, plant, goals
+):
+    """`evidence.dir` is judged as text by the config check and by git's ignore
+    rule; a symlinked component points the record, its temporary file and the
+    report a goal's stale copy is deleted from somewhere neither looked."""
+    victim = _victim(tmp_path)
+    named = _LINKS[plant](repo, victim)
+    outside, inside = _snapshot(victim), _snapshot(repo)
+    runner = _Runner()
+    code = ge.main(["--gate", "verify", "--", "make"] + goals, runner)
+    assert code is ge.ExitCode.USAGE
+    line = _refusal(capsys)
+    assert "evidence.dir" in line and "symlink" in line and named in line, line
+    assert "config/project.json" in line.rsplit("; ", 1)[1], line
+    assert runner.calls == []
+    assert _snapshot(victim) == outside
+    assert _snapshot(repo) == inside
+
+
+def test_a_real_evidence_dir_is_not_refused_as_a_symlink(repo, tmp_path):
+    """The guard is not vacuous the other way: the same tree with a real
+    directory in the link's place runs and writes."""
+    (repo / ".evidence" / "junit").mkdir(parents=True)
+    assert ge.main(["--gate", "verify", "--", "make", "test"], _Runner()) == 0
+    assert _record(repo)["result"] == "pass"
+
+
+def test_a_project_reached_through_a_symlink_is_not_refused(
+    repo, tmp_path, monkeypatch
+):
+    """Only a link below the project root is asked about: a checkout that is
+    itself reached through one (an automount, say) is where the user put it."""
+    alias = tmp_path / "alias"
+    alias.symlink_to(repo, target_is_directory=True)
+    monkeypatch.chdir(alias)
+    assert ge.main(["--gate", "verify", "--", "make", "test"], _Runner()) == 0
+    assert _record(repo)["result"] == "pass"
+
+
+def test_a_dry_run_through_a_symlink_writes_and_removes_nothing(
+    repo, tmp_path, monkeypatch
+):
+    victim = _victim(tmp_path)
+    _dir_is_a_symlink(repo, victim)
+    before = _snapshot(victim)
+    monkeypatch.setenv("MAKEFLAGS", "n")
+    runner = _Runner(reports=())
+    assert ge.main(["--gate", "verify", "--", "make", "test"], runner) == 0
+    assert len(runner.calls) == 1
+    assert _snapshot(victim) == before
+
+
+# --- git ran and failed ---------------------------------------------------------
+
+
+def test_a_git_that_fails_before_the_goals_is_refused_naming_its_status(
+    repo, tmp_path, monkeypatch, capsys
+):
+    """A repository git cannot read is unknown, not absent: the ignore rule
+    cannot be asked, so no path is known safe to write."""
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path))
+    (repo / ".git" / "HEAD").write_text("garbage\n", encoding="utf-8")
+    runner = _Runner()
+    code = ge.main(["--gate", "verify", "--", "make", "test"], runner)
+    assert code is ge.ExitCode.USAGE
+    line = _refusal(capsys)
+    assert "git exited " in line and "evidence.dir" in line, line
+    assert runner.calls == []
+    assert not (repo / ".evidence").exists()
+
+
+def test_a_repository_broken_during_the_run_is_a_red_record_not_a_crash(
+    repo, tmp_path, monkeypatch
+):
+    """Readable before the goals and not after: what they did cannot be shown
+    harmless, so it counts as a change and the test counts stay in the record."""
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path))
+
+    class Breaks(_Runner):
+        def __call__(self, argv, cwd=None, env=None):
+            (Path(cwd) / ".git" / "HEAD").write_text("garbage\n", encoding="utf-8")
+            return _Runner.__call__(self, argv, cwd, env)
+
+    code = ge.main(["--gate", "verify", "--", "make", "test"], Breaks())
+    assert code is ge.ExitCode.RED_RECORD
+    rec = _record(repo)
+    assert rec["reasons"] == ["tree-changed"]
+    assert rec["source"]["tree_changed"] is True
+    assert rec["tests"] == _counts(passed=1)
+
+
+# --- one date for the whole run -------------------------------------------------
+
+_RUN_DATE = "A_GATE_RUN_DATE"
+_TODAY = datetime.date(2031, 3, 1)
+_ONE_DAY = datetime.timedelta(days=1)
+
+
+def _with_run_date(proj, block=None, names=(_RUN_DATE,)):
+    """Rewrite the scratch manifest with an `evidence.run_date` block and the
+    `child_env.names` list it is checked against."""
+    if block is None:
+        block = {"env": _RUN_DATE, "max_age_days": 1}
+    manifest = {
+        "evidence": _evidence_block(run_date=block),
+        "child_env": {"names": list(names)},
+    }
+    (proj / "config" / "project.json").write_text(
+        json.dumps(manifest), encoding="utf-8"
+    )
+
+
+class _Clock:
+    """A clock that moves on one day every time it is read."""
+
+    def __init__(self, start=_TODAY):
+        self.now = start
+        self.reads = 0
+
+    def __call__(self):
+        self.reads += 1
+        now = self.now
+        self.now = now + _ONE_DAY
+        return now
+
+
+def test_every_goal_is_handed_the_one_date_the_driver_read(repo, monkeypatch):
+    monkeypatch.delenv(_RUN_DATE, raising=False)
+    _with_run_date(repo)
+    clock, runner = _Clock(), _Runner()
+    argv = ["--gate", "verify", "--", "make", "lint", "check-docs", "test"]
+    assert ge.main(argv, runner, clock) == 0
+    assert clock.reads == 1
+    assert [c["env"].get(_RUN_DATE) for c in runner.calls] == [_TODAY.isoformat()] * 3
+
+
+def test_a_dry_run_hands_the_date_on_too(repo, monkeypatch):
+    monkeypatch.delenv(_RUN_DATE, raising=False)
+    monkeypatch.setenv("MAKEFLAGS", "n")
+    _with_run_date(repo)
+    runner = _Runner(reports=())
+    assert ge.main(["--gate", "verify", "--", "make", "test"], runner, _Clock()) == 0
+    assert runner.calls[0]["env"].get(_RUN_DATE) == _TODAY.isoformat()
+
+
+def test_without_the_block_no_goal_is_handed_a_date(repo, monkeypatch):
+    """The channel is opt-in: a project whose config has no `evidence.run_date`
+    gets today's behaviour, and the driver reads no clock."""
+    monkeypatch.setenv(_RUN_DATE, "not-a-date")
+    clock, runner = _Clock(), _Runner()
+    assert ge.main(["--gate", "verify", "--", "make", "test"], runner, clock) == 0
+    assert clock.reads == 0
+    assert runner.calls[0]["env"].get(_RUN_DATE) is None
+
+
+@pytest.mark.parametrize("age", [0, 1])
+def test_an_outer_runs_date_is_kept_by_a_nested_driver(repo, monkeypatch, age):
+    """A gate goal that itself starts a gate (a test of the driver, say) is
+    still inside the outer run: the outer date stands."""
+    outer = (_TODAY - age * _ONE_DAY).isoformat()
+    monkeypatch.setenv(_RUN_DATE, outer)
+    _with_run_date(repo)
+    clock, runner = _Clock(), _Runner()
+    assert ge.main(["--gate", "verify", "--", "make", "test"], runner, clock) == 0
+    assert clock.reads == 1
+    assert runner.calls[0]["env"].get(_RUN_DATE) == outer
+
+
+@pytest.mark.parametrize(
+    "supplied, names",
+    [
+        ((_TODAY - 2 * _ONE_DAY).isoformat(), "evidence.run_date.max_age_days"),
+        ((_TODAY + _ONE_DAY).isoformat(), "later"),
+        ("not-a-date", "YYYY-MM-DD"),
+        ("", "YYYY-MM-DD"),
+    ],
+    ids=["two-days-old", "tomorrow", "not-a-date", "empty"],
+)
+def test_a_supplied_date_the_run_could_not_have_is_refused_before_any_goal(
+    repo, monkeypatch, capsys, supplied, names
+):
+    monkeypatch.setenv(_RUN_DATE, supplied)
+    _with_run_date(repo)
+    runner = _Runner()
+    code = ge.main(["--gate", "verify", "--", "make", "test"], runner, _Clock())
+    assert code is ge.ExitCode.USAGE
+    line = _refusal(capsys)
+    assert _RUN_DATE in line and names in line, line
+    assert _RUN_DATE in line.rsplit("; ", 1)[1], line
+    assert runner.calls == []
+    assert not (repo / ".evidence").exists()
+
+
+@pytest.mark.parametrize(
+    "block, names, key",
+    [
+        ([], (_RUN_DATE,), "evidence.run_date"),
+        ({"env": _RUN_DATE}, (_RUN_DATE,), "evidence.run_date.max_age_days"),
+        ({"env": _RUN_DATE, "max_age_days": -1}, (_RUN_DATE,), "max_age_days"),
+        ({"env": _RUN_DATE, "max_age_days": 1}, ("PATH",), "child_env.names"),
+    ],
+    ids=["not-an-object", "no-bound", "negative-bound", "not-allowlisted"],
+)
+def test_a_bad_run_date_block_is_refused(repo, capsys, block, names, key):
+    _with_run_date(repo, block, names)
+    runner = _Runner()
+    assert ge.main(["--gate", "verify", "--", "make", "test"], runner) == 2
+    assert key in capsys.readouterr().err
+    assert runner.calls == []
+    assert not (repo / ".evidence").exists()
+
+
+def test_the_record_holds_no_date_so_two_days_write_the_same_bytes(repo, monkeypatch):
+    monkeypatch.delenv(_RUN_DATE, raising=False)
+    _with_run_date(repo)
+    argv = ["--gate", "verify", "--", "make", "lint", "test"]
+    assert ge.main(argv, _Runner(), _Clock(_TODAY)) == 0
+    first = (repo / ".evidence" / "verify.json").read_bytes()
+    assert ge.main(argv, _Runner(), _Clock(_TODAY + 40 * _ONE_DAY)) == 0
+    assert (repo / ".evidence" / "verify.json").read_bytes() == first
+    assert _TODAY.isoformat().encode("ascii") not in first
+
+
 # --- the old-python floor -------------------------------------------------------
 
 
@@ -565,7 +906,7 @@ def test_the_writer_is_3_6_safe():
     sys.path.insert(0, str(_ROOT / "tests" / "integration"))
     import test_gate_scope as scope
 
-    for name in ("gate_evidence.py", "git_tree.py"):
+    for name in ("gate_evidence.py", "git_tree.py", "run_date.py"):
         path = _ROOT / "scripts" / name
         assert scope._too_new_syntax(path) == [], name
         assert scope._old_python_safe(path), name

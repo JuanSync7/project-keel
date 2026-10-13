@@ -8,7 +8,7 @@ tags: [copier, generate, update, migrations, adoption, guide]
 summary: How a project is generated from keel, what arrives and what never does, what `make new` refuses, how to adopt keel into an existing repository, and how `copier update` pulls template changes — with one checklist row per task and migration an update runs, and how to finish an update a migration stopped.
 id: docs-guides-generate-and-upgrade
 created: 2026-10-09
-updated: 2026-10-12
+updated: 2026-10-13
 visibility: internal
 canonical: true
 ---
@@ -233,6 +233,58 @@ script must match the new. To exit with a code the list does not hold, add a
 member to `ExitCode` in `scripts/exit_codes.py` and run `make exit-codes`. A
 later update that changes the same lines conflicts in that file, and
 `limits-and-troubleshooting.md` has the row for what you then see.
+
+One number carries one fact, so a wrapper of yours can act on the number
+alone. `scripts/gate_evidence.py` exits `RED_RECORD` (10) when every goal
+passed and the record is red, and `scripts/run_evals.py` exits
+`BACKEND_ABSENT` (11) when the live backend did not answer. No keel script
+exits 3: a wrapper that tested `$? -eq 3` after either script must test 10 or
+11. `ExitCode` refuses two members with one value when the module is
+imported (`enum.unique`), so every script that imports the helper stops with
+a `ValueError` naming both members if a member you added holds 10 or 11.
+Give yours another value, then run `make exit-codes`.
+
+### A gate run has one date, and a git failure stops it
+
+The update brings three stricter rules to `make verify`. Each is an exit 2
+before any goal runs, and `limits-and-troubleshooting.md` has a row for each
+message.
+
+1. **One date.** `scripts/gate_evidence.py` hands every goal the date the run
+   began in `KEEL_GATE_RUN_DATE` (config/project.json
+   `evidence.run_date.env`), and `child_env.names` gains that name. If you
+   keep your own `child_env.names`, the merge keeps your list: check that the
+   name is in it, because the gate refuses an `evidence.run_date.env` the
+   allowlist does not carry. A gate that runs longer than
+   `evidence.run_date.max_age_days` (`1`) days needs a larger bound. Removing
+   `evidence.run_date` returns every check to the clock.
+2. **git failures.** A project in a repository git cannot read used to run
+   its gates as if there were no git. `scripts/gate_evidence.py`,
+   `scripts/run_evals.py`, `scripts/trace_requirements.py` and
+   `scripts/run_make_target.py` now refuse and quote git's status. A project
+   with no repository, or a host with no git, runs as before. A script of
+   yours that imports `scripts/git_tree.py` and catches `NoGitError` no longer
+   catches a failed git command: that is `GitFailedError`, and it should stop
+   your script too.
+3. **Symlinks under `evidence.dir`.** A project whose `.evidence` is a symlink
+   to another disk is refused. Point config/project.json `evidence.dir` at a
+   real directory inside the project.
+
+### A model adapter sends its credential only to a listed host
+
+The update brings config/project.json `models.allowed_hosts`, with
+`openai-compatible` mapped to an empty list. An empty list allows no host, so
+a project that calls `openai-compatible` must add its endpoint's host before
+the adapter will start: `get_model("openai-compatible", ...)` raises a
+`ValueError` naming `models.allowed_hosts.openai-compatible` and the entry to
+add, and `make eval-live` refuses with exit 2 before any call. Write the
+entry as `host`, or `host:port` for a port other than the scheme's default,
+in the form `models/README.md` gives. A project that keeps its own `models`
+block keeps it through the merge: add the key yourself, because check_X
+reads a missing one as an empty list. The adapter also refuses a redirect
+now; a `base_url` that answered with one must point at the URL the endpoint
+serves from. [ADR-K-0018](../adr/keel/K-0018-model-endpoint-host-allowlist.md)
+is the decision.
 
 ## Update checklist
 

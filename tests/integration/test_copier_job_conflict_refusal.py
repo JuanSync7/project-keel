@@ -448,16 +448,27 @@ def _strip_declaration(path, name):
 def test_the_completeness_check_goes_red_when_a_declaration_is_removed(
     generated, tmp_path
 ):
-    """Fault injection: child_env without its PROJECT_READS. The scan names
-    the manifest literal it no longer covers, and the job whose closure
-    declares the manifest only through child_env stops refusing with the
-    guard's line; child_env's own message still names the conflict."""
+    """Fault injection: every module that declares reading the manifest,
+    child_env among them, without its PROJECT_READS. The scan names the
+    manifest literal each no longer covers, and a job whose closure reaches
+    child_env stops refusing with the guard's line; the module that then
+    meets the conflict still names it as one."""
     project, env = generated
     mutant = tmp_path / "project"
     shutil.copytree(str(project), str(mutant), symlinks=True)
-    _strip_declaration(mutant / _CHILD_ENV, conflict_guard.READS_NAME)
-
     manifest = "config/project.json"
+    declarers = sorted(
+        {
+            rel
+            for job_id, _kind, command in _JOBS
+            for rel, _path in _closure(mutant, _entry(mutant, _render(command, mutant)))
+            if manifest in _reads([(rel, str(mutant / rel))])
+        }
+    )
+    assert _CHILD_ENV in declarers, declarers
+    for rel in declarers:
+        _strip_declaration(mutant / rel, conflict_guard.READS_NAME)
+
     picked = None
     for job_id, _kind, command in _JOBS:
         argv = _render(command, mutant)
@@ -472,9 +483,11 @@ def test_the_completeness_check_goes_red_when_a_declaration_is_removed(
     job_id, argv, closure = picked
 
     findings = literal_findings(closure, _shipped(mutant))
-    assert any(
-        f.startswith(_CHILD_ENV + ":") and repr(manifest) in f for f in findings
-    ), findings
+    for rel in declarers:
+        if any(rel == mod for mod, _path in closure):
+            assert any(
+                f.startswith(rel + ":") and repr(manifest) in f for f in findings
+            ), (rel, findings)
 
     _inject(mutant / manifest)
     proc = _run(argv, mutant, env)

@@ -226,6 +226,60 @@ def test_a_template_twin_moves_with_its_document(tmp_path, monkeypatch, capsys):
     assert restamp_docs.main(argv + ["--check"]) == 0
 
 
+def test_the_writer_stamps_the_gate_runs_date_the_judge_reads(monkeypatch):
+    """A `make restamp-docs` started inside a gate run stamps the run's date,
+    the one the judge of that run holds a document to."""
+    import run_date
+
+    assert review_docs.run_date is run_date, "the pin below would not reach the judge"
+    shipped = run_date.load(review_docs.ROOT)
+    # One read of the clock serves every resolver below. Without the pin, a
+    # clock that passes midnight between building a stamp and resolving it
+    # ages the stamp by a day, and a stamp already max_age_days old is then
+    # refused. The bound is raised to at least one day because only a run
+    # date older than the clock shows that the variable, not the clock, was
+    # read; a project may ship a bound of 0, and the bound has its own tests.
+    now = datetime.date.today()
+    bound = max(1, shipped.max_age_days)
+    checked = run_date.today
+    monkeypatch.setattr(
+        run_date,
+        "today",
+        lambda environ, policy, clock=None: checked(
+            environ, policy._replace(max_age_days=bound), lambda: now
+        ),
+    )
+    for age in range(bound + 1):
+        stamp = now - datetime.timedelta(days=age)
+        env = {shipped.env: stamp.isoformat()}
+        got = restamp_docs.resolve_today(None, env)
+        assert got == review_docs.resolve_today(None, env) == stamp
+    with pytest.raises(restamp_docs.RestampError) as caught:
+        restamp_docs.resolve_today(None, {shipped.env: "not-a-date"})
+    assert shipped.env in str(caught.value)
+
+
+def test_a_run_date_config_fault_is_answered_with_the_config_fix(
+    monkeypatch, capsys, tmp_path
+):
+    """The writer reports the same next step as the judge for a fault in the
+    config, not the one for a date it could be handed instead."""
+    root = tmp_path / "project"
+    (root / "config").mkdir(parents=True)
+    (root / "config" / "project.json").write_text(
+        '{"evidence": {"run_date": {"env": "A_RUN_DATE", "max_age_days": 1}},'
+        ' "child_env": {"names": ["PATH"]}}',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(review_docs, "ROOT", str(root))
+    monkeypatch.delenv("SOURCE_DATE_EPOCH", raising=False)
+    assert restamp_docs.main(["--root", str(root), "--check"]) == 2
+    line = capsys.readouterr().err.strip().splitlines()[-1]
+    next_step = line.rsplit("; ", 1)[1]
+    assert "child_env.names" in next_step and "A_RUN_DATE" in next_step, line
+    assert "--today" not in next_step, line
+
+
 def test_the_twin_suffix_is_the_parity_gates_own():
     assert restamp_docs.TWIN_SUFFIX == check_structure._TWIN_SUFFIX
 

@@ -8,7 +8,7 @@ tags: [checks, ci, linter, determinism, pre-commit, hooks, guide]
 summary: Catalogue of every deterministic check that keeps a project-template repo honest — purpose, when to run, and how to wire as a hook.
 id: docs-guides-deterministic-checks
 created: 2026-06-19
-updated: 2026-10-12
+updated: 2026-10-13
 visibility: internal
 canonical: true
 ---
@@ -351,8 +351,14 @@ print but never fail the build.
   environment is an error: `os.environ` or `os.getenv` directly, or a name
   that a value from them reached within the module, through assignment,
   aliasing, `dict.update`, a subscript store, a loop or a comprehension. There
-  is no waiver. The `config/project.json` `child_env` block and
-  `models.credential_env` are validated through `child_env.child_env_policy`.
+  is no waiver. The `config/project.json` `child_env` block,
+  `models.credential_env` and `models.allowed_hosts` are validated through
+  `child_env.child_env_policy`; an `allowed_hosts` entry must already be in
+  the one form `child_env.canonical_host_entry` returns, and must name an
+  adapter in `models.available`. `evidence.run_date` is validated through
+  `run_date.policy`, the reader scripts/gate_evidence.py uses at the start of
+  a run, so a block whose variable `child_env.names` does not list is an error
+  before any run instead of a refusal at the start of one.
   That includes `child_env.repo_context_names`, which is required and
   non-empty: it lists the variables git binds to the repository it started a
   process in (a hook's `GIT_DIR`, `GIT_INDEX_FILE`, `GIT_PREFIX`, ...).
@@ -813,6 +819,31 @@ writer runs `git check-ignore` before any goal, and refuses with exit 2 a
 record path that git would list. So `make verify` keeps its `[local]` label:
 `scripts/run_make_target.py` still sees an unchanged tree.
 
+**Where it may write.** Before the ignore check the writer passes the record,
+its temporary file and each goal's junit report to `scripts/git_tree.py`
+`through_symlink`, and refuses with exit 2 a path that resolves through a
+symlink. The config check and the ignore rule both judge the path as text,
+and a symlink leads where neither looked. Where git is not installed, or no
+repository holds the project, nothing can be dirtied and the writer skips the
+ignore check. A git command that ran and failed is not that case: the writer
+refuses with exit 2 and quotes git's status and stderr.
+`scripts/git_tree.py` tells the two apart: `NoGitError` for the first,
+`GitFailedError` for the second.
+
+**One date per run.** The writer reads the clock once, before the first goal,
+and hands that date to every goal in `KEEL_GATE_RUN_DATE`, the variable
+config/project.json `evidence.run_date.env` names. `scripts/jobs/review_docs.py`
+`resolve_today` reads it after `--today` and `SOURCE_DATE_EPOCH` and before
+the clock, so a goal that starts after midnight still judges a touched
+document by the day the run began. `scripts/run_date.py` checks the value on
+every read: it must be a calendar date written `YYYY-MM-DD`, no later than the
+clock and at most `evidence.run_date.max_age_days` (`1`) days before it. A
+value that fails is refused with exit 2 and is never replaced by the clock.
+The date is not written to the record, which still holds no clock.
+`tests/integration/test_doc_freshness.py` runs the judge on the day after the
+run began, with and without the variable
+([ADR-K-0019](../adr/keel/K-0019-one-date-per-gate-run.md)).
+
 **Why it is derived and canonical.** Every byte comes from:
 
 - the commit and what git lists
@@ -831,7 +862,8 @@ real gate twice and compares them.
 - **A failing goal.** Its exit code passes through, and the goals after it are
   `not-run` unless make runs with `-k`.
 - **Evidence missing although every goal passed.** These make the record red
-  and the writer exit 3:
+  and the writer exit `RED_RECORD` (10, by the exit-code table in
+  `docs/guides/limits-and-troubleshooting.md`):
   - zero tests ran (an all-skipped suite counts as zero)
   - pytest's report counts a failed or errored test although its goal
     exited 0 (under `make -i`, or a test recipe that ignores pytest's exit)
