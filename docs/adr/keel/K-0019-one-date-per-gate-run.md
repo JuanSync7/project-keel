@@ -2,20 +2,20 @@
 title: "ADR-K-0019: one gate run has one date, handed to every goal through the child-environment allowlist"
 kind: adr
 layer: n/a
-status: proposed
+status: accepted
 owner: TBD
 tags: [adr, gate, freshness, verify, child-env, evidence]
 summary: "A make verify that crossed midnight turned red on every document touched that day, because the freshness judge read the clock again late in the run. The gate's driver now reads the clock once, before the first goal, and hands that date to every goal in the variable config/project.json evidence.run_date.env names. The judge reads the variable after --today and SOURCE_DATE_EPOCH and before the clock, which adds one step to the order ADR-K-0010 decision 5 states. A supplied date is checked on every read: it may be earlier than the clock by at most evidence.run_date.max_age_days and never later. A commit the test suite makes inside a run is dated by the run as well, so the date git records agrees with the stamps the run wrote. The same slice makes two more gate rules fail closed: a git command that ran and failed is refused rather than read as no git, and the driver refuses an evidence path reached through a symlink."
 id: docs-adr-0019-one-date-per-gate-run
 created: 2026-10-12
-updated: 2026-10-13
+updated: 2026-10-15
 visibility: internal
 canonical: true
 ---
 
 # ADR-K-0019: one gate run has one date
 
-**Status:** proposed. It adds one step to the order of date sources in
+**Status:** accepted 2026-10-15 by the maintainer. It adds one step to the order of date sources in
 decision 5 of [ADR-K-0010](K-0010-generation-needs-trust-to-stamp-docs.md), and
 it adds two refusals to the driver
 [ADR-K-0017](K-0017-gate-evidence-record.md) describes. Both ADRs stand

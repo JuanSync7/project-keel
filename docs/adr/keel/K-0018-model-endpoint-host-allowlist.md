@@ -2,20 +2,20 @@
 title: "ADR-K-0018: a model adapter sends its credential only to a host config lists for it"
 kind: adr
 layer: n/a
-status: proposed
+status: accepted
 owner: TBD
 tags: [adr, models, credentials, allowlist, redirect, child-env]
 summary: "models/openai_compatible.py sent its bearer token to whatever host base_url named, and urllib re-sent it to whatever host a 301, 302 or 303 named. Now config/project.json models.allowed_hosts lists, per adapter, the `host` or `host:port` entries it may send its credential to, compared exactly in one canonical form that scripts/child_env.py canonical_host_entry defines; an entry with no port matches only the scheme's default port, and http is refused unless the host is a loopback address literal. The list ships empty, so every host, the adapter's default one included, is refused until a project lists it. The check runs at construction, before any request is built and before the credential variable is read, and any redirect is refused rather than followed. Defence in depth, not a sandbox."
 id: docs-adr-0018-model-endpoint-host-allowlist
 created: 2026-10-12
-updated: 2026-10-13
+updated: 2026-10-15
 visibility: internal
 canonical: true
 ---
 
 # ADR-K-0018: a model adapter sends its credential only to a host config lists
 
-**Status:** proposed. It adds a destination rule beside the credential-variable
+**Status:** accepted 2026-10-15 by the maintainer. It adds a destination rule beside the credential-variable
 rule of [ADR-K-0012](K-0012-child-process-environment-allowlist.md), which
 stands and is not edited.
 

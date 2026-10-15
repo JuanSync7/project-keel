@@ -2146,7 +2146,7 @@ so.
 | 97 | A Ctrl-C run replaces a long record | defect | low | |
 | 98 | CONVENTIONS §2 says `scripts/` has two importable modules | doc-drift | low | closed in CMP-5.S4: the note names no count and cites `derived_features`, which reads the set from the import graph |
 | 99 | K-0020's recorded limits: a reserved farm status, last writer wins, queue time in the seconds | decision | low | |
-| 100 | K-0018, K-0019 and K-0020 are proposed | decision | low | the maintainer's |
+| 100 | K-0018, K-0019 and K-0020 are proposed | decision | low | closed: accepted after CMP-5.S4 |
 | 101 | `__all__` built with `+=` is not read | missing-check | low | |
 | 102 | mypy covers five of nine code roots | decision | low | `pyproject.toml` |
 | 103 | One slice id on several commits is not detected | missing-check | low | CMP-4.S7 is on four commits, CMP-5.S2 on two |

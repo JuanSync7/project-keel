@@ -82,7 +82,7 @@ version rather than a bare commit:
   list. It edits nothing, and a file with no measured run fails, because
   judging nothing is not "none is long"; it is in neither `make check-all`
   nor `make verify` for that reason. `docs/adr/keel/K-0020-shared-compute-launcher.md` is the
-  proposed decision; it is defence in depth for shared compute, not a
+  accepted decision; it is defence in depth for shared compute, not a
   scheduler.
 - **The `openai-compatible` adapter sends its credential only to a host
   config lists.** config/project.json `models.allowed_hosts` maps an adapter
@@ -102,7 +102,7 @@ version rather than a bare commit:
   literal (127.0.0.0/8 or `::1`; the name `localhost` is refused), so the
   credential never crosses a network in clear text. Defence in depth, not a
   sandbox;
-  `docs/adr/keel/K-0018-model-endpoint-host-allowlist.md` is the proposed
+  `docs/adr/keel/K-0018-model-endpoint-host-allowlist.md` is the accepted
   decision. **Action required:** a project that calls `openai-compatible`
   adds its endpoint's host to the list after `copier update`, as the upgrade
   guide says.
@@ -120,7 +120,7 @@ version rather than a bare commit:
   most `evidence.run_date.max_age_days` (`1`) days before it. Anything else is
   an exit 2 that names the variable, never a fall back to the clock. The
   variable can therefore move a check's today back by the bound and never
-  forward. `docs/adr/keel/K-0019-one-date-per-gate-run.md` is the proposed
+  forward. `docs/adr/keel/K-0019-one-date-per-gate-run.md` is the accepted
   decision. A project that keeps its own `child_env.names` must add the name;
   the upgrade guide says how. check_X reads the same block, so a variable
   `child_env.names` does not list is a `make check` error before any run, and

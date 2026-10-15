@@ -2,20 +2,20 @@
 title: "ADR-K-0020: one launcher decides where a long script runs, and an unknown host counts as shared"
 kind: adr
 layer: n/a
-status: proposed
+status: accepted
 owner: TBD
 tags: [adr, launcher, shared-compute, farm, child-env, security]
 summary: "A long script such as make verify ran wherever it was called and took CPU other people were using on a shared host. One neutral launcher, scripts/launch.py, now decides where a script runs from three facts and prints the decision and its reasons in one line. The facts are the host kind, the script length and the farm. A host is one person's own only when a pattern in a git-ignored local file matches it; an absent, unreadable or unmatched file means shared. A script is long when config lists it or its last recorded run took longer than a threshold, and a script with no record counts as long. The farm is an adapter chosen in config: none ships as the default and Slurm is one interchangeable option, written as an argv list. A local-only script never goes to the farm, and a farm job receives a credential only when config names it for that script. Each run's outcome and whole seconds are recorded, and a read-only search proposes the scripts to list as long. The launcher is defence in depth for shared compute, not a scheduler."
 id: docs-adr-0020-shared-compute-launcher
 created: 2026-10-13
-updated: 2026-10-13
+updated: 2026-10-15
 visibility: internal
 canonical: true
 ---
 
 # ADR-K-0020: one launcher decides where a long script runs
 
-**Status:** proposed. It adds a doer and a config block, and it edits no
+**Status:** accepted 2026-10-15 by the maintainer. It adds a doer and a config block, and it edits no
 other ADR. Running a child process still follows
 [ADR-K-0012](K-0012-child-process-environment-allowlist.md), and every exit
 still goes through `scripts/exit_codes.py`.
