@@ -59,7 +59,7 @@ class ExitCode(enum.IntEnum):
         "could not read",
         "correct the call or the input the last stderr line names, and run it again",
     )
-    # 10, 11 and 12 are numbers no tool in a gate's path already uses: the shell
+    # 10 to 13 are numbers no tool in a gate's path already uses: the shell
     # owns 0 and 1, argparse and make 2, pytest 1 to 5, sysexits.h 64 to 78,
     # timeout and the shell 124 to 127, a signal 128 and up, and 255 is an
     # out-of-range status. A caller can then act on the number alone.
@@ -79,6 +79,11 @@ class ExitCode(enum.IntEnum):
         "nothing ran: the farm did not start the job within the wait bound and "
         "this host had no spare compute",
         "run it again later, or raise config/project.json launcher.farm.wait_seconds",
+    )
+    NOTHING_JUDGED = (
+        13,
+        "it ran and found no item to judge, so it cannot answer yes",
+        "give it something to judge, as the last stderr line names, then run it again",
     )
     INTERRUPTED = (
         130,

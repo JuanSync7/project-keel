@@ -2,11 +2,12 @@
 title: Unit — exit_codes (the closed list of exit codes and the one place a process ends)
 kind: tests
 layer: n/a
-summary: ExitCode is a closed, alias-free enum whose every member carries its value, a meaning and what to do, and compares equal to its int. report writes exactly one `<what>: <on>; <next>` line to the stream it is given (stderr by default, never stdout) and returns the member; it refuses a blank or non-string part by name, a bare int and SUCCESS, and writes nothing when it refuses. passthrough wraps a wrapped tool's status, spells a signal death the way the shell does and refuses anything but an int. finish exits with a member's or a passed-through value, and exits USAGE with one line naming the value when it is handed a bare int, a bool or None. fail is finish over report. The module parses on the oldest interpreter a hook runs it under, and runs there when the host has one.
+summary: ExitCode is a closed, alias-free enum whose every member carries its value, a meaning and what to do, and compares equal to its int. NOTHING_JUDGED is 13, non-zero, and outside the bands other programs use, the launcher's reserved statuses and every farm status config/project.json configures. report writes exactly one `<what>: <on>; <next>` line to the stream it is given (stderr by default, never stdout) and returns the member; it refuses a blank or non-string part by name, a bare int and SUCCESS, and writes nothing when it refuses. passthrough wraps a wrapped tool's status, spells a signal death the way the shell does and refuses anything but an int. finish exits with a member's or a passed-through value, and exits USAGE with one line naming the value when it is handed a bare int, a bool or None. fail is finish over report. The module parses on the oldest interpreter a hook runs it under, and runs there when the host has one.
 """
 
 import ast
 import io
+import json
 import os
 import subprocess
 import sys
@@ -20,6 +21,7 @@ sys.path.insert(0, str(_ROOT / "tests"))
 sys.path.insert(0, str(_ROOT / "tests" / "integration"))
 
 import exit_codes  # noqa: E402
+import launch  # noqa: E402
 import test_gate_scope as gate_scope  # noqa: E402
 from child_env import build_child_env  # noqa: E402
 from exit_codes import (  # noqa: E402
@@ -108,6 +110,39 @@ def test_no_capacity_is_its_own_member_outside_the_taken_bands():
     assert member.meaning.strip() and member.action.strip(), member
     assert member.meaning != ExitCode.BACKEND_ABSENT.meaning
     assert member.action != ExitCode.BACKEND_ABSENT.action
+
+
+def _farm_statuses():
+    """Every status a configured farm adapter reserves, read from
+    config/project.json `launcher.farm.adapters`: a member equal to one would be
+    a farm's verdict the caller could not tell from the script's own."""
+    with open(str(_ROOT / "config" / "project.json"), encoding="utf-8") as fh:
+        adapters = json.load(fh)["launcher"]["farm"]["adapters"]
+    return {
+        value
+        for adapter in adapters.values()
+        for key, value in adapter.items()
+        if key.endswith("_status")
+    }
+
+
+def test_nothing_judged_is_thirteen_and_free():
+    """A run that found no item to judge cannot answer yes, and it is not the
+    answer no either: its own non-zero member, at a value no shell, tool, signal,
+    launcher-reserved or farm-reserved status already means."""
+    assert "NOTHING_JUDGED" in ExitCode.__members__, sorted(ExitCode.__members__)
+    member = ExitCode.NOTHING_JUDGED
+    assert member == 13 and member != ExitCode.SUCCESS
+    others = [m for m in ExitCode if m is not member]
+    assert all(int(member) != int(other) for other in others), member
+    taken = [band for band in _TAKEN_BANDS if band[0] <= int(member) <= band[1]]
+    assert taken == [], (member, taken)
+    assert int(member) not in launch._STATUS_TAKEN
+    farm = _farm_statuses()
+    assert farm, "no farm status configured -- zero items"
+    assert int(member) not in farm, sorted(farm)
+    assert member.meaning != ExitCode.FAILURE.meaning
+    assert member.action != ExitCode.FAILURE.action
 
 
 def test_report_writes_one_line_and_returns_the_member(capsys):

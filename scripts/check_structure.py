@@ -17,7 +17,8 @@ Checks:
      declared name, and a declared project-checks dir holds at least one
      module
   C. Each src/ directory containing *.py is a package: __init__.py with __all__
-  D. The __init__ boundary: no absolute import of another package's _private module
+  D. The __init__ boundary: no absolute import of another package's _private module,
+     and no `from pkg import _sub` of a private submodule from outside pkg
   E. Authored coverage (ERR): every __all__-exported symbol defined in-file
      has a docstring — the corpus's symbol summaries (WARN until ADR-K-0008)
   F. Tool specs governed (ERR) + accountability (WARN): tool/agent docs are
@@ -704,6 +705,61 @@ def _private_segment(dotted):
     return False
 
 
+def _private_name(name):
+    return name.startswith("_") and not name.startswith("__")
+
+
+def _from_package_dir(full, node):
+    """The directory a `from ... import` names as its package: a dotted module
+    under ROOT or ROOT/src for an absolute import, else the importer's own
+    package climbed `level - 1` times. None when nothing on disk holds it."""
+    parts = node.module.split(".") if node.module else []
+    if node.level == 0:
+        for base in (ROOT, os.path.join(ROOT, "src")):
+            candidate = os.path.join(base, *parts) if parts else None
+            if candidate and os.path.isdir(candidate):
+                return candidate
+        return None
+    package = os.path.dirname(full)
+    for _ in range(node.level - 1):
+        package = os.path.dirname(package)
+    candidate = os.path.join(package, *parts) if parts else package
+    return candidate if os.path.isdir(candidate) else None
+
+
+def _dotted(directory):
+    """*directory* as the dotted name it is imported by: relative to ROOT/src
+    when it lies there, else to ROOT."""
+    src = os.path.join(ROOT, "src")
+    base = src if directory.startswith(src + os.sep) else ROOT
+    return os.path.relpath(directory, base).replace(os.sep, ".")
+
+
+def _private_submodule_findings(full, node):
+    """Each alias of a `from ... import` that names a package's private
+    submodule (`_sub.py` or `_sub/__init__.py`) from a file outside that
+    package. A private function of a public module is not a submodule and is
+    never judged here."""
+    out = []
+    package = _from_package_dir(full, node)
+    if package is None:
+        return out
+    if full.startswith(package + os.sep):
+        return out
+    for alias in node.names:
+        if not _private_name(alias.name):
+            continue
+        as_file = os.path.join(package, alias.name + ".py")
+        as_package = os.path.join(package, alias.name, "__init__.py")
+        if os.path.isfile(as_file) or os.path.isfile(as_package):
+            out.append(
+                "%s:%d: imports the private submodule %s.%s from outside its "
+                "package; import the name the package's __init__.py exports"
+                % (rel(full), node.lineno, _dotted(package), alias.name)
+            )
+    return out
+
+
 def check_D():
     for croot in CODE_ROOTS:
         base = os.path.join(ROOT, croot)
@@ -722,6 +778,8 @@ def check_D():
                     continue
                 for node in ast.walk(tree):
                     if isinstance(node, ast.ImportFrom):
+                        for finding in _private_submodule_findings(full, node):
+                            err(finding)
                         if node.level == 0 and _private_segment(node.module):
                             err(
                                 "%s:%d: absolute import of private module '%s' "
@@ -4199,6 +4257,18 @@ _TARGET_VAR = re.compile(
     r"^\s*(?:(?:export|override|private)\s+)*[A-Za-z_][A-Za-z0-9_.-]*\s*[:?+!]?="
 )
 _SPECIAL_TARGET = re.compile(r"^\.[A-Z_]+$")
+# The make-level clause a guard definition opens with. Under -i, --ignore-errors,
+# MAKEFLAGS=i or a bare `.IGNORE:` make ignores the shell's `exit 1` and runs the
+# write (measured: `Error 1 (ignored)`, rc 0); each puts `i` in the first word of
+# MAKEFLAGS, and `$(error)` stops make whatever its flags, because make expands
+# the recipe before its first line runs. The `-` in front of MAKEFLAGS is the GNU
+# make manual's "Testing Flags" idiom: without it a long option such as
+# --no-print-directory would read as the i flag. The message is the project's.
+_GUARD_IGNORE_CLAUSE = "$(if $(findstring i,$(firstword -$(MAKEFLAGS))),$(error "
+# The special target that ignores recipe errors. `.IGNORE: <target>` does so
+# without touching MAKEFLAGS (measured: the write ran, rc 0), so the clause above
+# cannot see it and check_W refuses the rule itself.
+_IGNORE_TARGET = ".IGNORE"
 _RECURSE = re.compile(r"\$[({]MAKE[)}]")
 # make flags that consume the next word, and those that point make somewhere
 # this check cannot follow (another directory or another makefile).
@@ -4349,7 +4419,7 @@ def _recursions(cmd):
     return targets, unresolved
 
 
-def make_target_rules(text):
+def make_target_rules(text, specials=None):
     """Every explicit rule in one makefile's text, as MakeRule records in order.
 
     Reads what make reads: `\\`-continuations joined (lineno is the rule's first
@@ -4357,7 +4427,9 @@ def make_target_rules(text):
     variables, pattern rules, `$`-named and dotted special targets skipped, one
     record per target on a multi-target line. help is the text after `## `
     (None without one); prereqs drops order-only `|` and moves `$`-references to
-    unresolved; recursions are the goals of `$(MAKE)` calls in the recipe."""
+    unresolved; recursions are the goals of `$(MAKE)` calls in the recipe.
+    A list passed as specials receives (name, lineno) for each dotted special
+    target the records skip."""
     lines = text.split("\n")
     rules, current, define_depth, i = [], [], 0, 0
     while i < len(lines):
@@ -4424,6 +4496,8 @@ def make_target_rules(text):
             (unresolved if word.startswith("$") else prereqs).append(word)
         current = []
         for name in names:
+            if _SPECIAL_TARGET.match(name) and specials is not None:
+                specials.append((name, start + 1))
             if name.startswith("$") or _SPECIAL_TARGET.match(name):
                 continue
             rec = {
@@ -4915,16 +4989,49 @@ def _strip_make_comment(value):
 def _guard_findings(makefiles, unattended):
     """(defined_in or None, errs) for the WRITE_GUARD definition.
 
-    The guard must test every configured unattended variable and `exit 1`, must
-    not open with a `-` (make would ignore its failure), and its condition --
-    the text before `then`, or before `exit 1` without one -- may test no
-    variable the config omits, so the Makefile and config/project.json name the
-    same set in both directions."""
+    The guard must open with _GUARD_IGNORE_CLAUSE, closed, so it refuses when
+    make ignores recipe errors; after that it must test every configured
+    unattended variable and `exit 1`, must not carry a `-` before or after the
+    clause (make strips the prefix after expansion and would ignore its
+    failure), and its condition -- the text before `then`, or before `exit 1`
+    without one -- may test no variable the config omits, so the Makefile and
+    config/project.json name the same set in both directions."""
     for relpath, text in makefiles:
         m = _GUARD_DEF.search(_UNFOLD.sub(" ", text))
         if not m:
             continue
-        body = _strip_make_comment(m.group(1))
+        at = _GUARD_DEF.search(text)
+        where = "%s:%d" % (relpath, text.count("\n", 0, at.start(1)) + 1)
+        defined = _strip_make_comment(m.group(1))
+        lead = _RECIPE_PREFIX.match(defined).group(0)
+        rest = defined[len(lead) :]
+        if not rest.startswith(_GUARD_IGNORE_CLAUSE):
+            return relpath, [
+                "%s: %s does not refuse when make ignores recipe errors (-i, "
+                "--ignore-errors or .IGNORE), where the shell's `exit 1` is ignored "
+                "and the [write] recipe runs; open its definition with "
+                "%s...) as the root Makefile does"
+                % (where, _GUARD_NAME, _GUARD_IGNORE_CLAUSE)
+            ]
+        depth, close = 0, None
+        for i, ch in enumerate(rest):
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+                if depth == 0:
+                    close = i
+                    break
+        if close is None:
+            return relpath, [
+                "%s: %s opens its make-errors clause with `$(if` but the clause "
+                "never closes, so make reads the whole guard as its argument -- "
+                "balance its parentheses" % (where, _GUARD_NAME)
+            ]
+        after = rest[close + 1 :]
+        body = lead + after
+        # The clause expands to nothing, so make sees `lead` and `after` as one
+        # recipe-line prefix: a `-` on either side lands on the `exit 1`.
         if "-" in _RECIPE_PREFIX.match(body).group(0):
             return relpath, [
                 "%s: `%s` opens with a `-` prefix, so make ignores its `exit 1` and "
@@ -4964,6 +5071,25 @@ def _guard_findings(makefiles, unattended):
             ]
         return relpath, []
     return None, []
+
+
+def _ignore_findings(makefiles):
+    """errs for each `.IGNORE` rule in any makefile make reads: it makes make
+    ignore recipe errors, so no guard's `exit 1` stops the recipe, and the
+    form with prerequisites leaves MAKEFLAGS alone, out of the guard's sight."""
+    errs = []
+    for relpath, text in makefiles:
+        found = []
+        make_target_rules(text, found)
+        for name, lineno in found:
+            if name == _IGNORE_TARGET:
+                errs.append(
+                    "%s:%d: %s makes make ignore recipe errors, so no [write] "
+                    "guard's `exit 1` can stop its target and a failing gate "
+                    "recipe passes; delete the %s rule"
+                    % (relpath, lineno, _IGNORE_TARGET, _IGNORE_TARGET)
+                )
+    return errs
 
 
 def _area_findings(makefiles, by_file, area_dir):
@@ -5134,6 +5260,7 @@ def _effect_findings(makefiles, policy):
     shapes = policy["write_shapes"]
     guard_in, guard_errs = _guard_findings(makefiles, policy["unattended_vars"])
     errs.extend(guard_errs)
+    errs.extend(_ignore_findings(makefiles))
     exempt = policy["write_shape_exempt"]
     stale_exempt = {}
     for name in sorted(exempt):
@@ -5234,7 +5361,9 @@ def check_W():
     write-shaped target that config does not exempt does not open with
     `$(WRITE_GUARD)` or opens with it behind a `-`, a labelled non-[write]
     recipe calls the guard, an exemption is stale, the guard misses a configured unattended variable, tests one
-    the config omits, or ignores its own failure, the make_targets policy is malformed or stale, or (with
+    the config omits, ignores its own failure, or does not open with the clause
+    that refuses under -i, any makefile holds a `.IGNORE` rule, the
+    make_targets policy is malformed or stale, or (with
     areas on) an area makefile breaks its header, prefix or include. WARN where
     a recursion or an unlabelled recipe hides an effect. Silent without a
     Makefile; include problems are check_P's to report."""

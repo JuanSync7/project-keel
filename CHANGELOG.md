@@ -16,6 +16,40 @@ version rather than a bare commit:
   recipe runs today, `trace` and `eval` included.
 
 ### Added
+- **Imports flow up a configured layer order, and the tree is held to three
+  more rules.** config/project.json `import_layers.order` lists the layers
+  bottom to top, and `tests/integration/test_import_layers_gate.py` fails an
+  import into a higher layer, a Python file no layer holds and a layer entry
+  that places no file (ADR-K-0021, proposed). check_D also fails
+  `from pkg import _sub` of a private submodule from outside `pkg/`.
+  `tests/integration/test_exit_gate.py` fails a `fail` or `finish` call
+  outside the entry block of a module another project module imports, unless
+  `import_layers.may_end_the_process` names it with a reason.
+  `tests/integration/test_swallowed_error_gate.py` fails a bare `except:` or a
+  broad handler that only drops the error unless its suppression gives a
+  reason, and `tests/integration/test_change_comment_gate.py` fails a comment
+  that opens with a `change_comments.phrases` phrase. The four tests share one
+  reader of the tree, `tests/source_tree.py`. **Action required:** each rule
+  fails a project's own code from the first `make test` after
+  `copier update`, with no warning period. The ruled warn-then-fail tier is not built,
+  and no date for it is set: 2027-01-31 is a proposed default the maintainer
+  has not ruled on, and no config key carries it until the tier reads one.
+- **A shipped gate test and a shared scripts module each need a features
+  row.** `tests/integration/test_reference_drift.py` derives every
+  `tests/integration/test_*_gate.py` and every `scripts/` module another module
+  outside `tests/` imports, from the import graph, and fails one with no row in
+  `docs/reference/features.md`, which gains the `Gate tests` and `Shared script
+  modules` sections. The CONVENTIONS §2 note about importable `scripts/`
+  modules states no count and cites that derivation, and the same test fails
+  it if it states a count again. The derivation reads your project's tree,
+  not keel's file list: a project whose own code adds a
+  `tests/integration/test_*_gate.py`, or a `scripts/` module another of its
+  modules imports, goes red on update until the page has its row.
+- **"Nothing judged" has its own exit code, 13.** `ExitCode.NOTHING_JUDGED`
+  means a run found no item to judge, so it cannot answer yes; it is
+  non-zero and outside the launcher's reserved and farm statuses.
+  `scripts/long_scripts.py` exits 13, not 1, when no recorded run carries a
+  duration, and `make exit-codes` gives the member its row.
 - **`scripts/launch.py` decides where a long script runs, and says why in one
   line.** It reads three facts: the host kind, the script length and the farm.
   A host is `own` only when a pattern in the git-ignored file
@@ -224,8 +258,14 @@ version rather than a bare commit:
   fifth goal, `test-fe`, recorded in `.evidence/verify.json` with its result and
   `tests: null`. A suite with zero tests fails, a focused (`.only`) test fails
   in either suite, a red test fails the gate, and with `node_modules`
-  installed a missing browser is red; an app without
-  `node_modules`, or a host without `npm`, still skips as `make lint-fe` does.
+  installed a missing browser is red. With a frontend app, a host without
+  `npm` or an app without `node_modules` exits 2 before any app runs, naming
+  the app and `make fe-install`, so the gate never passes over tests that
+  never ran; a project with no frontend app stays silent. `make fe-browsers`
+  downloads the journey's browser through each app's npm script
+  `test:e2e:browsers`, CI runs `make fe-browsers` and then `make test-fe`
+  after `make eval`, and the READMEs' Quickstart runs both install targets
+  before `make verify` when a frontend ships.
   The journey's server reads the new config/project.json keys
   `layers.frontend.journey.host`, `port`, `server_timeout_ms` and
   `browser_executable`, and refuses a busy port rather than reuse whatever
@@ -281,6 +321,23 @@ version rather than a bare commit:
   has its row.
 
 ### Fixed
+- **`passthrough` no longer passes a script's own status off as a wrapped
+  tool's.** `tests/integration/test_exit_gate.py`, through
+  `scripts/exit_code_table.py`, fails `finish(passthrough(main()))`,
+  `passthrough` over `main`'s result directly or through a name, over an int
+  literal or a member, and over a function of the same script whose every
+  return is one of those, also under a sign (`-1`), combined with `or` or
+  arithmetic, or through a builtin such as `int(...)`. A `main` that returned
+  integers wrapped that way passed the gate before.
+- **`make -i` no longer lets a `[write]` target past `WRITE_GUARD`.** Under
+  `-i`, `--ignore-errors`, `MAKEFLAGS=i` or a bare `.IGNORE:`, make ignored the
+  guard's `exit 1` and ran the write under CI or a gate run, exit 0. The guard
+  now opens with a make `$(error)` that fires when the first word of
+  `MAKEFLAGS` holds `i`, which stops make whatever its flags, attended runs
+  included. check_W requires that clause in the guard's definition and
+  refuses any `.IGNORE` rule, because `.IGNORE: <target>` ignores errors
+  without touching `MAKEFLAGS`. `tests/integration/test_write_guard.py` runs
+  each flag against a real make.
 - **A git command that ran and failed is no longer read as "no git".**
   `scripts/git_tree.py` raised `NoGitError` for every git failure, and
   `scripts/run_evals.py` and `scripts/gate_evidence.py` then wrote without

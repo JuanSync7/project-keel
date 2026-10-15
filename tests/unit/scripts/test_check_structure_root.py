@@ -38,7 +38,9 @@ _POLICY = {
     "gate_vars": ["PY"],
 }
 _GUARD = (
-    'WRITE_GUARD = @if [ -n "$(CI)$(RALPH)" ]; then echo "refusing $@" >&2; '
+    "WRITE_GUARD = $(if $(findstring i,$(firstword -$(MAKEFLAGS))),"
+    "$(error refusing $@: make ignores recipe errors))"
+    '@if [ -n "$(CI)$(RALPH)" ]; then echo "refusing $@" >&2; '
     "exit 1; fi\n"
 )
 

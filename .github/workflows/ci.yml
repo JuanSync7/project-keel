@@ -22,7 +22,7 @@ jobs:
       # transport's own requirements, not in the dependency-free base install.
       # (The langgraph engine stays optional — its conformance test importorskips.)
       - run: pip install -r api/rest_fastapi/requirements.txt
-      # Install FE deps so the frontend lint/typecheck gates run; no-op
+      # Install FE deps so the frontend lint/typecheck gates and suites run; no-op
       # if there are no frontend apps.
       - run: make fe-install
       - run: make check-all   # structure, python floor, corpus, openapi, aad, cdmon (a stated skip)
@@ -47,3 +47,11 @@ jobs:
       # Replays every eval suite against its recorded responses: no network, no
       # credential (config/project.json evals; scripts/run_evals.py).
       - run: make eval
+      # The browser journey needs a browser in the runner's per-user cache, which
+      # a fresh CI machine does not have and `make fe-install` does not fill.
+      # Download it here (with its system libraries) rather than skip the journey:
+      # `make test-fe` refuses, exit 2, on an app it cannot run, so a missing
+      # browser or install fails this job instead of passing over nothing.
+      - name: download the browser the frontend journey drives
+        run: make fe-browsers FE_BROWSER_FLAGS=--with-deps
+      - run: make test-fe

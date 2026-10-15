@@ -248,7 +248,9 @@ def test_a_variable_cannot_smuggle_a_write_target_into_a_gate_run(tmp_path):
     marker = tmp_path.parent / (tmp_path.name + "-deployed.marker")
     _gate_repo(
         tmp_path,
-        'WRITE_GUARD = @if [ -n "$(CI)$(RALPH)" ]; then exit 1; fi\n'
+        "WRITE_GUARD = $(if $(findstring i,$(firstword -$(MAKEFLAGS))),"
+        "$(error refusing $@: make ignores recipe errors))"
+        '@if [ -n "$(CI)$(RALPH)" ]; then exit 1; fi\n'
         'show: ## [local] runs py\n\t$(PY) -c "print(1)"\n'
         "deploy-apply: ## [write] deploys\n\t$(WRITE_GUARD)\n\ttouch %s\n" % marker,
     )

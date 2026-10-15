@@ -36,13 +36,24 @@ PY_ROOTS := $(wildcard $(CODE_ROOTS))
 # variables tested here are config/project.json make_targets.unattended_vars, and
 # check_W fails the gate if the two sets differ in either direction. Call it as
 # a recipe's first line with no `-` prefix: `-` would make make ignore its exit 1.
+# The `$(if ...)` clause in front covers the other way make ignores an exit 1:
+# under `-i`, `--ignore-errors`, MAKEFLAGS=i or a bare `.IGNORE:` (all four put
+# `i` in the first word of MAKEFLAGS) make prints "Error 1 (ignored)" and runs
+# the write anyway, exit 0 (measured on GNU make 4.2.1). `$(error)` is expanded
+# before the recipe's first line runs, so it stops make whatever the flags; it
+# refuses an attended run under those flags too, because a guard make ignores
+# protects nothing. `-` is prepended so a flag-less MAKEFLAGS ("k", "s") never
+# reads as a flag word, the GNU make manual's "Testing Flags" idiom. A
+# `.IGNORE: <target>` rule ignores that target's errors WITHOUT touching
+# MAKEFLAGS (measured: the write ran, exit 0), so no clause can see it, and
+# check_W refuses any .IGNORE rule instead.
 # Keel ships no [write] target; a project that adds one inherits the guard.
-WRITE_GUARD = @if [ -n "$(CI)$(RALPH)" ]; then echo "refusing '$@': a [write] target never runs under CI or a Ralph loop (docs/adr/keel/K-0011-make-target-effect-labels.md)" >&2; exit 1; fi
+WRITE_GUARD = $(if $(findstring i,$(firstword -$(MAKEFLAGS))),$(error refusing '$@': make is ignoring recipe errors (-i, --ignore-errors or .IGNORE), so a failing guard could not stop this [write] target; run it without that flag (docs/adr/keel/K-0011-make-target-effect-labels.md)))@if [ -n "$(CI)$(RALPH)" ]; then echo "refusing '$@': a [write] target never runs under CI or a Ralph loop (docs/adr/keel/K-0011-make-target-effect-labels.md)" >&2; exit 1; fi
 
 .PHONY: help new audit-project check-python check check-all check-corpus check-openapi check-aad check-cdmon check-exit-codes exit-codes advise check-generic long-scripts verify test trace eval eval-live unit integration e2e smoke \
         lint lint-py lint-fe fmt fmt-check typecheck typecheck-py typecheck-fe \
         test-fe test-fe-unit test-fe-e2e \
-        fe-install run run-api run-web site-data site-static demo agent-surface-schema check-docs restamp-docs doc-review doc-review-apply
+        fe-install fe-browsers run run-api run-web site-data site-static demo agent-surface-schema check-docs restamp-docs doc-review doc-review-apply
 
 # `make help EFFECT=tree` lists only what rewrites the tree; `AREA=` filters by a
 # `##@` area header once config/project.json make_targets.area_dir names one.
@@ -227,30 +238,44 @@ typecheck-fe: ## [local] Type-check frontend apps (tsc / astro check)
 
 # The frontend suites: a unit runner over each app's own modules and a browser
 # journey against its BUILT site, each app's npm scripts test:unit and test:e2e.
-# Same one-logical-line guard as lint-fe above. A verify goal of their own, never
-# under `test`: CI runs `make test` with no browser cache, and JUNIT_XML is
-# pytest's report alone, so the evidence record lists test-fe with `tests: null`.
-# Zero tests, a missing script, a browser missing from the cache and a busy
-# journey port each fail; the host, port, timeout and browser come from
-# config/project.json layers.frontend.journey, read by each app's runner config.
+# Guard and loop are one logical line, as in lint-fe above. Unlike lint-fe they
+# never skip: a suite that ran nothing must not pass, so with a frontend app
+# present a missing npm, or an app with no node_modules, ends the target with
+# make's exit 2, naming the app and `make fe-install`. Every app is checked
+# before any runs, so the message names the first bare app rather than half a
+# run. A backend-only project (no FE_APPS) stays silent and exits 0. A verify
+# goal of their own, never under `test`: JUNIT_XML is pytest's report alone, so
+# the evidence record lists test-fe with `tests: null`. The journey's browser
+# lives in a per-user cache that `make fe-install` does not fill; `make
+# fe-browsers` downloads it, and CI runs it (with FE_BROWSER_FLAGS=--with-deps
+# for the system libraries) before `make test-fe`. Zero tests, a missing
+# script, a browser missing from the cache and a busy journey port each fail;
+# the host, port, timeout and browser come from config/project.json
+# layers.frontend.journey, read by each app's runner config.
 test-fe: test-fe-unit test-fe-e2e ## [local] Run every frontend test suite (unit runner + browser journey)
 test-fe-unit: ## [local] Run each frontend app's unit tests (npm script test:unit)
 	@test -n "$(strip $(FE_APPS))" || exit 0; \
-	command -v npm >/dev/null 2>&1 || { echo "npm not found; skipping frontend unit tests"; exit 0; }; \
-	for app in $(FE_APPS); do \
-		if [ -d "$$app/node_modules" ]; then echo "unit tests: $$app"; (cd $$app && npm run --silent test:unit) || exit 1; \
-		else echo "skip $$app (no node_modules — run 'make fe-install')"; fi; \
-	done
+	command -v npm >/dev/null 2>&1 || { echo "$@: npm is not on PATH, so no frontend unit test ran for $(strip $(FE_APPS)); install Node.js and run 'make fe-install', then run it again" >&2; exit 2; }; \
+	for app in $(FE_APPS); do [ -d "$$app/node_modules" ] || { echo "$@: $$app has no node_modules, so its unit tests did not run; run 'make fe-install', then run it again" >&2; exit 2; }; done; \
+	for app in $(FE_APPS); do echo "unit tests: $$app"; (cd $$app && npm run --silent test:unit) || exit 1; done
 test-fe-e2e: ## [local] Run each frontend app's browser journey headless against its built site (npm script test:e2e)
 	@test -n "$(strip $(FE_APPS))" || exit 0; \
-	command -v npm >/dev/null 2>&1 || { echo "npm not found; skipping frontend browser journeys"; exit 0; }; \
-	for app in $(FE_APPS); do \
-		if [ -d "$$app/node_modules" ]; then echo "browser journey: $$app"; (cd $$app && npm run --silent test:e2e) || exit 1; \
-		else echo "skip $$app (no node_modules — run 'make fe-install')"; fi; \
-	done
+	command -v npm >/dev/null 2>&1 || { echo "$@: npm is not on PATH, so no frontend browser journey ran for $(strip $(FE_APPS)); install Node.js and run 'make fe-install', then run it again" >&2; exit 2; }; \
+	for app in $(FE_APPS); do [ -d "$$app/node_modules" ] || { echo "$@: $$app has no node_modules, so its browser journey did not run; run 'make fe-install', then run it again" >&2; exit 2; }; done; \
+	for app in $(FE_APPS); do echo "browser journey: $$app"; (cd $$app && npm run --silent test:e2e) || exit 1; done
 
 fe-install: ## [tree,read] Install frontend deps for all FE apps
 	@for app in $(FE_APPS); do echo "npm install: $$app"; (cd $$app && npm install) || exit 1; done
+# Downloads into the browser runner's per-user cache, outside the tree, so the
+# label is [read]. Extra flags for the runner's install command go through
+# FE_BROWSER_FLAGS (CI passes --with-deps for the system libraries). The same
+# refusal as test-fe-unit: with a frontend app present it never skips.
+FE_BROWSER_FLAGS =
+fe-browsers: ## [read] Download the browser each frontend app's journey drives (npm script test:e2e:browsers)
+	@test -n "$(strip $(FE_APPS))" || exit 0; \
+	command -v npm >/dev/null 2>&1 || { echo "$@: npm is not on PATH, so no journey browser was downloaded for $(strip $(FE_APPS)); install Node.js and run 'make fe-install', then run it again" >&2; exit 2; }; \
+	for app in $(FE_APPS); do [ -d "$$app/node_modules" ] || { echo "$@: $$app has no node_modules, so its journey browser was not downloaded; run 'make fe-install', then run it again" >&2; exit 2; }; done; \
+	for app in $(FE_APPS); do echo "journey browser: $$app"; (cd $$app && npm run --silent test:e2e:browsers -- $(FE_BROWSER_FLAGS)) || exit 1; done
 
 run: check-python ## [local] Run the composition root config/project.json layers.app declares
 	PYTHONPATH=$(PYTHONPATH) $(PY) scripts/run_app.py

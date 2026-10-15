@@ -2,7 +2,7 @@
 title: Unit — check_structure check_W (every make target declares its effect)
 kind: tests
 layer: n/a
-summary: check_W's rule, pinned: an annotated make target opens its help with an effect label from the closed EFFECT_LABELS vocabulary, written as comma-separated words in canonical order, the same label on every rule that annotates one target; a composite target's label covers what its prerequisites and `$(MAKE)` recursions reach; a [write] target, and any target named with a configured write shape, opens its recipe with `$(WRITE_GUARD)` behind no `-` prefix unless config names it in `write_shape_exempt` with a reason (an exemption that matches nothing, an unshaped, unlabelled or [write] target is stale), a labelled recipe that calls the guard anywhere in any line (a `$$`-escaped reference is text) must be [write], and the guard, read as make stores it (a `#` comment cut off), tests exactly the configured unattended variables, carries no `-` prefix and exits 1. The policy is read from config/project.json `make_targets` and validated before it is used. Area makefiles are held to their header, prefix and include only when the policy names an area directory. Keel's own Makefile passes, and so does the bedrock-platform shape that the rule was ported from.
+summary: check_W's rule, pinned: an annotated make target opens its help with an effect label from the closed EFFECT_LABELS vocabulary, written as comma-separated words in canonical order, the same label on every rule that annotates one target; a composite target's label covers what its prerequisites and `$(MAKE)` recursions reach; a [write] target, and any target named with a configured write shape, opens its recipe with `$(WRITE_GUARD)` behind no `-` prefix unless config names it in `write_shape_exempt` with a reason (an exemption that matches nothing, an unshaped, unlabelled or [write] target is stale), a labelled recipe that calls the guard anywhere in any line (a `$$`-escaped reference is text) must be [write], and the guard, read as make stores it (a `#` comment cut off), opens with the `$(if $(findstring i,$(firstword -$(MAKEFLAGS))),$(error ...))` clause, closed, that stops make under `-i`, tests exactly the configured unattended variables, carries no `-` prefix before or after that clause and exits 1; a `.IGNORE` rule, bare, with prerequisites or in an included makefile, is an error at its line. The policy is read from config/project.json `make_targets` and validated before it is used. Area makefiles are held to their header, prefix and include only when the policy names an area directory. Keel's own Makefile passes, and so does the bedrock-platform shape that the rule was ported from.
 """
 
 import copy
@@ -36,9 +36,16 @@ _POLICY = {
     "empty_test_selections": {},
     "gate_vars": ["PY"],
 }
+# The make-level clause a guard opens with: $(error) aborts make even under -i or
+# .IGNORE, where the shell's `exit 1` is ignored. Spelled here, not imported from
+# check_structure, so a change to the check's constant shows in this file.
+_CLAUSE = (
+    "$(if $(findstring i,$(firstword -$(MAKEFLAGS))),$(error refusing $@: make "
+    "ignores recipe errors))"
+)
 _GUARD = (
-    'WRITE_GUARD = @if [ -n "$(CI)$(RALPH)" ]; then echo "refusing $@" >&2; '
-    "exit 1; fi\n"
+    "WRITE_GUARD = " + _CLAUSE + '@if [ -n "$(CI)$(RALPH)" ]; then echo '
+    '"refusing $@" >&2; exit 1; fi\n'
 )
 
 
@@ -428,9 +435,12 @@ def test_stale_exemptions_are_reported_sorted_by_name(repo):
 @pytest.mark.parametrize(
     "guard, missing",
     [
-        ('WRITE_GUARD = @if [ -n "$(CI)" ]; then exit 1; fi\n', "RALPH"),
-        ('WRITE_GUARD = @if [ -n "$(RALPH)" ]; then exit 1; fi\n', "CI"),
-        ('WRITE_GUARD = @if [ -n "$(CI)$(RALPH)" ]; then false; fi\n', "exit 1"),
+        ("WRITE_GUARD = " + _CLAUSE + '@if [ -n "$(CI)" ]; then exit 1; fi\n', "RALPH"),
+        ("WRITE_GUARD = " + _CLAUSE + '@if [ -n "$(RALPH)" ]; then exit 1; fi\n', "CI"),
+        (
+            "WRITE_GUARD = " + _CLAUSE + '@if [ -n "$(CI)$(RALPH)" ]; then false; fi\n',
+            "exit 1",
+        ),
     ],
 )
 def test_a_guard_that_misses_a_configured_refusal_errors(repo, guard, missing):
@@ -441,8 +451,10 @@ def test_a_guard_that_misses_a_configured_refusal_errors(repo, guard, missing):
 @pytest.mark.parametrize(
     "guard",
     [
-        'WRITE_GUARD = @if [ -n "$$CI$${RALPH}" ]; then exit 1; fi\n',
-        'WRITE_GUARD = @if [ -n "${CI}" ] || [ -n "$(RALPH)" ]; then \\\n\texit 1; fi\n',
+        "WRITE_GUARD = " + _CLAUSE + '@if [ -n "$$CI$${RALPH}" ]; then exit 1; fi\n',
+        "WRITE_GUARD = "
+        + _CLAUSE
+        + '@if [ -n "${CI}" ] || [ -n "$(RALPH)" ]; then \\\n\texit 1; fi\n',
     ],
     ids=["shell-vars", "continued"],
 )
@@ -470,10 +482,75 @@ def test_a_guard_line_with_a_harmless_prefix_passes(repo, line):
     )
 
 
-def test_a_guard_definition_that_ignores_its_own_failure_errors(repo):
-    guard = _GUARD.replace("WRITE_GUARD = @if", "WRITE_GUARD = -@if")
+@pytest.mark.parametrize(
+    "guard",
+    [
+        _GUARD.replace(_CLAUSE + "@if", _CLAUSE + "-@if"),
+        _GUARD.replace("WRITE_GUARD = " + _CLAUSE, "WRITE_GUARD = -" + _CLAUSE),
+    ],
+    ids=["after-the-clause", "before-the-clause"],
+)
+def test_a_guard_definition_that_ignores_its_own_failure_errors(repo, guard):
+    """make strips the prefix after expanding the line, so a `-` before the
+    clause, which expands to nothing, still lands on the shell's `exit 1`."""
     errs, _ = _run(repo, guard + "check: ## [local] c\n\tc\n")
     assert len(errs) == 1 and "WRITE_GUARD" in errs[0] and "`-`" in errs[0], errs
+
+
+@pytest.mark.parametrize(
+    "guard",
+    [
+        'WRITE_GUARD = @if [ -n "$(CI)$(RALPH)" ]; then echo "refusing $@" >&2; '
+        "exit 1; fi\n",
+        "WRITE_GUARD = $(if $(findstring i,$(MAKEFLAGS)),$(error no))@if "
+        '[ -n "$(CI)$(RALPH)" ]; then exit 1; fi\n',
+        "WRITE_GUARD = $(if $(findstring i,$(firstword -$(MAKEFLAGS))),$(warning no))"
+        '@if [ -n "$(CI)$(RALPH)" ]; then exit 1; fi\n',
+    ],
+    ids=["shell-only", "whole-makeflags", "warning-not-error"],
+)
+def test_a_guard_without_the_ignore_errors_clause_errors(repo, guard):
+    """Under -i or .IGNORE make ignores the shell's `exit 1`, so a guard that
+    refuses only in the shell lets the write run (measured: `Error 1 (ignored)`,
+    rc 0). Testing the whole of MAKEFLAGS matches a long option such as
+    --no-print-directory, and $(warning) refuses nothing."""
+    errs, _ = _run(repo, guard + "check: ## [local] c\n\tc\n")
+    assert len(errs) == 1, errs
+    assert errs[0].startswith("Makefile:1: WRITE_GUARD does not refuse"), errs
+    assert "$(if $(findstring i,$(firstword -$(MAKEFLAGS))),$(error" in errs[0], errs
+
+
+def test_a_guard_whose_clause_never_closes_errors(repo):
+    guard = (
+        "WRITE_GUARD = "
+        + _CLAUSE[:-1]
+        + '@if [ -n "$(CI)$(RALPH)" ]; then exit 1; fi\n'
+    )
+    errs, _ = _run(repo, guard + "check: ## [local] c\n\tc\n")
+    assert len(errs) == 1 and "never closes" in errs[0], errs
+
+
+@pytest.mark.parametrize(
+    "makefile, extra, where",
+    [
+        (_GUARD + "check: ## [local] c\n\tc\n.IGNORE:\n", {}, "Makefile:4:"),
+        (_GUARD + ".IGNORE: check\ncheck: ## [local] c\n\tc\n", {}, "Makefile:2:"),
+        (
+            _GUARD + "include extra.mk\ncheck: ## [local] c\n\tc\n",
+            {"extra_mk": "# an included makefile\n.IGNORE :\n"},
+            "extra.mk:2:",
+        ),
+    ],
+    ids=["bare", "with-prerequisites", "in-an-included-makefile"],
+)
+def test_an_ignore_special_target_errors(repo, makefile, extra, where):
+    """A bare `.IGNORE:` makes every recipe ignore its errors; `.IGNORE: w`
+    does it for w and leaves MAKEFLAGS alone (measured), so only a static check
+    can refuse it."""
+    errs, _ = _run(repo, makefile, **extra)
+    assert len(errs) == 1, errs
+    assert errs[0].startswith(where), errs
+    assert ".IGNORE" in errs[0] and "delete the .IGNORE rule" in errs[0], errs
 
 
 def test_a_guard_whose_refusal_is_a_make_comment_errors(repo):
@@ -481,7 +558,7 @@ def test_a_guard_whose_refusal_is_a_make_comment_errors(repo):
     this guard is `@true` and never refuses."""
     errs, _ = _run(
         repo,
-        "WRITE_GUARD = @true # $(CI) $(RALPH) exit 1\n"
+        "WRITE_GUARD = " + _CLAUSE + "@true # $(CI) $(RALPH) exit 1\n"
         "d-apply: ## [write] x\n\t$(WRITE_GUARD)\n\techo hi\n",
     )
     assert len(errs) == 1 and "CI" in errs[0] and "exit 1" in errs[0], errs
@@ -492,7 +569,9 @@ def test_a_guard_testing_a_variable_config_omits_errors(repo):
     in both directions, so a variable only the Makefile tests is never untested."""
     errs, _ = _run(
         repo,
-        'WRITE_GUARD = @if [ -n "$(CI)$(RALPH)$(NIGHTLY)" ]; then echo "$(MSG)"; '
+        "WRITE_GUARD = "
+        + _CLAUSE
+        + '@if [ -n "$(CI)$(RALPH)$(NIGHTLY)" ]; then echo "$(MSG)"; '
         "exit 1; fi\ncheck: ## [local] c\n\tc\n",
     )
     assert len(errs) == 1 and "NIGHTLY" in errs[0] and "MSG" not in errs[0], errs

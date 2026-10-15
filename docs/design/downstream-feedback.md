@@ -8,7 +8,7 @@ tags: [plan, template, downstream, freshness, taxonomy, effects, credentials, au
 summary: The bounded-convergence record for the defects bedrock-platform, the first real project generated from keel, reported back — a red gate on arrival, unknown directories the gate never sees, make targets whose effect nobody declares, and child processes that inherit every credential — plus the command that checks any keel-generated project for all of them. One slice per defect, five passes, each landed as one commit on a green `make verify`.
 id: docs-design-downstream-feedback
 created: 2026-10-06
-updated: 2026-10-14
+updated: 2026-10-15
 visibility: internal
 canonical: true
 ---
@@ -1666,7 +1666,7 @@ order on 2026-10-12. The cap is five slices, each one commit on a green
 | CMP-5.S1 | A script exits with a bare integer from any line, so nothing holds the rule that every exit has a code from one closed list and a message saying what failed, on which input and what to do next | done |
 | CMP-5.S2 | `scripts/gate_evidence.py` writes under `evidence.dir` without the symlink check `scripts/git_tree.py` holds; `scripts/run_evals.py` reads any git failure as "no git"; a full verify on a dirty tree turns red when the date changes during the run; exit code 3 has one name for two meanings; the `openai-compatible` adapter sends a credential to any host config names; a project's own scripts that call `sys.exit` are rewritten by hand after an update | done, except the rewriter, which is queued (below) |
 | CMP-5.S3 | A long script runs wherever it is called, so on a shared host it takes the CPU other people are using; nothing in the tree submits it to a job farm or limits it | done |
-| CMP-5.S4 | The rules a helper cannot carry (the import boundary, a bare `except`, text matching without a stated reason, a comment that reports a change) are held by review alone | planned |
+| CMP-5.S4 | The rules a helper cannot carry (the import boundary, a bare `except`, text matching without a stated reason, a comment that reports a change) are held by review alone | done, except the `re` allowlist and the warn-then-fail tier, which are unstarted (below) |
 | CMP-5.S5 | A module reads config, the environment and its own defaults directly, so no one place applies a default, reports it, or refuses a wrong value | planned |
 
 **CMP-5.S1, the exit helper.** A closed enum of exit codes, one helper that is
@@ -1743,9 +1743,10 @@ Left by CMP-5.S2:
   `https`. Decided since: `http` is refused unless the host is a loopback
   address literal, `docs/adr/keel/K-0018-model-endpoint-host-allowlist.md`
   Decision 8.
-- `tests/integration/test_exit_gate.py` accepts `finish(passthrough(main()))`
-  over a `main` that returns a script's own integers, so a script can pass the
-  gate without returning members. Queued for the CMP-5.S4 tree-wide checks.
+- `tests/integration/test_exit_gate.py` accepted `finish(passthrough(main()))`
+  over a `main` that returns a script's own integers, so a script could pass
+  the gate without returning members. Closed in CMP-5.S4 (see the CMP-5.S4
+  note).
 - `scripts/trace_requirements.py` refuses a missing `git` inside a repository,
   while `scripts/gate_evidence.py` and `scripts/run_evals.py` take the no-git
   path. The two readings are not unified.
@@ -1784,10 +1785,9 @@ Left by CMP-5.S3:
   interrupted run replaces an earlier long record and `make long-scripts`
   stops proposing that key until it runs long again. A farm that never starts
   the job and a killed run keep the earlier long record.
-- `make long-scripts` exits 1 when it judged no run, the same code as "it
-  proposes a key", because a pass over zero records is not a pass. Whether
-  "nothing judged" deserves its own member of `ExitCode` is open for the
-  maintainer.
+- `make long-scripts` exited 1 when it judged no run, the same code as "it
+  proposes a key". Decided since: it exits 13, `ExitCode.NOTHING_JUDGED`, a
+  member of its own that is still non-zero (see the CMP-5.S4 note).
 - The CONVENTIONS §2 note says `scripts/` holds two importable modules and
   only these two, while the tree now imports more shared modules from
   `scripts/` (the exit helper, `git_tree.py`, `run_date.py` and the launcher).
@@ -1804,14 +1804,120 @@ checks come first because they count the direct config reads the loader has to
 replace. S4 also takes one rule from CMP-5.S1: a shipped gate test or a shared
 helper module with no row of its own in `docs/reference/features.md` is red.
 
+**CMP-5.S4, done.** Two gate holes close first. `$(WRITE_GUARD)` opens with
+a make-level `$(error)` when `i` is among make's flags (`-i`,
+`--ignore-errors`, `MAKEFLAGS=i` or a bare `.IGNORE:`), because make expands
+it before the recipe's first line and an ignored shell `exit 1` stops
+nothing; check_W fails any `.IGNORE` rule, since a `.IGNORE: <target>` rule
+leaves MAKEFLAGS untouched. `tests/integration/test_write_guard.py` drives
+each form. `make test-fe-unit` and `make test-fe-e2e` exit 2 when an app is
+declared and `npm` or its `node_modules` is missing, `make fe-browsers` fills
+the browser cache, and `.github/workflows/ci.yml` runs both before
+`make test-fe` (`tests/integration/test_gate_scope.py`). This closes open
+items 1 and 2.
+
+Three of the four tree-wide checks are gate tests
+under `tests/integration/`, sharing one reader, `tests/source_tree.py`:
+
+- `test_import_layers_gate.py` holds imports to config/project.json
+  `import_layers.order`, and check_D also fails `from pkg import _sub` of a
+  private submodule from outside `pkg`. A module another project module
+  imports never calls `fail` or `finish`, which `test_exit_gate.py` enforces.
+  `docs/adr/keel/K-0021-imports-flow-up-a-configured-layer-order.md` is the
+  decision, and it is proposed.
+- `test_swallowed_error_gate.py` fails a bare `except:` or a broad `except`
+  that only drops the error, unless its `# noqa: BLE001` or `# noqa: E722`
+  gives a reason.
+- `test_change_comment_gate.py` fails a comment that opens with a phrase in
+  config/project.json `change_comments.phrases`.
+
+The allowlist of modules that may match text with `re` (open item 88) is
+unstarted, and stays so until it has a slice of its own. A measurement found
+45 modules that import `re`, 24 of them under `tests/`, so the list needs a
+written reason for each entry. Its entries for the files copier prunes go
+stale in every generated project, a project's own `re` calls turn red on
+arrival, and the warn-then-fail tier it leans on is unbuilt.
+
+The exit gate also closes open item 10. `scripts/exit_code_table.py`, which
+`test_exit_gate.py` reads through, finds a `passthrough` handed the script's
+own status: the entry function's result, directly or through a plain-assigned
+name, an int literal, a member, a `report`, or a call to a function of the
+module whose every return is one of those, also under a sign (`-1`), combined
+with `or` or arithmetic, or through a builtin the module does not rebind
+(`int(main())`). It finds an entry line
+`finish(passthrough(...))` too. A helper that converts another process's
+status, such as `scripts/run_app.py` `_app_status`, passes by design, and so
+does a function some of whose returns are the script's own literals and
+others a tool's status; the gate cannot tell those apart from the tree.
+`ExitCode.NOTHING_JUDGED` is 13, and `scripts/long_scripts.py` exits with it
+when no recorded run carries a duration; a proposal stays exit 1.
+`tests/unit/scripts/test_exit_codes.py` holds 13 outside the bands other
+programs use, the launcher's reserved statuses and every farm status
+config/project.json configures.
+
+The features-row rule taken from CMP-5.S1 is in place.
+`tests/integration/test_reference_drift.py` `derived_features` adds two
+groups: each `tests/integration/test_*_gate.py`, and each `scripts/` module
+another module outside `tests/` imports, read from the import graph through
+config/project.json `import_layers.search_roots`. `docs/reference/features.md`
+carries a row for each in its `Gate tests` and `Shared script modules`
+sections, or under another role the module plays, and the test fails a
+member with no row. The CONVENTIONS §2 note now states no count and cites
+that derivation, which the same test checks, closing open item 98. A
+generated project has fewer shared modules than the template, because copier
+prunes `scripts/audit_project.py`, so no count is pinned anywhere.
+
+The warn-then-fail tier for a project's own code (B1, open item 11) is
+unstarted, with nothing of it in the tree. Its rule needs a project's gate
+to tell a file keel ships from one the project wrote, and the one place that
+fact is derived is `scripts/audit_project.py` `origin_of`, which lists the
+template's git tree at the project's `_commit` through `_tree_at`, run in the
+template checkout. copier's `_exclude` prunes that script and every
+`tests/integration/test_copier_*.py`, and a generated project carries no list
+of the files keel shipped: `.copier-answers.yml` records only the answers,
+`_commit` and `_src_path`. Building the tier therefore needs one of three
+things the maintainer has not chosen: a shipped manifest of keel's files (a
+third rule beside the audit and the copier tests), a fetch of the template
+inside `make verify` (a network dependency in the gate), or the rule "a
+finding in the template repository is red, a finding in a generated project
+warns until the date", read from whether `copier.yml` exists. The last needs
+no manifest, and a fresh project is green under every answer set
+(`tests/integration/test_copier_generation.py`), so a finding after an update
+is in a file the project wrote or edited. It is still a third rule, and it
+also warns on a keel file the project edited. The date is not ruled either:
+the brief proposed 2027-01-31, and no config key carries it, because a key
+nothing reads is a key with no consumer.
+
+Left by CMP-5.S4:
+
+- The `re` allowlist (open item 88) and the B1 warn-then-fail tier (open
+  item 11) are unstarted; the note above gives what each needs.
+- Under a recursive `$(MAKE)` with `-i` on the outer make, the inner guard
+  stops the write, but the outer make ignores that error and exits 0.
+- `make lint-fe` and `make typecheck-fe` still print a skip and exit 0 when
+  `npm` or an app's `node_modules` is missing.
+- keel's own `make verify` on a fresh checkout is red at `test-fe-unit` until
+  `make fe-install` has run, by design. CI downloads the browser on every run
+  with no cache.
+- The change-comment check reads only the phrase that opens a comment, so a
+  change reported mid-sentence or in other words passes; two such comments
+  remain (`mcp/protocol.py`, `tests/integration/test_copier_generation.py`).
+- copier's `run_copy` with `vcs_ref=HEAD` on a dirty tree copies untracked
+  files, so a local untracked file at the template root reaches a project
+  generated from a working tree.
+- `tests/integration/test_copier_generation.py` and
+  `tests/integration/test_copier_audit.py` run near a 90-minute farm job's
+  limit when run on their own on one CPU.
+- ADR K-0021, the import layer order, is proposed.
+
 **Cut from this campaign.** Typed inputs with a log helper, planned here
 before, is queued again to make room for the launcher. Everything else in the
 Campaign 4 queue stays queued: the lane and merge parts of the lane and gate
 tooling, the frontend backlog, the mutation runner,
 `make new-test`, the agent and playbook contract, the D0 decisions,
 project-jarvis's proposals, and the residuals of CMP-4.S5 to S8 not named in
-CMP-5.S2. A header field per code file is proposed in the vault and is not
-accepted, so it is not planned here.
+CMP-5.S2. The header fields per code file are accepted after CMP-5.S4 and queued
+for Campaign 6.
 
 ## Queued for Campaign 6
 
@@ -1908,17 +2014,23 @@ are settled:
 - **KEEL-DOC-1 holds keel to its own rule.** keel's three `kind: design`
   documents get defence tables, with no exemption for older documents. A
   project's older documents follow the same warn-then-fail as B1.
-- **CMP-5.S4 waits** for the B1 date, a ruling on ADRs K-0018, K-0019 and
-  K-0020, and the push.
+- **ADRs K-0018, K-0019 and K-0020 are accepted**, and the seven commits up
+  to `241c630` are pushed.
+- **The three extra file-header fields are accepted** (touches, tests checked
+  against existing test files, docs as requirement ids), and "description"
+  and "purpose" merge into one field. Campaign 5's cap holds, so this is
+  queued for Campaign 6.
 
 Open for the maintainer:
 
 - **B1, the warning period.** The ruling of 2026-10-12 says a project's own
   code that exits directly warns first and fails after a set date. The date
   is not chosen. It lives in config, the warning prints it, and a test turns
-  the warning red once the date has passed.
-- **The three extra file-header fields** (touches, tests, docs as requirement
-  ids), and merging "description" with "purpose" into one field.
+  the warning red once the date has passed. CMP-5.S4 proposed 2027-01-31 and
+  left the tier unstarted; the CMP-5.S4 note gives the three ways to build
+  it.
+- **How a project's gate tells keel's files from its own**, which the B1
+  tier needs: the CMP-5.S4 note gives the three ways.
 
 ## Open items
 
@@ -1935,8 +2047,8 @@ so.
 
 | # | Item | Kind | Severity | Evidence |
 |---|------|------|----------|----------|
-| 1 | `make -i` or a `.IGNORE` target lets a `[write]` recipe run past `$(WRITE_GUARD)` under CI or a Ralph loop | defect | high | reproduced: the guard's `exit 1` is ignored and the write runs, exit 0 |
-| 2 | `test-fe` exits 0 when npm or an app's `node_modules` is missing, and CI never runs `test-fe` | missing-check | high | `Makefile` `test-fe-unit`, `test-fe-e2e`; `.github/workflows/ci.yml` |
+| 1 | `make -i` or a `.IGNORE` target lets a `[write]` recipe run past `$(WRITE_GUARD)` under CI or a Ralph loop | defect | high | closed in CMP-5.S4: the guard's `$(error)` clause and check_W's `.IGNORE` rule |
+| 2 | `test-fe` exits 0 when npm or an app's `node_modules` is missing, and CI never runs `test-fe` | missing-check | high | closed in CMP-5.S4: both targets exit 2, and CI runs `make fe-browsers` and `make test-fe` |
 | 3 | KEEL-TEST-1: nothing stops a test reaching a live store | feature | high | queued first in Campaign 6 |
 | 4 | KEEL-SEC-1: nothing scans the tree for a committed secret | missing-check | high | queued second in Campaign 6 |
 | 5 | `credential_value_patterns` covers five token forms | missing-check | medium | `config/project.json` |
@@ -1944,8 +2056,8 @@ so.
 | 7 | A same-user child can read `/proc/$PPID/environ` | decision | medium | outside keel; K-0012 says defence in depth |
 | 8 | The gate runner judges the child environment against keel's config, not the `--dir` project's | defect | medium | `scripts/run_make_target.py` calls `build_child_env()` and `load_policy()` with no root |
 | 9 | The gate runner keeps `HOME` and the XDG directories, so host state leaks into a run | defect | medium | `scripts/run_make_target.py` |
-| 10 | `test_exit_gate` accepts `finish(passthrough(main()))` over a `main` that returns integers | missing-check | medium | queued for CMP-5.S4 |
-| 11 | A project's own `sys.exit` turns red after an update and no rewriter exists | decision | medium | rewriter ruled (a) above; B1 date open |
+| 10 | `test_exit_gate` accepts `finish(passthrough(main()))` over a `main` that returns integers | missing-check | medium | closed in CMP-5.S4: `scripts/exit_code_table.py` finds a passthrough of the script's own status |
+| 11 | A project's own `sys.exit` turns red after an update and no rewriter exists | decision | medium | rewriter ruled (a) above; B1 date open; the warn tier is unstarted in CMP-5.S4, which needs a ruling on how a project's gate tells a keel file from its own (see the CMP-5.S4 note) |
 | 12 | `structure.extra_toplevel` directories, the project-checks directory among them, are outside `CODE_ROOTS` | missing-check | medium | `scripts/check_structure.py` `CODE_ROOTS` |
 | 13 | check_X misses a receiver it cannot resolve, a value passed through a parameter, and a spawn in a shell script | missing-check | medium | stated in `scripts/check_structure.py` |
 | 14 | A duplicate key in `config/project.json` is not refused | defect | medium | no `object_pairs_hook` in the tree |
@@ -1956,7 +2068,7 @@ so.
 | 19 | `api/grpc/Makefile` is outside the effect-label walk | missing-check | medium | its `gen` target has no label |
 | 20 | The `PY` gate variable names a program | defect | medium | `make_targets.gate_vars` |
 | 21 | No mutation runner; mutants are written by hand | feature | medium | queued since Campaign 4 |
-| 22 | CMP-5.S4, the tree-wide checks and the features-row rule | feature | medium | planned |
+| 22 | CMP-5.S4, the tree-wide checks and the features-row rule | feature | medium | done, except open items 11 and 88 |
 | 23 | CMP-5.S5, the config loader with a default marker | feature | medium | planned |
 | 24 | KEEL-DOC-1, the defence table | feature | medium | queued third in Campaign 6 |
 | 25 | pre-commit is not run in CI | missing-check | medium | `.github/workflows/ci.yml` |
@@ -2022,7 +2134,7 @@ so.
 | 85 | jarvis `kind_evidence` | decision | low | |
 | 86 | `run_evals.py --help` prints the header's `kind:` line | defect | low | reproduced by the audit |
 | 87 | Typed inputs and the log helper | feature | low | cut from Campaign 5 |
-| 88 | The pattern-match allowlist may only shrink | missing-check | low | CMP-5.S4 scope |
+| 88 | The pattern-match allowlist may only shrink | missing-check | low | CMP-5.S4, unstarted: see the CMP-5.S4 note |
 | 89 | jarvis's proposals (store migration, removal tests, docstring claims named by a test, closed lists, one home per grammar, load margin in config, an example for an ignored config, lane placeholders, the browser-automation ignore) | feature | low | none built |
 | 90 | The exit gate cannot see `getattr`, `os.abort`, `os.kill`, an uncaught exception or argparse's own exits | missing-check | low | |
 | 91 | The hand-written `\| Script \| When \|` table is compared with nothing | missing-check | low | |
@@ -2032,7 +2144,7 @@ so.
 | 95 | The run date across a daylight-saving change is not tested | missing-check | low | |
 | 96 | A gate longer than `evidence.run_date.max_age_days` refuses | defect | low | |
 | 97 | A Ctrl-C run replaces a long record | defect | low | |
-| 98 | CONVENTIONS §2 says `scripts/` has two importable modules | doc-drift | low | the tree has more |
+| 98 | CONVENTIONS §2 says `scripts/` has two importable modules | doc-drift | low | closed in CMP-5.S4: the note names no count and cites `derived_features`, which reads the set from the import graph |
 | 99 | K-0020's recorded limits: a reserved farm status, last writer wins, queue time in the seconds | decision | low | |
 | 100 | K-0018, K-0019 and K-0020 are proposed | decision | low | the maintainer's |
 | 101 | `__all__` built with `+=` is not read | missing-check | low | |
@@ -2044,6 +2156,9 @@ so.
 | 107 | bedrock-platform's known failures list | defect | unknown | outside this repo |
 | 108 | The documentation-quality system, phases 4 to 8 | feature | unknown | `docs/design/documentation-quality.md` not read |
 | 109 | Whether a release tag is on the remote | decision | unknown | not checked over the network |
+| 110 | `scripts/audit_project.py` exits 1 when it judged zero files, the code it uses for a finding, not `ExitCode.NOTHING_JUDGED` | defect | low | left unchanged in CMP-5.S4 |
+| 111 | The launcher does not refuse a configured farm status equal to an `ExitCode` member, so a farm's "not allocated" could read as a script's own code | missing-check | low | `scripts/launch.py` refuses only its reserved statuses; `tests/unit/scripts/test_exit_codes.py` holds 13 alone apart from the configured ones |
+| 112 | The exit gate passes a `passthrough` over a function whose returns mix the script's own literals with a tool's status | missing-check | low | stated in `tests/integration/test_exit_gate.py` |
 
 Contradictions the audit found, each settled here or listed above:
 

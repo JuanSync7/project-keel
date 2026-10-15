@@ -8,7 +8,7 @@ tags: [template, scaffold, project_keel]
 summary: A generic, polyglot-aware, agent-friendly project skeleton that stays honest.
 id: readme
 created: 2026-06-17
-updated: 2026-10-13
+updated: 2026-10-15
 visibility: internal
 canonical: true
 ---
@@ -71,8 +71,16 @@ python3 -m venv .venv
 .venv/bin/pip install -e ".[dev]"     # pytest, ruff and mypy: the gate's tools
 .venv/bin/pip install pre-commit && .venv/bin/pre-commit install
 make check                            # the structure gate
+make fe-install                       # the frontend app's packages
+make fe-browsers                      # the browser its journey drives, into your user cache
 make verify                           # every gate: checks, lint, types, tests, frontend tests
 ```
+
+`make verify` is red until `make fe-install` has run: its frontend suites
+exit 2 naming the app and that command rather than pass over tests that never
+ran. The journey fails until `make fe-browsers` has downloaded its browser.
+With `frontend_stack: none` both targets do nothing, and the generated
+README leaves them out.
 
 copier accepts any git URL or local path in place of
 `gh:JuanSync7/project-keel`. With no `--vcs-ref`, copier resolves the **newest

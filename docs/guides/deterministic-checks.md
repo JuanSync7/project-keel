@@ -8,7 +8,7 @@ tags: [checks, ci, linter, determinism, pre-commit, hooks, guide]
 summary: Catalogue of every deterministic check that keeps a project-template repo honest — purpose, when to run, and how to wire as a hook.
 id: docs-guides-deterministic-checks
 created: 2026-06-19
-updated: 2026-10-13
+updated: 2026-10-15
 visibility: internal
 canonical: true
 ---
@@ -100,7 +100,9 @@ print but never fail the build.
 - **C. Package boundary** — every `src/` dir with `.py` has an `__init__.py`
   defining `__all__`.
 - **D. `__init__` is the API** — no absolute import of another package's
-  `_private` module.
+  `_private` module, and no `from pkg import _sub` of a private submodule or
+  subpackage from outside `pkg/`; a relative import that climbs out of the
+  package is judged as its absolute twin would be.
 - **E. Authored coverage** — every `__all__`-exported symbol defined in-file has
   a docstring: the corpus's symbol summaries (error since ADR-K-0008).
 - **F. Tool specs governed** (error) + **accountability** (warn) — valid
@@ -301,8 +303,13 @@ print but never fail the build.
   in any line (`$(WRITE_GUARD) && cmd` included; a `$$`-escaped reference is
   text, not a call) must be `[write]`: the gate runner would admit a `[read]`
   one and the guard would then kill it. The guard's definition, read as make stores it (a `#` comment
-  cut off), must test exactly the `make_targets.unattended_vars` names, carry no
-  `-` prefix of its own, and `exit 1`. A target annotated on two rules must carry
+  cut off), must open with `$(if $(findstring i,$(firstword -$(MAKEFLAGS))),$(error ...))`,
+  closed, so it stops make under `-i`, `--ignore-errors` or a bare `.IGNORE:`,
+  where the shell's `exit 1` is ignored and the write runs; it must then test
+  exactly the `make_targets.unattended_vars` names, carry no `-` prefix before
+  or after that clause, and `exit 1`. Any `.IGNORE` rule in a makefile make
+  reads is an error: `.IGNORE: <target>` ignores that target's errors without
+  touching `MAKEFLAGS`, so the clause cannot see it. A target annotated on two rules must carry
   one label on both, since make merges them. The `make_targets` block
   itself is validated: `gate_effects` must hold `local` and must not hold `tree`
   or `write`, `gate_vars` may not name make's own control variables,
@@ -593,7 +600,8 @@ key path, copier question, make variable, environment variable and
 command-line flag the code reads, and each literal default it states is the
 code's, character for character. The same test holds the feature catalogue
 that `doc_drift.features_reference` names: it has one row for each check
-letter, make target, checker script, copier job, agent, MCP server, model and
+letter, make target, checker script, copier job, gate test, scripts module
+another module outside `tests/` imports, agent, MCP server, model and
 runtime adapter, workflow and skill the tree declares, each make target's row
 carries the effect label its help opens with, and every row's Limits cell is
 non-empty.
@@ -729,7 +737,11 @@ helper. It fails an entry block whose `finish(...)` is handed anything
 `scripts/exit_code_table.py` `read_script` cannot follow to a member: a bare
 integer, a failure member returned without `report`, a function that can
 reach its end without returning. It fails a `report` or `fail` call that
-lacks one of the three message parts or holds a blank literal one.
+lacks one of the three message parts or holds a blank literal one. It fails
+a `fail` or `finish` call outside the entry block of a module another project
+module imports, because only an entry point may end the process; config/project.json
+`import_layers.may_end_the_process` names the one module that may, with its
+reason, and a stale entry fails. `passthrough` ends nothing and is allowed.
 `scripts/exit_code_table.py --check` compares the region between the
 `<!-- exit-codes:begin -->` and `<!-- exit-codes:end -->` lines of
 `docs/guides/limits-and-troubleshooting.md` with what it would write: one row
@@ -744,6 +756,46 @@ usage (exit 2) exits, or a `python -c` line in a makefile. The hand-written
 table below the generated region is compared with nothing.
 
 **Run.** `make check-exit-codes` · `make exit-codes` · `pytest tests/integration/test_exit_gate.py`
+
+---
+
+### 13. Tree-wide source gates — `tests/source_tree.py`
+
+**Purpose.** Three gate tests judge every Python file the structure gate
+walks, through one shared reader, `tests/source_tree.py`, so no two of them
+disagree about which files are the project's, what an import points at, or
+what a comment is. None is a `scripts/check_structure.py` letter, because
+the letters A to Z are taken; `make test` runs them.
+
+- `tests/integration/test_import_layers_gate.py` resolves every import
+  through config/project.json `import_layers.search_roots` and fails one that
+  points into a higher layer of `import_layers.order`, a file no prefix
+  places, and a prefix on disk that places no file.
+  `docs/adr/keel/K-0021-imports-flow-up-a-configured-layer-order.md` is the
+  decision.
+- `tests/integration/test_swallowed_error_gate.py` fails a bare `except:`, and
+  an `except Exception` or `except BaseException` with no `raise` whose body
+  only passes, continues, breaks, or returns or assigns a fixed value such
+  as `None`, `-1` or `[]`, unless a `# noqa: BLE001` or `# noqa: E722` on
+  its clause gives a reason after its codes. It fails
+  every such suppression whose reason is blank.
+- `tests/integration/test_change_comment_gate.py` fails a comment that opens a
+  thought with a config/project.json `change_comments.phrases` phrase as a
+  whole word, and skips one that opens with a `change_comments.directives`
+  entry. It reads comments through tokenize, so a `#` inside a string is never
+  one.
+
+Each fails, never passes, on a malformed config block, a walk with no Python
+file, and a walk with nothing to judge.
+
+**What it does not prove.** The layer gate cannot see an import made through
+`importlib`, `__import__` or a `sys.path` entry no search root names. The
+swallowed-error gate judges a handler by its body's shape, so a handler that
+does work but never looks at the error, and `contextlib.suppress`, pass. The
+comment gate is a heuristic: a phrase in mid-sentence, or a change reported in
+other words, passes.
+
+**Run.** `pytest tests/integration/test_import_layers_gate.py tests/integration/test_swallowed_error_gate.py tests/integration/test_change_comment_gate.py`
 
 ---
 

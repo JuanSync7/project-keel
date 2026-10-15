@@ -2,7 +2,7 @@
 title: Integration — a process ends only through the exit helper, and the exit-code table is the enum
 kind: tests
 layer: n/a
-summary: Two tree-wide gates over every Python file `check_structure.walk` reaches, read from the syntax tree. The first fails an exit written anywhere but scripts/exit_codes.py (`sys.exit`, `os._exit`, any `.exit(...)` attribute such as argparse's, `raise SystemExit`, a SystemExit subclass, the builtins `exit` and `quit`, each of those as an attribute of `builtins` or `__builtins__`, and an import that renames any of them), an entry block that hands `finish` nothing while its module imports the helper, or that calls a function of its module and drops the value it returns, a return scripts/exit_code_table.py `read_script` cannot follow to an ExitCode member (a returned name bound by anything but a plain assignment included), a `report` or `fail` call missing one of its three message parts or holding a blank literal one, or handed a code that is not a failure member, and an import of the helper under a second name. The second fails an ExitCode member the generated table in the limits guide does not name and a table row no member backs (scripts/exit_code_table.py `table_findings`). A walk that finds no Python file, or no entry block, is a failure, never a pass. It does not judge whether a message part is useful, and it cannot see an exit reached through `getattr`, `os.abort`, `os.kill`, an uncaught exception, argparse's own `--help` and usage exits, a `python -c` line in a makefile, or a status dropped by another callable (`asyncio.run(main())`). Catching SystemExit is not an exit and is not a finding: the exception itself, or a tuple holding it, as the type of an `except` clause or an argument of pytest's `raises`; anywhere deeper in those expressions, and in a `raises` that is not pytest's, it is one. Not a check_* letter: the letters A to Z are taken.
+summary: Three tree-wide gates over every Python file tests/source_tree.py `python_files` lists (the walk `check_structure.walk` uses), read from the syntax tree. The first fails an exit written anywhere but scripts/exit_codes.py (`sys.exit`, `os._exit`, any `.exit(...)` attribute such as argparse's, `raise SystemExit`, a SystemExit subclass, the builtins `exit` and `quit`, each of those as an attribute of `builtins` or `__builtins__`, and an import that renames any of them), an entry block that hands `finish` nothing while its module imports the helper, or that calls a function of its module and drops the value it returns, a return scripts/exit_code_table.py `read_script` cannot follow to an ExitCode member (a returned name bound by anything but a plain assignment included), a `report` or `fail` call missing one of its three message parts or holding a blank literal one, or handed a code that is not a failure member, a `passthrough` handed the script's own status (the entry function's result, directly or through a name, an int literal, a member, or a function of the module whose every return is one of those, also under a sign, in an arithmetic or `and`/`or` of them, or through a builtin such as `int`), an entry line `finish(passthrough(...))`, and an import of the helper under a second name. The second fails an ExitCode member the generated table in the limits guide does not name and a table row no member backs (scripts/exit_code_table.py `table_findings`). The third fails a `fail` or `finish` call outside the entry block of a module another project module imports (an import from tests/ does not count, and scripts/exit_codes.py is the helper), because a shared module raises or returns and only an entry point ends the process; `passthrough` is no ending, it marks a status and returns it. config/project.json `import_layers.may_end_the_process` names a module that may, with a non-blank reason, and an entry naming no such module is a finding. A walk that finds no Python file, or no entry block, is a failure, never a pass. It does not judge whether a message part is useful, and it cannot see an exit reached through `getattr`, `os.abort`, `os.kill`, an uncaught exception, argparse's own `--help` and usage exits, a `python -c` line in a makefile, or a status dropped by another callable (`asyncio.run(main())`); and it does not check a `passthrough` over a helper that returns another process's status (scripts/run_app.py `_app_status`), which passes by design, nor one over a function some of whose returns are the script's own literals and others a tool's status. Catching SystemExit is not an exit and is not a finding: the exception itself, or a tuple holding it, as the type of an `except` clause or an argument of pytest's `raises`; anywhere deeper in those expressions, and in a `raises` that is not pytest's, it is one. Not a check_* letter: the letters A to Z are taken.
 """
 
 import ast
@@ -16,9 +16,12 @@ import pytest
 
 _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT / "scripts"))
+sys.path.insert(0, str(_ROOT / "tests"))
 
 import check_structure as cs  # noqa: E402
 import exit_code_table as et  # noqa: E402
+
+import source_tree as st  # noqa: E402
 
 pytestmark = pytest.mark.integration
 
@@ -48,31 +51,6 @@ _MESSAGE_CALLS = ("report", "fail")
 _FINISH = "finish"
 # The helper is one module under one import name; this is the other spelling.
 _SECOND_NAME = "scripts." + et.HELPER_MODULE
-_PY = ".py"
-
-
-class ExitGateError(AssertionError):
-    """The gate cannot judge: nothing to walk, or a file it cannot parse."""
-
-
-def python_files(root):
-    """Every `*.py` under *root* the structure gate walks, as sorted relative
-    posix paths."""
-    found = []
-    for dirpath, _dirnames, filenames in cs.walk(str(root)):
-        for name in filenames:
-            if name.endswith(_PY):
-                full = os.path.join(dirpath, name)
-                found.append(os.path.relpath(full, str(root)).replace(os.sep, "/"))
-    return sorted(found)
-
-
-def _parse(root, relpath):
-    try:
-        with open(os.path.join(str(root), relpath), encoding="utf-8") as fh:
-            return ast.parse(fh.read(), filename=relpath)
-    except cs.UNPARSEABLE as exc:
-        raise ExitGateError("%s: cannot be parsed (%s)" % (relpath, exc)) from exc
 
 
 def _builtins_names(tree):
@@ -305,17 +283,17 @@ def _mirror_test(relpath):
 
 def helper_findings(root):
     """Every finding of the first gate over the tree at *root*, with the count
-    of files walked and of entry blocks judged. Raises ExitGateError when there
+    of files walked and of entry blocks judged. Raises st.SourceTreeError when there
     is nothing to walk."""
-    files = python_files(root)
+    files = st.python_files(root)
     if not files:
-        raise ExitGateError("%s: no Python file to judge -- zero items" % root)
+        raise st.SourceTreeError("%s: no Python file to judge -- zero items" % root)
     members = et.read_members(str(root))
     quiet = frozenset(m.name for m in members if m.value == 0)
     known = {m.name for m in members}
     findings, entries = [], 0
     for relpath in files:
-        tree = _parse(root, relpath)
+        tree = st.parse(root, relpath)
         if relpath != et.HELPER:
             findings.extend(exit_form_findings(tree, relpath))
         # The helper's mirror unit test calls it with bad arguments on purpose.
@@ -340,6 +318,59 @@ def helper_findings(root):
     # function reaches; one line per defect.
     findings = sorted(set(findings))
     return {"files": len(files), "entries": entries, "findings": findings}
+
+
+# The helper calls that end the process. `passthrough` only marks a wrapped
+# tool's status for `finish` and returns it, so a module may call it anywhere.
+_ENDING_CALLS = ("fail", "finish")
+_TESTS = "tests/"
+
+
+def library_findings(root):
+    """Every call that ends the process in a module another project module
+    imports, outside that module's entry block, with the count of such
+    modules judged. Tests importing a module do not make it shared: a test
+    imports scripts to drive their `main`. config/project.json
+    `import_layers.may_end_the_process` names a module that may, with its
+    reason; an entry that names no shared module calling the helper is
+    stale and a finding."""
+    files = st.python_files(root)
+    if not files:
+        raise st.SourceTreeError("%s: no Python file to judge -- zero items" % root)
+    policy = st.import_layers(root)
+    exempt = policy["may_end_the_process"]
+    importers = {}
+    for importer, _lineno, imported in st.import_edges(
+        root, files, policy["search_roots"]
+    ):
+        if not importer.startswith(_TESTS) and imported != et.HELPER:
+            importers.setdefault(imported, importer)
+    findings, enders = [], set()
+    for relpath in sorted(importers):
+        tree = st.parse(root, relpath)
+        bindings = et.helper_bindings(tree)
+        entry = {id(n) for block in et.entry_blocks(tree) for n in ast.walk(block)}
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or id(node) in entry:
+                continue
+            name = et.helper_symbol(node.func, bindings)
+            if name not in _ENDING_CALLS:
+                continue
+            enders.add(relpath)
+            if relpath in exempt:
+                continue
+            findings.append(
+                "%s:%d: %s is imported by %s, so it must raise or return, never end "
+                "the process; return to the entry point and let it call finish"
+                % (relpath, node.lineno, name, importers[relpath])
+            )
+    findings.extend(
+        "config/project.json: import_layers.may_end_the_process names `%s`, which "
+        "is no shared module that ends the process; delete the entry" % relpath
+        for relpath in sorted(exempt)
+        if relpath not in enders
+    )
+    return {"modules": len(importers), "findings": sorted(findings)}
 
 
 # --- the tree itself -------------------------------------------------------------
@@ -368,6 +399,12 @@ def test_every_member_is_named_by_a_row_and_every_row_by_a_member():
     backed = {(str(m.value), m.name) for m in et.read_members(str(_ROOT))}
     assert backed, "zero members"
     assert named == backed
+
+
+def test_a_shared_module_never_ends_the_process():
+    result = library_findings(_ROOT)
+    assert result["modules"] > 0, "no shared module was judged -- zero items"
+    assert not result["findings"], "\n".join(result["findings"])
 
 
 # --- fixtures: each check can fail -------------------------------------------------
@@ -557,6 +594,45 @@ _BAD_ENTRIES["rebound in a module-level branch"] = (
     "def main():\n    return rc\n\nif __name__ == '__main__':\n    finish(main())\n"
 )
 
+# `passthrough` marks a wrapped tool's status. Handed main's own result, or a
+# status this script wrote itself, it would label the script's choice as a
+# tool's and let a main returning integers past the gate.
+_INT_MAIN = _GOOD.replace("return ExitCode.SUCCESS", "return 0").replace(
+    "return report(ExitCode.USAGE, 'tool: no', sys.argv[1], 'drop it')", "return 2"
+)
+_BAD_ENTRIES["finish of passthrough of main"] = _INT_MAIN.replace(
+    "finish(main())", "finish(passthrough(main()))"
+).replace("finish, report", "finish, passthrough, report")
+_BAD_ENTRIES["finish of passthrough of a name bound to main"] = _INT_MAIN.replace(
+    "    finish(main())\n", "    rc = main()\n    finish(passthrough(rc))\n"
+).replace("finish, report", "finish, passthrough, report")
+_BAD_ENTRIES["passthrough of a module function returning integers"] = (
+    "import sys\n"
+    "from exit_codes import ExitCode, finish, passthrough\n"
+    "\n"
+    "def main2():\n"
+    "    return 1 if len(sys.argv) > 1 else 0\n"
+    "\n"
+    "def main():\n"
+    "    return passthrough(main2())\n"
+    "\n"
+    "if __name__ == '__main__':\n"
+    "    finish(main())\n"
+)
+# The same status dressed as a computed one: a builtin, an `or`, a sign.
+for _label, _dressed in (
+    ("through a builtin", "int(main2())"),
+    ("or a literal", "main2() or 0"),
+):
+    _BAD_ENTRIES["passthrough of a module function returning integers " + _label] = (
+        _BAD_ENTRIES["passthrough of a module function returning integers"].replace(
+            "passthrough(main2())", "passthrough(%s)" % _dressed
+        )
+    )
+_BAD_ENTRIES["passthrough of a negative literal"] = _BAD_ENTRIES[
+    "passthrough of a module function returning integers"
+].replace("passthrough(main2())", "passthrough(-1)")
+
 
 def test_a_name_bound_only_by_plain_assignments_is_followed(tmp_path):
     """The control for the rebinding fixtures: the same script without the
@@ -564,6 +640,23 @@ def test_a_name_bound_only_by_plain_assignments_is_followed(tmp_path):
     for line in ("", "    rc: ExitCode = ExitCode.SUCCESS\n", "    other, x = 1, 2\n"):
         root = _tree(tmp_path / str(len(line)), tool=_REBOUND % line)
         assert helper_findings(root)["findings"] == [], line
+
+
+def test_a_passthrough_of_a_wrapped_status_is_no_finding(tmp_path):
+    """The control for the passthrough fixtures: a status read from the child
+    the script ran, where it ran it, passes through."""
+    tool = (
+        "import subprocess\n"
+        "from exit_codes import finish, passthrough\n"
+        "\n"
+        "def main():\n"
+        "    return passthrough(subprocess.run(['true']).returncode)\n"
+        "\n"
+        "if __name__ == '__main__':\n"
+        "    finish(main())\n"
+    )
+    root = _tree(tmp_path, tool=tool)
+    assert helper_findings(root)["findings"] == []
 
 
 @pytest.mark.parametrize(
@@ -730,11 +823,149 @@ def test_a_script_row_that_says_another_code_is_a_finding(tmp_path):
 
 def test_a_tree_with_no_python_file_is_an_error_not_a_pass(tmp_path):
     (tmp_path / "empty").mkdir()
-    with pytest.raises(ExitGateError, match="zero items"):
+    with pytest.raises(st.SourceTreeError, match="zero items"):
         helper_findings(tmp_path / "empty")
 
 
 def test_a_file_that_does_not_parse_is_an_error_not_a_skip(tmp_path):
     root = _tree(tmp_path, extra={"src/bad.py": "def (:\n"})
-    with pytest.raises(ExitGateError, match="src/bad.py"):
+    with pytest.raises(st.SourceTreeError, match="src/bad.py"):
         helper_findings(root)
+
+
+# --- fixtures: a shared module never ends the process -----------------------------
+
+_LAYERS = {"search_roots": ["", "scripts/"], "order": [["scripts"]]}
+_USER = "import lib\n\nlib.check()\n"
+
+
+def _shared(tmp_path, lib, exempt=None, user=_USER):
+    """A project whose scripts/user.py imports scripts/lib.py."""
+    layers = dict(_LAYERS)
+    if exempt is not None:
+        layers["may_end_the_process"] = exempt
+    root = _tree(tmp_path, extra={"scripts/lib.py": lib, "scripts/user.py": user})
+    (root / "config" / "project.json").write_text(
+        json.dumps({"import_layers": layers}), encoding="utf-8"
+    )
+    return root
+
+
+_FAIL_IN_A_FUNCTION = (
+    "from exit_codes import ExitCode, fail\n"
+    "\n"
+    "def check():\n"
+    "    fail(ExitCode.USAGE, 'lib: bad', 'input', 'fix it')\n"
+)
+
+
+@pytest.mark.parametrize(
+    "lib, line, name",
+    [
+        (_FAIL_IN_A_FUNCTION, 4, "fail"),
+        (
+            "import exit_codes\n"
+            "exit_codes.fail(exit_codes.ExitCode.USAGE, 'lib: bad', 'in', 'fix')\n",
+            2,
+            "fail",
+        ),
+        (
+            "from exit_codes import ExitCode, finish\n"
+            "\n"
+            "def check():\n"
+            "    finish(ExitCode.SUCCESS)\n",
+            4,
+            "finish",
+        ),
+        (
+            "import exit_codes\n"
+            "_f = exit_codes.fail\n"
+            "\n"
+            "def check():\n"
+            "    _f(exit_codes.ExitCode.USAGE, 'lib: bad', 'input', 'fix it')\n",
+            5,
+            "fail",
+        ),
+        (
+            "from exit_codes import ExitCode, fail\n"
+            "die = fail\n"
+            "stop = die\n"
+            "\n"
+            "def check():\n"
+            "    stop(ExitCode.USAGE, 'lib: bad', 'input', 'fix it')\n",
+            6,
+            "fail",
+        ),
+        (
+            "import exit_codes\n"
+            "helper = exit_codes\n"
+            "\n"
+            "def check():\n"
+            "    helper.fail(helper.ExitCode.USAGE, 'lib: bad', 'input', 'fix it')\n",
+            5,
+            "fail",
+        ),
+    ],
+    ids=[
+        "fail in a function",
+        "fail at module level",
+        "finish in a function",
+        "fail rebound to a name",
+        "fail rebound twice",
+        "the helper module rebound to a name",
+    ],
+)
+def test_a_shared_module_that_ends_the_process_is_a_finding(tmp_path, lib, line, name):
+    result = library_findings(_shared(tmp_path, lib))
+    assert result["findings"] == [
+        "scripts/lib.py:%d: %s is imported by scripts/user.py, so it must raise or "
+        "return, never end the process; return to the entry point and let it call "
+        "finish" % (line, name)
+    ], result
+
+
+def test_an_entry_block_or_passthrough_in_a_shared_module_is_no_finding(tmp_path):
+    lib = (
+        "from exit_codes import ExitCode, finish, passthrough\n"
+        "\n"
+        "def check():\n"
+        "    return passthrough(3)\n"
+        "\n"
+        "def main():\n"
+        "    return ExitCode.SUCCESS\n"
+        "\n"
+        "if __name__ == '__main__':\n"
+        "    finish(main())\n"
+    )
+    result = library_findings(_shared(tmp_path, lib))
+    assert result == {"modules": 1, "findings": []}, result
+
+
+def test_a_module_only_tests_import_is_not_shared(tmp_path):
+    root = _shared(tmp_path, _FAIL_IN_A_FUNCTION, user="")
+    (root / "tests").mkdir()
+    (root / "tests" / "test_lib.py").write_text("import lib\n", encoding="utf-8")
+    result = library_findings(root)
+    assert result == {"modules": 0, "findings": []}, result
+
+
+def test_an_exempt_module_is_no_finding(tmp_path):
+    exempt = {"scripts/lib.py": "it runs before its importer can hold a main"}
+    result = library_findings(_shared(tmp_path, _FAIL_IN_A_FUNCTION, exempt))
+    assert result["findings"] == [], result
+
+
+def test_a_stale_exemption_is_a_finding(tmp_path):
+    exempt = {"scripts/lib.py": "it once ended the process"}
+    result = library_findings(_shared(tmp_path, "def check():\n    return 1\n", exempt))
+    assert result["findings"] == [
+        "config/project.json: import_layers.may_end_the_process names "
+        "`scripts/lib.py`, which is no shared module that ends the process; "
+        "delete the entry"
+    ], result
+
+
+def test_an_exemption_with_a_blank_reason_is_an_error_not_a_pass(tmp_path):
+    root = _shared(tmp_path, _FAIL_IN_A_FUNCTION, {"scripts/lib.py": " -- "})
+    with pytest.raises(st.SourceTreeError, match="may_end_the_process"):
+        library_findings(root)

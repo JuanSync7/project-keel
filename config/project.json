@@ -45,11 +45,12 @@
       "K-0017-gate-evidence-record.md",
       "K-0018-model-endpoint-host-allowlist.md",
       "K-0019-one-date-per-gate-run.md",
-      "K-0020-shared-compute-launcher.md"
+      "K-0020-shared-compute-launcher.md",
+      "K-0021-imports-flow-up-a-configured-layer-order.md"
     ]
   },
   "doc_drift": {
-    "_comment": "What a shipped document may not say (docs/guides/doc-style.md, CONVENTIONS section 15). A shipped document is any Markdown file, or its .md.jinja twin, whose path starts with none of history_paths; history_paths are the prefixes whose Markdown is history (a changelog, decisions, plans) and may name a campaign, a slice or a moment. forbidden_phrases maps a regular expression to the reason it is refused: a phrase true of one machine or one person, never a literal host, port or path. tests/integration/test_doc_drift.py reads both: in a shipped document's prose (code spans and fences are illustrations) it refuses a concrete work id in the work_naming grammar, any forbidden phrase, a loopback port that no non-Markdown file declares, and a citation of a document copier.yml never ships. The other keys name the documents a newcomer reads and what each must say, and the same test holds them: one_hop maps an entry document to the documents it links to directly; layout_heading is the README section whose tree lists every top-level directory that ships; roster is the guide index, whose rows each name their audiences from audiences, in that order; limits_guide names every waiver the checkers, the child-process allowlist and this test grant, and holds the exit-code table scripts/exit_code_table.py generates from scripts/exit_codes.py and from every script make gate_target runs (make check-exit-codes fails a stale one); upgrade_guide gives every copier task and migration its own row in copier's order, names every exclusion and states the copier version floor (template only). settings_reference is the settings reference: tests/integration/test_reference_drift.py holds its rows derived-equal to every key of the JSON files it names, every copier question, make variable, environment variable and command-line flag, with each literal default. features_reference is the feature catalogue: the same test holds its rows to every feature the tree declares (each check letter, annotated make target with its effect label, checker script, copier job, agent, MCP server, model and runtime adapter, workflow and agent skill) and requires each row to state its limits. A missing or malformed block fails that test.",
+    "_comment": "What a shipped document may not say (docs/guides/doc-style.md, CONVENTIONS section 15). A shipped document is any Markdown file, or its .md.jinja twin, whose path starts with none of history_paths; history_paths are the prefixes whose Markdown is history (a changelog, decisions, plans) and may name a campaign, a slice or a moment. forbidden_phrases maps a regular expression to the reason it is refused: a phrase true of one machine or one person, never a literal host, port or path. tests/integration/test_doc_drift.py reads both: in a shipped document's prose (code spans and fences are illustrations) it refuses a concrete work id in the work_naming grammar, any forbidden phrase, a loopback port that no non-Markdown file declares, and a citation of a document copier.yml never ships. The other keys name the documents a newcomer reads and what each must say, and the same test holds them: one_hop maps an entry document to the documents it links to directly; layout_heading is the README section whose tree lists every top-level directory that ships; roster is the guide index, whose rows each name their audiences from audiences, in that order; limits_guide names every waiver the checkers, the child-process allowlist and this test grant, and holds the exit-code table scripts/exit_code_table.py generates from scripts/exit_codes.py and from every script make gate_target runs (make check-exit-codes fails a stale one); upgrade_guide gives every copier task and migration its own row in copier's order, names every exclusion and states the copier version floor (template only). settings_reference is the settings reference: tests/integration/test_reference_drift.py holds its rows derived-equal to every key of the JSON files it names, every copier question, make variable, environment variable and command-line flag, with each literal default. features_reference is the feature catalogue: the same test holds its rows to every feature the tree declares (each check letter, annotated make target with its effect label, checker script, copier job, gate test, scripts module another module outside tests/ imports, agent, MCP server, model and runtime adapter, workflow and agent skill) and requires each row to state its limits. A missing or malformed block fails that test.",
     "history_paths": ["CHANGELOG.md", "docs/adr/", "docs/design/"],
     "forbidden_phrases": {
       "(?i)\\bon this host\\b": "a claim about one machine; name the condition instead",
@@ -114,7 +115,10 @@
       "test": "runs the whole suite, which holds this sweep, so it would run itself; tests/integration/test_write_guard.py runs its make-driving cases through the gate runner",
       "integration": "runs the integration suite, which holds this proof",
       "long-scripts": "judges recorded runs, and .launch/durations.json is git-ignored so a fresh clone has none, which is red by design (a pass over zero runs fails); tests/integration/test_launcher.py proves it read-only with a whole-tree digest",
-      "verify": "runs `test`, which holds this proof"
+      "verify": "runs `test`, which holds this proof",
+      "test-fe": "with a frontend app present, a hermetic clone has no node_modules, which is red by design (a suite over zero apps' tests fails); tests/integration/test_gate_scope.py drives it",
+      "test-fe-unit": "with a frontend app present, a hermetic clone has no node_modules, which is red by design (a suite over zero apps' tests fails); tests/integration/test_gate_scope.py drives it",
+      "test-fe-e2e": "with a frontend app present, a hermetic clone has no node_modules, which is red by design (a suite over zero apps' tests fails); tests/integration/test_gate_scope.py drives it"
     },
     "empty_test_selections": {},
     "gate_vars": ["PY"]
@@ -242,7 +246,7 @@
       "root": "src/frontend",
       "available": ["react-vite", "astro"],
       "journey": {
-        "_comment": "The browser journey each frontend app's playwright.config.ts reads (`make test-fe-e2e`): it builds the site, serves it with the stack's own preview server on http://<host>:<port> (an IPv6 host is written without brackets), and waits server_timeout_ms for it before the run fails. A port another process holds fails the run rather than reusing that server. browser_executable null uses the runner's own browser cache, located by PLAYWRIGHT_BROWSERS_PATH when set (child_env.names passes it to every make verify goal); a path launches that browser instead. Nothing here downloads a browser.",
+        "_comment": "The browser journey each frontend app's playwright.config.ts reads (`make test-fe-e2e`): it builds the site, serves it with the stack's own preview server on http://<host>:<port> (an IPv6 host is written without brackets), and waits server_timeout_ms for it before the run fails. A port another process holds fails the run rather than reusing that server. browser_executable null uses the runner's own browser cache, located by PLAYWRIGHT_BROWSERS_PATH when set (child_env.names passes it to every make verify goal); a path launches that browser instead. Nothing here downloads a browser: `make fe-browsers` does, through each app's npm script test:e2e:browsers, and without one in the cache the journey fails.",
         "host": "127.0.0.1",
         "port": 4391,
         "server_timeout_ms": 120000,
@@ -336,6 +340,30 @@
       "claude-code-headless": ["ANTHROPIC_API_KEY", "CLAUDE_CONFIG_DIR"],
       "openai-compatible": ["OPENAI_API_KEY"]
     }
+  },
+  "import_layers": {
+    "_comment": "The layers a Python import may cross, bottom to top: a file may import a file in its own layer or a lower one, never a higher one, so everything flows up. A file sits in the layer of its longest prefix, matched by whole path segments. search_roots are the directories an import name is looked up from, in order, the first holding it winning: the repository root and the sys.path entries keel's entry points and tests add. The order comes from CONVENTIONS section 2 (the directories), src/AGENT.md (app -> {frontend, backend} -> shared) and the measured import graph: scripts/child_env.py and scripts/exit_codes.py, both stdlib-only, sit at the bottom because models, agents, mcp, evals and api import them, and the rest of scripts/ sits above api, mcp and demo because scripts/doc_review.py imports agents. tests/integration/test_import_layers_gate.py reads search_roots and order and fails an upward import, a file no prefix places, and a prefix on disk that places no file; a prefix whose path is absent, such as a transport this project did not select, is skipped. Place a new top-level directory that holds Python here. may_end_the_process maps a module another non-test module imports to the reason it still ends the process outside its entry block; tests/integration/test_exit_gate.py reads it, and an entry that no longer names such a module, or whose reason is blank, is red. docs/adr/keel/K-0021-imports-flow-up-a-configured-layer-order.md is the decision.",
+    "search_roots": ["", "src/", "tests/", "scripts/", "scripts/jobs/", "scripts/hooks/", "scripts/agent_surface/", "mcp/", "api/rest_fastapi/", "tests/integration/"],
+    "order": [
+      ["scripts/child_env.py", "scripts/exit_codes.py"],
+      ["src/shared"],
+      ["src/backend"],
+      ["src/app"],
+      ["models", "runtimes"],
+      ["agents"],
+      ["evals"],
+      ["api", "mcp", "demo"],
+      ["scripts"],
+      ["tests"]
+    ],
+    "may_end_the_process": {
+      "scripts/jobs/conflict_guard.py": "exit_if_conflicted runs in a job's entry block before the job imports anything else of the project, so there is no main yet to return a member to, and the job's next import may be the conflicted file; it ends the process through exit_codes.fail, imported only at that moment"
+    }
+  },
+  "change_comments": {
+    "_comment": "A heuristic over the comments that open a thought (tests/source_tree.py comment_starts, read through tokenize, so a string is never a comment): tests/integration/test_change_comment_gate.py fails one whose text, lowercased, starts with a phrase here followed by a character that is not a letter or digit, or by its end, because such a comment reports a change instead of explaining the code (docs/guides/python-style.md section 2). It has known false negatives: a phrase in mid-sentence, and a change reported in other words. A comment opening with one of `directives` is an instruction to a tool (a shebang, a type, lint or coverage pragma, a formatter switch), not prose, and is skipped. Add a phrase when review finds a new opener of that kind.",
+    "phrases": ["now", "no longer", "previously", "was changed", "added", "fixed", "used to", "as of", "new:", "changed", "removed", "renamed", "moved"],
+    "directives": ["!", "type:", "noqa", "pragma", "fmt:"]
   },
   "practices": {
     "_comment": "Domain coding-practice profiles are DEFINED in config/practices.json (ai/cuda/langgraph) and ENABLED here — flip a flag to true to turn its domain checks on (e.g. cuda -> check_L naked-tensor, resource-context-manager advisory). All off keeps the template domain-neutral. Validated by check_structure.py (check_H); consumed by check_L and check_practices.py.",

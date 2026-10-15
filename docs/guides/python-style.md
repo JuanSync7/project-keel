@@ -8,7 +8,7 @@ tags: [practices, style, readability, robustness, docstrings, comments, agents, 
 summary: The canonical statement of how Python is written in this project — readability and loud failure modes outrank speed; the machine-readable module header; comment and docstring discipline; and how a code agent works here. The provable floor is gated (check_O/E, ruff, mypy); this guide is the judgment above it.
 id: docs-guides-python-style
 created: 2026-08-18
-updated: 2026-10-12
+updated: 2026-10-15
 visibility: internal
 canonical: true
 ---
@@ -102,6 +102,15 @@ style is deliberately comment-heavy — but every comment must earn its line:
 - When a value or threshold is chosen from evidence, cite the evidence:
   `# 8 links max — measured: beyond 8, every extra edge was noise (2026-08).`
 
+- A comment explains the code as it stands, never the change that made it so.
+  `# now uses the cache` or `# Fixed the off-by-one` tells the reader what
+  happened, which the commit message already carries, and not why the code is
+  as it is. Write the reason instead: `# The cache holds the parse: a second
+  read of a 6 MB file doubled the gate's time`. (Heuristic gate:
+  `tests/integration/test_change_comment_gate.py` fails a comment that opens
+  with a config/project.json `change_comments.phrases` phrase as a whole
+  word; it cannot see the phrase mid-sentence, which is review's.)
+
 The test: could a reviewer who distrusts the code check it against the
 comments? If the comments only repeat the code, there is nothing to check
 against.
@@ -114,8 +123,13 @@ Every rule here exists because one of those was found and measured:
 
 - **Never blanket-except.** `except Exception: return 0` converts every future
   bug into a passing check. Catch the exceptions you can *name*, and let the
-  rest crash — a traceback is loud, and loud is correct. (Gated: ruff `BLE001`;
-  chain with `raise ... from` — `B904`.)
+  rest crash — a traceback is loud, and loud is correct. When dropping the
+  error is right, say why on the clause: `except Exception:  # noqa: BLE001 --
+  any probe failure means "unavailable"`. (Gated: ruff `BLE001`; chain with
+  `raise ... from` — `B904`; `tests/integration/test_swallowed_error_gate.py`
+  fails a bare `except:` or a broad handler whose body only passes,
+  continues, breaks, or returns or assigns a fixed value such as `None`,
+  `-1` or `[]`, unless its suppression gives a reason, and fails any `BLE001` or `E722` suppression with a blank one.)
 - **Distinguish *absent* from *broken*.** "The optional thing is not installed"
   and "the thing is installed but failing" must take different paths: absent →
   say so and continue (exit 0, with a message naming how to get it); broken →
@@ -145,9 +159,21 @@ Every rule here exists because one of those was found and measured:
   failure is `return report(ExitCode.<MEMBER>, what, on, next_step)`: what
   failed, on which input, and what to do next, written as one stderr line.
   `regenerate with make site-data` beats `stale`. A script that wraps a tool
-  returns `passthrough(<the tool's status>)`.
+  returns `passthrough(<the tool's status>)` where it reads that status;
+  `passthrough` over `main`'s result, a literal, a member or a function of the
+  module that returns only those is the script's own status, and so is
+  `finish(passthrough(...))` on the entry line. Only an entry point ends the
+  process: a module another project module imports raises or returns, and
+  never calls `fail` or `finish` outside its entry block, so its caller
+  decides what a failure means.
   (Gated: `tests/integration/test_exit_gate.py`; whether the three parts help
   the reader is review's.)
+- **Imports flow up.** A module imports only from its own layer or a lower
+  one in config/project.json `import_layers.order`, and a package's private
+  submodule only from inside the package. A shared module that reaches up
+  into the code that uses it makes every change to the user a change to the
+  shared code. (Gated: `tests/integration/test_import_layers_gate.py`, and
+  check_D for `from pkg import _sub`.)
 
 For a script wrapping an external tool (an EDA flow, a license query, a farm
 submission), assume the tool **will** misbehave: check the return code, check
@@ -222,10 +248,14 @@ that quietly becomes load-bearing is precisely the file nobody re-reads.
 | Module header, symbol docstrings | gate | `check_O`, `check_E` |
 | Types — `strict` over the ratcheted scope | gate | mypy (`rulesets.mypy` declares every relaxation) |
 | Exception hygiene (no blind except, chaining) | gate | ruff `BLE`, `B904` |
+| A swallowed error carries a reason | gate | `tests/integration/test_swallowed_error_gate.py` |
+| A process ends only at an entry point | gate | `tests/integration/test_exit_gate.py` |
+| Imports flow up the layer order; no private submodule from outside | gate | `tests/integration/test_import_layers_gate.py`, `check_D` |
+| A comment does not open by reporting a change | gate (heuristic) | `tests/integration/test_change_comment_gate.py` |
 | No `print()` in library code | gate | ruff `T20` |
 | Inline-constructed backends (DI), `isinstance` chains, hot-path `__slots__`, resources outside `with` | advisory | `make advise` |
 | Function size, complexity, naming | judgment | this guide + review |
-| Comment quality, absent-vs-broken splits | judgment | this guide + review |
+| Comment quality (a change reported mid-sentence included), absent-vs-broken splits | judgment | this guide + review |
 
 The line between the tiers is principled (see
 [coding-practices](coding-practices.md)): *can a rule decide it

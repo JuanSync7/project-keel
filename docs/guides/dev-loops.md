@@ -8,7 +8,7 @@ tags: [tdd, bounded-convergence, ralph-loop, testing, e2e, workflow, agents, gui
 summary: The default working loops any human or LLM follows in this repo — test-first, bounded convergence, and end-to-end coverage — all gated by `make verify`.
 id: docs-guides-dev-loops
 created: 2026-06-22
-updated: 2026-10-13
+updated: 2026-10-15
 visibility: internal
 canonical: true
 ---
@@ -241,8 +241,12 @@ visitor sees. Each journey config reads config/project.json
 `server_timeout_ms` (`120000`) and `browser_executable` (`null`, the runner's
 own browser cache, at `PLAYWRIGHT_BROWSERS_PATH` when that is set, which
 config/project.json `child_env.names` passes to each `make verify` goal). No
-browser is downloaded under the gate. An app without `node_modules` skips both
-suites, as `make lint-fe` does.
+browser is downloaded under the gate: `make fe-browsers` downloads it, through
+each app's npm script `test:e2e:browsers`. Neither suite skips. With a frontend
+app present, a missing `npm` or an app without `node_modules` ends the suite
+with exit 2, naming the app and `make fe-install`, because a suite that ran
+nothing must not pass; only a project with no frontend app runs them silently.
+CI runs `make fe-install`, `make fe-browsers` and then `make test-fe`.
 `tests/integration/test_gate_scope.py` holds every app to both scripts, both
 configs and a file in each suite. These suites are not for the backend: its
 routes and transport endpoints are `tests/e2e/` scenarios.

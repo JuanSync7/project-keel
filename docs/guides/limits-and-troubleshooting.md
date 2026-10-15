@@ -8,7 +8,7 @@ tags: [limits, waivers, exit-codes, troubleshooting, guide]
 summary: What adopting keel costs, the risks its rails leave open, the checks that pass by skipping, what no gate can see, every waiver a project may use, every exit code the gate's scripts return, and the symptom-to-fix list for the failures a newcomer meets first.
 id: docs-guides-limits-and-troubleshooting
 created: 2026-10-09
-updated: 2026-10-13
+updated: 2026-10-15
 visibility: internal
 canonical: true
 ---
@@ -90,8 +90,11 @@ own limits, is a row of the [feature catalogue](../reference/features.md).
   `make test-fe-e2e` judge by their runners' exit codes alone. A runner that
   finds zero tests exits non-zero, but a suite whose every test is skipped
   exits 0 in both runners, and the evidence record lists `test-fe` with
-  `tests: null`, so nothing counts those skips. CI runs `make test`, which
-  does not reach `make test-fe`, so a broken frontend suite does not fail CI.
+  `tests: null`, so nothing counts those skips. CI runs `make test-fe` as a
+  step of its own, after `make fe-install` and `make fe-browsers`.
+- **CI downloads the journey's browser on every run.** A fresh CI machine has
+  no browser cache, so the `make fe-browsers FE_BROWSER_FLAGS=--with-deps`
+  step reads the network each run; nothing caches it between runs.
 - **The browser runner's version fixes the browser.** Each app pins
   `@playwright/test` exactly, and that version names the chromium revision the
   browser cache must hold. `tests/integration/test_gate_scope.py` holds every
@@ -112,11 +115,12 @@ a decision on whether it should fail instead.
   decision.
 - check_K is silent when `config/practices.json` declares no
   `tokens.config_marker`. Queued for a decision.
-- `make lint-fe`, `make typecheck-fe`, `make test-fe-unit` and
-  `make test-fe-e2e` exit 0 when no frontend app is found, when `npm` is not
-  installed, or when an app has no `node_modules`. Queued for a decision.
-  With `node_modules` installed, a browser missing from the cache is red, not
-  a skip.
+- `make lint-fe` and `make typecheck-fe` exit 0 when no frontend app is
+  found, when `npm` is not installed, or when an app has no `node_modules`.
+  Queued for a decision. The suites do not skip: with a frontend app,
+  `make test-fe-unit`, `make test-fe-e2e` and `make fe-browsers` exit 2 on a
+  missing `npm` or `node_modules`, and a browser missing from the cache is
+  red.
 - `make check-openapi` and `make check-aad` skip when FastAPI or pydantic is
   not installed. Queued for a decision.
 - `scripts/cdmon_sync.py` exits 0 when the `cdmon` program or its config is
@@ -142,6 +146,21 @@ a decision on whether it should fail instead.
   leading-underscore segment, so it also flags the stdlib `_thread`, the
   `_pytest` internals and a package importing its own private module by its
   absolute name. It has no waiver; import from the public package instead.
+  `from pkg import _sub` is caught only when `_sub.py` or `_sub/__init__.py`
+  exists under `pkg/`; a private function imported from a public module is
+  review's.
+- **The layer gate's reach.** `tests/integration/test_import_layers_gate.py`
+  resolves an import through config/project.json `import_layers.search_roots`
+  only. An import made through `importlib`, `__import__`, or a `sys.path`
+  entry no search root names is invisible to it, and an import under
+  `TYPE_CHECKING` or in `try/except ImportError` counts as a real edge.
+- **Heuristic comment gate.** `tests/integration/test_change_comment_gate.py`
+  reads only the opening words of a comment, so `# The cache, which used to
+  be a dict, ...` passes; review catches a change reported mid-sentence.
+- **What a swallowed error looks like to the gate.**
+  `tests/integration/test_swallowed_error_gate.py` judges a broad handler by
+  its body's shape: one that logs nothing useful and returns a computed value,
+  or an error dropped through `contextlib.suppress`, passes.
 - **Dead registry keys.** `practices.schema_version` and
   `tokens.owned_error_marker` in `config/practices.json` are read by no code.
 - **Display-only profile fields.** `profiles.*.activates` is read only by the
@@ -324,6 +343,7 @@ between the markers.
 | 10 | `RED_RECORD` | every step it ran passed, and the record it wrote of the run says fail | read `reasons` in the record the last stderr line names, fix what they name, and run it again |
 | 11 | `BACKEND_ABSENT` | the backend it was told to use did not answer, so nothing was judged | start or configure the backend the last stderr line names, and run it again |
 | 12 | `NO_CAPACITY` | nothing ran: the farm did not start the job within the wait bound and this host had no spare compute | run it again later, or raise config/project.json launcher.farm.wait_seconds |
+| 13 | `NOTHING_JUDGED` | it ran and found no item to judge, so it cannot answer yes | give it something to judge, as the last stderr line names, then run it again |
 | 130 | `INTERRUPTED` | it was interrupted before it finished | run it again; what it had written so far is not a result |
 
 | Script | Exit |
@@ -359,7 +379,7 @@ says when each script returns each code.
 | `scripts/gate_evidence.py` | 0: every goal passed and the record is green. 2: refused before any goal ran: a malformed `--gate` or goal, zero goals, a bad `evidence` block, a record or report path that resolves through a symlink or that git does not ignore, a git command that ran and failed, or a date in the `evidence.run_date.env` variable that is not a date, is later than the clock or is older than `evidence.run_date.max_age_days` allows. 10: every goal passed but the record is red: zero tests, a failed or errored test in the junit report of a goal that exited 0, no junit report, the tree changed during the run, the checks could not run, or the writer crashed. 130: interrupted, and the red placeholder record stays. Otherwise the first failing goal's code passes through |
 | `scripts/launch.py` | the launched command's own status passes through when it ran, here or on the farm. 2: refused before anything ran: a bad `launcher` block, a state path reached through a symlink or one git would list, a git that failed, no command or one that is not installed here, an environment holding a credential name `launcher.credentials` does not list for the key, an unwritable run record before the start, or a farm that refused the submission. 11: the farm's submit command is not installed. 12 (`NO_CAPACITY`): the farm did not start the command within `launcher.farm.wait_seconds` and this host was not spare, so nothing ran. 130: interrupted while the command ran, recorded as `interrupted` |
 | `scripts/jobs/check_corpus.py` | 0: the corpus is well-formed and its build is reproducible. 1: it is not, and each error is printed |
-| `scripts/long_scripts.py` | 0: at least one recorded run was judged and none is over `launcher.long_after_seconds` and unlisted. 1: a key is proposed, each one `propose:` stdout line, or no recorded run carried a duration, so nothing was judged. 2: refused: a bad `launcher` block, a durations file reached through a symlink, one git would list, a git that failed, or a file that is unreadable, not JSON or not a JSON object |
+| `scripts/long_scripts.py` | 0: at least one recorded run was judged and none is over `launcher.long_after_seconds` and unlisted. 1: a key is proposed, each one `propose:` stdout line. 13 (`NOTHING_JUDGED`): no recorded run carried a duration, so nothing was judged. 2: refused: a bad `launcher` block, a durations file reached through a symlink, one git would list, a git that failed, or a file that is unreadable, not JSON or not a JSON object |
 | `scripts/run_evals.py` | 0: every suite passed. 1: a suite failed: below `evals.threshold`, an errored case or a stale recording. 2: refused: a bad `evals` block, a malformed or empty dataset, a live run over `evals.live.max_calls`, a null or unknown `evals.live.model`, an `evals.report_dir` git does not ignore, or a git command that ran and failed. 11: the live backend is absent; the first case is `absent` and the rest `not-run` |
 | `scripts/trace_requirements.py` | 0: every unit is `covered` or a `traceability.gaps` row, and there is no finding. 1: at least one finding, each one stderr line: an `uncovered` unit, a marker or gap id that is malformed or undefined, an unreadable or unattached marker, a redundant gap, or zero requirements with no reason. 2: it could not judge: a bad `traceability` block, a path reached through a symlink, a `matrix_path` git does not ignore, a repository git cannot read, an unreadable schema, spec or test file, a spec line that does not parse, a document under the specs root that defines a requirement without `kind: spec`, or a collection rule pytest could not give; or it could not write the matrix at `traceability.matrix_path` |
 
@@ -381,10 +401,26 @@ Three more codes come from the tools around these scripts:
 | `make verify` stops on a missing `pytest`, `ruff` or `mypy` | the `dev` extra is not installed | `.venv/bin/pip install -e ".[dev]"` |
 | check_B names a directory you just added | it is not a taxonomy row | add its name to `structure.extra_toplevel` and give it a `README.md` and `CLAUDE.md` |
 | check_W names a make target | its `##` help does not open with an effect label | open the help with `[local]`, `[tree]`, `[read]`, `[cost]` or `[write]` |
+| check_W says `WRITE_GUARD does not refuse when make ignores recipe errors` | the guard's definition does not open with `$(if $(findstring i,$(firstword -$(MAKEFLAGS))),$(error ...))`, so under `make -i` the shell's `exit 1` is ignored and the `[write]` recipe runs | open the definition with that clause, as the root Makefile does |
+| check_W says `.IGNORE makes make ignore recipe errors` | a makefile holds a `.IGNORE` rule, which lets every recipe it names, or every recipe, carry on past a failing line, including the guard's `exit 1` | delete the `.IGNORE` rule; put a `-` on the one line whose failure may be ignored |
+| a `[write]` target stops with `refusing '<target>': make is ignoring recipe errors` | make was run with `-i`, `--ignore-errors`, `MAKEFLAGS=i` or under a bare `.IGNORE:`, so the guard could not stop the target | run the target without that flag |
+| `make test-fe-unit`, `make test-fe-e2e` or `make fe-browsers` exits 2 with `<target>: npm is not on PATH` | Node.js is not installed or not on `PATH`, and a frontend app exists | install Node.js, run `make fe-install`, then run the target again |
+| `make test-fe-unit`, `make test-fe-e2e` or `make fe-browsers` exits 2 with `<target>: <app> has no node_modules` | the app's packages are not installed, as in a fresh clone or a newly generated project | run `make fe-install`, then run the target again |
 | `scripts/launch.py` ends with exit 12 and `the farm did not start the command within launcher.farm.wait_seconds` | the farm had no free slot within the wait, and the load per cpu of the host it was called on was over `launcher.spare.max_load_per_cpu` or unknown, so nothing ran | run it again later, or raise config/project.json `launcher.farm.wait_seconds` |
 | `scripts/launch.py` ends with exit 2 and `the farm refused the submission, so nothing ran` | the submit command returned the adapter's `farm_error_status`: a size the farm cannot grant, or a farm-side error; a command that itself exits that status reads the same | lower the size in config/project.json `launcher.long_scripts` or `launcher.default_size`, or run the submit command by hand to see the farm's message |
 | `scripts/launch.py` ends with exit 2 naming `config/project.json launcher.credentials` | the environment would hold a credential name the launch key's `launcher.credentials` entry does not list | add the name to that key's entry, or unset it before the launch |
-| `make long-scripts` ends with exit 1 and `no recorded runs, so nothing was judged` | the durations file is absent or holds no run with a duration, which is the state of a fresh clone | run a long script through `scripts/launch.py`, then run it again |
+| check_D says `imports the private submodule <pkg>.<_sub> from outside its package` | a file outside `<pkg>/` imports `_sub` by name, which reaches inside the package as `from pkg._sub import x` does | import the name `<pkg>/__init__.py` exports, and add it to `__all__` there if it is missing |
+| `test_import_layers_gate` names `<file>:<line>: layer <n> (...) imports <other> in the higher layer <m>` | a lower layer of `import_layers.order` imports from a higher one | move the shared code down to the lower layer, or pass the higher layer's behaviour in as an argument; change the order only when the layering itself is wrong |
+| `test_import_layers_gate` says `no prefix in config/project.json import_layers.order holds it` | a new top-level directory or file sits in no layer | add its path prefix to the layer it belongs in, in both `config/project.json` and its `.jinja` twin |
+| `test_import_layers_gate` says `import_layers.order names <prefix>, which places no Python file` | the entry is stale: its directory holds no Python file any more | delete the entry, or point it at the files it means |
+| `test_exit_gate` says `<name> is imported by <importer>, so it must raise or return, never end the process` | a shared module calls `fail` or `finish` outside its entry block | raise an exception or return a value, and let the entry point's `main` turn it into `report(...)` |
+| `test_exit_gate` says `import_layers.may_end_the_process names <path>, which is no shared module that ends the process` | the exemption is stale: the module no longer ends the process, or nothing imports it | delete the entry |
+| `test_exit_gate` says `passthrough wraps a wrapped tool's status, never this script's own` | `passthrough` is handed the entry function's result, an int literal, a member, or a function of the same module whose every return is one of those, also under a sign, combined with `or` or arithmetic, or through a builtin such as `int`, so a script's own status would pass as a wrapped tool's | return `ExitCode` members from `main` through `report`, and call `passthrough` only on the status of the tool the script ran, where it reads it (`subprocess.run(...).returncode`) |
+| `test_exit_gate` says `the entry line is finish(main()); call passthrough inside main where the wrapped tool's status is read` | the entry block hands `finish` a `passthrough(...)` call, or a name bound to one | write the entry line as `finish(main())`, and return `passthrough(<the tool's status>)` from `main` |
+| `test_swallowed_error_gate` says `<handler> swallows the error, so the caller reads a failure as a success` | a bare `except:`, or a broad handler whose body only passes, continues, breaks, or returns or assigns a fixed value such as `None`, `-1` or `[]` | catch the exception you can name, raise or return the failure, or give the reason on the clause: `# noqa: BLE001 -- <why>` |
+| `test_swallowed_error_gate` says ``# noqa: BLE001` gives no reason`` | a blind-except suppression has no text after its codes | write after the codes why the error may be dropped, or handle it |
+| `test_change_comment_gate` says `the comment opens with <phrase>, which reports a change` | the comment tells what changed, not why the code is as it is | rewrite it as the reason, and leave the change to the commit message |
+| `make long-scripts` ends with exit 13 (make says `Error 13`) and `no recorded runs, so nothing was judged` | the durations file is absent or holds no run with a duration, which is the state of a fresh clone | run a long script through `scripts/launch.py`, then run it again |
 | `make check-docs` names a stale `updated:` | a document changed without its stamp | `make restamp-docs` |
 | `make new` refuses | no `DEST`, the template is not a git checkout, or its tree is dirty | see `generate-and-upgrade.md`; `ALLOW_DIRTY=1` overrides the dirty tree only |
 | a test target exits 5 | it selected zero tests | add tests, or name its marker in `make_targets.empty_test_selections` |
@@ -425,7 +461,7 @@ Three more codes come from the tools around these scripts:
 | `make trace` exits 2 with `pytest read its ini from outside the project` | the project has no pytest configuration of its own, so pytest took a parent directory's and its collection rule is another project's | give the project its own `[tool.pytest.ini_options]` in `pyproject.toml` |
 | `make test-fe-unit` fails with `Unexpected .only modifier` | a unit test is focused with `.only`, which would skip the rest of the suite; the app's `vitest.config.ts` sets `allowOnly: false`, and the journey's `forbidOnly: true` refuses the same in `e2e/` | remove the `.only` |
 | `make test-fe-e2e` fails with `Error: No tests found` | the app's journey directory holds no `*.spec.ts`; this is the intended red for a stack with zero journeys | add a journey under the app's `e2e/` |
-| `make test-fe-e2e` fails with `browserType.launch: Executable doesn't exist at ...` and a box saying `npx playwright install` | the browser cache lacks the chromium revision the pinned `@playwright/test` expects, or config/project.json `layers.frontend.journey.browser_executable` names a path that does not exist; a cache that `PLAYWRIGHT_BROWSERS_PATH` relocates reaches each `make verify` goal only while config/project.json `child_env.names` lists that variable | outside the gate, run `npx playwright install chromium` in the app (it downloads into the user's browser cache, not the tree), or set `layers.frontend.journey.browser_executable` (`null` as shipped) to a chromium on the host |
+| `make test-fe-e2e` fails with `browserType.launch: Executable doesn't exist at ...` and a box saying `npx playwright install` | the browser cache lacks the chromium revision the pinned `@playwright/test` expects, or config/project.json `layers.frontend.journey.browser_executable` names a path that does not exist; a cache that `PLAYWRIGHT_BROWSERS_PATH` relocates reaches each `make verify` goal only while config/project.json `child_env.names` lists that variable | outside the gate, run `make fe-browsers` (it downloads into the user's browser cache, not the tree), or set `layers.frontend.journey.browser_executable` (`null` as shipped) to a chromium on the host |
 | `make test-fe-e2e` fails with `http://<host>:<port> is already used` | another process holds config/project.json `layers.frontend.journey.port` (`4391` as shipped); the journey refuses to test a server it did not start | stop that process, or set `layers.frontend.journey.port` to a free port |
 | `make test-fe-e2e` fails with `Timed out waiting <n>ms from config.webServer` | the build or the preview server took longer than config/project.json `layers.frontend.journey.server_timeout_ms` (`120000` as shipped), or never answered on the journey's URL | run the app's `npm run build` and `npm run preview` by hand to see why, or raise `layers.frontend.journey.server_timeout_ms` |
 | `make test-fe-e2e` fails naming `layers.frontend.journey.<key> must be ...` | config/project.json lacks that key or holds the wrong type for it | restore the key; [settings.md](../reference/settings.md) gives each key's type and shipped default |

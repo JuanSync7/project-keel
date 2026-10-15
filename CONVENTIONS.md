@@ -8,7 +8,7 @@ tags: [conventions, frontmatter, taxonomy]
 summary: Single source of truth for labeling (frontmatter) and the directory taxonomy.
 id: conventions
 created: 2026-06-17
-updated: 2026-10-13
+updated: 2026-10-15
 visibility: internal
 canonical: true
 ---
@@ -106,7 +106,7 @@ accidental first line as its summary, labeled as if someone wrote it.
 | `mcp`          | mcp | MCP servers exposing tools | business logic (call into `src/`) |
 | `api`          | api | HTTP handlers + OpenAPI specs | business logic (call into `src/`) |
 | `wiki`         | wiki | browsable index/knowledge site (optional) | source of truth |
-| `scripts`      | script | dev/CI automation, one-shots | importable library code, except the two shared modules named in the note below |
+| `scripts`      | script | dev/CI automation, one-shots | importable library code, except the shared modules named in the note below |
 | `config`       | config | committed defaults + `*.example.*` | secrets |
 | `demo`         | demo | runnable examples | tests |
 | `containers`   | container | Dockerfiles, compose, build context | app code |
@@ -116,14 +116,22 @@ accidental first line as its summary, labeled as if someone wrote it.
 | `runtimes`     | package | agent control-flow engines: a neutral `Plan` + `Runtime` (adapters + registry, e.g. LangGraph) | domain/business logic (that's `src/`) |
 | `agents/tools` | tool | shared, thin `*.tool.md` tool-use specs (markdown adapters over `scripts/`) | tool logic (stays in `scripts/`) |
 
-Note: `scripts/` holds two importable modules by exception, and only these two.
-`scripts/check_structure.py` is the gate the tests and jobs import, and
-`scripts/child_env.py` builds the allowlisted environment every child process
-starts with (`docs/adr/keel/K-0012-child-process-environment-allowlist.md`). Both must
-import under the bare `python3` that `.pre-commit-config.yaml` hooks run (the
-oldest python3 a supported host ships), which cannot import `src/`; that is
-why they live here and not in `src/`. `models/`, `agents/` and `mcp/` import the second as
-`scripts.child_env`. Any other reused code still belongs in `src/`.
+Note: `scripts/` holds library modules by exception: every scripts module
+that another module outside `tests/` imports. The set is derived, never typed
+here: `derived_features` in `tests/integration/test_reference_drift.py` reads
+it from the import graph, and each member has a row in
+`docs/reference/features.md`, in the `Shared script modules` section or under
+another role it plays, or that test fails. A module a hook or a copier job
+imports lives here and not in `src/` because the bare `python3` that
+`.pre-commit-config.yaml` hooks and copier jobs run (the oldest python3 a
+supported host ships) cannot import `src/`, so it stays stdlib-only and safe on
+that interpreter; the others hold a gate rule a command and its gate test
+share, never app logic. `models/`,
+`agents/`, `mcp/` and `evals/` import the allowlisted child environment as
+`scripts.child_env` for that reason
+(`docs/adr/keel/K-0012-child-process-environment-allowlist.md`). A shared
+module never ends the process; the package-boundary rules below say how that
+is checked. Any other reused code still belongs in `src/`.
 
 Note: `agents/<name>/` holds **all** files for one agent — its
 `prompt.md` (system prompt), code (`__init__.py` + private `_brain.py`),
@@ -182,6 +190,27 @@ from myproj.backend._impl import do_thing  # ❌ reaching inside
 - Cross-package contracts are **ABCs / `typing.Protocol`** in
   `contracts.py`, re-exported from `__init__.py`. Depend on the
   contract, not the concrete class.
+- A private submodule is no less private when it is imported by name:
+  `from pkg import _sub` from outside `pkg/` reaches inside just as
+  `from pkg._sub import x` does, and check_D fails both. A private
+  function of a public module (`from pkg.mod import _helper`) is not a
+  submodule, and check_D leaves it to review.
+- **Imports flow up one layer order.** `config/project.json`
+  `import_layers.order` lists the layers bottom to top (the exit helper
+  and the child-environment allowlist, then `src/shared`, `src/backend`,
+  `src/app`, the adapters, `agents`, `evals`, the transports, `scripts`,
+  `tests`); a file sits in the layer of its longest path prefix, and
+  `tests/integration/test_import_layers_gate.py` fails an import into a
+  higher layer, a file no prefix places, and a prefix that places no file.
+  `docs/adr/keel/K-0021-imports-flow-up-a-configured-layer-order.md` is the
+  decision.
+- **A shared module never ends the process.** A module another project
+  module imports raises or returns; only an entry block calls `finish`,
+  and `fail` belongs to a script's own functions. `passthrough` ends
+  nothing, so a shared module may return it.
+  `tests/integration/test_exit_gate.py` fails a `fail` or `finish` call
+  outside the entry block of an imported module, unless
+  `import_layers.may_end_the_process` names the module with its reason.
 - **Polyglot analogs:** TS → a single `index.ts` barrel; Go → package
   exports (capitalized identifiers); Rust → `pub` in `mod.rs`; Java →
   package-private by default + a public façade.
@@ -236,7 +265,10 @@ pre-commit hook) fails the build if the conventions above drift:
 | Corpus lifecycle | `status: deprecated` and `status: superseded` both require `superseded_by` |
 | Closed taxonomy (§2) | every non-hidden top-level directory is a §2 row or declared in `config/project.json` `structure.extra_toplevel`; a declared name exists and is not already a row; every top-level directory and every directory directly under `agents/` (each `agents/<name>/` and `agents/tools/`) has both `README.md` and `CLAUDE.md`; an undeclared symlinked directory warns; `structure.project_checks` is absent, null or a declared name, and a declared project-checks directory holds at least one module |
 | Package boundary (§3) | every `src/` dir with `.py` has an `__init__.py` that defines `__all__` |
-| `__init__` is the API (§3) | no absolute import of another package's `_private` module |
+| `__init__` is the API (§3) | no absolute import of another package's `_private` module, and no `from pkg import _sub` of a private submodule or subpackage from outside `pkg/` (a relative import that climbs out of the package is judged the same) |
+| Import layer order (§3) | not a `check_structure.py` letter: `tests/integration/test_import_layers_gate.py` (`make test`) resolves every import through `import_layers.search_roots` and fails one that points into a higher layer of `import_layers.order`, a file no prefix places, a prefix on disk that places no file, a malformed block and a walk with no edge. It cannot see an import made through `importlib`, `__import__` or a `sys.path` entry no search root names |
+| Swallowed errors (`docs/guides/python-style.md`) | not a `check_structure.py` letter: `tests/integration/test_swallowed_error_gate.py` (`make test`) fails a bare `except:`, and an `except Exception` or `except BaseException` with no `raise` whose body only passes, continues, breaks, or returns or assigns a fixed value such as `None`, `-1` or `[]`, unless a `# noqa: BLE001` or `# noqa: E722` on its clause gives a reason; it also fails every such suppression with a blank reason. It cannot see `contextlib.suppress`, or a handler that does work but never looks at the error |
+| Change-reporting comments (`docs/guides/python-style.md`) | not a `check_structure.py` letter, and a heuristic: `tests/integration/test_change_comment_gate.py` (`make test`) fails a comment that opens a thought with a `change_comments.phrases` phrase as a whole word (`# now uses X`, `# Fixed the off-by-one`), read through tokenize so a string is never a comment. It cannot see a phrase in mid-sentence or a change reported in other words |
 | Authored coverage (error) | every `__all__`-exported symbol defined in-file has a one-line docstring |
 | Module header (error) | every `.py` under the code roots opens with a docstring carrying explicit, non-empty `title:` and `summary:` lines — the grammar the corpus reads, its input contract (ADR-K-0008) |
 | Tool specs governed (error) | `agents/**/*.tool.md` carry valid `kind: tool` frontmatter + a resolvable `public_api` + a valid `tool_effect` |
@@ -257,13 +289,13 @@ pre-commit hook) fails the build if the conventions above drift:
 | Practice mechanisms (§15) | every `config/practices.json` entry's `enforced_by` names a mechanism that exists — a check letter defined in `check_structure.py`, a script, test or doc path (and numbered section) in the tree, a Makefile target; `ruff:`/`mypy:` codes are the tools' own vocabulary |
 | Policy reachability | a practice enforced BY a document names that document within one hop of the root `AGENT.md` — named there, or named in a document named there — so a rule an agent never reads cannot be declared enforced |
 | Writer rerun declaration (§7) | a module that writes to the filesystem declares `effect: writes` and what a second run does (`rerun:` — `fixed-point`, `append-only` or `unsafe`); a `fixed-point` claim names a `rerun_proof:` in the same grammar as `enforced_by` above. The detector resolves each call's base (`os.replace`, never `str.replace`), so it under-reports rather than over-reports: a declared write it cannot see is a stated WARN, never a pass. See [`docs/guides/idempotency.md`](docs/guides/idempotency.md) |
-| Make-target effect labels (§7) | every `## `-annotated Makefile target opens its help with one bracketed effect label — `local`, `tree`, `read`, `cost`, `write`, comma-separated in that order, `local` alone; a target annotated twice carries one label; a composite's label covers what its prerequisites and `$(MAKE)` calls reach; a `[write]` target (or one whose name ends in a `make_targets.write_shapes` suffix and that `make_targets.write_shape_exempt` does not name) opens its recipe with `$(WRITE_GUARD)` and no `-` prefix; a labelled recipe that calls `$(WRITE_GUARD)` anywhere in any line (a `$$`-escaped reference is text) is `[write]`; and the guard (make comments stripped) tests exactly the `make_targets.unattended_vars` names, has no `-` prefix of its own, and exits 1; the `make_targets` policy in `config/project.json` is well-formed. A recursion the check cannot resolve is a stated WARN. See [`docs/adr/keel/K-0011-make-target-effect-labels.md`](docs/adr/keel/K-0011-make-target-effect-labels.md) and, for the exemption and the converse, [`docs/adr/keel/K-0015-write-shape-exemptions-and-guarded-recipe-converse.md`](docs/adr/keel/K-0015-write-shape-exemptions-and-guarded-recipe-converse.md) |
+| Make-target effect labels (§7) | every `## `-annotated Makefile target opens its help with one bracketed effect label — `local`, `tree`, `read`, `cost`, `write`, comma-separated in that order, `local` alone; a target annotated twice carries one label; a composite's label covers what its prerequisites and `$(MAKE)` calls reach; a `[write]` target (or one whose name ends in a `make_targets.write_shapes` suffix and that `make_targets.write_shape_exempt` does not name) opens its recipe with `$(WRITE_GUARD)` and no `-` prefix; a labelled recipe that calls `$(WRITE_GUARD)` anywhere in any line (a `$$`-escaped reference is text) is `[write]`; and the guard (make comments stripped) opens with the `$(if $(findstring i,$(firstword -$(MAKEFLAGS))),$(error ...))` clause that stops make under `-i`, tests exactly the `make_targets.unattended_vars` names, has no `-` prefix of its own, and exits 1; no makefile holds a `.IGNORE` rule; the `make_targets` policy in `config/project.json` is well-formed. A recursion the check cannot resolve is a stated WARN. See [`docs/adr/keel/K-0011-make-target-effect-labels.md`](docs/adr/keel/K-0011-make-target-effect-labels.md) and, for the exemption and the converse, [`docs/adr/keel/K-0015-write-shape-exemptions-and-guarded-recipe-converse.md`](docs/adr/keel/K-0015-write-shape-exemptions-and-guarded-recipe-converse.md) |
 | Child-process environment (§7) | every subprocess/asyncio spawn in a `.py` at the root or under any top-level directory but `tests/` passes `env=` built by `build_child_env` (`scripts/child_env.py`), directly or through a name bound only to it and afterwards only read; `os.system`/`popen`/`exec*`/`spawn*`, `pty.spawn` and `subprocess.getoutput` are errors, as is a spawn API referenced without a call and a spawn name bound two ways in one scope; names resolve per Python scope; the helper's arguments never carry `os.environ`/`os.getenv`, directly or through a name within the module; `config/project.json` `child_env`, `models.credential_env`, `models.allowed_hosts` and `evidence.run_date` are well-formed and `child_env.names` lists the variable `evidence.run_date.env` names, no allowlist source admits a `child_env.repo_context_names` variable or a configuration-injection variable (`child_env.config_injection_names`, or a name under a `child_env.config_injection_prefixes` entry, a prefix covering one included), no name is both, `child_env.credential_value_patterns` is a non-empty map of label to a regular expression that compiles with no late global flag (an error names the label, never the pattern), `child_env.login_name_schemes` lists lower-case URL schemes, and `child_env.credentialed_values` names only a variable the allowlist copies, each with a reason. A spawn through an unresolvable receiver, and a parent value crossing a function parameter, are not seen. See [docs/adr/keel/K-0012-child-process-environment-allowlist.md](docs/adr/keel/K-0012-child-process-environment-allowlist.md) |
 | ADR number spaces (§19) | `config/project.json` `adr` is well-formed once the tree holds a `kind: adr` document; an ADR in the project space is `NNNN-<slug>.md` and never carries the template prefix; an ADR in the template space is `<prefix>NNNN-<slug>.md` and is one `adr.template_adrs` lists, and every listed name is a file there; a `kind: adr` document lives directly in one of the two spaces; a number is unique within its space (once in each space is clean); an ADR's frontmatter `kind` is `adr` and its `title` begins `ADR-NNNN:` or `ADR-<prefix>NNNN:` for its own file. Both spaces empty is a WARN. A kept copy of a retired template ADR shares its `id:` with the template's file, which check_A reports. See [docs/adr/keel/K-0013-template-and-project-adr-number-spaces.md](docs/adr/keel/K-0013-template-and-project-adr-number-spaces.md) |
 | Work naming (§20) | `config/project.json` `work_naming` is well-formed once the tree holds a plan doc; every first cell of a plan doc's slice table is a slice id; a slice table sits under exactly one campaign heading, its rows name that campaign and run from `S1` in document order (a duplicate names both lines, a gap names the missing slice); a campaign is declared by one heading across all plan docs, and campaigns run from 1 with no gap; a mention in any Markdown prose, bare or with the project's own `name:` prefix, names a declared campaign or slice, and an id-shaped token outside the grammar (`CMP-1.S02`) is an error, not a mention of its campaign. A plan doc that declares no slice is a WARN. `tests/integration/test_work_trailers.py` judges the `Slice:` and `Backlog:` commit trailers, because check_structure does not read git |
 | Shipped-doc drift (§15) | a shipped document (any Markdown outside `doc_drift.history_paths`, and its `.md.jinja` twin) names in prose no concrete campaign or slice id in the `work_naming` grammar, whatever its prefix, and no `doc_drift.forbidden_phrases` pattern; a loopback port it names, fenced or not, is declared by some non-Markdown file (a git-ignored file is not read, since generated views copy Markdown text); and it cites no document copier.yml `_exclude`s unconditionally (template only). Code spans and fences are illustrations. Not in `check_structure.py`: `tests/integration/test_doc_drift.py` is a pytest gate under `make verify` and `make test`, not pre-commit, because it reads copier.yml through yaml and the file list through git. The same test holds the newcomer documents `doc_drift` names: the entry documents' direct links, the README layout tree, each guide's audience, the limits guide's waivers and exit codes, and the upgrade guide's copier steps. `tests/integration/test_reference_drift.py`, also a pytest gate under `make verify` and `make test`, holds the two reference documents `doc_drift` names: the settings reference's rows equal every setting the tree reads, each with its literal default, and the feature catalogue's rows equal every feature the tree declares, each stating its limits and a Ships cell that copier.yml `_exclude` agrees with under every answer set copier.yml allows |
 | Requirement traceability (§17) | not a `check_structure.py` letter: `scripts/trace_requirements.py` (`make trace`, a `make verify` goal) and `tests/integration/test_requirement_traceability.py` (`make test`) fail when a requirement or numbered criterion a `kind: spec` document under `traceability.specs_root` defines is named by no `@pytest.mark.req` on a collected test and by no `traceability.gaps` row with a reason; a marker or gap naming no defined unit, a gap for a covered unit, an id under a prefix `traceability.id_prefixes` does not list, and zero requirements with no `traceability.no_requirements` reason are red too |
-| Exit helper (`docs/guides/python-style.md`) | not a `check_structure.py` letter: `tests/integration/test_exit_gate.py` (`make test`) reads every Python file's syntax tree and fails an exit written outside `scripts/exit_codes.py` (`sys.exit`, `os._exit`, an argparse `.exit(...)`, `raise SystemExit`, a SystemExit subclass, the builtins `exit` and `quit`, each of those reached through `builtins`, and an import that renames one), an entry block whose `finish(...)` is handed anything that cannot be read as an `ExitCode` member returned through `report(...)` or a wrapped tool's status returned through `passthrough(...)`, a returned name bound by anything but a plain assignment, an entry block that calls a function of its module and drops the value it returns, and a `report` or `fail` call with a missing or blank-literal message part or a code that is not a failure member; `scripts/exit_code_table.py --check` (`make check-exit-codes`, from `make check-all`) fails when the exit-code table in the `doc_drift.limits_guide` document is not what the enum and the scripts `make <doc_drift.gate_target>` runs say, in either direction. Neither sees an exit reached through `getattr`, `os.abort`, `os.kill` or an uncaught exception, argparse's own `--help` and usage exits, a status dropped by another callable (`asyncio.run(main())`), or whether a message part is useful |
+| Exit helper (`docs/guides/python-style.md`) | not a `check_structure.py` letter: `tests/integration/test_exit_gate.py` (`make test`) reads every Python file's syntax tree and fails an exit written outside `scripts/exit_codes.py` (`sys.exit`, `os._exit`, an argparse `.exit(...)`, `raise SystemExit`, a SystemExit subclass, the builtins `exit` and `quit`, each of those reached through `builtins`, and an import that renames one), an entry block whose `finish(...)` is handed anything that cannot be read as an `ExitCode` member returned through `report(...)` or a wrapped tool's status returned through `passthrough(...)`, a returned name bound by anything but a plain assignment, an entry block that calls a function of its module and drops the value it returns, and a `report` or `fail` call with a missing or blank-literal message part or a code that is not a failure member, and a `fail` or `finish` call outside the entry block of a module another project module imports (§3); `scripts/exit_code_table.py --check` (`make check-exit-codes`, from `make check-all`) fails when the exit-code table in the `doc_drift.limits_guide` document is not what the enum and the scripts `make <doc_drift.gate_target>` runs say, in either direction. Neither sees an exit reached through `getattr`, `os.abort`, `os.kill` or an uncaught exception, argparse's own `--help` and usage exits, a status dropped by another callable (`asyncio.run(main())`), or whether a message part is useful |
 
 Missing `owner` is a warning, not a failure. If you change the scheme
 (KINDS / LAYERS / STATUSES / VISIBILITIES) or a check, update **both**

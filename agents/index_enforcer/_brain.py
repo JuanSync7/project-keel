@@ -179,8 +179,9 @@ def _commit(state):
 
 
 # --- the plan: control flow as data, with a durable fill loop ------------------
-# The clauses that used to be inline `if execute and ... and not s_errors` are
-# now named edge predicates. `execute` is the runtime's job for the dry-run guard
+# Each clause of the route is a named edge predicate rather than one inline
+# `if execute and ... and not s_errors`, so the runtime reads the plan as data.
+# `execute` is the runtime's job for the dry-run guard
 # AND a domain-state key so the loop predicate is engine-neutral (the runtime's
 # internal flag isn't visible to edge predicates).
 

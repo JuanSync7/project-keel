@@ -7,7 +7,7 @@ owner: TBD
 summary: Global rules for any agent working in this repo.
 id: agent
 created: 2026-06-17
-updated: 2026-10-12
+updated: 2026-10-15
 visibility: internal
 canonical: true
 ---
@@ -67,14 +67,22 @@ of truth for labeling and the directory taxonomy. Each directory's own
 - **End every process through the exit helper.** A script's entry line is
   `finish(main())`, and `main` returns a member of `ExitCode` from
   `scripts/exit_codes.py`: `report(member, what failed, on which input, what
-  to do next)` for a failure, `passthrough(...)` for a wrapped tool's status.
+  to do next)` for a failure, `passthrough(...)` for a wrapped tool's status,
+  read where the script ran the tool and never `main`'s own result or a
+  literal.
+  A module another project module imports raises or returns and never calls
+  `fail` or `finish` outside its entry block; `passthrough` ends nothing.
   `tests/integration/test_exit_gate.py` fails any other exit and a blank
   message part. `make exit-codes` regenerates the exit-code table in
   `docs/guides/limits-and-troubleshooting.md`, and `make check-exit-codes`
   fails a stale one.
 - **Respect the `__init__.py` boundary.** Import a package's public
-  symbols from the package, never from its private (`_*`) submodules.
+  symbols from the package, never from its private (`_*`) submodules,
+  `from pkg import _sub` included (check_D).
   When you add a public symbol, add it to `__all__` and re-export it.
+  Imports flow up `config/project.json` `import_layers.order`: a lower
+  layer never imports a higher one
+  (`tests/integration/test_import_layers_gate.py`).
 - **Label new dirs.** A new top-level directory is not done until it is a
   CONVENTIONS §2 row or declared in `config/project.json`
   `structure.extra_toplevel`, and has a `README.md` and `CLAUDE.md` with valid

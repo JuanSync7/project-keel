@@ -3,7 +3,7 @@
 title: long_scripts — propose launch keys whose last recorded run was long
 kind: script
 layer: n/a
-summary: Reads the durations file scripts/launch.py writes (config/project.json `launcher.durations_file`) and proposes each launch key whose last measured run took longer than `launcher.long_after_seconds` and that `launcher.long_scripts` does not list, whatever the run's outcome, because the duration is the fact. It never edits config: a proposal is a stdout line naming the key, the seconds, the outcome and the config key to add it under, and a person decides. An entry with no duration (incomplete, no-capacity) or one that is malformed is unjudged and counts neither way, and is printed as an `unjudged:` line. It ends on one of three verdicts: exit 0 when it judged at least one run and none is over and unlisted, exit 1 when it proposes a key, and exit 1 when it judged nothing, because a pass over zero records is not "none is long". It refuses with exit 2 a config block launch.py's loader rejects, a durations file reached through a symlink, one git would list, a git that ran and failed, and a file that is not a JSON object. Stdlib-only and 3.6-safe, for the reason launch.py is.
+summary: Reads the durations file scripts/launch.py writes (config/project.json `launcher.durations_file`) and proposes each launch key whose last measured run took longer than `launcher.long_after_seconds` and that `launcher.long_scripts` does not list, whatever the run's outcome, because the duration is the fact. It never edits config: a proposal is a stdout line naming the key, the seconds, the outcome and the config key to add it under, and a person decides. An entry with no duration (incomplete, no-capacity) or one that is malformed is unjudged and counts neither way, and is printed as an `unjudged:` line. It ends on one of three verdicts: exit 0 when it judged at least one run and none is over and unlisted, exit 1 when it proposes a key, and exit 13 (ExitCode.NOTHING_JUDGED) when it judged nothing, because a pass over zero records is neither "none is long" nor a proposal. It refuses with exit 2 a config block launch.py's loader rejects, a durations file reached through a symlink, one git would list, a git that ran and failed, and a file that is not a JSON object. Stdlib-only and 3.6-safe, for the reason launch.py is.
 effect: read-only
 """
 
@@ -178,7 +178,7 @@ def main(argv=None):
         sys.stdout.write("unjudged: %s (%s)\n" % (json.dumps(key), reason))
     if found.verdict == "nothing-judged":
         return report(
-            ExitCode.FAILURE,
+            ExitCode.NOTHING_JUDGED,
             "long_scripts: no recorded runs, so nothing was judged",
             cfg.durations_file,
             "run a long script through scripts/launch.py, then run this again",

@@ -2,7 +2,7 @@
 title: Integration — the gate's scope is the whole corpus, not a hand-written subset
 kind: tests
 layer: n/a
-summary: Pass 3's contract, read off the REAL Makefile recipes, the REAL pyproject and the REAL .pre-commit-config.yaml. (1) `lint-py` and `fmt` must cover every entry of `CODE_ROOTS` — imported from scripts/check_structure.py, never re-typed here, so the three scope lists cannot drift. (2) mypy's scope must ACCOUNT for every code root: each is either inside `[tool.mypy] files` or a declared, reasoned entry in config/practices.json rulesets.mypy.ratchet — a root may not simply be unmentioned. (3) ruff must actually be clean over that scope. (4) The FE gates must SKIP, not hard-fail, when npm is absent (`command -v npm || exit 0` exits only its own recipe sub-shell). (5) Every bare-`python3` pre-commit entry must be legal under the documented old interpreter, since pre-commit `language: system` hooks exec the ambient python3. (6) The tools whose output IS the gate's verdict — ruff, mypy — must be pinned exactly in the `dev` extra, and pre-commit must run the SAME ruff, or the same tree gets different verdicts in different places. (7) Every frontend app the Makefile's FE_APPS glob finds wires a unit runner and a browser journey that `make verify` reaches and `make test` does not: each npm script the test-fe recipes run is defined, the unit config refuses zero tests and a focused test and never collects the journeys, the journey config refuses a focused test, both suites hold at least one file, the journey config reads every config/project.json `layers.frontend.journey` key and spells no port, and the browser runner is pinned to one exact version every app and lockfile agree on. Imports nothing optional: this pin must never itself skip.
+summary: Pass 3's contract, read off the REAL Makefile recipes, the REAL pyproject and the REAL .pre-commit-config.yaml. (1) `lint-py` and `fmt` must cover every entry of `CODE_ROOTS` — imported from scripts/check_structure.py, never re-typed here, so the three scope lists cannot drift. (2) mypy's scope must ACCOUNT for every code root: each is either inside `[tool.mypy] files` or a declared, reasoned entry in config/practices.json rulesets.mypy.ratchet — a root may not simply be unmentioned. (3) ruff must actually be clean over that scope. (4) The static FE gates (lint-fe, typecheck-fe) SKIP when npm is absent; the frontend suites and `fe-browsers` exit 2 naming the target, the app and `make fe-install` when npm is absent or any app lacks node_modules, checked for every app before any suite runs, and every FE target is silent and green on a repo with no frontend app; CI installs the packages and the journey's browser before it runs `make test-fe`, and no CI step carries on past a failure. (5) Every bare-`python3` pre-commit entry must be legal under the documented old interpreter, since pre-commit `language: system` hooks exec the ambient python3. (6) The tools whose output IS the gate's verdict — ruff, mypy — must be pinned exactly in the `dev` extra, and pre-commit must run the SAME ruff, or the same tree gets different verdicts in different places. (7) Every frontend app the Makefile's FE_APPS glob finds wires a unit runner and a browser journey that `make verify` reaches and `make test` does not: each npm script the test-fe and fe-browsers recipes run is defined, the unit config refuses zero tests and a focused test and never collects the journeys, the journey config refuses a focused test, both suites hold at least one file, the journey config reads every config/project.json `layers.frontend.journey` key and spells no port, and the browser runner is pinned to one exact version every app and lockfile agree on. Imports nothing optional: this pin must never itself skip.
 """
 
 import ast
@@ -214,7 +214,7 @@ def test_typecheck_py_takes_its_scope_from_the_config():
     )
 
 
-# --- the FE gates skip, not fail, without npm -------------------------------
+# --- the FE gates: lint skips without npm, a suite refuses -------------------
 
 
 # Every per-app frontend gate and the npm script it runs in each app.
@@ -223,25 +223,29 @@ _FE_GATE_SCRIPTS = [
     ("typecheck-fe", "typecheck"),
     ("test-fe-unit", "test:unit"),
     ("test-fe-e2e", "test:e2e"),
+    ("fe-browsers", "test:e2e:browsers"),
 ]
 _FE_GATES = [target for target, _script in _FE_GATE_SCRIPTS]
+# The static gates still skip without npm or node_modules; the suites, and the
+# browser download that feeds one, refuse instead, because a suite that ran
+# nothing is not a pass.
+_FE_SKIPPING = ["lint-fe", "typecheck-fe"]
+_FE_REFUSING = ["test-fe-unit", "test-fe-e2e", "fe-browsers"]
+_FE_INSTALL = "make fe-install"
 
 
-def _fe_app(tmp_path):
+def _fe_app(tmp_path, name="webapp", node_modules=True):
     """A minimal FE app the Makefile's FE_APPS shape can point at."""
-    app = tmp_path / "fe" / "webapp"
-    (app / "node_modules").mkdir(parents=True)
+    app = tmp_path / "fe" / name
+    app.mkdir(parents=True)
+    if node_modules:
+        (app / "node_modules").mkdir()
     (app / "package.json").write_text(
         json.dumps(
             {
                 "name": "probe",
                 "private": True,
-                "scripts": {
-                    "lint": "true",
-                    "typecheck": "true",
-                    "test:unit": "true",
-                    "test:e2e": "true",
-                },
+                "scripts": {script: "true" for _target, script in _FE_GATE_SCRIPTS},
             }
         )
     )
@@ -261,7 +265,7 @@ def _run_make(target, fe_apps, path_env):
 
 
 @pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
-@pytest.mark.parametrize("target", _FE_GATES)
+@pytest.mark.parametrize("target", _FE_SKIPPING)
 def test_fe_gate_skips_when_npm_is_absent(tmp_path, target):
     """`command -v npm >/dev/null || { echo skipping; exit 0; }` is its OWN shell: the
     `exit 0` ends that line, and make runs the loop on the next line anyway, which
@@ -283,17 +287,73 @@ def test_fe_gate_skips_when_npm_is_absent(tmp_path, target):
 
 
 @pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
+@pytest.mark.parametrize("target", _FE_REFUSING)
+def test_fe_suite_refuses_when_npm_is_absent(tmp_path, target):
+    """A frontend suite that could not run tested nothing, so it exits 2, the
+    refusal code run-web uses, naming itself, the app and the fix. PATH is an
+    empty directory, as above."""
+    emptybin = tmp_path / "emptybin"
+    emptybin.mkdir()
+    app = _fe_app(tmp_path)
+    r = _run_make(target, app, str(emptybin))
+    assert r.returncode == 2 and "Error 2" in r.stderr, r.stdout + r.stderr
+    assert target + ": npm is not on PATH" in r.stderr, r.stderr
+    assert app in r.stderr and _FE_INSTALL in r.stderr, r.stderr
+
+
+def _recording_npm(tmp_path):
+    """A directory holding an `npm` that records each call and exits 0."""
+    bindir = tmp_path / "fakebin"
+    bindir.mkdir()
+    log = tmp_path / "npm-calls.log"
+    npm = bindir / "npm"
+    npm.write_text('#!/bin/sh\necho "$*" >> %s\nexit 0\n' % shlex.quote(str(log)))
+    npm.chmod(0o755)
+    return bindir, log
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
+@pytest.mark.parametrize("target", _FE_REFUSING)
+def test_fe_suite_refuses_an_app_without_node_modules(tmp_path, target):
+    """Every app is checked before any suite runs, so one installed app ahead of
+    an uninstalled one runs nothing: the refusal names the uninstalled app and
+    npm is never called."""
+    bindir, log = _recording_npm(tmp_path)
+    ready = _fe_app(tmp_path, "ready")
+    bare = _fe_app(tmp_path, "bare", node_modules=False)
+    r = _run_make(target, ready + " " + bare, str(bindir) + ":/usr/bin:/bin")
+    assert r.returncode == 2 and "Error 2" in r.stderr, r.stdout + r.stderr
+    assert target + ": " + bare + " has no node_modules" in r.stderr, r.stderr
+    assert _FE_INSTALL in r.stderr, r.stderr
+    assert not log.exists(), "npm ran before the refusal: %s" % log.read_text()
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
+@pytest.mark.parametrize("target", _FE_REFUSING)
+def test_fe_suite_runs_every_installed_app(tmp_path, target):
+    """The control for the two refusals: with npm present and every app
+    installed, each app's script runs once and the target passes."""
+    bindir, log = _recording_npm(tmp_path)
+    apps = [_fe_app(tmp_path, "one"), _fe_app(tmp_path, "two")]
+    r = _run_make(target, " ".join(apps), str(bindir) + ":/usr/bin:/bin")
+    assert r.returncode == 0, r.stdout + r.stderr
+    script = dict(_FE_GATE_SCRIPTS)[target]
+    calls = log.read_text().splitlines()
+    assert len(calls) == 2 and all(script in c for c in calls), calls
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
 @pytest.mark.parametrize("target", _FE_GATES)
 def test_fe_gate_is_silent_on_a_repo_with_no_frontend(tmp_path, target):
     """copier.yml prunes src/frontend entirely for `frontend_stack: none`, so
-    FE_APPS-empty is a real downstream shape. It must exit 0 AND say nothing about
-    npm — a backend-only project has no frontend to skip."""
+    FE_APPS-empty is a real downstream shape. It must exit 0 AND say nothing:
+    a backend-only project has no frontend to skip or refuse."""
     emptybin = tmp_path / "emptybin"
     emptybin.mkdir()
     r = _run_make(target, "", str(emptybin))
     assert r.returncode == 0, r.stdout + r.stderr
-    assert "npm not found" not in r.stdout, (
-        "a repo with no frontend is told npm is missing:\n%s" % r.stdout
+    assert r.stdout.strip() == "" and r.stderr.strip() == "", (
+        "a repo with no frontend is told about npm:\n%s" % (r.stdout + r.stderr)
     )
 
 
@@ -341,6 +401,9 @@ _JOURNEY_CONFIG = "playwright.config.ts"
 _BROWSER_RUNNER = "@playwright/test"
 _FE_SUITE_TARGETS = ("test-fe-unit", "test-fe-e2e")
 _FE_SUITES = "test-fe"
+# The target that downloads the browser the journey drives: outside `verify`,
+# run once per host and by CI before the suites.
+_FE_BROWSERS = "fe-browsers"
 _EXACT_VERSION = re.compile(r"^\d+\.\d+\.\d+$")
 # The variable the browser runner reads for its browser cache's location: a
 # fact of the runner, like _BROWSER_RUNNER, not of this project.
@@ -384,12 +447,13 @@ def _fe_app_dirs():
 
 
 def _suite_scripts():
-    """{gate target: the npm script its recipe runs in each app}."""
+    """{frontend suite or browser target: the npm script its recipe runs in each
+    app}."""
     rules = {}
     for rule in cs.make_target_rules((_ROOT / "Makefile").read_text("utf-8")):
         rules.setdefault(rule.target, rule)
     out = {}
-    for target in _FE_SUITE_TARGETS:
+    for target in _FE_SUITE_TARGETS + (_FE_BROWSERS,):
         assert target in rules, "the Makefile has no `%s` target" % target
         scripts = set(
             re.findall(
@@ -590,9 +654,9 @@ def test_every_frontend_app_wires_both_suites():
 
 
 def test_verify_reaches_the_frontend_suites():
-    """`make verify` must run both frontend suites, and `make test` must not: CI
-    runs `make test` with no browser cache, and JUNIT_XML is pytest's report, the
-    evidence record's only source of counts."""
+    """`make verify` must run both frontend suites, and `make test` must not:
+    JUNIT_XML is pytest's report, the evidence record's only source of counts,
+    and CI runs `make test-fe` as a step of its own after `make fe-browsers`."""
     rules = _merged_rules()
     for target in _FE_SUITE_TARGETS + (_FE_SUITES,):
         assert target in rules, "the Makefile has no `%s` target" % target
@@ -601,6 +665,54 @@ def test_verify_reaches_the_frontend_suites():
     assert missing == [], "`make verify` never reaches %s" % missing
     leaked = sorted(set(_FE_SUITE_TARGETS + (_FE_SUITES,)) & _reach(rules, "test"))
     assert leaked == [], "`make test` reaches %s; it must stay pytest's alone" % leaked
+
+
+def _ci_run_lines():
+    """[(step index, run command, continue-on-error value or None)] for every
+    step of the CI workflow, in order. Stdlib line-scanning, for the reason
+    _precommit_python3_entries gives: a yaml import would make this skip."""
+    ci = _ROOT / ".github" / "workflows" / "ci.yml"
+    if not ci.is_file():
+        return None
+    steps = []
+    for line in ci.read_text("utf-8").splitlines():
+        body = line.strip()
+        if body.startswith("- "):
+            steps.append({"run": None, "continue": None})
+            body = body[2:].strip()
+        if not steps:
+            continue
+        key, sep, value = body.partition(":")
+        if not sep:
+            continue
+        value = value.split("#", 1)[0].strip()
+        if key == "run":
+            steps[-1]["run"] = value
+        elif key == "continue-on-error":
+            steps[-1]["continue"] = value
+    return [(i, st["run"], st["continue"]) for i, st in enumerate(steps) if st["run"]]
+
+
+def _ci_step_of(runs, target):
+    hits = [i for i, run, _c in runs if run.split()[:2] == ["make", target]]
+    assert hits, "no CI step runs `make %s`" % target
+    return hits[0]
+
+
+def test_ci_runs_the_frontend_suites_after_installing_them():
+    """CI ran `make test`, which never reaches the frontend suites, so a frontend
+    that broke its own tests stayed green there. The suites run as a step after
+    the packages and the journey's browser are installed, and no step may carry
+    on past a failure of either."""
+    runs = _ci_run_lines()
+    if runs is None:
+        pytest.skip("no CI workflow in this project")
+    install = _ci_step_of(runs, "fe-install")
+    browsers = _ci_step_of(runs, _FE_BROWSERS)
+    suites = _ci_step_of(runs, _FE_SUITES)
+    assert install < browsers < suites, (install, browsers, suites)
+    soft = [run for i, run, cont in runs if cont not in (None, "false")]
+    assert soft == [], "CI steps that carry on past a failure: %s" % soft
 
 
 def test_the_browser_cache_location_reaches_every_verify_goal(monkeypatch):

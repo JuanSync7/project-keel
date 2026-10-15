@@ -96,6 +96,8 @@ export default defineConfig({
     launchOptions:
       journey.browser_executable === null ? {} : { executablePath: journey.browser_executable },
   },
+  // package.json test:e2e:browsers (`make fe-browsers`) downloads this same
+  // browser; change the two together.
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: {
     // --strictPort: vite preview otherwise moves to the next free port and the

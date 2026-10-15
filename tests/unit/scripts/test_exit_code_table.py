@@ -2,7 +2,7 @@
 title: Unit — exit_code_table (the generated exit-code table and the reader of what a script exits with)
 kind: tests
 layer: n/a
-summary: read_members reads the enum from the helper's syntax tree in value order and refuses a missing class, a member that is not three literals, a shared value and a text that cannot be a table cell. read_script follows an entry function to the members it returns, counts a `fail` call anywhere in the module, marks a passed-through status, and reports a bare integer, an unknown member and a function that can reach its end without returning as findings, never as codes. split_region refuses a marker that is missing, repeated or out of order. render and exit_cell are pure and sorted. load_policy names the config key it cannot read. main writes the region, leaves every byte outside it alone, keeps a CRLF guide CRLF, reaches a fixed point on the second run, exits 1 from --check on a stale table and 2 when it refuses, and refuses a guide reached through a symlink without writing through it.
+summary: read_members reads the enum from the helper's syntax tree in value order and refuses a missing class, a member that is not three literals, a shared value and a text that cannot be a table cell. read_script follows an entry function to the members it returns, counts a `fail` call anywhere in the module, marks a passed-through status read from a tool, refuses a `passthrough` of the entry function's result, a literal, a member or a module function returning only those, also signed, combined by arithmetic or `or`, or through a builtin such as `int`, while a child's status through the same forms reads, refuses `finish(passthrough(...))` on the entry line, and reports a bare integer, an unknown member and a function that can reach its end without returning as findings, never as codes. split_region refuses a marker that is missing, repeated or out of order. render and exit_cell are pure and sorted. load_policy names the config key it cannot read. main writes the region, leaves every byte outside it alone, keeps a CRLF guide CRLF, reaches a fixed point on the second run, exits 1 from --check on a stale table and 2 when it refuses, and refuses a guide reached through a symlink without writing through it.
 """
 
 import json
@@ -239,6 +239,136 @@ def test_read_script_reports_a_return_outside_the_grammar_and_reads_no_code_from
     # process exits with; no other unreadable return yields a name.
     assert reading.names <= {"SUCCESS", "USAGE"} and not reading.passes
     assert ("USAGE" in reading.names) == ("return ExitCode.USAGE" in body)
+
+
+# A status the script chose itself, handed to `passthrough` as if a wrapped
+# tool had produced it: each is a finding at the `passthrough` call's line.
+_OWN_STATUS = "passthrough wraps a wrapped tool's status, never this script's own"
+
+
+@pytest.mark.parametrize(
+    ("body", "line"),
+    [
+        ("def main():\n    return passthrough(main())\n", 4),
+        ("def main():\n    rc = main()\n    return passthrough(rc)\n", 5),
+        (
+            "def main2():\n    if x:\n        return 1\n    return 0\n\n"
+            "def main():\n    return passthrough(main2())\n",
+            9,
+        ),
+        ("def main():\n    return passthrough(0)\n", 4),
+        ("def main():\n    rc = 1 if x else 0\n    return passthrough(rc)\n", 5),
+        (
+            "def _check():\n    return report(ExitCode.USAGE, 'a', 'b', 'c')\n\n"
+            "def main():\n    return passthrough(_check())\n",
+            7,
+        ),
+        ("def main():\n    rc = rc\n    return passthrough(rc)\n", 5),
+        ("def main():\n    return passthrough(-1)\n", 4),
+        ("def main():\n    return passthrough(int(main()))\n", 4),
+        ("def main():\n    return passthrough(int(str(main())))\n", 4),
+        ("def main():\n    return passthrough(max(main(), 1))\n", 4),
+        ("def main():\n    return passthrough(main() or 0)\n", 4),
+        ("def main():\n    return passthrough(main() + 0)\n", 4),
+        (
+            "def main2():\n    return 1 if x else 0\n\n"
+            "def main():\n    return passthrough(int(main2()))\n",
+            7,
+        ),
+    ],
+    ids=[
+        "the entry function",
+        "a name bound to the entry function",
+        "a module function returning its own integers",
+        "a literal",
+        "a name bound to literals",
+        "a module function returning a member",
+        "a name bound to itself",
+        "a negative literal",
+        "the entry function through a builtin",
+        "the entry function through two builtins",
+        "the entry function among literals through a builtin",
+        "the entry function or a literal",
+        "the entry function plus a literal",
+        "a module function returning integers through a builtin",
+    ],
+)
+def test_passthrough_of_the_entry_function_is_refused(tmp_path, body, line):
+    reading = _reading(tmp_path, body)
+    said = [f for f in reading.findings if _OWN_STATUS in f]
+    assert said and all(f.startswith("scripts/tool.py:%d: " % line) for f in said), (
+        reading.findings
+    )
+    assert not reading.passes, reading
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        "    finish(passthrough(main()))\n",
+        "    rc = main()\n    finish(passthrough(rc))\n",
+        "    finish(passthrough(subprocess.run(['tool']).returncode))\n",
+    ],
+    ids=["of main", "of a name bound to main", "of a wrapped status"],
+)
+def test_finish_of_passthrough_is_refused(tmp_path, entry):
+    tool = (
+        "import subprocess\n" + _PRELUDE + "def main():\n"
+        "    return passthrough(subprocess.run(['tool']).returncode)\n\n"
+        "if __name__ == '__main__':\n" + entry
+    )
+    root = _project(tmp_path, tool=tool)
+    members = et.read_members(str(root))
+    reading = et.read_script(
+        str(root / "scripts" / "tool.py"), "scripts/tool.py", members
+    )
+    line = 7 + entry.count("\n")
+    assert (
+        "scripts/tool.py:%d: the entry line is finish(main()); call passthrough "
+        "inside main where the wrapped tool's status is read" % line
+    ) in reading.findings, reading.findings
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "import subprocess\n\n"
+        "def main():\n    return passthrough(subprocess.run(['x']).returncode)\n",
+        "def main():\n    return passthrough(target['returncode'])\n",
+        "import subprocess\n\n"
+        "def _run():\n    return subprocess.run(['x']).returncode\n\n"
+        "def main():\n    return passthrough(_run())\n",
+        # A function that turns another process's status into an int: one of
+        # its returns reads that status, so it is not the script's own choice.
+        "def _status(code):\n    if code is None:\n        return 0\n"
+        "    return code & 255\n\n"
+        "def main():\n    try:\n        run()\n    except SystemExit as stop:\n"
+        "        return passthrough(_status(stop.code))\n"
+        "    return ExitCode.SUCCESS\n",
+        "import subprocess\n\n"
+        "def main():\n    return passthrough(int(subprocess.call(['x'])))\n",
+        "import subprocess\n\n"
+        "def main():\n    return passthrough(subprocess.call(['x']) or 0)\n",
+        # A builtin the module rebinds is the module's own function, followed
+        # to its returns like any other.
+        "import subprocess\n\n"
+        "def int(value):\n    return subprocess.call([value])\n\n"
+        "def main():\n    return passthrough(int(3))\n",
+    ],
+    ids=[
+        "a child's returncode",
+        "a recorded status",
+        "a helper that runs the tool",
+        "a helper that converts the tool's status",
+        "a child's status through a builtin",
+        "a child's status or a literal",
+        "a module function that shadows a builtin",
+    ],
+)
+def test_passthrough_of_a_wrapped_status_reads(tmp_path, body):
+    reading = _reading(tmp_path, body)
+    assert reading.findings == []
+    assert reading.passes
 
 
 def test_exit_codes_maps_names_to_values_by_the_given_root(tmp_path):

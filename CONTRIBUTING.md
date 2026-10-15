@@ -7,7 +7,7 @@ owner: TBD
 summary: How to add code/tests/docs without breaking the structure.
 id: contributing
 created: 2026-06-17
-updated: 2026-10-12
+updated: 2026-10-15
 visibility: internal
 canonical: true
 ---
@@ -42,8 +42,9 @@ steps below are that discipline applied to one change:
    `docs/reference/settings.md` in the same change;
    `tests/integration/test_reference_drift.py` fails until it has one.
    A new feature of a derived shape (a check letter, make target, checker
-   script, copier job, agent, MCP server, model or runtime adapter, workflow
-   or skill) gets its row, with its limits, in `docs/reference/features.md`;
+   script, copier job, gate test, scripts module another module imports,
+   agent, MCP server, model or runtime adapter, workflow or skill) gets its
+   row, with its limits, in `docs/reference/features.md`;
    the same test fails until it has one.
 8. Run `make verify` (the full gate) — or at least `make lint test` — before
    pushing; treat green as the definition of done, not your own assessment.

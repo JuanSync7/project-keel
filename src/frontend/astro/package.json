@@ -10,7 +10,8 @@
     "lint": "eslint .",
     "typecheck": "astro check",
     "test:unit": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:e2e:browsers": "playwright install chromium"
   },
   "dependencies": {
     "@fontsource-variable/dm-sans": "^5.2.8",

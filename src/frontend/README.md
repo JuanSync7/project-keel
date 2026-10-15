@@ -9,7 +9,7 @@ tags: []
 summary: UI / client code. Two reference apps; generation keeps the one you choose.
 id: src-frontend-readme
 created: 2026-06-17
-updated: 2026-10-10
+updated: 2026-10-15
 visibility: internal
 canonical: true
 ---
@@ -43,7 +43,11 @@ runs as its `test-fe` goal. The unit runner is the npm script `test:unit`
 browser journey is the npm script `test:e2e` (Playwright,
 `playwright.config.ts`) over `e2e/*.spec.ts`: it builds the app, serves it on
 config/project.json `layers.frontend.journey` `host` and `port`, and drives it
-in headless chromium. A suite with zero tests fails, and an app without
-`node_modules` skips both. `tests/integration/test_gate_scope.py` holds every
-app to both scripts, both configs and a file in each suite. `docs/guides/dev-loops.md`
+in headless chromium. A suite with zero tests fails. With a frontend app
+present, a host without `npm` or an app without `node_modules` makes
+`make test-fe-unit` and `make test-fe-e2e` exit 2 before any app runs, naming
+`make fe-install`, because a suite that ran nothing is not a pass. The journey's browser is a separate download:
+`make fe-browsers` runs each app's npm script `test:e2e:browsers`.
+`tests/integration/test_gate_scope.py` holds every app to the npm script each
+of those make targets runs, both configs and a file in each suite. `docs/guides/dev-loops.md`
 says where these suites sit beside the backend's `tests/e2e/`.

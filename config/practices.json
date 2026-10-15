@@ -252,11 +252,12 @@
       "tier": "gate",
       "status": "on",
       "title": "Preserve the cause; never blind-except",
-      "mechanism": "ruff B904 (raise ... from) + BLE001 (blind except)",
+      "mechanism": "ruff B904 (raise ... from) + BLE001 (blind except); tests/integration/test_swallowed_error_gate.py -- a bare except, or a broad handler whose body only passes, continues, breaks or returns a constant, is red unless its BLE001/E722 suppression gives a reason, and a suppression with a blank reason is red",
       "subject": "code",
       "enforced_by": [
         "ruff:B904",
-        "ruff:BLE001"
+        "ruff:BLE001",
+        "test:tests/integration/test_swallowed_error_gate.py"
       ]
     },
     {
@@ -295,13 +296,14 @@
       "tier": "gate",
       "status": "on",
       "title": "Public API via __init__/__all__; no cross-package _private import",
-      "mechanism": "check_structure.py check_C/check_D/check_E + ruff I",
+      "mechanism": "check_structure.py check_C/check_D/check_E + ruff I; check_D also refuses `from pkg import _sub` of a private submodule from outside pkg; tests/integration/test_import_layers_gate.py -- an import into a higher layer of config/project.json import_layers.order is red",
       "subject": "code",
       "enforced_by": [
         "check:C",
         "check:D",
         "check:E",
-        "ruff:I"
+        "ruff:I",
+        "test:tests/integration/test_import_layers_gate.py"
       ]
     },
     {
@@ -705,11 +707,25 @@
       "tier": "gate",
       "status": "on",
       "title": "A process ends through one helper, with a code from one closed list and a message in three parts",
-      "mechanism": "tests/integration/test_exit_gate.py -- every Python file's syntax tree: an exit outside scripts/exit_codes.py (sys.exit, os._exit, an argparse .exit, raise SystemExit, exit, quit) is red, an entry block ends on finish(main()) with main returning an ExitCode member through report(member, what failed, on which input, what to do next) or a wrapped tool's status through passthrough, and a missing or blank-literal message part is red; scripts/exit_code_table.py --check (make check-exit-codes) holds the generated exit-code table in docs/guides/limits-and-troubleshooting.md to the enum in both directions",
+      "mechanism": "tests/integration/test_exit_gate.py -- every Python file's syntax tree: an exit outside scripts/exit_codes.py (sys.exit, os._exit, an argparse .exit, raise SystemExit, exit, quit) is red, an entry block ends on finish(main()) with main returning an ExitCode member through report(member, what failed, on which input, what to do next) or a wrapped tool's status through passthrough, a missing or blank-literal message part is red, and a fail or finish call outside the entry block of a module another project module imports is red unless config/project.json import_layers.may_end_the_process names it with a reason; scripts/exit_code_table.py --check (make check-exit-codes) holds the generated exit-code table in docs/guides/limits-and-troubleshooting.md to the enum in both directions",
       "subject": "code",
       "enforced_by": [
         "test:tests/integration/test_exit_gate.py",
         "make:check-exit-codes"
+      ]
+    },
+    {
+      "id": "comment-explains-code",
+      "row": 42,
+      "scope": "universal",
+      "tier": "gate",
+      "status": "on",
+      "title": "A comment explains the code as it stands, never the change that made it so",
+      "mechanism": "tests/integration/test_change_comment_gate.py -- a heuristic: a comment that opens a thought with a config/project.json change_comments.phrases phrase as a whole word is red; a phrase in mid-sentence is review's (docs/guides/python-style.md section 2)",
+      "subject": "code",
+      "enforced_by": [
+        "test:tests/integration/test_change_comment_gate.py",
+        "doc:docs/guides/python-style.md §2"
       ]
     }
   ],

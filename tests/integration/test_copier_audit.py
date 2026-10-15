@@ -2,7 +2,7 @@
 title: Integration — the downstream audit judges a generated project and writes nothing
 kind: tests
 layer: n/a
-summary: `scripts/audit_project.py` run against projects copier generates from this template. The audit judges the tree a real `copier update` leaves, built in a scratch copy; the parity test runs that update itself, on an independent clone of each old project against `hermetic_git.clone_including_worktree`, and holds the audit's owed and warned letter findings equal to `check_structure.py --root` on the result; for a 7f0a68b project whose own `.PHONY` edit makes copier conflict on the Makefile, the result is resolved both ways by git's `merge-file --ours/--theirs` over copier's index stages, and the audit's judged findings equal what both resolutions have outside the conflicted file, with nothing owed; for a 7f0a68b project that edited its own scripts/check_structure.py, copier conflicts on it and every migration still runs, because none reads it (the restamp, which once imported it for two constants, refused there); for one that edited its own scripts/jobs/review_docs.py, the first migration, which imports it, refuses in the real update and in the audit alike, which names the migration under not checked, exits on the findings (none owed) and never 2. A project generated from the working tree audits with no letter error, no config arrival and no conflict; the same project with four planted defects (an undeclared top-level directory, an unlabelled make target, a bare subprocess call, an unstamped doc edit) reports exactly those four under B, W, X and freshness, and its whole tree — `.git` included, bytes and modes, plus `.git/index`'s mtime — is identical after two audits whose JSON is byte-identical, with no `keel-audit-*` scratch left behind. A project generated at 7f0a68b, before the downstream-feedback campaign, owes nothing: every W/X error it has today is absent from the tree the update leaves, and the config keys the update brings are reported. A project generated at a70a7b5, before slice CMP-2.S1 moved git's repository variables out of `child_env.names`, owes no X error whether or not it added its own allowlist name, and the config group calls that list an update or a merge from copier's own merge. A project generated at 29e45f0, before slice CMP-2.S2, receives `child_env.credentialed_values` as an info arrival with the template default `{}` and owes no X error. A project generated at 7dbcc0c, before slice CMP-3.S4, that recorded its own `child_env.credentialed_values` and `prefixes` keeps both through a real update with nothing unmerged, and its audit owes no X error. A project generated at ef79551, before slice CMP-5.S2, receives `evidence.run_date`, `models.allowed_hosts` and the `launcher` block CMP-5.S3 added after it as its only manifest arrivals and the run date's variable in `child_env.names`, owes no X error, and after a real update holds the template's run date block with its variable allowlisted; one that added its own name to `models.credential_env.openai-compatible` keeps it through a real update with nothing unmerged, and the host list arrives as the template ships it. The template checkout's index is never refreshed by an audit. A generated project's own `make audit-project` is a stub that names the template checkout. Keel-only: copier's `tests/integration/test_copier_*.py` glob prunes it.
+summary: `scripts/audit_project.py` run against projects copier generates from this template. The audit judges the tree a real `copier update` leaves, built in a scratch copy; the parity test runs that update itself, on an independent clone of each old project against `hermetic_git.clone_including_worktree`, and holds the audit's owed and warned letter findings equal to `check_structure.py --root` on the result; for a 7f0a68b project whose own `.PHONY` edit makes copier conflict on the Makefile, the result is resolved both ways by git's `merge-file --ours/--theirs` over copier's index stages, and the audit's judged findings equal what both resolutions have outside the conflicted file, with nothing owed; for a 7f0a68b project that edited its own scripts/check_structure.py, copier conflicts on it and every migration still runs, because none reads it (the restamp, which once imported it for two constants, refused there); for one that edited its own scripts/jobs/review_docs.py, the first migration, which imports it, refuses in the real update and in the audit alike, which names the migration under not checked, exits on the findings (none owed) and never 2. A project generated from the working tree audits with no letter error, no config arrival and no conflict; the same project with four planted defects (an undeclared top-level directory, an unlabelled make target, a bare subprocess call, an unstamped doc edit) reports exactly those four under B, W, X and freshness, and its whole tree — `.git` included, bytes and modes, plus `.git/index`'s mtime — is identical after two audits whose JSON is byte-identical, with no `keel-audit-*` scratch left behind. A project generated at 7f0a68b, before the downstream-feedback campaign, owes nothing: every W/X error it has today is absent from the tree the update leaves, and the config keys the update brings are reported. A project generated at a70a7b5, before slice CMP-2.S1 moved git's repository variables out of `child_env.names`, owes no X error whether or not it added its own allowlist name, and the config group calls that list an update or a merge from copier's own merge. A project generated at 29e45f0, before slice CMP-2.S2, receives `child_env.credentialed_values` as an info arrival with the template default `{}` and owes no X error. A project generated at 7dbcc0c, before slice CMP-3.S4, that recorded its own `child_env.credentialed_values` and `prefixes` keeps both through a real update with nothing unmerged, and its audit owes no X error. A project generated at ef79551, before slice CMP-5.S2, receives `evidence.run_date`, `models.allowed_hosts`, the `launcher` block CMP-5.S3 added after it and the three `make_targets.effect_proof_skip` entries for the frontend suites CMP-5.S4 made refuse an uninstalled app and the `import_layers` and `change_comments` blocks its tree-wide gate tests read as its only manifest arrivals and the run date's variable in `child_env.names`, owes no X error, and after a real update holds the template's run date block with its variable allowlisted; one that added its own name to `models.credential_env.openai-compatible` keeps it through a real update with nothing unmerged, and the host list arrives as the template ships it. The template checkout's index is never refreshed by an audit. A generated project's own `make audit-project` is a stub that names the template checkout. Keel-only: copier's `tests/integration/test_copier_*.py` glob prunes it.
 """
 
 import json
@@ -763,6 +763,8 @@ def test_a_pre_c2_2_project_receives_the_new_child_env_keys_as_arrivals_and_owes
     and `make_targets.empty_test_selections`, `write_shape_exempt` and
     `effect_proof_kept_dirs` (CONVENTIONS §15), the `effect_proof_skip` entry
     for `make long-scripts`, which judges run records a fresh clone lacks, the
+    entries for `make test-fe`, `test-fe-unit` and `test-fe-e2e`, which refuse
+    an app a fresh clone has not installed, the
     `evidence` block that
     `make verify`'s record reads (CONVENTIONS §15), the `e2e` block that
     tests/integration/test_e2e_coverage.py and tests/live_server.py read
@@ -773,7 +775,8 @@ def test_a_pre_c2_2_project_receives_the_new_child_env_keys_as_arrivals_and_owes
     (docs/guides/doc-style.md) and `models.credential_env.openai-compatible`,
     the only names models/openai_compatible.py accepts as `api_key_env`, and
     `models.allowed_hosts`, the hosts it may send that credential to, arrive
-    beside them.
+    beside them, and so do `import_layers` and `change_comments`, which the
+    tree-wide gate tests read.
     `structure.project_checks` does not: the template never ships it, because a
     key beside `extra_toplevel` would conflict with every project that declared
     one."""
@@ -804,6 +807,7 @@ def test_a_pre_c2_2_project_receives_the_new_child_env_keys_as_arrivals_and_owes
     ]
     assert {f["key"] for f in arrived} == {
         "adr",
+        "change_comments",
         "child_env.config_injection_names",
         "child_env.config_injection_prefixes",
         "child_env.credential_value_patterns",
@@ -813,10 +817,14 @@ def test_a_pre_c2_2_project_receives_the_new_child_env_keys_as_arrivals_and_owes
         "e2e",
         "evals",
         "evidence",
+        "import_layers",
         "launcher",
         "layers.app",
         "make_targets.effect_proof_kept_dirs",
         "make_targets.effect_proof_skip.long-scripts",
+        "make_targets.effect_proof_skip.test-fe",
+        "make_targets.effect_proof_skip.test-fe-e2e",
+        "make_targets.effect_proof_skip.test-fe-unit",
         "make_targets.empty_test_selections",
         "make_targets.write_shape_exempt",
         "models.allowed_hosts",
@@ -913,9 +921,13 @@ def test_a_pre_c5_2_project_receives_the_run_date_and_host_list_as_arrivals(
     what the update brings is two keys inside them, `evidence.run_date` and
     `models.allowed_hosts`, the `launcher` block CMP-5.S3 added after them
     with the `make_targets.effect_proof_skip` entry for its `make long-scripts`,
-    and one more name in `child_env.names`: the variable the run date travels
-    in, without which scripts/child_env.py would drop it before any goal saw
-    it. The audit reports exactly those four keys as arrivals and the list as changed, owes no X error, and a real
+    the three entries for the frontend suites slice CMP-5.S4 made refuse an
+    uninstalled app, the `import_layers` and `change_comments` blocks the
+    tree-wide gate tests of CMP-5.S4 read, and one more name in
+    `child_env.names`: the variable the run date travels in, without which
+    scripts/child_env.py would drop it before any goal saw it. The audit
+    reports exactly those nine keys as
+    arrivals and the list as changed, owes no X error, and a real
     update leaves the run date block as the template ships it with its
     variable on the allowlist."""
     project, env = pre_c5_2
@@ -940,9 +952,14 @@ def test_a_pre_c5_2_project_receives_the_run_date_and_host_list_as_arrivals(
     ]
     arrived = {f["key"] for f in manifest if f["kind"] == "arrives"}
     assert arrived == {
+        "change_comments",
         "evidence.run_date",
+        "import_layers",
         "launcher",
         "make_targets.effect_proof_skip.long-scripts",
+        "make_targets.effect_proof_skip.test-fe",
+        "make_targets.effect_proof_skip.test-fe-e2e",
+        "make_targets.effect_proof_skip.test-fe-unit",
         "models.allowed_hosts",
     }, manifest
     names = [f for f in manifest if f["key"] == "child_env.names"]

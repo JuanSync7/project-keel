@@ -101,6 +101,8 @@ export default defineConfig({
     launchOptions:
       journey.browser_executable === null ? {} : { executablePath: journey.browser_executable },
   },
+  // package.json test:e2e:browsers (`make fe-browsers`) downloads this same
+  // browser; change the two together.
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: {
     command: `npm run build && npm run preview -- --host ${journey.host} --port ${String(journey.port)}`,

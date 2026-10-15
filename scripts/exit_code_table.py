@@ -2,7 +2,7 @@
 title: exit_code_table — generate the exit-code table from the enum and the gate's scripts
 kind: script
 layer: n/a
-summary: Writes the region between the `<!-- exit-codes:begin -->` and `<!-- exit-codes:end -->` lines of the guide config/project.json `doc_drift.limits_guide` names. The region holds two tables. The first has one row per member of ExitCode, read from the syntax tree of scripts/exit_codes.py and never by importing it: value, name, meaning, what to do. The second has one row per script a recipe reachable from make `doc_drift.gate_target` runs, naming the values that script's entry function can return and `passes through` when it returns a wrapped tool's status. `read_script` is the one reader of what a script can exit with, and it reads a closed grammar from the syntax tree: SUCCESS itself, `report(<member>, ...)`, `passthrough(...)`, a conditional between those, a name every binding of which is a plain assignment of those, or a call to a function of the same module whose every return is one of those, plus the member of every `fail(<member>, ...)` call in the module; any other return, a name also bound another way (a parameter, an unpacking, a loop, `+=`, `:=`, `as`, `global`), a `report` of a member with nothing to report, and a function that can reach its end without returning, is a finding, never a guess. An enum member written with an annotation is refused, not skipped. `--check` writes nothing and exits 1 naming each difference when the region is stale. It refuses, exit 2, a guide or marker that is missing, repeated or out of order, a config block it cannot read, a guide reached through a symlink (scripts/git_tree.py `through_symlink`) and a script whose exits it cannot read. It replaces the file whole through a temporary file beside it and never touches `updated:`. It does not hold exits to the helper (tests/integration/test_exit_gate.py does) and it does not write the per-script prose below the region, which is hand-written. Needs the project interpreter.
+summary: Writes the region between the `<!-- exit-codes:begin -->` and `<!-- exit-codes:end -->` lines of the guide config/project.json `doc_drift.limits_guide` names. The region holds two tables. The first has one row per member of ExitCode, read from the syntax tree of scripts/exit_codes.py and never by importing it: value, name, meaning, what to do. The second has one row per script a recipe reachable from make `doc_drift.gate_target` runs, naming the values that script's entry function can return and `passes through` when it returns a wrapped tool's status. `read_script` is the one reader of what a script can exit with, and it reads a closed grammar from the syntax tree: SUCCESS itself, `report(<member>, ...)`, `passthrough(...)`, a conditional between those, a name every binding of which is a plain assignment of those, or a call to a function of the same module whose every return is one of those, plus the member of every `fail(<member>, ...)` call in the module; any other return, a name also bound another way (a parameter, an unpacking, a loop, `+=`, `:=`, `as`, `global`), a `report` of a member with nothing to report, and a function that can reach its end without returning, is a finding, never a guess. `passthrough` marks a wrapped tool's status, so one handed the script's own status is a finding too: the entry function's result (the function `finish` is handed, or `main`), directly or through a plain-assigned name, an int literal, a member, a `report`, or a call to a function of the module whose every return is one of those, including such a status under a sign (`-1`), in an arithmetic or `and`/`or` whose every operand is one, or handed to a builtin the module does not rebind (`int(main())`); and so is an entry line that hands `finish` a `passthrough(...)`. A helper that converts another process's status (one of its returns reads it) passes. An enum member written with an annotation is refused, not skipped. `--check` writes nothing and exits 1 naming each difference when the region is stale. It refuses, exit 2, a guide or marker that is missing, repeated or out of order, a config block it cannot read, a guide reached through a symlink (scripts/git_tree.py `through_symlink`) and a script whose exits it cannot read. It replaces the file whole through a temporary file beside it and never touches `updated:`. It does not hold exits to the helper (tests/integration/test_exit_gate.py does) and it does not write the per-script prose below the region, which is hand-written. Needs the project interpreter.
 effect: writes
 rerun: fixed-point
 rerun_proof: make:check-exit-codes
@@ -10,6 +10,7 @@ rerun_proof: make:check-exit-codes
 
 import argparse
 import ast
+import builtins
 import collections
 import json
 import os
@@ -68,6 +69,19 @@ _DEFINITIONS = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
 _CAPTURES = ("MatchAs", "MatchStar", "MatchMapping")
 # The function read when a script's entry block hands nothing to `finish`.
 _DEFAULT_ENTRY = "main"
+# `passthrough` marks a status a wrapped tool produced. Handed one this script
+# chose (main's result, a literal, a member, or a function of the module whose
+# every return is one of those), it would pass a main returning integers off as
+# a wrapper.
+_OWN_STATUS = (
+    "passthrough wraps a wrapped tool's status, never this script's own (the "
+    "entry function's result, a literal, a member, or a function of this module "
+    "that returns only those); return ExitCode members from main"
+)
+_PASSTHROUGH_HANDED = (
+    "the entry line is finish(main()); call passthrough inside main where the "
+    "wrapped tool's status is read"
+)
 
 BEGIN = "<!-- exit-codes:begin -->"
 END = "<!-- exit-codes:end -->"
@@ -182,8 +196,12 @@ def read_members(root):
 def helper_bindings(tree):
     """(names, modules) *tree* binds from the helper: {local name: helper
     symbol} for each `from exit_codes import <symbol> [as <local>]`, and the
-    local names of `import exit_codes [as <local>]`."""
+    local names of `import exit_codes [as <local>]`. A plain assignment that
+    rebinds one (`die = fail`, `_f = exit_codes.fail`, `h = exit_codes`) adds
+    its target too, followed through chains, so a second name is never a way
+    past a gate that asks what a call is."""
     names, modules = {}, set()
+    aliases = []
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom):
             if node.level == 0 and node.module == HELPER_MODULE:
@@ -193,6 +211,29 @@ def helper_bindings(tree):
             for alias in node.names:
                 if alias.name == HELPER_MODULE:
                     modules.add(alias.asname or alias.name)
+        elif isinstance(node, (ast.Assign, ast.AnnAssign)) and node.value is not None:
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            aliases.extend(
+                (target.id, node.value)
+                for target in targets
+                if isinstance(target, ast.Name)
+            )
+    # Each pass binds at least one new name or ends, so a chain resolves in
+    # as many passes as it has links.
+    changed = True
+    while changed:
+        changed = False
+        for target, value in aliases:
+            if target in names or target in modules:
+                continue
+            if isinstance(value, ast.Name) and value.id in modules:
+                modules.add(target)
+                changed = True
+                continue
+            symbol = helper_symbol(value, (names, modules))
+            if symbol is not None:
+                names[target] = symbol
+                changed = True
     return names, modules
 
 
@@ -243,6 +284,9 @@ class _Reader:
             for name in node.names
         }
         self.names, self.passes, self.findings = set(), False, []
+        # The functions whose result `finish` is handed: their status is the
+        # script's own by definition.
+        self.entries = {_DEFAULT_ENTRY}
         self._visited = set()
         # The assigned values being followed now: one met again is a cycle.
         self._following = set()
@@ -381,7 +425,10 @@ class _Reader:
             if symbol == _REPORT:
                 self.reported_call(node, symbol)
             elif symbol == _PASSTHROUGH:
-                self.passes = True
+                if node.args and self.own_status(node.args[0], scope, set()):
+                    self._finding(node, _OWN_STATUS)
+                else:
+                    self.passes = True
             elif target in nested or target in self.functions:
                 self.function(nested.get(target) or self.functions[target])
             else:
@@ -399,15 +446,113 @@ class _Reader:
                 "through `report`, or `passthrough(...)`" % ENUM,
             )
 
+    def own_status(self, node, scope, seen):
+        """True when the expression *node* handed to `passthrough` is a status
+        this script chose rather than one a wrapped tool produced: an int
+        literal, a member, a `report`, a call to an entry function, a
+        conditional both of whose branches are such, a sign over such
+        (`-1`), an arithmetic or `and`/`or` whose every operand is such, a
+        call to a builtin the module does not rebind whose every argument is
+        such (`int(main())`), a name every plain assignment of which is such,
+        or a call to a function of this module whose every return is such. A
+        name bound any other way, an attribute, a subscript and a call to
+        anything else are read as a tool's status.
+        *seen* holds the functions and assigned values being followed, so a
+        cycle ends."""
+        if isinstance(node, ast.Constant):
+            return isinstance(node.value, int)
+        if self._member(node) is not None:
+            return True
+        if isinstance(node, ast.IfExp):
+            return self.own_status(node.body, scope, seen) and self.own_status(
+                node.orelse, scope, seen
+            )
+        # `-1`, `main() + 0` and `main() or 0` compute nothing a tool produced
+        # when every operand is the script's own.
+        if isinstance(node, ast.UnaryOp):
+            return self.own_status(node.operand, scope, seen)
+        if isinstance(node, (ast.BinOp, ast.BoolOp)):
+            operands = (
+                node.values if isinstance(node, ast.BoolOp) else [node.left, node.right]
+            )
+            return all(self.own_status(value, scope, seen) for value in operands)
+        if isinstance(node, ast.Name):
+            where = scope
+            if node.id not in scope[0] and node.id not in scope[1]:
+                where = self.module_scope
+            assigned, opaque, _nested = where
+            values = assigned.get(node.id)
+            if not values or node.id in opaque or node.id in self.shared:
+                return False
+            # A value met again is a name bound to itself: it adds no status.
+            fresh = [value for value in values if id(value) not in seen]
+            seen = seen | {id(value) for value in fresh}
+            return all(self.own_status(value, where, seen) for value in fresh)
+        if not isinstance(node, ast.Call):
+            return False
+        if helper_symbol(node.func, self.bindings) == _REPORT:
+            return True
+        target = node.func.id if isinstance(node.func, ast.Name) else None
+        if target in self.entries:
+            return True
+        func = scope[2].get(target) or self.functions.get(target)
+        if func is None and self._builtin(target, scope):
+            # `int(main())` converts the script's status; it reads no tool's.
+            arguments = list(node.args) + [kw.value for kw in node.keywords]
+            return bool(arguments) and all(
+                self.own_status(value, scope, seen) for value in arguments
+            )
+        if func is None or id(func) in seen:
+            return func is not None
+        seen = seen | {id(func)}
+        inner = self._scope(func)
+        returns = [n.value for n in own_nodes(func) if isinstance(n, ast.Return)]
+        return bool(returns) and all(
+            value is not None and self.own_status(value, inner, seen)
+            for value in returns
+        )
+
+    def _builtin(self, name, scope):
+        """True when *name* is a builtin this module does not rebind: no
+        assignment, import, parameter or definition in *scope* or at module
+        level gives it another meaning."""
+        if name is None or not hasattr(builtins, name):
+            return False
+        return not any(
+            name in where[0] or name in where[1] for where in (scope, self.module_scope)
+        )
+
+    def handed_passthrough(self, node, seen=frozenset()):
+        """True when the expression `finish` is handed is a `passthrough` call,
+        directly or through a name a plain assignment binds to one. *seen*
+        holds the assigned values being followed, so `rc = rc` ends."""
+        if isinstance(node, ast.Name):
+            values = [
+                value
+                for value in self.module_scope[0].get(node.id, ())
+                if id(value) not in seen
+            ]
+            seen = seen | {id(value) for value in values}
+            return any(self.handed_passthrough(value, seen) for value in values)
+        return (
+            isinstance(node, ast.Call)
+            and helper_symbol(node.func, self.bindings) == _PASSTHROUGH
+        )
+
+    def _scope(self, func):
+        """(assigned, opaque, nested functions) of the function *func*."""
+        nodes = list(own_nodes(func))
+        parameters = [a.arg for a in ast.walk(func.args) if isinstance(a, ast.arg)]
+        return self._bindings(nodes, parameters) + (
+            {n.name: n for n in nodes if isinstance(n, ast.FunctionDef)},
+        )
+
     def function(self, func):
         if id(func) in self._visited:
             return
         self._visited.add(id(func))
         nodes = list(own_nodes(func))
-        parameters = [a.arg for a in ast.walk(func.args) if isinstance(a, ast.arg)]
-        scope = self._bindings(nodes, parameters) + (
-            {n.name: n for n in nodes if isinstance(n, ast.FunctionDef)},
-        )
+        scope = self._scope(func)
         returns = [n for n in nodes if isinstance(n, ast.Return)]
         if not returns:
             self._finding(func, "`%s` returns no exit code" % func.name)
@@ -493,10 +638,13 @@ def read_tree(tree, relpath, quiet_names):
         ):
             reader.reported_call(node, _FAIL)
     handed = finish_calls(tree, reader.bindings)
+    reader.entries.update(_called_functions(handed, reader))
     for call in handed:
         if len(call.args) != 1 or call.keywords:
             reader._finding(call, "`finish` takes exactly what `main` returned")
             continue
+        if reader.handed_passthrough(call.args[0]):
+            reader._finding(call, _PASSTHROUGH_HANDED)
         reader.value(call.args[0], reader.module_scope)
     if not handed:
         if _DEFAULT_ENTRY in reader.functions:
@@ -507,6 +655,28 @@ def read_tree(tree, relpath, quiet_names):
                 "is no `%s`" % (relpath, _DEFAULT_ENTRY)
             )
     return Reading(frozenset(reader.names), reader.passes, reader.findings)
+
+
+def _called_functions(calls, reader):
+    """The names of the module's functions the arguments of *calls* call,
+    directly or through a name a module-level plain assignment binds."""
+    assigned = reader.module_scope[0]
+    nodes = [arg for call in calls for arg in call.args]
+    nodes += [
+        value
+        for node in list(nodes)
+        for name in ast.walk(node)
+        if isinstance(name, ast.Name)
+        for value in assigned.get(name.id, ())
+    ]
+    return {
+        node.func.id
+        for expr in nodes
+        for node in ast.walk(expr)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id in reader.functions
+    }
 
 
 def code_findings(tree, relpath, quiet_names):

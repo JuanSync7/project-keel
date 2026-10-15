@@ -2,7 +2,7 @@
 title: Integration — the settings reference and the feature catalogue list what the code holds
 kind: tests
 layer: n/a
-summary: The reference-drift gate. config/project.json `doc_drift.settings_reference` names the settings reference; each of its keyed sections holds one table with the columns Key, Type, Default, Valid values, Read by, What changing it does, Not for and Ships, and each row is derived-equal to the code; a key listed twice is a finding. The JSON sections are exactly the files check_structure's JSON_CONFIGS reads, each heading naming its file, and every key path of that file (`_comment` dropped at any depth, `[]` for a list-of-object element, `<name>` for one segment of an open-keyed map) matches exactly one row; in the template each literal-path JSON row's Default states the value the file holds, or its twin renders under copier's default answers; the rendered project.json twin is judged under every answer set copier.yml's validators allow, rendered with StrictUndefined; the copier question rows equal copier.yml's questions and name what each prunes; the make variable rows equal what the makefiles assign and reference; the environment variable rows cover every literal read in code, recipes, workflows and the manifest; the command-line flag rows equal every `add_argument` in the code roots, with each literal default stated verbatim; the `models.default` and `runtimes.default` rows state the registry constant that decides. Every expected set is derived, never typed here; a missing or malformed `doc_drift` key fails, a section over zero items fails, and only the copier.yml-derived tests skip, with a stated reason, in a generated project. `doc_drift.features_reference` names the feature catalogue; every `## ` section table with the columns Feature, What it does and why, How to run, Settings, Limits / not for, Deep doc and Ships is keyed by its Feature cell's first code span, and the keys of the derived shapes equal what the tree declares: each check letter, each `## `-annotated make target with its effect label, each script `make check-all` reaches or the catalogue of deterministic checks lists, each copier job (a script beside conflict_guard's finish command that runs its guard), each agent directory, each MCP server with a `__main__` guard, each registry model and runtime, each workflow and each agent skill. In a generated project the rows need only cover the derived set, and a derived-shaped row the project lacks must say in Ships which answer brings it. Every row states its limits, every Ships cell is `always`, `keel maintainers only` or `when <question>[=<value>]`, naming a question copier.yml asks and a value it offers, every Settings cell links to a heading of the settings reference, and in the template each derived row's Ships matches copier.yml's excludes under the answers it names and under those it leaves out, and no link lands on an excluded path. Each rule has a fault-injection twin that plants one fault and asserts exactly one more finding than the document had before. Not a writer: it reads the tree and writes nothing.
+summary: The reference-drift gate. config/project.json `doc_drift.settings_reference` names the settings reference; each of its keyed sections holds one table with the columns Key, Type, Default, Valid values, Read by, What changing it does, Not for and Ships, and each row is derived-equal to the code; a key listed twice is a finding. The JSON sections are exactly the files check_structure's JSON_CONFIGS reads, each heading naming its file, and every key path of that file (`_comment` dropped at any depth, `[]` for a list-of-object element, `<name>` for one segment of an open-keyed map) matches exactly one row; in the template each literal-path JSON row's Default states the value the file holds, or its twin renders under copier's default answers; the rendered project.json twin is judged under every answer set copier.yml's validators allow, rendered with StrictUndefined; the copier question rows equal copier.yml's questions and name what each prunes; the make variable rows equal what the makefiles assign and reference; the environment variable rows cover every literal read in code, recipes, workflows and the manifest; the command-line flag rows equal every `add_argument` in the code roots, with each literal default stated verbatim; the `models.default` and `runtimes.default` rows state the registry constant that decides. Every expected set is derived, never typed here; a missing or malformed `doc_drift` key fails, a section over zero items fails, and only the copier.yml-derived tests skip, with a stated reason, in a generated project. `doc_drift.features_reference` names the feature catalogue; every `## ` section table with the columns Feature, What it does and why, How to run, Settings, Limits / not for, Deep doc and Ships is keyed by its Feature cell's first code span, and the keys of the derived shapes equal what the tree declares: each check letter, each `## `-annotated make target with its effect label, each script `make check-all` reaches or the catalogue of deterministic checks lists, each copier job (a script beside conflict_guard's finish command that runs its guard), each gate test (a `test_*_gate.py` file directly in tests/integration), each shared script module (a scripts module that a module outside tests/ imports, read from the import graph tests/source_tree.py `import_edges` resolves through config/project.json `import_layers.search_roots`), each agent directory, each MCP server with a `__main__` guard, each registry model and runtime, each workflow and each agent skill. In a generated project the rows need only cover the derived set, and a derived-shaped row the project lacks must say in Ships which answer brings it. Every row states its limits, every Ships cell is `always`, `keel maintainers only` or `when <question>[=<value>]`, naming a question copier.yml asks and a value it offers, every Settings cell links to a heading of the settings reference, and in the template each derived row's Ships matches copier.yml's excludes under the answers it names and under those it leaves out, and no link lands on an excluded path. The CONVENTIONS section 2 scripts note names `derived_features`, this file and the catalogue's `Shared script modules` section, and states no count, in words or as the derived size, so the note cannot drift from the set. Each rule has a fault-injection twin that plants one fault and asserts exactly one more finding than the document had before. Not a writer: it reads the tree and writes nothing.
 """
 
 import ast
@@ -24,6 +24,7 @@ _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT / "scripts"))
 sys.path.insert(0, str(_ROOT / "scripts" / "jobs"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(_ROOT / "tests"))
 
 import check_structure as cs  # noqa: E402
 from test_doc_drift import (  # noqa: E402
@@ -35,6 +36,8 @@ from test_doc_drift import (  # noqa: E402
     entry_policy,
     load_manifest,
 )
+
+import source_tree as st  # noqa: E402
 
 pytestmark = pytest.mark.integration
 
@@ -1029,6 +1032,18 @@ _REGISTRY_LISTS = (
 )
 _AGENTS_DIR = "agents"
 _MCP_DIR = "mcp"
+# A gate test is a file of this name directly in the integration directory; a
+# shared script module is a file under the scripts directory that a module
+# outside the tests directory imports. The two groups' names, and the section
+# of the catalogue and the CONVENTIONS section 2 note that point at them.
+_GATE_TEST_DIR = "tests/integration"
+_GATE_TEST_NAME = "test_*_gate.py"
+_SCRIPTS_DIR = "scripts/"
+_TESTS_DIR = "tests/"
+_GATE_TEST_GROUP = "gate test"
+_SHARED_GROUP = "shared script module"
+_SHARED_SECTION = "Shared script modules"
+_SCRIPTS_NOTE = "Note: `scripts/`"
 _SKILLS_DIR = ".claude/skills"
 _GUARD_CALL = "exit_if_conflicted"
 _MAIN = "__main__"
@@ -1158,13 +1173,39 @@ def checker_scripts(root, makefiles):
     return {s for s in scripts if (Path(root) / s).is_file()}
 
 
+def gate_tests(root):
+    """Every gate test: each `test_*_gate.py` directly in the integration
+    directory, among the files tests/source_tree.py `python_files` lists."""
+    return {
+        rel
+        for rel in st.python_files(root)
+        if posixpath.dirname(rel) == _GATE_TEST_DIR
+        and fnmatch.fnmatch(posixpath.basename(rel), _GATE_TEST_NAME)
+    }
+
+
+def shared_script_modules(root):
+    """Every scripts module another module imports, from the import graph
+    tests/source_tree.py `import_edges` resolves through config/project.json
+    `import_layers.search_roots`. An import from the tests directory does not
+    make a module shared: a test imports what it judges."""
+    files = st.python_files(root)
+    search_roots = st.import_layers(root)["search_roots"]
+    return {
+        imported
+        for importer, _line, imported in st.import_edges(root, files, search_roots)
+        if imported.startswith(_SCRIPTS_DIR) and not importer.startswith(_TESTS_DIR)
+    }
+
+
 def derived_features(root):
     """({key: [reader paths]}, {make key: effect span}, {group: count}): every
     feature the tree itself declares, keyed the way the catalogue keys it --
     each check letter, each `## `-annotated make target with the label its
-    help opens with, each checker and copier job, each agent directory, each
-    MCP server with a `__main__` guard, each model and runtime the registries
-    list, each workflow and each agent skill."""
+    help opens with, each checker and copier job, each gate test, each scripts
+    module another module imports, each agent directory, each MCP server with
+    a `__main__` guard, each model and runtime the registries list, each
+    workflow and each agent skill."""
     root = Path(root)
     readers, labels, counts = {}, {}, {}
 
@@ -1188,6 +1229,8 @@ def derived_features(root):
     add("make target", make)
     add("checker", {s: [s] for s in checker_scripts(root, makefiles)})
     add("copier job", {s: [s] for s in copier_jobs(root)})
+    add(_GATE_TEST_GROUP, {s: [s] for s in gate_tests(root)})
+    add(_SHARED_GROUP, {s: [s] for s in shared_script_modules(root)})
     agents = root / _AGENTS_DIR
     add(
         "agent",
@@ -2038,6 +2081,133 @@ def test_a_feature_dropped_invented_or_mislabelled_is_one_finding(
         for r in rows
     ]
     assert len(feature_findings(doc, flipped, readers, labels, exhaustive)) == base + 1
+
+
+def _write(root, relpath, text):
+    path = root / relpath
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+def test_gate_tests_and_shared_script_modules_are_derived(tmp_path):
+    # A planted tree: one module a script imports, one a non-script module
+    # imports by its dotted name, one only a test imports, one nobody imports,
+    # and gate-shaped test files inside and outside the gate directory.
+    _write(
+        tmp_path,
+        st.CONFIG,
+        json.dumps(
+            {
+                st.LAYERS_BLOCK: {
+                    "search_roots": ["", "scripts/", "tests/"],
+                    "order": [["scripts"], ["models"], ["tests"]],
+                }
+            }
+        ),
+    )
+    _write(tmp_path, "scripts/lib.py", "X = 1\n")
+    _write(tmp_path, "scripts/user.py", "import lib\n")
+    _write(tmp_path, "scripts/kernel.py", "Y = 1\n")
+    _write(tmp_path, "models/adapter.py", "from scripts import kernel\n")
+    _write(tmp_path, "scripts/test_only.py", "Z = 1\n")
+    _write(tmp_path, "tests/unit/test_x.py", "import test_only\n")
+    _write(tmp_path, "scripts/alone.py", "W = 1\n")
+    _write(tmp_path, "tests/integration/test_a_gate.py", "\n")
+    _write(tmp_path, "tests/integration/test_b.py", "\n")
+    _write(tmp_path, "tests/integration/sub/test_c_gate.py", "\n")
+    _write(tmp_path, "tests/unit/test_d_gate.py", "\n")
+    assert gate_tests(tmp_path) == {"tests/integration/test_a_gate.py"}
+    assert shared_script_modules(tmp_path) == {"scripts/lib.py", "scripts/kernel.py"}
+
+
+def test_every_gate_test_and_shared_script_module_has_a_row(
+    features, derived, inventory
+):
+    doc, _text = features
+    readers, labels, counts = derived
+    rows, _ = _feature_rows(features)
+    exhaustive = _is_template(inventory)
+    groups = {_GATE_TEST_GROUP: gate_tests(_ROOT)}
+    groups[_SHARED_GROUP] = shared_script_modules(_ROOT)
+    base = len(feature_findings(doc, rows, readers, labels, exhaustive))
+    for group, members in sorted(groups.items()):
+        assert members, "no %s derived from the tree -- zero items" % group
+        assert counts.get(group) == len(members), (group, counts.get(group))
+        assert members <= set(readers), sorted(members - set(readers))
+        # Twin: a member whose row is dropped is exactly one more finding.
+        victim = sorted(members)[0]
+        dropped = [r for r in rows if r["key"] != victim]
+        assert len(dropped) == len(rows) - 1, "%s has no row to drop" % victim
+        found = feature_findings(doc, dropped, readers, labels, exhaustive)
+        assert len(found) == base + 1, found
+
+
+def _note_paragraph(text, opening):
+    """The paragraph of *text* that opens with *opening*, as one line."""
+    lines = text.splitlines()
+    for at, line in enumerate(lines):
+        if line.startswith(opening):
+            para = []
+            for rest in lines[at:]:
+                if not rest.strip():
+                    break
+                para.append(rest.strip())
+            return " ".join(para)
+    return None
+
+
+# A cardinal written in words: the note says where the set is derived, so a
+# count in it, in words or as the derived size, is a second, unchecked copy of
+# the derivation. Digits in general are not refused, since the note cites an
+# ADR number.
+_COUNT_WORDS = [
+    "one",
+    "two",
+    "three",
+    "four",
+    "five",
+    "six",
+    "seven",
+    "eight",
+    "nine",
+    "ten",
+    "eleven",
+    "twelve",
+    "thirteen",
+    "fourteen",
+    "fifteen",
+    "sixteen",
+    "seventeen",
+    "eighteen",
+    "nineteen",
+    "twenty",
+]
+
+
+def test_the_scripts_note_cites_its_derivation(features, derived):
+    doc, _text = features
+    _readers, _labels, counts = derived
+    text = (_ROOT / cs._CONVENTIONS_DOC).read_text(encoding="utf-8")
+    note = _note_paragraph(text, _SCRIPTS_NOTE)
+    assert note is not None, "%s has no paragraph opening %r" % (
+        cs._CONVENTIONS_DOC,
+        _SCRIPTS_NOTE,
+    )
+    me = _rel(_ROOT, __file__)
+    for needed in (me, derived_features.__name__, doc, _SHARED_SECTION):
+        assert needed in note, "the scripts note does not name %r: %s" % (
+            needed,
+            note,
+        )
+    words = "".join(c if c.isalnum() else " " for c in note.lower()).split()
+    size = str(counts[_SHARED_GROUP])
+    counted = sorted({w for w in words if w in _COUNT_WORDS or w == size})
+    assert not counted, "the scripts note states a count %s: %s" % (counted, note)
+    sections = {heading for heading, _body in cs._sections(_text)}
+    assert _SHARED_SECTION in sections, "%s has no `## %s` section" % (
+        doc,
+        _SHARED_SECTION,
+    )
 
 
 def test_every_feature_row_states_its_limits(features):

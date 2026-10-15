@@ -8,7 +8,7 @@ tags: [copier, generate, update, migrations, adoption, guide]
 summary: How a project is generated from keel, what arrives and what never does, what `make new` refuses, how to adopt keel into an existing repository, and how `copier update` pulls template changes — with one checklist row per task and migration an update runs, and how to finish an update a migration stopped.
 id: docs-guides-generate-and-upgrade
 created: 2026-10-09
-updated: 2026-10-13
+updated: 2026-10-15
 visibility: internal
 canonical: true
 ---
@@ -51,6 +51,15 @@ own freshness gate on its first commit, and copier refuses a template that runs
 a task unless you pass `--trust`
 ([ADR-K-0010](../adr/keel/K-0010-generation-needs-trust-to-stamp-docs.md)).
 copier accepts any git URL or local path in place of `gh:JuanSync7/project-keel`.
+
+With a frontend stack, run `make fe-install` and then `make fe-browsers` before
+the first `make verify`. A fresh project has no `node_modules`, so
+`make test-fe` exits 2 naming the app and `make fe-install` rather than pass
+over tests that never ran, and the browser journey fails until
+`make fe-browsers` has downloaded its browser. With `frontend_stack` `none`,
+`make test-fe` exits 0 and says nothing.
+`tests/integration/test_copier_generation.py` generates each stack and checks
+both behaviours.
 
 ## What arrives and what never does
 
@@ -219,9 +228,14 @@ script is moved:
    where it returned another number. Keep each number: the first generated
    table in `limits-and-troubleshooting.md` gives every member's value.
 4. Return `passthrough(<status>)` where `main` returned the status of a tool
-   it ran.
-5. Call `fail(...)`, with the four arguments of `report`, where code outside
-   `main` called `sys.exit`.
+   it ran, read where it ran it. `finish(passthrough(main()))` over a `main`
+   that still returns numbers is red: the gate reads `passthrough` over
+   `main`'s result, a literal, a member, or a function of the script that
+   returns only those as the script's own status, not a tool's, and wrapping
+   one in `int(...)`, `or 0` or a sign does not change that.
+5. Call `fail(...)`, with the four arguments of `report`, where a function of
+   the script itself outside `main` called `sys.exit`. A module another of
+   your modules imports raises instead, and its importer's `main` reports.
 6. Give a module that has no status to report, such as an app's `__main__`,
    a `main` that returns nothing, and leave its entry line as `main()`.
 7. Run `make exit-codes` when `make verify` runs the script, so the generated
@@ -246,6 +260,18 @@ that imports the helper stops with a `ValueError` naming both members if a
 member you added holds a value keel's members hold: 10, 11 or 12 today, and
 the generated table in `docs/guides/limits-and-troubleshooting.md` lists every
 one. Give yours another value, then run `make exit-codes`.
+
+### The frontend suites refuse an app they cannot run
+
+With a frontend app present, `make test-fe-unit` and `make test-fe-e2e` exit 2
+when `npm` or an app's `node_modules` is missing, naming the app and
+`make fe-install`, because a suite that ran nothing does not pass. Run
+`make fe-install` and `make fe-browsers` after the update, before
+`make verify`. The update adds the `make test-fe`,
+`test-fe-unit` and `test-fe-e2e` entries to config/project.json
+`make_targets.effect_proof_skip`, because the effect sweep's fresh clone has
+no `node_modules`. Its CI workflow gains a `make fe-browsers` step and a
+`make test-fe` step after `make eval`.
 
 ### A gate run has one date, and a git failure stops it
 
@@ -287,6 +313,63 @@ block keeps it through the merge: add the key yourself, because check_X
 reads a missing one as an empty list. The adapter also refuses a redirect
 now; a `base_url` that answered with one must point at the URL the endpoint
 serves from. [ADR-K-0018](../adr/keel/K-0018-model-endpoint-host-allowlist.md)
+is the decision.
+
+### Your imports, handlers, comments and shared modules meet new gate tests
+
+The update brings five rules that `make test` holds your own Python to, each
+naming the file it fails on, and `limits-and-troubleshooting.md` has a row for
+each message.
+
+1. **Layers.** config/project.json `import_layers.order` lists the layers
+   bottom to top, and `tests/integration/test_import_layers_gate.py` fails an
+   import into a higher layer and a Python file no layer's prefix holds. A
+   top-level directory you added is such a file's home: add its prefix to the
+   layer it belongs in, in `config/project.json`. A prefix for a directory you
+   do not have is skipped.
+2. **Shared modules return.** A module another of your modules imports never
+   calls `fail` or `finish` outside its entry block;
+   `tests/integration/test_exit_gate.py` fails one that does. Raise instead,
+   and let the importer's `main` return `report(...)`. Name a module that must
+   end the process, with its reason, in
+   `import_layers.may_end_the_process`.
+3. **Swallowed errors.** `tests/integration/test_swallowed_error_gate.py`
+   fails a bare `except:`, and an `except Exception` whose body only passes,
+   continues, breaks, or returns or assigns a fixed value such as `None`,
+   `-1` or `[]`, unless its `# noqa: BLE001` or `# noqa: E722` gives a reason
+   after the codes; a second code is not a reason. A suppression you already
+   carry with no reason is red too.
+4. **Change-reporting comments.** `tests/integration/test_change_comment_gate.py`
+   fails a comment that opens with a `change_comments.phrases` phrase such as
+   `now` or `fixed`. Rewrite it as the reason the code is as it is; add a
+   phrase or a directive to the block when your project needs one.
+5. **Features rows.** `tests/integration/test_reference_drift.py` derives
+   every `tests/integration/test_*_gate.py` and every `scripts/` module that
+   a module outside `tests/` imports from your tree, not from keel's file
+   list, and fails one with no row in `docs/reference/features.md`. Add a row
+   for each of your own under the `Gate tests` or `Shared script modules`
+   section; the failure names the file.
+
+check_D also fails `from pkg import _sub` of a private submodule from outside
+`pkg/`; import the name `pkg/__init__.py` exports instead.
+
+Each of these rules, like the exit gate above, fails your own code from the
+first `make test` after the update. No setting turns a finding into a warning
+for a period first. The maintainer has ruled that a project's own code warns
+before it fails, after a date set in config, but that tier is not built and
+its date is not chosen. A project's gate cannot tell a file keel ships from a
+file you wrote, because only `scripts/audit_project.py`, which runs from the
+template checkout, reads that from the template's git history, and copier
+does not ship it. Until the tier exists, run `make test` right after the
+update and fix each finding it names. `make audit-project` does not preview
+these findings: it judges the structure gate's letters, check_D among them,
+and runs none of the gate tests.
+
+`make long-scripts` exits 13, `ExitCode.NOTHING_JUDGED`, when no recorded run
+carries a duration, which is a fresh clone's state; it exited 1 before, the
+status it keeps for a proposal. A caller that read 1 as "nothing recorded"
+reads 13.
+[ADR-K-0021](../adr/keel/K-0021-imports-flow-up-a-configured-layer-order.md)
 is the decision.
 
 ## Update checklist
