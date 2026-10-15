@@ -8,7 +8,7 @@ tags: [plan, template, copier, upgrade, gate, environment, convergence]
 summary: The bounded-convergence record for keel's template-as-product hardening: eight numbered passes plus four unnumbered units, all merged to main as 956b7da, with the still-open release blockers for v0.1.0 and every deferral's measurement and trigger. The status table and the release-readiness section are authoritative; the per-pass narratives below them are historical and carry inline corrections where they went stale.
 id: docs-design-keel-hardening-plan
 created: 2026-08-04
-updated: 2026-10-14
+updated: 2026-10-15
 visibility: internal
 canonical: true
 ---
@@ -28,7 +28,7 @@ skipped, exit 0**; `make advise` clean; `check_structure` 0 errors and 5
 `owner: TBD` warnings; CI green with ruff 0.15.18 and mypy 2.1.0, now pinned
 exactly (`0ab1bbf`).
 
-**Released.** Tags `v0.1.0` to `v0.2.2` exist. What is still open from this
+**Released.** Tags `v0.1.0` to `v0.3.0` exist. What is still open from this
 file is listed in `docs/design/downstream-feedback.md`, section "Open items".
 
 | Pass | Subject | Status |

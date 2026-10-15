@@ -5,10 +5,12 @@ All notable changes. Format: Keep a Changelog.
 Generated projects record the template ref they came from in
 `.copier-answers.yml` (tracked, not ignored — see 0.1.0). Generate a **named**
 version rather than a bare commit:
-`copier copy --trust --vcs-ref v0.2.2 gh:JuanSync7/project-keel my-project`
+`copier copy --trust --vcs-ref v0.3.0 gh:JuanSync7/project-keel my-project`
 (`--trust` since 0.2.0, below).
 
 ## [Unreleased]
+
+## [0.3.0] — 2026-10-15
 
 - **ADR-K-0016 and ADR-K-0017 are accepted.** A release tags locally, runs
   the full gate, and pushes only on green; `make verify` writes its evidence
