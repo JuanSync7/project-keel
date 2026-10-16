@@ -8,7 +8,7 @@ tags: [plan, template, downstream, freshness, taxonomy, effects, credentials, au
 summary: The bounded-convergence record for the defects bedrock-platform, the first real project generated from keel, reported back — a red gate on arrival, unknown directories the gate never sees, make targets whose effect nobody declares, and child processes that inherit every credential — plus the command that checks any keel-generated project for all of them. One slice per defect, five passes, each landed as one commit on a green `make verify`.
 id: docs-design-downstream-feedback
 created: 2026-10-06
-updated: 2026-10-15
+updated: 2026-10-16
 visibility: internal
 canonical: true
 ---
@@ -1824,7 +1824,7 @@ under `tests/integration/`, sharing one reader, `tests/source_tree.py`:
   private submodule from outside `pkg`. A module another project module
   imports never calls `fail` or `finish`, which `test_exit_gate.py` enforces.
   `docs/adr/keel/K-0021-imports-flow-up-a-configured-layer-order.md` is the
-  decision, and it is proposed.
+  decision, and it is accepted.
 - `test_swallowed_error_gate.py` fails a bare `except:` or a broad `except`
   that only drops the error, unless its `# noqa: BLE001` or `# noqa: E722`
   gives a reason.
@@ -1908,7 +1908,6 @@ Left by CMP-5.S4:
 - `tests/integration/test_copier_generation.py` and
   `tests/integration/test_copier_audit.py` run near a 90-minute farm job's
   limit when run on their own on one CPU.
-- ADR K-0021, the import layer order, is proposed.
 
 **Cut from this campaign.** Typed inputs with a log helper, planned here
 before, is queued again to make room for the launcher. Everything else in the
@@ -2021,16 +2020,14 @@ are settled:
   and "purpose" merge into one field. Campaign 5's cap holds, so this is
   queued for Campaign 6.
 
-Open for the maintainer:
-
-- **B1, the warning period.** The ruling of 2026-10-12 says a project's own
-  code that exits directly warns first and fails after a set date. The date
-  is not chosen. It lives in config, the warning prints it, and a test turns
-  the warning red once the date has passed. CMP-5.S4 proposed 2027-01-31 and
-  left the tier unstarted; the CMP-5.S4 note gives the three ways to build
-  it.
-- **How a project's gate tells keel's files from its own**, which the B1
-  tier needs: the CMP-5.S4 note gives the three ways.
+- **ADR K-0021, the import layer order, is accepted.**
+- **B1 tells keel's files from a project's own by where the gate runs**, the
+  third way in the CMP-5.S4 note. A finding in the template repository, read
+  from whether `copier.yml` exists, is red. A finding in a generated project
+  warns until 2027-01-31 and is red from that date. The date lives in config,
+  the warning prints it, and a test drives the run date past it to show the
+  warning turn red. The maintainer accepted that this also warns on a keel
+  file the project edited. The tier is not built; it is queued.
 
 ## Open items
 
@@ -2057,7 +2054,7 @@ so.
 | 8 | The gate runner judges the child environment against keel's config, not the `--dir` project's | defect | medium | `scripts/run_make_target.py` calls `build_child_env()` and `load_policy()` with no root |
 | 9 | The gate runner keeps `HOME` and the XDG directories, so host state leaks into a run | defect | medium | `scripts/run_make_target.py` |
 | 10 | `test_exit_gate` accepts `finish(passthrough(main()))` over a `main` that returns integers | missing-check | medium | closed in CMP-5.S4: `scripts/exit_code_table.py` finds a passthrough of the script's own status |
-| 11 | A project's own `sys.exit` turns red after an update and no rewriter exists | decision | medium | rewriter ruled (a) above; B1 date open; the warn tier is unstarted in CMP-5.S4, which needs a ruling on how a project's gate tells a keel file from its own (see the CMP-5.S4 note) |
+| 11 | A project's own `sys.exit` turns red after an update and no rewriter exists | decision | medium | rewriter ruled (a) above; B1 ruled above (the template repository is red, a generated project warns until 2027-01-31); the tier is not built |
 | 12 | `structure.extra_toplevel` directories, the project-checks directory among them, are outside `CODE_ROOTS` | missing-check | medium | `scripts/check_structure.py` `CODE_ROOTS` |
 | 13 | check_X misses a receiver it cannot resolve, a value passed through a parameter, and a spawn in a shell script | missing-check | medium | stated in `scripts/check_structure.py` |
 | 14 | A duplicate key in `config/project.json` is not refused | defect | medium | no `object_pairs_hook` in the tree |

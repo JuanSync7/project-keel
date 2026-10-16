@@ -10,6 +10,9 @@ version rather than a bare commit:
 
 ## [Unreleased]
 
+- **ADR-K-0021 is accepted.** Imports flow up the layer order in
+  config/project.json `import_layers.order`, as 0.3.0 enforces.
+
 ## [0.3.0] — 2026-10-15
 
 - **ADR-K-0016 and ADR-K-0017 are accepted.** A release tags locally, runs

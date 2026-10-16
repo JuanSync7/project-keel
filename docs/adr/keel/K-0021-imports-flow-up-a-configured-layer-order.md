@@ -2,20 +2,20 @@
 title: "ADR-K-0021: imports flow up a configured layer order, and a shared module never ends the process"
 kind: adr
 layer: n/a
-status: proposed
+status: accepted
 owner: TBD
 tags: [adr, imports, layers, exit-codes, gate]
 summary: "Keel's layering lived in prose: CONVENTIONS section 3 kept callers outside a package's private modules, and nothing stopped shared code from importing the code that uses it. config/project.json import_layers.order now lists the layers bottom to top, each a list of path prefixes, and tests/integration/test_import_layers_gate.py fails an import into a higher layer, a file no layer holds and a layer entry that places no file. check_D also fails `from pkg import _sub` of a private submodule from outside the package. A module another project module imports never calls fail or finish outside its entry block, which tests/integration/test_exit_gate.py enforces; import_layers.may_end_the_process names the one module that may, with its reason. The order is config, so a project reorders it without editing a test."
 id: docs-adr-0021-imports-flow-up-a-configured-layer-order
 created: 2026-10-14
-updated: 2026-10-15
+updated: 2026-10-16
 visibility: internal
 canonical: true
 ---
 
 # ADR-K-0021: imports flow up a configured layer order
 
-**Status:** proposed. It adds a config block and gate tests, and it edits no
+**Status:** accepted 2026-10-16 by the maintainer. It adds a config block and gate tests, and it edits no
 other ADR. Every exit still goes through `scripts/exit_codes.py`, and the
 package boundary of CONVENTIONS §3 still holds.
 
