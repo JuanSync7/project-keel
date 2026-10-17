@@ -876,7 +876,7 @@ under `config_reads.roots` that `config_reads.allowed` does not excuse with a
 reason; that map only shrinks, and a module it lists still exits 2 on a config
 fault until it moves onto the loader. `scripts/check_structure.py` is one of
 them, so `check_H` and its siblings still parse the manifest themselves.
-`docs/adr/keel/K-0022-one-config-loader.md` is the proposed decision.
+`docs/adr/keel/K-0022-one-config-loader.md` is the accepted decision.
 
 Why JSON here, and why this and not prose: a manifest is read by **code** (a
 deterministic gate), whereas `AGENT.md` prose is read by a **model**

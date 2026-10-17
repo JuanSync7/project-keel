@@ -403,7 +403,7 @@ the config/project.json `config_reads` block. You may meet it three ways.
    above describes arrives: `read` the file, then pass `resolve` your own `Key`
    rows, built with the type set `TYPES` and the default in the row.
 
-[ADR-K-0022](../adr/keel/K-0022-one-config-loader.md) is the proposed decision.
+[ADR-K-0022](../adr/keel/K-0022-one-config-loader.md) is the accepted decision.
 
 ## Update checklist
 

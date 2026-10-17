@@ -2,7 +2,7 @@
 title: "ADR-K-0022: one config loader in the bottom layer, the environment over the file only where a row names a variable, and its own exit code"
 kind: adr
 layer: n/a
-status: proposed
+status: accepted
 owner: TBD
 tags: [adr, config, loader, defaults, exit-codes, gate]
 summary: "Each script read config/project.json its own way, with its own defaults in `.get(key, default)` calls, so a default was a value nobody chose and nobody saw. scripts/config_loader.py is now the one reader: KEYS is the one table of declared keys, `read` the one open and parse of a config file, `resolve` the one judge of a value, and `env` the one literal-name read of a declared variable. It sits in the bottom import layer, beside the exit helper and the child-environment allowlist. A row that names a variable takes the variable over the file when it is set and not empty, and no other row reads the environment. An unset key with a default says so on stderr; an unset required key or a wrong value is refused by name, and the entry point exits 14, ExitCode.CONFIG. tests/integration/test_config_reads_gate.py fails a direct read outside the loader that config/project.json config_reads.allowed does not excuse."
@@ -15,7 +15,7 @@ canonical: true
 
 # ADR-K-0022: one config loader
 
-**Status:** proposed. It adds a module, a config block, an exit code and a gate
+**Status:** accepted 2026-10-17 by the maintainer. It adds a module, a config block, an exit code and a gate
 test, and it edits no other ADR. The child-environment allowlist of
 `K-0012-child-process-environment-allowlist.md` keeps its meaning: the loader
 decides how a declared variable is read, never which variables a child gets.

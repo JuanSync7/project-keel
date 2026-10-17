@@ -12,7 +12,7 @@ version rather than a bare commit:
 
 - **ADR-K-0021 is accepted.** Imports flow up the layer order in
   config/project.json `import_layers.order`, as 0.3.0 enforces.
-- **ADR-K-0022 is proposed.** One config loader in the bottom import layer,
+- **ADR-K-0022 is accepted.** One config loader in the bottom import layer,
   a variable over the file only where a key's row names it, and exit 14 for a
   config fault.
 

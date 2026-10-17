@@ -1667,7 +1667,7 @@ order on 2026-10-12. The cap is five slices, each one commit on a green
 | CMP-5.S2 | `scripts/gate_evidence.py` writes under `evidence.dir` without the symlink check `scripts/git_tree.py` holds; `scripts/run_evals.py` reads any git failure as "no git"; a full verify on a dirty tree turns red when the date changes during the run; exit code 3 has one name for two meanings; the `openai-compatible` adapter sends a credential to any host config names; a project's own scripts that call `sys.exit` are rewritten by hand after an update | done, except the rewriter, which is queued (below) |
 | CMP-5.S3 | A long script runs wherever it is called, so on a shared host it takes the CPU other people are using; nothing in the tree submits it to a job farm or limits it | done |
 | CMP-5.S4 | The rules a helper cannot carry (the import boundary, a bare `except`, text matching without a stated reason, a comment that reports a change) are held by review alone | done, except the `re` allowlist and the warn-then-fail tier, which are unstarted (below) |
-| CMP-5.S5 | A module reads config, the environment and its own defaults directly, so no one place applies a default, reports it, or refuses a wrong value | done — `make verify` green (3260 passed); 7 of 7 review findings confirmed and fixed; ADR-K-0022 proposed |
+| CMP-5.S5 | A module reads config, the environment and its own defaults directly, so no one place applies a default, reports it, or refuses a wrong value | done — `make verify` green (3260 passed); 7 of 7 review findings confirmed and fixed; ADR-K-0022 accepted |
 
 **CMP-5.S1, the exit helper.** A closed enum of exit codes, one helper that is
 the only place a process exits with an error, the exit-code table in
@@ -1946,7 +1946,7 @@ Left by CMP-5.S5:
   names the bottom layer's members as "the exit helper and the
   child-environment allowlist"; the configured order now holds
   `scripts/config_loader.py` there too. The ADR is accepted, so it is not
-  edited; [ADR-K-0022](../adr/keel/K-0022-one-config-loader.md), proposed,
+  edited; [ADR-K-0022](../adr/keel/K-0022-one-config-loader.md), accepted,
   states the placement.
 
 **Cut from this campaign.** Typed inputs with a log helper, planned here
@@ -1958,17 +1958,38 @@ project-jarvis's proposals, and the residuals of CMP-4.S5 to S8 not named in
 CMP-5.S2. The header fields per code file are accepted after CMP-5.S4 and queued
 for Campaign 6.
 
-## Queued for Campaign 6
+## CMP-6 — a generated project is proven whole, and the two high gaps close
 
-Campaign 6 is not planned or approved. Until it is, this list is its queue,
-in order. A queue id becomes a `CMP-6.S<m>` name only when an approved slice
-table gives it one (CONVENTIONS §20).
+The maintainer approved this campaign on 2026-10-17. The cap is five slices,
+each one commit on a green `make verify`. Slices 1 to 3 are what a project
+using keel relies on; slices 4 and 5 hold keel's own rules. After this
+campaign the low open items are triaged in one read-only pass, and the next
+work comes from dogfooding a real project rather than from the backlog.
+
+| Slice | Gap | Status |
+|-------|-----|--------|
+| CMP-6.S1 | Each part of a generated project is tested on its own, but no test runs a generated project's full `make verify`, or `make verify` after `copier update` from the previous tag; nothing checks that each frontend app commits its lockfile, or that CI's Node version is the one the gate is run with | planned |
+| CMP-6.S2 | KEEL-TEST-1: a test can reach a live store; nothing in the suite refuses it | planned |
+| CMP-6.S3 | KEEL-SEC-1: nothing scans the tree for a committed secret | planned |
+| CMP-6.S4 | B1: a generated project's own code that breaks a keel gate check is red on `copier update` (the exit gate) or not judged at all (the config-reads gate skips); the ruled warn-then-fail tier is not built | planned |
+| CMP-6.S5 | The three accepted file-header fields are not read by any check, and a call into `re` needs no stated reason | planned |
+
+**CMP-6.S3, the scanner.** The maintainer ruled on 2026-10-17: keel's own
+rule is a gate test, and a scanner is a thin adapter behind it. The gate test
+fails a committed file that holds a value under a key
+`scripts/config_loader.py` `KEYS` marks secret. The scanner covers the shapes
+no key names; gitleaks is its default, chosen in config, and another scanner
+is a second adapter, not an edit to the test.
+
+## Queued after Campaign 6
+
+A queue id becomes a `CMP-<n>.S<m>` name only when an approved slice table
+gives it one (CONVENTIONS §20).
 
 | Position | Queue id | Gap |
 |----------|----------|-----|
-| 1 | KEEL-TEST-1 | A test can reach a live store; nothing in the suite refuses it |
-| 2 | KEEL-SEC-1 | Nothing scans the tree for a committed secret; the scanner is the maintainer's choice |
-| 3 | KEEL-DOC-1 | A design or spec document can describe itself without meeting its features; nothing records which questions it answers and which it leaves open |
+| 1 | KEEL-DOC-1 | A design or spec document can describe itself without meeting its features; nothing records which questions it answers and which it leaves open |
+| 2 | KEEL-SHELL-1 | A generated project supports Python and TypeScript but not shell: a shell script gets no lint, format or test target, and none of the header, exit-code, environment or config rules reaches it |
 
 **KEEL-DOC-1, the defence table.** This holds the maintainer's document rule
 R-DOC-15: before a design is planned, it answers hard questions on behalf of
@@ -2039,6 +2060,28 @@ The slice must also decide these points, and say what it chose:
   DT-3 on the first run of `make verify`. `docs/design/README.md` would show
   the table's shape inside a fenced block, which no check reads as a table.
 
+**KEEL-SHELL-1, shell as a template language.** The maintainer approved it on
+2026-10-17 as the campaign after Campaign 6, in three slices; it becomes a
+`CMP-<n>.S<m>` name only when its slice table is approved. Shell gets the
+treatment Python and TypeScript already have, and ships to generated projects:
+
+- A copier question `shell`, on by default, adds the shell targets; a project
+  that answers no installs none of the tools. Shell scripts live in
+  `scripts/` beside the Python ones, because the taxonomy groups by role.
+- Slice 1: `lint-sh` (shellcheck), `fmt-sh` and `fmt-check-sh` (shfmt) and
+  `test-sh` (bats-core), run by `make verify`, with generation tests for both
+  answers.
+- Slice 2: check_O and check_V read a shell script's `# title:` comment
+  block, and an exit-code helper generated from `scripts/exit_codes.py` gives
+  shell the one exit-code table; the exit gate reads `.sh` files.
+- Slice 3: a child process starts from `env -i` and the names in
+  `child_env.names`; a configured value is read only through
+  `python -m scripts.config_loader`; the bash version floor is a config key;
+  `docs/guides/shell-style.md` and the reference rows.
+- Not yet checked: whether the shellcheck and shfmt packages on PyPI install
+  the binaries into the venv, and how bats-core is installed. This host has
+  bash 4.4 and none of the three tools.
+
 ## Rulings recorded after CMP-5.S3
 
 The maintainer asked for the vault's recommendations to be acted on. These
@@ -2068,6 +2111,12 @@ are settled:
   the warning prints it, and a test drives the run date past it to show the
   warning turn red. The maintainer accepted that this also warns on a keel
   file the project edited. The tier is not built; it is queued.
+- **ADR-K-0022, one config loader, is accepted** (2026-10-17), and
+  CMP-5.S5 with the react-vite lockfile is pushed.
+- **Campaign 6 is approved with a cap of five slices** (2026-10-17), in the
+  order of its slice table. The secret scanner is ruled under CMP-6.S3.
+- **CI runs on a pinned runner image, `ubuntu-24.04`**, so the image changes
+  only when the workflows are edited, not when the `ubuntu-latest` label moves.
 
 ## Open items
 
@@ -2086,8 +2135,8 @@ so.
 |---|------|------|----------|----------|
 | 1 | `make -i` or a `.IGNORE` target lets a `[write]` recipe run past `$(WRITE_GUARD)` under CI or a Ralph loop | defect | high | closed in CMP-5.S4: the guard's `$(error)` clause and check_W's `.IGNORE` rule |
 | 2 | `test-fe` exits 0 when npm or an app's `node_modules` is missing, and CI never runs `test-fe` | missing-check | high | closed in CMP-5.S4: both targets exit 2, and CI runs `make fe-browsers` and `make test-fe` |
-| 3 | KEEL-TEST-1: nothing stops a test reaching a live store | feature | high | queued first in Campaign 6 |
-| 4 | KEEL-SEC-1: nothing scans the tree for a committed secret | missing-check | high | queued second in Campaign 6 |
+| 3 | KEEL-TEST-1: nothing stops a test reaching a live store | feature | high | planned as CMP-6.S2 |
+| 4 | KEEL-SEC-1: nothing scans the tree for a committed secret | missing-check | high | planned as CMP-6.S3 |
 | 5 | `credential_value_patterns` covers five token forms | missing-check | medium | `config/project.json` |
 | 6 | A process keel does not start (`make new`'s copier, a hook calling make) gets the caller's whole environment | defect | medium | `Makefile` `new` target |
 | 7 | A same-user child can read `/proc/$PPID/environ` | decision | medium | outside keel; K-0012 says defence in depth |
@@ -2107,7 +2156,7 @@ so.
 | 21 | No mutation runner; mutants are written by hand | feature | medium | queued since Campaign 4 |
 | 22 | CMP-5.S4, the tree-wide checks and the features-row rule | feature | medium | done, except open items 11 and 88 |
 | 23 | CMP-5.S5, the config loader with a default marker | feature | medium | done; what it leaves is under "Left by CMP-5.S5" |
-| 24 | KEEL-DOC-1, the defence table | feature | medium | queued third in Campaign 6 |
+| 24 | KEEL-DOC-1, the defence table | feature | medium | queued first after Campaign 6 |
 | 25 | pre-commit is not run in CI | missing-check | medium | `.github/workflows/ci.yml` |
 | 26 | The coverage floor is not re-measured, so it can fall | missing-check | medium | `tests/integration/test_gate_scope.py` |
 | 27 | `review_docs` and `restamp_docs` each keep a skip-directory list | defect | low | `_SKIP_DIRS`, `WALK_SKIP_DIRS` |

@@ -83,7 +83,7 @@ of truth for labeling and the directory taxonomy. Each directory's own
   fault returns `report(ExitCode.CONFIG, ...)`.
   `tests/integration/test_config_reads_gate.py` fails a direct read that
   `config/project.json` `config_reads.allowed` does not excuse.
-  `docs/adr/keel/K-0022-one-config-loader.md` is the proposed decision.
+  `docs/adr/keel/K-0022-one-config-loader.md` is the accepted decision.
 - **Respect the `__init__.py` boundary.** Import a package's public
   symbols from the package, never from its private (`_*`) submodules,
   `from pkg import _sub` included (check_D).
