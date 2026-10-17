@@ -3,7 +3,7 @@
 title: Gate evidence — run a gate's goals and write its evidence record
 kind: script
 layer: n/a
-summary: The driver a gate recipe runs as `gate_evidence.py --gate <token> -- <make> <goal>...`. It runs each goal as its own make, in order, with the allowlisted environment from scripts/child_env.py and the outer make's flags and command-line variables as argv; when config/project.json `evidence.run_date` is present it reads the clock once before the first goal (or keeps a valid date an outer run already set) and hands that one date to every goal in the variable the block names, through scripts/run_date.py, so a check late in a run that crossed midnight judges by the day the run began; stops at the first failing goal unless MAKEFLAGS carries k; and writes one canonical JSON record to `<config/project.json evidence.dir>/<gate>.json`, shaped by the JSON Schema `evidence.schema` names, which alone owns `schema_version`. The record names the commit, whether the tree was dirty and a digest of what git lists (scripts/git_tree.py), each goal's result and exit code, the test counts from pytest's own junit report, and every scripts/check_structure.py finding. The record holds no clock, date, duration, host, user or absolute path, so a rerun on the same tree writes the same bytes. It fails closed: a red placeholder is written before the first goal, so an interrupted run never leaves an earlier green record standing; a failing goal's exit code passes through; zero tests, no report, a failed or errored test in pytest's report (a goal that exited 0 anyway, as under `make -i`), a tree changed during the run, checks that could not run and a crash of the writer itself are each a red record and exit RED_RECORD (scripts/exit_codes.py); zero goals, a malformed gate or goal, a bad evidence block, a supplied run date that is not a date or is further from the clock than `evidence.run_date.max_age_days` allows, a record, temporary or report path that reaches its file through a symlink (scripts/git_tree.py `through_symlink`, asked once before the first write or removal and not again during the run), a record or report path git does not ignore, and a git that ran and failed when asked (an unreadable repository is unknown, not absent) are refused with exit 2 before any goal runs; an interrupt exits 130. Under `make -n`, `-q` or `-t` it runs the goals with that flag and writes nothing. It is not a general gate runner (scripts/run_make_target.py is) and keeps no history: each run replaces the file whole.
+summary: The driver a gate recipe runs as `gate_evidence.py --gate <token> -- <make> <goal>...`. It runs each goal as its own make, in order, with the allowlisted environment from scripts/child_env.py and the outer make's flags and command-line variables as argv; when config/project.json `evidence.run_date` is present it reads the clock once before the first goal (or keeps a valid date an outer run already set) and hands that one date to every goal in the variable the block names, through scripts/run_date.py, so a check late in a run that crossed midnight judges by the day the run began; stops at the first failing goal unless MAKEFLAGS carries k; and writes one canonical JSON record to `<config/project.json evidence.dir>/<gate>.json`, shaped by the JSON Schema `evidence.schema` names, which alone owns `schema_version`. The record names the commit, whether the tree was dirty and a digest of what git lists (scripts/git_tree.py), each goal's result and exit code, the test counts from pytest's own junit report, and every scripts/check_structure.py finding. The record holds no clock, date, duration, host, user or absolute path, so a rerun on the same tree writes the same bytes. It fails closed: a red placeholder is written before the first goal, so an interrupted run never leaves an earlier green record standing; a failing goal's exit code passes through; zero tests, no report, a failed or errored test in pytest's report (a goal that exited 0 anyway, as under `make -i`), a tree changed during the run, checks that could not run and a crash of the writer itself are each a red record and exit RED_RECORD (scripts/exit_codes.py); a config/project.json value it reads that cannot be used (the manifest, `evidence.dir`, `evidence.schema` or `evidence.run_date`, each read through scripts/config_loader.py, which names every key at fault in one run) is refused with exit CONFIG before any goal runs; zero goals, a malformed gate or goal, an `evidence.schema` file that cannot be read or has no integer version, a supplied run date that is not a date or is further from the clock than `evidence.run_date.max_age_days` allows, a record, temporary or report path that reaches its file through a symlink (scripts/git_tree.py `through_symlink`, asked once before the first write or removal and not again during the run), a record or report path git does not ignore, and a git that ran and failed when asked (an unreadable repository is unknown, not absent) are refused with exit 2 before any goal runs; an interrupt exits 130. Under `make -n`, `-q` or `-t` it runs the goals with that flag and writes nothing. It is not a general gate runner (scripts/run_make_target.py is) and keeps no history: each run replaces the file whole.
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/integration/test_gate_evidence_record.py
@@ -31,6 +31,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import check_structure  # noqa: E402 — the one owner of the check list
 import child_env  # noqa: E402 — the environment every goal inherits
+import config_loader  # noqa: E402 — the one reader of config/project.json
 import git_tree  # noqa: E402 — the one definition of what git lists
 import run_date  # noqa: E402 — the one date a whole run calls today
 from exit_codes import ExitCode, finish, passthrough, report  # noqa: E402
@@ -64,54 +65,52 @@ _JOBSERVER = ("--jobserver-auth=", "--jobserver-fds=")
 
 
 class EvidenceConfigError(Exception):
-    """config/project.json `evidence` or the schema it names cannot be used."""
+    """A config/project.json value `evidence` reads cannot be used: the
+    manifest itself, `evidence.dir`, `evidence.schema` or the run date block.
+    An edit to config/project.json clears it."""
+
+
+class EvidenceSchemaError(Exception):
+    """The JSON Schema `evidence.schema` names cannot be read, or has no
+    integer `properties.schema_version.const`. The schema file, not a config
+    value, is at fault."""
+
+
+_PATHS = (("evidence", "dir"), ("evidence", "schema"))
 
 
 def load_policy(root):
     """{dir, schema, schema_version, run_date} from config/project.json
-    `evidence`, the version read from the schema's
-    `properties.schema_version.const`, its only owner, and run_date the
-    scripts/run_date.py policy or None when the block has no `run_date`. Raises
-    EvidenceConfigError naming the key at fault."""
+    `evidence`, read through scripts/config_loader.py, the version read from
+    the schema's `properties.schema_version.const`, its only owner, and
+    run_date the scripts/run_date.py policy or None when the block has no
+    `run_date`. Raises EvidenceConfigError carrying the loader's lines for a
+    config value, and EvidenceSchemaError for the schema file."""
     try:
-        with open(os.path.join(root, _MANIFEST), encoding="utf-8") as fh:
-            manifest = json.load(fh)
-    except (OSError, ValueError) as exc:
-        raise EvidenceConfigError("%s: unreadable (%s)" % (_MANIFEST, exc)) from exc
-    block = manifest.get("evidence") if isinstance(manifest, dict) else None
-    if not isinstance(block, dict):
-        raise EvidenceConfigError(
-            "%s: no `evidence` object (keys dir and schema)" % _MANIFEST
+        manifest = config_loader.read(root)
+        declared = config_loader.resolve(
+            manifest, config_loader.rows(*_PATHS), _MANIFEST
         )
-    for key in ("dir", "schema"):
-        value = block.get(key)
-        if not isinstance(value, str) or not value:
-            raise EvidenceConfigError(
-                "%s: evidence.%s must be a non-empty string" % (_MANIFEST, key)
-            )
-        parts = value.replace("\\", "/").split("/")
-        if os.path.isabs(value) or value.startswith("/") or ".." in parts:
-            raise EvidenceConfigError(
-                "%s: evidence.%s must be a path inside the repository, got %r"
-                % (_MANIFEST, key, value)
-            )
-    schema_path = os.path.join(root, block["schema"])
+    except config_loader.ConfigError as exc:
+        raise EvidenceConfigError("; ".join(exc.lines)) from exc
+    schema_rel = declared[("evidence", "schema")]
+    schema_path = os.path.join(root, schema_rel)
     try:
         with open(schema_path, encoding="utf-8") as fh:
             schema = json.load(fh)
     except (OSError, ValueError) as exc:
-        raise EvidenceConfigError(
+        raise EvidenceSchemaError(
             "%s: evidence.schema %s is not a readable JSON file (%s)"
-            % (_MANIFEST, block["schema"], exc)
+            % (_MANIFEST, schema_rel, exc)
         ) from exc
     try:
         version = schema["properties"]["schema_version"]["const"]
     except (KeyError, TypeError):
         version = None
     if type(version) is not int:
-        raise EvidenceConfigError(
+        raise EvidenceSchemaError(
             "%s: has no integer properties.schema_version.const, the record "
-            "version's only owner" % block["schema"]
+            "version's only owner" % schema_rel
         )
     try:
         date_policy = run_date.policy(manifest)
@@ -119,8 +118,8 @@ def load_policy(root):
         raise EvidenceConfigError(str(exc)) from exc
     return {
         "run_date": date_policy,
-        "dir": block["dir"].replace("\\", "/").rstrip("/"),
-        "schema": block["schema"],
+        "dir": declared[("evidence", "dir")].replace("\\", "/").rstrip("/"),
+        "schema": schema_rel,
         "schema_version": version,
     }
 
@@ -485,7 +484,14 @@ def main(argv=None, runner=None, clock=None):
     try:
         policy = load_policy(root)
     except EvidenceConfigError as exc:
-        return _refuse(str(exc), "correct config/project.json `evidence`")
+        return report(
+            ExitCode.CONFIG,
+            "gate_evidence: refused before any goal ran",
+            str(exc),
+            "correct config/project.json `evidence`",
+        )
+    except EvidenceSchemaError as exc:
+        return _refuse(str(exc), "correct the schema config/project.json names")
     rel = policy["dir"] + "/" + args.gate + ".json"
     junit_dir = policy["dir"] + "/junit"
     makeflags = os.environ.get("MAKEFLAGS", "")

@@ -291,6 +291,20 @@ def test_without_a_valid_policy_the_run_is_refused(proj, manifest):
     assert runner.calls == []
 
 
+def test_the_manifest_is_read_through_the_config_loader(proj):
+    """scripts/config_loader.py `read` is the one parse, so a key written twice
+    is a refusal naming it, never whichever value came last."""
+    text = json.dumps({"make_targets": _POLICY})
+    (proj / "config" / "project.json").write_text(
+        text[:-1] + ', "make_targets": {}}', encoding="utf-8"
+    )
+    runner = _fake(0)
+    res = rmt.run_target("check", cwd=str(proj), runner=runner, snapshot=_never)
+    assert res["refused"] and "`make_targets` appears twice" in res["refused"], res
+    assert "make_targets policy is unknown" in res["refused"], res
+    assert runner.calls == []
+
+
 def test_a_timeout_is_red_and_still_checks_the_tree(proj):
     import subprocess
 

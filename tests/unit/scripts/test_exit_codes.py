@@ -2,7 +2,7 @@
 title: Unit — exit_codes (the closed list of exit codes and the one place a process ends)
 kind: tests
 layer: n/a
-summary: ExitCode is a closed, alias-free enum whose every member carries its value, a meaning and what to do, and compares equal to its int. NOTHING_JUDGED is 13, non-zero, and outside the bands other programs use, the launcher's reserved statuses and every farm status config/project.json configures. report writes exactly one `<what>: <on>; <next>` line to the stream it is given (stderr by default, never stdout) and returns the member; it refuses a blank or non-string part by name, a bare int and SUCCESS, and writes nothing when it refuses. passthrough wraps a wrapped tool's status, spells a signal death the way the shell does and refuses anything but an int. finish exits with a member's or a passed-through value, and exits USAGE with one line naming the value when it is handed a bare int, a bool or None. fail is finish over report. The module parses on the oldest interpreter a hook runs it under, and runs there when the host has one.
+summary: ExitCode is a closed, alias-free enum whose every member carries its value, a meaning and what to do, and compares equal to its int. NOTHING_JUDGED is 13 and CONFIG, the config loader's refusal, is 14, each non-zero and outside the bands other programs use, the launcher's reserved statuses and every farm status config/project.json configures. report writes exactly one `<what>: <on>; <next>` line to the stream it is given (stderr by default, never stdout) and returns the member; it refuses a blank or non-string part by name, a bare int and SUCCESS, and writes nothing when it refuses. passthrough wraps a wrapped tool's status, spells a signal death the way the shell does and refuses anything but an int. finish exits with a member's or a passed-through value, and exits USAGE with one line naming the value when it is handed a bare int, a bool or None. fail is finish over report. The module parses on the oldest interpreter a hook runs it under, and runs there when the host has one.
 """
 
 import ast
@@ -143,6 +143,26 @@ def test_nothing_judged_is_thirteen_and_free():
     assert int(member) not in farm, sorted(farm)
     assert member.meaning != ExitCode.FAILURE.meaning
     assert member.action != ExitCode.FAILURE.action
+
+
+def test_config_is_the_loader_refusal_code():
+    """A configured value missing or wrong is refused before anything is judged,
+    by scripts/config_loader.py: its own non-zero member, at a value no shell,
+    tool, signal, launcher-reserved or farm-reserved status already means, so a
+    caller can tell a config refusal from wrong usage by the number alone."""
+    assert "CONFIG" in ExitCode.__members__, sorted(ExitCode.__members__)
+    member = ExitCode.CONFIG
+    assert member == 14
+    others = [m for m in ExitCode if m is not member]
+    assert all(int(member) != int(other) for other in others), member
+    taken = [band for band in _TAKEN_BANDS if band[0] <= int(member) <= band[1]]
+    assert taken == [], (member, taken)
+    assert int(member) not in launch._STATUS_TAKEN
+    farm = _farm_statuses()
+    assert farm, "no farm status configured -- zero items"
+    assert int(member) not in farm, sorted(farm)
+    assert "config" in member.meaning and member.meaning != ExitCode.USAGE.meaning
+    assert member.action != ExitCode.USAGE.action
 
 
 def test_report_writes_one_line_and_returns_the_member(capsys):

@@ -17,6 +17,7 @@ import pytest
 _ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(_ROOT / "scripts"))
 
+import config_loader  # noqa: E402
 import run_date  # noqa: E402
 
 pytestmark = pytest.mark.unit
@@ -211,7 +212,6 @@ def test_an_absent_block_switches_the_channel_off():
     [
         ([], "config/project.json"),
         ({"evidence": []}, "evidence"),
-        (_manifest(None), "evidence.run_date"),
         (_manifest([]), "evidence.run_date"),
         (_manifest({}), "evidence.run_date.env"),
         (_manifest(_block(env=3)), "evidence.run_date.env"),
@@ -237,6 +237,50 @@ def test_a_malformed_block_is_refused_naming_its_key(manifest, names):
     with pytest.raises(run_date.RunDateError) as caught:
         run_date.policy(manifest)
     assert names in str(caught.value), str(caught.value)
+
+
+@pytest.fixture
+def fresh_defaults():
+    """A fresh process's announced set: no default line written yet."""
+    config_loader._ANNOUNCED.clear()
+    yield
+    config_loader._ANNOUNCED.clear()
+
+
+def test_an_absent_or_null_block_is_the_declared_default_and_says_so(
+    capsys, fresh_defaults
+):
+    """`evidence.run_date` is a scripts/config_loader.py KEYS row whose default
+    is null, the channel off: an absent block takes it and writes the one
+    default line, and an explicit null is that same declared off."""
+    assert run_date.policy({"evidence": {"dir": ".evidence"}}) is None
+    err = capsys.readouterr().err
+    assert "[using default] evidence.run_date = null" in err, err
+    assert run_date.policy(_manifest(None)) is None
+    assert run_date.policy(_manifest(_block())) == _policy()
+    assert capsys.readouterr().err == ""
+
+
+def test_a_missing_allowlist_names_the_loader_line_and_the_key(capsys):
+    with pytest.raises(run_date.RunDateConfigError) as caught:
+        run_date.policy({"evidence": {"run_date": _block()}})
+    message = str(caught.value)
+    assert "[not set] child_env" in message and "child_env.names" in message
+    assert "[not set] child_env" in capsys.readouterr().err
+
+
+def test_load_refuses_a_key_written_twice(tmp_path):
+    """load reads through scripts/config_loader.py `read`, so a key written
+    twice is refused naming it, not decided by whichever came last."""
+    (tmp_path / "config").mkdir()
+    text = json.dumps(_manifest(_block()))
+    (tmp_path / "config" / "project.json").write_text(
+        text[:-1] + ', "evidence": {}}', encoding="utf-8"
+    )
+    with pytest.raises(run_date.RunDateConfigError) as caught:
+        run_date.load(str(tmp_path))
+    assert "`evidence` appears twice" in str(caught.value), str(caught.value)
+    assert "config/project.json" in caught.value.remedy, caught.value.remedy
 
 
 def test_a_variable_the_allowlist_would_drop_names_both_keys():

@@ -2,7 +2,7 @@
 title: run_date — the one date a gate run calls today
 kind: script
 layer: n/a
-summary: The one definition of the date a whole gate run calls today, shared by the driver that fixes it and every check that reads it. config/project.json `evidence.run_date` names the channel: `env`, the environment variable the date travels in, and `max_age_days`, how many days before the clock a supplied date may be. scripts/gate_evidence.py calls `for_run` once, before the first goal, and hands the answer to every goal; scripts/jobs/review_docs.py `resolve_today` calls `today`, so a check started late in a run that crossed midnight judges by the day the run began. `git_dates` gives a git commit made inside the run the run's date, held to the last second of that day once the clock has passed it, for tests/hermetic_git.py, so a tree the test suite commits after midnight is not dated a day past the stamps the run wrote. A date found in the variable is a caller's claim and is checked every time it is read: it must be written YYYY-MM-DD, be a calendar date, be no later than the clock and no more than `max_age_days` days before it, and anything else is a RunDateError that names the variable and the config key and never falls back to the clock. So the variable can move today back by the bound and never forward, which is the most a caller gains by setting it by hand. `policy` refuses a malformed block naming the key at fault, and refuses an `env` that `child_env.names` does not list, since scripts/child_env.py would then drop the variable before any check below the driver saw it. A fault in config/project.json, as opposed to a supplied date, is a RunDateConfigError, a RunDateError that carries `remedy`, the edit that clears it, because no other date would; scripts/jobs/review_docs.py and scripts/jobs/restamp_docs.py report that as their next step, and scripts/check_structure.py check_X reads the same `policy` so a project learns of the fault before a run. An absent `evidence.run_date`, or an absent config/project.json, switches the channel off: every reader reads the clock and no variable is a run date. A config/project.json an update left conflicted is refused as that conflict, with the hunk's line found by scripts/child_env.py `conflict_hunk_line`, never as the JSON error the markers cause. It is never run, starts no process and writes nothing; it does not decide what a date is compared with (scripts/jobs/review_docs.py `stale_findings` does), and it is not the pinned build date (SOURCE_DATE_EPOCH, which `resolve_today` reads first). Stdlib plus scripts/child_env.py, and 3.6-safe, because scripts/gate_evidence.py imports it under the old interpreter.
+summary: The one definition of the date a whole gate run calls today, shared by the driver that fixes it and every check that reads it. config/project.json `evidence.run_date` names the channel: `env`, the environment variable the date travels in, and `max_age_days`, how many days before the clock a supplied date may be. scripts/gate_evidence.py calls `for_run` once, before the first goal, and hands the answer to every goal; scripts/jobs/review_docs.py `resolve_today` calls `today`, so a check started late in a run that crossed midnight judges by the day the run began. `git_dates` gives a git commit made inside the run the run's date, held to the last second of that day once the clock has passed it, for tests/hermetic_git.py, so a tree the test suite commits after midnight is not dated a day past the stamps the run wrote. A date found in the variable is a caller's claim and is checked every time it is read: it must be written YYYY-MM-DD, be a calendar date, be no later than the clock and no more than `max_age_days` days before it, and anything else is a RunDateError that names the variable and the config key and never falls back to the clock. So the variable can move today back by the bound and never forward, which is the most a caller gains by setting it by hand. `policy` refuses a malformed block naming the key at fault, and refuses an `env` that `child_env.names` does not list, since scripts/child_env.py would then drop the variable before any check below the driver saw it. A fault in config/project.json, as opposed to a supplied date, is a RunDateConfigError, a RunDateError that carries `remedy`, the edit that clears it, because no other date would; scripts/jobs/review_docs.py and scripts/jobs/restamp_docs.py report that as their next step, and scripts/check_structure.py check_X reads the same `policy` so a project learns of the fault before a run. An absent `evidence.run_date`, or an absent config/project.json, switches the channel off: every reader reads the clock and no variable is a run date. It reads config/project.json through scripts/config_loader.py `read` and `resolve`, so a null `evidence.run_date` is that same declared default, the channel off, which the loader writes to stderr once per process when it takes it; a block that is not an object, a `child_env` that is absent or not an object, and a key written twice in one object are each refused with the loader's line; and a config/project.json an update left conflicted is refused as that conflict, with the hunk's line, never as the JSON error the markers cause. It is never run, starts no process and writes nothing; it does not decide what a date is compared with (scripts/jobs/review_docs.py `stale_findings` does), and it is not the pinned build date (SOURCE_DATE_EPOCH, which `resolve_today` reads first). Stdlib plus scripts/config_loader.py, and 3.6-safe, because scripts/gate_evidence.py imports it under the old interpreter.
 effect: read-only
 """
 
@@ -14,12 +14,11 @@ effect: read-only
 
 import collections
 import datetime
-import json
 import os
 import string
 import time
 
-import child_env
+import config_loader
 
 __all__ = [
     "RunDateConfigError",
@@ -42,6 +41,7 @@ __all__ = [
 PROJECT_READS = ("config/project.json",)
 _MANIFEST = "config/project.json"
 _KEY = "evidence.run_date"
+_PATH = ("evidence", "run_date")
 _FINISH_DOC = "docs/guides/generate-and-upgrade.md, 'Finish an update that stopped'"
 _KEYS = ("env", "max_age_days")
 _FORMAT = "%Y-%m-%d"
@@ -72,7 +72,7 @@ class RunDateConfigError(RunDateError):
         self.remedy = remedy
 
 
-_NOT_JSON_REMEDY = "correct %s where the parser points, then rerun" % _MANIFEST
+_NOT_JSON_REMEDY = "correct %s where the message points, then rerun" % _MANIFEST
 # The next step for a malformed block. The message names the key at fault.
 _BLOCK_REMEDY = (
     "correct %s `evidence.run_date`: an object with `env`, a variable name "
@@ -99,21 +99,13 @@ def policy(manifest):
             "%s: is not a JSON object" % _MANIFEST,
             "rewrite %s as one JSON object" % _MANIFEST,
         )
-    evidence = manifest.get("evidence", {})
-    if not isinstance(evidence, dict):
-        raise RunDateConfigError(
-            "%s: `evidence` must be an object" % _MANIFEST,
-            "rewrite %s `evidence` as an object" % _MANIFEST,
-        )
-    if "run_date" not in evidence:
+    try:
+        declared = config_loader.resolve(manifest, config_loader.rows(_PATH), _MANIFEST)
+    except config_loader.ConfigError as exc:
+        raise RunDateConfigError("; ".join(exc.lines), _BLOCK_REMEDY) from exc
+    block = declared[_PATH]
+    if block is None:
         return None
-    block = evidence["run_date"]
-    if not isinstance(block, dict):
-        raise RunDateConfigError(
-            "%s: %s must be an object with the keys %s"
-            % (_MANIFEST, _KEY, " and ".join(_KEYS)),
-            _BLOCK_REMEDY,
-        )
     for key in sorted(block):
         if key not in _KEYS:
             raise RunDateConfigError(
@@ -137,15 +129,27 @@ def policy(manifest):
             % (_MANIFEST, _KEY),
             _BLOCK_REMEDY,
         )
-    allowlist = manifest.get("child_env", {})
-    names = allowlist.get("names") if isinstance(allowlist, dict) else None
+    allow_remedy = (
+        "add %s to %s `child_env.names`, or remove `%s` to switch the run "
+        "date off" % (name, _MANIFEST, _KEY)
+    )
+    try:
+        allowlist = config_loader.resolve(
+            manifest, config_loader.rows(("child_env",)), _MANIFEST
+        )[("child_env",)]
+    except config_loader.ConfigError as exc:
+        raise RunDateConfigError(
+            "%s, so no `child_env.names` lists %s and no process below the "
+            "gate's driver would receive the run's date" % ("; ".join(exc.lines), name),
+            allow_remedy,
+        ) from exc
+    names = allowlist.get("names")
     if not isinstance(names, list) or name not in names:
         raise RunDateConfigError(
             "%s: %s.env names %s, which `child_env.names` does not list, so no "
             "process below the gate's driver would receive the run's date"
             % (_MANIFEST, _KEY, name),
-            "add %s to %s `child_env.names`, or remove `%s` to switch the run "
-            "date off" % (name, _MANIFEST, _KEY),
+            allow_remedy,
         )
     return RunDatePolicy(env=name, max_age_days=bound)
 
@@ -160,40 +164,20 @@ def load(root):
     if not os.path.lexists(path):
         return None
     try:
-        with open(path, encoding="utf-8") as fh:
-            manifest = json.load(fh)
-    except OSError as exc:
-        raise RunDateConfigError(
-            "%s: unreadable (%s)" % (_MANIFEST, exc),
-            "make %s readable, then rerun" % _MANIFEST,
-        ) from exc
-    except ValueError as exc:
-        message, remedy = _unparsed(path, exc)
-        raise RunDateConfigError(message, remedy) from exc
+        manifest = config_loader.read(root, _MANIFEST)
+    except config_loader.ConfigError as exc:
+        raise RunDateConfigError("; ".join(exc.lines), _read_remedy(exc)) from exc
     return policy(manifest)
 
 
-def _unparsed(path, exc):
-    """(message, remedy) for a manifest that is not JSON."""
-    # Markers are what an update leaves, and the JSON error they cause
-    # ("Expecting property name") names neither the file's real state nor the
-    # step that clears it.
-    try:
-        line = child_env.conflict_hunk_line(path)
-    except Exception as why:  # noqa: BLE001 -- any failure keeps the parse error
-        return (
-            "%s: unreadable (%s; conflict markers not checked: %s)"
-            % (_MANIFEST, exc, why),
-            _NOT_JSON_REMEDY,
-        )
-    if line is None:
-        return "%s: unreadable (%s)" % (_MANIFEST, exc), _NOT_JSON_REMEDY
-    finish = "resolve it, then finish the update (%s)" % _FINISH_DOC
-    return (
-        "%s holds a merge-conflict hunk at line %d, so the gate run's date "
-        "cannot be read: %s" % (_MANIFEST, line, finish),
-        finish,
-    )
+def _read_remedy(exc):
+    """The next step for a manifest scripts/config_loader.py `read` refused."""
+    if getattr(exc, "conflict_line", None) is not None:
+        return "resolve it, then finish the update (%s)" % _FINISH_DOC
+    if isinstance(exc, config_loader.ConfigAbsent):
+        # lexists saw it, so it is a link to nothing.
+        return "point %s at a file, or remove it, then rerun" % _MANIFEST
+    return _NOT_JSON_REMEDY
 
 
 def _shown(raw):

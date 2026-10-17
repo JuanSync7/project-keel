@@ -2,16 +2,19 @@
 title: Eval configuration — the evals block of config/project.json, checked
 layer: n/a
 public_api: no
-summary: parse_config turns the config/project.json `evals` block into a frozen EvalConfig and reads each schema's version from its `properties.schema_version.const`, the only owner of that number; load_config reads the files for it. Every missing, unknown or ill-typed key is a ConfigError naming its dotted key (evals.threshold, evals.live.max_calls, ...): a threshold outside 0 < t <= 1, a negative or non-integer call cap, an empty model name, non-object model options, and a path that is absolute or climbs out of the project. A ConfigError from parse_config carries `evals.report_dir` whenever that key alone is still a safe relative path, so the caller can remove an earlier report rather than leave it standing.
+summary: parse_config turns the config/project.json `evals` block into a frozen EvalConfig and reads each schema's version from its `properties.schema_version.const`, the only owner of that number; load_config reads the files for it. It is a typed view over scripts/config_loader.py, not a second loader: load_config reads the manifest through `read`, and parse_config resolves the block's eight keys through `resolve` against that module's KEYS rows, which hold each key's type and bound (a threshold with 0 < t <= 1, an integer call cap >= 0, a null or non-empty model name, object model options, and a path that is non-empty, not absolute and with no `..` part), so every key that is missing or ill-typed is named in one refusal, one loader line each, written to stderr. It adds what a row cannot say: a key the block or `evals.live` does not know is refused by its dotted name. Each refusal here is a ConfigError carrying the loader's `lines` and `in_config`, true when an edit to config/project.json clears it and false, the default, for a schema file that cannot be read or has no positive integer version. A ConfigError from parse_config carries `evals.report_dir` whenever that key alone is still a safe relative path, so the caller can remove an earlier report rather than leave it standing.
 """
 
 from __future__ import annotations
 
+import io
 import json
 import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from pathlib import PurePosixPath
+from typing import Any
+
+from scripts import config_loader
 
 __all__ = ["ConfigError", "EvalConfig", "load_config", "parse_config"]
 
@@ -21,16 +24,35 @@ _COMMENT = "_comment"
 _PATHS = ("case_schema", "report_schema", "dataset_dir", "report_dir")
 _KEYS = frozenset(_PATHS + ("threshold", "live"))
 _LIVE_KEYS = frozenset({"model", "max_calls", "model_options"})
+_LIVE = (_BLOCK, "live")
+# The block's rows in scripts/config_loader.py KEYS: the one statement of each
+# key's type, bound and default (none has one).
+_ROWS = config_loader.rows(
+    *[(_BLOCK, key) for key in _PATHS + ("threshold",)],
+    *[_LIVE + (key,) for key in sorted(_LIVE_KEYS)],
+)
+_REPORT_DIR_ROW = config_loader.rows((_BLOCK, "report_dir"))
 
 
 class ConfigError(Exception):
     """config/project.json `evals`, or a schema it names, cannot be used; the
-    message names the dotted key at fault. *report_dir* is `evals.report_dir`
-    when that key alone still reads as a safe relative path, else None."""
+    message names the dotted key at fault. *lines* are scripts/config_loader.py's
+    lines for it (empty for a fault that is not a config value), *in_config*
+    is true when an edit to config/project.json clears it, and *report_dir* is
+    `evals.report_dir` when that key alone still reads as a safe relative
+    path, else None."""
 
-    def __init__(self, message: str, report_dir: str | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        report_dir: str | None = None,
+        lines: list[str] | None = None,
+        in_config: bool = False,
+    ) -> None:
         super().__init__(message)
         self.report_dir = report_dir
+        self.lines = list(lines or [])
+        self.in_config = in_config
 
 
 @dataclass(frozen=True)
@@ -49,31 +71,15 @@ class EvalConfig:
     report_schema_version: int = 1
 
 
-def _is_number(value: object) -> bool:
-    # bool is an int to isinstance; a threshold of `true` is a typo, not 1.
-    return isinstance(value, (int, float)) and not isinstance(value, bool)
+def _from_loader(exc: config_loader.ConfigError) -> ConfigError:
+    return ConfigError("; ".join(exc.lines), lines=exc.lines, in_config=True)
 
 
-def _keys(block: Mapping[str, object], where: str, allowed: frozenset[str]) -> None:
+def _unknown(block: Mapping[str, object], where: str, allowed: frozenset[str]) -> None:
     unknown = sorted(set(block) - allowed - {_COMMENT})
     if unknown:
-        raise ConfigError("%s: unknown key `%s.%s`" % (_MANIFEST, where, unknown[0]))
-    missing = sorted(allowed - set(block))
-    if missing:
-        raise ConfigError("%s: missing key `%s.%s`" % (_MANIFEST, where, missing[0]))
-
-
-def _rel_path(value: object, key: str) -> str:
-    where = "%s.%s" % (_BLOCK, key)
-    if not isinstance(value, str) or not value:
-        raise ConfigError("%s: `%s` must be a non-empty path" % (_MANIFEST, where))
-    path = PurePosixPath(value)
-    if path.is_absolute() or ".." in path.parts or os.path.isabs(value):
-        raise ConfigError(
-            "%s: `%s` must be relative to the project and stay inside it, got %r"
-            % (_MANIFEST, where, value)
-        )
-    return value
+        line = "%s: unknown key `%s.%s`" % (_MANIFEST, where, unknown[0])
+        raise ConfigError(line, lines=[line], in_config=True)
 
 
 def _version(read_schema: Callable[[str], object], rel: str, key: str) -> int:
@@ -97,13 +103,16 @@ def _version(read_schema: Callable[[str], object], rel: str, key: str) -> int:
 
 
 def _report_dir_hint(manifest: Mapping[str, object]) -> str | None:
-    block = manifest.get(_BLOCK)
-    if not isinstance(block, dict):
-        return None
+    # A scratch stream: the refusal has already written its lines, and the
+    # hint is a second reading of one key, not a second fault to tell.
     try:
-        return _rel_path(block.get("report_dir"), "report_dir")
-    except ConfigError:
+        values = config_loader.resolve(
+            manifest, _REPORT_DIR_ROW, _MANIFEST, stream=io.StringIO()
+        )
+    except config_loader.ConfigError:
         return None
+    hint: str = values[(_BLOCK, "report_dir")]
+    return hint
 
 
 def parse_config(
@@ -125,46 +134,27 @@ def _parse(
     manifest: Mapping[str, object], read_schema: Callable[[str], object]
 ) -> EvalConfig:
     block = manifest.get(_BLOCK)
-    if not isinstance(block, dict):
-        raise ConfigError("%s: `%s` must be an object" % (_MANIFEST, _BLOCK))
-    _keys(block, _BLOCK, _KEYS)
-    paths = {key: _rel_path(block[key], key) for key in _PATHS}
-    threshold = block["threshold"]
-    if not _is_number(threshold) or not 0 < threshold <= 1:
-        raise ConfigError(
-            "%s: `%s.threshold` must be a number with 0 < threshold <= 1, got %r"
-            % (_MANIFEST, _BLOCK, threshold)
+    if isinstance(block, dict):
+        _unknown(block, _BLOCK, _KEYS)
+        live = block.get("live")
+        if isinstance(live, dict):
+            _unknown(live, ".".join(_LIVE), _LIVE_KEYS)
+    try:
+        values: dict[tuple[str, ...], Any] = config_loader.resolve(
+            manifest, _ROWS, _MANIFEST
         )
-    live = block["live"]
-    if not isinstance(live, dict):
-        raise ConfigError("%s: `%s.live` must be an object" % (_MANIFEST, _BLOCK))
-    _keys(live, _BLOCK + ".live", _LIVE_KEYS)
-    model = live["model"]
-    if model is not None and (not isinstance(model, str) or not model):
-        raise ConfigError(
-            "%s: `%s.live.model` must be null or a non-empty model name"
-            % (_MANIFEST, _BLOCK)
-        )
-    cap = live["max_calls"]
-    if not isinstance(cap, int) or isinstance(cap, bool) or cap < 0:
-        raise ConfigError(
-            "%s: `%s.live.max_calls` must be an integer >= 0, got %r"
-            % (_MANIFEST, _BLOCK, cap)
-        )
-    options = live["model_options"]
-    if not isinstance(options, dict):
-        raise ConfigError(
-            "%s: `%s.live.model_options` must be an object" % (_MANIFEST, _BLOCK)
-        )
+    except config_loader.ConfigError as exc:
+        raise _from_loader(exc) from exc
+    paths = {key: values[(_BLOCK, key)] for key in _PATHS}
     return EvalConfig(
         case_schema=paths["case_schema"],
         report_schema=paths["report_schema"],
         dataset_dir=paths["dataset_dir"],
         report_dir=paths["report_dir"],
-        threshold=threshold,
-        live_model=model,
-        live_max_calls=cap,
-        live_model_options=dict(options),
+        threshold=values[(_BLOCK, "threshold")],
+        live_model=values[_LIVE + ("model",)],
+        live_max_calls=values[_LIVE + ("max_calls",)],
+        live_model_options=dict(values[_LIVE + ("model_options",)]),
         schema_version=_version(read_schema, paths["case_schema"], "case_schema"),
         report_schema_version=_version(
             read_schema, paths["report_schema"], "report_schema"
@@ -172,18 +162,17 @@ def _parse(
     )
 
 
-def _read_json(path: str) -> object:
+def _read_schema(path: str) -> object:
     with open(path, encoding="utf-8") as fh:
         return json.load(fh)
 
 
 def load_config(root: str | os.PathLike[str]) -> EvalConfig:
-    """The EvalConfig of the project at *root*. Raises ConfigError."""
+    """The EvalConfig of the project at *root*, its manifest read through
+    scripts/config_loader.py `read`. Raises ConfigError."""
     base = os.fspath(root)
     try:
-        manifest = _read_json(os.path.join(base, _MANIFEST))
-    except (OSError, ValueError) as exc:
-        raise ConfigError("%s: unreadable (%s)" % (_MANIFEST, exc)) from exc
-    if not isinstance(manifest, dict):
-        raise ConfigError("%s: must be a JSON object" % _MANIFEST)
-    return parse_config(manifest, lambda rel: _read_json(os.path.join(base, rel)))
+        manifest = config_loader.read(base)
+    except config_loader.ConfigError as exc:
+        raise _from_loader(exc) from exc
+    return parse_config(manifest, lambda rel: _read_schema(os.path.join(base, rel)))

@@ -2,7 +2,7 @@
 title: exit_code_table — generate the exit-code table from the enum and the gate's scripts
 kind: script
 layer: n/a
-summary: Writes the region between the `<!-- exit-codes:begin -->` and `<!-- exit-codes:end -->` lines of the guide config/project.json `doc_drift.limits_guide` names. The region holds two tables. The first has one row per member of ExitCode, read from the syntax tree of scripts/exit_codes.py and never by importing it: value, name, meaning, what to do. The second has one row per script a recipe reachable from make `doc_drift.gate_target` runs, naming the values that script's entry function can return and `passes through` when it returns a wrapped tool's status. `read_script` is the one reader of what a script can exit with, and it reads a closed grammar from the syntax tree: SUCCESS itself, `report(<member>, ...)`, `passthrough(...)`, a conditional between those, a name every binding of which is a plain assignment of those, or a call to a function of the same module whose every return is one of those, plus the member of every `fail(<member>, ...)` call in the module; any other return, a name also bound another way (a parameter, an unpacking, a loop, `+=`, `:=`, `as`, `global`), a `report` of a member with nothing to report, and a function that can reach its end without returning, is a finding, never a guess. `passthrough` marks a wrapped tool's status, so one handed the script's own status is a finding too: the entry function's result (the function `finish` is handed, or `main`), directly or through a plain-assigned name, an int literal, a member, a `report`, or a call to a function of the module whose every return is one of those, including such a status under a sign (`-1`), in an arithmetic or `and`/`or` whose every operand is one, or handed to a builtin the module does not rebind (`int(main())`); and so is an entry line that hands `finish` a `passthrough(...)`. A helper that converts another process's status (one of its returns reads it) passes. An enum member written with an annotation is refused, not skipped. `--check` writes nothing and exits 1 naming each difference when the region is stale. It refuses, exit 2, a guide or marker that is missing, repeated or out of order, a config block it cannot read, a guide reached through a symlink (scripts/git_tree.py `through_symlink`) and a script whose exits it cannot read. It replaces the file whole through a temporary file beside it and never touches `updated:`. It does not hold exits to the helper (tests/integration/test_exit_gate.py does) and it does not write the per-script prose below the region, which is hand-written. Needs the project interpreter.
+summary: Writes the region between the `<!-- exit-codes:begin -->` and `<!-- exit-codes:end -->` lines of the guide config/project.json `doc_drift.limits_guide` names. The region holds two tables. The first has one row per member of ExitCode, read from the syntax tree of scripts/exit_codes.py and never by importing it: value, name, meaning, what to do. The second has one row per script a recipe reachable from make `doc_drift.gate_target` runs, naming the values that script's entry function can return and `passes through` when it returns a wrapped tool's status. `read_script` is the one reader of what a script can exit with, and it reads a closed grammar from the syntax tree: SUCCESS itself, `report(<member>, ...)`, `passthrough(...)`, a conditional between those, a name every binding of which is a plain assignment of those, or a call to a function of the same module whose every return is one of those, plus the member of every `fail(<member>, ...)` call in the module; any other return, a name also bound another way (a parameter, an unpacking, a loop, `+=`, `:=`, `as`, `global`), a `report` of a member with nothing to report, and a function that can reach its end without returning, is a finding, never a guess. `passthrough` marks a wrapped tool's status, so one handed the script's own status is a finding too: the entry function's result (the function `finish` is handed, or `main`), directly or through a plain-assigned name, an int literal, a member, a `report`, or a call to a function of the module whose every return is one of those, including such a status under a sign (`-1`), in an arithmetic or `and`/`or` whose every operand is one, or handed to a builtin the module does not rebind (`int(main())`); and so is an entry line that hands `finish` a `passthrough(...)`. A helper that converts another process's status (one of its returns reads it) passes. An enum member written with an annotation is refused, not skipped. `--check` writes nothing and exits 1 naming each difference when the region is stale. It reads config/project.json `doc_drift` through scripts/config_loader.py and refuses, exit CONFIG, a manifest or block it cannot use, after the loader's line for each key at fault. It refuses, exit 2, a guide or marker that is missing, repeated or out of order, a guide reached through a symlink (scripts/git_tree.py `through_symlink`) and a script whose exits it cannot read. It replaces the file whole through a temporary file beside it and never touches `updated:`. It does not hold exits to the helper (tests/integration/test_exit_gate.py does) and it does not write the per-script prose below the region, which is hand-written. Needs the project interpreter.
 effect: writes
 rerun: fixed-point
 rerun_proof: make:check-exit-codes
@@ -12,7 +12,6 @@ import argparse
 import ast
 import builtins
 import collections
-import json
 import os
 import sys
 
@@ -22,6 +21,7 @@ if _SCRIPTS not in sys.path:
     sys.path.insert(0, _SCRIPTS)
 
 import check_structure as cs  # noqa: E402
+import config_loader  # noqa: E402
 import exit_codes as _helper  # noqa: E402
 import git_tree  # noqa: E402
 
@@ -33,6 +33,7 @@ __all__ = [
     "SCRIPT_COLUMNS",
     "Member",
     "Reading",
+    "TableConfigError",
     "TableError",
     "code_findings",
     "dropped_results",
@@ -106,6 +107,11 @@ class TableError(Exception):
     def __init__(self, what, on, next_step):
         Exception.__init__(self, "%s: %s; %s" % (what, on, next_step))
         self.what, self.on, self.next_step = what, on, next_step
+
+
+class TableConfigError(TableError):
+    """config/project.json `doc_drift` cannot be used: an edit to the config,
+    not to the guide or a script, clears it."""
 
 
 # --- the enum, read from the syntax tree ---------------------------------------
@@ -773,32 +779,21 @@ def gate_scripts(root, target):
 
 
 def load_policy(root):
-    """(guide, gate target) from config/project.json `doc_drift`. Raises
-    TableError naming the key: there is no default path in code."""
-    where = "%s `%s`" % (MANIFEST, BLOCK)
+    """(guide, gate target) from config/project.json `doc_drift`, read through
+    scripts/config_loader.py. Raises TableConfigError carrying the loader's
+    lines: both keys are required, so there is no default path in code."""
+    paths = ((BLOCK, GUIDE_KEY), (BLOCK, TARGET_KEY))
     try:
-        with open(os.path.join(root, MANIFEST), encoding="utf-8") as fh:
-            manifest = json.load(fh)
-    except (OSError, ValueError) as exc:
-        raise TableError(
-            "cannot read the manifest", "%s (%s)" % (MANIFEST, exc), "restore it"
-        ) from exc
-    block = manifest.get(BLOCK) if isinstance(manifest, dict) else None
-    if not isinstance(block, dict):
-        raise TableError(
-            "the manifest block is missing or not an object", where, "restore it"
+        values = config_loader.resolve(
+            config_loader.read(root), config_loader.rows(*paths), MANIFEST
         )
-    values = []
-    for key in (GUIDE_KEY, TARGET_KEY):
-        value = block.get(key)
-        if not isinstance(value, str) or not value.strip():
-            raise TableError(
-                "a manifest key is missing or not a non-empty string",
-                "%s.%s" % (where, key),
-                "set it",
-            )
-        values.append(value)
-    return tuple(values)
+    except config_loader.ConfigError as exc:
+        raise TableConfigError(
+            "the manifest block cannot be used",
+            "%s `%s`: %s" % (MANIFEST, BLOCK, "; ".join(exc.lines)),
+            "correct it as the lines above say",
+        ) from exc
+    return tuple(values[path] for path in paths)
 
 
 def split_region(text, guide):
@@ -988,6 +983,13 @@ def main(argv=None, root=None):
     root = ROOT if root is None else str(root)
     try:
         guide, text, wanted = wanted_text(root)
+    except TableConfigError as exc:
+        return _helper.report(
+            _helper.ExitCode.CONFIG,
+            "exit_code_table: " + exc.what,
+            exc.on,
+            exc.next_step,
+        )
     except TableError as exc:
         return _helper.report(
             _helper.ExitCode.USAGE,

@@ -8,7 +8,7 @@ tags: [conventions, frontmatter, taxonomy]
 summary: Single source of truth for labeling (frontmatter) and the directory taxonomy.
 id: conventions
 created: 2026-06-17
-updated: 2026-10-15
+updated: 2026-10-17
 visibility: internal
 canonical: true
 ---
@@ -432,7 +432,7 @@ tune:
 
 | Kind of value | Example | Home |
 |---------------|---------|------|
-| runtime, app-wide, language-neutral | RAG chunk size, top-k, max context, ports, timeouts | `config/` — committed `default.*` / `*.example.*`, grouped by concern (e.g. `config/rag.example.toml`, copied to an untracked `config/rag.local.toml` for local values); no loader ships, so the reader is code you write |
+| runtime, app-wide, language-neutral | RAG chunk size, top-k, max context, ports, timeouts | `config/` — committed `default.*` / `*.example.*`, grouped by concern (e.g. `config/rag.example.toml`, copied to an untracked `config/rag.local.toml` for local values); no TOML loader ships, so the reader is code you write (`scripts/config_loader.py` reads only the JSON manifests of §15) |
 | model-backend selection / launch | which embedding model or reranker adapter + flags | `models/config/` — next to the registry that picks by name |
 | build-time, component-coupled | frontend font, colours, footer (design tokens) | with the frontend package (`src/frontend/<app>/src/styles` / theme) — the build is the consumer |
 | secret | API keys, tokens | the environment / `.env` (gitignored) — **never** `config/` |
@@ -698,9 +698,10 @@ It is keyed **by layer/concern, never one global `language`**:
   `<dir>/<gate>.json` and each goal's junit report is `<dir>/junit/<goal>.xml`) and `schema`
   (the repo-relative path of the record's JSON Schema, whose
   `schema_version.const` is the version the record carries).
-  `scripts/gate_evidence.py` reads the block and refuses, with exit 2 and no
-  record, a missing block, a path that is absolute or climbs out with `..`, an
-  unreadable schema, and a record or report path git would list.
+  `scripts/gate_evidence.py` reads the block through `scripts/config_loader.py`
+  and refuses, with no record, a missing block or a path that is absolute or
+  climbs out with `..` with exit 14, and an unreadable schema or a record or
+  report path git would list with exit 2.
 - `evals` — the eval harness (`evals/`, `scripts/run_evals.py`):
   `case_schema` (`config/evals/eval-case.schema.json`) and `report_schema`
   (`config/evals/eval-report.schema.json`), each the only owner of its format's
@@ -860,6 +861,22 @@ declarative: `runtimes/registry.py` `DEFAULT_RUNTIME` and `models/registry.py`
 `DEFAULT_MODEL` decide what code gets when it names no engine or adapter, and
 no check ties each pair together. A missing `config/project.json` is a warning,
 not an error.
+
+**One reader.** Code reads `config/project.json`, `config/practices.json` and
+the variables they declare only through `scripts/config_loader.py`: `read` opens
+and parses a file, `resolve` judges each key against its `KEYS` row, and `env`
+reads a declared variable by name. A key's type and default live in its `KEYS`
+row, never in a `.get(key, default)` at the reader, and its
+`docs/reference/settings.md` row quotes the `[using default]` line the loader
+writes when the key is unset (`tests/integration/test_config_default_lines_docs.py`).
+A variable wins over the file only for a row that names it. An unset required
+key or a wrong value is refused by name, and the entry point exits 14
+(`CONFIG`). `tests/integration/test_config_reads_gate.py` fails a direct read
+under `config_reads.roots` that `config_reads.allowed` does not excuse with a
+reason; that map only shrinks, and a module it lists still exits 2 on a config
+fault until it moves onto the loader. `scripts/check_structure.py` is one of
+them, so `check_H` and its siblings still parse the manifest themselves.
+`docs/adr/keel/K-0022-one-config-loader.md` is the proposed decision.
 
 Why JSON here, and why this and not prose: a manifest is read by **code** (a
 deterministic gate), whereas `AGENT.md` prose is read by a **model**

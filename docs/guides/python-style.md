@@ -8,7 +8,7 @@ tags: [practices, style, readability, robustness, docstrings, comments, agents, 
 summary: The canonical statement of how Python is written in this project — readability and loud failure modes outrank speed; the machine-readable module header; comment and docstring discipline; and how a code agent works here. The provable floor is gated (check_O/E, ruff, mypy); this guide is the judgment above it.
 id: docs-guides-python-style
 created: 2026-08-18
-updated: 2026-10-15
+updated: 2026-10-17
 visibility: internal
 canonical: true
 ---
@@ -174,6 +174,17 @@ Every rule here exists because one of those was found and measured:
   into the code that uses it makes every change to the user a change to the
   shared code. (Gated: `tests/integration/test_import_layers_gate.py`, and
   check_D for `from pkg import _sub`.)
+- **A configured value comes through the loader.** Read config/project.json,
+  config/practices.json or a variable they declare through
+  `scripts/config_loader.py` `read`, `resolve` or `env`, and declare a default
+  in the key's `KEYS` row, never in a `.get(key, default)`. A default buried in
+  a reader is a value nobody chose: the loader says on stderr when it uses one
+  (`[using default] <key> = <value>`), and refuses an absent required key or a
+  wrong type by name, so the entry point returns
+  `report(ExitCode.CONFIG, ...)`. (Gated:
+  `tests/integration/test_config_reads_gate.py` fails a direct read that
+  config/project.json `config_reads.allowed` does not excuse;
+  `tests/unit/scripts/test_config_loader.py` holds the loader to its lines.)
 
 For a script wrapping an external tool (an EDA flow, a license query, a farm
 submission), assume the tool **will** misbehave: check the return code, check
@@ -251,6 +262,7 @@ that quietly becomes load-bearing is precisely the file nobody re-reads.
 | A swallowed error carries a reason | gate | `tests/integration/test_swallowed_error_gate.py` |
 | A process ends only at an entry point | gate | `tests/integration/test_exit_gate.py` |
 | Imports flow up the layer order; no private submodule from outside | gate | `tests/integration/test_import_layers_gate.py`, `check_D` |
+| A configured value is read only through the config loader | gate | `tests/integration/test_config_reads_gate.py` |
 | A comment does not open by reporting a change | gate (heuristic) | `tests/integration/test_change_comment_gate.py` |
 | No `print()` in library code | gate | ruff `T20` |
 | Inline-constructed backends (DI), `isinstance` chains, hot-path `__slots__`, resources outside `with` | advisory | `make advise` |

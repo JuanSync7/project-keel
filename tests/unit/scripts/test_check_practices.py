@@ -6,6 +6,7 @@ summary: The coding-practices advisor detects DI-inline / isinstance-chain / hot
 """
 
 import ast
+import json
 import sys
 from pathlib import Path
 
@@ -15,6 +16,8 @@ _ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(_ROOT / "scripts"))
 
 import check_practices as cp  # noqa: E402
+import config_loader  # noqa: E402
+from exit_codes import ExitCode  # noqa: E402
 
 pytestmark = pytest.mark.unit
 
@@ -149,3 +152,64 @@ def test_an_entry_without_subject_is_code():
         "tokens": {},
     }
     assert "x" in cp._enabled(registry)
+
+
+# --- the config it reads, through scripts/config_loader.py ----------------------
+
+
+@pytest.fixture
+def project(tmp_path, monkeypatch):
+    """A root holding the two config files the advisor reads, as its ROOT, and a
+    fresh process's announced set."""
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "practices.json").write_text(
+        json.dumps({"practices": [], "tokens": {}}), encoding="utf-8"
+    )
+    (tmp_path / "config" / "project.json").write_text(
+        json.dumps({"practices": {"profiles": {"web": True}}}), encoding="utf-8"
+    )
+    monkeypatch.setattr(cp, "ROOT", str(tmp_path))
+    config_loader._ANNOUNCED.clear()
+    yield tmp_path
+    config_loader._ANNOUNCED.clear()
+
+
+def test_the_profiles_are_read_and_an_absent_key_takes_its_declared_default(
+    project, capsys
+):
+    assert cp.profiles_on() == {"web"}
+    assert capsys.readouterr().err == ""
+    (project / "config" / "project.json").write_text("{}", encoding="utf-8")
+    assert cp.profiles_on() == set()
+    err = capsys.readouterr().err
+    assert "[using default] practices.profiles = {}" in err, err
+
+
+@pytest.mark.parametrize(
+    ("relpath", "text", "said"),
+    [
+        ("config/practices.json", "{not json", "config/practices.json cannot be read"),
+        ("config/practices.json", None, "config/practices.json does not exist"),
+        (
+            "config/project.json",
+            '{"practices": {"profiles": []}}',
+            "practices.profiles",
+        ),
+        ("config/project.json", '{"a": 1, "a": 2}', "`a` appears twice"),
+    ],
+    ids=["registry-not-json", "registry-absent", "profiles-not-object", "key-twice"],
+)
+def test_a_config_it_cannot_use_is_refused_with_the_config_exit(
+    project, capsys, relpath, text, said
+):
+    """A registry or manifest it cannot read was once an empty registry, so the
+    advisor said "no smells" over nothing; now it refuses, naming the file."""
+    path = project / relpath
+    if text is None:
+        path.unlink()
+    else:
+        path.write_text(text, encoding="utf-8")
+    assert cp.main([]) == ExitCode.CONFIG
+    captured = capsys.readouterr()
+    assert said in captured.err, captured.err
+    assert "no smells" not in captured.out, captured.out

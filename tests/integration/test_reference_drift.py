@@ -2,7 +2,7 @@
 title: Integration — the settings reference and the feature catalogue list what the code holds
 kind: tests
 layer: n/a
-summary: The reference-drift gate. config/project.json `doc_drift.settings_reference` names the settings reference; each of its keyed sections holds one table with the columns Key, Type, Default, Valid values, Read by, What changing it does, Not for and Ships, and each row is derived-equal to the code; a key listed twice is a finding. The JSON sections are exactly the files check_structure's JSON_CONFIGS reads, each heading naming its file, and every key path of that file (`_comment` dropped at any depth, `[]` for a list-of-object element, `<name>` for one segment of an open-keyed map) matches exactly one row; in the template each literal-path JSON row's Default states the value the file holds, or its twin renders under copier's default answers; the rendered project.json twin is judged under every answer set copier.yml's validators allow, rendered with StrictUndefined; the copier question rows equal copier.yml's questions and name what each prunes; the make variable rows equal what the makefiles assign and reference; the environment variable rows cover every literal read in code, recipes, workflows and the manifest; the command-line flag rows equal every `add_argument` in the code roots, with each literal default stated verbatim; the `models.default` and `runtimes.default` rows state the registry constant that decides. Every expected set is derived, never typed here; a missing or malformed `doc_drift` key fails, a section over zero items fails, and only the copier.yml-derived tests skip, with a stated reason, in a generated project. `doc_drift.features_reference` names the feature catalogue; every `## ` section table with the columns Feature, What it does and why, How to run, Settings, Limits / not for, Deep doc and Ships is keyed by its Feature cell's first code span, and the keys of the derived shapes equal what the tree declares: each check letter, each `## `-annotated make target with its effect label, each script `make check-all` reaches or the catalogue of deterministic checks lists, each copier job (a script beside conflict_guard's finish command that runs its guard), each gate test (a `test_*_gate.py` file directly in tests/integration), each shared script module (a scripts module that a module outside tests/ imports, read from the import graph tests/source_tree.py `import_edges` resolves through config/project.json `import_layers.search_roots`), each agent directory, each MCP server with a `__main__` guard, each registry model and runtime, each workflow and each agent skill. In a generated project the rows need only cover the derived set, and a derived-shaped row the project lacks must say in Ships which answer brings it. Every row states its limits, every Ships cell is `always`, `keel maintainers only` or `when <question>[=<value>]`, naming a question copier.yml asks and a value it offers, every Settings cell links to a heading of the settings reference, and in the template each derived row's Ships matches copier.yml's excludes under the answers it names and under those it leaves out, and no link lands on an excluded path. The CONVENTIONS section 2 scripts note names `derived_features`, this file and the catalogue's `Shared script modules` section, and states no count, in words or as the derived size, so the note cannot drift from the set. Each rule has a fault-injection twin that plants one fault and asserts exactly one more finding than the document had before. Not a writer: it reads the tree and writes nothing.
+summary: The reference-drift gate. config/project.json `doc_drift.settings_reference` names the settings reference; each of its keyed sections holds one table with the columns Key, Type, Default, Valid values, Read by, What changing it does, Not for and Ships, and each row is derived-equal to the code; a key listed twice is a finding. The JSON sections are exactly the files check_structure's JSON_CONFIGS reads, each heading naming its file, and every key path of that file (`_comment` dropped at any depth, `[]` for a list-of-object element, `<name>` for one segment of an open-keyed map) matches exactly one row; in the template each literal-path JSON row's Default states the value the file holds, or its twin renders under copier's default answers; the rendered project.json twin is judged under every answer set copier.yml's validators allow, rendered with StrictUndefined; the copier question rows equal copier.yml's questions and name what each prunes; the make variable rows equal what the makefiles assign and reference; the environment variable rows cover every literal read in code, recipes, workflows and the manifest, and every variable a scripts/config_loader.py `KEYS` row names; the command-line flag rows equal every `add_argument` in the code roots, with each literal default stated verbatim; the `models.default` and `runtimes.default` rows state the registry constant that decides. Every expected set is derived, never typed here; a missing or malformed `doc_drift` key fails, a section over zero items fails, and only the copier.yml-derived tests skip, with a stated reason, in a generated project. `doc_drift.features_reference` names the feature catalogue; every `## ` section table with the columns Feature, What it does and why, How to run, Settings, Limits / not for, Deep doc and Ships is keyed by its Feature cell's first code span, and the keys of the derived shapes equal what the tree declares: each check letter, each `## `-annotated make target with its effect label, each script `make check-all` reaches or the catalogue of deterministic checks lists, each copier job (a script beside conflict_guard's finish command that runs its guard), each gate test (a `test_*_gate.py` file directly in tests/integration), each shared script module (a scripts module that a module outside tests/ imports, read from the import graph tests/source_tree.py `import_edges` resolves through config/project.json `import_layers.search_roots`), each agent directory, each MCP server with a `__main__` guard, each registry model and runtime, each workflow and each agent skill. In a generated project the rows need only cover the derived set, and a derived-shaped row the project lacks must say in Ships which answer brings it. Every row states its limits, every Ships cell is `always`, `keel maintainers only` or `when <question>[=<value>]`, naming a question copier.yml asks and a value it offers, every Settings cell links to a heading of the settings reference, and in the template each derived row's Ships matches copier.yml's excludes under the answers it names and under those it leaves out, and no link lands on an excluded path. The CONVENTIONS section 2 scripts note names `derived_features`, this file and the catalogue's `Shared script modules` section, and states no count, in words or as the derived size, so the note cannot drift from the set. Each rule has a fault-injection twin that plants one fault and asserts exactly one more finding than the document had before. Not a writer: it reads the tree and writes nothing.
 """
 
 import ast
@@ -27,6 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(_ROOT / "tests"))
 
 import check_structure as cs  # noqa: E402
+import config_loader  # noqa: E402
 from test_doc_drift import (  # noqa: E402
     _TEMPLATE_ONLY,
     _TWIN_SUFFIX,
@@ -62,6 +63,7 @@ _MAINTAINERS = "keel maintainers only"
 _ALWAYS = "always"
 _WHEN = "when "
 _DYNAMIC = "dynamic"
+_LOADER = "scripts/config_loader.py"
 # A JSON key path's segments: `<name>` is one segment of an open-keyed map and
 # `[]` one element of a list of objects.
 _LIST_ELEMENT = "[]"
@@ -80,10 +82,6 @@ _WORKFLOW_DIR = ".github/workflows"
 _WORKFLOW_SUFFIXES = (".yml", ".yaml")
 _YAML_ENV = re.compile(r"^(\s*)env:\s*$")
 _YAML_KEY = re.compile(r"^(\s*)([A-Za-z_][A-Za-z0-9_]*):")
-# A Python read of the environment: the mapping and the calls on it.
-_ENVIRON = "environ"
-_ENV_CALLS = ("get", "pop", "setdefault")
-_GETENV = "getenv"
 # A test module reads the harness's environment (HOME, PATH), not a setting.
 _TEST_MODULE = re.compile(r"^(?:test_.*|conftest)\.py$")
 _ADD_ARGUMENT = "add_argument"
@@ -714,69 +712,6 @@ def _py_files(root, roots):
                     yield Path(dirpath) / name
 
 
-def _module_strings(tree):
-    """{NAME: value} for every module-level `NAME = "literal"`."""
-    out = {}
-    for node in tree.body:
-        if (
-            isinstance(node, ast.Assign)
-            and isinstance(node.value, ast.Constant)
-            and isinstance(node.value.value, str)
-        ):
-            for target in node.targets:
-                if isinstance(target, ast.Name):
-                    out[target.id] = node.value.value
-    return out
-
-
-def _is_environ(node):
-    return (isinstance(node, ast.Attribute) and node.attr == _ENVIRON) or (
-        isinstance(node, ast.Name) and node.id == _ENVIRON
-    )
-
-
-def _string_of(node, constants):
-    if isinstance(node, ast.Constant) and isinstance(node.value, str):
-        return node.value
-    if isinstance(node, ast.Name):
-        return constants.get(node.id)
-    return None
-
-
-def python_env_reads(path):
-    """Every environment variable *path* reads by a name it spells: through
-    `environ[...]`, `environ.get/pop/setdefault(...)`, `... in environ`, or
-    `getenv(...)`, the name a literal or a module-level string constant."""
-    tree = ast.parse(path.read_text(encoding="utf-8"), str(path))
-    constants = _module_strings(tree)
-    found = set()
-    for node in ast.walk(tree):
-        name = None
-        if isinstance(node, ast.Subscript) and isinstance(node.ctx, ast.Load):
-            if _is_environ(node.value):
-                name = _string_of(node.slice, constants)
-        elif (
-            isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Attribute)
-            and node.args
-        ):
-            func = node.func
-            if (
-                func.attr in _ENV_CALLS and _is_environ(func.value)
-            ) or func.attr == _GETENV:
-                name = _string_of(node.args[0], constants)
-        elif (
-            isinstance(node, ast.Compare)
-            and len(node.ops) == 1
-            and isinstance(node.ops[0], ast.In)
-            and _is_environ(node.comparators[0])
-        ):
-            name = _string_of(node.left, constants)
-        if name:
-            found.add(name)
-    return found
-
-
 def _workflow_env_keys(text):
     """The keys of every `env:` mapping in a workflow, at its first indent."""
     keys, lines = set(), text.split("\n")
@@ -802,8 +737,10 @@ def _workflow_env_keys(text):
 def env_readers(root, manifest):
     """{variable: {files that read it}} over the code roots' non-test Python,
     the frontends' sources, the makefiles' recipes, the workflows' `env:`
-    blocks, `make_targets.unattended_vars` (what WRITE_GUARD reads) and
-    `models.credential_env` (what an adapter's child is given)."""
+    blocks, `make_targets.unattended_vars` (what WRITE_GUARD reads),
+    `models.credential_env` (what an adapter's child is given) and each
+    variable a scripts/config_loader.py `KEYS` row names (what `resolve`
+    reads)."""
     readers = {}
 
     def add(name, path):
@@ -814,8 +751,13 @@ def env_readers(root, manifest):
         if _TEST_MODULE.match(path.name):
             continue
         rel = path.relative_to(root).as_posix()
-        for name in python_env_reads(path):
+        for name in st.python_env_reads(path):
             add(name, rel)
+    # A variable a loader row declares is read by the loader's `resolve`, which
+    # takes the name from the row, so no literal read spells it.
+    for key in config_loader.KEYS:
+        if key.env:
+            add(key.env, _LOADER)
     for dirpath, _dirs, files in cs.walk(str(Path(root) / "src")):
         for fname in sorted(files):
             if fname.endswith(_JS_SUFFIXES):
@@ -870,7 +812,7 @@ def env_findings(doc, rows, readers, exhaustive):
 def _resolve_flag(node, constants, path, root):
     """A flag spelled as a literal, a module constant, or `module.CONSTANT`
     of a sibling module; None when it is none of those."""
-    text = _string_of(node, constants)
+    text = st.string_of(node, constants)
     if text is not None:
         return text
     if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
@@ -882,7 +824,7 @@ def _resolve_flag(node, constants, path, root):
             module = base / (node.value.id + ".py")
             if module.is_file():
                 tree = ast.parse(module.read_text(encoding="utf-8"), str(module))
-                return _module_strings(tree).get(node.attr)
+                return st.module_strings(tree).get(node.attr)
     return None
 
 
@@ -893,7 +835,7 @@ def cli_flags(root):
     roots = [r for r in cs.CODE_ROOTS if (Path(root) / r).is_dir()]
     for path in _py_files(root, roots):
         tree = ast.parse(path.read_text(encoding="utf-8"), str(path))
-        constants = _module_strings(tree)
+        constants = st.module_strings(tree)
         rel = path.relative_to(root).as_posix()
         for node in ast.walk(tree):
             if not (

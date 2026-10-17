@@ -46,7 +46,8 @@
       "K-0018-model-endpoint-host-allowlist.md",
       "K-0019-one-date-per-gate-run.md",
       "K-0020-shared-compute-launcher.md",
-      "K-0021-imports-flow-up-a-configured-layer-order.md"
+      "K-0021-imports-flow-up-a-configured-layer-order.md",
+      "K-0022-one-config-loader.md"
     ]
   },
   "doc_drift": {
@@ -342,10 +343,10 @@
     }
   },
   "import_layers": {
-    "_comment": "The layers a Python import may cross, bottom to top: a file may import a file in its own layer or a lower one, never a higher one, so everything flows up. A file sits in the layer of its longest prefix, matched by whole path segments. search_roots are the directories an import name is looked up from, in order, the first holding it winning: the repository root and the sys.path entries keel's entry points and tests add. The order comes from CONVENTIONS section 2 (the directories), src/AGENT.md (app -> {frontend, backend} -> shared) and the measured import graph: scripts/child_env.py and scripts/exit_codes.py, both stdlib-only, sit at the bottom because models, agents, mcp, evals and api import them, and the rest of scripts/ sits above api, mcp and demo because scripts/doc_review.py imports agents. tests/integration/test_import_layers_gate.py reads search_roots and order and fails an upward import, a file no prefix places, and a prefix on disk that places no file; a prefix whose path is absent, such as a transport this project did not select, is skipped. Place a new top-level directory that holds Python here. may_end_the_process maps a module another non-test module imports to the reason it still ends the process outside its entry block; tests/integration/test_exit_gate.py reads it, and an entry that no longer names such a module, or whose reason is blank, is red. docs/adr/keel/K-0021-imports-flow-up-a-configured-layer-order.md is the decision.",
+    "_comment": "The layers a Python import may cross, bottom to top: a file may import a file in its own layer or a lower one, never a higher one, so everything flows up. A file sits in the layer of its longest prefix, matched by whole path segments. search_roots are the directories an import name is looked up from, in order, the first holding it winning: the repository root and the sys.path entries keel's entry points and tests add. The order comes from CONVENTIONS section 2 (the directories), src/AGENT.md (app -> {frontend, backend} -> shared) and the measured import graph: scripts/child_env.py and scripts/exit_codes.py, both stdlib-only, sit at the bottom because models, agents, mcp, evals and api import them, and scripts/config_loader.py, stdlib-only too, sits with them as the config reader any layer may import; tests/integration/test_gate_scope.py holds every file of the bottom layer to the oldest interpreter a hook runs, and the rest of scripts/ sits above api, mcp and demo because scripts/doc_review.py imports agents. tests/integration/test_import_layers_gate.py reads search_roots and order and fails an upward import, a file no prefix places, and a prefix on disk that places no file; a prefix whose path is absent, such as a transport this project did not select, is skipped. Place a new top-level directory that holds Python here. may_end_the_process maps a module another non-test module imports to the reason it still ends the process outside its entry block; tests/integration/test_exit_gate.py reads it, and an entry that no longer names such a module, or whose reason is blank, is red. docs/adr/keel/K-0021-imports-flow-up-a-configured-layer-order.md is the decision.",
     "search_roots": ["", "src/", "tests/", "scripts/", "scripts/jobs/", "scripts/hooks/", "scripts/agent_surface/", "mcp/", "api/rest_fastapi/", "tests/integration/"],
     "order": [
-      ["scripts/child_env.py", "scripts/exit_codes.py"],
+      ["scripts/child_env.py", "scripts/config_loader.py", "scripts/exit_codes.py"],
       ["src/shared"],
       ["src/backend"],
       ["src/app"],
@@ -358,6 +359,24 @@
     ],
     "may_end_the_process": {
       "scripts/jobs/conflict_guard.py": "exit_if_conflicted runs in a job's entry block before the job imports anything else of the project, so there is no main yet to return a member to, and the job's next import may be the conflicted file; it ends the process through exit_codes.fail, imported only at that moment"
+    }
+  },
+  "config_reads": {
+    "_comment": "A heuristic over the syntax tree: tests/integration/test_config_reads_gate.py walks the Python files under `roots`, scripts/config_loader.py left out, and fails a direct read of a file scripts/config_loader.py PROJECT_READS declares (an open, read_text or read_bytes of a path built from constants, a bound name, a starred split, another project module's path constant imported by name or read as an attribute, or a same-module helper handed one) and a direct read of a variable the config declares as carrying a value (environ, getenv), because a value read twice is read by two rules; an open for writing counts too. The loader is the one reader, so a default, a type and a secret are judged once. It has known false negatives: a path handed in as a parameter, an attribute of a module imported inside a function or relatively, a function of another module that opens what it is given, a method called through an object, a variable whose name the code holds in a variable, a read through subprocess or importlib, and a path built from a value that is not a constant. tests/ is not walked: it reads config as its own policy and to build fixtures. `allowed` maps each file that still reads directly to the reason; an entry whose reason is blank, whose file is absent or outside the roots, or whose file no longer reads directly is red, and the test's _CEILING caps the count, so the map only shrinks. Where the gate runs tells keel's files from a project's own: in the template repository, which holds copier.yml, every finding is red; a generated project carries no list of the files keel shipped, and keel's were judged in the template, so there the two finding tests skip and name each direct read they saw, until the warn-then-fail tier for a project's own code is built. docs/adr/keel/K-0022-one-config-loader.md is the decision.",
+    "roots": ["agents", "api", "demo", "evals", "mcp", "models", "runtimes", "scripts", "src"],
+    "allowed": {
+      "agents/practice_refactor/_brain.py": "opens the practices registry under the corpus root its caller hands it, not this project's; it stays until a loader test covers a root an agent is handed",
+      "scripts/audit_project.py": "opens the manifest of the generated project it audits, which is data under audit and not this project's configuration",
+      "scripts/check_structure.py": "the gate validates the manifest's shape under the oldest host interpreter before any loader row can be trusted, at twelve sites, so moving it onto the loader is a change of its own",
+      "scripts/jobs/declare_no_app.py": "rewrites the manifest's text in place, so it reads the file as text to edit, not as configuration",
+      "scripts/jobs/export_showcase_static.py": "opens the manifest for layers.frontend inside a copier job; importing the loader would add config/practices.json to the files scripts/jobs/conflict_guard.py refuses the job over, and no test yet proves the job under that refusal",
+      "scripts/jobs/restamp_docs.py": "reads the manifest's raw bytes to find a merge-conflict marker before anything parses it, not a configured value",
+      "scripts/launch.py": "opens the manifest for the launcher block, whose one reader scripts/long_scripts.py imports; the launcher block has no KEYS rows yet, and the two modules move onto the loader together",
+      "scripts/long_scripts.py": "opens the manifest for the launcher block through the reader scripts/launch.py owns, and moves onto the loader with scripts/launch.py",
+      "scripts/run_app.py": "opens the manifest for layers.app, where absent and null are two refusals; that split needs a KEYS row and an exit-code decision not yet made",
+      "src/backend/showcase/_repo.py": "opens the manifest and the practices registry for the showcase read model, whose keys have no KEYS rows yet",
+      "scripts/trace_requirements.py": "opens the manifest for the traceability block, which has no KEYS rows yet",
+      "src/backend/shared/__init__.py": "opens the manifest for the project name at import time; through the loader, a read at import would write a default line in every process that imports the package, and whether it should is not decided"
     }
   },
   "change_comments": {

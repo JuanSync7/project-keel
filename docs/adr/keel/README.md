@@ -9,7 +9,7 @@ tags: [adr, decisions, template]
 summary: The architecture decisions the template ships into every project, numbered in their own space as K-NNNN-<slug>.md and cited as ADR-K-NNNN.
 id: docs-adr-keel-readme
 created: 2026-10-07
-updated: 2026-10-16
+updated: 2026-10-17
 visibility: internal
 canonical: true
 ---
@@ -52,3 +52,4 @@ copy the update names, as the parent README describes.
 | `K-0019-one-date-per-gate-run.md` | A gate run reads the clock once and hands that date to every goal in the variable config/project.json `evidence.run_date.env` names; a git command that ran and failed is refused, never read as no git; the driver refuses an evidence path reached through a symlink. | What the record holds or where it is written: `K-0017-gate-evidence-record.md`. Which variables a child inherits: `K-0012-child-process-environment-allowlist.md`. |
 | `K-0020-shared-compute-launcher.md` | One launcher, `scripts/launch.py`, decides where a long script runs from the host kind, the script length and the farm, and says why in one line; a host is shared unless a git-ignored local pattern file matches it, a script is long unless a recorded success proves it short, and the farm is a config adapter that ships as `none`. | Which variables a child inherits: `K-0012-child-process-environment-allowlist.md`. How the gate itself runs: `K-0017-gate-evidence-record.md`. |
 | `K-0021-imports-flow-up-a-configured-layer-order.md` | config/project.json `import_layers.order` lists the layers bottom to top and `tests/integration/test_import_layers_gate.py` fails an import into a higher layer; check_D fails `from pkg import _sub` from outside `pkg/`; a module another project module imports never ends the process outside its entry block. | Where a long script runs: `K-0020-shared-compute-launcher.md`. |
+| `K-0022-one-config-loader.md` | `scripts/config_loader.py` is the one reader of config/project.json, config/practices.json and the variables they declare; a variable wins over the file only where a `KEYS` row names it; a missing or wrong value exits 14, `CONFIG`, and `tests/integration/test_config_reads_gate.py` fails a direct read. | Which variables a child process inherits: `K-0012-child-process-environment-allowlist.md`. Where a module may import from: `K-0021-imports-flow-up-a-configured-layer-order.md`. |

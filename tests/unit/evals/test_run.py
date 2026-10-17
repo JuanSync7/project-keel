@@ -272,3 +272,28 @@ def test_live_details_never_carry_a_declared_credential_value(monkeypatch):
     )
     detail = {o.id: o for o in run.results[0].cases}["a"].detail
     assert "sk-declared-canary" not in detail and "<hidden>" in detail, detail
+
+
+def test_the_declared_secrets_are_read_through_the_config_loader(monkeypatch):
+    """Each credential variable is read by scripts/config_loader.py `env`, so
+    a name config/project.json does not declare is refused, never read."""
+    from scripts import config_loader
+
+    asked = []
+    real = config_loader.env
+
+    def spy(name, environ=None, root=None):
+        asked.append(name)
+        return real(name, environ, root)
+
+    monkeypatch.setattr(config_loader, "env", spy)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-loader-canary")
+    backend = _Scripted([RuntimeError("echo sk-loader-canary"), "ACK", "ACK"])
+    run = run_live(
+        _three(),
+        _config(model="openai-compatible"),
+        backend_factory=_Factory(backend),
+    )
+    detail = {o.id: o for o in run.results[0].cases}["a"].detail
+    assert "sk-loader-canary" not in detail and "<hidden>" in detail, detail
+    assert asked == ["OPENAI_API_KEY"], asked

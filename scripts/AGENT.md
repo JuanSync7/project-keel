@@ -7,7 +7,7 @@ owner: TBD
 summary: Local agent rules inside scripts/.
 id: scripts-agent
 created: 2026-06-17
-updated: 2026-10-15
+updated: 2026-10-17
 visibility: internal
 canonical: true
 ---
@@ -54,10 +54,20 @@ These rules are **local and authoritative** for this directory. They inherit fro
   - `run_date.py` is never run: the one definition of the date a gate run
     calls today, imported by `gate_evidence.py`, which fixes it,
     `jobs/review_docs.py`, which reads it, and `check_structure.py`, whose
-    check X reads its `policy` before any run. It stays stdlib-only and
-    3.6-safe for the reason `git_tree.py` does. A second reader of the
+    check X reads its `policy` before any run. It stays stdlib-only, beside
+    `config_loader.py`, and 3.6-safe for the reason `git_tree.py` does. A second reader of the
     variable config/project.json `evidence.run_date.env` names anywhere else
     is a defect.
+  - `config_loader.py` is never run: the one way a configured value enters a
+    process. A module reads config/project.json, config/practices.json or a
+    variable they declare through its `read`, `resolve` or `env`, and a
+    default lives in its `KEYS` row, never in a `.get(key, default)`;
+    `tests/integration/test_config_reads_gate.py` fails a direct read that
+    config/project.json `config_reads.allowed` does not excuse. It raises and
+    never ends the process: the entry point returns
+    `report(ExitCode.CONFIG, ...)`. `child_env.py` loads it by path, because
+    `child_env.py` itself is imported under two names. It stays stdlib-only and
+    3.6-safe, because the hook interpreter reaches it through `child_env.py`.
   - `launch.py` is the one place that decides where a long script runs and
     the one writer of `launcher.durations_file`; `long_scripts.py` imports its
     config loader and record reader, so the proposal and the decision cannot

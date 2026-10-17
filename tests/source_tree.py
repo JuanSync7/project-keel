@@ -329,3 +329,431 @@ def noqa_reasons(root, relpath):
 def blank(reason):
     """True when *reason* holds no letter or digit: punctuation is no reason."""
     return not any(ch.isalnum() for ch in reason)
+
+
+# --- environment reads -------------------------------------------------------------
+
+_ENVIRON = "environ"
+# The environ methods that read a variable by name.
+_ENV_CALLS = ("get", "pop", "setdefault")
+_GETENV = "getenv"
+
+
+def module_strings(tree):
+    """{NAME: value} for every module-level `NAME = "literal"`."""
+    out = {}
+    for node in tree.body:
+        if (
+            isinstance(node, ast.Assign)
+            and isinstance(node.value, ast.Constant)
+            and isinstance(node.value.value, str)
+        ):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    out[target.id] = node.value.value
+    return out
+
+
+def is_environ(node):
+    """True for `environ` or `<anything>.environ`."""
+    return (isinstance(node, ast.Attribute) and node.attr == _ENVIRON) or (
+        isinstance(node, ast.Name) and node.id == _ENVIRON
+    )
+
+
+def string_of(node, constants):
+    """The string *node* spells: a literal, or a name in *constants*; else None."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.Name):
+        return constants.get(node.id)
+    return None
+
+
+def env_reads(tree):
+    """`(lineno, name)` for every environment variable *tree* reads by a name
+    it spells, sorted: through `environ[...]`, `environ.get/pop/setdefault(...)`,
+    `... in environ` or `getenv(...)`, the name a literal or a module-level
+    string constant. A name held in any other variable is not seen."""
+    constants = module_strings(tree)
+    found = set()
+    for node in ast.walk(tree):
+        name = None
+        if isinstance(node, ast.Subscript) and isinstance(node.ctx, ast.Load):
+            if is_environ(node.value):
+                name = string_of(node.slice, constants)
+        elif (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.args
+        ):
+            func = node.func
+            if (
+                func.attr in _ENV_CALLS and is_environ(func.value)
+            ) or func.attr == _GETENV:
+                name = string_of(node.args[0], constants)
+        elif (
+            isinstance(node, ast.Compare)
+            and len(node.ops) == 1
+            and isinstance(node.ops[0], ast.In)
+            and is_environ(node.comparators[0])
+        ):
+            name = string_of(node.left, constants)
+        if name:
+            found.add((node.lineno, name))
+    return sorted(found)
+
+
+def python_env_reads(path):
+    """The names of every environment variable the file at *path* reads by a
+    name it spells (env_reads)."""
+    tree = ast.parse(path.read_text(encoding="utf-8"), str(path))
+    return {name for _lineno, name in env_reads(tree)}
+
+
+# --- config-file reads -------------------------------------------------------------
+
+# The callables that build a path from segments: os.path/posixpath/ntpath
+# `join` and the pathlib constructors. `str.join` matches too, harmlessly: its
+# one argument is an iterable, never a constant segment.
+_JOINERS = ("join", "Path", "PurePath", "PosixPath", "PurePosixPath")
+_JOINPATH = "joinpath"
+_OPEN = "open"
+_SPLIT = "split"
+# Methods of a path object that read the file it names.
+_PATH_READERS = ("read_text", "read_bytes", "open")
+
+
+def _split(text):
+    """The segments of a path string, either separator, `.` and empty dropped."""
+    return [p for p in text.replace("\\", "/").split("/") if p not in ("", ".")]
+
+
+def _callee(func):
+    if isinstance(func, ast.Name):
+        return func.id
+    if isinstance(func, ast.Attribute):
+        return func.attr
+    return None
+
+
+def _segments(node, scope):
+    """The path segments *node* spells, None standing for one it cannot read;
+    None overall when *node* is no path expression. *scope* is
+    {"paths": {name: segments}, "parts": {name: [str]}}: names bound to a path
+    expression, and names bound to a tuple of string constants (read only
+    through `*name`); "modules" is {name: {NAME: segments}}, the module-level
+    path constants (module_paths) of the project module each imported name
+    binds."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return _split(node.value)
+    if isinstance(node, ast.Name):
+        return scope["paths"].get(node.id)
+    if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
+        found = scope["modules"].get(node.value.id, {}).get(node.attr)
+        return None if found is None else list(found)
+    if isinstance(node, ast.Call):
+        name = _callee(node.func)
+        head = []
+        if name == _JOINPATH and isinstance(node.func, ast.Attribute):
+            head = _segments(node.func.value, scope) or [None]
+        elif name not in _JOINERS:
+            return None
+        out = list(head)
+        for arg in node.args:
+            if isinstance(arg, ast.Starred):
+                parts = _parts(arg.value, scope)
+                out.extend(parts if parts is not None else [None])
+            else:
+                seg = _segments(arg, scope)
+                out.extend(seg if seg is not None else [None])
+        return out
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
+        left = _segments(node.left, scope)
+        right = _segments(node.right, scope)
+        if left is None and right is None:
+            return None
+        return (left or [None]) + (right or [None])
+    return None
+
+
+def _parts(node, scope):
+    """The segments of a tuple of string constants, literal or bound to a
+    name; None for anything else."""
+    if isinstance(node, ast.Name):
+        return scope["parts"].get(node.id)
+    if (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == _SPLIT
+    ):
+        # `*TEXT.split("/")`: the segments of the text, which _split takes
+        # apart on either separator already.
+        seg = _segments(node.func.value, scope)
+        return seg if seg is not None and None not in seg else None
+    if isinstance(node, (ast.Tuple, ast.List)) and all(
+        isinstance(e, ast.Constant) and isinstance(e.value, str) for e in node.elts
+    ):
+        return [p for e in node.elts for p in _split(e.value)]
+    return None
+
+
+def _declared(segments, declared):
+    """The declared path whose segments end *segments*, else None."""
+    if not segments:
+        return None
+    for path, parts in declared:
+        n = len(parts)
+        if len(segments) >= n and segments[-n:] == parts:
+            return path
+    return None
+
+
+def _read_paths(call):
+    """The expressions a call reads a file from: the argument of `open`,
+    `io.open` and the like, and the object of `.read_text()`, `.read_bytes()`
+    and `.open()`."""
+    func = call.func
+    out = []
+    first = call.args[0] if call.args else None
+    if first is None:
+        first = next((k.value for k in call.keywords if k.arg == "file"), None)
+    if isinstance(func, ast.Name) and func.id == _OPEN and first is not None:
+        out.append(first)
+    elif isinstance(func, ast.Attribute):
+        if func.attr in _PATH_READERS:
+            out.append(func.value)
+        if func.attr == _OPEN and first is not None:
+            out.append(first)
+    return out
+
+
+def _bind(scope, target, value):
+    """Record or forget *target* in *scope* by what *value* is."""
+    if not isinstance(target, ast.Name):
+        return
+    name = target.id
+    scope["paths"].pop(name, None)
+    scope["parts"].pop(name, None)
+    parts = _parts(value, scope)
+    if parts is not None and not isinstance(value, ast.Name):
+        scope["parts"][name] = parts
+        return
+    seg = _segments(value, scope)
+    if seg is not None:
+        scope["paths"][name] = seg
+
+
+def _assigns(body):
+    """The `name = value` pairs a body binds, in source order, not entering a
+    nested function or class."""
+    out = []
+    stack = list(body)
+    while stack:
+        node = stack.pop(0)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        if isinstance(node, ast.Assign):
+            out.extend((node.lineno, target, node.value) for target in node.targets)
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+            out.append((node.lineno, node.target, node.value))
+        stack.extend(ast.iter_child_nodes(node))
+    return sorted(out, key=lambda item: item[0])
+
+
+def _scope_at(base, assigns, lineno):
+    """*base* updated by the *assigns* made before *lineno*."""
+    scope = dict(base, paths=dict(base["paths"]), parts=dict(base["parts"]))
+    for line, target, value in assigns:
+        if line < lineno:
+            _bind(scope, target, value)
+    return scope
+
+
+def _mentions(node, names):
+    return any(isinstance(n, ast.Name) and n.id in names for n in ast.walk(node))
+
+
+def _param_names(func):
+    args = func.args
+    return [a.arg for a in getattr(args, "posonlyargs", []) + args.args]
+
+
+def _opening_params(functions):
+    """{function name: {parameter index}} for each module-level function that
+    opens what a parameter names, directly or through another such function,
+    to a fixed point."""
+    opens = {name: set() for name in functions}
+    changed = True
+    while changed:
+        changed = False
+        for name, func in functions.items():
+            params = _param_names(func)
+            # A local name built from a parameter carries it.
+            carriers = {p: {p} for p in params}
+            for _line, target, value in _assigns(func.body):
+                if isinstance(target, ast.Name):
+                    for p in params:
+                        if _mentions(value, carriers[p]):
+                            carriers[p].add(target.id)
+            for node in ast.walk(func):
+                if not isinstance(node, ast.Call):
+                    continue
+                handed = list(_read_paths(node))
+                callee = _callee(node.func)
+                if isinstance(node.func, ast.Name) and callee in opens:
+                    handed += _handed(node, functions[callee], opens[callee])
+                for index, p in enumerate(params):
+                    if index in opens[name]:
+                        continue
+                    if any(_mentions(expr, carriers[p]) for expr in handed):
+                        opens[name].add(index)
+                        changed = True
+    return opens
+
+
+def _handed(call, func, indexes):
+    """The arguments *call* passes at the parameter *indexes* of *func*."""
+    params = _param_names(func)
+    out = []
+    for index in sorted(indexes):
+        if index < len(call.args) and not isinstance(call.args[index], ast.Starred):
+            out.append(call.args[index])
+        out.extend(
+            keyword.value
+            for keyword in call.keywords
+            if index < len(params) and keyword.arg == params[index]
+        )
+    return out
+
+
+def _calls_by_scope(tree):
+    """`(call, function or None)` for every call, with the innermost
+    function that holds it."""
+    out = []
+
+    def visit(node, func):
+        for child in ast.iter_child_nodes(node):
+            inner = func
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                inner = child
+            if isinstance(child, ast.Call):
+                out.append((child, inner))
+            visit(child, inner)
+
+    visit(tree, None)
+    return out
+
+
+def module_paths(tree):
+    """{NAME: segments} for every module-level name *tree* binds to a path
+    expression (a string constant, or a join or pathlib construction of
+    constants and of names bound so before it), None standing for a segment
+    it cannot read, as _segments spells it."""
+    scope = {"paths": {}, "parts": {}, "modules": {}}
+    for _line, target, value in _assigns(tree.body):
+        _bind(scope, target, value)
+    return scope["paths"]
+
+
+def _import_pairs(node):
+    """`(bound name, dotted parts, imported name or None)` for each name a
+    module-level absolute import statement binds: `import a.b as n` binds
+    the module a.b; `from a import b` binds b, which is either the module
+    a.b or the name b of module a, so the imported name rides along."""
+    if isinstance(node, ast.Import):
+        # `import a.b` binds `a`, not `a.b`, so only an aliased dotted
+        # import names the module itself.
+        return [
+            (alias.asname or alias.name, alias.name.split("."), None)
+            for alias in node.names
+            if alias.asname or "." not in alias.name
+        ]
+    if isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+        return [
+            (
+                alias.asname or alias.name,
+                node.module.split(".") + [alias.name],
+                alias.name,
+            )
+            for alias in node.names
+            if alias.name != "*"
+        ]
+    return []
+
+
+def imported_paths(root, tree, search_roots):
+    """{"modules": {name: {NAME: segments}}, "names": {name: segments}} for
+    the module-level absolute imports in *tree* that reach a project module
+    through *search_roots*: "modules" for a name bound to a module (its
+    module_paths), "names" for a name bound to one of a module's path
+    constants (`from a import NAME [as n]`)."""
+    modules = {}
+    names = {}
+    for node in tree.body:
+        for bound, parts, imported in _import_pairs(node):
+            if parts[0] in sys.stdlib_module_names:
+                continue
+            found = _resolve(root, search_roots, parts)
+            if found is not None:
+                modules[bound] = module_paths(parse(root, found))
+                continue
+            if imported is None:
+                continue
+            owner = _resolve(root, search_roots, parts[:-1])
+            if owner is not None:
+                segments = module_paths(parse(root, owner)).get(imported)
+                if segments is not None:
+                    names[bound] = segments
+    return {"modules": modules, "names": names}
+
+
+def config_path_reads(tree, declared, imported=None):
+    """`(lineno, path)` for every read in *tree* of a file in *declared*
+    (repo-relative posix paths), sorted. A read is an `open`/`io.open`/`.open`
+    call, or `.read_text`/`.read_bytes`/`.open` on a path object, whose path
+    is a string constant naming the file, a join or pathlib construction of
+    constants whose last segments are its parts (a `*NAME` of a tuple of
+    constants, or `*TEXT.split(...)` of such a string, included), a name bound
+    to one at module level or earlier in the same function, a path constant
+    of another project module bound by name (`from mod import NAME`), or
+    `mod.NAME` of such a constant (*imported* is imported_paths); or a call
+    to a module-level function of *tree* that opens the parameter the path is
+    handed to. A path handed in from outside, opened by a function of
+    another module, or built from a value that is not a constant is not seen;
+    neither is a probe such as getmtime or exists, which reads no content."""
+    wanted = [(p, _split(p)) for p in sorted(declared)]
+    if not wanted:
+        raise SourceTreeError("no declared config file to look for -- zero items")
+    imported = imported or {}
+    module = {
+        "paths": dict(imported.get("names", {})),
+        "parts": {},
+        "modules": dict(imported.get("modules", {})),
+    }
+    for _line, target, value in _assigns(tree.body):
+        _bind(module, target, value)
+    functions = {
+        node.name: node
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    opens = _opening_params(functions)
+    assigns = {}
+    found = set()
+    for call, func in _calls_by_scope(tree):
+        if func is None:
+            scope = module
+        else:
+            if func not in assigns:
+                assigns[func] = _assigns(func.body)
+            scope = _scope_at(module, assigns[func], call.lineno)
+        exprs = list(_read_paths(call))
+        callee = _callee(call.func)
+        if isinstance(call.func, ast.Name) and opens.get(callee):
+            exprs += _handed(call, functions[callee], opens[callee])
+        for expr in exprs:
+            path = _declared(_segments(expr, scope), wanted)
+            if path is not None:
+                found.add((call.lineno, path))
+    return sorted(found)

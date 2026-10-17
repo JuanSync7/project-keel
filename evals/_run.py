@@ -7,11 +7,11 @@ summary: replay drives every case's real doer against a backend that answers wit
 
 from __future__ import annotations
 
-import os
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 
 from models import ModelBackend, ModelUnavailable, get_model
+from scripts import config_loader
 from scripts.child_env import load_policy
 
 from ._config import ConfigError, EvalConfig
@@ -108,9 +108,10 @@ def _detail(exc: BaseException, secrets: Sequence[str]) -> str:
 
 def _declared_secrets(model: str) -> tuple[str, ...]:
     """The values this process holds for the credential variables
-    config/project.json `models.credential_env` declares for *model*."""
+    config/project.json `models.credential_env` declares for *model*, each
+    read through scripts/config_loader.py `env`."""
     names = load_policy().credentials.get(model, ())
-    return tuple(v for v in (os.environ.get(n) for n in names) if v)
+    return tuple(v for v in (config_loader.env(n) for n in names) if v)
 
 
 def _scored(case: Case, response: str) -> Outcome:

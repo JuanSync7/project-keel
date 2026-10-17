@@ -39,6 +39,7 @@ _SHIPPED = (
     "scripts/check_structure.py",
     "scripts/check_python_version.py",
     "scripts/child_env.py",
+    "scripts/config_loader.py",
     "scripts/exit_codes.py",
     "scripts/run_date.py",
 )

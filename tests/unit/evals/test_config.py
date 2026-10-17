@@ -6,6 +6,8 @@ summary: parse_config reads the config/project.json `evals` block from a dict an
 """
 
 import copy
+import json
+import shutil
 import sys
 from pathlib import Path
 
@@ -14,7 +16,7 @@ import pytest
 _ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(_ROOT))
 
-from evals import ConfigError, parse_config  # noqa: E402
+from evals import ConfigError, load_config, parse_config  # noqa: E402
 
 pytestmark = pytest.mark.unit
 
@@ -131,3 +133,68 @@ def test_a_refusal_names_the_report_dir_it_could_still_read(path, value, hint):
     with pytest.raises(ConfigError) as info:
         _parse(copy.deepcopy(_BLOCK), lambda _rel: {"properties": {}})
     assert info.value.report_dir == ".evidence/evals"
+
+
+_ALL_KEYS = (
+    "evals.case_schema",
+    "evals.dataset_dir",
+    "evals.live.max_calls",
+    "evals.live.model",
+    "evals.live.model_options",
+    "evals.report_dir",
+    "evals.report_schema",
+    "evals.threshold",
+)
+
+
+def test_every_missing_key_is_named_in_one_refusal(capsys):
+    """The block is resolved through scripts/config_loader.py's rows, so a
+    block missing every key names all of them at once, sorted, not the first."""
+    with pytest.raises(ConfigError) as info:
+        parse_config({"evals": {"live": {}}}, lambda _rel: _schema())
+    assert info.value.lines == [
+        "[not set] %s  (required, no default; set %s in config/project.json)" % (k, k)
+        for k in _ALL_KEYS
+    ], info.value.lines
+    assert info.value.in_config is True
+    err = capsys.readouterr().err
+    assert all("[not set] " + k in err for k in _ALL_KEYS), err
+
+
+def test_a_schema_fault_is_not_a_config_value_fault():
+    with pytest.raises(ConfigError) as info:
+        _parse(copy.deepcopy(_BLOCK), lambda _rel: {"properties": {}})
+    assert info.value.in_config is False and info.value.lines == []
+    with pytest.raises(ConfigError) as info:
+        _parse(_with("threshold", 2))
+    assert info.value.in_config is True and info.value.lines
+
+
+def _project(tmp_path, text):
+    (tmp_path / "config" / "evals").mkdir(parents=True)
+    for name in ("eval-case.schema.json", "eval-report.schema.json"):
+        shutil.copy(
+            str(_ROOT / "config" / "evals" / name),
+            str(tmp_path / "config" / "evals" / name),
+        )
+    (tmp_path / "config" / "project.json").write_text(text, encoding="utf-8")
+    return tmp_path
+
+
+def test_load_config_reads_through_the_config_loader(tmp_path):
+    """A key written twice is refused, not decided by the last one, and the
+    manifest is read by scripts/config_loader.py `read` alone."""
+    root = _project(tmp_path, json.dumps({"evals": _BLOCK}))
+    assert load_config(root).threshold == 1.0
+    text = json.dumps({"evals": _BLOCK})
+    (root / "config" / "project.json").write_text(
+        text[:-1] + ', "evals": {}}', encoding="utf-8"
+    )
+    with pytest.raises(ConfigError) as info:
+        load_config(root)
+    assert "`evals` appears twice" in str(info.value), str(info.value)
+    assert info.value.in_config is True
+    (root / "config" / "project.json").unlink()
+    with pytest.raises(ConfigError) as info:
+        load_config(root)
+    assert "config/project.json does not exist" in str(info.value)

@@ -8,7 +8,7 @@ tags: [limits, waivers, exit-codes, troubleshooting, guide]
 summary: What adopting keel costs, the risks its rails leave open, the checks that pass by skipping, what no gate can see, every waiver a project may use, every exit code the gate's scripts return, and the symptom-to-fix list for the failures a newcomer meets first.
 id: docs-guides-limits-and-troubleshooting
 created: 2026-10-09
-updated: 2026-10-15
+updated: 2026-10-17
 visibility: internal
 canonical: true
 ---
@@ -157,6 +157,19 @@ a decision on whether it should fail instead.
 - **Heuristic comment gate.** `tests/integration/test_change_comment_gate.py`
   reads only the opening words of a comment, so `# The cache, which used to
   be a dict, ...` passes; review catches a change reported mid-sentence.
+- **The config-reads gate's reach.**
+  `tests/integration/test_config_reads_gate.py` follows a config path only
+  through constants, names bound to them, a starred split, a path constant of
+  a module imported at module level (read as `mod.NAME` or imported with
+  `from mod import NAME`), and a helper of the same module. A path handed in
+  as a parameter, an attribute of a module imported inside a function or
+  relatively, a function of another module that opens what it is given, a
+  method called through an object, a variable name the code holds in a
+  variable, and a read through `subprocess` or `importlib` all pass. A
+  generated project cannot tell keel's files from its own, so there its two
+  finding tests skip and name each direct read under config/project.json
+  `config_reads.roots` in the skip reason (`pytest -rs` prints it); such a
+  reader is not judged until the warn-then-fail tier is built.
 - **What a swallowed error looks like to the gate.**
   `tests/integration/test_swallowed_error_gate.py` judges a broad handler by
   its body's shape: one that logs nothing useful and returns a computed value,
@@ -344,6 +357,7 @@ between the markers.
 | 11 | `BACKEND_ABSENT` | the backend it was told to use did not answer, so nothing was judged | start or configure the backend the last stderr line names, and run it again |
 | 12 | `NO_CAPACITY` | nothing ran: the farm did not start the job within the wait bound and this host had no spare compute | run it again later, or raise config/project.json launcher.farm.wait_seconds |
 | 13 | `NOTHING_JUDGED` | it ran and found no item to judge, so it cannot answer yes | give it something to judge, as the last stderr line names, then run it again |
+| 14 | `CONFIG` | it refused before judging: a config value is missing or wrong, in config/project.json or a variable it declares | set or correct each key a `[not set]` or `accepted:` line on stderr names, then run it again |
 | 130 | `INTERRUPTED` | it was interrupted before it finished | run it again; what it had written so far is not a result |
 
 | Script | Exit |
@@ -353,10 +367,10 @@ between the markers.
 | `scripts/cdmon_sync.py` | 0, passes through |
 | `scripts/check_python_version.py` | 0, 1 |
 | `scripts/check_structure.py` | 0, 1, 2 |
-| `scripts/exit_code_table.py` | 0, 1, 2 |
-| `scripts/gate_evidence.py` | 0, 2, 10, 130, passes through |
+| `scripts/exit_code_table.py` | 0, 1, 2, 14 |
+| `scripts/gate_evidence.py` | 0, 2, 10, 14, 130, passes through |
 | `scripts/jobs/check_corpus.py` | 0, 1 |
-| `scripts/run_evals.py` | 0, 1, 2, 11 |
+| `scripts/run_evals.py` | 0, 1, 2, 11, 14 |
 | `scripts/trace_requirements.py` | 0, 1, 2 |
 <!-- exit-codes:end -->
 
@@ -375,12 +389,12 @@ says when each script returns each code.
 | `scripts/cdmon_sync.py` | 0: cdmon or its config is absent. Otherwise cdmon's own code passes through |
 | `scripts/check_python_version.py` | 0: the interpreter meets `requires-python`. 1: it does not, and the message names the floor |
 | `scripts/check_structure.py` | 0: no error. 1: at least one error, each printed. 2: a bad `--root` |
-| `scripts/exit_code_table.py` | 0: the exit-code table between the markers is current. 1: it is stale, and each differing row is one stderr line. 2: it could not build the table: a missing or repeated marker, a bad `doc_drift` block, a guide reached through a symlink, or a script whose returns it cannot read |
-| `scripts/gate_evidence.py` | 0: every goal passed and the record is green. 2: refused before any goal ran: a malformed `--gate` or goal, zero goals, a bad `evidence` block, a record or report path that resolves through a symlink or that git does not ignore, a git command that ran and failed, or a date in the `evidence.run_date.env` variable that is not a date, is later than the clock or is older than `evidence.run_date.max_age_days` allows. 10: every goal passed but the record is red: zero tests, a failed or errored test in the junit report of a goal that exited 0, no junit report, the tree changed during the run, the checks could not run, or the writer crashed. 130: interrupted, and the red placeholder record stays. Otherwise the first failing goal's code passes through |
+| `scripts/exit_code_table.py` | 0: the exit-code table between the markers is current. 1: it is stale, and each differing row is one stderr line. 2: it could not build the table: a missing or repeated marker, a guide reached through a symlink, or a script whose returns it cannot read. 14: config/project.json or its `doc_drift` block cannot be used, each key at fault named on its own stderr line first |
+| `scripts/gate_evidence.py` | 0: every goal passed and the record is green. 2: refused before any goal ran: a malformed `--gate` or goal, zero goals, an evidence schema file that cannot be read, a record or report path that resolves through a symlink or that git does not ignore, a git command that ran and failed, or a date in the `evidence.run_date.env` variable that is not a date, is later than the clock or is older than `evidence.run_date.max_age_days` allows. 10: every goal passed but the record is red: zero tests, a failed or errored test in the junit report of a goal that exited 0, no junit report, the tree changed during the run, the checks could not run, or the writer crashed. 130: interrupted, and the red placeholder record stays. 14: refused before any goal ran because a config/project.json `evidence` value, `evidence.run_date` included, is missing or wrong, each key at fault named on its own stderr line first. Otherwise the first failing goal's code passes through |
 | `scripts/launch.py` | the launched command's own status passes through when it ran, here or on the farm. 2: refused before anything ran: a bad `launcher` block, a state path reached through a symlink or one git would list, a git that failed, no command or one that is not installed here, an environment holding a credential name `launcher.credentials` does not list for the key, an unwritable run record before the start, or a farm that refused the submission. 11: the farm's submit command is not installed. 12 (`NO_CAPACITY`): the farm did not start the command within `launcher.farm.wait_seconds` and this host was not spare, so nothing ran. 130: interrupted while the command ran, recorded as `interrupted` |
 | `scripts/jobs/check_corpus.py` | 0: the corpus is well-formed and its build is reproducible. 1: it is not, and each error is printed |
 | `scripts/long_scripts.py` | 0: at least one recorded run was judged and none is over `launcher.long_after_seconds` and unlisted. 1: a key is proposed, each one `propose:` stdout line. 13 (`NOTHING_JUDGED`): no recorded run carried a duration, so nothing was judged. 2: refused: a bad `launcher` block, a durations file reached through a symlink, one git would list, a git that failed, or a file that is unreadable, not JSON or not a JSON object |
-| `scripts/run_evals.py` | 0: every suite passed. 1: a suite failed: below `evals.threshold`, an errored case or a stale recording. 2: refused: a bad `evals` block, a malformed or empty dataset, a live run over `evals.live.max_calls`, a null or unknown `evals.live.model`, an `evals.report_dir` git does not ignore, or a git command that ran and failed. 11: the live backend is absent; the first case is `absent` and the rest `not-run` |
+| `scripts/run_evals.py` | 0: every suite passed. 1: a suite failed: below `evals.threshold`, an errored case or a stale recording. 2: refused: a schema the `evals` block names that cannot be read, a malformed or empty dataset, a live run over `evals.live.max_calls`, a null or unknown `evals.live.model`, an `evals.report_dir` git does not ignore, or a git command that ran and failed. 11: the live backend is absent; the first case is `absent` and the rest `not-run`. 14: an `evals` value is missing, unknown or wrong, each key at fault named on its own stderr line first |
 | `scripts/trace_requirements.py` | 0: every unit is `covered` or a `traceability.gaps` row, and there is no finding. 1: at least one finding, each one stderr line: an `uncovered` unit, a marker or gap id that is malformed or undefined, an unreadable or unattached marker, a redundant gap, or zero requirements with no reason. 2: it could not judge: a bad `traceability` block, a path reached through a symlink, a `matrix_path` git does not ignore, a repository git cannot read, an unreadable schema, spec or test file, a spec line that does not parse, a document under the specs root that defines a requirement without `kind: spec`, or a collection rule pytest could not give; or it could not write the matrix at `traceability.matrix_path` |
 
 Three more codes come from the tools around these scripts:
@@ -392,6 +406,42 @@ Three more codes come from the tools around these scripts:
   take; the usage line names the right ones.
 - **make exit 2** means make itself failed: a recipe returned non-zero, or the
   target does not exist. The line above it names the recipe's own code.
+
+## Lines the config loader writes
+
+A script that reads its config through `scripts/config_loader.py` writes two
+kinds of line to stderr about the keys it reads.
+`tests/integration/test_config_default_lines_docs.py` fails this section when a
+line quoted here is not one the loader writes.
+
+- **`[using default]`** means a key that has a declared default is absent, and
+  the run goes on with that default. The loader writes the line once per process
+  in this shape:
+  `[using default] <key> = <value>  (not set; to change it, set <key> in <config file>)`.
+  A `config/project.json` with no `practices.profiles` block makes `make advise`
+  write
+  `[using default] practices.profiles = {}  (not set; to change it, set practices.profiles in config/project.json)`.
+  For a key only a variable sets, `<config file>` reads `the environment`, and a
+  secret's value is shown as `<hidden>`. The line does not change the exit code.
+  If the default is what you want, do nothing. To silence the line, set the key
+  in the file it names, to the default or to another value. Each defaulted key's
+  row in [settings.md](../reference/settings.md) quotes its line.
+- **`[not set]`** means a key that has no default is absent, and the script
+  stops with exit 14 (`CONFIG`) in this shape:
+  `[not set] <key>  (required, no default; set <key> in <config file>)`.
+  A `config/project.json` with no `evidence.dir` makes the gate's driver write
+  `[not set] evidence.dir  (required, no default; set evidence.dir in config/project.json)`
+  before any goal runs. Add each key a line names; settings.md gives its type
+  and shipped value.
+
+A value of the wrong type, or out of a key's range, is a third line,
+`<config file>: <key> is <JSON type> <value>; accepted: <what it accepts>`,
+with `<value>` left out for a list, an object or a secret, and also stops the
+script with exit 14. A value read from an environment variable is blamed on
+it instead: `the environment: <variable> is <JSON type> <value>; accepted: <what it accepts>`. The loader writes every `[not set]` and wrong-value line before it stops,
+so one run names every key at fault. A script that config/project.json
+`config_reads.allowed` still lists reads its config directly: it writes its own
+message and stops with exit 2 until it is moved onto the loader.
 
 ## Symptom, cause, fix
 
@@ -427,6 +477,9 @@ Three more codes come from the tools around these scripts:
 | `copier update` stops with exit 2 naming files | a migration found conflict markers in a file it imports, or in a fixed project file one of its modules declares reading (`config/project.json`, the `Makefile`) | resolve each named file, then run the command the message prints: under an update it is `<python> scripts/jobs/finish_update.py`, which runs the migrations copier never reached |
 | a migration names `scripts/exit_codes.py` as conflicted and then stops with exit 1 on a `SyntaxError` traceback, or `scripts/check_structure.py` stops on that traceback alone | the conflicted file is the exit helper itself, which every script imports to end with a chosen status, so nothing can exit 2; a project that added its own `ExitCode` member is the one an update conflicts here | resolve the hunk in `scripts/exit_codes.py`, keeping your members and the template's, run `make exit-codes`, then run the command the refusal line prints |
 | a command stops with `config/project.json holds a merge-conflict hunk at line N` | an update left the manifest conflicted, so `scripts/child_env.py` has no allowlist and lets no child start | resolve the hunk, then finish the update as `generate-and-upgrade.md` says |
+| stderr shows `[using default] child_env.login_name_schemes = []` and the run goes on | the key is absent from config/project.json, as in a project that deleted it or kept its own side of an update | nothing, if the default is what you want; otherwise, or to silence the line, set the key ([settings.md](../reference/settings.md) gives its meaning) |
+| a script stops with exit 14 after `[not set] evidence.schema` | config/project.json lacks a key the script requires, which has no default | add each key a `[not set]` line names, then run it again |
+| a script stops with exit 14 after a line ending `accepted: <what>` | a config/project.json key, or the environment variable a line opening `the environment:` names, holds a value of the wrong type or out of its range | set the key or the variable to a value the line accepts, then run it again |
 | a job stops on `Expecting property name enclosed in double quotes` after `copier update` | the update went to a template release whose migrations read `config/project.json` without checking it for conflict markers, and the manifest was conflicted; copier ran no later migration, and that release has no `scripts/jobs/finish_update.py` | resolve the file and `git add` it; copy `scripts/jobs/finish_update.py` from a newer keel checkout into the project, run `python scripts/jobs/finish_update.py --template <that keel checkout>`, delete the copied script (that release's `scripts/jobs/README.md` roster does not name it, so `check_structure.py` fails on it), then review and commit. On a release that has the check, the same conflict stops with the refusal row above instead, and `tests/integration/test_copier_job_conflict_refusal.py` keeps it so |
 | `copier update` refuses the ref you named | it is older than the project's recorded `_commit` | update to a newer tag ([ADR-K-0009](../adr/keel/K-0009-release-identity-and-the-tag-ordering-rule.md)) |
 | `make check-corpus` fails after you added documents | the local corpus is stale | `make site-data` |

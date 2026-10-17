@@ -2,14 +2,15 @@
 title: MCP Q&A server
 layer: backend
 public_api: no
-summary: Read-only MCP tools that answer questions from the corpus via the wiki_navigator agent.
+summary: Read-only MCP tools that answer questions from the corpus via the wiki_navigator agent. The model it asks is the KEEL_MCP_MODEL variable, read by configured_model through scripts/config_loader.py; unset or empty is the declared null default, the registry's own model, written to stderr once, and a blank value is refused.
 """
 
 from __future__ import annotations
 
-import os
 import sys
+from collections.abc import Mapping
 from pathlib import Path
+from typing import IO
 
 # Thin transport: reach the agent via the repo's package public API. Insert the
 # repo root (for `agents`/`models`/`runtimes`) and this dir (for `protocol`).
@@ -19,8 +20,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from agents.wiki_navigator import answer  # noqa: E402
 from protocol import Tool, ToolServer, serve_stdio  # noqa: E402
+from scripts import config_loader  # noqa: E402
 
-__all__ = ["build_qa_server"]
+__all__ = ["build_qa_server", "configured_model"]
+
+_MODEL = ("KEEL_MCP_MODEL",)
 
 _ANSWER_SCHEMA = {
     "type": "object",
@@ -30,6 +34,21 @@ _ANSWER_SCHEMA = {
     "required": ["question"],
     "additionalProperties": False,
 }
+
+
+def configured_model(
+    environ: Mapping[str, str] | None = None, stream: IO[str] | None = None
+) -> str | None:
+    """The model the server asks: the KEEL_MCP_MODEL variable, resolved through
+    its scripts/config_loader.py KEYS row (*environ*: os.environ when None).
+    Unset or empty is the row's null default, the registry's own model, which
+    the loader writes to *stream* (stderr when None) once per process; a value
+    the row refuses raises config_loader.WrongValue."""
+    values = config_loader.resolve(
+        {}, config_loader.rows(_MODEL), "the environment", environ, stream
+    )
+    model: str | None = values[_MODEL]
+    return model
 
 
 def build_qa_server(model: str | None = None, corpus: str | None = None) -> ToolServer:
@@ -73,4 +92,4 @@ def build_qa_server(model: str | None = None, corpus: str | None = None) -> Tool
 
 
 if __name__ == "__main__":  # pragma: no cover — launched by an MCP client
-    serve_stdio(build_qa_server(model=os.environ.get("KEEL_MCP_MODEL")))
+    serve_stdio(build_qa_server(model=configured_model()))

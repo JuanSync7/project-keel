@@ -20,6 +20,7 @@ _ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(_ROOT / "scripts"))
 
 import child_env  # noqa: E402
+import config_loader  # noqa: E402 -- child_env's loader, one module under both names
 
 pytestmark = pytest.mark.unit
 
@@ -445,7 +446,7 @@ def test_a_conflicted_manifest_is_named_as_a_conflict_not_a_json_error(
     (tmp_path / "config" / "project.json").write_text("{not json", encoding="utf-8")
     with pytest.raises(child_env.ChildEnvError) as caught:
         child_env.load_policy(str(tmp_path))
-    assert "cannot be read (Expecting property name" in str(caught.value)
+    assert "cannot be read as JSON (Expecting property name" in str(caught.value)
     assert "merge-conflict" not in str(caught.value)
 
 
@@ -457,11 +458,51 @@ def test_a_conflicted_manifest_falls_back_when_the_grammar_cannot_load(
     not checked, never a different exception type."""
     (tmp_path / "config").mkdir()
     (tmp_path / "config" / "project.json").write_text("{not json", encoding="utf-8")
-    monkeypatch.setattr(child_env, "_GRAMMAR", str(tmp_path / "absent.py"))
+    monkeypatch.setattr(config_loader, "_GRAMMAR", str(tmp_path / "absent.py"))
     with pytest.raises(child_env.ChildEnvError) as caught:
         child_env.load_policy(str(tmp_path))
     assert "cannot be read" in str(caught.value)
     assert "conflict markers not checked" in str(caught.value)
+
+
+def test_the_manifest_is_read_through_the_config_loader(tmp_path, parent):
+    """child_env reads config/project.json through scripts/config_loader.py
+    `read`, so a key written twice is refused rather than the last one
+    silently winning, and the refusal still says no child may start."""
+    (tmp_path / "config").mkdir()
+    text = json.dumps(_MANIFEST)
+    twice = text[:-1] + ', "child_env": {"names": ["PATH"]}}'
+    (tmp_path / "config" / "project.json").write_text(twice, encoding="utf-8")
+    with pytest.raises(child_env.ChildEnvError) as caught:
+        child_env.load_policy(str(tmp_path))
+    message = str(caught.value)
+    assert "`child_env` appears twice" in message, message
+    assert "no child may start" in message, message
+    assert sys.modules["config_loader"] is config_loader
+
+
+@pytest.fixture
+def fresh_defaults():
+    """A fresh process's announced set: no default line written yet."""
+    config_loader._ANNOUNCED.clear()
+    yield
+    config_loader._ANNOUNCED.clear()
+
+
+def test_an_absent_login_name_schemes_takes_its_declared_default_and_says_so(
+    capsys, fresh_defaults
+):
+    """The default is the scripts/config_loader.py KEYS row's, written once to
+    stderr naming the key; a set key writes no line."""
+    policy, errs = child_env.child_env_policy(
+        _manifest(child_env__login_name_schemes=_DROP)
+    )
+    assert errs == [] and policy.login_schemes == frozenset(), errs
+    err = capsys.readouterr().err
+    assert "[using default] child_env.login_name_schemes = []" in err, err
+    assert err.count("\n") == 1, err
+    child_env.child_env_policy(_manifest())
+    assert capsys.readouterr().err == ""
 
 
 def test_a_manifest_that_is_not_an_object_fails_closed():

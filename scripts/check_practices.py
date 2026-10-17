@@ -3,7 +3,7 @@
 title: Coding-practices advisor
 kind: script
 layer: n/a
-summary: Read-only advisory. Flags coding-practice SMELLS - a concrete backend constructed inline instead of injected, a long isinstance chain that wants singledispatch, a hot-path class without __slots__, a resource acquired outside a context manager. Judgment calls that over/under-flag, so advisory only; never fails the build. Stdlib only; runs on Python 3.6+.
+summary: Read-only advisory. Flags coding-practice SMELLS - a concrete backend constructed inline instead of injected, a long isinstance chain that wants singledispatch, a hot-path class without __slots__, a resource acquired outside a context manager. Judgment calls that over/under-flag, so advisory only: a smell never fails the build. It reads config/practices.json and config/project.json `practices.profiles` through scripts/config_loader.py, and a config file it cannot use exits CONFIG (scripts/exit_codes.py) naming the file, rather than reporting no smells over an empty registry; `make advise` ignores its status. Stdlib only; runs on Python 3.6+.
 """
 
 import argparse
@@ -17,7 +17,8 @@ import tokenize
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-from exit_codes import ExitCode, finish  # noqa: E402
+import config_loader  # noqa: E402
+from exit_codes import ExitCode, finish, report  # noqa: E402
 
 # The doer/domain code an advisory should look at. Transport adapters (api/, mcp/)
 # and tests/ are intentionally excluded - speaking a framework's dialect there is
@@ -49,15 +50,6 @@ def _read(path):
             return fh.read()
     except (OSError, UnicodeDecodeError):
         return None
-
-
-def _read_json(path):
-    try:
-        with io.open(path, encoding="utf-8-sig") as fh:
-            data = json.load(fh)
-        return data if isinstance(data, dict) else {}
-    except (OSError, ValueError):
-        return {}
 
 
 def _parse(text):
@@ -117,14 +109,20 @@ def _suppressed(line, pragma):
 
 
 def load_registry():
-    """The vendor-neutral practices registry (config/practices.json), or {}."""
-    return _read_json(os.path.join(ROOT, "config", "practices.json"))
+    """The vendor-neutral practices registry (config/practices.json), read
+    through scripts/config_loader.py; raises its ConfigError when the file is
+    absent or cannot be used, so no registry is never read as an empty one."""
+    return config_loader.read(ROOT, config_loader.PRACTICES_FILE)
 
 
 def profiles_on():
-    """Set of domain profiles a repo has enabled in config/project.json."""
-    proj = _read_json(os.path.join(ROOT, "config", "project.json"))
-    prof = (proj.get("practices") or {}).get("profiles") or {}
+    """Set of domain profiles config/project.json `practices.profiles` enables,
+    resolved through scripts/config_loader.py: an absent key is its declared
+    default, no profile, and a value of the wrong type raises ConfigError."""
+    path = ("practices", "profiles")
+    prof = config_loader.resolve(
+        config_loader.read(ROOT), config_loader.rows(path), config_loader.CONFIG_FILE
+    )[path]
     return {k for k, v in prof.items() if v is True and not k.startswith("_")}
 
 
@@ -366,7 +364,16 @@ def main(argv=None):
     ap.add_argument("--json", action="store_true", help="emit active findings as JSON")
     args = ap.parse_args(argv)
 
-    findings, empty_pragmas = scan(load_registry(), profiles_on())
+    try:
+        registry, profiles = load_registry(), profiles_on()
+    except config_loader.ConfigError as exc:
+        return report(
+            ExitCode.CONFIG,
+            "coding-practices: refused before any file was scanned",
+            str(exc),
+            "correct the config file it names, then run `make advise` again",
+        )
+    findings, empty_pragmas = scan(registry, profiles)
     active = [f for f in findings if not f["suppressed"]]
 
     if args.json:

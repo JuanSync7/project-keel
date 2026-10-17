@@ -46,6 +46,7 @@ _SCRIPTS = (
     "exit_codes.py",
     "git_tree.py",
     "child_env.py",
+    "config_loader.py",
 )
 _COMMAND = ("python3", "-c", "pass")
 _KEY = " ".join(_COMMAND)

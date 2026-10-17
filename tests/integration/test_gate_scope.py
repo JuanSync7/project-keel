@@ -2,7 +2,7 @@
 title: Integration — the gate's scope is the whole corpus, not a hand-written subset
 kind: tests
 layer: n/a
-summary: Pass 3's contract, read off the REAL Makefile recipes, the REAL pyproject and the REAL .pre-commit-config.yaml. (1) `lint-py` and `fmt` must cover every entry of `CODE_ROOTS` — imported from scripts/check_structure.py, never re-typed here, so the three scope lists cannot drift. (2) mypy's scope must ACCOUNT for every code root: each is either inside `[tool.mypy] files` or a declared, reasoned entry in config/practices.json rulesets.mypy.ratchet — a root may not simply be unmentioned. (3) ruff must actually be clean over that scope. (4) The static FE gates (lint-fe, typecheck-fe) SKIP when npm is absent; the frontend suites and `fe-browsers` exit 2 naming the target, the app and `make fe-install` when npm is absent or any app lacks node_modules, checked for every app before any suite runs, and every FE target is silent and green on a repo with no frontend app; CI installs the packages and the journey's browser before it runs `make test-fe`, and no CI step carries on past a failure. (5) Every bare-`python3` pre-commit entry must be legal under the documented old interpreter, since pre-commit `language: system` hooks exec the ambient python3. (6) The tools whose output IS the gate's verdict — ruff, mypy — must be pinned exactly in the `dev` extra, and pre-commit must run the SAME ruff, or the same tree gets different verdicts in different places. (7) Every frontend app the Makefile's FE_APPS glob finds wires a unit runner and a browser journey that `make verify` reaches and `make test` does not: each npm script the test-fe and fe-browsers recipes run is defined, the unit config refuses zero tests and a focused test and never collects the journeys, the journey config refuses a focused test, both suites hold at least one file, the journey config reads every config/project.json `layers.frontend.journey` key and spells no port, and the browser runner is pinned to one exact version every app and lockfile agree on. Imports nothing optional: this pin must never itself skip.
+summary: Pass 3's contract, read off the REAL Makefile recipes, the REAL pyproject and the REAL .pre-commit-config.yaml. (1) `lint-py` and `fmt` must cover every entry of `CODE_ROOTS` — imported from scripts/check_structure.py, never re-typed here, so the three scope lists cannot drift. (2) mypy's scope must ACCOUNT for every code root: each is either inside `[tool.mypy] files` or a declared, reasoned entry in config/practices.json rulesets.mypy.ratchet — a root may not simply be unmentioned. (3) ruff must actually be clean over that scope. (4) The static FE gates (lint-fe, typecheck-fe) SKIP when npm is absent; the frontend suites and `fe-browsers` exit 2 naming the target, the app and `make fe-install` when npm is absent or any app lacks node_modules, checked for every app before any suite runs, and every FE target is silent and green on a repo with no frontend app; CI installs the packages and the journey's browser before it runs `make test-fe`, and no CI step carries on past a failure. (5) Every bare-`python3` pre-commit entry, each keel module it imports by bare name and every file of config/project.json `import_layers.order[0]` must be legal under the documented old interpreter, since pre-commit `language: system` hooks exec the ambient python3, and where the host has one, child_env builds an environment and scripts/config_loader.py resolves keel's own config there with nothing on stderr. (6) The tools whose output IS the gate's verdict — ruff, mypy — must be pinned exactly in the `dev` extra, and pre-commit must run the SAME ruff, or the same tree gets different verdicts in different places. (7) Every frontend app the Makefile's FE_APPS glob finds wires a unit runner and a browser journey that `make verify` reaches and `make test` does not: each npm script the test-fe and fe-browsers recipes run is defined, the unit config refuses zero tests and a focused test and never collects the journeys, the journey config refuses a focused test, both suites hold at least one file, the journey config reads every config/project.json `layers.frontend.journey` key and spells no port, and the browser runner is pinned to one exact version every app and lockfile agree on. Imports nothing optional: this pin must never itself skip.
 """
 
 import ast
@@ -827,13 +827,26 @@ def _local_imports(path):
     return sorted(set(found))
 
 
+def _bottom_import_layer():
+    """The files of config/project.json `import_layers.order[0]`. Every layer may
+    import the bottom one, the 3.6 hook entries included, and a member may reach
+    it by a path load (child_env loads scripts/config_loader.py so) that no
+    import statement shows, so the whole layer is on the old-interpreter surface."""
+    manifest = json.loads((_ROOT / "config" / "project.json").read_text("utf-8"))
+    bottom = manifest["import_layers"]["order"][0]
+    assert bottom, "import_layers.order[0] names no file -- zero items"
+    return [_ROOT / rel for rel in bottom if rel.endswith(".py")]
+
+
 def _precommit_python3_surface():
-    """Every pre-commit `python3` entry plus each sibling module it imports."""
+    """Every pre-commit `python3` entry plus each sibling module it imports, and
+    every file of the bottom import layer."""
     out = []
     for entry in _precommit_python3_entries():
         path = _ROOT / entry
         out.append(path)
         out += _local_imports(path)
+    out += _bottom_import_layer()
     return sorted(set(out))
 
 
@@ -852,6 +865,11 @@ def test_the_old_interpreter_surface_reaches_sibling_imports():
     while this suite stays green."""
     surface = [p.relative_to(_ROOT).as_posix() for p in _precommit_python3_surface()]
     assert "scripts/child_env.py" in surface, surface
+    # The loader is the bottom layer's; no hook imports it by a name this scan
+    # follows, so only the layer rule puts it here.
+    assert "scripts/config_loader.py" in surface, surface
+    for path in _bottom_import_layer():
+        assert path.is_file(), "%s is in import_layers.order[0] and absent" % path
 
 
 def test_precommit_python3_entries_run_on_the_documented_old_interpreter():
@@ -935,6 +953,30 @@ def test_precommit_python3_entries_actually_execute_on_an_old_interpreter():
         env=dict(os.environ, KEEL_PLANTED_SECRET="s", GIT_DIR="/nonexistent/.git"),
     )
     assert r.returncode == 0, "child_env does not run under %s:\n%s" % (old, r.stderr)
+
+    # The config loader must resolve keel's own config there too: check_structure
+    # and child_env read through it under that interpreter.
+    r = subprocess.run(
+        [
+            old,
+            "-B",
+            "-c",
+            "import sys; sys.path.insert(0, 'scripts'); import config_loader as c; "
+            "rows = [k for k in c.KEYS if k.file == c.CONFIG_FILE]; "
+            "assert rows, 'no row reads the config'; "
+            "got = c.resolve(c.read('.'), rows, c.CONFIG_FILE); "
+            "assert len(got) == len(rows), got",
+        ],
+        cwd=str(_ROOT),
+        capture_output=True,
+        text=True,
+        env=child_env.build_child_env(),
+    )
+    assert r.returncode == 0, "config_loader does not run under %s:\n%s" % (
+        old,
+        r.stderr,
+    )
+    assert r.stderr == "", r.stderr
 
 
 # --- the interpreter floor: a target that needs the project interpreter checks it first

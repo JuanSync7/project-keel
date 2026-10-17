@@ -40,6 +40,7 @@ _SCRIPTS = (
     "git_tree.py",
     "child_env.py",
     "check_structure.py",
+    "config_loader.py",
     "exit_codes.py",
     "run_date.py",
 )

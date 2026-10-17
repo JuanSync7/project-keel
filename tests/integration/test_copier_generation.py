@@ -2,7 +2,7 @@
 title: Integration — copier generates a structurally valid, tailored project
 kind: tests
 layer: n/a
-summary: `copier` renders keel's root template into a new project — the manifest is tailored to the answers, the un-chosen frontend stack is pruned, CLAUDE.md->AGENT.md symlinks are preserved, keel's own template meta-tests are pruned, and check_structure passes; an undeclared top-level directory reds the project until it is declared and labelled. A bare `subprocess.run` reds a generated project through check_X until it passes `env=build_child_env()`, and the project's helper passes an adapter's declared credential and no planted secret. A credentialed proxy (a `#` in the password included) fails the project's doc judge by name and never by value, while a `LANGUAGE=sr_RS:sr@latin` locale list does not, until `child_env.credentialed_values` names it, and a stale entry there reds the gate. A generated project carries keel's `work_naming` block and no plan doc, so check_Z is silent until the project writes one; a slice row that is not a slice id then reds the gate and a well-formed one does not. A generated project runs its own doc-drift tests green, every skip there a template-only test naming why, and a prose slice id planted in its CONTRIBUTING.md reds them, and so does a row dropped from its settings reference or from its feature catalogue; its README names no `make new`, and its `run-web` line names Astro and its port only for the astro stack and is absent with no frontend. Under every transport answer, and without the showcase, a generated project's e2e coverage gate and its scenarios pass with nothing skipped, and a grpc project whose exemption is dropped is red naming the method. A project with a frontend carries keel's `layers.frontend.journey` keys and passes its own frontend-suite contract tests statically; its fresh tree's `make test-fe` refuses with exit 2 naming the app and `make fe-install`, and its README Quickstart runs `make fe-install` and `make fe-browsers` before `make verify`; one without has no frontend keys, its wiring test skips with a reason, `make test-fe` exits 0 silently, and its Quickstart names neither target. Under every answer set, `make eval` in a committed generated project replays its shipped eval dataset, which uses every scorer, green twice with the same report bytes and leaves what git lists alone, and the README's delete advice no longer offers evals/. Under every answer set, `make trace` in a committed generated project writes the same passing matrix twice and leaves what git lists alone, and a requirement added to its spec with no test turns `make trace` and the project's own traceability gate test red naming it. Skipped on a bare local clone without the optional `template` extra; CI installs `.[dev,template]` and declares the surface required (KEEL_REQUIRED_EXTRAS), so there a missing copier is a hard failure instead of a silent skip. A generated project passes its exit gate file with nothing skipped and holds a current exit-code table; a script ending on `sys.exit(main())` fails the gate test naming its line, an enum member added without regenerating fails `make check-exit-codes`, and `make exit-codes` run twice writes the same guide. A default project ships scripts/launch.py and scripts/long_scripts.py with keel's `launcher` block, the `none` farm, the placeholder own-hosts twin and no local file; committed, its `make long-scripts` finds no recorded runs and exits 13, its launcher says its own `make verify` runs here limited on a shared host, a real launch runs here limited and records the run in an ignored file with one entry per key, a failing command is recorded as failed, and its own launcher tests pass with nothing skipped.
+summary: `copier` renders keel's root template into a new project — the manifest is tailored to the answers, the un-chosen frontend stack is pruned, CLAUDE.md->AGENT.md symlinks are preserved, keel's own template meta-tests are pruned, and check_structure passes; an undeclared top-level directory reds the project until it is declared and labelled. A bare `subprocess.run` reds a generated project through check_X until it passes `env=build_child_env()`, and the project's helper passes an adapter's declared credential and no planted secret. A credentialed proxy (a `#` in the password included) fails the project's doc judge by name and never by value, while a `LANGUAGE=sr_RS:sr@latin` locale list does not, until `child_env.credentialed_values` names it, and a stale entry there reds the gate. A generated project carries keel's `work_naming` block and no plan doc, so check_Z is silent until the project writes one; a slice row that is not a slice id then reds the gate and a well-formed one does not. A generated project runs its own doc-drift tests green, every skip there a template-only test naming why, and a prose slice id planted in its CONTRIBUTING.md reds them, and so does a row dropped from its settings reference or from its feature catalogue; its README names no `make new`, and its `run-web` line names Astro and its port only for the astro stack and is absent with no frontend. Under every transport answer, and without the showcase, a generated project's e2e coverage gate and its scenarios pass with nothing skipped, and a grpc project whose exemption is dropped is red naming the method. A project with a frontend carries keel's `layers.frontend.journey` keys and passes its own frontend-suite contract tests statically; its fresh tree's `make test-fe` refuses with exit 2 naming the app and `make fe-install`, and its README Quickstart runs `make fe-install` and `make fe-browsers` before `make verify`; one without has no frontend keys, its wiring test skips with a reason, `make test-fe` exits 0 silently, and its Quickstart names neither target. Under every answer set, `make eval` in a committed generated project replays its shipped eval dataset, which uses every scorer, green twice with the same report bytes and leaves what git lists alone, and the README's delete advice no longer offers evals/. Under every answer set, `make trace` in a committed generated project writes the same passing matrix twice and leaves what git lists alone, and a requirement added to its spec with no test turns `make trace` and the project's own traceability gate test red naming it. Skipped on a bare local clone without the optional `template` extra; CI installs `.[dev,template]` and declares the surface required (KEEL_REQUIRED_EXTRAS), so there a missing copier is a hard failure instead of a silent skip. A generated project passes its exit gate file with nothing skipped and holds a current exit-code table; a script ending on `sys.exit(main())` fails the gate test naming its line, an enum member added without regenerating fails `make check-exit-codes`, and `make exit-codes` run twice writes the same guide. A default project ships scripts/launch.py and scripts/long_scripts.py with keel's `launcher` block, the `none` farm, the placeholder own-hosts twin and no local file; committed, its `make long-scripts` finds no recorded runs and exits 13, its launcher says its own `make verify` runs here limited on a shared host, a real launch runs here limited and records the run in an ignored file with one entry per key, a failing command is recorded as failed, and its own launcher tests pass with nothing skipped. A generated project's config-reads gate skips its two finding tests, naming each direct read, while keel's rendered files read config only through the loader or an allowlist entry. A default project sets every config/project.json key scripts/config_loader.py declares, so resolving them writes no `[using default]` or `[not set]` line, and deleting each defaulted key writes exactly one `[using default]` line per key, sorted.
 """
 
 import ast
@@ -19,6 +19,7 @@ import pytest
 import doc_stamps
 import hermetic_git
 import optional_deps
+import source_tree
 
 # The optional 'template' extra. CI installs it and declares it required, so a missing
 # copier is a HARD collection error there — these tests silently skipping in CI is the
@@ -39,7 +40,12 @@ import review_docs  # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 
 import check_structure  # noqa: E402
+import config_loader  # noqa: E402
 from child_env import build_child_env  # noqa: E402
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import test_config_reads_gate as reads_gate  # noqa: E402
 
 _ROOT = Path(__file__).resolve().parents[2]
 
@@ -2918,3 +2924,187 @@ def test_a_generated_grpc_project_without_its_exemption_is_red(tmp_path):
     assert ran.returncode == 1, ran.stdout[-6000:] + ran.stderr[-2000:]
     assert "is_named_or_exempt[%s] FAILED" % _GRPC_TRANSPORT in ran.stdout, ran.stdout
     assert method in ran.stdout, ran.stdout[-6000:]
+
+
+# The child that resolves a generated project's config/project.json rows through
+# its own loader, under its own interpreter, and prints what it resolved and which
+# rows carry a default; the lines the loader writes are its stderr.
+_RESOLVE_PROJECT_ROWS = (
+    "import json, sys; sys.path.insert(0, 'scripts'); import config_loader as c; "
+    "rows = [k for k in c.KEYS if k.file == c.CONFIG_FILE]; "
+    "got = c.resolve(c.read('.'), rows, c.CONFIG_FILE); "
+    "print(json.dumps({'resolved': len(got), "
+    "'defaulted': [k.path for k in rows if not k.required]}))"
+)
+
+
+def _resolve_project_rows(project):
+    return subprocess.run(
+        [sys.executable, "-c", _RESOLVE_PROJECT_ROWS],
+        cwd=str(project),
+        env=build_child_env(root=str(project)),
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+
+
+def test_a_default_project_prints_no_default_lines(tmp_path):
+    """A project generated with default answers sets every key its loader
+    declares for config/project.json, so resolving them all writes no
+    `[using default]` and no `[not set]` line. Deleting each key that has a
+    default writes exactly one `[using default]` line per deleted key, sorted,
+    naming the project's config file, so the silence above is not a loader that
+    never writes."""
+    dest = tmp_path / "proj"
+    _generate(dest, project_name="demo_proj")
+    ran = _resolve_project_rows(dest)
+    assert ran.returncode == 0, ran.stderr[-4000:]
+    assert ran.stderr == "", ran.stderr[-4000:]
+    out = json.loads(ran.stdout)
+    assert out["resolved"] > 0, "the loader resolved no row -- zero items"
+    defaulted = [tuple(path) for path in out["defaulted"]]
+    assert defaulted, "no config/project.json row has a default -- zero items"
+
+    manifest_path = dest / "config" / "project.json"
+    manifest = json.loads(manifest_path.read_text("utf-8"))
+    for path in defaulted:
+        parent = manifest
+        for part in path[:-1]:
+            parent = parent[part]
+        del parent[path[-1]]
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", "utf-8")
+    ran = _resolve_project_rows(dest)
+    assert ran.returncode == 0, ran.stderr[-4000:]
+    lines = ran.stderr.splitlines()
+    assert [line.split(" = ", 1)[0] for line in lines] == [
+        "[using default] " + ".".join(path) for path in sorted(defaulted)
+    ], lines
+    for line in lines:
+        assert line.endswith(" in config/project.json)"), line
+
+
+_READS_GATE = "tests/integration/test_config_reads_gate.py"
+_READS_BLOCK = "config_reads"
+
+
+def _reads_ceiling(gate_path):
+    """The `_CEILING` integer the config-reads gate test at *gate_path* sets at
+    module level."""
+    tree = ast.parse(gate_path.read_text(encoding="utf-8"))
+    found = [
+        node.value.value
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        and [getattr(t, "id", None) for t in node.targets] == ["_CEILING"]
+        and isinstance(node.value, ast.Constant)
+    ]
+    assert len(found) == 1, "%s sets no single integer _CEILING" % gate_path
+    return found[0]
+
+
+def test_keels_config_reads_allowlist_is_exactly_the_gate_tests_ceiling():
+    """In keel the ceiling is the count itself, so a migrated reader that
+    leaves `config_reads.allowed` cannot leave the ceiling behind for a new one
+    to fill. Keel-only: a generated project renders out the entries for files
+    it does not ship, so there the ceiling only bounds the count."""
+    allowed = json.loads((_ROOT / "config" / "project.json").read_text("utf-8"))[
+        _READS_BLOCK
+    ]["allowed"]
+    assert allowed, "keel's config_reads.allowed is empty -- zero items"
+    assert len(allowed) == _reads_ceiling(_ROOT / _READS_GATE), (
+        "config/project.json config_reads.allowed holds %d entries; set %s "
+        "_CEILING to that count" % (len(allowed), _READS_GATE)
+    )
+
+
+def _reads_gate(project):
+    """The generated project's config-reads gate file, run as its `make test`
+    recipe runs pytest (PYTHONPATH=src:.)."""
+    return subprocess.run(
+        [sys.executable, "-m", "pytest", "-v", "-rs", "-p", "no:cacheprovider"]
+        + [_READS_GATE],
+        cwd=str(project),
+        env=build_child_env(root=str(project), extra={"PYTHONPATH": "src:."}),
+        capture_output=True,
+        text=True,
+        timeout=900,
+    )
+
+
+@pytest.mark.parametrize(
+    "answers",
+    [
+        pytest.param({}, id="defaults"),
+        pytest.param(
+            {"frontend_stack": "none", "showcase": False}, id="showcase-declined"
+        ),
+    ],
+)
+def test_a_generated_project_reads_config_only_through_the_loader(tmp_path, answers):
+    """The config-reads gate held downstream: the project's allowlist is keel's
+    with exactly the entries for files the project does not ship rendered out,
+    within the ceiling, and keel's own rendered files read config only through
+    the loader or an entry there. In the project the gate cannot tell keel's
+    files from the project's own, so its two finding tests skip, naming what
+    they saw: a script the project adds that opens its manifest directly is
+    named in the skip reason and turns nothing red, while the same walk run as
+    the template runs it finds the line."""
+    dest = tmp_path / "proj"
+    _generate(dest, project_name="demo_proj", **answers)
+    keel = json.loads((_ROOT / "config" / "project.json").read_text("utf-8"))
+    manifest = json.loads((dest / "config" / "project.json").read_text("utf-8"))
+    allowed = manifest[_READS_BLOCK]["allowed"]
+    shipped = {
+        k: v for k, v in keel[_READS_BLOCK]["allowed"].items() if (dest / k).is_file()
+    }
+    assert allowed == shipped, sorted(set(allowed) ^ set(shipped))
+    assert len(allowed) < len(keel[_READS_BLOCK]["allowed"]), (
+        "the project ships every allowlisted file, keel's audit doer included"
+    )
+    assert len(allowed) <= _reads_ceiling(dest / _READS_GATE)
+    assert not reads_gate.judges_findings(dest)
+
+    def unexcused():
+        result = reads_gate.direct_reads(
+            dest,
+            manifest[_READS_BLOCK]["roots"],
+            config_loader.PROJECT_READS,
+            reads_gate.declared_variables(manifest),
+            source_tree.import_layers(dest)["search_roots"],
+        )
+        return [
+            line
+            for relpath, lines in sorted(result["findings"].items())
+            if relpath not in allowed
+            for line in lines
+        ]
+
+    assert unexcused() == []
+    skipped = re.compile(
+        r"SKIPPED \[\d+\] %s:\d+: a generated project: .*" % re.escape(_READS_GATE)
+    )
+
+    ran = _reads_gate(dest)
+    assert ran.returncode == 0, ran.stdout[-6000:] + ran.stderr[-2000:]
+    assert " FAILED" not in ran.stdout, ran.stdout[-6000:]
+    reasons = skipped.findall(ran.stdout)
+    assert reasons and all("0 direct read(s) seen" in r for r in reasons), ran.stdout[
+        -6000:
+    ]
+    assert ran.stdout.count(" SKIPPED") == 2, ran.stdout[-6000:]
+
+    rogue = dest / "scripts" / "rogue_reader.py"
+    rogue.write_text(
+        "import json\n\n\ndef manifest():\n"
+        "    with open('config/project.json', encoding='utf-8') as fh:\n"
+        "        return json.load(fh)\n",
+        encoding="utf-8",
+    )
+    line = "scripts/rogue_reader.py:5: opens config/project.json"
+    found = unexcused()
+    assert len(found) == 1 and found[0].startswith(line), found
+    named = _reads_gate(dest)
+    assert named.returncode == 0, named.stdout[-6000:] + named.stderr[-2000:]
+    assert " FAILED" not in named.stdout, named.stdout[-6000:]
+    assert any(line in r for r in skipped.findall(named.stdout)), named.stdout[-6000:]

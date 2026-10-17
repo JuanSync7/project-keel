@@ -21,6 +21,7 @@ sys.path.insert(0, str(_ROOT / "scripts"))
 
 import check_structure  # noqa: E402
 import child_env  # noqa: E402
+import config_loader  # noqa: E402
 import conflict_guard  # noqa: E402
 import restamp_docs  # noqa: E402
 import review_docs  # noqa: E402
@@ -614,7 +615,13 @@ def test_a_conflict_in_a_file_the_restamp_never_reads_does_not_stop_it(tmp_path)
     shutil.copy2(
         str(_ROOT / "config" / "project.json"), str(proj / "config" / "project.json")
     )
-    own = set(restamp_docs.PROJECT_READS) | set(child_env.PROJECT_READS)
+    # child_env reads through the loader, whose code the restamp runs, so each
+    # file the loader declares is one the restamp may read.
+    own = (
+        set(restamp_docs.PROJECT_READS)
+        | set(child_env.PROJECT_READS)
+        | set(config_loader.PROJECT_READS)
+    )
     unread = ["scripts/check_structure.py"] + [
         rel for rel in check_structure.PROJECT_READS if rel not in own
     ]

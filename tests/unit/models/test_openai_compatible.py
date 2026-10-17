@@ -71,6 +71,30 @@ def test_run_posts_chat_completions_and_returns_the_message(monkeypatch):
     assert captured["headers"]["Authorization"] == "Bearer sk-test-123"
 
 
+def test_the_credential_is_read_through_the_config_loader(monkeypatch):
+    """The key's variable is read by scripts/config_loader.py `env`, the one
+    literal-name reader of a declared variable, and by nothing else."""
+    from scripts import config_loader
+
+    allowing(monkeypatch, "llm.example")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-through-the-loader")
+    asked = []
+    real = config_loader.env
+
+    def spy(name, environ=None, root=None):
+        asked.append(name)
+        return real(name, environ, root)
+
+    monkeypatch.setattr(config_loader, "env", spy)
+    captured: dict = {}
+    backend = get_model(
+        "openai-compatible", base_url=_URL, transport=_captured_transport(captured)
+    )
+    backend.run("hi")
+    assert asked == ["OPENAI_API_KEY"], asked
+    assert captured["headers"]["Authorization"] == "Bearer sk-through-the-loader"
+
+
 def test_base_url_trailing_slash_is_normalised(monkeypatch):
     allowing(monkeypatch, "llm.example")
     monkeypatch.setenv("OPENAI_API_KEY", "sk-x")
@@ -437,7 +461,8 @@ def test_the_default_base_url_is_refused_until_its_host_is_listed(monkeypatch):
 def test_the_host_is_checked_before_the_credential_variable(monkeypatch):
     """With an unlisted host and an undeclared variable, the host refuses
     first, and the environment is not read for any credential."""
-    from models import openai_compatible as mod
+    # The adapter reads its credential through the loader, which reads os.environ.
+    from scripts import config_loader
 
     allowing(monkeypatch)
     read = []
@@ -451,7 +476,7 @@ def test_the_host_is_checked_before_the_credential_variable(monkeypatch):
             read.append(key)
             return super().__getitem__(key)
 
-    monkeypatch.setattr(mod.os, "environ", Spy(UNRELATED_SECRET="canary"))
+    monkeypatch.setattr(config_loader.os, "environ", Spy(UNRELATED_SECRET="canary"))
     with pytest.raises(ValueError) as info:
         get_model(
             "openai-compatible",
@@ -562,7 +587,8 @@ def test_https_to_a_host_that_is_not_a_loopback_address_is_unaffected(monkeypatc
 def test_the_http_refusal_comes_before_the_credential_variable_is_read(monkeypatch):
     """The host is listed and the variable undeclared: the scheme refuses
     first, and the environment is not read for any credential."""
-    from models import openai_compatible as mod
+    # The adapter reads its credential through the loader, which reads os.environ.
+    from scripts import config_loader
 
     allowing(monkeypatch, "llm.example")
     read = []
@@ -576,7 +602,7 @@ def test_the_http_refusal_comes_before_the_credential_variable_is_read(monkeypat
             read.append(key)
             return super().__getitem__(key)
 
-    monkeypatch.setattr(mod.os, "environ", Spy(UNRELATED_SECRET="canary"))
+    monkeypatch.setattr(config_loader.os, "environ", Spy(UNRELATED_SECRET="canary"))
     with pytest.raises(ValueError) as info:
         get_model(
             "openai-compatible",

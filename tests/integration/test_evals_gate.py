@@ -31,7 +31,13 @@ _CONFIG = load_config(_ROOT)
 # What the CLI imports when it runs in a project: the harness, the doers and
 # backends it drives, the CLI and the stdlib siblings git_tree needs.
 _TREES = ("evals", "models", "agents/triage", "config")
-_SCRIPTS = ("run_evals.py", "git_tree.py", "child_env.py", "exit_codes.py")
+_SCRIPTS = (
+    "run_evals.py",
+    "git_tree.py",
+    "child_env.py",
+    "config_loader.py",
+    "exit_codes.py",
+)
 _IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc")
 
 
@@ -261,7 +267,7 @@ def test_a_refused_eval_config_leaves_no_green_report(tmp_path, key, value):
     _set_manifest(repo, key, value)
     for attempt in range(2):
         out = run_cli(repo, env)
-        assert out.returncode == 2, out.stdout
+        assert out.returncode == 14, out.stdout
         assert "evals." in out.stdout, out.stdout
         assert not report_path(repo).exists(), out.stdout
         assert ("removed" in out.stdout) is (attempt == 0), out.stdout
@@ -276,7 +282,7 @@ def test_a_refused_live_config_removes_the_earlier_candidates(tmp_path):
     live.write_text('{"result": "pass"}\n', encoding="utf-8")
     _set_manifest(repo, "threshold", 0)
     out = run_cli(repo, env, mode="live")
-    assert out.returncode == 2, out.stdout
+    assert out.returncode == 14, out.stdout
     assert not live.exists() and not candidates.exists(), out.stdout
 
 
@@ -285,7 +291,7 @@ def test_an_unusable_report_dir_says_the_old_report_may_stand(tmp_path):
     assert run_cli(repo, env).returncode == 0
     _set_manifest(repo, "report_dir", "../elsewhere")
     out = run_cli(repo, env)
-    assert out.returncode == 2, out.stdout
+    assert out.returncode == 14, out.stdout
     assert "may still stand" in out.stdout, out.stdout
 
 
@@ -322,7 +328,9 @@ def test_a_report_dir_through_a_symlink_writes_and_deletes_nothing(
     if refused_config:
         _set_manifest(repo, "threshold", 0)
     out = run_cli(repo, env, mode=mode)
-    assert out.returncode == 2, out.stdout
+    # A refused block is a config fault (CONFIG); a valid one reaching its
+    # files through a symlink is a refused call (USAGE).
+    assert out.returncode == (14 if refused_config else 2), out.stdout
     assert "evals.report_dir" in out.stdout and "symlink" in out.stdout, out.stdout
     assert _tree(outside) == before, out.stdout
     assert (outside / "evals" / "live-candidates" / "keep.txt").read_text(
@@ -413,7 +421,7 @@ def test_a_git_that_fails_under_a_refused_config_removes_nothing(tmp_path):
     _set_manifest(repo, "threshold", 2)
     _head_names_nothing(repo)
     out = _run_apart(repo, env)
-    assert out.returncode == 2, out.stderr
+    assert out.returncode == 14, out.stderr
     assert "git exited 128" in out.stderr and "may still stand" in out.stderr
     assert "Traceback" not in out.stderr, out.stderr
     assert report_path(repo).exists()

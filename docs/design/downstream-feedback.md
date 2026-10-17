@@ -8,7 +8,7 @@ tags: [plan, template, downstream, freshness, taxonomy, effects, credentials, au
 summary: The bounded-convergence record for the defects bedrock-platform, the first real project generated from keel, reported back — a red gate on arrival, unknown directories the gate never sees, make targets whose effect nobody declares, and child processes that inherit every credential — plus the command that checks any keel-generated project for all of them. One slice per defect, five passes, each landed as one commit on a green `make verify`.
 id: docs-design-downstream-feedback
 created: 2026-10-06
-updated: 2026-10-16
+updated: 2026-10-17
 visibility: internal
 canonical: true
 ---
@@ -1667,7 +1667,7 @@ order on 2026-10-12. The cap is five slices, each one commit on a green
 | CMP-5.S2 | `scripts/gate_evidence.py` writes under `evidence.dir` without the symlink check `scripts/git_tree.py` holds; `scripts/run_evals.py` reads any git failure as "no git"; a full verify on a dirty tree turns red when the date changes during the run; exit code 3 has one name for two meanings; the `openai-compatible` adapter sends a credential to any host config names; a project's own scripts that call `sys.exit` are rewritten by hand after an update | done, except the rewriter, which is queued (below) |
 | CMP-5.S3 | A long script runs wherever it is called, so on a shared host it takes the CPU other people are using; nothing in the tree submits it to a job farm or limits it | done |
 | CMP-5.S4 | The rules a helper cannot carry (the import boundary, a bare `except`, text matching without a stated reason, a comment that reports a change) are held by review alone | done, except the `re` allowlist and the warn-then-fail tier, which are unstarted (below) |
-| CMP-5.S5 | A module reads config, the environment and its own defaults directly, so no one place applies a default, reports it, or refuses a wrong value | planned |
+| CMP-5.S5 | A module reads config, the environment and its own defaults directly, so no one place applies a default, reports it, or refuses a wrong value | done — `make verify` green (3260 passed); 7 of 7 review findings confirmed and fixed; ADR-K-0022 proposed |
 
 **CMP-5.S1, the exit helper.** A closed enum of exit codes, one helper that is
 the only place a process exits with an error, the exit-code table in
@@ -1909,6 +1909,46 @@ Left by CMP-5.S4:
   `tests/integration/test_copier_audit.py` run near a 90-minute farm job's
   limit when run on their own on one CPU.
 
+Left by CMP-5.S5:
+
+- Twelve files still read config directly, each named with its reason in
+  config/project.json `config_reads.allowed`, and
+  `tests/integration/test_config_reads_gate.py` `_CEILING` keeps the map from
+  growing. Nine are queued for a later CMP-5 slice: `scripts/check_structure.py`,
+  `scripts/launch.py` with `scripts/long_scripts.py`, `scripts/run_app.py`,
+  `scripts/trace_requirements.py`, `scripts/jobs/export_showcase_static.py`,
+  `src/backend/showcase/_repo.py`, `src/backend/shared/__init__.py` and
+  `agents/practice_refactor/_brain.py`. Three are not config reads and stay:
+  `scripts/audit_project.py`, `scripts/jobs/declare_no_app.py` and
+  `scripts/jobs/restamp_docs.py`. Until a module moves, its config fault exits
+  2, not 14.
+- The gate tells keel's files from a project's own by where it runs, as the
+  B1 ruling reads it: in the template repository a finding is red, and in a
+  generated project, which carries no list of keel's files, its two finding
+  tests skip and name each direct read in the skip reason. That skip is the
+  B1 residual (open item 11): the warn-then-fail tier turns it into a warning
+  that goes red on the ruled date. A project's own reader needs no room under
+  `_CEILING`, since nothing there turns red.
+- `scripts/config_loader.py` has no rows for the `launcher`, `traceability`
+  and `layers` blocks, so the modules that read them cannot move yet.
+- Defaults that are code literals remain: the `models/openai_compatible.py`
+  constructor's `base_url`, `model`, `api_key_env` and `timeout`, and the
+  `.get(key, default)` calls `scripts/check_practices.py` makes on each
+  config/practices.json list item. Neither is a `KEYS` row, so neither writes a
+  `[using default]` line.
+- `mcp/qa_server.py` ends with a traceback, not a `report(...)` line, when
+  `KEEL_MCP_MODEL` holds a blank value: its `__main__` block calls
+  `configured_model` with no handler.
+- Importing `scripts/child_env.py` now puts config/practices.json among the
+  files `scripts/jobs/conflict_guard.py` refuses a copier job over, because
+  the loader declares both files in `PROJECT_READS`.
+- [ADR-K-0021](../adr/keel/K-0021-imports-flow-up-a-configured-layer-order.md)
+  names the bottom layer's members as "the exit helper and the
+  child-environment allowlist"; the configured order now holds
+  `scripts/config_loader.py` there too. The ADR is accepted, so it is not
+  edited; [ADR-K-0022](../adr/keel/K-0022-one-config-loader.md), proposed,
+  states the placement.
+
 **Cut from this campaign.** Typed inputs with a log helper, planned here
 before, is queued again to make room for the launcher. Everything else in the
 Campaign 4 queue stays queued: the lane and merge parts of the lane and gate
@@ -2057,7 +2097,7 @@ so.
 | 11 | A project's own `sys.exit` turns red after an update and no rewriter exists | decision | medium | rewriter ruled (a) above; B1 ruled above (the template repository is red, a generated project warns until 2027-01-31); the tier is not built |
 | 12 | `structure.extra_toplevel` directories, the project-checks directory among them, are outside `CODE_ROOTS` | missing-check | medium | `scripts/check_structure.py` `CODE_ROOTS` |
 | 13 | check_X misses a receiver it cannot resolve, a value passed through a parameter, and a spawn in a shell script | missing-check | medium | stated in `scripts/check_structure.py` |
-| 14 | A duplicate key in `config/project.json` is not refused | defect | medium | no `object_pairs_hook` in the tree |
+| 14 | A duplicate key in `config/project.json` is not refused | defect | medium | refused by `scripts/config_loader.py` `read` since CMP-5.S5; `scripts/check_structure.py`, still a direct reader, accepts one |
 | 15 | An `rm` migration in `copier.yml` deletes after the keep-edited guard runs | defect | medium | `copier.yml` `_migrations` |
 | 16 | The optional surfaces (wiki, evals, containers) have no copier question, and a deleted one returns on update | feature | medium | `copier.yml` questions |
 | 17 | `react-vite` ships no lockfile | defect | medium | only astro has `package-lock.json` |
@@ -2066,7 +2106,7 @@ so.
 | 20 | The `PY` gate variable names a program | defect | medium | `make_targets.gate_vars` |
 | 21 | No mutation runner; mutants are written by hand | feature | medium | queued since Campaign 4 |
 | 22 | CMP-5.S4, the tree-wide checks and the features-row rule | feature | medium | done, except open items 11 and 88 |
-| 23 | CMP-5.S5, the config loader with a default marker | feature | medium | planned |
+| 23 | CMP-5.S5, the config loader with a default marker | feature | medium | done; what it leaves is under "Left by CMP-5.S5" |
 | 24 | KEEL-DOC-1, the defence table | feature | medium | queued third in Campaign 6 |
 | 25 | pre-commit is not run in CI | missing-check | medium | `.github/workflows/ci.yml` |
 | 26 | The coverage floor is not re-measured, so it can fall | missing-check | medium | `tests/integration/test_gate_scope.py` |

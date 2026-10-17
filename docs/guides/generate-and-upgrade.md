@@ -8,7 +8,7 @@ tags: [copier, generate, update, migrations, adoption, guide]
 summary: How a project is generated from keel, what arrives and what never does, what `make new` refuses, how to adopt keel into an existing repository, and how `copier update` pulls template changes — with one checklist row per task and migration an update runs, and how to finish an update a migration stopped.
 id: docs-guides-generate-and-upgrade
 created: 2026-10-09
-updated: 2026-10-15
+updated: 2026-10-17
 visibility: internal
 canonical: true
 ---
@@ -371,6 +371,39 @@ status it keeps for a proposal. A caller that read 1 as "nothing recorded"
 reads 13.
 [ADR-K-0021](../adr/keel/K-0021-imports-flow-up-a-configured-layer-order.md)
 is the decision.
+
+### Your config is read through one loader
+
+The update brings `scripts/config_loader.py`, the one reader of
+config/project.json, config/practices.json and the variables they declare, and
+the config/project.json `config_reads` block. You may meet it three ways.
+
+1. **Default lines on stderr.** A key with a declared default that your
+   config/project.json lacks is now named once per process, and the run goes
+   on with the default. A project that deleted `evidence.run_date` to switch
+   the date channel off sees `[using default] evidence.run_date = null`. The
+   exit code does not change. Set the key to silence the line; each defaulted
+   key's row in [settings.md](../reference/settings.md) quotes its line, and
+   `limits-and-troubleshooting.md` says what each kind of line means.
+2. **Exit 14 for a config fault.** A missing or wrong value read by
+   `scripts/gate_evidence.py`, `scripts/exit_code_table.py`,
+   `scripts/check_practices.py` or `scripts/run_evals.py` exits 14
+   (`CONFIG`) where it exited 2. A wrapper or CI step that tested for 2 tests
+   for 14 as well. `scripts/check_practices.py` also refuses a
+   config/practices.json it cannot parse, where it scanned with no practices
+   and exited 0.
+3. **Your own direct readers are named, not failed.**
+   `tests/integration/test_config_reads_gate.py` walks the directories
+   `config_reads.roots` names for an open of either config file, or a read of a
+   variable the config declares, outside the loader. It cannot tell a file keel
+   ships from one you wrote, and keel's own files were judged in the template,
+   so in your project its two finding tests skip, and the skip reason names
+   each direct read it saw; `pytest -rs` prints it. Nothing turns red. Move
+   such a reader onto the loader before the warn-then-fail tier the section
+   above describes arrives: `read` the file, then pass `resolve` your own `Key`
+   rows, built with the type set `TYPES` and the default in the row.
+
+[ADR-K-0022](../adr/keel/K-0022-one-config-loader.md) is the proposed decision.
 
 ## Update checklist
 

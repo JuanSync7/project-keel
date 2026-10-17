@@ -7,7 +7,7 @@ owner: TBD
 summary: Global rules for any agent working in this repo.
 id: agent
 created: 2026-06-17
-updated: 2026-10-15
+updated: 2026-10-17
 visibility: internal
 canonical: true
 ---
@@ -76,6 +76,14 @@ of truth for labeling and the directory taxonomy. Each directory's own
   message part. `make exit-codes` regenerates the exit-code table in
   `docs/guides/limits-and-troubleshooting.md`, and `make check-exit-codes`
   fails a stale one.
+- **Read a configured value through the loader.** Read `config/project.json`,
+  `config/practices.json` or a variable they declare through
+  `scripts/config_loader.py` (`read`, `resolve`, `env`), and give a key its
+  type and default in a `KEYS` row, never in a `.get(key, default)`; a config
+  fault returns `report(ExitCode.CONFIG, ...)`.
+  `tests/integration/test_config_reads_gate.py` fails a direct read that
+  `config/project.json` `config_reads.allowed` does not excuse.
+  `docs/adr/keel/K-0022-one-config-loader.md` is the proposed decision.
 - **Respect the `__init__.py` boundary.** Import a package's public
   symbols from the package, never from its private (`_*`) submodules,
   `from pkg import _sub` included (check_D).
@@ -162,4 +170,6 @@ of truth for labeling and the directory taxonomy. Each directory's own
   claim `tests/integration/test_make_target_effects.py` measures.
 - Hand a child `os.environ` (directly or through `extra=`), or spawn with
   `os.system`/`os.popen`.
+- Open a config file or read a declared variable outside
+  `scripts/config_loader.py`, or bury a default in the code that reads it.
 - Commit secrets to `config/` — only defaults and `*.example.*`.

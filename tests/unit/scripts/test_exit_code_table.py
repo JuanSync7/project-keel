@@ -2,7 +2,7 @@
 title: Unit — exit_code_table (the generated exit-code table and the reader of what a script exits with)
 kind: tests
 layer: n/a
-summary: read_members reads the enum from the helper's syntax tree in value order and refuses a missing class, a member that is not three literals, a shared value and a text that cannot be a table cell. read_script follows an entry function to the members it returns, counts a `fail` call anywhere in the module, marks a passed-through status read from a tool, refuses a `passthrough` of the entry function's result, a literal, a member or a module function returning only those, also signed, combined by arithmetic or `or`, or through a builtin such as `int`, while a child's status through the same forms reads, refuses `finish(passthrough(...))` on the entry line, and reports a bare integer, an unknown member and a function that can reach its end without returning as findings, never as codes. split_region refuses a marker that is missing, repeated or out of order. render and exit_cell are pure and sorted. load_policy names the config key it cannot read. main writes the region, leaves every byte outside it alone, keeps a CRLF guide CRLF, reaches a fixed point on the second run, exits 1 from --check on a stale table and 2 when it refuses, and refuses a guide reached through a symlink without writing through it.
+summary: read_members reads the enum from the helper's syntax tree in value order and refuses a missing class, a member that is not three literals, a shared value and a text that cannot be a table cell. read_script follows an entry function to the members it returns, counts a `fail` call anywhere in the module, marks a passed-through status read from a tool, refuses a `passthrough` of the entry function's result, a literal, a member or a module function returning only those, also signed, combined by arithmetic or `or`, or through a builtin such as `int`, while a child's status through the same forms reads, refuses `finish(passthrough(...))` on the entry line, and reports a bare integer, an unknown member and a function that can reach its end without returning as findings, never as codes. split_region refuses a marker that is missing, repeated or out of order. render and exit_cell are pure and sorted. load_policy names the config key it cannot read. main writes the region, leaves every byte outside it alone, keeps a CRLF guide CRLF, reaches a fixed point on the second run, exits 1 from --check on a stale table, CONFIG when config/project.json `doc_drift` cannot be used, with the loader's line for each key before the one refusal, and 2 when it refuses anything else, and refuses a guide reached through a symlink without writing through it.
 """
 
 import json
@@ -523,7 +523,6 @@ def test_main_refuses_a_guide_reached_through_a_symlink_and_writes_nothing(
             lambda root: (root / _GUIDE).write_text("no markers\n", encoding="utf-8"),
             "does not hold exactly one",
         ),
-        (lambda root: os.remove(str(root / et.MANIFEST)), "cannot read the manifest"),
         (lambda root: os.remove(str(root / "scripts" / "tool.py")), "does not exist"),
         (
             lambda root: (root / "scripts" / "tool.py").write_text(
@@ -548,6 +547,50 @@ def test_main_refuses_what_it_cannot_tabulate_in_both_modes(
         err = capsys.readouterr().err
         assert said in err and err.count("\n") == 1
     assert et.table_findings(str(root)) != []
+
+
+@pytest.mark.parametrize(
+    ("manifest", "said"),
+    [
+        (None, "config/project.json does not exist"),
+        ("{", "config/project.json cannot be read as JSON"),
+        ("{}", "[not set] doc_drift.gate_target"),
+        (
+            json.dumps({et.BLOCK: {et.GUIDE_KEY: "/abs.md", et.TARGET_KEY: "v"}}),
+            "doc_drift.limits_guide is string",
+        ),
+    ],
+    ids=["absent", "not-json", "empty", "absolute-guide"],
+)
+def test_main_refuses_a_config_fault_with_the_config_exit_in_both_modes(
+    tmp_path, capsys, manifest, said
+):
+    """The doc_drift block is read through scripts/config_loader.py: a fault in
+    it exits CONFIG, and the loader's lines come before the one refusal."""
+    root = _project(tmp_path)
+    if manifest is None:
+        os.remove(str(root / et.MANIFEST))
+    else:
+        (root / et.MANIFEST).write_text(manifest, encoding="utf-8")
+    before = _bytes(root)
+    for argv in ([], ["--check"]):
+        assert et.main(argv, root=str(root)) == ExitCode.CONFIG
+        err = capsys.readouterr().err
+        assert said in err, err
+        assert err.splitlines()[-1].startswith("exit_code_table: "), err
+    assert _bytes(root) == before
+
+
+def test_an_empty_block_lists_both_keys_sorted_before_the_refusal(tmp_path, capsys):
+    root = _project(tmp_path)
+    (root / et.MANIFEST).write_text("{}", encoding="utf-8")
+    assert et.main([], root=str(root)) == ExitCode.CONFIG
+    lines = capsys.readouterr().err.splitlines()
+    assert [ln.split("  ")[0] for ln in lines[:2]] == [
+        "[not set] doc_drift.gate_target",
+        "[not set] doc_drift.limits_guide",
+    ], lines
+    assert len(lines) == 3 and lines[2].startswith("exit_code_table: "), lines
 
 
 def test_the_shipped_table_is_current():

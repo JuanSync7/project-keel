@@ -12,6 +12,61 @@ version rather than a bare commit:
 
 - **ADR-K-0021 is accepted.** Imports flow up the layer order in
   config/project.json `import_layers.order`, as 0.3.0 enforces.
+- **ADR-K-0022 is proposed.** One config loader in the bottom import layer,
+  a variable over the file only where a key's row names it, and exit 14 for a
+  config fault.
+
+### Added
+- **A configured value missing or wrong has its own exit code, 14.**
+  `ExitCode.CONFIG` is the refusal of `scripts/config_loader.py`, the one
+  table of declared config keys and the one read of a config file: an unset
+  key with a default says so once in a `[using default]` line, and every
+  unset required key and every wrong value is named before it refuses.
+- **A direct read of a config file or a declared variable is red outside the
+  loader.** `tests/integration/test_config_reads_gate.py` walks the code roots
+  config/project.json `config_reads.roots` names and fails an open of
+  `config/project.json` or `config/practices.json`, or a read of a variable the
+  config declares, anywhere but `scripts/config_loader.py`. The files that
+  still read directly are listed in `config_reads.allowed` with a reason, and
+  the list can only shrink. In the template repository a finding is red; a
+  generated project cannot tell keel's files from its own, so there the two
+  finding tests skip and name each direct read they saw, and a project's own
+  reader is not red after `copier update`;
+  `docs/guides/generate-and-upgrade.md` says what to do.
+- **The docs quote the loader's lines, and a test holds them to it.**
+  Each defaulted key's row in `docs/reference/settings.md` quotes its
+  `[using default]` line, and `docs/guides/limits-and-troubleshooting.md` shows
+  both line shapes and what to do about each;
+  `tests/integration/test_config_default_lines_docs.py` fails a quoted line the
+  loader does not write.
+
+### Changed
+- **The scripts, the evals, the OpenAI-compatible adapter and the MCP
+  question server read config through the loader.** `scripts/child_env.py`,
+  `scripts/run_date.py`, `scripts/gate_evidence.py`,
+  `scripts/exit_code_table.py`, `scripts/check_practices.py`,
+  `scripts/run_make_target.py`, `evals/_config.py`, `evals/_run.py`,
+  `models/openai_compatible.py` and `mcp/qa_server.py` leave
+  `config_reads.allowed`, which now lists twelve files in keel.
+- **A config fault in `gate_evidence.py`, `exit_code_table.py`,
+  `check_practices.py` or `run_evals.py` exits 14, not 2.** A script or a
+  wrapper that tested for 2 on a bad `evidence`, `doc_drift`, `practices` or
+  `evals` value must test for 14 as well.
+- **`check_practices.py` refuses a config/practices.json it cannot read.** It
+  used to scan with no practices and exit 0; a byte-order mark at the start of
+  either config file is now refused, as everywhere else.
+- **Four settings print their default when unset.** An absent
+  `child_env.login_name_schemes` (`[]`), `evidence.run_date` (`null`, the
+  channel off) or `practices.profiles` (`{}`), and an unset `KEEL_MCP_MODEL`
+  (`null`, the registry default), each write one `[using default]` line to
+  stderr. An explicit `evidence.run_date: null` now switches the channel off
+  rather than being refused, and a whitespace-only path or model name is
+  refused.
+- **A copier job that imports `scripts/child_env.py` also refuses over a
+  conflicted config/practices.json.** `child_env.py` now reads through
+  `scripts/config_loader.py`, which declares both config files in
+  `PROJECT_READS`, so `scripts/jobs/conflict_guard.py` counts both among the
+  job's reads.
 
 ## [0.3.0] — 2026-10-15
 

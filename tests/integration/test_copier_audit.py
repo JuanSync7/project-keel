@@ -775,8 +775,8 @@ def test_a_pre_c2_2_project_receives_the_new_child_env_keys_as_arrivals_and_owes
     (docs/guides/doc-style.md) and `models.credential_env.openai-compatible`,
     the only names models/openai_compatible.py accepts as `api_key_env`, and
     `models.allowed_hosts`, the hosts it may send that credential to, arrive
-    beside them, and so do `import_layers` and `change_comments`, which the
-    tree-wide gate tests read.
+    beside them, and so do `import_layers`, `change_comments` and
+    `config_reads`, which the tree-wide gate tests read.
     `structure.project_checks` does not: the template never ships it, because a
     key beside `extra_toplevel` would conflict with every project that declared
     one."""
@@ -813,6 +813,7 @@ def test_a_pre_c2_2_project_receives_the_new_child_env_keys_as_arrivals_and_owes
         "child_env.credential_value_patterns",
         "child_env.credentialed_values",
         "child_env.login_name_schemes",
+        "config_reads",
         "doc_drift",
         "e2e",
         "evals",
@@ -923,10 +924,11 @@ def test_a_pre_c5_2_project_receives_the_run_date_and_host_list_as_arrivals(
     with the `make_targets.effect_proof_skip` entry for its `make long-scripts`,
     the three entries for the frontend suites slice CMP-5.S4 made refuse an
     uninstalled app, the `import_layers` and `change_comments` blocks the
-    tree-wide gate tests of CMP-5.S4 read, and one more name in
+    tree-wide gate tests of CMP-5.S4 read, the `config_reads` block the
+    config-reads gate test of CMP-5.S5 reads, and one more name in
     `child_env.names`: the variable the run date travels in, without which
     scripts/child_env.py would drop it before any goal saw it. The audit
-    reports exactly those nine keys as
+    reports exactly those ten keys as
     arrivals and the list as changed, owes no X error, and a real
     update leaves the run date block as the template ships it with its
     variable on the allowlist."""
@@ -953,6 +955,7 @@ def test_a_pre_c5_2_project_receives_the_run_date_and_host_list_as_arrivals(
     arrived = {f["key"] for f in manifest if f["kind"] == "arrives"}
     assert arrived == {
         "change_comments",
+        "config_reads",
         "evidence.run_date",
         "import_layers",
         "launcher",

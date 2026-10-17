@@ -8,7 +8,7 @@ tags: [checks, ci, linter, determinism, pre-commit, hooks, guide]
 summary: Catalogue of every deterministic check that keeps a project-template repo honest — purpose, when to run, and how to wire as a hook.
 id: docs-guides-deterministic-checks
 created: 2026-06-19
-updated: 2026-10-15
+updated: 2026-10-17
 visibility: internal
 canonical: true
 ---
@@ -761,7 +761,7 @@ table below the generated region is compared with nothing.
 
 ### 13. Tree-wide source gates — `tests/source_tree.py`
 
-**Purpose.** Three gate tests judge every Python file the structure gate
+**Purpose.** Four gate tests judge the Python files the structure gate
 walks, through one shared reader, `tests/source_tree.py`, so no two of them
 disagree about which files are the project's, what an import points at, or
 what a comment is. None is a `scripts/check_structure.py` letter, because
@@ -784,6 +784,19 @@ the letters A to Z are taken; `make test` runs them.
   whole word, and skips one that opens with a `change_comments.directives`
   entry. It reads comments through tokenize, so a `#` inside a string is never
   one.
+- `tests/integration/test_config_reads_gate.py` walks the directories
+  config/project.json `config_reads.roots` names, `scripts/config_loader.py`
+  left out, and fails an open or read of a file the loader's `PROJECT_READS`
+  declares and a read of a variable the config declares, outside the loader.
+  It follows a path through constants, names bound to them, a starred split,
+  a path constant of another project module (read as `mod.NAME` or imported
+  with `from mod import NAME`) and a helper of the same module. A file that
+  still reads directly is excused only by a `config_reads.allowed` entry with
+  a reason; a stale entry is red, and the test's `_CEILING` caps the count.
+  In the template repository, which holds `copier.yml`, a finding is red; in a
+  generated project, which cannot tell keel's files from its own, the two
+  finding tests skip and name each direct read they saw.
+  `docs/adr/keel/K-0022-one-config-loader.md` is the decision.
 
 Each fails, never passes, on a malformed config block, a walk with no Python
 file, and a walk with nothing to judge.
@@ -793,9 +806,14 @@ file, and a walk with nothing to judge.
 swallowed-error gate judges a handler by its body's shape, so a handler that
 does work but never looks at the error, and `contextlib.suppress`, pass. The
 comment gate is a heuristic: a phrase in mid-sentence, or a change reported in
-other words, passes.
+other words, passes. The config-reads gate is a heuristic too: a path handed in
+as a parameter, an attribute of a module imported inside a function or
+relatively, a function of another module that opens what it is given, a
+method called through an object, a variable name held in a variable, and a
+read through `subprocess` or `importlib` pass; in a generated project it
+judges nothing, it names.
 
-**Run.** `pytest tests/integration/test_import_layers_gate.py tests/integration/test_swallowed_error_gate.py tests/integration/test_change_comment_gate.py`
+**Run.** `pytest tests/integration/test_import_layers_gate.py tests/integration/test_swallowed_error_gate.py tests/integration/test_change_comment_gate.py tests/integration/test_config_reads_gate.py`
 
 ---
 

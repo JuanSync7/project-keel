@@ -513,19 +513,34 @@ def test_a_goal_that_changes_what_git_lists_is_red(repo):
     assert rec["source"]["tree_changed"] is True
 
 
+# A fault in a config value exits CONFIG; a fault in the schema file the
+# config names exits USAGE, since no config edit is what is wrong.
 @pytest.mark.parametrize(
-    "block, names",
+    "block, names, code",
     [
-        (None, "evidence"),
-        (_evidence_block(dir="/abs/evidence"), "evidence.dir"),
-        (_evidence_block(dir="a/../../up"), "evidence.dir"),
-        (_evidence_block(dir=3), "evidence.dir"),
-        (_evidence_block(schema="config/evidence/absent.json"), "evidence.schema"),
-        ("no-const", "schema_version"),
+        (None, "[not set] evidence.dir", ge.ExitCode.CONFIG),
+        (_evidence_block(dir="/abs/evidence"), "evidence.dir", ge.ExitCode.CONFIG),
+        (_evidence_block(dir="a/../../up"), "evidence.dir", ge.ExitCode.CONFIG),
+        (_evidence_block(dir=3), "evidence.dir", ge.ExitCode.CONFIG),
+        ([], "evidence is array", ge.ExitCode.CONFIG),
+        (
+            _evidence_block(schema="config/evidence/absent.json"),
+            "evidence.schema",
+            ge.ExitCode.USAGE,
+        ),
+        ("no-const", "schema_version", ge.ExitCode.USAGE),
     ],
-    ids=["missing", "absolute", "dotdot", "not-a-string", "schema-absent", "no-const"],
+    ids=[
+        "missing",
+        "absolute",
+        "dotdot",
+        "not-a-string",
+        "not-an-object",
+        "schema-absent",
+        "no-const",
+    ],
 )
-def test_a_bad_evidence_block_is_refused(repo, capsys, block, names):
+def test_a_bad_evidence_block_is_refused(repo, capsys, block, names, code):
     if block == "no-const":
         schema = json.loads((repo / _SCHEMA_REL).read_text("utf-8"))
         del schema["properties"]["schema_version"]["const"]
@@ -533,10 +548,25 @@ def test_a_bad_evidence_block_is_refused(repo, capsys, block, names):
     else:
         _write_manifest(repo, block)
     runner = _Runner()
-    assert ge.main(["--gate", "verify", "--", "make", "test"], runner) == 2
+    assert ge.main(["--gate", "verify", "--", "make", "test"], runner) is code
     assert names in capsys.readouterr().err
     assert runner.calls == []
     assert not (repo / ".evidence").exists()
+
+
+def test_a_missing_block_names_every_key_it_lacks_before_one_refusal(repo, capsys):
+    """The evidence block is read through scripts/config_loader.py: every
+    required key it lacks is its own `[not set]` line, sorted, and then the
+    helper's one refusal line, so one run names the whole fix."""
+    _write_manifest(repo, None)
+    assert ge.main(["--gate", "verify", "--", "make", "test"], _Runner()) == 14
+    lines = capsys.readouterr().err.strip().splitlines()
+    assert [ln.split("  ")[0] for ln in lines[:2]] == [
+        "[not set] evidence.dir",
+        "[not set] evidence.schema",
+    ], lines
+    assert len(lines) == 3, lines
+    assert lines[2].startswith("gate_evidence: refused before any goal ran: "), lines
 
 
 @pytest.mark.parametrize("gate", ["Verify", "../x", "a/b", "", "-v"])
@@ -880,7 +910,8 @@ def test_a_supplied_date_the_run_could_not_have_is_refused_before_any_goal(
 def test_a_bad_run_date_block_is_refused(repo, capsys, block, names, key):
     _with_run_date(repo, block, names)
     runner = _Runner()
-    assert ge.main(["--gate", "verify", "--", "make", "test"], runner) == 2
+    code = ge.main(["--gate", "verify", "--", "make", "test"], runner)
+    assert code is ge.ExitCode.CONFIG
     assert key in capsys.readouterr().err
     assert runner.calls == []
     assert not (repo / ".evidence").exists()
@@ -906,7 +937,7 @@ def test_the_writer_is_3_6_safe():
     sys.path.insert(0, str(_ROOT / "tests" / "integration"))
     import test_gate_scope as scope
 
-    for name in ("gate_evidence.py", "git_tree.py", "run_date.py"):
+    for name in ("gate_evidence.py", "git_tree.py", "run_date.py", "config_loader.py"):
         path = _ROOT / "scripts" / name
         assert scope._too_new_syntax(path) == [], name
         assert scope._old_python_safe(path), name

@@ -14,8 +14,10 @@ import pytest
 _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT / "mcp"))
 
+import qa_server  # noqa: E402
 from action_server import build_action_server  # noqa: E402
 from qa_server import build_qa_server  # noqa: E402
+from scripts import config_loader  # noqa: E402
 
 pytestmark = pytest.mark.integration
 
@@ -140,3 +142,21 @@ def test_action_tool_rejects_out_escaping_the_tree(tmp_path):
 
     assert result["isError"] is True  # refused at the boundary
     assert not escape.exists()  # and nothing was written
+
+
+def test_the_server_model_is_the_declared_variable_or_its_declared_default(capsys):
+    """KEEL_MCP_MODEL is a scripts/config_loader.py KEYS row: set, it names the
+    model; unset or empty, the row's null default (the registry's own) is
+    taken and said once; a blank value is refused, never passed on."""
+    config_loader._ANNOUNCED.clear()
+    try:
+        assert qa_server.configured_model({"KEEL_MCP_MODEL": "fake"}) == "fake"
+        assert capsys.readouterr().err == ""
+        assert qa_server.configured_model({}) is None
+        assert qa_server.configured_model({"KEEL_MCP_MODEL": ""}) is None
+        err = capsys.readouterr().err
+        assert err.count("[using default] KEEL_MCP_MODEL = null") == 1, err
+        with pytest.raises(config_loader.WrongValue):
+            qa_server.configured_model({"KEEL_MCP_MODEL": "  "})
+    finally:
+        config_loader._ANNOUNCED.clear()

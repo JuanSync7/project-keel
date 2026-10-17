@@ -32,6 +32,7 @@ _SHIPPED = (
     "scripts/jobs/conflict_guard.py",
     "scripts/jobs/review_docs.py",
     "scripts/child_env.py",
+    "scripts/config_loader.py",
     "scripts/exit_codes.py",
     "scripts/run_date.py",
     "config/project.json",
