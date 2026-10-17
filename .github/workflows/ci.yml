@@ -2,7 +2,9 @@ name: ci
 on: [push, pull_request]
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # A named image, not ubuntu-latest: the machine the gate runs on changes
+    # only when this line is edited.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
         # Full history + tags: copier resolves a template by git ref, and the

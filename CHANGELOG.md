@@ -41,6 +41,9 @@ version rather than a bare commit:
   loader does not write.
 
 ### Changed
+- **CI runs on `ubuntu-24.04`, not `ubuntu-latest`.** The three workflows
+  pin the runner image, so a move of the `ubuntu-latest` label cannot change
+  the machine the gate runs on; a new image is a workflow edit.
 - **The scripts, the evals, the OpenAI-compatible adapter and the MCP
   question server read config through the loader.** `scripts/child_env.py`,
   `scripts/run_date.py`, `scripts/gate_evidence.py`,

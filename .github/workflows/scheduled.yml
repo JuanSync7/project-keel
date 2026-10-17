@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   doc-review:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
         # Full history: the review compares each document's `updated:` with the
