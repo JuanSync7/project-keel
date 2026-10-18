@@ -17,6 +17,33 @@ version rather than a bare commit:
   config fault.
 
 ### Added
+- **Each toolchain version has one home, and the tree is held to it.**
+  config/project.json `toolchain` names the Node major (`node_major`), the
+  Python CI installs (`python`) and the runner images a workflow may use
+  (`runner_images`). `scripts/check_toolchain.py versions` prints the first two
+  for each workflow's `toolchain` step; `tests/integration/test_toolchain_gate.py`
+  fails a setup-node or setup-python step that spells a version instead of
+  reading that step, a `runs-on` label the list does not name, a configured
+  Python below `layers.backend.python` or `requires-python`, and an
+  `fe-install` recipe that installs before it checks Node.
+- **Every frontend app commits a lockfile that matches its manifest.**
+  `tests/integration/test_frontend_lockfile_gate.py` asks git for each
+  `package.json` the Makefile's `FE_APPS` names and fails one whose
+  `package-lock.json` is untracked or absent, or whose root entry records other
+  dependencies than the manifest, so CI's npm installs the tree its author
+  tested.
+- **`make canary` renders each configured project and runs its whole gate.**
+  In the keel template, `scripts/canary.py` renders each config/project.json
+  `canary.answer_sets` set twice, fresh and as a `copier update` from the
+  previous release tag, and runs that project's own `make verify`; one line per
+  set and path says which step failed, and a failed project is kept with its
+  log. CONTRIBUTING.md's Release steps run it before the push, the farm sizes
+  it through `launcher.long_scripts`, and `.github/workflows/canary.yml` runs it
+  weekly. A generated project's `make canary` names the template checkout and
+  exits 2. docs/guides/generate-and-upgrade.md says how to read a canary
+  line and rerun a kept project, and
+  [ADR-K-0023](docs/adr/keel/K-0023-canary-gates-a-release-not-a-commit.md),
+  proposed, records that a red canary blocks a release push and nothing else.
 - **A configured value missing or wrong has its own exit code, 14.**
   `ExitCode.CONFIG` is the refusal of `scripts/config_loader.py`, the one
   table of declared config keys and the one read of a config file: an unset
@@ -41,9 +68,24 @@ version rather than a bare commit:
   loader does not write.
 
 ### Changed
-- **CI runs on `ubuntu-24.04`, not `ubuntu-latest`.** The three workflows
-  pin the runner image, so a move of the `ubuntu-latest` label cannot change
-  the machine the gate runs on; a new image is a workflow edit.
+- **CI installs Node 24, and `make fe-install` refuses another major.**
+  The workflows read the Node major and the Python from config/project.json
+  `toolchain` through their `toolchain` step, where they spelled `22` and
+  `3.11`; `make fe-install` runs `scripts/check_toolchain.py node` first and
+  stops, before npm runs, under a Node whose major is not `toolchain.node_major`.
+  copier asks `toolchain_python`, the release CI installs, after
+  `backend_python` and renders it into `toolchain.python`; its validator
+  refuses a release the floor does not allow, so a project generated with a
+  raised floor arrives with a release that satisfies it. A project that raised
+  `layers.backend.python` above `3.11` before this answers `toolchain_python`
+  on its next `copier update` (under `--defaults`, with
+  `--data toolchain_python=<release>`).
+- **CI runs on `ubuntu-24.04`, not `ubuntu-latest`.** Every workflow pins
+  the runner image, so a move of the `ubuntu-latest` label cannot change the
+  machine the gate runs on; a new image is an entry in config/project.json
+  `toolchain.runner_images` and a workflow edit, and
+  `tests/integration/test_toolchain_gate.py` fails a `runs-on` the list does
+  not name.
 - **The scripts, the evals, the OpenAI-compatible adapter and the MCP
   question server read config through the loader.** `scripts/child_env.py`,
   `scripts/run_date.py`, `scripts/gate_evidence.py`,

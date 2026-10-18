@@ -8,7 +8,7 @@ tags: [checks, ci, linter, determinism, pre-commit, hooks, guide]
 summary: Catalogue of every deterministic check that keeps a project-template repo honest — purpose, when to run, and how to wire as a hook.
 id: docs-guides-deterministic-checks
 created: 2026-06-19
-updated: 2026-10-17
+updated: 2026-10-18
 visibility: internal
 canonical: true
 ---
@@ -817,6 +817,56 @@ judges nothing, it names.
 
 ---
 
+### 14. Toolchain versions and lockfiles — `scripts/check_toolchain.py`
+
+**Purpose.** A lockfile is the dependency tree one npm, under one Node, resolved
+for one `package.json`. CI that installs without it, or under another Node
+major, installs a tree nobody tested. So each version has one home,
+config/project.json `toolchain`, and three checks hold the tree to it:
+
+- `scripts/check_toolchain.py node` runs `node --version` and exits 1 when its
+  major is not `toolchain.node_major`, or when node is absent, exits non-zero
+  or prints no `v<major>.<minor>.<patch>`. `make fe-install` runs it before
+  any `npm install`, and only when the Makefile's `FE_APPS` names an app.
+  `scripts/check_toolchain.py versions` prints `node=<toolchain.node_major>`
+  and `python=<toolchain.python>`; every workflow job that installs either
+  runs it first as the step with id `toolchain`, appending to
+  `$GITHUB_OUTPUT`.
+- `tests/integration/test_toolchain_gate.py` fails a workflow job whose
+  `runs-on` is not in `toolchain.runner_images` (a `-latest` label, which
+  moves under the project, is refused there by the loader), a setup-node or
+  setup-python step whose version is not `${{ steps.toolchain.outputs.node }}`
+  or `${{ steps.toolchain.outputs.python }}` from an earlier `toolchain` step
+  of the same job, a `toolchain.python` below `layers.backend.python` or
+  `pyproject.toml` `requires-python` (judged by `packaging`, the specifier
+  library pytest depends on), and an `fe-install` recipe that reaches
+  `npm install` before the Node check; it then runs `make fe-install` in a
+  scratch copy against a stub `node` of the wrong major and of the configured
+  one, and holds that the first never reaches npm.
+- `tests/integration/test_frontend_lockfile_gate.py` asks git, through
+  `git ls-files`, for every `package.json` the Makefile's `FE_APPS` glob names
+  and fails one whose `package-lock.json` is untracked or absent, whose
+  `lockfileVersion` is below 2, or whose root entry `packages[""]` records
+  other `dependencies`, `devDependencies`, `optionalDependencies` or
+  `peerDependencies` than the manifest; a set `layers.frontend.stack` git
+  tracks no app for is a fault too.
+
+Each gate test also judges planted faults, so a check that judges nothing
+cannot pass. The checker is not in the catalogue table above: `make check-all`
+does not run it, because it judges the host's Node, which `make fe-install`
+needs and the tree's gate does not.
+
+**What it does not prove.** The checker compares the major only, so another
+minor or patch passes. The toolchain gate reads the workflow files; a version
+set inside a reusable workflow or an action passes. The lockfile gate compares
+the manifest with the lockfile's root entry, not with the resolved tree below
+it, and it skips in a tree outside any git repository, and in a project with no
+frontend app and no stack, saying which.
+
+**Run.** `make fe-install` · `python3 scripts/check_toolchain.py versions` · `pytest tests/integration/test_toolchain_gate.py tests/integration/test_frontend_lockfile_gate.py`
+
+---
+
 ## How the hooks are wired
 
 ### Pre-commit (event trigger)
@@ -837,7 +887,9 @@ Enable once: `pip install pre-commit && pre-commit install`.
 
 ### CI (event trigger)
 
-`.github/workflows/ci.yml` runs under Python 3.11 and Node 22:
+`.github/workflows/ci.yml` runs under the Python and the Node major
+config/project.json `toolchain.python` and `toolchain.node_major` name, which
+its `toolchain` step prints for setup-python and setup-node (section 14):
 
 ```yaml
 - run: make check-all   # structure, python floor, corpus, openapi, aad, cdmon

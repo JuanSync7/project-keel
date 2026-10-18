@@ -7,7 +7,7 @@ owner: TBD
 summary: Local agent rules inside scripts/.
 id: scripts-agent
 created: 2026-06-17
-updated: 2026-10-17
+updated: 2026-10-18
 visibility: internal
 canonical: true
 ---
@@ -73,6 +73,12 @@ These rules are **local and authoritative** for this directory. They inherit fro
     config loader and record reader, so the proposal and the decision cannot
     read the block by different rules. A second reader of the `launcher`
     block anywhere else is a defect. Both stay stdlib-only and 3.6-safe.
+  - `template_snapshot.py` is never run: the one way a keel doer renders from
+    the checkout as it stands. It clones the checkout into a scratch directory
+    and commits the uncommitted and untracked files there, so copier never
+    touches the checkout's own index; `audit_project.py` and `canary.py` import
+    it, and all three are keel-only (copier.yml `_exclude`). It raises
+    `SnapshotError` and never ends the process.
   - `check_structure.py` is the gate the tests and jobs import.
 - End every script through `exit_codes.py`. The entry line is
   `finish(main())`. `main` returns `ExitCode.SUCCESS`, or

@@ -516,6 +516,7 @@ SETUP_STEPS: tuple[Step, ...] = (
         title="Generate your project",
         body="One command runs an interactive Q&A (name, whether to keep the showcase "
         "demo, frontend stack, the backend's minimum Python (backend_python), "
+        "the Python CI installs (toolchain_python, which must satisfy it), "
         "transports, domain profiles) and writes a tailored skeleton: the chosen stack, a "
         "filled-in config/project.json, and a .copier-answers.yml so you can pull "
         "future template improvements later. The template URL is whatever this "

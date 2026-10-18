@@ -47,7 +47,8 @@
       "K-0019-one-date-per-gate-run.md",
       "K-0020-shared-compute-launcher.md",
       "K-0021-imports-flow-up-a-configured-layer-order.md",
-      "K-0022-one-config-loader.md"
+      "K-0022-one-config-loader.md",
+      "K-0023-canary-gates-a-release-not-a-commit.md"
     ]
   },
   "doc_drift": {
@@ -133,6 +134,22 @@
     },
     "schema": "config/evidence/gate-record.schema.json"
   },
+  "canary": {
+    "_comment": "The release canary, keel's own (scripts/canary.py, make canary): each answer set is rendered fresh and as an update from the last release tag, then fe-install, fe-browsers and make verify run in it (the two frontend targets exit 0 when the project's Makefile FE_APPS names no app). answer_sets maps a set's name to its copier answers over copier.yml's defaults. scratch_root is where the projects render: relative to the checkout and git-ignored, or absolute through KEEL_CANARY_SCRATCH, never under the system temporary directory. step_timeout_minutes kills one step past it; workers is how many projects run at once. A generated project carries the block because its config loader declares the keys; its make canary is a stub.",
+    "answer_sets": {
+      "default": {},
+      "skeleton": {"frontend_stack": "none", "showcase": false, "transports": ["grpc"]}
+    },
+    "scratch_root": ".canary",
+    "step_timeout_minutes": 90,
+    "workers": 1
+  },
+  "toolchain": {
+    "_comment": "The toolchain versions, one home each; read by scripts/check_toolchain.py. node_major is the Node major every frontend app's lockfile is resolved under: make fe-install refuses another (check_toolchain.py node), and CI's setup-node installs it. python is the release CI's setup-python installs; it must satisfy layers.backend.python and pyproject.toml requires-python (tests/integration/test_toolchain_gate.py), and a generated project takes it from the copier answer toolchain_python, whose validator refuses a release backend_python does not allow. Each workflow job reads both from a step with id toolchain that runs check_toolchain.py versions into $GITHUB_OUTPUT, whose outputs are node and python, never a literal. runner_images is every runs-on label a workflow may use: pinned images only, never a label ending -latest, which moves under the project.",
+    "node_major": 24,
+    "python": "3.11",
+    "runner_images": ["ubuntu-24.04"]
+  },
   "launcher": {
     "_comment": "Where a long script runs; read by scripts/launch.py, which decides, and scripts/long_scripts.py, which proposes long_scripts entries (docs/adr/keel/K-0020-shared-compute-launcher.md). own_hosts_file is a git-ignored JSON file of fnmatch patterns for the hosts that are one person's own (config/own-hosts.example.json is its shipped twin); absent, unreadable or matching nothing means the host is shared. durations_file is the git-ignored record of each script's last run, keyed by the launch key. A script is long when long_scripts lists it, when its last recorded run took more than long_after_seconds, or when nothing is recorded; long_scripts and default_size give the farm size (cpus, mem_gb, minutes). local_only maps a launch key to the reason it never goes to the farm. credentials maps a launch key to {model_adapter, names}: the only credential names its process may receive. limited.niceness is what running here limited means (os.nice, nothing else). spare.max_load_per_cpu: after the farm did not allocate, this host runs it only when max(load1, load5) / cpus is at most this. farm.adapter names the farm in farm.adapters; the default is none (no farm); an argv adapter submits through its submit argv, with its own bounded wait of wait_seconds, and its reserved not_allocated_status and farm_error_status (1 to 254, not 126, 127 or 130).",
     "own_hosts_file": "config/own-hosts.local.json",
@@ -140,7 +157,8 @@
     "long_after_seconds": 600,
     "long_scripts": {
       "make verify": {"cpus": 8, "mem_gb": 16, "minutes": 180},
-      "make test": {"cpus": 8, "mem_gb": 16, "minutes": 120}
+      "make test": {"cpus": 8, "mem_gb": 16, "minutes": 120},
+      "make canary": {"cpus": 8, "mem_gb": 16, "minutes": 360}
     },
     "default_size": {"cpus": 4, "mem_gb": 8, "minutes": 120},
     "local_only": {},

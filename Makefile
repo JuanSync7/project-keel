@@ -50,7 +50,7 @@ PY_ROOTS := $(wildcard $(CODE_ROOTS))
 # Keel ships no [write] target; a project that adds one inherits the guard.
 WRITE_GUARD = $(if $(findstring i,$(firstword -$(MAKEFLAGS))),$(error refusing '$@': make is ignoring recipe errors (-i, --ignore-errors or .IGNORE), so a failing guard could not stop this [write] target; run it without that flag (docs/adr/keel/K-0011-make-target-effect-labels.md)))@if [ -n "$(CI)$(RALPH)" ]; then echo "refusing '$@': a [write] target never runs under CI or a Ralph loop (docs/adr/keel/K-0011-make-target-effect-labels.md)" >&2; exit 1; fi
 
-.PHONY: help new audit-project check-python check check-all check-corpus check-openapi check-aad check-cdmon check-exit-codes exit-codes advise check-generic long-scripts verify test trace eval eval-live unit integration e2e smoke \
+.PHONY: help new audit-project canary check-python check check-all check-corpus check-openapi check-aad check-cdmon check-exit-codes exit-codes advise check-generic long-scripts verify test trace eval eval-live unit integration e2e smoke \
         lint lint-py lint-fe fmt fmt-check typecheck typecheck-py typecheck-fe \
         test-fe test-fe-unit test-fe-e2e \
         fe-install fe-browsers run run-api run-web site-data site-static demo agent-surface-schema check-docs restamp-docs doc-review doc-review-apply
@@ -112,6 +112,18 @@ audit-project: ## [local] Report what DEST, another keel project, would fail und
 	@test -n "$(DEST)" || { echo "usage: make audit-project DEST=../my-project"; exit 2; }
 	$(PY) scripts/check_python_version.py
 	$(PY) scripts/audit_project.py "$(DEST)"
+
+# The release canary renders each config/project.json `canary.answer_sets` set
+# fresh and as an update from the previous release tag, and runs that project's
+# own make verify. [read] because npm and the browser download reach the
+# network; it writes only under the git-ignored `canary.scratch_root`. Keel-only
+# doer (copier.yml `_exclude`), so a generated project keeps the stub, as
+# audit-project does. CANARY_FLAGS passes `--set NAME` and `--path` through.
+CANARY_FLAGS =
+canary: ## [read] Render each configured answer set fresh and as an update from the previous tag, and run its make verify (keel checkout only)
+	@[ -f scripts/canary.py ] || { echo "canary runs from the template checkout: make -C <the _src_path in .copier-answers.yml> canary"; exit 2; }
+	$(PY) scripts/check_python_version.py
+	$(PY) scripts/canary.py $(CANARY_FLAGS)
 
 check: ## [local] Validate structure + frontmatter (3.6-safe)
 	$(PY) scripts/check_structure.py
@@ -264,7 +276,11 @@ test-fe-e2e: ## [local] Run each frontend app's browser journey headless against
 	for app in $(FE_APPS); do [ -d "$$app/node_modules" ] || { echo "$@: $$app has no node_modules, so its browser journey did not run; run 'make fe-install', then run it again" >&2; exit 2; }; done; \
 	for app in $(FE_APPS); do echo "browser journey: $$app"; (cd $$app && npm run --silent test:e2e) || exit 1; done
 
-fe-install: ## [tree,read] Install frontend deps for all FE apps
+# Each lockfile is resolved under one Node major, config/project.json
+# toolchain.node_major; npm under another resolves a different tree, so the
+# check runs before any install, and only when there is an app to install.
+fe-install: ## [tree,read] Install frontend deps for all FE apps, after checking the Node major
+	@if [ -n "$(strip $(FE_APPS))" ]; then $(PY) scripts/check_toolchain.py node; fi
 	@for app in $(FE_APPS); do echo "npm install: $$app"; (cd $$app && npm install) || exit 1; done
 # Downloads into the browser runner's per-user cache, outside the tree, so the
 # label is [read]. Extra flags for the runner's install command go through

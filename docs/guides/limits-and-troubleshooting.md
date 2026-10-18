@@ -8,7 +8,7 @@ tags: [limits, waivers, exit-codes, troubleshooting, guide]
 summary: What adopting keel costs, the risks its rails leave open, the checks that pass by skipping, what no gate can see, every waiver a project may use, every exit code the gate's scripts return, and the symptom-to-fix list for the failures a newcomer meets first.
 id: docs-guides-limits-and-troubleshooting
 created: 2026-10-09
-updated: 2026-10-17
+updated: 2026-10-18
 visibility: internal
 canonical: true
 ---
@@ -130,6 +130,10 @@ a decision on whether it should fail instead.
   decision.
 - `scripts/jobs/check_corpus.py` passes when no local corpus has been built;
   it then judges a fresh build only. Queued for a decision.
+- `tests/integration/test_frontend_lockfile_gate.py` skips in a tree outside
+  any git repository, because it judges what git tracks, and in a project
+  with no frontend app and no `layers.frontend.stack`. Queued for a
+  decision.
 - `tests/integration/test_release_identity.py` and
   `tests/integration/test_work_trailers.py` skip without git. Queued for a
   decision.
@@ -456,6 +460,21 @@ message and stops with exit 2 until it is moved onto the loader.
 | a `[write]` target stops with `refusing '<target>': make is ignoring recipe errors` | make was run with `-i`, `--ignore-errors`, `MAKEFLAGS=i` or under a bare `.IGNORE:`, so the guard could not stop the target | run the target without that flag |
 | `make test-fe-unit`, `make test-fe-e2e` or `make fe-browsers` exits 2 with `<target>: npm is not on PATH` | Node.js is not installed or not on `PATH`, and a frontend app exists | install Node.js, run `make fe-install`, then run the target again |
 | `make test-fe-unit`, `make test-fe-e2e` or `make fe-browsers` exits 2 with `<target>: <app> has no node_modules` | the app's packages are not installed, as in a fresh clone or a newly generated project | run `make fe-install`, then run the target again |
+| `make fe-install` stops with `node major is <found>, and config/project.json toolchain.node_major is <configured>` | the Node on `PATH` is another major than the one every lockfile was resolved under | install that Node major, or change `toolchain.node_major`, run `make fe-install` and commit the regenerated lockfiles |
+| `make fe-install` stops with `node cannot be run` or `node --version printed` | Node.js is not on `PATH`, or the `node` found is not Node.js | install Node.js of the major `toolchain.node_major` names, then run the target again |
+| `test_frontend_lockfile_gate` says `<app>/package-lock.json exists but git does not track it` or `has no package-lock.json` | the app's lockfile was never committed, so CI's npm resolves a tree of its own | run `npm install` in the app and commit its `package-lock.json` |
+| `test_frontend_lockfile_gate` says `<app>/package.json <section> differs from its package-lock.json root entry` | the manifest was edited without reinstalling, so the lockfile records other dependencies | run `npm install` in the app and commit the lockfile with the manifest |
+| `test_toolchain_gate` names a `runs-on` label, or a `node-version` or `python-version` that is not a `toolchain` step output | a workflow job uses a label `toolchain.runner_images` does not list, or spells a version instead of reading the `toolchain` step | name a listed image, or add the `toolchain` step before the setup step and read `${{ steps.toolchain.outputs.node }}` or `${{ steps.toolchain.outputs.python }}` |
+| `test_toolchain_gate` says `toolchain.python <release> does not satisfy` a floor | `layers.backend.python` or `requires-python` was raised above the release CI installs | set `toolchain.python` to a release that satisfies both; in a generated project, record it as the copier answer too (`copier update --data toolchain_python=<release>`) |
+| In the keel template, `make canary` ends with exit 1 and `<n> of <m> canary projects failed`, each `<set> <path> at <step>` | a project rendered from that answer set and path failed at that step; the line for it names its log, and stderr names the project it kept under the scratch root | read the log beside the kept project and the step's row in [generate-and-upgrade.md](generate-and-upgrade.md); fix keel, then rerun that project alone with `make canary CANARY_FLAGS="--set <set> --path <path>"` |
+| `make canary` ends with exit 2 and `no previous release to update from` | no dated `## [X.Y.Z]` heading of `CHANGELOG.md` has a tag that is a strict ancestor of `HEAD`, as in a shallow clone with no tags | fetch the tags (`git fetch --tags`, or a checkout with full history), tag the last release, or run the fresh path alone with `CANARY_FLAGS="--path fresh"` |
+| `make canary` ends with exit 2 and `no such answer set` | a `--set` name in `CANARY_FLAGS` is not a key of config/project.json `canary.answer_sets` | name a set the message lists, or add the set to `canary.answer_sets` |
+| `make canary` ends with exit 13 and `there is no answer set to render` | config/project.json `canary.answer_sets` is empty | add a set to `canary.answer_sets`, then run the target again |
+| `make canary` ends with exit 14 and `the canary settings are refused`, `an answer set is not a plain name mapped to an object of answers` or `the run date is refused` | a `canary` key, or `evidence.run_date`, in config/project.json is missing or wrong, or a set name is not one plain segment of letters, digits, `.`, `_` or `-` | fix the key the message names; config/project.json's `canary._comment` says what each key holds |
+| `make canary` ends with exit 14 and `an answer set names a question copier.yml does not ask`, each `<set>.<key>` | a key of a config/project.json `canary.answer_sets` set is not a question copier.yml asks, as with a misspelt name; copier would ignore it and render that question's default | spell the key as copier.yml names its question, or drop it from the set |
+| `make canary` ends with exit 1 and `the template's copier.yml could not be read` | PyYAML, which copier brings, is not installed for the interpreter `make` runs, or copier.yml does not parse to a mapping | install the template extra with `pip install -e '.[template]'`, or fix copier.yml as the message says |
+| `make canary` ends with exit 14 and `the canary's scratch root is refused` | config/project.json `canary.scratch_root`, or `KEEL_CANARY_SCRATCH` when it is set, is under the system temporary directory, or is inside the checkout and git tracks a file in it or does not ignore it | point it at a directory of the checkout that `.gitignore` names, or at local disk outside the system temporary directory |
+| `make canary` ends with exit 1 and `git could not answer about the template checkout` or `the template checkout could not be snapshotted` | the canary was run outside a keel git checkout, or git failed while it cloned the checkout and committed its uncommitted files | run it from a keel git checkout whose `git status` succeeds; the message says which git step failed and quotes its last output lines |
 | `scripts/launch.py` ends with exit 12 and `the farm did not start the command within launcher.farm.wait_seconds` | the farm had no free slot within the wait, and the load per cpu of the host it was called on was over `launcher.spare.max_load_per_cpu` or unknown, so nothing ran | run it again later, or raise config/project.json `launcher.farm.wait_seconds` |
 | `scripts/launch.py` ends with exit 2 and `the farm refused the submission, so nothing ran` | the submit command returned the adapter's `farm_error_status`: a size the farm cannot grant, or a farm-side error; a command that itself exits that status reads the same | lower the size in config/project.json `launcher.long_scripts` or `launcher.default_size`, or run the submit command by hand to see the farm's message |
 | `scripts/launch.py` ends with exit 2 naming `config/project.json launcher.credentials` | the environment would hold a credential name the launch key's `launcher.credentials` entry does not list | add the name to that key's entry, or unset it before the launch |

@@ -36,12 +36,17 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # The versions come from config/project.json `toolchain`, one home each,
+      # printed by the checker into this step's outputs; the runner's own python3
+      # runs it, because it is stdlib-only and 3.6-safe.
+      - id: toolchain
+        run: python3 scripts/check_toolchain.py versions >> "$GITHUB_OUTPUT"
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.11"
+          python-version: "${{ steps.toolchain.outputs.python }}"
       - uses: actions/setup-node@v6
         with:
-          node-version: "22"
+          node-version: "${{ steps.toolchain.outputs.node }}"
 
       # Makes `backend.showcase` importable for the export/corpus jobs. The
       # package declares no runtime deps, so this installs nothing extra.

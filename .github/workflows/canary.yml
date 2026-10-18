@@ -1,0 +1,62 @@
+name: canary
+# A thin SCHEDULE TRIGGER over keel's release canary (scripts/canary.py, `make
+# canary`): each config/project.json canary.answer_sets set is rendered fresh and
+# as an update from the previous release tag, and that project's own make verify
+# runs. Weekly, not nightly: one run is four project verifies. Keel-only
+# (copier.yml `_exclude`): a generated project's `make canary` is a stub.
+on:
+  schedule:
+    - cron: "0 3 * * 1"        # Mondays at 03:00 UTC
+  workflow_dispatch: {}         # also runnable on demand, as the release step does
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-canary
+  cancel-in-progress: false
+
+jobs:
+  canary:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        # Full history + tags: the update path renders from the previous release
+        # tag, which a depth-1 checkout does not carry.
+        with: { fetch-depth: 0 }
+      # The versions come from config/project.json `toolchain`, one home each,
+      # printed by the checker into this step's outputs; the runner's own python3
+      # runs it, because it is stdlib-only and 3.6-safe.
+      - id: toolchain
+        run: python3 scripts/check_toolchain.py versions >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-python@v6
+        with: { python-version: "${{ steps.toolchain.outputs.python }}" }
+      - uses: actions/setup-node@v6
+        with: { node-version: "${{ steps.toolchain.outputs.node }}" }
+      # The interpreter every rendered project's make runs under (`PY=` is the
+      # project's .venv when it has one, else this one), so it carries what a
+      # project's verify imports: the dev and template extras and the REST
+      # transport's requirements, as ci.yml installs them.
+      - run: pip install -e ".[dev,template]"
+      - run: pip install -r api/rest_fastapi/requirements.txt
+      # The browser's system libraries need root, which the canary's own
+      # `make fe-browsers` in each project does not ask for: installing them once
+      # here, through keel's own frontend, leaves only the per-project download.
+      - run: make fe-install
+      - run: make fe-browsers FE_BROWSER_FLAGS=--with-deps
+      - run: make canary
+      # A failing project is kept with its log beside it; upload them so the
+      # failure can be read without rerunning four verifies. Installed
+      # dependencies and the browser cache are re-derivable and large. The
+      # paths are config/project.json canary.scratch_root, which no step here
+      # overrides with KEEL_CANARY_SCRATCH; tests/integration/test_canary_wiring.py
+      # holds them equal. `warn`, so an upload that finds nothing says so.
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: canary-kept
+          path: |
+            .canary/
+            !.canary/**/node_modules/
+            !.canary/*/cache/
+          if-no-files-found: warn

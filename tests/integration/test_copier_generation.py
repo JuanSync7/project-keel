@@ -2,7 +2,7 @@
 title: Integration — copier generates a structurally valid, tailored project
 kind: tests
 layer: n/a
-summary: `copier` renders keel's root template into a new project — the manifest is tailored to the answers, the un-chosen frontend stack is pruned, CLAUDE.md->AGENT.md symlinks are preserved, keel's own template meta-tests are pruned, and check_structure passes; an undeclared top-level directory reds the project until it is declared and labelled. A bare `subprocess.run` reds a generated project through check_X until it passes `env=build_child_env()`, and the project's helper passes an adapter's declared credential and no planted secret. A credentialed proxy (a `#` in the password included) fails the project's doc judge by name and never by value, while a `LANGUAGE=sr_RS:sr@latin` locale list does not, until `child_env.credentialed_values` names it, and a stale entry there reds the gate. A generated project carries keel's `work_naming` block and no plan doc, so check_Z is silent until the project writes one; a slice row that is not a slice id then reds the gate and a well-formed one does not. A generated project runs its own doc-drift tests green, every skip there a template-only test naming why, and a prose slice id planted in its CONTRIBUTING.md reds them, and so does a row dropped from its settings reference or from its feature catalogue; its README names no `make new`, and its `run-web` line names Astro and its port only for the astro stack and is absent with no frontend. Under every transport answer, and without the showcase, a generated project's e2e coverage gate and its scenarios pass with nothing skipped, and a grpc project whose exemption is dropped is red naming the method. A project with a frontend carries keel's `layers.frontend.journey` keys and passes its own frontend-suite contract tests statically; its fresh tree's `make test-fe` refuses with exit 2 naming the app and `make fe-install`, and its README Quickstart runs `make fe-install` and `make fe-browsers` before `make verify`; one without has no frontend keys, its wiring test skips with a reason, `make test-fe` exits 0 silently, and its Quickstart names neither target. Under every answer set, `make eval` in a committed generated project replays its shipped eval dataset, which uses every scorer, green twice with the same report bytes and leaves what git lists alone, and the README's delete advice no longer offers evals/. Under every answer set, `make trace` in a committed generated project writes the same passing matrix twice and leaves what git lists alone, and a requirement added to its spec with no test turns `make trace` and the project's own traceability gate test red naming it. Skipped on a bare local clone without the optional `template` extra; CI installs `.[dev,template]` and declares the surface required (KEEL_REQUIRED_EXTRAS), so there a missing copier is a hard failure instead of a silent skip. A generated project passes its exit gate file with nothing skipped and holds a current exit-code table; a script ending on `sys.exit(main())` fails the gate test naming its line, an enum member added without regenerating fails `make check-exit-codes`, and `make exit-codes` run twice writes the same guide. A default project ships scripts/launch.py and scripts/long_scripts.py with keel's `launcher` block, the `none` farm, the placeholder own-hosts twin and no local file; committed, its `make long-scripts` finds no recorded runs and exits 13, its launcher says its own `make verify` runs here limited on a shared host, a real launch runs here limited and records the run in an ignored file with one entry per key, a failing command is recorded as failed, and its own launcher tests pass with nothing skipped. A generated project's config-reads gate skips its two finding tests, naming each direct read, while keel's rendered files read config only through the loader or an allowlist entry. A default project sets every config/project.json key scripts/config_loader.py declares, so resolving them writes no `[using default]` or `[not set]` line, and deleting each defaulted key writes exactly one `[using default]` line per key, sorted.
+summary: `copier` renders keel's root template into a new project — the manifest is tailored to the answers, the un-chosen frontend stack is pruned, CLAUDE.md->AGENT.md symlinks are preserved, keel's own template meta-tests are pruned, and check_structure passes; an undeclared top-level directory reds the project until it is declared and labelled. A bare `subprocess.run` reds a generated project through check_X until it passes `env=build_child_env()`, and the project's helper passes an adapter's declared credential and no planted secret. A credentialed proxy (a `#` in the password included) fails the project's doc judge by name and never by value, while a `LANGUAGE=sr_RS:sr@latin` locale list does not, until `child_env.credentialed_values` names it, and a stale entry there reds the gate. A generated project carries keel's `work_naming` block and no plan doc, so check_Z is silent until the project writes one; a slice row that is not a slice id then reds the gate and a well-formed one does not. A generated project runs its own doc-drift tests green, every skip there a template-only test naming why, and a prose slice id planted in its CONTRIBUTING.md reds them, and so does a row dropped from its settings reference or from its feature catalogue; its README names no `make new`, and its `run-web` line names Astro and its port only for the astro stack and is absent with no frontend. Under every transport answer, and without the showcase, a generated project's e2e coverage gate and its scenarios pass with nothing skipped, and a grpc project whose exemption is dropped is red naming the method. A project with a frontend carries keel's `layers.frontend.journey` keys and passes its own frontend-suite contract tests statically; its fresh tree's `make test-fe` refuses with exit 2 naming the app and `make fe-install`, and its README Quickstart runs `make fe-install` and `make fe-browsers` before `make verify`; one without has no frontend keys, its wiring test skips with a reason, `make test-fe` exits 0 silently, and its Quickstart names neither target. Under every answer set, `make eval` in a committed generated project replays its shipped eval dataset, which uses every scorer, green twice with the same report bytes and leaves what git lists alone, and the README's delete advice no longer offers evals/. Under every answer set, `make trace` in a committed generated project writes the same passing matrix twice and leaves what git lists alone, and a requirement added to its spec with no test turns `make trace` and the project's own traceability gate test red naming it. Skipped on a bare local clone without the optional `template` extra; CI installs `.[dev,template]` and declares the surface required (KEEL_REQUIRED_EXTRAS), so there a missing copier is a hard failure instead of a silent skip. A generated project passes its exit gate file with nothing skipped and holds a current exit-code table; a script ending on `sys.exit(main())` fails the gate test naming its line, an enum member added without regenerating fails `make check-exit-codes`, and `make exit-codes` run twice writes the same guide. A default project ships scripts/launch.py and scripts/long_scripts.py with keel's `launcher` block, the `none` farm, the placeholder own-hosts twin and no local file; committed, its `make long-scripts` finds no recorded runs and exits 13, its launcher says its own `make verify` runs here limited on a shared host, a real launch runs here limited and records the run in an ignored file with one entry per key, a failing command is recorded as failed, and its own launcher tests pass with nothing skipped. A generated project's config-reads gate skips its two finding tests, naming each direct read, while keel's rendered files read config only through the loader or an allowlist entry. A default project sets every config/project.json key scripts/config_loader.py declares, so resolving them writes no `[using default]` or `[not set]` line, and deleting each defaulted key writes exactly one `[using default]` line per key, sorted. A generated project's `make canary` is a stub, exit 2, that names the template checkout, and the canary's doer, its snapshot module and its workflow do not ship. Committed, a default project's lockfile gate and toolchain gate pass with nothing skipped, and a `frontend_stack: none` project's lockfile gate skips saying it has no frontend app while its toolchain gate passes; both ship scripts/check_toolchain.py.
 """
 
 import ast
@@ -3108,3 +3108,80 @@ def test_a_generated_project_reads_config_only_through_the_loader(tmp_path, answ
     assert named.returncode == 0, named.stdout[-6000:] + named.stderr[-2000:]
     assert " FAILED" not in named.stdout, named.stdout[-6000:]
     assert any(line in r for r in skipped.findall(named.stdout)), named.stdout[-6000:]
+
+
+# The keel-only files of the canary: its doer, the snapshot module it shares
+# with the audit, and the workflow that runs it. The test holds copier.yml's
+# `_exclude` to them; tests/integration/test_canary_wiring.py derives the same
+# set from the modules and the workflow that runs `make canary`.
+_CANARY_ONLY = (
+    "scripts/canary.py",
+    "scripts/template_snapshot.py",
+    ".github/workflows/canary.yml",
+)
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
+def test_a_generated_project_canary_target_names_the_template_checkout(tmp_path):
+    """A generated project has no template to render, so it ships the target
+    and not the doer: `make canary` says where to run it, exit 2, rather than
+    failing on a missing file."""
+    excluded = set(
+        yaml.safe_load((_ROOT / "copier.yml").read_text(encoding="utf-8"))["_exclude"]
+    )
+    assert set(_CANARY_ONLY) <= excluded, sorted(set(_CANARY_ONLY) - excluded)
+    dest = tmp_path / "proj"
+    _generate(dest, project_name="demo_proj")
+    for rel in _CANARY_ONLY:
+        assert not (dest / rel).exists(), rel
+    ran = _make_in(dest, "canary")
+    assert ran.returncode == 2, ran.stdout + ran.stderr
+    assert "canary runs from the template checkout" in ran.stdout, ran.stdout
+    assert "_src_path" in ran.stdout, ran.stdout
+
+
+# The two static toolchain gates CMP-6.S1 added, and the checker they hold the
+# workflows and fe-install to, which a project needs because both call it.
+_TOOLCHAIN_GATES = (
+    "tests/integration/test_frontend_lockfile_gate.py",
+    "tests/integration/test_toolchain_gate.py",
+)
+_TOOLCHAIN_CHECKER = "scripts/check_toolchain.py"
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
+@pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
+@pytest.mark.parametrize("stack", ["react-vite", "none"])
+def test_a_committed_generated_project_passes_its_toolchain_gates(stack, tmp_path):
+    """The lockfile gate judges what git tracks, so it is run in a project that
+    is committed, as a project's CI judges it: with a frontend app its lockfile
+    is tracked and matches, and nothing skips; with none, the lockfile gate skips
+    saying the project has no frontend app, and the toolchain gate still judges
+    its workflows, its fe-install recipe and its Python floor."""
+    dest = tmp_path / "proj"
+    _generate(dest, project_name="demo_proj", frontend_stack=stack)
+    assert (dest / _TOOLCHAIN_CHECKER).is_file()
+    home = tmp_path / "git-home"
+    home.mkdir()
+    env = _hermetic_git_env(home)
+    for argv in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "generated"]):
+        r = subprocess.run(
+            ["git"] + argv, cwd=str(dest), env=env, capture_output=True, text=True
+        )
+        assert r.returncode == 0, r.stderr
+    ran = _project_tests(dest, _TOOLCHAIN_GATES)
+    assert ran.returncode == 0, ran.stdout[-4000:] + ran.stderr[-2000:]
+    outcomes = _TEST_OUTCOME.findall(ran.stdout)
+    assert outcomes, "no gate test ran in the project:\n" + ran.stdout[-2000:]
+    assert {o for _f, _t, o in outcomes} <= {"PASSED", "SKIPPED"}, outcomes
+    skipped = sorted((f, t) for f, t, o in outcomes if o == "SKIPPED")
+    if stack == "none":
+        assert skipped == [
+            (
+                _TOOLCHAIN_GATES[0],
+                "test_every_frontend_app_tracks_a_lockfile_that_matches_its_manifest",
+            )
+        ], skipped
+        assert "has no frontend app" in ran.stdout, ran.stdout[-2000:]
+    else:
+        assert skipped == [], skipped

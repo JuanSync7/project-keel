@@ -5,10 +5,10 @@ layer: n/a
 status: template
 owner: TBD
 tags: [copier, generate, update, migrations, adoption, guide]
-summary: How a project is generated from keel, what arrives and what never does, what `make new` refuses, how to adopt keel into an existing repository, and how `copier update` pulls template changes — with one checklist row per task and migration an update runs, and how to finish an update a migration stopped.
+summary: How a project is generated from keel, what arrives and what never does, what `make new` refuses, how to adopt keel into an existing repository, and how `copier update` pulls template changes — with one checklist row per task and migration an update runs, how to finish an update a migration stopped, and how keel's release canary proves a fresh project and an updated one pass their own `make verify`.
 id: docs-guides-generate-and-upgrade
 created: 2026-10-09
-updated: 2026-10-17
+updated: 2026-10-18
 visibility: internal
 canonical: true
 ---
@@ -37,6 +37,8 @@ copier copy --trust gh:JuanSync7/project-keel my-project
 copier asks for the project name, whether to keep the bundled showcase demo
 (`showcase`), the frontend stack (`react-vite`, `astro` or `none`; `astro`
 needs the showcase), the backend's minimum Python (`backend_python`), the
+Python release CI installs (`toolchain_python`, which must satisfy
+`backend_python`, or copier refuses the pair before writing a file), the
 optional transports (`grpc`, `edge_nginx`) and the domain profiles (`ai`,
 `cuda`, `langgraph`). `--defaults` takes every default without asking, and
 `--data name=value` answers one question on the command line:
@@ -89,6 +91,12 @@ left out only when the answer matches it.
 | `tests/integration/test_copier_*.py` | never | tests of the template itself |
 | `scripts/audit_project.py` | never | runs from a template checkout only |
 | `tests/unit/scripts/test_audit_project.py` | never | its test |
+| `scripts/canary.py` | never | renders the template checkout, so it runs from one only |
+| `scripts/template_snapshot.py` | never | serves only the audit and the canary |
+| `tests/unit/scripts/test_canary.py` | never | its test |
+| `tests/unit/scripts/test_template_snapshot.py` | never | its test |
+| `tests/integration/test_canary_wiring.py` | never | a test of the template itself |
+| `.github/workflows/canary.yml` | never | runs `make canary`, which a project answers with a stub |
 | `src/frontend/react-vite` | only when `frontend_stack` is `react-vite` | the stack you did not choose |
 | `src/frontend/astro` | only when `frontend_stack` is `astro` | the stack you did not choose |
 | `src/frontend` | not when `frontend_stack` is `none` | no frontend |
@@ -405,6 +413,30 @@ the config/project.json `config_reads` block. You may meet it three ways.
 
 [ADR-K-0022](../adr/keel/K-0022-one-config-loader.md) is the accepted decision.
 
+### Your Node, Python and runner images come from config
+
+The update brings the config/project.json `toolchain` block,
+`scripts/check_toolchain.py` and two gate tests. You may meet them three ways.
+
+1. **`make fe-install` checks Node first.** With a frontend app, it stops
+   before npm runs when the major of `node --version` is not
+   `toolchain.node_major`, naming both majors. Install that major, or set the
+   key to the one your lockfiles were resolved under and commit it.
+2. **Your workflows read the versions.** The shipped workflows gain a step
+   with id `toolchain` and read setup-node's and setup-python's versions from
+   it. `tests/integration/test_toolchain_gate.py` fails a workflow of your own
+   that spells a version, or uses a `runs-on` label
+   `toolchain.runner_images` does not list, and fails a `toolchain.python`
+   below your `layers.backend.python` or `requires-python`. The update asks
+   `toolchain_python`, the release it renders into `toolchain.python`, and its
+   validator refuses one your `backend_python` does not allow: a project that
+   raised its floor answers a release that satisfies it (under `--defaults`,
+   pass `--data toolchain_python=<release>`).
+3. **Your lockfiles are judged.** `tests/integration/test_frontend_lockfile_gate.py`
+   fails a frontend app whose `package-lock.json` is not committed or does not
+   record the dependencies its `package.json` names. Run `npm install` in the
+   app and commit the lockfile.
+
 ## Update checklist
 
 An update runs the steps below in this order. The task runs while copier renders
@@ -477,3 +509,85 @@ uses something it cannot replay as copier does: `_envops`,
 `command` and `when`, or a name the migration renders that it does not supply.
 In those cases, run the migrations by hand from the template's `copier.yml`.
 `tests/integration/test_finish_update.py` holds each of these to its exit.
+
+## How keel proves an update works
+
+Before a release is pushed, keel checks that the projects it generates pass
+their own gate, fresh and after an update. In the keel template checkout,
+`make canary` runs `scripts/canary.py`. In a generated project, `make canary`
+prints the command to run in the template checkout and exits 2, because a
+project has no template to render. `make verify` never runs the canary:
+`tests/integration/test_canary_wiring.py` fails a `verify` recipe that names
+it.
+
+The canary snapshots the checkout as it stands, with its uncommitted and
+untracked files, and builds two projects from the snapshot for each answer set
+config/project.json `canary.answer_sets` lists. Each key of a set must be a
+question copier.yml asks: copier ignores any other key and renders that
+question's default, so the canary refuses such a key with exit 14 before it
+renders anything.
+
+1. **fresh**: `copier copy` of the snapshot, committed in a new git repository.
+2. **update**: `copier copy` of the previous release tag, committed, then
+   `copier update --conflict inline` to the snapshot with the set's answers
+   given again, committed, so a question the tag did not ask takes the set's
+   answer and not its default. The previous release is the newest dated
+   `## [X.Y.Z]` heading of `CHANGELOG.md` whose tag exists and is a strict
+   ancestor of `HEAD`, so a run on a commit that already carries the new tag
+   updates from the release before it. With no such tag the
+   canary exits 2 before it renders anything; `CANARY_FLAGS="--path fresh"`
+   runs the fresh path alone.
+
+Each project then runs `make fe-install` and `make fe-browsers`, which exit 0
+when the project's Makefile `FE_APPS` names no frontend app, and then its own
+`make verify`. A step that runs past
+`canary.step_timeout_minutes` is killed and fails. Each set and path prints one
+line:
+
+```text
+default update fe-install fail /path/.canary/all-both/default-update.log 212s
+skeleton fresh verify pass /path/.canary/all-both/skeleton-fresh.log 404s
+```
+
+The six fields are the answer set, the path, the last step the project
+reached, `pass` or `fail`, that project's log, and the elapsed seconds. The
+step says what failed:
+
+| Step | A `fail` there means |
+|------|----------------------|
+| `copy` | copier could not render the snapshot or the tag with the set's answers |
+| `commit` | git could not initialise the project or commit it |
+| `update` | `copier update` failed, or it left a path git lists as unmerged or a file holding a conflict hunk |
+| `fe-install` | `scripts/check_toolchain.py node` refused the Node major, or npm could not install a frontend app |
+| `fe-browsers` | the browser the end-to-end suites drive could not be installed |
+| `verify` | the project's own `make verify` is red; every `pass` line names this step too |
+
+A passing project is deleted. A failing one is kept at
+`<scratch root>/<run>/<set>-<path>`, named on stderr with its log beside it,
+and the run exits 1 naming each kept project. Every set runs even after one
+fails. The scratch root is config/project.json `canary.scratch_root`, `.canary`
+in the checkout, which git ignores; `KEEL_CANARY_SCRATCH` moves it, for
+example onto a farm node's local disk. The canary refuses a scratch root under
+the system temporary directory, and one inside the checkout that git does not
+ignore.
+
+To rerun one failed project, run
+`make canary CANARY_FLAGS="--set <set> --path <path>"`. Its run directory is
+`<set>-<path>`, not the `all-both` of a full run, so the project kept by the
+full run stays. A run replaces its own run directory, so a second run with the
+same flags deletes the project the first one kept.
+
+Each line costs a whole project `make verify`. With keel's two answer sets,
+measured on the farm on 2026-10-17 with one job per set and
+`canary.workers` 1, each project took 404 to 494 seconds and the whole canary
+about 31 minutes. That is why the canary runs at three points and no other:
+CONTRIBUTING.md's Release steps run it before the push,
+`.github/workflows/canary.yml` runs it weekly and on demand, and a maintainer
+runs it by hand. The astro frontend stack is in no answer set, so no canary
+renders it; `tests/integration/test_frontend_lockfile_gate.py` checks its
+lockfile without installing it.
+
+`tests/integration/test_canary_wiring.py` holds this section to the canary: the
+step table names each step a line can report as failed and no other, the
+example lines have the fields the canary prints, and the section names the
+answer-set key and the scratch variable.

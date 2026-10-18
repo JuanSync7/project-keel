@@ -1968,7 +1968,7 @@ work comes from dogfooding a real project rather than from the backlog.
 
 | Slice | Gap | Status |
 |-------|-----|--------|
-| CMP-6.S1 | Each part of a generated project is tested on its own, but no test runs a generated project's full `make verify`, or `make verify` after `copier update` from the previous tag; nothing checks that each frontend app commits its lockfile, or that CI's Node version is the one the gate is run with | planned |
+| CMP-6.S1 | Each part of a generated project is tested on its own, but no test runs a generated project's full `make verify`, or `make verify` after `copier update` from the previous tag; nothing checks that each frontend app commits its lockfile, or that CI's Node version is the one the gate is run with | done — `make verify` green (3321 passed); the real canary passed both answer sets, fresh and updated from v0.3.0; 9 of 10 review findings confirmed and fixed; ADR-K-0023 proposed |
 | CMP-6.S2 | KEEL-TEST-1: a test can reach a live store; nothing in the suite refuses it | planned |
 | CMP-6.S3 | KEEL-SEC-1: nothing scans the tree for a committed secret | planned |
 | CMP-6.S4 | B1: a generated project's own code that breaks a keel gate check is red on `copier update` (the exit gate) or not judged at all (the config-reads gate skips); the ruled warn-then-fail tier is not built | planned |
@@ -1981,6 +1981,83 @@ fails a committed file that holds a value under a key
 no key names; gitleaks is its default, chosen in config, and another scanner
 is a second adapter, not an edit to the test.
 
+**CMP-6.S1, the release canary.** `make canary` (`scripts/canary.py`) renders
+each config/project.json `canary.answer_sets` set from a snapshot of the
+checkout, fresh and as a `copier update` from the newest released tag that is a
+strict ancestor of HEAD, and runs the project's own `make verify`, after
+`fe-install` and `fe-browsers`, which exit 0 with no frontend app. A pass is deleted and a
+failure is kept with its log. CONTRIBUTING.md's Release steps run it on the farm
+before the push, `launcher.long_scripts."make canary"` sizes the farm job, and
+`.github/workflows/canary.yml` runs it weekly and on demand. The audit and the
+canary share one snapshot, `scripts/template_snapshot.py`, lifted out of
+`scripts/audit_project.py`.
+
+`tests/integration/test_frontend_lockfile_gate.py` fails a frontend app whose
+lockfile git does not track or whose lockfile root entry disagrees with its
+manifest. config/project.json `toolchain` holds the Node major, the Python and
+the runner images; `tests/integration/test_toolchain_gate.py` holds every
+workflow and the `fe-install` recipe to it, and `scripts/check_toolchain.py`
+prints the versions for CI and refuses another Node major before npm runs.
+
+Left by CMP-6.S1 so far:
+
+- The first farm run of every set and path passed: `default` (react-vite, the
+  showcase, every transport) fresh in 454 s and as an update from `v0.3.0` in
+  494 s, and `skeleton` (no frontend, no showcase, gRPC only) in 404 s and
+  441 s. One job per set, `canary.workers` 1, so the whole canary is about 31
+  minutes in one job. `launcher.long_scripts."make canary"` asks for 360
+  minutes, 8 cores and 16 GB, which is provisional: each job used under one core
+  on average (12 and 15 CPU-minutes over 14 and 16 minutes) and peaked near
+  320 MB of resident memory.
+- The farm nodes' CA bundle lacks the root the site's TLS interception signs
+  with, so a browser download there fails; the measured `default` run used a
+  copy of the browser build through `PLAYWRIGHT_BROWSERS_PATH`, and `fe-install`
+  may have been served from npm's cache. A browser download on the farm is not
+  proven; the workflow, which installs the browser's system libraries first, is
+  where it is.
+- The astro stack is in no answer set, so no canary renders it.
+- config/project.json `launcher.farm.adapter` is `none` in the template, so
+  `scripts/launch.py -- make canary` runs the canary on this host, limited, until
+  a maintainer configures a farm adapter; the measured runs were submitted to the
+  farm by hand, sized as the `launcher.long_scripts` entry says.
+- `make canary` is `[read]` and has no `make_targets.effect_proof_skip` entry:
+  it writes only under the git-ignored `canary.scratch_root`, so the local-target
+  proof would judge a target the gate runner never runs, and a skip entry for a
+  target that is not local would fail `test_every_skip_names_a_local_target`.
+- The workflows read the Node major and the Python from config/project.json
+  `toolchain` through a `toolchain` step, and `make fe-install` refuses another
+  Node major before npm runs. CI moved from Node 22 to 24 with it, to the
+  major the maintainer's host runs. Node 24 on the runner is not proven by a CI
+  run in this slice, and the lockfile gate compares each manifest with its
+  lockfile's root entry, not the tree npm resolves under a given major.
+- `backend_python` is a specifier, not a release, so the template cannot
+  derive the release CI installs from it; copier asks `toolchain_python` for
+  it instead, and its validator refuses a release the floor does not allow.
+  The validator judges plain releases only: a floor clause with a pre-release,
+  a post-release or `===` is refused as one it cannot judge, not passed.
+- The release order in
+  [ADR-K-0016](../adr/keel/K-0016-release-order-tag-before-verify.md) does not
+  name the canary step CONTRIBUTING.md's Release section now carries between
+  the verify and the push. The ADR is accepted, so it is not edited;
+  [ADR-K-0023](../adr/keel/K-0023-canary-gates-a-release-not-a-commit.md),
+  proposed, records where the canary runs and that a red one blocks the release
+  push and nothing else. It waits for the maintainer's acceptance.
+- The guides are held to the canary by
+  `tests/integration/test_canary_wiring.py`: the step table of
+  `docs/guides/generate-and-upgrade.md` names each step a canary line can
+  report as failed, found by failing each call into a project in turn, and the
+  symptom table of `docs/guides/limits-and-troubleshooting.md` quotes the
+  words of every `report(...)` message `scripts/canary.py` holds.
+- Out of scope, and not yet a row of the open-items table: CI has no Python
+  below `requires-python`, so the old-interpreter tests skip there. Three
+  tests look for one: `tests/unit/scripts/test_exit_codes.py`
+  `test_the_helper_runs_on_an_old_host_interpreter_when_there_is_one`, and
+  `tests/integration/test_gate_scope.py`
+  `test_precommit_python3_entries_actually_execute_on_an_old_interpreter` and
+  `test_needy_targets_fail_with_the_floor_message_on_an_old_python3`. The CI
+  run of 2026-10-17 (39053838083) reported 7 skipped in all; it runs pytest
+  without `-rs`, so its log does not name the other four.
+
 ## Queued after Campaign 6
 
 A queue id becomes a `CMP-<n>.S<m>` name only when an approved slice table
@@ -1990,6 +2067,15 @@ gives it one (CONVENTIONS §20).
 |----------|----------|-----|
 | 1 | KEEL-DOC-1 | A design or spec document can describe itself without meeting its features; nothing records which questions it answers and which it leaves open |
 | 2 | KEEL-SHELL-1 | A generated project supports Python and TypeScript but not shell: a shell script gets no lint, format or test target, and none of the header, exit-code, environment or config rules reaches it |
+| 3 | KEEL-AGT-1 | An agent's edit can reach the code that judges it: `scripts/apply_refactor.py` refuses only a path outside the repo root, so a model-chosen `edits[].file` may change a check, a test, the Makefile, config, an ADR or `AGENT.md` (R-AGT-7, R-AGT-33; high) |
+| 4 | KEEL-RES-1 | Tests and clones use the system temp folder: 80 test files use `tmp_path` with no `--basetemp`, and `tests/hermetic_git.py` and `scripts/jobs/finish_update.py` clone the whole repo there (R-CODE-26) |
+| 5 | KEEL-ERR-1 | A narrow handler turns a broken result into an empty one: `agents/doc_reviewer/_brain.py` reads unparseable JSON as zero findings, and the swallowed-error gate sees only broad handlers (R-CODE-7) |
+| 6 | KEEL-AGT-2 | An agent's `--execute` run has no spend cap, and without `--model` it uses the registry's default without saying so (R-AGT-27, R-AGT-29) |
+| 7 | KEEL-RES-2 | The gRPC, REST and MCP entry points have no memory cap and no shutdown owner; a headless model child has no timeout; a network reply is read whole (R-CODE-23, R-CODE-27, R-CODE-28) |
+| 8 | KEEL-CFG-3 | Limits are typed in code: the gRPC port and worker count, the in-process runtime's step cap, agent and refactor timeouts (R-CODE-3, R-CFG-1) |
+| 9 | KEEL-WARN-1 | Warnings nobody must fix fire on every run: the owner-TBD warning and the fail-open "not found" and "could not parse" warnings in `scripts/check_structure.py` (R-AGT-32) |
+| 10 | KEEL-AGT-3 | Four of the five agents have no eval case and no known-good example (R-AGT-4, R-AGT-12, R-AGT-14) |
+| 11 | KEEL-DOC-2 | Wrong claims pass every gate (a check letter, counts with no method in `doc-style.md`), and release notes sit in shipped guides that the change-comment phrase list does not read (R-DOC-1, R-DOC-2, R-DOC-14) |
 
 **KEEL-DOC-1, the defence table.** This holds the maintainer's document rule
 R-DOC-15: before a design is planned, it answers hard questions on behalf of
@@ -2067,15 +2153,6 @@ treatment Python and TypeScript already have, and ships to generated projects:
 
 - A copier question `shell`, on by default, adds the shell targets; a project
   that answers no installs none of the tools. Shell scripts live in
-| 3 | KEEL-AGT-1 | An agent's edit can reach the code that judges it: `scripts/apply_refactor.py` refuses only a path outside the repo root, so a model-chosen `edits[].file` may change a check, a test, the Makefile, config, an ADR or `AGENT.md` (R-AGT-7, R-AGT-33; high) |
-| 4 | KEEL-RES-1 | Tests and clones use the system temp folder: 80 test files use `tmp_path` with no `--basetemp`, and `tests/hermetic_git.py` and `scripts/jobs/finish_update.py` clone the whole repo there (R-CODE-26) |
-| 5 | KEEL-ERR-1 | A narrow handler turns a broken result into an empty one: `agents/doc_reviewer/_brain.py` reads unparseable JSON as zero findings, and the swallowed-error gate sees only broad handlers (R-CODE-7) |
-| 6 | KEEL-AGT-2 | An agent's `--execute` run has no spend cap, and without `--model` it uses the registry's default without saying so (R-AGT-27, R-AGT-29) |
-| 7 | KEEL-RES-2 | The gRPC, REST and MCP entry points have no memory cap and no shutdown owner; a headless model child has no timeout; a network reply is read whole (R-CODE-23, R-CODE-27, R-CODE-28) |
-| 8 | KEEL-CFG-3 | Limits are typed in code: the gRPC port and worker count, the in-process runtime's step cap, agent and refactor timeouts (R-CODE-3, R-CFG-1) |
-| 9 | KEEL-WARN-1 | Warnings nobody must fix fire on every run: the owner-TBD warning and the fail-open "not found" and "could not parse" warnings in `scripts/check_structure.py` (R-AGT-32) |
-| 10 | KEEL-AGT-3 | Four of the five agents have no eval case and no known-good example (R-AGT-4, R-AGT-12, R-AGT-14) |
-| 11 | KEEL-DOC-2 | Wrong claims pass every gate (a check letter, counts with no method in `doc-style.md`), and release notes sit in shipped guides that the change-comment phrase list does not read (R-DOC-1, R-DOC-2, R-DOC-14) |
   `scripts/` beside the Python ones, because the taxonomy groups by role.
 - Slice 1: `lint-sh` (shellcheck), `fmt-sh` and `fmt-check-sh` (shfmt) and
   `test-sh` (bats-core), run by `make verify`, with generation tests for both
@@ -2090,6 +2167,26 @@ treatment Python and TypeScript already have, and ships to generated projects:
 - Not yet checked: whether the shellcheck and shfmt packages on PyPI install
   the binaries into the venv, and how bats-core is installed. This host has
   bash 4.4 and none of the three tools.
+
+**The audit against the rule packages, version 0.10.0.** On 2026-10-17 a
+read-only audit compared keel with every rule id in the maintainer's four
+rule packages: 33 code rules, 19 document rules and 37 agent rules. It ran
+no gate, so a verdict of covered means a check exists that would fail a
+violation. The counts:
+
+| Package | Covered | Convention | Partial | Gap | Not applicable |
+|---------|---------|------------|---------|-----|----------------|
+| Code (R-CODE, R-CFG-1 to 3) | 4 | 1 | 15 | 13 | 0 |
+| Documents (R-DOC, R-CFG-4 to 6) | 2 | 0 | 14 | 3 | 0 |
+| Agents (R-AGT) | 1 | 1 | 21 | 13 | 1 |
+
+Positions 3 to 11 above are the gaps it ranked highest that no slice already
+plans; the secret scan (R-CFG-3, R-CFG-6) is CMP-6.S3. R-DOC-16, the probe
+questions, joins KEEL-DOC-1 as rows of the same table, and lands as an error
+under the R-AGT-32 ruling below. Two findings wait on a ruling: whether
+keel's own ADRs ship to a generated project (R-DOC-11: some name the first
+downstream project or one site's estate), and whether a finished plan is
+kept (R-DOC-8 against the plan documents kept on purpose).
 
 ## Rulings recorded after CMP-5.S3
 
@@ -2126,6 +2223,12 @@ are settled:
   order of its slice table. The secret scanner is ruled under CMP-6.S3.
 - **CI runs on a pinned runner image, `ubuntu-24.04`**, so the image changes
   only when the workflows are edited, not when the `ubuntu-latest` label moves.
+- **R-AGT-32 and the B1 tier.** The maintainer ruled on 2026-10-17 that
+  CMP-6.S4's warning tier stays, with a hard expiry a check enforces: the
+  date is one config key, it can move only earlier, the tier turns red on
+  that date, a new finding is red at once, and keel itself gets no grace.
+  Every other new check lands as an error in the change that makes the tree
+  pass it.
 
 ## Open items
 
@@ -2168,26 +2271,6 @@ so.
 | 24 | KEEL-DOC-1, the defence table | feature | medium | queued first after Campaign 6 |
 | 25 | pre-commit is not run in CI | missing-check | medium | `.github/workflows/ci.yml` |
 | 26 | The coverage floor is not re-measured, so it can fall | missing-check | medium | `tests/integration/test_gate_scope.py` |
-**The audit against the rule packages, version 0.10.0.** On 2026-10-17 a
-read-only audit compared keel with every rule id in the maintainer's four
-rule packages: 33 code rules, 19 document rules and 37 agent rules. It ran
-no gate, so a verdict of covered means a check exists that would fail a
-violation. The counts:
-
-| Package | Covered | Convention | Partial | Gap | Not applicable |
-|---------|---------|------------|---------|-----|----------------|
-| Code (R-CODE, R-CFG-1 to 3) | 4 | 1 | 15 | 13 | 0 |
-| Documents (R-DOC, R-CFG-4 to 6) | 2 | 0 | 14 | 3 | 0 |
-| Agents (R-AGT) | 1 | 1 | 21 | 13 | 1 |
-
-Positions 3 to 11 above are the gaps it ranked highest that no slice already
-plans; the secret scan (R-CFG-3, R-CFG-6) is CMP-6.S3. R-DOC-16, the probe
-questions, joins KEEL-DOC-1 as rows of the same table, and lands as an error
-under the R-AGT-32 ruling below. Two findings wait on a ruling: whether
-keel's own ADRs ship to a generated project (R-DOC-11: some name the first
-downstream project or one site's estate), and whether a finished plan is
-kept (R-DOC-8 against the plan documents kept on purpose).
-
 | 27 | `review_docs` and `restamp_docs` each keep a skip-directory list | defect | low | `_SKIP_DIRS`, `WALK_SKIP_DIRS` |
 | 28 | `ALLOW_DIRTY` copies untracked files | defect | low | `Makefile` `new` |
 | 29 | The copier 9.3.0 floor is checked statically, never run | missing-check | low | `tests/integration/test_copier_generator_contract.py` |
@@ -2223,12 +2306,6 @@ kept (R-DOC-8 against the plan documents kept on purpose).
 | 59 | A stamp hunk next to a content hunk is left for a person | defect | low | |
 | 60 | A project check is trusted code | decision | low | accepted |
 | 61 | A document that quotes a conflict hunk is never restamped | defect | low | |
-- **R-AGT-32 and the B1 tier.** The maintainer ruled on 2026-10-17 that
-  CMP-6.S4's warning tier stays, with a hard expiry a check enforces: the
-  date is one config key, it can move only earlier, the tier turns red on
-  that date, a new finding is red at once, and keel itself gets no grace.
-  Every other new check lands as an error in the change that makes the tree
-  pass it.
 | 62 | The `structure` `_comment` conflicts in every adopting project | defect | low | |
 | 63 | The `.claude` ignore has no config key | defect | low | |
 | 64 | `build_child_env(extra=...)` is honoured verbatim | decision | low | |

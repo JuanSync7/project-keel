@@ -110,6 +110,17 @@ _exclude:
   # `_migrations` removal. Its integration test is pruned by the glob above.
   - "scripts/audit_project.py"
   - "tests/unit/scripts/test_audit_project.py"
+  # The release canary is keel-only for the same reason: it renders THIS checkout
+  # and its answer sets name copier.yml questions, which a generated project does
+  # not have. Its snapshot module serves only the canary and the audit, and its
+  # workflow runs `make canary`, which a project answers with the stub. Never
+  # shipped, so no `_migrations` removal.
+  - "scripts/canary.py"
+  - "scripts/template_snapshot.py"
+  - "tests/unit/scripts/test_canary.py"
+  - "tests/unit/scripts/test_template_snapshot.py"
+  - "tests/integration/test_canary_wiring.py"
+  - ".github/workflows/canary.yml"
   # Answer-driven pruning: keep only the chosen frontend stack (the two reference
   # apps are self-contained under src/frontend/<stack>/, so pruning one is clean).
   - "{% if frontend_stack != 'react-vite' %}src/frontend/react-vite{% endif %}"
@@ -212,6 +223,72 @@ backend_python:
   type: str
   help: "Minimum Python for the backend (must match pyproject requires-python)"
   default: ">=3.10"
+
+toolchain_python:
+  type: str
+  help: "Python release CI installs (MAJOR.MINOR or MAJOR.MINOR.PATCH); it must satisfy backend_python"
+  default: "3.11"
+  # Asked, not computed: a computed (`when: false`) value is not recorded in the
+  # answers file, and no release can be derived from a floor (">=3.12" admits
+  # many). It renders config/project.json `toolchain.python`, which
+  # tests/integration/test_toolchain_gate.py holds to backend_python, so the
+  # validator refuses here, at generation, the pair that gate would fail later.
+  # It judges each comma clause by packaging's version-specifier rules for plain
+  # releases (tests/integration/test_copier_toolchain_answer.py compares the two
+  # over a grid) and refuses a clause it cannot judge rather than passing it.
+  validator: |-
+    {%- set digits = '0123456789' -%}
+    {%- set ns = namespace(release=[], bad=false, op='', spec=[], ok=true, faults=[], unjudged=[]) -%}
+    {%- set given = toolchain_python.split('.') -%}
+    {%- for part in given -%}
+      {%- if not part or part.strip(digits) -%}{%- set ns.bad = true -%}
+      {%- else -%}{%- set ns.release = ns.release + [part | int] -%}{%- endif -%}
+    {%- endfor -%}
+    {%- if ns.bad or given | length not in [2, 3] -%}
+    toolchain_python '{{ toolchain_python }}' is not a release MAJOR.MINOR or MAJOR.MINOR.PATCH in ASCII digits, such as 3.12.
+    {%- else -%}
+      {%- set py = (ns.release + [0, 0, 0])[:3] -%}
+      {%- for raw in backend_python.split(',') -%}
+        {%- set clause = raw | replace(' ', '') | trim -%}
+        {%- if clause -%}
+          {%- set ns.op = '' -%}
+          {%- for op in ['~=', '==', '!=', '<=', '>=', '<', '>'] -%}
+            {%- if not ns.op and clause.startswith(op) -%}{%- set ns.op = op -%}{%- endif -%}
+          {%- endfor -%}
+          {%- set version = clause[ns.op | length:] -%}
+          {%- set wild = version.endswith('.*') -%}
+          {%- set parts = (version[:-2] if wild else version).split('.') -%}
+          {%- set ns.spec = [] -%}
+          {%- set ns.ok = ns.op != '' and parts | length <= 3 -%}
+          {%- for part in parts -%}
+            {%- if not part or part.strip(digits) -%}{%- set ns.ok = false -%}
+            {%- else -%}{%- set ns.spec = ns.spec + [part | int] -%}{%- endif -%}
+          {%- endfor -%}
+          {%- if wild and ns.op not in ['==', '!='] -%}{%- set ns.ok = false -%}{%- endif -%}
+          {%- if ns.op == '~=' and parts | length < 2 -%}{%- set ns.ok = false -%}{%- endif -%}
+          {%- if not ns.ok -%}
+            {%- set ns.unjudged = ns.unjudged + [clause] -%}
+          {%- else -%}
+            {%- set n = parts | length -%}
+            {%- set spec = (ns.spec + [0, 0, 0])[:3] -%}
+            {%- if ns.op == '>=' -%}{%- set fits = py >= spec -%}
+            {%- elif ns.op == '<=' -%}{%- set fits = py <= spec -%}
+            {%- elif ns.op == '>' -%}{%- set fits = py > spec -%}
+            {%- elif ns.op == '<' -%}{%- set fits = py < spec -%}
+            {%- elif ns.op == '~=' -%}{%- set fits = py >= spec and py[:n - 1] == spec[:n - 1] -%}
+            {%- elif wild -%}{%- set fits = (py[:n] == spec[:n]) == (ns.op == '==') -%}
+            {%- else -%}{%- set fits = (py == spec) == (ns.op == '==') -%}
+            {%- endif -%}
+            {%- if not fits -%}{%- set ns.faults = ns.faults + [clause] -%}{%- endif -%}
+          {%- endif -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {%- if ns.unjudged -%}
+    backend_python clause {{ ns.unjudged | join(', ') }}: the toolchain_python validator cannot judge it; write each clause as one of ~= == != <= >= < > and a release of up to three ASCII-digit parts, with a trailing .* only after == or !=.
+      {%- elif ns.faults -%}
+    toolchain_python {{ toolchain_python }} does not satisfy backend_python '{{ backend_python }}' (it fails {{ ns.faults | join(', ') }}); answer the release CI should install, one the floor allows.
+      {%- endif -%}
+    {%- endif -%}
 
 transports:
   type: str

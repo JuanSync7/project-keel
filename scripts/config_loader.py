@@ -273,6 +273,35 @@ def _not_negative(value: Any) -> bool:
     return bool(value >= 0)
 
 
+def _at_least_one(value: Any) -> bool:
+    return bool(value >= 1)
+
+
+def _no_parent_part(value: Any) -> bool:
+    # Absolute is allowed (a farm job's local disk); `..` never is, so a
+    # relative value cannot climb out of the checkout it resolves against.
+    return ".." not in str(value).replace("\\", "/").split("/")
+
+
+_ASCII_DIGITS = "0123456789"
+
+
+def _dotted_release(value: Any) -> bool:
+    # The grammar setup-python takes for a release: two or three whole numbers.
+    # Not str.isdigit, which also accepts `²` and fullwidth digits.
+    parts = str(value).split(".")
+    return len(parts) in (2, 3) and all(p and not p.strip(_ASCII_DIGITS) for p in parts)
+
+
+def _pinned_images(value: Any) -> bool:
+    # `-latest` is the suffix GitHub gives every label that moves to a new
+    # image without an edit here, so a list naming one pins nothing. Judged
+    # stripped, so surrounding whitespace cannot hide the suffix.
+    return bool(value) and all(
+        v.strip() and not v.strip().endswith("-latest") for v in value
+    )
+
+
 # The one table of declared keys, sorted by path. A block a typed validator
 # owns (child_env, evidence) is one `object` row, and the validator stays the
 # typed view over the value resolved here; an open-keyed map is one row, never
@@ -287,6 +316,44 @@ KEYS = tuple(
                 "the model the MCP Q&A server asks; null: the registry default",
                 env="KEEL_MCP_MODEL",
                 file=None,
+            ),
+            _row(
+                ("canary", "answer_sets"),
+                "object",
+                {
+                    "default": {},
+                    "skeleton": {
+                        "frontend_stack": "none",
+                        "showcase": False,
+                        "transports": ["grpc"],
+                    },
+                },
+                "the copier answer sets the canary renders, each name mapped "
+                "to its answers over copier.yml's defaults",
+            ),
+            _row(
+                ("canary", "scratch_root"),
+                "nonempty_str",
+                ".canary",
+                "where the canary renders its projects: relative to the "
+                "checkout, git-ignored, or an absolute path off the system "
+                "temporary directory",
+                env="KEEL_CANARY_SCRATCH",
+                accepts=(_no_parent_part, "a path with no `..` part"),
+            ),
+            _row(
+                ("canary", "step_timeout_minutes"),
+                "int",
+                90,
+                "the minutes one canary step may run before it is killed and failed",
+                accepts=(_at_least_one, "a value >= 1"),
+            ),
+            _row(
+                ("canary", "workers"),
+                "int",
+                1,
+                "how many canary projects render and verify at once",
+                accepts=(_at_least_one, "a value >= 1"),
             ),
             _row(
                 ("child_env",),
@@ -406,6 +473,32 @@ KEYS = tuple(
                 "object",
                 {},
                 "which domain practice profiles are on; empty: none",
+            ),
+            _row(
+                ("toolchain", "node_major"),
+                "int",
+                24,
+                "the Node.js major version CI installs and `make fe-install` accepts",
+                accepts=(_at_least_one, "a value >= 1"),
+            ),
+            _row(
+                ("toolchain", "python"),
+                "nonempty_str",
+                "3.11",
+                "the Python version CI installs, which must satisfy "
+                "layers.backend.python and requires-python",
+                accepts=(_dotted_release, "a version written MAJOR.MINOR[.PATCH]"),
+            ),
+            _row(
+                ("toolchain", "runner_images"),
+                "list_of_str",
+                ["ubuntu-24.04"],
+                "the runner images a workflow's runs-on may name",
+                accepts=(
+                    _pinned_images,
+                    "a non-empty list of image names, none blank and none a "
+                    "moving `-latest` label",
+                ),
             ),
         ),
         key=lambda k: k.path,

@@ -7,7 +7,7 @@ owner: TBD
 summary: How to add code/tests/docs without breaking the structure.
 id: contributing
 created: 2026-06-17
-updated: 2026-10-15
+updated: 2026-10-18
 visibility: internal
 canonical: true
 ---
@@ -67,5 +67,12 @@ version heading in `CHANGELOG.md` has no matching tag, so the tag comes first:
    and commit. ADR-K-0016 lists those lines for the keel template itself.
 2. Tag that commit locally: `git tag -a v<version> -m "v<version>"`.
 3. Run `make verify`.
-4. On green, push both together: `git push --atomic origin main v<version>`.
-5. On red, `git tag -d v<version>`, fix, commit, and go back to step 2.
+4. In the keel template, run `make canary` too, through
+   `python3 scripts/launch.py -- make canary`, which sends it to the farm
+   `config/project.json` `launcher.farm.adapter` names and sizes the job from
+   its `launcher.long_scripts` entry: it renders each
+   `canary.answer_sets` set fresh and as an update from the release before
+   this tag, and runs that project's `make verify`. A generated project's
+   `make canary` is a stub that exits 2, so a project skips this step.
+5. On green, push both together: `git push --atomic origin main v<version>`.
+6. On red, `git tag -d v<version>`, fix, commit, and go back to step 2.

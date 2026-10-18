@@ -11,10 +11,15 @@ jobs:
         # default depth-1 checkout carries NO tags — so a `--vcs-ref v0.1.0` pin or
         # any multi-commit update test would fail in CI only.
         with: { fetch-depth: 0 }
+      # The versions come from config/project.json `toolchain`, one home each,
+      # printed by the checker into this step's outputs; the runner's own python3
+      # runs it, because it is stdlib-only and 3.6-safe.
+      - id: toolchain
+        run: python3 scripts/check_toolchain.py versions >> "$GITHUB_OUTPUT"
       - uses: actions/setup-python@v6
-        with: { python-version: "3.11" }
+        with: { python-version: "${{ steps.toolchain.outputs.python }}" }
       - uses: actions/setup-node@v6
-        with: { node-version: "22" }
+        with: { node-version: "${{ steps.toolchain.outputs.node }}" }
       # The `template` extra (copier) is REQUIRED here, not optional: keel's repo root
       # IS the template, and without copier every tests/integration/test_copier_*.py
       # importorskips — so the generation and update gates never ran in CI at all.
