@@ -8,7 +8,7 @@ tags: [plan, template, downstream, freshness, taxonomy, effects, credentials, au
 summary: The bounded-convergence record for the defects bedrock-platform, the first real project generated from keel, reported back — a red gate on arrival, unknown directories the gate never sees, make targets whose effect nobody declares, and child processes that inherit every credential — plus the command that checks any keel-generated project for all of them. One slice per defect, five passes, each landed as one commit on a green `make verify`.
 id: docs-design-downstream-feedback
 created: 2026-10-06
-updated: 2026-10-17
+updated: 2026-10-18
 visibility: internal
 canonical: true
 ---
@@ -2067,6 +2067,15 @@ treatment Python and TypeScript already have, and ships to generated projects:
 
 - A copier question `shell`, on by default, adds the shell targets; a project
   that answers no installs none of the tools. Shell scripts live in
+| 3 | KEEL-AGT-1 | An agent's edit can reach the code that judges it: `scripts/apply_refactor.py` refuses only a path outside the repo root, so a model-chosen `edits[].file` may change a check, a test, the Makefile, config, an ADR or `AGENT.md` (R-AGT-7, R-AGT-33; high) |
+| 4 | KEEL-RES-1 | Tests and clones use the system temp folder: 80 test files use `tmp_path` with no `--basetemp`, and `tests/hermetic_git.py` and `scripts/jobs/finish_update.py` clone the whole repo there (R-CODE-26) |
+| 5 | KEEL-ERR-1 | A narrow handler turns a broken result into an empty one: `agents/doc_reviewer/_brain.py` reads unparseable JSON as zero findings, and the swallowed-error gate sees only broad handlers (R-CODE-7) |
+| 6 | KEEL-AGT-2 | An agent's `--execute` run has no spend cap, and without `--model` it uses the registry's default without saying so (R-AGT-27, R-AGT-29) |
+| 7 | KEEL-RES-2 | The gRPC, REST and MCP entry points have no memory cap and no shutdown owner; a headless model child has no timeout; a network reply is read whole (R-CODE-23, R-CODE-27, R-CODE-28) |
+| 8 | KEEL-CFG-3 | Limits are typed in code: the gRPC port and worker count, the in-process runtime's step cap, agent and refactor timeouts (R-CODE-3, R-CFG-1) |
+| 9 | KEEL-WARN-1 | Warnings nobody must fix fire on every run: the owner-TBD warning and the fail-open "not found" and "could not parse" warnings in `scripts/check_structure.py` (R-AGT-32) |
+| 10 | KEEL-AGT-3 | Four of the five agents have no eval case and no known-good example (R-AGT-4, R-AGT-12, R-AGT-14) |
+| 11 | KEEL-DOC-2 | Wrong claims pass every gate (a check letter, counts with no method in `doc-style.md`), and release notes sit in shipped guides that the change-comment phrase list does not read (R-DOC-1, R-DOC-2, R-DOC-14) |
   `scripts/` beside the Python ones, because the taxonomy groups by role.
 - Slice 1: `lint-sh` (shellcheck), `fmt-sh` and `fmt-check-sh` (shfmt) and
   `test-sh` (bats-core), run by `make verify`, with generation tests for both
@@ -2159,6 +2168,26 @@ so.
 | 24 | KEEL-DOC-1, the defence table | feature | medium | queued first after Campaign 6 |
 | 25 | pre-commit is not run in CI | missing-check | medium | `.github/workflows/ci.yml` |
 | 26 | The coverage floor is not re-measured, so it can fall | missing-check | medium | `tests/integration/test_gate_scope.py` |
+**The audit against the rule packages, version 0.10.0.** On 2026-10-17 a
+read-only audit compared keel with every rule id in the maintainer's four
+rule packages: 33 code rules, 19 document rules and 37 agent rules. It ran
+no gate, so a verdict of covered means a check exists that would fail a
+violation. The counts:
+
+| Package | Covered | Convention | Partial | Gap | Not applicable |
+|---------|---------|------------|---------|-----|----------------|
+| Code (R-CODE, R-CFG-1 to 3) | 4 | 1 | 15 | 13 | 0 |
+| Documents (R-DOC, R-CFG-4 to 6) | 2 | 0 | 14 | 3 | 0 |
+| Agents (R-AGT) | 1 | 1 | 21 | 13 | 1 |
+
+Positions 3 to 11 above are the gaps it ranked highest that no slice already
+plans; the secret scan (R-CFG-3, R-CFG-6) is CMP-6.S3. R-DOC-16, the probe
+questions, joins KEEL-DOC-1 as rows of the same table, and lands as an error
+under the R-AGT-32 ruling below. Two findings wait on a ruling: whether
+keel's own ADRs ship to a generated project (R-DOC-11: some name the first
+downstream project or one site's estate), and whether a finished plan is
+kept (R-DOC-8 against the plan documents kept on purpose).
+
 | 27 | `review_docs` and `restamp_docs` each keep a skip-directory list | defect | low | `_SKIP_DIRS`, `WALK_SKIP_DIRS` |
 | 28 | `ALLOW_DIRTY` copies untracked files | defect | low | `Makefile` `new` |
 | 29 | The copier 9.3.0 floor is checked statically, never run | missing-check | low | `tests/integration/test_copier_generator_contract.py` |
@@ -2194,6 +2223,12 @@ so.
 | 59 | A stamp hunk next to a content hunk is left for a person | defect | low | |
 | 60 | A project check is trusted code | decision | low | accepted |
 | 61 | A document that quotes a conflict hunk is never restamped | defect | low | |
+- **R-AGT-32 and the B1 tier.** The maintainer ruled on 2026-10-17 that
+  CMP-6.S4's warning tier stays, with a hard expiry a check enforces: the
+  date is one config key, it can move only earlier, the tier turns red on
+  that date, a new finding is red at once, and keel itself gets no grace.
+  Every other new check lands as an error in the change that makes the tree
+  pass it.
 | 62 | The `structure` `_comment` conflicts in every adopting project | defect | low | |
 | 63 | The `.claude` ignore has no config key | defect | low | |
 | 64 | `build_child_env(extra=...)` is honoured verbatim | decision | low | |
