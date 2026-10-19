@@ -246,7 +246,8 @@ def _scratch_left(tmp_path):
 
 
 def _snapshot(root):
-    """Every path under *root* with its bytes (or link target), mode and mtime."""
+    """Every path under *root* with its bytes (or link target), mode and, for a
+    regular file, mtime."""
     state = {}
     for dirpath, dirnames, filenames in os.walk(str(root)):
         dirnames.sort()
@@ -260,7 +261,12 @@ def _snapshot(root):
                     body = ("file", fh.read())
             else:
                 body = ("dir", None)
-            state[os.path.relpath(full, str(root))] = (body, st.st_mode, st.st_mtime_ns)
+            # A directory's mtime is not compared: on a scratch root over NFS
+            # it moved between two snapshots with no write by the audit (a
+            # measured flake); the sorted listing already shows an entry added
+            # or removed, and a file's mtime still shows a rewrite.
+            mtime = st.st_mtime_ns if body[0] == "file" else None
+            state[os.path.relpath(full, str(root))] = (body, st.st_mode, mtime)
     return state
 
 
