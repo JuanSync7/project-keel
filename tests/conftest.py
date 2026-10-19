@@ -1,6 +1,6 @@
 """
-title: Shared pytest fixtures + the hermetic git environment + the zero-tests guard
-summary: Repo-wide fixtures; the one place the suite's git environment is neutralised and the parent's git repository context and injected git configuration removed (see tests/hermetic_git.py for what is neutralised and why); and the end-of-session guard that fails a run in which zero tests ran (see tests/selection_guard.py for the verdict).
+title: Shared pytest fixtures + the test scratch root + the hermetic git environment + the isolation guard + the zero-tests guard
+summary: Repo-wide fixtures; the test scratch root, config/project.json `tests.scratch_root` (or KEEL_TEST_SCRATCH), which tempfile, TMPDIR, pytest's basetemp and the hermetic git directory are pointed at before anything else is made (see tests/isolation_guard.py `scratch_root` for what is refused); the one place the suite's git environment is neutralised and the parent's git repository context and injected git configuration removed (see tests/hermetic_git.py for what is neutralised and why); the isolation guard, which fails a test that reaches the network, the disk or a store outside its tier's rule in config/project.json `tests.isolation`, and the store_copy fixture that hands a test its own copy of a listed store (see tests/isolation_guard.py for the judgement); and the end-of-session guard that fails a run in which zero tests ran (see tests/selection_guard.py for the verdict).
 
 Shared pytest fixtures live here.
 
@@ -19,9 +19,18 @@ import tempfile
 import pytest
 
 import hermetic_git
+import isolation_guard
 import selection_guard
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# Test scratch, at import: before pytest makes its basetemp (from
+# tempfile.gettempdir()), before the hermetic git directory below and the
+# isolation guard's roots are taken from tempfile, and before plumbum
+# snapshots os.environ, so every one of them, and every child, sees the root.
+# A refused root raises here and pytest stops before any test runs (exit 4).
+_SCRATCH = isolation_guard.scratch_root(_ROOT)
+isolation_guard.point_temp_at(_SCRATCH, os.environ)
 
 # Applied at IMPORT time, deliberately, and session-wide rather than per test.
 #
@@ -40,6 +49,9 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # this repo: control -> no meta-tests shipped; the identical run under that one ignore
 # line -> all three shipped. A green suite on one laptop and a red one on the next,
 # for a template that is correct either way.
+#
+# mkdtemp lands under the scratch root: tempfile was pointed there above, and
+# os.environ already carries the moved TMPDIR when plumbum takes its snapshot.
 _GITCONFIG_DIR = tempfile.mkdtemp(prefix="keel-hermetic-git-")
 atexit.register(shutil.rmtree, _GITCONFIG_DIR, True)
 os.environ.update(hermetic_git.git_env_vars(_GITCONFIG_DIR))
@@ -58,6 +70,96 @@ for _name in hermetic_git.repo_context_names(_ROOT):
     os.environ.pop(_name, None)
 # A parent's `git -c` settings (GIT_CONFIG_PARAMETERS, GIT_CONFIG_COUNT/KEY_n/VALUE_n) override the hermetic GIT_CONFIG_GLOBAL, so they go too, before plumbum snapshots.
 hermetic_git.drop_config_injection(os.environ, _ROOT)
+
+# The isolation guard, installed at import so it is in place before any test
+# module is imported; it judges nothing until a test's phase begins. A config
+# fault raises here and pytest refuses to start, so a blank exemption reason
+# is never a run in which the exemption silently holds.
+_ISOLATION = isolation_guard.load_policy(_ROOT)
+isolation_guard.install(_ISOLATION)
+
+
+def pytest_sessionstart(session):
+    # pytest's basetemp may sit outside the system temporary directory
+    # (--basetemp), and tmp_path lives under it.
+    isolation_guard.add_root(str(session.config._tmp_path_factory.getbasetemp()))
+
+
+def _judged(item, phase):
+    names = [mark.name for mark in item.iter_markers()]
+    isolation_guard.begin(
+        item.nodeid, phase, isolation_guard.rule_for(_ISOLATION, names)
+    )
+    try:
+        result = yield
+    except (KeyboardInterrupt, isolation_guard.IsolationError):
+        isolation_guard.end()
+        raise
+    except BaseException as exc:
+        # The violation outranks the test's own failure, skip or exit: the
+        # test may have failed because the reach was refused.
+        _refuse(isolation_guard.end(), exc)
+        raise
+    _refuse(isolation_guard.end(), None)
+    return result
+
+
+def _refuse(found, cause):
+    if not found:
+        return
+    error = isolation_guard.IsolationError("\n".join(v.message() for v in found))
+    if cause is None:
+        # The test caught the refusal itself, so only this names it.
+        raise error
+    raise error from cause
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_setup(item):
+    return (yield from _judged(item, "setup"))
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_call(item):
+    return (yield from _judged(item, "call"))
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_teardown(item, nextitem):
+    return (yield from _judged(item, "teardown"))
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_makereport(item, call):
+    report = yield
+    # An expected failure must not hide a reach: xfail turns any exception
+    # into the pass it expected, the refusal included.
+    if (
+        call.excinfo is not None
+        and call.excinfo.errisinstance(isolation_guard.IsolationError)
+        and hasattr(report, "wasxfail")
+    ):
+        del report.wasxfail
+        report.outcome = "failed"
+    return report
+
+
+@pytest.fixture
+def store_copy(tmp_path):
+    """A function that copies a store config/project.json
+    `tests.isolation.stores` lists, with its sqlite siblings, into this test's
+    own directory and returns the copy's path; the test may change the copy.
+    Fails the test, naming the key, for a store the list does not name."""
+
+    def copy(name):
+        try:
+            return isolation_guard.copy_store(
+                _ISOLATION, _ROOT, str(name), str(tmp_path / "stores")
+            )
+        except isolation_guard.StoreError as exc:
+            pytest.fail(str(exc), pytrace=False)
+
+    return copy
 
 
 @pytest.fixture(scope="session")
@@ -107,9 +209,22 @@ def pytest_runtest_logreport(report):
         _RAN.append(report.nodeid)
 
 
+def _say(config, message):
+    reporter = config.pluginmanager.get_plugin("terminalreporter")
+    if reporter is not None:
+        reporter.write_line(message)
+    else:
+        sys.stderr.write(message + "\n")
+
+
 @pytest.hookimpl(trylast=True)
 def pytest_sessionfinish(session, exitstatus):
     config = session.config
+    unused = isolation_guard.unused_exemptions()
+    if unused:
+        _say(config, "\n".join(unused))
+        if exitstatus == 0:
+            exitstatus = session.exitstatus = pytest.ExitCode.TESTS_FAILED
     if (
         config.option.collectonly
         or getattr(config.option, "setupplan", False)
@@ -134,8 +249,4 @@ def pytest_sessionfinish(session, exitstatus):
     if code is None:
         return
     session.exitstatus = code
-    reporter = config.pluginmanager.get_plugin("terminalreporter")
-    if reporter is not None:
-        reporter.write_line(message)
-    else:
-        sys.stderr.write(message + "\n")
+    _say(config, message)

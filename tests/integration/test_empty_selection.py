@@ -36,6 +36,7 @@ _SHIPPED = (
     "tests/conftest.py",
     "tests/selection_guard.py",
     "tests/hermetic_git.py",
+    "tests/isolation_guard.py",
     "scripts/check_structure.py",
     "scripts/check_python_version.py",
     "scripts/child_env.py",

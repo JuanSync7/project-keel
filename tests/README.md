@@ -9,7 +9,7 @@ tags: []
 summary: Unit tests mirror src/; integration/e2e/smoke go by scenario.
 id: tests-readme
 created: 2026-06-17
-updated: 2026-10-09
+updated: 2026-10-19
 visibility: internal
 canonical: true
 ---
@@ -28,6 +28,49 @@ Unit tests mirror src/; integration/e2e/smoke go by scenario.
 `fixtures/` holds shared data; `conftest.py` holds shared pytest
 fixtures. Markers (`unit`/`integration`/`e2e`/`smoke`) are declared
 in `pyproject.toml` — select with `pytest -m`.
+
+## What a test may reach
+
+`tests/isolation_guard.py` holds each test to its tier's rule, and
+`conftest.py` installs it as a Python audit hook before any test module is
+imported. A tier's rule is a row of `config/project.json` `tests.isolation.tiers`,
+with a value on each of three axes:
+
+| Axis | Values, strictest first | What it judges |
+|------|-------------------------|----------------|
+| `network` | `none`, `loopback`, `any` | a socket connect, sendto or sendmsg |
+| `writes` | `temp`, `any` | a file, directory or link created, changed or removed, its mode, owner, flags, times or extended attributes changed, or an AF_UNIX socket bound to a path |
+| `stores` | `temp`, `any` | a sqlite database opened, and any open of a listed store |
+
+The closest tier marker on a test picks the row; a test with no tier marker
+gets the strictest value on every axis. A reach outside the rule raises
+`IsolationError` at the reach and fails the test in that phase, even when the
+test caught the error, and an `xfail` does not hide it. A test that needs a
+live store `tests.isolation.stores` lists asks the `store_copy` fixture for
+its own copy, with the store's `-wal`, `-shm` and `-journal` siblings. A reach
+a test truly needs gets a reason in `tests.isolation.exempt`, under its axis
+and node id; a blank reason stops pytest before any test runs, and an
+exemption whose test ran and reached nothing on its axis fails the run.
+
+The guard is defence-in-depth, not a sandbox. It does not see a write or a
+socket by a child process, a C extension's own file or socket calls, a FIFO or
+device node, or the directory an `os.open` with a relative path and a `dir_fd`
+lands in. It does not judge a name lookup, by choice: the connect that follows
+is judged. A sqlite name that starts `file:` is judged as a URI and as a file
+of that name in the working directory, so a test that opens a `file:` URI
+changes directory to `tmp_path` first. `docs/adr/keel/K-0024-what-a-test-may-reach.md` is the decision.
+
+## Where test scratch lives
+
+`conftest.py` points tempfile, `TMPDIR` and pytest's numbered basetemp at
+`tests.scratch_root` (`KEEL_TEST_SCRATCH` overrides it, and a nested pytest a
+test starts inherits it). The root must be absolute and lie neither under the
+system temporary directory, which may be memory-backed, nor inside the
+checkout, whose tree walkers would read a kept directory; anything else stops
+pytest before any test runs. A root that holds the checkout is accepted, and
+the checkout stays outside it. A test that starts a child process gives it the
+seconds `tests.child_timeout_seconds` names. `pyproject.toml` keeps a failed test's directory,
+named after the test, and removes a passed one's.
 
 ## A run in which zero tests ran fails
 

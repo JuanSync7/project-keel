@@ -1572,6 +1572,45 @@ _LAUNCHER_TESTS = (
 )
 
 
+_ISOLATION_FILES = (
+    "tests/isolation_guard.py",
+    "tests/fixtures/isolation/case_reach.py",
+    "tests/fixtures/isolation/case_store.py",
+    "tests/fixtures/isolation/case_tiers.py",
+)
+_ISOLATION_TESTS = (
+    "tests/unit/test_isolation_guard.py",
+    "tests/integration/test_isolation_gate.py",
+    "tests/integration/test_scratch_root_gate.py",
+)
+
+
+def test_a_generated_project_ships_the_isolation_guard(tmp_path):
+    """A project generated with default answers carries the isolation guard,
+    its fixture cases, the `tests` block as the template states it with the
+    scratch root named after the project, and its own copies of the guard's
+    unit tests and gate tests pass with nothing skipped."""
+    dest = tmp_path / "proj"
+    _generate(dest, project_name="demo_proj")
+    for path in _ISOLATION_FILES + _ISOLATION_TESTS:
+        assert (dest / path).is_file(), path
+    manifest = json.loads((dest / "config" / "project.json").read_text("utf-8"))
+    template = json.loads((_ROOT / "config" / "project.json").read_text("utf-8"))
+    # The scratch root is the one value that follows the project's own name.
+    own = dict(manifest["tests"])
+    theirs = dict(template["tests"])
+    assert own.pop("scratch_root") == theirs.pop("scratch_root").replace(
+        template["name"], manifest["name"]
+    ), manifest["tests"]
+    assert own == theirs, manifest.get("tests")
+    ran = _project_tests(dest, _ISOLATION_TESTS)
+    assert ran.returncode == 0, ran.stdout[-8000:] + ran.stderr[-2000:]
+    outcomes = _TEST_OUTCOME.findall(ran.stdout)
+    assert outcomes, "the project's isolation tests ran no test -- zero items"
+    assert {outcome for _file, _test, outcome in outcomes} == {"PASSED"}, outcomes
+    assert {path for path, _test, _outcome in outcomes} == set(_ISOLATION_TESTS)
+
+
 @pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
 @pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
 def test_a_default_project_launches_here_limited_and_records_the_run(tmp_path):

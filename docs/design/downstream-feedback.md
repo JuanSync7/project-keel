@@ -8,7 +8,7 @@ tags: [plan, template, downstream, freshness, taxonomy, effects, credentials, au
 summary: The bounded-convergence record for the defects bedrock-platform, the first real project generated from keel, reported back — a red gate on arrival, unknown directories the gate never sees, make targets whose effect nobody declares, and child processes that inherit every credential — plus the command that checks any keel-generated project for all of them. One slice per defect, five passes, each landed as one commit on a green `make verify`.
 id: docs-design-downstream-feedback
 created: 2026-10-06
-updated: 2026-10-18
+updated: 2026-10-19
 visibility: internal
 canonical: true
 ---
@@ -1966,13 +1966,21 @@ using keel relies on; slices 4 and 5 hold keel's own rules. After this
 campaign the low open items are triaged in one read-only pass, and the next
 work comes from dogfooding a real project rather than from the backlog.
 
+On 2026-10-18 the maintainer asked for the rest of the campaign to run under
+keel's rules and the vault rule packages at 0.10.0, with safeguards added
+where they raise code quality. The cap becomes six slices: CMP-6.S6 is
+KEEL-AGT-1, the one high gap the 0.10.0 audit found, because an agent edit
+that can reach its own judge undoes every other safeguard. The stop point is
+CMP-6.S6 green or the sixth slice reached, whichever comes first.
+
 | Slice | Gap | Status |
 |-------|-----|--------|
 | CMP-6.S1 | Each part of a generated project is tested on its own, but no test runs a generated project's full `make verify`, or `make verify` after `copier update` from the previous tag; nothing checks that each frontend app commits its lockfile, or that CI's Node version is the one the gate is run with | done — `make verify` green (3321 passed); the real canary passed both answer sets, fresh and updated from v0.3.0; 9 of 10 review findings confirmed and fixed; ADR-K-0023 proposed |
-| CMP-6.S2 | KEEL-TEST-1: a test can reach a live store; nothing in the suite refuses it | planned |
+| CMP-6.S2 | KEEL-TEST-1: a test can reach a live store; nothing in the suite refuses it | done — `make verify` green (3456 passed) with `KEEL_TEST_SCRATCH` on local disk; the guard caught four tests in keel's own suite, all fixed; 13 of 13 review findings confirmed and fixed; ADR-K-0024 proposed |
 | CMP-6.S3 | KEEL-SEC-1: nothing scans the tree for a committed secret | planned |
 | CMP-6.S4 | B1: a generated project's own code that breaks a keel gate check is red on `copier update` (the exit gate) or not judged at all (the config-reads gate skips); the ruled warn-then-fail tier is not built | planned |
 | CMP-6.S5 | The three accepted file-header fields are not read by any check, and a call into `re` needs no stated reason | planned |
+| CMP-6.S6 | KEEL-AGT-1: an agent's edit can reach the code that judges it; `scripts/apply_refactor.py` refuses only a path outside the repo root | planned |
 
 **CMP-6.S3, the scanner.** The maintainer ruled on 2026-10-17: keel's own
 rule is a gate test, and a scanner is a thin adapter behind it. The gate test
@@ -2058,6 +2066,81 @@ Left by CMP-6.S1 so far:
   run of 2026-10-17 (39053838083) reported 7 skipped in all; it runs pytest
   without `-rs`, so its log does not name the other four.
 
+**CMP-6.S2, what a test may reach.** `tests/isolation_guard.py`, a Python
+audit hook `tests/conftest.py` installs, fails a test that reaches past its
+tier's row of config/project.json `tests.isolation.tiers` on the network,
+writes or stores axis, even when the test caught the error. An exemption is
+a reasoned entry in `tests.isolation.exempt`, and an unused one is red; the
+`store_copy` fixture copies a store `tests.isolation.stores` lists into the
+test's own directory. Test scratch goes under `tests.scratch_root`, never the
+system temporary directory or the checkout.
+`tests/integration/test_isolation_gate.py` and
+`tests/integration/test_scratch_root_gate.py` prove both on planted cases, and
+`tests/integration/test_isolation_docs.py` holds the docs to the guard.
+[ADR-K-0024](../adr/keel/K-0024-what-a-test-may-reach.md) is proposed.
+
+Left by CMP-6.S2 so far:
+
+- The guard caught four tests in keel's own suite, all in
+  `tests/integration/test_practice_refactor.py`: each wrote refactor
+  checkpoints under the checkout's `wiki/.runtime`. Each now checkpoints
+  under its own `tmp_path`, so `tests.isolation.exempt` ships empty on every
+  axis. It is one class of reach, a default output path in the checkout,
+  which the guard now catches for every test.
+- The guard does not see a child process. `real_corpus` writes
+  `wiki/corpus.json` through a child, and the gate tests that run make, git,
+  copier or a nested pytest are unjudged inside it. A `sitecustomize` that
+  installs the guard in every child Python is the candidate; it is not built.
+- A nested pytest a gate test starts takes no `--basetemp`, so each makes its
+  own numbered session directory under the inherited root, and pytest's
+  retention count rotates them; one measurement found 74 MB of them under the
+  root.
+- The shipped `tests.scratch_root`, `~/.cache/project_keel/tests`, is under
+  the home directory, which on this site is a network mount: the suite is
+  slower there, and a directory's modification time moved between two
+  snapshots with no write, which made `tests/unit/scripts/test_audit_project.py`
+  flake until it stopped comparing directory times. `KEEL_TEST_SCRATCH` on
+  local disk is the documented fix; no default is derived from the host.
+- Keel's own `make verify` with scratch on that network home did not finish
+  inside a 240-minute farm job, three times; with `KEEL_TEST_SCRATCH` on the
+  node's local disk it took 2 hours 31 minutes of tests. A farm run of keel's
+  gate sets the variable.
+- A run killed by SIGTERM or SIGKILL leaves its session directory behind until
+  pytest's count of 3 rotates it. `PYTEST_DEBUG_TEMPROOT` moves the basetemp
+  past the root, and a `--basetemp` the caller gives is only checked against
+  the system temporary directory.
+- `tests/conftest.py` reads the basetemp through pytest's private
+  `config._tmp_path_factory`, so a pytest release that renames it breaks the
+  session start loudly, not silently.
+- `store_copy` has no consumer in keel, which has no live store;
+  `tests/integration/test_isolation_gate.py` proves it on a planted store.
+  pytest-xdist is not used by the suite, so a judgement under its workers is
+  not exercised.
+- Three reaches no audit event decides. `os.mkfifo` and `os.mknod` raise no
+  event, so a FIFO or device node outside the roots is not seen. The `open`
+  event carries no `dir_fd`, so an `os.open` with a relative path and a
+  `dir_fd` is judged against the working directory; a shim over `os.open` was
+  rejected because `shutil` tests `os.open in os.supports_dir_fd` by identity.
+  The `sqlite3.connect` event does not say whether `uri=True` was passed, so a
+  `file:` name is judged both ways, and a `file:` URI opened while the working
+  directory is outside the roots is refused even for a memory database.
+- A metadata event does not say whether the call follows a link, so the
+  guard judges both ends, except when the Python caller is `shutil.copystat`
+  or `shutil._copyxattr` and its local says it stays on the link: without
+  that, `shutil.copytree(symlinks=True)` of a tree holding a link that points
+  outside was refused (six copier tests, through an untracked link at the
+  checkout root). The exception reads CPython's local names; if a release
+  renames them, both ends are judged again and such a copy is refused, loudly.
+- A name lookup is not judged, by choice: library code such as
+  `email.utils.make_msgid` looks a name up without reaching anywhere, and the
+  connect that follows is judged.
+- The gate tests this slice adds read their child timeout from
+  config/project.json `tests.child_timeout_seconds`; 23 older `timeout=`
+  literals in the suite are the existing pattern and are not moved.
+- `scripts/jobs/finish_update.py` still clones under the system temporary
+  directory: it is a copier job, not a test, and the half of KEEL-RES-1 it
+  holds stays queued.
+
 ## Queued after Campaign 6
 
 A queue id becomes a `CMP-<n>.S<m>` name only when an approved slice table
@@ -2068,7 +2151,7 @@ gives it one (CONVENTIONS §20).
 | 1 | KEEL-DOC-1 | A design or spec document can describe itself without meeting its features; nothing records which questions it answers and which it leaves open |
 | 2 | KEEL-SHELL-1 | A generated project supports Python and TypeScript but not shell: a shell script gets no lint, format or test target, and none of the header, exit-code, environment or config rules reaches it |
 | 3 | KEEL-AGT-1 | An agent's edit can reach the code that judges it: `scripts/apply_refactor.py` refuses only a path outside the repo root, so a model-chosen `edits[].file` may change a check, a test, the Makefile, config, an ADR or `AGENT.md` (R-AGT-7, R-AGT-33; high) |
-| 4 | KEEL-RES-1 | Tests and clones use the system temp folder: 80 test files use `tmp_path` with no `--basetemp`, and `tests/hermetic_git.py` and `scripts/jobs/finish_update.py` clone the whole repo there (R-CODE-26) |
+| 4 | KEEL-RES-1 | Tests and clones use the system temp folder: 80 test files use `tmp_path` with no `--basetemp`, and `tests/hermetic_git.py` and `scripts/jobs/finish_update.py` clone the whole repo there (R-CODE-26). The test half is taken into CMP-6.S2: test scratch, the hermetic git directory and the clones a test makes go under config/project.json `tests.scratch_root`. Left: `scripts/jobs/finish_update.py` still clones under the system temp folder |
 | 5 | KEEL-ERR-1 | A narrow handler turns a broken result into an empty one: `agents/doc_reviewer/_brain.py` reads unparseable JSON as zero findings, and the swallowed-error gate sees only broad handlers (R-CODE-7) |
 | 6 | KEEL-AGT-2 | An agent's `--execute` run has no spend cap, and without `--model` it uses the registry's default without saying so (R-AGT-27, R-AGT-29) |
 | 7 | KEEL-RES-2 | The gRPC, REST and MCP entry points have no memory cap and no shutdown owner; a headless model child has no timeout; a network reply is read whole (R-CODE-23, R-CODE-27, R-CODE-28) |
@@ -2247,7 +2330,7 @@ so.
 |---|------|------|----------|----------|
 | 1 | `make -i` or a `.IGNORE` target lets a `[write]` recipe run past `$(WRITE_GUARD)` under CI or a Ralph loop | defect | high | closed in CMP-5.S4: the guard's `$(error)` clause and check_W's `.IGNORE` rule |
 | 2 | `test-fe` exits 0 when npm or an app's `node_modules` is missing, and CI never runs `test-fe` | missing-check | high | closed in CMP-5.S4: both targets exit 2, and CI runs `make fe-browsers` and `make test-fe` |
-| 3 | KEEL-TEST-1: nothing stops a test reaching a live store | feature | high | planned as CMP-6.S2 |
+| 3 | KEEL-TEST-1: nothing stops a test reaching a live store | feature | high | in progress in CMP-6.S2 |
 | 4 | KEEL-SEC-1: nothing scans the tree for a committed secret | missing-check | high | planned as CMP-6.S3 |
 | 5 | `credential_value_patterns` covers five token forms | missing-check | medium | `config/project.json` |
 | 6 | A process keel does not start (`make new`'s copier, a hook calling make) gets the caller's whole environment | defect | medium | `Makefile` `new` target |

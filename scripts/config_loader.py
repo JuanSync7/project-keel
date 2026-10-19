@@ -475,6 +475,44 @@ KEYS = tuple(
                 "which domain practice profiles are on; empty: none",
             ),
             _row(
+                ("tests", "child_timeout_seconds"),
+                "int",
+                NONE,
+                "the seconds a test of the shipped harness lets a child process "
+                "run before it kills it and fails",
+                accepts=(_at_least_one, "a value >= 1"),
+            ),
+            _row(
+                ("tests", "isolation", "exempt"),
+                "object",
+                {},
+                "per axis, the tests that may reach outside their tier on it, "
+                "each with its reason; empty: none may",
+            ),
+            _row(
+                ("tests", "isolation", "stores"),
+                "list_of_str",
+                [],
+                "the live stores a test reaches only through the store_copy "
+                "fixture; empty: none is listed",
+            ),
+            _row(
+                ("tests", "isolation", "tiers"),
+                "object",
+                NONE,
+                "what a test of each tier marker may reach on the network, "
+                "writes and stores axes",
+            ),
+            _row(
+                ("tests", "scratch_root"),
+                "nonempty_str",
+                NONE,
+                "where test scratch lives: an absolute path, `~` allowed, "
+                "outside the system temporary directory and the checkout",
+                env="KEEL_TEST_SCRATCH",
+                accepts=(_no_parent_part, "a path with no `..` part"),
+            ),
+            _row(
                 ("toolchain", "node_major"),
                 "int",
                 24,

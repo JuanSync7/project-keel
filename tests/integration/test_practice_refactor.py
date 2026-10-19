@@ -15,6 +15,7 @@ _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT))
 
 from agents.practice_refactor import refactor  # noqa: E402
+from runtimes import FileCheckpointer  # noqa: E402
 
 pytestmark = pytest.mark.integration
 
@@ -125,6 +126,12 @@ def _patch(monkeypatch, runner, model):
     monkeypatch.setattr(_BRAIN + ".get_model", lambda name=None: model)
 
 
+def _checkpointer(tmp_path):
+    # The default checkpointer writes under the checkout's wiki/.runtime, and
+    # would resume a snapshot an earlier crashed run left there.
+    return FileCheckpointer(str(tmp_path / "checkpoints"))
+
+
 def test_dry_run_walks_and_previews_but_never_proposes_or_writes(monkeypatch):
     runner, model = _Runner(), _Model()
     _patch(monkeypatch, runner, model)
@@ -143,11 +150,16 @@ def test_dry_run_walks_and_previews_but_never_proposes_or_writes(monkeypatch):
     assert runner.calls == ["query_corpus", "run_make_target"]
 
 
-def test_red_baseline_attempts_no_refactor(monkeypatch):
+def test_red_baseline_attempts_no_refactor(tmp_path, monkeypatch):
     runner, model = _Runner(baseline_ok=False), _Model()
     _patch(monkeypatch, runner, model)
 
-    rep = refactor("precise-container-types", execute=True, root=str(_ROOT))
+    rep = refactor(
+        "precise-container-types",
+        execute=True,
+        root=str(_ROOT),
+        checkpointer=_checkpointer(tmp_path),
+    )
 
     assert rep.baseline_green is False
     assert rep.refactored == () and rep.skipped == ()
@@ -155,11 +167,18 @@ def test_red_baseline_attempts_no_refactor(monkeypatch):
     assert "apply_refactor" not in runner.calls
 
 
-def test_execute_applies_each_accepted_chunk_and_the_gate_keeps_it(monkeypatch):
+def test_execute_applies_each_accepted_chunk_and_the_gate_keeps_it(
+    tmp_path, monkeypatch
+):
     runner, model = _Runner(gate_ok=True), _Model()
     _patch(monkeypatch, runner, model)
 
-    rep = refactor("precise-container-types", execute=True, root=str(_ROOT))
+    rep = refactor(
+        "precise-container-types",
+        execute=True,
+        root=str(_ROOT),
+        checkpointer=_checkpointer(tmp_path),
+    )
 
     assert rep.dry_run is False and rep.baseline_green is True
     assert rep.refactored == ("src/backend/f1.py", "src/backend/f2.py")
@@ -168,24 +187,36 @@ def test_execute_applies_each_accepted_chunk_and_the_gate_keeps_it(monkeypatch):
     assert model.n == 2
 
 
-def test_gate_red_rolls_back_so_the_chunk_is_skipped_not_refactored(monkeypatch):
+def test_gate_red_rolls_back_so_the_chunk_is_skipped_not_refactored(
+    tmp_path, monkeypatch
+):
     runner, model = _Runner(gate_ok=False), _Model()
     _patch(monkeypatch, runner, model)
 
-    rep = refactor("precise-container-types", execute=True, root=str(_ROOT))
+    rep = refactor(
+        "precise-container-types",
+        execute=True,
+        root=str(_ROOT),
+        checkpointer=_checkpointer(tmp_path),
+    )
 
     assert rep.refactored == ()  # nothing kept — the gate went red
     assert rep.skipped == ("n1", "n2")  # both chunks rolled back
     assert runner.applied_files == []
 
 
-def test_model_declining_a_chunk_skips_it_without_touching_apply(monkeypatch):
+def test_model_declining_a_chunk_skips_it_without_touching_apply(tmp_path, monkeypatch):
     # Non-JSON and empty-edits replies both mean "decline this chunk".
     runner = _Runner()
     model = _Model(replies=["I cannot safely edit this.", json.dumps({"edits": []})])
     _patch(monkeypatch, runner, model)
 
-    rep = refactor("precise-container-types", execute=True, root=str(_ROOT))
+    rep = refactor(
+        "precise-container-types",
+        execute=True,
+        root=str(_ROOT),
+        checkpointer=_checkpointer(tmp_path),
+    )
 
     assert rep.refactored == () and rep.skipped == ("n1", "n2")
     assert (

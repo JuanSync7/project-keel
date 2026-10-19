@@ -776,8 +776,8 @@ def test_a_pre_c2_2_project_receives_the_new_child_env_keys_as_arrivals_and_owes
     the only names models/openai_compatible.py accepts as `api_key_env`, and
     `models.allowed_hosts`, the hosts it may send that credential to, arrive
     beside them, and so do `import_layers`, `change_comments` and
-    `config_reads`, which the tree-wide gate tests read, and `canary` and
-    `toolchain`, whose keys the config loader declares.
+    `config_reads`, which the tree-wide gate tests read, and `canary`,
+    `toolchain` and `tests`, whose keys the config loader declares.
     `structure.project_checks` does not: the template never ships it, because a
     key beside `extra_toplevel` would conflict with every project that declared
     one."""
@@ -832,6 +832,7 @@ def test_a_pre_c2_2_project_receives_the_new_child_env_keys_as_arrivals_and_owes
         "make_targets.write_shape_exempt",
         "models.allowed_hosts",
         "models.credential_env.openai-compatible",
+        "tests",
         "toolchain",
         "traceability",
         "work_naming",
@@ -929,11 +930,12 @@ def test_a_pre_c5_2_project_receives_the_run_date_and_host_list_as_arrivals(
     uninstalled app, the `import_layers` and `change_comments` blocks the
     tree-wide gate tests of CMP-5.S4 read, the `config_reads` block the
     config-reads gate test of CMP-5.S5 reads, the `canary` and `toolchain`
-    blocks whose keys the config loader declares since CMP-6.S1, and one more
+    blocks whose keys the config loader declares since CMP-6.S1, the `tests`
+    block tests/isolation_guard.py reads since CMP-6.S2, and one more
     name in
     `child_env.names`: the variable the run date travels in, without which
     scripts/child_env.py would drop it before any goal saw it. The audit
-    reports exactly those twelve keys as
+    reports exactly those thirteen keys as
     arrivals and the list as changed, owes no X error, and a real
     update leaves the run date block as the template ships it with its
     variable on the allowlist."""
@@ -970,6 +972,7 @@ def test_a_pre_c5_2_project_receives_the_run_date_and_host_list_as_arrivals(
         "make_targets.effect_proof_skip.test-fe-e2e",
         "make_targets.effect_proof_skip.test-fe-unit",
         "models.allowed_hosts",
+        "tests",
         "toolchain",
     }, manifest
     names = [f for f in manifest if f["key"] == "child_env.names"]

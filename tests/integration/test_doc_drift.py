@@ -17,6 +17,7 @@ from pathlib import Path
 
 import pytest
 
+import isolation_guard
 import optional_deps
 
 _ROOT = Path(__file__).resolve().parents[2]
@@ -548,9 +549,11 @@ def derived_waivers(root):
     active one, every key of the child-process allowlist's block, the
     history prefixes this gate exempts, the end-to-end gate's endpoint
     exemptions (tests/integration/test_e2e_coverage.py `EXEMPT_KEY`, by leaf),
-    and the two keys that excuse a requirement or a whole project from
+    the two keys that excuse a requirement or a whole project from
     requirement traceability (scripts/traceability.py `GAPS_KEY` and
-    `EMPTY_KEY`, by leaf)."""
+    `EMPTY_KEY`, by leaf), and the keys that let a test reach past the
+    strictest isolation rule (tests/isolation_guard.py `WAIVERS`, whole: the
+    leaf `exempt` is the end-to-end gate's too)."""
     root = Path(root)
     found = set()
     checkers = sorted(root.glob(_CHECKER_GLOB))
@@ -575,6 +578,7 @@ def derived_waivers(root):
     found.add(EXEMPT_KEY.rsplit(".", 1)[-1])
     for key in (traceability.GAPS_KEY, traceability.EMPTY_KEY):
         found.add(key.rsplit(".", 1)[-1])
+    found.update(isolation_guard.WAIVERS)
     registry_path = root / "config" / "practices.json"
     if not registry_path.is_file():
         raise DocDriftConfigError("config/practices.json is missing")
@@ -636,12 +640,34 @@ def _backticked(text):
     return spans
 
 
+# The header of the limits guide's waiver table, whose first cell names a waiver.
+_WAIVER_HEADER = "| Waiver |"
+
+
+def waiver_rows(text):
+    """The code spans of the first cell of each row of the waiver table: a
+    waiver named only in prose elsewhere in the guide has no row."""
+    named = set()
+    in_table = False
+    for line in cs._unfenced_lines(text):
+        if line.startswith(_WAIVER_HEADER):
+            in_table = True
+            continue
+        if in_table and not line.startswith("|"):
+            in_table = False
+        if in_table:
+            named.update(_backticked(line.split("|")[1]))
+    return named
+
+
 def waiver_findings(guide, text, waivers):
     if not waivers:
         return ["no waiver derived -- zero items"]
-    named = _backticked(text)
+    named = waiver_rows(text)
+    if not named:
+        return ["%s: holds no `%s` table" % (guide, _WAIVER_HEADER)]
     return [
-        "%s: does not name the waiver `%s`" % (guide, w)
+        "%s: the waiver table has no row for `%s`" % (guide, w)
         for w in waivers
         if w not in named
     ]
@@ -1148,6 +1174,29 @@ def test_the_limits_guide_names_every_waiver(entry, markdown):
     assert not findings, "\n".join(findings)
 
 
+def test_dropping_a_waivers_row_reds_it_though_the_guide_names_it_elsewhere(
+    entry, markdown
+):
+    # A waiver is also named in prose (a symptom row, a blind spot), so a
+    # rule that read the whole guide would not see its row go.
+    guide = entry["limits_guide"]
+    text = markdown[guide]
+    waivers = derived_waivers(_ROOT)
+    assert waivers, "no waiver derived -- zero items"
+    assert waiver_findings(guide, text, waivers) == [], (
+        "the unplanted guide must be clean"
+    )
+    for waiver in sorted(waivers):
+        lines = text.split("\n")
+        rows = [
+            i for i, line in enumerate(lines) if line.startswith("| `%s` |" % waiver)
+        ]
+        assert len(rows) == 1, (waiver, rows)
+        del lines[rows[0]]
+        findings = waiver_findings(guide, "\n".join(lines), waivers)
+        assert len(findings) == 1 and waiver in findings[0], (waiver, findings)
+
+
 def test_the_limits_guide_names_every_gate_exit_code(entry, markdown):
     guide = entry["limits_guide"]
     assert guide in markdown, "%s does not exist" % guide
@@ -1163,15 +1212,16 @@ def test_the_limits_guide_names_every_gate_exit_code(entry, markdown):
         "generic-ok",
         "child_env.credentialed_values",
         "doc_drift.history_paths",
+        "tests.isolation.exempt",
         "exit-code",
     ],
 )
 def test_removing_a_waiver_or_an_exit_code_from_the_limits_guide_reds_it(
     entry, markdown, fault
 ):
-    # The three waivers come from three sources derived_waivers reads: a
-    # checker's pragma, the child-process allowlist's keys, and this gate's
-    # own history exemption.
+    # The four waivers come from four sources derived_waivers reads: a
+    # checker's pragma, the child-process allowlist's keys, this gate's own
+    # history exemption, and the isolation guard's exemptions.
     guide = entry["limits_guide"]
     text = markdown[guide]
     if fault != "exit-code":

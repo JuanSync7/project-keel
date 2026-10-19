@@ -8,7 +8,7 @@ tags: [tdd, bounded-convergence, ralph-loop, testing, e2e, workflow, agents, gui
 summary: The default working loops any human or LLM follows in this repo — test-first, bounded convergence, and end-to-end coverage — all gated by `make verify`.
 id: docs-guides-dev-loops
 created: 2026-06-22
-updated: 2026-10-15
+updated: 2026-10-19
 visibility: internal
 canonical: true
 ---
@@ -49,6 +49,36 @@ unless the tier's one `-m` marker is declared in config/project.json
 that bare `-m <marker>` run: narrowed by `-k` or a path it exits 5, and the
 message names the selection as given. So a green tier always
 executed at least one assertion.
+
+A test reaches the network, the disk and the stores only as its tier allows.
+`tests/isolation_guard.py`, which `tests/conftest.py` installs as a Python audit
+hook, judges each test's setup, call and teardown on three axes against the row
+of config/project.json `tests.isolation.tiers` its closest tier marker names:
+`network` (`none`, `loopback`, `any`), `writes` (`temp`, `any`) and `stores`
+(`temp`, `any`). A test with no tier marker gets the strictest value on every
+axis. A reach outside the rule fails the test with a line naming the test, the
+phase, the tier, the event and its target, even when the test caught the error.
+Fix it in this order: write scratch to `tmp_path`; reach a live store
+`tests.isolation.stores` lists through the `store_copy` fixture, which copies it
+with its sqlite siblings into the test's own directory; move the test to the
+tier that allows the reach; and only then give it a reason in
+`tests.isolation.exempt` under its axis and node id. An exemption whose test ran
+and reached nothing on that axis fails the run, so an exemption cannot outlive
+its reason. The guard is defence-in-depth, not a sandbox: it does not see a
+child process, a C extension's own file or socket calls, a FIFO or device node,
+or the directory an `os.open` with a relative path and a `dir_fd` lands in, and
+it does not judge a name lookup, by choice, because the connect that follows is
+judged (`docs/adr/keel/K-0024-what-a-test-may-reach.md`).
+
+Test scratch lives under config/project.json `tests.scratch_root`, which
+`KEEL_TEST_SCRATCH` overrides: `tests/conftest.py` points tempfile, `TMPDIR` and
+pytest's basetemp there before any test module is imported, and refuses, before
+any test runs, a root that is relative or sits under the system temporary
+directory or inside the checkout. A root that holds the checkout is accepted,
+and the checkout stays outside it. A passed test's directory is removed and a
+failed one's is kept, named after the test (`pyproject.toml`
+`tmp_path_retention_policy`). A test that starts a child process gives it the
+seconds `tests.child_timeout_seconds` names.
 
 Run the *smallest sufficient* target often (a focused `pytest -m unit -k name`),
 and the full `make verify` before declaring a task complete. A loop that advances

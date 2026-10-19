@@ -23,7 +23,7 @@ dependencies = []
 # the corpus re-linted at the new version — and move .pre-commit-config.yaml's rev
 # in the same change (tests/integration/test_gate_scope.py pins the two together).
 dev = [
-  "pytest",
+  "pytest>=7.3",
   "pytest-cov",
   "ruff==0.15.18",
   "mypy==2.1.0",
@@ -47,6 +47,14 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Test scratch goes under config/project.json tests.scratch_root (tests/conftest.py
+# moves tempfile there). "failed" removes a passed test's tmp_path at its teardown
+# and a passed session's numbered basetemp at its end, and keeps a failed test's
+# directory, named after the test; 3 is pytest's own count of kept sessions.
+# Both need pytest 7.3. No --basetemp here: pytest empties a given basetemp at the
+# start of each session, so two sessions sharing one would delete each other's.
+tmp_path_retention_policy = "failed"
+tmp_path_retention_count = 3
 markers = [
   "unit: fast isolated tests (mirror src/)",
   "integration: 2+ real components",

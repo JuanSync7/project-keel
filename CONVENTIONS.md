@@ -8,7 +8,7 @@ tags: [conventions, frontmatter, taxonomy]
 summary: Single source of truth for labeling (frontmatter) and the directory taxonomy.
 id: conventions
 created: 2026-06-17
-updated: 2026-10-17
+updated: 2026-10-19
 visibility: internal
 canonical: true
 ---
@@ -96,7 +96,7 @@ accidental first line as its summary, labeled as if someone wrote it.
 | `src/backend`  | package | services, domain, persistence | UI rendering |
 | `src/shared`   | package | contracts/types used by BOTH FE+BE | anything FE- or BE-only |
 | `src/app`      | package | entrypoints, DI/wiring, CLI/`__main__` | business logic |
-| `tests/unit`   | tests | fast, isolated; **mirrors `src/`** | network/disk/process |
+| `tests/unit`   | tests | fast, isolated; **mirrors `src/`** | a reach past `tests.isolation.tiers.unit` in config/project.json (`tests/isolation_guard.py` fails it) |
 | `tests/integration` | tests | 2+ real components, by scenario | full-stack journeys |
 | `tests/e2e`    | tests | full system, user journeys | unit-level asserts |
 | `tests/smoke`  | tests | "is it alive" post-deploy checks | exhaustive cases |

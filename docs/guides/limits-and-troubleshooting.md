@@ -8,7 +8,7 @@ tags: [limits, waivers, exit-codes, troubleshooting, guide]
 summary: What adopting keel costs, the risks its rails leave open, the checks that pass by skipping, what no gate can see, every waiver a project may use, every exit code the gate's scripts return, and the symptom-to-fix list for the failures a newcomer meets first.
 id: docs-guides-limits-and-troubleshooting
 created: 2026-10-09
-updated: 2026-10-18
+updated: 2026-10-19
 visibility: internal
 canonical: true
 ---
@@ -222,6 +222,32 @@ a decision on whether it should fail instead.
   REST server in a `finally`, and from a handler when SIGTERM or SIGHUP ends
   the run. A pytest killed by SIGKILL, or by the out-of-memory killer, runs
   neither, so its uvicorn process survives; find it with `ps -eo pid,args | grep uvicorn`.
+- **What the isolation guard cannot see.** `tests/isolation_guard.py` judges
+  the reaches a Python audit event carries, in the pytest process alone. A
+  write, a socket or a store opened by a child process the test starts (a
+  nested pytest, `make`, `git`, copier), a C extension's own file or socket
+  calls, and a FIFO or device node (`os.mkfifo` and `os.mknod` raise no audit
+  event) pass unjudged; so does a read of a file outside the temp roots, of
+  which only a listed store's open counts. An `os.open` with a relative path
+  and a `dir_fd` is judged against the working directory, because the open
+  event does not carry the `dir_fd`. A name lookup is not judged, by choice:
+  library code looks names up without reaching anywhere, and the connect that
+  follows is judged. A test that keeps
+  its reach inside a child keeps it out of the guard: the guard is
+  defence-in-depth, not a sandbox
+  ([ADR-K-0024](../adr/keel/K-0024-what-a-test-may-reach.md)).
+- **A sqlite `file:` name outside the roots.** The `sqlite3.connect` audit
+  event does not say whether the call passed `uri=True`, so the guard judges a
+  name that starts `file:` both as a URI and as a file of that name in the
+  working directory. A test that opens a `file:` URI while the working
+  directory is outside the temp roots fails, even for a memory database;
+  `monkeypatch.chdir(tmp_path)` first.
+- **A scratch root the caller moves.** A `--basetemp` given on the command
+  line is honoured wherever it is and only checked against the system
+  temporary directory, and pytest's own `PYTEST_DEBUG_TEMPROOT` moves the
+  basetemp past config/project.json `tests.scratch_root`. A run killed by
+  SIGKILL or SIGTERM leaves its numbered basetemp behind; pytest's retention
+  count removes it in a later session.
 - **Example settings files with no loader.** `config/default.example.toml`,
   `config/rag.example.toml` and `models/config/default.example.toml` are read
   by no code; a typo in a copy of one goes unnoticed.
@@ -258,6 +284,8 @@ decision in the tree, so a reviewer sees it.
 | `exempt` | `config/project.json` `e2e` | lets one named endpoint through `tests/integration/test_e2e_coverage.py` with no scenario, with the reason; a stale, redundant or reasonless entry is red |
 | `gaps` | `config/project.json` `traceability` | lets one named unit, a criterion or a requirement that has none, through `make trace` with no test, with the reason; an entry for a covered, undefined or malformed id is red, and a blank reason is refused |
 | `no_requirements` | `config/project.json` `traceability` | lets a project with zero requirements through `make trace`, with the reason; red once a requirement or a `req` marker exists |
+| `tests.isolation.tiers` | `config/project.json` | a tier's rule on each axis; `any` on an axis lets every test of that tier reach anywhere on it, and a wider value widens every test the tier's marker names |
+| `tests.isolation.exempt` | `config/project.json` | lets one named test reach outside its tier on one axis (`network`, `writes` or `stores`), with the reason; a blank reason stops pytest before any test runs, and an exemption whose test ran and reached nothing on that axis is red |
 | `child_env.names` | `config/project.json` | the allowlist for a named variable: every child of `scripts/child_env.py` receives it |
 | `child_env.prefixes` | `config/project.json` | the allowlist for every variable that starts with a listed prefix |
 | `child_env.credentialed_values` | `config/project.json` | the credential refusal for a named variable, with the reason its value may carry a user part |
@@ -493,6 +521,10 @@ message and stops with exit 2 until it is moved onto the loader.
 | `make check-docs` names a stale `updated:` | a document changed without its stamp | `make restamp-docs` |
 | `make new` refuses | no `DEST`, the template is not a git checkout, or its tree is dirty | see `generate-and-upgrade.md`; `ALLOW_DIRTY=1` overrides the dirty tree only |
 | a test target exits 5 | it selected zero tests | add tests, or name its marker in `make_targets.empty_test_selections` |
+| a test fails with `IsolationError` and `<nodeid> [<phase>] reached outside its tier '<tier>': <event> <target> (<axis>=<value>). Use tmp_path or the store_copy fixture; or exempt it with a reason in config/project.json tests.isolation.exempt.<axis>."<nodeid>"` | in that phase the test connected, wrote, or opened a sqlite database or a listed store past the rule config/project.json `tests.isolation.tiers` gives its tier; the test fails even when its code caught the error | write scratch to `tmp_path`, ask `store_copy` for a copy of a listed store, or move the test to the tier that allows the reach; exempt it in `tests.isolation.exempt` under that axis with the reason only when the reach is the point of the test |
+| a run whose tests all passed exits 1 with `tests.isolation.exempt.<axis>."<nodeid>": the test ran and reached nothing on <axis>; remove the exemption from config/project.json` | the exemption outlived its reason: the test no longer reaches outside its tier on that axis | delete the entry the line names |
+| pytest stops before any test runs (exit 4) with `ImportError while loading conftest` and a `config_loader.WrongValue` saying `config/project.json tests.scratch_root is` or KEEL_TEST_SCRATCH, which sets tests.scratch_root is the value, then a reason: it is relative, so it would land in the checkout; it is under the system temporary directory; or it is inside the checkout | test scratch is refused a root the system temporary directory holds, because that may be memory-backed and shared, and one inside the checkout, because the tree walkers would read a kept directory as source | set `tests.scratch_root`, or `KEEL_TEST_SCRATCH`, to a value the line accepts, accepted: an absolute path (`~` allowed) outside the system temporary directory and the checkout |
+| the suite runs slowly, or a test that compares file times fails now and then, while test scratch sits on a network home directory | the shipped `tests.scratch_root` (`~/.cache/project_keel/tests`) is under the home directory, which some hosts mount from a network filesystem whose writes are slow and whose clock may differ from the host's | set `KEEL_TEST_SCRATCH` to a directory on local disk outside the system temporary directory, or set `tests.scratch_root` to one |
 | `copier update` stops with exit 2 naming files | a migration found conflict markers in a file it imports, or in a fixed project file one of its modules declares reading (`config/project.json`, the `Makefile`) | resolve each named file, then run the command the message prints: under an update it is `<python> scripts/jobs/finish_update.py`, which runs the migrations copier never reached |
 | a migration names `scripts/exit_codes.py` as conflicted and then stops with exit 1 on a `SyntaxError` traceback, or `scripts/check_structure.py` stops on that traceback alone | the conflicted file is the exit helper itself, which every script imports to end with a chosen status, so nothing can exit 2; a project that added its own `ExitCode` member is the one an update conflicts here | resolve the hunk in `scripts/exit_codes.py`, keeping your members and the template's, run `make exit-codes`, then run the command the refusal line prints |
 | a command stops with `config/project.json holds a merge-conflict hunk at line N` | an update left the manifest conflicted, so `scripts/child_env.py` has no allowlist and lets no child start | resolve the hunk, then finish the update as `generate-and-upgrade.md` says |

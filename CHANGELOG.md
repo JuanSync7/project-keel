@@ -66,6 +66,29 @@ version rather than a bare commit:
   both line shapes and what to do about each;
   `tests/integration/test_config_default_lines_docs.py` fails a quoted line the
   loader does not write.
+- **A test reaches only what its tier allows.** `tests/isolation_guard.py`,
+  a Python audit hook `tests/conftest.py` installs, fails a test that connects
+  or sends past its tier's network rule, writes or changes a file's mode,
+  owner or times outside its scratch, or opens a sqlite
+  database outside it or a store config/project.json `tests.isolation.stores`
+  lists, naming the test, the phase, the event, the target and the fix, even
+  when the test caught the error. A tier's rule is a row of
+  `tests.isolation.tiers`; `unit` allows no network, `integration` and `e2e`
+  allow loopback. A reach a test needs is a reasoned entry in
+  `tests.isolation.exempt`, and one whose test reached nothing fails the run.
+  The `store_copy` fixture hands a test its own copy of a listed store.
+  `tests/integration/test_isolation_gate.py` runs the guard over planted cases
+  in a scratch project;
+  [ADR-K-0024](docs/adr/keel/K-0024-what-a-test-may-reach.md), proposed,
+  records the decision. Defence-in-depth, not a sandbox: a child process is
+  not audited.
+- **The docs state the guard, and a test holds them to it.**
+  `tests/AGENT.md`, `tests/README.md` and `docs/guides/dev-loops.md` name the
+  guard, each key it reads, each axis and the `store_copy` fixture, and
+  `docs/guides/limits-and-troubleshooting.md` shows the guard's failure line,
+  its unused-exemption line and each scratch-root refusal;
+  `tests/integration/test_isolation_docs.py` derives each from the guard and
+  fails a document that drops one.
 
 ### Changed
 - **CI installs Node 24, and `make fe-install` refuses another major.**
@@ -112,6 +135,33 @@ version rather than a bare commit:
   `scripts/config_loader.py`, which declares both config files in
   `PROJECT_READS`, so `scripts/jobs/conflict_guard.py` counts both among the
   job's reads.
+- **Test scratch lives under `tests.scratch_root`, not the system temporary
+  directory.** `tests/conftest.py` points `tempfile`, `TMPDIR`, pytest's
+  basetemp and the hermetic git directory at config/project.json
+  `tests.scratch_root` (`~/.cache/project_keel/tests`; `KEEL_TEST_SCRATCH`
+  overrides it) before any test module is imported, and stops pytest with
+  exit 4 on a root that is relative or sits under the system temporary
+  directory or inside the checkout; a root that holds the checkout is
+  accepted, and the checkout stays outside it. `pyproject.toml` keeps a failed test's
+  directory and removes a passed one's, which needs pytest 7.3, now the `dev`
+  extra's floor. `child_env.names` lists `KEEL_TEST_SCRATCH`, so a nested
+  pytest keeps its caller's root. On a host whose home directory is a network
+  mount, set `KEEL_TEST_SCRATCH` to local disk.
+- **The unit-test rule names its mechanism.** `tests/AGENT.md` and the
+  `tests/unit` row of CONVENTIONS.md §2 said a unit test touches no network,
+  disk or process; they now point at `tests.isolation.tiers.unit` and the
+  guard that fails a reach past it.
+
+### Fixed
+- **Four refactor tests no longer write into the checkout.** The execute-mode
+  tests of `tests/integration/test_practice_refactor.py` wrote their
+  checkpoints under the checkout's `wiki/.runtime`, where a later run could
+  resume a crashed one's snapshot; each now checkpoints under its own
+  `tmp_path`.
+- **`tests/unit/scripts/test_audit_project.py` no longer flakes on a network
+  scratch root.** Its no-write snapshot compared a directory's modification
+  time, which moved between two snapshots with no write on a network mount; it
+  now compares a file's time and the sorted listing.
 
 ## [0.3.0] — 2026-10-15
 
