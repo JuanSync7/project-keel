@@ -2149,16 +2149,17 @@ gives it one (CONVENTIONS §20).
 | Position | Queue id | Gap |
 |----------|----------|-----|
 | 1 | KEEL-DOC-1 | A design or spec document can describe itself without meeting its features; nothing records which questions it answers and which it leaves open |
-| 2 | KEEL-SHELL-1 | A generated project supports Python and TypeScript but not shell: a shell script gets no lint, format or test target, and none of the header, exit-code, environment or config rules reaches it |
-| 3 | KEEL-AGT-1 | An agent's edit can reach the code that judges it: `scripts/apply_refactor.py` refuses only a path outside the repo root, so a model-chosen `edits[].file` may change a check, a test, the Makefile, config, an ADR or `AGENT.md` (R-AGT-7, R-AGT-33; high) |
-| 4 | KEEL-RES-1 | Tests and clones use the system temp folder: 80 test files use `tmp_path` with no `--basetemp`, and `tests/hermetic_git.py` and `scripts/jobs/finish_update.py` clone the whole repo there (R-CODE-26). The test half is taken into CMP-6.S2: test scratch, the hermetic git directory and the clones a test makes go under config/project.json `tests.scratch_root`. Left: `scripts/jobs/finish_update.py` still clones under the system temp folder |
-| 5 | KEEL-ERR-1 | A narrow handler turns a broken result into an empty one: `agents/doc_reviewer/_brain.py` reads unparseable JSON as zero findings, and the swallowed-error gate sees only broad handlers (R-CODE-7) |
-| 6 | KEEL-AGT-2 | An agent's `--execute` run has no spend cap, and without `--model` it uses the registry's default without saying so (R-AGT-27, R-AGT-29) |
-| 7 | KEEL-RES-2 | The gRPC, REST and MCP entry points have no memory cap and no shutdown owner; a headless model child has no timeout; a network reply is read whole (R-CODE-23, R-CODE-27, R-CODE-28) |
-| 8 | KEEL-CFG-3 | Limits are typed in code: the gRPC port and worker count, the in-process runtime's step cap, agent and refactor timeouts (R-CODE-3, R-CFG-1) |
-| 9 | KEEL-WARN-1 | Warnings nobody must fix fire on every run: the owner-TBD warning and the fail-open "not found" and "could not parse" warnings in `scripts/check_structure.py` (R-AGT-32) |
-| 10 | KEEL-AGT-3 | Four of the five agents have no eval case and no known-good example (R-AGT-4, R-AGT-12, R-AGT-14) |
-| 11 | KEEL-DOC-2 | Wrong claims pass every gate (a check letter, counts with no method in `doc-style.md`), and release notes sit in shipped guides that the change-comment phrase list does not read (R-DOC-1, R-DOC-2, R-DOC-14) |
+| 2 | KEEL-LINT-1 | A rule a tool can decide is still held only by a prompt: a boolean passed by position (R-CODE-18), a cache with no maximum or one typed into code (R-CODE-24), and a narrow error caught and dropped (R-CODE-7) reach no check, and ruff's SIM105 steers a dropped error into `contextlib.suppress`, which the swallowed-error gate cannot see |
+| 3 | KEEL-TESTQ-1 | A green suite does not show its tests can fail: nothing measures whether a test uses the real part or a mock, whether its assertions would catch a change, or whether a failure path is tested; the measuring engine, pyverdex, lives outside keel |
+| 4 | KEEL-PKG-1 | Keel's checks reach a repository only by generating it from the template; the vault and pyverdex cannot install them on their own |
+| 5 | KEEL-SHELL-1 | A generated project supports Python and TypeScript but not shell: a shell script gets no lint, format or test target, and none of the header, exit-code, environment or config rules reaches it |
+| 6 | KEEL-ERR-1 | A narrow handler turns a broken result into an empty one: `agents/doc_reviewer/_brain.py` reads unparseable JSON as zero findings, and the swallowed-error gate sees only broad handlers (R-CODE-7); the R-CODE-7 check KEEL-LINT-1 plans fixes it |
+| 7 | KEEL-AGT-2 | An agent's `--execute` run has no spend cap, and without `--model` it uses the registry's default without saying so (R-AGT-27, R-AGT-29) |
+| 8 | KEEL-RES-2 | The gRPC, REST and MCP entry points have no memory cap and no shutdown owner; a headless model child has no timeout; a network reply is read whole (R-CODE-23, R-CODE-27, R-CODE-28) |
+| 9 | KEEL-CFG-3 | Limits are typed in code: the gRPC port and worker count, the in-process runtime's step cap, agent and refactor timeouts (R-CODE-3, R-CFG-1) |
+| 10 | KEEL-WARN-1 | Warnings nobody must fix fire on every run: the owner-TBD warning and the fail-open "not found" and "could not parse" warnings in `scripts/check_structure.py` (R-AGT-32) |
+| 11 | KEEL-AGT-3 | Four of the five agents have no eval case and no known-good example (R-AGT-4, R-AGT-12, R-AGT-14) |
+| 12 | KEEL-DOC-2 | Wrong claims pass every gate (a check letter, counts with no method in `doc-style.md`), and release notes sit in shipped guides that the change-comment phrase list does not read (R-DOC-1, R-DOC-2, R-DOC-14) |
 
 **KEEL-DOC-1, the defence table.** This holds the maintainer's document rule
 R-DOC-15: before a design is planned, it answers hard questions on behalf of
@@ -2250,6 +2251,77 @@ treatment Python and TypeScript already have, and ships to generated projects:
 - Not yet checked: whether the shellcheck and shfmt packages on PyPI install
   the binaries into the venv, and how bats-core is installed. This host has
   bash 4.4 and none of the three tools.
+
+**KEEL-LINT-1, the lint kernel.** The maintainer ruled on 2026-10-19 that
+the rules a tool can decide are built into keel's checks before shell, so
+every project generated from keel holds them, and the prompt keeps only the
+rules that need judgment. The vault's rule experiments are the evidence: with
+the rules loaded, 19 of 20 runs still kept a setting in code as a fallback,
+and what made the work production-ready was caught by deterministic checks in
+every arm. It is planned as the campaign after Campaign 6.
+
+Its opening pass is read-only and writes the slice table. It maps every rule
+in the 0.10.0 code package to one of three answers: held by a named keel
+check, decidable by a tool but not held, or a judgment rule that stays in the
+prompt. For each tool-decidable rule it measures how many places in the tree
+break it today, and it names an existing tool's rule before proposing a new
+check. The candidates already found, each confirmed by reading the tree:
+
+- R-CODE-18: ruff `FBT003`, which fails a boolean passed by position at a
+  call. `FBT001` and `FBT002`, which fail a boolean parameter in a
+  definition, are a wider choice the maintainer makes.
+- R-CODE-24: a new gate test, because ruff has no rule for a cache's
+  maximum (`B019` covers a cached method only). `functools.cache`,
+  `lru_cache` with no `maxsize`, `maxsize=None` and a literal maximum fail;
+  the maximum comes from config. Two places in the tree break it today:
+  `tests/integration/test_e2e_coverage.py` and
+  `tests/integration/test_reference_drift.py`.
+- R-CODE-7, a narrow error dropped: ruff `S110` and `S112` first; a new
+  check covers only what they miss. `SIM105` is disabled, or the
+  swallowed-error gate learns `contextlib.suppress`, in the same change.
+  KEEL-ERR-1's instance is fixed by this check.
+- The allow comment: each check's way of excusing a line names the rule id
+  and gives a reason, so an excuse can be read back to the rule it waives.
+
+Every check lands as an error in the change that makes the tree pass it
+(R-AGT-32), with a planted break shown red, then green. The cap is five
+slices, the opening pass included. The stop point is the slice table done,
+or the cap. When it is done, the vault installs keel's checks rather than
+keep its own AST gate; how a repository not generated from keel installs
+them is KEEL-PKG-1, not this campaign.
+
+**KEEL-TESTQ-1, the test kernel.** It follows KEEL-LINT-1. Its source is
+pyverdex (`my_rnd/python-verification`), a test-effectiveness engine that
+measures line, branch, function-to-function edge, mutation,
+assertion-quality, realness (mock, fake, in-process, real) and failure-path
+coverage. The maintainer ruled on 2026-10-19 to split it by cost, not to
+merge it whole:
+
+| Part of pyverdex | Where it goes | Why |
+|---|---|---|
+| Realness classifier, assertion-quality checks, failure-path detection | keel, as gate tests in `make verify` | They read the syntax tree with the standard library and run in seconds, so they reach every generated project |
+| Mutation and edge or branch measurement | the engine, run by a keel target labelled `[cost]` through a thin adapter, pyverdex by default and chosen in config | They take minutes to hours, so they run on a schedule or before a release; keel holds the thresholds in config |
+| The LangGraph pipeline, the judgment nodes and the dashboard | pyverdex only | A template every project inherits carries no model pipeline or web app |
+
+Starting split keeps the choice reversible: a part can move into keel later,
+but a part merged into keel leaves every generated project only through
+`copier update`. The split assumes pyverdex is worth keeping as a product
+that runs on any pytest project; if it only ever runs on keel projects, the
+case for the engine staying outside weakens.
+
+A prerequisite sits in pyverdex, not keel: its ten measuring tools are
+copies of another repository and are not committed, so a fresh clone does
+not run. Before keel depends on any part, those tools are ported, packaged
+or installed, decided in pyverdex's own repository.
+
+Its opening pass is read-only and writes the slice table: each pyverdex part
+mapped to keel, the engine or pyverdex only; how each keel-side part is
+ported to keel's house pattern (the config loader, the exit helper, module
+headers, effect labels), since pyverdex predates them; the measured run time
+of each engine part on keel's own suite; and the thresholds a gate would
+hold. The cap is five slices, the opening pass included.
+
+KEEL-SHELL-1 follows KEEL-TESTQ-1.
 
 **The audit against the rule packages, version 0.10.0.** On 2026-10-17 a
 read-only audit compared keel with every rule id in the maintainer's four
