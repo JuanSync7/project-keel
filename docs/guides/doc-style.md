@@ -8,7 +8,7 @@ tags: [documentation, style, rosters, citations, freshness, guide]
 summary: The canonical statement of how documentation is written in this repo — the judgment half above the gated floor. What a document is for, one claim per sentence, the discriminator between siblings (rosters and NOT lines), the citation grammar, freshness as a fact, the plain imperative over BCP 14, idempotency stated and proven, and what the gate checks versus what a reviewer must judge. The twin of python-style.md.
 id: docs-guides-doc-style
 created: 2026-09-02
-updated: 2026-10-10
+updated: 2026-10-20
 visibility: internal
 canonical: true
 ---
@@ -197,6 +197,7 @@ edit that leaves the decision untouched, and that edit restamps `updated:`.
 | The upgrade guide gives every copier task and migration its own row in copier's order, names every exclusion, states the copier version floor, and gives each script's exit codes (template only) | `tests/integration/test_doc_drift.py` (`doc_drift.upgrade_guide`) | gate |
 | The settings reference has one row for each JSON key path, copier question, make variable, environment variable and command-line flag the code reads, and states each literal default as the code holds it | `tests/integration/test_reference_drift.py` (`doc_drift.settings_reference`) | gate |
 | The feature catalogue has one row for each feature of a shape the tree declares, each make target's row carries its effect label, and every row states its limits | `tests/integration/test_reference_drift.py` (`doc_drift.features_reference`) | gate |
+| A tool card's `## Args` table has one row for each flag its script declares, and states each literal default as the script holds it | `tests/integration/test_tool_card_drift.py` | gate |
 | A backticked path that resolves to nothing | `scripts/jobs/review_docs.py` under `make advise` | advisory |
 | A `Not for` cell that is true; a `- NOT` line that names the right sibling | this guide, a reviewer, `agents/doc_reviewer` (`make doc-review`) | judgment |
 | One claim per sentence; the mechanism named; measurements dated | this guide | judgment |

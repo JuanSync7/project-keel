@@ -2,10 +2,12 @@
 title: Integration — refactor doers (apply_refactor + run_make_target)
 kind: tests
 layer: n/a
-summary: apply_and_gate writes the edit and keeps it when the (injected) gate passes, but reverts EVERY file when it fails — the safety net that keeps the tree green; run_make_target drives a real `make` subprocess in a git work tree and reports its pass/fail, failing a run that changed what git sees (content, index state, or a worktree rename's two paths) and refusing a tree without git, a target annotated [local] then [write], and a variable that would smuggle a [write] target into the run. Together they are the refactor loop's hands + gate.
+summary: apply_and_gate writes the edit and keeps it when the (injected) gate passes, but reverts EVERY file when it fails — the safety net that keeps the tree green; run_make_target drives a real `make` subprocess in a git work tree and reports its pass/fail, failing a run that changed what git sees (content, index state, or a worktree rename's two paths) and refusing a tree without git, a target annotated [local] then [write], and a variable that would smuggle a [write] target into the run. Together they are the refactor loop's hands + gate. Every tree a test edits carries the template's config/project.json `agents` block, because apply_refactor refuses to plan without its edit policy; in the template, every seeded protected path names a file or directory that exists (the copier answers file, which only a generated project holds, excepted by copier.yml's own `_answers_file`), and every protected name or glob matches a tracked file's name or shares its reason with one that does. Each tree the doer edits is a git work tree tracking its files, under the hermetic git config, because the doer edits only a file git tracks.
 """
 
+import fnmatch
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -13,13 +15,47 @@ from pathlib import Path
 
 import pytest
 
+import hermetic_git
+import optional_deps
+
 _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT / "scripts"))
 
 import apply_refactor as ar  # noqa: E402
 import run_make_target as rmt  # noqa: E402
+from child_env import build_child_env  # noqa: E402
 
 pytestmark = pytest.mark.integration
+
+
+def _template_agents():
+    manifest = json.loads((_ROOT / "config" / "project.json").read_text("utf-8"))
+    return manifest["agents"]
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_git(tmp_path_factory, monkeypatch):
+    """Every git call here, the doer's own included, under the hermetic git
+    config: the doer takes its environment from child_env, which copies
+    GIT_CONFIG_* from os.environ."""
+    work = tmp_path_factory.mktemp("git-home")
+    for key, value in hermetic_git.git_env_vars(work).items():
+        monkeypatch.setenv(key, value)
+
+
+def _policy_tree(root):
+    """Give *root* the template's edit policy: apply_refactor refuses to plan
+    an edit in a tree whose config/project.json has no `agents` block."""
+    path = root / "config" / "project.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"agents": _template_agents()}), encoding="utf-8")
+
+
+def _track_all(root):
+    """Make *root* a git work tree tracking every file in it: the doer edits
+    only a file git tracks."""
+    for argv in (["init", "-q"], ["add", "-A"]):
+        subprocess.run(["git", *argv], cwd=str(root), check=True, env=os.environ)
 
 
 def _pass_gate(gate, cwd, timeout):
@@ -36,8 +72,10 @@ def _timeout_gate(gate, cwd, timeout):
 
 
 def test_apply_keeps_the_edit_when_the_gate_passes(tmp_path):
+    _policy_tree(tmp_path)
     f = tmp_path / "m.py"
     f.write_text("class Hot:\n    pass\n", encoding="utf-8")
+    _track_all(tmp_path)
     spec = {
         "practice": "slots-hot-path",
         "edits": [
@@ -51,9 +89,11 @@ def test_apply_keeps_the_edit_when_the_gate_passes(tmp_path):
 
 
 def test_apply_rolls_back_every_file_when_the_gate_fails(tmp_path):
+    _policy_tree(tmp_path)
     original = "class Hot:\n    pass\n"
     f = tmp_path / "m.py"
     f.write_text(original, encoding="utf-8")
+    _track_all(tmp_path)
     spec = {
         "edits": [{"file": "m.py", "find": "    pass", "replace": "    __slots__ = ()"}]
     }
@@ -64,11 +104,13 @@ def test_apply_rolls_back_every_file_when_the_gate_fails(tmp_path):
 
 
 def test_apply_rolls_back_when_the_gate_raises_or_times_out(tmp_path):
+    _policy_tree(tmp_path)
     # The transactional guarantee must hold even when the gate never returns a
     # verdict (a hung/timed-out/killed `make`), not only when it returns red.
     original = "class Hot:\n    pass\n"
     f = tmp_path / "m.py"
     f.write_text(original, encoding="utf-8")
+    _track_all(tmp_path)
     spec = {
         "edits": [{"file": "m.py", "find": "    pass", "replace": "    __slots__ = ()"}]
     }
@@ -79,8 +121,10 @@ def test_apply_rolls_back_when_the_gate_raises_or_times_out(tmp_path):
 
 
 def test_multiple_edits_to_one_file_compose(tmp_path):
+    _policy_tree(tmp_path)
     f = tmp_path / "m.py"
     f.write_text("a = 1\nb = 2\n", encoding="utf-8")
+    _track_all(tmp_path)
     spec = {
         "edits": [
             {"file": "m.py", "find": "a = 1", "replace": "a = 10"},
@@ -93,8 +137,10 @@ def test_multiple_edits_to_one_file_compose(tmp_path):
 
 
 def test_rollback_restores_all_files_across_a_multi_file_edit(tmp_path):
+    _policy_tree(tmp_path)
     (tmp_path / "a.py").write_text("x = 1\n", encoding="utf-8")
     (tmp_path / "b.py").write_text("y = 1\n", encoding="utf-8")
+    _track_all(tmp_path)
     spec = {
         "edits": [
             {"file": "a.py", "find": "x = 1", "replace": "x = 2"},
@@ -108,6 +154,7 @@ def test_rollback_restores_all_files_across_a_multi_file_edit(tmp_path):
 
 
 def test_plan_edits_rejects_a_missing_file_before_writing(tmp_path):
+    _policy_tree(tmp_path)
     with pytest.raises(ar.RefactorError):
         ar.plan_edits(
             {"edits": [{"file": "nope.py", "find": "a", "replace": "b"}]}, str(tmp_path)
@@ -115,6 +162,7 @@ def test_plan_edits_rejects_a_missing_file_before_writing(tmp_path):
 
 
 def test_plan_edits_rejects_a_path_that_escapes_the_root(tmp_path):
+    _policy_tree(tmp_path)
     outside = tmp_path.parent / "escape.py"
     outside.write_text("secret = 1\n", encoding="utf-8")
     try:
@@ -133,14 +181,60 @@ def test_plan_edits_rejects_a_path_that_escapes_the_root(tmp_path):
 
 
 def test_dry_run_writes_nothing(tmp_path):
+    _policy_tree(tmp_path)
     f = tmp_path / "m.py"
     f.write_text("keep = 1\n", encoding="utf-8")
+    _track_all(tmp_path)
     planned = ar.plan_edits(
         {"edits": [{"file": "m.py", "find": "keep = 1", "replace": "keep = 2"}]},
         str(tmp_path),
     )
     assert planned[0][2] == "keep = 2\n"  # the planned NEW text
     assert f.read_text(encoding="utf-8") == "keep = 1\n"  # ...but disk is untouched
+
+
+def _tracked_names(root):
+    out = subprocess.run(
+        ["git", "ls-files", "-z"],
+        cwd=str(root),
+        env=build_child_env(),
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    return {Path(p).name for p in out.split("\0") if p}
+
+
+def test_every_seeded_protected_path_exists_in_the_template():
+    """A typo'd seed protects nothing and fails nothing, so the template proves
+    each entry names something real. Only in the template: a generated project
+    lacks copier.yml and holds paths the template does not."""
+    copier_yml = _ROOT / "copier.yml"
+    if not copier_yml.is_file():
+        pytest.skip("not a copier template — this is a generated project")
+    yaml = optional_deps.importorskip("yaml", extra="template")
+    answers_file = yaml.safe_load(copier_yml.read_text("utf-8"))["_answers_file"]
+    agents = _template_agents()
+    paths = sorted(agents["protected_paths"])
+    assert paths and agents["protected_names"], "an empty seed -- zero items"
+    missing = [p for p in paths if p != answers_file and not (_ROOT / p).exists()]
+    assert missing == [], missing
+    tracked = _tracked_names(_ROOT)
+    assert tracked, "git lists no file -- zero items"
+    names = agents["protected_names"]
+    # A name may be a glob (`*.test.*`); it is present when some tracked
+    # file's name matches it, case-folded as apply_refactor matches.
+    folded = {t.casefold() for t in tracked}
+    present = {
+        n for n in names if any(fnmatch.fnmatchcase(t, n.casefold()) for t in folded)
+    }
+    present_reasons = {names[n] for n in present}
+    # make reads GNUmakefile, makefile and Makefile, so one reason guards all
+    # three; a name no tracked file carries passes only beside a sibling that
+    # shares its reason and is tracked, so a lone typo still fails.
+    untracked = [n for n in sorted(names) if n not in present]
+    orphans = [n for n in untracked if names[n] not in present_reasons]
+    assert orphans == [], orphans
 
 
 _GATE_POLICY = {

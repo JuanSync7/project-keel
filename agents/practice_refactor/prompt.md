@@ -29,8 +29,12 @@ given. You do not iterate, run tools, or write files.
 2. *(agent)* Gate the baseline with `run_make_target`; a red tree stops the run —
    a dirty tree yields a dirty refactor.
 3. *(you)* For the given chunk, propose ONE bounded edit toward the practice as an
-   `apply_refactor` spec: `{"practice": "<id>", "edits": [{"file": "<path>",
-   "find": "<verbatim text>", "replace": "<new text>"}], "gate": "verify"}`.
+   `apply_refactor` spec: `{"practice": "<id>", "edits": [{"file": "<the
+   chunk's path>", "find": "<verbatim text>", "replace": "<new text>"}]}`.
+   The `file` must be the chunk's own path. The gate is chosen by the run, not
+   by you: a reply that names a gate, edits any other file, or edits a
+   protected path (config/project.json `agents`) is refused and the chunk
+   skipped.
    The `find` text MUST appear **verbatim and exactly once** in the file; if you
    cannot produce such an edit safely, return `{"edits": []}` to decline the chunk.
 4. *(agent)* Apply the spec through `apply_refactor`. A chunk is *done* only if the

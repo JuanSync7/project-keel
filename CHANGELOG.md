@@ -15,8 +15,25 @@ version rather than a bare commit:
 - **ADR-K-0022 is accepted.** One config loader in the bottom import layer,
   a variable over the file only where a key's row names it, and exit 14 for a
   config fault.
+- **ADR-K-0026 is proposed.** An agent edit cannot reach the code that judges
+  it.
 
 ### Added
+- **An agent edit cannot reach the code that judges it.**
+  `scripts/apply_refactor.py` refuses, before any write and so in a dry run
+  too, an edit to a path config/project.json `agents` protects: a path under
+  `agents.protected_paths` (the checks, tests, config, ADRs and agents), a
+  name or glob in `agents.protected_names` in any directory (`Makefile`,
+  `AGENT.md`, `*.test.*`, `tsconfig*.json`, `.gitignore`), with
+  `agents.editable_names` carving `README.md` back out, and, beneath the list,
+  any file git does not track (`.git`, `.venv`, `node_modules`, an ignored
+  file). A path is judged case-folded on itself and on its realpath, two
+  spellings of one file compose as one, and the block must protect
+  config/project.json. Each agent run binds its edit to the chunk's own file
+  with the new `--allow` flag, and the gate is the caller's `--gate`, never
+  the spec's. It does not reach an interactive agent's direct edit, which
+  needs hooks or permission rules
+  ([ADR-K-0026](docs/adr/keel/K-0026-agent-edits-cannot-reach-the-judge.md)).
 - **Each toolchain version has one home, and the tree is held to it.**
   config/project.json `toolchain` names the Node major (`node_major`), the
   Python CI installs (`python`) and the runner images a workflow may use
@@ -118,6 +135,14 @@ version rather than a bare commit:
   to rotate the credential first;
   [ADR-K-0025](docs/adr/keel/K-0025-committed-secrets-keyed-gate-and-scanner.md),
   proposed, records the decision.
+- **A tool card's flags are its script's flags, and the edit policy's docs
+  are held to the doer.** `tests/integration/test_tool_card_drift.py` fails a
+  `*.tool.md` whose `## Args` table lacks a flag its script declares, names
+  one it does not, or states another literal default;
+  `tests/integration/test_edit_policy_docs.py` fails the apply_refactor card or
+  `docs/guides/coding-practices.md` when either drops an `agents` key, and
+  `docs/guides/limits-and-troubleshooting.md` when its symptom table stops
+  quoting a refusal `plan_edits` raises.
 
 ### Changed
 - **`make verify` is red until `make secrets-install` has run once.** A fresh
@@ -129,6 +154,15 @@ version rather than a bare commit:
   `make secrets-install` in each project before its `make verify`.
   Upgrading: run `make secrets-install` once after `copier update`;
   docs/guides/generate-and-upgrade.md says why no hook reinstall is needed.
+- **check_S reads which READMEs are rosters from config/project.json.** The
+  new `rosters.readmes` list, not a README's `## What ships here` heading,
+  switches the roster check on: a listed README without the heading and a
+  headed README the list does not name are errors, so an edit that drops the
+  heading fails instead of silencing the check. A project that adds its own
+  roster README lists it there.
+- **`apply_refactor` no longer reads a spec's gate.** `--gate` defaults to
+  `verify`, and a spec that names a gate is refused (exit 2) rather than
+  used, so a model reply cannot choose to skip the gate.
 - **CI installs Node 24, and `make fe-install` refuses another major.**
   The workflows read the Node major and the Python from config/project.json
   `toolchain` through their `toolchain` step, where they spelled `22` and

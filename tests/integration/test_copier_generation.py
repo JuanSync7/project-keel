@@ -2,7 +2,7 @@
 title: Integration — copier generates a structurally valid, tailored project
 kind: tests
 layer: n/a
-summary: `copier` renders keel's root template into a new project — the manifest is tailored to the answers, the un-chosen frontend stack is pruned, CLAUDE.md->AGENT.md symlinks are preserved, keel's own template meta-tests are pruned, and check_structure passes; an undeclared top-level directory reds the project until it is declared and labelled. A bare `subprocess.run` reds a generated project through check_X until it passes `env=build_child_env()`, and the project's helper passes an adapter's declared credential and no planted secret. A credentialed proxy (a `#` in the password included) fails the project's doc judge by name and never by value, while a `LANGUAGE=sr_RS:sr@latin` locale list does not, until `child_env.credentialed_values` names it, and a stale entry there reds the gate. A generated project carries keel's `work_naming` block and no plan doc, so check_Z is silent until the project writes one; a slice row that is not a slice id then reds the gate and a well-formed one does not. A generated project runs its own doc-drift tests green, every skip there a template-only test naming why, and a prose slice id planted in its CONTRIBUTING.md reds them, and so does a row dropped from its settings reference or from its feature catalogue; its README names no `make new`, and its `run-web` line names Astro and its port only for the astro stack and is absent with no frontend. Under every transport answer, and without the showcase, a generated project's e2e coverage gate and its scenarios pass with nothing skipped, and a grpc project whose exemption is dropped is red naming the method. A project with a frontend carries keel's `layers.frontend.journey` keys and passes its own frontend-suite contract tests statically; its fresh tree's `make test-fe` refuses with exit 2 naming the app and `make fe-install`, and its README Quickstart runs `make fe-install` and `make fe-browsers` before `make verify`; one without has no frontend keys, its wiring test skips with a reason, `make test-fe` exits 0 silently, and its Quickstart names neither target. Under every answer set, `make eval` in a committed generated project replays its shipped eval dataset, which uses every scorer, green twice with the same report bytes and leaves what git lists alone, and the README's delete advice no longer offers evals/. Under every answer set, `make trace` in a committed generated project writes the same passing matrix twice and leaves what git lists alone, and a requirement added to its spec with no test turns `make trace` and the project's own traceability gate test red naming it. Skipped on a bare local clone without the optional `template` extra; CI installs `.[dev,template]` and declares the surface required (KEEL_REQUIRED_EXTRAS), so there a missing copier is a hard failure instead of a silent skip. A generated project passes its exit gate file with nothing skipped and holds a current exit-code table; a script ending on `sys.exit(main())` fails the gate test naming its line, an enum member added without regenerating fails `make check-exit-codes`, and `make exit-codes` run twice writes the same guide. A default project ships scripts/launch.py and scripts/long_scripts.py with keel's `launcher` block, the `none` farm, the placeholder own-hosts twin and no local file; committed, its `make long-scripts` finds no recorded runs and exits 13, its launcher says its own `make verify` runs here limited on a shared host, a real launch runs here limited and records the run in an ignored file with one entry per key, a failing command is recorded as failed, and its own launcher tests pass with nothing skipped. A generated project's config-reads gate skips its two finding tests, naming each direct read, while keel's rendered files read config only through the loader or an allowlist entry. A default project sets every config/project.json key scripts/config_loader.py declares, so resolving them writes no `[using default]` or `[not set]` line, and deleting each defaulted key writes exactly one `[using default]` line per key, sorted. A generated project's `make canary` is a stub, exit 2, that names the template checkout, and the canary's doer, its snapshot module and its workflow do not ship. Committed, a default project's lockfile gate and toolchain gate pass with nothing skipped, and a `frontend_stack: none` project's lockfile gate skips saying it has no frontend app while its toolchain gate passes; both ship scripts/check_toolchain.py. Committed, a default project's committed-secrets gate passes with nothing skipped, and an untracked `.env.production` that gives a credential variable a value turns its first test red naming the file and the key, never the value; its `make secret-scan`, with no scanner recorded, is red with exit 11 naming `make secrets-install`. Its README Quickstart commits the project before `pre-commit install` and runs `make secrets-install` before `make verify`, under every frontend answer. A suite run inside a project generated a moment ago drops `secrets` from the caller's KEEL_REQUIRED_EXTRAS, because that project has run no `make secrets-install`, so its scanner cases skip there rather than fail.
+summary: `copier` renders keel's root template into a new project — the manifest is tailored to the answers, the un-chosen frontend stack is pruned, CLAUDE.md->AGENT.md symlinks are preserved, keel's own template meta-tests are pruned, and check_structure passes; an undeclared top-level directory reds the project until it is declared and labelled. A bare `subprocess.run` reds a generated project through check_X until it passes `env=build_child_env()`, and the project's helper passes an adapter's declared credential and no planted secret. A credentialed proxy (a `#` in the password included) fails the project's doc judge by name and never by value, while a `LANGUAGE=sr_RS:sr@latin` locale list does not, until `child_env.credentialed_values` names it, and a stale entry there reds the gate. A generated project carries keel's `work_naming` block and no plan doc, so check_Z is silent until the project writes one; a slice row that is not a slice id then reds the gate and a well-formed one does not. A generated project runs its own doc-drift tests green, every skip there a template-only test naming why, and a prose slice id planted in its CONTRIBUTING.md reds them, and so does a row dropped from its settings reference or from its feature catalogue; its README names no `make new`, and its `run-web` line names Astro and its port only for the astro stack and is absent with no frontend. Under every transport answer, and without the showcase, a generated project's e2e coverage gate and its scenarios pass with nothing skipped, and a grpc project whose exemption is dropped is red naming the method. A project with a frontend carries keel's `layers.frontend.journey` keys and passes its own frontend-suite contract tests statically; its fresh tree's `make test-fe` refuses with exit 2 naming the app and `make fe-install`, and its README Quickstart runs `make fe-install` and `make fe-browsers` before `make verify`; one without has no frontend keys, its wiring test skips with a reason, `make test-fe` exits 0 silently, and its Quickstart names neither target. Under every answer set, `make eval` in a committed generated project replays its shipped eval dataset, which uses every scorer, green twice with the same report bytes and leaves what git lists alone, and the README's delete advice no longer offers evals/. Under every answer set, `make trace` in a committed generated project writes the same passing matrix twice and leaves what git lists alone, and a requirement added to its spec with no test turns `make trace` and the project's own traceability gate test red naming it. Skipped on a bare local clone without the optional `template` extra; CI installs `.[dev,template]` and declares the surface required (KEEL_REQUIRED_EXTRAS), so there a missing copier is a hard failure instead of a silent skip. A generated project passes its exit gate file with nothing skipped and holds a current exit-code table; a script ending on `sys.exit(main())` fails the gate test naming its line, an enum member added without regenerating fails `make check-exit-codes`, and `make exit-codes` run twice writes the same guide. A default project ships scripts/launch.py and scripts/long_scripts.py with keel's `launcher` block, the `none` farm, the placeholder own-hosts twin and no local file; committed, its `make long-scripts` finds no recorded runs and exits 13, its launcher says its own `make verify` runs here limited on a shared host, a real launch runs here limited and records the run in an ignored file with one entry per key, a failing command is recorded as failed, and its own launcher tests pass with nothing skipped. A generated project's config-reads gate skips its two finding tests, naming each direct read, while keel's rendered files read config only through the loader or an allowlist entry. A default project sets every config/project.json key scripts/config_loader.py declares, so resolving them writes no `[using default]` or `[not set]` line, and deleting each defaulted key writes exactly one `[using default]` line per key, sorted. A generated project's `make canary` is a stub, exit 2, that names the template checkout, and the canary's doer, its snapshot module and its workflow do not ship. Committed, a default project's lockfile gate and toolchain gate pass with nothing skipped, and a `frontend_stack: none` project's lockfile gate skips saying it has no frontend app while its toolchain gate passes; both ship scripts/check_toolchain.py. Committed, a default project's committed-secrets gate passes with nothing skipped, and an untracked `.env.production` that gives a credential variable a value turns its first test red naming the file and the key, never the value; its `make secret-scan`, with no scanner recorded, is red with exit 11 naming `make secrets-install`. Its README Quickstart commits the project before `pre-commit install` and runs `make secrets-install` before `make verify`, under every frontend answer. A suite run inside a project generated a moment ago drops `secrets` from the caller's KEEL_REQUIRED_EXTRAS, because that project has run no `make secrets-install`, so its scanner cases skip there rather than fail. A default project ships keel's `agents` block, and its own apply_refactor refuses an edit to scripts/check_structure.py and to AGENT.md with exit 2 naming the rule and leaving the file's bytes and time alone, refuses the same way a spec that names its own gate, while an edit to a tracked .py under src/ applies.
 """
 
 import ast
@@ -630,6 +630,19 @@ def test_deleting_a_manifest_declared_dir_is_caught_and_the_documented_fix_works
     data["models"]["credential_env"] = {}
     data["models"]["allowed_hosts"] = {}
     data["models"]["default"] = None
+    # A roster README under a deleted directory leaves rosters.readmes naming a
+    # file that is gone, which check_S errors on; the README's remedy must say
+    # so, and the entries dropped here are the manifest's own, not a literal.
+    under_models = [
+        entry for entry in data["rosters"]["readmes"] if entry.startswith("models/")
+    ]
+    assert "`rosters.readmes`" in (dest / "README.md").read_text(), (
+        "deleting a directory whose README rosters.readmes lists (here %r) needs "
+        "that entry dropped, but the README's remedy never says so" % under_models
+    )
+    data["rosters"]["readmes"] = [
+        entry for entry in data["rosters"]["readmes"] if entry not in under_models
+    ]
     manifest.write_text(json.dumps(data, indent=2) + "\n")
 
     r = _structure_gate(dest)
@@ -3303,3 +3316,142 @@ def test_a_committed_generated_project_passes_its_toolchain_gates(stack, tmp_pat
         assert "has no frontend app" in ran.stdout, ran.stdout[-2000:]
     else:
         assert skipped == [], skipped
+
+
+_TITLE_LINE = re.compile(r"^title: .*$", re.MULTILINE)
+
+
+def _apply_in(project, spec):
+    """Run the project's OWN apply_refactor on *spec*, with no gate."""
+    return subprocess.run(
+        [
+            sys.executable,
+            "scripts/apply_refactor.py",
+            "--spec",
+            "-",
+            "--root",
+            str(project),
+            "--gate",
+            "none",
+            "--json",
+        ],
+        cwd=str(project),
+        input=json.dumps(spec),
+        env=build_child_env(root=str(project)),
+        capture_output=True,
+        text=True,
+    )
+
+
+def _title_edit(project, rel):
+    """A spec replacing *rel*'s one `title:` line, and the file's bytes and mtime."""
+    path = project / rel
+    text = path.read_text(encoding="utf-8")
+    titles = _TITLE_LINE.findall(text)
+    assert len(titles) == 1, "%s has %d title lines" % (rel, len(titles))
+    spec = {
+        "edits": [
+            {"file": rel, "find": titles[0], "replace": titles[0] + " (agent edit)"}
+        ]
+    }
+    return spec, path.read_bytes(), path.stat().st_mtime_ns
+
+
+def _append_edit(project, rel):
+    """A whole-file spec appending a line to *rel*, and the file's bytes and
+    mtime: it fits a file with no `title:` line or no unique anchor."""
+    path = project / rel
+    before = path.read_bytes()
+    text = before.decode("utf-8") + "\n"
+    return {"edits": [{"file": rel, "content": text}]}, before, path.stat().st_mtime_ns
+
+
+def test_a_generated_project_refuses_an_agent_edit_to_its_judge_on_arrival(
+    tmp_path, monkeypatch
+):
+    """KEEL-AGT-1 arrives through copier: the project's own apply_refactor reads
+    the project's own `agents` block and refuses, before writing, an edit to its
+    structure gate, its agent rules, the frontend unit test and TypeScript
+    config the default stack ships, its .gitignore and git's own config, and an
+    edit to a file git does not track; it refuses a spec that names its own
+    gate, while an edit under src/ applies. Every git call, the doer's own
+    included, runs under the hermetic git config."""
+    from exit_codes import ExitCode
+
+    dest = tmp_path / "proj"
+    _generate(dest, project_name="demo_proj")
+    keel = json.loads((_ROOT / "config" / "project.json").read_text())
+    shipped = json.loads((dest / "config" / "project.json").read_text())
+    assert shipped["agents"] == keel["agents"]
+
+    home = tmp_path / "git-home"
+    home.mkdir()
+    env = _hermetic_git_env(home)
+    for key, value in hermetic_git.git_env_vars(home).items():
+        monkeypatch.setenv(key, value)
+    for argv in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "generated"]):
+        r = subprocess.run(
+            ["git"] + argv, cwd=str(dest), env=env, capture_output=True, text=True
+        )
+        assert r.returncode == 0, r.stderr
+    untracked = "src/backend/untracked_by_git.py"
+    (dest / untracked).write_text("x = 1\n", encoding="utf-8")
+
+    ran = []
+    for rel, rule, edit in (
+        ("scripts/check_structure.py", "agents.protected_paths.scripts", _title_edit),
+        ("AGENT.md", "agents.protected_names.AGENT.md", _title_edit),
+        (
+            "src/frontend/react-vite/src/App.test.tsx",
+            "agents.protected_names.*.test.*",
+            _append_edit,
+        ),
+        (
+            "src/frontend/react-vite/tsconfig.app.json",
+            "agents.protected_names.tsconfig*.json",
+            _append_edit,
+        ),
+        (".gitignore", "agents.protected_names..gitignore", _append_edit),
+        (".git/config", "agents.protected_paths..git", _append_edit),
+        (untracked, "is not a file git tracks", _append_edit),
+    ):
+        spec, before, mtime = edit(dest, rel)
+        r = _apply_in(dest, spec)
+        assert r.returncode == int(ExitCode.USAGE), (rel, r.stdout, r.stderr)
+        assert rule in r.stderr, (rel, r.stderr)
+        assert (dest / rel).read_bytes() == before, rel
+        assert (dest / rel).stat().st_mtime_ns == mtime, rel
+        ran.append(("refused", rel))
+
+    listed = subprocess.run(
+        ["git", "ls-files", "-z", "--", "src"],
+        cwd=str(dest),
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert listed.returncode == 0, listed.stderr
+    tracked = sorted(p for p in listed.stdout.split("\0") if p.endswith(".py"))
+    assert tracked, "the project tracks no .py under src/"
+    rel = tracked[0]
+    # A whole-file replacement, so the control holds for an empty __init__.py.
+    before = (dest / rel).read_bytes()
+    marker = "# an agent edit under src/\n"
+    spec = {"edits": [{"file": rel, "content": before.decode("utf-8") + marker}]}
+    # The same edit, naming its own gate, is refused: an editable file, so the
+    # gate field is the only reason. The gate is the caller's --gate.
+    mtime = (dest / rel).stat().st_mtime_ns
+    r = _apply_in(dest, dict(spec, gate="none"))
+    assert r.returncode == int(ExitCode.USAGE), (r.stdout, r.stderr)
+    assert "names a gate" in r.stderr, r.stderr
+    assert (dest / rel).read_bytes() == before, rel
+    assert (dest / rel).stat().st_mtime_ns == mtime, rel
+    ran.append(("refused", "a spec naming a gate"))
+
+    r = _apply_in(dest, spec)
+    assert r.returncode == 0, (rel, r.stdout, r.stderr)
+    assert json.loads(r.stdout)["applied"] is True, r.stdout
+    assert (dest / rel).read_bytes() == before + marker.encode("utf-8"), rel
+    ran.append(("applied", rel))
+
+    assert [kind for kind, _rel in ran] == ["refused"] * 8 + ["applied"], ran

@@ -73,9 +73,11 @@ Checks:
      run by some target, every script check-all reaches is catalogued, and
      the hooks table matches .pre-commit-config.yaml. A catalogue this
      check cannot read is a stated WARN
-  S. Roster parity (ERR): a README declaring `## What ships here` names every
-     member of its directory exactly once and nothing else (Member column),
-     and every row's `Not for` cell is filled. Opt-in by the heading
+  S. Roster parity (ERR): a README config/project.json `rosters.readmes`
+     lists carries `## What ships here`, which names every member of its
+     directory exactly once and nothing else (Member column), and every row's
+     `Not for` cell is filled; a README carrying the heading that the list
+     does not name errors, so the protected list, not the heading, is the switch
   T. Practice mechanisms resolve (ERR): every config/practices.json entry's
      `enforced_by` names a check letter, script, test, make target or guide
      section that exists (a closed grammar; ruff/mypy codes are accepted)
@@ -3489,12 +3491,14 @@ def check_R():
 # --- check_S: roster parity ---------------------------------------------------
 #
 # A README that says "## What ships here" is making a claim about its
-# directory, and the claim rots the day a file is added or removed. The roster
-# is opt-in by that heading (no README is retro-failed); once declared it is
-# held to the tree both ways, and every row must carry a `Not for` cell — what
-# a reader must NOT reach for the member to do, naming the sibling that does.
-# That cell is the discriminator a bare listing never states: the answer to
-# "why are these two separate things?"
+# directory, and the claim rots the day a file is added or removed. Which
+# READMEs are rosters is config/project.json `rosters.readmes`, a protected
+# file an agent cannot edit: the heading is the roster's content, never its
+# switch, so an edit that drops or renames the heading fails instead of
+# silencing the check. A roster is held to the tree both ways, and every row
+# must carry a `Not for` cell — what a reader must NOT reach for the member to
+# do, naming the sibling that does. That cell is the discriminator a bare
+# listing never states: the answer to "why are these two separate things?"
 
 _ROSTER_HEADING = "What ships here"
 _ROSTER_BOILERPLATE = {
@@ -3606,9 +3610,75 @@ def _roster_findings(relpath, text, members):
     return errs
 
 
+def _roster_registry_findings(declared, headed, exists):
+    """declared: the `rosters.readmes` list as read; headed: the set of
+    ROOT-relative README paths whose text carries the roster heading; exists:
+    path -> bool. -> error strings, one per entry that is not a README path,
+    is listed twice or names no file, per listed README without the heading,
+    and per headed README the list does not name."""
+    errs = []
+    listed = set()
+    for entry in declared:
+        if (
+            not isinstance(entry, str)
+            or not entry
+            or entry.startswith("/")
+            or "\\" in entry
+            or ".." in entry.split("/")
+            or entry.split("/")[-1] != "README.md"
+        ):
+            errs.append(
+                "config/project.json: rosters.readmes entry %r is not a "
+                "repo-relative path to a README.md" % (entry,)
+            )
+            continue
+        if entry in listed:
+            errs.append(
+                "config/project.json: rosters.readmes lists '%s' twice -- "
+                "drop one" % entry
+            )
+            continue
+        listed.add(entry)
+        if not exists(entry):
+            errs.append(
+                "config/project.json: rosters.readmes lists '%s', but there is "
+                "no such file -- drop the entry, or restore the README" % entry
+            )
+        elif entry not in headed:
+            errs.append(
+                "%s: rosters.readmes (config/project.json) lists it as a roster, "
+                "but it has no '## %s' table -- restore the heading and its table; "
+                "a roster stops being one only by a config edit"
+                % (entry, _ROSTER_HEADING)
+            )
+    errs.extend(
+        "%s: declares '## %s' but is not listed in config/project.json "
+        "rosters.readmes -- add it there so the roster cannot be switched "
+        "off by a README edit" % (path, _ROSTER_HEADING)
+        for path in sorted(headed - listed)
+    )
+    return errs
+
+
+def _declared_rosters():
+    """config/project.json `rosters.readmes`, a list of README paths. An
+    absent manifest, block or key lists nothing, so every headed README errors
+    as unlisted: the check fails closed rather than going quiet. The block sits
+    apart from `structure`, so copier update brings it without meeting a
+    project's own `structure.extra_toplevel` edit."""
+    manifest = _read_json_config(os.path.join("config", "project.json"))
+    if not isinstance(manifest, dict):
+        return []  # unreadable/non-object is reported by the reader
+    block = _expect(manifest.get("rosters"), dict, "rosters", {})
+    return _expect(block.get("readmes"), list, "rosters.readmes", [])
+
+
 def check_S():
-    """ERROR when a README declaring '## What ships here' disagrees with its
-    directory, or a row lacks its 'Not for' discriminator. Opt-in per README."""
+    """ERROR when a README config/project.json `rosters.readmes` lists
+    disagrees with its directory or lacks the '## What ships here' table, when a
+    row lacks its 'Not for' discriminator, or when a README carrying the heading
+    is not listed."""
+    headed = set()
     for dirpath, _, filenames in walk(ROOT):
         if "README.md" not in filenames:
             continue
@@ -3616,11 +3686,18 @@ def check_S():
         text = _read_text(full, err)
         if text is None or ("## " + _ROSTER_HEADING) not in text:
             continue
+        headed.add(rel(full))
         members = _roster_members(
             os.listdir(dirpath), lambda n, d=dirpath: os.path.isdir(os.path.join(d, n))
         )
         for m in _roster_findings(rel(full), text, members):
             err(m)
+    for m in _roster_registry_findings(
+        _declared_rosters(),
+        headed,
+        lambda p: os.path.isfile(os.path.join(ROOT, p)),
+    ):
+        err(m)
 
 
 # --- check_T: practice mechanisms resolve --------------------------------------

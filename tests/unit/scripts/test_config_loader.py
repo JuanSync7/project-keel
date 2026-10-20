@@ -553,3 +553,71 @@ def test_the_loader_parses_on_the_oldest_hook_interpreter_and_imports_only_the_s
     path = _ROOT / "scripts" / "config_loader.py"
     assert gate_scope._too_new_syntax(path) == []
     assert gate_scope._old_python_safe(path)
+
+
+_AGENT_ROWS = (
+    ("agents", "editable_names"),
+    ("agents", "protected_names"),
+    ("agents", "protected_paths"),
+)
+
+
+def _agents_block():
+    manifest = json.loads((_ROOT / CONFIG_FILE).read_text(encoding="utf-8"))
+    return manifest["agents"]
+
+
+@pytest.mark.parametrize(
+    "path, value",
+    [
+        (("agents", "protected_paths"), {}),
+        (("agents", "protected_paths"), {"scripts": " "}),
+        (("agents", "protected_paths"), {"src/../scripts": "a reason"}),
+        (("agents", "protected_paths"), {"/scripts": "a reason"}),
+        (("agents", "protected_paths"), {"scripts/": "a reason"}),
+        (("agents", "protected_paths"), {"scripts": 1}),
+        (("agents", "protected_paths"), ["scripts"]),
+        (("agents", "protected_names"), {}),
+        (("agents", "protected_names"), {"sub/Makefile": "a reason"}),
+        (("agents", "protected_names"), {"..": "a reason"}),
+        (("agents", "protected_names"), {"Makefile": ""}),
+        (("agents", "editable_names"), {"docs/README.md": "a reason"}),
+        (("agents", "editable_names"), {"README.md": " "}),
+        (("agents", "editable_names"), {".": "a reason"}),
+    ],
+)
+def test_the_agents_policy_rows_refuse_an_empty_or_unreasoned_map(path, value):
+    block = _agents_block()
+    block[path[1]] = value
+    rows = config_loader.rows(*_AGENT_ROWS)
+    with pytest.raises(WrongValue) as exc:
+        resolve({"agents": block}, rows, _WHERE, environ={}, stream=io.StringIO())
+    (line,) = exc.value.lines
+    assert line.startswith("%s: %s is " % (_WHERE, ".".join(path))), line
+
+
+def test_an_empty_carve_out_is_the_strict_setting_and_resolves():
+    """editable_names only lifts protection, so an empty map is the setting
+    with no carve-out, never a vacuous policy; and a glob over a name is a
+    name, so `*.test.*` is accepted where `sub/x` is not."""
+    block = _agents_block()
+    block["editable_names"] = {}
+    block["protected_names"] = dict(block["protected_names"], **{"*.test.*": "r"})
+    rows = config_loader.rows(*_AGENT_ROWS)
+    got = resolve({"agents": block}, rows, _WHERE, environ={}, stream=io.StringIO())
+    assert got[("agents", "editable_names")] == {}
+    assert got[("agents", "protected_names")]["*.test.*"] == "r"
+
+
+def test_the_agents_policy_rows_are_required_and_the_templates_block_resolves():
+    rows = config_loader.rows(*_AGENT_ROWS)
+    assert all(k.required and k.file == CONFIG_FILE for k in rows), rows
+    with pytest.raises(NotSet) as exc:
+        resolve({}, rows, _WHERE, environ={}, stream=io.StringIO())
+    assert exc.value.keys == list(_AGENT_ROWS)
+    block = _agents_block()
+    buf = io.StringIO()
+    got = resolve({"agents": block}, rows, _WHERE, environ={}, stream=buf)
+    assert buf.getvalue() == ""
+    assert got[("agents", "protected_paths")] == block["protected_paths"]
+    assert all(got[p] for p in _AGENT_ROWS), "an empty policy map -- zero items"

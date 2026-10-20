@@ -230,16 +230,19 @@ print but never fail the build.
   catches a row that claims the error tier while `check-all` never runs it.
   Silent without this file; a checks table or Makefile it cannot read is a
   WARN that says *unverified*.
-- **S. Roster parity** — a README that declares `## What ships here` is held
-  to its directory: a pipe table follows the heading, its first column is
+- **S. Roster parity** — a README `config/project.json` `rosters.readmes`
+  lists is held to its directory: a pipe table follows the heading, its first column is
   `Member` (each cell a backticked path relative to the README's directory,
   directories with a trailing `/`), every member appears exactly once and
   nothing that is not a member appears (labels and packaging — `README.md`,
   `AGENT.md`, `CLAUDE.md`, `__init__.py`, `__pycache__` — hidden entries,
   ignored dirs and `.jinja` twins are not members), and a `Not for` column exists with every
-  cell filled. Opt-in by the heading, so no README is retro-failed; keel
-  declares rosters for `agents/`, `agents/tools/`, `docs/guides/`, `mcp/`,
-  `scripts/` and `scripts/jobs/`. The `Not for` cell is the point: it states
+  cell filled. The list, not the heading, is the switch: a listed README
+  without the heading errors, and so does a README carrying the heading that
+  the list does not name, so renaming the heading cannot turn the check off;
+  an absent `rosters` block lists nothing, so every roster README errors. The
+  list is in `config/project.json`, which `agents.protected_paths` keeps out of
+  an agent's edit. Keel's list is `config/project.json` `rosters.readmes`. The `Not for` cell is the point: it states
   what a reader must not reach for that member to do and names the sibling
   that does — the discriminator between two things that look alike
   (`rebuild_index.py` and `build_corpus.py` both say "index"; the roster says

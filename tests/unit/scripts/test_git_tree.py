@@ -2,7 +2,7 @@
 title: Unit — git_tree (what git lists, shared by the gate runner and the evidence writer)
 kind: tests
 layer: n/a
-summary: tree_snapshot lists every path git status reports under a work tree (modified and untracked) and never an ignored one, each joined to its content digest; snapshot_digest is a stable sha256 over that snapshot and changes when one byte of a listed file changes; candidate_files lists the files a commit could carry (tracked, staged, and untracked but not ignored, a force-added ignored file included), sorted, staged_paths lists what the next commit adds or changes, sorted, a staged deletion left out, and reads the index GIT_INDEX_FILE names only when asked for git's repository context; and staged_blob gives the index copy of a path or None; outside a work tree each raises NoGitError, and scripts/run_make_target.py re-exports the same class rather than defining a second one. Runs real git in a tmp_path repository under the hermetic git environment.
+summary: tree_snapshot lists every path git status reports under a work tree (modified and untracked) and never an ignored one, each joined to its content digest; tracked answers which of the given paths git tracks, matching each name literally; snapshot_digest is a stable sha256 over that snapshot and changes when one byte of a listed file changes; candidate_files lists the files a commit could carry (tracked, staged, and untracked but not ignored, a force-added ignored file included), sorted, staged_paths lists what the next commit adds or changes, sorted, a staged deletion left out, and reads the index GIT_INDEX_FILE names only when asked for git's repository context; and staged_blob gives the index copy of a path or None; outside a work tree each raises NoGitError, and scripts/run_make_target.py re-exports the same class rather than defining a second one. Runs real git in a tmp_path repository under the hermetic git environment.
 """
 
 import subprocess
@@ -427,3 +427,18 @@ def test_the_gate_runner_re_exports_both_git_errors():
     assert rmt.GitFailedError is git_tree.GitFailedError
     for name in ("GitFailedError", "NoGitError", "inside_a_repository"):
         assert name in git_tree.__all__, name
+
+
+def test_tracked_names_only_the_given_paths_git_tracks(repo, tmp_path):
+    """An untracked, an ignored, an absent and a git-internal path are not
+    tracked, and a pathspec character in a name is matched literally, so `*.txt`
+    does not stand for tracked.txt."""
+    (repo / "new.txt").write_text("fresh\n", encoding="utf-8")
+    (repo / "ignored.txt").write_text("hidden\n", encoding="utf-8")
+    asked = ["tracked.txt", "new.txt", "ignored.txt", ".git/config", "gone.txt"]
+    assert git_tree.tracked(str(repo), asked + ["*.txt"]) == {"tracked.txt"}
+    assert git_tree.tracked(str(repo), []) == set()
+    lone = tmp_path / "lone"
+    lone.mkdir()
+    with pytest.raises(git_tree.NoGitError):
+        git_tree.tracked(str(lone), ["x.txt"])

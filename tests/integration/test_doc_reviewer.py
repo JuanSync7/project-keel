@@ -2,7 +2,7 @@
 title: Integration — the doc reviewer agent (dry-run, execute, decline, rollback)
 kind: tests
 layer: backend
-summary: agents.doc_reviewer.review over patched tool and model seams (no subprocess, no model): a dry-run gathers findings, retrieves rules, gates the baseline and writes nothing; execute proposes one edit per chunk and applies through the gated doer; a declined chunk or a red gate lands in skipped; a red baseline attempts nothing. The report the CLI and hook print is this report.
+summary: agents.doc_reviewer.review over patched tool and model seams (no subprocess, no model): a dry-run gathers findings, retrieves rules, gates the baseline and writes nothing; execute proposes one edit per chunk and applies through the gated doer; a declined chunk or a red gate lands in skipped; a red baseline attempts nothing; a reply that names a gate is declined, the prompt never states the gate, and every apply is bound to its chunk's own file with `--allow`. The report the CLI and hook print is this report.
 """
 
 import json
@@ -50,9 +50,12 @@ _RULES = [
 class _Runner:
     def __init__(self, baseline_ok=True, gate_ok=True):
         self.baseline_ok, self.gate_ok, self.calls = baseline_ok, gate_ok, []
+        self.argvs = {}
 
     def __call__(self, args, stdin=None):
         joined = " ".join(args)
+        tool = next((a for a in args if a.endswith(".py")), "")
+        self.argvs.setdefault(tool.rsplit("/", 1)[-1], []).append(list(args))
         if "review_docs.py" in joined:
             self.calls.append("review_docs")
             return 0, json.dumps(_REVIEW), ""
@@ -139,6 +142,35 @@ def test_a_declined_chunk_is_skipped_without_touching_apply(seams, monkeypatch):
     r = review(execute=True, root=str(root), max_chunks=1)
     assert r.skipped == ("mention:docs/b.md:4",) and r.applied == ()
     assert "apply_refactor" not in runner.calls
+
+
+def _flag(argv, name):
+    assert argv.count(name) == 1, argv
+    return argv[argv.index(name) + 1]
+
+
+def test_a_reply_that_names_a_gate_is_declined_and_each_apply_is_bound_to_its_chunk(
+    seams,
+):
+    """The gate is the run's: a reply naming one is declined before apply, the
+    prompt never tells the model the gate, and an accepted chunk's apply may
+    edit only that chunk's own file."""
+    runner, model, root = seams
+    gated = json.loads(_SPEC)
+    gated["gate"] = "none"
+    replies = iter([json.dumps(gated), _SPEC])
+    model.run = lambda prompt, **opts: (model.prompts.append(prompt), next(replies))[1]
+    r = review(execute=True, root=str(root), checkpointer=None)
+    assert r.skipped == ("mention:docs/b.md:4",)
+    applies = runner.argvs["apply_refactor.py"]
+    assert [_flag(a, "--allow") for a in applies] == ["scripts/README.md"]
+    assert [_flag(a, "--gate") for a in applies] == ["check-docs"]
+    assert [argv[1] for argv in runner.argvs["run_make_target.py"]] == ["check-docs"]
+    assert len(model.prompts) == 2
+    assert not any(
+        line.startswith("gate:") for p in model.prompts for line in p.splitlines()
+    )
+    assert "gate:" not in r.preview
 
 
 def test_a_red_gate_rolls_back_so_the_chunk_is_skipped(monkeypatch, tmp_path):

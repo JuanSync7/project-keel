@@ -160,7 +160,10 @@ there, so deleting the directory alone leaves the manifest claiming adapters tha
 longer exist and `make check` correctly reports one error per adapter. To drop it, clear
 `models.available`, `models.credential_env` and `models.allowed_hosts` to `{}`
 and set `models.default` to `null` in the same commit (a credential declaration or
-a host list for an adapter that is not available is itself an error), then run `make check` once more: it lists every doc that still links into `models/`, by file
+a host list for an adapter that is not available is itself an error).
+Removing a directory whose README `config/project.json` `rosters.readmes` lists
+also means dropping that entry, `models/README.md` here, because check_S errors
+on a listed README that is gone. Then run `make check` once more: it lists every doc that still links into `models/`, by file
 and line, so you can unlink or reword each one. That second step is the same for any
 directory you remove — the gate holds every link to a target that exists. Project
 generation is `copier`-based (see [ADR-K-0004](docs/adr/keel/K-0004-project-templating-copier.md)).

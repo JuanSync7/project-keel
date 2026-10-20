@@ -123,7 +123,7 @@ def _chunks(report, root, max_chunks):
     return (mentions + rosters)[:max_chunks]
 
 
-def _propose_prompt(rules, chunk, gate):
+def _propose_prompt(rules, chunk):
     """The per-chunk prompt: the guide's rules + one finding + the text it is about."""
     rule_text = "\n\n".join(
         "## %s\n%s"
@@ -133,20 +133,19 @@ def _propose_prompt(rules, chunk, gate):
     return (
         _system_prompt()
         + "\n\n# Rules (from docs/guides/doc-style.md, via the corpus)\n%s"
-        "\n\n# Chunk to review\nkind: %s\npath: %s\nline: %d\nfinding: %s\ngate: %s\n---\n%s\n"
+        "\n\n# Chunk to review\nkind: %s\npath: %s\nline: %d\nfinding: %s\n---\n%s\n"
         % (
             rule_text,
             chunk["kind"],
             chunk["path"],
             chunk["line"],
             chunk["finding"],
-            gate,
             chunk["text"],
         )
     )
 
 
-def _parse_spec(reply, gate):
+def _parse_spec(reply):
     """A bounded edit spec from the model reply, or None to decline the chunk."""
     text = reply.strip()
     if text.startswith("```"):
@@ -164,7 +163,11 @@ def _parse_spec(reply, gate):
     edits = data.get("edits")
     if not isinstance(edits, list) or not edits:
         return None
-    data.setdefault("gate", gate)
+    # The gate is the run's (--gate), never the reply's: a reply that names one
+    # is trying to choose its own judge, so it is declined, fail-closed, rather
+    # than stripped and applied.
+    if "gate" in data:
+        return None
     return data
 
 
@@ -215,7 +218,7 @@ def _retrieve(state):
         n for n in nodes if str(n.get("path", "")).endswith(os.path.basename(_GUIDE))
     ] or nodes
     chunks = state.get("chunks", [])
-    preview = _propose_prompt(rules, chunks[0], state["gate"]) if chunks else ""
+    preview = _propose_prompt(rules, chunks[0]) if chunks else ""
     return {"rules": rules, "preview": preview}
 
 
@@ -235,9 +238,9 @@ def _propose(state):
     """Model-call: ONE bounded edit spec for the chunk at the cursor, or a decline."""
     chunk = state["chunks"][state["cursor"]]
     reply = get_model(state.get("model")).run(
-        _propose_prompt(state.get("rules", []), chunk, state["gate"])
+        _propose_prompt(state.get("rules", []), chunk)
     )
-    return {"spec": _parse_spec(reply, state["gate"])}
+    return {"spec": _parse_spec(reply)}
 
 
 def _apply(state):
@@ -248,6 +251,8 @@ def _apply(state):
     skipped = list(state.get("skipped", ()))
     spec = state.get("spec")
     if spec:
+        # --allow binds the apply to the chunk the model was shown, so the
+        # reply's edits[].file cannot reach any other file.
         _, out, _ = _run(
             [
                 "scripts/apply_refactor.py",
@@ -257,6 +262,8 @@ def _apply(state):
                 state["root"],
                 "--gate",
                 state["gate"],
+                "--allow",
+                chunk["path"],
                 "--json",
             ],
             stdin=json.dumps(spec),

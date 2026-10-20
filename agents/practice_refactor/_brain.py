@@ -140,12 +140,12 @@ def _propose_prompt(practice, pdef, node):
     )
 
 
-def _parse_spec(reply, practice, gate):
+def _parse_spec(reply, practice):
     """Extract a bounded edit spec from the model reply, or None to decline.
 
-    Tolerates a ```json ...``` fence. Returns None on unparseable text or an
-    empty edit list, so a chunk the model can't safely edit is simply skipped —
-    never a half-formed write.
+    Tolerates a ```json ...``` fence. Returns None on unparseable text, an
+    empty edit list or a reply that names a gate, so a chunk the model can't
+    safely edit is simply skipped — never a half-formed write.
     """
     text = reply.strip()
     if text.startswith("```"):
@@ -163,8 +163,12 @@ def _parse_spec(reply, practice, gate):
     edits = data.get("edits")
     if not isinstance(edits, list) or not edits:
         return None
+    # The gate is the run's (--gate), never the reply's: a reply that names one
+    # is trying to choose its own judge, so it is declined, fail-closed, rather
+    # than stripped and applied.
+    if "gate" in data:
+        return None
     data.setdefault("practice", practice)
-    data.setdefault("gate", gate)
     return data
 
 
@@ -231,10 +235,14 @@ def _propose(state):
     re-proposed.
     """
     node = state["chunks"][state["cursor"]]
+    if not node.get("path"):
+        # An apply is bound to the chunk's own file (--allow), so a chunk with
+        # no path can never be applied; declining here spends no model call.
+        return {"spec": None}
     reply = get_model(state.get("model")).run(
         _propose_prompt(state["practice"], state.get("practice_def"), node)
     )
-    return {"spec": _parse_spec(reply, state["practice"], state["gate"])}
+    return {"spec": _parse_spec(reply, state["practice"])}
 
 
 def _apply(state):
@@ -250,6 +258,9 @@ def _apply(state):
     skipped = list(state.get("skipped", ()))
     spec = state.get("spec")
     if spec:
+        # --allow binds the apply to the chunk the model was shown, so the
+        # reply's edits[].file cannot reach any other file; `propose` already
+        # declined a chunk with no path, and an empty one binds to no file.
         _, out, _ = _run(
             [
                 "scripts/apply_refactor.py",
@@ -259,6 +270,8 @@ def _apply(state):
                 state["root"],
                 "--gate",
                 state["gate"],
+                "--allow",
+                node.get("path", ""),
                 "--json",
             ],
             stdin=json.dumps(spec),

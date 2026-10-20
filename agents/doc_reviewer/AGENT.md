@@ -7,7 +7,7 @@ owner: TBD
 summary: Local agent rules inside agents/doc_reviewer/.
 id: agents-doc-reviewer-agent
 created: 2026-09-02
-updated: 2026-09-02
+updated: 2026-10-20
 visibility: internal
 canonical: true
 ---
@@ -23,5 +23,6 @@ These rules are **local and authoritative** for this directory. They inherit fro
 - Default to dry-run (`execute=False`): `review`, `retrieve` and `baseline` run so the report is real; `propose` (model) and `apply` (writes) are skipped. Editing needs `execute=True`.
 - Control flow is a neutral `Plan` (steps + edges; see `runtimes/`) executed by a `Runtime`; the dry-run effect-guard lives in the runtime, not in inline `if`s.
 - **The gate is the definition of done.** A chunk is `applied` only when `apply_refactor` keeps `make check-docs` green; a red gate rolls the edit back and the chunk is `skipped`.
+- **An edit cannot reach the judge.** `apply_refactor` refuses, before any write, an edit outside the chunk's own file (the run binds it with `--allow`) or to a path config/project.json `agents` protects, and a spec that names a gate: the gate is the run's `--gate` flag, never the reply's. So a finding in CONVENTIONS.md, an AGENT.md, an ADR or a tool card is declined, not fixed; a `README.md` under a protected directory stays editable (`agents.editable_names`), and `docs/guides/coding-practices.md` owns this policy.
 - Edit the finding, never the document: the stamp, the path, the cell. Never an accepted ADR's decision text (`docs/guides/doc-style.md §8`), never a `.jinja` twin's templated line.
 - The loop is **durable**: one chunk per step, cursor-checkpointed under `wiki/.runtime`, so a crash resumes without re-proposing accepted chunks.

@@ -1980,7 +1980,7 @@ CMP-6.S6 green or the sixth slice reached, whichever comes first.
 | CMP-6.S3 | KEEL-SEC-1: nothing scans the tree for a committed secret | built, full `make verify` not yet run — the keyed gate, the scanner adapter and the wiring are built; 9 of 11 review findings confirmed and fixed; the targeted gates are green (337 passed, check-docs, check-exit-codes, mypy); the scanner installs through the pinned pre-commit hook here and is not yet run in GitHub CI; ADR-K-0025 proposed |
 | CMP-6.S4 | B1: a generated project's own code that breaks a keel gate check is red on `copier update` (the exit gate) or not judged at all (the config-reads gate skips); the ruled warn-then-fail tier is not built | planned |
 | CMP-6.S5 | The three accepted file-header fields are not read by any check, and a call into `re` needs no stated reason | planned |
-| CMP-6.S6 | KEEL-AGT-1: an agent's edit can reach the code that judges it; `scripts/apply_refactor.py` refuses only a path outside the repo root | planned |
+| CMP-6.S6 | KEEL-AGT-1: an agent's edit can reach the code that judges it; `scripts/apply_refactor.py` refuses only a path outside the repo root | done — `make verify` green (3544 passed); an agent edit to a protected or untracked file, or a spec that names its own gate, is refused before any write; 10 of 10 review findings confirmed and fixed; ADR-K-0026 proposed |
 
 **CMP-6.S3, the scanner.** The maintainer ruled on 2026-10-17: keel's own
 rule is a gate test, and a scanner is a thin adapter behind it. The gate test
@@ -2185,6 +2185,37 @@ Left by CMP-6.S3 so far:
   `make secrets-install`. `tests/integration/test_copier_generation.py` now
   drops `secrets` for those runs; a project's own CI installs the scanner
   before its suite.
+
+Left by CMP-6.S6 so far:
+
+- An interactive agent's direct Edit or Write tool, outside
+  `scripts/apply_refactor.py`, is not refused: config/project.json `agents`
+  binds only edits that land through the doer. Closing it needs hooks or
+  permission rules on the agent host, which are not built.
+- A refusal's reason is not surfaced: the brains keep `apply_refactor`'s exit
+  and drop its stderr, so a protected chunk shows as skipped like any other.
+  Recording why needs a rejection ledger, not built and not queued under an id
+  (the queue below gives KEEL-AGT-2 to the spend cap).
+- A protected chunk is not filtered out before the model call, so a
+  `doc_reviewer` finding in a protected document costs one call before the
+  edit is refused: `agents/` sits below `scripts/` in config/project.json
+  `import_layers.order` and cannot import `scripts/apply_refactor.py`
+  `protected_by`.
+- The frontend tests and configs the default project ships (`*.test.*`,
+  `*.spec.*`, `tsconfig*.json`, `package-lock.json`) are listed in
+  `agents.protected_names`, and a file git does not track is refused; a
+  tracked judge a project adds under another name (the directory
+  `structure.project_checks` names, the `make_targets.area_dir` makefiles) is
+  protected only once listed in `agents.protected_paths` or
+  `agents.protected_names`.
+- `scripts/git_tree.py` does not pass `-c core.fsmonitor=false` to its own
+  git calls: the tracked rule keeps an agent edit off `.git/config`, and the
+  extra layer was left out of a file another slice also edits.
+- A project that adds its own roster README must list it in
+  config/project.json `rosters.readmes`, or check_S errors on it.
+- `scripts/README.md.jinja` is a protected path while `scripts/README.md` is
+  editable, and a run binds one file, so `doc_reviewer` cannot fix a twinned
+  roster row in both: the edit to the twin is refused.
 
 ## Queued after Campaign 6
 

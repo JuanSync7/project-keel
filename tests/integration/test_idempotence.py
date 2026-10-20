@@ -262,31 +262,51 @@ def test_restamp_docs_is_a_fixed_point(tmp_path):
     assert stamped, "the first run restamped nothing -- the case proves nothing"
 
 
-def test_apply_refactor_leaves_the_tree_alone_on_a_second_apply(tmp_path):
+def test_apply_refactor_leaves_the_tree_alone_on_a_second_apply(tmp_path, monkeypatch):
     """@covers scripts/apply_refactor.py
 
     The doer applies a proposal by unique search/replace, so the anchor is gone
     once the edit lands. A second identical apply must therefore REFUSE — before
     writing — rather than find some other occurrence and edit it. Re-running is
     safe here because the refusal is loud, not because the edit is repeatable.
+    The scratch root is a git work tree tracking mod.py, under the hermetic git
+    config, because the doer edits only a file git tracks.
     """
     _require("scripts/apply_refactor.py")
     import apply_refactor
 
-    target = tmp_path / "mod.py"
+    sys.path.insert(0, str(_ROOT / "tests"))
+    import hermetic_git
+
+    work = tmp_path / "git-home"
+    work.mkdir()
+    for key, value in hermetic_git.git_env_vars(work).items():
+        monkeypatch.setenv(key, value)
+    root = tmp_path / "repo"
+    root.mkdir()
+
+    # The edit policy the doer refuses to plan without: keel's own `agents`
+    # block. config/project.json is protected; mod.py is not.
+    keel = json.loads((_ROOT / "config" / "project.json").read_text("utf-8"))
+    policy = root / "config" / "project.json"
+    policy.parent.mkdir()
+    policy.write_text(json.dumps({"agents": keel["agents"]}), encoding="utf-8")
+    target = root / "mod.py"
     target.write_text("x = old_name(1)\n", encoding="utf-8")
+    for argv in (["init", "-q"], ["add", "--", "mod.py"]):
+        subprocess.run(["git", *argv], cwd=str(root), check=True, env=os.environ)
     spec = {
         "practice": "t",
-        "gate": "none",
         "edits": [{"file": "mod.py", "find": "old_name", "replace": "new_name"}],
     }
 
-    first = apply_refactor.apply_and_gate(spec, str(tmp_path), gate="none")
+    first = apply_refactor.apply_and_gate(spec, str(root), gate="none")
     assert first["applied"], first
     after_first = target.read_bytes()
 
-    with pytest.raises(apply_refactor.RefactorError):
-        apply_refactor.apply_and_gate(spec, str(tmp_path), gate="none")
+    # Refused because the anchor is gone, not for any other reason.
+    with pytest.raises(apply_refactor.RefactorError, match="find text not present"):
+        apply_refactor.apply_and_gate(spec, str(root), gate="none")
     assert target.read_bytes() == after_first, "the refused second apply still wrote"
 
 

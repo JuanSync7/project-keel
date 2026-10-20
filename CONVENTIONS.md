@@ -161,8 +161,14 @@ and a declared one is an error (stale) while it does not.
 ### Rosters: `## What ships here`
 
 A directory README may declare what its directory contains under the exact
-heading `## What ships here`. The declaration is opt-in, and once made it is
-held to the tree (`check_S`): a pipe table follows the heading; its first
+heading `## What ships here`. Which READMEs are rosters is
+`config/project.json` `rosters.readmes`, a list of README paths, not the
+heading: `check_S` errors on a listed README without the heading and on a
+README carrying the heading that the list does not name, so an edit that drops
+or renames the heading fails rather than silencing the check, and the list sits
+in a file an agent edit cannot reach
+(`docs/adr/keel/K-0026-agent-edits-cannot-reach-the-judge.md`). A roster is held to the tree
+(`check_S`): a pipe table follows the heading; its first
 column is `Member`, each cell the member's path in backticks relative to the
 README's own directory (a directory member ends in `/`); every member of the
 directory appears exactly once and nothing else does (`README.md`, `AGENT.md`,
@@ -285,7 +291,7 @@ pre-commit hook) fails the build if the conventions above drift:
 | Cross-references | every relative Markdown link in prose (file, directory, `#anchor`) names something that exists, and every `§N` citation names a numbered section: a bare `§N` always cites this file, a section of any other document is cited by naming it (`docs/guides/python-style.md §3`). Read from prose and from code/config; links inside code are illustrations and are not read |
 | Check catalogue | `docs/guides/deterministic-checks.md` and the triggers agree on one membership: every catalogued script exists, an error-tier row is reachable from `make check-all`, a report row is run by some target, every script `check-all` reaches is catalogued, and the hooks table names exactly the hooks `.pre-commit-config.yaml` declares |
 | Tool spec body (§10) | a `kind: tool` spec's body is the seven sections in order (Command, Purpose, When to use, Args, Output, Side effects, Used by); `## Side effects` opens with the word for its `tool_effect` (`READ-ONLY` / `WRITES` / `MODEL-CALL`); `## When to use` carries at least one `- NOT ...` bullet |
-| Rosters (§2) | a README declaring `## What ships here` names every member of its directory exactly once and nothing else, in a `Member` first column, and every row's `Not for` cell is filled |
+| Rosters (§2) | a README `config/project.json` `rosters.readmes` lists, and no other README, declares `## What ships here`, which names every member of its directory exactly once and nothing else, in a `Member` first column, and every row's `Not for` cell is filled |
 | Practice mechanisms (§15) | every `config/practices.json` entry's `enforced_by` names a mechanism that exists — a check letter defined in `check_structure.py`, a script, test or doc path (and numbered section) in the tree, a Makefile target; `ruff:`/`mypy:` codes are the tools' own vocabulary |
 | Policy reachability | a practice enforced BY a document names that document within one hop of the root `AGENT.md` — named there, or named in a document named there — so a rule an agent never reads cannot be declared enforced |
 | Writer rerun declaration (§7) | a module that writes to the filesystem declares `effect: writes` and what a second run does (`rerun:` — `fixed-point`, `append-only` or `unsafe`); a `fixed-point` claim names a `rerun_proof:` in the same grammar as `enforced_by` above. The detector resolves each call's base (`os.replace`, never `str.replace`), so it under-reports rather than over-reports: a declared write it cannot see is a stated WARN, never a pass. See [`docs/guides/idempotency.md`](docs/guides/idempotency.md) |

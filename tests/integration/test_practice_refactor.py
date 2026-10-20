@@ -2,10 +2,11 @@
 title: Integration — practice_refactor gated KG-walking loop
 kind: tests
 layer: backend
-summary: Dry-run walks the graph + gates the read-only baseline but proposes/writes nothing; execute proposes one bounded edit per chunk and a chunk is `refactored` only when the gated apply_refactor keeps make verify green (else rolled back -> `skipped`); a crash mid-refactor resumes at the cursor without re-applying accepted chunks.
+summary: Dry-run walks the graph + gates the read-only baseline but proposes/writes nothing; execute proposes one bounded edit per chunk and a chunk is `refactored` only when the gated apply_refactor keeps make verify green (else rolled back -> `skipped`); a crash mid-refactor resumes at the cursor without re-applying accepted chunks. The gate is the run's: a reply that names a gate is declined before any apply, every apply is bound to its chunk's own file with `--allow`, and a chunk with no path is declined before the model is called.
 """
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -52,10 +53,14 @@ class _Runner:
         self.baseline_ok = baseline_ok
         self.gate_ok = gate_ok
         self.calls = []
+        self.argvs = {}
+        self.specs = []
         self.applied_files = []
 
     def __call__(self, args, stdin=None):
         joined = " ".join(args)
+        tool = next((a for a in args if a.endswith(".py")), "")
+        self.argvs.setdefault(tool.rsplit("/", 1)[-1], []).append(list(args))
         if "query_corpus.py" in joined:
             self.calls.append("query_corpus")
             return 0, json.dumps(self.nodes), ""
@@ -76,6 +81,7 @@ class _Runner:
         if "apply_refactor.py" in joined:
             self.calls.append("apply_refactor")
             spec = json.loads(stdin)
+            self.specs.append(spec)
             files = [e["file"] for e in spec.get("edits", [])]
             if self.gate_ok:
                 self.applied_files.extend(files)
@@ -97,6 +103,16 @@ class _Runner:
         return 0, "", ""
 
 
+_CHUNK_PATH = re.compile(r"^path: (.*)$", re.MULTILINE)
+
+
+def _chunk_edit(prompt):
+    """One bounded edit to the file the prompt's chunk is from: the only file
+    the brain binds apply_refactor to (`--allow <chunk path>`)."""
+    path = _CHUNK_PATH.findall(prompt)[-1]
+    return json.dumps({"edits": [{"file": path, "find": "old", "replace": "new"}]})
+
+
 class _Model:
     """A model that returns one bounded edit spec per chunk (or a scripted reply)."""
 
@@ -108,17 +124,7 @@ class _Model:
         self.n += 1
         if self.replies is not None:
             return self.replies[self.n - 1]
-        return json.dumps(
-            {
-                "edits": [
-                    {
-                        "file": "src/backend/f%d.py" % self.n,
-                        "find": "old",
-                        "replace": "new",
-                    }
-                ]
-            }
-        )
+        return _chunk_edit(prompt)
 
 
 def _patch(monkeypatch, runner, model):
@@ -181,7 +187,7 @@ def test_execute_applies_each_accepted_chunk_and_the_gate_keeps_it(
     )
 
     assert rep.dry_run is False and rep.baseline_green is True
-    assert rep.refactored == ("src/backend/f1.py", "src/backend/f2.py")
+    assert rep.refactored == ("src/backend/a.py", "src/backend/b.py")
     assert rep.skipped == ()
     assert runner.calls.count("apply_refactor") == 2  # one gated apply per chunk
     assert model.n == 2
@@ -224,6 +230,64 @@ def test_model_declining_a_chunk_skips_it_without_touching_apply(tmp_path, monke
     )  # declined -> the gated doer is never called
 
 
+def test_a_reply_that_names_a_gate_is_declined_and_never_applied(tmp_path, monkeypatch):
+    """The gate is the run's: a reply naming one (here `none`, no gate at all)
+    is declined before apply, and the baseline still ran the run's gate."""
+    runner = _Runner()
+    gated = json.loads(_chunk_edit("path: src/backend/a.py\n"))
+    gated["gate"] = "none"
+    model = _Model(replies=[json.dumps(gated), _chunk_edit("path: src/backend/b.py\n")])
+    _patch(monkeypatch, runner, model)
+
+    rep = refactor(
+        "precise-container-types",
+        execute=True,
+        root=str(_ROOT),
+        checkpointer=_checkpointer(tmp_path),
+    )
+
+    assert rep.skipped == ("n1",) and rep.refactored == ("src/backend/b.py",)
+    assert runner.calls.count("apply_refactor") == 1
+    assert [argv[1] for argv in runner.argvs["run_make_target.py"]] == ["verify"]
+    assert [sorted(spec) for spec in runner.specs] == [["edits", "practice"]]
+
+
+def _flag(argv, name):
+    assert argv.count(name) == 1, argv
+    return argv[argv.index(name) + 1]
+
+
+def test_each_apply_is_bound_to_the_chunks_own_file(tmp_path, monkeypatch):
+    nodes = _NODES + [{"node_id": "n3", "path": "", "text_excerpt": "x3"}]
+    runner = _Runner(nodes=nodes)
+    model = _Model(
+        replies=[
+            _chunk_edit("path: src/backend/a.py\n"),
+            _chunk_edit("path: src/backend/b.py\n"),
+            _chunk_edit("path: src/backend/a.py\n"),
+        ]
+    )
+    _patch(monkeypatch, runner, model)
+
+    rep = refactor(
+        "precise-container-types",
+        execute=True,
+        root=str(_ROOT),
+        checkpointer=_checkpointer(tmp_path),
+        gate="verify",
+    )
+
+    applies = runner.argvs["apply_refactor.py"]
+    assert [_flag(a, "--allow") for a in applies] == [
+        "src/backend/a.py",
+        "src/backend/b.py",
+    ]
+    assert [_flag(a, "--gate") for a in applies] == ["verify", "verify"]
+    # A chunk with no path cannot be bound, so it is declined before the
+    # model is paid for it, and never applied.
+    assert rep.skipped == ("n3",) and len(applies) == 2 and model.n == 2
+
+
 def test_no_matching_nodes_reports_empty_candidates(monkeypatch):
     runner, model = _Runner(nodes=[]), _Model()
     _patch(monkeypatch, runner, model)
@@ -248,17 +312,7 @@ def test_crash_mid_refactor_resumes_without_reapplying(engine, tmp_path, monkeyp
             calls["n"] += 1
             if calls["n"] == 2:  # SIGKILL-ish on the 2nd chunk's propose
                 raise RuntimeError("crash mid-refactor")
-            return json.dumps(
-                {
-                    "edits": [
-                        {
-                            "file": "src/backend/f%d.py" % calls["n"],
-                            "find": "old",
-                            "replace": "new",
-                        }
-                    ]
-                }
-            )
+            return _chunk_edit(prompt)
 
     monkeypatch.setattr(_BRAIN + "._run", runner)
     monkeypatch.setattr(_BRAIN + ".get_model", lambda name=None: _Crashy())
@@ -281,8 +335,8 @@ def test_crash_mid_refactor_resumes_without_reapplying(engine, tmp_path, monkeyp
         run_key="job",
     )
     assert rep.refactored == (
-        "src/backend/f1.py",
-        "src/backend/f3.py",
+        "src/backend/a.py",
+        "src/backend/b.py",
     )  # both chunks done
     assert calls["n"] == 3  # only the in-flight chunk retried
     # chunk0 was NOT re-applied: 1 apply on the first run + 1 on resume == 2 total

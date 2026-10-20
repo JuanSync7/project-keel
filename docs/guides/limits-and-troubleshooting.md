@@ -101,6 +101,27 @@ own limits, is a row of the [feature catalogue](../reference/features.md).
   app, and each committed lockfile, to one exact pin; a bump to
   a version whose revision is not in the cache shows only when the journey
   runs, as the missing-browser row below.
+- **An interactive agent's direct edit is not policed.** config/project.json
+  `agents` binds only edits that land through `scripts/apply_refactor.py`. An
+  interactive agent's own Edit or Write tool reaches every file its permissions
+  allow; closing that needs hooks or permission rules, which are not built
+  (`docs/guides/coding-practices.md` owns agent edit safety).
+- **A refused chunk shows only as skipped.** The agents' brains keep
+  `apply_refactor`'s exit and drop its refusal text, so a report lists a chunk
+  refused as protected like any other skipped chunk; recording the reason needs
+  a rejection ledger, which is not built.
+- **A judge the project adds is protected only when listed.** The frontend
+  tests and configs keel ships (`*.test.*`, `*.spec.*`, `tsconfig*.json`) are
+  covered by `agents.protected_names`, and any file git does not track is
+  refused, but a tracked judge a project adds under another name, such as the
+  directory `structure.project_checks` names or the `make_targets.area_dir`
+  makefiles, is covered only once `agents.protected_paths` or
+  `agents.protected_names` names it.
+- **A `README.md` under a protected directory stays editable.**
+  `agents.editable_names` carves it out by design, so `agents/doc_reviewer` can
+  fix a roster row. A README's `## What ships here` heading does not switch
+  check_S on or off: config/project.json `rosters.readmes` does, so check_S
+  fails a listed README whose heading an edit removed.
 
 ## Checks that pass when they skip
 
@@ -585,6 +606,12 @@ kept on purpose, such as a test fixture, with its reason.
 | stderr shows `[using default] child_env.login_name_schemes = []` and the run goes on | the key is absent from config/project.json, as in a project that deleted it or kept its own side of an update | nothing, if the default is what you want; otherwise, or to silence the line, set the key ([settings.md](../reference/settings.md) gives its meaning) |
 | a script stops with exit 14 after `[not set] evidence.schema` | config/project.json lacks a key the script requires, which has no default | add each key a `[not set]` line names, then run it again |
 | a script stops with exit 14 after a line ending `accepted: <what>` | a config/project.json key, or the environment variable a line opening `the environment:` names, holds a value of the wrong type or out of its range | set the key or the variable to a value the line accepts, then run it again |
+| `scripts/apply_refactor.py` stops with exit 2 and `edit N: P is protected by agents.protected_paths.X (<reason>); an agent edit may not reach the code that judges it`, or `edit N: P is protected by agents.protected_names.X (<reason>)` for a protected file name, and an agent lists the chunk as skipped | the edit reached a file config/project.json `agents` protects: a check, a test, config, an ADR, an AGENT.md, the Makefile | propose the change to that file's owner; only a human edit of config/project.json removes the entry, and no flag lifts it |
+| `scripts/apply_refactor.py` stops with exit 2 and `spec names a gate ('verify'); the gate is the caller's --gate, never the spec's` | the edit spec carries a `gate` key, as an older caller wrote it | drop the field from the spec and pass `--gate <target>` |
+| `scripts/apply_refactor.py` stops with exit 2 and `edit N: P is not a file this run was bound to (--allow F)` | the run passed `--allow` and the edit names another file; an agent binds each run to its chunk's own file | edit only a bound file, or pass one `--allow` for each file a person means to change |
+| `scripts/apply_refactor.py` stops with exit 2 and `edit N: P is not a file git tracks; an agent edits only tracked source, never git's own state, an ignored file or the toolchain the gate runs` | the edit names a file git does not track: something under `.git`, an ignored file such as one in `.venv` or `node_modules`, or a new file not yet added | edit a tracked file; a person who means the agent to edit a new file runs `git add` on it first |
+| `scripts/apply_refactor.py` stops with exit 2 and `edit N: P: git cannot say whether it is tracked (...); an agent edits only a file git tracks` | the root is not a git work tree, or git is not installed or failed; the doer refuses rather than guess | run it in a git work tree with git on the PATH; the parenthesis names git's own failure |
+| `scripts/apply_refactor.py` stops with exit 14 and ``apply_refactor: the edit policy in config/project.json `agents` could not be used`` | a key of the `agents` block is absent, holds a blank reason, is an empty `agents.protected_paths` or `agents.protected_names` (an empty `agents.editable_names` is valid), or `agents.protected_paths` does not cover config/project.json | fix the key the message names; nothing was changed |
 | a job stops on `Expecting property name enclosed in double quotes` after `copier update` | the update went to a template release whose migrations read `config/project.json` without checking it for conflict markers, and the manifest was conflicted; copier ran no later migration, and that release has no `scripts/jobs/finish_update.py` | resolve the file and `git add` it; copy `scripts/jobs/finish_update.py` from a newer keel checkout into the project, run `python scripts/jobs/finish_update.py --template <that keel checkout>`, delete the copied script (that release's `scripts/jobs/README.md` roster does not name it, so `check_structure.py` fails on it), then review and commit. On a release that has the check, the same conflict stops with the refusal row above instead, and `tests/integration/test_copier_job_conflict_refusal.py` keeps it so |
 | `copier update` refuses the ref you named | it is older than the project's recorded `_commit` | update to a newer tag ([ADR-K-0009](../adr/keel/K-0009-release-identity-and-the-tag-ordering-rule.md)) |
 | `make check-corpus` fails after you added documents | the local corpus is stale | `make site-data` |

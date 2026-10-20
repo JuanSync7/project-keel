@@ -21,6 +21,21 @@
     "_comment": "Top-level directories this project adds beyond the CONVENTIONS section 2 taxonomy, by name. scripts/check_structure.py check_B errors on any other non-hidden top-level directory, on a name here that does not exist or is already in the taxonomy, and on a declared directory without README.md and CLAUDE.md. Names only: the directory's own README.md summary says why it exists.",
     "extra_toplevel": []
   },
+  "rosters": {
+    "_comment": "The README.md files that are rosters, by repo-relative path. scripts/check_structure.py check_S holds each to its directory through its '## What ships here' table, and errors on a listed README without that table, on a listed path with no file, and on a README carrying the heading that readmes does not list. The list lives here, in a file agents.protected_paths refuses an agent edit to, so a README edit cannot turn its own roster check off; an absent block lists nothing, so every roster README errors.",
+    "readmes": [
+      "agents/README.md",
+      "agents/tools/README.md",
+      "docs/adr/keel/README.md",
+      "docs/guides/README.md",
+      "docs/reference/README.md",
+      "evals/README.md",
+      "mcp/README.md",
+      "models/README.md",
+      "scripts/README.md",
+      "scripts/jobs/README.md"
+    ]
+  },
   "adr": {
     "_comment": "The two ADR number spaces (docs/adr/keel/K-0013-template-and-project-adr-number-spaces.md, CONVENTIONS section 19). project_dir holds this project's own ADRs, NNNN-<slug>.md numbered from 0001; template_dir holds the ADRs the template ships, template_prefix + NNNN-<slug>.md, shown as ADR-K-NNNN; number_digits is N. Each space numbers on its own. template_adrs names every file the template ships in template_dir: it is the template's to write, and a project does not add to it, because a project's decision under a free K- number would meet the template's next ADR of that number on update. scripts/check_structure.py check_Y holds every ADR file to the space it sits in, a template-space file to template_adrs and template_adrs to the files, every kind: adr document to one of the two directories, its title to its file name, and a number to one file per space; a missing or malformed block is an error once the tree has a `kind: adr` document.",
     "project_dir": "docs/adr",
@@ -52,8 +67,56 @@
       "K-0022-one-config-loader.md",
       "K-0023-canary-gates-a-release-not-a-commit.md",
       "K-0024-what-a-test-may-reach.md",
-      "K-0025-committed-secrets-keyed-gate-and-scanner.md"
+      "K-0025-committed-secrets-keyed-gate-and-scanner.md",
+      "K-0026-agent-edits-cannot-reach-the-judge.md"
     ]
+  },
+  "agents": {
+    "_comment": "What an edit an agent proposes may never reach: the code, configuration and approved text that judge it. scripts/apply_refactor.py plan_edits reads this block through scripts/config_loader.py and refuses, before any write and so in a dry run too, an edit to a covered path, naming the edit, the path and the key that protects it with its reason. protected_paths maps a repo-relative path to its reason and covers that path and everything under it; protected_names maps a file name, or a glob over one such as `*.test.*`, to its reason and covers each name it matches in any directory; editable_names maps a file name or glob to its reason and carves the names it matches back out of a protected directory. Precedence: a protected name refuses, else an editable name allows, else a protected path refuses. Matching compares case-folded path parts, so a case variant is refused too, and an edit is judged twice, on the path as written and on its realpath, so a symlink cannot launder a judge file; an absolute path, a `..` part and a file with more than one hard link are refused outright. Below this list sits a second rule no entry lifts: a file git does not track is refused, so git's own state, an ignored file and the toolchain the gate runs (.venv, node_modules) stay out of reach even where no entry names them. protected_paths and protected_names must each hold at least one entry, every reason must be non-blank, and protected_paths must cover config/project.json itself, or the policy is a config fault; editable_names may be empty, the setting with no carve-out. The map only refuses: no flag lifts it, and only a human edit of this file removes an entry. An entry for a path this tree lacks protects nothing and is not an error. It does not reach an interactive agent's direct edit outside scripts/apply_refactor.py, which needs hooks or permission rules, not built. docs/adr/keel/K-0026-agent-edits-cannot-reach-the-judge.md is the decision.",
+    "protected_paths": {
+      ".claude": "the hooks and skills that launch the agents and run the gates on Stop",
+      ".copier-answers.yml": "the commit copier update merges from; absent in the template",
+      ".copier-answers.yml.jinja": "the twin .copier-answers.yml renders from; absent in a generated project",
+      ".git": "git's own state: .git/config can set core.fsmonitor, which runs inside the gate's own git status, .git/hooks run on commit, and in a linked worktree .git is the file naming the repository",
+      ".github": "the CI workflows that run make verify and gate a release",
+      ".gitignore.jinja": "the twin .gitignore renders from; absent in a generated project",
+      ".pre-commit-config.yaml": "the commit-time gate",
+      "CONVENTIONS.md": "the taxonomy check_structure enforces; approved text (R-AGT-33)",
+      "agents": "the brains, prompts and tool cards: an agent may not rewrite its own instructions or orchestration",
+      "api/rest_fastapi/export_openapi.py": "make check-openapi's checker, a gate make check-all runs from outside scripts/",
+      "config": "the judge's own configuration: project.json, this list included, and practices.json",
+      "copier.yml": "the template's migrations and excludes; absent in a generated project",
+      "docs/adr": "the decisions the gates enforce; accepted ADRs are immutable",
+      "docs/specs": "the requirements make trace holds tests to",
+      "evals": "make verify runs make eval",
+      "models": "the adapters and the allowed_hosts boundary",
+      "pyproject.toml": "ruff, mypy and pytest settings the lint, typecheck and test gates read",
+      "pyproject.toml.jinja": "the twin pyproject.toml renders from",
+      "runtimes": "the effect guard that bounds every agent step",
+      "scripts": "check_structure and the other gate scripts, run_make_target, and apply_refactor itself",
+      "tests": "the suite make test runs, conftest and the isolation guard included"
+    },
+    "protected_names": {
+      "*.spec.*": "a browser journey make test-fe-e2e runs (each app's e2e/*.spec.ts)",
+      "*.test.*": "a unit test make test-fe-unit runs (each app's src/**/*.test.ts and .test.tsx)",
+      ".gitattributes": "the attributes git status reads (filters, line endings), so they decide what the tree-changed check sees",
+      ".gitignore": "what git status leaves out in its directory, so what the tree-changed check and the gate evidence see",
+      "AGENT.md": "agent rules in every directory; approved text",
+      "CLAUDE.md": "the symlink to AGENT.md",
+      "GNUmakefile": "make verify's own recipes; make reads all three names",
+      "Makefile": "make verify's own recipes; make reads all three names",
+      "conftest.py": "pytest loads a conftest.py above tests/ too, so one anywhere on the path changes what make test runs",
+      "eslint.config.js": "the frontend lint and test gates' settings, make test-fe",
+      "makefile": "make verify's own recipes; make reads all three names",
+      "package-lock.json": "pins the frontend gates' own toolchain (vitest, playwright, tsc, eslint) make fe-install installs",
+      "package.json": "the frontend lint and test gates' settings, make test-fe",
+      "playwright.config.ts": "the frontend lint and test gates' settings, make test-fe",
+      "tsconfig*.json": "the TypeScript settings make typecheck-fe reads; tsconfig.app.json and tsconfig.node.json hold the strict flags",
+      "vitest.config.ts": "the frontend lint and test gates' settings, make test-fe"
+    },
+    "editable_names": {
+      "README.md": "every roster row doc_reviewer fixes lives in a README.md (115 of 115 measured); the one switch a gate reads in a README, its `## What ships here` heading, is held by rosters.readmes in this protected file, so a README edit cannot turn check_S off"
+    }
   },
   "doc_drift": {
     "_comment": "What a shipped document may not say (docs/guides/doc-style.md, CONVENTIONS section 15). A shipped document is any Markdown file, or its .md.jinja twin, whose path starts with none of history_paths; history_paths are the prefixes whose Markdown is history (a changelog, decisions, plans) and may name a campaign, a slice or a moment. forbidden_phrases maps a regular expression to the reason it is refused: a phrase true of one machine or one person, never a literal host, port or path. tests/integration/test_doc_drift.py reads both: in a shipped document's prose (code spans and fences are illustrations) it refuses a concrete work id in the work_naming grammar, any forbidden phrase, a loopback port that no non-Markdown file declares, and a citation of a document copier.yml never ships. The other keys name the documents a newcomer reads and what each must say, and the same test holds them: one_hop maps an entry document to the documents it links to directly; layout_heading is the README section whose tree lists every top-level directory that ships; roster is the guide index, whose rows each name their audiences from audiences, in that order; limits_guide names every waiver the checkers, the child-process allowlist, the isolation guard and this test grant, and holds the exit-code table scripts/exit_code_table.py generates from scripts/exit_codes.py and from every script make gate_target runs (make check-exit-codes fails a stale one); upgrade_guide gives every copier task and migration its own row in copier's order, names every exclusion and states the copier version floor (template only). settings_reference is the settings reference: tests/integration/test_reference_drift.py holds its rows derived-equal to every key of the JSON files it names, every copier question, make variable, environment variable and command-line flag, with each literal default. features_reference is the feature catalogue: the same test holds its rows to every feature the tree declares (each check letter, annotated make target with its effect label, checker script, copier job, gate test, scripts module another module outside tests/ imports, agent, MCP server, model and runtime adapter, workflow and agent skill) and requires each row to state its limits. A missing or malformed block fails that test.",
@@ -68,17 +131,17 @@
         "AGENT.md",
         "CONTRIBUTING.md",
         "CONVENTIONS.md",
-        "docs/README.md",
-        "docs/guides/README.md",
+      "docs/README.md",
+      "docs/guides/README.md",
         "docs/guides/limits-and-troubleshooting.md",
         "docs/guides/generate-and-upgrade.md",
         "docs/reference/settings.md",
         "docs/reference/features.md"
       ],
       "docs/README.md": [
-        "docs/guides/README.md",
-        "docs/adr/README.md",
-        "docs/adr/keel/README.md",
+      "docs/guides/README.md",
+      "docs/adr/README.md",
+      "docs/adr/keel/README.md",
         "CONVENTIONS.md",
         "docs/reference/settings.md",
         "docs/reference/features.md"

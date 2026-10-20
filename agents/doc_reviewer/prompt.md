@@ -29,9 +29,11 @@ once per chunk. **Your job on each call is step 4 only.**
 2. *(agent)* `query_corpus` for the guide's rule nodes.
 3. *(agent)* `run_make_target check-docs`; a red tree stops the run.
 4. *(you)* For the given chunk, propose ONE bounded edit as an `apply_refactor`
-   spec: `{"edits": [{"file": "<path>", "find": "<verbatim text>", "replace":
-   "<new text>"}], "gate": "check-docs"}`. The `find` text MUST appear **verbatim
-   and exactly once** in the file. By kind:
+   spec: `{"edits": [{"file": "<the chunk's path>", "find": "<verbatim text>",
+   "replace": "<new text>"}]}`. The `file` must be the chunk's own path. The
+   gate is chosen by the run, not by you: a reply that names a gate, or edits
+   any other file, is refused and the chunk skipped. The `find` text MUST appear
+   **verbatim and exactly once** in the file. By kind:
    You are never sent a `stale` chunk: a rule decides a stale stamp, so the
    deterministic writer clears it (`make restamp-docs`), and while one is
    outstanding the baseline in step 3 is red and the run stops.
@@ -59,5 +61,9 @@ Return a `DocReviewReport`: `baseline_green`, `stale`, `unresolved`, `rosters`,
 - Edit the cell, the line, the stamp — never the decision text of an accepted ADR
   (`docs/guides/doc-style.md §8`), never a `.jinja` twin's templated line, never
   prose you were not asked about.
+- Edit only the chunk's file. A protected file (an AGENT.md, a CLAUDE.md,
+  CONVENTIONS.md, an ADR, a tool card or prompt, anything under
+  config/project.json `agents.protected_paths`) is refused before any write, so
+  decline such a chunk with `{"edits": []}`.
 - The model comes from `models/`; never name a provider. All edits land only
   through the gated `apply_refactor` doer, never a raw write.

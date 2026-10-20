@@ -347,6 +347,63 @@ def _exclusions(value: Any) -> bool:
     return True
 
 
+def _is_reason_map(value: Any) -> bool:
+    # At least one entry: an empty policy protects nothing, and a guard over
+    # zero items is a vacuous pass, not a pass.
+    return _is_any_reason_map(value) and bool(value)
+
+
+def _is_any_reason_map(value: Any) -> bool:
+    # Empty allowed: for a map that only lifts protection, empty is the
+    # strictest setting, so the at-least-one bound of a deny map would force
+    # a carve-out to exist.
+    return isinstance(value, dict) and all(_is_nonempty_str(v) for v in value.values())
+
+
+def _bare_names(value: Any) -> bool:
+    # A bare file name or a glob over one: a `/` would make it a path, and `.`
+    # or `..` name a directory, never a file a rule can protect or carve out.
+    return all(
+        _is_nonempty_str(k) and "/" not in k and k not in (".", "..") for k in value
+    )
+
+
+def _reasoned_names(value: Any) -> bool:
+    return _is_reason_map(value) and _bare_names(value)
+
+
+def _carved_out_names(value: Any) -> bool:
+    return _is_any_reason_map(value) and _bare_names(value)
+
+
+def _reasoned_paths(value: Any) -> bool:
+    # Relative POSIX parts only, each a real name: a leading or trailing `/`,
+    # an empty, `.` or `..` part would make two spellings of one protection,
+    # or one that climbs out of the root it is judged against.
+    return _is_reason_map(value) and all(
+        _is_nonempty_str(k)
+        and all(part not in ("", ".", "..") for part in k.split("/"))
+        for k in value
+    )
+
+
+_REASONED_NAMES = (
+    _reasoned_names,
+    "at least one entry, each a bare file name or a glob over one (no `/`, "
+    "not `.` or `..`) mapped to a non-blank reason",
+)
+_CARVED_OUT_NAMES = (
+    _carved_out_names,
+    "an object, empty for no carve-out, each key a bare file name or a glob "
+    "over one (no `/`, not `.` or `..`) mapped to a non-blank reason",
+)
+_REASONED_PATHS = (
+    _reasoned_paths,
+    "at least one entry, each a relative POSIX path (no leading or trailing "
+    "`/`, no empty, `.` or `..` part) mapped to a non-blank reason",
+)
+
+
 # The one table of declared keys, sorted by path. A block a typed validator
 # owns (child_env, evidence) is one `object` row, and the validator stays the
 # typed view over the value resolved here; an open-keyed map is one row, never
@@ -392,6 +449,32 @@ KEYS = tuple(
                 secret=True,
                 env="OPENAI_API_KEY",
                 file=None,
+            ),
+            _row(
+                ("agents", "editable_names"),
+                "object",
+                NONE,
+                "each file name or glob scripts/apply_refactor.py lets an agent "
+                "edit inside a protected path, mapped to the reason; empty: no "
+                "carve-out",
+                accepts=_CARVED_OUT_NAMES,
+            ),
+            _row(
+                ("agents", "protected_names"),
+                "object",
+                NONE,
+                "each file name or glob scripts/apply_refactor.py refuses an "
+                "agent edit to in any directory, mapped to the reason",
+                accepts=_REASONED_NAMES,
+            ),
+            _row(
+                ("agents", "protected_paths"),
+                "object",
+                NONE,
+                "each repo-relative path scripts/apply_refactor.py refuses an "
+                "agent edit to, itself and everything under it, mapped to the "
+                "reason",
+                accepts=_REASONED_PATHS,
             ),
             _row(
                 ("canary", "answer_sets"),

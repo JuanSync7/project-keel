@@ -8,7 +8,7 @@ tags: [practices, gate, advisory, ruff, mypy, types, llm, cuda, langgraph, guide
 summary: The catalogue of good-Python practices Keel promotes for general and LLM/CUDA/LangGraph code — each sorted onto the gate/advisory/doc line, sourced from config/practices.json.
 id: docs-guides-coding-practices
 created: 2026-07-06
-updated: 2026-10-09
+updated: 2026-10-20
 visibility: internal
 canonical: true
 ---
@@ -214,6 +214,50 @@ vendor-specific trigger, the `practice-refactor` skill:
 python3 scripts/refactor_practice.py <practice-id> --json            # dry-run preview
 python3 scripts/refactor_practice.py <practice-id> --execute --json  # apply, gated
 ```
+
+### What an agent edit cannot reach
+
+This guide owns agent edit safety: what an edit an agent proposes may touch, for
+`agents/practice_refactor/` and `agents/doc_reviewer/` alike. The rule is that
+an agent edit never reaches the code, configuration or approved text that
+judges it (R-AGT-7, R-AGT-33), and `scripts/apply_refactor.py` enforces it
+before any write, so a dry run is refused too. Three layers hold it:
+
+- **A deny floor in the project's own config.** config/project.json `agents`
+  lists what no agent edit may reach. `agents.protected_paths` maps a
+  repo-relative path to its reason and covers everything under it (the checks
+  in `scripts/`, `tests/`, `config/`, `docs/adr/`, `agents/` and more);
+  `agents.protected_names` maps a file name, or a glob over one, to its reason
+  and covers each name it matches in any directory (`Makefile`, `AGENT.md`,
+  `CLAUDE.md`, `.gitignore`, the frontend tool configs, `*.test.*` and
+  `*.spec.*`); `agents.editable_names` carves a name back out of a protected
+  directory (`README.md`, so a roster row stays fixable; which READMEs are
+  rosters is config/project.json `rosters.readmes`, so the edit cannot switch
+  check_S off). A protected name refuses first,
+  else an editable name allows, else a protected path refuses. A path is judged
+  case-folded, once as written and again on its realpath, so a symlink cannot
+  launder a judge file; a `..` part, an absolute path and a file with more than
+  one hard link are refused outright. `agents.protected_paths` must cover
+  config/project.json itself, or the policy is a config fault (exit 14), so the
+  floor protects itself; no flag lifts it, and only a human edit removes an
+  entry.
+- **Only tracked files.** An edit to a file git does not track is refused
+  whatever `agents` lists: git's own state, an ignored file, `.venv`,
+  `node_modules` and a new file stay out of reach.
+- **A per-run binding.** Each agent passes `--allow <the chunk's file>`, so an
+  edit to any other file is refused even when no entry protects it.
+
+The gate is the caller's, never the reply's: `--gate` defaults to `verify`, and
+a spec that names a `gate` is refused rather than dropped. `--gate none` skips
+the gate, and is a human caller's flag only.
+
+A project that adds its own tracked judge under a name the list does not cover
+adds it to `agents.protected_paths` by hand: the directory
+`structure.project_checks` names and the `make_targets.area_dir` makefiles are
+protected only when listed. The frontend tests and configs the default project
+ships are listed already. The policy does not reach an interactive agent's
+direct Edit or Write outside `scripts/apply_refactor.py`; closing that needs
+hooks or permission rules, which are not built.
 
 ## Extending the catalogue
 
