@@ -1235,19 +1235,28 @@ def test_a_refusal_naming_a_file_the_update_did_not_conflict_is_exit_2(
 
 
 _OWED = "config/project.json: child_env.names lists GIT_DIR, which is bound"
-_RETIRED_ARGV = (
-    "Task ['python', 'scripts/jobs/keep_edited_retired.py', '--quiet'] returned "
-    "non-zero exit status 2."
-)
 
 
-def _stopped_over(message):
+def _task(stem, finish=True):
+    """copier's line for a failed Task running scripts/jobs/<stem>.py; a
+    migration passes `--finish-with`, a `_tasks` entry does not."""
+    tail = ", '--finish-with', 'python'" if finish else ""
+    return (
+        "Task ['python', 'scripts/jobs/%s.py', '--quiet'%s] returned non-zero "
+        "exit status 2." % (stem, tail)
+    )
+
+
+def _stopped_over(message, task=None):
     """The stderr copier writes when keep_edited_retired stops over *message*."""
     return (
         "keep_edited_retired: cannot judge the files the update deleted: git "
         "diff-index: %s; fix what it names, then finish the update | %s\n"
-        % (message, _RETIRED_ARGV)
+        % (message, task or _task("keep_edited_retired"))
     )
+
+
+_JOBS = ["keep_edited_retired", None, "restamp_docs"]
 
 
 def test_a_migration_stopping_over_an_owed_error_is_the_prediction():
@@ -1256,8 +1265,7 @@ def test_a_migration_stopping_over_an_owed_error_is_the_prediction():
     the real update stops there too, so the refusal is what the audit
     predicts, named with its job and the finish command, not a broken audit."""
     afters = [[("X", "error", _OWED), ("A", "warning", "docs/x.md: stale")]]
-    jobs = ["keep_edited_retired", None, "restamp_docs"]
-    assert ap.owed_refusal(_stopped_over(_OWED), afters, jobs) == {
+    assert ap.owed_refusal(_stopped_over(_OWED), afters, _JOBS) == {
         "job": "keep_edited_retired",
         "owed": [("X", _OWED)],
         "rerun": ap.FINISH_RERUN,
@@ -1268,48 +1276,85 @@ def test_a_migration_stopping_over_an_owed_error_is_the_prediction():
     "afters, jobs, stderr",
     [
         # Only one resolution has the error: it is not owed.
-        (
-            [[("X", "error", _OWED)], []],
-            ["keep_edited_retired"],
-            _stopped_over(_OWED),
-        ),
+        ([[("X", "error", _OWED)], []], _JOBS, _stopped_over(_OWED)),
         # A warning is never owed.
-        ([[("X", "warning", _OWED)]], ["keep_edited_retired"], _stopped_over(_OWED)),
+        ([[("X", "warning", _OWED)]], _JOBS, _stopped_over(_OWED)),
         # The migration stopped over something the audit does not report.
         (
             [[("X", "error", _OWED)]],
-            ["keep_edited_retired"],
+            _JOBS,
             _stopped_over("git: fatal: not a git repository"),
         ),
+        # copier.yml cannot be read: no migration can be named.
+        ([[("X", "error", _OWED)]], None, _stopped_over(_OWED)),
+        # The failed script is no migration of the template.
+        ([[("X", "error", _OWED)]], ["restamp_docs"], _stopped_over(_OWED)),
+        # A `_tasks` entry, not a migration, failed: restamp_docs is both, and
+        # only a migration passes `--finish-with`.
+        (
+            [[("X", "error", _OWED)]],
+            _JOBS,
+            _stopped_over(_OWED, _task("restamp_docs", finish=False)),
+        ),
+        # Two migrations are named: which one stopped is not known.
+        (
+            [[("X", "error", _OWED)]],
+            _JOBS,
+            _stopped_over(_OWED) + _task("restamp_docs") + "\n",
+        ),
     ],
-    ids=["one-resolution", "warning", "unreported-fault"],
+    ids=[
+        "one-resolution",
+        "warning",
+        "unreported-fault",
+        "unreadable-migrations",
+        "job-not-listed",
+        "a-task-failed",
+        "two-jobs-named",
+    ],
 )
 def test_a_migration_stopping_over_anything_else_is_not_predicted(afters, jobs, stderr):
-    """None unless the message the migration printed is, verbatim, an error
-    every resolution of the tree has: anything else is a failed update the
-    audit cannot stand in for (exit 2)."""
+    """None unless copier names exactly one migration as the failed task and
+    what it printed is, verbatim, an error every resolution of the tree has:
+    anything else is a failed update the audit cannot stand in for (exit 2)."""
     assert ap.owed_refusal(stderr, afters, jobs) is None
 
 
-@pytest.mark.parametrize(
-    "jobs, also",
-    [
-        (None, ""),
-        (["restamp_docs"], ""),
-        (
-            ["keep_edited_retired", "restamp_docs"],
-            "Task ['python', 'scripts/jobs/restamp_docs.py'] returned 2.\n",
-        ),
-    ],
-    ids=["unreadable-migrations", "job-not-listed", "two-jobs-named"],
-)
-def test_an_owed_refusal_names_no_job_it_cannot_tell(jobs, also):
-    """The job is the one migration whose script copier names in the failed
-    task; when copier.yml cannot be read, or none or two of its jobs are named,
-    the job is None, so the caller assumes no migration ran."""
-    stderr = _stopped_over(_OWED) + also
-    found = ap.owed_refusal(stderr, [[("X", "error", _OWED)]], jobs)
-    assert found is not None and found["job"] is None, found
+def test_no_job_named_means_no_migration_is_assumed_to_have_run():
+    """An `rm` migration is None in migration_jobs, so a None job must not
+    match it: the caller then assumes nothing ran."""
+    assert ap.jobs_not_run(_JOBS, None) is None
+
+
+def test_a_tree_a_failed_update_leaves_unjudgeable_is_the_update_failure(
+    tmp_path, template, capsys, monkeypatch
+):
+    """The update failed with no refusal the audit predicts, and judging the
+    tree it left crashes: the copier failure is the cause and exit 2, never an
+    escaped traceback, whose exit 1 would read as an owed error."""
+    tag = _migrating_template(
+        template, [("job", "make job", True)], {"scripts/other.py": "X = 1\n"}
+    )
+    dest = _generated(tmp_path, template, tag)
+    (dest / "scripts" / "dep.py").write_text(
+        "%s mine\nVALUE = 3\n%s\nVALUE = 1\n%s theirs\n" % ("<" * 7, "=" * 7, ">" * 7),
+        encoding="utf-8",
+    )
+    calls = []
+    real = ap.check_structure.run_checks
+
+    def crash_after_the_update(root, project_checks=True):
+        calls.append(root)
+        if len(calls) > 1:
+            raise RuntimeError("planted: the tree cannot be judged")
+        return real(root, project_checks=project_checks)
+
+    monkeypatch.setattr(ap.check_structure, "run_checks", crash_after_the_update)
+    code, out, err = _run([str(dest), "--today", TODAY], capsys)
+    assert len(calls) == 2, calls  # not vacuous: the crash was reached
+    assert code == 2, out + err
+    assert "copier update of <scratch>" in err and "failed" in err, err
+    assert _scratch_left(tmp_path) == []
 
 
 @pytest.mark.parametrize(

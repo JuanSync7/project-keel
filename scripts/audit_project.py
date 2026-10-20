@@ -3,7 +3,7 @@
 title: audit_project — another keel project judged by this template's current gates
 kind: script
 layer: n/a
-summary: Answers "what would this template's current gates say about DEST once `copier update` has landed?" by judging one consistent tree, the one the update leaves, never a mix of merged and unmerged files. It builds that tree in a scratch directory (`tempfile.TemporaryDirectory`, prefix `keel-audit-`, removed on every exit path): a clone of this checkout with its uncommitted edits committed on top (a snapshot, scripts/template_snapshot.py `snapshot_working_tree`, so the template's own index is never refreshed), a copy of DEST's files (the ones git does not ignore; a symlink leaving DEST is copied as its target's bytes, so nothing is written through it), and a real `copier update --trust --conflict inline` of the copy against the snapshot, run as a child process with an allowlisted environment and a hermetic git config. check_structure's letters (A..Z) run in-process on the copy before and after the update: a letter finding after the update is owed; one present only before is resolved by the update; a path copier leaves conflicted is reported in the `conflict` group, and the tree after the update is then checked twice, every conflict hunk the project's way and every hunk the template's way (`resolve_conflict`, read from copier's own markers), so no check parses a marker and no conflicted file is put back to DEST's bytes beside the update's other files: a finding both resolutions have is owed, one only one has depends on how the conflict is resolved and is not judged, and a finding in a conflicted file is not judged. The `retired` group names each DEST file the update deletes that the project edited (an error, owed: the same `is_edited` rule scripts/jobs/keep_edited_retired.py applies; the prediction runs that guard migration as the real update does, so a file still deleted after it is one a later `rm` migration removes or one copier deleted without running migrations). The config group warns (`update-refused`) when the real update would refuse DEST: outside git, or with uncommitted changes, which it names. The config group names what the update did to each key of each JSON config (`classify`: arrives, updates, merges, removed-upstream) from the template's render at DEST's `_commit`, DEST's file and the predicted file. Every finding carries an origin evidence kind (template-unedited, template-edited, template-rendered, template-new, project, unknown) read from git at `_commit`; a file that cannot be read is `unknown`. When `_commit` does not resolve here nothing is predicted: DEST is judged as it stands and the not-checked section says so. It adds the freshness judge (scripts/jobs/review_docs.py) and the restamp writer's `pending` list (scripts/jobs/restamp_docs.py) on DEST, both of which the update's last migration clears. A "not checked" section names every proof it does not run, including that the update's tasks run the project's merged restamp step inside the scratch copy. DEST and this checkout are never written: DEST is read with open() and ast and its git with name-level commands built by `review_docs.git_argv` that write nothing and switch off fsmonitor, signature verification and every filter driver its git config names; no make target, hook or module of DEST runs in this process, its own structure checks (`structure.project_checks`) included. Exit 0 when no letter or `retired` error is owed, 1 when one is (or no file was seen), 2 on a usage error, a refusal (DEST is not a keel project, or its answers are malformed), a template render error (including answers of the wrong type), a failed copier update (except an `after` migration the real update stops at too -- one refusing, through scripts/jobs/conflict_guard.py, over files the update itself leaves conflicted, or one whose output holds verbatim the message of a letter error the audit judges owed (`owed_refusal`) -- which is named under not checked with its rerun, the tree copier leaves is judged, and when the restamp is among the migrations never reached the freshness and restamp groups name `make restamp-docs`) or a missing extra. Keel-only: excluded from generated projects (docs/design/downstream-feedback.md, CMP-1.S5); a generated project's `make audit-project` stub points back at the template checkout.
+summary: Answers "what would this template's current gates say about DEST once `copier update` has landed?" by judging one consistent tree, the one the update leaves, never a mix of merged and unmerged files. It builds that tree in a scratch directory (`tempfile.TemporaryDirectory`, prefix `keel-audit-`, removed on every exit path): a clone of this checkout with its uncommitted edits committed on top (a snapshot, scripts/template_snapshot.py `snapshot_working_tree`, so the template's own index is never refreshed), a copy of DEST's files (the ones git does not ignore; a symlink leaving DEST is copied as its target's bytes, so nothing is written through it), and a real `copier update --trust --conflict inline` of the copy against the snapshot, run as a child process with an allowlisted environment and a hermetic git config. check_structure's letters (A..Z) run in-process on the copy before and after the update: a letter finding after the update is owed; one present only before is resolved by the update; a path copier leaves conflicted is reported in the `conflict` group, and the tree after the update is then checked twice, every conflict hunk the project's way and every hunk the template's way (`resolve_conflict`, read from copier's own markers), so no check parses a marker and no conflicted file is put back to DEST's bytes beside the update's other files: a finding both resolutions have is owed, one only one has depends on how the conflict is resolved and is not judged, and a finding in a conflicted file is not judged. The `retired` group names each DEST file the update deletes that the project edited (an error, owed: the same `is_edited` rule scripts/jobs/keep_edited_retired.py applies; the prediction runs that guard migration as the real update does, so a file still deleted after it is one a later `rm` migration removes or one copier deleted without running migrations). The config group warns (`update-refused`) when the real update would refuse DEST: outside git, or with uncommitted changes, which it names. The config group names what the update did to each key of each JSON config (`classify`: arrives, updates, merges, removed-upstream) from the template's render at DEST's `_commit`, DEST's file and the predicted file. Every finding carries an origin evidence kind (template-unedited, template-edited, template-rendered, template-new, project, unknown) read from git at `_commit`; a file that cannot be read is `unknown`. When `_commit` does not resolve here nothing is predicted: DEST is judged as it stands and the not-checked section says so. It adds the freshness judge (scripts/jobs/review_docs.py) and the restamp writer's `pending` list (scripts/jobs/restamp_docs.py) on DEST, both of which the update's last migration clears. A "not checked" section names every proof it does not run, including that the update's tasks run the project's merged restamp step inside the scratch copy. DEST and this checkout are never written: DEST is read with open() and ast and its git with name-level commands built by `review_docs.git_argv` that write nothing and switch off fsmonitor, signature verification and every filter driver its git config names; no make target, hook or module of DEST runs in this process, its own structure checks (`structure.project_checks`) included. Exit 0 when no letter or `retired` error is owed, 1 when one is (or no file was seen), 2 on a usage error, a refusal (DEST is not a keel project, or its answers are malformed), a template render error (including answers of the wrong type), a failed copier update (except an `after` migration the real update stops at too -- one refusing, through scripts/jobs/conflict_guard.py, over files the update itself leaves conflicted, or one copier names as the failed task (its argv carries `--finish-with`, which no `_tasks` entry passes) whose output holds verbatim the message of a letter error the audit judges owed (`owed_refusal`) -- which is named under not checked with its rerun, the tree copier leaves is judged, and when the restamp is among the migrations never reached the freshness and restamp groups name `make restamp-docs`) or a missing extra. Keel-only: excluded from generated projects (docs/design/downstream-feedback.md, CMP-1.S5); a generated project's `make audit-project` stub points back at the template checkout.
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/integration/test_copier_audit.py
@@ -721,14 +721,42 @@ def migration_refusal(stderr, conflicts):
     return {"job": job, "files": files, "rerun": rerun}
 
 
+# copier's report of a failed `_tasks` or `_migrations` command, measured on
+# copier 9.17: `Task [<argv as a Python list>] returned non-zero exit status N.`
+_TASK_OPEN = "Task ["
+_TASK_CLOSE = "] returned non-zero exit status"
+
+
+def failed_migration(stderr, jobs):
+    """The one job of *jobs* (migration_jobs) whose script a failed Task in
+    *stderr* runs with conflict_guard.FINISH_FLAG, else None. Only a
+    migration passes that flag; a `_tasks` entry running the same script
+    (the restamp is both) does not, so it never names a migration."""
+    named = set()
+    for line in stderr.splitlines():
+        start = line.find(_TASK_OPEN)
+        end = line.find(_TASK_CLOSE, start)
+        if start < 0 or end < 0:
+            continue
+        argv = line[start:end]
+        if repr(conflict_guard.FINISH_FLAG) not in argv:
+            continue
+        named.update(
+            job for job in jobs or () if job and "scripts/jobs/%s.py" % job in argv
+        )
+    return named.pop() if len(named) == 1 else None
+
+
 def owed_refusal(stderr, afters, jobs):
-    """{"job", "owed", "rerun"} when *stderr*, a failed update's, holds
-    verbatim the message of an error every resolution in *afters* has: an
-    `after` migration that runs the project's own code stopped on a fault the
-    audit reports as owed, and the real update of DEST will stop there too.
-    "owed" is each such (letter, message), sorted; "job" is the one job of
-    *jobs* (migration_jobs) whose script the failed task names, else None.
-    None when no owed error is in *stderr*: the failure is not predicted."""
+    """{"job", "owed", "rerun"} when copier names one migration as the failed
+    task (failed_migration) and *stderr* holds verbatim the message of an
+    error every resolution in *afters* has: an `after` migration that runs the
+    project's own code stopped on a fault the audit reports as owed, and the
+    real update of DEST will stop there too. "owed" is each such (letter,
+    message), sorted. None otherwise: the failure is not predicted."""
+    job = failed_migration(stderr, jobs)
+    if job is None:
+        return None
     common = set(afters[0]).intersection(*afters[1:])
     owed = sorted(
         (letter, message)
@@ -737,12 +765,7 @@ def owed_refusal(stderr, afters, jobs):
     )
     if not owed:
         return None
-    named = {job for job in jobs or () if job and "scripts/jobs/%s.py" % job in stderr}
-    return {
-        "job": named.pop() if len(named) == 1 else None,
-        "owed": owed,
-        "rerun": FINISH_RERUN,
-    }
+    return {"job": job, "owed": owed, "rerun": FINISH_RERUN}
 
 
 def migration_jobs(snap, yaml):
@@ -780,8 +803,9 @@ def migration_jobs(snap, yaml):
 def jobs_not_run(jobs, refused_job):
     """The jobs copier never reached once *refused_job* failed (it stops at the
     first failed migration), the refused one first; None when *jobs* is None
-    or does not hold it, so a caller assumes nothing ran."""
-    if jobs is None or refused_job not in jobs:
+    or does not hold it, so a caller assumes nothing ran. A None job is never
+    held: None in *jobs* is an `rm`, not a named job."""
+    if jobs is None or refused_job is None or refused_job not in jobs:
         return None
     return [job for job in jobs[jobs.index(refused_job) :] if job is not None]
 
@@ -993,11 +1017,12 @@ def predict(dest, yaml, scratch, today, not_checked):
             afters = _judge_resolutions(root, conflicts)
         else:
             afters = [check_structure.run_checks(root, project_checks=False)]
-    except AuditError:
+    except Exception as exc:
         if failed and refused is None:
             # The update's own failure is the cause; a tree it left half
-            # written failing to judge is a symptom.
-            raise _failure("copier update of %s" % root, update, scratch) from None
+            # written failing to judge is a symptom, and an escaped traceback
+            # would exit 1, which reads as an owed error.
+            raise _failure("copier update of %s" % root, update, scratch) from exc
         raise
     if failed:
         jobs = migration_jobs(snap, yaml)
@@ -1169,10 +1194,7 @@ def _judged_after_update(
         if pred.refused is None:
             return []
         refused = pred.refused
-        job = refused["job"]
-        item = (
-            "the migration that stopped" if job is None else "migration %s" % job
-        ) + " and every migration after it"
+        item = "migration %s and every migration after it" % refused["job"]
         if "owed" in refused:
             reason = (
                 "it stopped over the owed %s error(s) this report lists, exactly "

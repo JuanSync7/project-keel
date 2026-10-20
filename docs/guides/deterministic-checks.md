@@ -1347,8 +1347,10 @@ gate finds on the real update resolved both ways (git's own `merge-file
   `copier update` of the scratch copy (copier's last lines, the scratch path
   shown as `<scratch>`) other than a migration the real update stops at too,
   or a missing `template` extra. A migration stops the real update too when
-  it refuses over files the update leaves conflicted, or when what it prints
-  holds verbatim the message of a letter error the audit reports as owed (the
+  it refuses over files the update leaves conflicted, or when copier names it
+  as the failed task (with `--finish-with`, which only a migration passes) and
+  what it prints holds verbatim the message of a letter error the audit
+  reports as owed (the
   first migration runs the project's `child_env`, so a project that lists
   `GIT_DIR` in `child_env.names` stops there). The audit names that
   migration under not checked with the command that finishes the update, and
