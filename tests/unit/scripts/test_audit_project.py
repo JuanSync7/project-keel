@@ -1234,6 +1234,84 @@ def test_a_refusal_naming_a_file_the_update_did_not_conflict_is_exit_2(
     assert _scratch_left(tmp_path) == []
 
 
+_OWED = "config/project.json: child_env.names lists GIT_DIR, which is bound"
+_RETIRED_ARGV = (
+    "Task ['python', 'scripts/jobs/keep_edited_retired.py', '--quiet'] returned "
+    "non-zero exit status 2."
+)
+
+
+def _stopped_over(message):
+    """The stderr copier writes when keep_edited_retired stops over *message*."""
+    return (
+        "keep_edited_retired: cannot judge the files the update deleted: git "
+        "diff-index: %s; fix what it names, then finish the update | %s\n"
+        % (message, _RETIRED_ARGV)
+    )
+
+
+def test_a_migration_stopping_over_an_owed_error_is_the_prediction():
+    """An `after` migration that runs the project's own code stops on a fault
+    the tree copier leaves holds, and the audit reports that fault as owed:
+    the real update stops there too, so the refusal is what the audit
+    predicts, named with its job and the finish command, not a broken audit."""
+    afters = [[("X", "error", _OWED), ("A", "warning", "docs/x.md: stale")]]
+    jobs = ["keep_edited_retired", None, "restamp_docs"]
+    assert ap.owed_refusal(_stopped_over(_OWED), afters, jobs) == {
+        "job": "keep_edited_retired",
+        "owed": [("X", _OWED)],
+        "rerun": ap.FINISH_RERUN,
+    }
+
+
+@pytest.mark.parametrize(
+    "afters, jobs, stderr",
+    [
+        # Only one resolution has the error: it is not owed.
+        (
+            [[("X", "error", _OWED)], []],
+            ["keep_edited_retired"],
+            _stopped_over(_OWED),
+        ),
+        # A warning is never owed.
+        ([[("X", "warning", _OWED)]], ["keep_edited_retired"], _stopped_over(_OWED)),
+        # The migration stopped over something the audit does not report.
+        (
+            [[("X", "error", _OWED)]],
+            ["keep_edited_retired"],
+            _stopped_over("git: fatal: not a git repository"),
+        ),
+    ],
+    ids=["one-resolution", "warning", "unreported-fault"],
+)
+def test_a_migration_stopping_over_anything_else_is_not_predicted(afters, jobs, stderr):
+    """None unless the message the migration printed is, verbatim, an error
+    every resolution of the tree has: anything else is a failed update the
+    audit cannot stand in for (exit 2)."""
+    assert ap.owed_refusal(stderr, afters, jobs) is None
+
+
+@pytest.mark.parametrize(
+    "jobs, also",
+    [
+        (None, ""),
+        (["restamp_docs"], ""),
+        (
+            ["keep_edited_retired", "restamp_docs"],
+            "Task ['python', 'scripts/jobs/restamp_docs.py'] returned 2.\n",
+        ),
+    ],
+    ids=["unreadable-migrations", "job-not-listed", "two-jobs-named"],
+)
+def test_an_owed_refusal_names_no_job_it_cannot_tell(jobs, also):
+    """The job is the one migration whose script copier names in the failed
+    task; when copier.yml cannot be read, or none or two of its jobs are named,
+    the job is None, so the caller assumes no migration ran."""
+    stderr = _stopped_over(_OWED) + also
+    found = ap.owed_refusal(stderr, [[("X", "error", _OWED)]], jobs)
+    assert found is not None and found["job"] is None, found
+
+
 @pytest.mark.parametrize(
     "jobs, restamped",
     [

@@ -1973,13 +1973,18 @@ KEEL-AGT-1, the one high gap the 0.10.0 audit found, because an agent edit
 that can reach its own judge undoes every other safeguard. The stop point is
 CMP-6.S6 green or the sixth slice reached, whichever comes first.
 
+On 2026-10-20 the maintainer replaced CMP-6.S5 with the gap the first full
+`make verify` on the farm found. That run started from a clean checkout and
+from a parent `make`, which no earlier run had done, and two tests failed. The
+header fields and the `re` reason move to the queue as KEEL-HDR-1.
+
 | Slice | Gap | Status |
 |-------|-----|--------|
 | CMP-6.S1 | Each part of a generated project is tested on its own, but no test runs a generated project's full `make verify`, or `make verify` after `copier update` from the previous tag; nothing checks that each frontend app commits its lockfile, or that CI's Node version is the one the gate is run with | done — `make verify` green (3321 passed); the real canary passed both answer sets, fresh and updated from v0.3.0; 9 of 10 review findings confirmed and fixed; ADR-K-0023 proposed |
 | CMP-6.S2 | KEEL-TEST-1: a test can reach a live store; nothing in the suite refuses it | done — `make verify` green (3456 passed) with `KEEL_TEST_SCRATCH` on local disk; the guard caught four tests in keel's own suite, all fixed; 13 of 13 review findings confirmed and fixed; ADR-K-0024 proposed |
 | CMP-6.S3 | KEEL-SEC-1: nothing scans the tree for a committed secret | built, full `make verify` not yet run — the keyed gate, the scanner adapter and the wiring are built; 9 of 11 review findings confirmed and fixed; the targeted gates are green (337 passed, check-docs, check-exit-codes, mypy); the scanner installs through the pinned pre-commit hook here and is not yet run in GitHub CI; ADR-K-0025 proposed |
 | CMP-6.S4 | B1: a generated project's own code that breaks a keel gate check is red on `copier update` (the exit gate) or not judged at all (the config-reads gate skips); the ruled warn-then-fail tier is not built | planned |
-| CMP-6.S5 | The three accepted file-header fields are not read by any check, and a call into `re` needs no stated reason | planned |
+| CMP-6.S5 | The audit's suite is not hermetic: from a dirty template checkout the audit never takes copier's three-way path, so a clean checkout reaches untested code; when an `after` migration refuses over a fault the audit already reports as owed, the audit exits 2 instead of reporting it; and a test that drives `make` inherits the parent `make`'s `MAKEFLAGS` (K-0011) | built, full `make verify` not yet run — the old audit fails the hermetic fixture exactly as the farm run did; the targeted gates are green (the audit unit file, the four integration tests under `MAKEFLAGS=w`, ruff, mypy, check-docs, check-exit-codes) |
 | CMP-6.S6 | KEEL-AGT-1: an agent's edit can reach the code that judges it; `scripts/apply_refactor.py` refuses only a path outside the repo root | done — `make verify` green (3544 passed); an agent edit to a protected or untracked file, or a spec that names its own gate, is refused before any write; 10 of 10 review findings confirmed and fixed; ADR-K-0026 proposed |
 
 **CMP-6.S3, the scanner.** The maintainer ruled on 2026-10-17: keel's own
@@ -2238,6 +2243,7 @@ gives it one (CONVENTIONS §20).
 | 12 | KEEL-DOC-2 | Wrong claims pass every gate (a check letter, counts with no method in `doc-style.md`), and release notes sit in shipped guides that the change-comment phrase list does not read (R-DOC-1, R-DOC-2, R-DOC-14) |
 | 13 | KEEL-SHIP-1 | Nothing fails a new file that is neither rendered to a generated project nor excluded from it with a reason: a slice can build a check keel holds itself to and leave every project without it, and only review notices |
 | 14 | KEEL-FRAG-1 | Every slice appends to the same shared files (`CHANGELOG.md`, this plan, `config/project.json` and its twin, the ADR index, the settings and features references), so two slices built in parallel worktrees conflict in about ten files each time, and this plan grows without bound; CMP-6.S3 and CMP-6.S6 conflicted in ten |
+| 15 | KEEL-HDR-1 | The three accepted file-header fields are not read by any check, and a call into `re` needs no stated reason; moved from CMP-6.S5 |
 
 **KEEL-DOC-1, the defence table.** This holds the maintainer's document rule
 R-DOC-15: before a design is planned, it answers hard questions on behalf of

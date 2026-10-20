@@ -1345,8 +1345,14 @@ gate finds on the real update resolved both ways (git's own `merge-file
 - 2: a usage error, a refusal (DEST is not a keel project), a template render
   error (DEST's answers included, when one has the wrong type), a failed
   `copier update` of the scratch copy (copier's last lines, the scratch path
-  shown as `<scratch>`) other than a migration refusing over conflicts the
-  update leaves, or a missing `template` extra.
+  shown as `<scratch>`) other than a migration the real update stops at too,
+  or a missing `template` extra. A migration stops the real update too when
+  it refuses over files the update leaves conflicted, or when what it prints
+  holds verbatim the message of a letter error the audit reports as owed (the
+  first migration runs the project's `child_env`, so a project that lists
+  `GIT_DIR` in `child_env.names` stops there). The audit names that
+  migration under not checked with the command that finishes the update, and
+  exits 0 or 1 on its findings.
 
 DEST is a keel project when every one of these holds:
 - it is a directory, and not this checkout;

@@ -225,6 +225,14 @@ version rather than a bare commit:
   guard that fails a reach past it.
 
 ### Fixed
+- **The audit reports a migration that stops over an owed error.** A
+  project that lists `GIT_DIR` in `child_env.names` made
+  `scripts/audit_project.py` exit 2, because the update's first migration
+  stops on that fault; the real update stops there too, so the audit now
+  names the migration under not checked with the finish command and exits 1
+  on the X error. `tests/integration/test_copier_audit.py` generates its
+  project from a clean clone of the checkout, so it takes copier's 3-way path
+  on every run, and its make-driving test drops make's inherited variables.
 - **Four refactor tests no longer write into the checkout.** The execute-mode
   tests of `tests/integration/test_practice_refactor.py` wrote their
   checkpoints under the checkout's `wiki/.runtime`, where a later run could

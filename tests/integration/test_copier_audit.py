@@ -2,7 +2,7 @@
 title: Integration — the downstream audit judges a generated project and writes nothing
 kind: tests
 layer: n/a
-summary: `scripts/audit_project.py` run against projects copier generates from this template. The audit judges the tree a real `copier update` leaves, built in a scratch copy; the parity test runs that update itself, on an independent clone of each old project against `hermetic_git.clone_including_worktree`, and holds the audit's owed and warned letter findings equal to `check_structure.py --root` on the result; for a 7f0a68b project whose own `.PHONY` edit makes copier conflict on the Makefile, the result is resolved both ways by git's `merge-file --ours/--theirs` over copier's index stages, and the audit's judged findings equal what both resolutions have outside the conflicted file, with nothing owed; for a 7f0a68b project that edited its own scripts/check_structure.py, copier conflicts on it and every migration still runs, because none reads it (the restamp, which once imported it for two constants, refused there); for one that edited its own scripts/jobs/review_docs.py, the first migration, which imports it, refuses in the real update and in the audit alike, which names the migration under not checked, exits on the findings (none owed) and never 2. A project generated from the working tree audits with no letter error, no config arrival and no conflict; the same project with four planted defects (an undeclared top-level directory, an unlabelled make target, a bare subprocess call, an unstamped doc edit) reports exactly those four under B, W, X and freshness, and its whole tree — `.git` included, bytes and modes, plus `.git/index`'s mtime — is identical after two audits whose JSON is byte-identical, with no `keel-audit-*` scratch left behind. A project generated at 7f0a68b, before the downstream-feedback campaign, owes nothing: every W/X error it has today is absent from the tree the update leaves, and the config keys the update brings are reported. A project generated at a70a7b5, before slice CMP-2.S1 moved git's repository variables out of `child_env.names`, owes no X error whether or not it added its own allowlist name, and the config group calls that list an update or a merge from copier's own merge. A project generated at 29e45f0, before slice CMP-2.S2, receives `child_env.credentialed_values` as an info arrival with the template default `{}` and owes no X error. A project generated at 7dbcc0c, before slice CMP-3.S4, that recorded its own `child_env.credentialed_values` and `prefixes` keeps both through a real update with nothing unmerged, and its audit owes no X error. A project generated at ef79551, before slice CMP-5.S2, receives `evidence.run_date`, `models.allowed_hosts`, the `launcher` block CMP-5.S3 added after it and the three `make_targets.effect_proof_skip` entries for the frontend suites CMP-5.S4 made refuse an uninstalled app and the `import_layers` and `change_comments` blocks its tree-wide gate tests read and the `canary` and `toolchain` blocks the config loader declares as its only manifest arrivals and the `secrets` block the committed-secrets gate reads with the `make_targets.effect_proof_skip` entry for the `make secret-scan` a fresh clone cannot run and the `agents` and `rosters` blocks apply_refactor and check_S read and the run date's variable in `child_env.names`, owes no X error, and after a real update holds the template's run date block with its variable allowlisted; one that added its own name to `models.credential_env.openai-compatible` keeps it through a real update with nothing unmerged, and the host list arrives as the template ships it. The template checkout's index is never refreshed by an audit. A generated project's own `make audit-project` is a stub that names the template checkout. Keel-only: copier's `tests/integration/test_copier_*.py` glob prunes it.
+summary: `scripts/audit_project.py` run against projects copier generates from this template. The audit judges the tree a real `copier update` leaves, built in a scratch copy; the parity test runs that update itself, on an independent clone of each old project against `hermetic_git.clone_including_worktree`, and holds the audit's owed and warned letter findings equal to `check_structure.py --root` on the result; for a 7f0a68b project whose own `.PHONY` edit makes copier conflict on the Makefile, the result is resolved both ways by git's `merge-file --ours/--theirs` over copier's index stages, and the audit's judged findings equal what both resolutions have outside the conflicted file, with nothing owed; for a 7f0a68b project that edited its own scripts/check_structure.py, copier conflicts on it and every migration still runs, because none reads it (the restamp, which once imported it for two constants, refused there); for one that edited its own scripts/jobs/review_docs.py, the first migration, which imports it, refuses in the real update and in the audit alike, which names the migration under not checked, exits on the findings (none owed) and never 2. The project these tests generate from the working tree comes from a clean clone of it with its uncommitted edits committed on top, so the audit always takes copier's 3-way path, which a dirty checkout never reaches; each test using it asserts the base resolved. A project generated from the working tree audits with no letter error, no config arrival and no conflict; the same project with four planted defects (an undeclared top-level directory, an unlabelled make target, a bare subprocess call, an unstamped doc edit) reports exactly those four under B, W, X and freshness, and its whole tree — `.git` included, bytes and modes, plus `.git/index`'s mtime — is identical after two audits whose JSON is byte-identical, with no `keel-audit-*` scratch left behind. A project generated at 7f0a68b, before the downstream-feedback campaign, owes nothing: every W/X error it has today is absent from the tree the update leaves, and the config keys the update brings are reported. A project generated at a70a7b5, before slice CMP-2.S1 moved git's repository variables out of `child_env.names`, owes no X error whether or not it added its own allowlist name, and the config group calls that list an update or a merge from copier's own merge. A project generated at 29e45f0, before slice CMP-2.S2, receives `child_env.credentialed_values` as an info arrival with the template default `{}` and owes no X error. A project generated at 7dbcc0c, before slice CMP-3.S4, that recorded its own `child_env.credentialed_values` and `prefixes` keeps both through a real update with nothing unmerged, and its audit owes no X error. A project generated at ef79551, before slice CMP-5.S2, receives `evidence.run_date`, `models.allowed_hosts`, the `launcher` block CMP-5.S3 added after it and the three `make_targets.effect_proof_skip` entries for the frontend suites CMP-5.S4 made refuse an uninstalled app and the `import_layers` and `change_comments` blocks its tree-wide gate tests read and the `canary` and `toolchain` blocks the config loader declares as its only manifest arrivals and the `secrets` block the committed-secrets gate reads with the `make_targets.effect_proof_skip` entry for the `make secret-scan` a fresh clone cannot run and the `agents` and `rosters` blocks apply_refactor and check_S read and the run date's variable in `child_env.names`, owes no X error, and after a real update holds the template's run date block with its variable allowlisted; one that added its own name to `models.credential_env.openai-compatible` keeps it through a real update with nothing unmerged, and the host list arrives as the template ships it. The template checkout's index is never refreshed by an audit. A project that adds GIT_DIR to `child_env.names` owes one X error, and the update's first migration stops on the same fault: the audit names that migration under not checked and exits 1, never 2. A generated project's own `make audit-project` is a stub that names the template checkout, read with make's inherited variables dropped (K-0011). Keel-only: copier's `tests/integration/test_copier_*.py` glob prunes it.
 """
 
 import json
@@ -45,6 +45,7 @@ _PRE_C3_4 = "7dbcc0c"
 # models.credential_env line a project customises.
 _PRE_C5_2 = "ef79551"
 _ANSWERS = {"project_name": "demo_proj", "frontend_stack": "none"}
+_MAKE_INHERITANCE = ("MAKEFLAGS", "MFLAGS", "MAKELEVEL", "MAKEOVERRIDES")
 
 pytestmark = [
     pytest.mark.integration,
@@ -167,11 +168,14 @@ def _letters(report):
 def generated(tmp_path_factory):
     """A project generated from this template, committed on its generation day.
 
-    Yields (project, day, env). The template is `_ROOT` itself: the audit judges
-    it against its own working tree, so DEST's `_commit` must resolve in it for
-    the 3-way merge to have a base. On a dirty checkout copier commits the tree
-    afresh and the base does not resolve; that path is the 2-way fallback the
-    unit tests hold."""
+    Yields (project, day, env, audit). The template is a clean clone of this
+    checkout with its uncommitted edits committed on top
+    (`hermetic_git.clone_including_worktree`), and *audit* is that clone's
+    audit_project.py, so DEST's `_commit` resolves where the audit runs and it
+    takes copier's 3-way path however dirty this checkout is. Generated from a
+    dirty checkout directly, copier commits the tree afresh, the base resolves
+    nowhere and only the 2-way fallback the unit tests hold would run: the
+    3-way path then went untested until a clean checkout reached it."""
     work = tmp_path_factory.mktemp("copier_audit")
     mp = pytest.MonkeyPatch()
     for var, value in hermetic_git.git_env_vars(work).items():
@@ -179,10 +183,12 @@ def generated(tmp_path_factory):
     mp.setenv("COPIER_CACHE_DIR", str(work / "copier-cache"))
     try:
         epoch, day = doc_stamps.epoch_after_newest_stamp(_ROOT)
+        template = work / "template"
+        hermetic_git.clone_including_worktree(_ROOT, template, work)
         project = work / "proj"
         with plumbum.local.env(SOURCE_DATE_EPOCH=str(epoch)):
             copier.run_copy(
-                str(_ROOT),
+                str(template),
                 str(project),
                 data=_ANSWERS,
                 defaults=True,
@@ -198,7 +204,7 @@ def generated(tmp_path_factory):
             ["commit", "-qm", "g"],
         ):
             _git(project, *argv, env=env)
-        yield project, day, env
+        yield project, day, env, template / "scripts" / "audit_project.py"
     finally:
         mp.undo()
 
@@ -207,10 +213,12 @@ def test_a_project_generated_from_the_working_tree_audits_clean(generated, tmp_p
     """(a) What the template generates today passes the template's gates today:
     no letter error, no config key the update would add or change, nothing
     stale, and the keel-only doer and its roster row did not ship."""
-    project, day, _env = generated
-    r = _audit(project, day, tmpdir=tmp_path)
+    project, day, _env, audit = generated
+    r = _audit(project, day, tmpdir=tmp_path, audit=audit)
     assert r.returncode == 0, r.stdout + r.stderr
     report = json.loads(r.stdout)
+    # Not vacuous: the 3-way path, the one a clean checkout takes, ran.
+    assert report["base"]["resolved"], report["base"]
     # Every letter the template's gate registers runs, read from the registry
     # rather than counted here, so a new letter does not need this line edited.
     assert _letters(report) == [letter for letter, _fn in check_structure.CHECKS]
@@ -242,7 +250,7 @@ def test_four_planted_defects_audit_as_exactly_those_four_and_the_tree_is_byte_i
     reports each under its letter with the check's own message. The proof of
     read-only is the whole tree, `.git` and the index's mtime included: porcelain
     alone cannot see an index rewrite."""
-    project, day, env = generated
+    project, day, env, audit = generated
     dest = tmp_path / "planted"
     _git(tmp_path, "clone", "-q", "--no-hardlinks", str(project), str(dest), env=env)
 
@@ -272,8 +280,8 @@ def test_four_planted_defects_audit_as_exactly_those_four_and_the_tree_is_byte_i
     systmp = tmp_path / "systmp"
     systmp.mkdir()
     first, second = (
-        _audit(dest, later, tmpdir=systmp),
-        _audit(dest, later, tmpdir=systmp),
+        _audit(dest, later, tmpdir=systmp, audit=audit),
+        _audit(dest, later, tmpdir=systmp, audit=audit),
     )
     assert _scratch_left(systmp) == []
     assert _tree(dest) == before, "the audit changed DEST's tree"
@@ -288,14 +296,12 @@ def test_four_planted_defects_audit_as_exactly_those_four_and_the_tree_is_byte_i
     assert "zzz_undeclared" in errors["B"][0]["message"]
     assert "planted" in errors["W"][0]["message"]
     assert "scripts/check_generic.py" in errors["X"][0]["message"]
-    # The generated project's `_commit` resolves here only when the template
-    # tree was clean at generation; every origin follows from that, exactly
-    # (no base -> every origin is unknown, the doer's documented 2-way path).
-    resolved = report["base"]["resolved"]
-    assert errors["B"][0]["origin"] == ("project" if resolved else "unknown")
-    edited = "template-edited" if resolved else "unknown"
-    assert errors["X"][0]["origin"] == edited
-    assert errors["W"][0]["origin"] == edited
+    # The fixture's template is clean, so the base resolves and every origin is
+    # read from it.
+    assert report["base"]["resolved"], report["base"]
+    assert errors["B"][0]["origin"] == "project"
+    assert errors["X"][0]["origin"] == "template-edited"
+    assert errors["W"][0]["origin"] == "template-edited"
     assert all("resolved_by" not in f for g in errors for f in errors[g])
     assert report["summary"]["errors"] == 3, report["summary"]
     assert report["summary"]["resolved_by_update"] == 0, report["summary"]
@@ -316,11 +322,14 @@ def test_a_project_whose_child_env_allowlists_a_repository_variable_owes_an_x_er
     """A project that kept GIT_DIR in child_env.names (the template shipped it
     there before slice CMP-2.S1) is told, by the check's own message, which key
     marks it and what the fix is. The project's edit survives the merge, so
-    the error is owed, not resolved by the update."""
-    project, day, env = generated
+    the error is owed, not resolved by the update. The update's first
+    migration runs the project's child_env and stops on the same fault, as
+    the real update will: the audit names it under not checked and still
+    exits on the finding, never 2."""
+    project, day, env, audit = generated
     dest = tmp_path / "edited"
     _git(tmp_path, "clone", "-q", "--no-hardlinks", str(project), str(dest), env=env)
-    r = _audit(dest, day)
+    r = _audit(dest, day, audit=audit)
     assert _errors(json.loads(r.stdout), "X") == [], r.stdout  # not vacuous
 
     manifest_path = dest / "config" / "project.json"
@@ -331,7 +340,7 @@ def test_a_project_whose_child_env_allowlists_a_repository_variable_owes_an_x_er
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     _git(dest, "commit", "-qam", "allowlist GIT_DIR", env=env)
 
-    r = _audit(dest, day)
+    r = _audit(dest, day, audit=audit)
     assert r.returncode == 1, r.stdout + r.stderr
     report = json.loads(r.stdout)
     x = _errors(report, "X")
@@ -340,11 +349,21 @@ def test_a_project_whose_child_env_allowlists_a_repository_variable_owes_an_x_er
     assert message.startswith("config/project.json: child_env.names lists GIT_DIR")
     assert "child_env.repo_context_names" in message, message
     assert "build_child_env(repo_context=True)" in message, message
-    # The manifest is rendered from its `.jinja` twin, so with a base its origin
-    # says so (audit_project.origin_of); without one every origin is unknown.
-    resolved = report["base"]["resolved"]
-    assert x[0]["origin"] == ("template-rendered" if resolved else "unknown"), x
+    # The manifest is rendered from its `.jinja` twin, so its origin says so
+    # (audit_project.origin_of).
+    assert report["base"]["resolved"], report["base"]
+    assert x[0]["origin"] == "template-rendered", x
     assert "resolved_by" not in x[0], x
+    stopped = [i for i in report["not_checked"] if i["item"].startswith("migration ")]
+    assert stopped == [
+        {
+            "item": "migration keep_edited_retired and every migration after it",
+            "reason": "it stopped over the owed X error(s) this report lists, "
+            "exactly as the real update will (copier stops at the first failed "
+            "migration); fix them, then run `python scripts/jobs/finish_update.py` "
+            "to finish the update",
+        }
+    ], report["not_checked"]
 
 
 def _generated_at(tmp_path_factory, ref):
@@ -1093,7 +1112,12 @@ def test_the_shipped_audit_target_points_back_at_the_template(generated):
     """A generated project keeps the target but not the doer, so its stub must
     say where the doer is rather than fail obscurely; and the effect sweep must
     skip it, since it needs DEST."""
-    project, _day, _env = generated
+    project, _day, _env, _audit_path = generated
+    # make hands its command-line variables and flags to every child through
+    # these, so a suite run under a parent make (`make -C`, which puts `w` in
+    # MAKEFLAGS) would otherwise print directory lines around the stub's output
+    # (K-0011).
+    env = {k: v for k, v in os.environ.items() if k not in _MAKE_INHERITANCE}
     # The printed command runs under `make -C <template>`, so DEST is absolute:
     # the one asked for, else this project.
     for argv, dest in (
@@ -1101,7 +1125,11 @@ def test_the_shipped_audit_target_points_back_at_the_template(generated):
         (["audit-project"], project),
     ):
         r = subprocess.run(
-            ["make", "-s"] + argv, cwd=str(project), capture_output=True, text=True
+            ["make", "-s"] + argv,
+            cwd=str(project),
+            env=env,
+            capture_output=True,
+            text=True,
         )
         assert r.returncode == 2, r.stdout + r.stderr
         assert "make -C" in r.stdout and "_src_path" in r.stdout, r.stdout
