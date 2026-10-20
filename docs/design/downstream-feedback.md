@@ -2236,6 +2236,8 @@ gives it one (CONVENTIONS §20).
 | 10 | KEEL-WARN-1 | Warnings nobody must fix fire on every run: the owner-TBD warning and the fail-open "not found" and "could not parse" warnings in `scripts/check_structure.py` (R-AGT-32) |
 | 11 | KEEL-AGT-3 | Four of the five agents have no eval case and no known-good example (R-AGT-4, R-AGT-12, R-AGT-14) |
 | 12 | KEEL-DOC-2 | Wrong claims pass every gate (a check letter, counts with no method in `doc-style.md`), and release notes sit in shipped guides that the change-comment phrase list does not read (R-DOC-1, R-DOC-2, R-DOC-14) |
+| 13 | KEEL-SHIP-1 | Nothing fails a new file that is neither rendered to a generated project nor excluded from it with a reason: a slice can build a check keel holds itself to and leave every project without it, and only review notices |
+| 14 | KEEL-FRAG-1 | Every slice appends to the same shared files (`CHANGELOG.md`, this plan, `config/project.json` and its twin, the ADR index, the settings and features references), so two slices built in parallel worktrees conflict in about ten files each time, and this plan grows without bound; CMP-6.S3 and CMP-6.S6 conflicted in ten |
 
 **KEEL-DOC-1, the defence table.** This holds the maintainer's document rule
 R-DOC-15: before a design is planned, it answers hard questions on behalf of
@@ -2306,6 +2308,35 @@ The slice must also decide these points, and say what it chose:
   DT-3 on the first run of `make verify`. `docs/design/README.md` would show
   the table's shape inside a fenced block, which no check reads as a table.
 
+**KEEL-DOC-1, the candidate slices.** The ruling below makes the documentation
+work one campaign. It merges two lists: the keel documentation inventory's
+ten gaps, ranked by value, and the first eight slices of the
+documentation-system design study kept in the maintainer's vault (its slices
+9 to 18 belong to custodex, pyverdex, jarvis or a trial, not keel). The
+opening pass checks each claim against the tree before it keeps a row,
+reconciles the two lists, and writes the approved table. Until then this is
+a candidate list, not a plan:
+
+| Candidate | Source | What it builds |
+|-----------|--------|----------------|
+| The defence table | queue item KEEL-DOC-1 above | DT-1 to DT-7, and R-DOC-16's probe questions as rows |
+| Kind-to-folder binding | inventory gap 1 | a `docs.homes` map in `config/project.json` and a check that a document of a kind sits under that kind's folders |
+| A genre for `kind: doc` | inventory gap 2 | a closed `genre` vocabulary, used only under `kind: doc` |
+| The coverage register | inventory gap 3, study slice 5 | `test-docs/coverage/register.md` deleted or rendered from `make trace` |
+| Check ids and registry | study slice 1 | an id per check, and a registered check with no fault-injection twin fails |
+| Kinds and status lists | study slice 2 | per-kind allowed status lists, and a backward status move fails |
+| Changelog heading and commit message | study slice 3 | an unknown changelog heading fails, a "wip" commit subject fails |
+| Heading contracts | study slice 4 | required headings for the root README, a directory README, a new ADR and a design document; lands as an error with the tree fixed in the same change |
+| Freshness that fails closed | study slice 5 | the freshness check with no git exits 2, could not run, never a skip |
+| House vocabulary | study slice 6 | a reject list run over prose, and an empty list fails |
+| Roadmap fields in the features catalogue | study slice 7 | an `implemented` row with no test fails |
+| Docstring grammar | study slice 8 | ruff `D` and pydoclint; lands as an error, a baseline only under CMP-6.S4's tier with its hard expiry |
+| Placeholders per kind | inventory gap 5 | a fenced skeleton in each kind's folder README |
+
+The study's slices 4 and 8 proposed a warning first; the ruling below lands
+them as errors. The cap is five slices with the opening pass, so most rows
+here are queued by that pass, not built in this campaign.
+
 **KEEL-SHELL-1, shell as a template language.** The maintainer approved it on
 2026-10-17 as the campaign after Campaign 6, in three slices; it becomes a
 `CMP-<n>.S<m>` name only when its slice table is approved. Shell gets the
@@ -2328,7 +2359,7 @@ treatment Python and TypeScript already have, and ships to generated projects:
   the binaries into the venv, and how bats-core is installed. This host has
   bash 4.4 and none of the three tools.
 
-**KEEL-LINT-1, the lint kernel.** The maintainer ruled on 2026-10-19 that
+**KEEL-LINT-1, the lint checks.** The maintainer ruled on 2026-10-19 that
 the rules a tool can decide are built into keel's checks before shell, so
 every project generated from keel holds them, and the prompt keeps only the
 rules that need judgment. The vault's rule experiments are the evidence: with
@@ -2366,7 +2397,25 @@ or the cap. When it is done, the vault installs keel's checks rather than
 keep its own AST gate; how a repository not generated from keel installs
 them is KEEL-PKG-1, not this campaign.
 
-**KEEL-TESTQ-1, the test kernel.** It follows KEEL-LINT-1. Its source is
+Proposed slices, from the opening pass. A slice gets its `CMP-<n>.S<m>` name
+only when the maintainer approves this table (CONVENTIONS §20). The campaign
+starts after CMP-6.S4, because each check reaches a generated project's own
+code through that slice's expiring tier.
+
+| # | Gap | Size | Breaks today |
+|---|-----|------|--------------|
+| 1 | Opening pass, read-only: the rule map and this table | — | done |
+| 2a | R-CODE-7, dropped errors: ruff `S110` and `S112` with `check-typed-exception = true`; the swallowed-error gate widened to `contextlib.suppress` and `rmtree(ignore_errors=True)`; the excuse grammar (rule id and reason) for every code the gate owns; KEEL-ERR-1's `agents/doc_reviewer/_brain.py` instance fixed | M | 39 |
+| 2b | R-CODE-7, a narrow handler that returns or assigns a fixed value, `None` included, in place of the error; a function whose documented result for "absent" is `None` carries the excuse | M | 40 fixed values and 31 `None` values |
+| 3 | R-CODE-18, a boolean by position: ruff `FBT001`, `FBT002` and `FBT003`; the keyword-only conversion lands as its own mechanical commit | M | 127 |
+| 4 | R-CODE-24, a cache maximum: ruff `TID251` bans `functools.cache` and `lru_cache`, a bounded-cache helper reads its maximum from a `KEYS` row; R-CODE-17's `ERA001` added at no cost | S | 2 |
+| 5 | A stale excuse is red: `RUF100` selected, check_M reads `ignore` and `extend-ignore`, `practice-ok` takes a rule id and a reason | M | 45 and the `practice-ok` sites |
+
+The cap is five slices with the opening pass, so with 2a and 2b separate,
+slice 5 is queued unless a slice comes in under one pass. The counts are the
+opening pass's measurement, not a gate's.
+
+**KEEL-TESTQ-1, the test checks.** It follows KEEL-LINT-1. Its source is
 pyverdex (`my_rnd/python-verification`), a test-effectiveness engine that
 measures line, branch, function-to-function edge, mutation,
 assertion-quality, realness (mock, fake, in-process, real) and failure-path
@@ -2396,6 +2445,23 @@ ported to keel's house pattern (the config loader, the exit helper, module
 headers, effect labels), since pyverdex predates them; the measured run time
 of each engine part on keel's own suite; and the thresholds a gate would
 hold. The cap is five slices, the opening pass included.
+
+
+Proposed slices, from the opening pass, named only on approval
+(CONVENTIONS §20). The ruling below moves failure-path detection to the
+engine side: its static half found nothing to fail in fail-closed code (132
+of 167 boundaries have no handler, by design).
+
+| # | What, end to end | Size |
+|---|------------------|------|
+| 1 | Opening pass, read-only: the part map, the measured run times and this table | done |
+| 2 | Assertion-quality gate test, a standard-library port into `tests/`, shown red on a test with no assertion, a trivial one and an assertion hidden in a helper; `test_quality.*` `KEYS` rows; ships through copier | M |
+| 3 | Realness gate test, with a gate that an `e2e` test never mocks | S |
+| 4 | The engine adapter and its target: a thin `scripts/` adapter chosen by `test_engine.adapter`, pyverdex the default, runs mutation and branch and edge coverage on a scratch copy; an absent engine and zero mutants each exit non-zero, never a pass; labelled `[cost]` under the wider definition below | L |
+| 5 | Failure-path and boot measures from the same coverage run, with thresholds that land as errors at the measured value | S |
+
+Slice 4 is blocked on the pyverdex prerequisite above; slices 2 and 3 are
+not.
 
 KEEL-SHELL-1 follows KEEL-TESTQ-1.
 
@@ -2460,6 +2526,52 @@ are settled:
   that date, a new finding is red at once, and keel itself gets no grace.
   Every other new check lands as an error in the change that makes the tree
   pass it.
+
+## Rulings recorded during CMP-6
+
+On 2026-10-19 the maintainer delegated these to a judgement grounded in the
+vault's rules ("make your best judgement on the decision for me based on the
+vault's knowledge"). Each names its evidence. The rule packages are now at
+version 0.11.1.
+
+1. **R-CODE-7 counts a fixed value as a dropped error.** A narrow handler that
+   returns `None`, or any fixed value, in place of the error swallows it:
+   R-CODE-7 says a swallowed error turns a failure into a wrong result that
+   looks right, and unknown is kept distinct from zero. Where `None` is the
+   function's documented result for "absent", the line carries the excuse,
+   rule id and reason. It is its own slice, KEEL-LINT-1 2b, so 2a stays one
+   pass.
+2. **R-CODE-18 takes `FBT001`, `FBT002` and `FBT003` together.** The fix for
+   the class is a keyword-only parameter, which `FBT001` and `FBT002` hold;
+   `FBT003` alone holds the symptom at each call (R-CODE-30). The keyword-only
+   conversion lands as its own mechanical commit.
+3. **A downstream project's red on `copier update` takes the B1 answer.** The
+   ruling recorded after CMP-5.S3 already answers it: every KEEL-LINT-1,
+   KEEL-TESTQ-1 and KEEL-DOC-1 check reaches a generated project's own code
+   through CMP-6.S4's expiring tier, a new finding is red at once, and keel
+   itself gets no grace. So those three campaigns start after CMP-6.S4.
+4. **Failure-path detection moves to the engine side of KEEL-TESTQ-1.** It
+   needs a coverage run: the static half found nothing to fail in keel's
+   fail-closed code, 132 of 167 boundaries with no handler by design.
+5. **`[cost]` widens to "spends a budget the caller approves: money or shared
+   compute".** Mutation and coverage runs take that label. A new proposed ADR
+   supersedes K-0011's definition, because K-0011 is accepted and is not
+   edited. Both kinds of spend are handled the same way, never unattended, so
+   they share one label rather than adding a sixth.
+6. **No check lands as a warning first.** An engine threshold lands as an
+   error set at the measured current value, a ratchet that only tightens
+   (R-AGT-32). The same holds for the design study's slices 4 and 8: a
+   baseline is allowed only under the B1 expiring tier.
+7. **The documentation work is one campaign, KEEL-DOC-1.** It merges the keel
+   documentation inventory and the design study's eight keel slices; its
+   opening pass reconciles the two lists and checks each claim against the
+   tree first.
+8. **"Kernel" is kept for build code (R-AGT-6, R-AGT-7).** KEEL-LINT-1 and
+   KEEL-TESTQ-1 are "the lint checks" and "the test checks"; their ids do not
+   change.
+
+Pushing commits stayed outside that delegation; the maintainer approved it
+separately.
 
 ## Open items
 
