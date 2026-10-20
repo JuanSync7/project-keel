@@ -2,7 +2,7 @@
 title: Integration — the gate's scope is the whole corpus, not a hand-written subset
 kind: tests
 layer: n/a
-summary: Pass 3's contract, read off the REAL Makefile recipes, the REAL pyproject and the REAL .pre-commit-config.yaml. (1) `lint-py` and `fmt` must cover every entry of `CODE_ROOTS` — imported from scripts/check_structure.py, never re-typed here, so the three scope lists cannot drift. (2) mypy's scope must ACCOUNT for every code root: each is either inside `[tool.mypy] files` or a declared, reasoned entry in config/practices.json rulesets.mypy.ratchet — a root may not simply be unmentioned. (3) ruff must actually be clean over that scope. (4) The static FE gates (lint-fe, typecheck-fe) SKIP when npm is absent; the frontend suites and `fe-browsers` exit 2 naming the target, the app and `make fe-install` when npm is absent or any app lacks node_modules, checked for every app before any suite runs, and every FE target is silent and green on a repo with no frontend app; CI installs the packages and the journey's browser before it runs `make test-fe`, and no CI step carries on past a failure. (5) Every bare-`python3` pre-commit entry, each keel module it imports by bare name and every file of config/project.json `import_layers.order[0]` must be legal under the documented old interpreter, since pre-commit `language: system` hooks exec the ambient python3, and where the host has one, child_env builds an environment and scripts/config_loader.py resolves keel's own config there with nothing on stderr. (6) The tools whose output IS the gate's verdict — ruff, mypy — must be pinned exactly in the `dev` extra, and pre-commit must run the SAME ruff, or the same tree gets different verdicts in different places. (7) Every frontend app the Makefile's FE_APPS glob finds wires a unit runner and a browser journey that `make verify` reaches and `make test` does not: each npm script the test-fe and fe-browsers recipes run is defined, the unit config refuses zero tests and a focused test and never collects the journeys, the journey config refuses a focused test, both suites hold at least one file, the journey config reads every config/project.json `layers.frontend.journey` key and spells no port, and the browser runner is pinned to one exact version every app and lockfile agree on. Imports nothing optional: this pin must never itself skip.
+summary: Pass 3's contract, read off the REAL Makefile recipes, the REAL pyproject and the REAL .pre-commit-config.yaml. (1) `lint-py` and `fmt` must cover every entry of `CODE_ROOTS` — imported from scripts/check_structure.py, never re-typed here, so the three scope lists cannot drift. (2) mypy's scope must ACCOUNT for every code root: each is either inside `[tool.mypy] files` or a declared, reasoned entry in config/practices.json rulesets.mypy.ratchet — a root may not simply be unmentioned. (3) ruff must actually be clean over that scope. (4) The static FE gates (lint-fe, typecheck-fe) SKIP when npm is absent; the frontend suites and `fe-browsers` exit 2 naming the target, the app and `make fe-install` when npm is absent or any app lacks node_modules, checked for every app before any suite runs, and every FE target is silent and green on a repo with no frontend app; CI installs the packages and the journey's browser before it runs `make test-fe`, and no CI step carries on past a failure. (5) Every bare-`python3` pre-commit entry, each keel module it imports by bare name and every file of config/project.json `import_layers.order[0]` must be legal under the documented old interpreter, since pre-commit `language: system` hooks exec the ambient python3, and where the host has one, child_env builds an environment and scripts/config_loader.py resolves keel's own config there with nothing on stderr. (6) The tools whose output IS the gate's verdict — ruff, mypy, and pre-commit, which builds the secret scanner — must be pinned exactly in the `dev` extra, and pre-commit must run the SAME ruff, or the same tree gets different verdicts in different places; its secret-scanner block names the repository and rev config/project.json `secrets.scanner` pins, runs the commit scan (the staged diff, or every commit when nothing is staged) on commit and holds the manual hook `make secrets-install` runs, `make verify` reaches `make secret-scan` and never the install, and CI installs the scanner, then scans, before the suite, with no step carrying on past a failure. (7) Every frontend app the Makefile's FE_APPS glob finds wires a unit runner and a browser journey that `make verify` reaches and `make test` does not: each npm script the test-fe and fe-browsers recipes run is defined, the unit config refuses zero tests and a focused test and never collects the journeys, the journey config refuses a focused test, both suites hold at least one file, the journey config reads every config/project.json `layers.frontend.journey` key and spells no port, and the browser runner is pinned to one exact version every app and lockfile agree on. Imports nothing optional: this pin must never itself skip.
 """
 
 import ast
@@ -24,6 +24,7 @@ sys.path.insert(0, str(_ROOT / "scripts"))
 
 import check_structure as cs  # noqa: E402
 import child_env  # noqa: E402
+import config_loader  # noqa: E402
 
 pytestmark = pytest.mark.integration
 
@@ -1317,7 +1318,9 @@ def test_every_required_surface_is_installed_by_a_ci_step():
 # defaults, 0.16's wider default set produced 464 findings from families this repo
 # deliberately defers (UP031, E402, RUF100). Green locally, red in CI, with no code
 # change between the two runs.
-_GATE_TOOLS = ("ruff", "mypy")
+# pre-commit is held the same way: it builds the secret scanner, so the release
+# it resolves decides which build the history scan runs.
+_GATE_TOOLS = ("ruff", "mypy", "pre-commit")
 _DEV_EXTRA = re.compile(r"^dev\s*=\s*\[(?P<items>[^\]]*)\]", re.MULTILINE)
 _EXACT_PIN = re.compile(r'"(?P<name>[A-Za-z0-9_.-]+)==(?P<version>[0-9][^"]*)"')
 # Bounded and non-greedy: `rev:` is the FIRST one after the repo line, but comment
@@ -1365,6 +1368,141 @@ def test_pre_commit_runs_the_same_ruff_as_the_gate():
         "pre-commit runs ruff %s while the gate runs %s — the same file can be "
         "clean for one and dirty for the other" % (m.group("rev"), pins["ruff"])
     )
+
+
+# ---- scope: the secret scanner -----------------------------------------------
+# The scanner is built by pre-commit at the rev config pins, and the history scan
+# runs the build that rev recorded, so three files must agree: config, the hook
+# block and the Makefile. A hook that ran another release would judge a commit by
+# rules the gate does not use.
+_SCANNER = "scripts/scan_secrets.py"
+_SECRET_SCAN = "secret-scan"
+_SECRETS_INSTALL = "secrets-install"
+# The commit hook's mode: the staged diff, or every commit when nothing is
+# staged (`pre-commit run --all-files`), so it never passes over zero files.
+_SCANNER_ENTRY_COMMIT = "python3 %s --staged-or-history" % _SCANNER
+_SCANNER_ENTRY_LOCATE = "python3 %s --locate" % _SCANNER
+
+
+def _scanner_config():
+    keys = config_loader.rows(
+        ("secrets", "scanner", "hook_repo"), ("secrets", "scanner", "rev")
+    )
+    values = config_loader.resolve(
+        config_loader.read(str(_ROOT)), keys, config_loader.CONFIG_FILE
+    )
+    return {key[-1]: value for key, value in values.items()}
+
+
+def _precommit_repos():
+    """[{"repo", "rev", "hooks": [{key: value}]}] for each `- repo:` block of
+    .pre-commit-config.yaml. Stdlib line-scanning, for the reason
+    _precommit_python3_entries gives."""
+    repos = []
+    for line in (_ROOT / ".pre-commit-config.yaml").read_text("utf-8").splitlines():
+        body = line.strip()
+        if not body or body.startswith("#"):
+            continue
+        if body.startswith("- repo:"):
+            repos.append({"repo": body.split(":", 1)[1].strip(), "rev": None})
+            repos[-1]["hooks"] = []
+            continue
+        if not repos:
+            continue
+        block = repos[-1]
+        if body.startswith("- id:"):
+            block["hooks"].append({"id": body.split(":", 1)[1].strip()})
+            continue
+        key, sep, value = body.partition(":")
+        if not sep or key == "hooks":
+            continue
+        if block["hooks"]:
+            block["hooks"][-1][key] = value.strip()
+        elif key == "rev":
+            block["rev"] = value.strip()
+    return repos
+
+
+def _recipe(target):
+    """The recipe lines of *target* in keel's Makefile, the tab stripped."""
+    lines = (_ROOT / "Makefile").read_text("utf-8").splitlines()
+    heads = [i for i, ln in enumerate(lines) if ln.startswith(target + ":")]
+    assert len(heads) == 1, "the Makefile defines `%s` %d times" % (target, len(heads))
+    out = []
+    for line in lines[heads[0] + 1 :]:
+        if not line.startswith("\t"):
+            break
+        out.append(line[1:])
+    return out
+
+
+def test_pre_commit_runs_the_same_secret_scanner_as_config():
+    """The hook block names the repository and the rev config/project.json
+    secrets.scanner names. It runs the commit scan on every commit and holds the
+    manual-stage hook `make secrets-install` runs to record the build."""
+    want = _scanner_config()
+    blocks = [b for b in _precommit_repos() if b["repo"] == want["hook_repo"]]
+    assert len(blocks) == 1, (
+        ".pre-commit-config.yaml holds %d blocks for %s, the repository "
+        "config/project.json secrets.scanner.hook_repo names"
+        % (len(blocks), want["hook_repo"])
+    )
+    block = blocks[0]
+    assert block["rev"] == want["rev"], (
+        "pre-commit builds the scanner at %s while config/project.json "
+        "secrets.scanner.rev pins %s" % (block["rev"], want["rev"])
+    )
+    staged = [h for h in block["hooks"] if h.get("entry") == _SCANNER_ENTRY_COMMIT]
+    assert len(staged) == 1, (
+        "no single hook runs `%s` on commit" % _SCANNER_ENTRY_COMMIT,
+        block["hooks"],
+    )
+    assert "stages" not in staged[0], (
+        "the commit scan must run at the commit stage, not %s" % staged[0]["stages"]
+    )
+    assert staged[0].get("pass_filenames") == "false", staged[0]
+    locate = [h for h in block["hooks"] if h.get("entry") == _SCANNER_ENTRY_LOCATE]
+    assert len(locate) == 1, block["hooks"]
+    assert locate[0].get("stages") == "[manual]", locate[0]
+    alias = locate[0].get("alias")
+    assert alias, "the locate hook has no alias for `make secrets-install` to run"
+    install = " ".join(_recipe(_SECRETS_INSTALL))
+    assert "pre_commit run %s --hook-stage manual" % alias in install, install
+
+
+def test_verify_reaches_the_secret_scan():
+    """`make verify` runs the history scan, the backstop for a commit made with
+    `--no-verify`, and does not reach the install, which downloads: verify stays
+    [local] (docs/adr/keel/K-0011-make-target-effect-labels.md)."""
+    rules = _merged_rules()
+    assert _SECRET_SCAN in rules, "the Makefile has no `%s` target" % _SECRET_SCAN
+    verify = _reach(rules, "verify")
+    assert _SECRET_SCAN in verify, "`make verify` never reaches `%s`" % _SECRET_SCAN
+    assert _SECRETS_INSTALL not in verify, (
+        "`make verify` reaches `%s`, which downloads, so verify would not be "
+        "[local]" % _SECRETS_INSTALL
+    )
+    scan = " ".join(_recipe(_SECRET_SCAN))
+    assert "%s --history" % _SCANNER in scan, scan
+
+
+def test_ci_installs_the_scanner_then_scans():
+    """CI builds the scanner, then scans the whole history before the suite,
+    and neither step may carry on past a failure. The suite declares the
+    scanner required, so its install comes before `make test` too."""
+    runs = _ci_run_lines()
+    if runs is None:
+        pytest.skip("no CI workflow in this project")
+    install = _ci_step_of(runs, _SECRETS_INSTALL)
+    scan = _ci_step_of(runs, _SECRET_SCAN)
+    suite = _ci_step_of(runs, "test")
+    assert install < scan < suite, (install, scan, suite)
+    soft = [
+        run
+        for i, run, cont in runs
+        if i in (install, scan) and cont not in (None, "false")
+    ]
+    assert soft == [], "CI scanner steps that carry on past a failure: %s" % soft
 
 
 # ---- scope: what the SHIPPED documents claim the gate covers ------------------

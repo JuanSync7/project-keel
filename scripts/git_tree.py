@@ -2,7 +2,7 @@
 title: git_tree — what git lists, and a digest of it
 kind: script
 layer: n/a
-summary: The one definition of "what git lists" in a work tree. tree_snapshot maps every path `git status` reports (modified, staged, deleted, untracked; never an ignored one) to its two-letter porcelain status joined to a digest of its content, and snapshot_digest reduces a snapshot to one `sha256:` value over its canonical JSON. is_ignored answers whether git would list a path that may not exist yet, and head_commit names HEAD's sha or None when there is no commit. A git command that does not answer has three causes, and only two of them mean "no git": NoGitError is raised when git is not installed (the spawn finds no program) or when no repository exists at or above the directory, and GitFailedError, which is not a NoGitError, when git ran and failed for any other reason or could not be started, carrying git's exit status and its stderr cut to STDERR_MAX characters. git exits 128 for "not a git repository" and for a repository it cannot read alike, so the two are told apart on disk, never by the text of stderr: inside_a_repository walks up from the directory for a `.git` entry and stops where git's own discovery stops (a directory GIT_CEILING_DIRECTORIES names, and a filesystem boundary). A caller that treats NoGitError as "nothing is tracked here" must let GitFailedError stop it: an unreadable repository is unknown, not absent. through_symlink names the project-relative paths that reach their file through a symlink, which needs no git and is what a writer asks before it writes or deletes at a path read from config. git runs with the allowlisted environment from scripts/child_env.py and with the developer's global excludes file switched off. Stdlib and 3.6-safe, so scripts/gate_evidence.py can import it under the old interpreter. It decides nothing about what runs or passes (scripts/run_make_target.py and scripts/gate_evidence.py do), and it writes nothing.
+summary: The one definition of "what git lists" in a work tree. tree_snapshot maps every path `git status` reports (modified, staged, deleted, untracked; never an ignored one) to its two-letter porcelain status joined to a digest of its content, and snapshot_digest reduces a snapshot to one `sha256:` value over its canonical JSON. candidate_files lists what a commit could carry (every tracked or staged path and every untracked path git does not ignore, sorted), the one definition of that set, and staged_blob gives the bytes the index holds for one path, or None for no entry, a submodule or a symlink, whose blob is its target's path and not file content. staged_paths lists what the index stages for the next commit, deletions left out as pre-commit leaves them out, and with repo_context=True reads the index a hook's GIT_INDEX_FILE names. is_ignored answers whether git would list a path that may not exist yet, and head_commit names HEAD's sha or None when there is no commit. log_commits lists the commits `git log` walks for a list of options, so a scan of that range can tell it walked none. A git command that does not answer has three causes, and only two of them mean "no git": NoGitError is raised when git is not installed (the spawn finds no program) or when no repository exists at or above the directory, and GitFailedError, which is not a NoGitError, when git ran and failed for any other reason or could not be started, carrying git's exit status and its stderr cut to STDERR_MAX characters. git exits 128 for "not a git repository" and for a repository it cannot read alike, so the two are told apart on disk, never by the text of stderr: inside_a_repository walks up from the directory for a `.git` entry and stops where git's own discovery stops (a directory GIT_CEILING_DIRECTORIES names, and a filesystem boundary). A caller that treats NoGitError as "nothing is tracked here" must let GitFailedError stop it: an unreadable repository is unknown, not absent. through_symlink names the project-relative paths that reach their file through a symlink, which needs no git and is what a writer asks before it writes or deletes at a path read from config. git runs with the allowlisted environment from scripts/child_env.py, git's repository context left out except where staged_paths is asked for it, and with the developer's global excludes file switched off. Stdlib and 3.6-safe, so scripts/gate_evidence.py can import it under the old interpreter. It decides nothing about what runs or passes (scripts/run_make_target.py and scripts/gate_evidence.py do), and it writes nothing.
 """
 
 # NB: stdlib only, no `from __future__ import annotations`, no f-strings, no walrus,
@@ -25,10 +25,14 @@ __all__ = [
     "STDERR_MAX",
     "GitFailedError",
     "NoGitError",
+    "candidate_files",
     "head_commit",
     "inside_a_repository",
     "is_ignored",
+    "log_commits",
     "snapshot_digest",
+    "staged_blob",
+    "staged_paths",
     "through_symlink",
     "tree_snapshot",
 ]
@@ -97,16 +101,22 @@ def inside_a_repository(root, env=None):
         current = parent
 
 
-def _run(root, argv):
+def _run(root, argv, repo_context=False):
     # The developer's global excludes file is ignored ON PURPOSE: a stray file a
     # personal ignore hides is still a change this machine's checkout would carry.
+    # The keyword is passed only when set, so a caller that patches
+    # build_child_env with a no-argument stand-in still works.
+    if repo_context:
+        env = child_env.build_child_env(repo_context=True)
+    else:
+        env = child_env.build_child_env()
     try:
         return subprocess.run(  # noqa: S603 — argv list, never a shell string
             ["git", "-c", "core.excludesFile=" + os.devnull] + list(argv),
             cwd=root,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            env=child_env.build_child_env(),
+            env=env,
         )
     except FileNotFoundError as exc:
         # The spawn reports a missing program and a missing working directory
@@ -128,8 +138,8 @@ def _failed(proc, root):
     return GitFailedError(proc.returncode, stderr)
 
 
-def _git(root, *argv):
-    proc = _run(root, argv)
+def _git(root, *argv, repo_context=False):
+    proc = _run(root, argv, repo_context=repo_context)
     if proc.returncode != 0:
         raise _failed(proc, root)
     return proc.stdout
@@ -188,6 +198,77 @@ def snapshot_digest(snap):
     )
 
 
+def candidate_files(root):
+    """The sorted root-relative paths a commit made from *root* could carry:
+    every tracked or staged path (one deleted from the work tree included) and
+    every untracked path git does not ignore. A force-added ignored file is
+    tracked, so it is listed. Raises NoGitError when there is no git or no
+    repository, and GitFailedError when git ran and failed for another
+    reason."""
+    raw = _git(root, "ls-files", "-z", "--cached", "--others", "--exclude-standard")
+    paths = raw.decode("utf-8", "surrogateescape").split("\0")
+    # A path both staged and modified is listed once per index stage; a set
+    # keeps one.
+    return sorted({p for p in paths if p})
+
+
+# pre-commit's own filter for the files a commit stages (pre_commit/git.py
+# get_staged_files): every change but a deletion, so the two agree on when a
+# staged hook has something to judge.
+_STAGED_FILTER = "--diff-filter=ACMRTUXB"
+
+
+def staged_paths(root, repo_context=False):
+    """The sorted root-relative paths the index stages for the next commit,
+    deletions left out. With *repo_context* the index is the one a hook's
+    GIT_INDEX_FILE names, which `git commit -a` and `git commit <path>` fill
+    in place of the default one. Raises NoGitError when there is no git or no
+    repository, and GitFailedError when git ran and failed for another
+    reason."""
+    raw = _git(
+        root,
+        "diff",
+        "--cached",
+        "--name-only",
+        "--no-renames",
+        "-z",
+        _STAGED_FILTER,
+        repo_context=repo_context,
+    )
+    return sorted({p for p in raw.decode("utf-8", "surrogateescape").split("\0") if p})
+
+
+# The index's modes whose object is no file's content: a submodule's entry
+# names a commit, and a symlink's blob is the path the link points at.
+_GITLINK = "160000"
+_SYMLINK = "120000"
+_NOT_CONTENT = (_GITLINK, _SYMLINK)
+
+
+def staged_blob(root, rel):
+    """The bytes the index holds for the root-relative path *rel*, which a
+    commit would carry whatever the work tree holds now, or None when the
+    index holds no file content for it (untracked, a submodule, or a symlink,
+    whose blob is its target's path and which a reader judges at the target's
+    own path). A path in conflict
+    gives its first stage. Raises NoGitError when there is no git or no
+    repository, and GitFailedError when git ran and failed for another
+    reason."""
+    # Literal, so a `*` or `[` in a file name is that name and not a pattern.
+    raw = _git(root, "--literal-pathspecs", "ls-files", "-s", "-z", "--", rel)
+    for entry in raw.decode("utf-8", "surrogateescape").split("\0"):
+        # `<mode> <object> <stage>\t<path>`; a directory's pathspec also lists
+        # the files under it, so only the entry for *rel* itself counts.
+        fields, _tab, path = entry.partition("\t")
+        if path != rel:
+            continue
+        mode, sha = fields.split(" ")[:2]
+        if mode in _NOT_CONTENT:
+            return None
+        return _git(root, "cat-file", "blob", sha)
+    return None
+
+
 def is_ignored(root, rel):
     """True when git ignores the repo-relative path *rel* (which need not exist
     yet), False when it would list it. A tracked path is never ignored. Raises
@@ -219,6 +300,27 @@ def head_commit(root):
             return None
         raise failure
     return proc.stdout.decode("ascii", "replace").strip() or None
+
+
+# The lengths of a full object name, sha1 and sha256, in lowercase hex.
+_OBJECT_NAME_LENGTHS = (40, 64)
+_HEX = frozenset("0123456789abcdef")
+
+
+def log_commits(root, options):
+    """The full shas of the commits `git log <options>` walks, newest first,
+    which is the range a history scan handed those options judges. An option
+    after ours that asks for a patch or another format can add lines, so only
+    a line that is a whole object name counts. Raises NoGitError when there is
+    no git or no repository, and GitFailedError when git ran and failed,
+    an option it refuses included: a range git could not walk is unknown,
+    not empty."""
+    raw = _git(root, "log", "--no-patch", "--format=%H", *options)
+    return [
+        line
+        for line in raw.decode("ascii", "replace").split("\n")
+        if len(line) in _OBJECT_NAME_LENGTHS and set(line) <= _HEX
+    ]
 
 
 def through_symlink(root, paths):

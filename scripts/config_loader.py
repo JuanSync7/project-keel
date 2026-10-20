@@ -302,6 +302,51 @@ def _pinned_images(value: Any) -> bool:
     )
 
 
+def _patterns(value: Any) -> bool:
+    # An empty list would judge no file, which reads as a pass over nothing.
+    return bool(value) and all(v.strip() for v in value)
+
+
+def _scanner_exit_code(value: Any) -> bool:
+    # 0 is a clean scan, 1 the scanner's own error and 2 a usage error, so a
+    # finding must exit with none of them; 126 and up are the shell's and a
+    # signal's.
+    return bool(3 <= value <= 125)
+
+
+def _log_options(value: Any) -> bool:
+    # The scanner splits its git log options on single spaces, so an option
+    # holding whitespace would reach git as two words.
+    return bool(value) and all(v and v.split() == [v] for v in value)
+
+
+def _basenames(value: Any) -> bool:
+    return bool(value) and all(
+        v.strip() == v and v and "/" not in v and "\\" not in v for v in value
+    )
+
+
+_GLOB_CHARS = "*?["
+
+
+def _exclusions(value: Any) -> bool:
+    # {exact repo-relative path: {rule id: reason}}: a glob or a blank reason
+    # would excuse findings nobody named, and a path in any spelling but the
+    # scanner's own (POSIX, normalised) could never match one, so it is refused
+    # here, where the message names the key.
+    for path, rules in value.items():
+        if not _is_repo_path(path) or any(c in path for c in _GLOB_CHARS):
+            return False
+        if "\\" in path or posixpath.normpath(path) != path:
+            return False
+        if not isinstance(rules, dict) or not rules:
+            return False
+        for rule, reason in rules.items():
+            if not rule.strip() or not _is_nonempty_str(reason):
+                return False
+    return True
+
+
 # The one table of declared keys, sorted by path. A block a typed validator
 # owns (child_env, evidence) is one `object` row, and the validator stays the
 # typed view over the value resolved here; an open-keyed map is one row, never
@@ -310,11 +355,42 @@ KEYS = tuple(
     sorted(
         (
             _row(
+                ("ANTHROPIC_API_KEY",),
+                "nonempty_str_or_null",
+                None,
+                "the claude-code-headless adapter's API key; set it in the "
+                "environment or a git-ignored .env, never a committed file",
+                secret=True,
+                env="ANTHROPIC_API_KEY",
+                file=None,
+            ),
+            _row(
+                ("CLAUDE_CONFIG_DIR",),
+                "nonempty_str_or_null",
+                None,
+                "the claude-code-headless adapter's configuration directory; "
+                "secret because models.credential_env lists it, and every name "
+                "there is judged a credential",
+                secret=True,
+                env="CLAUDE_CONFIG_DIR",
+                file=None,
+            ),
+            _row(
                 ("KEEL_MCP_MODEL",),
                 "nonempty_str_or_null",
                 None,
                 "the model the MCP Q&A server asks; null: the registry default",
                 env="KEEL_MCP_MODEL",
+                file=None,
+            ),
+            _row(
+                ("OPENAI_API_KEY",),
+                "nonempty_str_or_null",
+                None,
+                "the openai-compatible adapter's API key; set it in the "
+                "environment or a git-ignored .env, never a committed file",
+                secret=True,
+                env="OPENAI_API_KEY",
                 file=None,
             ),
             _row(
@@ -473,6 +549,88 @@ KEYS = tuple(
                 "object",
                 {},
                 "which domain practice profiles are on; empty: none",
+            ),
+            _row(
+                ("secrets", "dotenv_files"),
+                "list_of_str",
+                [".env", ".env.*"],
+                "the basename patterns of the KEY=VALUE files the committed-"
+                "secrets gate judges",
+                accepts=(_patterns, "a non-empty list with no blank pattern"),
+            ),
+            _row(
+                ("secrets", "json_files"),
+                "list_of_str",
+                ["*.json"],
+                "the basename patterns of the JSON files the committed-secrets "
+                "gate judges",
+                accepts=(_patterns, "a non-empty list with no blank pattern"),
+            ),
+            _row(
+                ("secrets", "scanner", "exclusions"),
+                "object",
+                {},
+                "the scanner findings excused, each exact repo-relative path "
+                "mapped to {rule id: reason}; empty: none is excused",
+                accepts=(
+                    _exclusions,
+                    "an object mapping an exact repo-relative path (no glob, no "
+                    "`..`, not absolute) to a non-empty object of rule id to a "
+                    "non-empty reason",
+                ),
+            ),
+            _row(
+                ("secrets", "scanner", "history_log_opts"),
+                "list_of_str",
+                ["--all"],
+                "the git log options the history scan passes the scanner",
+                accepts=(
+                    _log_options,
+                    "a non-empty list of options, none blank or holding whitespace",
+                ),
+            ),
+            _row(
+                ("secrets", "scanner", "hook_repo"),
+                "nonempty_str",
+                "https://github.com/gitleaks/gitleaks",
+                "the pre-commit repository the secret scanner is installed from",
+            ),
+            _row(
+                ("secrets", "scanner", "leak_exit_code"),
+                "int",
+                77,
+                "the status the scanner is told to exit with when it finds a "
+                "candidate secret",
+                accepts=(_scanner_exit_code, "a value from 3 to 125"),
+            ),
+            _row(
+                ("secrets", "scanner", "name"),
+                "nonempty_str",
+                "gitleaks",
+                "the secret scanner's program name, which scripts/scan_secrets.py "
+                "looks up on PATH and records; it adapts gitleaks only and "
+                "refuses any other name",
+            ),
+            _row(
+                ("secrets", "scanner", "record_file"),
+                "repo_path",
+                ".secret-scan/scanner.json",
+                "where `make secrets-install` records the scanner's path, rev and "
+                "digest; git must ignore it",
+            ),
+            _row(
+                ("secrets", "scanner", "refused_files"),
+                "list_of_str",
+                [".gitleaks.toml", ".gitleaksignore"],
+                "the basenames of the scanner's own config and ignore files, "
+                "which a scan refuses to run beside",
+                accepts=(_basenames, "a non-empty list of bare file names"),
+            ),
+            _row(
+                ("secrets", "scanner", "rev"),
+                "nonempty_str",
+                "v8.30.1",
+                "the scanner release the pre-commit hook pins and the record must name",
             ),
             _row(
                 ("tests", "child_timeout_seconds"),

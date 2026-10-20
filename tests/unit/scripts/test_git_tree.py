@@ -2,7 +2,7 @@
 title: Unit — git_tree (what git lists, shared by the gate runner and the evidence writer)
 kind: tests
 layer: n/a
-summary: tree_snapshot lists every path git status reports under a work tree (modified and untracked) and never an ignored one, each joined to its content digest; snapshot_digest is a stable sha256 over that snapshot and changes when one byte of a listed file changes; outside a work tree tree_snapshot raises NoGitError, and scripts/run_make_target.py re-exports the same class rather than defining a second one. Runs real git in a tmp_path repository under the hermetic git environment.
+summary: tree_snapshot lists every path git status reports under a work tree (modified and untracked) and never an ignored one, each joined to its content digest; snapshot_digest is a stable sha256 over that snapshot and changes when one byte of a listed file changes; candidate_files lists the files a commit could carry (tracked, staged, and untracked but not ignored, a force-added ignored file included), sorted, staged_paths lists what the next commit adds or changes, sorted, a staged deletion left out, and reads the index GIT_INDEX_FILE names only when asked for git's repository context; and staged_blob gives the index copy of a path or None; outside a work tree each raises NoGitError, and scripts/run_make_target.py re-exports the same class rather than defining a second one. Runs real git in a tmp_path repository under the hermetic git environment.
 """
 
 import subprocess
@@ -115,6 +115,94 @@ def test_is_ignored_outside_a_work_tree_raises_NoGitError(tmp_path, monkeypatch)
         git_tree.is_ignored(str(lone), "x.json")
 
 
+def test_candidate_files_lists_tracked_staged_and_unignored_untracked_only(
+    repo, tmp_path, monkeypatch
+):
+    """What a commit could carry: tracked, staged and untracked-but-not-ignored
+    files, sorted; an ignored file only once it is force-added."""
+    env = hermetic_git.git_env(tmp_path / "work")
+    (repo / "staged.txt").write_text("s\n", encoding="utf-8")
+    _git(repo, env, "add", "staged.txt")
+    (repo / "loose.txt").write_text("l\n", encoding="utf-8")
+    (repo / "ignored.txt").write_text("i\n", encoding="utf-8")
+    (repo / "sub").mkdir()
+    (repo / "sub" / "deep.txt").write_text("d\n", encoding="utf-8")
+    got = git_tree.candidate_files(str(repo))
+    assert got == [
+        ".gitignore",
+        "loose.txt",
+        "staged.txt",
+        "sub/deep.txt",
+        "tracked.txt",
+    ], got
+    _git(repo, env, "add", "-f", "ignored.txt")
+    assert "ignored.txt" in git_tree.candidate_files(str(repo))
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path.parent))
+    lone = tmp_path / "lone"
+    lone.mkdir()
+    with pytest.raises(git_tree.NoGitError):
+        git_tree.candidate_files(str(lone))
+
+
+def test_staged_paths_lists_what_the_index_stages_deletions_left_out(
+    repo, tmp_path, monkeypatch
+):
+    """What the next commit adds or changes, sorted: an unstaged edit and an
+    untracked file are not listed, a staged deletion is not either, and with
+    repo_context the index GIT_INDEX_FILE names is the one read."""
+    env = hermetic_git.git_env(tmp_path / "work")
+    assert git_tree.staged_paths(str(repo)) == []
+    (repo / "b.txt").write_text("b\n", encoding="utf-8")
+    (repo / "a.txt").write_text("a\n", encoding="utf-8")
+    (repo / "loose.txt").write_text("l\n", encoding="utf-8")
+    _git(repo, env, "add", "b.txt", "a.txt")
+    (repo / "tracked.txt").write_text("edited, not staged\n", encoding="utf-8")
+    assert git_tree.staged_paths(str(repo)) == ["a.txt", "b.txt"]
+    _git(repo, env, "commit", "-q", "-m", "two")
+    _git(repo, env, "rm", "-q", "a.txt")
+    assert git_tree.staged_paths(str(repo)) == []
+
+    other = repo / ".git" / "other-index"
+    other_env = dict(env, GIT_INDEX_FILE=str(other))
+    _git(repo, other_env, "read-tree", "HEAD")
+    _git(repo, other_env, "add", "tracked.txt")
+    monkeypatch.setenv("GIT_INDEX_FILE", str(other))
+    assert git_tree.staged_paths(str(repo)) == [], "the default index, no context"
+    assert git_tree.staged_paths(str(repo), repo_context=True) == ["tracked.txt"]
+
+    monkeypatch.delenv("GIT_INDEX_FILE")
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path.parent))
+    lone = tmp_path / "lone"
+    lone.mkdir()
+    with pytest.raises(git_tree.NoGitError):
+        git_tree.staged_paths(str(lone))
+
+
+def test_staged_blob_is_the_index_copy_or_none(repo, tmp_path):
+    """The bytes a commit would carry for a path, which can differ from the
+    work-tree copy; None for a path the index does not hold."""
+    env = hermetic_git.git_env(tmp_path / "work")
+    (repo / "tracked.txt").write_text("edited after staging\n", encoding="utf-8")
+    assert git_tree.staged_blob(str(repo), "tracked.txt") == b"one\n"
+    (repo / "new.txt").write_text("new\n", encoding="utf-8")
+    assert git_tree.staged_blob(str(repo), "new.txt") is None
+    _git(repo, env, "add", "new.txt")
+    (repo / "new.txt").unlink()
+    assert git_tree.staged_blob(str(repo), "new.txt") == b"new\n"
+    assert git_tree.staged_blob(str(repo), "never-there.txt") is None
+    # A directory and a glob name only themselves, never the files they match.
+    (repo / "sub").mkdir()
+    (repo / "sub" / "deep.txt").write_text("d\n", encoding="utf-8")
+    _git(repo, env, "add", "sub/deep.txt")
+    assert git_tree.staged_blob(str(repo), "sub") is None
+    assert git_tree.staged_blob(str(repo), "*.txt") is None
+    assert git_tree.staged_blob(str(repo), "sub/deep.txt") == b"d\n"
+    # A symlink's blob is its target's path, which is no file's content.
+    (repo / "link.txt").symlink_to("tracked.txt")
+    _git(repo, env, "add", "link.txt")
+    assert git_tree.staged_blob(str(repo), "link.txt") is None
+
+
 def test_head_commit_is_the_sha_or_none(repo, tmp_path):
     sha = git_tree.head_commit(str(repo))
     assert sha is not None and len(sha) == 40, sha
@@ -123,6 +211,28 @@ def test_head_commit_is_the_sha_or_none(repo, tmp_path):
     empty.mkdir()
     _git(empty, hermetic_git.git_env(tmp_path / "work"), "init", "-q")
     assert git_tree.head_commit(str(empty)) is None
+
+
+def test_log_commits_lists_what_the_log_options_reach(repo, tmp_path):
+    """The commits `git log <options>` walks, so a scan over a range can tell
+    it walked none; an option git refuses is git failing, never zero."""
+    env = hermetic_git.git_env(tmp_path / "work")
+    first = git_tree.head_commit(str(repo))
+    (repo / "tracked.txt").write_text("two\n", encoding="utf-8")
+    _git(repo, env, "commit", "-q", "-am", "second")
+    second = git_tree.head_commit(str(repo))
+    assert git_tree.log_commits(str(repo), ["--all"]) == [second, first]
+    assert git_tree.log_commits(str(repo), ["--max-count=1"]) == [second]
+    assert git_tree.log_commits(str(repo), ["--max-count=0"]) == []
+    assert git_tree.log_commits(str(repo), ["--author=nobody-wrote-this"]) == []
+    # An option that asks for patches or another format still yields commits.
+    assert git_tree.log_commits(str(repo), ["--all", "-p"]) == [second, first]
+    with pytest.raises(git_tree.GitFailedError):
+        git_tree.log_commits(str(repo), ["--no-such-option"])
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    _git(empty, env, "init", "-q")
+    assert git_tree.log_commits(str(empty), ["--all"]) == []
 
 
 def test_through_symlink_judges_a_path_by_where_it_resolves(tmp_path):
@@ -188,6 +298,9 @@ _ASKS = {
     "tree_snapshot": lambda root: git_tree.tree_snapshot(root),
     "is_ignored": lambda root: git_tree.is_ignored(root, "ignored.txt"),
     "head_commit": lambda root: git_tree.head_commit(root),
+    "candidate_files": lambda root: git_tree.candidate_files(root),
+    "staged_blob": lambda root: git_tree.staged_blob(root, "tracked.txt"),
+    "log_commits": lambda root: git_tree.log_commits(root, ["--all"]),
 }
 
 
@@ -198,7 +311,13 @@ def test_a_git_that_is_not_installed_is_NoGitError(repo, tmp_path, monkeypatch):
     bare = tmp_path / "no-tools"
     bare.mkdir()
     monkeypatch.setenv("PATH", str(bare))
-    for name in ("tree_snapshot", "is_ignored"):
+    for name in (
+        "tree_snapshot",
+        "is_ignored",
+        "candidate_files",
+        "staged_blob",
+        "log_commits",
+    ):
         with pytest.raises(git_tree.NoGitError) as caught:
             _ASKS[name](str(repo))
         assert "not installed" in str(caught.value), name

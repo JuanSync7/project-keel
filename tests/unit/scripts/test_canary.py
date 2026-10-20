@@ -274,7 +274,7 @@ def test_each_set_and_path_prints_one_line_with_step_and_verdict(root, capsys):
     # Makefile's FE_APPS decides what they install, so the canary keeps no
     # second copy of the app layout.
     beta = [target for dest, target in make.calls if dest == "beta-fresh"]
-    assert beta == ["fe-install", "fe-browsers", "verify"], beta
+    assert beta == ["fe-install", "fe-browsers", "secrets-install", "verify"], beta
 
 
 def test_a_pass_deletes_the_project_and_a_fail_keeps_and_names_it(root, capsys):

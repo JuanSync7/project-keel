@@ -8,7 +8,7 @@ tags: [checks, ci, linter, determinism, pre-commit, hooks, guide]
 summary: Catalogue of every deterministic check that keeps a project-template repo honest — purpose, when to run, and how to wire as a hook.
 id: docs-guides-deterministic-checks
 created: 2026-06-19
-updated: 2026-10-18
+updated: 2026-10-20
 visibility: internal
 canonical: true
 ---
@@ -31,14 +31,15 @@ CI) call them. Each script is self-describing (`--help`) and safe to re-run.
 ```bash
 make check        # fast structural gate — runs anywhere, incl. Python 3.6
 make check-all    # the full deterministic suite (needs the project interpreter)
-make verify       # check-all + lint + typecheck + test + trace + eval + test-fe (the everything gate)
+make verify       # check-all + secret-scan + lint + typecheck + test + trace + eval + test-fe (the everything gate)
 ```
 
 Wire them once and forget:
 
 ```bash
-pip install pre-commit && pre-commit install   # run the fast checks on every commit
-# CI already runs `make check-all` (.github/workflows/ci.yml)
+pip install -e ".[dev]" && pre-commit install   # run the fast checks on every commit
+make secrets-install                           # build the pinned secret scanner, once per machine
+# CI already runs `make check-all` and `make secret-scan` (.github/workflows/ci.yml)
 ```
 
 ## Two interpreters, on purpose
@@ -867,6 +868,118 @@ frontend app and no stack, saying which.
 
 ---
 
+### 15. Committed secrets: the keyed gate and the scanner — `tests/integration/test_committed_secrets_gate.py`, `scripts/scan_secrets.py`
+
+**Purpose.** A credential that reaches a commit is exposed to everyone who can
+read the repository, and deleting it later leaves it in history. Two layers
+judge what a commit carries, and each is for what the other cannot see.
+
+- **The keyed gate** is keel's own rule, with no outside tool.
+  `tests/integration/test_committed_secrets_gate.py` takes its secret names
+  from the `scripts/config_loader.py` `KEYS` rows marked `secret=True`, reads
+  every file a commit could carry (`scripts/git_tree.py` `candidate_files`:
+  tracked, staged, and untracked but not ignored, a force-added ignored file
+  included) and judges a basename matching config/project.json
+  `secrets.json_files` as JSON at any depth and one matching
+  `secrets.dotenv_files` as `KEY=VALUE` lines, the work-tree copy and the index
+  copy both. A value under a secret name is red, naming the file, the line and
+  the key and never the value. The empty value is the only placeholder,
+  because `.env.example` ships a secret name with nothing after it: in a
+  dotenv file `changeme` or `${OTHER}` is a value, and in JSON only `""` and
+  `null` pass. A leading byte order mark, which a Windows editor writes and
+  a dotenv loader skips, hides no key, and a bare CR ends a line as LF does.
+  A committed symlink is judged at its target's own path, never as the link's
+  text. It also fails a `models.credential_env` name with no secret
+  row, so a new credential cannot pass by having no row. It is **not** for a
+  credential's shape: a value under a name no row declares, or in a file type
+  it does not parse, is the scanner's.
+- **The scanner** is a thin adapter behind that rule.
+  `scripts/scan_secrets.py` is the gitleaks adapter: it runs gitleaks, which
+  `.pre-commit-config.yaml` pins at `secrets.scanner.rev` from
+  `secrets.scanner.hook_repo`, and refuses any other config/project.json
+  `secrets.scanner.name` with exit 14, because its flags, rules file and
+  report fields are gitleaks's own. Another scanner is a second adapter, not
+  an edit to the gate test. It judges shapes, such as an access-key prefix and
+  its alphabet, whatever the name or the file. It is **not** for a value whose
+  shape no rule knows: the keyed gate judges names.
+
+The scanner runs in three places, one build in each
+(`tests/integration/test_gate_scope.py` holds all three to config):
+
+| Where | Command | What it judges |
+|-------|---------|----------------|
+| every commit | the `.pre-commit-config.yaml` hook `secret scan (staged, or every commit when nothing is staged)`: `python3 scripts/scan_secrets.py --staged-or-history` | the staged diff, in the index git hands the hook (`GIT_INDEX_FILE`, so `git commit -a` is judged too); under `pre-commit run --all-files`, which stages nothing, every commit `secrets.scanner.history_log_opts` reaches, with the scanner on PATH |
+| `make verify` | `make secret-scan`: `scripts/scan_secrets.py --history` | every commit `secrets.scanner.history_log_opts` (`--all`) reaches |
+| CI | `make secrets-install`, then `make secret-scan`, before `make test` | the same, over the full-history checkout |
+
+The adapter fixes the scanner's flags in code, because each one closes a way
+past it: `--redact`, so no report holds a value; `--ignore-gitleaks-allow`,
+so an inline allow comment in the file under judgement excuses nothing; an
+empty ignore directory and a rules file that only extends the default rules,
+so a file in the tree cannot change what is judged; and a finding status of
+`secrets.scanner.leak_exit_code` with a JSON report, so the scanner's own
+crash cannot read as a clean scan or as a finding. A scan beside a file named in
+`secrets.scanner.refused_files` (the scanner's own config and ignore file) is
+exit 14 before the scanner runs. The history scan runs the recorded build
+only: `make secrets-install` records its path, rev and sha256 in the
+git-ignored `secrets.scanner.record_file`, and no record, another rev, a path
+that is gone or a changed digest is exit 11 naming `make secrets-install`,
+never a skip.
+
+**Exclusions.** A fake credential kept on purpose, such as a test fixture, is
+a `secrets.scanner.exclusions` entry: one exact repo-relative path mapped to
+one rule id and a non-empty reason. A glob, a `..` part or an absolute path is
+refused (exit 14), and an entry the history scan did not use is exit 14, so a
+stale one cannot sit there waiting for a real value. An entry excuses every
+finding of that rule in that file, a later real one included: keep fixtures
+in a file of their own.
+
+**Exit codes.** 0: clean, or every finding excused. 1: a finding, one
+`file:line rule` line each (a history finding with its commit after it), and
+nothing else, so 1 always means "rotate or excuse a value". 2: a git command
+that ran and failed, or a bad command line. 11: no scanner, no matching
+record, or a scanner whose status and report disagree, so it gave no verdict.
+13: no repository, no commit, `git log` options that reach no commit, or a
+`--staged` scan of a stage that adds or changes no file, because a scan over
+zero files or commits proves nothing. 14: a config fault, an unused exclusion
+or a scanner name with no adapter included. `docs/guides/limits-and-troubleshooting.md` gives each script's
+codes and each message's fix.
+
+**What each layer does not catch.** Each row but the one marked "not tried"
+was tried in a generated project against the real scanner (gitleaks v8.30.1),
+and is caught, refused, or not caught and accepted:
+
+| Way past | Outcome |
+|----------|---------|
+| `git commit --no-verify`, or `SKIP=gitleaks` | the staged hook does not run; `make secret-scan` in `make verify` and in CI is red on the commit |
+| `git commit -a` of an edited tracked file | caught: the hook judges the index git hands it |
+| an inline `gitleaks:allow` comment | caught: `--ignore-gitleaks-allow` |
+| a `.gitleaksignore` or `.gitleaks.toml` in the tree | refused, exit 14, before the scanner runs |
+| an access key base64-encoded in a source file | caught by the scanner's decoding |
+| an access key split across two string literals | not caught: no rule sees the joined value |
+| a weak password under a name no secret row declares (`db_password = "hunter2hunter2"`) | not caught: no rule knows its shape and no secret row its name |
+| an access key under a non-secret JSON key | caught by the scanner; the keyed gate does not see it |
+| a secret name with a value in a `.env.production` added with `git add -f` | caught by the keyed gate |
+| an access key in a file the scanner's default allowlist skips (`package-lock.json`, `go.sum`, `*.svg`, `*.pdf`, under `node_modules/`) | not caught |
+| an exclusion naming a file and rule | excuses every later finding of that rule in that file |
+| a program named like the scanner, first on PATH when `scripts/scan_secrets.py --locate` runs, that writes an empty report | not caught: the record proves the program has not changed since it was recorded, not that it is the real scanner; CI builds its own |
+| a commit pushed with CI skipped (`[skip ci]`) | not tried, because it is the CI provider's behaviour: CI does not run on that commit, and `make verify` on any clone, and the next CI run, scan it |
+| a value already pushed | the history scan is red, and the value stays exposed: rotate it (`docs/guides/limits-and-troubleshooting.md`, "A credential was committed") |
+
+The keyed gate also cannot see a value already in history, which is the
+history scan's, or a file outside both basename patterns.
+
+**Cost.** The first `make secrets-install` on a machine builds the scanner
+through pre-commit (about 2 to 4 minutes, and several hundred megabytes of
+pre-commit and Go module cache under the home directory); later runs reuse
+it. The history scan of a project's own history takes seconds. The scanner
+is not in the catalogue table above, and `make check-all` does not run it,
+because it needs the recorded build, which a fresh clone does not have.
+
+**Run.** `make secrets-install` · `make secret-scan` · `pytest tests/integration/test_committed_secrets_gate.py tests/integration/test_secret_scan.py`
+
+---
+
 ## How the hooks are wired
 
 ### Pre-commit (event trigger)
@@ -882,8 +995,10 @@ commit (each hook is a thin trigger that calls a `scripts/` doer):
 | `cdmon` | `python3 scripts/cdmon_sync.py --check` (a stated skip until cdmon and its config exist) |
 | `doc-review` | `python3 scripts/jobs/review_docs.py --strict` (stale stamps fail; mentions advisory; no git is a stated skip) |
 | `eslint` / `ruff` / `ruff-format` | frontend lint + Python lint + Python formatting |
+| `gitleaks` | `secret scan (staged, or every commit when nothing is staged)`: `python3 scripts/scan_secrets.py --staged-or-history` over the index the commit would carry, inside the pinned scanner's hook environment, or over every commit when `pre-commit run --all-files` stages nothing; pre-commit skips it when a commit adds or changes no file (section 15) |
+| `gitleaks` | alias secrets-locate, manual stage: `python3 scripts/scan_secrets.py --locate` inside the hook environment pre-commit builds the pinned secret scanner into; `make secrets-install` runs it, and no commit does |
 
-Enable once: `pip install pre-commit && pre-commit install`.
+Enable once: `pip install -e ".[dev]" && pre-commit install`, then `make secrets-install`.
 
 ### CI (event trigger)
 
@@ -892,6 +1007,8 @@ config/project.json `toolchain.python` and `toolchain.node_major` name, which
 its `toolchain` step prints for setup-python and setup-node (section 14):
 
 ```yaml
+- run: make secrets-install   # build the pinned secret scanner and record it
+- run: make secret-scan       # every commit the full-history checkout carries
 - run: make check-all   # structure, python floor, corpus, openapi, aad, cdmon
 - run: make lint
 - run: make typecheck
@@ -916,7 +1033,7 @@ does.
 commit, with what result. Something outside the repository, such as
 project-jarvis, can read that file instead of scraping a log. The verify
 recipe runs `scripts/gate_evidence.py`, which runs each goal (`check-all`,
-`lint`, `typecheck`, `test`, `trace`, `eval`, `test-fe`) as its own make, in order. The writer then
+`secret-scan`, `lint`, `typecheck`, `test`, `trace`, `eval`, `test-fe`) as its own make, in order. The writer then
 writes the record to `<evidence.dir>/<gate>.json`: `.evidence/verify.json`,
 with config/project.json `evidence.dir` = `.evidence`.
 
@@ -1005,9 +1122,10 @@ An unknown value is `null`, never `0`. Outside git, `commit`, `dirty` and
 the ledger across runs and repositories is a consumer's, such as
 project-jarvis, which ingests the record
 (`docs/adr/keel/K-0017-gate-evidence-record.md`). It is unsigned and sits in a writable directory, so it is evidence, not
-attestation (`docs/guides/limits-and-troubleshooting.md`). CI runs `check-all`, `lint`,
-`typecheck`, `test`, `trace` and `eval` as separate steps and never `test-fe`
-(`.github/workflows/ci.yml`), so CI writes no record and runs no frontend suite.
+attestation (`docs/guides/limits-and-troubleshooting.md`). CI runs `secrets-install`,
+`secret-scan`, `check-all`, `lint`, `typecheck`, `test`, `trace`, `eval` and
+`test-fe` as separate steps (`.github/workflows/ci.yml`), so CI writes no
+record.
 
 **How a consumer reads it.**
 

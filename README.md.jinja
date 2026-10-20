@@ -8,7 +8,7 @@ tags: [template, scaffold, {{ project_slug }}]
 summary: A generic, polyglot-aware, agent-friendly project skeleton that stays honest.
 id: readme
 created: 2026-06-17
-updated: 2026-10-15
+updated: 2026-10-20
 visibility: internal
 canonical: true
 ---
@@ -68,15 +68,22 @@ pipx install copier
 copier copy --trust gh:JuanSync7/project-keel my-project
 cd my-project
 python3 -m venv .venv
-.venv/bin/pip install -e ".[dev]"     # pytest, ruff and mypy: the gate's tools
-.venv/bin/pip install pre-commit && .venv/bin/pre-commit install
+.venv/bin/pip install -e ".[dev]"     # pytest, ruff, mypy and pre-commit: the gate's tools
+git init && git add -A && git commit -q -m "generated"   # the hook and the history scan need a commit
+.venv/bin/pre-commit install          # the commit hooks, the staged secret scan among them
 make check                            # the structure gate
 {%- if frontend_stack != "none" %}
 make fe-install                       # the frontend app's packages
 make fe-browsers                      # the browser its journey drives, into your user cache
 {%- endif %}
-make verify                           # every gate: checks, lint, types, tests, frontend tests
+make secrets-install                  # the pinned secret scanner, built once per machine
+make verify                           # every gate: checks, secret scan, lint, types, tests, frontend tests
 ```
+
+`make verify` is red until `make secrets-install` has recorded the scanner
+its history scan runs: `scripts/scan_secrets.py --history` exits 11
+(BACKEND_ABSENT) naming that command, never a skip. Before the first commit it
+exits 13 (NOTHING_JUDGED), because a scan over no commit judges nothing.
 {%- if frontend_stack != "none" %}
 
 `make verify` is red until `make fe-install` has run: its frontend suites

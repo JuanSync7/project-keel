@@ -9,7 +9,7 @@ tags: [adr, decisions, template]
 summary: The architecture decisions the template ships into every project, numbered in their own space as K-NNNN-<slug>.md and cited as ADR-K-NNNN.
 id: docs-adr-keel-readme
 created: 2026-10-07
-updated: 2026-10-19
+updated: 2026-10-20
 visibility: internal
 canonical: true
 ---
@@ -55,3 +55,4 @@ copy the update names, as the parent README describes.
 | `K-0022-one-config-loader.md` | `scripts/config_loader.py` is the one reader of config/project.json, config/practices.json and the variables they declare; a variable wins over the file only where a `KEYS` row names it; a missing or wrong value exits 14, `CONFIG`, and `tests/integration/test_config_reads_gate.py` fails a direct read. | Which variables a child process inherits: `K-0012-child-process-environment-allowlist.md`. Where a module may import from: `K-0021-imports-flow-up-a-configured-layer-order.md`. |
 | `K-0023-canary-gates-a-release-not-a-commit.md` | Proposed: `make canary` renders each configured answer set fresh and as an update from the previous release tag and runs that project's `make verify`, before a release push, weekly and on demand, never in `make verify`; a red canary blocks the release push and nothing else. | The release order it adds a step to: `K-0016-release-order-tag-before-verify.md`. What `make verify` itself runs: `K-0017-gate-evidence-record.md`. |
 | `K-0024-what-a-test-may-reach.md` | Proposed: a test's network, write and store rule is a row of config/project.json `tests.isolation.tiers` its closest tier marker picks; `tests/isolation_guard.py`, an audit hook `tests/conftest.py` installs, fails a test that reaches past it, an exemption is per test and axis with a reason and an unused one is red, and test scratch lives under `tests.scratch_root`. | What a child process inherits: `K-0012-child-process-environment-allowlist.md`. The one config reader it reads through: `K-0022-one-config-loader.md`. |
+| `K-0025-committed-secrets-keyed-gate-and-scanner.md` | Proposed: a keyed gate test fails a committable file that gives a secret `KEYS` name a value, and a scanner adapter, `scripts/scan_secrets.py` behind config/project.json `secrets.scanner` (the gitleaks adapter, the scanner installed by the pinned pre-commit hook), scans the staged diff at commit and every commit in `make verify` and CI; a missing or unrecorded scanner, or one that gave no verdict, is exit 11 and a scan over zero files exit 13, never a skip. | What a child process inherits, the scanner included: `K-0012-child-process-environment-allowlist.md`. Which config keys are secret, and how a value is read: `K-0022-one-config-loader.md`. |

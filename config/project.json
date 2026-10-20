@@ -49,7 +49,8 @@
       "K-0021-imports-flow-up-a-configured-layer-order.md",
       "K-0022-one-config-loader.md",
       "K-0023-canary-gates-a-release-not-a-commit.md",
-      "K-0024-what-a-test-may-reach.md"
+      "K-0024-what-a-test-may-reach.md",
+      "K-0025-committed-secrets-keyed-gate-and-scanner.md"
     ]
   },
   "doc_drift": {
@@ -118,6 +119,7 @@
       "test": "runs the whole suite, which holds this sweep, so it would run itself; tests/integration/test_write_guard.py runs its make-driving cases through the gate runner",
       "integration": "runs the integration suite, which holds this proof",
       "long-scripts": "judges recorded runs, and .launch/durations.json is git-ignored so a fresh clone has none, which is red by design (a pass over zero runs fails); tests/integration/test_launcher.py proves it read-only with a whole-tree digest",
+      "secret-scan": "runs the scanner `make secrets-install` records, and secrets.scanner.record_file is git-ignored so a fresh clone has none, which is red by design (exit 11, never a skip); tests/integration/test_secret_scan.py proves the history scan leaves what git lists unchanged",
       "verify": "runs `test`, which holds this proof",
       "test-fe": "with a frontend app present, a hermetic clone has no node_modules, which is red by design (a suite over zero apps' tests fails); tests/integration/test_gate_scope.py drives it",
       "test-fe-unit": "with a frontend app present, a hermetic clone has no node_modules, which is red by design (a suite over zero apps' tests fails); tests/integration/test_gate_scope.py drives it",
@@ -318,6 +320,21 @@
       "probe_interval_s": 0.1,
       "request_timeout_s": 30,
       "stop_timeout_s": 10
+    }
+  },
+  "secrets": {
+    "_comment": "What keeps a credential out of a file git would commit. tests/integration/test_committed_secrets_gate.py is the keyed layer, keel's own rule with no outside tool: it takes its secret names from scripts/config_loader.py KEYS (each row with secret=True gives its variable name, and its config path when it lives in a file; every models.credential_env name must have one), reads every file a commit could carry (scripts/git_tree.py candidate_files: tracked, staged, and untracked but not ignored; with no repository, every file the structure walk reaches), and judges a file whose basename matches json_files as JSON and one matching dotenv_files as KEY=VALUE lines, its work-tree copy and its index copy both. A value under a secret name is red, naming the file, the line and the key and never the value. The empty value is the only placeholder, because .env.example ships a secret name with nothing after it: in a dotenv file KEY=, KEY=\"\" and KEY='' pass, and changeme or ${OTHER} is a value; in JSON \"\" and null pass. A file that does not parse as JSON is red, so a commented JSON file needs a basename these patterns do not match. Narrowing either list hides files from the gate: that is a security decision, not a tidy-up. The gate sees a name, not a shape: a credential under a name no secret row declares, in a file type it does not parse, or already in history is not its to see. The scanner is the second layer, for the shapes no name declares: scripts/scan_secrets.py is the gitleaks adapter and runs the program scanner.name names (another name is exit 14, because no adapter writes its flags), which the scanner.hook_repo hook in .pre-commit-config.yaml installs at the release scanner.rev pins (`make secrets-install`, which also writes scanner.record_file with the path, rev and sha256 the history scan runs, so git must ignore that file). Its staged mode judges what a commit would carry, and the commit hook scans every commit instead when nothing is staged; its history mode judges every commit scanner.history_log_opts reaches. A finding prints as file, line and rule, never the value. The scanner is told to exit scanner.leak_exit_code on a finding, so its own crash cannot read as one; a status and report that disagree, and a missing or unrecorded scanner, are exit 11, never a skip, and log options that reach no commit are exit 13. scanner.refused_files are the scanner's own config and ignore file names: a scan refuses to run beside one, because a file under judgement must not decide what is judged. scanner.exclusions excuses one rule in one exact file, each with its reason; an exclusion the history scan does not use is red.",
+    "dotenv_files": [".env", ".env.*"],
+    "json_files": ["*.json"],
+    "scanner": {
+      "exclusions": {},
+      "history_log_opts": ["--all"],
+      "hook_repo": "https://github.com/gitleaks/gitleaks",
+      "leak_exit_code": 77,
+      "name": "gitleaks",
+      "record_file": ".secret-scan/scanner.json",
+      "refused_files": [".gitleaks.toml", ".gitleaksignore"],
+      "rev": "v8.30.1"
     }
   },
   "tests": {

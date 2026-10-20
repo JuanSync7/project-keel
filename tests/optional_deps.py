@@ -1,6 +1,6 @@
 """
 title: Optional-dependency policy — skip vs fail
-summary: Turns pytest.importorskip into a hard import for any surface declared in KEEL_REQUIRED_EXTRAS (CI installs those on purpose), so a broken install fails the run instead of degrading into a green suite with the assertions never executed; an undeclared surface still skips.
+summary: Turns pytest.importorskip into a hard import for any surface declared in KEEL_REQUIRED_EXTRAS (CI installs those on purpose), so a broken install fails the run instead of degrading into a green suite with the assertions never executed; an undeclared surface still skips. require_or_skip applies the same rule to a surface that is not an import, such as the secret scanner `make secrets-install` builds.
 
 Whether a missing optional dependency SKIPS the test or FAILS the run.
 
@@ -43,6 +43,7 @@ SURFACES = {
     "template": 'pip install -e ".[dev,template]"',  # copier + its yaml
     "dev": 'pip install -e ".[dev,template]"',  # pytest, jsonschema, httpx
     "transport": "pip install -r api/rest_fastapi/requirements.txt",
+    "secrets": "make secrets-install",  # the pinned secret scanner, recorded
 }
 
 #: Surfaces that must stay a skip even in CI, with the reason. The langgraph
@@ -83,3 +84,22 @@ def importorskip(module, extra):
         # A real import: ImportError propagates and collection fails loudly.
         return importlib.import_module(module)
     return pytest.importorskip(module)
+
+
+def require_or_skip(available, extra, reason):
+    """Return when *available*; otherwise skip, or fail when CI declared
+    *extra* required. For a surface that is not a Python import, such as a
+    program an installer builds: *reason* says what is missing."""
+    if extra not in SURFACES:
+        raise ValueError(
+            "unknown surface %r; add it to SURFACES with the CI step that "
+            "installs it" % (extra,)
+        )
+    if available:
+        return
+    if extra in required_extras():
+        pytest.fail(
+            "%s, and %s declares %r required; run `%s`"
+            % (reason, ENV_VAR, extra, SURFACES[extra])
+        )
+    pytest.skip("%s; `%s` installs it" % (reason, SURFACES[extra]))

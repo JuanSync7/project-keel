@@ -300,6 +300,7 @@ def test_keels_verify_recipe_runs_the_driver_over_the_goals_check_w_reads():
     goals, unresolved = cs._recursions(cmd)
     assert goals == [
         "check-all",
+        "secret-scan",
         "lint",
         "typecheck",
         "test",

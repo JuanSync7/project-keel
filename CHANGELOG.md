@@ -89,8 +89,46 @@ version rather than a bare commit:
   its unused-exemption line and each scratch-root refusal;
   `tests/integration/test_isolation_docs.py` derives each from the guard and
   fails a document that drops one.
+- **A value under a secret name is red in any file a commit could carry.**
+  `tests/integration/test_committed_secrets_gate.py`, with no outside tool,
+  takes the secret names from the `scripts/config_loader.py` `KEYS` rows
+  marked `secret=True` and fails a JSON or dotenv file (config/project.json
+  `secrets.json_files`, `secrets.dotenv_files`) that gives one a value other
+  than the empty value, naming the file, line and key and never the value. A
+  `models.credential_env` name with no secret row is red too.
+- **A credential-shaped string is red at commit, in `make verify` and in CI.**
+  `scripts/scan_secrets.py` is the gitleaks adapter: it runs the scanner
+  config/project.json `secrets.scanner` pins, which the pinned pre-commit
+  hook builds and `make secrets-install` records, and a `secrets.scanner.name`
+  it has no adapter for is exit 14. The `secret scan (staged, or every
+  commit when nothing is staged)` pre-commit hook scans what a commit adds or
+  changes, and every commit when `pre-commit run --all-files` stages nothing;
+  `make secret-scan`, a `[local]` goal of `make verify`, and CI scan every
+  commit, so a value a later commit deleted is still red. A finding is
+  `file:line rule`, never the value, and exit 1 means a finding only. A
+  missing or unrecorded scanner, or one whose status and report disagree, is
+  exit 11; a scan over zero files or log options that reach no commit is exit
+  13; a git failure is exit 2; none is a skip. An exclusion names one rule in
+  one file with a reason, and an unused one is exit 14. The keyed gate reads
+  a file through a byte-order mark and CR line ends, and judges a committed
+  symlink only through its target.
+  docs/guides/deterministic-checks.md lists what each layer catches, what
+  neither sees and each bypass tried;
+  docs/guides/limits-and-troubleshooting.md "A credential was committed" says
+  to rotate the credential first;
+  [ADR-K-0025](docs/adr/keel/K-0025-committed-secrets-keyed-gate-and-scanner.md),
+  proposed, records the decision.
 
 ### Changed
+- **`make verify` is red until `make secrets-install` has run once.** A fresh
+  clone has no scanner record, so `make secret-scan` exits 11 naming the
+  install. The README Quickstart now commits the generated project, installs
+  the pre-commit hooks and runs `make secrets-install` before the first
+  `make verify`. CI adds `secrets` to `KEEL_REQUIRED_EXTRAS`, so a scanner
+  test that cannot run there fails instead of skipping. `make canary` runs
+  `make secrets-install` in each project before its `make verify`.
+  Upgrading: run `make secrets-install` once after `copier update`;
+  docs/guides/generate-and-upgrade.md says why no hook reinstall is needed.
 - **CI installs Node 24, and `make fe-install` refuses another major.**
   The workflows read the Node major and the Python from config/project.json
   `toolchain` through their `toolchain` step, where they spelled `22` and

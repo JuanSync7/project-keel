@@ -8,7 +8,7 @@ tags: [plan, template, downstream, freshness, taxonomy, effects, credentials, au
 summary: The bounded-convergence record for the defects bedrock-platform, the first real project generated from keel, reported back — a red gate on arrival, unknown directories the gate never sees, make targets whose effect nobody declares, and child processes that inherit every credential — plus the command that checks any keel-generated project for all of them. One slice per defect, five passes, each landed as one commit on a green `make verify`.
 id: docs-design-downstream-feedback
 created: 2026-10-06
-updated: 2026-10-19
+updated: 2026-10-20
 visibility: internal
 canonical: true
 ---
@@ -1977,7 +1977,7 @@ CMP-6.S6 green or the sixth slice reached, whichever comes first.
 |-------|-----|--------|
 | CMP-6.S1 | Each part of a generated project is tested on its own, but no test runs a generated project's full `make verify`, or `make verify` after `copier update` from the previous tag; nothing checks that each frontend app commits its lockfile, or that CI's Node version is the one the gate is run with | done — `make verify` green (3321 passed); the real canary passed both answer sets, fresh and updated from v0.3.0; 9 of 10 review findings confirmed and fixed; ADR-K-0023 proposed |
 | CMP-6.S2 | KEEL-TEST-1: a test can reach a live store; nothing in the suite refuses it | done — `make verify` green (3456 passed) with `KEEL_TEST_SCRATCH` on local disk; the guard caught four tests in keel's own suite, all fixed; 13 of 13 review findings confirmed and fixed; ADR-K-0024 proposed |
-| CMP-6.S3 | KEEL-SEC-1: nothing scans the tree for a committed secret | planned |
+| CMP-6.S3 | KEEL-SEC-1: nothing scans the tree for a committed secret | built, full `make verify` not yet run — the keyed gate, the scanner adapter and the wiring are built; 9 of 11 review findings confirmed and fixed; the targeted gates are green (337 passed, check-docs, check-exit-codes, mypy); the scanner installs through the pinned pre-commit hook here and is not yet run in GitHub CI; ADR-K-0025 proposed |
 | CMP-6.S4 | B1: a generated project's own code that breaks a keel gate check is red on `copier update` (the exit gate) or not judged at all (the config-reads gate skips); the ruled warn-then-fail tier is not built | planned |
 | CMP-6.S5 | The three accepted file-header fields are not read by any check, and a call into `re` needs no stated reason | planned |
 | CMP-6.S6 | KEEL-AGT-1: an agent's edit can reach the code that judges it; `scripts/apply_refactor.py` refuses only a path outside the repo root | planned |
@@ -2140,6 +2140,51 @@ Left by CMP-6.S2 so far:
 - `scripts/jobs/finish_update.py` still clones under the system temporary
   directory: it is a copier job, not a test, and the half of KEEL-RES-1 it
   holds stays queued.
+
+**CMP-6.S3, built as ruled.** The keyed layer,
+`tests/integration/test_committed_secrets_gate.py`, takes its secret names from
+the `scripts/config_loader.py` `KEYS` rows marked secret and judges every file
+`scripts/git_tree.py` `candidate_files` lists. The scanner layer,
+`scripts/scan_secrets.py`, the gitleaks adapter, runs the scanner
+config/project.json `secrets.scanner` pins; the pre-commit hook pinned at `secrets.scanner.rev`
+builds it, and `make secrets-install` records it. The commit hook
+scans what a commit adds or changes, or every commit when nothing is staged, and `make secret-scan`, a `make
+verify` goal, and CI scan every commit.
+[ADR-K-0025](../adr/keel/K-0025-committed-secrets-keyed-gate-and-scanner.md) is
+proposed.
+
+Left by CMP-6.S3 so far:
+
+- The record is trust on first use: a program named `gitleaks` that is first
+  on `PATH` when `make secrets-install` runs is the one recorded, and a fake
+  that writes an empty report passed the history scan by hand. The record
+  catches a later swap, not the first.
+- Measured by hand in a generated project, and not caught by either layer: a
+  value split across two string literals; a weak password with no known
+  shape; a credential in `package-lock.json`, an `.svg`, `go.sum`, a PDF or
+  under `node_modules/`, which the scanner's default rules allow. A
+  `--no-verify` or `SKIP=gitleaks` commit passes the hook and is red in the
+  history scan. docs/guides/deterministic-checks.md lists every bypass tried.
+- `make canary` runs `make secrets-install` in each project with
+  `XDG_CACHE_HOME` inside the run, so pre-commit builds the scanner once per
+  run. `GOPROXY` and the CA bundle variables are not in `child_env.names`, so
+  on a host whose TLS is intercepted the canary's install may fail; the
+  canary was not run in this slice.
+- The README Quickstart does not install `api/rest_fastapi/requirements.txt`,
+  so a generated project's first `make verify` was red in `typecheck`
+  (fastapi and uvicorn not found) before it reached the secret scan, which
+  passed. It is older than this slice and not fixed here.
+- CI's two new steps are written and not yet run on GitHub. A commit whose
+  message asks the provider to skip CI is not scanned there; the history scan
+  in the next run's `make verify` sees it.
+- One history scan of keel's 113 commits took 7.4 seconds on the network home
+  directory, so the scan is of the whole history, not the pushed range.
+- With `secrets` in `KEEL_REQUIRED_EXTRAS`, as CI declares it, the suite a
+  generation test runs inside a just-generated project inherited the
+  declaration and failed its scanner cases, because that project has run no
+  `make secrets-install`. `tests/integration/test_copier_generation.py` now
+  drops `secrets` for those runs; a project's own CI installs the scanner
+  before its suite.
 
 ## Queued after Campaign 6
 
@@ -2403,8 +2448,8 @@ so.
 | 1 | `make -i` or a `.IGNORE` target lets a `[write]` recipe run past `$(WRITE_GUARD)` under CI or a Ralph loop | defect | high | closed in CMP-5.S4: the guard's `$(error)` clause and check_W's `.IGNORE` rule |
 | 2 | `test-fe` exits 0 when npm or an app's `node_modules` is missing, and CI never runs `test-fe` | missing-check | high | closed in CMP-5.S4: both targets exit 2, and CI runs `make fe-browsers` and `make test-fe` |
 | 3 | KEEL-TEST-1: nothing stops a test reaching a live store | feature | high | in progress in CMP-6.S2 |
-| 4 | KEEL-SEC-1: nothing scans the tree for a committed secret | missing-check | high | planned as CMP-6.S3 |
-| 5 | `credential_value_patterns` covers five token forms | missing-check | medium | `config/project.json` |
+| 4 | KEEL-SEC-1: nothing scans the tree for a committed secret | missing-check | high | in progress in CMP-6.S3 |
+| 5 | `credential_value_patterns` covers five token forms | missing-check | medium | `config/project.json`; CMP-6.S3 left it the child-environment guard's list, and the secret scan uses the scanner's own rules instead |
 | 6 | A process keel does not start (`make new`'s copier, a hook calling make) gets the caller's whole environment | defect | medium | `Makefile` `new` target |
 | 7 | A same-user child can read `/proc/$PPID/environ` | decision | medium | outside keel; K-0012 says defence in depth |
 | 8 | The gate runner judges the child environment against keel's config, not the `--dir` project's | defect | medium | `scripts/run_make_target.py` calls `build_child_env()` and `load_policy()` with no root |

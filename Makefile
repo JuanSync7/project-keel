@@ -53,7 +53,7 @@ WRITE_GUARD = $(if $(findstring i,$(firstword -$(MAKEFLAGS))),$(error refusing '
 .PHONY: help new audit-project canary check-python check check-all check-corpus check-openapi check-aad check-cdmon check-exit-codes exit-codes advise check-generic long-scripts verify test trace eval eval-live unit integration e2e smoke \
         lint lint-py lint-fe fmt fmt-check typecheck typecheck-py typecheck-fe \
         test-fe test-fe-unit test-fe-e2e \
-        fe-install fe-browsers run run-api run-web site-data site-static demo agent-surface-schema check-docs restamp-docs doc-review doc-review-apply
+        fe-install fe-browsers secrets-install secret-scan run run-api run-web site-data site-static demo agent-surface-schema check-docs restamp-docs doc-review doc-review-apply
 
 # `make help EFFECT=tree` lists only what rewrites the tree; `AREA=` filters by a
 # `##@` area header once config/project.json make_targets.area_dir names one.
@@ -167,11 +167,11 @@ long-scripts: ## [local] Propose the scripts whose last run recorded by scripts/
 # leave an earlier green record standing. scripts/gate_evidence.py runs each goal,
 # passes the first failing code through and writes the record to config/project.json
 # evidence.dir (an ignored path, so [local] stays true). check_W reads the goals of
-# this `$(MAKE)` line, so the label still closes over all seven. make runs a
+# this `$(MAKE)` line, so the label still closes over all eight. make runs a
 # `$(MAKE)` line even under -n; the driver reads -n/-q/-t from MAKEFLAGS and writes
 # nothing then. It runs the goals in sequence, so -j does not parallelise them.
-verify: ## [local] Run all gates (all checks + lint + types + tests + traceability + evals + frontend tests) and write their evidence record to config/project.json evidence.dir
-	$(PY) scripts/gate_evidence.py --gate $@ -- $(MAKE) check-all lint typecheck test trace eval test-fe
+verify: ## [local] Run all gates (all checks + secret scan + lint + types + tests + traceability + evals + frontend tests) and write their evidence record to config/project.json evidence.dir
+	$(PY) scripts/gate_evidence.py --gate $@ -- $(MAKE) check-all secret-scan lint typecheck test trace eval test-fe
 
 # JUNIT_XML is empty unless scripts/gate_evidence.py sets it per goal: pytest then
 # writes its own junit report, the only source of the evidence record's test
@@ -292,6 +292,21 @@ fe-browsers: ## [read] Download the browser each frontend app's journey drives (
 	command -v npm >/dev/null 2>&1 || { echo "$@: npm is not on PATH, so no journey browser was downloaded for $(strip $(FE_APPS)); install Node.js and run 'make fe-install', then run it again" >&2; exit 2; }; \
 	for app in $(FE_APPS); do [ -d "$$app/node_modules" ] || { echo "$@: $$app has no node_modules, so its journey browser was not downloaded; run 'make fe-install', then run it again" >&2; exit 2; }; done; \
 	for app in $(FE_APPS); do echo "journey browser: $$app"; (cd $$app && npm run --silent test:e2e:browsers -- $(FE_BROWSER_FLAGS)) || exit 1; done
+
+# The secret scanner is built by its pre-commit hook at the rev
+# .pre-commit-config.yaml pins (config/project.json secrets.scanner.rev), so
+# make, pre-commit and CI run one build; the manual-stage hook's entry,
+# scripts/scan_secrets.py --locate, records where it is in the git-ignored
+# secrets.scanner.record_file.
+secrets-install: check-python ## [read] Build the pinned secret scanner through pre-commit and record where it is
+	$(PY) -m pre_commit run secrets-locate --hook-stage manual --all-files
+
+# The history scan runs the recorded build only: with no record, or one naming
+# another rev or a program whose digest changed, it exits BACKEND_ABSENT (11) and
+# names `make secrets-install`, never a skip. The scanner's JSON report goes to a
+# temporary directory outside the tree, so [local] stays true.
+secret-scan: check-python ## [local] Scan every commit config/project.json secrets.scanner.history_log_opts reaches with the recorded secret scanner (scripts/scan_secrets.py)
+	$(PY) scripts/scan_secrets.py --history
 
 run: check-python ## [local] Run the composition root config/project.json layers.app declares
 	PYTHONPATH=$(PYTHONPATH) $(PY) scripts/run_app.py

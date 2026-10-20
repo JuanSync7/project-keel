@@ -8,7 +8,7 @@ tags: [copier, generate, update, migrations, adoption, guide]
 summary: How a project is generated from keel, what arrives and what never does, what `make new` refuses, how to adopt keel into an existing repository, and how `copier update` pulls template changes — with one checklist row per task and migration an update runs, how to finish an update a migration stopped, and how keel's release canary proves a fresh project and an updated one pass their own `make verify`.
 id: docs-guides-generate-and-upgrade
 created: 2026-10-09
-updated: 2026-10-18
+updated: 2026-10-20
 visibility: internal
 canonical: true
 ---
@@ -62,6 +62,14 @@ over tests that never ran, and the browser journey fails until
 `make test-fe` exits 0 and says nothing.
 `tests/integration/test_copier_generation.py` generates each stack and checks
 both behaviours.
+
+Commit the project, then run `make secrets-install`, before the first
+`make verify`. Its history scan judges commits, so before the first one
+`scripts/scan_secrets.py --history` exits 13 (`NOTHING_JUDGED`); with no
+recorded scanner it exits 11 (`BACKEND_ABSENT`) naming `make secrets-install`,
+never a skip. The README Quickstart runs both in that order, and
+`tests/integration/test_copier_generation.py` checks the order under every
+frontend answer.
 
 ## What arrives and what never does
 
@@ -280,6 +288,21 @@ when `npm` or an app's `node_modules` is missing, naming the app and
 `make_targets.effect_proof_skip`, because the effect sweep's fresh clone has
 no `node_modules`. Its CI workflow gains a `make fe-browsers` step and a
 `make test-fe` step after `make eval`.
+
+### `make verify` scans the history for committed secrets
+
+The update adds `make secret-scan` to `make verify` and a staged secret-scan
+hook to `.pre-commit-config.yaml`. An existing project's `make verify` is red,
+its `secret-scan` goal exiting 11 (`BACKEND_ABSENT`), until
+`make secrets-install` has built the scanner the hook pins and recorded where.
+Run it once per machine after the update. The hook needs no reinstall: the
+script `pre-commit install` wrote reads `.pre-commit-config.yaml` on every
+commit. A finding in history is not fixed by an
+exclusion: `docs/guides/limits-and-troubleshooting.md`, "A credential was
+committed", is the procedure. The update adds `secret-scan` to
+config/project.json `make_targets.effect_proof_skip`, because the effect
+sweep's fresh clone has no record, and its CI workflow gains a
+`make secrets-install` step and a `make secret-scan` step before `make test`.
 
 ### A gate run has one date, and a git failure stops it
 
@@ -539,8 +562,8 @@ renders anything.
    runs the fresh path alone.
 
 Each project then runs `make fe-install` and `make fe-browsers`, which exit 0
-when the project's Makefile `FE_APPS` names no frontend app, and then its own
-`make verify`. A step that runs past
+when the project's Makefile `FE_APPS` names no frontend app, `make secrets-install`,
+and then its own `make verify`. A step that runs past
 `canary.step_timeout_minutes` is killed and fails. Each set and path prints one
 line:
 
@@ -560,6 +583,7 @@ step says what failed:
 | `update` | `copier update` failed, or it left a path git lists as unmerged or a file holding a conflict hunk |
 | `fe-install` | `scripts/check_toolchain.py node` refused the Node major, or npm could not install a frontend app |
 | `fe-browsers` | the browser the end-to-end suites drive could not be installed |
+| `secrets-install` | pre-commit could not build the pinned secret scanner, or `scripts/scan_secrets.py --locate` could not record it |
 | `verify` | the project's own `make verify` is red; every `pass` line names this step too |
 
 A passing project is deleted. A failing one is kept at

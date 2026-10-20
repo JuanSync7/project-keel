@@ -44,6 +44,9 @@ coverage.xml
 # the release canary's rendered projects and logs (config/project.json
 # canary.scratch_root): rewritten on every run, never committed
 .canary
+# the secret scanner's path, rev and digest on this machine (config/project.json
+# secrets.scanner.record_file): written by `make secrets-install`, never committed
+.secret-scan
 # local config / secrets; config/own-hosts.local.json (launcher.own_hosts_file)
 # lists the hosts that are one person's own, and host names are never committed
 config/*.local.*

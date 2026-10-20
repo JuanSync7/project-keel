@@ -8,7 +8,7 @@ tags: [conventions, frontmatter, taxonomy]
 summary: Single source of truth for labeling (frontmatter) and the directory taxonomy.
 id: conventions
 created: 2026-06-17
-updated: 2026-10-19
+updated: 2026-10-20
 visibility: internal
 canonical: true
 ---
@@ -235,7 +235,7 @@ second.
 | `.gitignore` `.editorconfig` `.gitattributes` | ✅ | repo hygiene |
 | `.github/workflows/` or `.gitlab-ci.yml` | ✅ | CI definitions |
 | `.claude/` (`settings.json`, `skills/`, `commands/`) | ✅ | agent config shared with the team |
-| `.env.example` | ✅ | documents required env vars (no real values) |
+| `.env.example` | ✅ | documents required env vars (no real values: `tests/integration/test_committed_secrets_gate.py` fails one under a secret name) |
 | `.vscode/` `.idea/` | ⚠️ optional | editor config — commit only a minimal shared subset |
 | `.env` `.env.local` | ❌ | real secrets — gitignored |
 | `.venv/` `.pytest_cache/` `.mypy_cache/` `.ruff_cache/` | ❌ | tool caches/venvs — generated, gitignored |
@@ -435,7 +435,7 @@ tune:
 | runtime, app-wide, language-neutral | RAG chunk size, top-k, max context, ports, timeouts | `config/` — committed `default.*` / `*.example.*`, grouped by concern (e.g. `config/rag.example.toml`, copied to an untracked `config/rag.local.toml` for local values); no TOML loader ships, so the reader is code you write (`scripts/config_loader.py` reads only the JSON manifests of §15) |
 | model-backend selection / launch | which embedding model or reranker adapter + flags | `models/config/` — next to the registry that picks by name |
 | build-time, component-coupled | frontend font, colours, footer (design tokens) | with the frontend package (`src/frontend/<app>/src/styles` / theme) — the build is the consumer |
-| secret | API keys, tokens | the environment / `.env` (gitignored) — **never** `config/` |
+| secret | API keys, tokens | the environment / `.env` (gitignored) — **never** `config/`; a secret variable gets a `scripts/config_loader.py` `KEYS` row with `secret=True`, and `tests/integration/test_committed_secrets_gate.py` fails a file a commit could carry that gives its name a value |
 | child-process environment | which variable NAMES a child receives; which an adapter's child also receives | `config/project.json` `child_env`, `models.credential_env` — names only; values stay in the environment |
 | credential destination | which hosts an adapter that sends a credential itself may send it to | `config/project.json` `models.allowed_hosts` — exact `host` or `host:port` entries, empty by default |
 
@@ -967,7 +967,7 @@ govern *how you work*; their executable analog — a loop a program runs unatten
   `- AC-<n>: <text>` line below it. A test names its unit with
   `@pytest.mark.req("REQ-0001#AC-1")`. A bare requirement id never covers a
   requirement that has numbered criteria.
-- **The gate is the judge.** "Done" means `make verify` (`check-all` + `lint` +
+- **The gate is the judge.** "Done" means `make verify` (`check-all` + `secret-scan` + `lint` +
   `typecheck` + `test` + `trace` + `eval` + `test-fe`) is green; step transitions and completion gate on the
   real exit code, never on a model's self-report. A loop runs its gate through
   `scripts/run_make_target.py`, which runs only a target labelled inside

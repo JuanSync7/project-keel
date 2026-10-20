@@ -8,7 +8,7 @@ tags: [limits, waivers, exit-codes, troubleshooting, guide]
 summary: What adopting keel costs, the risks its rails leave open, the checks that pass by skipping, what no gate can see, every waiver a project may use, every exit code the gate's scripts return, and the symptom-to-fix list for the failures a newcomer meets first.
 id: docs-guides-limits-and-troubleshooting
 created: 2026-10-09
-updated: 2026-10-19
+updated: 2026-10-20
 visibility: internal
 canonical: true
 ---
@@ -248,6 +248,20 @@ a decision on whether it should fail instead.
   basetemp past config/project.json `tests.scratch_root`. A run killed by
   SIGKILL or SIGTERM leaves its numbered basetemp behind; pytest's retention
   count removes it in a later session.
+- **What the secret layers cannot see.** The keyed gate,
+  `tests/integration/test_committed_secrets_gate.py`, judges names: a value
+  under a name no secret `KEYS` row declares, in a file type it does not parse
+  (YAML, TOML, source code), or in a basename outside
+  `secrets.json_files` and `secrets.dotenv_files`, is not its to see. The
+  scanner, `scripts/scan_secrets.py`, judges shapes: a weak password, a value
+  split across two literals, and a file its default allowlist skips
+  (`package-lock.json`, `go.sum`, `*.svg`, `*.pdf`, `node_modules/`) pass it.
+  An exclusion excuses every later finding of its rule in its file. The record
+  proves the scanner has not changed since `make secrets-install`, not that
+  the program it recorded is the real scanner. A value already pushed stays
+  exposed whatever either layer says: see "A credential was committed".
+  `docs/guides/deterministic-checks.md` section 15 lists each way past that
+  was tried and its outcome.
 - **Example settings files with no loader.** `config/default.example.toml`,
   `config/rag.example.toml` and `models/config/default.example.toml` are read
   by no code; a typo in a copy of one goes unnoticed.
@@ -403,6 +417,7 @@ between the markers.
 | `scripts/gate_evidence.py` | 0, 2, 10, 14, 130, passes through |
 | `scripts/jobs/check_corpus.py` | 0, 1 |
 | `scripts/run_evals.py` | 0, 1, 2, 11, 14 |
+| `scripts/scan_secrets.py` | 0, 1, 2, 11, 13, 14 |
 | `scripts/trace_requirements.py` | 0, 1, 2 |
 <!-- exit-codes:end -->
 
@@ -427,6 +442,7 @@ says when each script returns each code.
 | `scripts/jobs/check_corpus.py` | 0: the corpus is well-formed and its build is reproducible. 1: it is not, and each error is printed |
 | `scripts/long_scripts.py` | 0: at least one recorded run was judged and none is over `launcher.long_after_seconds` and unlisted. 1: a key is proposed, each one `propose:` stdout line. 13 (`NOTHING_JUDGED`): no recorded run carried a duration, so nothing was judged. 2: refused: a bad `launcher` block, a durations file reached through a symlink, one git would list, a git that failed, or a file that is unreadable, not JSON or not a JSON object |
 | `scripts/run_evals.py` | 0: every suite passed. 1: a suite failed: below `evals.threshold`, an errored case or a stale recording. 2: refused: a schema the `evals` block names that cannot be read, a malformed or empty dataset, a live run over `evals.live.max_calls`, a null or unknown `evals.live.model`, an `evals.report_dir` git does not ignore, or a git command that ran and failed. 11: the live backend is absent; the first case is `absent` and the rest `not-run`. 14: an `evals` value is missing, unknown or wrong, each key at fault named on its own stderr line first |
+| `scripts/scan_secrets.py` | 0: `--locate` recorded the scanner, or a scan judged at least one file or commit and every finding is a `secrets.scanner.exclusions` entry. 1: a finding, each one `file:line rule` stdout line (a history finding with its commit after it), never the value, and nothing else. 2: not exactly one of `--locate`, `--staged`, `--history` or `--staged-or-history`, or a git command that ran and failed. 11 (`BACKEND_ABSENT`): no scanner on PATH for `--locate`, `--staged` or `--staged-or-history`; for a history scan, no record, a record naming another program or rev, a recorded path that is gone or a program whose digest changed; or a scanner that ran and gave no verdict: a status other than 0 and the finding status, a report that is not a JSON list of findings, no report, or a status and report that disagree. 13 (`NOTHING_JUDGED`): no repository, a history with no commit, `secrets.scanner.history_log_opts` that reach no commit, or a `--staged` scan of a stage that adds or changes no file. 14 (`CONFIG`): a bad `secrets.scanner` block, a `secrets.scanner.name` other than the one scanner the adapter adapts, a record file git would track, the scanner's own config or ignore file in the tree, or an exclusion the history scan did not use |
 | `scripts/trace_requirements.py` | 0: every unit is `covered` or a `traceability.gaps` row, and there is no finding. 1: at least one finding, each one stderr line: an `uncovered` unit, a marker or gap id that is malformed or undefined, an unreadable or unattached marker, a redundant gap, or zero requirements with no reason. 2: it could not judge: a bad `traceability` block, a path reached through a symlink, a `matrix_path` git does not ignore, a repository git cannot read, an unreadable schema, spec or test file, a spec line that does not parse, a document under the specs root that defines a requirement without `kind: spec`, or a collection rule pytest could not give; or it could not write the matrix at `traceability.matrix_path` |
 
 Three more codes come from the tools around these scripts:
@@ -475,12 +491,50 @@ so one run names every key at fault. A script that config/project.json
 `config_reads.allowed` still lists reads its config directly: it writes its own
 message and stops with exit 2 until it is moved onto the loader.
 
+## A credential was committed
+
+A finding from the keyed gate or the scanner means a credential is in a file
+git would commit, or in a commit already made. Deleting the line does not undo
+it: history keeps the value, and a pushed commit has been fetched by every
+clone and by CI. Work in this order.
+
+1. **Rotate it first.** Revoke the credential at its provider and issue a new
+   one, before anything else. Once it was pushed, treat it as read by someone
+   else; the steps below stop it spreading, not the exposure that happened.
+2. **Remove it from the tree.** Delete the value and set the new one where the
+   keyed gate expects it: the environment, or a git-ignored file such as
+   `.env`. Leave an empty placeholder (`ANTHROPIC_API_KEY=`) in
+   `.env.example`; the empty value is the only one the keyed gate accepts.
+3. **Purge history when it was pushed.** Rewrite every branch and tag that
+   holds the commit with a history-rewriting tool, force-push, and ask each
+   holder of a clone to re-clone. This is irreversible and visible to everyone
+   with access, so it needs the repository owner's say. A commit not yet
+   pushed needs only `git commit --amend` or a rebase, then
+   `make secret-scan` to confirm that no branch reaches it.
+4. **Confirm.** `make secret-scan` is green and the keyed gate passes.
+
+A `secrets.scanner.exclusions` entry is never the fix for a real credential:
+it hides a finding and leaves the value where it was. It is for a fake value
+kept on purpose, such as a test fixture, with its reason.
+
 ## Symptom, cause, fix
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
 | pre-commit fails with a syntax error before any check runs | the bare `python3` is older than the gate supports | install a newer `python3`, or run `make check` with the project interpreter |
 | `make verify` stops on a missing `pytest`, `ruff` or `mypy` | the `dev` extra is not installed | `.venv/bin/pip install -e ".[dev]"` |
+| `make secret-scan` (or `make verify`'s `secret-scan` goal) exits 11 with `there is no scanner record at` | `make secrets-install` has not run on this machine, as in a fresh clone or a newly generated project | run `make secrets-install`, then run the scan again |
+| `make secret-scan` exits 11 with `is gone`, `changed after it was recorded`, or a record naming another rev | the recorded build was deleted or rebuilt, or `.pre-commit-config.yaml` now pins another rev | run `make secrets-install`, which records the build pre-commit holds for the pinned rev |
+| `make secret-scan` exits 13 with `the repository has no commit` | the project was never committed, so there is no history to judge | `git add -A && git commit`, then run it again |
+| `scripts/scan_secrets.py --staged` exits 13 with `nothing is staged` | it was run by hand with a stage that adds or changes no file; the commit hook runs `--staged-or-history`, which scans every commit then, and pre-commit skips the hook at a commit that adds or changes no file | stage the files to commit with `git add`; `make secret-scan` judges the history |
+| `make secret-scan` exits 13 with `reaches no commit` | `secrets.scanner.history_log_opts` select no commit (such as `--max-count=0`, or an `--author` or `--since` that matches nothing), so the scan would judge nothing | widen the options until `git log` with them lists at least one commit |
+| a scan exits 11 with `exited <n>, its own error`, `without a report` or `not a JSON list of findings` | the scanner crashed or is not the program the adapter expects, so it gave no verdict; no credential is implicated | read the scanner's stderr the scan prints above, run `make secrets-install` to rebuild it, then run the scan again |
+| a scan exits 14 with `adapts gitleaks only` | `secrets.scanner.name` names a scanner `scripts/scan_secrets.py` has no adapter for | set it back to `gitleaks`, or write an adapter for the other scanner first |
+| a scan exits 2 with `git failed` | git could not read the repository (a broken `.git`, a corrupt `HEAD`, or an option in `secrets.scanner.history_log_opts` git refuses) | fix what git's stderr in the message names, then run the scan again |
+| `make secret-scan` exits 14 with `exclusions the scan did not use` | a `secrets.scanner.exclusions` entry names a file and rule no finding has, because the fixture moved or the value is gone | delete the entry, or correct its path or rule id |
+| a scan exits 14 with `the scanner's own config or ignore file is in the tree` | a file `secrets.scanner.refused_files` names, such as `.gitleaksignore`, is in a file git would commit or at the root | delete it; excuse a fake value with a `secrets.scanner.exclusions` entry and its reason |
+| `make secrets-install` fails with an unexpected EOF or a certificate error while pre-commit builds the scanner | a site that intercepts TLS breaks the Go module download pre-commit's golang build makes | on such a host, set `GOPROXY=direct` and point `SSL_CERT_FILE` and `GIT_SSL_CAINFO` at the site's CA bundle, then rerun; this is a host fact, so it is not in config |
+| `make secrets-install` fails on a farm node and works on a login host | the node's CA bundle lacks the root the site's TLS interception signs with | run `make secrets-install` once on a host that has the root: pre-commit's cache under the home directory is shared, so the node then reuses that build |
 | check_B names a directory you just added | it is not a taxonomy row | add its name to `structure.extra_toplevel` and give it a `README.md` and `CLAUDE.md` |
 | check_W names a make target | its `##` help does not open with an effect label | open the help with `[local]`, `[tree]`, `[read]`, `[cost]` or `[write]` |
 | check_W says `WRITE_GUARD does not refuse when make ignores recipe errors` | the guard's definition does not open with `$(if $(findstring i,$(firstword -$(MAKEFLAGS))),$(error ...))`, so under `make -i` the shell's `exit 1` is ignored and the `[write]` recipe runs | open the definition with that clause, as the root Makefile does |

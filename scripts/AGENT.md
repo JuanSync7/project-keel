@@ -7,7 +7,7 @@ owner: TBD
 summary: Local agent rules inside scripts/.
 id: scripts-agent
 created: 2026-06-17
-updated: 2026-10-18
+updated: 2026-10-20
 visibility: internal
 canonical: true
 ---
@@ -33,11 +33,28 @@ These rules are **local and authoritative** for this directory. They inherit fro
     project, to refuse a job over a conflicted module it imports and the data
     files the job's modules declare reading.
   - `git_tree.py` is never run either: it is the one definition of what git
-    lists. It raises `NoGitError` only when git is not installed or there is
-    no repository, and `GitFailedError` for every other git failure: catch the
+    lists, `candidate_files` included: the files a commit could carry, which
+    the committed-secrets gate judges, and `staged_paths`: the files the
+    next commit adds or changes, which the staged secret scan needs to be
+    non-empty, so a second listing of that set
+    anywhere else is a defect. It raises `NoGitError` only when git is not
+    installed or there is no repository, and `GitFailedError` for every other git failure: catch the
     first to take a no-git path, and never catch the second to take one. It
     stays 3.6-safe so the evidence writer can import it under an interpreter
     older than requires-python and still leave a red record.
+  - `scan_secrets.py` is the one place the secret scanner runs: the commit
+    hook, `make secret-scan` and CI all call it, and the scanner's own flags
+    live only here and in config/project.json `secrets.scanner`, so another
+    scanner is a second adapter beside it and never an edit to
+    `tests/integration/test_committed_secrets_gate.py`. It never prints or
+    logs a value: a finding is `file:line rule`, and the scanner is handed
+    `--redact`. A scan that judged nothing is `NOTHING_JUDGED`, never a pass,
+    and exit 1 is a finding and nothing else: a scanner that gave no
+    verdict is `BACKEND_ABSENT` and a git failure is `USAGE`. It adapts gitleaks only, and refuses another
+    `secrets.scanner.name` with `CONFIG` rather than hand it gitleaks flags.
+    It stays stdlib-only and 3.6-safe, because the hook runs it under the
+    host's `python3`; `git_tree.py` `staged_paths` is how it knows the stage
+    is empty, and the hook then scans every commit instead.
   - `traceability.py` and `pytest_markers.py` are never run.
     `traceability.py` is the one home of the requirement-id grammar and the
     verdict rule, imported by `trace_requirements.py` and

@@ -2,7 +2,7 @@
 title: Unit — the one config loader (declared keys, the default line, the not-set line, a refused value)
 kind: tests
 layer: n/a
-summary: scripts/config_loader.py resolves a parsed config against declared rows. An unset key with a default takes it and writes one `[using default]` line naming the key, its canonical-JSON value and the file, once per (file, key) per process under either import name, and a secret shows `<hidden>` and never its value; a set key of the wrong type or out of its bound is refused in one line naming the key, the file, the value's JSON type and what is accepted, a secret's value never in the exception or the stream; every unset required key is written as one `[not set]` line in sorted key order before one NotSet; a wrong value and a missing one together write every line and raise WrongValue. An environment value wins only for a row that names a variable and only when it is not empty, and `env` refuses a variable nothing declares. resolve neither mutates its input nor hands out the table's own default, and gives the same values and lines twice. The key table is well formed against keel's own config, the variables the config declares are derived from it, and the module parses on the oldest hook interpreter.
+summary: scripts/config_loader.py resolves a parsed config against declared rows. An unset key with a default takes it and writes one `[using default]` line naming the key, its canonical-JSON value and the file, once per (file, key) per process under either import name, and a secret shows `<hidden>` and never its value; a set key of the wrong type or out of its bound is refused in one line naming the key, the file, the value's JSON type and what is accepted, a secret's value never in the exception or the stream; every unset required key is written as one `[not set]` line in sorted key order before one NotSet; a wrong value and a missing one together write every line and raise WrongValue. An environment value wins only for a row that names a variable and only when it is not empty, and `env` refuses a variable nothing declares. resolve neither mutates its input nor hands out the table's own default, and gives the same values and lines twice. The key table is well formed against keel's own config, every models.credential_env name has a secret variable-only row, the variables the config declares are derived from it, and the module parses on the oldest hook interpreter.
 @covers scripts/config_loader.py
 """
 
@@ -508,6 +508,35 @@ def test_the_key_table_is_well_formed():
             assert _get(manifest, k.path) is not NONE, (
                 "%s is required and keel's config lacks it" % (k.path,)
             )
+
+
+def test_keels_credential_rows_are_secret_variable_only_rows():
+    """Every name config/project.json models.credential_env lists is a
+    credential, so each has a variable-only row marked secret with no default;
+    resolving one that is set never shows its value."""
+    manifest = json.loads((_ROOT / CONFIG_FILE).read_text(encoding="utf-8"))
+    names = sorted(
+        {n for group in manifest["models"]["credential_env"].values() for n in group}
+    )
+    assert names, "models.credential_env names no variable -- zero items"
+    by_env = {k.env: k for k in KEYS if k.env is not None}
+    for name in names:
+        row = by_env.get(name)
+        assert row is not None, "%s has no KEYS row" % name
+        assert row.path == (name,) and row.file is None, row
+        assert row.secret is True and row.default is None, row
+    buf = io.StringIO()
+    got = resolve({}, [by_env[names[0]]], _WHERE, environ={}, stream=buf)
+    assert got == {(names[0],): None}
+    assert buf.getvalue() == (
+        "[using default] %s = <hidden>  (not set; to change it, set %s in "
+        "the environment)\n" % (names[0], names[0])
+    )
+    buf = io.StringIO()
+    got = resolve(
+        {}, [by_env[names[0]]], _WHERE, environ={names[0]: _SENTINEL}, stream=buf
+    )
+    assert got == {(names[0],): _SENTINEL} and buf.getvalue() == ""
 
 
 def test_keels_own_config_resolves_every_file_row_silently():

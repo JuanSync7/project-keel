@@ -27,6 +27,9 @@ dev = [
   "pytest-cov",
   "ruff==0.15.18",
   "mypy==2.1.0",
+  # Installs and runs the pinned secret scanner (`make secrets-install`); 4.6.2
+  # is the newest release whose own requires-python admits 3.10.
+  "pre-commit==4.6.2",
   "httpx",
   "jsonschema",
 ]

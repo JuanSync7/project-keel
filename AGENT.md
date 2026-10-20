@@ -7,7 +7,7 @@ owner: TBD
 summary: Global rules for any agent working in this repo.
 id: agent
 created: 2026-06-17
-updated: 2026-10-17
+updated: 2026-10-20
 visibility: internal
 canonical: true
 ---
@@ -172,4 +172,8 @@ of truth for labeling and the directory taxonomy. Each directory's own
   `os.system`/`os.popen`.
 - Open a config file or read a declared variable outside
   `scripts/config_loader.py`, or bury a default in the code that reads it.
-- Commit secrets to `config/` — only defaults and `*.example.*`.
+- Commit secrets to `config/` — only defaults and `*.example.*`. A new
+  credential variable gets a `secret=True` row in `scripts/config_loader.py`
+  `KEYS`; `tests/integration/test_committed_secrets_gate.py` fails a
+  `models.credential_env` name with no such row, and a file a commit could
+  carry that gives a secret name a value.

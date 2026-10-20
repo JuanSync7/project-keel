@@ -29,6 +29,13 @@ jobs:
       # transport's own requirements, not in the dependency-free base install.
       # (The langgraph engine stays optional — its conformance test importorskips.)
       - run: pip install -r api/rest_fastapi/requirements.txt
+      # The secret scanner: pre-commit builds the build .pre-commit-config.yaml
+      # pins and records where (scripts/scan_secrets.py --locate), then the
+      # history scan judges every commit the full checkout above carries. Both
+      # run before the suite, so a committed credential fails the job even when
+      # the push skipped the staged hook with --no-verify.
+      - run: make secrets-install
+      - run: make secret-scan
       # Install FE deps so the frontend lint/typecheck gates and suites run; no-op
       # if there are no frontend apps.
       - run: make fe-install
@@ -46,7 +53,7 @@ jobs:
       # tests/optional_deps.py SURFACES; an unknown name here is an error, not a no-op.
       - run: make test
         env:
-          KEEL_REQUIRED_EXTRAS: "template,dev,transport"
+          KEEL_REQUIRED_EXTRAS: "template,dev,transport,secrets"
       # Judges every requirement in the specs against the tests that name it and
       # the documented gaps (config/project.json traceability;
       # scripts/trace_requirements.py).
