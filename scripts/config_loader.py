@@ -754,6 +754,23 @@ KEYS = tuple(
                 accepts=(_no_parent_part, "a path with no `..` part"),
             ),
             _row(
+                ("tests", "memory_scratch_root"),
+                "nonempty_str_or_null",
+                None,
+                "where test scratch lives when memory can hold it: an absolute "
+                "path in a memory-backed directory, `-<uid>` appended; null "
+                "leaves tests.scratch_root",
+                accepts=(_no_parent_part, "a path with no `..` part"),
+            ),
+            _row(
+                ("tests", "memory_scratch_min_free_mb"),
+                "int",
+                NONE,
+                "the megabytes the memory root's file system must have free "
+                "for a session to choose it",
+                accepts=(_not_negative, "a value >= 0"),
+            ),
+            _row(
                 ("toolchain", "node_major"),
                 "int",
                 24,

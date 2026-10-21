@@ -2,7 +2,7 @@
 title: Unit — the isolation guard judges each reach by the test's tier
 kind: tests
 layer: n/a
-summary: tests/isolation_guard.py's pure parts. `classify` returns no violation for a reach inside the roots and one naming its axis, event and resolved target outside them, for every judged event: an open for writing (by mode or by flags; a read is allowed, a file descriptor skipped), a rename's source and destination, a remove, rmdir, mkdir, truncate and rmtree, a symlink's or link's destination only, an entry removed through a directory file descriptor (resolved through /proc, skipped when /proc is absent), a change of mode, times, owner or an extended attribute (at the link and through it, or at the link alone when the caller stays on it, so a tree copied with a link that points outside reaches nothing), a bytecode write in a `__pycache__` allowed and any other write there refused, a socket connect, sendto or sendmsg (loopback v4, v6, v4-mapped and the literal `localhost` allowed under `loopback`, a hostname refused, an AF_UNIX path judged by the roots, an abstract one refused, a sendmsg with no address allowed), an AF_UNIX bind to a path, a sqlite connect (`:memory:`, an empty name and a memory URI allowed, a `file:` name judged as a URI and as a file in the working directory, bytes decoded), and an open in any mode of a listed store. A root that holds the checkout leaves the checkout outside it, and one inside the checkout is scratch again. The closest tier marker wins, an unmarked test gets the strictest rule, this project's policy loads one rule per configured tier, each a declared marker, an empty scratch variable leaves the configured root, and `load_policy` refuses an unknown value, an unknown axis, a tier missing an axis and a blank reason, naming the key. The message has its fixed shape, and a second store copy changes nothing.
+summary: tests/isolation_guard.py's pure parts. `classify` returns no violation for a reach inside the roots and one naming its axis, event and resolved target outside them, for every judged event: an open for writing (by mode or by flags; a read is allowed, a file descriptor skipped), a rename's source and destination, a remove, rmdir, mkdir, truncate and rmtree, a symlink's or link's destination only, an entry removed through a directory file descriptor (resolved through /proc, skipped when /proc is absent), a change of mode, times, owner or an extended attribute (at the link and through it, or at the link alone when the caller stays on it, so a tree copied with a link that points outside reaches nothing), a bytecode write in a `__pycache__` allowed and any other write there refused, a socket connect, sendto or sendmsg (loopback v4, v6, v4-mapped and the literal `localhost` allowed under `loopback`, a hostname refused, an AF_UNIX path judged by the roots, an abstract one refused, a sendmsg with no address allowed), an AF_UNIX bind to a path, a sqlite connect (`:memory:`, an empty name and a memory URI allowed, a `file:` name judged as a URI and as a file in the working directory, bytes decoded), and an open in any mode of a listed store. A root that holds the checkout leaves the checkout outside it, and one inside the checkout is scratch again. The closest tier marker wins, an unmarked test gets the strictest rule, this project's policy loads one rule per configured tier, each a declared marker, an empty scratch variable leaves the configured root, `choose_scratch` takes the variable, else the memory root with `-<uid>` appended and mode 0700, else the disk root with a note when memory is null, absent, missing, under its free-space floor or a directory another user could enter (an open mode, a link, a file), and refuses an unsafe memory root or a negative floor naming its key, and `load_policy` refuses an unknown value, an unknown axis, a tier missing an axis and a blank reason, naming the key. The message has its fixed shape, and a second store copy changes nothing.
 """
 
 import ipaddress
@@ -881,6 +881,140 @@ def test_an_absent_scratch_root_is_refused_naming_the_key(tmp_path):
     with pytest.raises(ig.ConfigError) as caught:
         ig.scratch_root(str(checkout), {}, _systemp(tmp_path))
     assert "tests.scratch_root" in str(caught.value)
+
+
+_MEMORY_KEY = "memory_scratch_root"
+_FLOOR_KEY = "memory_scratch_min_free_mb"
+
+
+def _memory_config(tmp_path, memory, floor=0, disk=None):
+    """A checkout whose config names a disk root and *memory* as the memory
+    root, with *floor* MB as the free-space floor."""
+    checkout = tmp_path / "checkout"
+    (checkout / "config").mkdir(parents=True, exist_ok=True)
+    disk = str((tmp_path / "disk").resolve()) if disk is None else disk
+    tests = {"scratch_root": disk, _MEMORY_KEY: memory, _FLOOR_KEY: floor}
+    (checkout / "config" / "project.json").write_text(
+        json.dumps({"tests": tests}), encoding="utf-8"
+    )
+    return str(checkout), disk
+
+
+def _shm(tmp_path):
+    """A stand-in for a memory-backed directory: one that exists."""
+    shm = tmp_path / "shm"
+    shm.mkdir(exist_ok=True)
+    return shm.resolve()
+
+
+def test_the_memory_root_is_chosen_private_to_the_user(tmp_path):
+    memory = str(_shm(tmp_path) / "proj-tests")
+    checkout, _ = _memory_config(tmp_path, memory)
+    got = ig.choose_scratch(checkout, {}, _systemp(tmp_path))
+    mine = "%s-%d" % (memory, os.getuid())
+    assert got == ig.Scratch(mine, "memory", ""), got
+    # Shared memory is world-writable, so only the user may enter theirs.
+    assert os.stat(mine).st_mode & 0o777 == 0o700
+    # A second call finds the directory it made and changes nothing.
+    assert ig.choose_scratch(checkout, {}, _systemp(tmp_path)) == got
+    assert os.stat(mine).st_mode & 0o777 == 0o700
+
+
+def test_the_variable_wins_over_the_memory_root(tmp_path):
+    memory = str(_shm(tmp_path) / "proj-tests")
+    checkout, _ = _memory_config(tmp_path, memory)
+    chosen = str((tmp_path / "chosen").resolve())
+    got = ig.choose_scratch(checkout, {_SCRATCH_VAR: chosen}, _systemp(tmp_path))
+    assert got == ig.Scratch(chosen, "variable", ""), got
+    assert not os.path.exists("%s-%d" % (memory, os.getuid()))
+
+
+def test_a_null_memory_root_leaves_the_disk_root(tmp_path):
+    checkout, disk = _memory_config(tmp_path, None)
+    got = ig.choose_scratch(checkout, {}, _systemp(tmp_path))
+    assert got.path == disk and got.medium == "disk", got
+    assert "tests.memory_scratch_root is null" in got.note, got
+
+
+def test_an_absent_memory_root_leaves_the_disk_root(tmp_path):
+    checkout = tmp_path / "checkout"
+    (checkout / "config").mkdir(parents=True)
+    disk = str((tmp_path / "disk").resolve())
+    (checkout / "config" / "project.json").write_text(
+        json.dumps({"tests": {"scratch_root": disk}}), encoding="utf-8"
+    )
+    got = ig.choose_scratch(str(checkout), {}, _systemp(tmp_path))
+    assert got.path == disk and got.medium == "disk", got
+
+
+def test_a_memory_root_whose_parent_is_missing_falls_back_naming_it(tmp_path):
+    parent = tmp_path / "no-shm-on-this-host"
+    checkout, disk = _memory_config(tmp_path, str(parent / "proj-tests"))
+    got = ig.choose_scratch(checkout, {}, _systemp(tmp_path))
+    assert got.path == disk and got.medium == "disk", got
+    assert str(parent) in got.note and "does not exist" in got.note, got
+    assert not parent.exists()
+
+
+def test_a_memory_root_below_the_free_space_floor_falls_back_naming_both(tmp_path):
+    memory = str(_shm(tmp_path) / "proj-tests")
+    # More than any host holds, so the floor is never met.
+    floor = 10**12
+    checkout, disk = _memory_config(tmp_path, memory, floor)
+    got = ig.choose_scratch(checkout, {}, _systemp(tmp_path))
+    assert got.path == disk and got.medium == "disk", got
+    assert "MB free" in got.note and str(floor) in got.note, got
+    assert _FLOOR_KEY in got.note, got
+    assert not os.path.exists("%s-%d" % (memory, os.getuid()))
+
+
+@pytest.mark.parametrize("planted", ["open-mode", "symlink", "file"])
+def test_a_memory_root_someone_else_could_enter_falls_back_naming_why(
+    tmp_path, planted
+):
+    shm = _shm(tmp_path)
+    memory = str(shm / "proj-tests")
+    mine = "%s-%d" % (memory, os.getuid())
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    if planted == "open-mode":
+        os.mkdir(mine)
+        os.chmod(mine, 0o755)
+    elif planted == "symlink":
+        os.symlink(str(elsewhere), mine)
+    else:
+        open(mine, "w").close()
+    checkout, disk = _memory_config(tmp_path, memory)
+    got = ig.choose_scratch(checkout, {}, _systemp(tmp_path))
+    assert got.path == disk and got.medium == "disk", got
+    assert mine in got.note, got
+    assert sorted(os.listdir(str(elsewhere))) == []
+
+
+@pytest.mark.parametrize(
+    "where", ["relative", "parent-part", "system-temp", "checkout"]
+)
+def test_an_unsafe_memory_root_is_refused_naming_the_key(tmp_path, where):
+    systemp = _systemp(tmp_path)
+    checkout = str(tmp_path / "checkout")
+    value = {
+        "relative": "proj-tests",
+        "parent-part": str(tmp_path / "a" / ".." / "b"),
+        "system-temp": os.path.join(systemp, "proj-tests"),
+        "checkout": os.path.join(checkout, "proj-tests"),
+    }[where]
+    _memory_config(tmp_path, value)
+    with pytest.raises(ig.ConfigError) as caught:
+        ig.choose_scratch(checkout, {}, systemp)
+    assert "tests.memory_scratch_root" in str(caught.value), str(caught.value)
+    assert sorted(os.listdir(systemp)) == []
+
+
+def test_a_negative_free_space_floor_is_refused_naming_the_key(tmp_path):
+    checkout, _ = _memory_config(tmp_path, str(_shm(tmp_path) / "p"), -1)
+    with pytest.raises(ig.ConfigError) as caught:
+        ig.choose_scratch(checkout, {}, _systemp(tmp_path))
+    assert _FLOOR_KEY in str(caught.value), str(caught.value)
 
 
 def test_pointing_temp_at_the_root_twice_changes_nothing_more(tmp_path, monkeypatch):

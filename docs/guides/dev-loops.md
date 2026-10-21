@@ -8,7 +8,7 @@ tags: [tdd, bounded-convergence, ralph-loop, testing, e2e, workflow, agents, gui
 summary: The default working loops any human or LLM follows in this repo — test-first, bounded convergence, and end-to-end coverage — all gated by `make verify`.
 id: docs-guides-dev-loops
 created: 2026-06-22
-updated: 2026-10-20
+updated: 2026-10-21
 visibility: internal
 canonical: true
 ---
@@ -70,11 +70,12 @@ or the directory an `os.open` with a relative path and a `dir_fd` lands in, and
 it does not judge a name lookup, by choice, because the connect that follows is
 judged (`docs/adr/keel/K-0024-what-a-test-may-reach.md`).
 
-Test scratch lives under config/project.json `tests.scratch_root`, which
-`KEEL_TEST_SCRATCH` overrides: `tests/conftest.py` points tempfile, `TMPDIR` and
-pytest's basetemp there before any test module is imported, and refuses, before
-any test runs, a root that is relative or sits under the system temporary
-directory or inside the checkout. A root that holds the checkout is accepted,
+Test scratch lives in memory when the host can hold it. `tests/conftest.py`
+takes the first root of three that applies: `KEEL_TEST_SCRATCH` when it is set; else `tests.memory_scratch_root` with `-<uid>` appended, when its parent exists, its file system has `tests.memory_scratch_min_free_mb` megabytes free, and only this user owns and may enter the directory; else `tests.scratch_root`. It points
+tempfile, `TMPDIR` and pytest's basetemp there before any test module is
+imported, and pytest's `scratch:` header line names the root and why memory was
+passed over. It refuses, before any test runs, a root that is relative or sits
+under the system temporary directory or inside the checkout. A root that holds the checkout is accepted,
 and the checkout stays outside it. A passed test's directory is removed and a
 failed one's is kept, named after the test (`pyproject.toml`
 `tmp_path_retention_policy`). A test that starts a child process gives it the

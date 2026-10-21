@@ -1,6 +1,6 @@
 """
 title: Shared pytest fixtures + the test scratch root + the hermetic git environment + the isolation guard + the zero-tests guard
-summary: Repo-wide fixtures; the test scratch root, config/project.json `tests.scratch_root` (or KEEL_TEST_SCRATCH), which tempfile, TMPDIR, pytest's basetemp and the hermetic git directory are pointed at before anything else is made (see tests/isolation_guard.py `scratch_root` for what is refused); the one place the suite's git environment is neutralised and the parent's git repository context and injected git configuration removed (see tests/hermetic_git.py for what is neutralised and why); the isolation guard, which fails a test that reaches the network, the disk or a store outside its tier's rule in config/project.json `tests.isolation`, and the store_copy fixture that hands a test its own copy of a listed store (see tests/isolation_guard.py for the judgement); and the end-of-session guard that fails a run in which zero tests ran (see tests/selection_guard.py for the verdict).
+summary: Repo-wide fixtures; the test scratch root, KEEL_TEST_SCRATCH, else config/project.json `tests.memory_scratch_root` when the host's memory can hold it, else `tests.scratch_root`, which tempfile, TMPDIR, pytest's basetemp and the hermetic git directory are pointed at before anything else is made, and which the `scratch:` header line names with why memory was passed over (see tests/isolation_guard.py `choose_scratch` for the choice and what is refused); the one place the suite's git environment is neutralised and the parent's git repository context and injected git configuration removed (see tests/hermetic_git.py for what is neutralised and why); the isolation guard, which fails a test that reaches the network, the disk or a store outside its tier's rule in config/project.json `tests.isolation`, and the store_copy fixture that hands a test its own copy of a listed store (see tests/isolation_guard.py for the judgement); and the end-of-session guard that fails a run in which zero tests ran (see tests/selection_guard.py for the verdict).
 
 Shared pytest fixtures live here.
 
@@ -29,8 +29,8 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # isolation guard's roots are taken from tempfile, and before plumbum
 # snapshots os.environ, so every one of them, and every child, sees the root.
 # A refused root raises here and pytest stops before any test runs (exit 4).
-_SCRATCH = isolation_guard.scratch_root(_ROOT)
-isolation_guard.point_temp_at(_SCRATCH, os.environ)
+_SCRATCH = isolation_guard.choose_scratch(_ROOT)
+isolation_guard.point_temp_at(_SCRATCH.path, os.environ)
 
 # Applied at IMPORT time, deliberately, and session-wide rather than per test.
 #
@@ -77,6 +77,13 @@ hermetic_git.drop_config_injection(os.environ, _ROOT)
 # is never a run in which the exemption silently holds.
 _ISOLATION = isolation_guard.load_policy(_ROOT)
 isolation_guard.install(_ISOLATION)
+
+
+def pytest_report_header(config):
+    """Names the scratch root in use and where it came from, so a session
+    that fell back from memory to disk says so, with the reason."""
+    note = ": %s" % _SCRATCH.note if _SCRATCH.note else ""
+    return "scratch: %s (%s%s)" % (_SCRATCH.path, _SCRATCH.medium, note)
 
 
 def pytest_sessionstart(session):

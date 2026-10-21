@@ -9,7 +9,7 @@ tags: []
 summary: Unit tests mirror src/; integration/e2e/smoke go by scenario.
 id: tests-readme
 created: 2026-06-17
-updated: 2026-10-19
+updated: 2026-10-21
 visibility: internal
 canonical: true
 ---
@@ -63,9 +63,13 @@ changes directory to `tmp_path` first. `docs/adr/keel/K-0024-what-a-test-may-rea
 ## Where test scratch lives
 
 `conftest.py` points tempfile, `TMPDIR` and pytest's numbered basetemp at
-`tests.scratch_root` (`KEEL_TEST_SCRATCH` overrides it, and a nested pytest a
-test starts inherits it). The root must be absolute and lie neither under the
-system temporary directory, which may be memory-backed, nor inside the
+the first root of three that applies: `KEEL_TEST_SCRATCH` when it is set; else `tests.memory_scratch_root` with `-<uid>` appended, when its parent exists, its file system has `tests.memory_scratch_min_free_mb` megabytes free, and only this user owns and may enter the directory; else `tests.scratch_root`. A nested pytest a test
+starts inherits the root through `KEEL_TEST_SCRATCH`. Memory comes first
+because test scratch is thrown away within seconds and needs no durability. A
+host without the parent, with too little free, or with a directory another
+user could enter falls back to disk, and pytest's `scratch:` header line says
+which root it took and why. Every root must be absolute and lie neither under
+the system temporary directory, which every program shares, nor inside the
 checkout, whose tree walkers would read a kept directory; anything else stops
 pytest before any test runs. A root that holds the checkout is accepted, and
 the checkout stays outside it. A test that starts a child process gives it the

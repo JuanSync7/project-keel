@@ -5,10 +5,10 @@ layer: n/a
 status: proposed
 owner: TBD
 tags: [adr, tests, isolation, scratch, guard]
-summary: "A test's rule for the network, writes and stores is a row of config/project.json tests.isolation.tiers, picked by the test's closest tier marker, and tests/isolation_guard.py, which tests/conftest.py installs as a Python audit hook, fails a test that reaches past it, even when the test caught the error. A reach a test needs is a per-test exemption with a reason, and an unused one is red. Test scratch lives under tests.scratch_root, never the system temporary directory or the checkout. Defence-in-depth, not a sandbox: a child process is not audited."
+summary: "A test's rule for the network, writes and stores is a row of config/project.json tests.isolation.tiers, picked by the test's closest tier marker, and tests/isolation_guard.py, which tests/conftest.py installs as a Python audit hook, fails a test that reaches past it, even when the test caught the error. A reach a test needs is a per-test exemption with a reason, and an unused one is red. Test scratch lives in a per-user memory directory, tests.memory_scratch_root, when the host can hold it, else under tests.scratch_root, never the system temporary directory or the checkout. Defence-in-depth, not a sandbox: a child process is not audited."
 id: docs-adr-0024-what-a-test-may-reach
 created: 2026-10-18
-updated: 2026-10-19
+updated: 2026-10-21
 visibility: internal
 canonical: true
 ---
@@ -73,9 +73,24 @@ under its own `tmp_path`, so the suite ships with no exemption.
    the project's live stores. An open of a listed store, in any mode, is a
    violation. The `store_copy` fixture copies a listed store into the test's
    own directory, together with its `-wal`, `-shm` and `-journal` siblings.
-5. **Scratch has one configured root.** `tests/conftest.py` points
-   `tempfile`, `TMPDIR` and pytest's basetemp at `tests.scratch_root`, which
-   `KEEL_TEST_SCRATCH` overrides, before anything else is made.
+5. **Scratch prefers memory, and falls back to one configured disk root.**
+   `tests/conftest.py` points `tempfile`, `TMPDIR` and pytest's basetemp,
+   before anything else is made, at the first root that applies:
+   `KEEL_TEST_SCRATCH`; `tests.memory_scratch_root` with `-<uid>` appended;
+   `tests.scratch_root`.
+   - Memory comes first because test scratch is thrown away within seconds
+     and needs no durability. Measured on a host whose home directory is a
+     network mount, with scratch there: the processors were 28% busy and 25%
+     waiting on I/O, and one copier render took 9.8 s while copying its
+     output took 0.03 s.
+   - The memory root is taken only when its parent exists, its file system
+     has `tests.memory_scratch_min_free_mb` free at session start, and the
+     directory is one only this user owns and may enter, made with mode 0700,
+     because a memory directory such as `/dev/shm` is writable by every user.
+     Otherwise the session falls back to `tests.scratch_root`, and pytest's
+     `scratch:` header line names the root in use and why.
+   - It is not the system temporary directory: that is shared with every
+     program, while the memory root is the project's own, with a floor.
    - It refuses, before any test runs, a root that is relative, has a `..`
      part, sits under the system temporary directory, or sits inside the
      checkout.

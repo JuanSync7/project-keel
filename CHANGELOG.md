@@ -19,6 +19,14 @@ version rather than a bare commit:
   it.
 
 ### Added
+- **Test scratch lives in memory when the host can hold it.**
+  `tests/conftest.py` now takes config/project.json `tests.memory_scratch_root`
+  (`/dev/shm/project_keel-tests`, `-<uid>` appended, mode 0700) before
+  `tests.scratch_root`, when its parent exists and has
+  `tests.memory_scratch_min_free_mb` (`4096`) free, and only this user owns
+  and may enter the directory; `KEEL_TEST_SCRATCH` still wins over both.
+  pytest's `scratch:` header line names the root in use and why memory was
+  passed over. A generated project carries both keys; null turns memory off.
 - **An agent edit cannot reach the code that judges it.**
   `scripts/apply_refactor.py` refuses, before any write and so in a dry run
   too, an edit to a path config/project.json `agents` protects: a path under
