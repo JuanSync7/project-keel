@@ -2,7 +2,7 @@
 title: Unit — the isolation guard judges each reach by the test's tier
 kind: tests
 layer: n/a
-summary: tests/isolation_guard.py's pure parts. `classify` returns no violation for a reach inside the roots and one naming its axis, event and resolved target outside them, for every judged event: an open for writing (by mode or by flags; a read is allowed, a file descriptor skipped), a rename's source and destination, a remove, rmdir, mkdir, truncate and rmtree, a symlink's or link's destination only, an entry removed through a directory file descriptor (resolved through /proc, skipped when /proc is absent), a change of mode, times, owner or an extended attribute (at the link and through it, or at the link alone when the caller stays on it, so a tree copied with a link that points outside reaches nothing), a bytecode write in a `__pycache__` allowed and any other write there refused, a socket connect, sendto or sendmsg (loopback v4, v6, v4-mapped and the literal `localhost` allowed under `loopback`, a hostname refused, an AF_UNIX path judged by the roots, an abstract one refused, a sendmsg with no address allowed), an AF_UNIX bind to a path, a sqlite connect (`:memory:`, an empty name and a memory URI allowed, a `file:` name judged as a URI and as a file in the working directory, bytes decoded), and an open in any mode of a listed store. A root that holds the checkout leaves the checkout outside it, and one inside the checkout is scratch again. The closest tier marker wins, an unmarked test gets the strictest rule, this project's policy loads one rule per configured tier, each a declared marker, an empty scratch variable leaves the configured root, `choose_scratch` takes the variable, else the memory root with `-<uid>` appended and mode 0700, else the disk root with a note when memory is null, absent, missing, under its free-space floor or a directory another user could enter (an open mode, a link, a file), and refuses an unsafe memory root or a negative floor naming its key, and `load_policy` refuses an unknown value, an unknown axis, a tier missing an axis and a blank reason, naming the key. The message has its fixed shape, and a second store copy changes nothing.
+summary: tests/isolation_guard.py's pure parts. `classify` returns no violation for a reach inside the roots and one naming its axis, event and resolved target outside them, for every judged event: an open for writing (by mode or by flags; a read is allowed, a file descriptor skipped), a rename's source and destination, a remove, rmdir, mkdir, truncate and rmtree, a symlink's or link's destination only, an entry removed through a directory file descriptor (resolved through /proc, skipped when /proc is absent), a change of mode, times, owner or an extended attribute (at the link and through it, or at the link alone when the caller stays on it, so a tree copied with a link that points outside reaches nothing), a bytecode write in a `__pycache__` allowed and any other write there refused, a socket connect, sendto or sendmsg (loopback v4, v6, v4-mapped and the literal `localhost` allowed under `loopback`, a hostname refused, an AF_UNIX path judged by the roots, an abstract one refused, a sendmsg with no address allowed), an AF_UNIX bind to a path, a sqlite connect (`:memory:`, an empty name and a memory URI allowed, a `file:` name judged as a URI and as a file in the working directory, bytes decoded), and an open in any mode of a listed store. A root that holds the checkout leaves the checkout outside it, and one inside the checkout is scratch again. The closest tier marker wins, an unmarked test gets the strictest rule, this project's policy loads one rule per configured tier, each a declared marker, an empty scratch variable leaves the configured root, `choose_scratch` takes the variable, else the memory root with `-<uid>` appended and mode 0700, made 0700 under a umask that narrows mkdir, never through a link at the configured name, and with a trailing separator dropped, else the disk root with a note when memory is null, absent, missing, under its free-space floor, in a parent others may write without the sticky bit, or not this user's directory with mode 0700 (an open mode, a link, a file, another owner, no owner write), and refuses an unsafe memory root or a negative floor naming its key, and `load_policy` refuses an unknown value, an unknown axis, a tier missing an axis and a blank reason, naming the key. The message has its fixed shape, and a second store copy changes nothing.
 """
 
 import ipaddress
@@ -1008,6 +1008,87 @@ def test_an_unsafe_memory_root_is_refused_naming_the_key(tmp_path, where):
         ig.choose_scratch(checkout, {}, systemp)
     assert "tests.memory_scratch_root" in str(caught.value), str(caught.value)
     assert sorted(os.listdir(systemp)) == []
+
+
+def test_a_link_planted_at_the_configured_name_is_never_followed(tmp_path):
+    systemp = _systemp(tmp_path)
+    shm = _shm(tmp_path)
+    memory = str(shm / "proj-tests")
+    # Another user's link at the base name points where a root is refused;
+    # following it would stop every user's session.
+    os.symlink(systemp, memory)
+    checkout, _ = _memory_config(tmp_path, memory)
+    got = ig.choose_scratch(checkout, {}, systemp)
+    assert got == ig.Scratch("%s-%d" % (memory, os.getuid()), "memory", ""), got
+
+
+def test_a_trailing_slash_names_the_same_memory_root(tmp_path):
+    memory = str(_shm(tmp_path) / "proj-tests")
+    checkout, _ = _memory_config(tmp_path, memory + "/")
+    got = ig.choose_scratch(checkout, {}, _systemp(tmp_path))
+    assert got == ig.Scratch("%s-%d" % (memory, os.getuid()), "memory", ""), got
+
+
+def test_a_memory_root_another_user_owns_falls_back(tmp_path, monkeypatch):
+    memory = str(_shm(tmp_path) / "proj-tests")
+    other = os.getuid() + 1
+    # Made by this user with the private mode, so only the owner differs.
+    mine = "%s-%d" % (memory, other)
+    os.mkdir(mine, 0o700)
+    monkeypatch.setattr(os, "getuid", lambda: other)
+    checkout, disk = _memory_config(tmp_path, memory)
+    got = ig.choose_scratch(checkout, {}, _systemp(tmp_path))
+    assert got.path == disk and got.medium == "disk", got
+    assert mine in got.note, got
+
+
+@pytest.mark.parametrize("planted", ["private-file", "owner-cannot-write"])
+def test_a_memory_root_this_user_cannot_use_falls_back(tmp_path, planted):
+    memory = str(_shm(tmp_path) / "proj-tests")
+    mine = "%s-%d" % (memory, os.getuid())
+    if planted == "private-file":
+        # The directory's own mode, so only the type tells it apart.
+        os.close(os.open(mine, os.O_CREAT | os.O_WRONLY, 0o600))
+        os.chmod(mine, 0o700)
+    else:
+        os.mkdir(mine, 0o500)
+    try:
+        checkout, disk = _memory_config(tmp_path, memory)
+        got = ig.choose_scratch(checkout, {}, _systemp(tmp_path))
+        assert got.path == disk and got.medium == "disk", got
+        assert mine in got.note, got
+    finally:
+        os.chmod(mine, 0o700)
+
+
+def test_a_umask_that_narrows_mkdir_still_gives_mode_0700(tmp_path):
+    memory = str(_shm(tmp_path) / "proj-tests")
+    checkout, _ = _memory_config(tmp_path, memory)
+    # Owner write masked: mkdir alone would make the directory read-only.
+    before = os.umask(0o277)
+    try:
+        got = ig.choose_scratch(checkout, {}, _systemp(tmp_path))
+    finally:
+        os.umask(before)
+    assert got.medium == "memory", got
+    assert os.stat(got.path).st_mode & 0o777 == 0o700
+
+
+def test_a_parent_anyone_may_rename_in_falls_back(tmp_path):
+    shm = _shm(tmp_path)
+    # Writable by others without the sticky bit: anyone may rename the
+    # checked directory away and put their own in its place.
+    os.chmod(str(shm), 0o777)
+    try:
+        checkout, disk = _memory_config(tmp_path, str(shm / "proj-tests"))
+        got = ig.choose_scratch(checkout, {}, _systemp(tmp_path))
+        assert got.path == disk and got.medium == "disk", got
+        assert "sticky" in got.note, got
+        os.chmod(str(shm), 0o1777)
+        got = ig.choose_scratch(checkout, {}, _systemp(tmp_path))
+        assert got.medium == "memory", got
+    finally:
+        os.chmod(str(shm), 0o700)
 
 
 def test_a_negative_free_space_floor_is_refused_naming_the_key(tmp_path):

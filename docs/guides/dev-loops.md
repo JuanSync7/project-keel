@@ -71,9 +71,9 @@ it does not judge a name lookup, by choice, because the connect that follows is
 judged (`docs/adr/keel/K-0024-what-a-test-may-reach.md`).
 
 Test scratch lives in memory when the host can hold it. `tests/conftest.py`
-takes the first root of three that applies: `KEEL_TEST_SCRATCH` when it is set; else `tests.memory_scratch_root` with `-<uid>` appended, when its parent exists, its file system has `tests.memory_scratch_min_free_mb` megabytes free, and only this user owns and may enter the directory; else `tests.scratch_root`. It points
+takes the first root of three that applies: `KEEL_TEST_SCRATCH` when it is set; else `tests.memory_scratch_root` with `-<uid>` appended, when its parent exists, its file system has `tests.memory_scratch_min_free_mb` megabytes free, and the directory is this user's with mode 0700; else `tests.scratch_root`. It points
 tempfile, `TMPDIR` and pytest's basetemp there before any test module is
-imported, and pytest's `scratch:` header line names the root and why memory was
+imported, and pytest's `scratch:` header line, which `-q` hides, names the root and why memory was
 passed over. It refuses, before any test runs, a root that is relative or sits
 under the system temporary directory or inside the checkout. A root that holds the checkout is accepted,
 and the checkout stays outside it. A passed test's directory is removed and a

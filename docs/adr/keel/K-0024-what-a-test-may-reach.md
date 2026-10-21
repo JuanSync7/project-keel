@@ -84,9 +84,12 @@ under its own `tmp_path`, so the suite ships with no exemption.
      waiting on I/O, and one copier render took 9.8 s while copying its
      output took 0.03 s.
    - The memory root is taken only when its parent exists, its file system
-     has `tests.memory_scratch_min_free_mb` free at session start, and the
-     directory is one only this user owns and may enter, made with mode 0700,
-     because a memory directory such as `/dev/shm` is writable by every user.
+     has `tests.memory_scratch_min_free_mb` free at session start, the parent
+     is not writable by other users without the sticky bit, and the directory
+     is this user's with mode 0700, made so when absent, because a memory
+     directory such as `/dev/shm` is writable by every user. A link at the
+     configured name is never followed, so no other user can make the root
+     refused for everyone.
      Otherwise the session falls back to `tests.scratch_root`, and pytest's
      `scratch:` header line names the root in use and why.
    - It is not the system temporary directory: that is shared with every
