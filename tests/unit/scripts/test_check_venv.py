@@ -230,8 +230,17 @@ def test_a_keel_venv_without_copier_fails_naming_the_template_extra(capsys):
     if not (_ROOT / "copier.yml").is_file():
         pytest.skip("a generated project is not a template; its venv.extras is dev")
 
+    from packaging.requirements import Requirement
+
+    # The distribution is read off the template extra, not spelled here:
+    # tests/integration/test_copier_generator_contract.py holds every test
+    # module that names the renderer to an optional_deps import guard, and
+    # this case imports nothing of it.
+    project = check_venv.read_project(str(_ROOT))
+    hidden = Requirement(project["optional-dependencies"]["template"][0]).name
+
     def version_of(name):
-        if check_venv._canonical(name) == "copier":
+        if check_venv._canonical(name) == check_venv._canonical(hidden):
             return None
         return check_venv._installed_version(name)
 
@@ -240,5 +249,5 @@ def test_a_keel_venv_without_copier_fails_naming_the_template_extra(capsys):
     )
     err = capsys.readouterr().err
     assert code is ExitCode.FAILURE, err
-    assert "copier" in err and "extra template" in err, err
+    assert hidden in err and "extra template" in err, err
     assert '%s -m pip install -e ".[dev,template]"' % _PY in err, err
