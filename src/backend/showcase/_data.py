@@ -413,6 +413,19 @@ CHECKS: tuple[Check, ...] = (
         "before a newer-syntax check fails with a traceback.",
     ),
     Check(
+        slug="venv",
+        name="Venv holds the declared packages",
+        script="scripts/check_venv.py",
+        gate="error",
+        interpreter=">=3.8",
+        command="make check-venv",
+        when="First step of make check-all, so of make verify and CI",
+        purpose="Every requirement of pyproject.toml's core dependencies, of "
+        "venv.extras and of each enabled transport's extra is installed at a "
+        "version its specifier allows, judged from installed metadata with no "
+        "network; a stale venv fails with the pip command that fixes it.",
+    ),
+    Check(
         slug="corpus",
         name="Corpus integrity & determinism",
         script="scripts/jobs/check_corpus.py",
