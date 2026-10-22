@@ -98,6 +98,8 @@ left out only when the answer matches it.
 | `wiki/.runtime` | never | runtime state |
 | `api/rest_fastapi/openapi.json` | absent; `api/rest_fastapi/export_openapi.py` writes it | generated from the app |
 | `tests/integration/test_copier_*.py` | never | tests of the template itself |
+| `tests/render_cache.py` | never | serves only a test of the template itself |
+| `tests/unit/test_render_cache.py` | never | its test |
 | `scripts/audit_project.py` | never | runs from a template checkout only |
 | `tests/unit/scripts/test_audit_project.py` | never | its test |
 | `scripts/canary.py` | never | renders the template checkout, so it runs from one only |

@@ -103,6 +103,11 @@ _exclude:
   # turning every descendant's CI red. The glob covers every test_copier_*.py.
   # Pinned by tests/integration/test_copier_generation.py.
   - "tests/integration/test_copier_*.py"
+  # The render cache serves only test_copier_generation.py, pruned above, so
+  # downstream it would be a helper with no caller. Never shipped, so no
+  # `_migrations` removal.
+  - "tests/render_cache.py"
+  - "tests/unit/test_render_cache.py"
   # The downstream audit is keel-only: it imports THIS checkout's check_structure
   # API (run_checks, CHECKS, JSON_CONFIGS), so a copy shipped into a project would
   # pair an older doer with a newer template's gates. A generated project keeps the
