@@ -507,9 +507,10 @@ def test_make_and_git_run_with_the_allowlisted_environment(proj, monkeypatch):
 
         def __init__(self, cmd, **kw):
             seen.append(kw)
-
-        def communicate(self, timeout=None):
-            return "", None
+            # A real pipe whose writer is already closed: make printed nothing.
+            read_end, write_end = os.pipe()
+            os.close(write_end)
+            self.stdout = os.fdopen(read_end, "rb")
 
         def poll(self):
             return 0
@@ -524,7 +525,11 @@ def test_make_and_git_run_with_the_allowlisted_environment(proj, monkeypatch):
     def no_group(pgid, sig):
         raise ProcessLookupError
 
+    def reaped(*_args):
+        raise ChildProcessError
+
     monkeypatch.setattr(rmt.subprocess, "run", record)
+    monkeypatch.setattr(rmt.os, "waitid", reaped)
     monkeypatch.setattr(rmt.subprocess, "Popen", _Started)
     monkeypatch.setattr(rmt.os, "killpg", no_group)
     rmt._default_runner(["make", "x"], str(proj), 5, grace=1)
@@ -998,3 +1003,198 @@ def test_the_cli_reports_an_interrupt_through_the_exit_helper(
     monkeypatch.setattr(rmt, "tree_snapshot", lambda root: {})
     assert rmt.main(["check", "--dir", str(proj)]) == rmt.ExitCode.INTERRUPTED
     assert "interrupted" in capsys.readouterr().err
+
+
+# --- review findings: what counts as alive, signals, the pipe, cleanup --------
+
+
+def _write_script(where, name, body):
+    """An executable Python script *name* in *where* that runs *body*."""
+    where.mkdir(exist_ok=True)
+    path = where / name
+    path.write_text("#!%s\n%s" % (sys.executable, body), encoding="utf-8")
+    path.chmod(0o755)
+    return path
+
+
+def _in_child(tree, body):
+    """Run *body* in a fresh interpreter that has imported run_make_target as
+    `r`, and return what it printed: a case that changes process-wide state
+    (a subreaper) keeps it out of the pytest process."""
+    code = "import sys; sys.path.insert(0, %r); import run_make_target as r\n%s" % (
+        str(_ROOT / "scripts"),
+        body,
+    )
+    done = subprocess.run(  # noqa: S603 — argv list, never a shell string
+        [sys.executable, "-c", code],
+        cwd=str(tree),
+        env=rmt.child_env.build_child_env(),
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert done.returncode == 0, done.stderr
+    return done.stdout.strip().splitlines()[-1]
+
+
+def test_a_member_that_exited_but_was_not_yet_reaped_is_not_a_leak(tree):
+    """A zombie runs nothing. Under a subreaper that has not collected it, a
+    background job that already ended stays a zombie in make's group; the run
+    must still be green and must not spend the grace waiting for it."""
+    make = _write_script(
+        tree / "bin",
+        "make",
+        "import subprocess, sys, time\n"
+        # The middle process exits at once, so its child is reparented to the
+        # subreaper (the runner's process), exits, and is never reaped.
+        "subprocess.run([sys.executable, '-c', 'import subprocess, sys; "
+        'subprocess.Popen([sys.executable, "-c", "pass"])\'])\n'
+        "time.sleep(3)\n",
+    )
+    out = _in_child(
+        tree,
+        "import ctypes, json, time\n"
+        "ctypes.CDLL(None, use_errno=True).prctl(36, 1, 0, 0, 0)\n"
+        "t = time.monotonic()\n"
+        "try:\n"
+        "    rc, _ = r._default_runner([%r], '.', 60, grace=20)\n"
+        "    print(json.dumps({'rc': rc, 'leaked': None, 's': time.monotonic() - t}))\n"
+        "except r.LeftRunning as e:\n"
+        "    print(json.dumps({'rc': e.returncode, 'leaked': e.leftovers, "
+        "'s': time.monotonic() - t}))\n" % str(make),
+    )
+    got = json.loads(out)
+    assert got["rc"] == 0 and got["leaked"] is None, got
+    assert got["s"] < 15, got
+
+
+def test_a_signal_the_caller_ignored_stays_ignored(tree):
+    """nohup: a runner started with SIGHUP ignored must not end make on one."""
+    make = _write_script(
+        tree / "bin",
+        "make",
+        "import pathlib, time\npathlib.Path('pids').write_text('1')\ntime.sleep(2)\n",
+    )
+    out = _in_child(
+        tree,
+        "import os, pathlib, signal, threading, time\n"
+        "signal.signal(signal.SIGHUP, signal.SIG_IGN)\n"
+        "def hup():\n"
+        "    while not pathlib.Path('pids').exists():\n"
+        "        time.sleep(0.05)\n"
+        "    os.kill(os.getpid(), signal.SIGHUP)\n"
+        "threading.Thread(target=hup, daemon=True).start()\n"
+        "print(r._default_runner([%r], '.', 60, grace=5)[0])\n" % str(make),
+    )
+    assert out == "0", out
+
+
+def test_a_background_child_holding_the_output_does_not_hold_the_run(tree):
+    """make's exit, not the end of its output, ends the run: a child that keeps
+    the pipe open is a leak, reported as soon as make exits, with make's 0."""
+    _write_fake_make(tree / "bin", _SLEEPS, exit_after=True)
+    started = time.monotonic()
+    res = rmt.run_target(
+        "check", cwd=str(tree), timeout=40, grace=2, snapshot=_snaps({}, {})
+    )
+    pids = _pids(tree)
+    try:
+        assert _gone_within(pids), "the child holding the pipe outlived the run"
+    finally:
+        _cleanup(pids)
+    assert time.monotonic() - started < 20, "the run waited for the pipe to close"
+    assert res["timed_out"] is False and res["returncode"] == 0, res
+    assert len(res["leaked"]) == 1 and res["ok"] is False, res
+    assert "make started its child" in res["output"], res["output"]
+
+
+def test_a_sigterm_during_the_leak_cleanup_still_kills_the_leftover(tree):
+    """The leftover ignores SIGTERM, so the cleanup waits out its grace; a
+    SIGTERM to the runner then must still end it before the runner goes."""
+    make = _write_fake_make(tree / "bin", _IGNORES_TERM, detach=True, exit_after=True)
+    runner = subprocess.Popen(  # noqa: S603 — argv list, never a shell string
+        [
+            sys.executable,
+            "-c",
+            "import sys; sys.path.insert(0, %r); import run_make_target as r; "
+            "r._default_runner([%r], %r, 600, grace=60)"
+            % (str(_ROOT / "scripts"), str(make), str(tree)),
+        ],
+        cwd=str(tree),
+        env=rmt.child_env.build_child_env(),
+    )
+    pids = []
+    try:
+        deadline = time.monotonic() + _SETTLE
+        while not (tree / "pids").exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        pids = _pids(tree)
+        assert _gone_within(pids[:1]), "the fake make did not exit"
+        time.sleep(1)  # into the cleanup's grace
+        runner.send_signal(signal.SIGTERM)
+        assert runner.wait(timeout=_SETTLE) == -signal.SIGTERM
+        assert _gone_within(pids[1:]), "a SIGTERM during cleanup orphaned the leftover"
+    finally:
+        _cleanup(pids)
+        if runner.poll() is None:
+            runner.kill()
+            runner.wait()
+
+
+def test_a_second_interrupt_during_the_grace_still_kills_the_group(tree):
+    make = _write_fake_make(tree / "bin", _IGNORES_TERM)
+    in_run = [False]
+
+    def interrupt(*_):
+        if in_run[0]:
+            raise KeyboardInterrupt
+
+    armed, lock = [True], threading.Lock()
+
+    def twice():
+        deadline = time.monotonic() + _SETTLE
+        while not (tree / "pids").exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        for _ in range(2):
+            with lock:
+                if armed[0]:
+                    signal.pthread_kill(threading.main_thread().ident, signal.SIGUSR1)
+            time.sleep(1)
+
+    previous = signal.signal(signal.SIGUSR1, interrupt)
+    watcher = threading.Thread(target=twice, daemon=True)
+    try:
+        watcher.start()
+        with pytest.raises(KeyboardInterrupt):
+            in_run[0] = True
+            try:
+                rmt._default_runner([str(make)], str(tree), 600, grace=60)
+            finally:
+                in_run[0] = False
+    finally:
+        with lock:
+            armed[0] = False
+        watcher.join(_SETTLE)
+        signal.signal(signal.SIGUSR1, previous)
+    pids = _pids(tree)
+    try:
+        assert _gone_within(pids), "a second interrupt skipped the SIGKILL"
+    finally:
+        _cleanup(pids)
+
+
+def test_the_runner_puts_back_the_signal_handlers_it_replaced(tree):
+    make = _write_script(tree / "bin", "make", "pass\n")
+
+    def mine(*_):
+        return None
+
+    before = {s: signal.getsignal(s) for s in rmt._UNWINDLESS}
+    for sig in rmt._UNWINDLESS:
+        signal.signal(sig, mine)
+    try:
+        assert rmt._default_runner([str(make)], str(tree), 30, grace=1)[0] == 0
+        assert all(signal.getsignal(s) is mine for s in rmt._UNWINDLESS)
+    finally:
+        for sig, old in before.items():
+            signal.signal(sig, old)
