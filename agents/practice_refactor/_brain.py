@@ -13,7 +13,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 
-from models import get_model
+from models import ModelBackend, get_model
 from runtimes import (
     END,
     MODEL_CALL,
@@ -27,7 +27,7 @@ from runtimes import (
 )
 from scripts.child_env import build_child_env
 
-__all__ = ["refactor", "RefactorReport"]
+__all__ = ["refactor", "propose", "RefactorReport"]
 
 _REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 _CORPUS = os.path.join("wiki", "corpus.json")
@@ -172,6 +172,23 @@ def _parse_spec(reply, practice):
     return data
 
 
+def propose(
+    practice: str, practice_def: dict | None, node: dict, *, backend: ModelBackend
+) -> dict | None:
+    """The agent's one model call: ONE bounded edit spec moving the corpus
+    *node* toward *practice* (its config/practices.json row *practice_def*, or
+    None when the registry has none), from *backend*; None when the model
+    declines, the reply does not parse, or it names its own gate. The plan's
+    propose step and the eval harness (evals/_doers.py) both call it."""
+    if not node.get("path"):
+        # An apply is bound to the chunk's own file (--allow), so a chunk with
+        # no path can never be applied; declining here spends no model call.
+        return None
+    reply = backend.run(_propose_prompt(practice, practice_def, node))
+    spec: dict | None = _parse_spec(reply, practice)
+    return spec
+
+
 # --- plan steps: each returns a dict merged into the run state -----------------
 # Deterministic logic stays in pure-stdlib scripts/ doers invoked as CLIs; these
 # steps orchestrate them. The model is reached only in `propose` (MODEL_CALL) and
@@ -236,13 +253,15 @@ def _propose(state):
     """
     node = state["chunks"][state["cursor"]]
     if not node.get("path"):
-        # An apply is bound to the chunk's own file (--allow), so a chunk with
-        # no path can never be applied; declining here spends no model call.
+        # Checked here as well as in propose, so a pathless chunk never builds
+        # a backend.
         return {"spec": None}
-    reply = get_model(state.get("model")).run(
-        _propose_prompt(state["practice"], state.get("practice_def"), node)
-    )
-    return {"spec": _parse_spec(reply, state["practice"])}
+    backend = get_model(state.get("model"))
+    return {
+        "spec": propose(
+            state["practice"], state.get("practice_def"), node, backend=backend
+        )
+    }
 
 
 def _apply(state):

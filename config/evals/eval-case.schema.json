@@ -34,8 +34,12 @@
         "doer": {
           "description": "The code path the case drives; the closed registry evals/_doers.py DOERS.",
           "enum": [
+            "doc_reviewer",
+            "index_enforcer",
+            "practice_refactor",
             "prompt",
-            "triage"
+            "triage",
+            "wiki_navigator"
           ]
         },
         "text": {

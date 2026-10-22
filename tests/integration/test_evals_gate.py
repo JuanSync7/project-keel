@@ -2,7 +2,7 @@
 title: Integration — the replayed eval gate, run as a real CLI over a scratch repository
 kind: tests
 layer: n/a
-summary: A scratch git repository carrying keel's evals/, models/, agents/triage, the eval CLI and its script siblings, config/ and .gitignore runs scripts/run_evals.py --mode replay as a child process. Two runs on the same tree exit 0 and write byte-identical reports with result pass under config/project.json `evals.report_dir`, and leave what git lists unchanged (the writer's rerun_proof). The shipped dataset uses every scorer in evals.SCORERS and every doer in evals.DOERS. Each red twin is red with its own exit code: a recorded response that fails its scorer or a prompt that changed is a fail (exit 1); a stale response hash, an empty dataset, no dataset file, an unknown scorer, an id repeated across two suites and a stray file in the dataset directory are refused (exit 2). A report_dir git does not ignore is refused before anything is written, as is one whose first component is a symlink to a directory outside the project (in replay and live mode, with and without git, and when the `evals` block is itself refused) and a report temporary file that is a symlink, each leaving the outside files as they were, a red run replaces an earlier green report, and a refused `evals` block (a bad value or an unknown key) removes the earlier report, twice over, rather than leave it reading pass.
+summary: A scratch git repository carrying keel's evals/, models/, agents/, runtimes/, the eval CLI and its script siblings, config/ and .gitignore runs scripts/run_evals.py --mode replay as a child process. Two runs on the same tree exit 0 and write byte-identical reports with result pass under config/project.json `evals.report_dir`, and leave what git lists unchanged (the writer's rerun_proof). The shipped dataset uses every scorer in evals.SCORERS and every doer in evals.DOERS, every agent package under agents/ has a doer of its own name that a shipped case drives, and every shipped case's scorer rejects an empty answer, so no case passes whatever the model says. Each red twin is red with its own exit code: a recorded response that fails its scorer or a prompt that changed is a fail (exit 1); a stale response hash, an empty dataset, no dataset file, an unknown scorer, an id repeated across two suites and a stray file in the dataset directory are refused (exit 2). A report_dir git does not ignore is refused before anything is written, as is one whose first component is a symlink to a directory outside the project (in replay and live mode, with and without git, and when the `evals` block is itself refused) and a report temporary file that is a symlink, each leaving the outside files as they were, a red run replaces an earlier green report, and a refused `evals` block (a bad value or an unknown key) removes the earlier report, twice over, rather than leave it reading pass.
 @covers scripts/run_evals.py
 """
 
@@ -30,7 +30,7 @@ pytestmark = pytest.mark.integration
 _CONFIG = load_config(_ROOT)
 # What the CLI imports when it runs in a project: the harness, the doers and
 # backends it drives, the CLI and the stdlib siblings git_tree needs.
-_TREES = ("evals", "models", "agents/triage", "config")
+_TREES = ("evals", "models", "agents", "runtimes", "config")
 _SCRIPTS = (
     "run_evals.py",
     "git_tree.py",
@@ -149,9 +149,41 @@ def test_the_shipped_dataset_uses_every_scorer_and_doer():
     assert {c.doer for c in cases} == set(DOERS)
 
 
+def _example(repo):
+    """The suite whose first case takes plain text, so an edit to its text
+    stays a valid input and changes only the prompt."""
+    return repo / _CONFIG.dataset_dir / "example.jsonl"
+
+
+def _agents():
+    """Every agent package under agents/: a directory holding an __init__.py."""
+    return sorted(
+        d.name for d in (_ROOT / "agents").iterdir() if (d / "__init__.py").is_file()
+    )
+
+
+def test_every_agent_has_a_doer_and_a_shipped_case():
+    """An agent with no doer has no eval, and a doer with no case judges
+    nothing; the doer takes the agent's package name."""
+    agents = _agents()
+    assert agents, "no agent package found under agents/"
+    named = {c.doer for s in load_suites(_CONFIG, _ROOT) for c in s.cases}
+    assert [a for a in agents if a not in DOERS] == []
+    assert [a for a in agents if a not in named] == []
+
+
+def test_every_shipped_case_can_fail():
+    """A case its scorer passes whatever the model says proves nothing: each
+    shipped case's scorer must reject an empty answer."""
+    cases = [c for s in load_suites(_CONFIG, _ROOT) for c in s.cases]
+    assert cases
+    vacuous = [c.id for c in cases if SCORERS[c.scorer_name].score("", c.params)[0]]
+    assert vacuous == []
+
+
 def _fail_first(repo):
     """Record a response the first case's scorer rejects (hash kept true)."""
-    path = _dataset_files(repo)[0]
+    path = _example(repo)
     cases = _cases(path)
     scorer = SCORERS[cases[0]["scorer"]["name"]]
     assert scorer.score("", cases[0]["scorer"]["params"])[0] is False
@@ -162,7 +194,7 @@ def _fail_first(repo):
 
 
 def _stale_prompt(repo):
-    path = _dataset_files(repo)[0]
+    path = _example(repo)
     cases = _cases(path)
     cases[0]["input"]["text"] += " (edited)"
     _write_cases(path, cases)

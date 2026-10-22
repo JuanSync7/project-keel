@@ -9,7 +9,7 @@ tags: [agent, documentation, review, rosters, freshness]
 summary: Reviews the documentation against docs/guides/doc-style.md — the deterministic findings first, then one judged edit per chunk, each gated on make check-docs and rolled back if red.
 id: agents-doc-reviewer
 created: 2026-09-02
-updated: 2026-10-06
+updated: 2026-10-22
 visibility: internal
 canonical: true
 ---
@@ -34,8 +34,10 @@ back** unless the tree stays green.
 
 It is thin: policy + prompt only. The doers are `scripts/` tools (per the specs in
 `agents/tools/`, declared in `tools.md`); control flow is a neutral `Plan` on a
-`Runtime`; the model comes from `models/`. The single public symbol is
-`review(...)`, returning a `DocReviewReport`. It **defaults to dry-run**:
+`Runtime`; the model comes from `models/`. The entry point is
+`review(...)`, returning a `DocReviewReport`. The second public symbol,
+`propose(rules, chunk, backend=b)`, is the one model call per chunk: one bounded
+edit spec, or `None` for a decline. The eval harness (`evals/_doers.py`) drives it on a recording backend, so a replayed case judges the real prompt and parser and calls no model. It **defaults to dry-run**:
 `review()` gathers the findings, retrieves the rules, gates the read-only baseline
 and reports the candidate chunks plus the prompt it *would* send, calling no model
 and writing nothing; `review(execute=True)` proposes and applies the gated edits

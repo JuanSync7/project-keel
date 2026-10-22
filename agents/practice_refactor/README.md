@@ -9,7 +9,7 @@ tags: [agent, refactor, practices, corpus, gate]
 summary: Walks the corpus KG and refactors each chunk toward a named practice, gating every edit on make verify.
 id: agents-practice-refactor-readme
 created: 2026-07-07
-updated: 2026-07-07
+updated: 2026-10-22
 visibility: internal
 canonical: true
 ---
@@ -32,7 +32,10 @@ the very rule the gate encodes**.
 It is thin: policy + prompt only. The real work lives in `scripts/` doers,
 invoked as **tools** (per the specs in `agents/tools/`, declared in `tools.md`);
 control flow is a neutral `Plan` on a `Runtime`; the model comes from `models/`.
-The single public symbol is `refactor(...)`, returning a `RefactorReport`. It
+The entry point is `refactor(...)`, returning a `RefactorReport`. The second
+public symbol, `propose(practice, practice_def, node, backend=b)`, is the one
+model call per chunk: one bounded edit spec, or `None` for a decline or a chunk
+with no path (which spends no call). The eval harness (`evals/_doers.py`) drives it on a recording backend, so a replayed case judges the real prompt and parser and calls no model. It
 **defaults to dry-run**: `refactor("<practice>")` walks the graph, gates the
 read-only baseline, and reports the candidate chunks + the prompt it *would*
 send, writing nothing; `refactor("<practice>", execute=True)` proposes and applies

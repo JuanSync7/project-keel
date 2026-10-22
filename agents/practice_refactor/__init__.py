@@ -5,6 +5,6 @@ public_api: yes
 summary: Walks the corpus KG and refactors each chunk toward a named practice, gating every edit on make verify.
 """
 
-from ._brain import RefactorReport, refactor
+from ._brain import RefactorReport, propose, refactor
 
-__all__ = ["refactor", "RefactorReport"]
+__all__ = ["refactor", "propose", "RefactorReport"]

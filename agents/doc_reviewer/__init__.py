@@ -6,5 +6,6 @@ summary: Reviews the documentation against docs/guides/doc-style.md — the dete
 """
 
 from ._brain import DocReviewReport, review
+from ._step import propose
 
-__all__ = ["review", "DocReviewReport"]
+__all__ = ["review", "propose", "DocReviewReport"]

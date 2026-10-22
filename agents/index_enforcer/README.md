@@ -9,7 +9,7 @@ tags: [agent, enforcer, index, corpus]
 summary: Enforces conventions and builds/maintains the accountable wiki corpus.
 id: agents-index-enforcer-readme
 created: 2026-06-17
-updated: 2026-09-02
+updated: 2026-10-22
 visibility: internal
 canonical: true
 ---
@@ -25,7 +25,8 @@ and fills *missing* summaries via `models/` -- never overwriting authored ones.
 
 It is thin: policy + prompt only. The real work lives in `scripts/`, invoked as
 **tools** (per the specs in `agents/tools/`, declared in `tools.md`); the model
-comes from `models/`. The single public symbol is `enforce(...)`, returning an
-`EnforceReport`. It **defaults to dry-run**: `enforce()` reports the plan + gaps
+comes from `models/`. The entry point is `enforce(...)`, returning an
+`EnforceReport`. The second public symbol, `summarize_gap(node, backend=b)`, is
+the one model call per gap: the one-sentence summary the fill step writes. The eval harness (`evals/_doers.py`) drives it on a recording backend, so a replayed case judges the real prompt and parser and calls no model. It **defaults to dry-run**: `enforce()` reports the plan + gaps
 and writes nothing; `enforce(execute=True)` runs the deterministic build/link;
 gap-fill additionally needs `fix_gaps=True`.

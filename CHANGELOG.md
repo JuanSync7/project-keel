@@ -71,6 +71,16 @@ version rather than a bare commit:
   vendored script, or a directory of them, out of every shell gate with its
   reason; an entry that covers no file is exit 14. The new copier question `shell` (default yes) sets
   `shell.enabled`, and no makes every shell target say so and run no tool.
+- **Every agent has a replayed eval with a known-good response.** The doc
+  reviewer, index enforcer, practice refactor and wiki navigator each export
+  their one model call as a step on an injected backend (`propose`,
+  `summarize_gap`, `propose`, `synthesize`), which the agent's own plan also
+  calls; `evals/_doers.py` gains a doer per agent, named after its package,
+  whose case text is a JSON object holding exactly the step's inputs; and
+  `evals/datasets/` ships two authored cases per agent that `make eval`
+  replays with no model call. `tests/integration/test_evals_gate.py` fails an
+  agent with no doer or no case, and a case whose scorer passes an empty
+  answer.
 - **An agent edit cannot reach the code that judges it.**
   `scripts/apply_refactor.py` refuses, before any write and so in a dry run
   too, an edit to a path config/project.json `agents` protects: a path under

@@ -69,6 +69,17 @@ PYTHONPATH=. python -c 'from evals import prompt_sha256, sha256_text; print(prom
 Alternatively, write the case with any valid hash, run `make eval`, and copy
 the new hash from the stale case's detail.
 
+`recorded.response` is the model's reply as the model would send it, not the
+doer's answer: replay hands it to the doer, which builds the answer the scorer
+judges. For `prompt` and `triage` the two are the same text. Each other agent's
+doer is named after the agent's package (`doc_reviewer`, `index_enforcer`,
+`practice_refactor`, `wiki_navigator`), and its `input.text` is one JSON object
+holding exactly that agent's model-step inputs; a key missing, an extra key or a
+value of the wrong type is that case's error, before any model call. A doer
+that proposes an edit answers with the parsed spec as canonical JSON, or `null`
+when the reply declines, so the scorer judges what the agent would apply, and a
+reply wrapped in a code fence judges the same as a bare one.
+
 ## Live: `make eval-live`
 
 ```sh

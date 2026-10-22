@@ -13,11 +13,11 @@ import subprocess
 import sys
 from dataclasses import dataclass
 
-from models import get_model
+from models import ModelBackend, get_model
 from runtimes import END, MODEL_CALL, READ_ONLY, Edge, Plan, Step, get_runtime
 from scripts.child_env import build_child_env
 
-__all__ = ["answer", "Answer", "Citation"]
+__all__ = ["answer", "synthesize", "Answer", "Citation"]
 
 _REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 _CORPUS = os.path.join("wiki", "corpus.json")
@@ -63,6 +63,10 @@ def _system_prompt():
         return fh.read()
 
 
+def _visible(nodes):
+    return [n for n in nodes if (n.get("visibility") or "internal") in _VISIBLE]
+
+
 def _answer_prompt(question, nodes):
     ctx = "\n".join(
         "- [%s] %s (%s): %s"
@@ -106,7 +110,7 @@ def _retrieve(state):
         hits = json.loads(out) if out.strip() else []
     except ValueError:
         hits = []
-    visible = [h for h in hits if (h.get("visibility") or "internal") in _VISIBLE]
+    visible = _visible(hits)
     citations = tuple(
         Citation(
             node_id=h.get("node_id", ""),
@@ -119,13 +123,26 @@ def _retrieve(state):
     )
     return {
         "citations": citations,
+        "nodes": visible,
         "prompt": _answer_prompt(state["question"], visible),
     }
 
 
+def synthesize(question: str, nodes: list[dict], *, backend: ModelBackend) -> str:
+    """The agent's one model call: answer *question* from the visible members of
+    *nodes* (retrieved corpus nodes) on *backend*, citing each by node_id, and
+    return the reply stripped. A confidential or restricted node is dropped
+    here as well as at retrieval, so no caller can send one. The plan's
+    synthesize step and the eval harness (evals/_doers.py) both call it."""
+    return backend.run(_answer_prompt(question, _visible(nodes))).strip()
+
+
 def _synthesize(state):
     """Model-call: synthesize the answer over the retrieved, visible nodes."""
-    return {"answer_text": get_model(state.get("model")).run(state["prompt"]).strip()}
+    backend = get_model(state.get("model"))
+    return {
+        "answer_text": synthesize(state["question"], state["nodes"], backend=backend)
+    }
 
 
 _PLAN = Plan(

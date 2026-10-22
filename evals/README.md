@@ -9,7 +9,7 @@ tags: []
 summary: The eval harness — typed JSONL cases, deterministic scorers, replay of recorded responses as a verify gate, and a live run capped by config.
 id: evals-readme
 created: 2026-06-17
-updated: 2026-10-13
+updated: 2026-10-22
 visibility: internal
 canonical: true
 ---
@@ -38,11 +38,11 @@ to 0. `README_run.md` is the how-to.
 | `README_run.md` | The how-to: running replay and live, reading the report, authoring a case and its two hashes, promoting a live candidate, the exit codes | The design and its reasons — this README; the settings' defaults — `docs/reference/settings.md` |
 | `_config.py` | `load_config`/`parse_config`: the config/project.json `evals` block as a frozen `EvalConfig`, each fault a `ConfigError` naming its dotted key; reads each schema's version from its `schema_version` const | Reading a dataset — `_dataset.py`; choosing or building a model — `models/` (`get_model`), which `_run.py` calls with the configured name |
 | `_dataset.py` | `parse_cases`/`load_suites`: one suite per `.jsonl` file, every line held to `config/evals/eval-case.schema.json` plus the rules a schema cannot state (a repeated JSON key, a response hash that does not match, a repeated id); every fault a `DatasetError` naming `path:line` | Judging an answer — `_scorers.py`; running a doer — `_run.py` |
-| `_doers.py` | `DOERS`, the closed registry of code paths a case drives (`prompt`, `triage`), and `prompt_sha256`, which runs a doer against a capturing backend so a prompt hash always comes from the code | A model backend — `models/`; the agent's reasoning — `agents/triage`, which a doer calls and never copies |
+| `_doers.py` | `DOERS`, the closed registry of code paths a case drives (`prompt`, `triage`, and one per other agent named after its package, whose case text is a JSON object holding exactly that agent's model-step inputs), and `prompt_sha256`, which runs a doer against a capturing backend so a prompt hash always comes from the code | A model backend — `models/`; the agent's reasoning — the agent package under `agents/`, whose step a doer calls and never copies |
 | `_report.py` | `verdict` (the threshold rule), `aggregate`, the `Report` shape and `render` (canonical JSON); `OUTCOMES`, `REASONS` and `RESULTS`, the closed vocabularies `config/evals/eval-report.schema.json` is held equal to | Writing the file — `scripts/run_evals.py`; scoring one case — `_scorers.py` |
 | `_run.py` | `replay` and `run_live`: drive each case's doer through a recording backend or the counted live one, mark a changed prompt stale, refuse a null model or an over-cap run before any backend is built, stop at an absent backend | Judging rules — `_scorers.py` and `_report.py`; the command line and the files — `scripts/run_evals.py` |
 | `_scorers.py` | `SCORERS`, the closed registry of deterministic judges (`exact`, `contains`, `regex`, `json_fields`), each refusing bad parameters when the dataset loads | Judging with a model (LLM-as-judge) — not built; a scorer added here also needs its branch in the case schema's `scorer.oneOf` |
-| `datasets/` | The suites: one `<suite>.jsonl` per suite, one canonical case per line; `example.jsonl` ships four authored cases covering every scorer and doer | Run reports or live candidates — those go under config/project.json `evals.report_dir`, which git ignores; fixtures for unit tests — `tests/` |
+| `datasets/` | The suites: one `<suite>.jsonl` per suite, one canonical case per line; `example.jsonl` ships four authored cases covering every scorer and the `prompt` and `triage` doers, and one suite per other agent (`doc-reviewer`, `index-enforcer`, `practice-refactor`, `wiki-navigator`) ships two authored cases, each holding a known-good response; `tests/integration/test_evals_gate.py` fails an agent with no doer or no case, and a case whose scorer passes an empty answer | Run reports or live candidates — those go under config/project.json `evals.report_dir`, which git ignores; fixtures for unit tests — `tests/` |
 
 ## Why it is built this way
 

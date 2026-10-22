@@ -16,7 +16,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 
-from models import get_model
+from models import ModelBackend, get_model
 from runtimes import (
     END,
     MODEL_CALL,
@@ -30,7 +30,7 @@ from runtimes import (
 )
 from scripts.child_env import build_child_env
 
-__all__ = ["enforce", "EnforceReport"]
+__all__ = ["enforce", "summarize_gap", "EnforceReport"]
 
 _REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 _CORPUS = os.path.join("wiki", "corpus.json")
@@ -90,6 +90,13 @@ def _gap_prompt(node):
         "title: %s\npath: %s\n---\n%s\n"
         % (node.get("title", ""), node.get("path", ""), node.get("text_excerpt", ""))
     )
+
+
+def summarize_gap(node: dict, *, backend: ModelBackend) -> str:
+    """The agent's one model call: a one-sentence summary of a corpus *node*
+    (its title, path and text excerpt) from *backend*, stripped. The plan's
+    fill step and the eval harness (evals/_doers.py) both call it."""
+    return backend.run(_gap_prompt(node)).strip()
 
 
 def _ungapped(corpus):
@@ -165,7 +172,7 @@ def _fill_one(state):
     if not todo:
         return {}
     node = todo[0]
-    node["summary"] = get_model(state.get("model")).run(_gap_prompt(node)).strip()
+    node["summary"] = summarize_gap(node, backend=get_model(state.get("model")))
     node["summary_source"] = "generated"  # never "authored"
     return {"corpus": corpus, "gaps_filled": state.get("gaps_filled", 0) + 1}
 
