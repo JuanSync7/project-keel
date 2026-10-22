@@ -359,7 +359,7 @@
     }
   },
   "transports": {
-    "_comment": "The transports this project serves (CONVENTIONS section 15): enabled lists the ones it runs, available maps each declared transport to its directory (check_H). extras maps an enabled transport to the pyproject.toml extra that installs its packages: scripts/check_venv.py judges that extra installed before make verify runs a goal, and tests/optional_deps.py turns a test's skip over one of its packages into a failure while the transport is enabled. grpc holds the gRPC server's own limits, read by api/grpc/server.py through scripts/config_loader.py: port is the TCP port it listens on, workers how many threads answer calls.",
+    "_comment": "The transports this project serves (CONVENTIONS section 15): enabled lists the ones it runs, available maps each declared transport to its directory (check_H). extras maps an enabled transport to the pyproject.toml extra that installs its packages: scripts/check_venv.py judges that extra installed before make verify runs a goal, and tests/optional_deps.py turns a test's skip over one of its packages into a failure while the transport is enabled. grpc holds the gRPC server's own limits, set in every project whether or not it serves gRPC, so the loader's rows resolve with no default line and a project that adds the transport later finds them, read by api/grpc/server.py through scripts/config_loader.py: port is the TCP port it listens on, workers how many threads answer calls.",
     "extras": {"rest": "transport"},
     "enabled": ["rest", "mcp"],
     "available": {

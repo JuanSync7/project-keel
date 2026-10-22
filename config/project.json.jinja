@@ -363,7 +363,7 @@
     }
   },
   "transports": {
-    "_comment": "The transports this project serves (CONVENTIONS section 15): enabled lists the ones it runs, available maps each declared transport to its directory (check_H). extras maps an enabled transport to the pyproject.toml extra that installs its packages: scripts/check_venv.py judges that extra installed before make verify runs a goal, and tests/optional_deps.py turns a test's skip over one of its packages into a failure while the transport is enabled. grpc holds the gRPC server's own limits, read by api/grpc/server.py through scripts/config_loader.py: port is the TCP port it listens on, workers how many threads answer calls.",
+    "_comment": "The transports this project serves (CONVENTIONS section 15): enabled lists the ones it runs, available maps each declared transport to its directory (check_H). extras maps an enabled transport to the pyproject.toml extra that installs its packages: scripts/check_venv.py judges that extra installed before make verify runs a goal, and tests/optional_deps.py turns a test's skip over one of its packages into a failure while the transport is enabled. grpc holds the gRPC server's own limits, set in every project whether or not it serves gRPC, so the loader's rows resolve with no default line and a project that adds the transport later finds them, read by api/grpc/server.py through scripts/config_loader.py: port is the TCP port it listens on, workers how many threads answer calls.",
     "extras": {"rest": "transport"},
     "enabled": ["rest", "mcp"{% for t in transports if t not in ["rest", "mcp"] %}, "{{ t }}"{% endfor %}],
     "available": {
@@ -371,8 +371,8 @@
       "mcp": "mcp"{% if "grpc" in transports %},
       "grpc": "api/grpc"{% endif %}{% if "edge_nginx" in transports %},
       "edge_nginx": "api/edge_nginx"{% endif %}
-    }{% if "grpc" in transports %},
-    "grpc": {"port": 50051, "workers": 8}{% endif %}
+    },
+    "grpc": {"port": 50051, "workers": 8}
   },
   "e2e": {
     "_comment": "End-to-end coverage (CONVENTIONS section 17): every endpoint an enabled transport serves is named by a scenario under scenario_dir with @pytest.mark.<marker>(\"<transport> <id>\"), or exempt here with a reason. tests/integration/test_e2e_coverage.py derives the endpoints from the code, never from a list: sources maps a transport to how (openapi: the app's OpenAPI document, written by openapi_exporter inside the REST transport directory; mcp-stdio: each __main__-guarded server asked over its stdio, with mcp_env added to its environment; proto: the transport's .proto service methods; none: the transport serves no endpoint of its own). list_timeout_s bounds each child a derivation or a scenario starts: the walk over the routes the REST app serves, the exporter, and each MCP server. exempt maps an endpoint id to the reason it has no scenario; a stale, redundant or reasonless entry is red. server is how tests/live_server.py starts the REST app for a scenario: uvicorn serving app on host, ready when probe_path answers 200 within ready_timeout_s (polled every probe_interval_s), each request bounded by request_timeout_s, and stopped by SIGTERM then SIGKILL after stop_timeout_s. There is no port: the OS assigns a free one. make run-api's fixed port is a separate value.",
