@@ -2,7 +2,7 @@
 title: Unit — models registry + backend conformance
 kind: tests
 layer: backend
-summary: Every registered ModelBackend conforms to the contract, the HTTP adapter with the host of its own default base_url listed for the test because the shipped `models.allowed_hosts` list is empty; the fake backend is deterministic.
+summary: Every registered ModelBackend conforms to the contract, the HTTP adapter with the host of its own default base_url listed for the test because the shipped `models.allowed_hosts` list is empty; the fake backend is deterministic. choose_model is the one rule get_model resolves a name by: an absent or empty name is the registry default and says it defaulted, any other name is kept as named.
 """
 
 import inspect
@@ -15,7 +15,8 @@ import pytest
 _ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(_ROOT))
 
-from models import ModelBackend, get_model, list_models  # noqa: E402
+from models import ModelBackend, choose_model, get_model, list_models  # noqa: E402
+from models.registry import DEFAULT_MODEL  # noqa: E402
 
 pytestmark = pytest.mark.unit
 
@@ -72,6 +73,18 @@ def test_get_model_defaults_to_the_default_model():
     default = get_model()
     explicit = get_model("claude-code-headless")
     assert default.name == explicit.name == "claude-code-headless"
+
+
+@pytest.mark.parametrize("name", [None, ""])
+def test_choose_model_says_when_it_fell_back_to_the_default(name):
+    choice = choose_model(name)
+    assert (choice.name, choice.defaulted) == (DEFAULT_MODEL, True)
+    assert get_model(name).name == choice.name
+
+
+def test_choose_model_keeps_a_named_model_and_says_it_was_named():
+    choice = choose_model("fake")
+    assert (choice.name, choice.defaulted) == ("fake", False)
 
 
 def test_unknown_model_raises_with_a_helpful_message():
