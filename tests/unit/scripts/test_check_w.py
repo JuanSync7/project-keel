@@ -632,6 +632,37 @@ def test_every_policy_key_is_required(key):
     assert len(errs) == 1 and key in errs[0], errs
 
 
+def test_the_gate_runners_limits_are_optional_and_kept_when_set():
+    """scripts/config_loader.py KEYS defaults the two limits, so a policy without
+    them is valid; one that sets them hands them on to the gate runner."""
+    policy, errs = cs.make_targets_policy({"make_targets": _policy()})
+    assert errs == [] and "gate_timeout_seconds" not in policy, (errs, policy)
+    policy, errs = cs.make_targets_policy(
+        {"make_targets": _policy(gate_timeout_seconds=60, gate_stop_grace_seconds=2)}
+    )
+    assert errs == [], errs
+    assert (policy["gate_timeout_seconds"], policy["gate_stop_grace_seconds"]) == (
+        60,
+        2,
+    )
+
+
+@pytest.mark.parametrize(
+    "over, expect",
+    [
+        ({"gate_timeout_seconds": 0}, "gate_timeout_seconds is 0"),
+        ({"gate_timeout_seconds": True}, "gate_timeout_seconds is true"),
+        ({"gate_stop_grace_seconds": "10"}, 'gate_stop_grace_seconds is "10"'),
+        ({"gate_stop_grace_seconds": -1}, "gate_stop_grace_seconds is -1"),
+        ({"gate_timeout_second": 60}, "unknown key `gate_timeout_second`"),
+    ],
+    ids=["zero", "bool", "string", "negative", "typo"],
+)
+def test_a_bad_gate_runner_limit_is_one_error_naming_it(over, expect):
+    errs = _policy_errors(_policy(**over))
+    assert len(errs) == 1 and expect in errs[0], errs
+
+
 @pytest.mark.parametrize(
     "over, expect",
     [

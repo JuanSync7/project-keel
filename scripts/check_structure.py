@@ -169,6 +169,7 @@ if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 
 import child_env  # noqa: E402
+import config_loader  # noqa: E402
 import exit_codes  # noqa: E402
 import run_date  # noqa: E402
 
@@ -4269,6 +4270,9 @@ _POLICY_KEYS = (
     "empty_test_selections",
     "gate_vars",
 )
+# The gate runner's limits: optional, since scripts/config_loader.py KEYS gives
+# each its type and default, but known, so a typo is still an unknown key.
+_POLICY_OPTIONAL_KEYS = ("gate_timeout_seconds", "gate_stop_grace_seconds")
 # make's own control variables and the guard: a gate run that let a caller set
 # one could load a makefile nobody labelled (MAKEFILES), pass flags (MAKEFLAGS,
 # MFLAGS), swap the shell or make itself, or empty the guard, so gate_vars may
@@ -4695,8 +4699,10 @@ def _kept_dirs_errors(kept, where):
 def make_targets_policy(manifest):
     """config/project.json's make_targets block -> (policy, errs). Pure.
 
-    Every key is required and a key outside them is an error (`_comment` aside),
-    so a typo cannot silently fall back to a default; each bad value is one
+    Every key is required except the gate runner's two limits
+    (_POLICY_OPTIONAL_KEYS, defaulted by scripts/config_loader.py KEYS), and a
+    key outside them is an error (`_comment` aside), so a typo cannot silently
+    fall back to a default; each bad value is one
     error naming the key and what is wrong. policy is None when errs is not
     empty -- a consumer refuses rather than half-trusting it."""
     if not isinstance(manifest, dict) or _POLICY_BLOCK not in manifest:
@@ -4714,13 +4720,29 @@ def make_targets_policy(manifest):
         for key in _POLICY_KEYS
         if key not in block
     ]
+    known = _POLICY_KEYS + _POLICY_OPTIONAL_KEYS
     errs.extend(
         "%s has an unknown key `%s` (the keys are %s)"
-        % (_POLICY_BLOCK, key, ", ".join(_POLICY_KEYS))
+        % (_POLICY_BLOCK, key, ", ".join(known))
         for key in sorted(block)
-        if key not in _POLICY_KEYS and key != "_comment"
+        if key not in known and key != "_comment"
     )
     where = _POLICY_BLOCK + "."
+    for row in config_loader.rows(
+        *((_POLICY_BLOCK, key) for key in _POLICY_OPTIONAL_KEYS)
+    ):
+        key = row.path[-1]
+        if key not in block:
+            continue
+        check, text = config_loader.TYPES[row.type]
+        if row.accepts is not None:
+            bound, text = row.accepts
+        else:
+            bound = check
+        if not (check(block[key]) and bound(block[key])):
+            errs.append(
+                where + "%s is %s; accepted: %s" % (key, json.dumps(block[key]), text)
+            )
     unattended = block.get("unattended_vars")
     unattended_ok = False
     if "unattended_vars" in block:
@@ -4883,7 +4905,7 @@ def make_targets_policy(manifest):
                 )
     if errs:
         return None, errs
-    return {k: block[k] for k in _POLICY_KEYS}, []
+    return {k: block[k] for k in known if k in block}, []
 
 
 def _pytest_selection(command):

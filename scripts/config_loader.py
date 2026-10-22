@@ -669,6 +669,29 @@ KEYS = tuple(
                 NONE,
                 "the JSON schema a gate evidence record follows",
             ),
+            # 4 h: a full `make verify` took 3 h 12 min (11 520 s) on the
+            # slowest host keel runs on (2026-10); 4 h leaves a quarter more,
+            # so a slow run that is progressing is not ended as a hang.
+            _row(
+                ("make_targets", "gate_timeout_seconds"),
+                "int",
+                14400,
+                "the seconds scripts/run_make_target.py lets make run before it "
+                "ends every process make started; its --timeout overrides it",
+                accepts=(_at_least_one, "a value >= 1"),
+            ),
+            # 10 s: the same SIGTERM-to-SIGKILL grace tests/live_server.py gives
+            # the uvicorn server (e2e.server.stop_timeout_s); SIGTERM's default
+            # action ends pytest, copier and make at once, so only a handler
+            # that cleans up uses it.
+            _row(
+                ("make_targets", "gate_stop_grace_seconds"),
+                "int",
+                10,
+                "the seconds scripts/run_make_target.py waits after SIGTERM for "
+                "make's process group to exit before it sends SIGKILL",
+                accepts=(_at_least_one, "a value >= 1"),
+            ),
             _row(
                 ("practices", "profiles"),
                 "object",
