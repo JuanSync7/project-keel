@@ -71,6 +71,15 @@ version rather than a bare commit:
   vendored script, or a directory of them, out of every shell gate with its
   reason; an entry that covers no file is exit 14. The new copier question `shell` (default yes) sets
   `shell.enabled`, and no makes every shell target say so and run no tool.
+- **An agent `--execute` run is held to an approved model-call cap.**
+  `scripts/doc_review.py`, `scripts/refactor_practice.py` and the two Stop
+  hooks refuse an execute run with exit 2 before any model is built when its
+  bound (`--max-chunks`, `--max-nodes`, or one call for triage) is over
+  config/project.json `agents.max_model_calls`, or is negative and bounds
+  nothing; the key ships as `0`, which approves none, and a value the
+  loader refuses is exit 14 (`scripts/model_budget.py`). With no `--model`,
+  each names on stderr the registry default it will use
+  (`models.choose_model`). The doc-review Stop hook gains `--max-chunks`.
 - **Every agent has a replayed eval with a known-good response.** The doc
   reviewer, index enforcer, practice refactor and wiki navigator each export
   their one model call as a step on an injected backend (`propose`,

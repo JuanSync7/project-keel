@@ -157,7 +157,7 @@ restamp-docs: ## [tree] Set a stale `updated:` to today on every changed, new or
 
 doc-review: check-python ## [local] Review the docs (dry-run: findings, rules, baseline; no model, writes nothing)
 	$(PY) scripts/doc_review.py
-doc-review-apply: check-python ## [tree,cost] Review the docs and APPLY one gated edit per finding (model from models/; rolled back if check-docs goes red)
+doc-review-apply: check-python ## [tree,cost] Review the docs and APPLY one gated edit per finding (model from models/; refused unless agents.max_model_calls covers --max-chunks; rolled back if check-docs goes red)
 	$(PY) scripts/doc_review.py --execute
 advise: check-python ## [local] Advisory: overfitting / answer-key + coding-practice smells, unowned corpus nodes, stale doc stamps (CONVENTIONS §18; never fails the build)
 	-$(PY) scripts/check_generic.py

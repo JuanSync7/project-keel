@@ -3,7 +3,7 @@
 title: Refactor toward a named practice (LLM-doer entrypoint)
 kind: script
 layer: n/a
-summary: Thin CLI over the agents/practice_refactor brain — walk the corpus KG and refactor each chunk toward a named coding practice, gating every edit on make verify. The vendor-agnostic doer behind the practice-refactor skill (trigger).
+summary: Thin CLI over the agents/practice_refactor brain — walk the corpus KG and refactor each chunk toward a named coding practice, gating every edit on make verify. The vendor-agnostic doer behind the practice-refactor skill (trigger). `--execute` is first held to config/project.json `agents.max_model_calls` (scripts/model_budget.py): a --max-nodes over the cap, or a negative one that bounds nothing, is refused (exit 2) and a cap the config cannot give is exit 14, both before the agent runs; with no --model it names on stderr the registry default it will use.
 """
 
 from __future__ import annotations
@@ -20,7 +20,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)  # make top-level `agents`/`models`/`runtimes` importable
 sys.path.insert(0, os.path.join(ROOT, "scripts"))
 
+import config_loader  # noqa: E402
 import exit_codes  # noqa: E402
+import model_budget  # noqa: E402
 from agents.practice_refactor import refactor  # noqa: E402  (after sys.path setup)
 from models import ModelUnavailable  # noqa: E402
 
@@ -69,6 +71,30 @@ def main(argv=None):
     )
     ap.add_argument("--json", action="store_true", help="emit the report as JSON")
     args = ap.parse_args(argv)
+    if args.execute:
+        # Held to the cap before the agent runs, so a refused run calls no
+        # model and writes nothing; a dry run calls none, so it is never held.
+        try:
+            model_budget.approve(
+                args.max_nodes, model_budget.cap(args.root or ROOT), "--max-nodes"
+            )
+        except config_loader.ConfigError:
+            return exit_codes.report(
+                exit_codes.ExitCode.CONFIG,
+                "refactor_practice: the model-call cap cannot be read",
+                "config/project.json agents.max_model_calls",
+                "set it to a whole number of 0 or more, as the line above says",
+            )
+        except model_budget.SpendRefused as exc:
+            return exit_codes.report(
+                exit_codes.ExitCode.USAGE,
+                "refactor_practice: " + exc.what,
+                exc.on,
+                exc.next_step,
+            )
+        chosen = model_budget.announce("refactor_practice", args.model)
+        if chosen is not None:
+            sys.stderr.write(chosen + "\n")
 
     try:
         report = refactor(

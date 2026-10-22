@@ -36,6 +36,10 @@ The user wants an *existing* codebase brought toward one **named** practice from
    ```
    python3 scripts/refactor_practice.py <practice-id> --execute --json
    ```
+   An execute run makes up to `--max-nodes` model calls, and it refuses with
+   exit 2 unless `config/project.json` `agents.max_model_calls` approves that
+   many (the default 0 approves none). Ask the user before raising the cap:
+   model calls cost money.
 
 4. **Report** `refactored` (chunks whose edit passed the gate) vs `skipped`
    (chunks with no accepted edit). A chunk is *done* only if the gate stayed

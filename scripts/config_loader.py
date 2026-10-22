@@ -536,6 +536,14 @@ KEYS = tuple(
                 accepts=_CARVED_OUT_NAMES,
             ),
             _row(
+                ("agents", "max_model_calls"),
+                "int",
+                0,
+                "the approved cap on the model calls one agent --execute run "
+                "may make; 0 approves none",
+                accepts=(_not_negative, "a value >= 0"),
+            ),
+            _row(
                 ("agents", "protected_names"),
                 "object",
                 NONE,

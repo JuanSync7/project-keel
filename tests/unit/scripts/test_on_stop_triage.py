@@ -12,11 +12,20 @@ import pytest
 
 _ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(_ROOT / "scripts" / "hooks"))
+sys.path.insert(0, str(_ROOT / "scripts"))
 
+import model_budget  # noqa: E402
 import on_stop_triage as hook  # noqa: E402
 from models import ModelUnavailable  # noqa: E402
 
 pytestmark = pytest.mark.unit
+
+
+@pytest.fixture(autouse=True)
+def _approved(monkeypatch):
+    # These cases are about the model-absent path, so the run is approved;
+    # tests/unit/scripts/test_agent_spend_cap.py holds the cap itself.
+    monkeypatch.setattr(model_budget, "cap", lambda root: 1)
 
 
 def test_an_unavailable_model_is_a_stated_skip_at_exit_zero(monkeypatch, capsys):

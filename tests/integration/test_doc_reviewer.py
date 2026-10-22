@@ -202,8 +202,13 @@ def test_the_cli_and_hook_report_the_review_and_skip_an_absent_model(
     sys.path.insert(0, str(_ROOT / "scripts"))
     sys.path.insert(0, str(_ROOT / "scripts" / "hooks"))
     import doc_review as cli  # noqa: E402
+    import model_budget  # noqa: E402
     import on_stop_doc_review as hook  # noqa: E402
     from models import ModelUnavailable
+
+    # Approved, so the absent model is what this case reaches; the cap itself
+    # is tests/unit/scripts/test_agent_spend_cap.py.
+    monkeypatch.setattr(model_budget, "cap", lambda root: 8)
 
     def no_model(**kwargs):
         raise ModelUnavailable("claude binary 'claude' is not on PATH")

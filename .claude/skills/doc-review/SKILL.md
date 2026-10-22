@@ -36,6 +36,10 @@ prose written from scratch.
    ```
    .venv/bin/python scripts/doc_review.py --execute --json
    ```
+   An execute run makes up to `--max-chunks` model calls, and it refuses with
+   exit 2 unless `config/project.json` `agents.max_model_calls` approves that
+   many (the default 0 approves none). Ask the user before raising the cap:
+   model calls cost money.
 
 3. **Report** `applied` (files whose edit passed the gate) vs `skipped` (chunks
    the model declined, or whose edit was rolled back). A chunk is *done* only if

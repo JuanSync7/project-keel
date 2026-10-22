@@ -363,8 +363,13 @@ def test_cli_entrypoint_reports_an_unavailable_model_as_a_skip(monkeypatch, caps
     """The model-absent path (documentation-quality plan, phase 6): a doer that
     cannot run its model says so and exits 0, writing nothing."""
     sys.path.insert(0, str(_ROOT / "scripts"))
+    import model_budget  # noqa: E402
     import refactor_practice as rp  # noqa: E402
     from models import ModelUnavailable
+
+    # Approved, so the absent model is what this case reaches; the cap itself
+    # is tests/unit/scripts/test_agent_spend_cap.py.
+    monkeypatch.setattr(model_budget, "cap", lambda root: 8)
 
     def no_model(*args, **kwargs):
         raise ModelUnavailable("claude binary 'claude' is not on PATH")
