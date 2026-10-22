@@ -391,6 +391,23 @@ def _exclusions(value: Any) -> bool:
     return True
 
 
+def _suffixes(value: Any) -> bool:
+    # A suffix is matched against the end of a file name, so one without its
+    # dot (`sh`) would also judge `fresh`, and a `/` would make it a path.
+    return bool(value) and all(
+        len(v) > 1 and v.startswith(".") and v.split() == [v] and "/" not in v
+        for v in value
+    )
+
+
+def _program_names(value: Any) -> bool:
+    # Matched against a shebang interpreter's basename, so a path can never
+    # match one, and an empty list would make the shebang rule judge nothing.
+    return bool(value) and all(
+        v and v.split() == [v] and "/" not in v and "\\" not in v for v in value
+    )
+
+
 def _is_reason_map(value: Any) -> bool:
     # At least one entry: an empty policy protects nothing, and a guard over
     # zero items is a vacuous pass, not a pass.
@@ -802,6 +819,72 @@ KEYS = tuple(
                 "nonempty_str",
                 "v8.30.1",
                 "the scanner release the pre-commit hook pins and the record must name",
+            ),
+            _row(
+                ("shell", "enabled"),
+                "bool",
+                True,
+                "whether scripts/shell_gate.py judges the project's shell scripts; "
+                "the copier question `shell` sets it, and false makes every shell "
+                "target say so and run no tool",
+            ),
+            _row(
+                ("shell", "formatter"),
+                "nonempty_str",
+                "shfmt",
+                "the shell formatter scripts/shell_gate.py runs for `make fmt-sh` "
+                "and `make fmt-check-sh`, by adapter name; a name it has no "
+                "adapter for is refused",
+            ),
+            _row(
+                ("shell", "linter"),
+                "nonempty_str",
+                "shellcheck",
+                "the shell linter scripts/shell_gate.py runs for `make lint-sh`, "
+                "by adapter name; a name it has no adapter for is refused",
+            ),
+            _row(
+                ("shell", "script_suffixes"),
+                "list_of_str",
+                [".sh", ".bash"],
+                "the file-name suffixes that make a file a shell script",
+                accepts=(
+                    _suffixes,
+                    "a non-empty list of suffixes, each a dot and at least one "
+                    "more character, with no whitespace or `/`",
+                ),
+            ),
+            _row(
+                ("shell", "shebang_shells"),
+                "list_of_str",
+                ["sh", "bash"],
+                "the interpreter names whose shebang makes a file with no "
+                "script suffix a shell script",
+                accepts=(
+                    _program_names,
+                    "a non-empty list of bare program names, with no whitespace "
+                    "or path separator",
+                ),
+            ),
+            _row(
+                ("shell", "test_runner"),
+                "nonempty_str",
+                "bats",
+                "the shell test runner scripts/shell_gate.py runs for `make "
+                "test-sh`, by adapter name; a name it has no adapter for is "
+                "refused",
+            ),
+            _row(
+                ("shell", "test_suffixes"),
+                "list_of_str",
+                [".bats"],
+                "the file-name suffixes that make a file a shell test, which "
+                "`make test-sh` runs and the lint and format modes do not judge",
+                accepts=(
+                    _suffixes,
+                    "a non-empty list of suffixes, each a dot and at least one "
+                    "more character, with no whitespace or `/`",
+                ),
             ),
             _row(
                 ("tests", "child_timeout_seconds"),

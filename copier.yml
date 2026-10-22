@@ -315,6 +315,14 @@ profiles:
     - langgraph
   default: []
 
+# Prunes no file: scripts/shell_gate.py ships either way and reads the answer from
+# config/project.json shell.enabled, so a project that switches shell on later
+# flips one key instead of re-running copier, and `_migrations` needs no mirror.
+shell:
+  type: bool
+  help: "Gate shell scripts (lint, format and test targets that `make verify` runs)? 'no' runs no shell tool"
+  default: true
+
 # ---- Retirement: what `copier update` must REMOVE ----------------------------
 # `_exclude` above is a GENERATION-time filter and nothing more. On update copier
 # renders the OLD template copy with the UNION of the old and new excludes — on
