@@ -193,6 +193,14 @@ version rather than a bare commit:
   these tests, as it already was to the update tests. dev-loops.md now says which
   make target is the inner loop and which is the full gate. A generated
   project ships neither file.
+- **The gate runner's time limit comes from config.**
+  `scripts/run_make_target.py` gives make `--timeout` seconds, else
+  config/project.json `make_targets.gate_timeout_seconds` (`14400`; a full
+  `make verify` measured 3 h 12 min on the slowest host, where the old fixed
+  1800 s cut it off). `make_targets.gate_stop_grace_seconds` (`10`) is the wait
+  between SIGTERM and SIGKILL. Both keys are optional; a value that is not a
+  whole number >= 1 exits 14. `scripts/apply_refactor.py --timeout` now
+  defaults to the same configured limit.
 - **`make verify` is red until `make secrets-install` has run once.** A fresh
   clone has no scanner record, so `make secret-scan` exits 11 naming the
   install. The README Quickstart now commits the generated project, installs
@@ -273,6 +281,14 @@ version rather than a bare commit:
   guard that fails a reach past it.
 
 ### Fixed
+- **A gate that times out or is interrupted ends everything make started.**
+  `scripts/run_make_target.py` killed only make on a timeout, leaving the
+  pytest, copier and uvicorn processes it started running. make now runs in a
+  session of its own, and a timeout, Ctrl-C (exit 130), SIGTERM or SIGHUP
+  sends SIGTERM to that whole process group, then SIGKILL after the grace;
+  nothing outside the group is signalled. A timeout sets `timed_out` in the
+  JSON result, and a process left in the group after make exits is ended and
+  named.
 - **The audit reports a migration that stops over an owed error.** A
   project that lists `GIT_DIR` in `child_env.names` made
   `scripts/audit_project.py` exit 2, because the update's first migration

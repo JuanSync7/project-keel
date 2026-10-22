@@ -249,7 +249,10 @@ Why these guardrails:
   last so a `[write]` recipe's `$(WRITE_GUARD)` refuses, and fails a green run
   that changed what git sees. `make verify` is `[local]`, so it is a legal gate;
   `make fmt` is `[tree]`, so it is refused before it can rewrite the code the
-  pass is about to commit (CONVENTIONS §7).
+  pass is about to commit (CONVENTIONS §7). make gets `--timeout` seconds, else
+  `make_targets.gate_timeout_seconds` (`14400`); on that timeout or an
+  interrupt the runner ends make's whole process group, so no test server or
+  copier run outlives the pass.
 
 When you want this loop to run unattended (a program, not you, driving it), encode
 it as a durable `Plan` and let a `Runtime` checkpoint and resume it — see
