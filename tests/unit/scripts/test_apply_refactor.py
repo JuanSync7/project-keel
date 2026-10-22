@@ -869,3 +869,18 @@ def test_the_cli_timeout_is_unset_unless_given(tmp_path, monkeypatch):
     assert ar.main(argv) == 0
     assert ar.main(argv + ["--timeout", "42"]) == 0
     assert seen == [None, 42]
+
+
+@pytest.mark.parametrize("value", ["0", "-3"])
+def test_a_timeout_below_one_second_is_refused_before_any_edit(
+    tmp_path, monkeypatch, capsys, value
+):
+    f, spec = _spec(tmp_path)
+    called = []
+    monkeypatch.setattr(ar, "apply_and_gate", lambda *a, **k: called.append(a))
+    spec_file = tmp_path.parent / ("t%s-spec.json" % value)
+    spec_file.write_text(json.dumps(spec), encoding="utf-8")
+    argv = ["--spec", str(spec_file), "--root", str(tmp_path), "--timeout", value]
+    assert ar.main(argv) == ExitCode.USAGE
+    assert called == [] and "--timeout" in capsys.readouterr().err
+    assert f.read_text(encoding="utf-8") == "keep = 1\n"

@@ -4736,7 +4736,9 @@ def make_targets_policy(manifest):
             continue
         check, text = config_loader.TYPES[row.type]
         if row.accepts is not None:
-            bound, text = row.accepts
+            # Type and bound together, as config_loader words a bad value.
+            bound, bound_text = row.accepts
+            text = "%s with %s" % (text, bound_text)
         else:
             bound = check
         if not (check(block[key]) and bound(block[key])):

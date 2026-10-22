@@ -448,6 +448,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     ap.add_argument("--json", action="store_true", help="emit the result as JSON")
     args = ap.parse_args(argv)
+    if args.timeout is not None and args.timeout < 1:
+        return report(
+            ExitCode.USAGE,
+            "apply_refactor: --timeout must be 1 or more seconds",
+            "--timeout %d" % args.timeout,
+            "give a whole number of seconds >= 1, or leave --timeout out to use "
+            "config/project.json make_targets.gate_timeout_seconds",
+        )
 
     try:
         spec = _load_spec(args.spec)

@@ -652,7 +652,10 @@ def test_the_gate_runners_limits_are_optional_and_kept_when_set():
     [
         ({"gate_timeout_seconds": 0}, "gate_timeout_seconds is 0"),
         ({"gate_timeout_seconds": True}, "gate_timeout_seconds is true"),
-        ({"gate_stop_grace_seconds": "10"}, 'gate_stop_grace_seconds is "10"'),
+        (
+            {"gate_stop_grace_seconds": "10"},
+            'gate_stop_grace_seconds is "10"; accepted: an integer with a value >= 1',
+        ),
         ({"gate_stop_grace_seconds": -1}, "gate_stop_grace_seconds is -1"),
         ({"gate_timeout_second": 60}, "unknown key `gate_timeout_second`"),
     ],
