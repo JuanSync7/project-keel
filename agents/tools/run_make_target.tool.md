@@ -67,11 +67,12 @@ of editing on top of failures. The labels are defined in
 
 ## Output
 With `--json`, `{target, ok, returncode, output, effects, changed, refused,
-timed_out}` on stdout. `timed_out` is true when make did not finish within the
-limit. `effects` is the target's closed label; `changed` lists the paths a run
+timed_out, leaked}` on stdout. `timed_out` is true when make did not finish within
+the limit. `leaked` lists `<pid> <command>` for each process still running in
+make's group after make exited; any entry makes the run red. `effects` is the target's closed label; `changed` lists the paths a run
 changed; `refused` is the reason when the runner did not run make, and `null`
 otherwise. Exit 0 when the target passed and changed nothing, 1 when it was red,
-timed out or changed the tree, 2 when it was refused or the name was unsafe, 14
+timed out, changed the tree or leaked a process, 2 when it was refused or the name was unsafe, 14
 when `make_targets.gate_timeout_seconds` or `make_targets.gate_stop_grace_seconds`
 is not a whole number >= 1, and 130 when it was interrupted.
 A `make_targets.gate_vars` value present in the caller's environment and not
@@ -89,7 +90,9 @@ whatever in the group is still alive. It signals nothing outside that group. The
 limit is `--timeout`, else `make_targets.gate_timeout_seconds` (14400 s in keel:
 a full `make verify` measured 3 h 12 min on the slowest host, and 4 h leaves a
 quarter of that again as headroom). A process still in the group after make
-exits is ended the same way and named in `output`. A runner killed with SIGKILL
+exits is ended the same way and listed in `leaked`: a make that exited 0 is then
+red, naming each leftover, because a gate target must stop every process it
+starts; a make that failed keeps its own status. A runner killed with SIGKILL
 cannot end the group, so make's session outlives it.
 
 ## Side effects

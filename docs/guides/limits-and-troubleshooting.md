@@ -68,7 +68,10 @@ own limits, is a row of the [feature catalogue](../reference/features.md).
   timeout, Ctrl-C, SIGTERM or SIGHUP, ends that process group (SIGTERM, then
   SIGKILL after config/project.json `make_targets.gate_stop_grace_seconds`). A
   process that moved itself into a new session, or a runner killed with
-  SIGKILL, escapes it.
+  SIGKILL, escapes it. A process still in the group after make exits is ended
+  and turns a green run red. `scripts/gate_evidence.py` has no limit of its
+  own: run by `make verify` under the gate runner, it is inside the group the
+  runner ends.
 - **The evidence record is evidence, not attestation.** `make verify` writes
   `.evidence/verify.json` (config/project.json `evidence.dir`) unsigned, in a
   directory any process of the same user can write. A consumer should match its
@@ -673,4 +676,5 @@ kept on purpose, such as a test fixture, with its reason.
 | `make test-fe-e2e` fails with `Timed out waiting <n>ms from config.webServer` | the build or the preview server took longer than config/project.json `layers.frontend.journey.server_timeout_ms` (`120000` as shipped), or never answered on the journey's URL | run the app's `npm run build` and `npm run preview` by hand to see why, or raise `layers.frontend.journey.server_timeout_ms` |
 | `make test-fe-e2e` fails naming `layers.frontend.journey.<key> must be ...` | config/project.json lacks that key or holds the wrong type for it | restore the key; [settings.md](../reference/settings.md) gives each key's type and shipped default |
 | `scripts/run_make_target.py` exits 1 with `the gate timed out, and every process make started was ended` | make ran longer than `--timeout`, else config/project.json `make_targets.gate_timeout_seconds` (`14400` as shipped; a full `make verify` measured 3 h 12 min on the slowest host) | if the output was still progressing, raise `--timeout` or `make_targets.gate_timeout_seconds`; otherwise find the step that hung in the output |
+| `scripts/run_make_target.py` exits 1 with `the gate is red because the target leaked a process`, naming each pid and command | make exited 0 but a process it started (a server, a watcher, a background job) was still running in its process group; the runner ended it | make the recipe stop or wait for everything it starts before it exits |
 | `scripts/run_make_target.py` exits 14 naming `make_targets.gate_timeout_seconds` or `make_targets.gate_stop_grace_seconds` | the key holds something other than a whole number >= 1 | correct the key, or remove it to take the default [settings.md](../reference/settings.md) gives |

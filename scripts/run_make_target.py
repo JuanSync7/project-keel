@@ -3,7 +3,7 @@
 title: Run make target (the read-only gate runner)
 kind: script
 layer: n/a
-summary: Deterministic doer — run a make target as a gate and report a structured pass/fail, but only a target whose effect label, closed over what it runs, falls inside config/project.json `make_targets.gate_effects`. It refuses an unknown, unlabelled or wider target, an extra argument that is not a NAME=VALUE variable named in `make_targets.gate_vars` with a one-word path-like value, a tree without git, and an allowlist scripts/child_env.py cannot build or that would copy a value carrying a credential, all before make runs; it forwards a `make_targets.gate_vars` variable found in its own environment onto make's command line under the same one-word rule (an explicit one wins), and refuses any gate value, explicit or forwarded, that carries a credential by scripts/child_env.py's carries_credential under the project's child_env policy (user information, or a `child_env.credential_value_patterns` match, named by its label), even one `child_env.credentialed_values` opts in, because make's command line reaches every recipe; every refusal names the variable and never quotes a value; because make and git get the allowlisted environment from scripts/child_env.py, never this one; it sets the gate-runner variable last so WRITE_GUARD refuses a [write] target; and it snapshots what git lists before and after (each path's porcelain status and content, by scripts/git_tree.py), failing a green run that changed it and naming the paths, and one whose tree cannot be re-read afterwards. It reads config/project.json through scripts/config_loader.py `read`, so a manifest it cannot use, a key written twice in one object included, is a refusal carrying the loader's line. It starts make in a session of its own and gives it `--timeout` seconds, else config/project.json `make_targets.gate_timeout_seconds` (scripts/config_loader.py KEYS gives its type and default; a value that is not a whole number >= 1 is ExitCode.CONFIG, or a refusal from run_target). On that timeout, on KeyboardInterrupt (ExitCode.INTERRUPTED) and on a SIGTERM or SIGHUP to itself it ends make's whole process group: SIGTERM, then SIGKILL once `make_targets.gate_stop_grace_seconds` pass with any member alive; it signals no process outside that group. A timeout is red with `timed_out` true in the result and ExitCode.FAILURE from the command line; a process left in the group after make exits is ended the same way and named in the output. A runner killed with SIGKILL cannot do this, so make's session outlives it. The refactor loop (agents/practice_refactor, scripts/apply_refactor.py) and tests/integration/test_make_target_effects.py gate through it. Vendor-neutral, stdlib; it writes nothing itself.
+summary: Deterministic doer — run a make target as a gate and report a structured pass/fail, but only a target whose effect label, closed over what it runs, falls inside config/project.json `make_targets.gate_effects`. It refuses an unknown, unlabelled or wider target, an extra argument that is not a NAME=VALUE variable named in `make_targets.gate_vars` with a one-word path-like value, a tree without git, and an allowlist scripts/child_env.py cannot build or that would copy a value carrying a credential, all before make runs; it forwards a `make_targets.gate_vars` variable found in its own environment onto make's command line under the same one-word rule (an explicit one wins), and refuses any gate value, explicit or forwarded, that carries a credential by scripts/child_env.py's carries_credential under the project's child_env policy (user information, or a `child_env.credential_value_patterns` match, named by its label), even one `child_env.credentialed_values` opts in, because make's command line reaches every recipe; every refusal names the variable and never quotes a value; because make and git get the allowlisted environment from scripts/child_env.py, never this one; it sets the gate-runner variable last so WRITE_GUARD refuses a [write] target; and it snapshots what git lists before and after (each path's porcelain status and content, by scripts/git_tree.py), failing a green run that changed it and naming the paths, and one whose tree cannot be re-read afterwards. It reads config/project.json through scripts/config_loader.py `read`, so a manifest it cannot use, a key written twice in one object included, is a refusal carrying the loader's line. It starts make in a session of its own and gives it `--timeout` seconds, else config/project.json `make_targets.gate_timeout_seconds` (scripts/config_loader.py KEYS gives its type and default; a value that is not a whole number >= 1 is ExitCode.CONFIG, or a refusal from run_target). On that timeout, on KeyboardInterrupt (ExitCode.INTERRUPTED) and on a SIGTERM or SIGHUP to itself it ends make's whole process group: SIGTERM, then SIGKILL once `make_targets.gate_stop_grace_seconds` pass with any member alive; it signals no process outside that group. A timeout is red with `timed_out` true in the result and ExitCode.FAILURE from the command line; a process left in the group after make exits is ended the same way, listed by pid and command in `leaked`, and fails closed: a make that exited 0 is red (ExitCode.FAILURE, naming each leftover), and a make that failed keeps its own status. A runner killed with SIGKILL cannot do this, so make's session outlives it. The refactor loop (agents/practice_refactor, scripts/apply_refactor.py) and tests/integration/test_make_target_effects.py gate through it. Vendor-neutral, stdlib; it writes nothing itself.
 """
 
 from __future__ import annotations
@@ -111,6 +111,48 @@ def _signal_group(pgid: int, sig: int) -> None:
         return
 
 
+class LeftRunning(Exception):
+    """make exited with *returncode* and *output*, but the processes in
+    *leftovers* ((pid, command) pairs) were still running in its group; they
+    have been ended by the time this is raised."""
+
+    def __init__(
+        self, returncode: int, output: str, leftovers: Sequence[tuple[int, str]]
+    ) -> None:
+        super().__init__(returncode, output, leftovers)
+        self.returncode = returncode
+        self.output = output
+        self.leftovers = list(leftovers)
+
+
+def _group_members(pgid: int) -> list[tuple[int, str]]:
+    """(pid, command) of each live process in group *pgid*, read from /proc
+    (Linux). A process that ends while it is read is skipped; a host with no
+    /proc gives an empty list, and the caller still knows the group was alive."""
+    try:
+        names = os.listdir("/proc")
+    except OSError:
+        return []
+    members = []
+    for name in sorted(names, key=lambda n: (len(n), n)):
+        if not name.isdigit():
+            continue
+        try:
+            with open("/proc/%s/stat" % name, encoding="utf-8") as fh:
+                # The command name in parentheses may hold spaces or `)`, so
+                # the fields are counted after the last `)`: state, ppid, pgrp.
+                fields = fh.read().rsplit(")", 1)[1].split()
+            if int(fields[2]) != pgid or fields[0] == "Z":
+                continue
+            with open("/proc/%s/cmdline" % name, "rb") as fh:
+                argv = fh.read().split(b"\0")
+        except (OSError, IndexError, ValueError):
+            continue
+        command = " ".join(a.decode("utf-8", "replace") for a in argv if a)
+        members.append((int(name), command or "?"))
+    return members
+
+
 def _end_group(proc: subprocess.Popen[str], grace: int) -> None:
     """End every process in *proc*'s group: SIGTERM, up to *grace* seconds for
     the group to empty, then SIGKILL. *proc* leads its group (it started with
@@ -184,7 +226,7 @@ def _default_runner(
     on any exception while it runs (KeyboardInterrupt included), the whole
     group is ended (see _end_group) and subprocess.TimeoutExpired, carrying
     the output read so far, or the exception, is raised. A group member still
-    running after make exits is ended too, and the output says so."""
+    running after make exits is ended too, and LeftRunning names it."""
     proc = subprocess.Popen(  # noqa: S603 — argv list, never a shell string
         list(cmd),
         cwd=cwd,
@@ -211,12 +253,10 @@ def _default_runner(
             _end_group(proc, grace)
             raise
     if _group_alive(proc.pid):
+        # Listed before they are ended, so the report can name what leaked.
+        leftovers = _group_members(proc.pid)
         _end_group(proc, grace)
-        output += (
-            "run_make_target: `%s` exited and left processes running in its "
-            "group; they were ended (SIGTERM, then SIGKILL after %d s)\n"
-            % (" ".join(cmd[:2]), grace)
-        )
+        raise LeftRunning(proc.returncode, output, leftovers)
     return proc.returncode, output
 
 
@@ -254,6 +294,7 @@ def _refusal(target: str, why: str, effects: Sequence[str] = ()) -> dict[str, ob
         "changed": [],
         "refused": why,
         "timed_out": False,
+        "leaked": [],
     }
 
 
@@ -296,7 +337,9 @@ def run_target(
     The result holds target, ok, returncode, output, effects (the target's
     closed-over label), changed (sorted paths whose git-listed state differs
     after the run), refused (None, or why the run never started) and timed_out
-    (True when make ran past ``timeout``). A refusal never calls the runner.
+    (True when make ran past ``timeout``) and leaked ("<pid> <command>" of each
+    process left in make's group after it exited, ended; any makes ok False). A
+    refusal never calls the runner.
     ``timeout`` and ``grace`` are seconds; each left None is read through
     gate_limits, and a limit config/project.json gets wrong is a refusal.
     Past the timeout, or on an interrupt, every process make started is ended
@@ -432,8 +475,26 @@ def run_target(
     # Looked up at call time, so a test that replaces _default_runner is used.
     run = runner or functools.partial(_default_runner, grace=grace)
     timed_out = False
+    leaked: list[str] = []
     try:
         code, output = run(cmd, root, timeout)
+    except LeftRunning as exc:
+        code = exc.returncode
+        leaked = ["%d %s" % pair for pair in exc.leftovers]
+        output = (
+            "%srun_make_target: `make %s` leaked %s: %s still running in its "
+            "process group after make exited, so they were ended (SIGTERM, then "
+            "SIGKILL after %d s); a gate target must stop every process it starts\n"
+            % (
+                exc.output,
+                target,
+                "a process" if len(leaked) == 1 else "processes",
+                "; ".join(leaked) or "(the members could not be listed)",
+                grace,
+            )
+        )
+        if not leaked:
+            leaked = ["(unlisted)"]
     except subprocess.TimeoutExpired as exc:
         timed_out = True
         partial = exc.output if isinstance(exc.output, str) else ""
@@ -467,6 +528,7 @@ def run_target(
             "changed": [],
             "refused": None,
             "timed_out": timed_out,
+            "leaked": leaked,
         }
     changed = sorted(
         p for p in set(before) | set(after) if before.get(p) != after.get(p)
@@ -482,13 +544,14 @@ def run_target(
         )
     return {
         "target": target,
-        "ok": code == 0 and not changed,
+        "ok": code == 0 and not changed and not leaked,
         "returncode": code,
         "output": output,
         "effects": list(labels),
         "changed": changed,
         "refused": None,
         "timed_out": timed_out,
+        "leaked": leaked,
     }
 
 
@@ -600,6 +663,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             "if the output above was still progressing, raise --timeout or "
             "make_targets.gate_timeout_seconds; otherwise find the step that hung "
             "in the output above",
+        )
+    if result["leaked"] and result["returncode"] == 0 and not result["changed"]:
+        return report(
+            ExitCode.FAILURE,
+            "run_make_target: the gate is red because the target leaked a process",
+            "`make %s` exited 0 and left %s running"
+            % (result["target"], "; ".join(result["leaked"])),  # type: ignore[arg-type]
+            "make the target stop every process it starts before it exits; "
+            "these were ended",
         )
     return report(
         ExitCode.FAILURE,

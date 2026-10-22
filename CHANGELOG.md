@@ -287,8 +287,9 @@ version rather than a bare commit:
   session of its own, and a timeout, Ctrl-C (exit 130), SIGTERM or SIGHUP
   sends SIGTERM to that whole process group, then SIGKILL after the grace;
   nothing outside the group is signalled. A timeout sets `timed_out` in the
-  JSON result, and a process left in the group after make exits is ended and
-  named.
+  JSON result. A process left in the group after make exits is ended, listed
+  by pid and command in `leaked`, and fails the gate closed: a make that exited
+  0 is red (exit 1), and a make that failed keeps its own status.
 - **The audit reports a migration that stops over an owed error.** A
   project that lists `GIT_DIR` in `child_env.names` made
   `scripts/audit_project.py` exit 2, because the update's first migration

@@ -2,7 +2,7 @@
 title: Unit — run_make_target (the read-only gate runner)
 kind: tests
 layer: n/a
-summary: run_target runs a make target only when its effect label, closed over its prerequisites, falls inside config/project.json `make_targets.gate_effects`; it refuses an unknown, unlabelled or wider target, an extra argument that is not a NAME=VALUE variable, a variable outside `make_targets.gate_vars` (make's control variables, the guard and the unattended variables among them), a value that is not one path-like word, a tree without git and a project without the policy, all without calling the runner. It passes the gate-runner variable last, so the Makefile's WRITE_GUARD refuses whatever the caller supplied, and fails a green run that changed the tree, naming the paths. A `make_targets.gate_vars` value found in the runner's own environment is forwarded on make's command line under the same one-word rule, an explicit one wins, and a bad one is refused before make runs. make and git get the allowlisted environment from scripts/child_env.py, never the runner's own. An allowlist that cannot be built, or that would copy a gate variable carrying a credential, is a refusal before anything runs and before any message could quote the value; a gate value, explicit or forwarded, that carries a credential is refused by name even when opted in, and no refusal quotes a value; and a ChildEnvError during the run or a tree that cannot be re-read afterwards is red, never a traceback. The runner and the snapshot are injected for those cases, so no make or git process runs in them. The default runner's own cases put a fake `make` (a short Python script) first on PATH that starts a grandchild, and prove that a timeout, a KeyboardInterrupt and a SIGTERM to the runner end the whole group, that an ignored SIGTERM is followed by SIGKILL after the grace, that a SIGTERM handler gets that grace, and that a process left behind after make exits is ended and named; each polls with a bound and kills only the pids it started. The time limit and grace come from config/project.json `make_targets` through scripts/config_loader.py, the loader's default when the key is absent, a bad value is CONFIG or a refusal naming the key, and `--timeout` overrides the configured limit.
+summary: run_target runs a make target only when its effect label, closed over its prerequisites, falls inside config/project.json `make_targets.gate_effects`; it refuses an unknown, unlabelled or wider target, an extra argument that is not a NAME=VALUE variable, a variable outside `make_targets.gate_vars` (make's control variables, the guard and the unattended variables among them), a value that is not one path-like word, a tree without git and a project without the policy, all without calling the runner. It passes the gate-runner variable last, so the Makefile's WRITE_GUARD refuses whatever the caller supplied, and fails a green run that changed the tree, naming the paths. A `make_targets.gate_vars` value found in the runner's own environment is forwarded on make's command line under the same one-word rule, an explicit one wins, and a bad one is refused before make runs. make and git get the allowlisted environment from scripts/child_env.py, never the runner's own. An allowlist that cannot be built, or that would copy a gate variable carrying a credential, is a refusal before anything runs and before any message could quote the value; a gate value, explicit or forwarded, that carries a credential is refused by name even when opted in, and no refusal quotes a value; and a ChildEnvError during the run or a tree that cannot be re-read afterwards is red, never a traceback. The runner and the snapshot are injected for those cases, so no make or git process runs in them. The default runner's own cases put a fake `make` (a short Python script) first on PATH that starts a grandchild, and prove that a timeout, a KeyboardInterrupt and a SIGTERM to the runner end the whole group, that an ignored SIGTERM is followed by SIGKILL after the grace, that a SIGTERM handler gets that grace, and that a process left behind after make exits is ended, named by pid and command, and turns a green make red while a failing make keeps its own status; each polls with a bound and kills only the pids it started. The time limit and grace come from config/project.json `make_targets` through scripts/config_loader.py, the loader's default when the key is absent, a bad value is CONFIG or a refusal naming the key, and `--timeout` overrides the configured limit.
 """
 
 import base64
@@ -623,9 +623,9 @@ _TRAPS_TERM = (
 _SETTLE = 30.0
 
 
-def _write_fake_make(where, grandchild, detach=False, exit_after=False):
-    """A `make` that starts *grandchild* and then sleeps (or exits 0 when
-    *exit_after*). *detach* points the grandchild's output away from make's,
+def _write_fake_make(where, grandchild, detach=False, exit_after=False, status=0):
+    """A `make` that starts *grandchild* and then sleeps (or exits *status*
+    when *exit_after*). *detach* points the grandchild's output away from make's,
     as a daemon does, so make's output closes while the grandchild lives."""
     where.mkdir(exist_ok=True)
     make = where / "make"
@@ -646,7 +646,7 @@ def _write_fake_make(where, grandchild, detach=False, exit_after=False):
             out,
             out,
             _SETTLE,
-            "sys.exit(0)" if exit_after else "time.sleep(600)",
+            "sys.exit(%d)" % status if exit_after else "time.sleep(600)",
         ),
         encoding="utf-8",
     )
@@ -815,7 +815,11 @@ def test_a_sigterm_to_the_runner_ends_the_tree_and_then_the_runner(tree):
             runner.wait()
 
 
-def test_a_process_left_running_after_make_exits_is_ended_and_named(tree):
+def test_a_process_left_running_after_make_exits_is_ended_and_turns_the_gate_red(
+    tree,
+):
+    """Fail closed: a green make that leaves a process behind leaked it, and a
+    gate that passed it would hand the next pass a tree something still writes."""
     _write_fake_make(tree / "bin", _SLEEPS, detach=True, exit_after=True)
     res = rmt.run_target(
         "check", cwd=str(tree), timeout=60, grace=5, snapshot=_snaps({}, {})
@@ -826,7 +830,37 @@ def test_a_process_left_running_after_make_exits_is_ended_and_named(tree):
     finally:
         _cleanup(pids)
     assert res["returncode"] == 0 and res["timed_out"] is False, res
-    assert "left processes running" in res["output"], res["output"]
+    assert res["ok"] is False, res
+    leaked = res["leaked"]
+    assert len(leaked) == 1 and leaked[0].startswith("%d " % pids[1]), leaked
+    assert "-c" in leaked[0], leaked
+    assert "leaked" in res["output"] and str(pids[1]) in res["output"], res["output"]
+
+
+def test_a_failing_make_that_leaks_keeps_its_own_status(tree):
+    _write_fake_make(tree / "bin", _SLEEPS, detach=True, exit_after=True, status=3)
+    res = rmt.run_target(
+        "check", cwd=str(tree), timeout=60, grace=5, snapshot=_snaps({}, {})
+    )
+    pids = _pids(tree)
+    try:
+        assert _gone_within(pids), "a process make left behind is still running"
+    finally:
+        _cleanup(pids)
+    assert res["returncode"] == 3 and res["ok"] is False, res
+    assert len(res["leaked"]) == 1, res
+
+
+def test_a_run_that_leaks_nothing_names_no_leak(proj):
+    res = rmt.run_target(
+        "check",
+        cwd=str(proj),
+        runner=lambda cmd, cwd, timeout: (0, "ok\n"),
+        timeout=5,
+        grace=1,
+        snapshot=_snaps({}, {}),
+    )
+    assert res["ok"] is True and res["leaked"] == [], res
 
 
 def _with_limits(proj, **limits):
@@ -923,6 +957,35 @@ def test_the_cli_reports_a_timeout_through_the_exit_helper(proj, monkeypatch, ca
     last = captured.err.strip().splitlines()[-1]
     assert "timed out" in last and "9 s" in last, last
     assert "make_targets.gate_timeout_seconds" in last, last
+
+
+def _leaks(status):
+    def runner(cmd, cwd, timeout, grace):
+        raise rmt.LeftRunning(status, "made it\n", [(4242, "python -c sleep")])
+
+    return runner
+
+
+def test_the_cli_fails_a_green_target_that_leaked_a_process(proj, monkeypatch, capsys):
+    monkeypatch.setattr(rmt, "_default_runner", _leaks(0))
+    monkeypatch.setattr(rmt, "tree_snapshot", lambda root: {})
+    code = rmt.main(["check", "--dir", str(proj)])
+    captured = capsys.readouterr()
+    assert code == rmt.ExitCode.FAILURE
+    assert "made it" in captured.out
+    last = captured.err.strip().splitlines()[-1]
+    assert "leaked" in last and "4242 python -c sleep" in last, last
+    assert "stop every process it starts" in last, last
+
+
+def test_the_cli_keeps_makes_own_failure_when_a_red_target_leaked(
+    proj, monkeypatch, capsys
+):
+    monkeypatch.setattr(rmt, "_default_runner", _leaks(2))
+    monkeypatch.setattr(rmt, "tree_snapshot", lambda root: {})
+    assert rmt.main(["check", "--dir", str(proj)]) == rmt.ExitCode.FAILURE
+    last = capsys.readouterr().err.strip().splitlines()[-1]
+    assert "the gate is red" in last and "rc=2" in last, last
 
 
 def test_the_cli_reports_an_interrupt_through_the_exit_helper(
