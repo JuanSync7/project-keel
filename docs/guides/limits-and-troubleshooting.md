@@ -8,7 +8,7 @@ tags: [limits, waivers, exit-codes, troubleshooting, guide]
 summary: What adopting keel costs, the risks its rails leave open, the checks that pass by skipping, what no gate can see, every waiver a project may use, every exit code the gate's scripts return, and the symptom-to-fix list for the failures a newcomer meets first.
 id: docs-guides-limits-and-troubleshooting
 created: 2026-10-09
-updated: 2026-10-21
+updated: 2026-10-22
 visibility: internal
 canonical: true
 ---
@@ -190,11 +190,11 @@ a decision on whether it should fail instead.
   as a parameter, an attribute of a module imported inside a function or
   relatively, a function of another module that opens what it is given, a
   method called through an object, a variable name the code holds in a
-  variable, and a read through `subprocess` or `importlib` all pass. A
-  generated project cannot tell keel's files from its own, so there its two
-  finding tests skip and name each direct read under config/project.json
-  `config_reads.roots` in the skip reason (`pytest -rs` prints it); such a
-  reader is not judged until the warn-then-fail tier is built.
+  variable, and a read through `subprocess` or `importlib` all pass. In a
+  generated project its two finding tests judge through
+  `scripts/expiring_tier.py`: a direct read under config/project.json
+  `config_reads.roots` that `expiring_tier.baseline` records warns until
+  `expiring_tier.expires`, and any other is red.
 - **What a swallowed error looks like to the gate.**
   `tests/integration/test_swallowed_error_gate.py` judges a broad handler by
   its body's shape: one that logs nothing useful and returns a computed value,
@@ -556,6 +556,13 @@ kept on purpose, such as a test fixture, with its reason.
 | a scan exits 14 with `the scanner's own config or ignore file is in the tree` | a file `secrets.scanner.refused_files` names, such as `.gitleaksignore`, is in a file git would commit or at the root | delete it; excuse a fake value with a `secrets.scanner.exclusions` entry and its reason |
 | `make secrets-install` fails with an unexpected EOF or a certificate error while pre-commit builds the scanner | a site that intercepts TLS breaks the Go module download pre-commit's golang build makes | on such a host, set `GOPROXY=direct` and point `SSL_CERT_FILE` and `GIT_SSL_CAINFO` at the site's CA bundle, then rerun; this is a host fact, so it is not in config |
 | `make secrets-install` fails on a farm node and works on a login host | the node's CA bundle lacks the root the site's TLS interception signs with | run `make secrets-install` once on a host that has the root: pre-commit's cache under the home directory is shared, so the node then reuses that build |
+| a config-reads or exit gate test fails in a generated project with `no config/gate-baseline.json records it` | `make gate-baseline` has not run since the project was generated or updated, so the tier has no record of the project's own findings | fix the finding, or run `make gate-baseline` once after `copier update` and commit the file it writes |
+| such a test fails with `does not record it` | the finding is new since the commit the baseline records, which the tier holds red at once | fix the finding; the baseline grows only after the next `copier update` moves `_commit` |
+| such a test fails with `which no finding matches; delete the entry` | a finding the baseline records is gone, so the file must shrink | rerun `make gate-baseline`, or delete the named entry, and commit the file |
+| such a test fails with `its grace in config/gate-baseline.json ended on` | today is on or after config/project.json `expiring_tier.expires`, so recorded findings are red | fix each finding the line names; a later date than `scripts/expiring_tier_data.py` `CEILING` is refused |
+| such a test errors with `later than the ceiling` | config/project.json `expiring_tier.expires` holds a date after keel's `CEILING` | set it to the ceiling or an earlier date |
+| `make gate-baseline` exits 1 with `would gain` | the gate tests found a finding the baseline lacks while `.copier-answers.yml` `_commit` still names the commit the file records | fix the finding the line names, then run it again |
+| `make gate-baseline` exits 13 with `judged no finding for` | a registered gate test stopped before it handed its findings to the tier, such as on a walk over zero files | run the named test, fix what stops it, then run the target again |
 | check_B names a directory you just added | it is not a taxonomy row | add its name to `structure.extra_toplevel` and give it a `README.md` and `CLAUDE.md` |
 | check_W names a make target | its `##` help does not open with an effect label | open the help with `[local]`, `[tree]`, `[read]`, `[cost]` or `[write]` |
 | check_W says `WRITE_GUARD does not refuse when make ignores recipe errors` | the guard's definition does not open with `$(if $(findstring i,$(firstword -$(MAKEFLAGS))),$(error ...))`, so under `make -i` the shell's `exit 1` is ignored and the `[write]` recipe runs | open the definition with that clause, as the root Makefile does |

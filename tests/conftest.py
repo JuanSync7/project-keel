@@ -1,6 +1,6 @@
 """
-title: Shared pytest fixtures + the test scratch root + the hermetic git environment + the isolation guard + the zero-tests guard
-summary: Repo-wide fixtures; the test scratch root, KEEL_TEST_SCRATCH, else config/project.json `tests.memory_scratch_root` when the host's memory can hold it, else `tests.scratch_root`, which tempfile, TMPDIR, pytest's basetemp and the hermetic git directory are pointed at before anything else is made, and which the `scratch:` header line names with why memory was passed over (see tests/isolation_guard.py `choose_scratch` for the choice and what is refused); the one place the suite's git environment is neutralised and the parent's git repository context and injected git configuration removed (see tests/hermetic_git.py for what is neutralised and why); the isolation guard, which fails a test that reaches the network, the disk or a store outside its tier's rule in config/project.json `tests.isolation`, and the store_copy fixture that hands a test its own copy of a listed store (see tests/isolation_guard.py for the judgement); and the end-of-session guard that fails a run in which zero tests ran (see tests/selection_guard.py for the verdict).
+title: Shared pytest fixtures + the test scratch root + the hermetic git environment + the isolation guard + the zero-tests guard + the expiring-tier recorder
+summary: Repo-wide fixtures; the `--expiring-tier-record PATH` option, which makes every scripts/expiring_tier.py `judge` of the session keep the finding lines it was handed and writes them to PATH as canonical JSON when the session ends, for scripts/record_gate_baseline.py; the test scratch root, KEEL_TEST_SCRATCH, else config/project.json `tests.memory_scratch_root` when the host's memory can hold it, else `tests.scratch_root`, which tempfile, TMPDIR, pytest's basetemp and the hermetic git directory are pointed at before anything else is made, and which the `scratch:` header line names with why memory was passed over (see tests/isolation_guard.py `choose_scratch` for the choice and what is refused); the one place the suite's git environment is neutralised and the parent's git repository context and injected git configuration removed (see tests/hermetic_git.py for what is neutralised and why); the isolation guard, which fails a test that reaches the network, the disk or a store outside its tier's rule in config/project.json `tests.isolation`, and the store_copy fixture that hands a test its own copy of a listed store (see tests/isolation_guard.py for the judgement); and the end-of-session guard that fails a run in which zero tests ran (see tests/selection_guard.py for the verdict).
 
 Shared pytest fixtures live here.
 
@@ -10,6 +10,7 @@ comments below, and tests/hermetic_git.py for what is neutralised and why.
 """
 
 import atexit
+import json
 import os
 import shutil
 import subprocess
@@ -84,6 +85,47 @@ def pytest_report_header(config):
     that fell back from memory to disk says so, with the reason."""
     note = ": %s" % _SCRATCH.note if _SCRATCH.note else ""
     return "scratch: %s (%s%s)" % (_SCRATCH.path, _SCRATCH.medium, note)
+
+
+_RECORD_OPTION = "--expiring-tier-record"
+
+
+def pytest_addoption(parser):
+    parser.addoption(
+        _RECORD_OPTION,
+        metavar="PATH",
+        default=None,
+        help="write the finding lines each scripts/expiring_tier.py check was "
+        "handed to PATH as JSON (scripts/record_gate_baseline.py)",
+    )
+
+
+def _tier():
+    # Imported only when recording: scripts/ is not on every session's path,
+    # and the gate tests import the module under this same name, so both
+    # reach the one module object and its one record.
+    scripts = os.path.join(_ROOT, "scripts")
+    if scripts not in sys.path:
+        sys.path.insert(0, scripts)
+    import expiring_tier
+
+    return expiring_tier
+
+
+def pytest_configure(config):
+    if config.getoption(_RECORD_OPTION):
+        _tier().start_recording()
+
+
+def _write_record(config):
+    path = config.getoption(_RECORD_OPTION)
+    if not path:
+        return
+    lines = _tier().recorded() or {}
+    # Canonical JSON, so the same findings write the same bytes.
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(lines, fh, indent=2, sort_keys=True, ensure_ascii=False)
+        fh.write("\n")
 
 
 def pytest_sessionstart(session):
@@ -227,6 +269,7 @@ def _say(config, message):
 @pytest.hookimpl(trylast=True)
 def pytest_sessionfinish(session, exitstatus):
     config = session.config
+    _write_record(config)
     unused = isolation_guard.unused_exemptions()
     if unused:
         _say(config, "\n".join(unused))

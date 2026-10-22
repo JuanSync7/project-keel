@@ -12,6 +12,7 @@ effect: read-only
 # (tests/integration/test_gate_scope.py `_bottom_import_layer`).
 
 import copy
+import datetime
 import importlib
 import importlib.util
 import json
@@ -284,6 +285,17 @@ def _no_parent_part(value: Any) -> bool:
 
 
 _ASCII_DIGITS = "0123456789"
+_ISO_DATE = "%Y-%m-%d"
+
+
+def _iso_date(value: Any) -> bool:
+    # strptime takes "2027-1-31"; the round trip holds the value to the one
+    # spelling a reader compares, and refuses a day the calendar lacks.
+    try:
+        parsed = datetime.datetime.strptime(str(value), _ISO_DATE).date()
+    except ValueError:
+        return False
+    return bool(parsed.isoformat() == value)
 
 
 def _dotted_release(value: Any) -> bool:
@@ -601,6 +613,22 @@ KEYS = tuple(
                 NONE,
                 "the pass fraction a suite needs",
                 accepts=(_in_unit_interval, "0 < value <= 1"),
+            ),
+            _row(
+                ("expiring_tier", "baseline"),
+                "repo_path",
+                NONE,
+                "the file of a generated project's recorded findings, each of "
+                "which warns until expiring_tier.expires; scripts/"
+                "record_gate_baseline.py writes it",
+            ),
+            _row(
+                ("expiring_tier", "expires"),
+                "nonempty_str",
+                NONE,
+                "the day a generated project's recorded findings turn red, no "
+                "later than scripts/expiring_tier_data.py CEILING",
+                accepts=(_iso_date, "a calendar date written YYYY-MM-DD"),
             ),
             _row(
                 ("evidence",),

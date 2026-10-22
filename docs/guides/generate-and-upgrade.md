@@ -8,7 +8,7 @@ tags: [copier, generate, update, migrations, adoption, guide]
 summary: How a project is generated from keel, what arrives and what never does, what `make new` refuses, how to adopt keel into an existing repository, and how `copier update` pulls template changes — with one checklist row per task and migration an update runs, how to finish an update a migration stopped, and how keel's release canary proves a fresh project and an updated one pass their own `make verify`.
 id: docs-guides-generate-and-upgrade
 created: 2026-10-09
-updated: 2026-10-20
+updated: 2026-10-22
 visibility: internal
 canonical: true
 ---
@@ -384,17 +384,14 @@ each message.
 check_D also fails `from pkg import _sub` of a private submodule from outside
 `pkg/`; import the name `pkg/__init__.py` exports instead.
 
-Each of these rules, like the exit gate above, fails your own code from the
-first `make test` after the update. No setting turns a finding into a warning
-for a period first. The maintainer has ruled that a project's own code warns
-before it fails, after a date set in config, but that tier is not built and
-its date is not chosen. A project's gate cannot tell a file keel ships from a
-file you wrote, because only `scripts/audit_project.py`, which runs from the
-template checkout, reads that from the template's git history, and copier
-does not ship it. Until the tier exists, run `make test` right after the
-update and fix each finding it names. `make audit-project` does not preview
-these findings: it judges the structure gate's letters, check_D among them,
-and runs none of the gate tests.
+Rule 2, and the exit gate's rule that a process ends through
+`finish(main())`, judge through the expiring tier the section "Your own gate
+findings warn until a date" below describes: a finding you record warns until
+a date. Rules 1, 3, 4 and 5 fail your own code from the first `make test` after
+the update, with no warning period; run `make test` right after the update and
+fix each finding they name. `make audit-project` does not preview these
+findings: it judges the structure gate's letters, check_D among them, and runs
+none of the gate tests.
 
 `make long-scripts` exits 13, `ExitCode.NOTHING_JUDGED`, when no recorded run
 carries a duration, which is a fresh clone's state; it exited 1 before, the
@@ -423,18 +420,55 @@ the config/project.json `config_reads` block. You may meet it three ways.
    for 14 as well. `scripts/check_practices.py` also refuses a
    config/practices.json it cannot parse, where it scanned with no practices
    and exited 0.
-3. **Your own direct readers are named, not failed.**
+3. **Your own direct readers warn until a date.**
    `tests/integration/test_config_reads_gate.py` walks the directories
    `config_reads.roots` names for an open of either config file, or a read of a
-   variable the config declares, outside the loader. It cannot tell a file keel
-   ships from one you wrote, and keel's own files were judged in the template,
-   so in your project its two finding tests skip, and the skip reason names
-   each direct read it saw; `pytest -rs` prints it. Nothing turns red. Move
-   such a reader onto the loader before the warn-then-fail tier the section
-   above describes arrives: `read` the file, then pass `resolve` your own `Key`
-   rows, built with the type set `TYPES` and the default in the row.
+   variable the config declares, outside the loader. Its two finding tests
+   judge through the expiring tier the next section describes, so a direct
+   read is red until `make gate-baseline` records it, and then warns until
+   `expiring_tier.expires`. Move such a reader onto the loader before that day:
+   `read` the file, then pass `resolve` your own `Key` rows, built with the
+   type set `TYPES` and the default in the row.
 
 [ADR-K-0022](../adr/keel/K-0022-one-config-loader.md) is the accepted decision.
+
+### Your own gate findings warn until a date
+
+The update brings the config/project.json `expiring_tier` block,
+`scripts/expiring_tier.py`, `scripts/expiring_tier_data.py`,
+`scripts/record_gate_baseline.py` and the `make gate-baseline` target. Four
+gate tests judge their findings through the tier: the two finding tests of
+`tests/integration/test_config_reads_gate.py`, and the two of
+`tests/integration/test_exit_gate.py` that fail an exit outside the helper and
+a shared module that ends the process. Each judges by these rules.
+
+1. **Run `make gate-baseline` once after the update.** Until it runs, a
+   finding in your own code is red, and its line names the target. The target
+   runs those four gate tests and writes each finding they saw to the file
+   `expiring_tier.baseline` names (`config/gate-baseline.json`), stamped with
+   `.copier-answers.yml` `_commit`. Commit the file.
+2. **A recorded finding warns.** `make test` passes, and pytest's warnings
+   summary prints an `ExpiringTierWarning` that names each recorded finding
+   and the date. A finding is matched by its file and its message, not its
+   line number, so an edit above it does not turn it red.
+3. **A new finding is red at once.** At the `_commit` the file records,
+   `make gate-baseline` refuses to add an entry and writes nothing; the file
+   grows only after the next `copier update` moves `_commit`. So fix a finding
+   your own change brought.
+4. **The file only shrinks.** An entry no finding matches is red, naming the
+   entry. Rerun `make gate-baseline`, or delete the entry, once you fix the
+   finding.
+5. **The grace ends on a date.** From `expiring_tier.expires` every recorded
+   finding is red. You may set an earlier date. A date later than
+   `scripts/expiring_tier_data.py` `CEILING`, 2027-01-31, is red, and copier
+   rewrites that file on every update.
+
+In the template repository, which holds `copier.yml`, there is no tier: every
+finding is red, and `make gate-baseline` exits 2. Nothing stops a hand edit of
+the baseline or of `scripts/expiring_tier_data.py`; review holds both, and an
+edit of the data file shows as a diff on the next update.
+[ADR-K-0027](../adr/keel/K-0027-a-project-s-own-code-warns-until-a-hard-date.md)
+is the proposed decision.
 
 ### Your Node, Python and runner images come from config
 

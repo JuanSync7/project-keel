@@ -2,7 +2,7 @@
 title: Integration — a configured value is read only through the config loader
 kind: tests
 layer: n/a
-summary: A tree-wide gate over the Python files tests/source_tree.py `python_files` lists under config/project.json `config_reads.roots`, read from the syntax tree, scripts/config_loader.py itself left out. It fails two kinds of direct read. The first is a read of a config file scripts/config_loader.py `PROJECT_READS` declares, found by tests/source_tree.py `config_path_reads`: an `open`, `io.open` or other `.open` call, or a `.read_text`, `.read_bytes` or `.open` on a path, whose path is a string constant naming the file, a join or `Path` of constants whose last segments are its parts (a `*NAME` of a tuple of constants, or `*TEXT.split(...)` of such a string, included), a name bound to one at module level or earlier in the same function, or a path constant (a string or a join of constants) of a project module a module-level absolute import binds, read as `mod.NAME` or imported by name with `from mod import NAME` (resolved through config/project.json `import_layers.search_roots`); or a call to a function of the same module that opens the parameter it hands such a path to. The second is a read of a variable the config declares as carrying a value (scripts/config_loader.py `declared_variables`, with each KEYS row's variable), found by tests/source_tree.py `env_reads`: `environ[...]`, `environ.get/pop/setdefault(...)`, `... in environ` or `getenv(...)` with the name a literal or a module-level string constant. Each finding is one line, `<file>:<line>: <rule> — <what to do>`. The exceptions are `config_reads.allowed`, a map from a file to the reason it still reads directly; an entry whose reason is blank, whose file is absent or outside the roots, or whose file no longer reads directly is red, and the map may hold no more entries than `_CEILING`, so it only shrinks. A walk over no root, no file, no declared file or no declared variable is a failure, never a pass. An open for writing counts too, since the loader is the one module that touches the file. It cannot see a path handed in as a parameter, an attribute of a module imported inside a function or relatively, a function of another module that opens what it is given, a method called through an object, a git cat-file blob, a variable whose name the code holds in a variable (`os.environ.get(name)` with `name` a parameter), a read through subprocess or importlib, os.environ handed on as a mapping, or a path built at run time from a value that is not a constant. It does not walk tests/, which reads config as its own policy and to build fixtures. Where the gate runs tells keel's files from a project's own: in the template repository, which holds copier.yml, a finding is red; a generated project carries no list of the files keel shipped, and keel's were judged in the template, so there the two finding tests skip with a reason naming each direct read they saw, until the warn-then-fail tier for a project's own code is built. Not a check_* letter: the letters A to Z are taken.
+summary: A tree-wide gate over the Python files tests/source_tree.py `python_files` lists under config/project.json `config_reads.roots`, read from the syntax tree, scripts/config_loader.py itself left out. It fails two kinds of direct read. The first is a read of a config file scripts/config_loader.py `PROJECT_READS` declares, found by tests/source_tree.py `config_path_reads`: an `open`, `io.open` or other `.open` call, or a `.read_text`, `.read_bytes` or `.open` on a path, whose path is a string constant naming the file, a join or `Path` of constants whose last segments are its parts (a `*NAME` of a tuple of constants, or `*TEXT.split(...)` of such a string, included), a name bound to one at module level or earlier in the same function, or a path constant (a string or a join of constants) of a project module a module-level absolute import binds, read as `mod.NAME` or imported by name with `from mod import NAME` (resolved through config/project.json `import_layers.search_roots`); or a call to a function of the same module that opens the parameter it hands such a path to. The second is a read of a variable the config declares as carrying a value (scripts/config_loader.py `declared_variables`, with each KEYS row's variable), found by tests/source_tree.py `env_reads`: `environ[...]`, `environ.get/pop/setdefault(...)`, `... in environ` or `getenv(...)` with the name a literal or a module-level string constant. Each finding is one line, `<file>:<line>: <rule> — <what to do>`. The exceptions are `config_reads.allowed`, a map from a file to the reason it still reads directly; an entry whose reason is blank, whose file is absent or outside the roots, or whose file no longer reads directly is red, and the map may hold no more entries than `_CEILING`, so it only shrinks. A walk over no root, no file, no declared file or no declared variable is a failure, never a pass. An open for writing counts too, since the loader is the one module that touches the file. It cannot see a path handed in as a parameter, an attribute of a module imported inside a function or relatively, a function of another module that opens what it is given, a method called through an object, a git cat-file blob, a variable whose name the code holds in a variable (`os.environ.get(name)` with `name` a parameter), a read through subprocess or importlib, os.environ handed on as a mapping, or a path built at run time from a value that is not a constant. It does not walk tests/, which reads config as its own policy and to build fixtures. The two finding tests hand what they see to scripts/expiring_tier.py as the checks `config-reads-file` and `config-reads-variable`: in the template repository, which holds copier.yml, every finding is red; in a generated project a finding its `expiring_tier.baseline` records warns until `expiring_tier.expires`, and any other is red. Not a check_* letter: the letters A to Z are taken.
 """
 
 import sys
@@ -15,6 +15,7 @@ sys.path.insert(0, str(_ROOT / "tests"))
 sys.path.insert(0, str(_ROOT / "scripts"))
 
 import config_loader  # noqa: E402
+import expiring_tier  # noqa: E402
 
 import source_tree as st  # noqa: E402
 
@@ -31,18 +32,11 @@ _LOADER = "scripts/config_loader.py"
 # its count is lower; tests/integration/test_copier_generation.py, which
 # copier prunes, holds keel's count equal to this number.
 _CEILING = 12
-# Where the gate runs tells keel's files from a project's own (the B1 ruling in
-# docs/design/downstream-feedback.md). The template repository holds this file
-# and every Python file under its roots is keel's, so a finding is red there. A
-# generated project carries no list of the files keel shipped, and keel's own
-# were judged in the template, so there the finding tests skip and name what
-# they saw until the warn-then-fail tier is built.
-_TEMPLATE_MARK = "copier.yml"
-_PROJECT_SKIP = (
-    "a generated project: this gate cannot tell a file keel ships from one the "
-    "project wrote, so a direct read is not judged here until the warn-then-fail "
-    "tier for a project's own code is built; %d direct read(s) seen%s"
-)
+# The finding tests' check ids in scripts/expiring_tier_data.py CHECKS: the
+# tier judges what each one sees (red in the template, warn-then-fail in a
+# generated project).
+_FILE_CHECK = "config-reads-file"
+_ENV_CHECK = "config-reads-variable"
 _ALLOW = "or allowlist it in config/project.json config_reads.allowed with a reason"
 _FILE_FIX = "read it through scripts/config_loader.py read and resolve, " + _ALLOW
 _ENV_FIX = "read it through scripts/config_loader.py env, " + _ALLOW
@@ -83,18 +77,6 @@ def declared_variables(manifest, where=config_loader.CONFIG_FILE):
     names = set(config_loader.declared_variables(manifest, where))
     names.update(k.env for k in config_loader.KEYS if k.env is not None)
     return sorted(names)
-
-
-def judges_findings(root):
-    """True when *root* is the template repository, where a direct read is a
-    finding; False in a generated project (_TEMPLATE_MARK)."""
-    return (Path(root) / _TEMPLATE_MARK).is_file()
-
-
-def project_skip_reason(lines):
-    """The skip reason a generated project's finding test gives, naming each
-    direct read it saw so none goes unreported."""
-    return _PROJECT_SKIP % (len(lines), (": " + "; ".join(lines)) if lines else "")
 
 
 def _under(relpath, roots):
@@ -185,9 +167,10 @@ def _tree():
     return _RESULT
 
 
-def _unexcused(rule):
-    """The findings of *rule* no allowlist entry excuses; in a generated
-    project the calling test skips instead, naming them."""
+def _unexcused(rule, check):
+    """The red findings of *rule* no allowlist entry excuses, judged by
+    scripts/expiring_tier.py as *check*: all of them in the template, and in a
+    generated project those its baseline does not hold within the grace."""
     tree = _tree()
     allowed = tree["policy"]["allowed"]
     found = [
@@ -197,18 +180,16 @@ def _unexcused(rule):
         for line in lines
         if rule in line
     ]
-    if not judges_findings(_ROOT):
-        pytest.skip(project_skip_reason(found))
-    return found
+    return expiring_tier.apply(check, found, str(_ROOT))
 
 
 def test_no_code_root_reads_a_config_file_outside_the_loader():
-    unexcused = _unexcused(": opens ")
+    unexcused = _unexcused(": opens ", _FILE_CHECK)
     assert not unexcused, "\n".join(unexcused)
 
 
 def test_no_code_root_reads_a_declared_variable_outside_the_loader():
-    unexcused = _unexcused(": reads the declared variable ")
+    unexcused = _unexcused(": reads the declared variable ", _ENV_CHECK)
     assert not unexcused, "\n".join(unexcused)
 
 
@@ -518,23 +499,6 @@ def test_a_policy_with_a_missing_or_wrong_key_is_refused_by_name():
         "roots": ["src"],
         "allowed": {},
     }
-
-
-def test_a_finding_is_judged_in_the_template_and_named_in_a_generated_project(
-    tmp_path,
-):
-    template = tmp_path / "template"
-    project = tmp_path / "project"
-    template.mkdir()
-    project.mkdir()
-    (template / _TEMPLATE_MARK).write_text("_subdirectory: .\n", encoding="utf-8")
-    assert judges_findings(template) is True
-    assert judges_findings(project) is False
-    seen = ["src/a.py:3: opens config/project.json directly", "src/b.py:9: reads"]
-    reason = project_skip_reason(seen)
-    assert "2 direct read(s) seen: src/a.py:3: " in reason, reason
-    assert "; src/b.py:9: reads" in reason, reason
-    assert project_skip_reason([]).endswith("0 direct read(s) seen"), reason
 
 
 def test_a_walk_over_zero_files_or_zero_declared_names_fails(tmp_path):

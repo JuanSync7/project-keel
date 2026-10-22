@@ -17,6 +17,8 @@ version rather than a bare commit:
   config fault.
 - **ADR-K-0026 is proposed.** An agent edit cannot reach the code that judges
   it.
+- **ADR-K-0027 is proposed.** A generated project's own gate finding warns
+  until a hard date, from a record that only shrinks.
 
 ### Added
 - **Test scratch lives in memory when the host can hold it.**
@@ -27,6 +29,22 @@ version rather than a bare commit:
   this user's with mode 0700; `KEEL_TEST_SCRATCH` still wins over both.
   pytest's `scratch:` header line names the root in use and why memory was
   passed over. A generated project carries both keys; null turns memory off.
+- **A generated project's own gate finding warns until a date.**
+  `scripts/expiring_tier.py` judges the findings of the config-reads gate's two
+  finding tests and of the exit gate's helper and shared-module tests. In the
+  template repository every finding is red. In a generated project a finding
+  config/project.json `expiring_tier.baseline` records warns, as an
+  `ExpiringTierWarning`, until `expiring_tier.expires`, and is red from that
+  day; an unrecorded finding and an entry no finding matches are red at once.
+  `make gate-baseline` (`scripts/record_gate_baseline.py`, `[tree,write]`)
+  writes the file from what those tests see and may add entries only when
+  `.copier-answers.yml` `_commit` has moved. `expiring_tier.expires` may be
+  no later than `scripts/expiring_tier_data.py` `CEILING`, 2027-01-31, which
+  copier rewrites on every update. **Action required:** after
+  `copier update`, run `make gate-baseline` once and commit
+  `config/gate-baseline.json`; until then a project's own finding in those
+  gates is red, naming the target. The config-reads gate no longer skips in
+  a generated project.
 - **An agent edit cannot reach the code that judges it.**
   `scripts/apply_refactor.py` refuses, before any write and so in a dry run
   too, an edit to a path config/project.json `agents` protects: a path under
@@ -80,10 +98,9 @@ version rather than a bare commit:
   `config/project.json` or `config/practices.json`, or a read of a variable the
   config declares, anywhere but `scripts/config_loader.py`. The files that
   still read directly are listed in `config_reads.allowed` with a reason, and
-  the list can only shrink. In the template repository a finding is red; a
-  generated project cannot tell keel's files from its own, so there the two
-  finding tests skip and name each direct read they saw, and a project's own
-  reader is not red after `copier update`;
+  the list can only shrink. In the template repository a finding is red; in
+  a generated project the two finding tests judge through the expiring tier
+  below, so a project's own reader warns until a date once it is recorded;
   `docs/guides/generate-and-upgrade.md` says what to do.
 - **The docs quote the loader's lines, and a test holds them to it.**
   Each defaulted key's row in `docs/reference/settings.md` quotes its

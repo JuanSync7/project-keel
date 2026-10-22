@@ -47,7 +47,8 @@ PY_ROOTS := $(wildcard $(CODE_ROOTS))
 # `.IGNORE: <target>` rule ignores that target's errors WITHOUT touching
 # MAKEFLAGS (measured: the write ran, exit 0), so no clause can see it, and
 # check_W refuses any .IGNORE rule instead.
-# Keel ships no [write] target; a project that adds one inherits the guard.
+# Keel's one [write] target is gate-baseline; a project that adds one inherits
+# the guard.
 WRITE_GUARD = $(if $(findstring i,$(firstword -$(MAKEFLAGS))),$(error refusing '$@': make is ignoring recipe errors (-i, --ignore-errors or .IGNORE), so a failing guard could not stop this [write] target; run it without that flag (docs/adr/keel/K-0011-make-target-effect-labels.md)))@if [ -n "$(CI)$(RALPH)" ]; then echo "refusing '$@': a [write] target never runs under CI or a Ralph loop (docs/adr/keel/K-0011-make-target-effect-labels.md)" >&2; exit 1; fi
 
 .PHONY: help new audit-project canary check-python check check-all check-corpus check-openapi check-aad check-cdmon check-exit-codes exit-codes advise check-generic long-scripts verify test trace eval eval-live unit integration e2e smoke \
@@ -345,3 +346,9 @@ agent-surface-schema: check-python ## [tree] Regenerate the committed AAD JSON S
 	$(PY) scripts/agent_surface/generate_aad_schema.py
 exit-codes: check-python ## [tree] Regenerate the exit-code table in the limits guide from scripts/exit_codes.py and the gate's scripts
 	$(PY) scripts/exit_code_table.py
+# [tree,write], not [tree] alone: the file it rewrites is the record of what a
+# generated project's gate lets warn, so WRITE_GUARD keeps a CI job or a Ralph
+# loop from growing it unattended (docs/adr/keel/K-0027-a-project-s-own-code-warns-until-a-hard-date.md).
+gate-baseline: check-python ## [tree,write] Record a generated project's own gate findings in expiring_tier.baseline; run once after `copier update`
+	$(WRITE_GUARD)
+	$(PY) scripts/record_gate_baseline.py

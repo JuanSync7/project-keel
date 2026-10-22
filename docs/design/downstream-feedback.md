@@ -1836,7 +1836,8 @@ unstarted, and stays so until it has a slice of its own. A measurement found
 45 modules that import `re`, 24 of them under `tests/`, so the list needs a
 written reason for each entry. Its entries for the files copier prunes go
 stale in every generated project, a project's own `re` calls turn red on
-arrival, and the warn-then-fail tier it leans on is unbuilt.
+arrival, and the warn-then-fail tier it leans on was unbuilt then (CMP-6.S4
+built it).
 
 The exit gate also closes open item 10. `scripts/exit_code_table.py`, which
 `test_exit_gate.py` reads through, finds a `passthrough` handed the script's
@@ -1867,8 +1868,8 @@ that derivation, which the same test checks, closing open item 98. A
 generated project has fewer shared modules than the template, because copier
 prunes `scripts/audit_project.py`, so no count is pinned anywhere.
 
-The warn-then-fail tier for a project's own code (B1, open item 11) is
-unstarted, with nothing of it in the tree. Its rule needs a project's gate
+The warn-then-fail tier for a project's own code (B1, open item 11) was
+unstarted then, with nothing of it in the tree; CMP-6.S4 built it. Its rule needs a project's gate
 to tell a file keel ships from one the project wrote, and the one place that
 fact is derived is `scripts/audit_project.py` `origin_of`, which lists the
 template's git tree at the project's `_commit` through `_tree_at`, run in the
@@ -1891,7 +1892,8 @@ nothing reads is a key with no consumer.
 Left by CMP-5.S4:
 
 - The `re` allowlist (open item 88) and the B1 warn-then-fail tier (open
-  item 11) are unstarted; the note above gives what each needs.
+  item 11) are unstarted; the note above gives what each needs. CMP-6.S4
+  built the tier.
 - Under a recursive `$(MAKE)` with `-i` on the outer make, the inner guard
   stops the write, but the outer make ignores that error and exits 0.
 - `make lint-fe` and `make typecheck-fe` still print a skip and exit 0 when
@@ -1927,7 +1929,7 @@ Left by CMP-5.S5:
   generated project, which carries no list of keel's files, its two finding
   tests skip and name each direct read in the skip reason. That skip is the
   B1 residual (open item 11): the warn-then-fail tier turns it into a warning
-  that goes red on the ruled date. A project's own reader needs no room under
+  that goes red on the ruled date. CMP-6.S4 replaced the skip with the tier. A project's own reader needs no room under
   `_CEILING`, since nothing there turns red.
 - `scripts/config_loader.py` has no rows for the `launcher`, `traceability`
   and `layers` blocks, so the modules that read them cannot move yet.
@@ -1983,7 +1985,7 @@ header fields and the `re` reason move to the queue as KEEL-HDR-1.
 | CMP-6.S1 | Each part of a generated project is tested on its own, but no test runs a generated project's full `make verify`, or `make verify` after `copier update` from the previous tag; nothing checks that each frontend app commits its lockfile, or that CI's Node version is the one the gate is run with | done — `make verify` green (3321 passed); the real canary passed both answer sets, fresh and updated from v0.3.0; 9 of 10 review findings confirmed and fixed; ADR-K-0023 proposed |
 | CMP-6.S2 | KEEL-TEST-1: a test can reach a live store; nothing in the suite refuses it | done — `make verify` green (3456 passed) with `KEEL_TEST_SCRATCH` on local disk; the guard caught four tests in keel's own suite, all fixed; 13 of 13 review findings confirmed and fixed; ADR-K-0024 proposed |
 | CMP-6.S3 | KEEL-SEC-1: nothing scans the tree for a committed secret | done — `make verify` green (3662 passed, with CMP-6.S5 and CMP-6.S6); the keyed gate, the scanner adapter and the wiring are built; 9 of 11 review findings confirmed and fixed; the targeted gates are green (337 passed, check-docs, check-exit-codes, mypy); the scanner installs through the pinned pre-commit hook here and is not yet run in GitHub CI; ADR-K-0025 proposed |
-| CMP-6.S4 | B1: a generated project's own code that breaks a keel gate check is red on `copier update` (the exit gate) or not judged at all (the config-reads gate skips); the ruled warn-then-fail tier is not built | planned |
+| CMP-6.S4 | B1: a generated project's own code that breaks a keel gate check is red on `copier update` (the exit gate) or not judged at all (the config-reads gate skips); the ruled warn-then-fail tier is not built | built — targeted gates green; full `make verify` not yet run |
 | CMP-6.S5 | The audit's suite is not hermetic: from a dirty template checkout the audit never takes copier's three-way path, so a clean checkout reaches untested code; when an `after` migration refuses over a fault the audit already reports as owed, the audit exits 2 instead of reporting it; and a test that drives `make` inherits the parent `make`'s `MAKEFLAGS` (K-0011) | done — `make verify` green (3662 passed); the old audit fails the hermetic fixture exactly as the farm run did, and the fixed audit passes it |
 | CMP-6.S6 | KEEL-AGT-1: an agent's edit can reach the code that judges it; `scripts/apply_refactor.py` refuses only a path outside the repo root | done — `make verify` green (3544 passed); an agent edit to a protected or untracked file, or a spec that names its own gate, is refused before any write; 10 of 10 review findings confirmed and fixed; ADR-K-0026 proposed |
 
@@ -2309,7 +2311,7 @@ no new config reader. It is also a keel file that copier rewrites on every
 update, so a project's edit to it shows as a diff, or a conflict, on the next
 update. A configured date later than the ceiling, or one that is not a calendar
 date, is red in every gate that adopts the tier, and in
-`tests/integration/test_expiring_tier.py`. An earlier date is the project's own
+`tests/integration/test_expiring_tier_wiring.py`. An earlier date is the project's own
 choice. Nothing inside a repository stops a determined edit of keel's file. The
 tier reads today through `scripts/run_date.py` (ADR-K-0019), so one gate run
 has one date. From the expiry date on, every finding of an adopting check is
@@ -2318,12 +2320,12 @@ the key.
 
 **What a warning looks like.** Each adopting test raises one `ExpiringTierWarning`
 (a `UserWarning`) per check with at least one warned line. pytest prints it in
-its `warnings summary` at the end of `make test`. It reads:
+its `warnings summary` at the end of `make test`. Its first line reads, and
+each warned finding follows on a line of its own:
 
-`config-reads-file: 2 finding(s) in this project's own code are recorded in
-config/gate-baseline.json and warn until 2027-01-31 (config/project.json
-expiring_tier.expires); from that date they are red. Fix each, then run make
-gate-baseline to drop it: <line>; <line>`
+```text
+2 finding(s) of `config-reads-file` that config/gate-baseline.json records warn until 2027-01-31 (config/project.json expiring_tier.expires) and are red from that day
+```
 
 **What the tests prove.**
 
@@ -2338,7 +2340,7 @@ gate-baseline to drop it: <line>; <line>`
   derivation: first record, growth across a `_commit`, shrink-only at one
   `_commit`, refusal of growth, an unrecorded check, the answers file read, the
   template refusal, and byte-identical output on a second run.
-- `tests/integration/test_expiring_tier.py` checks the live tree. The
+- `tests/integration/test_expiring_tier_wiring.py` checks the live tree. The
   configured date is no later than the ceiling. Each `CHECKS` entry names a test
   function that exists. The record target is in the Makefile. The template
   holds no baseline file.
@@ -2738,7 +2740,7 @@ are settled:
   warns until 2027-01-31 and is red from that date. The date lives in config,
   the warning prints it, and a test drives the run date past it to show the
   warning turn red. The maintainer accepted that this also warns on a keel
-  file the project edited. The tier is not built; it is queued.
+  file the project edited. CMP-6.S4 built the tier.
 - **ADR-K-0022, one config loader, is accepted** (2026-10-17), and
   CMP-5.S5 with the react-vite lockfile is pushed.
 - **Campaign 6 is approved with a cap of five slices** (2026-10-17), in the
@@ -2840,7 +2842,7 @@ so.
 | 8 | The gate runner judges the child environment against keel's config, not the `--dir` project's | defect | medium | `scripts/run_make_target.py` calls `build_child_env()` and `load_policy()` with no root |
 | 9 | The gate runner keeps `HOME` and the XDG directories, so host state leaks into a run | defect | medium | `scripts/run_make_target.py` |
 | 10 | `test_exit_gate` accepts `finish(passthrough(main()))` over a `main` that returns integers | missing-check | medium | closed in CMP-5.S4: `scripts/exit_code_table.py` finds a passthrough of the script's own status |
-| 11 | A project's own `sys.exit` turns red after an update and no rewriter exists | decision | medium | rewriter ruled (a) above; B1 ruled above (the template repository is red, a generated project warns until 2027-01-31); the tier is not built |
+| 11 | A project's own `sys.exit` turns red after an update and no rewriter exists | decision | medium | rewriter ruled (a) above; B1 ruled above (the template repository is red, a generated project warns until 2027-01-31); the tier is built in CMP-6.S4 (ADR-K-0027 proposed), full `make verify` not yet run |
 | 12 | `structure.extra_toplevel` directories, the project-checks directory among them, are outside `CODE_ROOTS` | missing-check | medium | `scripts/check_structure.py` `CODE_ROOTS` |
 | 13 | check_X misses a receiver it cannot resolve, a value passed through a parameter, and a spawn in a shell script | missing-check | medium | stated in `scripts/check_structure.py` |
 | 14 | A duplicate key in `config/project.json` is not refused | defect | medium | refused by `scripts/config_loader.py` `read` since CMP-5.S5; `scripts/check_structure.py`, still a direct reader, accepts one |
