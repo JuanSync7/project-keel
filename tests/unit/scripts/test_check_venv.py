@@ -217,3 +217,28 @@ def test_this_checkouts_config_names_extras_its_pyproject_declares():
     declared = project["optional-dependencies"]
     assert wanted and all(extra in declared for extra in wanted), (wanted, declared)
     assert "transport" in check_venv.reachable(project, wanted), wanted
+
+
+def test_a_keel_venv_without_copier_fails_naming_the_template_extra(capsys):
+    """Keel's own gate renders projects with copier, so keel's config names the
+    `template` extra: a keel venv holding everything but copier must fail with
+    the command that installs it, rather than skip every copier test. Real
+    pyproject.toml and config/project.json; the installed view is injected."""
+    import config_loader
+
+    loaded = config_loader.read(str(_ROOT))
+    if not (_ROOT / "copier.yml").is_file():
+        pytest.skip("a generated project is not a template; its venv.extras is dev")
+
+    def version_of(name):
+        if check_venv._canonical(name) == "copier":
+            return None
+        return check_venv._installed_version(name)
+
+    code = check_venv.main(
+        root=str(_ROOT), loaded=loaded, version_of=version_of, executable=_PY
+    )
+    err = capsys.readouterr().err
+    assert code is ExitCode.FAILURE, err
+    assert "copier" in err and "extra template" in err, err
+    assert '%s -m pip install -e ".[dev,template]"' % _PY in err, err
