@@ -200,7 +200,10 @@ version rather than a bare commit:
   1800 s cut it off). `make_targets.gate_stop_grace_seconds` (`10`) is the wait
   between SIGTERM and SIGKILL. Both keys are optional; a value that is not a
   whole number >= 1 exits 14. `scripts/apply_refactor.py --timeout` now
-  defaults to the same configured limit.
+  defaults to the same configured limit, and refuses a value below 1 with exit
+  2 before any edit. So `scripts/apply_refactor.py` and the agents' baseline
+  gate now wait up to 14400 s per gate call, not 1800 s; a hung gate in an
+  agent run holds it eight times longer before it is ended.
 - **`make verify` is red until `make secrets-install` has run once.** A fresh
   clone has no scanner record, so `make secret-scan` exits 11 naming the
   install. The README Quickstart now commits the generated project, installs
@@ -289,7 +292,12 @@ version rather than a bare commit:
   nothing outside the group is signalled. A timeout sets `timed_out` in the
   JSON result. A process left in the group after make exits is ended, listed
   by pid and command in `leaked`, and fails the gate closed: a make that exited
-  0 is red (exit 1), and a make that failed keeps its own status.
+  0 is red (exit 1), and a make that failed keeps its own status. A zombie in
+  the group is not a leftover. The runner waits on make's exit rather than on
+  its output, so a background job holding the output open no longer holds the
+  run to the limit. A signal the caller ignored (`nohup`) stays ignored, a
+  second interrupt during the grace still sends the SIGKILL, and a SIGTERM
+  during the leftover cleanup still ends the leftovers.
 - **The audit reports a migration that stops over an owed error.** A
   project that lists `GIT_DIR` in `child_env.names` made
   `scripts/audit_project.py` exit 2, because the update's first migration

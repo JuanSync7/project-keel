@@ -68,8 +68,12 @@ own limits, is a row of the [feature catalogue](../reference/features.md).
   timeout, Ctrl-C, SIGTERM or SIGHUP, ends that process group (SIGTERM, then
   SIGKILL after config/project.json `make_targets.gate_stop_grace_seconds`). A
   process that moved itself into a new session, or a runner killed with
-  SIGKILL, escapes it. A process still in the group after make exits is ended
-  and turns a green run red. `scripts/gate_evidence.py` has no limit of its
+  SIGKILL, escapes it. The run ends when make exits, even while a background
+  job holds make's output open. A process still in the group half a second
+  after make exits is ended and turns a green run red; a zombie is not counted.
+  Without `/proc` the leftovers cannot be named, and without `os.waitid` make
+  is reaped at once, so its group id is not held against reuse while the group
+  is ended. `scripts/gate_evidence.py` has no limit of its
   own: run by `make verify` under the gate runner, it is inside the group the
   runner ends.
 - **The evidence record is evidence, not attestation.** `make verify` writes

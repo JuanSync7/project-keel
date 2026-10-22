@@ -86,14 +86,30 @@ make runs in a session of its own. When the limit passes, or the runner gets
 Ctrl-C, SIGTERM or SIGHUP, it sends SIGTERM to make's whole process group
 (make, and the pytest, copier or uvicorn it started), waits
 `make_targets.gate_stop_grace_seconds` (10 in keel), then sends SIGKILL to
-whatever in the group is still alive. It signals nothing outside that group. The
-limit is `--timeout`, else `make_targets.gate_timeout_seconds` (14400 s in keel:
-a full `make verify` measured 3 h 12 min on the slowest host, and 4 h leaves a
-quarter of that again as headroom). A process still in the group after make
-exits is ended the same way and listed in `leaked`: a make that exited 0 is then
-red, naming each leftover, because a gate target must stop every process it
-starts; a make that failed keeps its own status. A runner killed with SIGKILL
-cannot end the group, so make's session outlives it.
+whatever in the group is still alive. A second Ctrl-C or SIGTERM during that
+wait cuts it short and still sends the SIGKILL. A signal the caller set to be
+ignored (for example SIGHUP under `nohup`) stays ignored. The limit is
+`--timeout`, else `make_targets.gate_timeout_seconds` (14400 s in keel: a full
+`make verify` measured 3 h 12 min on the slowest host, and 4 h leaves a quarter
+of that again as headroom).
+
+The run ends when make exits, not when make's output closes: a background job
+that still holds the output open does not hold the run to the limit, and make's
+own status is kept. A process still in the group half a second after make exits
+is ended the same way and listed in `leaked`: a make that exited 0 is then red,
+naming each leftover, because a gate target must stop every process it starts;
+a make that failed keeps its own status. A process that has exited but is not
+yet reaped (a zombie) runs nothing and is not a leftover. Membership is read
+from `/proc`; on a host without it, a group that answers signal 0 counts as
+alive and its leftovers are listed as `(unlisted)`.
+
+The runner signals only make's group. make is left unreaped until the group is
+empty, so its process id, which is the group id, cannot pass to a new process
+meanwhile; where Python has no `os.waitid` that hold is lost. Output still
+open after the group ends is held by a process that left the group (with
+`setsid`, for example); the runner stops reading it and says so in the output.
+A runner killed with SIGKILL cannot end the group, so make's session outlives
+it.
 
 ## Side effects
 READ-ONLY: it never edits a file itself, and it refuses any target whose label
