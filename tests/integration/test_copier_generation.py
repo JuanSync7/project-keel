@@ -75,7 +75,8 @@ _TWIN_ANSWERS_BLOCK = (
 )
 
 # The ONLY licensed differences between pyproject.toml and its .jinja twin: the three
-# fields that are answers rather than policy. Everything else in that file shapes the
+# fields that are answers rather than policy, and the `dev` extra's reference to
+# the project's own `transport` extra, which names the project. Everything else in that file shapes the
 # gate and must be identical, so it is pinned as text below.
 _PYPROJECT_ANSWER_FIELDS = (
     (
@@ -84,6 +85,7 @@ _PYPROJECT_ANSWER_FIELDS = (
     ),
     ('name = "project_keel"', 'name = "{{ project_slug }}"'),
     ('requires-python = ">=3.10"', 'requires-python = "{{ backend_python }}"'),
+    ('"project_keel[transport]",', '"{{ project_slug }}[transport]",'),
 )
 
 

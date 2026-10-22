@@ -11,6 +11,13 @@ requires-python = "{{ backend_python }}"
 dependencies = []
 
 [project.optional-dependencies]
+# The `dev` extra is every package the gate (`make verify`) imports, so
+# scripts/check_venv.py, the first goal of `make verify`, judges the venv against
+# it and the extra each enabled transport names (config/project.json
+# transports.extras). It names `transport` as itself plus that extra rather than
+# repeating the three packages: the REST transport always ships, so its tests run
+# in every gate, and a package installed by hand beside the extra was a package a
+# venv could lack while the REST suites read as skipped.
 # httpx backs FastAPI's TestClient (API/AAD tests); jsonschema validates the served
 # AAD descriptor against the committed schema — it was in no extra at all, so that
 # assertion had never executed anywhere while the suite reported success.
@@ -32,6 +39,21 @@ dev = [
   "pre-commit==4.6.2",
   "httpx",
   "jsonschema",
+  # scripts/check_venv.py parses requirements with packaging and pyproject.toml
+  # with tomllib, which is stdlib only from 3.11; both come with pytest today,
+  # and are named here because the check imports them itself.
+  "packaging",
+  "tomli; python_version < '3.11'",
+  "{{ project_slug }}[transport]",
+]
+# The REST transport's runtime packages (api/rest_fastapi). A deployment that
+# serves the API without the gate's tools installs this extra alone;
+# api/rest_fastapi/requirements.txt lists the same requirements for an install
+# outside the project, and tests/unit/scripts/test_check_venv.py holds the two equal.
+transport = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.32",
+  "pydantic>=2.9",
 ]
 # Optional agent-runtime engines. The default 'inprocess' runtime is pure
 # stdlib (no install); install an engine only if you select it by name, e.g.

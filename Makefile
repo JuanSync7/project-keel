@@ -51,7 +51,7 @@ PY_ROOTS := $(wildcard $(CODE_ROOTS))
 # the guard.
 WRITE_GUARD = $(if $(findstring i,$(firstword -$(MAKEFLAGS))),$(error refusing '$@': make is ignoring recipe errors (-i, --ignore-errors or .IGNORE), so a failing guard could not stop this [write] target; run it without that flag (docs/adr/keel/K-0011-make-target-effect-labels.md)))@if [ -n "$(CI)$(RALPH)" ]; then echo "refusing '$@': a [write] target never runs under CI or a Ralph loop (docs/adr/keel/K-0011-make-target-effect-labels.md)" >&2; exit 1; fi
 
-.PHONY: help new audit-project canary check-python check check-all check-corpus check-openapi check-aad check-cdmon check-exit-codes exit-codes advise check-generic long-scripts verify test trace eval eval-live unit integration e2e smoke \
+.PHONY: help new audit-project canary check-python check-venv check check-all check-corpus check-openapi check-aad check-cdmon check-exit-codes exit-codes advise check-generic long-scripts verify test trace eval eval-live unit integration e2e smoke \
         lint lint-py lint-fe fmt fmt-check typecheck typecheck-py typecheck-fe \
         test-fe test-fe-unit test-fe-e2e \
         fe-install fe-browsers secrets-install secret-scan run run-api run-web site-data site-static demo agent-surface-schema check-docs restamp-docs doc-review doc-review-apply
@@ -66,6 +66,15 @@ help: ## [local] List tasks with their effect labels (filter: EFFECT=<word>, ARE
 
 check-python: ## [local] Fail early with a clear message if PY is older than pyproject requires
 	$(PY) scripts/check_python_version.py
+
+# The venv's packages against pyproject.toml: the core dependencies, the extras
+# config/project.json venv.extras names and each enabled transport's extra. It is
+# check-all's first prerequisite, and check-all is verify's first goal (and CI's
+# own step), so a venv older than pyproject.toml stops the gate with the pip
+# command that fixes it instead of an import error, or a skipped suite, several
+# goals in. [local]: it reads installed metadata and never the network.
+check-venv: check-python ## [local] Fail early, naming the pip command, when the venv lacks a requirement pyproject.toml declares for the gate
+	$(PY) scripts/check_venv.py
 
 # Which template revision `make new` generates from. Explicit ON PURPOSE: given no
 # --vcs-ref copier resolves `self.ref or get_latest_tag(...)`, i.e. the newest TAG —
@@ -129,7 +138,7 @@ canary: ## [read] Render each configured answer set fresh and as an update from 
 check: ## [local] Validate structure + frontmatter (3.6-safe)
 	$(PY) scripts/check_structure.py
 
-check-all: check check-corpus check-openapi check-aad check-cdmon check-exit-codes ## [local] All deterministic checks (project interpreter; see docs/guides/deterministic-checks.md)
+check-all: check-venv check check-corpus check-openapi check-aad check-cdmon check-exit-codes ## [local] All deterministic checks (project interpreter; see docs/guides/deterministic-checks.md)
 check-corpus: check-python ## [local] Corpus integrity + build determinism (needs the project interpreter)
 	$(PY) scripts/jobs/check_corpus.py
 check-openapi: ## [local] Committed openapi.json in sync with the app (skips if FastAPI absent)

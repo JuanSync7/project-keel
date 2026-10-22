@@ -332,6 +332,20 @@ def _log_options(value: Any) -> bool:
     return bool(value) and all(v and v.split() == [v] for v in value)
 
 
+def _extra_names(value: Any) -> bool:
+    # A pyproject extra is one word, and a gate that installs no extra judges
+    # only the core dependencies, which is a narrower gate than any project has.
+    return bool(value) and all(_is_nonempty_str(v) and v.split() == [v] for v in value)
+
+
+def _extra_map(value: Any) -> bool:
+    # transport -> the one pyproject extra that installs its packages.
+    return all(
+        _is_nonempty_str(k) and _is_nonempty_str(v) and v.split() == [v]
+        for k, v in value.items()
+    )
+
+
 def _basenames(value: Any) -> bool:
     return bool(value) and all(
         v.strip() == v and v and "/" not in v and "\\" not in v for v in value
@@ -823,6 +837,30 @@ KEYS = tuple(
                     "a non-empty list of image names, none blank and none a "
                     "moving `-latest` label",
                 ),
+            ),
+            _row(
+                ("transports", "enabled"),
+                "list_of_str",
+                NONE,
+                "the transports this project serves, each a key of "
+                "transports.available",
+            ),
+            _row(
+                ("transports", "extras"),
+                "object",
+                {},
+                "an enabled transport mapped to the pyproject.toml extra that "
+                "installs its packages; the gate judges that extra and its "
+                "tests fail rather than skip without it",
+                accepts=(_extra_map, "transport names mapped to one extra name each"),
+            ),
+            _row(
+                ("venv", "extras"),
+                "list_of_str",
+                ["dev"],
+                "the pyproject.toml extras the gate imports, judged installed "
+                "by scripts/check_venv.py before `make verify` runs a goal",
+                accepts=(_extra_names, "a non-empty list of one-word extra names"),
             ),
         ),
         key=lambda k: k.path,

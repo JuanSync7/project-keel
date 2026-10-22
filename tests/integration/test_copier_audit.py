@@ -863,6 +863,8 @@ def test_a_pre_c2_2_project_receives_the_new_child_env_keys_as_arrivals_and_owes
         "tests",
         "toolchain",
         "traceability",
+        "transports.extras",
+        "venv",
         "work_naming",
     }, arrived
     values = [f for f in arrived if f["key"] == "child_env.credentialed_values"]
@@ -1011,6 +1013,8 @@ def test_a_pre_c5_2_project_receives_the_run_date_and_host_list_as_arrivals(
         "secrets",
         "tests",
         "toolchain",
+        "transports.extras",
+        "venv",
     }, manifest
     names = [f for f in manifest if f["key"] == "child_env.names"]
     assert len(names) == 1 and variable in names[0]["message"], manifest
