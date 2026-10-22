@@ -84,6 +84,7 @@ _exclude:
   - "docs/design/keel-hardening-plan.md"
   - "docs/design/documentation-quality.md"
   - "docs/design/downstream-feedback.md"
+  - "docs/design/make-next-steps.md"
   - "wiki/corpus.json"
   - "wiki/llms.txt"
   - "wiki/llms-full.txt"

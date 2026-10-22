@@ -91,6 +91,7 @@ left out only when the answer matches it.
 | `docs/design/keel-hardening-plan.md` | never | the template's own plan |
 | `docs/design/documentation-quality.md` | never | the template's own design note |
 | `docs/design/downstream-feedback.md` | never | the template's own design note |
+| `docs/design/make-next-steps.md` | never | the template's own design note |
 | `wiki/corpus.json` | absent; `make site-data` builds it | a generated view of the tree |
 | `wiki/llms.txt` | absent; `make site-data` builds it with the showcase | a generated view of the corpus |
 | `wiki/llms-full.txt` | absent; `make site-data` builds it with the showcase | a generated view of the corpus |
