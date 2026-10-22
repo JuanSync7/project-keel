@@ -8,7 +8,7 @@ tags: [template, scaffold, project_keel]
 summary: A generic, polyglot-aware, agent-friendly project skeleton that stays honest.
 id: readme
 created: 2026-06-17
-updated: 2026-10-20
+updated: 2026-10-22
 visibility: internal
 canonical: true
 ---
@@ -95,15 +95,43 @@ tag**, so the command above gives you the latest named release. Pin a specific
 one with `--vcs-ref v0.3.0` when you need two projects generated from the same
 keel.
 
-In a checkout of keel, `make new DEST=../my-project` runs the same generation
-against the checkout; it needs the `template` extra
-(`pip install -e ".[dev,template]"`), and
-[generate-and-upgrade.md](docs/guides/generate-and-upgrade.md) says what it
-records and when it refuses.
+In a checkout of keel, install the `template` extra in place of the
+Quickstart's `.[dev]`, because `make new` and the template's own copier tests
+run copier from the venv:
 
-If your system `python3` predates the project floor, pass the
-interpreter explicitly — `make PY=.venv/bin/python verify` — which is what
-`check_python_version.py` is telling you when it refuses.
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -e ".[dev,template]"   # the gate's tools, plus copier
+make new DEST=../my-project                  # the same generation, against the checkout
+```
+
+[generate-and-upgrade.md](docs/guides/generate-and-upgrade.md) says what
+`make new` records and when it refuses.
+
+If your system `python3` predates `pyproject.toml` `requires-python`, build the
+venv from an interpreter that meets it — `python3.11 -m venv .venv` in place of
+the Quickstart's `python3 -m venv .venv` — which is what
+`check_python_version.py` is telling you when it refuses. `Makefile` `PY`
+picks `.venv/bin/python` up whenever it exists, so a venv built from the old
+`python3` is refused the same way; `make PY=<interpreter> verify` names any
+other interpreter.
+
+### On a new machine
+
+A clone or a copy of the checkout on another machine carries none of the
+per-machine state the Quickstart built, so redo these steps there before
+`make verify`:
+
+```bash
+python3 -m venv --clear .venv         # the interpreter at requires-python; a venv names it by absolute path
+.venv/bin/pip install -e ".[dev]"
+.venv/bin/pre-commit install          # the commit hook names the venv's interpreter too
+make fe-install                       # node_modules is git-ignored, so a clone has none
+make fe-browsers                      # the browser is in your user cache, which did not move
+make secrets-install                  # the scanner is in your user cache; its git-ignored record names it
+```
+
+In a checkout of keel, the install step takes `.[dev,template]`, as above.
 
 ## Top-level layout
 

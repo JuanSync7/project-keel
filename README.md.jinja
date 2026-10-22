@@ -8,7 +8,7 @@ tags: [template, scaffold, {{ project_slug }}]
 summary: A generic, polyglot-aware, agent-friendly project skeleton that stays honest.
 id: readme
 created: 2026-06-17
-updated: 2026-10-20
+updated: 2026-10-22
 visibility: internal
 canonical: true
 ---
@@ -97,9 +97,30 @@ tag**, so the command above gives you the latest named release. Pin a specific
 one with `--vcs-ref v0.3.0` when you need two projects generated from the same
 keel.
 
-If your system `python3` predates the project floor, pass the
-interpreter explicitly — `make PY=.venv/bin/python verify` — which is what
-`check_python_version.py` is telling you when it refuses.
+If your system `python3` predates `pyproject.toml` `requires-python`, build the
+venv from an interpreter that meets it — `python3.11 -m venv .venv` in place of
+the Quickstart's `python3 -m venv .venv` — which is what
+`check_python_version.py` is telling you when it refuses. `Makefile` `PY`
+picks `.venv/bin/python` up whenever it exists, so a venv built from the old
+`python3` is refused the same way; `make PY=<interpreter> verify` names any
+other interpreter.
+
+### On a new machine
+
+A clone or a copy of the checkout on another machine carries none of the
+per-machine state the Quickstart built, so redo these steps there before
+`make verify`:
+
+```bash
+python3 -m venv --clear .venv         # the interpreter at requires-python; a venv names it by absolute path
+.venv/bin/pip install -e ".[dev]"
+.venv/bin/pre-commit install          # the commit hook names the venv's interpreter too
+{%- if frontend_stack != "none" %}
+make fe-install                       # node_modules is git-ignored, so a clone has none
+make fe-browsers                      # the browser is in your user cache, which did not move
+{%- endif %}
+make secrets-install                  # the scanner is in your user cache; its git-ignored record names it
+```
 
 ## Top-level layout
 
