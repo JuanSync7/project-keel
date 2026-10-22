@@ -2264,6 +2264,7 @@ On 2026-10-22 the maintainer approved this order. Positions 1 to 9 come from the
 | 23 | KEEL-HDR-1 | The three accepted file-header fields are not read by any check, and a call into `re` needs no stated reason; moved from CMP-6.S5 | planned |
 | 24 | KEEL-LINK-1 | The untracked `project-keel` link in keel's checkout points into another project's tree, which the personal host does not have; it gets a target or is removed | planned |
 | 25 | KEEL-CODEDOC-1 | No per-function implementation documentation is generated from the code (a tree-sitter or code-wiki tool was raised), and no document says how keel's agents are evaluated | raised 2026-10-19, not scoped |
+| 26 | KEEL-GRPC-1 | The gRPC transport's packages sit in `api/grpc/requirements.txt` and no `pyproject.toml` extra, so `make check-venv` (KEEL-VENV-1) does not judge them and `transports.extras` has no gRPC entry; found while building KEEL-VENV-1, which kept to REST | planned |
 
 **KEEL-DOC-1, the defence table.** This holds the maintainer's document rule
 R-DOC-15: before a design is planned, it answers hard questions on behalf of
