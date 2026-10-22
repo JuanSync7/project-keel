@@ -27,8 +27,9 @@ import git_tree  # noqa: E402 — the one definition of what git tracks
 import run_make_target  # noqa: E402 — the read-only gate runner; tests patch it here
 from exit_codes import ExitCode, finish, report  # noqa: E402
 
-# gate_runner(gate, cwd, timeout) -> (ok, combined_output)
-GateRunner = Callable[[str, str, int], "tuple[bool, str]"]
+# gate_runner(gate, cwd, timeout) -> (ok, combined_output); a timeout of None
+# leaves the limit to config/project.json make_targets.gate_timeout_seconds.
+GateRunner = Callable[[str, str, "int | None"], "tuple[bool, str]"]
 
 
 class RefactorError(Exception):
@@ -325,7 +326,7 @@ def plan_edits(
     return [(p, originals[p], working[p]) for p in order]
 
 
-def _read_only_gate(gate: str, cwd: str, timeout: int) -> tuple[bool, str]:
+def _read_only_gate(gate: str, cwd: str, timeout: int | None) -> tuple[bool, str]:
     """The default gate: scripts/run_make_target.py, as (ok, output).
 
     A refusal (a target labelled wider than a gate may run, no git, no policy)
@@ -343,7 +344,7 @@ def apply_and_gate(
     spec: dict[str, object],
     root: str,
     gate: str = "verify",
-    timeout: int = 1800,
+    timeout: int | None = None,
     gate_runner: GateRunner | None = None,
     allow: Sequence[str] | None = None,
     policy: EditPolicy | None = None,
@@ -354,7 +355,9 @@ def apply_and_gate(
     spec naming one is refused, and an empty gate raises RefactorError.
     ``"none"`` skips the gate (apply only) and is for a human caller: the
     agents' baseline run_make_target refuses it. ``allow`` binds the run to
-    those files (see plan_edits). ``gate_runner`` is injected for testing. A gate that
+    those files (see plan_edits). ``timeout`` is the gate's limit in seconds; None
+    leaves it to config/project.json ``make_targets.gate_timeout_seconds``.
+    ``gate_runner`` is injected for testing. A gate that
     RAISES -- any exception: a timeout, a hang, a killed ``make`` subprocess, an
     allowlist that cannot be built -- is treated as red, so
     the rollback still fires -- a non-returning gate must never leave an ungated
@@ -432,7 +435,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="A file this run may edit, repeatable; an edit to any other file is "
         "refused before any write",
     )
-    ap.add_argument("--timeout", type=int, default=1800, help="gate timeout in seconds")
+    ap.add_argument(
+        "--timeout",
+        type=int,
+        help="gate timeout in seconds (default: config/project.json "
+        "make_targets.gate_timeout_seconds)",
+    )
     ap.add_argument(
         "--dry-run",
         action="store_true",

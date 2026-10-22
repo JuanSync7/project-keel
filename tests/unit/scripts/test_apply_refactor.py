@@ -102,13 +102,25 @@ def _fake_run_target(result):
     calls = []
 
     def run_target(
-        target, cwd=None, timeout=1800, extra=None, runner=None, snapshot=None
+        target, cwd=None, timeout=None, extra=None, runner=None, snapshot=None
     ):
         calls.append((target, cwd, timeout))
         return dict(result, target=target)
 
     run_target.calls = calls
     return run_target
+
+
+def test_no_timeout_leaves_the_limit_to_the_configured_one(tmp_path, monkeypatch):
+    """apply_and_gate passes None, so run_make_target reads
+    make_targets.gate_timeout_seconds rather than a number fixed here."""
+    _f, spec = _spec(tmp_path)
+    fake = _fake_run_target(
+        {"ok": True, "returncode": 0, "output": "", "changed": [], "refused": None}
+    )
+    monkeypatch.setattr(ar.run_make_target, "run_target", fake)
+    ar.apply_and_gate(spec, str(tmp_path), gate="check")
+    assert fake.calls == [("check", str(tmp_path), None)]
 
 
 def test_the_default_gate_goes_through_run_make_target(tmp_path, monkeypatch):
@@ -839,3 +851,21 @@ def test_the_cli_defaults_the_gate_to_verify_and_takes_none_only_as_a_flag(
     assert ar.main(argv) == 0
     assert ar.main(argv + ["--gate", "none"]) == 0
     assert seen == ["verify", "none"]
+
+
+def test_the_cli_timeout_is_unset_unless_given(tmp_path, monkeypatch):
+    """No --timeout reaches apply_and_gate as None (the configured limit); a
+    given one is passed through unchanged."""
+    seen = []
+
+    def fake(spec, root, gate="unset", timeout=0, allow=None, **kwargs):
+        seen.append(timeout)
+        return {"practice": "", "gate": gate, "applied": True, "files": []}
+
+    monkeypatch.setattr(ar, "apply_and_gate", fake)
+    spec_file = tmp_path / "spec.json"
+    spec_file.write_text(json.dumps(_edit("m.py")), encoding="utf-8")
+    argv = ["--spec", str(spec_file), "--root", str(tmp_path)]
+    assert ar.main(argv) == 0
+    assert ar.main(argv + ["--timeout", "42"]) == 0
+    assert seen == [None, 42]
