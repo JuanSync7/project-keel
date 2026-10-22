@@ -103,6 +103,8 @@
       "*.test.*": "a unit test make test-fe-unit runs (each app's src/**/*.test.ts and .test.tsx)",
       ".gitattributes": "the attributes git status reads (filters, line endings), so they decide what the tree-changed check sees",
       ".gitignore": "what git status leaves out in its directory, so what the tree-changed check and the gate evidence see",
+      ".gitleaks.toml": "the secret scanner's own config, which decides what the scan judges; scripts/scan_secrets.py refuses to scan beside one (secrets.scanner.refused_files)",
+      ".gitleaksignore": "the secret scanner's own ignore file, which decides what the scan judges; scripts/scan_secrets.py refuses to scan beside one (secrets.scanner.refused_files)",
       "AGENT.md": "agent rules in every directory; approved text",
       "CLAUDE.md": "the symlink to AGENT.md",
       "GNUmakefile": "make verify's own recipes; make reads all three names",

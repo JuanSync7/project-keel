@@ -28,9 +28,12 @@ from child_env import build_child_env  # noqa: E402
 pytestmark = pytest.mark.integration
 
 
+def _template_manifest():
+    return json.loads((_ROOT / "config" / "project.json").read_text("utf-8"))
+
+
 def _template_agents():
-    manifest = json.loads((_ROOT / "config" / "project.json").read_text("utf-8"))
-    return manifest["agents"]
+    return _template_manifest()["agents"]
 
 
 @pytest.fixture(autouse=True)
@@ -232,9 +235,25 @@ def test_every_seeded_protected_path_exists_in_the_template():
     # make reads GNUmakefile, makefile and Makefile, so one reason guards all
     # three; a name no tracked file carries passes only beside a sibling that
     # shares its reason and is tracked, so a lone typo still fails.
+    # The scanner's own config and ignore names are protected because no file
+    # may carry them: a scan refuses to run beside one, so none is tracked.
+    absent_by_design = set(_template_manifest()["secrets"]["scanner"]["refused_files"])
     untracked = [n for n in sorted(names) if n not in present]
-    orphans = [n for n in untracked if names[n] not in present_reasons]
+    orphans = [
+        n
+        for n in untracked
+        if names[n] not in present_reasons and n not in absent_by_design
+    ]
     assert orphans == [], orphans
+
+
+def test_an_agent_edit_cannot_reach_the_secret_scanners_own_files():
+    """Each name the scan refuses to run beside is a protected name, so an agent
+    cannot add the config or ignore file that would decide what the scan judges."""
+    refused = _template_manifest()["secrets"]["scanner"]["refused_files"]
+    assert refused, "secrets.scanner.refused_files is empty -- zero items"
+    names = _template_agents()["protected_names"]
+    assert [n for n in refused if n not in names] == []
 
 
 _GATE_POLICY = {

@@ -312,7 +312,9 @@ version rather than a bare commit:
   needs no Go toolchain, and every scan, the hook's included, runs the
   recorded program and never one on PATH. `secrets.scanner.hook_repo` and
   `scripts/scan_secrets.py --locate` are gone. A host that cannot reach the
-  vendor repoints `secrets.scanner.release_url` at a mirror. Upgrading: run
+  vendor repoints `secrets.scanner.release_url` at a mirror. The scanner's
+  own config and ignore file, `.gitleaks.toml` and `.gitleaksignore`, join
+  `agents.protected_names`, so an agent edit cannot add one. Upgrading: run
   `make secrets-install` once after `copier update`, before the next commit.
 - **check_S reads which READMEs are rosters from config/project.json.** The
   new `rosters.readmes` list, not a README's `## What ships here` heading,

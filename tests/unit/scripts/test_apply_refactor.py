@@ -2,7 +2,7 @@
 title: Unit — apply_refactor (edit application and its default gate)
 kind: tests
 layer: n/a
-summary: apply_one applies a search/replace only when the target text occurs EXACTLY once, so a refactor edit is unambiguous — zero or multiple matches raise before anything is written. plan_edits refuses, before any write and so in a dry run too, an edit to a path the root's config/project.json `agents` block protects (a protected path covers everything under it, a protected name or glob covers each file name it matches anywhere, an editable name carves a README.md back out), judged on the path as written and on its realpath, case-folded, so a symlink, a directory link, a case variant, a new file and a full `content` replacement are refused alike; git's own state, a nested .gitignore, .gitattributes, the frontend tests and configs the default stack ships, a root conftest.py, the .jinja twins of .gitignore and .copier-answers.yml and make check-openapi's checker are each refused; every template twin of a protected file is itself protected, derived from git's own list, with a fault-injection twin; a file git does not track (.venv, node_modules, an untracked source file, git's state even with its entry removed) and a root outside a git work tree are refused before any write; `src/m.py` and `./src/m.py` compose as one file; an absolute path, a `..` part and a hard-linked file are refused outright; removing an entry from the config lets that edit apply, so the config and not a literal drives the refusal; and an unusable policy (no file, no block, an empty map, a blank reason, a `..` key, a map that leaves config/project.json uncovered) is a config fault the CLI returns as ExitCode.CONFIG. The default gate is scripts/run_make_target.py, so a refused gate (a target labelled wider than a gate may run) and a gate that changed the tree are both red and roll the edit back, and so is a gate that raises any exception. The gate is the caller's: a spec that names a gate, or holds any key outside its closed vocabulary, is refused before any write, an empty gate is refused rather than defaulted, and the CLI's --gate defaults to verify; repeated --allow binds a run to those files, so an edit to any other is refused and an empty binding refuses every edit.
+summary: apply_one applies a search/replace only when the target text occurs EXACTLY once, so a refactor edit is unambiguous — zero or multiple matches raise before anything is written. plan_edits refuses, before any write and so in a dry run too, an edit to a path the root's config/project.json `agents` block protects (a protected path covers everything under it, a protected name or glob covers each file name it matches anywhere, an editable name carves a README.md back out), judged on the path as written and on its realpath, case-folded, so a symlink, a directory link, a case variant, a new file and a full `content` replacement are refused alike; git's own state, a nested .gitignore, .gitattributes, the secret scanner's own ignore file and config, the frontend tests and configs the default stack ships, a root conftest.py, the .jinja twins of .gitignore and .copier-answers.yml and make check-openapi's checker are each refused; every template twin of a protected file is itself protected, derived from git's own list, with a fault-injection twin; a file git does not track (.venv, node_modules, an untracked source file, git's state even with its entry removed) and a root outside a git work tree are refused before any write; `src/m.py` and `./src/m.py` compose as one file; an absolute path, a `..` part and a hard-linked file are refused outright; removing an entry from the config lets that edit apply, so the config and not a literal drives the refusal; and an unusable policy (no file, no block, an empty map, a blank reason, a `..` key, a map that leaves config/project.json uncovered) is a config fault the CLI returns as ExitCode.CONFIG. The default gate is scripts/run_make_target.py, so a refused gate (a target labelled wider than a gate may run) and a gate that changed the tree are both red and roll the edit back, and so is a gate that raises any exception. The gate is the caller's: a spec that names a gate, or holds any key outside its closed vocabulary, is refused before any write, an empty gate is refused rather than defaulted, and the CLI's --gate defaults to verify; repeated --allow binds a run to those files, so an edit to any other is refused and an empty binding refuses every edit.
 """
 
 import json
@@ -354,6 +354,16 @@ def _case_gitattributes(root):
     return _edit(".gitattributes"), "agents.protected_names..gitattributes"
 
 
+def _case_scanner_ignore(root):
+    _plant(root, ".gitleaksignore")
+    return _edit(".gitleaksignore"), "agents.protected_names..gitleaksignore"
+
+
+def _case_scanner_config(root):
+    _plant(root, "src/.gitleaks.toml")
+    return _edit("src/.gitleaks.toml"), "agents.protected_names..gitleaks.toml"
+
+
 def _case_unit_test(root):
     _plant(root, "src/frontend/app/src/App.test.tsx")
     return (
@@ -434,6 +444,8 @@ _PROTECTED_CASES = {
     "git-hook": _case_git_hook,
     "nested-gitignore": _case_gitignore,
     "gitattributes": _case_gitattributes,
+    "secret-scanner-ignore-file": _case_scanner_ignore,
+    "secret-scanner-config-in-a-subdirectory": _case_scanner_config,
     "frontend-unit-test": _case_unit_test,
     "frontend-e2e-spec": _case_e2e_spec,
     "tsconfig-app": _case_tsconfig_app,
