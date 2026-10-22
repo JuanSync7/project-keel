@@ -2222,6 +2222,160 @@ Left by CMP-6.S6 so far:
   editable, and a run binds one file, so `doc_reviewer` cannot fix a twinned
   roster row in both: the edit to the twin is refused.
 
+### Slice CMP-6.S4 — a project's own code warns until a hard date, from a record that only shrinks
+
+**The gap.** A keel gate check judges every file under its roots. In a
+generated project, a finding in a file the project wrote is red on the first
+`make test` after `copier update` (`tests/integration/test_exit_gate.py`). The
+other case is a finding that is never judged at all: the two finding tests of
+`tests/integration/test_config_reads_gate.py` skip and only name what they saw.
+Neither is the ruled tier. The maintainer's rulings (B1 and R-AGT-32 above, and
+the two of 2026-10-22 below) fix its shape.
+
+**What is judged.** A gate test that adopts the tier hands it every finding
+line it computed, in the house grammar `<file>:<line>: <rule> — <fix>`, under a
+check id. The tier gives back two lists: the lines that are red and the lines
+that warn. The test asserts the red list is empty and raises one warning
+carrying the warned list. Four tests adopt it in this slice:
+
+| Check id | Test |
+|----------|------|
+| `config-reads-file` | `tests/integration/test_config_reads_gate.py::test_no_code_root_reads_a_config_file_outside_the_loader` |
+| `config-reads-variable` | `tests/integration/test_config_reads_gate.py::test_no_code_root_reads_a_declared_variable_outside_the_loader` |
+| `exit-helper` | `tests/integration/test_exit_gate.py::test_no_process_in_the_tree_ends_outside_the_helper` |
+| `exit-shared-module` | `tests/integration/test_exit_gate.py::test_a_shared_module_never_ends_the_process` |
+
+The registry is `CHECKS` in `scripts/expiring_tier_data.py`. A line outside the
+grammar has no file, so no project wrote it. A stale
+`import_layers.may_end_the_process` entry is one such line, and it is always
+red. A finding's identity is its line with the line number dropped,
+`<file>: <rule> — <fix>`, so an edit above a recorded finding does not turn it
+into a new one. Identities are counted, so two equal findings in one file need
+two entries.
+
+**How keel's files are told from the project's.** This follows the B1 ruling:
+by where the gate runs. When `copier.yml` exists at the root, the gate is in the
+template repository. There every finding is red, nothing warns, and a baseline
+file there is itself red, so keel gets no grace. Anywhere else is a generated
+project. A fresh project is green under every answer set
+(`tests/integration/test_copier_generation.py`), so a finding there is in a
+file the project wrote or edited. The maintainer accepted that this also warns
+on a keel file the project edited.
+
+**New versus existing (ruling 9 below).** A generated project carries a
+per-check baseline file. Its path is config/project.json
+`expiring_tier.baseline`, and keel ships `config/gate-baseline.json` there. One
+make target writes the file after `copier update`: `make gate-baseline`
+(`scripts/record_gate_baseline.py`). The writer runs each registered test under
+pytest's `--expiring-tier-record PATH` option. `tests/conftest.py` turns the
+tier's recorder on for that run and, at the end of the session, writes what each
+check saw to PATH. The tier judges the same way in that run, so the record is
+exactly the findings the gate sees. The writer then derives the whole file:
+
+- A check the run did not record is refused with `NOTHING_JUDGED` (13), and
+  nothing is written.
+- The file may grow only when `.copier-answers.yml` `_commit` differs from the
+  `commit` stamped in the file, or when no file exists. In that case it takes
+  every finding the run recorded and stamps the new `_commit`.
+- At the same `_commit`, the file may only shrink. An entry no longer seen is
+  dropped. A finding not already recorded is refused with `FAILURE` (1), naming
+  each such line, and nothing is written. That finding is the project's own new
+  code, and the rule says it is red at once.
+- The output is canonical JSON with sorted keys and sorted lists, and no clock
+  value. A second run on the same tree writes the same bytes (`rerun:
+  fixed-point`).
+
+The gate judges against the file:
+
+- A recorded finding warns.
+- A finding with no entry left for it is red. The message names `make
+  gate-baseline` and says it records only after a `copier update`.
+- An entry no finding matches is red and names the file to delete it from, so
+  the record only shrinks.
+- A check id that `CHECKS` does not register is red.
+- A project with no baseline file has every finding red, and the message names
+  the target to run. So `copier update` stays red until `make gate-baseline`
+  has run once.
+
+A hand edit of the baseline file is not prevented. Review holds it, as review
+holds `config_reads.allowed`.
+
+**The date (ruling 10 below).** config/project.json `expiring_tier.expires` is
+the project's date, written `YYYY-MM-DD`. keel ships `2027-01-31`, the ceiling.
+The ceiling is `CEILING` in `scripts/expiring_tier_data.py`. This is a
+CONVENTIONS §18 data registry, so the date is data and not a literal in logic.
+It is a Python module rather than a JSON file because the tier imports it with
+no new config reader. It is also a keel file that copier rewrites on every
+update, so a project's edit to it shows as a diff, or a conflict, on the next
+update. A configured date later than the ceiling, or one that is not a calendar
+date, is red in every gate that adopts the tier, and in
+`tests/integration/test_expiring_tier.py`. An earlier date is the project's own
+choice. Nothing inside a repository stops a determined edit of keel's file. The
+tier reads today through `scripts/run_date.py` (ADR-K-0019), so one gate run
+has one date. From the expiry date on, every finding of an adopting check is
+red, recorded or not, and the line says the grace ended on that date and names
+the key.
+
+**What a warning looks like.** Each adopting test raises one `ExpiringTierWarning`
+(a `UserWarning`) per check with at least one warned line. pytest prints it in
+its `warnings summary` at the end of `make test`. It reads:
+
+`config-reads-file: 2 finding(s) in this project's own code are recorded in
+config/gate-baseline.json and warn until 2027-01-31 (config/project.json
+expiring_tier.expires); from that date they are red. Fix each, then run make
+gate-baseline to drop it: <line>; <line>`
+
+**What the tests prove.**
+
+- `tests/unit/scripts/test_expiring_tier.py` covers the tier itself. A finding
+  is red in the template. A recorded finding warns the day before the expiry
+  and is red on the date. An unrecorded finding is red, and so is a second copy
+  over the recorded count. A stale entry is red, an unregistered check is red,
+  and a line outside the grammar is red. A missing baseline makes every finding
+  red, naming the target. A date later than the ceiling is refused, and the
+  ceiling itself is accepted.
+- `tests/unit/scripts/test_record_gate_baseline.py` covers the writer's
+  derivation: first record, growth across a `_commit`, shrink-only at one
+  `_commit`, refusal of growth, an unrecorded check, the answers file read, the
+  template refusal, and byte-identical output on a second run.
+- `tests/integration/test_expiring_tier.py` checks the live tree. The
+  configured date is no later than the ceiling. Each `CHECKS` entry names a test
+  function that exists. The record target is in the Makefile. The template
+  holds no baseline file.
+- The generated-project test in `tests/integration/test_copier_generation.py`
+  drives it end to end. A planted direct read is red, `make gate-baseline`
+  records it, the gate is green with the warning, and an expiry moved to today
+  turns it red. Each new comparison is broken by hand to show a test goes red,
+  and the mutations are listed with the commit.
+
+**Where it is decided.**
+ADR-K-0027,
+`docs/adr/keel/K-0027-a-project-s-own-code-warns-until-a-hard-date.md`, is
+proposed. It is a new decision rather than an edit, because K-0016 to K-0022
+are accepted and the proposed K-0023 to K-0026 decide other things.
+
+**The make target's label.** The 2026-10-22 ruling asked for a `[write]`
+target. ADR-K-0011 calls a rewrite of tracked files `[tree]`, and check_W fails
+a non-`[write]` recipe that calls `$(WRITE_GUARD)`. The target is
+`[tree,write]`. The words are true together: it rewrites a tracked file, and it
+opens with the guard, so CI, a Ralph loop and the gate runner never record a
+baseline unattended. An agent that could record its own findings would undo the
+rule.
+
+**Not built:**
+
+- No other gate adopts the tier in this slice. The swallowed-error, change-comment,
+  import-layer and committed-secret gates still fail a project's own code at
+  once. Adopting the tier is one `CHECKS` row and one call each. The KEEL-LINT-1,
+  KEEL-TESTQ-1 and KEEL-DOC-1 checks take it as they land.
+- ruff, mypy and check_structure findings are not under the tier. They are not
+  gate tests and do not print the house grammar.
+- Nothing stops a hand edit of the baseline file or of `scripts/expiring_tier_data.py`.
+- The writer judges no stamp freshness. A project that runs `make gate-baseline`
+  before its first `copier update` records its findings at its first `_commit`.
+- No fetch of the template and no manifest of keel's files is built. Both were
+  rejected in the B1 ruling.
+
 ## CMP-7 — a document answers for the features it serves
 
 The maintainer approved this campaign on 2026-10-22. It is KEEL-DOC-1, the first campaign-sized item in the queue. The cap is five slices, the read-only opening pass included, and each slice is one commit on a green `make verify`. CMP-7.S1 is the defence table, because every later documentation check reads it. The opening pass checks the candidate slices below against the tree and writes the next rows into this table; until then they are candidates. The stop point is the fifth slice or the table's last row green, whichever comes first. It starts after queue positions 1 to 9.
@@ -2643,6 +2797,23 @@ version 0.11.1.
 
 Pushing commits stayed outside that delegation; the maintainer approved it
 separately.
+
+On 2026-10-22 the maintainer ruled on the two questions CMP-6.S4's design
+raised:
+
+9. **New versus existing is a per-check baseline in the generated project.**
+   One `[write]` make target, run after `copier update`, records it. A recorded
+   finding warns until the date, an unrecorded one is red at once, and an entry
+   no longer seen is red, so the file only shrinks. It may grow only when
+   `.copier-answers.yml` `_commit` differs from the commit stamped in it.
+   `copier update` stays red until the target runs once, and the failure names
+   the target. A hand edit of the baseline is not prevented; review holds it.
+10. **The date's ceiling ships in a keel-owned file that copier rewrites on
+    every update**, as data, not a code literal. The project's config key may
+    set an earlier date and never a later one: a later date is red. An edit to
+    keel's file shows as a diff or a conflict on the next update; nothing
+    inside a repository stops a determined edit. The ceiling is 2027-01-31. In
+    the template repository every finding stays red, with no tier.
 
 ## Open items
 
