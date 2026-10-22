@@ -29,7 +29,8 @@ pytestmark = pytest.mark.integration
 
 _CONFIG = load_config(_ROOT)
 # What the CLI imports when it runs in a project: the harness, the doers and
-# backends it drives, the CLI and the stdlib siblings git_tree needs.
+# backends it drives, the CLI and the stdlib siblings git_tree needs, and
+# resource_limits.py, which models starts its CLI child through.
 _TREES = ("evals", "models", "agents", "runtimes", "config")
 _SCRIPTS = (
     "run_evals.py",
@@ -37,6 +38,7 @@ _SCRIPTS = (
     "child_env.py",
     "config_loader.py",
     "exit_codes.py",
+    "resource_limits.py",
 )
 _IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc")
 
