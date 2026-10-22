@@ -1311,6 +1311,57 @@ def test_every_required_surface_is_installed_by_a_ci_step():
         )
 
 
+_NO_SUCH_PACKAGE = "keel_no_such_transport_package"
+
+
+def _transports(enabled, extras):
+    return {"transports": {"enabled": list(enabled), "extras": dict(extras)}}
+
+
+def test_an_enabled_transports_surface_is_required_without_ci_declaring_it(
+    monkeypatch,
+):
+    """A local `make verify` sets no KEEL_REQUIRED_EXTRAS, so the REST suites
+    skipped there whenever FastAPI was missing, while config/project.json said
+    the project serves REST. The enabled transport is the declaration: its
+    extra's surface fails on a missing import, and a disabled one still skips."""
+    monkeypatch.delenv(optional_deps.ENV_VAR, raising=False)
+    served = _transports(["rest", "mcp"], {"rest": "transport"})
+    unserved = _transports(["mcp"], {"rest": "transport"})
+    assert optional_deps.required_extras(served) == {"transport"}
+    assert optional_deps.required_extras(unserved) == set()
+    with pytest.raises(ModuleNotFoundError):
+        optional_deps.importorskip(_NO_SUCH_PACKAGE, extra="transport", loaded=served)
+    with pytest.raises(pytest.skip.Exception):
+        optional_deps.importorskip(_NO_SUCH_PACKAGE, extra="transport", loaded=unserved)
+    with pytest.raises(pytest.fail.Exception):
+        optional_deps.require_or_skip(False, "transport", "no server", loaded=served)
+    with pytest.raises(pytest.skip.Exception):
+        optional_deps.require_or_skip(False, "transport", "no server", loaded=unserved)
+
+
+def test_a_transport_extra_outside_the_surface_vocabulary_is_an_error(monkeypatch):
+    """A typo in transports.extras would quietly make the transport's tests
+    skippable again, so it is refused the way a typo in CI's list is."""
+    monkeypatch.delenv(optional_deps.ENV_VAR, raising=False)
+    with pytest.raises(RuntimeError, match="tranport"):
+        optional_deps.required_extras(_transports(["rest"], {"rest": "tranport"}))
+
+
+def test_this_checkouts_enabled_transports_make_their_surfaces_required(
+    monkeypatch,
+):
+    """Read off the real config/project.json: every enabled transport with an
+    extra makes that surface required, and keel's REST transport has one, so
+    the rule is not satisfied by an empty map."""
+    monkeypatch.delenv(optional_deps.ENV_VAR, raising=False)
+    manifest = json.loads((_ROOT / "config" / "project.json").read_text("utf-8"))
+    extras = manifest["transports"].get("extras", {})
+    owed = {extras[t] for t in manifest["transports"]["enabled"] if t in extras}
+    assert owed, "no enabled transport names an extra in transports.extras"
+    assert owed <= optional_deps.required_extras()
+
+
 # ---- scope: the toolchain itself ---------------------------------------------
 # A linter is not a dependency like any other: its output IS the gate's verdict.
 # Measured the hard way — `dev = [..., "ruff", "mypy", ...]` let CI resolve ruff
