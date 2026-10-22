@@ -1621,7 +1621,7 @@ _ISOLATION_TESTS = (
 def test_a_generated_project_ships_the_isolation_guard(tmp_path):
     """A project generated with default answers carries the isolation guard,
     its fixture cases, the `tests` block as the template states it with the
-    scratch root named after the project, and its own copies of the guard's
+    scratch roots named after the project, and its own copies of the guard's
     unit tests and gate tests pass with nothing skipped."""
     dest = tmp_path / "proj"
     _generate(dest, project_name="demo_proj")
@@ -1629,12 +1629,14 @@ def test_a_generated_project_ships_the_isolation_guard(tmp_path):
         assert (dest / path).is_file(), path
     manifest = json.loads((dest / "config" / "project.json").read_text("utf-8"))
     template = json.loads((_ROOT / "config" / "project.json").read_text("utf-8"))
-    # The scratch root is the one value that follows the project's own name.
+    # The two scratch roots are the values that follow the project's own name,
+    # so two projects on one host never share test scratch.
     own = dict(manifest["tests"])
     theirs = dict(template["tests"])
-    assert own.pop("scratch_root") == theirs.pop("scratch_root").replace(
-        template["name"], manifest["name"]
-    ), manifest["tests"]
+    for key in ("scratch_root", "memory_scratch_root"):
+        assert own.pop(key) == theirs.pop(key).replace(
+            template["name"], manifest["name"]
+        ), manifest["tests"]
     assert own == theirs, manifest.get("tests")
     ran = _project_tests(dest, _ISOLATION_TESTS)
     assert ran.returncode == 0, ran.stdout[-8000:] + ran.stderr[-2000:]
