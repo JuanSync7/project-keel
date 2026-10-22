@@ -2,7 +2,7 @@
 title: Unit — a project's own finding warns until a hard date, from a record that only shrinks
 kind: tests
 layer: n/a
-summary: scripts/expiring_tier.py pinned on fixture projects under tmp_path, with the day handed in, so no case depends on the day it runs. In the template repository (copier.yml present) every finding is red and nothing warns. In a generated project a finding the baseline records warns the day before config/project.json `expiring_tier.expires` and is red on that day; a finding with no entry left for it is red and names `make gate-baseline`, a second copy over the recorded count included; an entry no finding matches is red; a line outside the `<file>:<line>: ` grammar is red; with no baseline file every finding is red and names the target. A date later than scripts/expiring_tier_data.py `CEILING`, or not a calendar date, is refused; the ceiling itself and an earlier date are accepted. The recorder keeps what each check was handed. A baseline naming a check `CHECKS` does not register is red.
+summary: scripts/expiring_tier.py pinned on fixture projects under tmp_path, with the day handed in, so no case depends on the day it runs. In the template repository (copier.yml present) every finding is red and nothing warns, and a date past the ceiling or a missing manifest is refused there too. In a generated project a finding the baseline records warns the day before config/project.json `expiring_tier.expires` and is red on that day; a finding with no entry left for it is red and names `make gate-baseline`, a second copy over the recorded count included; an entry no finding matches is red; a line outside the `<file>:<line>: ` grammar is red; with no baseline file every finding is red and names the target. A date later than scripts/expiring_tier_data.py `CEILING`, or not a calendar date, is refused; the ceiling itself and an earlier date are accepted. The recorder keeps what each check was handed as a multiset: two identical lines are two entries, and a check judged twice over the same lines is not counted twice. A baseline naming a check `CHECKS` does not register is red.
 @covers scripts/expiring_tier.py
 """
 
@@ -168,11 +168,18 @@ def test_a_date_that_is_not_a_calendar_date_is_refused_by_key(tmp_path, value):
         tier.load_policy(str(root))
 
 
-def test_a_template_needs_no_tier_config(tmp_path):
-    root = tmp_path / "bare"
-    root.mkdir()
-    (root / tier.TEMPLATE_MARK).write_text("_subdirectory: .\n", encoding="utf-8")
-    assert tier.judge(_CHECK, [_A], str(root)).red == [_A]
+def test_a_template_with_a_bad_tier_config_is_refused_too(tmp_path):
+    """The policy is checked before the template's early return, so a date
+    past the ceiling fails closed in every gate that adopts the tier."""
+    later = (_CEILING + _DAY).isoformat()
+    root = _project(tmp_path, expires=later, template=True)
+    with pytest.raises(tier.TierError, match="ceiling"):
+        tier.judge(_CHECK, [_A], str(root))
+    bare = tmp_path / "bare"
+    bare.mkdir()
+    (bare / tier.TEMPLATE_MARK).write_text("_subdirectory: .\n", encoding="utf-8")
+    with pytest.raises(tier.TierError, match="config/project.json"):
+        tier.judge(_CHECK, [_A], str(bare))
 
 
 def test_an_unregistered_check_is_refused(tmp_path):
@@ -228,6 +235,20 @@ def test_the_recorder_keeps_what_each_check_was_handed(tmp_path):
     finally:
         tier.stop_recording()
     assert tier.recorded() is None
+
+
+def test_the_recorder_keeps_every_copy_of_an_identical_finding(tmp_path):
+    """Two byte-identical findings are two entries, and a check judged twice
+    over the same lines is not counted twice."""
+    root = _project(tmp_path)
+    tier.start_recording()
+    try:
+        tier.judge(_CHECK, [_A, _A, _B], str(root), today=_CEILING - _DAY)
+        tier.judge(_CHECK, [_A, _A, _B], str(root), today=_CEILING - _DAY)
+        tier.judge(_CHECK, [_A], str(root), today=_CEILING - _DAY)
+        assert tier.recorded() == {_CHECK: sorted([_A, _A, _B])}
+    finally:
+        tier.stop_recording()
 
 
 def test_the_run_date_is_today_when_none_is_handed_in(tmp_path, monkeypatch):

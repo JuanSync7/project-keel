@@ -2,7 +2,7 @@
 title: git_tree — what git lists, and a digest of it
 kind: script
 layer: n/a
-summary: The one definition of "what git lists" in a work tree. tree_snapshot maps every path `git status` reports (modified, staged, deleted, untracked; never an ignored one) to its two-letter porcelain status joined to a digest of its content, and snapshot_digest reduces a snapshot to one `sha256:` value over its canonical JSON. candidate_files lists what a commit could carry (every tracked or staged path and every untracked path git does not ignore, sorted), the one definition of that set, and staged_blob gives the bytes the index holds for one path, or None for no entry, a submodule or a symlink, whose blob is its target's path and not file content. staged_paths lists what the index stages for the next commit, deletions left out as pre-commit leaves them out, and with repo_context=True reads the index a hook's GIT_INDEX_FILE names. is_ignored answers whether git would list a path that may not exist yet, tracked answers which of the given paths git tracks, and head_commit names HEAD's sha or None when there is no commit. log_commits lists the commits `git log` walks for a list of options, so a scan of that range can tell it walked none. A git command that does not answer has three causes, and only two of them mean "no git": NoGitError is raised when git is not installed (the spawn finds no program) or when no repository exists at or above the directory, and GitFailedError, which is not a NoGitError, when git ran and failed for any other reason or could not be started, carrying git's exit status and its stderr cut to STDERR_MAX characters. git exits 128 for "not a git repository" and for a repository it cannot read alike, so the two are told apart on disk, never by the text of stderr: inside_a_repository walks up from the directory for a `.git` entry and stops where git's own discovery stops (a directory GIT_CEILING_DIRECTORIES names, and a filesystem boundary). A caller that treats NoGitError as "nothing is tracked here" must let GitFailedError stop it: an unreadable repository is unknown, not absent. through_symlink names the project-relative paths that reach their file through a symlink, which needs no git and is what a writer asks before it writes or deletes at a path read from config. git runs with the allowlisted environment from scripts/child_env.py, git's repository context left out except where staged_paths is asked for it, and with the developer's global excludes file switched off. Stdlib and 3.6-safe, so scripts/gate_evidence.py can import it under the old interpreter. It decides nothing about what runs or passes (scripts/run_make_target.py and scripts/gate_evidence.py do), and it writes nothing.
+summary: The one definition of "what git lists" in a work tree. tree_snapshot maps every path `git status` reports (modified, staged, deleted, untracked; never an ignored one) to its two-letter porcelain status joined to a digest of its content, and snapshot_digest reduces a snapshot to one `sha256:` value over its canonical JSON. candidate_files lists what a commit could carry (every tracked or staged path and every untracked path git does not ignore, sorted), the one definition of that set, and staged_blob gives the bytes the index holds for one path, or None for no entry, a submodule or a symlink, whose blob is its target's path and not file content. staged_paths lists what the index stages for the next commit, deletions left out as pre-commit leaves them out, and with repo_context=True reads the index a hook's GIT_INDEX_FILE names. is_ignored answers whether git would list a path that may not exist yet, tracked answers which of the given paths git tracks, and head_commit names HEAD's sha or None when there is no commit. in_head says whether HEAD's commit holds a path, so a file deleted from the work tree or the index still counts as committed. log_commits lists the commits `git log` walks for a list of options, so a scan of that range can tell it walked none. A git command that does not answer has three causes, and only two of them mean "no git": NoGitError is raised when git is not installed (the spawn finds no program) or when no repository exists at or above the directory, and GitFailedError, which is not a NoGitError, when git ran and failed for any other reason or could not be started, carrying git's exit status and its stderr cut to STDERR_MAX characters. git exits 128 for "not a git repository" and for a repository it cannot read alike, so the two are told apart on disk, never by the text of stderr: inside_a_repository walks up from the directory for a `.git` entry and stops where git's own discovery stops (a directory GIT_CEILING_DIRECTORIES names, and a filesystem boundary). A caller that treats NoGitError as "nothing is tracked here" must let GitFailedError stop it: an unreadable repository is unknown, not absent. through_symlink names the project-relative paths that reach their file through a symlink, which needs no git and is what a writer asks before it writes or deletes at a path read from config. git runs with the allowlisted environment from scripts/child_env.py, git's repository context left out except where staged_paths is asked for it, and with the developer's global excludes file switched off. Stdlib and 3.6-safe, so scripts/gate_evidence.py can import it under the old interpreter. It decides nothing about what runs or passes (scripts/run_make_target.py and scripts/gate_evidence.py do), and it writes nothing.
 """
 
 # NB: stdlib only, no `from __future__ import annotations`, no f-strings, no walrus,
@@ -27,6 +27,7 @@ __all__ = [
     "NoGitError",
     "candidate_files",
     "head_commit",
+    "in_head",
     "inside_a_repository",
     "is_ignored",
     "log_commits",
@@ -316,6 +317,23 @@ def head_commit(root):
             return None
         raise failure
     return proc.stdout.decode("ascii", "replace").strip() or None
+
+
+def in_head(root, rel):
+    """True when the commit HEAD names holds the *root*-relative path *rel*,
+    matched literally; False when it does not, or when there is no commit yet.
+    A path deleted from the work tree or the index is still in HEAD. Raises
+    NoGitError when there is no git or no repository, and GitFailedError when
+    git ran and failed for another reason."""
+    # tracked() raises NoGitError where head_commit() would read "no git" as
+    # "no commit", and a caller must not take that for "not in HEAD".
+    tracked(root, [rel])
+    if head_commit(root) is None:
+        return False
+    raw = _git(
+        root, "--literal-pathspecs", "ls-tree", "--name-only", "-z", "HEAD", "--", rel
+    )
+    return rel in raw.decode("utf-8", "surrogateescape").split("\0")
 
 
 # The lengths of a full object name, sha1 and sha256, in lowercase hex.

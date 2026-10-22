@@ -2,7 +2,7 @@
 title: record_gate_baseline — write a generated project's gate baseline from what the checks see
 kind: script
 layer: n/a
-summary: `make gate-baseline`, run in a generated project once after `copier update`. It runs the gate test of every check scripts/expiring_tier_data.py `CHECKS` registers under pytest, as a child process with an allowlisted environment (scripts/child_env.py `build_child_env`) killed after config/project.json `tests.child_timeout_seconds`, with tests/conftest.py's `--expiring-tier-record` option, so each check's findings come from the gate itself and never from a second reading of the tree. Each finding becomes its identity (scripts/expiring_tier.py `identity`), and the file config/project.json `expiring_tier.baseline` names is rewritten as `{"checks": {<check id>: [<identity>, ...]}, "commit": <_commit>}`, every registered check present and a retired one dropped. When the file already records the commit .copier-answers.yml `_commit` names, the new record may only shrink: an entry over the old count is refused by name and nothing is written, because the file grows only when an update brought new keel code. Exit 0 when it wrote the file or found it current; 1 (FAILURE) for refused growth; 2 (USAGE) in the template repository, which holds copier.yml and has no tier, or when .copier-answers.yml has no single `_commit`; 13 (NOTHING_JUDGED) when the run wrote no record or left out a registered check, so a gate test that stopped before it judged never records an empty baseline; 14 (CONFIG) for an `expiring_tier` block or a baseline scripts/expiring_tier.py refuses; any other pytest status is handed through. It does not stop a hand edit of the file, which review holds (docs/adr/keel/K-0027-a-project-s-own-code-warns-until-a-hard-date.md).
+summary: `make gate-baseline`, run in a generated project once after `copier update`. It runs the gate test of every check scripts/expiring_tier_data.py `CHECKS` registers under pytest, as a child process with an allowlisted environment (scripts/child_env.py `build_child_env`) killed after config/project.json `tests.child_timeout_seconds`, with tests/conftest.py's `--expiring-tier-record` option, so each check's findings come from the gate itself and never from a second reading of the tree. Each finding becomes its identity (scripts/expiring_tier.py `identity`), and the file config/project.json `expiring_tier.baseline` names is rewritten as `{"checks": {<check id>: [<identity>, ...]}, "commit": <_commit>}`, every registered check present and a retired one dropped. When the file already records the commit .copier-answers.yml `_commit` names, the new record may only shrink: an entry over the old count is refused by name and nothing is written, because the file grows only when an update brought new keel code. With no baseline file it first asks git (scripts/git_tree.py `tracked` and `in_head`): a baseline the index or HEAD still holds was deleted, and rewriting it would lift the only-shrinks rule, so the writer refuses and says to restore it with `git checkout -- <file>`; with no git to ask it refuses too, failing closed, because it cannot tell a first baseline from a deleted one. Exit 0 when it wrote the file or found it current; 1 (FAILURE) for refused growth or a deleted committed baseline; 2 (USAGE) in the template repository, which holds copier.yml and has no tier, when .copier-answers.yml has no single `_commit`, or when git cannot answer for a first write; 13 (NOTHING_JUDGED) when the run wrote no record or left out a registered check, so a gate test that stopped before it judged never records an empty baseline; 14 (CONFIG) for an `expiring_tier` block or a baseline scripts/expiring_tier.py refuses; any other pytest status is handed through. It does not stop a hand edit of the file, which review holds (docs/adr/keel/K-0027-a-project-s-own-code-warns-until-a-hard-date.md).
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/unit/scripts/test_record_gate_baseline.py
@@ -25,12 +25,14 @@ import child_env  # noqa: E402
 import config_loader  # noqa: E402
 import expiring_tier  # noqa: E402
 import expiring_tier_data  # noqa: E402
+import git_tree  # noqa: E402
 from exit_codes import ExitCode, finish, passthrough, report  # noqa: E402
 
 __all__ = [
     "ANSWERS",
     "BaselineError",
     "answers_commit",
+    "known_to_git",
     "main",
     "next_baseline",
     "render",
@@ -138,6 +140,15 @@ def run_checks(root, record_path):
     return done.returncode
 
 
+def known_to_git(root, relpath):
+    """True when git's index or HEAD's commit holds *relpath*, so a missing
+    file there was deleted rather than never written. Raises git_tree's
+    NoGitError or GitFailedError when git cannot answer."""
+    return relpath in git_tree.tracked(root, [relpath]) or git_tree.in_head(
+        root, relpath
+    )
+
+
 def _read_record(path):
     if not os.path.isfile(path):
         return None
@@ -146,9 +157,10 @@ def _read_record(path):
     return record if isinstance(record, dict) else None
 
 
-def main(argv=None, root=None, runner=run_checks):
+def main(argv=None, root=None, runner=run_checks, known=known_to_git):
     """Write the baseline of the project at *root*, the checks run by
-    *runner* (root, record path) -> pytest status."""
+    *runner* (root, record path) -> pytest status. With no baseline file,
+    *known* (root, relpath) -> bool says whether git holds one the tree lost."""
     argparse.ArgumentParser(
         description="Record a generated project's gate findings in its "
         "expiring_tier.baseline after `copier update`"
@@ -182,6 +194,29 @@ def main(argv=None, root=None, runner=run_checks):
             "correct the named key or file, then rerun `make %s`"
             % expiring_tier.RECORD_TARGET,
         )
+    if old is None:
+        # A missing file at an unchanged `_commit` would let a first write
+        # record anything, so a baseline git still holds must be restored.
+        try:
+            lost = known(root, policy.baseline)
+        except (git_tree.NoGitError, git_tree.GitFailedError) as exc:
+            return report(
+                ExitCode.USAGE,
+                "%s: git cannot say whether %s was committed (%s), so a first "
+                "baseline cannot be told from a deleted one"
+                % (_TOOL, policy.baseline, exc),
+                os.path.join(root, policy.baseline),
+                "run it in the project's git repository, committed at least once",
+            )
+        if lost:
+            return report(
+                ExitCode.FAILURE,
+                "%s: %s is committed but missing from the work tree, and a "
+                "rewrite would lift its only-shrinks rule" % (_TOOL, policy.baseline),
+                os.path.join(root, policy.baseline),
+                "restore it with `git checkout -- %s`, then rerun `make %s`"
+                % (policy.baseline, expiring_tier.RECORD_TARGET),
+            )
     with tempfile.TemporaryDirectory(prefix="keel-gate-baseline-") as scratch:
         record_path = os.path.join(scratch, "record.json")
         try:

@@ -450,14 +450,18 @@ a shared module that ends the process. Each judges by these rules.
 2. **A recorded finding warns.** `make test` passes, and pytest's warnings
    summary prints an `ExpiringTierWarning` that names each recorded finding
    and the date. A finding is matched by its file and its message, not its
-   line number, so an edit above it does not turn it red.
+   line number, so an edit above it does not turn it red. The same rule
+   means a recorded finding fixed and a new one of the same rule added in the
+   same file still warns; review holds that.
 3. **A new finding is red at once.** At the `_commit` the file records,
    `make gate-baseline` refuses to add an entry and writes nothing; the file
    grows only after the next `copier update` moves `_commit`. So fix a finding
    your own change brought.
 4. **The file only shrinks.** An entry no finding matches is red, naming the
    entry. Rerun `make gate-baseline`, or delete the entry, once you fix the
-   finding.
+   finding. Deleting the file does not reopen it: while git still holds the
+   file, `make gate-baseline` refuses and says to restore it with
+   `git checkout -- config/gate-baseline.json`.
 5. **The grace ends on a date.** From `expiring_tier.expires` every recorded
    finding is red. You may set an earlier date. A date later than
    `scripts/expiring_tier_data.py` `CEILING`, 2027-01-31, is red, and copier

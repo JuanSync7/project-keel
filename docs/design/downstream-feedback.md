@@ -2271,14 +2271,25 @@ make target writes the file after `copier update`: `make gate-baseline`
 (`scripts/record_gate_baseline.py`). The writer runs each registered test under
 pytest's `--expiring-tier-record PATH` option. `tests/conftest.py` turns the
 tier's recorder on for that run and, at the end of the session, writes what each
-check saw to PATH. The tier judges the same way in that run, so the record is
-exactly the findings the gate sees. The writer then derives the whole file:
+check saw to PATH. The recorder keeps a multiset, so two byte-identical
+findings (two calls on one line) are two entries, and a check judged twice over
+the same lines is not counted twice. The tier judges the same way in that run,
+so the record is exactly the findings the gate sees. The writer then derives
+the whole file:
 
 - A check the run did not record is refused with `NOTHING_JUDGED` (13), and
   nothing is written.
 - The file may grow only when `.copier-answers.yml` `_commit` differs from the
   `commit` stamped in the file, or when no file exists. In that case it takes
   every finding the run recorded and stamps the new `_commit`.
+- When no file exists, the writer first asks git (scripts/git_tree.py `tracked`
+  and `in_head`). A baseline that git's index or HEAD still holds was deleted,
+  and a rewrite would lift the only-shrinks rule, so the writer refuses with
+  `FAILURE` (1) and says to restore it with `git checkout -- <file>`. When git
+  cannot answer (no git, no repository, or git failing), the writer refuses
+  with `USAGE` (2) and writes nothing. That is fail-closed by choice: without
+  git it cannot tell a first baseline from a deleted one, and `copier update`,
+  the step the writer follows, already needs a git repository.
 - At the same `_commit`, the file may only shrink. An entry no longer seen is
   dropped. A finding not already recorded is refused with `FAILURE` (1), naming
   each such line, and nothing is written. That finding is the project's own new
@@ -2310,8 +2321,9 @@ It is a Python module rather than a JSON file because the tier imports it with
 no new config reader. It is also a keel file that copier rewrites on every
 update, so a project's edit to it shows as a diff, or a conflict, on the next
 update. A configured date later than the ceiling, or one that is not a calendar
-date, is red in every gate that adopts the tier, and in
-`tests/integration/test_expiring_tier_wiring.py`. An earlier date is the project's own
+date, is red in every gate that adopts the tier, in the template repository
+too, because `judge` loads the policy before it returns early there; and it is
+red in `tests/integration/test_expiring_tier_wiring.py`. An earlier date is the project's own
 choice. Nothing inside a repository stops a determined edit of keel's file. The
 tier reads today through `scripts/run_date.py` (ADR-K-0019), so one gate run
 has one date. From the expiry date on, every finding of an adopting check is
@@ -2373,6 +2385,11 @@ rule.
 - ruff, mypy and check_structure findings are not under the tier. They are not
   gate tests and do not print the house grammar.
 - Nothing stops a hand edit of the baseline file or of `scripts/expiring_tier_data.py`.
+- A finding's identity drops its line number, so the tier cannot tell a
+  recorded finding fixed and a new one of the same rule added in the same file
+  from the recorded one moved. That new finding warns rather than going red.
+  Review holds it; the identity stays line-free so that an edit above a
+  recorded finding does not turn it red.
 - The writer judges no stamp freshness. A project that runs `make gate-baseline`
   before its first `copier update` records its findings at its first `_commit`.
 - No fetch of the template and no manifest of keel's files is built. Both were

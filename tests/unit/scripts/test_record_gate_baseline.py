@@ -2,11 +2,13 @@
 title: Unit — the gate baseline is recorded from what the checks see, and grows only when the update moved
 kind: tests
 layer: n/a
-summary: scripts/record_gate_baseline.py pinned on fixture projects under tmp_path, with the pytest run replaced by a runner that writes a chosen record, so no case starts a process. `answers_commit` reads the one top-level `_commit` line of .copier-answers.yml, quoted or not, and refuses a file with none, two or an empty one. `next_baseline` turns each recorded line into its identity, keeps every registered check and drops a retired one; with no old file, or an old one stamped with another commit, it may grow; stamped with the same commit it refuses each entry over the old count and names `_commit`, and it may shrink. `render` is canonical JSON, so a second run writes the same bytes. `main` refuses the template repository and a missing answers file (USAGE), a bad `expiring_tier` (CONFIG), a record that lacks a registered check (NOTHING_JUDGED), refused growth (FAILURE, file untouched), and hands a pytest status other than 0 or 1 through.
+summary: scripts/record_gate_baseline.py pinned on fixture projects under tmp_path, with the pytest run replaced by a runner that writes a chosen record, so no case starts a process. `answers_commit` reads the one top-level `_commit` line of .copier-answers.yml, quoted or not, and refuses a file with none, two or an empty one. `next_baseline` turns each recorded line into its identity, keeps every registered check and drops a retired one; with no old file, or an old one stamped with another commit, it may grow; stamped with the same commit it refuses each entry over the old count and names `_commit`, and it may shrink. `render` is canonical JSON, so a second run writes the same bytes. `main` refuses the template repository and a missing answers file (USAGE), a bad `expiring_tier` (CONFIG), a record that lacks a registered check (NOTHING_JUDGED), refused growth (FAILURE, file untouched), and hands a pytest status other than 0 or 1 through. Two byte-identical findings are both recorded, and the gate then warns on both. With no baseline file, one git still holds (deleted with `rm` or `git rm --cached`, asked of a real repository) is refused naming `git checkout -- <file>`, and with no git to ask a first write is refused (USAGE).
 @covers scripts/record_gate_baseline.py
 """
 
+import datetime
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -15,15 +17,22 @@ import pytest
 _ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(_ROOT / "scripts"))
 
+import expiring_tier  # noqa: E402
 import expiring_tier_data  # noqa: E402
+import git_tree  # noqa: E402
 import record_gate_baseline as rgb  # noqa: E402
 from exit_codes import ExitCode  # noqa: E402
+
+import hermetic_git  # noqa: E402
 
 pytestmark = pytest.mark.unit
 
 _BASELINE = "config/gate-baseline.json"
 _CHECKS = sorted(expiring_tier_data.CHECKS)
 _CHECK = _CHECKS[0]
+_DAY_BEFORE_CEILING = datetime.date.fromisoformat(
+    expiring_tier_data.CEILING
+) - datetime.timedelta(days=1)
 _A = "src/a.py:3: opens config/project.json directly — read it through the loader"
 _A2 = "src/a.py:8: opens config/project.json directly — read it through the loader"
 _A_ID = "src/a.py: opens config/project.json directly — read it through the loader"
@@ -61,6 +70,14 @@ def _runner(record, status=1):
         return status
 
     return run
+
+
+def _never_tracked(_root, _rel):
+    return False
+
+
+def _main(root, runner, known=_never_tracked):
+    return rgb.main([], root=str(root), runner=runner, known=known)
 
 
 def test_answers_commit_reads_the_one_commit_line(tmp_path):
@@ -124,49 +141,49 @@ def test_render_is_canonical():
 def test_main_writes_the_baseline_and_a_second_run_writes_the_same_bytes(tmp_path):
     root = _project(tmp_path)
     runner = _runner(_record([_A]))
-    assert rgb.main([], root=str(root), runner=runner) == ExitCode.SUCCESS
+    assert _main(root, runner) == ExitCode.SUCCESS
     first = (root / _BASELINE).read_bytes()
     assert json.loads(first)["checks"][_CHECK] == [_A_ID]
     assert json.loads(first)["commit"] == "v0.2.0"
-    assert rgb.main([], root=str(root), runner=runner) == ExitCode.SUCCESS
+    assert _main(root, runner) == ExitCode.SUCCESS
     assert (root / _BASELINE).read_bytes() == first
 
 
 def test_main_refuses_growth_at_the_same_commit_and_leaves_the_file(tmp_path):
     root = _project(tmp_path)
-    assert rgb.main([], root=str(root), runner=_runner(_record([_A]))) == 0
+    assert _main(root, _runner(_record([_A]))) == 0
     before = (root / _BASELINE).read_bytes()
-    code = rgb.main([], root=str(root), runner=_runner(_record([_A, _B])))
+    code = _main(root, _runner(_record([_A, _B])))
     assert code == ExitCode.FAILURE
     assert (root / _BASELINE).read_bytes() == before
 
 
 def test_main_refuses_the_template_and_a_project_with_no_answers(tmp_path):
     template = _project(tmp_path / "t", template=True)
-    assert rgb.main([], root=str(template), runner=_runner(_record())) == ExitCode.USAGE
+    assert _main(template, _runner(_record())) == ExitCode.USAGE
     bare = _project(tmp_path / "b", commit=None)
-    assert rgb.main([], root=str(bare), runner=_runner(_record())) == ExitCode.USAGE
+    assert _main(bare, _runner(_record())) == ExitCode.USAGE
     assert not (template / _BASELINE).exists()
     assert not (bare / _BASELINE).exists()
 
 
 def test_main_refuses_a_bad_tier_config(tmp_path):
     root = _project(tmp_path, expires="2999-01-01")
-    assert rgb.main([], root=str(root), runner=_runner(_record())) == ExitCode.CONFIG
+    assert _main(root, _runner(_record())) == ExitCode.CONFIG
 
 
 def test_a_check_the_run_never_judged_writes_nothing(tmp_path):
     root = _project(tmp_path)
     record = _record([_A])
     del record[_CHECKS[-1]]
-    code = rgb.main([], root=str(root), runner=_runner(record))
+    code = _main(root, _runner(record))
     assert code == ExitCode.NOTHING_JUDGED
     assert not (root / _BASELINE).exists()
 
 
 def test_a_run_that_wrote_no_record_writes_nothing(tmp_path):
     root = _project(tmp_path)
-    code = rgb.main([], root=str(root), runner=lambda _root, _path: 0)
+    code = _main(root, lambda _root, _path: 0)
     assert code == ExitCode.NOTHING_JUDGED
     assert not (root / _BASELINE).exists()
 
@@ -174,6 +191,80 @@ def test_a_run_that_wrote_no_record_writes_nothing(tmp_path):
 @pytest.mark.parametrize("status", [2, 4, 130])
 def test_a_pytest_status_other_than_pass_or_fail_is_handed_through(tmp_path, status):
     root = _project(tmp_path)
-    code = rgb.main([], root=str(root), runner=_runner(_record([_A]), status))
+    code = _main(root, _runner(_record([_A]), status))
     assert int(code) == status
+    assert not (root / _BASELINE).exists()
+
+
+def test_two_identical_findings_are_both_recorded_and_then_warn(tmp_path):
+    """Two byte-identical finding lines (two calls on one line) are two
+    entries, so the gate that saw them both warns rather than staying red."""
+    root = _project(tmp_path)
+    today = _DAY_BEFORE_CEILING
+    expiring_tier.start_recording()
+    try:
+        assert expiring_tier.judge(_CHECK, [_A, _A], str(root), today).red
+        record = expiring_tier.recorded()
+    finally:
+        expiring_tier.stop_recording()
+    record = {c: (record or {}).get(c, []) for c in _CHECKS}
+    assert _main(root, _runner(record)) == ExitCode.SUCCESS
+    assert json.loads((root / _BASELINE).read_text("utf-8"))["checks"][_CHECK] == [
+        _A_ID,
+        _A_ID,
+    ]
+    verdict = expiring_tier.judge(_CHECK, [_A, _A], str(root), today)
+    assert verdict.red == [] and verdict.warned == [_A, _A], verdict
+
+
+def test_a_baseline_git_knows_but_the_tree_lacks_is_refused(tmp_path, capsys):
+    """Deleting the file must not reopen growth at an unchanged `_commit`."""
+    root = _project(tmp_path)
+    code = _main(root, _runner(_record([_A])), known=lambda _r, _p: True)
+    assert code == ExitCode.FAILURE
+    assert "git checkout -- %s" % _BASELINE in capsys.readouterr().err
+    assert not (root / _BASELINE).exists()
+
+
+def test_with_no_git_to_ask_a_first_write_is_refused(tmp_path, capsys):
+    """Fail closed: with no git the writer cannot tell a first baseline from
+    a deleted one, so it writes nothing."""
+    root = _project(tmp_path)
+
+    def no_git(_root, _rel):
+        raise git_tree.NoGitError("no repository")
+
+    assert _main(root, _runner(_record([_A])), known=no_git) == ExitCode.USAGE
+    assert "no repository" in capsys.readouterr().err
+    assert not (root / _BASELINE).exists()
+
+
+def test_a_deleted_committed_baseline_is_refused_by_the_real_git_check(
+    tmp_path, monkeypatch
+):
+    """The default check asks git: a committed baseline removed with `rm`, or
+    with `git rm`, is refused; a project that never had one may write it."""
+    work = tmp_path / "work"
+    work.mkdir()
+    env = hermetic_git.git_env(work)
+    for key, value in hermetic_git.git_env_vars(work).items():
+        monkeypatch.setenv(key, value)
+    root = _project(tmp_path)
+
+    def git(*argv):
+        subprocess.run(
+            ["git", *argv], cwd=str(root), env=env, check=True, capture_output=True
+        )
+
+    git("init", "-q")
+    git("add", "-A")
+    git("commit", "-q", "-m", "generated")
+    runner = _runner(_record([_A]))
+    assert rgb.main([], root=str(root), runner=runner) == ExitCode.SUCCESS
+    git("add", "-A")
+    git("commit", "-q", "-m", "baseline")
+    (root / _BASELINE).unlink()
+    assert rgb.main([], root=str(root), runner=runner) == ExitCode.FAILURE
+    git("rm", "-q", "--cached", _BASELINE)
+    assert rgb.main([], root=str(root), runner=runner) == ExitCode.FAILURE
     assert not (root / _BASELINE).exists()

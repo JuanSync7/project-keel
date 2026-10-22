@@ -2,7 +2,7 @@
 title: Unit — git_tree (what git lists, shared by the gate runner and the evidence writer)
 kind: tests
 layer: n/a
-summary: tree_snapshot lists every path git status reports under a work tree (modified and untracked) and never an ignored one, each joined to its content digest; tracked answers which of the given paths git tracks, matching each name literally; snapshot_digest is a stable sha256 over that snapshot and changes when one byte of a listed file changes; candidate_files lists the files a commit could carry (tracked, staged, and untracked but not ignored, a force-added ignored file included), sorted, staged_paths lists what the next commit adds or changes, sorted, a staged deletion left out, and reads the index GIT_INDEX_FILE names only when asked for git's repository context; and staged_blob gives the index copy of a path or None; outside a work tree each raises NoGitError, and scripts/run_make_target.py re-exports the same class rather than defining a second one. Runs real git in a tmp_path repository under the hermetic git environment.
+summary: tree_snapshot lists every path git status reports under a work tree (modified and untracked) and never an ignored one, each joined to its content digest; tracked answers which of the given paths git tracks, matching each name literally; in_head says whether HEAD's commit holds a path, still true after `rm` and `git rm --cached`, false with no commit, NoGitError with no repository; snapshot_digest is a stable sha256 over that snapshot and changes when one byte of a listed file changes; candidate_files lists the files a commit could carry (tracked, staged, and untracked but not ignored, a force-added ignored file included), sorted, staged_paths lists what the next commit adds or changes, sorted, a staged deletion left out, and reads the index GIT_INDEX_FILE names only when asked for git's repository context; and staged_blob gives the index copy of a path or None; outside a work tree each raises NoGitError, and scripts/run_make_target.py re-exports the same class rather than defining a second one. Runs real git in a tmp_path repository under the hermetic git environment.
 """
 
 import subprocess
@@ -211,6 +211,30 @@ def test_head_commit_is_the_sha_or_none(repo, tmp_path):
     empty.mkdir()
     _git(empty, hermetic_git.git_env(tmp_path / "work"), "init", "-q")
     assert git_tree.head_commit(str(empty)) is None
+
+
+def test_in_head_names_what_the_head_commit_holds(repo, tmp_path):
+    """A committed path is in HEAD after `rm` and after `git rm --cached`; a
+    staged new path, an absent one and a `*` pattern are not; a repository
+    with no commit holds nothing, and no repository is NoGitError."""
+    env = hermetic_git.git_env(tmp_path / "work")
+    (repo / "new.txt").write_text("fresh\n", encoding="utf-8")
+    _git(repo, env, "add", "new.txt")
+    assert git_tree.in_head(str(repo), "tracked.txt") is True
+    assert git_tree.in_head(str(repo), "new.txt") is False
+    assert git_tree.in_head(str(repo), "gone.txt") is False
+    assert git_tree.in_head(str(repo), "*.txt") is False
+    (repo / "tracked.txt").unlink()
+    _git(repo, env, "rm", "-q", "--cached", "tracked.txt")
+    assert git_tree.in_head(str(repo), "tracked.txt") is True
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    _git(empty, env, "init", "-q")
+    assert git_tree.in_head(str(empty), "x.txt") is False
+    lone = tmp_path / "lone"
+    lone.mkdir()
+    with pytest.raises(git_tree.NoGitError):
+        git_tree.in_head(str(lone), "x.txt")
 
 
 def test_log_commits_lists_what_the_log_options_reach(repo, tmp_path):

@@ -3217,6 +3217,14 @@ def test_a_generated_project_reads_config_only_through_the_loader(tmp_path, answ
     assert red.returncode == 1, red.stdout[-6000:] + red.stderr[-2000:]
     assert line in red.stdout and "make gate-baseline" in red.stdout, red.stdout[-6000:]
 
+    # The writer asks git whether a missing baseline was deleted, and with no
+    # repository it refuses, so the project is committed as copier update needs.
+    env = _hermetic_git_env(tmp_path)
+    for argv in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "generated"]):
+        g = subprocess.run(
+            ["git"] + argv, cwd=str(dest), env=env, capture_output=True, text=True
+        )
+        assert g.returncode == 0, g.stderr
     wrote = _record_baseline(dest)
     assert wrote.returncode == 0, wrote.stdout[-4000:] + wrote.stderr[-4000:]
     recorded = json.loads(baseline.read_text("utf-8"))

@@ -55,16 +55,20 @@ that keel's own code stays red.
 - **One writer, which grows the file only across an update.**
   `make gate-baseline` runs `scripts/record_gate_baseline.py`. It runs each
   registered gate test under pytest with tests/conftest.py's
-  `--expiring-tier-record` option, so the record is exactly what the gate saw.
+  `--expiring-tier-record` option, so the record is exactly what the gate saw:
+  a multiset, in which two byte-identical findings are two entries.
   It may add entries only when `.copier-answers.yml` `_commit` differs from the
   `commit` the file records; at the same commit it refuses each new entry and
-  writes nothing. Its output is canonical JSON, so a second run writes the same
-  bytes.
+  writes nothing. With no baseline file it asks git first: a baseline the
+  index or HEAD still holds was deleted, so it refuses and says to restore it
+  with `git checkout -- <file>`; with no git to ask it refuses too. Its output
+  is canonical JSON, so a second run writes the same bytes.
 - **A hard date with a keel-owned ceiling.** config/project.json
   `expiring_tier.expires` is the day recorded findings turn red. It may be no
   later than `CEILING` in `scripts/expiring_tier_data.py`, 2027-01-31, a
   CONVENTIONS §18 data registry that copier rewrites on every update. An
-  earlier date is the project's choice. The day is `scripts/run_date.py`
+  earlier date is the project's choice. The policy is loaded before the
+  template's early return, so a bad date fails closed there too. The day is `scripts/run_date.py`
   `today`, so one gate run judges by one date.
 - **The target is `[tree,write]`.** It rewrites a tracked file, which is
   `[tree]`, and its recipe opens with `$(WRITE_GUARD)`, which check_W allows
@@ -105,3 +109,7 @@ that keel's own code stays red.
   gate tests and do not print the finding grammar.
 - Nothing inside a repository stops a determined edit of the baseline or of
   `scripts/expiring_tier_data.py`. Review holds both.
+- A finding's identity drops its line number, so a recorded finding fixed and a
+  new one of the same rule added in the same file warns rather than going red.
+  Review holds it. A line-free identity is what keeps an edit above a recorded
+  finding from turning it red.
