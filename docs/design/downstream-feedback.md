@@ -8,7 +8,7 @@ tags: [plan, template, downstream, freshness, taxonomy, effects, credentials, au
 summary: The bounded-convergence record for the defects bedrock-platform, the first real project generated from keel, reported back — a red gate on arrival, unknown directories the gate never sees, make targets whose effect nobody declares, and child processes that inherit every credential — plus the command that checks any keel-generated project for all of them. One slice per defect, five passes, each landed as one commit on a green `make verify`.
 id: docs-design-downstream-feedback
 created: 2026-10-06
-updated: 2026-10-21
+updated: 2026-10-22
 visibility: internal
 canonical: true
 ---
@@ -2222,28 +2222,48 @@ Left by CMP-6.S6 so far:
   editable, and a run binds one file, so `doc_reviewer` cannot fix a twinned
   roster row in both: the edit to the twin is refused.
 
+## CMP-7 — a document answers for the features it serves
+
+The maintainer approved this campaign on 2026-10-22. It is KEEL-DOC-1, the first campaign-sized item in the queue. The cap is five slices, the read-only opening pass included, and each slice is one commit on a green `make verify`. CMP-7.S1 is the defence table, because every later documentation check reads it. The opening pass checks the candidate slices below against the tree and writes the next rows into this table; until then they are candidates. The stop point is the fifth slice or the table's last row green, whichever comes first. It starts after queue positions 1 to 9.
+
+| Slice | Gap | Status |
+|-------|-----|--------|
+| CMP-7.S1 | KEEL-DOC-1: a design or spec document can describe itself without meeting its features; nothing records which questions it answers and which it leaves open (DT-1 to DT-7 below) | planned |
+
 ## Queued after Campaign 6
 
 A queue id becomes a `CMP-<n>.S<m>` name only when an approved slice table
 gives it one (CONVENTIONS §20).
 
-| Position | Queue id | Gap |
-|----------|----------|-----|
-| 1 | KEEL-DOC-1 | A design or spec document can describe itself without meeting its features; nothing records which questions it answers and which it leaves open |
-| 2 | KEEL-LINT-1 | A rule a tool can decide is still held only by a prompt: a boolean passed by position (R-CODE-18), a cache with no maximum or one typed into code (R-CODE-24), and a narrow error caught and dropped (R-CODE-7) reach no check, and ruff's SIM105 steers a dropped error into `contextlib.suppress`, which the swallowed-error gate cannot see |
-| 3 | KEEL-TESTQ-1 | A green suite does not show its tests can fail: nothing measures whether a test uses the real part or a mock, whether its assertions would catch a change, or whether a failure path is tested; the measuring engine, pyverdex, lives outside keel |
-| 4 | KEEL-PKG-1 | Keel's checks reach a repository only by generating it from the template; the vault and pyverdex cannot install them on their own |
-| 5 | KEEL-SHELL-1 | A generated project supports Python and TypeScript but not shell: a shell script gets no lint, format or test target, and none of the header, exit-code, environment or config rules reaches it |
-| 6 | KEEL-ERR-1 | A narrow handler turns a broken result into an empty one: `agents/doc_reviewer/_brain.py` reads unparseable JSON as zero findings, and the swallowed-error gate sees only broad handlers (R-CODE-7); the R-CODE-7 check KEEL-LINT-1 plans fixes it |
-| 7 | KEEL-AGT-2 | An agent's `--execute` run has no spend cap, and without `--model` it uses the registry's default without saying so (R-AGT-27, R-AGT-29) |
-| 8 | KEEL-RES-2 | The gRPC, REST and MCP entry points have no memory cap and no shutdown owner; a headless model child has no timeout; a network reply is read whole (R-CODE-23, R-CODE-27, R-CODE-28) |
-| 9 | KEEL-CFG-3 | Limits are typed in code: the gRPC port and worker count, the in-process runtime's step cap, agent and refactor timeouts (R-CODE-3, R-CFG-1) |
-| 10 | KEEL-WARN-1 | Warnings nobody must fix fire on every run: the owner-TBD warning and the fail-open "not found" and "could not parse" warnings in `scripts/check_structure.py` (R-AGT-32) |
-| 11 | KEEL-AGT-3 | Four of the five agents have no eval case and no known-good example (R-AGT-4, R-AGT-12, R-AGT-14) |
-| 12 | KEEL-DOC-2 | Wrong claims pass every gate (a check letter, counts with no method in `doc-style.md`), and release notes sit in shipped guides that the change-comment phrase list does not read (R-DOC-1, R-DOC-2, R-DOC-14) |
-| 13 | KEEL-SHIP-1 | Nothing fails a new file that is neither rendered to a generated project nor excluded from it with a reason: a slice can build a check keel holds itself to and leave every project without it, and only review notices |
-| 14 | KEEL-FRAG-1 | Every slice appends to the same shared files (`CHANGELOG.md`, this plan, `config/project.json` and its twin, the ADR index, the settings and features references), so two slices built in parallel worktrees conflict in about ten files each time, and this plan grows without bound; CMP-6.S3 and CMP-6.S6 conflicted in ten |
-| 15 | KEEL-HDR-1 | The three accepted file-header fields are not read by any check, and a call into `re` needs no stated reason; moved from CMP-6.S5 |
+On 2026-10-22 the maintainer approved this order. Positions 1 to 9 come from the move to the personal host and run before CMP-7 starts, because a full `make verify` there takes over three hours and two slices built in parallel conflict in about ten shared files. KEEL-DOC-1 left the queue to become CMP-7.
+
+| Position | Queue id | Gap | Status |
+|----------|----------|-----|--------|
+| 1 | KEEL-RAM-1 | Test scratch goes to a disk root, and on a network-mounted home every small-file write is a round trip; a session should prefer a per-user memory root and fall back to disk, naming why (K-0024 Decision 5) | built on branch `keel-ram-1`, full `make verify` running |
+| 2 | KEEL-DOC-SETUP-1 | The README does not say what a new machine must rebuild (the venv, `node_modules`, the browser and the scanner record), and its venv line names a `python3` that can predate `pyproject.toml` `requires-python` | built on branch `keel-doc-setup-1` |
+| 3 | KEEL-SPEED-1 | A full `make verify` takes 3 h 12 min on the personal host, and about 85% of it is copier rendering projects: `tests/integration/test_copier_generation.py` renders 52, many from the same answers. Planned: one render per distinct answer set from one clean clone, a private copy per test, a guard that no two tests share a folder, then parallel workers, then the verify tiers written into `docs/guides/dev-loops.md`. Rejected: a render cache across runs (a stale pass) and building one project from another by `copier update` (slower) | planned |
+| 4 | KEEL-FRAG-1 | Every slice appends to the same shared files (`CHANGELOG.md`, this plan, `config/project.json` and its twin, the ADR index, the settings and features references), so two slices built in parallel worktrees conflict in about ten files each time, and this plan grows without bound; CMP-6.S3 and CMP-6.S6 conflicted in ten; moved up on 2026-10-22 so that parallel slices stop conflicting | planned |
+| 5 | KEEL-RUN-1 | `scripts/run_make_target.py` gives up after a 1800-second default typed in code, and on that timeout it leaves the processes `make` started running: on a busy host a full `make verify` timed out and its pytest kept writing in the worktree | planned |
+| 6 | KEEL-VENV-1 | The transport packages fastapi, uvicorn and httpx are installed by hand rather than declared in an extra, so a missing one reads as a skipped test; a venv older than `pyproject.toml`'s dependencies fails late rather than when `make verify` starts | planned |
+| 7 | KEEL-SEC-2 | Installing the scanner needs Go and GitHub, which a firewalled host lacks; recommended: a pinned release binary checked by sha256, its URL in config. Optional: `.gitleaksignore` and `.gitleaks.toml` join `agents.protected_names` | planned |
+| 8 | KEEL-FE-AUDIT-1 | `npm audit` reports 28 findings in the astro app (1 critical, 17 high); each is triaged and its version raised in its own commit, never with `--force` | planned |
+| 9 | KEEL-DIST-1 | No install source (PyPI, npm, the browser and scanner downloads) can be pointed at a company mirror by config, and only GitHub CI ships, with no GitLab pipeline beside it | planned |
+| 10 | KEEL-NEXT-1 | A `make` target's next step is prose: a failure's `report()` line says what to do in words, a success prints no next step, and nothing checks that a named next step exists or moves the work on. Proposed: one table maps a target and its outcome to the next target or command, the footer is printed from it, and a test walks each declared edge once from the entry targets; a costly edge is checked on paper, and a target no entry reaches is an orphan only with a reason | proposed, not scoped |
+| 11 | KEEL-LINT-1 | A rule a tool can decide is still held only by a prompt: a boolean passed by position (R-CODE-18), a cache with no maximum or one typed into code (R-CODE-24), and a narrow error caught and dropped (R-CODE-7) reach no check, and ruff's SIM105 steers a dropped error into `contextlib.suppress`, which the swallowed-error gate cannot see | planned |
+| 12 | KEEL-TESTQ-1 | A green suite does not show its tests can fail: nothing measures whether a test uses the real part or a mock, whether its assertions would catch a change, or whether a failure path is tested; the measuring engine, pyverdex, lives outside keel | planned |
+| 13 | KEEL-PKG-1 | Keel's checks reach a repository only by generating it from the template; the vault and pyverdex cannot install them on their own | planned |
+| 14 | KEEL-SHELL-1 | A generated project supports Python and TypeScript but not shell: a shell script gets no lint, format or test target, and none of the header, exit-code, environment or config rules reaches it | planned |
+| 15 | KEEL-ERR-1 | A narrow handler turns a broken result into an empty one: `agents/doc_reviewer/_brain.py` reads unparseable JSON as zero findings, and the swallowed-error gate sees only broad handlers (R-CODE-7); the R-CODE-7 check KEEL-LINT-1 plans fixes it | planned |
+| 16 | KEEL-AGT-2 | An agent's `--execute` run has no spend cap, and without `--model` it uses the registry's default without saying so (R-AGT-27, R-AGT-29) | planned |
+| 17 | KEEL-RES-2 | The gRPC, REST and MCP entry points have no memory cap and no shutdown owner; a headless model child has no timeout; a network reply is read whole (R-CODE-23, R-CODE-27, R-CODE-28) | planned |
+| 18 | KEEL-CFG-3 | Limits are typed in code: the gRPC port and worker count, the in-process runtime's step cap, agent and refactor timeouts (R-CODE-3, R-CFG-1) | planned |
+| 19 | KEEL-WARN-1 | Warnings nobody must fix fire on every run: the owner-TBD warning and the fail-open "not found" and "could not parse" warnings in `scripts/check_structure.py` (R-AGT-32) | planned |
+| 20 | KEEL-AGT-3 | Four of the five agents have no eval case and no known-good example (R-AGT-4, R-AGT-12, R-AGT-14) | planned |
+| 21 | KEEL-DOC-2 | Wrong claims pass every gate (a check letter, counts with no method in `doc-style.md`), and release notes sit in shipped guides that the change-comment phrase list does not read (R-DOC-1, R-DOC-2, R-DOC-14) | planned |
+| 22 | KEEL-SHIP-1 | Nothing fails a new file that is neither rendered to a generated project nor excluded from it with a reason: a slice can build a check keel holds itself to and leave every project without it, and only review notices | planned |
+| 23 | KEEL-HDR-1 | The three accepted file-header fields are not read by any check, and a call into `re` needs no stated reason; moved from CMP-6.S5 | planned |
+| 24 | KEEL-LINK-1 | The untracked `project-keel` link in keel's checkout points into another project's tree, which the personal host does not have; it gets a target or is removed | planned |
+| 25 | KEEL-CODEDOC-1 | No per-function implementation documentation is generated from the code (a tree-sitter or code-wiki tool was raised), and no document says how keel's agents are evaluated | raised 2026-10-19, not scoped |
 
 **KEEL-DOC-1, the defence table.** This holds the maintainer's document rule
 R-DOC-15: before a design is planned, it answers hard questions on behalf of
@@ -2325,7 +2345,7 @@ a candidate list, not a plan:
 
 | Candidate | Source | What it builds |
 |-----------|--------|----------------|
-| The defence table | queue item KEEL-DOC-1 above | DT-1 to DT-7, and R-DOC-16's probe questions as rows |
+| The defence table | CMP-7.S1 above | DT-1 to DT-7, and R-DOC-16's probe questions as rows |
 | Kind-to-folder binding | inventory gap 1 | a `docs.homes` map in `config/project.json` and a check that a document of a kind sits under that kind's folders |
 | A genre for `kind: doc` | inventory gap 2 | a closed `genre` vocabulary, used only under `kind: doc` |
 | The coverage register | inventory gap 3, study slice 5 | `test-docs/coverage/register.md` deleted or rendered from `make trace` |
@@ -2344,7 +2364,8 @@ them as errors. The cap is five slices with the opening pass, so most rows
 here are queued by that pass, not built in this campaign.
 
 **KEEL-SHELL-1, shell as a template language.** The maintainer approved it on
-2026-10-17 as the campaign after Campaign 6, in three slices; it becomes a
+2026-10-17, in three slices, and the 2026-10-19 ruling put it after KEEL-LINT-1,
+KEEL-TESTQ-1 and KEEL-PKG-1; it becomes a
 `CMP-<n>.S<m>` name only when its slice table is approved. Shell gets the
 treatment Python and TypeScript already have, and ships to generated projects:
 
@@ -2371,7 +2392,7 @@ every project generated from keel holds them, and the prompt keeps only the
 rules that need judgment. The vault's rule experiments are the evidence: with
 the rules loaded, 19 of 20 runs still kept a setting in code as a fallback,
 and what made the work production-ready was caught by deterministic checks in
-every arm. It is planned as the campaign after Campaign 6.
+every arm. It is planned as the campaign after CMP-7.
 
 Its opening pass is read-only and writes the slice table. It maps every rule
 in the 0.10.0 code package to one of three answers: held by a named keel
@@ -2596,8 +2617,8 @@ so.
 |---|------|------|----------|----------|
 | 1 | `make -i` or a `.IGNORE` target lets a `[write]` recipe run past `$(WRITE_GUARD)` under CI or a Ralph loop | defect | high | closed in CMP-5.S4: the guard's `$(error)` clause and check_W's `.IGNORE` rule |
 | 2 | `test-fe` exits 0 when npm or an app's `node_modules` is missing, and CI never runs `test-fe` | missing-check | high | closed in CMP-5.S4: both targets exit 2, and CI runs `make fe-browsers` and `make test-fe` |
-| 3 | KEEL-TEST-1: nothing stops a test reaching a live store | feature | high | in progress in CMP-6.S2 |
-| 4 | KEEL-SEC-1: nothing scans the tree for a committed secret | missing-check | high | in progress in CMP-6.S3 |
+| 3 | KEEL-TEST-1: nothing stops a test reaching a live store | feature | high | closed in CMP-6.S2 |
+| 4 | KEEL-SEC-1: nothing scans the tree for a committed secret | missing-check | high | closed in CMP-6.S3 |
 | 5 | `credential_value_patterns` covers five token forms | missing-check | medium | `config/project.json`; CMP-6.S3 left it the child-environment guard's list, and the secret scan uses the scanner's own rules instead |
 | 6 | A process keel does not start (`make new`'s copier, a hook calling make) gets the caller's whole environment | defect | medium | `Makefile` `new` target |
 | 7 | A same-user child can read `/proc/$PPID/environ` | decision | medium | outside keel; K-0012 says defence in depth |
@@ -2617,7 +2638,7 @@ so.
 | 21 | No mutation runner; mutants are written by hand | feature | medium | queued since Campaign 4 |
 | 22 | CMP-5.S4, the tree-wide checks and the features-row rule | feature | medium | done, except open items 11 and 88 |
 | 23 | CMP-5.S5, the config loader with a default marker | feature | medium | done; what it leaves is under "Left by CMP-5.S5" |
-| 24 | KEEL-DOC-1, the defence table | feature | medium | queued first after Campaign 6 |
+| 24 | KEEL-DOC-1, the defence table | feature | medium | CMP-7.S1 |
 | 25 | pre-commit is not run in CI | missing-check | medium | `.github/workflows/ci.yml` |
 | 26 | The coverage floor is not re-measured, so it can fall | missing-check | medium | `tests/integration/test_gate_scope.py` |
 | 27 | `review_docs` and `restamp_docs` each keep a skip-directory list | defect | low | `_SKIP_DIRS`, `WALK_SKIP_DIRS` |

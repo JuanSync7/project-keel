@@ -8,7 +8,7 @@ tags: [tdd, bounded-convergence, ralph-loop, testing, e2e, workflow, agents, gui
 summary: The default working loops any human or LLM follows in this repo — test-first, bounded convergence, and end-to-end coverage — all gated by `make verify`.
 id: docs-guides-dev-loops
 created: 2026-06-22
-updated: 2026-10-21
+updated: 2026-10-22
 visibility: internal
 canonical: true
 ---
@@ -121,6 +121,32 @@ Why slice this way:
 Slicing by layer or dimension is the right move for a **read-only review or
 research sweep** (each worker is a lens, not a deliverable) — but not for
 building functionality.
+
+### From an ask to a slice
+
+An ask becomes work in four steps. Each step leaves a row in a plan doc, so a
+fresh session, another account or another machine resumes from the repository
+rather than from a hand-off note.
+
+1. **Queue it.** When the maintainer asks for work, or agrees that a gap should
+   close, the gap gets a backlog id that matches `config/project.json`
+   `work_naming.backlog_id`, such as `SPEED-1`. It also gets a row in the plan
+   doc's queue table: its position, its id, the gap it closes and its status.
+   Write the row in its own `docs(plan)` commit before the work starts. A
+   hand-off note or an agent's memory may point at a row, but it is never the
+   only copy.
+2. **Order it.** The position is the order the work is taken in. A ruling that
+   moves a row is written beside the table, saying who ruled and when.
+3. **Name it.** An approved campaign gets a `CMP-<n>` heading that states its
+   cap and its stop point, above its slice table (§20). A queue row the
+   campaign takes leaves the queue and becomes a slice id. A small item is
+   built without a campaign, and its commit names it by its `Backlog:` trailer.
+4. **Close it.** The commit that delivers the work carries its `Slice:` or
+   `Backlog:` trailer. The same commit sets the row's status to done and names
+   the gate run that passed it.
+
+`check_Z` and `tests/integration/test_work_trailers.py` hold the names and the
+trailers. No check proves that an ask reached the queue, so review holds step 1.
 
 ### Naming the slice you are on
 
