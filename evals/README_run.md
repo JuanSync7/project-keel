@@ -7,7 +7,7 @@ owner: TBD
 summary: How to replay the eval suites, run them live under the call cap, read the report, author a case with its hashes, and promote a live answer into the dataset.
 id: evals-readme-run
 created: 2026-06-17
-updated: 2026-10-13
+updated: 2026-10-22
 visibility: internal
 canonical: true
 ---
@@ -103,8 +103,9 @@ endpoint and the prompt length. The report counts the calls made in `calls`.
 
 A live run deletes `<evals.report_dir>/live-candidates/` and then writes one
 candidate line per answered case to
-`<evals.report_dir>/live-candidates/<suite>.jsonl`. It never edits the
-dataset. A case detail in the report has the value of each variable
+`<evals.report_dir>/live-candidates/<suite>.jsonl`, with the model's reply in
+`recorded.response`, so a promoted line replays as the model answered. It
+never edits the dataset. A case detail in the report has the value of each variable
 `models.credential_env` lists for the model replaced by `<hidden>`; a
 candidate line holds the model's response whole, so read it before you share
 it.

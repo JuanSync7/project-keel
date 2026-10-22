@@ -2,7 +2,7 @@
 title: Unit — eval replay and the capped live run
 kind: tests
 layer: n/a
-summary: replay drives each case's real doer against a recording backend, so a case whose prompt hash matches is scored, a case whose prompt changed is stale with the new hash named, and a doer that calls the model twice is an error; run_live refuses a null model and a case count above evals.live.max_calls before the backend factory runs, turns an unknown model name or a bad option into a config refusal, stops at an absent backend and marks the rest not-run, so a later suite is absent too, records any other exception as that case's error, and raises SpendCapExceeded when a doer breaches the cap mid-run. An option the adapter refuses with a ValueError is a config refusal, and a case detail has each passed secret, or by default the value of each credential variable declared for the model, replaced by `<hidden>`. No disk, no network: backends are small in-memory classes.
+summary: replay drives each case's real doer against a recording backend, so a case whose prompt hash matches is scored, a case whose prompt changed is stale with the new hash named, and a doer that calls the model twice is an error; run_live refuses a null model and a case count above evals.live.max_calls before the backend factory runs, turns an unknown model name or a bad option into a config refusal, stops at an absent backend and marks the rest not-run, so a later suite is absent too, records any other exception as that case's error, raises SpendCapExceeded when a doer breaches the cap mid-run, and writes into each candidate the reply the backend returned, not the doer's output, so a promoted candidate replays green. An option the adapter refuses with a ValueError is a config refusal, and a case detail has each passed secret, or by default the value of each credential variable declared for the model, replaced by `<hidden>`. No disk, no network: backends are small in-memory classes.
 """
 
 import hashlib
@@ -297,3 +297,23 @@ def test_the_declared_secrets_are_read_through_the_config_loader(monkeypatch):
     detail = {o.id: o for o in run.results[0].cases}["a"].detail
     assert "sk-loader-canary" not in detail and "<hidden>" in detail, detail
     assert asked == ["OPENAI_API_KEY"], asked
+
+
+def test_live_records_the_model_reply_not_the_doer_output():
+    # Replay hands recorded.response to the doer as the model's reply, so a
+    # candidate must carry that reply; a doer that parses or strips it would
+    # otherwise record its own output, and a promotion would lose the reply.
+    shouting = dict(DOERS, prompt=lambda text, b: b.run(text).strip().upper())
+    suite = _suite(_line("a", "Reply ACK a.", "ack"))
+    backend = _Scripted(["  ack\n"])
+    run = run_live(
+        [suite], _config(), backend_factory=_Factory(backend), doers=shouting
+    )
+    assert [o.outcome for o in run.results[0].cases] == ["pass"]
+    ((_suite_name, (cand,)),) = run.candidates
+    assert cand["recorded"]["response"] == "  ack\n"
+    assert cand["recorded"]["sha256"] == _sha("  ack\n")
+    promoted = _suite(json.dumps(cand, sort_keys=True))
+    assert [o.outcome for o in replay([promoted], 1.0, doers=shouting)[0].cases] == [
+        "pass"
+    ]

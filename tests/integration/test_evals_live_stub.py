@@ -118,8 +118,11 @@ def test_live_against_a_stub_server_green_and_candidates(tmp_path):
     sent = [r["messages"][-1]["content"] for r in requests]
     assert all(r["model"] == _STUB_MODEL for r in requests)
 
-    (cand_file,) = _candidates(repo)
-    lines = cand_file.read_text("utf-8").splitlines()
+    # One candidate file per suite, named after it, in the datasets' order.
+    cand_files = _candidates(repo)
+    assert [p.name for p in cand_files] == [p.name for p in _datasets(repo)]
+    first = cand_files[0].read_text("utf-8").splitlines()
+    lines = [ln for f in cand_files for ln in f.read_text("utf-8").splitlines()]
     candidates = [json.loads(line) for line in lines]
     assert [c["id"] for c in candidates] == [c["id"] for c in cases]
     for cand, case, prompt in zip(candidates, cases, sent, strict=True):
@@ -135,7 +138,7 @@ def test_live_against_a_stub_server_green_and_candidates(tmp_path):
     # Promotion is a hand copy of one line over its case line; replay stays green.
     dataset = _datasets(repo)[0]
     old = dataset.read_text("utf-8").splitlines()
-    old[0] = lines[0]
+    old[0] = first[0]
     dataset.write_text("\n".join(old) + "\n", encoding="utf-8")
     out = run_cli(repo, env)
     assert out.returncode == 0, out.stdout

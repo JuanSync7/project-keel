@@ -331,6 +331,13 @@ version rather than a bare commit:
   that another waiter in the runner's process reaps first is red at once with
   `reaped` true and its status unknown, and nothing is signalled after it;
   the window left is the moment between the runner's check and a signal.
+- **A live candidate records the model's reply.** `make eval-live` wrote the
+  doer's answer into a candidate's `recorded.response`, while replay hands
+  that field to the doer as the model's reply; a doer that parses or strips the
+  reply would have had its own output promoted in place of what the model
+  said. The candidate now carries the reply the backend returned, and
+  `tests/integration/test_evals_live_stub.py` expects one candidate file per
+  suite.
 - **The audit reports a migration that stops over an owed error.** A
   project that lists `GIT_DIR` in `child_env.names` made
   `scripts/audit_project.py` exit 2, because the update's first migration
