@@ -87,6 +87,21 @@ on the model's claim of success rather than a real exit code is unsafe — gate 
 the exit code, always (see the deterministic-checks catalogue:
 [deterministic-checks.md](deterministic-checks.md)).
 
+### Which tier to run when
+
+The tiers below are the Makefile targets, smallest first. Each tier is a subset
+of the next, and only the last is the judge of "done".
+
+| Tier | Run | What it covers | When |
+|---|---|---|---|
+| Inner loop | `make check`, then `pytest <file> -k <name>` or `make unit` | structure and frontmatter; the one test you are driving, or every `unit`-marked test | after each edit in a TDD pass |
+| Before a commit | `make lint`, `make typecheck`, `make check-all` | ruff and the format check; mypy strict over the `pyproject.toml` `[tool.mypy]` roots; every deterministic check | before each commit |
+| Before a merge | `make integration`, `make e2e` | the tests that start child processes, render projects and drive transports | when a change reaches what those tests drive |
+| Full gate | `make verify` | `check-all`, `secret-scan`, `lint`, `typecheck`, `test`, `trace`, `eval` and `test-fe`, with the evidence record | before you call a slice done |
+
+The `integration` tier holds most of the suite's time, so the inner loop leaves it
+out. The full gate never does: a slice is done only when `make verify` exits 0.
+
 On a host other people share, start the full gate through the launcher:
 `python3 scripts/launch.py -- make verify`. It prints one line saying where the
 command runs and why, then runs it here, here at a lower CPU priority

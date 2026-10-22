@@ -170,6 +170,15 @@ version rather than a bare commit:
   quoting a refusal `plan_edits` raises.
 
 ### Changed
+- **The generation suite renders each answer set once per session.**
+  `tests/integration/test_copier_generation.py` renders through
+  `tests/render_cache.py`, one copier render per distinct answer set and day
+  from the clean clone. Each test gets its own copy under its `tmp_path`. The
+  shared render is read-only, so a test that writes into it fails with
+  PermissionError. Nothing is cached across runs. On one host the file went
+  from 3063 s to 2584 s with the same 89 tests. dev-loops.md now says which
+  make target is the inner loop and which is the full gate. A generated
+  project ships neither file.
 - **`make verify` is red until `make secrets-install` has run once.** A fresh
   clone has no scanner record, so `make secret-scan` exits 11 naming the
   install. The README Quickstart now commits the generated project, installs
