@@ -2266,6 +2266,40 @@ On 2026-10-22 the maintainer approved this order. Positions 1 to 9 come from the
 | 25 | KEEL-CODEDOC-1 | No per-function implementation documentation is generated from the code (a tree-sitter or code-wiki tool was raised), and no document says how keel's agents are evaluated | raised 2026-10-19, not scoped |
 | 26 | KEEL-GRPC-1 | The gRPC transport's packages sit in `api/grpc/requirements.txt` and no `pyproject.toml` extra, so `make check-venv` (KEEL-VENV-1) does not judge them and `transports.extras` has no gRPC entry; found while building KEEL-VENV-1, which kept to REST | planned |
 
+### Build lanes ahead of the merge line
+
+The maintainer asked on 2026-10-22 for items that share no code to be built
+in parallel, each in its own worktree and branch, so a branch reaches the
+merge line already reviewed. Building ahead never changes the merge order:
+branches merge one at a time in queue order, each rebased onto the new
+`main` and passing the full `make verify` on the merged tree.
+
+A lane loops on its own branch gate, which is faster than `make verify`:
+`make lint typecheck check check-docs check-exit-codes check-corpus`, the
+unit tests, and the integration and generation tests of the area it
+touches. A fresh reviewer then tries to break the branch, and the builder
+fixes each confirmed finding. At most two full `make verify` runs share
+this host, and no two lanes running at once edit the same code file;
+the shared files (`CHANGELOG.md`, this plan, `config/project.json` and its
+twin, the settings and features references) are resolved at rebase until
+KEEL-FRAG-1 removes that conflict.
+
+| Lane | Items, in order | Code it owns | Starts |
+|---|---|---|---|
+| L1 | KEEL-FE-AUDIT-1 | `src/frontend/*/package.json` and lockfiles | now |
+| L2 | KEEL-SEC-2, then KEEL-DIST-1 | the scanner installer and the install sources | now; KEEL-DIST-1 after KEEL-VENV-1 merges |
+| L3 | KEEL-LINT-1, then KEEL-ERR-1, then KEEL-HDR-1 | the lint and header checks, `agents/doc_reviewer/_brain.py` | now |
+| L4 | KEEL-AGT-3, then KEEL-AGT-2 | the agents' eval cases and their run entry | now |
+| L5 | KEEL-CFG-3, then KEEL-RES-2 | the transports' and runtime's limits | now |
+| L6 | KEEL-NEXT-1, a design pass only | a design document for review | now |
+| L7 | KEEL-SHELL-1 | the shell lint, format and test targets | when a lane frees |
+| L8 | KEEL-WARN-1, then KEEL-SHIP-1, then KEEL-DOC-2 | `scripts/check_structure.py` warnings, the render check, doc claims | after KEEL-RUN-1 merges, which edits `scripts/check_structure.py` |
+| L9 | CMP-7 opening pass, a design pass only | the defence table | when a lane frees |
+
+KEEL-TESTQ-1, KEEL-PKG-1, KEEL-GRPC-1, KEEL-LINK-1 and KEEL-CODEDOC-1 have
+no lane yet: KEEL-LINK-1 and KEEL-CODEDOC-1 need the maintainer's decision,
+and KEEL-TESTQ-1 and KEEL-PKG-1 reach outside keel.
+
 **KEEL-DOC-1, the defence table.** This holds the maintainer's document rule
 R-DOC-15: before a design is planned, it answers hard questions on behalf of
 every feature it must serve, and records each answer. The table is a section
