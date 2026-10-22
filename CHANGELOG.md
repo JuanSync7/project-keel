@@ -259,6 +259,15 @@ version rather than a bare commit:
   read through scripts/config_loader.py with a bound it refuses past. An
   adapter missing from `models.timeout_seconds` is refused, never left
   unbounded.
+- **A model reply and the model CLI are bounded.** `openai-compatible` reads
+  a reply body in pieces up to config/project.json `models.max_reply_bytes`
+  (8 MiB) and refuses one byte more, never reading the rest.
+  `claude-code-headless` runs its CLI through the new
+  scripts/resource_limits.py `run_bounded`, in a process group of its own, and
+  sends the whole group SIGKILL when it outlives
+  `models.timeout_seconds.claude-code-headless` (600 seconds) or writes past
+  the reply cap on either stream, raising `ChildTimedOut` or
+  `ChildOutputTooLarge`, both a `RuntimeError` naming the key.
 - **`make verify` is red until `make secrets-install` has run once.** A fresh
   clone has no scanner record, so `make secret-scan` exits 11 naming the
   install. The README Quickstart now commits the generated project, installs

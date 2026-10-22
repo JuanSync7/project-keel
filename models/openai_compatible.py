@@ -2,12 +2,13 @@
 title: OpenAI-compatible model backend
 layer: backend
 public_api: no
-summary: Adapter for any HTTP endpoint speaking the OpenAI chat-completions API. It is built only for a `base_url` that is an http or https URL with a host and no user part, query or fragment, written in unreserved URL characters, and, for http, only when the host is a loopback address literal (127.0.0.0/8 or ::1 by the stdlib ipaddress module, read through scripts/child_env.py canonical_host_entry; the name localhost is refused, since a name resolves through DNS or a hosts file), so the bearer token never crosses a network in clear text; and only for an `api_key_env` that config/project.json `models.credential_env` declares for this adapter (scripts/child_env.py load_policy), so no caller, and no config a caller forwards, can choose another environment variable to send as the bearer token; either refusal is a ValueError that names the argument and never a value. Between the two, the base_url's host and port must be listed in config/project.json `models.allowed_hosts` for this adapter, compared exactly in scripts/child_env.py canonical_host_entry's one form (an entry `host` matches only the scheme's default port, `host:port` only that port, nothing by suffix, prefix or wildcard); the shipped list is empty, so every host, the default one included, is refused until a project lists it, and the refusal names that key and the entry to add, never the path, before the credential variable is read, which it is through scripts/config_loader.py `env`, at each call. base_url is read-only after that check. Each request waits at most `timeout` seconds, config/project.json `models.timeout_seconds` for this adapter (models/limits.py) when the caller names none. A redirect is never followed: urllib's default handler would re-send a 301, 302 or 303 as a GET with the Authorization header to a host nobody listed, so any 3xx is a RuntimeError naming the endpoint and the status, never the Location. Defence in depth, not a sandbox (docs/adr/keel/K-0018-model-endpoint-host-allowlist.md). An unreachable endpoint is ModelUnavailable (absent); an endpoint that answers with an error, or with a body that is not a chat completion, is broken, and that body is described by its keys, never quoted. An error names the endpoint by scheme, host and port, never by its path.
+summary: Adapter for any HTTP endpoint speaking the OpenAI chat-completions API. It is built only for a `base_url` that is an http or https URL with a host and no user part, query or fragment, written in unreserved URL characters, and, for http, only when the host is a loopback address literal (127.0.0.0/8 or ::1 by the stdlib ipaddress module, read through scripts/child_env.py canonical_host_entry; the name localhost is refused, since a name resolves through DNS or a hosts file), so the bearer token never crosses a network in clear text; and only for an `api_key_env` that config/project.json `models.credential_env` declares for this adapter (scripts/child_env.py load_policy), so no caller, and no config a caller forwards, can choose another environment variable to send as the bearer token; either refusal is a ValueError that names the argument and never a value. Between the two, the base_url's host and port must be listed in config/project.json `models.allowed_hosts` for this adapter, compared exactly in scripts/child_env.py canonical_host_entry's one form (an entry `host` matches only the scheme's default port, `host:port` only that port, nothing by suffix, prefix or wildcard); the shipped list is empty, so every host, the default one included, is refused until a project lists it, and the refusal names that key and the entry to add, never the path, before the credential variable is read, which it is through scripts/config_loader.py `env`, at each call. base_url is read-only after that check. Each request waits at most `timeout` seconds, config/project.json `models.timeout_seconds` for this adapter (models/limits.py) when the caller names none, and a reply body is read in pieces up to config/project.json `models.max_reply_bytes`: one byte more is a RuntimeError naming the endpoint and the cap, and the rest is never read. A redirect is never followed: urllib's default handler would re-send a 301, 302 or 303 as a GET with the Authorization header to a host nobody listed, so any 3xx is a RuntimeError naming the endpoint and the status, never the Location. Defence in depth, not a sandbox (docs/adr/keel/K-0018-model-endpoint-host-allowlist.md). An unreachable endpoint is ModelUnavailable (absent); an endpoint that answers with an error, or with a body that is not a chat completion, is broken, and that body is described by its keys, never quoted. An error names the endpoint by scheme, host and port, never by its path.
 """
 
 from __future__ import annotations
 
 import email.message
+import functools
 import http.client
 import ipaddress
 import json
@@ -21,7 +22,7 @@ from scripts import config_loader
 from scripts.child_env import canonical_host_entry, load_policy
 
 from .contracts import ModelBackend, ModelUnavailable
-from .limits import timeout_seconds
+from .limits import max_reply_bytes, timeout_seconds
 
 __all__ = ["OpenAICompatible"]
 
@@ -213,13 +214,34 @@ def _urlopen(req: urllib.request.Request, timeout: float) -> Any:
     return _OPENER.open(req, timeout=timeout)  # noqa: S310 (own, checked URL)
 
 
-def _post_json(url: str, payload: dict, headers: dict, timeout: float) -> dict:
-    """POST ``payload`` as JSON and return the decoded JSON response (stdlib)."""
+def _read_capped(resp: Any, max_bytes: int, url: str) -> bytes:
+    """At most *max_bytes* of the reply body, or RuntimeError once it holds more:
+    one byte past the cap is read, never the rest."""
+    chunks: list[bytes] = []
+    held = 0
+    while held <= max_bytes:
+        chunk = resp.read(max_bytes + 1 - held)
+        if not chunk:
+            return b"".join(chunks)
+        chunks.append(chunk)
+        held += len(chunk)
+    raise RuntimeError(
+        "the reply from %s holds more than %d bytes, so it was refused unread; "
+        "the cap is config/project.json models.max_reply_bytes"
+        % (_endpoint(url), max_bytes)
+    )
+
+
+def _post_json(
+    url: str, payload: dict, headers: dict, timeout: float, max_bytes: int
+) -> dict:
+    """POST ``payload`` as JSON and return the decoded JSON response (stdlib),
+    refusing a body past *max_bytes*."""
     body = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(url, data=body, headers=headers, method="POST")
     try:
         with _urlopen(req, timeout) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+            return json.loads(_read_capped(resp, max_bytes, url).decode("utf-8"))
     except urllib.error.HTTPError as exc:
         if 300 <= exc.code < 400:
             exc.close()
@@ -301,7 +323,9 @@ class OpenAICompatible(ModelBackend):
         )
         # None: the configured limit, so no call waits on a socket unbounded.
         self.timeout = timeout_seconds(self.name) if timeout is None else timeout
-        self._transport = transport or _post_json
+        self._transport = transport or functools.partial(
+            _post_json, max_bytes=max_reply_bytes()
+        )
 
     @property
     def base_url(self) -> str:

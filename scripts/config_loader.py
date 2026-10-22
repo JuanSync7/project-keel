@@ -772,6 +772,14 @@ KEYS = tuple(
                 accepts=(_gate_grace, "a value from 1 to %d" % _GATE_GRACE_MAX),
             ),
             _row(
+                ("models", "max_reply_bytes"),
+                "int",
+                8388608,
+                "the bytes one model reply may hold, an HTTP body or a model "
+                "child's output stream, before the adapter refuses it unread",
+                accepts=(_at_least_one, "a value >= 1"),
+            ),
+            _row(
                 ("models", "timeout_seconds"),
                 "object",
                 {"claude-code-headless": 600, "openai-compatible": 60},

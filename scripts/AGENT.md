@@ -7,7 +7,7 @@ owner: TBD
 summary: Local agent rules inside scripts/.
 id: scripts-agent
 created: 2026-06-17
-updated: 2026-10-20
+updated: 2026-10-22
 visibility: internal
 canonical: true
 ---
@@ -28,6 +28,11 @@ These rules are **local and authoritative** for this directory. They inherit fro
   - `child_env.py` is imported from `models/`, `agents/`, `mcp/` and `evals/`
     as `scripts.child_env` because it must run under the 3.6 hook
     interpreter, which cannot import `src/`.
+  - `resource_limits.py` is imported from `models/` as
+    `scripts.resource_limits`, so it sits in the bottom import layer with
+    `child_env.py`, the one module it imports, and stays stdlib-only and
+    3.6-safe. It is never run, and it reads no config: each caller names its
+    own limits and the keys that set them.
   - `jobs/conflict_guard.py` is never run, so it has no `--help`. The
     `copier update` jobs in `jobs/` import it before anything else from the
     project, to refuse a job over a conflicted module it imports and the data

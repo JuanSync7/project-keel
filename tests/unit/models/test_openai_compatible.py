@@ -161,7 +161,7 @@ def test_an_unreachable_endpoint_is_unavailable(monkeypatch):
 
     monkeypatch.setattr(mod, "_urlopen", refuse)
     with pytest.raises(ModelUnavailable) as caught:
-        mod._post_json("http://localhost:1/v1/chat/completions", {}, {}, 1.0)
+        mod._post_json("http://localhost:1/v1/chat/completions", {}, {}, 1.0, 1 << 20)
     assert "connection refused" in str(caught.value)
 
 
@@ -177,9 +177,9 @@ def test_an_endpoint_that_answers_with_an_error_is_broken_not_absent(monkeypatch
 
     monkeypatch.setattr(mod, "_urlopen", fail)
     with pytest.raises(urllib.error.HTTPError):
-        mod._post_json("http://h/v1/chat/completions", {}, {}, 1.0)
+        mod._post_json("http://h/v1/chat/completions", {}, {}, 1.0, 1 << 20)
     with pytest.raises(Exception) as caught:
-        mod._post_json("http://h/v1/chat/completions", {}, {}, 1.0)
+        mod._post_json("http://h/v1/chat/completions", {}, {}, 1.0, 1 << 20)
     assert not isinstance(caught.value, ModelUnavailable)
 
 
@@ -275,7 +275,7 @@ def test_an_unreachable_endpoint_is_named_without_its_path(monkeypatch):
 
     monkeypatch.setattr(mod, "_urlopen", refuse)
     with pytest.raises(ModelUnavailable) as caught:
-        mod._post_json(_KEYED_URL + "/chat/completions", {}, {}, 1.0)
+        mod._post_json(_KEYED_URL + "/chat/completions", {}, {}, 1.0, 1 << 20)
     assert "path-canary" not in str(caught.value)
     assert "https://llm.example:8443" in str(caught.value)
 
@@ -337,7 +337,7 @@ def test_a_url_urllib_refuses_is_named_without_its_path(monkeypatch, error):
 
     monkeypatch.setattr(mod, "_urlopen", refuse)
     with pytest.raises(RuntimeError) as caught:
-        mod._post_json(_KEYED_URL + "/chat/completions", {}, {}, 1.0)
+        mod._post_json(_KEYED_URL + "/chat/completions", {}, {}, 1.0, 1 << 20)
     assert "path-canary" not in str(caught.value)
     assert "https://llm.example:8443" in str(caught.value)
     assert caught.value.__cause__ is None and caught.value.__suppress_context__
@@ -357,7 +357,7 @@ def test_a_reply_that_is_not_json_is_broken_and_keeps_no_copy_of_the_body(monkey
         lambda req, timeout: io.BytesIO(b"<html>sk-canary</html>"),
     )
     with pytest.raises(RuntimeError) as caught:
-        mod._post_json(_KEYED_URL + "/chat/completions", {}, {}, 1.0)
+        mod._post_json(_KEYED_URL + "/chat/completions", {}, {}, 1.0, 1 << 20)
     assert not isinstance(caught.value, ModelUnavailable)
     assert "sk-canary" not in str(caught.value) and "path-canary" not in str(
         caught.value
@@ -662,3 +662,63 @@ def test_a_time_limit_the_caller_names_wins(monkeypatch):
     )
     backend.run("q")
     assert captured["timeout"] == 9.0
+
+
+# --- the reply cap: config/project.json models.max_reply_bytes ----------------
+
+
+class _Body:
+    """A reply body that hands out at most *step* bytes per read, the way a
+    socket does, and counts what was asked of it."""
+
+    def __init__(self, data, step=7):
+        self.data, self.step, self.served = data, step, 0
+
+    def read(self, n=-1):
+        if n is None or n < 0:
+            raise AssertionError("the reply was read whole, past any cap")
+        take = min(n, self.step, len(self.data) - self.served)
+        chunk = self.data[self.served : self.served + take]
+        self.served += take
+        return chunk
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+def test_a_reply_within_the_cap_is_read_in_pieces_and_decoded(monkeypatch):
+    from models import openai_compatible as mod
+
+    reply = b'{"choices": []}'
+    monkeypatch.setattr(mod, "_urlopen", lambda req, timeout: _Body(reply))
+    assert mod._post_json(_URL, {}, {}, 1.0, len(reply)) == {"choices": []}
+
+
+def test_a_reply_past_the_cap_is_refused_before_it_is_all_read(monkeypatch):
+    from models import ModelUnavailable
+    from models import openai_compatible as mod
+
+    # Each read hands out all it is asked for, so a read past the cap shows.
+    body = _Body(b'{"pad": "' + b"x" * 10000 + b'"}', step=1 << 20)
+    monkeypatch.setattr(mod, "_urlopen", lambda req, timeout: body)
+    with pytest.raises(RuntimeError) as caught:
+        mod._post_json(_URL + "/chat/completions", {}, {}, 1.0, 100)
+    assert not isinstance(caught.value, ModelUnavailable)
+    message = str(caught.value)
+    assert "100 bytes" in message and "models.max_reply_bytes" in message
+    assert "https://llm.example" in message and "xxx" not in message
+    assert body.served == 101
+
+
+def test_the_reply_cap_defaults_to_models_max_reply_bytes(monkeypatch):
+    from models import openai_compatible as mod
+
+    allowing(monkeypatch, "llm.example")
+    monkeypatch.setattr(mod, "max_reply_bytes", lambda root=None: 5)
+    monkeypatch.setattr(mod, "_urlopen", lambda req, timeout: _Body(b'{"a": 1}'))
+    backend = get_model(_ADAPTER, base_url=_URL)
+    with pytest.raises(RuntimeError, match="more than 5 bytes"):
+        backend.run("q")

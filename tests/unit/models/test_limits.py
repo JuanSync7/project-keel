@@ -2,7 +2,7 @@
 title: Unit — model call limits
 kind: tests
 layer: backend
-summary: models/limits.py reads an adapter's time limit from config/project.json `models.timeout_seconds`, refuses an adapter the map does not name rather than leaving its call unbounded, and refuses a limit that is not a number above zero through scripts/config_loader.py, naming the key.
+summary: models/limits.py reads an adapter's time limit from config/project.json `models.timeout_seconds`, refuses an adapter the map does not name rather than leaving its call unbounded, and refuses a limit that is not a number above zero through scripts/config_loader.py, naming the key. `max_reply_bytes` reads `models.max_reply_bytes`, refusing a value below 1.
 """
 
 import json
@@ -50,3 +50,18 @@ def test_a_limit_that_is_not_a_number_above_zero_is_refused(tmp_path, bad):
 def test_every_adapter_that_calls_out_ships_with_a_limit():
     for adapter in ("claude-code-headless", "openai-compatible"):
         assert limits.timeout_seconds(adapter) > 0
+
+
+def test_the_reply_cap_is_read_from_the_models_block(tmp_path):
+    assert limits.max_reply_bytes(_project(tmp_path, {"max_reply_bytes": 9})) == 9
+
+
+@pytest.mark.parametrize("bad", [0, -1, True, "9"])
+def test_a_reply_cap_below_one_is_refused(tmp_path, bad):
+    root = _project(tmp_path, {"max_reply_bytes": bad})
+    with pytest.raises(config_loader.WrongValue, match=r"models\.max_reply_bytes"):
+        limits.max_reply_bytes(root)
+
+
+def test_the_shipped_reply_cap_is_set():
+    assert limits.max_reply_bytes() == 8388608

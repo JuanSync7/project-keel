@@ -2,16 +2,15 @@
 title: Claude Code headless backend
 layer: backend
 public_api: no
-summary: Runs a prompt via the Claude Code CLI in headless mode, with the allowlisted environment plus the credential names config/project.json `models.credential_env` declares for this adapter (scripts/child_env.py). A missing binary is ModelUnavailable (absent); a non-zero exit is RuntimeError (broken); a broken allowlist is ChildEnvError, never ModelUnavailable.
+summary: Runs a prompt via the Claude Code CLI in headless mode, through scripts/resource_limits.py run_bounded, with the allowlisted environment plus the credential names config/project.json `models.credential_env` declares for this adapter (scripts/child_env.py). The CLI runs in a process group of its own for at most `models.timeout_seconds.claude-code-headless` seconds, with at most `models.max_reply_bytes` bytes on each stream (models/limits.py); past either its whole group is sent SIGKILL and the call is ChildTimedOut or ChildOutputTooLarge, both RuntimeError naming the key. A missing binary is ModelUnavailable (absent); a non-zero exit is RuntimeError (broken); a broken allowlist is ChildEnvError, never ModelUnavailable.
 """
 
 from __future__ import annotations
 
-import subprocess
-
-from scripts.child_env import build_child_env
+from scripts.resource_limits import run_bounded
 
 from .contracts import ModelBackend, ModelUnavailable
+from .limits import max_reply_bytes, timeout_seconds
 
 __all__ = ["ClaudeCodeHeadless"]
 
@@ -33,11 +32,18 @@ class ClaudeCodeHeadless(ModelBackend):
 
     def run(self, prompt: str, **opts) -> str:
         cmd = [self.binary, "-p", prompt, "--model", self.model]
-        # Built outside the try: a broken allowlist is a config defect a caller
-        # must see, never an absent model it may skip.
-        env = build_child_env(credentials_for=self.name)
         try:
-            proc = subprocess.run(cmd, capture_output=True, text=True, env=env)
+            # A broken allowlist is ChildEnvError, which is no OSError: a config
+            # defect a caller must see, never an absent model it may skip.
+            proc = run_bounded(
+                cmd,
+                timeout_seconds(self.name),
+                max_reply_bytes(),
+                credentials_for=self.name,
+                timeout_source="config/project.json models.timeout_seconds.%s"
+                % self.name,
+                output_source="config/project.json models.max_reply_bytes",
+            )
         except FileNotFoundError as exc:
             # Absent, not broken: nothing to run here. A doer that catches this
             # says so and exits 0; a traceback would read as a failed run.

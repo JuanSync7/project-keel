@@ -1,0 +1,205 @@
+"""
+title: resource_limits — a child process with a time limit and an output cap
+kind: script
+layer: n/a
+summary: `run_bounded` starts a program through the child-process allowlist (scripts/child_env.py build_child_env, called inside the spawn so check_X sees it) in a process group of its own, feeds it the caller's stdin text, and returns a subprocess.CompletedProcess with its status and its output decoded as UTF-8. A child that is still running, or whose output pipe is still held open by a process it started, when the caller's time limit passes has its whole group sent SIGKILL and is refused as ChildTimedOut; a child that writes more than the caller's byte cap to either stream has its group ended the same way and is refused as ChildOutputTooLarge. Both are RuntimeError subclasses whose message names the program by its file name only (never its arguments, which may carry a prompt), the limit, and the config key the caller says sets it. A limit below or equal to zero is a ValueError before anything starts; a program that does not exist is the FileNotFoundError the spawn raises. Off POSIX there is no process group, so only the child itself is ended. It reads no configuration of its own and writes no file.
+"""
+
+# NB: stdlib only, no `from __future__ import annotations`, no f-strings, no walrus,
+# no `list[str]` or `X | None` annotations: this module sits in the bottom import
+# layer (config/project.json import_layers.order), which
+# tests/integration/test_gate_scope.py holds to the oldest interpreter a hook runs.
+
+import contextlib
+import os
+import signal
+import subprocess
+import threading
+import time
+from typing import IO, Callable, List, Optional, Sequence
+
+from scripts.child_env import build_child_env
+
+__all__ = ["ChildOutputTooLarge", "ChildTimedOut", "run_bounded"]
+
+# One read's size: large enough that a child writing megabytes costs few
+# wake-ups, small enough that the cap is overshot by at most this much in memory.
+_CHUNK = 65536
+
+# How long to wait for the pipes to close once the group was sent SIGKILL: the
+# kernel closes a killed process's pipes at once, so a longer wait means a
+# process outside the group (one that called setsid) still holds them.
+_DRAIN_AFTER_KILL_S = 5.0
+
+
+class ChildTimedOut(RuntimeError):
+    """The child, or a process holding its output open, outlived its time limit."""
+
+
+class ChildOutputTooLarge(RuntimeError):
+    """The child wrote more than its byte cap to stdout or stderr."""
+
+
+def _end_group(proc: "subprocess.Popen[bytes]") -> None:
+    # SIGKILL, not SIGTERM: the limit has already passed, and a child that traps
+    # SIGTERM would keep the caller waiting past it.
+    if os.name == "posix":
+        # Gone already: PermissionError is how some kernels answer for a group
+        # whose only member is a zombie leader.
+        with contextlib.suppress(ProcessLookupError, PermissionError):
+            os.killpg(proc.pid, signal.SIGKILL)
+    if proc.poll() is None:
+        proc.kill()
+
+
+class _Reader(threading.Thread):
+    """Reads one pipe to its end, keeping at most cap + one chunk in memory."""
+
+    def __init__(self, stream: IO[bytes], cap: int, on_over: Callable[[], None]):
+        threading.Thread.__init__(self, daemon=True)
+        self.stream = stream
+        self.cap = cap
+        self.on_over = on_over
+        self.chunks: List[bytes] = []
+        self.size = 0
+        self.over = False
+
+    def run(self) -> None:
+        fd = self.stream.fileno()
+        while True:
+            chunk = os.read(fd, _CHUNK)
+            if not chunk:
+                return
+            if self.over:
+                continue  # drain to the end so the killed child is not blocked
+            self.size += len(chunk)
+            if self.size > self.cap:
+                self.over = True
+                self.on_over()
+                continue
+            self.chunks.append(chunk)
+
+    def text(self) -> str:
+        return b"".join(self.chunks).decode("utf-8", "replace")
+
+
+class _Writer(threading.Thread):
+    """Feeds the child its input, then closes its stdin."""
+
+    def __init__(self, stream: IO[bytes], data: bytes):
+        threading.Thread.__init__(self, daemon=True)
+        self.stream = stream
+        self.data = data
+        self.error: Optional[OSError] = None
+
+    def run(self) -> None:
+        try:
+            self.stream.write(self.data)
+            self.stream.close()
+        except BrokenPipeError:
+            # The child exited without reading all of it; its status says why.
+            pass
+        except OSError as exc:  # carried to the caller's thread, not lost
+            self.error = exc
+
+
+def _set_by(source: Optional[str]) -> str:
+    return "; the limit is %s" % source if source else ""
+
+
+def _positive(name: str, value: object) -> None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
+        raise ValueError(
+            "run_bounded %s must be a number above 0, got %r" % (name, value)
+        )
+
+
+def run_bounded(
+    argv: Sequence[str],
+    timeout: float,
+    max_output_bytes: int,
+    cwd: Optional[str] = None,
+    stdin_text: Optional[str] = None,
+    credentials_for: Optional[str] = None,
+    root: Optional[str] = None,
+    timeout_source: Optional[str] = None,
+    output_source: Optional[str] = None,
+) -> "subprocess.CompletedProcess[str]":
+    """Run *argv* with the allowlisted environment (plus *credentials_for*'s
+    credential names, read from *root*'s config) for at most *timeout* seconds,
+    keeping at most *max_output_bytes* of each stream; *timeout_source* and
+    *output_source* name where the caller configures each limit, for the
+    refusal. ChildTimedOut,
+    ChildOutputTooLarge, ValueError for a limit not above 0, and whatever the
+    spawn raises (FileNotFoundError, ChildEnvError) propagate."""
+    _positive("timeout", timeout)
+    _positive("max_output_bytes", max_output_bytes)
+    if isinstance(max_output_bytes, float):
+        raise ValueError("run_bounded max_output_bytes must be a whole number")
+    program = os.path.basename(argv[0]) if argv else "?"
+    deadline = time.monotonic() + timeout
+    proc = subprocess.Popen(
+        list(argv),
+        cwd=cwd,
+        stdin=subprocess.PIPE if stdin_text is not None else subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=build_child_env(credentials_for=credentials_for, root=root),
+        start_new_session=True,
+    )
+    # Both are pipes: PIPE was asked for each, so neither is None.
+    assert proc.stdout is not None and proc.stderr is not None
+    readers = [
+        _Reader(proc.stdout, max_output_bytes, lambda: _end_group(proc)),
+        _Reader(proc.stderr, max_output_bytes, lambda: _end_group(proc)),
+    ]
+    try:
+        for reader in readers:
+            reader.start()
+        writer = None
+        if stdin_text is not None and proc.stdin is not None:
+            writer = _Writer(proc.stdin, stdin_text.encode("utf-8"))
+            writer.start()
+        timed_out = False
+        try:
+            proc.wait(max(0.0, deadline - time.monotonic()))
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            _end_group(proc)
+            proc.wait()
+        for reader in readers:
+            reader.join(max(0.0, deadline - time.monotonic()))
+        if any(reader.is_alive() for reader in readers):
+            # The child exited but a process it started still holds the pipe.
+            timed_out = True
+            _end_group(proc)
+            for reader in readers:
+                reader.join(_DRAIN_AFTER_KILL_S)
+    except BaseException:
+        _end_group(proc)
+        raise
+    finally:
+        for reader in readers:
+            # A reader still blocked on a pipe a setsid process holds keeps its
+            # file open: closing it under the read could hand the number to
+            # another file. The daemon thread ends with the process.
+            if not reader.is_alive():
+                reader.stream.close()
+    for name, reader in (("stdout", readers[0]), ("stderr", readers[1])):
+        if reader.over:
+            raise ChildOutputTooLarge(
+                "%s wrote more than %d bytes to %s, so its process group was ended%s"
+                % (program, max_output_bytes, name, _set_by(output_source))
+            )
+    if timed_out:
+        raise ChildTimedOut(
+            "%s did not finish within %s seconds, so its process group was ended%s"
+            % (program, timeout, _set_by(timeout_source))
+        )
+    if writer is not None:
+        writer.join()
+        if writer.error is not None:
+            raise writer.error
+    return subprocess.CompletedProcess(
+        list(argv), proc.returncode, readers[0].text(), readers[1].text()
+    )
