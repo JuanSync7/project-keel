@@ -194,8 +194,8 @@ version rather than a bare commit:
   `models.credential_env` name with no secret row is red too.
 - **A credential-shaped string is red at commit, in `make verify` and in CI.**
   `scripts/scan_secrets.py` is the gitleaks adapter: it runs the scanner
-  config/project.json `secrets.scanner` pins, which the pinned pre-commit
-  hook builds and `make secrets-install` records, and a `secrets.scanner.name`
+  config/project.json `secrets.scanner` pins, which `make secrets-install`
+  installs and records, and a `secrets.scanner.name`
   it has no adapter for is exit 14. The `secret scan (staged, or every
   commit when nothing is staged)` pre-commit hook scans what a commit adds or
   changes, and every commit when `pre-commit run --all-files` stages nothing;
@@ -302,6 +302,18 @@ version rather than a bare commit:
   `make secrets-install` in each project before its `make verify`.
   Upgrading: run `make secrets-install` once after `copier update`;
   docs/guides/generate-and-upgrade.md says why no hook reinstall is needed.
+- **The secret scanner installs from a pinned release, with no Go and no
+  build.** `make secrets-install` now runs `scripts/install_scanner.py`: it
+  fetches the archive config/project.json `secrets.scanner.release_assets`
+  pins for this platform from `secrets.scanner.release_url`, installs it under
+  the per-user `secrets.scanner.install_root` only when its sha256 is the
+  pinned one, copied from the vendor's checksums file, and records it; a
+  second run fetches nothing. The commit hook is now a local hook, so a commit
+  needs no Go toolchain, and every scan, the hook's included, runs the
+  recorded program and never one on PATH. `secrets.scanner.hook_repo` and
+  `scripts/scan_secrets.py --locate` are gone. A host that cannot reach the
+  vendor repoints `secrets.scanner.release_url` at a mirror. Upgrading: run
+  `make secrets-install` once after `copier update`, before the next commit.
 - **check_S reads which READMEs are rosters from config/project.json.** The
   new `rosters.readmes` list, not a README's `## What ships here` heading,
   switches the roster check on: a listed README without the heading and a

@@ -898,21 +898,20 @@ judge what a commit carries, and each is for what the other cannot see.
   credential's shape: a value under a name no row declares, or in a file type
   it does not parse, is the scanner's.
 - **The scanner** is a thin adapter behind that rule.
-  `scripts/scan_secrets.py` is the gitleaks adapter: it runs gitleaks, which
-  `.pre-commit-config.yaml` pins at `secrets.scanner.rev` from
-  `secrets.scanner.hook_repo`, and refuses any other config/project.json
-  `secrets.scanner.name` with exit 14, because its flags, rules file and
+  `scripts/scan_secrets.py` is the gitleaks adapter: it runs the gitleaks
+  release `make secrets-install` installed and recorded, and refuses any other
+  config/project.json `secrets.scanner.name` with exit 14, because its flags, rules file and
   report fields are gitleaks's own. Another scanner is a second adapter, not
   an edit to the gate test. It judges shapes, such as an access-key prefix and
   its alphabet, whatever the name or the file. It is **not** for a value whose
   shape no rule knows: the keyed gate judges names.
 
-The scanner runs in three places, one build in each
+The scanner runs in three places, each running the one recorded program
 (`tests/integration/test_gate_scope.py` holds all three to config):
 
 | Where | Command | What it judges |
 |-------|---------|----------------|
-| every commit | the `.pre-commit-config.yaml` hook `secret scan (staged, or every commit when nothing is staged)`: `python3 scripts/scan_secrets.py --staged-or-history` | the staged diff, in the index git hands the hook (`GIT_INDEX_FILE`, so `git commit -a` is judged too); under `pre-commit run --all-files`, which stages nothing, every commit `secrets.scanner.history_log_opts` reaches, with the scanner on PATH |
+| every commit | the `.pre-commit-config.yaml` hook `secret scan (staged, or every commit when nothing is staged)`: `python3 scripts/scan_secrets.py --staged-or-history` | the staged diff, in the index git hands the hook (`GIT_INDEX_FILE`, so `git commit -a` is judged too); under `pre-commit run --all-files`, which stages nothing, every commit `secrets.scanner.history_log_opts` reaches |
 | `make verify` | `make secret-scan`: `scripts/scan_secrets.py --history` | every commit `secrets.scanner.history_log_opts` (`--all`) reaches |
 | CI | `make secrets-install`, then `make secret-scan`, before `make test` | the same, over the full-history checkout |
 
@@ -924,11 +923,26 @@ so a file in the tree cannot change what is judged; and a finding status of
 `secrets.scanner.leak_exit_code` with a JSON report, so the scanner's own
 crash cannot read as a clean scan or as a finding. A scan beside a file named in
 `secrets.scanner.refused_files` (the scanner's own config and ignore file) is
-exit 14 before the scanner runs. The history scan runs the recorded build
-only: `make secrets-install` records its path, rev and sha256 in the
-git-ignored `secrets.scanner.record_file`, and no record, another rev, a path
-that is gone or a changed digest is exit 11 naming `make secrets-install`,
-never a skip.
+exit 14 before the scanner runs. Every scan runs the recorded program only,
+never one found on PATH: `make secrets-install` records its path, rev and
+sha256 in the git-ignored `secrets.scanner.record_file`, and no record,
+another rev, a path that is gone or a changed digest is exit 11 naming
+`make secrets-install`, never a skip.
+
+**Install.** `make secrets-install` runs `scripts/install_scanner.py`, which
+needs no Go toolchain and no build. It picks this platform's entry in
+`secrets.scanner.release_assets` (the key is the lowercased
+`<system>-<machine>`, such as `linux-x86_64`), fetches that file name joined to
+`secrets.scanner.release_url`, and installs the archive's one program under
+`secrets.scanner.install_root`, a per-user directory outside the checkout, only
+when the archive's sha256 is the pinned one; the pins are copied from the
+vendor's checksums file for `secrets.scanner.rev`. A second run with the same
+pins fetches nothing and rewrites nothing (`tests/unit/scripts/test_install_scanner.py`).
+An unlisted platform is exit 14 naming the platforms the map lists; a sha256
+that differs is exit 1 and installs nothing. A host that cannot reach the
+vendor points `secrets.scanner.release_url` at a mirror holding the same files
+(an https URL, or `file:///` for a directory the host already holds); the
+sha256 check does not change.
 
 **Exclusions.** A fake credential kept on purpose, such as a test fixture, is
 a `secrets.scanner.exclusions` entry: one exact repo-relative path mapped to
@@ -955,7 +969,7 @@ and is caught, refused, or not caught and accepted:
 
 | Way past | Outcome |
 |----------|---------|
-| `git commit --no-verify`, or `SKIP=gitleaks` | the staged hook does not run; `make secret-scan` in `make verify` and in CI is red on the commit |
+| `git commit --no-verify`, or `SKIP=secret-scan` | the staged hook does not run; `make secret-scan` in `make verify` and in CI is red on the commit |
 | `git commit -a` of an edited tracked file | caught: the hook judges the index git hands it |
 | an inline `gitleaks:allow` comment | caught: `--ignore-gitleaks-allow` |
 | a `.gitleaksignore` or `.gitleaks.toml` in the tree | refused, exit 14, before the scanner runs |
@@ -966,17 +980,17 @@ and is caught, refused, or not caught and accepted:
 | a secret name with a value in a `.env.production` added with `git add -f` | caught by the keyed gate |
 | an access key in a file the scanner's default allowlist skips (`package-lock.json`, `go.sum`, `*.svg`, `*.pdf`, under `node_modules/`) | not caught |
 | an exclusion naming a file and rule | excuses every later finding of that rule in that file |
-| a program named like the scanner, first on PATH when `scripts/scan_secrets.py --locate` runs, that writes an empty report | not caught: the record proves the program has not changed since it was recorded, not that it is the real scanner; CI builds its own |
+| a program named like the scanner, first on PATH, that writes an empty report | caught: no scan runs a program from PATH, and `make secrets-install` installs only the archive whose sha256 config pins |
+| the record file edited by hand to name another program | not caught: the record is git-ignored and per machine, so it proves the program has not changed since it was recorded, not who recorded it; CI installs its own |
 | a commit pushed with CI skipped (`[skip ci]`) | not tried, because it is the CI provider's behaviour: CI does not run on that commit, and `make verify` on any clone, and the next CI run, scan it |
 | a value already pushed | the history scan is red, and the value stays exposed: rotate it (`docs/guides/limits-and-troubleshooting.md`, "A credential was committed") |
 
 The keyed gate also cannot see a value already in history, which is the
 history scan's, or a file outside both basename patterns.
 
-**Cost.** The first `make secrets-install` on a machine builds the scanner
-through pre-commit (about 2 to 4 minutes, and several hundred megabytes of
-pre-commit and Go module cache under the home directory); later runs reuse
-it. The history scan of a project's own history takes seconds. The scanner
+**Cost.** The first `make secrets-install` on a machine fetches one release
+archive of a few megabytes and installs one program; later runs with the same
+pins fetch nothing. The history scan of a project's own history takes seconds. The scanner
 is not in the catalogue table above, and `make check-all` does not run it,
 because it needs the recorded build, which a fresh clone does not have.
 
@@ -999,8 +1013,7 @@ commit (each hook is a thin trigger that calls a `scripts/` doer):
 | `cdmon` | `python3 scripts/cdmon_sync.py --check` (a stated skip until cdmon and its config exist) |
 | `doc-review` | `python3 scripts/jobs/review_docs.py --strict` (stale stamps fail; mentions advisory; no git is a stated skip) |
 | `eslint` / `ruff` / `ruff-format` | frontend lint + Python lint + Python formatting |
-| `gitleaks` | `secret scan (staged, or every commit when nothing is staged)`: `python3 scripts/scan_secrets.py --staged-or-history` over the index the commit would carry, inside the pinned scanner's hook environment, or over every commit when `pre-commit run --all-files` stages nothing; pre-commit skips it when a commit adds or changes no file (section 15) |
-| `gitleaks` | alias secrets-locate, manual stage: `python3 scripts/scan_secrets.py --locate` inside the hook environment pre-commit builds the pinned secret scanner into; `make secrets-install` runs it, and no commit does |
+| `secret-scan` | `python3 scripts/scan_secrets.py --staged-or-history`, running the recorded scanner over the index the commit would carry, or over every commit when `pre-commit run --all-files` stages nothing; pre-commit skips it when a commit adds or changes no file (section 15), and it is exit 11 until `make secrets-install` has run |
 
 Enable once: `pip install -e ".[dev]" && pre-commit install`, then `make secrets-install`.
 

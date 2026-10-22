@@ -298,8 +298,9 @@ no `node_modules`. Its CI workflow gains a `make fe-browsers` step and a
 The update adds `make secret-scan` to `make verify` and a staged secret-scan
 hook to `.pre-commit-config.yaml`. An existing project's `make verify` is red,
 its `secret-scan` goal exiting 11 (`BACKEND_ABSENT`), until
-`make secrets-install` has built the scanner the hook pins and recorded where.
-Run it once per machine after the update. The hook needs no reinstall: the
+`make secrets-install` has installed the scanner config pins and recorded it.
+Run it once in each checkout after the update, before the next commit: the
+commit hook runs only the recorded program, so it exits 11 until then too. The hook needs no reinstall: the
 script `pre-commit install` wrote reads `.pre-commit-config.yaml` on every
 commit. A finding in history is not fixed by an
 exclusion: `docs/guides/limits-and-troubleshooting.md`, "A credential was
@@ -653,7 +654,7 @@ step says what failed:
 | `update` | `copier update` failed, or it left a path git lists as unmerged or a file holding a conflict hunk |
 | `fe-install` | `scripts/check_toolchain.py node` refused the Node major, or npm could not install a frontend app |
 | `fe-browsers` | the browser the end-to-end suites drive could not be installed |
-| `secrets-install` | pre-commit could not build the pinned secret scanner, or `scripts/scan_secrets.py --locate` could not record it |
+| `secrets-install` | `scripts/install_scanner.py` could not fetch the pinned secret scanner release, its sha256 differed from the pin, or this platform has no pinned archive |
 | `verify` | the project's own `make verify` is red; every `pass` line names this step too |
 
 A passing project is deleted. A failing one is kept at

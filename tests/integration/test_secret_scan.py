@@ -2,7 +2,7 @@
 title: Integration — the secret scanner adapter against the real pinned scanner
 kind: tests
 layer: n/a
-summary: scripts/scan_secrets.py run against the scanner `make secrets-install` built and recorded in this checkout's config/project.json `secrets.scanner.record_file`, in a scratch repository that copies this checkout's config. A credential-shaped value, built at run time so no committed file holds one, is red in the staged scan and, once committed, in the history scan, and stays red after a later commit deletes it, because history keeps it; each finding prints its file, line and rule and the value appears on neither stream. A clean repository scans clean and is left as git lists it, so `make secret-scan` stays [local], an exclusion naming the finding's exact file and rule makes the scan pass, and one no finding uses is a config fault. A recorded scanner that is gone is BACKEND_ABSENT. The commit hook's own arguments, read from .pre-commit-config.yaml, run outside a commit with nothing staged (`pre-commit run --all-files`) judge every commit: clean on a clean history and red on a committed credential, never a pass or a refusal over zero files. .pre-commit-config.yaml pins the scanner's hook repository at the release config names, so pre-commit and the record name one build. With no recorded scanner the scanner cases skip, and fail where KEEL_REQUIRED_EXTRAS declares `secrets`.
+summary: scripts/scan_secrets.py run against the scanner `make secrets-install` built and recorded in this checkout's config/project.json `secrets.scanner.record_file`, in a scratch repository that copies this checkout's config. A credential-shaped value, built at run time so no committed file holds one, is red in the staged scan and, once committed, in the history scan, and stays red after a later commit deletes it, because history keeps it; each finding prints its file, line and rule and the value appears on neither stream. A clean repository scans clean and is left as git lists it, so `make secret-scan` stays [local], an exclusion naming the finding's exact file and rule makes the scan pass, and one no finding uses is a config fault. A recorded scanner that is gone is BACKEND_ABSENT. The commit hook's own arguments, read from .pre-commit-config.yaml, run outside a commit with nothing staged (`pre-commit run --all-files`) judge every commit: clean on a clean history and red on a committed credential, never a pass or a refusal over zero files. The one hook that runs scripts/scan_secrets.py is a local system hook and no pre-commit repository builds the scanner, so a commit needs no Go toolchain and runs only the recorded program. With no recorded scanner the scanner cases skip, and fail where KEEL_REQUIRED_EXTRAS declares `secrets`.
 """
 
 import json
@@ -35,7 +35,7 @@ _BLOCK = ("secrets", "scanner")
 
 
 def _scanner_config():
-    keys = ("hook_repo", "name", "record_file", "rev")
+    keys = ("name", "record_file", "rev")
     values = config_loader.resolve(
         config_loader.read(str(_ROOT)),
         config_loader.rows(*[_BLOCK + (k,) for k in keys]),
@@ -77,8 +77,8 @@ def recorded_scanner():
 
 @pytest.fixture
 def project(tmp_path, monkeypatch, recorded_scanner):
-    """A committed scratch project with this checkout's config, the recorded
-    scanner first on PATH and recorded again by `--locate`."""
+    """A committed scratch project with this checkout's config and the
+    recorded scanner recorded again in its own record file."""
     work = tmp_path / "work"
     work.mkdir()
     env = hermetic_git.git_env(work)
@@ -94,10 +94,9 @@ def project(tmp_path, monkeypatch, recorded_scanner):
     _git(root, env, "init", "-q")
     _git(root, env, "add", "-A")
     _git(root, env, "commit", "-q", "-m", "init")
-    monkeypatch.setenv(
-        "PATH", str(recorded_scanner.parent) + os.pathsep + os.environ["PATH"]
-    )
-    assert scan_secrets.main(["--locate"], root=str(root)) == ExitCode.SUCCESS
+    cfg = scan_secrets.settings(str(root))
+    assert scan_secrets.record_is_ignored(str(root), cfg)
+    scan_secrets.write_record(str(root), cfg, str(recorded_scanner))
     return root, env
 
 
@@ -175,7 +174,7 @@ def test_an_exclusion_no_finding_uses_is_a_config_fault(project, capsys):
 
 
 def test_a_recorded_scanner_that_is_gone_is_backend_absent(
-    project, tmp_path, monkeypatch, recorded_scanner, capsys
+    project, tmp_path, recorded_scanner, capsys
 ):
     root, _env = project
     copy_dir = tmp_path / "copy"
@@ -183,22 +182,30 @@ def test_a_recorded_scanner_that_is_gone_is_backend_absent(
     copy = copy_dir / recorded_scanner.name
     shutil.copyfile(str(recorded_scanner), str(copy))
     copy.chmod(copy.stat().st_mode | stat.S_IXUSR)
-    monkeypatch.setenv("PATH", str(copy_dir) + os.pathsep + os.environ["PATH"])
-    assert scan_secrets.main(["--locate"], root=str(root)) == ExitCode.SUCCESS
+    scan_secrets.write_record(str(root), scan_secrets.settings(str(root)), str(copy))
     copy.unlink()
     capsys.readouterr()
     assert scan_secrets.main(["--history"], root=str(root)) == ExitCode.BACKEND_ABSENT
     assert "make secrets-install" in capsys.readouterr().err
 
 
+def _scanner_hooks():
+    """(repository, hook) for every .pre-commit-config.yaml hook whose entry
+    runs scripts/scan_secrets.py."""
+    yaml = optional_deps.importorskip("yaml", extra="template")
+    loaded = yaml.safe_load((_ROOT / ".pre-commit-config.yaml").read_text())
+    return [
+        (repo["repo"], hook)
+        for repo in loaded["repos"]
+        for hook in repo["hooks"]
+        if "scripts/scan_secrets.py" in hook.get("entry", "")
+    ]
+
+
 def _commit_hook_args():
     """The arguments the commit-time hook in .pre-commit-config.yaml hands
     scripts/scan_secrets.py, read from the file rather than retyped."""
-    yaml = optional_deps.importorskip("yaml", extra="template")
-    cfg = _scanner_config()
-    loaded = yaml.safe_load((_ROOT / ".pre-commit-config.yaml").read_text())
-    (pin,) = [r for r in loaded["repos"] if r["repo"] == cfg["hook_repo"]]
-    (hook,) = [h for h in pin["hooks"] if "alias" not in h]
+    ((_repo, hook),) = _scanner_hooks()
     argv = shlex.split(hook["entry"])
     assert argv[:2] == ["python3", "scripts/scan_secrets.py"], argv
     return argv[2:]
@@ -222,13 +229,25 @@ def test_the_commit_hook_run_outside_a_commit_judges_the_history(project, capsys
     assert line.startswith("creds.py:1 aws-access-token "), line
 
 
-def test_the_pre_commit_hook_pins_the_configured_scanner():
+def test_the_commit_hook_runs_the_recorded_scanner_and_builds_nothing():
+    """The one hook that names the scanner is a local, system-language hook
+    over scripts/scan_secrets.py, so committing needs no Go toolchain and no
+    fetch: it runs only what `make secrets-install` recorded."""
+    ((repo, hook),) = _scanner_hooks()
+    assert repo == "local", repo
+    assert hook["language"] == "system", hook
+    assert hook["pass_filenames"] is False, hook
+    assert hook.get("stages") in (None, ["pre-commit"]), hook
+
+
+def test_no_pre_commit_repository_builds_the_scanner():
     yaml = optional_deps.importorskip("yaml", extra="template")
-    cfg = _scanner_config()
+    name = _scanner_config()["name"]
     loaded = yaml.safe_load((_ROOT / ".pre-commit-config.yaml").read_text())
-    pins = [r for r in loaded["repos"] if r["repo"] == cfg["hook_repo"]]
-    assert len(pins) == 1, "one %s block in .pre-commit-config.yaml" % cfg["hook_repo"]
-    assert pins[0]["rev"] == cfg["rev"]
-    locate = [h for h in pins[0]["hooks"] if h.get("alias") == "secrets-locate"]
-    assert len(locate) == 1 and locate[0]["stages"] == ["manual"], locate
-    assert locate[0]["entry"] == "python3 scripts/scan_secrets.py --locate"
+    builds = [
+        r["repo"]
+        for r in loaded["repos"]
+        if (r["repo"] != "local" and name in r["repo"])
+        or any(h["id"] == name for h in r["hooks"])
+    ]
+    assert builds == [], builds

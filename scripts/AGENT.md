@@ -61,6 +61,17 @@ These rules are **local and authoritative** for this directory. They inherit fro
     It stays stdlib-only and 3.6-safe, because the hook runs it under the
     host's `python3`; `git_tree.py` `staged_paths` is how it knows the stage
     is empty, and the hook then scans every commit instead.
+    Every scan runs only the program the record names, never one on PATH:
+    `write_record` is the record's one writer, so `install_scanner.py`
+    imports it rather than write the file itself.
+  - `install_scanner.py` is the one place the scanner is fetched. It installs
+    only an archive whose sha256 config/project.json
+    `secrets.scanner.release_assets` pins, under the per-user
+    `secrets.scanner.install_root` and never inside the checkout, so
+    `make secrets-install` stays `[read]`. The download URL is
+    `secrets.scanner.release_url` and nothing else, so a mirror repoints it
+    there; a test of it serves a fixture archive over a `file://` URL and
+    never reaches the network.
   - `traceability.py` and `pytest_markers.py` are never run.
     `traceability.py` is the one home of the requirement-id grammar and the
     verdict rule, imported by `trace_requirements.py` and

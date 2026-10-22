@@ -28,8 +28,8 @@ jobs:
       # install stays as it is. (The langgraph engine stays optional — its
       # conformance test importorskips.)
       - run: pip install -e ".[dev,template]"
-      # The secret scanner: pre-commit builds the build .pre-commit-config.yaml
-      # pins and records where (scripts/scan_secrets.py --locate), then the
+      # The secret scanner: make secrets-install fetches the release archive
+      # config/project.json pins, checks its sha256 and records it, then the
       # history scan judges every commit the full checkout above carries. Both
       # run before the suite, so a committed credential fails the job even when
       # the push skipped the staged hook with --no-verify.

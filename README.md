@@ -74,7 +74,7 @@ git init && git add -A && git commit -q -m "generated"   # the hook and the hist
 make check                            # the structure gate
 make fe-install                       # the frontend app's packages
 make fe-browsers                      # the browser its journey drives, into your user cache
-make secrets-install                  # the pinned secret scanner, built once per machine
+make secrets-install                  # the pinned secret scanner, fetched once per machine
 make verify                           # every gate: checks, secret scan, lint, types, tests, frontend tests
 ```
 

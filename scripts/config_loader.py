@@ -21,6 +21,7 @@ import os
 import posixpath
 import sys
 import threading
+import urllib.parse
 from types import ModuleType
 from typing import (
     IO,
@@ -406,6 +407,50 @@ def _basenames(value: Any) -> bool:
     return bool(value) and all(
         v.strip() == v and v and "/" not in v and "\\" not in v for v in value
     )
+
+
+def _user_path(value: Any) -> bool:
+    # Absolute or under `~`, so the place does not move with the directory a
+    # command runs from; `..` never, so the value says where it lands.
+    text = str(value)
+    return text.startswith(("/", "~/")) and _no_parent_part(text)
+
+
+_HEX = "0123456789abcdef"
+
+
+def _release_url(value: Any) -> bool:
+    # https, or file for a directory a host already holds; never a user part,
+    # query or fragment, so the URL a mirror is given carries no credential and
+    # a file name joins it as one more path part.
+    parts = urllib.parse.urlsplit(str(value))
+    if parts.query or parts.fragment or "@" in parts.netloc:
+        return False
+    if parts.scheme == "https":
+        return bool(parts.hostname)
+    return parts.scheme == "file" and not parts.netloc and parts.path.startswith("/")
+
+
+def _release_assets(value: Any) -> bool:
+    # {platform: {file, sha256}}: at least one, because a table that pins no
+    # platform installs nothing on any; a bare .tar.gz name, because the
+    # installer joins it to the URL and reads it as one; a full lowercase
+    # sha256, the form a vendor's checksums file prints.
+    if not value:
+        return False
+    for key, asset in value.items():
+        if not _is_nonempty_str(key) or key != key.lower() or "-" not in key:
+            return False
+        if not isinstance(asset, dict) or sorted(asset) != ["file", "sha256"]:
+            return False
+        name, digest = asset["file"], asset["sha256"]
+        if not _is_nonempty_str(name) or not name.endswith(".tar.gz"):
+            return False
+        if "/" in name or "\\" in name or name.startswith("."):
+            return False
+        if not isinstance(digest, str) or len(digest) != 64 or digest.strip(_HEX):
+            return False
+    return True
 
 
 _GLOB_CHARS = "*?["
@@ -869,10 +914,28 @@ KEYS = tuple(
                 ),
             ),
             _row(
-                ("secrets", "scanner", "hook_repo"),
+                ("secrets", "scanner", "download_max_bytes"),
+                "int",
+                104857600,
+                "the most bytes `make secrets-install` reads of a release archive "
+                "before it refuses it",
+                accepts=(_at_least_one, "a whole number, 1 or more"),
+            ),
+            _row(
+                ("secrets", "scanner", "download_timeout_seconds"),
+                "int",
+                60,
+                "how long `make secrets-install` waits on the release server "
+                "before it gives up",
+                accepts=(_at_least_one, "a whole number, 1 or more"),
+            ),
+            _row(
+                ("secrets", "scanner", "install_root"),
                 "nonempty_str",
-                "https://github.com/gitleaks/gitleaks",
-                "the pre-commit repository the secret scanner is installed from",
+                NONE,
+                "the per-user directory, outside the checkout, `make "
+                "secrets-install` installs the scanner under",
+                accepts=(_user_path, "an absolute path or one under `~/`, no `..`"),
             ),
             _row(
                 ("secrets", "scanner", "leak_exit_code"),
@@ -886,9 +949,9 @@ KEYS = tuple(
                 ("secrets", "scanner", "name"),
                 "nonempty_str",
                 "gitleaks",
-                "the secret scanner's program name, which scripts/scan_secrets.py "
-                "looks up on PATH and records; it adapts gitleaks only and "
-                "refuses any other name",
+                "the secret scanner's program name, the release archive member "
+                "the installer takes and the record names; scripts/scan_secrets.py "
+                "adapts gitleaks only and refuses any other name",
             ),
             _row(
                 ("secrets", "scanner", "record_file"),
@@ -906,10 +969,34 @@ KEYS = tuple(
                 accepts=(_basenames, "a non-empty list of bare file names"),
             ),
             _row(
+                ("secrets", "scanner", "release_assets"),
+                "object",
+                NONE,
+                "the scanner's release archive for each platform, its file name "
+                "and sha256",
+                accepts=(
+                    _release_assets,
+                    "a non-empty object mapping a lowercase `<system>-<machine>` "
+                    "to {file: a bare .tar.gz name, sha256: 64 lowercase hex}",
+                ),
+            ),
+            _row(
+                ("secrets", "scanner", "release_url"),
+                "nonempty_str",
+                NONE,
+                "the one URL an asset's file name is joined to; a mirror repoints it",
+                accepts=(
+                    _release_url,
+                    "an https URL with a host, or a file:/// URL, with no user "
+                    "part, query or fragment",
+                ),
+            ),
+            _row(
                 ("secrets", "scanner", "rev"),
                 "nonempty_str",
                 "v8.30.1",
-                "the scanner release the pre-commit hook pins and the record must name",
+                "the scanner release `make secrets-install` installs and the "
+                "record must name",
             ),
             _row(
                 ("shell", "enabled"),

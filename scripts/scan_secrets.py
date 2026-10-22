@@ -3,7 +3,7 @@
 title: scan_secrets — the secret scanner's adapter, over what a commit would carry and over every commit
 kind: script
 layer: n/a
-summary: The gitleaks adapter: runs the scanner config/project.json `secrets.scanner` pins and prints each finding as `file:line rule`, a history finding with its commit's first 12 hex digits after it, never the value. A `secrets.scanner.name` other than gitleaks is CONFIG before anything runs, because the flags, rules file and report fields here are gitleaks's own; another scanner is a second adapter. `--locate` finds `secrets.scanner.name` on PATH (inside the pre-commit hook environment `make secrets-install` builds at `secrets.scanner.rev`) and records its absolute path, that rev and the program's sha256 in `secrets.scanner.record_file`, rewriting the file only when its bytes would change; a record file git would track is CONFIG, and no scanner on PATH is BACKEND_ABSENT. `--staged` scans the staged diff with the scanner on PATH and passes git's repository context, so the index a hook commits is the one judged; a stage that adds or changes no file (nothing staged, or deletions only) is NOTHING_JUDGED, because a scan over zero files proves nothing. `--staged-or-history`, the pre-commit hook's mode, scans the staged diff, or every commit with the scanner on PATH when nothing is staged, as under `pre-commit run --all-files`. `--history` scans every commit `secrets.scanner.history_log_opts` reaches with the recorded program only, and options that reach no commit are NOTHING_JUDGED; no record, one naming another program or rev, a recorded path that is gone or a program whose digest changed is BACKEND_ABSENT naming `make secrets-install`, never a skip. The scanner is handed redaction, the inline allow comments ignored, an empty ignore directory, a config that only extends its default rules, the finding status `secrets.scanner.leak_exit_code` and a JSON report in a temporary directory, under the allowlisted environment (scripts/child_env.py). Its status and its report must agree: 0 with an empty list, the finding status with findings; anything else, a report that is not a JSON list of findings included, is BACKEND_ABSENT with the scanner's stderr excerpt, because the scanner gave no verdict, so FAILURE always means a finding. A git command that ran and failed is USAGE. `secrets.scanner.exclusions` removes the findings of one rule in one exact file; one the history scan did not use is CONFIG. A scan beside the scanner's own config or ignore file (`secrets.scanner.refused_files`, anywhere git would commit it or at the root) is CONFIG before the scanner runs, because such a file decides what is judged. No repository, or a history with no commit, is NOTHING_JUDGED. Stdlib-only and 3.6-safe, because the pre-commit hook runs it under the host's python3.
+summary: The gitleaks adapter: runs the scanner config/project.json `secrets.scanner` pins and prints each finding as `file:line rule`, a history finding with its commit's first 12 hex digits after it, never the value. A `secrets.scanner.name` other than gitleaks is CONFIG before anything runs, because the flags, rules file and report fields here are gitleaks's own; another scanner is a second adapter. Every mode runs only the program recorded in `secrets.scanner.record_file`, never one found on PATH: no record, one naming another program or rev, a recorded path that is gone or a program whose digest changed is BACKEND_ABSENT naming `make secrets-install`, never a skip. `write_record`, which scripts/install_scanner.py calls, records an absolute path, `secrets.scanner.rev` and the program's sha256, rewriting the file only when its bytes would change. `--staged` scans the staged diff and passes git's repository context, so the index a hook commits is the one judged; a stage that adds or changes no file (nothing staged, or deletions only) is NOTHING_JUDGED, because a scan over zero files proves nothing. `--staged-or-history`, the pre-commit hook's mode, scans the staged diff, or every commit when nothing is staged, as under `pre-commit run --all-files`. `--history` scans every commit `secrets.scanner.history_log_opts` reaches, and options that reach no commit are NOTHING_JUDGED. The scanner is handed redaction, the inline allow comments ignored, an empty ignore directory, a config that only extends its default rules, the finding status `secrets.scanner.leak_exit_code` and a JSON report in a temporary directory, under the allowlisted environment (scripts/child_env.py). Its status and its report must agree: 0 with an empty list, the finding status with findings; anything else, a report that is not a JSON list of findings included, is BACKEND_ABSENT with the scanner's stderr excerpt, because the scanner gave no verdict, so FAILURE always means a finding. A git command that ran and failed is USAGE. `secrets.scanner.exclusions` removes the findings of one rule in one exact file; one the history scan did not use is CONFIG. A scan beside the scanner's own config or ignore file (`secrets.scanner.refused_files`, anywhere git would commit it or at the root) is CONFIG before the scanner runs, because such a file decides what is judged. No repository, or a history with no commit, is NOTHING_JUDGED. Stdlib-only and 3.6-safe, because the pre-commit hook runs it under the host's python3.
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/unit/scripts/test_scan_secrets.py
@@ -33,7 +33,6 @@ _BLOCK = ("secrets", "scanner")
 _FIELDS = (
     "exclusions",
     "history_log_opts",
-    "hook_repo",
     "leak_exit_code",
     "name",
     "record_file",
@@ -47,8 +46,8 @@ _WHERE = "config/project.json secrets.scanner"
 _ADAPTER = "gitleaks"
 _STAGED, _HISTORY, _STAGED_OR_HISTORY = "staged", "history", "staged-or-history"
 _INSTALL = (
-    "run `make secrets-install`, which builds the pinned scanner through "
-    "pre-commit and records it"
+    "run `make secrets-install`, which downloads the pinned scanner release, "
+    "checks its sha256 and records it"
 )
 # The scanner's own config: its default rules and nothing else, so neither a
 # config named in the environment nor one in the tree changes what is judged.
@@ -61,14 +60,9 @@ def _parse(argv):
     parser = argparse.ArgumentParser(
         prog="scripts/scan_secrets.py",
         description="Run the secret scanner config/project.json secrets.scanner "
-        "pins, or record where it is installed.",
+        "pins, the one `make secrets-install` recorded.",
     )
     mode = parser.add_mutually_exclusive_group(required=True)
-    mode.add_argument(
-        "--locate",
-        action="store_true",
-        help="record the scanner on PATH in secrets.scanner.record_file",
-    )
     mode.add_argument(
         "--staged", action="store_true", help="scan what the next commit would carry"
     )
@@ -81,13 +75,14 @@ def _parse(argv):
         "--staged-or-history",
         action="store_true",
         help="the pre-commit hook's mode: scan the staged diff, or, when nothing "
-        "is staged (`pre-commit run --all-files`), every commit, with the "
-        "scanner on PATH",
+        "is staged (`pre-commit run --all-files`), every commit",
     )
     return parser.parse_args(argv)
 
 
-def _settings(root):
+def settings(root):
+    """The secrets.scanner settings this adapter reads, by field name; raises
+    config_loader.ConfigError on a refused value."""
     keys = config_loader.rows(*[_BLOCK + (field,) for field in _FIELDS])
     values = config_loader.resolve(
         config_loader.read(root), keys, config_loader.CONFIG_FILE
@@ -95,7 +90,8 @@ def _settings(root):
     return {field: values[_BLOCK + (field,)] for field in _FIELDS}
 
 
-def _sha256(path):
+def sha256(path):
+    """The hex sha256 of the file at *path*, read in chunks."""
     digest = hashlib.sha256()
     with open(path, "rb") as fh:
         for chunk in iter(lambda: fh.read(1 << 20), b""):
@@ -103,10 +99,10 @@ def _sha256(path):
     return digest.hexdigest()
 
 
-def _write_if_changed(path, text):
-    """Write *text* to *path* through a sibling temporary file, only when the
-    bytes differ, so a second run leaves the file and its time untouched."""
-    data = text.encode("utf-8")
+def write_if_changed(path, data):
+    """Write the bytes *data* to *path* through a sibling temporary file, only
+    when they differ, so a second run leaves the file and its time untouched.
+    True when it wrote."""
     try:
         with open(path, "rb") as fh:
             if fh.read() == data:
@@ -126,39 +122,31 @@ def _write_if_changed(path, text):
     return True
 
 
-def _locate(root, cfg):
-    name, rel = cfg["name"], cfg["record_file"]
-    found = shutil.which(name)
-    if found is None:
-        return report(
-            ExitCode.BACKEND_ABSENT,
-            "%s is not on PATH" % name,
-            "this process's PATH",
-            _INSTALL,
-        )
+def record_is_ignored(root, cfg):
+    """True when git would never commit the record at
+    secrets.scanner.record_file, which names one machine's path."""
     try:
-        ignored = git_tree.is_ignored(root, rel)
+        return git_tree.is_ignored(root, cfg["record_file"])
     except git_tree.NoGitError:
         # With no repository nothing can commit the record, and the shipped
         # .gitignore ignores it once one exists.
-        ignored = True
-    if not ignored:
-        return report(
-            ExitCode.CONFIG,
-            "git would commit the scanner record %s, which names one machine's path"
-            % rel,
-            "%s.record_file" % _WHERE,
-            "ignore that path in .gitignore, then rerun",
-        )
-    path = os.path.abspath(found)
-    record = {"name": name, "path": path, "rev": cfg["rev"], "sha256": _sha256(path)}
+        return True
+
+
+def write_record(root, cfg, path):
+    """Record the scanner at the absolute *path* under the configured name and
+    rev with its sha256, the one record every scan runs; True when the file
+    changed. The caller has checked record_is_ignored."""
+    record = {
+        "name": cfg["name"],
+        "path": path,
+        "rev": cfg["rev"],
+        "sha256": sha256(path),
+    }
     text = json.dumps(record, sort_keys=True, indent=2) + "\n"
-    changed = _write_if_changed(os.path.join(root, rel), text)
-    sys.stdout.write(
-        "scan_secrets: %s %s at %s %s %s\n"
-        % (name, cfg["rev"], path, "recorded in" if changed else "already in", rel)
+    return write_if_changed(
+        os.path.join(root, cfg["record_file"]), text.encode("utf-8")
     )
-    return ExitCode.SUCCESS
 
 
 def _recorded(root, cfg):
@@ -184,7 +172,7 @@ def _recorded(root, cfg):
         return None, "the scanner record %s holds no absolute path" % rel
     if not (os.path.isfile(path) and os.access(path, os.X_OK)):
         return None, "the recorded scanner %s is gone" % path
-    if _sha256(path) != record.get("sha256"):
+    if sha256(path) != record.get("sha256"):
         return None, "the recorded scanner %s changed after it was recorded" % path
     return path, None
 
@@ -316,30 +304,30 @@ def _scan(root, cfg, mode):
             "delete each; an excused finding is a secrets.scanner.exclusions "
             "entry with its reason",
         )
+    # Every mode runs the recorded program and never one found on PATH, so
+    # the commit hook, `make secret-scan` and CI judge with one checked build.
+    program, why = _recorded(root, cfg)
+    if program is None:
+        return report(
+            ExitCode.BACKEND_ABSENT, why, "%s %s" % (name, cfg["rev"]), _INSTALL
+        )
     staged = mode != _HISTORY
-    program = None
-    if staged:
-        program = shutil.which(name)
-        if program is None:
+    # A scan of an empty stage passes over zero files, which proves nothing.
+    if staged and not git_tree.staged_paths(root, repo_context=True):
+        if mode == _STAGED:
             return report(
-                ExitCode.BACKEND_ABSENT, "%s is not on PATH" % name, root, _INSTALL
+                ExitCode.NOTHING_JUDGED,
+                "nothing is staged that the next commit would add or change",
+                root,
+                "stage the files to commit with git add, then rerun; "
+                "make secret-scan scans the history",
             )
-        # A scan of an empty stage passes over zero files, which proves nothing.
-        if not git_tree.staged_paths(root, repo_context=True):
-            if mode == _STAGED:
-                return report(
-                    ExitCode.NOTHING_JUDGED,
-                    "nothing is staged that the next commit would add or change",
-                    root,
-                    "stage the files to commit with git add, then rerun; "
-                    "make secret-scan scans the history",
-                )
-            # `pre-commit run --all-files` runs the hook outside a commit, so
-            # the hook judges every commit instead of passing over nothing.
-            sys.stdout.write(
-                "scan_secrets: nothing is staged, so every commit is scanned\n"
-            )
-            staged = False
+        # `pre-commit run --all-files` runs the hook outside a commit, so
+        # the hook judges every commit instead of passing over nothing.
+        sys.stdout.write(
+            "scan_secrets: nothing is staged, so every commit is scanned\n"
+        )
+        staged = False
     if staged:
         on = "the staged diff of %s" % root
     else:
@@ -362,15 +350,6 @@ def _scan(root, cfg, mode):
                 "widen the options to reach at least one commit, then rerun",
             )
         on = "every commit `git log %s` reaches in %s" % (options, root)
-        if program is None:
-            program, why = _recorded(root, cfg)
-            if program is None:
-                return report(
-                    ExitCode.BACKEND_ABSENT,
-                    why,
-                    "%s %s from %s" % (name, cfg["rev"], cfg["hook_repo"]),
-                    _INSTALL,
-                )
     try:
         status, text, stderr = _run_scanner(root, cfg, program, staged)
     except OSError as exc:
@@ -452,12 +431,11 @@ def main(argv=None, root=None):
             ExitCode.USAGE,
             "argparse refused the arguments above",
             "the command line",
-            "call it with exactly one of --locate, --staged, --history or "
-            "--staged-or-history",
+            "call it with exactly one of --staged, --history or --staged-or-history",
         )
     root = os.path.abspath(ROOT if root is None else root)
     try:
-        cfg = _settings(root)
+        cfg = settings(root)
         if cfg["name"] != _ADAPTER:
             return report(
                 ExitCode.CONFIG,
@@ -466,8 +444,6 @@ def main(argv=None, root=None):
                 "%s.name" % _WHERE,
                 "name %s, or add an adapter for that scanner first" % _ADAPTER,
             )
-        if args.locate:
-            return _locate(root, cfg)
         if args.staged:
             return _scan(root, cfg, _STAGED)
         if args.history:

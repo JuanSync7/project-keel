@@ -1422,27 +1422,25 @@ def test_pre_commit_runs_the_same_ruff_as_the_gate():
 
 
 # ---- scope: the secret scanner -----------------------------------------------
-# The scanner is built by pre-commit at the rev config pins, and the history scan
-# runs the build that rev recorded, so three files must agree: config, the hook
-# block and the Makefile. A hook that ran another release would judge a commit by
-# rules the gate does not use.
+# `make secrets-install` fetches the release config/project.json pins and records
+# it, and every scan runs that record, so the commit hook must be a local hook over
+# the adapter and no pre-commit repository may build another copy: a hook that ran
+# another release would judge a commit by rules the gate does not use.
 _SCANNER = "scripts/scan_secrets.py"
+_SCANNER_INSTALLER = "scripts/install_scanner.py"
 _SECRET_SCAN = "secret-scan"
 _SECRETS_INSTALL = "secrets-install"
 # The commit hook's mode: the staged diff, or every commit when nothing is
 # staged (`pre-commit run --all-files`), so it never passes over zero files.
 _SCANNER_ENTRY_COMMIT = "python3 %s --staged-or-history" % _SCANNER
-_SCANNER_ENTRY_LOCATE = "python3 %s --locate" % _SCANNER
 
 
-def _scanner_config():
-    keys = config_loader.rows(
-        ("secrets", "scanner", "hook_repo"), ("secrets", "scanner", "rev")
-    )
+def _scanner_name():
+    keys = config_loader.rows(("secrets", "scanner", "name"))
     values = config_loader.resolve(
         config_loader.read(str(_ROOT)), keys, config_loader.CONFIG_FILE
     )
-    return {key[-1]: value for key, value in values.items()}
+    return values[("secrets", "scanner", "name")]
 
 
 def _precommit_repos():
@@ -1487,38 +1485,33 @@ def _recipe(target):
     return out
 
 
-def test_pre_commit_runs_the_same_secret_scanner_as_config():
-    """The hook block names the repository and the rev config/project.json
-    secrets.scanner names. It runs the commit scan on every commit and holds the
-    manual-stage hook `make secrets-install` runs to record the build."""
-    want = _scanner_config()
-    blocks = [b for b in _precommit_repos() if b["repo"] == want["hook_repo"]]
-    assert len(blocks) == 1, (
-        ".pre-commit-config.yaml holds %d blocks for %s, the repository "
-        "config/project.json secrets.scanner.hook_repo names"
-        % (len(blocks), want["hook_repo"])
+def test_pre_commit_runs_the_recorded_secret_scanner_and_builds_none():
+    """The commit scan is one local, system-language hook over the adapter, which
+    runs only the program `make secrets-install` recorded; no repository block
+    names the scanner, so a commit needs no Go toolchain and no fetch, and the
+    install target runs the installer rather than a pre-commit build."""
+    repos = _precommit_repos()
+    hooks = [
+        (b["repo"], h)
+        for b in repos
+        for h in b["hooks"]
+        if _SCANNER in h.get("entry", "")
+    ]
+    assert len(hooks) == 1, ("one hook must run %s" % _SCANNER, hooks)
+    repo, hook = hooks[0]
+    assert repo == "local", "the scanner hook sits in the %s block" % repo
+    assert hook.get("entry") == _SCANNER_ENTRY_COMMIT, hook
+    assert hook.get("language") == "system", hook
+    assert "stages" not in hook, (
+        "the commit scan must run at the commit stage, not %s" % hook["stages"]
     )
-    block = blocks[0]
-    assert block["rev"] == want["rev"], (
-        "pre-commit builds the scanner at %s while config/project.json "
-        "secrets.scanner.rev pins %s" % (block["rev"], want["rev"])
+    assert hook.get("pass_filenames") == "false", hook
+    name = _scanner_name()
+    builds = [b["repo"] for b in repos if b["repo"] != "local" and name in b["repo"]]
+    assert builds == [], "a pre-commit repository builds the scanner: %s" % builds
+    assert _recipe(_SECRETS_INSTALL) == ["$(PY) %s" % _SCANNER_INSTALLER], _recipe(
+        _SECRETS_INSTALL
     )
-    staged = [h for h in block["hooks"] if h.get("entry") == _SCANNER_ENTRY_COMMIT]
-    assert len(staged) == 1, (
-        "no single hook runs `%s` on commit" % _SCANNER_ENTRY_COMMIT,
-        block["hooks"],
-    )
-    assert "stages" not in staged[0], (
-        "the commit scan must run at the commit stage, not %s" % staged[0]["stages"]
-    )
-    assert staged[0].get("pass_filenames") == "false", staged[0]
-    locate = [h for h in block["hooks"] if h.get("entry") == _SCANNER_ENTRY_LOCATE]
-    assert len(locate) == 1, block["hooks"]
-    assert locate[0].get("stages") == "[manual]", locate[0]
-    alias = locate[0].get("alias")
-    assert alias, "the locate hook has no alias for `make secrets-install` to run"
-    install = " ".join(_recipe(_SECRETS_INSTALL))
-    assert "pre_commit run %s --hook-stage manual" % alias in install, install
 
 
 def test_verify_reaches_the_secret_scan():
@@ -1538,7 +1531,7 @@ def test_verify_reaches_the_secret_scan():
 
 
 def test_ci_installs_the_scanner_then_scans():
-    """CI builds the scanner, then scans the whole history before the suite,
+    """CI installs the pinned scanner, then scans the whole history before the suite,
     and neither step may carry on past a failure. The suite declares the
     scanner required, so its install comes before `make test` too."""
     runs = _ci_run_lines()

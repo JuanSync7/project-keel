@@ -356,8 +356,9 @@ class _Pair(object):
         # The frontend targets exit 0 in a project with no frontend app: the
         # Makefile's FE_APPS is the one statement of where apps live. The secret
         # scanner comes before verify, whose history scan is BACKEND_ABSENT
-        # without its record. scratch_env points XDG_CACHE_HOME into the run,
-        # so pre-commit builds the pinned scanner once per run, not per project.
+        # without its record. The install root is per user, outside the run,
+        # so the pinned archive is fetched once per machine and each later
+        # project only records it.
         for target in ("fe-install", "fe-browsers", "secrets-install"):
             if not self._call("make", target, [target], self.dest):
                 return False

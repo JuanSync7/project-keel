@@ -5,10 +5,10 @@ layer: n/a
 status: proposed
 owner: TBD
 tags: [adr, secrets, security, scanner, pre-commit, ci]
-summary: "keel's own rule against a committed credential is a gate test with no outside tool: tests/integration/test_committed_secrets_gate.py fails a file a commit could carry that gives a name a secret config_loader KEYS row declares a value. A scanner covers the shapes no name declares, as a thin adapter, scripts/scan_secrets.py, behind config/project.json secrets.scanner, an adapter for gitleaks, installed by the pre-commit hook pinned at the configured rev. The scanner runs on the staged diff at commit and on every commit in make verify and CI. A scanner that is missing or not the recorded build is exit 11, and a scan over zero files is exit 13, never a skip or a pass."
+summary: "keel's own rule against a committed credential is a gate test with no outside tool: tests/integration/test_committed_secrets_gate.py fails a file a commit could carry that gives a name a secret config_loader KEYS row declares a value. A scanner covers the shapes no name declares, as a thin adapter, scripts/scan_secrets.py, behind config/project.json secrets.scanner, an adapter for gitleaks, installed from the release archive config pins by sha256 for each platform, with no build. The scanner runs on the staged diff at commit and on every commit in make verify and CI. A scanner that is missing or not the recorded build is exit 11, and a scan over zero files is exit 13, never a skip or a pass."
 id: docs-adr-0025-committed-secrets-keyed-gate-and-scanner
 created: 2026-10-20
-updated: 2026-10-20
+updated: 2026-10-23
 visibility: internal
 canonical: true
 ---
@@ -50,17 +50,21 @@ Two kinds of leak need different tools:
    and key, never by value. Every name `models.credential_env` lists must have
    a secret row, so a new credential cannot slip past by having none.
 2. **The scanner is an adapter behind config.** config/project.json
-   `secrets.scanner` names the program (`gitleaks`), the hook repository and
-   the release (`rev`) that installs it, the status that means "findings",
+   `secrets.scanner` names the program (`gitleaks`), the release (`rev`), the
+   one URL its archives are fetched from and each platform's archive and
+   sha256, the status that means "findings",
    and the exclusions. `scripts/scan_secrets.py` is the one place the
    scanner's own flags are written. Another scanner is a second adapter beside
    it, and never an edit to the gate test.
-3. **One declared installer.** The scanner is built by the pre-commit hook
-   that `.pre-commit-config.yaml` pins at `secrets.scanner.rev`.
-   `make secrets-install` runs that hook's manual `secrets-locate` stage, which
-   records the program's path, rev and sha256 in the git-ignored
-   `secrets.scanner.record_file`. Commit, `make verify` and CI therefore run
-   one build, and none of them downloads anything outside pre-commit.
+3. **One declared installer.** `make secrets-install` runs
+   `scripts/install_scanner.py`, which fetches this platform's archive from
+   `secrets.scanner.release_url`, installs its program under the per-user
+   `secrets.scanner.install_root` only when the archive's sha256 is the one
+   `secrets.scanner.release_assets` pins, and records the program's path, rev
+   and sha256 in the git-ignored `secrets.scanner.record_file`. The commit hook
+   is a local hook over `scripts/scan_secrets.py`, so commit, `make verify` and
+   CI run that one recorded program, none of them runs one found on PATH, and
+   only the installer downloads anything.
 4. **Where it runs.**
    - At commit, the `secret scan (staged, or every commit when nothing is
      staged)` hook scans the staged diff, with the index the hook commits.
@@ -96,12 +100,20 @@ Two kinds of leak need different tools:
   secrets-install` has run once. The README Quickstart runs it before the
   first `make verify`, and `make secret-scan` is in
   config/project.json `make_targets.effect_proof_skip` for that reason.
-- The first install builds the scanner from source through pre-commit, which
-  needs Go's module proxy or `GOPROXY=direct` and a CA bundle where TLS is
-  intercepted; docs/guides/limits-and-troubleshooting.md names the symptoms.
-  A later install reuses pre-commit's cache.
-- The record is trust on first use: a program called `gitleaks` that is first
-  on `PATH` when `make secrets-install` runs is the one recorded.
+- The first install fetches one archive of a few megabytes and needs no Go
+  toolchain; it needs the release URL to be reachable and, where TLS is
+  intercepted, a CA bundle Python trusts. A host that cannot reach the vendor
+  repoints `secrets.scanner.release_url` at a mirror holding the same files,
+  and the sha256 check is unchanged. A second install with the same pins
+  fetches nothing.
+- A committed commit is red at the hook (exit 11) until `make
+  secrets-install` has run once in that checkout, because the hook runs the
+  record and nothing else.
+- The pins are as good as the checksums file they were copied from: an
+  archive and a sha256 changed together in config pass the check, so a change
+  to `secrets.scanner.release_assets` is a reviewed change.
+- The record is per machine and git-ignored, so it proves the program has not
+  changed since it was recorded, not who recorded it.
 - What neither layer sees is listed in
   docs/guides/deterministic-checks.md: a value split across literals, a weak
   password with no known shape, the file types the scanner's default rules
@@ -117,10 +129,13 @@ Two kinds of leak need different tools:
   passes, and keel's rule would live in a third-party tool's config.
 - **The keyed gate only.** Rejected: it cannot see a credential under a name
   no `KEYS` row declares, or in a file type it does not parse.
-- **Install the scanner as a pip extra or a downloaded binary.** Rejected:
-  pre-commit is already in the dev extra and pins the scanner's own
-  repository by rev, and either choice would be a second installer to pin and
-  audit.
+- **Build the scanner through its pre-commit hook repository.** Tried first,
+  and replaced: pre-commit builds it from source, which needs a Go toolchain
+  and the vendor's repository, and a firewalled host has neither. It also let
+  the record name whatever program was first on PATH.
+- **Install the scanner as a pip extra.** Rejected: no maintained package
+  ships the scanner's own release, so it would be a third party's build to
+  pin and audit.
 - **Skip the history scan when the scanner is missing.** Rejected: a skip
   reads as green, and a missing scanner is the state a fresh clone starts in.
 - **Scan only the pushed range in CI.** Rejected for now: a full history scan

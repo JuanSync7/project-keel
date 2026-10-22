@@ -2,7 +2,7 @@
 title: Unit — scan_secrets (the secret scanner's adapter, driven through a stub scanner)
 kind: tests
 layer: n/a
-summary: scripts/scan_secrets.py driven against a stub scanner, a small Python program put first on PATH under the name config/project.json `secrets.scanner.name` gives, which records its argv, environment and the config it was handed, writes the report a plan file tells it to and exits the plan's status. `--locate` records the scanner's absolute path, the configured rev and the program's sha256 in `secrets.scanner.record_file`, and a second run leaves the same bytes and the same modification time, which is the module's fixed point; a record file git would track is a config fault, and a scanner that is not on PATH is BACKEND_ABSENT naming `make secrets-install`. The history scan runs only the recorded program, and an absent record, one naming another program or rev, a recorded path that is gone, and a program whose digest changed are each BACKEND_ABSENT before anything runs. A finding prints as `file:line rule commit` and the value the stub reports never appears on stdout or stderr. The scanner is handed fixed flags (redaction, the inline allow comments ignored, an empty ignore directory, a config that only extends the default rules, the configured finding status, a JSON report) and the allowlisted environment, so GITLEAKS_CONFIG and the repository context never reach it in the history scan, while the staged scan passes GIT_INDEX_FILE. A staged scan with nothing staged, a deletion alone included, judges nothing (NOTHING_JUDGED), and it reads the staged list from the index GIT_INDEX_FILE names, the one `git commit -a` fills. A scanner that exits 0 with findings, the finding status with none, any other status, or a report that is not a JSON list is BACKEND_ABSENT, never a pass and never FAILURE, which is a finding's alone; a git that ran and failed is USAGE. History options that reach no commit judge nothing (NOTHING_JUDGED). The hook's mode, `--staged-or-history`, scans the staged diff when something is staged and every commit when nothing is, and judges nothing with neither. A `secrets.scanner.name` the module has no adapter for is CONFIG in every mode before anything runs. The asserted name, record path, finding status, rev and log options are read from config/project.json through scripts/config_loader.py, never typed here. An exclusion removes exactly its file and rule; one the history scan does not use is a config fault. The scanner's own config or ignore file in the tree stops the scan before the scanner runs. A repository with no commit, or no repository, judges nothing (NOTHING_JUDGED), and a refused config value is CONFIG before the scanner runs.
+summary: scripts/scan_secrets.py driven against a stub scanner, a small Python program named as config/project.json `secrets.scanner.name` gives and recorded through `write_record`, as the installer records it, which records its argv, environment and the config it was handed, writes the report a plan file tells it to and exits the plan's status. `write_record` records the scanner's absolute path, the configured rev and the program's sha256 in `secrets.scanner.record_file`, and a second write leaves the same bytes and the same modification time, which is the module's fixed point; `record_is_ignored` is false for a record file git would track. Every scan runs only the recorded program: a program named like the scanner first on PATH is never run, and an absent record, one naming another program or rev, a recorded path that is gone, and a program whose digest changed are each BACKEND_ABSENT naming `make secrets-install` before anything runs, in the staged scan and the history scan alike. A finding prints as `file:line rule commit` and the value the stub reports never appears on stdout or stderr. The scanner is handed fixed flags (redaction, the inline allow comments ignored, an empty ignore directory, a config that only extends the default rules, the configured finding status, a JSON report) and the allowlisted environment, so GITLEAKS_CONFIG and the repository context never reach it in the history scan, while the staged scan passes GIT_INDEX_FILE. A staged scan with nothing staged, a deletion alone included, judges nothing (NOTHING_JUDGED), and it reads the staged list from the index GIT_INDEX_FILE names, the one `git commit -a` fills. A scanner that exits 0 with findings, the finding status with none, any other status, or a report that is not a JSON list is BACKEND_ABSENT, never a pass and never FAILURE, which is a finding's alone; a git that ran and failed is USAGE. History options that reach no commit judge nothing (NOTHING_JUDGED). The hook's mode, `--staged-or-history`, scans the staged diff when something is staged and every commit when nothing is, and judges nothing with neither. A `secrets.scanner.name` the module has no adapter for is CONFIG in every mode before anything runs. The asserted name, record path, finding status, rev and log options are read from config/project.json through scripts/config_loader.py, never typed here. An exclusion removes exactly its file and rule; one the history scan does not use is a config fault. The scanner's own config or ignore file in the tree stops the scan before the scanner runs. A repository with no commit, or no repository, judges nothing (NOTHING_JUDGED), and a refused config value is CONFIG before the scanner runs.
 """
 
 import hashlib
@@ -120,10 +120,11 @@ class _Project:
     def run(self, *argv):
         return scan_secrets.main(list(argv), root=str(self.root))
 
-    def locate(self, capsys=None):
-        assert self.run("--locate") == ExitCode.SUCCESS
-        if capsys is not None:
-            capsys.readouterr()
+    def record(self):
+        """Record the stub as the installed scanner, as the installer does."""
+        root = str(self.root)
+        cfg = scan_secrets.settings(root)
+        return scan_secrets.write_record(root, cfg, str(self.stub_dir / _NAME))
 
     def stage(self, rel="staged.txt", text="staged\n"):
         """Write *rel* and stage it, so the staged diff holds one file."""
@@ -151,7 +152,7 @@ class _Project:
 @pytest.fixture
 def project(tmp_path, monkeypatch):
     """A committed project with keel's config, its record file ignored, and the
-    stub scanner first on PATH. The hermetic git environment is exported,
+    stub scanner recorded, never on PATH. The hermetic git environment is exported,
     because the module's own git calls copy GIT_CONFIG_* from here."""
     work = tmp_path / "work"
     work.mkdir()
@@ -173,9 +174,9 @@ def project(tmp_path, monkeypatch):
     stub = stub_dir / _NAME
     stub.write_text(_STUB % sys.executable, encoding="utf-8")
     stub.chmod(stub.stat().st_mode | stat.S_IXUSR)
-    monkeypatch.setenv("PATH", str(stub_dir) + os.pathsep + os.environ["PATH"])
     proj = _Project(root, stub_dir, env)
     proj.plan(rc=0, findings=[])
+    assert proj.record()
     return proj
 
 
@@ -193,13 +194,12 @@ def _finding(file="app.txt", line=3, rule="generic-api-key", commit=None):
     }
 
 
-# --- --locate: the record the history scan runs ----------------------------
+# --- the record every scan runs ------------------------------------------
 
 
-def test_locate_records_path_rev_and_digest_and_a_second_run_changes_nothing(
+def test_the_record_holds_path_rev_and_digest_and_a_second_write_changes_nothing(
     project,
 ):
-    project.locate()
     record = project.root / _RECORD
     stub = project.stub_dir / _NAME
     data = json.loads(record.read_text(encoding="utf-8"))
@@ -210,37 +210,35 @@ def test_locate_records_path_rev_and_digest_and_a_second_run_changes_nothing(
         "sha256": hashlib.sha256(stub.read_bytes()).hexdigest(),
     }
     first, first_mtime = record.read_bytes(), record.stat().st_mtime_ns
-    project.locate()
+    assert project.record() is False
     assert record.read_bytes() == first
     assert record.stat().st_mtime_ns == first_mtime
 
 
-def test_locate_refuses_a_record_file_git_would_track(project, capsys):
+def test_a_record_file_git_would_track_is_not_ignored(project):
+    cfg = scan_secrets.settings(str(project.root))
+    assert scan_secrets.record_is_ignored(str(project.root), cfg)
     (project.root / ".gitignore").write_text("", encoding="utf-8")
-    assert project.run("--locate") == ExitCode.CONFIG
-    assert not (project.root / _RECORD).exists()
-    assert "secrets.scanner.record_file" in capsys.readouterr().err
+    assert not scan_secrets.record_is_ignored(str(project.root), cfg)
 
 
-def test_locate_without_the_scanner_on_path_is_backend_absent(project, capsys):
-    (project.stub_dir / _NAME).unlink()
-    assert project.run("--locate") == ExitCode.BACKEND_ABSENT
-    assert "make secrets-install" in capsys.readouterr().err
-    assert not (project.root / _RECORD).exists()
-
-
-def test_a_staged_scan_without_the_scanner_on_path_is_backend_absent(project, capsys):
-    (project.stub_dir / _NAME).unlink()
+def test_a_scanner_on_path_is_never_run_without_a_record(project, monkeypatch, capsys):
+    """The commit hook and the history scan run one checked build: a program
+    named like the scanner first on PATH is not it."""
+    monkeypatch.setenv("PATH", str(project.stub_dir) + os.pathsep + os.environ["PATH"])
+    (project.root / _RECORD).unlink()
     project.stage()
-    assert project.run("--staged") == ExitCode.BACKEND_ABSENT
+    for mode in ("--staged", "--history", "--staged-or-history"):
+        assert project.run(mode) == ExitCode.BACKEND_ABSENT, mode
+    assert project.calls() == []
     assert "make secrets-install" in capsys.readouterr().err
 
 
-# --- the history scan runs only the recorded program -----------------------
+# --- every scan runs only the recorded program ---------------------------
 
 
 def _no_record(project):
-    pass
+    (project.root / _RECORD).unlink()
 
 
 def _other_name(project):
@@ -269,11 +267,13 @@ def _digest_changed(project):
 @pytest.mark.parametrize(
     "spoil", [_no_record, _other_name, _other_rev, _path_gone, _digest_changed]
 )
-def test_history_without_a_matching_record_is_backend_absent(project, capsys, spoil):
-    if spoil is not _no_record:
-        project.locate()
+@pytest.mark.parametrize("mode", ["--history", "--staged"])
+def test_a_scan_without_a_matching_record_is_backend_absent(
+    project, capsys, spoil, mode
+):
+    project.stage()
     spoil(project)
-    assert project.run("--history") == ExitCode.BACKEND_ABSENT
+    assert project.run(mode) == ExitCode.BACKEND_ABSENT
     assert project.calls() == []
     assert "make secrets-install" in capsys.readouterr().err
 
@@ -284,7 +284,6 @@ def test_history_without_a_matching_record_is_backend_absent(project, capsys, sp
 def test_history_hands_the_scanner_fixed_flags_and_the_allowlisted_env(
     project, monkeypatch
 ):
-    project.locate()
     monkeypatch.setenv("GITLEAKS_CONFIG", "/elsewhere/rules.toml")
     monkeypatch.setenv("GITLEAKS_CONFIG_TOML", "[allowlist]")
     monkeypatch.setenv("GIT_INDEX_FILE", str(project.root / ".git" / "index"))
@@ -348,7 +347,6 @@ def test_the_staged_scan_judges_the_index_git_hands_the_hook(project, monkeypatc
 
 
 def test_a_finding_prints_file_line_rule_and_commit_never_the_value(project, capsys):
-    project.locate(capsys)
     commit = project.head()
     project.plan(rc=_LEAK, findings=[_finding(commit=commit)])
     assert project.run("--history") == ExitCode.FAILURE
@@ -395,7 +393,6 @@ def test_a_scanner_that_contradicts_itself_is_backend_absent(
 ):
     # Not FAILURE, which is a finding: a caller must tell "rotate a
     # credential" from "fix the scanner".
-    project.locate()
     project.plan(rc=rc, report=report, stderr="scanner said something\n")
     assert project.run("--history") == ExitCode.BACKEND_ABSENT
     out, err = capsys.readouterr()
@@ -409,7 +406,6 @@ def test_a_scanner_that_contradicts_itself_is_backend_absent(
 
 
 def test_an_exclusion_removes_exactly_its_file_and_rule(project, capsys):
-    project.locate(capsys)
     project.scanner(
         exclusions={"tests/fixture.txt": {"generic-api-key": "a fake key on purpose"}}
     )
@@ -430,7 +426,6 @@ def test_an_exclusion_removes_exactly_its_file_and_rule(project, capsys):
 
 
 def test_a_used_exclusion_leaves_a_clean_scan(project):
-    project.locate()
     project.scanner(
         exclusions={"tests/fixture.txt": {"generic-api-key": "a fake key on purpose"}}
     )
@@ -439,7 +434,6 @@ def test_a_used_exclusion_leaves_a_clean_scan(project):
 
 
 def test_an_exclusion_the_history_scan_does_not_use_is_a_config_fault(project, capsys):
-    project.locate()
     project.scanner(exclusions={"gone.txt": {"generic-api-key": "was a fixture"}})
     project.plan(rc=0, findings=[])
     assert project.run("--history") == ExitCode.CONFIG
@@ -461,7 +455,6 @@ def test_an_unused_exclusion_does_not_fail_a_staged_scan(project):
 def test_the_scanners_own_config_or_ignore_file_stops_the_scan(
     project, capsys, name, where
 ):
-    project.locate()
     if where == "tracked-deep":
         (project.root / "sub").mkdir()
         (project.root / "sub" / name).write_text("x\n", encoding="utf-8")
@@ -496,7 +489,6 @@ def test_the_scanners_own_config_or_ignore_file_stops_the_scan(
 def test_a_refused_scanner_setting_is_config_before_the_scanner_runs(
     project, capsys, values
 ):
-    project.locate()
     project.scanner(**values)
     assert project.run("--history") == ExitCode.CONFIG
     assert project.calls() == []
@@ -505,7 +497,6 @@ def test_a_refused_scanner_setting_is_config_before_the_scanner_runs(
 
 @pytest.mark.parametrize("options", [["--max-count=0"], ["--author=nobody-wrote-this"]])
 def test_history_options_that_reach_no_commit_judge_nothing(project, capsys, options):
-    project.locate()
     project.scanner(history_log_opts=options)
     assert project.run("--history") == ExitCode.NOTHING_JUDGED
     assert project.calls() == []
@@ -513,7 +504,6 @@ def test_history_options_that_reach_no_commit_judge_nothing(project, capsys, opt
 
 
 def test_a_git_that_ran_and_failed_is_usage_never_a_finding(project, capsys):
-    project.locate()
     (project.root / ".git" / "HEAD").write_text("garbage\n", encoding="utf-8")
     for mode in ("--history", "--staged"):
         assert project.run(mode) == ExitCode.USAGE, mode
@@ -521,13 +511,10 @@ def test_a_git_that_ran_and_failed_is_usage_never_a_finding(project, capsys):
     assert "git failed" in capsys.readouterr().err
 
 
-@pytest.mark.parametrize(
-    "mode", ["--locate", "--staged", "--history", "--staged-or-history"]
-)
+@pytest.mark.parametrize("mode", ["--staged", "--history", "--staged-or-history"])
 def test_a_scanner_name_with_no_adapter_is_config(project, capsys, mode):
     """This module holds one scanner's flags, so config naming another is a
     refusal before anything runs, not a scan that cannot be read."""
-    project.locate()
     other = _NAME + "-other"
     shutil.copyfile(str(project.stub_dir / _NAME), str(project.stub_dir / other))
     (project.stub_dir / other).chmod(0o755)
@@ -541,7 +528,7 @@ def test_a_scanner_name_with_no_adapter_is_config(project, capsys, mode):
 
 def test_the_hook_scans_the_history_when_nothing_is_staged(project, capsys):
     """`pre-commit run --all-files` runs the hook with nothing staged; the
-    hook then judges every commit, with the build on PATH, never zero files."""
+    hook then judges every commit, with the recorded build, never zero files."""
     assert project.run("--staged-or-history") == ExitCode.SUCCESS
     (call,) = project.calls()
     assert "--staged" not in call["argv"], call["argv"]
@@ -560,7 +547,6 @@ def test_the_hook_with_no_commit_and_nothing_staged_judges_nothing(project):
 
 
 def test_a_repository_with_no_commit_judges_nothing(project, tmp_path, capsys):
-    project.locate()
     shutil.rmtree(str(project.root / ".git"))
     _git(project.root, project.env, "init", "-q")
     assert project.run("--history") == ExitCode.NOTHING_JUDGED

@@ -1,5 +1,6 @@
 # Install once:  pip install -e ".[dev]" (it carries pre-commit) && pre-commit install
-# The secret scanner once per machine:  make secrets-install
+# The secret scanner once per checkout:  make secrets-install (fetches the
+# pinned release once per machine; the commit hook below refuses until then)
 # Each hook below is a thin TRIGGER (an adapter) that fires a doer;
 # the doer's logic lives in scripts/ or the tool, never inline here.
 repos:
@@ -41,6 +42,20 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
+      # Every commit runs this one over the index git hands the hook: a
+      # credential-shaped value in what the commit adds is refused, printed as
+      # file, line and rule, never the value. A local hook, so pre-commit
+      # builds nothing: it runs the program `make secrets-install` fetched,
+      # checked by sha256 and recorded, which needs no Go toolchain. No
+      # always_run: pre-commit skips it when a commit adds or changes no file.
+      # `pre-commit run --all-files` runs it with nothing staged, and then it
+      # scans every commit instead, so it never passes, or fails, over zero
+      # files.
+      - id: secret-scan
+        name: secret scan (staged, or every commit when nothing is staged)
+        entry: python3 scripts/scan_secrets.py --staged-or-history
+        language: system
+        pass_filenames: false
   - repo: https://github.com/astral-sh/ruff-pre-commit
     # Must equal the `ruff==` pin in pyproject.toml's `dev` extra: a hook that
     # runs a different ruff than the gate reports the gate's output as a defect.
@@ -48,29 +63,3 @@ repos:
     hooks:
       - id: ruff
       - id: ruff-format
-  - repo: https://github.com/gitleaks/gitleaks
-    # Must equal config/project.json secrets.scanner.rev (and this repo its
-    # hook_repo): scripts/scan_secrets.py records this build under that rev and
-    # the history scan refuses a record naming another.
-    rev: v8.30.1
-    hooks:
-      # Every commit runs this one over the index git hands the hook: a
-      # credential-shaped value in what the commit adds is refused, printed as
-      # file, line and rule, never the value. No always_run: pre-commit skips
-      # it when a commit adds or changes no file. `pre-commit run --all-files`
-      # runs it with nothing staged, and then it scans every commit instead,
-      # so it never passes, or fails, over zero files.
-      - id: gitleaks
-        name: secret scan (staged, or every commit when nothing is staged)
-        entry: python3 scripts/scan_secrets.py --staged-or-history
-        pass_filenames: false
-      # `make secrets-install` runs this one: pre-commit builds the pinned
-      # scanner into its cache, and the entry records where. Manual, so no
-      # commit runs it.
-      - id: gitleaks
-        alias: secrets-locate
-        name: secret scanner (record the pinned build)
-        entry: python3 scripts/scan_secrets.py --locate
-        pass_filenames: false
-        always_run: true
-        stages: [manual]

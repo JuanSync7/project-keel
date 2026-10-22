@@ -317,13 +317,15 @@ fe-browsers: ## [read] Download the browser each frontend app's journey drives (
 	for app in $(FE_APPS); do [ -d "$$app/node_modules" ] || { echo "$@: $$app has no node_modules, so its journey browser was not downloaded; run 'make fe-install', then run it again" >&2; exit 2; }; done; \
 	for app in $(FE_APPS); do echo "journey browser: $$app"; (cd $$app && npm run --silent test:e2e:browsers -- $(FE_BROWSER_FLAGS)) || exit 1; done
 
-# The secret scanner is built by its pre-commit hook at the rev
-# .pre-commit-config.yaml pins (config/project.json secrets.scanner.rev), so
-# make, pre-commit and CI run one build; the manual-stage hook's entry,
-# scripts/scan_secrets.py --locate, records where it is in the git-ignored
-# secrets.scanner.record_file.
-secrets-install: check-python ## [read] Build the pinned secret scanner through pre-commit and record where it is
-	$(PY) -m pre_commit run secrets-locate --hook-stage manual --all-files
+# Fetches the release archive config/project.json secrets.scanner.release_assets
+# pins for this platform from secrets.scanner.release_url, with no Go toolchain
+# and no build, and installs it only when its sha256 matches. The program lands
+# under secrets.scanner.install_root, a per-user directory outside the checkout,
+# and its record in the git-ignored secrets.scanner.record_file, so the label is
+# [read]: nothing git lists changes. A second run with the same pins fetches
+# nothing. The commit hook, make secret-scan and CI all run that one record.
+secrets-install: check-python ## [read] Fetch the pinned secret scanner release, check its sha256, install it per user and record it (scripts/install_scanner.py)
+	$(PY) scripts/install_scanner.py
 
 # The history scan runs the recorded build only: with no record, or one naming
 # another rev or a program whose digest changed, it exits BACKEND_ABSENT (11) and
