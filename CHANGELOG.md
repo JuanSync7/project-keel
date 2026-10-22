@@ -268,6 +268,16 @@ version rather than a bare commit:
   `models.timeout_seconds.claude-code-headless` (600 seconds) or writes past
   the reply cap on either stream, raising `ChildTimedOut` or
   `ChildOutputTooLarge`, both a `RuntimeError` naming the key.
+- **Every server stops cleanly on SIGTERM, under a memory cap.** The REST
+  entry is now api/rest_fastapi/serve.py (what `make run-api` runs), the MCP
+  servers start through mcp/protocol.py `run_stdio_server`, and gRPC's
+  `serve` does the same: each caps its address space at config/project.json
+  `transports.serve.memory_cap_mb` (4096 MB, RLIMIT_AS; null for none) and
+  names a shutdown owner, scripts/resource_limits.py `shutdown_owner`, that
+  takes the first SIGTERM or SIGINT, writes `<server>: stopping on <signal>`,
+  lets the calls in flight finish for `transports.serve.shutdown_grace_seconds`
+  (10), and exits 0; a second signal ends the process at once. An MCP server
+  stops between requests.
 - **`make verify` is red until `make secrets-install` has run once.** A fresh
   clone has no scanner record, so `make secret-scan` exits 11 naming the
   install. The README Quickstart now commits the generated project, installs

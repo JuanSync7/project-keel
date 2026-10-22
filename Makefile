@@ -355,7 +355,7 @@ site-static: site-data ## [local] Snapshot the showcase to static files (no back
 			$(if $(strip $(FE_APPS)),--out-dir "$(firstword $(FE_APPS))public"); \
 	else echo "skip static snapshot (this project declined the showcase)"; fi
 run-api: check-python ## [local] Serve the showcase REST API (uvicorn :8000; needs the project interpreter)
-	$(PY) -m uvicorn app:app --app-dir api/rest_fastapi --reload --port 8000
+	$(PY) api/rest_fastapi/serve.py --reload --port 8000
 # The frontend directory is DISCOVERED (FE_APPS), never named: copier prunes the
 # un-chosen stack, so a literal `src/frontend/astro` here was ENOENT in every
 # project that did not answer "astro" — including the default one. Pinned by

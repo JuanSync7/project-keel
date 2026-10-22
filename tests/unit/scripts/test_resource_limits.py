@@ -2,10 +2,12 @@
 title: Unit — resource_limits (a bounded child)
 kind: tests
 layer: n/a
-summary: scripts/resource_limits.py `run_bounded` starts a child through the child-process allowlist in its own process group and returns its status and output; a child that runs past its time limit, and one whose output passes its byte cap, has its whole group ended and is refused as ChildTimedOut or ChildOutputTooLarge, naming the program, the limit and the key the caller says sets that limit, and a grandchild holding the pipe open after its parent exits does not hold the call past the limit. Every child is a short Python one-liner under this interpreter; nothing reaches a network.
+summary: scripts/resource_limits.py `run_bounded` starts a child through the child-process allowlist in its own process group and returns its status and output; a child that runs past its time limit, and one whose output passes its byte cap, has its whole group ended and is refused as ChildTimedOut or ChildOutputTooLarge, naming the program, the limit and the key the caller says sets that limit, and a grandchild holding the pipe open after its parent exits does not hold the call past the limit. `shutdown_owner` makes one named owner of SIGTERM and SIGINT for a server: the first signal writes a line naming the owner and the signal and calls the owner's stop, or raises ShutdownRequested (no Exception, so a request's own handler cannot eat it) only where the server says it is idle, and a second signal ends the process the default way; the handlers before it are put back. `cap_memory` sets RLIMIT_AS, proven in a child: an allocation past the cap is a MemoryError, one below it is not, and null says the cap is off. `serve_limits` reads config/project.json `transports.serve.memory_cap_mb` and `transports.serve.shutdown_grace_seconds`, refusing a value out of its bound by its key. Every child is a short Python one-liner under this interpreter; nothing reaches a network.
 """
 
+import json
 import os
+import signal
 import sys
 import time
 from pathlib import Path
@@ -15,7 +17,7 @@ import pytest
 _ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(_ROOT))
 
-from scripts import resource_limits  # noqa: E402
+from scripts import config_loader, resource_limits  # noqa: E402
 
 pytestmark = pytest.mark.unit
 
@@ -147,3 +149,127 @@ def test_a_limit_below_one_is_refused_before_a_child_starts():
     ):
         with pytest.raises(ValueError):
             resource_limits.run_bounded(["/nonexistent/keel-no-such-program"], **kwargs)
+
+
+# --- the end of a server: shutdown_owner ---------------------------------------
+
+
+def test_the_first_signal_calls_the_owner_s_stop_once_and_names_it(capsys):
+    stopped = []
+    with resource_limits.shutdown_owner("test server", stop=stopped.append) as owner:
+        os.kill(os.getpid(), signal.SIGTERM)
+        assert stopped == [signal.SIGTERM] and owner.signum == signal.SIGTERM
+        # A second signal now ends the process the default way.
+        assert signal.getsignal(signal.SIGTERM) is signal.SIG_DFL
+        assert signal.getsignal(signal.SIGINT) is signal.SIG_DFL
+    assert "test server: stopping on SIGTERM" in capsys.readouterr().err
+
+
+def test_the_handlers_before_the_owner_are_put_back():
+    before = signal.getsignal(signal.SIGTERM), signal.getsignal(signal.SIGINT)
+    with resource_limits.shutdown_owner("test server"):
+        assert signal.getsignal(signal.SIGTERM) not in before
+    assert (signal.getsignal(signal.SIGTERM), signal.getsignal(signal.SIGINT)) == before
+
+
+def test_a_signal_while_idle_raises_shutdown_requested():
+    with resource_limits.shutdown_owner("test server") as owner:
+        with pytest.raises(resource_limits.ShutdownRequested), owner.idle():
+            os.kill(os.getpid(), signal.SIGINT)
+            time.sleep(5)
+        assert owner.signum == signal.SIGINT
+
+
+def test_a_signal_while_busy_is_held_until_the_owner_is_next_idle():
+    with resource_limits.shutdown_owner("test server") as owner:
+        os.kill(os.getpid(), signal.SIGTERM)  # busy: noted, nothing raised
+        assert owner.signum == signal.SIGTERM
+        with pytest.raises(resource_limits.ShutdownRequested), owner.idle():
+            raise AssertionError("idle() must refuse once a stop was asked for")
+
+
+def test_shutdown_requested_is_not_caught_by_a_generic_handler():
+    # A server's `except Exception` around one request must not eat the stop.
+    assert not issubclass(resource_limits.ShutdownRequested, Exception)
+
+
+# --- the memory cap: cap_memory, in a child so this process keeps its limit ----
+
+_CAP_CHILD = (
+    "import sys; sys.path.insert(0, %r)\n"
+    "from scripts import resource_limits\n"
+    "print(resource_limits.cap_memory(%s))\n"
+    "try:\n"
+    "    block = bytearray(%d << 20)\n"
+    "    print('allocated')\n"
+    "except MemoryError:\n"
+    "    print('refused')\n"
+)
+
+
+def _capped(cap_mb, alloc_mb):
+    done = resource_limits.run_bounded(
+        [_PY, "-c", _CAP_CHILD % (str(_ROOT), cap_mb, alloc_mb)],
+        timeout=60,
+        max_output_bytes=4096,
+    )
+    assert done.returncode == 0, done.stderr
+    return done.stdout.splitlines()
+
+
+@pytest.mark.skipif(not hasattr(os, "fork"), reason="RLIMIT_AS is a POSIX limit")
+def test_an_allocation_past_the_cap_is_refused_and_one_below_it_is_not():
+    status, verdict = _capped(1024, 2048)
+    assert status.startswith("memory cap: 1024 MB of address space")
+    assert verdict == "refused"
+    assert _capped(1024, 64)[1] == "allocated"
+
+
+def test_no_cap_is_said_and_allocates_freely():
+    status, verdict = _capped(None, 64)
+    assert status.startswith("memory cap: off") and verdict == "allocated"
+
+
+def test_a_cap_below_one_megabyte_is_refused():
+    for bad in (0, -1, True, 1.5):
+        with pytest.raises(ValueError):
+            resource_limits.cap_memory(bad)
+
+
+# --- what a server reads: serve_limits ------------------------------------------
+
+
+def _project(tmp_path, serve_block):
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "project.json").write_text(
+        json.dumps({"transports": {"serve": serve_block}}), encoding="utf-8"
+    )
+    return str(tmp_path)
+
+
+def test_serve_limits_are_read_from_the_transports_block(tmp_path):
+    root = _project(tmp_path, {"memory_cap_mb": 512, "shutdown_grace_seconds": 2.5})
+    assert resource_limits.serve_limits(root) == (512, 2.5)
+    root2 = tmp_path / "off"
+    root2.mkdir()
+    assert (
+        resource_limits.serve_limits(_project(root2, {"memory_cap_mb": None}))[0]
+        is None
+    )
+
+
+@pytest.mark.parametrize(
+    "block, key",
+    [
+        ({"memory_cap_mb": 0}, r"transports\.serve\.memory_cap_mb"),
+        ({"memory_cap_mb": "1G"}, r"transports\.serve\.memory_cap_mb"),
+        ({"shutdown_grace_seconds": -1}, r"transports\.serve\.shutdown_grace_seconds"),
+    ],
+)
+def test_a_serve_limit_out_of_its_bound_is_refused(tmp_path, block, key):
+    with pytest.raises(config_loader.WrongValue, match=key):
+        resource_limits.serve_limits(_project(tmp_path, block))
+
+
+def test_the_shipped_serve_limits():
+    assert resource_limits.serve_limits() == (4096, 10)

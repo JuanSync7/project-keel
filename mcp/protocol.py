@@ -2,7 +2,7 @@
 title: MCP protocol core
 layer: backend
 public_api: no
-summary: A dependency-free Tool/ToolServer model and a JSON-RPC-over-stdio loop for MCP servers.
+summary: A dependency-free Tool/ToolServer model and a JSON-RPC-over-stdio loop for MCP servers. run_stdio_server is a server's entry: it caps the process's address space at config/project.json `transports.serve.memory_cap_mb` and serves under scripts/resource_limits.py shutdown_owner, so SIGTERM or SIGINT while it waits for a request ends the loop at once, one during a request ends it after that response, and the process exits 0; end of stdin ends it too.
 """
 
 from __future__ import annotations
@@ -10,9 +10,15 @@ from __future__ import annotations
 import json
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Callable, Optional, Tuple
 
-__all__ = ["Tool", "ToolServer", "handle_message", "serve_stdio"]
+# The repository root, so the stdlib-only limits module imports as
+# `scripts.resource_limits` whichever directory started the server.
+sys.path.insert(1, str(Path(__file__).resolve().parents[1]))
+from scripts import resource_limits  # noqa: E402
+
+__all__ = ["Tool", "ToolServer", "handle_message", "run_stdio_server", "serve_stdio"]
 
 # MCP speaks JSON-RPC 2.0. We implement the small server side it needs
 # (initialize / tools/list / tools/call) in pure stdlib, so the base install
@@ -160,8 +166,15 @@ def _ok(msg_id: Any, result: dict) -> dict:
     return {"jsonrpc": "2.0", "id": msg_id, "result": result}
 
 
-def serve_stdio(server: ToolServer, stdin=None, stdout=None) -> None:
-    """Run the server over newline-delimited JSON-RPC on stdin/stdout.
+def serve_stdio(
+    server: ToolServer,
+    stdin=None,
+    stdout=None,
+    owner: Optional[resource_limits.ShutdownOwner] = None,
+) -> None:
+    """Run the server over newline-delimited JSON-RPC on stdin/stdout until
+    stdin ends, or, with *owner*, until a stop signal: at once while waiting
+    for a line, after the response while handling one.
 
     This is how an MCP client (e.g. Claude Code) launches the server as a
     subprocess. It is the thin wire binding — all behaviour lives in
@@ -169,7 +182,17 @@ def serve_stdio(server: ToolServer, stdin=None, stdout=None) -> None:
     """
     rx = stdin or sys.stdin
     tx = stdout or sys.stdout
-    for line in rx:
+    while True:
+        try:
+            if owner is None:
+                line = rx.readline()
+            else:
+                with owner.idle():
+                    line = rx.readline()
+        except resource_limits.ShutdownRequested:
+            return
+        if not line:
+            return
         line = line.strip()
         if not line:
             continue
@@ -181,3 +204,12 @@ def serve_stdio(server: ToolServer, stdin=None, stdout=None) -> None:
         if response is not None:
             tx.write(json.dumps(response) + "\n")
             tx.flush()
+
+
+def run_stdio_server(server: ToolServer, root: Optional[str] = None) -> None:
+    """A server's entry: cap memory at *root*'s configured size (this checkout
+    when None), say so on stderr, and serve stdio under a shutdown owner."""
+    memory_cap, _grace = resource_limits.serve_limits(root)
+    sys.stderr.write(resource_limits.cap_memory(memory_cap) + "\n")
+    with resource_limits.shutdown_owner("MCP server %s" % server.name) as owner:
+        serve_stdio(server, owner=owner)

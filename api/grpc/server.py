@@ -2,7 +2,7 @@
 title: gRPC API
 layer: backend
 public_api: no
-summary: Thin gRPC transport over the backend domain. `serve` listens on config/project.json `transports.grpc.port` with `transports.grpc.workers` threads, read through scripts/config_loader.py, unless the caller names others; a configured value out of its bound is config_loader.WrongValue before any server exists.
+summary: Thin gRPC transport over the backend domain. `serve` listens on config/project.json `transports.grpc.port` with `transports.grpc.workers` threads, read through scripts/config_loader.py, unless the caller names others; a configured value out of its bound is config_loader.WrongValue before any server exists. Before it listens it caps its address space at `transports.serve.memory_cap_mb` (scripts/resource_limits.py cap_memory), and its shutdown owner is scripts/resource_limits.py shutdown_owner: the first SIGTERM or SIGINT stops the server with `transports.serve.shutdown_grace_seconds` for the calls in flight, and serve returns.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ sys.path.insert(1, str(_REPO))
 # Generated from proto/thing.proto via `make gen`.
 import thing_pb2  # noqa: E402
 import thing_pb2_grpc  # noqa: E402
-from scripts import config_loader  # noqa: E402
+from scripts import config_loader, resource_limits  # noqa: E402
 
 from backend import do_thing  # noqa: E402
 
@@ -46,17 +46,24 @@ def configured(root: str | None = None) -> dict:
 def serve(
     port: int | None = None, workers: int | None = None, root: str | None = None
 ) -> None:
-    """Serve ThingService until the server terminates; *port* and *workers*
-    default to the configured values."""
+    """Serve ThingService until the server terminates or a stop signal ends
+    it; *port* and *workers* default to the configured values."""
     values = configured(root)
+    memory_cap, grace = resource_limits.serve_limits(root)
     port = values[_PORT] if port is None else port
     workers = values[_WORKERS] if workers is None else workers
+    print(resource_limits.cap_memory(memory_cap), file=sys.stderr)
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=workers))
     thing_pb2_grpc.add_ThingServiceServicer_to_server(ThingService(), server)
     server.add_insecure_port(f"[::]:{port}")
     server.start()
     print(f"gRPC serving on :{port}")
-    server.wait_for_termination()
+    # server.stop does not block: it refuses new calls, ends the ones still
+    # running after the grace, and then wait_for_termination returns.
+    with resource_limits.shutdown_owner(
+        "gRPC server", stop=lambda _signum: server.stop(grace)
+    ):
+        server.wait_for_termination()
 
 
 if __name__ == "__main__":

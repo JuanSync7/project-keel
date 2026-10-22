@@ -7,6 +7,8 @@ summary: api/grpc/server.py `serve` listens on config/project.json `transports.g
 
 import importlib.util
 import json
+import os
+import signal
 import sys
 import types
 from pathlib import Path
@@ -30,6 +32,7 @@ class _FakeServer:
         self.workers = executor._max_workers
         self.ports = []
         self.events = []
+        self.signal_while_waiting = False
 
     def add_insecure_port(self, address):
         self.ports.append(address)
@@ -40,6 +43,10 @@ class _FakeServer:
 
     def wait_for_termination(self, timeout=None):
         self.events.append("wait")
+        if self.signal_while_waiting:
+            # A real server blocks here until stop; the signal stands in for
+            # the operator's SIGTERM arriving while it serves.
+            os.kill(os.getpid(), signal.SIGTERM)
         return True
 
     def stop(self, grace):
@@ -68,7 +75,18 @@ def grpc_server(monkeypatch):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     module.made = made
+    module.caps = []
+    # The real cap would bound the test process itself.
+    monkeypatch.setattr(module.resource_limits, "cap_memory", _record(module.caps))
     return module
+
+
+def _record(caps):
+    def cap_memory(megabytes):
+        caps.append(megabytes)
+        return "memory cap: recorded"
+
+    return cap_memory
 
 
 def _project(tmp_path, grpc_block):
@@ -112,3 +130,39 @@ def test_a_port_or_worker_count_out_of_bound_is_refused_before_a_server(
     with pytest.raises(config_loader.WrongValue, match=key.replace(".", r"\.")):
         grpc_server.serve(root=_project(tmp_path, block))
     assert grpc_server.made == []
+
+
+def test_serve_caps_memory_at_the_configured_size_before_it_listens(
+    grpc_server, tmp_path
+):
+    root = _project(tmp_path, {"port": 50123})
+    (tmp_path / "config" / "project.json").write_text(
+        json.dumps({"transports": {"serve": {"memory_cap_mb": 512}}}),
+        encoding="utf-8",
+    )
+    grpc_server.serve(root=root)
+    assert grpc_server.caps == [512]
+
+
+def test_sigterm_while_serving_stops_the_server_with_the_configured_grace(
+    grpc_server, tmp_path, monkeypatch, capsys
+):
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "project.json").write_text(
+        json.dumps({"transports": {"serve": {"shutdown_grace_seconds": 3}}}),
+        encoding="utf-8",
+    )
+    before = signal.getsignal(signal.SIGTERM)
+    real_server = grpc_server.grpc.server
+
+    def server(executor):
+        made = real_server(executor)
+        made.signal_while_waiting = True
+        return made
+
+    monkeypatch.setattr(grpc_server.grpc, "server", server)
+    grpc_server.serve(root=str(tmp_path))
+    (made,) = grpc_server.made
+    assert made.events == ["start", "wait", ("stop", 3)]
+    assert "gRPC server: stopping on SIGTERM" in capsys.readouterr().err
+    assert signal.getsignal(signal.SIGTERM) is before

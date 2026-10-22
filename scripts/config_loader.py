@@ -294,6 +294,8 @@ def _gate_timeout(value: Any) -> bool:
 
 def _gate_grace(value: Any) -> bool:
     return bool(1 <= value <= _GATE_GRACE_MAX)
+def _null_or_at_least_one(value: Any) -> bool:
+    return value is None or bool(value >= 1)
 
 
 def _port(value: Any) -> bool:
@@ -1081,6 +1083,22 @@ KEYS = tuple(
                 50051,
                 "the TCP port the gRPC transport's server listens on",
                 accepts=(_port, "a value from 1 to 65535"),
+            ),
+            _row(
+                ("transports", "serve", "memory_cap_mb"),
+                "int_or_null",
+                4096,
+                "the megabytes of address space a REST, MCP or gRPC server "
+                "process may hold (RLIMIT_AS); null: no cap",
+                accepts=(_null_or_at_least_one, "a value >= 1"),
+            ),
+            _row(
+                ("transports", "serve", "shutdown_grace_seconds"),
+                "number",
+                10,
+                "the seconds a REST or gRPC server gives the calls in flight to "
+                "finish after a stop signal before it ends them",
+                accepts=(_not_negative, "a value >= 0"),
             ),
             _row(
                 ("transports", "grpc", "workers"),

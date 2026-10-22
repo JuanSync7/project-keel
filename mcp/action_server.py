@@ -18,7 +18,7 @@ _ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(1, str(_ROOT))
 
-from protocol import Tool, ToolServer, serve_stdio  # noqa: E402
+from protocol import Tool, ToolServer, run_stdio_server  # noqa: E402
 from scripts.child_env import build_child_env  # noqa: E402
 
 __all__ = ["build_action_server"]
@@ -114,4 +114,4 @@ def build_action_server(root: str | None = None) -> ToolServer:
 
 
 if __name__ == "__main__":  # pragma: no cover — launched by an MCP client
-    serve_stdio(build_action_server())
+    run_stdio_server(build_action_server())

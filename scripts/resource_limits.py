@@ -1,8 +1,8 @@
 """
-title: resource_limits — a child process with a time limit and an output cap
+title: resource_limits — a bounded child process, and a server's memory cap and stop
 kind: script
 layer: n/a
-summary: `run_bounded` starts a program through the child-process allowlist (scripts/child_env.py build_child_env, called inside the spawn so check_X sees it) in a process group of its own, feeds it the caller's stdin text, and returns a subprocess.CompletedProcess with its status and its output decoded as UTF-8. A child that is still running, or whose output pipe is still held open by a process it started, when the caller's time limit passes has its whole group sent SIGKILL and is refused as ChildTimedOut; a child that writes more than the caller's byte cap to either stream has its group ended the same way and is refused as ChildOutputTooLarge. Both are RuntimeError subclasses whose message names the program by its file name only (never its arguments, which may carry a prompt), the limit, and the config key the caller says sets it. A limit below or equal to zero is a ValueError before anything starts; a program that does not exist is the FileNotFoundError the spawn raises. Off POSIX there is no process group, so only the child itself is ended. It reads no configuration of its own and writes no file.
+summary: `run_bounded` starts a program through the child-process allowlist (scripts/child_env.py build_child_env, called inside the spawn so check_X sees it) in a process group of its own, feeds it the caller's stdin text, and returns a subprocess.CompletedProcess with its status and its output decoded as UTF-8. A child that is still running, or whose output pipe is still held open by a process it started, when the caller's time limit passes has its whole group sent SIGKILL and is refused as ChildTimedOut; a child that writes more than the caller's byte cap to either stream has its group ended the same way and is refused as ChildOutputTooLarge. Both are RuntimeError subclasses whose message names the program by its file name only (never its arguments, which may carry a prompt), the limit, and the config key the caller says sets it. A limit below or equal to zero is a ValueError before anything starts; a program that does not exist is the FileNotFoundError the spawn raises. Off POSIX there is no process group, so only the child itself is ended. run_bounded reads no configuration of its own. For a server entry point, serve_limits reads config/project.json `transports.serve` (memory_cap_mb, shutdown_grace_seconds) through scripts/config_loader.py; cap_memory sets RLIMIT_AS to that many megabytes and returns a line naming what it set and what it does not cover (a file in a memory-backed directory, the processes the server starts, resident memory), or that it set nothing (null, or no setrlimit on this platform); shutdown_owner owns SIGTERM and SIGINT while a server runs: the first writes `<name>: stopping on <signal>` to stderr and calls the server's stop, or raises ShutdownRequested, a BaseException, where the server waits idle, and a second one ends the process at once. It writes no file.
 """
 
 # NB: stdlib only, no `from __future__ import annotations`, no f-strings, no walrus,
@@ -14,13 +14,36 @@ import contextlib
 import os
 import signal
 import subprocess
+import sys
 import threading
 import time
-from typing import IO, Callable, List, Optional, Sequence
+from typing import IO, Any, Callable, Dict, Iterator, List, Optional, Sequence, Tuple
 
+from scripts import config_loader
 from scripts.child_env import build_child_env
 
-__all__ = ["ChildOutputTooLarge", "ChildTimedOut", "run_bounded"]
+try:
+    import resource
+
+    _HAS_RLIMIT = True
+except ImportError:  # not POSIX: cap_memory says the cap is not set
+    _HAS_RLIMIT = False
+
+__all__ = [
+    "ChildOutputTooLarge",
+    "ChildTimedOut",
+    "ShutdownOwner",
+    "ShutdownRequested",
+    "cap_memory",
+    "run_bounded",
+    "serve_limits",
+    "shutdown_owner",
+]
+
+_REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_MEMORY_CAP = ("transports", "serve", "memory_cap_mb")
+_GRACE = ("transports", "serve", "shutdown_grace_seconds")
+_OWNED_SIGNALS = (signal.SIGTERM, signal.SIGINT)
 
 # One read's size: large enough that a child writing megabytes costs few
 # wake-ups, small enough that the cap is overshot by at most this much in memory.
@@ -203,3 +226,129 @@ def run_bounded(
     return subprocess.CompletedProcess(
         list(argv), proc.returncode, readers[0].text(), readers[1].text()
     )
+
+
+# --- a server's limits and its end ---------------------------------------------
+
+
+def serve_limits(root: Optional[str] = None) -> Tuple[Optional[int], float]:
+    """(memory_cap_mb, shutdown_grace_seconds) from *root*'s config/project.json
+    `transports.serve` (this checkout when None); config_loader.WrongValue for a
+    value out of its bound. memory_cap_mb None: no cap."""
+    loaded = config_loader.read(_REPO if root is None else root)
+    values = config_loader.resolve(
+        loaded, config_loader.rows(_MEMORY_CAP, _GRACE), config_loader.CONFIG_FILE
+    )
+    cap = values[_MEMORY_CAP]
+    grace = values[_GRACE]
+    assert cap is None or isinstance(cap, int)  # the KEYS row's type
+    assert isinstance(grace, (int, float))
+    return cap, grace
+
+
+def cap_memory(megabytes: Optional[int]) -> str:
+    """Cap this process's address space at *megabytes* (RLIMIT_AS) and return
+    the line that says what was set; None sets nothing. ValueError for a cap
+    that is not a whole number of megabytes above 0."""
+    if megabytes is None:
+        return (
+            "memory cap: off (config/project.json transports.serve.memory_cap_mb "
+            "is null)"
+        )
+    if isinstance(megabytes, bool) or not isinstance(megabytes, int) or megabytes < 1:
+        raise ValueError(
+            "cap_memory takes a whole number of megabytes above 0, got %r" % megabytes
+        )
+    if not _HAS_RLIMIT:
+        return (
+            "memory cap: not set, this platform has no setrlimit; the process "
+            "runs with no cap"
+        )
+    soft, hard = resource.getrlimit(resource.RLIMIT_AS)
+    wanted = megabytes << 20
+    clamped = ""
+    if hard != resource.RLIM_INFINITY and wanted > hard:
+        # An unprivileged process may lower its limit, never raise it past hard.
+        wanted = hard
+        clamped = ", lowered to the hard limit"
+    try:
+        resource.setrlimit(resource.RLIMIT_AS, (wanted, hard))
+    except (ValueError, OSError) as exc:
+        # Some kernels (macOS) refuse RLIMIT_AS; the server still runs, and the
+        # line it writes says it is uncapped and why.
+        return (
+            "memory cap: not set, setrlimit refused it (%s); the process runs with no cap"
+            % exc
+        )
+    return (
+        "memory cap: %d MB of address space (RLIMIT_AS%s); an allocation past it "
+        "is a MemoryError. It does not cover a file in a memory-backed directory "
+        "such as /dev/shm, the total of the processes this one starts (each gets "
+        "its own copy of the cap), or resident memory, which address space "
+        "overstates" % (wanted >> 20, clamped)
+    )
+
+
+class ShutdownRequested(BaseException):
+    """A stop signal reached an idle server. A BaseException, as
+    KeyboardInterrupt is, so a request handler's `except Exception` cannot
+    swallow the stop."""
+
+
+class ShutdownOwner:
+    """The one owner of a server's stop signals, from shutdown_owner."""
+
+    def __init__(self, name: str, stop: Optional[Callable[[int], Any]]):
+        self.name = name
+        self.signum: Optional[int] = None
+        self._stop = stop
+        self._idle = False
+
+    @contextlib.contextmanager
+    def idle(self) -> Iterator[None]:
+        """Mark a wait a stop may interrupt, such as reading the next request;
+        ShutdownRequested at once when a stop was already asked for."""
+        if self.signum is not None:
+            raise ShutdownRequested(self.signum)
+        self._idle = True
+        try:
+            yield
+        finally:
+            self._idle = False
+
+    def _handle(self, signum: int, _frame: object) -> None:
+        self.signum = signum
+        # The first signal is a request; a second one ends the process at once.
+        for owned in _OWNED_SIGNALS:
+            signal.signal(owned, signal.SIG_DFL)
+        sys.stderr.write(
+            "%s: stopping on %s\n" % (self.name, signal.Signals(signum).name)
+        )
+        sys.stderr.flush()
+        if self._stop is not None:
+            self._stop(signum)
+        elif self._idle:
+            raise ShutdownRequested(signum)
+
+
+@contextlib.contextmanager
+def shutdown_owner(
+    name: str, stop: Optional[Callable[[int], Any]] = None
+) -> Iterator[ShutdownOwner]:
+    """Own SIGTERM and SIGINT while inside: the first one writes `<name>:
+    stopping on <signal>` to stderr, then calls *stop* with the signal number,
+    or, with no *stop*, raises ShutdownRequested where the owner is idle and
+    else leaves `owner.signum` set for the server to see. The handlers before
+    it are put back on the way out. Only the main thread may install a
+    handler; elsewhere signal.signal's ValueError propagates."""
+    owner = ShutdownOwner(name, stop)
+    previous: Dict[int, Any] = {}
+    try:
+        for owned in _OWNED_SIGNALS:
+            previous[owned] = signal.signal(owned, owner._handle)
+        yield owner
+    finally:
+        for signum, handler in previous.items():
+            # None: a handler installed outside Python, which cannot be put
+            # back from here; the default action is the closest to it.
+            signal.signal(signum, signal.SIG_DFL if handler is None else handler)

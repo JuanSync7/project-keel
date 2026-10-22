@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from agents.wiki_navigator import answer  # noqa: E402
 from models import CallCapReached, approved_cap  # noqa: E402
-from protocol import Tool, ToolServer, serve_stdio  # noqa: E402
+from protocol import Tool, ToolServer, run_stdio_server  # noqa: E402
 from scripts import config_loader  # noqa: E402
 
 __all__ = ["build_qa_server", "configured_cap", "configured_model"]
@@ -119,6 +119,6 @@ def build_qa_server(
 
 
 if __name__ == "__main__":  # pragma: no cover — launched by an MCP client
-    serve_stdio(
+    run_stdio_server(
         build_qa_server(model=configured_model(), max_model_calls=configured_cap())
     )
