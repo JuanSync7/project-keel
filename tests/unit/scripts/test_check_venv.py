@@ -251,3 +251,97 @@ def test_a_keel_venv_without_copier_fails_naming_the_template_extra(capsys):
     assert code is ExitCode.FAILURE, err
     assert hidden in err and "extra template" in err, err
     assert '%s -m pip install -e ".[dev,template]"' % _PY in err, err
+
+
+def _with_dev(entry):
+    """_PYPROJECT with its self-reference line replaced by *entry*."""
+    return _PYPROJECT.replace('  "demo-proj[transport]",\n', "  %s,\n" % entry)
+
+
+def test_a_self_reference_is_matched_to_its_extra_whatever_the_case(tmp_path, capsys):
+    """PEP 685 compares extra names canonicalised, so `[Transport]` is the
+    `transport` extra and must be followed, not a KeyError."""
+    installed = dict(_INSTALLED)
+    del installed["fastapi"]
+    text = _with_dev('"demo-proj[Transport]"')
+    assert _run(tmp_path, installed=installed, text=text) is ExitCode.FAILURE
+    assert "fastapi" in capsys.readouterr().err
+
+
+def test_a_self_reference_to_an_undeclared_extra_is_a_config_refusal(tmp_path, capsys):
+    text = _with_dev('"demo-proj[transprt]"')
+    assert _run(tmp_path, text=text) is ExitCode.CONFIG
+    err = capsys.readouterr().err
+    assert "transprt" in err and "pyproject.toml" in err, err
+
+
+def test_an_unparsable_requirement_is_a_config_refusal(tmp_path, capsys):
+    text = _with_dev('"fastapi >= = 1"')
+    assert _run(tmp_path, text=text) is ExitCode.CONFIG
+    err = capsys.readouterr().err
+    assert "fastapi >= = 1" in err and "pyproject.toml" in err, err
+
+
+def test_a_self_reference_whose_marker_excludes_this_interpreter_is_not_followed(
+    tmp_path,
+):
+    """`solo` is reached only through a self-reference whose marker no
+    interpreter meets, so its absent `lonely` is not owed."""
+    installed = dict(_INSTALLED)
+    del installed["lonely"]
+    text = _with_dev(
+        '"demo-proj[transport]",\n  "demo-proj[solo]; python_version < \'3\'"'
+    )
+    assert _run(tmp_path, installed=installed, text=text) is ExitCode.SUCCESS
+
+
+def test_an_extra_a_later_one_reaches_is_left_out_of_the_command():
+    """Order does not decide the command: `dev` reaches `transport`, so
+    asking for transport first still installs `.[dev]` alone."""
+    project = {
+        "name": "demo_proj",
+        "dependencies": [],
+        "optional-dependencies": {
+            "dev": ["demo-proj[transport]"],
+            "transport": ["fastapi>=0.115"],
+        },
+    }
+    assert check_venv.install_extras(project, ["transport", "dev"]) == ["dev"]
+
+
+def test_extras_that_reach_each_other_still_name_one_in_the_command(tmp_path, capsys):
+    """dev reaches transport and transport reaches dev: dropping every extra
+    some other one reaches would leave `pip install -e ".[]"`."""
+    text = _PYPROJECT.replace(
+        'transport = ["fastapi>=0.115",',
+        'transport = ["demo-proj[dev]", "fastapi>=0.115",',
+    )
+    project = {
+        "name": "demo_proj",
+        "dependencies": [],
+        "optional-dependencies": {
+            "dev": ["demo-proj[transport]"],
+            "transport": ["demo-proj[dev]"],
+        },
+    }
+    assert check_venv.install_extras(project, ["dev", "transport"]) == ["dev"]
+    installed = dict(_INSTALLED)
+    del installed["fastapi"]
+    config = _config(transport_extras={"rest": "transport"})
+    assert (
+        _run(tmp_path, config=config, installed=installed, text=text)
+        is ExitCode.FAILURE
+    )
+    assert '-m pip install -e ".[dev]"' in capsys.readouterr().err
+
+
+def test_a_missing_toml_reader_fails_with_the_pip_command(
+    tmp_path, capsys, monkeypatch
+):
+    """Under 3.10 tomllib is absent and tomli comes from the dev extra: a venv
+    without it is the stale venv this check names, not a traceback."""
+    monkeypatch.setitem(sys.modules, "tomllib", None)
+    monkeypatch.setitem(sys.modules, "tomli", None)
+    assert _run(tmp_path) is ExitCode.FAILURE
+    err = capsys.readouterr().err
+    assert "tomli" in err and '%s -m pip install -e ".[dev]"' % _PY in err, err

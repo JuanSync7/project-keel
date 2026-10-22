@@ -3,7 +3,7 @@
 title: check_venv — the venv holds what pyproject.toml declares, before a gate runs
 kind: script
 layer: n/a
-summary: Judges the interpreter's installed distributions against pyproject.toml: every requirement of the core dependencies, of config/project.json `venv.extras` and of the extra each enabled transport names in `transports.extras`, following an extra that names the project itself and judging the requirements an extra asks of another distribution, is installed at a version its specifier allows; a requirement whose marker excludes this interpreter is not judged. An absent distribution, a version outside the specifier or an unparsable version is FAILURE naming each package, the interpreter and the exact `pip install -e ".[<extras>]"` command; an extra pyproject.toml does not declare, or a config value the loader refuses, is CONFIG; a pyproject.toml it cannot read is USAGE; nothing to judge is NOTHING_JUDGED. It reads installed metadata with importlib.metadata and never the network, and writes nothing.
+summary: Judges the interpreter's installed distributions against pyproject.toml: every requirement of the core dependencies, of config/project.json `venv.extras` and of the extra each enabled transport names in `transports.extras`, following an extra that names the project itself when its marker admits this interpreter, comparing extra names case- and separator-blind (PEP 685), and judging the requirements an extra asks of another distribution, is installed at a version its specifier allows; a requirement whose marker excludes this interpreter is not judged. An absent distribution, a version outside the specifier or an unparsable version is FAILURE naming each package, the interpreter and the exact `pip install -e ".[<extras>]"` command, which names one extra of any that reach each other and never `.[]`; no `packaging` or TOML reader is FAILURE naming the `.[dev]` install; an extra pyproject.toml does not declare (asked by config or by a self-reference), an unparsable requirement, or a config value the loader refuses, is CONFIG; a pyproject.toml it cannot read is USAGE; nothing to judge is NOTHING_JUDGED. It reads installed metadata with importlib.metadata and never the network, and writes nothing.
 effect: read-only
 """
 
@@ -33,6 +33,11 @@ class ProjectUnreadable(Exception):
     """pyproject.toml cannot be read as a project with a name."""
 
 
+class DeclarationUnusable(Exception):
+    """pyproject.toml holds a requirement packaging cannot parse, or an extra
+    that names the project asks for an extra the project does not declare."""
+
+
 def _installed_version(name: str) -> Optional[str]:
     """The installed version of distribution *name*, or None when absent."""
     try:
@@ -52,9 +57,12 @@ def _installed_requires(name: str) -> List[str]:
 def _toml() -> Any:
     # tomllib is stdlib from 3.11; requires-python admits 3.10, where pytest's
     # own dependency on tomli is what the `dev` extra brings.
+    # ImportError, not ModuleNotFoundError: a module blocked in sys.modules
+    # raises the base class, and either way there is no reader. With neither,
+    # the tomli ImportError propagates for main to report.
     try:
         import tomllib
-    except ModuleNotFoundError:
+    except ImportError:
         import tomli as tomllib
     return tomllib
 
@@ -99,9 +107,28 @@ def wanted_extras(loaded: Mapping[str, Any]) -> List[str]:
 
 
 def _canonical(name: str) -> str:
+    """*name* normalised as PEP 503 does for a distribution and PEP 685 for an
+    extra, so `Transport`, `transport` and `TRANSPORT` are one extra."""
     from packaging.utils import canonicalize_name
 
     return str(canonicalize_name(name))
+
+
+def _parse(spec: str, where: str) -> Any:
+    from packaging.requirements import InvalidRequirement, Requirement
+
+    try:
+        return Requirement(spec)
+    except InvalidRequirement as exc:
+        raise DeclarationUnusable(
+            "%s %s holds %r, which is not a requirement (%s)"
+            % (_PYPROJECT, where, spec, exc)
+        ) from exc
+
+
+def declared_extras(project: Mapping[str, Any]) -> Dict[str, List[str]]:
+    """pyproject.toml's optional extras, keyed by canonical extra name."""
+    return {_canonical(k): list(v) for k, v in project["optional-dependencies"].items()}
 
 
 def _applies(req: Any, extra: str) -> bool:
@@ -113,16 +140,17 @@ def _applies(req: Any, extra: str) -> bool:
 def _expand(
     project: Mapping[str, Any], extras: Sequence[str]
 ) -> Tuple[List[Tuple[Any, str]], Set[str]]:
-    """([(requirement, where it was declared)], every extra reached) for the
-    core dependencies and *extras*, following an extra that names the project."""
-    from packaging.requirements import Requirement
-
+    """([(requirement, where it was declared)], every extra reached, by
+    canonical name) for the core dependencies and *extras*, following an extra
+    that names the project when its marker admits this interpreter. Raises
+    DeclarationUnusable for an unparsable requirement or an extra that names an
+    undeclared one."""
     me = _canonical(project["name"])
-    declared = project["optional-dependencies"]
+    declared = declared_extras(project)
     reached: Set[str] = set()
-    todo = list(extras)
+    todo = [_canonical(e) for e in extras]
     found: List[Tuple[Any, str]] = [
-        (Requirement(s), "dependencies") for s in project["dependencies"]
+        (_parse(s, "dependencies"), "dependencies") for s in project["dependencies"]
     ]
     while todo:
         extra = todo.pop(0)
@@ -130,11 +158,21 @@ def _expand(
             continue
         reached.add(extra)
         for spec in declared[extra]:
-            req = Requirement(spec)
-            if _canonical(req.name) == me:
-                todo.extend(sorted(req.extras))
-            else:
+            req = _parse(spec, "extra %s" % extra)
+            if _canonical(req.name) != me:
                 found.append((req, "extra %s" % extra))
+                continue
+            # A self-reference is an install of the project's own extras; its
+            # version specifier names the project itself and is pip's to judge.
+            if not _applies(req, ""):
+                continue
+            for wanted in sorted(req.extras):
+                if _canonical(wanted) not in declared:
+                    raise DeclarationUnusable(
+                        "%s extra %s names %s[%s], an extra it does not declare"
+                        % (_PYPROJECT, extra, req.name, wanted)
+                    )
+                todo.append(_canonical(wanted))
     return found, reached
 
 
@@ -144,14 +182,24 @@ def reachable(project: Mapping[str, Any], extras: Sequence[str]) -> Set[str]:
 
 
 def install_extras(project: Mapping[str, Any], extras: Sequence[str]) -> List[str]:
-    """The fewest of *extras*, in order, whose install reaches all of them: an
-    extra another one already reaches is left out of the pip command."""
-    out = []
+    """A few of *extras*, in order, whose install reaches all of them: an extra
+    one already kept reaches is left out, then a kept extra a later kept one
+    reaches is dropped. One extra of extras that reach each other is always
+    kept, so the pip command never reads `.[]`."""
+    kept: List[str] = []
+    covered: Set[str] = set()
     for extra in extras:
-        others = [e for e in extras if e != extra]
-        if extra not in reachable(project, others):
-            out.append(extra)
-    return out
+        if _canonical(extra) in covered:
+            continue
+        kept.append(extra)
+        covered |= reachable(project, [extra])
+    return [
+        e
+        for i, e in enumerate(kept)
+        if not any(
+            _canonical(e) in reachable(project, [later]) for later in kept[i + 1 :]
+        )
+    ]
 
 
 def _judge(req: Any, have: Optional[str], label: str) -> Optional[str]:
@@ -243,6 +291,16 @@ def main(
             "fix venv.extras or transports in config/project.json, then rerun",
         )
     try:
+        _toml()
+    except ImportError:
+        return report(
+            ExitCode.FAILURE,
+            "check_venv: neither tomllib nor the `tomli` distribution is "
+            "importable, so %s cannot be read" % _PYPROJECT,
+            python,
+            'run `%s -m pip install -e ".[dev]"`' % python,
+        )
+    try:
         project = read_project(root)
     except ProjectUnreadable as exc:
         return report(
@@ -251,7 +309,7 @@ def main(
             os.path.join(root, _PYPROJECT),
             "restore a pyproject.toml whose [project] table has a name",
         )
-    undeclared = [e for e in extras if e not in project["optional-dependencies"]]
+    undeclared = [e for e in extras if _canonical(e) not in declared_extras(project)]
     if undeclared:
         return report(
             ExitCode.CONFIG,
@@ -261,20 +319,30 @@ def main(
             "declare the extra under [project.optional-dependencies] or remove "
             "it from config/project.json",
         )
-    command = '%s -m pip install -e ".[%s]"' % (
-        python,
-        ",".join(install_extras(project, extras)),
-    )
-    judged, problems = unmet(
-        project,
-        extras,
-        _installed_version if version_of is None else version_of,
-        _installed_requires if requires_of is None else requires_of,
-    )
+    try:
+        command = '%s -m pip install -e ".[%s]"' % (
+            python,
+            ",".join(install_extras(project, extras)),
+        )
+        judged, problems = unmet(
+            project,
+            extras,
+            _installed_version if version_of is None else version_of,
+            _installed_requires if requires_of is None else requires_of,
+        )
+        reached = sorted(reachable(project, extras))
+    except DeclarationUnusable as exc:
+        return report(
+            ExitCode.CONFIG,
+            "check_venv: %s" % exc,
+            os.path.join(root, _PYPROJECT),
+            "correct the requirement under [project.optional-dependencies] or "
+            "[project] dependencies, then rerun",
+        )
     where = "%s against %s dependencies and extras %s" % (
         python,
         _PYPROJECT,
-        ", ".join(sorted(reachable(project, extras))),
+        ", ".join(reached),
     )
     if judged == 0:
         return report(
@@ -294,7 +362,7 @@ def main(
         )
     sys.stdout.write(
         "check_venv: %s satisfies %d requirements of %s (extras %s)\n"
-        % (python, judged, _PYPROJECT, ", ".join(sorted(reachable(project, extras))))
+        % (python, judged, _PYPROJECT, ", ".join(reached))
     )
     return ExitCode.SUCCESS
 
