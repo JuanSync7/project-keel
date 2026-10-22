@@ -87,21 +87,56 @@ _PYPROJECT_ANSWER_FIELDS = (
 )
 
 
-def _generate(dest, **data):
-    """Render the keel template (from git HEAD) into dest with the given answers.
+@pytest.fixture(scope="module")
+def renders(clean_template, tmp_path_factory):
+    """One render of the keel template (the clean clone's HEAD, which carries
+    this checkout's working tree) per distinct answer set and day, made the
+    first time a test asks for it and removed when the module ends.
 
     `unsafe=True` is `copier copy --trust`: copier.yml's `_tasks` stamp the new
     project's documents, and copier refuses a template that runs tasks without
-    trust (pinned by test_copy_without_trust_is_refused_naming_tasks)."""
-    copier.run_copy(
-        str(_ROOT),
-        str(dest),
-        data=data,
-        defaults=True,
-        vcs_ref="HEAD",
-        unsafe=True,
-        quiet=True,
-    )
+    trust (pinned by test_copy_without_trust_is_refused_naming_tasks).
+
+    Measured: one render takes about 10 s and copying it 0.04 s, and this
+    module asked for one per test, about 70 times over a dozen answer sets."""
+
+    def render(dest, data):
+        copier.run_copy(
+            str(clean_template),
+            str(dest),
+            data=data,
+            defaults=True,
+            vcs_ref="HEAD",
+            unsafe=True,
+            quiet=True,
+        )
+
+    # Imported here, not at the top: copier.yml prunes tests/render_cache.py
+    # from a generated project, and a project that still carries this module
+    # must collect it and skip (test_meta_tests_neutralise_themselves_...).
+    import render_cache
+
+    cache = render_cache.RenderCache(tmp_path_factory.mktemp("renders"), render)
+    yield cache
+    cache.close()
+
+
+@pytest.fixture
+def generate(renders):
+    """`generate(dest, **answers)`: this test's own copy, at *dest*, of the
+    render those answers give today. The shared render is read-only, so a test
+    that changes its project changes only its copy.
+
+    Today is the day copier's `_tasks` stamp documents with, resolved as the
+    task resolves it from the environment copier hands it (plumbum's), so a
+    module that runs past midnight renders again rather than handing out
+    yesterday's stamps."""
+
+    def copy(dest, **answers):
+        day = review_docs.resolve_today(None, plumbum.local.env.getdict())
+        return renders.copy_into(dest, answers, day)
+
+    return copy
 
 
 def _gitignore_lines(path):
@@ -125,9 +160,9 @@ def _hermetic_git_env(tmp_path):
 
 
 @pytest.mark.parametrize("stack", ["react-vite", "astro", "none"])
-def test_generated_project_is_tailored_and_valid(stack, tmp_path):
+def test_generated_project_is_tailored_and_valid(stack, tmp_path, generate):
     dest = tmp_path / "proj"
-    _generate(dest, project_name="demo_proj", frontend_stack=stack)
+    generate(dest, project_name="demo_proj", frontend_stack=stack)
 
     # 1. the manifest is tailored to the answers (and valid JSON)
     manifest = json.loads((dest / "config" / "project.json").read_text())
@@ -159,12 +194,12 @@ def test_generated_project_is_tailored_and_valid(stack, tmp_path):
     assert r.returncode == 0, r.stdout + r.stderr
 
 
-def test_default_transports_prune_the_addon_dirs(tmp_path):
+def test_default_transports_prune_the_addon_dirs(tmp_path, generate):
     """No add-ons selected: REST+MCP are the always-shipped foundation, and the
     self-contained add-on dirs (api/grpc, api/edge_nginx) are pruned — so `available`
     lists only what actually ships and check_H sees no undeclared api/ dir."""
     dest = tmp_path / "proj"
-    _generate(dest, project_name="demo_proj")  # default transports = [] (no add-ons)
+    generate(dest, project_name="demo_proj")  # default transports = [] (no add-ons)
     manifest = json.loads((dest / "config" / "project.json").read_text())
     assert manifest["transports"]["enabled"] == ["rest", "mcp"]
     assert set(manifest["transports"]["available"]) == {"rest", "mcp"}  # add-ons pruned
@@ -174,11 +209,11 @@ def test_default_transports_prune_the_addon_dirs(tmp_path):
     assert not (dest / "api" / "edge_nginx").exists()
 
 
-def test_selected_addon_transport_ships_and_is_declared(tmp_path):
+def test_selected_addon_transport_ships_and_is_declared(tmp_path, generate):
     """Selecting an add-on keeps its dir and declares it; the un-selected one is still
     pruned. This is the gap that used to leak every transport regardless of the answer."""
     dest = tmp_path / "proj"
-    _generate(dest, project_name="demo_proj", transports=["grpc"])
+    generate(dest, project_name="demo_proj", transports=["grpc"])
     manifest = json.loads((dest / "config" / "project.json").read_text())
     assert manifest["transports"]["enabled"] == ["rest", "mcp", "grpc"]
     assert set(manifest["transports"]["available"]) == {"rest", "mcp", "grpc"}
@@ -194,14 +229,14 @@ def test_selected_addon_transport_ships_and_is_declared(tmp_path):
     assert r.returncode == 0, r.stdout + r.stderr
 
 
-def test_nondefault_name_and_python_propagate_and_stay_valid(tmp_path):
+def test_nondefault_name_and_python_propagate_and_stay_valid(tmp_path, generate):
     """A free-text name + a non-default requires-python must reach *every* file that
     declares them — else check_H fails (layers.backend.python != requires-python) or
     the 'tailored' name is a lie. This is the case defaults masked: with backend_python
     left at '>=3.10' the pyproject already matched by luck, so the twin was never
     exercised. Guards the project_slug/project_title derivation and the pyproject twin."""
     dest = tmp_path / "proj"
-    _generate(
+    generate(
         dest,
         project_name="Acme Widgets",
         frontend_stack="astro",
@@ -244,13 +279,13 @@ def test_nondefault_name_and_python_propagate_and_stay_valid(tmp_path):
 # So the assertion that matters is TRACKED-BY-GIT, not merely exists-on-disk.
 
 
-def test_generated_project_commits_its_copier_answers(tmp_path):
+def test_generated_project_commits_its_copier_answers(tmp_path, generate):
     """A generated project must TRACK .copier-answers.yml, or every clone of it
     loses the ability to `copier update` — the one capability ADR-K-0004 chose
     copier for. Keel's own .gitignore ignores the file (keel is the template,
     never a generated project); the .gitignore.jinja twin drops that line."""
     dest = tmp_path / "proj"
-    _generate(dest, project_name="demo_proj", frontend_stack="none")
+    generate(dest, project_name="demo_proj", frontend_stack="none")
 
     assert (dest / ".copier-answers.yml").exists()
     assert ".copier-answers.yml" not in _gitignore_lines(dest / ".gitignore")
@@ -266,13 +301,13 @@ def test_generated_project_commits_its_copier_answers(tmp_path):
     assert ".copier-answers.yml" in tracked
 
 
-def test_generated_project_starts_its_own_changelog(tmp_path):
+def test_generated_project_starts_its_own_changelog(tmp_path, generate):
     """CHANGELOG.md ships verbatim unless twinned, which hands the new project
     KEEL's release history — a dated `[0.1.0]` it never released, describing keel's
     `.gitignore.jinja` twin and `_min_copier_version` bump as if they were its own
     changes. A descendant starts empty, and records where it came from instead."""
     dest = tmp_path / "proj"
-    _generate(dest, project_name="Acme Widgets", frontend_stack="none")
+    generate(dest, project_name="Acme Widgets", frontend_stack="none")
     text = (dest / "CHANGELOG.md").read_text()
 
     # Naming keel as the ORIGIN is wanted (that is the provenance story). What must
@@ -290,14 +325,14 @@ def test_generated_project_starts_its_own_changelog(tmp_path):
     assert "project-keel" in text  # ...that records where it came from
 
 
-def test_generated_project_does_not_ship_keels_template_meta_tests(tmp_path):
+def test_generated_project_does_not_ship_keels_template_meta_tests(tmp_path, generate):
     """These copier tests are META-tests: they generate FROM this repo and assert on
     `copier.yml` and the `.jinja` twins, neither of which exists in a project
     generated BY it. `.github/workflows/ci.yml` ships verbatim and now installs the
     `template` extra, so an un-pruned meta-test would RUN downstream and fail on
     keel-only files — turning every descendant's CI red. Prune them at generation."""
     dest = tmp_path / "proj"
-    _generate(dest, project_name="demo_proj", frontend_stack="none")
+    generate(dest, project_name="demo_proj", frontend_stack="none")
 
     leaked = sorted(
         p.name for p in (dest / "tests" / "integration").glob("test_copier_*.py")
@@ -313,7 +348,7 @@ def test_generated_project_does_not_ship_keels_template_meta_tests(tmp_path):
     assert (dest / "tests" / "integration" / "README.md").is_file()
 
 
-def test_generated_project_does_not_inherit_keels_template_twins(tmp_path):
+def test_generated_project_does_not_inherit_keels_template_twins(tmp_path, generate):
     """`template.twins` is keel-as-a-template metadata. A generated project is not
     a template, and inheriting the block is not merely untidy — it is unrepairable:
     `_migrations` can only `rm` files, so a descendant that received keel's
@@ -325,7 +360,7 @@ def test_generated_project_does_not_inherit_keels_template_twins(tmp_path):
     about keel's files, in the user's project. Asserted here through the gate the
     user would actually run."""
     dest = tmp_path / "proj"
-    _generate(dest, project_name="demo_proj", frontend_stack="none")
+    generate(dest, project_name="demo_proj", frontend_stack="none")
 
     manifest = json.loads((dest / "config" / "project.json").read_text())
     inherited = (manifest.get("template") or {}).get("twins") or {}
@@ -352,7 +387,7 @@ def test_generated_project_does_not_inherit_keels_template_twins(tmp_path):
         )
 
 
-def test_generated_project_does_not_ship_keels_own_hardening_plan(tmp_path):
+def test_generated_project_does_not_ship_keels_own_hardening_plan(tmp_path, generate):
     """Same rule as the meta-tests, for prose: `docs/design/keel-hardening-plan.md`
     is keel's in-flight worklist — passes, measurements and deferrals about THIS
     repo, `status: draft`, `owner: TBD`. Shipped verbatim it arrives as a new
@@ -363,7 +398,7 @@ def test_generated_project_does_not_ship_keels_own_hardening_plan(tmp_path):
     `README.md` is the placeholder a project writes its own design notes into, and
     removing it would red the project's own check_B."""
     dest = tmp_path / "proj"
-    _generate(dest, project_name="demo_proj", frontend_stack="none")
+    generate(dest, project_name="demo_proj", frontend_stack="none")
 
     for keel_only in ("keel-hardening-plan.md", "documentation-quality.md"):
         assert not (dest / "docs" / "design" / keel_only).exists(), (
@@ -383,13 +418,13 @@ _PLAN_FRONTMATTER = (
 )
 
 
-def test_generated_project_judges_work_naming(tmp_path):
+def test_generated_project_judges_work_naming(tmp_path, generate):
     """The work-naming block arrives as config, a fresh project owes check_Z
     nothing (keel's own plan doc is not shipped), and the project's own first
     plan doc is judged by its own gate: a retired `2` row reds it, naming the
     line, and the CMP-<n>.S<m> form lands green (CONVENTIONS §20)."""
     dest = tmp_path / "proj"
-    _generate(dest, project_name="demo_proj", frontend_stack="none")
+    generate(dest, project_name="demo_proj", frontend_stack="none")
     data = json.loads((dest / "config" / "project.json").read_text())
     keel = json.loads((_ROOT / "config" / "project.json").read_text())
     assert data["work_naming"] == keel["work_naming"]
@@ -424,7 +459,7 @@ def test_generated_project_judges_work_naming(tmp_path):
     )
 
 
-def test_gitignore_twin_stays_pinned_to_keels_own(tmp_path):
+def test_gitignore_twin_stays_pinned_to_keels_own(tmp_path, generate):
     """`.gitignore.jinja` is a DIVERGENCE twin: unlike the project.json/pyproject/
     README twins it must NOT reproduce keel's file, because keel is the template
     and a generated project is not. Its one licensed difference is the
@@ -441,7 +476,7 @@ def test_gitignore_twin_stays_pinned_to_keels_own(tmp_path):
 
     # and the twin is what a generated project actually gets
     dest = tmp_path / "proj"
-    _generate(dest, project_name="demo_proj", frontend_stack="none")
+    generate(dest, project_name="demo_proj", frontend_stack="none")
     assert (dest / ".gitignore").read_text() == twin_text
     assert not (dest / ".gitignore.jinja").exists()  # the suffix is consumed
 
@@ -469,7 +504,7 @@ def _code_roots_from_makefile(makefile_text):
     raise AssertionError("the generated Makefile declares no CODE_ROOTS")
 
 
-def test_a_generated_project_is_lint_clean_on_arrival(tmp_path):
+def test_a_generated_project_is_lint_clean_on_arrival(tmp_path, generate):
     """`make lint` must be GREEN in a freshly generated project.
 
     A descendant's first act is to run the gate; if it is red on arrival the user
@@ -477,7 +512,7 @@ def test_a_generated_project_is_lint_clean_on_arrival(tmp_path):
     gate means something — is inverted downstream.
     """
     dest = tmp_path / "proj"
-    _generate(dest, project_name="demo_proj", frontend_stack="none")
+    generate(dest, project_name="demo_proj", frontend_stack="none")
 
     roots = [
         r
@@ -550,7 +585,7 @@ def _readme_deletable_dirs(project):
     return [name.rstrip("/") for name in _BACKTICKED.findall(hit.group(1))]
 
 
-def test_the_readmes_delete_advice_leaves_a_green_gate(tmp_path):
+def test_the_readmes_delete_advice_leaves_a_green_gate(tmp_path, generate):
     """Doing exactly what the generated README says must not break the project.
 
     It used to: the README named `models/` among the dirs you may delete, but
@@ -560,7 +595,7 @@ def test_the_readmes_delete_advice_leaves_a_green_gate(tmp_path):
     the first thing a new user does is exactly what the README told them to.
     """
     dest = tmp_path / "proj"
-    _generate(dest, project_name="demo_proj", frontend_stack="none")
+    generate(dest, project_name="demo_proj", frontend_stack="none")
     deletable = _readme_deletable_dirs(dest)
     assert deletable, "the delete-advice sentence lists no directories"
     # evals/ holds a verify goal's dataset and harness: deleting it reddens
@@ -588,6 +623,7 @@ def test_the_readmes_delete_advice_leaves_a_green_gate(tmp_path):
 
 def test_deleting_a_manifest_declared_dir_is_caught_and_the_documented_fix_works(
     tmp_path,
+    generate,
 ):
     """The other half: `models/` is NOT free to delete, and the README says so.
 
@@ -600,7 +636,7 @@ def test_deleting_a_manifest_declared_dir_is_caught_and_the_documented_fix_works
     follows the README is never stuck.
     """
     dest = tmp_path / "proj"
-    _generate(dest, project_name="demo_proj", frontend_stack="none")
+    generate(dest, project_name="demo_proj", frontend_stack="none")
     assert "models" not in _readme_deletable_dirs(dest), (
         "the README lists `models/` as free to delete, but the manifest declares "
         "the adapters that live there — that advice reddens the gate"
@@ -784,7 +820,9 @@ _FRONTEND_REF = re.compile(r"src/frontend/([A-Za-z0-9][A-Za-z0-9._-]*)")
 
 
 @pytest.mark.parametrize("stack", ["react-vite", "astro", "none"])
-def test_no_shipped_file_points_at_a_frontend_the_answers_pruned(stack, tmp_path):
+def test_no_shipped_file_points_at_a_frontend_the_answers_pruned(
+    stack, tmp_path, generate
+):
     """The generalisation of the meta-test prune, and of pass 2's `ci.yml` fix.
 
     `copier.yml` prunes the un-chosen `src/frontend/<stack>` directories, but the
@@ -806,7 +844,7 @@ def test_no_shipped_file_points_at_a_frontend_the_answers_pruned(stack, tmp_path
     positive, which is the right way round for a rule that fails a build.
     """
     dest = tmp_path / "proj"
-    _generate(dest, project_name="demo_proj", frontend_stack=stack)
+    generate(dest, project_name="demo_proj", frontend_stack=stack)
 
     offenders = []
     for surface in _VERBATIM_PATH_SURFACES:
@@ -839,7 +877,9 @@ def test_no_shipped_file_points_at_a_frontend_the_answers_pruned(stack, tmp_path
     )
 
 
-def test_meta_tests_neutralise_themselves_in_a_project_that_still_has_them(tmp_path):
+def test_meta_tests_neutralise_themselves_in_a_project_that_still_has_them(
+    tmp_path, generate
+):
     """The stopgap for the defect `_exclude` structurally cannot fix.
 
     Pruning at generation does not help a project generated BEFORE the prune
@@ -854,7 +894,7 @@ def test_meta_tests_neutralise_themselves_in_a_project_that_still_has_them(tmp_p
     accident of a missing copier, so the required-extra flag is set.
     """
     dest = tmp_path / "proj"
-    _generate(dest, project_name="demo_proj", frontend_stack="none")
+    generate(dest, project_name="demo_proj", frontend_stack="none")
 
     metas = sorted((_ROOT / "tests" / "integration").glob("test_copier_*.py"))
     assert metas, "no meta-test modules found — has the naming convention moved?"
@@ -996,6 +1036,7 @@ def _label_dir(path, slug):
 
 def test_an_undeclared_top_level_directory_reds_a_generated_project_until_declared_and_labelled(
     tmp_path,
+    generate,
 ):
     """The closed taxonomy holds DOWNSTREAM, through the project's own gate.
 
@@ -1005,7 +1046,7 @@ def test_an_undeclared_top_level_directory_reds_a_generated_project_until_declar
     asserted: a generation from a dirty template tree carries any untracked
     symlink at keel's root, which the gate reports as a WARN by design."""
     dest = tmp_path / "proj"
-    _generate(dest, project_name="demo_proj", frontend_stack="none")
+    generate(dest, project_name="demo_proj", frontend_stack="none")
     manifest = dest / "config" / "project.json"
     data = json.loads(manifest.read_text())
     assert data["structure"]["extra_toplevel"] == []
@@ -1036,20 +1077,21 @@ def test_an_undeclared_top_level_directory_reds_a_generated_project_until_declar
     )
 
 
-def test_the_showcase_ships_when_it_is_kept(tmp_path):
+def test_the_showcase_ships_when_it_is_kept(tmp_path, generate):
     """The default answer is unchanged: keeping the showcase keeps every part of it.
 
     Paired with the decline test below so a prune that fires unconditionally — the
     easy way to make the decline test pass — is caught here instead of shipping a
     template that can no longer deliver its own demo."""
     dest = tmp_path / "proj"
-    _generate(dest, project_name="demo_proj", frontend_stack="astro", showcase=True)
+    generate(dest, project_name="demo_proj", frontend_stack="astro", showcase=True)
     missing = [p for p in _SHOWCASE_PATHS if not (dest / p).exists()]
     assert not missing, "kept the showcase but these are absent: %s" % missing
 
 
 def test_declining_the_showcase_prunes_the_whole_surface_and_leaves_a_green_gate(
     tmp_path,
+    generate,
 ):
     """`showcase=false` must remove the read model AND everything that only exists
     to serve it, then still pass the project's own structural gate.
@@ -1060,7 +1102,7 @@ def test_declining_the_showcase_prunes_the_whole_surface_and_leaves_a_green_gate
     longer exist. Both are green at generation and red the first time anyone runs
     the thing, which is why the gate is asserted here rather than trusted."""
     dest = tmp_path / "proj"
-    _generate(
+    generate(
         dest, project_name="demo_proj", frontend_stack="react-vite", showcase=False
     )
 
@@ -1111,7 +1153,7 @@ _ANSWER_MATRIX = [
 
 
 @pytest.mark.parametrize("answers", _ANSWER_MATRIX)
-def test_a_generated_project_passes_its_own_suite(tmp_path, answers):
+def test_a_generated_project_passes_its_own_suite(tmp_path, answers, generate):
     """A project must be green on arrival for every answer the template offers.
 
     Its README tells the newcomer to run `make verify`; if that is red on a
@@ -1119,7 +1161,7 @@ def test_a_generated_project_passes_its_own_suite(tmp_path, answers):
     write and cannot diagnose. `showcase=false` has its own case above, which is
     where this class was first found."""
     dest = tmp_path / "proj"
-    _generate(dest, project_name="demo_proj", **answers)
+    generate(dest, project_name="demo_proj", **answers)
 
     structure = _structure_gate(dest)
     assert structure.returncode == 0, structure.stdout + structure.stderr
@@ -1164,13 +1206,13 @@ _PASSED = re.compile(r"\b(\d+) passed\b")
         )
     ],
 )
-def test_a_generated_project_runs_and_smokes(tmp_path, answers):
+def test_a_generated_project_runs_and_smokes(tmp_path, answers, generate):
     """Slice CMP-3.S1 held downstream: `make run` reached a module the recipe
     named literally and failed `No module named app` under every answer set, and
     `make smoke` selected no test. Both must be green on arrival, and the smoke
     run must have run something."""
     dest = tmp_path / "proj"
-    _generate(dest, project_name="demo_proj", **answers)
+    generate(dest, project_name="demo_proj", **answers)
     ran = _make_in(dest, "run")
     assert ran.returncode == 0, ran.stdout[-2000:] + ran.stderr[-2000:]
     smoke = _make_in(dest, "smoke")
@@ -1189,7 +1231,7 @@ def test_a_generated_project_runs_and_smokes(tmp_path, answers):
         )
     ],
 )
-def test_a_generated_project_replays_its_evals(tmp_path, answers):
+def test_a_generated_project_replays_its_evals(tmp_path, answers, generate):
     """Slice CMP-4.S7 held downstream: every answer set ships keel's `evals`
     block, the harness, the triage doer it drives and a dataset that uses every
     shipped scorer, and `make eval` run twice in the committed project exits 0,
@@ -1199,7 +1241,7 @@ def test_a_generated_project_replays_its_evals(tmp_path, answers):
     from evals import SCORERS
 
     dest = tmp_path / "proj"
-    _generate(dest, project_name="demo_proj", **answers)
+    generate(dest, project_name="demo_proj", **answers)
     keel = json.loads((_ROOT / "config" / "project.json").read_text())
     shipped = json.loads((dest / "config" / "project.json").read_text())
     assert shipped["evals"] == keel["evals"], shipped.get("evals")
@@ -1268,7 +1310,7 @@ def _unnamed_requirement(project, block):
         )
     ],
 )
-def test_a_generated_project_traces_its_requirements(tmp_path, answers):
+def test_a_generated_project_traces_its_requirements(tmp_path, answers, generate):
     """Requirement traceability held downstream: every answer set ships keel's
     `traceability` block, the matrix schema, a spec and the tests that name its
     requirements, and `make trace` run twice in the committed project exits 0,
@@ -1276,7 +1318,7 @@ def test_a_generated_project_traces_its_requirements(tmp_path, answers):
     A requirement then added to the spec with no test turns `make trace` red
     naming it, and the matrix says fail."""
     dest = tmp_path / "proj"
-    _generate(dest, project_name="demo_proj", **answers)
+    generate(dest, project_name="demo_proj", **answers)
     keel = json.loads((_ROOT / "config" / "project.json").read_text())
     shipped = json.loads((dest / "config" / "project.json").read_text())
     assert shipped["traceability"] == keel["traceability"], shipped.get("traceability")
@@ -1338,13 +1380,15 @@ def _trace_gate(project):
     )
 
 
-def test_the_traceability_gate_test_runs_and_judges_a_generated_project(tmp_path):
+def test_the_traceability_gate_test_runs_and_judges_a_generated_project(
+    tmp_path, generate
+):
     """The gate test ships and runs in a generated project: every test in its
     file passes there with nothing skipped, so its planted faults and symlink
     refusals hold on a project's tree and not only keel's. A requirement added
     to the project's spec with no test then fails the gate test naming it."""
     dest = tmp_path / "proj"
-    _generate(dest, project_name="demo_proj")
+    generate(dest, project_name="demo_proj")
     block = json.loads((dest / "config" / "project.json").read_text())["traceability"]
     ran = _trace_gate(dest)
     assert ran.returncode == 0, ran.stdout[-6000:] + ran.stderr[-2000:]
@@ -1414,7 +1458,7 @@ def _plant_exit_member(project):
     ],
 )
 def test_a_generated_project_ends_every_process_through_the_exit_helper(
-    tmp_path, answers
+    tmp_path, answers, generate
 ):
     """The exit helper held downstream: every answer set ships the helper, the
     generator and the gate test; the gate file passes there with nothing
@@ -1424,7 +1468,7 @@ def test_a_generated_project_ends_every_process_through_the_exit_helper(
     naming it, `make exit-codes` writes its row, and a second run leaves the
     guide byte-identical."""
     dest = tmp_path / "proj"
-    _generate(dest, project_name="demo_proj", **answers)
+    generate(dest, project_name="demo_proj", **answers)
     guide = (
         dest
         / json.loads((dest / "config" / "project.json").read_text())["doc_drift"][
@@ -1534,7 +1578,7 @@ def _project_members(project):
 
 
 @pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
-def test_a_default_project_ships_the_slice_and_stays_green(tmp_path):
+def test_a_default_project_ships_the_slice_and_stays_green(tmp_path, generate):
     """A project generated with default answers holds one member for a red
     evidence record and one for an absent backend, with different values; its
     own command-line test drives its own copies of both scripts to every code
@@ -1544,7 +1588,7 @@ def test_a_default_project_ships_the_slice_and_stays_green(tmp_path):
     them, and its own tests of the one-date rule, the symlink refusal, the
     three-way git answer and the host allowlist pass."""
     dest = tmp_path / "proj"
-    _generate(dest, project_name="demo_proj")
+    generate(dest, project_name="demo_proj")
     members = _project_members(dest)
     assert set(_RED_FACT_MEMBERS) <= set(members), sorted(members)
     values = [members[name] for name in _RED_FACT_MEMBERS]
@@ -1612,13 +1656,13 @@ _ISOLATION_TESTS = (
 )
 
 
-def test_a_generated_project_ships_the_isolation_guard(tmp_path):
+def test_a_generated_project_ships_the_isolation_guard(tmp_path, generate):
     """A project generated with default answers carries the isolation guard,
     its fixture cases, the `tests` block as the template states it with the
     scratch roots named after the project, and its own copies of the guard's
     unit tests and gate tests pass with nothing skipped."""
     dest = tmp_path / "proj"
-    _generate(dest, project_name="demo_proj")
+    generate(dest, project_name="demo_proj")
     for path in _ISOLATION_FILES + _ISOLATION_TESTS:
         assert (dest / path).is_file(), path
     manifest = json.loads((dest / "config" / "project.json").read_text("utf-8"))
@@ -1645,14 +1689,14 @@ _SECRETS_GATE_TEST = "test_no_file_a_commit_could_carry_holds_a_value_for_a_secr
 
 
 @pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
-def test_a_generated_project_judges_committed_secrets(tmp_path):
+def test_a_generated_project_judges_committed_secrets(tmp_path, generate):
     """The committed-secrets gate ships and runs in a generated project: every
     test in its file passes there with nothing skipped once the project is
     committed. A dotenv file git would add, holding a value for one of the
     project's own credential variables, then fails the gate test naming the
     file and the key, and the value appears nowhere in its output."""
     dest = tmp_path / "proj"
-    _generate(dest, project_name="demo_proj")
+    generate(dest, project_name="demo_proj")
     env = _hermetic_git_env(tmp_path)
     for argv in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "generated"]):
         g = subprocess.run(
@@ -1688,7 +1732,9 @@ def test_a_generated_project_judges_committed_secrets(tmp_path):
 
 @pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
 @pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
-def test_a_default_project_launches_here_limited_and_records_the_run(tmp_path):
+def test_a_default_project_launches_here_limited_and_records_the_run(
+    tmp_path, generate
+):
     """A project generated with default answers ships scripts/launch.py and
     scripts/long_scripts.py, the placeholder own-hosts twin and no local
     own-hosts file, carries the `launcher` block as the template states it, with
@@ -1701,7 +1747,7 @@ def test_a_default_project_launches_here_limited_and_records_the_run(tmp_path):
     here unlimited as short and keeps one entry; `make long-scripts` then exits 0; a failing command is recorded as failed;
     and its own launcher tests pass with nothing skipped."""
     dest = tmp_path / "proj"
-    _generate(dest, project_name="demo_proj")
+    generate(dest, project_name="demo_proj")
     template = json.loads((_ROOT / "config" / "project.json").read_text("utf-8"))
     manifest = json.loads((dest / "config" / "project.json").read_text("utf-8"))
     launcher = manifest["launcher"]
@@ -1806,14 +1852,14 @@ _APP_DELETE_ADVICE = re.compile(r"\*\*Delete this dir\*\*(.*?)(?:\n\n|\Z)", re.D
 
 
 @pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
-def test_following_src_apps_delete_advice_leaves_a_green_gate(tmp_path):
+def test_following_src_apps_delete_advice_leaves_a_green_gate(tmp_path, generate):
     """src/app/README.md tells a client-server project to delete the composition
     root. Doing exactly that must leave the structure gate and `make smoke` green:
     the README names the manifest edits (layers.app null, smoke declared empty,
     run kept out of the effect sweep) that go with the deletion, src/app/AGENT.md
     names the same three, and this test applies them from the README's own words."""
     dest = tmp_path / "proj"
-    _generate(dest, project_name="demo_proj", frontend_stack="none")
+    generate(dest, project_name="demo_proj", frontend_stack="none")
     advice = _APP_DELETE_ADVICE.search((dest / "src" / "app" / "README.md").read_text())
     assert advice, (
         "src/app/README.md no longer carries the 'Delete this dir' advice this "
@@ -1847,7 +1893,7 @@ def test_following_src_apps_delete_advice_leaves_a_green_gate(tmp_path):
     )
 
 
-def test_declining_the_showcase_leaves_nothing_importing_it(tmp_path):
+def test_declining_the_showcase_leaves_nothing_importing_it(tmp_path, generate):
     """The dangling-import half, asserted over the whole shipped tree.
 
     `api/rest_fastapi/app.py` mounts the showcase router at import time, and the two
@@ -1857,7 +1903,7 @@ def test_declining_the_showcase_leaves_nothing_importing_it(tmp_path):
     for the import rather than checking the three known files means a fourth one
     added later fails here."""
     dest = tmp_path / "proj"
-    _generate(dest, project_name="demo_proj", frontend_stack="none", showcase=False)
+    generate(dest, project_name="demo_proj", frontend_stack="none", showcase=False)
 
     offenders = []
     for path in sorted(dest.rglob("*.py")):
@@ -1871,7 +1917,7 @@ def test_declining_the_showcase_leaves_nothing_importing_it(tmp_path):
     )
 
 
-def test_declining_the_showcase_while_keeping_its_own_ui_is_refused(tmp_path):
+def test_declining_the_showcase_while_keeping_its_own_ui_is_refused(tmp_path, generate):
     """`astro` IS the showcase UI — seven pages, every one fetching `/api/*`, built
     by `pages.yml` and snapshotted by the exporter this answer prunes. So the pair
     (`showcase=false`, `frontend_stack=astro`) has no coherent meaning.
@@ -1881,9 +1927,7 @@ def test_declining_the_showcase_while_keeping_its_own_ui_is_refused(tmp_path):
     passes have been closing; an answer the template cannot honour should say so."""
     dest = tmp_path / "proj"
     with pytest.raises(ValueError) as refusal:
-        _generate(
-            dest, project_name="demo_proj", frontend_stack="astro", showcase=False
-        )
+        generate(dest, project_name="demo_proj", frontend_stack="astro", showcase=False)
     message = str(refusal.value)
     assert "showcase" in message and "astro" in message, message
     assert "react-vite" in message or "none" in message, (
@@ -1911,7 +1955,9 @@ _CODE_ROOTS_FOR_BRANDING = (
 )
 
 
-def test_no_code_the_generated_project_runs_carries_the_templates_name(tmp_path):
+def test_no_code_the_generated_project_runs_carries_the_templates_name(
+    tmp_path, generate
+):
     """Scanned as a class, not as the two known lines.
 
     Two hardcodes were found by reading; a scan is what stops the third. Restricted
@@ -1919,7 +1965,7 @@ def test_no_code_the_generated_project_runs_carries_the_templates_name(tmp_path)
     it came from is honest, a running service that answers to the template's name
     is not."""
     dest = tmp_path / "proj"
-    _generate(dest, project_name="Acme Widgets", frontend_stack="react-vite")
+    generate(dest, project_name="Acme Widgets", frontend_stack="react-vite")
 
     offenders = []
     for root in _CODE_ROOTS_FOR_BRANDING:
@@ -1948,7 +1994,7 @@ def test_no_code_the_generated_project_runs_carries_the_templates_name(tmp_path)
     )
 
 
-def test_the_rest_api_is_titled_after_the_project_not_the_template(tmp_path):
+def test_the_rest_api_is_titled_after_the_project_not_the_template(tmp_path, generate):
     """The observable end of the branding fix: the served OpenAPI document.
 
     Asserted by BUILDING the generated app and reading `info.title`, not by grepping
@@ -1957,7 +2003,7 @@ def test_the_rest_api_is_titled_after_the_project_not_the_template(tmp_path):
     correct after a rename instead of being frozen at generation time."""
     optional_deps.importorskip("fastapi", extra="transport")
     dest = tmp_path / "proj"
-    _generate(dest, project_name="Acme Widgets", frontend_stack="react-vite")
+    generate(dest, project_name="Acme Widgets", frontend_stack="react-vite")
 
     out = tmp_path / "spec.json"
     r = subprocess.run(
@@ -1971,7 +2017,7 @@ def test_the_rest_api_is_titled_after_the_project_not_the_template(tmp_path):
     assert spec["info"]["title"] == "Acme Widgets API", spec["info"]
 
 
-def test_the_generated_project_has_a_green_openapi_check_on_arrival(tmp_path):
+def test_the_generated_project_has_a_green_openapi_check_on_arrival(tmp_path, generate):
     """`make check-all` runs `check-openapi`, so whatever ships must already agree
     with the app the project actually has.
 
@@ -1983,7 +2029,7 @@ def test_the_generated_project_has_a_green_openapi_check_on_arrival(tmp_path):
     committed yet' from 'the committed contract has drifted'."""
     optional_deps.importorskip("fastapi", extra="transport")
     dest = tmp_path / "proj"
-    _generate(dest, project_name="Acme Widgets", frontend_stack="react-vite")
+    generate(dest, project_name="Acme Widgets", frontend_stack="react-vite")
 
     assert not (dest / "api" / "rest_fastapi" / "openapi.json").exists(), (
         "keel's own openapi.json shipped verbatim; it names keel and cannot match "
@@ -2025,6 +2071,7 @@ def test_the_generated_project_has_a_green_openapi_check_on_arrival(tmp_path):
 
 def test_the_rest_app_still_starts_and_drops_its_routes_when_the_showcase_is_declined(
     tmp_path,
+    generate,
 ):
     """The behavioural half of the dangling-import check, and the stronger one.
 
@@ -2034,7 +2081,7 @@ def test_the_rest_app_still_starts_and_drops_its_routes_when_the_showcase_is_dec
     satisfied by an app that mounts nothing at all."""
     optional_deps.importorskip("fastapi", extra="transport")
     dest = tmp_path / "proj"
-    _generate(
+    generate(
         dest, project_name="demo_proj", frontend_stack="react-vite", showcase=False
     )
 
@@ -2327,7 +2374,7 @@ def _gate_runner(project, *args):
 @pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
 @pytest.mark.parametrize("stack", ["react-vite", "astro"])
 def test_a_generated_project_gates_only_on_targets_that_leave_its_tree_alone(
-    stack, tmp_path
+    stack, tmp_path, generate
 ):
     """Slice CMP-1.S3 held downstream: the project ships keel's policy, its own gate
     reads its labels, its runner refuses a [tree] target and proves a [local] one
@@ -2335,7 +2382,7 @@ def test_a_generated_project_gates_only_on_targets_that_leave_its_tree_alone(
     frontend's `public/`; before .gitignore covered every stack, it dirtied a
     react-vite project's tree while labelled [local]."""
     dest = tmp_path / "proj"
-    _generate(dest, project_name="demo_proj", frontend_stack=stack)
+    generate(dest, project_name="demo_proj", frontend_stack=stack)
     keel = json.loads((_ROOT / "config" / "project.json").read_text())
     shipped = json.loads((dest / "config" / "project.json").read_text())
     assert shipped["make_targets"] == keel["make_targets"]
@@ -2386,7 +2433,7 @@ _FE_SUITE_CONTRACT = (
 
 @pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
 @pytest.mark.parametrize("stack", ["astro", "react-vite", "none"])
-def test_generated_frontend_carries_its_suites(stack, tmp_path):
+def test_generated_frontend_carries_its_suites(stack, tmp_path, generate):
     """CMP-4.S5 held downstream, statically (npm never runs here). A project
     with a frontend gets keel's `layers.frontend.journey` keys, and its own
     contract tests pass over its one app: both npm scripts, both runner configs,
@@ -2399,7 +2446,7 @@ def test_generated_frontend_carries_its_suites(stack, tmp_path):
     zero apps, `make test-fe` exits 0 and says nothing, and its Quickstart names
     neither target."""
     dest = tmp_path / "proj"
-    _generate(dest, project_name="demo_proj", frontend_stack=stack)
+    generate(dest, project_name="demo_proj", frontend_stack=stack)
     keel = json.loads((_ROOT / "config" / "project.json").read_text())
     shipped = json.loads((dest / "config" / "project.json").read_text())
     ran = subprocess.run(
@@ -2466,7 +2513,7 @@ def _readme_quickstart(project):
 
 
 @pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
-def test_a_generated_project_ships_the_gate_evidence_writer(tmp_path):
+def test_a_generated_project_ships_the_gate_evidence_writer(tmp_path, generate):
     """Slice CMP-4.S4 held downstream: a generated project gets the writer, the
     stdlib siblings it imports, its schema, the `evidence` block and the ignore
     line, and its own `verify` recipe runs the driver. A reduced gate (the
@@ -2475,7 +2522,7 @@ def test_a_generated_project_ships_the_gate_evidence_writer(tmp_path):
     Reduced, not the whole `verify`: lint and typecheck add minutes and nothing
     the record's derivation depends on."""
     dest = tmp_path / "proj"
-    _generate(dest, project_name="demo_proj")
+    generate(dest, project_name="demo_proj")
     keel = json.loads((_ROOT / "config" / "project.json").read_text())
     shipped = json.loads((dest / "config" / "project.json").read_text())
     assert shipped["evidence"] == keel["evidence"], shipped.get("evidence")
@@ -2540,7 +2587,9 @@ _ROGUE_HEADER = (
 )
 
 
-def test_a_generated_project_starts_children_only_through_the_allowlist(tmp_path):
+def test_a_generated_project_starts_children_only_through_the_allowlist(
+    tmp_path, generate
+):
     """check_X and the allowlist hold DOWNSTREAM, through the project's own gate
     and its own helper.
 
@@ -2552,7 +2601,7 @@ def test_a_generated_project_starts_children_only_through_the_allowlist(tmp_path
     The probe lives in `demo/`, a code root with no roster, so check_S cannot
     be what reds it."""
     dest = tmp_path / "proj"
-    _generate(dest, project_name="demo_proj", frontend_stack="none")
+    generate(dest, project_name="demo_proj", frontend_stack="none")
     keel = json.loads((_ROOT / "config" / "project.json").read_text())
     manifest = dest / "config" / "project.json"
     shipped = json.loads(manifest.read_text())
@@ -2620,7 +2669,9 @@ def test_a_generated_project_starts_children_only_through_the_allowlist(tmp_path
     assert r.returncode == 0, "a declared credential name reds the gate:\n" + r.stdout
 
 
-def test_a_generated_projects_children_never_follow_the_hooks_repository(tmp_path):
+def test_a_generated_projects_children_never_follow_the_hooks_repository(
+    tmp_path, generate
+):
     """The repository-context rule holds DOWNSTREAM, through the project's own
     doers and its own gate.
 
@@ -2633,7 +2684,7 @@ def test_a_generated_projects_children_never_follow_the_hooks_repository(tmp_pat
     only on `repo_context=True`, and its structure gate refuses GIT_DIR in
     child_env.names with the fix, then passes once it is removed."""
     dest = tmp_path / "proj"
-    _generate(dest, project_name="demo_proj", frontend_stack="none")
+    generate(dest, project_name="demo_proj", frontend_stack="none")
     env = _hermetic_git_env(tmp_path)
     for argv in (["init", "-q", "-b", "main"], ["add", "-A"], ["commit", "-qm", "g"]):
         r = subprocess.run(["git"] + argv, cwd=str(dest), env=env, capture_output=True)
@@ -2721,7 +2772,9 @@ def test_a_generated_projects_children_never_follow_the_hooks_repository(tmp_pat
     assert r.returncode == 0, r.stdout + r.stderr
 
 
-def test_a_generated_projects_children_never_receive_a_credentialed_proxy(tmp_path):
+def test_a_generated_projects_children_never_receive_a_credentialed_proxy(
+    tmp_path, generate
+):
     """The value rule holds DOWNSTREAM, through the project's own doer, gate and
     helper.
 
@@ -2732,7 +2785,7 @@ def test_a_generated_projects_children_never_receive_a_credentialed_proxy(tmp_pa
     HTTPS_PROXY in with a reason, the judge behaves as without a proxy and the
     helper hands a child the value; a stale opt-in reds the gate."""
     dest = tmp_path / "proj"
-    _generate(dest, project_name="demo_proj", frontend_stack="none")
+    generate(dest, project_name="demo_proj", frontend_stack="none")
     env = _hermetic_git_env(tmp_path)
     for argv in (["init", "-q", "-b", "main"], ["add", "-A"], ["commit", "-qm", "g"]):
         r = subprocess.run(["git"] + argv, cwd=str(dest), env=env, capture_output=True)
@@ -2876,7 +2929,9 @@ def _doc_drift_in(project, *flags):
         ),
     ],
 )
-def test_the_doc_drift_tests_run_and_judge_a_generated_project(tmp_path, answers):
+def test_the_doc_drift_tests_run_and_judge_a_generated_project(
+    tmp_path, answers, generate
+):
     """The doc-drift gate ships, runs, and still bites in a generated project.
 
     Every collected test either passes or skips, and every skip is a
@@ -2884,7 +2939,7 @@ def test_the_doc_drift_tests_run_and_judge_a_generated_project(tmp_path, answers
     in its prose, its settings reference and its feature catalogue alike. The
     expected counts come from the project's own collection, not from here."""
     dest = tmp_path / "proj"
-    _generate(dest, project_name="demo_proj", **answers)
+    generate(dest, project_name="demo_proj", **answers)
 
     collected = _doc_drift_in(dest, "--collect-only")
     assert collected.returncode == 0, collected.stdout + collected.stderr
@@ -2954,7 +3009,7 @@ def test_the_doc_drift_tests_run_and_judge_a_generated_project(tmp_path, answers
 
 @pytest.mark.parametrize("stack", ["react-vite", "astro", "none"])
 def test_the_generated_readme_names_no_keel_only_command_and_the_chosen_dev_server(
-    tmp_path, stack
+    tmp_path, stack, generate
 ):
     """A generated README offers only what the project can run.
 
@@ -2962,7 +3017,7 @@ def test_the_generated_readme_names_no_keel_only_command_and_the_chosen_dev_serv
     it; the showcase's `run-web` line describes the stack that shipped, names
     Astro and its port only for astro, and is absent with no frontend."""
     dest = tmp_path / "proj"
-    _generate(dest, project_name="demo_proj", frontend_stack=stack, showcase=True)
+    generate(dest, project_name="demo_proj", frontend_stack=stack, showcase=True)
     readme = (dest / "README.md").read_text(encoding="utf-8")
 
     assert "make new" not in readme, "the generated README offers keel's `make new`"
@@ -3010,7 +3065,9 @@ def _e2e_gate(project, *paths):
     ],
     ids=["grpc", "edge_nginx", "no-showcase"],
 )
-def test_each_transport_choice_passes_the_e2e_coverage_gate(answers, tmp_path):
+def test_each_transport_choice_passes_the_e2e_coverage_gate(
+    answers, tmp_path, generate
+):
     """CMP-4.S6 held downstream. Whatever the answers ship, every endpoint
     the project serves is named by a scenario or exempt with a reason, the
     REST scenarios pass over a real socket, and nothing skips: a `grpc` project
@@ -3018,7 +3075,7 @@ def test_each_transport_choice_passes_the_e2e_coverage_gate(answers, tmp_path):
     `edge_nginx` project's `none` source derives nothing, and a project without
     the showcase serves none of its routes and keeps none of its scenarios."""
     dest = tmp_path / "proj"
-    _generate(dest, project_name="demo_proj", **answers)
+    generate(dest, project_name="demo_proj", **answers)
     shipped = json.loads((dest / "config" / "project.json").read_text())
     ran = _e2e_gate(dest)
     assert ran.returncode == 0, ran.stdout[-6000:] + ran.stderr[-2000:]
@@ -3037,11 +3094,11 @@ def test_each_transport_choice_passes_the_e2e_coverage_gate(answers, tmp_path):
         assert not (dest / "tests" / "e2e" / "test_showcase_journey.py").exists()
 
 
-def test_a_generated_grpc_project_without_its_exemption_is_red(tmp_path):
+def test_a_generated_grpc_project_without_its_exemption_is_red(tmp_path, generate):
     """The other half: the grpc exemption is load-bearing. Dropped, the
     project's gate names the method no scenario calls."""
     dest = tmp_path / "proj"
-    _generate(dest, project_name="demo_proj", transports=[_GRPC_TRANSPORT])
+    generate(dest, project_name="demo_proj", transports=[_GRPC_TRANSPORT])
     manifest_path = dest / "config" / "project.json"
     manifest = json.loads(manifest_path.read_text())
     (method,) = manifest["e2e"]["exempt"]
@@ -3076,7 +3133,7 @@ def _resolve_project_rows(project):
     )
 
 
-def test_a_default_project_prints_no_default_lines(tmp_path):
+def test_a_default_project_prints_no_default_lines(tmp_path, generate):
     """A project generated with default answers sets every key its loader
     declares for config/project.json, so resolving them all writes no
     `[using default]` and no `[not set]` line. Deleting each key that has a
@@ -3084,7 +3141,7 @@ def test_a_default_project_prints_no_default_lines(tmp_path):
     naming the project's config file, so the silence above is not a loader that
     never writes."""
     dest = tmp_path / "proj"
-    _generate(dest, project_name="demo_proj")
+    generate(dest, project_name="demo_proj")
     ran = _resolve_project_rows(dest)
     assert ran.returncode == 0, ran.stderr[-4000:]
     assert ran.stderr == "", ran.stderr[-4000:]
@@ -3169,7 +3226,9 @@ def _reads_gate(project):
         ),
     ],
 )
-def test_a_generated_project_reads_config_only_through_the_loader(tmp_path, answers):
+def test_a_generated_project_reads_config_only_through_the_loader(
+    tmp_path, answers, generate
+):
     """The config-reads gate held downstream: the project's allowlist is keel's
     with exactly the entries for files the project does not ship rendered out,
     within the ceiling, and keel's own rendered files read config only through
@@ -3180,7 +3239,7 @@ def test_a_generated_project_reads_config_only_through_the_loader(tmp_path, answ
     second rogue reader at the same `_commit` is refused and the file is left;
     and once `expiring_tier.expires` has passed the recorded finding is red."""
     dest = tmp_path / "proj"
-    _generate(dest, project_name="demo_proj", **answers)
+    generate(dest, project_name="demo_proj", **answers)
     keel = json.loads((_ROOT / "config" / "project.json").read_text("utf-8"))
     manifest = json.loads((dest / "config" / "project.json").read_text("utf-8"))
     allowed = manifest[_READS_BLOCK]["allowed"]
@@ -3286,7 +3345,9 @@ _CANARY_ONLY = (
 
 
 @pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
-def test_a_generated_project_canary_target_names_the_template_checkout(tmp_path):
+def test_a_generated_project_canary_target_names_the_template_checkout(
+    tmp_path, generate
+):
     """A generated project has no template to render, so it ships the target
     and not the doer: `make canary` says where to run it, exit 2, rather than
     failing on a missing file."""
@@ -3295,7 +3356,7 @@ def test_a_generated_project_canary_target_names_the_template_checkout(tmp_path)
     )
     assert set(_CANARY_ONLY) <= excluded, sorted(set(_CANARY_ONLY) - excluded)
     dest = tmp_path / "proj"
-    _generate(dest, project_name="demo_proj")
+    generate(dest, project_name="demo_proj")
     for rel in _CANARY_ONLY:
         assert not (dest / rel).exists(), rel
     ran = _make_in(dest, "canary")
@@ -3316,14 +3377,16 @@ _TOOLCHAIN_CHECKER = "scripts/check_toolchain.py"
 @pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
 @pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
 @pytest.mark.parametrize("stack", ["react-vite", "none"])
-def test_a_committed_generated_project_passes_its_toolchain_gates(stack, tmp_path):
+def test_a_committed_generated_project_passes_its_toolchain_gates(
+    stack, tmp_path, generate
+):
     """The lockfile gate judges what git tracks, so it is run in a project that
     is committed, as a project's CI judges it: with a frontend app its lockfile
     is tracked and matches, and nothing skips; with none, the lockfile gate skips
     saying the project has no frontend app, and the toolchain gate still judges
     its workflows, its fe-install recipe and its Python floor."""
     dest = tmp_path / "proj"
-    _generate(dest, project_name="demo_proj", frontend_stack=stack)
+    generate(dest, project_name="demo_proj", frontend_stack=stack)
     assert (dest / _TOOLCHAIN_CHECKER).is_file()
     home = tmp_path / "git-home"
     home.mkdir()
@@ -3400,7 +3463,7 @@ def _append_edit(project, rel):
 
 
 def test_a_generated_project_refuses_an_agent_edit_to_its_judge_on_arrival(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, generate
 ):
     """KEEL-AGT-1 arrives through copier: the project's own apply_refactor reads
     the project's own `agents` block and refuses, before writing, an edit to its
@@ -3412,7 +3475,7 @@ def test_a_generated_project_refuses_an_agent_edit_to_its_judge_on_arrival(
     from exit_codes import ExitCode
 
     dest = tmp_path / "proj"
-    _generate(dest, project_name="demo_proj")
+    generate(dest, project_name="demo_proj")
     keel = json.loads((_ROOT / "config" / "project.json").read_text())
     shipped = json.loads((dest / "config" / "project.json").read_text())
     assert shipped["agents"] == keel["agents"]
