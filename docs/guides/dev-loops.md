@@ -33,7 +33,7 @@ Every loop below ends each pass at the **same gate**, and "done" means the gate 
 green — never a self-assessment:
 
 ```
-make verify   # check-all + secret-scan + lint + typecheck + test + trace + eval + test-fe   (the full bar)
+make verify   # check-all + secret-scan + lint + typecheck + test + trace + eval + test-fe + test-sh   (the full bar)
 make test     # plain pytest over the whole suite (tiers: unit · integration · e2e · smoke)
 make check    # fast, 3.6-safe structural gate (runs in pre-commit)
 ```

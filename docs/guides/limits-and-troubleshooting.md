@@ -467,6 +467,7 @@ between the markers.
 | `scripts/jobs/check_corpus.py` | 0, 1 |
 | `scripts/run_evals.py` | 0, 1, 2, 11, 14 |
 | `scripts/scan_secrets.py` | 0, 1, 2, 11, 13, 14 |
+| `scripts/shell_gate.py` | 0, 2, 11, 13, 14, passes through |
 | `scripts/trace_requirements.py` | 0, 1, 2 |
 <!-- exit-codes:end -->
 
@@ -575,6 +576,8 @@ kept on purpose, such as a test fixture, with its reason.
 | `make verify` stops at once with `check_venv: the venv is older than pyproject.toml` | a requirement of the core, the `dev` extra or an enabled transport's extra is missing or below its specifier, as after a `pyproject.toml` change or in a venv made by hand | run the `pip install -e ".[...]"` command the message names, with the interpreter it names |
 | `make verify` stops on a missing `pytest`, `ruff` or `mypy` | the `dev` extra is not installed, and `make check-venv` was skipped by running a goal by hand | `.venv/bin/pip install -e ".[dev]"` |
 | a REST test fails with `ModuleNotFoundError: No module named 'fastapi'` instead of skipping | config/project.json `transports.enabled` lists `rest`, whose `transports.extras` entry `transport` is then owed on every machine | `.venv/bin/pip install -e ".[dev]"`, whose `dev` extra names `transport` |
+| `make lint`, `make lint-sh`, `make fmt-check-sh` or `make test-sh` exits 11 with `(shell.linter) is not installed` (or `shell.formatter`, `shell.test_runner`) | the project carries a shell script and the tool config/project.json `shell` names for that role is in neither the interpreter's directory nor PATH; keel installs no shell tool | install the named tool, or set `shell.enabled` to `false` in a project that wants no shell gate |
+| `make test-sh` exits 13 with `shell script(s)` and `no shell test to run` | the project carries shell scripts and no file ending in a `shell.test_suffixes` suffix (`.bats`), so a pass would judge zero tests | add a test file for the scripts, or set `shell.enabled` to `false` |
 | `make secret-scan` (or `make verify`'s `secret-scan` goal) exits 11 with `there is no scanner record at` | `make secrets-install` has not run on this machine, as in a fresh clone or a newly generated project | run `make secrets-install`, then run the scan again |
 | `make secret-scan` exits 11 with `is gone`, `changed after it was recorded`, or a record naming another rev | the recorded build was deleted or rebuilt, or `.pre-commit-config.yaml` now pins another rev | run `make secrets-install`, which records the build pre-commit holds for the pinned rev |
 | `make secret-scan` exits 13 with `the repository has no commit` | the project was never committed, so there is no history to judge | `git add -A && git commit`, then run it again |

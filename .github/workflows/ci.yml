@@ -68,3 +68,6 @@ jobs:
       - name: download the browser the frontend journey drives
         run: make fe-browsers FE_BROWSER_FLAGS=--with-deps
       - run: make test-fe
+      # The shell tests (scripts/shell_gate.py test). `make lint` above already
+      # ran the shell linter and the format check.
+      - run: make test-sh

@@ -53,7 +53,7 @@ WRITE_GUARD = $(if $(findstring i,$(firstword -$(MAKEFLAGS))),$(error refusing '
 
 .PHONY: help new audit-project canary check-python check-venv check check-all check-corpus check-openapi check-aad check-cdmon check-exit-codes exit-codes advise check-generic long-scripts verify test trace eval eval-live unit integration e2e smoke \
         lint lint-py lint-fe fmt fmt-check typecheck typecheck-py typecheck-fe \
-        test-fe test-fe-unit test-fe-e2e \
+        test-fe test-fe-unit test-fe-e2e lint-sh fmt-sh fmt-check-sh test-sh \
         fe-install fe-browsers secrets-install secret-scan run run-api run-web site-data site-static demo agent-surface-schema check-docs restamp-docs doc-review doc-review-apply
 
 # `make help EFFECT=tree` lists only what rewrites the tree; `AREA=` filters by a
@@ -177,11 +177,11 @@ long-scripts: ## [local] Propose the scripts whose last run recorded by scripts/
 # leave an earlier green record standing. scripts/gate_evidence.py runs each goal,
 # passes the first failing code through and writes the record to config/project.json
 # evidence.dir (an ignored path, so [local] stays true). check_W reads the goals of
-# this `$(MAKE)` line, so the label still closes over all eight. make runs a
+# this `$(MAKE)` line, so the label still closes over all nine. make runs a
 # `$(MAKE)` line even under -n; the driver reads -n/-q/-t from MAKEFLAGS and writes
 # nothing then. It runs the goals in sequence, so -j does not parallelise them.
-verify: ## [local] Run all gates (all checks + secret scan + lint + types + tests + traceability + evals + frontend tests) and write their evidence record to config/project.json evidence.dir
-	$(PY) scripts/gate_evidence.py --gate $@ -- $(MAKE) check-all secret-scan lint typecheck test trace eval test-fe
+verify: ## [local] Run all gates (all checks + secret scan + lint + types + tests + traceability + evals + frontend tests + shell tests) and write their evidence record to config/project.json evidence.dir
+	$(PY) scripts/gate_evidence.py --gate $@ -- $(MAKE) check-all secret-scan lint typecheck test trace eval test-fe test-sh
 
 # JUNIT_XML is empty unless scripts/gate_evidence.py sets it per goal: pytest then
 # writes its own junit report, the only source of the evidence record's test
@@ -215,7 +215,7 @@ e2e: check-python ## [local] Run end-to-end tests
 smoke: check-python ## [local] Run smoke tests
 	PYTHONPATH=$(PYTHONPATH) $(PY) -m pytest -m smoke
 
-lint: lint-py fmt-check lint-fe ## [local] Lint everything (Python + frontend + formatting)
+lint: lint-py fmt-check lint-fe lint-sh fmt-check-sh ## [local] Lint everything (Python + frontend + shell + formatting)
 lint-py: check-python ## [local] Lint Python (ruff, via the selected interpreter)
 	$(PY) -m ruff check $(PY_ROOTS)
 # Each recipe LINE is its own shell, so a bare `... || exit 0` guard on its own line
@@ -242,6 +242,20 @@ fmt: check-python ## [tree] Format Python (ruff, via the selected interpreter)
 # that writes is not a check, and CI must report drift, not silently repair it.
 fmt-check: check-python ## [local] Check Python formatting without writing (rides `make lint`)
 	$(PY) -m ruff format --check $(PY_ROOTS)
+
+# Shell scripts. One adapter, scripts/shell_gate.py, maps each role to the tool
+# config/project.json shell names, so these targets name a role and never a
+# vendor. A missing tool is exit 11 and shell.enabled false (the copier answer
+# `shell`) is a stated pass that runs no tool; a project with no shell script
+# says so and passes, while scripts with no test file make test-sh exit 13.
+lint-sh: check-python ## [local] Lint the shell scripts with the linter config/project.json shell.linter names
+	$(PY) scripts/shell_gate.py lint
+fmt-sh: check-python ## [tree] Format the shell scripts in place with the formatter config/project.json shell.formatter names
+	$(PY) scripts/shell_gate.py format
+fmt-check-sh: check-python ## [local] Check shell script formatting without writing (rides `make lint`)
+	$(PY) scripts/shell_gate.py format-check
+test-sh: check-python ## [local] Run the shell tests (config/project.json shell.test_suffixes) with the runner shell.test_runner names
+	$(PY) scripts/shell_gate.py test
 
 typecheck: typecheck-py typecheck-fe ## [local] Type-check everything (Python + frontend)
 # No paths on the command line ON PURPOSE: an explicit path argument OVERRIDES

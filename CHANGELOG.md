@@ -57,6 +57,16 @@ version rather than a bare commit:
   transport names in the new `transports.extras` map. `tests/optional_deps.py`
   reads the same map, so a REST test fails instead of skipping on a missing
   FastAPI in any project that enables `rest`, not only in CI.
+- **Shell scripts have lint, format and test gates.** `make lint-sh`,
+  `make fmt-check-sh` (both ride `make lint`), `make fmt-sh` and `make test-sh`
+  (a `make verify` goal of its own) run the tools config/project.json `shell`
+  names through one adapter, `scripts/shell_gate.py`: shellcheck, shfmt and
+  bats today, behind the roles `shell.linter`, `shell.formatter` and
+  `shell.test_runner`. A file is a shell script by its suffix or its shebang.
+  A missing tool is exit 11 naming it, never a skip, and keel installs none
+  yet. Shell scripts with no test file, or test files with zero tests, are
+  exit 13. The new copier question `shell` (default yes) sets
+  `shell.enabled`, and no makes every shell target say so and run no tool.
 - **An agent edit cannot reach the code that judges it.**
   `scripts/apply_refactor.py` refuses, before any write and so in a dry run
   too, an edit to a path config/project.json `agents` protects: a path under

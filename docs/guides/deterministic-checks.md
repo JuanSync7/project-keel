@@ -31,7 +31,7 @@ CI) call them. Each script is self-describing (`--help`) and safe to re-run.
 ```bash
 make check        # fast structural gate — runs anywhere, incl. Python 3.6
 make check-all    # the full deterministic suite (needs the project interpreter)
-make verify       # check-all + secret-scan + lint + typecheck + test + trace + eval + test-fe (the everything gate)
+make verify       # check-all + secret-scan + lint + typecheck + test + trace + eval + test-fe + test-sh (the everything gate)
 ```
 
 Wire them once and forget:
@@ -1037,7 +1037,7 @@ does.
 commit, with what result. Something outside the repository, such as
 project-jarvis, can read that file instead of scraping a log. The verify
 recipe runs `scripts/gate_evidence.py`, which runs each goal (`check-all`,
-`secret-scan`, `lint`, `typecheck`, `test`, `trace`, `eval`, `test-fe`) as its own make, in order. The writer then
+`secret-scan`, `lint`, `typecheck`, `test`, `trace`, `eval`, `test-fe`, `test-sh`) as its own make, in order. The writer then
 writes the record to `<evidence.dir>/<gate>.json`: `.evidence/verify.json`,
 with config/project.json `evidence.dir` = `.evidence`.
 

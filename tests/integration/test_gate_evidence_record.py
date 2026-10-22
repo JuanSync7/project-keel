@@ -307,6 +307,7 @@ def test_keels_verify_recipe_runs_the_driver_over_the_goals_check_w_reads():
         "trace",
         "eval",
         "test-fe",
+        "test-sh",
     ], goals
     assert unresolved == [], unresolved
     assert rule.recursions == goals, rule.recursions
