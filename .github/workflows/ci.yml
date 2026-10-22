@@ -23,12 +23,11 @@ jobs:
       # The `template` extra (copier) is REQUIRED here, not optional: keel's repo root
       # IS the template, and without copier every tests/integration/test_copier_*.py
       # importorskips — so the generation and update gates never ran in CI at all.
+      # `dev` names the `transport` extra, so the same line installs FastAPI,
+      # uvicorn and pydantic for the REST and AAD tests; the dependency-free base
+      # install stays as it is. (The langgraph engine stays optional — its
+      # conformance test importorskips.)
       - run: pip install -e ".[dev,template]"
-      # Optional transport deps so the API + AAD tests actually run (not skip):
-      # the showcase REST/AAD tests need FastAPI + pydantic, which live in the
-      # transport's own requirements, not in the dependency-free base install.
-      # (The langgraph engine stays optional — its conformance test importorskips.)
-      - run: pip install -r api/rest_fastapi/requirements.txt
       # The secret scanner: pre-commit builds the build .pre-commit-config.yaml
       # pins and records where (scripts/scan_secrets.py --locate), then the
       # history scan judges every commit the full checkout above carries. Both
@@ -39,7 +38,7 @@ jobs:
       # Install FE deps so the frontend lint/typecheck gates and suites run; no-op
       # if there are no frontend apps.
       - run: make fe-install
-      - run: make check-all   # structure, python floor, corpus, openapi, aad, cdmon (a stated skip)
+      - run: make check-all   # venv, structure, python floor, corpus, openapi, aad, cdmon (a stated skip)
       - run: make lint
       - run: make typecheck
       # The corpus (wiki/corpus.json) is a generated artifact (gitignored), so a
