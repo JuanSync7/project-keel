@@ -2,7 +2,7 @@
 title: Unit — run_make_target (the read-only gate runner)
 kind: tests
 layer: n/a
-summary: run_target runs a make target only when its effect label, closed over its prerequisites, falls inside config/project.json `make_targets.gate_effects`; it refuses an unknown, unlabelled or wider target, an extra argument that is not a NAME=VALUE variable, a variable outside `make_targets.gate_vars` (make's control variables, the guard and the unattended variables among them), a value that is not one path-like word, a tree without git and a project without the policy, all without calling the runner. It passes the gate-runner variable last, so the Makefile's WRITE_GUARD refuses whatever the caller supplied, and fails a green run that changed the tree, naming the paths. A `make_targets.gate_vars` value found in the runner's own environment is forwarded on make's command line under the same one-word rule, an explicit one wins, and a bad one is refused before make runs. make and git get the allowlisted environment from scripts/child_env.py, never the runner's own. An allowlist that cannot be built, or that would copy a gate variable carrying a credential, is a refusal before anything runs and before any message could quote the value; a gate value, explicit or forwarded, that carries a credential is refused by name even when opted in, and no refusal quotes a value; and a ChildEnvError during the run or a tree that cannot be re-read afterwards is red, never a traceback. The runner and the snapshot are injected, so no make or git process runs here.
+summary: run_target runs a make target only when its effect label, closed over its prerequisites, falls inside config/project.json `make_targets.gate_effects`; it refuses an unknown, unlabelled or wider target, an extra argument that is not a NAME=VALUE variable, a variable outside `make_targets.gate_vars` (make's control variables, the guard and the unattended variables among them), a value that is not one path-like word, a tree without git and a project without the policy, all without calling the runner. It passes the gate-runner variable last, so the Makefile's WRITE_GUARD refuses whatever the caller supplied, and fails a green run that changed the tree, naming the paths. A `make_targets.gate_vars` value found in the runner's own environment is forwarded on make's command line under the same one-word rule, an explicit one wins, and a bad one is refused before make runs. make and git get the allowlisted environment from scripts/child_env.py, never the runner's own. An allowlist that cannot be built, or that would copy a gate variable carrying a credential, is a refusal before anything runs and before any message could quote the value; a gate value, explicit or forwarded, that carries a credential is refused by name even when opted in, and no refusal quotes a value; and a ChildEnvError during the run or a tree that cannot be re-read afterwards is red, never a traceback. The runner and the snapshot are injected for those cases, so no make or git process runs in them. The default runner's own cases put a fake `make` (a short Python script) first on PATH that starts a grandchild, and prove that a timeout, a KeyboardInterrupt and a SIGTERM to the runner end the whole group, that an ignored SIGTERM is followed by SIGKILL after the grace, that a SIGTERM handler gets that grace, and that a process left behind after make exits is ended and named; each polls with a bound and kills only the pids it started. The time limit and grace come from config/project.json `make_targets` through scripts/config_loader.py, the loader's default when the key is absent, a bad value is CONFIG or a refusal naming the key, and `--timeout` overrides the configured limit.
 """
 
 import base64
@@ -502,14 +502,35 @@ def test_make_and_git_run_with_the_allowlisted_environment(proj, monkeypatch):
         stdout = b""
         stderr = b""
 
+    class _Started(_Done):
+        pid = -1  # never signalled: os.killpg is replaced below
+
+        def __init__(self, cmd, **kw):
+            seen.append(kw)
+
+        def communicate(self, timeout=None):
+            return "", None
+
+        def poll(self):
+            return 0
+
+        def wait(self, timeout=None):
+            return 0
+
     def record(cmd, **kw):
         seen.append(kw)
         return _Done()
 
+    def no_group(pgid, sig):
+        raise ProcessLookupError
+
     monkeypatch.setattr(rmt.subprocess, "run", record)
-    rmt._default_runner(["make", "x"], str(proj), 5)
+    monkeypatch.setattr(rmt.subprocess, "Popen", _Started)
+    monkeypatch.setattr(rmt.os, "killpg", no_group)
+    rmt._default_runner(["make", "x"], str(proj), 5, grace=1)
     rmt._git(str(proj), "status")
     assert len(seen) == 2
+    assert seen[0].get("start_new_session") is True, seen[0]
     for kw in seen:
         assert "env" in kw, kw
         assert (
@@ -565,3 +586,352 @@ def test_a_tree_that_cannot_be_reread_after_the_run_is_red(proj, exc):
     res = rmt.run_target("check", cwd=str(proj), runner=_fake(0), snapshot=snapshot)
     assert res["ok"] is False and res["returncode"] == 0, res
     assert "cannot re-read the tree" in res["output"], res
+
+
+# --- the gate's time limit and the process tree make starts ------------------
+#
+# These cases run a real process tree: a fake `make` (a Python script) that
+# starts a grandchild, as `make test` starts pytest. The grandchild writes
+# `ready` once its signal disposition is set, and the fake make writes `pids`
+# (its own pid and the grandchild's) once the grandchild is ready, so a case
+# never signals a process that has not finished starting.
+
+import signal  # noqa: E402
+import subprocess  # noqa: E402
+import threading  # noqa: E402
+import time  # noqa: E402
+
+# A grandchild that sleeps until it is ended, one that ignores SIGTERM, and one
+# that records SIGTERM and exits, as a server with a shutdown handler does.
+_SLEEPS = (
+    "import pathlib, time\npathlib.Path('ready').write_text('1')\ntime.sleep(600)\n"
+)
+_IGNORES_TERM = (
+    "import pathlib, signal, time\n"
+    "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+    "pathlib.Path('ready').write_text('1')\ntime.sleep(600)\n"
+)
+_TRAPS_TERM = (
+    "import pathlib, signal, sys, time\n"
+    "def stop(*_):\n    pathlib.Path('termed').write_text('1')\n    sys.exit(0)\n"
+    "signal.signal(signal.SIGTERM, stop)\n"
+    "pathlib.Path('ready').write_text('1')\ntime.sleep(600)\n"
+)
+# Seconds a case waits for a process to start or to be gone: generous, because
+# a cold interpreter on a network home can take seconds to start, and bounded,
+# so a survivor fails the case instead of hanging the suite.
+_SETTLE = 30.0
+
+
+def _write_fake_make(where, grandchild, detach=False, exit_after=False):
+    """A `make` that starts *grandchild* and then sleeps (or exits 0 when
+    *exit_after*). *detach* points the grandchild's output away from make's,
+    as a daemon does, so make's output closes while the grandchild lives."""
+    where.mkdir(exist_ok=True)
+    make = where / "make"
+    out = "subprocess.DEVNULL" if detach else "None"
+    make.write_text(
+        "#!%s\n"
+        "import os, pathlib, subprocess, sys, time\n"
+        "child = subprocess.Popen([sys.executable, '-c', %r], stdout=%s, stderr=%s)\n"
+        "deadline = time.monotonic() + %r\n"
+        "while not pathlib.Path('ready').exists() and time.monotonic() < deadline:\n"
+        "    time.sleep(0.05)\n"
+        "pathlib.Path('pids').write_text('%%d %%d' %% (os.getpid(), child.pid))\n"
+        "print('make started its child', flush=True)\n"
+        "%s\n"
+        % (
+            sys.executable,
+            grandchild,
+            out,
+            out,
+            _SETTLE,
+            "sys.exit(0)" if exit_after else "time.sleep(600)",
+        ),
+        encoding="utf-8",
+    )
+    make.chmod(0o755)
+    return make
+
+
+def _alive(pid):
+    """True while *pid* runs. A zombie counts as gone: it runs nothing, and
+    who reaps it (init, or a subreaper) is not the runner's to decide."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    try:
+        with open("/proc/%d/stat" % pid, encoding="utf-8") as fh:
+            return fh.read().rsplit(")", 1)[1].split()[0] != "Z"
+    except OSError:
+        return True
+
+
+def _gone_within(pids, seconds=_SETTLE):
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        if not any(_alive(p) for p in pids):
+            return True
+        time.sleep(0.05)
+    return False
+
+
+def _pids(cwd):
+    path = cwd / "pids"
+    assert path.exists(), "the fake make never wrote its pids: it did not start"
+    return [int(p) for p in path.read_text(encoding="utf-8").split()]
+
+
+@pytest.fixture
+def tree(proj, monkeypatch):
+    """The project, with a fake make first on PATH; the allowlisted environment
+    copies PATH, so make is found there exactly as the real one is."""
+    bin_dir = proj / "bin"
+    monkeypatch.setenv("PATH", "%s%s%s" % (bin_dir, os.pathsep, os.environ["PATH"]))
+    return proj
+
+
+def _cleanup(pids):
+    """A case that failed leaves its tree running; end only the pids it started."""
+    for pid in pids:
+        if _alive(pid):
+            os.kill(pid, signal.SIGKILL)
+
+
+def test_a_timeout_ends_every_process_make_started_and_says_so(tree):
+    _write_fake_make(tree / "bin", _SLEEPS)
+    res = rmt.run_target(
+        "check", cwd=str(tree), timeout=5, grace=5, snapshot=_snaps({}, {})
+    )
+    pids = _pids(tree)
+    try:
+        assert _gone_within(pids), "a process make started outlived the timeout"
+    finally:
+        _cleanup(pids)
+    assert res["ok"] is False and res["returncode"] is None, res
+    assert res["timed_out"] is True, res
+    assert "did not complete within 5 s" in res["output"], res["output"]
+    assert "make started its child" in res["output"], res["output"]
+
+
+def test_a_process_that_ignores_sigterm_is_killed_after_the_grace(tree):
+    _write_fake_make(tree / "bin", _IGNORES_TERM)
+    started = time.monotonic()
+    res = rmt.run_target(
+        "check", cwd=str(tree), timeout=5, grace=1, snapshot=_snaps({}, {})
+    )
+    pids = _pids(tree)
+    try:
+        assert _gone_within(pids), "SIGTERM was ignored and nothing escalated"
+    finally:
+        _cleanup(pids)
+    assert res["timed_out"] is True, res
+    assert time.monotonic() - started < _SETTLE
+
+
+def test_a_process_that_handles_sigterm_gets_the_grace_to_stop(tree):
+    _write_fake_make(tree / "bin", _TRAPS_TERM)
+    rmt.run_target("check", cwd=str(tree), timeout=5, grace=20, snapshot=_snaps({}, {}))
+    pids = _pids(tree)
+    try:
+        assert _gone_within(pids)
+    finally:
+        _cleanup(pids)
+    assert (tree / "termed").exists(), "the group was killed without a SIGTERM first"
+
+
+def test_an_interrupt_ends_the_tree_and_propagates(tree):
+    make = _write_fake_make(tree / "bin", _SLEEPS)
+
+    # Raised only while the runner runs, so a late signal cannot interrupt the
+    # case's own cleanup.
+    in_run = [False]
+
+    def interrupt(*_):
+        if in_run[0]:
+            raise KeyboardInterrupt
+
+    # The watcher signals only while armed, under the lock the case takes to
+    # disarm it: SIGUSR1's default action ends the process, so a signal sent
+    # after the handler is restored would end the whole pytest session.
+    armed, lock = [True], threading.Lock()
+
+    def when_started():
+        deadline = time.monotonic() + _SETTLE
+        while not (tree / "pids").exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        with lock:
+            if armed[0]:
+                signal.pthread_kill(threading.main_thread().ident, signal.SIGUSR1)
+
+    previous = signal.signal(signal.SIGUSR1, interrupt)
+    watcher = threading.Thread(target=when_started, daemon=True)
+    try:
+        watcher.start()
+        with pytest.raises(KeyboardInterrupt):
+            in_run[0] = True
+            try:
+                rmt._default_runner([str(make)], str(tree), 600, grace=5)
+            finally:
+                in_run[0] = False
+    finally:
+        with lock:
+            armed[0] = False
+        watcher.join(_SETTLE)
+        signal.signal(signal.SIGUSR1, previous)
+    pids = _pids(tree)
+    try:
+        assert _gone_within(pids), "an interrupt left make's tree running"
+    finally:
+        _cleanup(pids)
+
+
+def test_a_sigterm_to_the_runner_ends_the_tree_and_then_the_runner(tree):
+    make = _write_fake_make(tree / "bin", _SLEEPS)
+    code = (
+        "import sys; sys.path.insert(0, %r); import run_make_target as r; "
+        "r._default_runner([%r], %r, 600, grace=5)"
+        % (str(_ROOT / "scripts"), str(make), str(tree))
+    )
+    runner = subprocess.Popen(  # noqa: S603 — argv list, never a shell string
+        [sys.executable, "-c", code],
+        cwd=str(tree),
+        env=rmt.child_env.build_child_env(),
+    )
+    pids = []
+    try:
+        deadline = time.monotonic() + _SETTLE
+        while not (tree / "pids").exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        pids = _pids(tree)
+        runner.send_signal(signal.SIGTERM)
+        assert runner.wait(timeout=_SETTLE) == -signal.SIGTERM
+        assert _gone_within(pids), "a SIGTERM to the runner orphaned make's tree"
+    finally:
+        _cleanup(pids)
+        if runner.poll() is None:
+            runner.kill()
+            runner.wait()
+
+
+def test_a_process_left_running_after_make_exits_is_ended_and_named(tree):
+    _write_fake_make(tree / "bin", _SLEEPS, detach=True, exit_after=True)
+    res = rmt.run_target(
+        "check", cwd=str(tree), timeout=60, grace=5, snapshot=_snaps({}, {})
+    )
+    pids = _pids(tree)
+    try:
+        assert _gone_within(pids), "a process make left behind is still running"
+    finally:
+        _cleanup(pids)
+    assert res["returncode"] == 0 and res["timed_out"] is False, res
+    assert "left processes running" in res["output"], res["output"]
+
+
+def _with_limits(proj, **limits):
+    policy = dict(_POLICY, **limits)
+    (proj / "config" / "project.json").write_text(
+        json.dumps({"make_targets": policy}), encoding="utf-8"
+    )
+
+
+def test_the_time_limit_and_grace_come_from_config(proj, monkeypatch):
+    _with_limits(proj, gate_timeout_seconds=7, gate_stop_grace_seconds=3)
+    seen = []
+    monkeypatch.setattr(
+        rmt,
+        "_default_runner",
+        lambda cmd, cwd, timeout, grace: seen.append((timeout, grace)) or (0, ""),
+    )
+    rmt.run_target("check", cwd=str(proj), snapshot=_snaps({}, {}))
+    assert seen == [(7, 3)]
+
+
+def test_an_absent_limit_takes_the_loader_default_and_says_so(
+    proj, monkeypatch, capsys
+):
+    seen = []
+    # The default line is written once per (where, key) per process; an earlier
+    # test may have spent it, so this one starts from an empty announced set.
+    monkeypatch.setattr(rmt.config_loader, "_ANNOUNCED", set())
+    monkeypatch.setattr(
+        rmt,
+        "_default_runner",
+        lambda cmd, cwd, timeout, grace: seen.append((timeout, grace)) or (0, ""),
+    )
+    rmt.run_target("check", cwd=str(proj), snapshot=_snaps({}, {}))
+    rows = {k.path[-1]: k.default for k in rmt.config_loader.rows(*rmt.LIMIT_KEYS)}
+    assert seen == [(rows["gate_timeout_seconds"], rows["gate_stop_grace_seconds"])]
+    err = capsys.readouterr().err
+    assert "[using default] make_targets.gate_timeout_seconds" in err, err
+
+
+@pytest.mark.parametrize(
+    "key, value",
+    [
+        ("gate_timeout_seconds", 0),
+        ("gate_stop_grace_seconds", "10"),
+        ("gate_timeout_seconds", True),
+    ],
+    ids=["zero", "string", "bool"],
+)
+def test_a_bad_limit_is_a_config_fault_before_make_runs(
+    proj, monkeypatch, capsys, key, value
+):
+    _with_limits(proj, **{key: value})
+    monkeypatch.setattr(rmt, "tree_snapshot", _never)
+    assert rmt.main(["check", "--dir", str(proj)]) == rmt.ExitCode.CONFIG
+    assert "make_targets.%s" % key in capsys.readouterr().err
+    res = rmt.run_target("check", cwd=str(proj), runner=_fake(0), snapshot=_never)
+    assert res["refused"] and "make_targets.%s" % key in res["refused"], res
+
+
+def test_the_timeout_flag_overrides_the_configured_limit(proj, monkeypatch):
+    _with_limits(proj, gate_timeout_seconds=7, gate_stop_grace_seconds=3)
+    seen = []
+    monkeypatch.setattr(
+        rmt,
+        "_default_runner",
+        lambda cmd, cwd, timeout, grace: seen.append((timeout, grace)) or (0, ""),
+    )
+    monkeypatch.setattr(rmt, "tree_snapshot", lambda root: {})
+    assert rmt.main(["check", "--dir", str(proj), "--timeout", "11"]) == 0
+    assert rmt.main(["check", "--dir", str(proj)]) == 0
+    assert seen == [(11, 3), (7, 3)]
+
+
+@pytest.mark.parametrize("value", ["0", "-5"])
+def test_a_timeout_flag_below_one_second_is_refused(proj, capsys, value):
+    assert (
+        rmt.main(["check", "--dir", str(proj), "--timeout", value])
+        == rmt.ExitCode.USAGE
+    )
+    assert "--timeout" in capsys.readouterr().err
+
+
+def test_the_cli_reports_a_timeout_through_the_exit_helper(proj, monkeypatch, capsys):
+    def hangs(cmd, cwd, timeout, grace):
+        raise subprocess.TimeoutExpired(cmd, timeout, output="half done\n")
+
+    monkeypatch.setattr(rmt, "_default_runner", hangs)
+    monkeypatch.setattr(rmt, "tree_snapshot", lambda root: {})
+    code = rmt.main(["check", "--dir", str(proj), "--timeout", "9"])
+    captured = capsys.readouterr()
+    assert code == rmt.ExitCode.FAILURE
+    assert "half done" in captured.out
+    last = captured.err.strip().splitlines()[-1]
+    assert "timed out" in last and "9 s" in last, last
+    assert "make_targets.gate_timeout_seconds" in last, last
+
+
+def test_the_cli_reports_an_interrupt_through_the_exit_helper(
+    proj, monkeypatch, capsys
+):
+    def interrupted(cmd, cwd, timeout, grace):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(rmt, "_default_runner", interrupted)
+    monkeypatch.setattr(rmt, "tree_snapshot", lambda root: {})
+    assert rmt.main(["check", "--dir", str(proj)]) == rmt.ExitCode.INTERRUPTED
+    assert "interrupted" in capsys.readouterr().err

@@ -3,18 +3,24 @@
 title: Run make target (the read-only gate runner)
 kind: script
 layer: n/a
-summary: Deterministic doer — run a make target as a gate and report a structured pass/fail, but only a target whose effect label, closed over what it runs, falls inside config/project.json `make_targets.gate_effects`. It refuses an unknown, unlabelled or wider target, an extra argument that is not a NAME=VALUE variable named in `make_targets.gate_vars` with a one-word path-like value, a tree without git, and an allowlist scripts/child_env.py cannot build or that would copy a value carrying a credential, all before make runs; it forwards a `make_targets.gate_vars` variable found in its own environment onto make's command line under the same one-word rule (an explicit one wins), and refuses any gate value, explicit or forwarded, that carries a credential by scripts/child_env.py's carries_credential under the project's child_env policy (user information, or a `child_env.credential_value_patterns` match, named by its label), even one `child_env.credentialed_values` opts in, because make's command line reaches every recipe; every refusal names the variable and never quotes a value; because make and git get the allowlisted environment from scripts/child_env.py, never this one; it sets the gate-runner variable last so WRITE_GUARD refuses a [write] target; and it snapshots what git lists before and after (each path's porcelain status and content, by scripts/git_tree.py), failing a green run that changed it and naming the paths, and one whose tree cannot be re-read afterwards. It reads config/project.json through scripts/config_loader.py `read`, so a manifest it cannot use, a key written twice in one object included, is a refusal carrying the loader's line. The refactor loop (agents/practice_refactor, scripts/apply_refactor.py) and tests/integration/test_make_target_effects.py gate through it. Vendor-neutral, stdlib; it writes nothing itself.
+summary: Deterministic doer — run a make target as a gate and report a structured pass/fail, but only a target whose effect label, closed over what it runs, falls inside config/project.json `make_targets.gate_effects`. It refuses an unknown, unlabelled or wider target, an extra argument that is not a NAME=VALUE variable named in `make_targets.gate_vars` with a one-word path-like value, a tree without git, and an allowlist scripts/child_env.py cannot build or that would copy a value carrying a credential, all before make runs; it forwards a `make_targets.gate_vars` variable found in its own environment onto make's command line under the same one-word rule (an explicit one wins), and refuses any gate value, explicit or forwarded, that carries a credential by scripts/child_env.py's carries_credential under the project's child_env policy (user information, or a `child_env.credential_value_patterns` match, named by its label), even one `child_env.credentialed_values` opts in, because make's command line reaches every recipe; every refusal names the variable and never quotes a value; because make and git get the allowlisted environment from scripts/child_env.py, never this one; it sets the gate-runner variable last so WRITE_GUARD refuses a [write] target; and it snapshots what git lists before and after (each path's porcelain status and content, by scripts/git_tree.py), failing a green run that changed it and naming the paths, and one whose tree cannot be re-read afterwards. It reads config/project.json through scripts/config_loader.py `read`, so a manifest it cannot use, a key written twice in one object included, is a refusal carrying the loader's line. It starts make in a session of its own and gives it `--timeout` seconds, else config/project.json `make_targets.gate_timeout_seconds` (scripts/config_loader.py KEYS gives its type and default; a value that is not a whole number >= 1 is ExitCode.CONFIG, or a refusal from run_target). On that timeout, on KeyboardInterrupt (ExitCode.INTERRUPTED) and on a SIGTERM or SIGHUP to itself it ends make's whole process group: SIGTERM, then SIGKILL once `make_targets.gate_stop_grace_seconds` pass with any member alive; it signals no process outside that group. A timeout is red with `timed_out` true in the result and ExitCode.FAILURE from the command line; a process left in the group after make exits is ended the same way and named in the output. A runner killed with SIGKILL cannot do this, so make's session outlives it. The refactor loop (agents/practice_refactor, scripts/apply_refactor.py) and tests/integration/test_make_target_effects.py gate through it. Vendor-neutral, stdlib; it writes nothing itself.
 """
 
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
-from collections.abc import Callable, Sequence
+import threading
+import time
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
+from typing import Any
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -49,6 +55,24 @@ _VARIABLE_ARG = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=.*$")
 # backstop for what that program does.
 _GATE_VALUE = re.compile(r"^(?:[A-Za-z0-9_./~][A-Za-z0-9_./+,:@%~-]*)?$")
 _MANIFEST = os.path.join("config", "project.json")
+# The gate's time limit and the grace a stopped run gets between SIGTERM and
+# SIGKILL; scripts/config_loader.py `KEYS` gives each its type, bound and default.
+LIMIT_KEYS = (
+    ("make_targets", "gate_timeout_seconds"),
+    ("make_targets", "gate_stop_grace_seconds"),
+)
+# How often the stop loop asks whether make's process group is empty. It only
+# sets how soon after the last member exits the runner notices, never how long
+# a member gets: the grace bounds that.
+_POLL_SECONDS = 0.05
+# Signals whose default action ends this process without unwinding its stack.
+# make runs in its own session, so the signal no longer reaches make's group
+# with this process: a CI cancel, `timeout` and a batch scheduler's limit send
+# SIGTERM, a closed terminal SIGHUP. SIGINT already unwinds (KeyboardInterrupt);
+# SIGKILL cannot be caught, and is the one way this runner still orphans make.
+_UNWINDLESS = tuple(
+    getattr(signal, name) for name in ("SIGTERM", "SIGHUP") if hasattr(signal, name)
+)
 
 # (returncode, combined_output) — the shape a runner returns.
 Runner = Callable[[Sequence[str], "str | None", int], "tuple[int, str]"]
@@ -66,19 +90,158 @@ def is_safe_target(name: str) -> bool:
     return bool(_TARGET_RE.match(name or ""))
 
 
+def _group_alive(pgid: int) -> bool:
+    """True while any process of group *pgid* exists (signal 0 tests, sends
+    nothing). A member this user may not signal still exists, so it counts."""
+    try:
+        os.killpg(pgid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _signal_group(pgid: int, sig: int) -> None:
+    """Send *sig* to group *pgid*; a group that has emptied meanwhile is the
+    outcome the caller wanted, so it is not an error."""
+    try:
+        os.killpg(pgid, sig)
+    except ProcessLookupError:
+        return
+
+
+def _end_group(proc: subprocess.Popen[str], grace: int) -> None:
+    """End every process in *proc*'s group: SIGTERM, up to *grace* seconds for
+    the group to empty, then SIGKILL. *proc* leads its group (it started with
+    start_new_session), so its pid is the group id and nothing outside the
+    group is signalled."""
+    pgid = proc.pid
+    _signal_group(pgid, signal.SIGTERM)
+    deadline = time.monotonic() + grace
+    # The leader is reaped on each pass (poll): an unreaped leader is a zombie
+    # that still holds the group id, and the group would never read as empty.
+    while proc.poll() is None or _group_alive(pgid):
+        if time.monotonic() >= deadline:
+            _signal_group(pgid, signal.SIGKILL)
+            break
+        time.sleep(_POLL_SECONDS)
+    proc.wait()
+
+
+def _drain(proc: subprocess.Popen[str], grace: int) -> str:
+    """What *proc* wrote and was not yet read. Bounded by *grace*: a process
+    that left the group (its own setsid) may hold the pipe open, and is not
+    this runner's to end."""
+    try:
+        out, _ = proc.communicate(timeout=grace)
+    except subprocess.TimeoutExpired:
+        if proc.stdout is not None:
+            proc.stdout.close()
+        return (
+            "run_make_target: output after this point was not read: a process "
+            "outside make's group holds make's output open\n"
+        )
+    return out or ""
+
+
+@contextmanager
+def _group_ended_on_termination(
+    proc: subprocess.Popen[str], grace: int
+) -> Iterator[None]:
+    """While inside, a signal in _UNWINDLESS ends *proc*'s group first and is
+    then raised again under the handler it replaced, so this process still
+    ends the way it would have. Python lets only the main thread install a
+    handler; elsewhere this adds nothing and the caller's except is the only
+    teardown."""
+    if threading.current_thread() is not threading.main_thread():
+        yield
+        return
+    previous: dict[int, Any] = {}
+
+    def end_then_reraise(signum: int, _frame: object) -> None:
+        _end_group(proc, grace)
+        signal.signal(signum, previous[signum])
+        os.kill(os.getpid(), signum)
+
+    for sig in _UNWINDLESS:
+        old = signal.signal(sig, end_then_reraise)
+        # None: a handler installed outside Python, which cannot be put back
+        # from here; the default action is the closest to it.
+        previous[sig] = signal.SIG_DFL if old is None else old
+    try:
+        yield
+    finally:
+        for sig, old in previous.items():
+            signal.signal(sig, old)
+
+
 def _default_runner(
-    cmd: Sequence[str], cwd: str | None, timeout: int
+    cmd: Sequence[str], cwd: str | None, timeout: int, grace: int
 ) -> tuple[int, str]:
-    proc = subprocess.run(  # noqa: S603 — argv list, never a shell string
+    """(returncode, combined output) of *cmd*, run in its own session so that
+    every process it starts can be ended with it. Past *timeout* seconds, or
+    on any exception while it runs (KeyboardInterrupt included), the whole
+    group is ended (see _end_group) and subprocess.TimeoutExpired, carrying
+    the output read so far, or the exception, is raised. A group member still
+    running after make exits is ended too, and the output says so."""
+    proc = subprocess.Popen(  # noqa: S603 — argv list, never a shell string
         list(cmd),
         cwd=cwd,
-        timeout=timeout,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         universal_newlines=True,
         env=child_env.build_child_env(),
+        # Its own session and group, so a timeout reaches what make started
+        # (pytest, copier, a server) and not just make: killing make alone
+        # left those running and writing in the tree.
+        start_new_session=True,
     )
-    return proc.returncode, proc.stdout
+    with _group_ended_on_termination(proc, grace):
+        try:
+            output, _ = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            _end_group(proc, grace)
+            raise subprocess.TimeoutExpired(
+                list(cmd), timeout, output=_drain(proc, grace)
+            ) from None
+        except BaseException:
+            # Any exception leaves make's session with no owner: end it, then
+            # let the exception carry on to the caller.
+            _end_group(proc, grace)
+            raise
+    if _group_alive(proc.pid):
+        _end_group(proc, grace)
+        output += (
+            "run_make_target: `%s` exited and left processes running in its "
+            "group; they were ended (SIGTERM, then SIGKILL after %d s)\n"
+            % (" ".join(cmd[:2]), grace)
+        )
+    return proc.returncode, output
+
+
+def gate_limits(
+    manifest: Mapping[str, Any], timeout: int | None = None, grace: int | None = None
+) -> tuple[int, int]:
+    """(timeout, grace) in seconds: each given value, else its LIMIT_KEYS row
+    resolved from *manifest* (config/project.json, parsed) by
+    scripts/config_loader.py, which announces a default it uses. Raises
+    config_loader.ConfigError (WrongValue for a value out of its row's bound)
+    and ValueError for a given value below 1."""
+    for name, given in (("timeout", timeout), ("grace", grace)):
+        if given is not None and (type(given) is not int or given < 1):
+            raise ValueError(
+                "the gate %s must be 1 or more seconds, not %r" % (name, given)
+            )
+    if timeout is not None and grace is not None:
+        return timeout, grace
+    values = config_loader.resolve(
+        manifest, config_loader.rows(*LIMIT_KEYS), config_loader.CONFIG_FILE
+    )
+    return (
+        values[LIMIT_KEYS[0]] if timeout is None else timeout,
+        values[LIMIT_KEYS[1]] if grace is None else grace,
+    )
 
 
 def _refusal(target: str, why: str, effects: Sequence[str] = ()) -> dict[str, object]:
@@ -90,37 +253,54 @@ def _refusal(target: str, why: str, effects: Sequence[str] = ()) -> dict[str, ob
         "effects": list(effects),
         "changed": [],
         "refused": why,
+        "timed_out": False,
     }
 
 
-def _policy(root: str) -> tuple[dict[str, object] | None, str | None]:
+def _policy(
+    root: str,
+) -> tuple[dict[str, Any], dict[str, object] | None, str | None]:
+    """(manifest, policy, None), or ({}, None, why) when the policy is unknown."""
     path = os.path.join(root, _MANIFEST)
     if not os.path.isfile(path):
-        return None, "%s is absent, so the make_targets policy is unknown" % _MANIFEST
+        return (
+            {},
+            None,
+            "%s is absent, so the make_targets policy is unknown" % _MANIFEST,
+        )
     try:
         manifest = config_loader.read(root, _MANIFEST)
     except config_loader.ConfigError as exc:
-        return None, "%s, so the make_targets policy is unknown" % "; ".join(exc.lines)
+        return (
+            {},
+            None,
+            "%s, so the make_targets policy is unknown" % "; ".join(exc.lines),
+        )
     policy, errs = check_structure.make_targets_policy(manifest)
     if errs:
-        return None, "%s: %s" % (_MANIFEST, "; ".join(errs))
-    return policy, None
+        return {}, None, "%s: %s" % (_MANIFEST, "; ".join(errs))
+    return manifest, policy, None
 
 
 def run_target(
     target: str,
     cwd: str | None = None,
-    timeout: int = 1800,
+    timeout: int | None = None,
     extra: Sequence[str] | None = None,
     runner: Runner | None = None,
     snapshot: Snapshot | None = None,
+    grace: int | None = None,
 ) -> dict[str, object]:
     """Run ``make <target>`` as a read-only gate and return a structured result.
 
     The result holds target, ok, returncode, output, effects (the target's
     closed-over label), changed (sorted paths whose git-listed state differs
-    after the run) and refused (None, or why the run never started). A refusal
-    never calls the runner. ``extra`` are NAME=VALUE make variables, each named
+    after the run), refused (None, or why the run never started) and timed_out
+    (True when make ran past ``timeout``). A refusal never calls the runner.
+    ``timeout`` and ``grace`` are seconds; each left None is read through
+    gate_limits, and a limit config/project.json gets wrong is a refusal.
+    Past the timeout, or on an interrupt, every process make started is ended
+    (SIGTERM, then SIGKILL after ``grace``); an interrupt is then re-raised. ``extra`` are NAME=VALUE make variables, each named
     in ``make_targets.gate_vars`` with a one-word path-like value; a gate
     variable set in this process's environment and not in ``extra`` is
     forwarded the same way (make itself gets the allowlisted environment from
@@ -141,9 +321,15 @@ def run_target(
                 "variables, never a flag (`-f`/`-C` would run a makefile whose "
                 "labels were never read) or another goal" % arg,
             )
-    policy, why = _policy(root)
+    manifest, policy, why = _policy(root)
     if policy is None:
         return _refusal(target, str(why))
+    try:
+        timeout, grace = gate_limits(manifest, timeout, grace)
+    except config_loader.ConfigError as exc:
+        return _refusal(
+            target, "%s, so the gate's time limit is unknown" % "; ".join(exc.lines)
+        )
     # Built once here so a malformed allowlist is a refusal before the tree is
     # touched; make and git rebuild it from the same file a moment later. It
     # runs before the gate variables are forwarded because a gate variable is
@@ -243,16 +429,19 @@ def run_target(
             labels,
         )
     cmd = ["make", target, *extra, "%s=1" % policy["gate_runner_var"]]
+    # Looked up at call time, so a test that replaces _default_runner is used.
+    run = runner or functools.partial(_default_runner, grace=grace)
+    timed_out = False
     try:
-        code, output = (runner or _default_runner)(cmd, root, timeout)
-    except subprocess.TimeoutExpired:
+        code, output = run(cmd, root, timeout)
+    except subprocess.TimeoutExpired as exc:
+        timed_out = True
+        partial = exc.output if isinstance(exc.output, str) else ""
         code, output = (
             None,
-            "run_make_target: `make %s` did not complete within %ss\n"
-            % (
-                target,
-                timeout,
-            ),
+            "%srun_make_target: `make %s` did not complete within %d s, so every "
+            "process it started was ended (SIGTERM, then SIGKILL after %d s)\n"
+            % (partial, target, timeout, grace),
         )
     except (OSError, child_env.ChildEnvError) as exc:
         code, output = (
@@ -277,6 +466,7 @@ def run_target(
             "effects": list(labels),
             "changed": [],
             "refused": None,
+            "timed_out": timed_out,
         }
     changed = sorted(
         p for p in set(before) | set(after) if before.get(p) != after.get(p)
@@ -298,11 +488,13 @@ def run_target(
         "effects": list(labels),
         "changed": changed,
         "refused": None,
+        "timed_out": timed_out,
     }
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """CLI: exit 0 green, 1 red or the tree changed, 2 refused (never run)."""
+    """CLI: exit 0 green, 1 red, timed out or the tree changed, 2 refused (never
+    run), 14 a time limit config/project.json gets wrong, 130 interrupted."""
     ap = argparse.ArgumentParser(
         description="Run a read-only make target as a gate and report pass/fail."
     )
@@ -310,7 +502,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--json", action="store_true", help="emit the result as JSON")
     ap.add_argument("--dir", default=None, help="run in this directory (default: cwd)")
     ap.add_argument(
-        "--timeout", type=int, default=1800, help="seconds before giving up"
+        "--timeout",
+        type=int,
+        help="seconds before every process make started is ended (default: "
+        "config/project.json make_targets.gate_timeout_seconds)",
     )
     ap.add_argument(
         "--make-arg",
@@ -329,9 +524,46 @@ def main(argv: Sequence[str] | None = None) -> int:
             repr(args.target),
             "name one target `make help` lists",
         )
-    result = run_target(
-        args.target, cwd=args.dir, timeout=args.timeout, extra=args.make_args
-    )
+    if args.timeout is not None and args.timeout < 1:
+        return report(
+            ExitCode.USAGE,
+            "run_make_target: --timeout must be 1 or more seconds",
+            "--timeout %d" % args.timeout,
+            "pass a whole number of seconds, or leave it out to use "
+            "config/project.json make_targets.gate_timeout_seconds",
+        )
+    root = os.path.abspath(args.dir or os.getcwd())
+    timeout: int | None = args.timeout
+    grace: int | None = None
+    try:
+        timeout, grace = gate_limits(config_loader.read(root, _MANIFEST), timeout)
+    except (config_loader.WrongValue, config_loader.NotSet):
+        # resolve has written one stderr line per key at fault.
+        return report(
+            ExitCode.CONFIG,
+            "run_make_target: the gate's time limit cannot be used",
+            "config/project.json make_targets",
+            "correct each key the lines above name, then run it again",
+        )
+    except (config_loader.ConfigAbsent, config_loader.ConfigUnreadable):
+        # Left to run_target, whose refusal names the manifest and why the
+        # make_targets policy is unknown, before anything runs.
+        pass
+    try:
+        result = run_target(
+            args.target,
+            cwd=root,
+            timeout=timeout,
+            extra=args.make_args,
+            grace=grace,
+        )
+    except KeyboardInterrupt:
+        return report(
+            ExitCode.INTERRUPTED,
+            "run_make_target: interrupted",
+            "`make %s`, whose processes were ended" % args.target,
+            "run the gate again; a partial run is not a verdict",
+        )
     if args.json:
         json.dump(result, sys.stdout, indent=2, sort_keys=True)
         sys.stdout.write("\n")
@@ -358,6 +590,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     if result["ok"]:
         return ExitCode.SUCCESS
+    if result["timed_out"]:
+        return report(
+            ExitCode.FAILURE,
+            "run_make_target: the gate timed out, and every process make started "
+            "was ended",
+            "`make %s` after %d s (--timeout, else config/project.json "
+            "make_targets.gate_timeout_seconds)" % (result["target"], timeout or 0),
+            "if the output above was still progressing, raise --timeout or "
+            "make_targets.gate_timeout_seconds; otherwise find the step that hung "
+            "in the output above",
+        )
     return report(
         ExitCode.FAILURE,
         "run_make_target: the gate is red",
