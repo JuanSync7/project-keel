@@ -9,7 +9,7 @@ tags: []
 summary: Thin FastAPI REST transport; auto-generates the OpenAPI contract.
 id: api-rest-fastapi-readme
 created: 2026-06-17
-updated: 2026-09-02
+updated: 2026-10-22
 visibility: internal
 canonical: true
 ---
@@ -20,7 +20,11 @@ Thin FastAPI REST transport; auto-generates the OpenAPI contract.
 
 A FastAPI app that exposes the domain over REST and auto-generates
 the OpenAPI document. Run: `pip install -r requirements.txt` then
-`uvicorn app:app --reload`; docs at `/docs`.
+`uvicorn app:app --reload`; docs at `/docs`. In a checkout, the project's
+`transport` extra holds the same packages and `pip install -e ".[dev]"` brings
+it; `make check-venv` fails a venv without them, and
+tests/unit/scripts/test_check_venv.py holds the extra and `requirements.txt`
+equal.
 
 - `app.py` — routes; each calls `backend.do_thing` (thin).
 - `schemas.py` — Pydantic HTTP DTOs that MIRROR `src/shared/`.

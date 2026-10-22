@@ -45,6 +45,18 @@ version rather than a bare commit:
   `config/gate-baseline.json`; until then a project's own finding in those
   gates is red, naming the target. The config-reads gate no longer skips in
   a generated project.
+- **The REST transport's packages are declared, and a stale venv fails first.**
+  `pyproject.toml` gains a `transport` extra (FastAPI, uvicorn, pydantic) that
+  `dev` names through the project's own `<project>[transport]` entry, so
+  `pip install -e ".[dev]"` installs it and CI drops its separate
+  `pip install -r api/rest_fastapi/requirements.txt` step. `make check-venv`
+  (`scripts/check_venv.py`), the first prerequisite of `make check-all` and so
+  the first step of `make verify`, fails with the
+  exact pip command when an installed distribution does not satisfy the core
+  dependencies, config/project.json `venv.extras` or the extra an enabled
+  transport names in the new `transports.extras` map. `tests/optional_deps.py`
+  reads the same map, so a REST test fails instead of skipping on a missing
+  FastAPI in any project that enables `rest`, not only in CI.
 - **An agent edit cannot reach the code that judges it.**
   `scripts/apply_refactor.py` refuses, before any write and so in a dry run
   too, an edit to a path config/project.json `agents` protects: a path under

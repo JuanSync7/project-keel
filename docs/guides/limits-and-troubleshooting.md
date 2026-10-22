@@ -143,7 +143,9 @@ a decision on whether it should fail instead.
   missing `npm` or `node_modules`, and a browser missing from the cache is
   red.
 - `make check-openapi` and `make check-aad` skip when FastAPI or pydantic is
-  not installed. Queued for a decision.
+  not installed. Queued for a decision. Under `make verify` they do not reach
+  the skip: `make check-venv` runs first and fails a venv without the
+  `transport` extra.
 - `scripts/cdmon_sync.py` exits 0 when the `cdmon` program or its config is
   absent; otherwise it passes cdmon's exit code through. Queued for a decision.
 - A `.py` file that does not parse is a WARN in check_D and the other checks
@@ -160,10 +162,11 @@ a decision on whether it should fail instead.
   decision.
 - The REST half of `tests/integration/test_e2e_coverage.py`, and every
   scenario that uses the `rest_server` fixture in `tests/e2e/conftest.py`,
-  skip when FastAPI or uvicorn is not installed; the MCP half still judges.
-  CI turns the skip into a failure, because `tests/optional_deps.py` fails a
-  surface named in `KEEL_REQUIRED_EXTRAS`, and CI names `transport`. Queued for
-  a decision.
+  skip when FastAPI or uvicorn is not installed only in a project whose
+  config/project.json `transports.enabled` does not list `rest`.
+  `tests/optional_deps.py` fails the import instead when the surface is named
+  in `KEEL_REQUIRED_EXTRAS` or is the `transports.extras` entry of an enabled
+  transport, so a project that serves REST fails on any machine.
 
 ## What the gates cannot see
 
@@ -434,6 +437,7 @@ between the markers.
 | `scripts/cdmon_sync.py` | 0, passes through |
 | `scripts/check_python_version.py` | 0, 1 |
 | `scripts/check_structure.py` | 0, 1, 2 |
+| `scripts/check_venv.py` | 0, 1, 2, 13, 14 |
 | `scripts/exit_code_table.py` | 0, 1, 2, 14 |
 | `scripts/gate_evidence.py` | 0, 2, 10, 14, 130, passes through |
 | `scripts/jobs/check_corpus.py` | 0, 1 |
@@ -456,6 +460,7 @@ says when each script returns each code.
 | `scripts/agent_surface/generate_aad_schema.py` | 0: the committed schema matches the model, or pydantic is absent. 1: it is stale or unreadable |
 | `scripts/cdmon_sync.py` | 0: cdmon or its config is absent. Otherwise cdmon's own code passes through |
 | `scripts/check_python_version.py` | 0: the interpreter meets `requires-python`. 1: it does not, and the message names the floor |
+| `scripts/check_venv.py` | 0: every requirement of `pyproject.toml`'s core dependencies, of config/project.json `venv.extras` and of the extra each enabled transport names in `transports.extras` is installed at a version its specifier allows. 1: one is absent, outside its specifier or has an unparsable version, or `packaging` is not installed; the message names each package and the `pip install -e ".[<extras>]"` command. 2: `pyproject.toml` cannot be read or has no `[project]` name. 13 (`NOTHING_JUDGED`): the core and the extras hold no requirement for this interpreter. 14 (`CONFIG`): a `venv` or `transports` value is wrong, or names an extra `pyproject.toml` does not declare |
 | `scripts/check_structure.py` | 0: no error. 1: at least one error, each printed. 2: a bad `--root` |
 | `scripts/exit_code_table.py` | 0: the exit-code table between the markers is current. 1: it is stale, and each differing row is one stderr line. 2: it could not build the table: a missing or repeated marker, a guide reached through a symlink, or a script whose returns it cannot read. 14: config/project.json or its `doc_drift` block cannot be used, each key at fault named on its own stderr line first |
 | `scripts/gate_evidence.py` | 0: every goal passed and the record is green. 2: refused before any goal ran: a malformed `--gate` or goal, zero goals, an evidence schema file that cannot be read, a record or report path that resolves through a symlink or that git does not ignore, a git command that ran and failed, or a date in the `evidence.run_date.env` variable that is not a date, is later than the clock or is older than `evidence.run_date.max_age_days` allows. 10: every goal passed but the record is red: zero tests, a failed or errored test in the junit report of a goal that exited 0, no junit report, the tree changed during the run, the checks could not run, or the writer crashed. 130: interrupted, and the red placeholder record stays. 14: refused before any goal ran because a config/project.json `evidence` value, `evidence.run_date` included, is missing or wrong, each key at fault named on its own stderr line first. Otherwise the first failing goal's code passes through |
@@ -543,7 +548,9 @@ kept on purpose, such as a test fixture, with its reason.
 | Symptom | Cause | Fix |
 |---------|-------|-----|
 | pre-commit fails with a syntax error before any check runs | the bare `python3` is older than the gate supports | install a newer `python3`, or run `make check` with the project interpreter |
-| `make verify` stops on a missing `pytest`, `ruff` or `mypy` | the `dev` extra is not installed | `.venv/bin/pip install -e ".[dev]"` |
+| `make verify` stops at once with `check_venv: the venv is older than pyproject.toml` | a requirement of the core, the `dev` extra or an enabled transport's extra is missing or below its specifier, as after a `pyproject.toml` change or in a venv made by hand | run the `pip install -e ".[...]"` command the message names, with the interpreter it names |
+| `make verify` stops on a missing `pytest`, `ruff` or `mypy` | the `dev` extra is not installed, and `make check-venv` was skipped by running a goal by hand | `.venv/bin/pip install -e ".[dev]"` |
+| a REST test fails with `ModuleNotFoundError: No module named 'fastapi'` instead of skipping | config/project.json `transports.enabled` lists `rest`, whose `transports.extras` entry `transport` is then owed on every machine | `.venv/bin/pip install -e ".[dev]"`, whose `dev` extra names `transport` |
 | `make secret-scan` (or `make verify`'s `secret-scan` goal) exits 11 with `there is no scanner record at` | `make secrets-install` has not run on this machine, as in a fresh clone or a newly generated project | run `make secrets-install`, then run the scan again |
 | `make secret-scan` exits 11 with `is gone`, `changed after it was recorded`, or a record naming another rev | the recorded build was deleted or rebuilt, or `.pre-commit-config.yaml` now pins another rev | run `make secrets-install`, which records the build pre-commit holds for the pinned rev |
 | `make secret-scan` exits 13 with `the repository has no commit` | the project was never committed, so there is no history to judge | `git add -A && git commit`, then run it again |

@@ -68,7 +68,7 @@ pipx install copier
 copier copy --trust gh:JuanSync7/project-keel my-project
 cd my-project
 python3 -m venv .venv
-.venv/bin/pip install -e ".[dev]"     # pytest, ruff, mypy and pre-commit: the gate's tools
+.venv/bin/pip install -e ".[dev]"     # the gate's tools and the REST transport's packages; make check-venv judges them
 git init && git add -A && git commit -q -m "generated"   # the hook and the history scan need a commit
 .venv/bin/pre-commit install          # the commit hooks, the staged secret scan among them
 make check                            # the structure gate
