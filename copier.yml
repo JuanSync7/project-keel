@@ -141,12 +141,15 @@ _exclude:
   # scans every shipped Makefile/workflow/script for a pruned frontend path.
   - "{% if frontend_stack != 'astro' %}.github/workflows/pages.yml{% endif %}"
   # Transport pruning: api/grpc and api/edge_nginx are self-contained add-ons (no
-  # code/test imports them), so drop each unless it was selected. REST (api/rest_fastapi)
+  # code imports them), so drop each unless it was selected. REST (api/rest_fastapi)
   # and MCP (mcp/) are NOT pruned: they are the always-shipped transport foundation —
   # the skeleton's own /things route, the AAD reference impl and the MCP servers all
   # live on them, and none of that depends on the showcase (see the `showcase` prunes
   # below and ADR-K-0007, which supersedes ADR-K-0004's claim that they are inseparable).
   - "{% if 'grpc' not in transports %}api/grpc{% endif %}"
+  # The one test that loads api/grpc/server.py (by path, against fake grpc
+  # modules) goes with it.
+  - "{% if 'grpc' not in transports %}tests/unit/api/test_grpc_server.py{% endif %}"
   - "{% if 'edge_nginx' not in transports %}api/edge_nginx{% endif %}"
   # Showcase pruning. The bundled demo is 1,205 of a generated project's 1,433
   # Python lines against a 30-line example_feature, so declining it is the largest
@@ -389,6 +392,8 @@ _migrations:
     when: "{{ _stage == 'after' and frontend_stack != 'astro' }}"
   # Mirrors the transport prunes.
   - command: "rm -rf api/grpc"
+    when: "{{ _stage == 'after' and 'grpc' not in transports }}"
+  - command: "rm -f tests/unit/api/test_grpc_server.py"
     when: "{{ _stage == 'after' and 'grpc' not in transports }}"
   - command: "rm -rf api/edge_nginx"
     when: "{{ _stage == 'after' and 'edge_nginx' not in transports }}"

@@ -296,6 +296,22 @@ def _gate_grace(value: Any) -> bool:
     return bool(1 <= value <= _GATE_GRACE_MAX)
 
 
+def _port(value: Any) -> bool:
+    return bool(1 <= value <= 65535)
+
+
+def _seconds_by_adapter(value: Any) -> bool:
+    # A bool is an int to isinstance, and `true` seconds is a typo, not a limit.
+    return all(
+        isinstance(name, str)
+        and name.strip()
+        and isinstance(seconds, (int, float))
+        and not isinstance(seconds, bool)
+        and seconds > 0
+        for name, seconds in value.items()
+    )
+
+
 def _no_parent_part(value: Any) -> bool:
     # Absolute is allowed (a farm job's local disk); `..` never is, so a
     # relative value cannot climb out of the checkout it resolves against.
@@ -756,10 +772,30 @@ KEYS = tuple(
                 accepts=(_gate_grace, "a value from 1 to %d" % _GATE_GRACE_MAX),
             ),
             _row(
+                ("models", "timeout_seconds"),
+                "object",
+                {"claude-code-headless": 600, "openai-compatible": 60},
+                "the seconds one call of each model adapter may take before it "
+                "is ended and refused, each adapter name mapped to its limit; an "
+                "adapter that calls out and is absent here is refused",
+                accepts=(
+                    _seconds_by_adapter,
+                    "an object mapping an adapter name to a number of seconds > 0",
+                ),
+            ),
+            _row(
                 ("practices", "profiles"),
                 "object",
                 {},
                 "which domain practice profiles are on; empty: none",
+            ),
+            _row(
+                ("runtimes", "max_steps"),
+                "int",
+                10000,
+                "the steps one in-process runtime run may take before it is "
+                "refused as a plan that never reaches its end",
+                accepts=(_at_least_one, "a value >= 1"),
             ),
             _row(
                 ("secrets", "dotenv_files"),
@@ -1030,6 +1066,20 @@ KEYS = tuple(
                 "the pyproject.toml extras the gate imports, judged installed "
                 "by scripts/check_venv.py before `make verify` runs a goal",
                 accepts=(_extra_names, "a non-empty list of one-word extra names"),
+            ),
+            _row(
+                ("transports", "grpc", "port"),
+                "int",
+                50051,
+                "the TCP port the gRPC transport's server listens on",
+                accepts=(_port, "a value from 1 to 65535"),
+            ),
+            _row(
+                ("transports", "grpc", "workers"),
+                "int",
+                8,
+                "how many threads the gRPC transport's server answers calls on",
+                accepts=(_at_least_one, "a value >= 1"),
             ),
         ),
         key=lambda k: k.path,

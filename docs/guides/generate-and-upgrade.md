@@ -113,6 +113,7 @@ left out only when the answer matches it.
 | `src/frontend` | not when `frontend_stack` is `none` | no frontend |
 | `.github/workflows/pages.yml` | only when `frontend_stack` is `astro` | publishes the Astro site |
 | `api/grpc` | only when `transports` has `grpc` | an optional transport |
+| `tests/unit/api/test_grpc_server.py` | only when `transports` has `grpc` | the test of that transport's server |
 | `api/edge_nginx` | only when `transports` has `edge_nginx` | an optional transport |
 | `src/backend/showcase` | only with `showcase` | the showcase demo |
 | `api/rest_fastapi/showcase_api.py` | only with `showcase` | the showcase demo |
@@ -545,6 +546,7 @@ brings back a file a step removed, as long as you committed it first.
 | `rm -rf src/frontend` | `frontend_stack` is `none` | removes the frontend | none | `git checkout -- src/frontend` |
 | `rm -f .github/workflows/pages.yml` | `frontend_stack` is not `astro` | removes the site workflow | none | `git checkout -- .github/workflows/pages.yml` |
 | `rm -rf api/grpc` | `transports` lacks `grpc` | removes the transport | none | `git checkout -- api/grpc` |
+| `rm -f tests/unit/api/test_grpc_server.py` | `transports` lacks `grpc` | removes the transport's test | none | `git checkout -- tests/unit/api/test_grpc_server.py` |
 | `rm -rf api/edge_nginx` | `transports` lacks `edge_nginx` | removes the transport | none | `git checkout -- api/edge_nginx` |
 | `rm -rf src/backend/showcase` | `showcase` is off | removes the showcase read model | none | `git checkout -- src/backend/showcase` |
 | `rm -f api/rest_fastapi/showcase_api.py` `scripts/jobs/export_showcase_static.py` `scripts/jobs/build_llms_txt.py` `tests/unit/backend/test_showcase.py` `tests/integration/test_showcase_repo.py` `tests/integration/test_showcase_api.py` `tests/e2e/test_showcase_journey.py` `docs/guides/showcase-site.md` | `showcase` is off | removes the showcase's files | none | `git checkout -- <path>` |

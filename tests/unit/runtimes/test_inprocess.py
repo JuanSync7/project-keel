@@ -5,6 +5,7 @@ layer: backend
 summary: Reference semantics — edge routing, dry-run guard, streaming, fan-out, durability, human-in-the-loop. No deps, no disk.
 """
 
+import json
 import sys
 from pathlib import Path
 
@@ -293,3 +294,60 @@ def test_interrupt_pauses_then_resumes_with_value():
 def test_interrupt_outside_a_run_is_an_error():
     with pytest.raises(RuntimeError):
         interrupt({}, {"q": "x"})
+
+
+# --- the step cap: config/project.json `runtimes.max_steps` -----------------
+
+
+def _loop_plan():
+    """A plan whose one step routes back to itself forever: only the cap ends it."""
+    return Plan(
+        name="loop",
+        entry="spin",
+        steps=(Step("spin", READ_ONLY, lambda s: {"n": s.get("n", 0) + 1}),),
+        edges=(Edge("spin", "spin"),),
+    )
+
+
+def _project(tmp_path, runtimes_block):
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "project.json").write_text(
+        json.dumps({"runtimes": runtimes_block}), encoding="utf-8"
+    )
+    return tmp_path
+
+
+def test_the_step_cap_is_read_from_runtimes_max_steps(tmp_path):
+    root = _project(tmp_path, {"max_steps": 3})
+    ran = []
+    with pytest.raises(RuntimeError, match="exceeded 3 steps"):
+        get_runtime("inprocess", root=str(root)).run(
+            _loop_plan(), {}, on_event=ran.append
+        )
+    # The step past the cap runs before the count refuses it.
+    assert len(ran) == 4
+
+
+def test_an_explicit_step_cap_overrides_the_config(tmp_path):
+    root = _project(tmp_path, {"max_steps": 3})
+    rt = get_runtime("inprocess", max_steps=5, root=str(root))
+    ran = []
+    with pytest.raises(RuntimeError, match="exceeded 5 steps"):
+        rt.run(_loop_plan(), {}, on_event=ran.append)
+    assert len(ran) == 6
+
+
+def test_the_shipped_step_cap_is_the_configured_one():
+    shipped = json.loads((_ROOT / "config" / "project.json").read_text("utf-8"))
+    assert _rt().max_steps == shipped["runtimes"]["max_steps"]
+
+
+@pytest.mark.parametrize("bad", [0, -1, "10", 2.5, True])
+def test_a_step_cap_below_one_or_not_an_integer_is_refused(tmp_path, bad):
+    from scripts import config_loader
+
+    root = _project(tmp_path, {"max_steps": bad})
+    with pytest.raises(config_loader.WrongValue, match="runtimes.max_steps"):
+        get_runtime("inprocess", root=str(root))
+    with pytest.raises(ValueError, match="max_steps"):
+        get_runtime("inprocess", max_steps=bad)

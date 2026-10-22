@@ -636,3 +636,29 @@ def test_the_http_refusal_is_the_same_with_the_credential_set_or_unset(monkeypat
 def test_both_http_tables_ran():
     """A pass over zero cases would prove nothing."""
     assert len(_HTTP_LOOPBACK) >= 3 and len(_HTTP_REFUSED) >= 3
+
+
+def test_a_call_s_time_limit_defaults_to_models_timeout_seconds(monkeypatch):
+    from models import openai_compatible as mod
+
+    allowing(monkeypatch, "llm.example")
+    asked = []
+    monkeypatch.setattr(
+        mod, "timeout_seconds", lambda adapter, root=None: asked.append(adapter) or 4.5
+    )
+    captured: dict = {}
+    get_model(_ADAPTER, base_url=_URL, transport=_captured_transport(captured)).run("q")
+    assert (asked, captured["timeout"]) == ([_ADAPTER], 4.5)
+
+
+def test_a_time_limit_the_caller_names_wins(monkeypatch):
+    from models import openai_compatible as mod
+
+    allowing(monkeypatch, "llm.example")
+    monkeypatch.setattr(mod, "timeout_seconds", lambda adapter, root=None: 4.5)
+    captured: dict = {}
+    backend = get_model(
+        _ADAPTER, base_url=_URL, timeout=9.0, transport=_captured_transport(captured)
+    )
+    backend.run("q")
+    assert captured["timeout"] == 9.0

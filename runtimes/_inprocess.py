@@ -2,10 +2,14 @@
 title: In-process runtime
 layer: backend
 public_api: no
-summary: The default zero-dependency Plan executor; reference semantics for the dry-run guard, durability, HIL, fan-out, and streaming.
+summary: The default zero-dependency Plan executor; reference semantics for the dry-run guard, durability, HIL, fan-out, and streaming. A run that takes more steps than its cap is a RuntimeError naming the plan and the cap; the cap is the constructor's `max_steps`, or config/project.json `runtimes.max_steps` read through scripts/config_loader.py when none is given, and a cap that is not an integer >= 1 is refused, a configured one as config_loader.WrongValue naming the key.
 """
 
 from __future__ import annotations
+
+import os
+
+from scripts import config_loader
 
 from .contracts import (
     COMPLETED,
@@ -22,9 +26,21 @@ from .contracts import (
 __all__ = ["InProcessRuntime"]
 
 _GATED = (WRITES, MODEL_CALL)
-_MAX_STEPS = 10000
+_MAX_STEPS = ("runtimes", "max_steps")
+_REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _UNSET = object()
 _INTERNAL = ("_interrupt",)  # engine-injected keys never returned to the caller
+
+
+def configured_max_steps(root=None):
+    """config/project.json `runtimes.max_steps` of *root* (this checkout when
+    None), through scripts/config_loader.py: its default when unset, and
+    config_loader.WrongValue when it is not an integer >= 1."""
+    loaded = config_loader.read(_REPO if root is None else root)
+    values = config_loader.resolve(
+        loaded, config_loader.rows(_MAX_STEPS), config_loader.CONFIG_FILE
+    )
+    return values[_MAX_STEPS]
 
 
 def _public(state):
@@ -67,6 +83,18 @@ class InProcessRuntime(Runtime):
     """
 
     name = "inprocess"
+
+    def __init__(self, max_steps=None, root=None):
+        """*max_steps* caps the steps of one run; None reads
+        `runtimes.max_steps` from *root*'s config (this checkout when None)."""
+        if max_steps is None:
+            max_steps = configured_max_steps(root)
+        # bool is an int to isinstance, and `True` steps is a typo, not a cap.
+        elif isinstance(max_steps, bool) or not isinstance(max_steps, int):
+            raise ValueError("max_steps must be an integer >= 1, not %r" % max_steps)
+        if max_steps < 1:
+            raise ValueError("max_steps must be an integer >= 1, not %r" % max_steps)
+        self.max_steps = max_steps
 
     def run(
         self,
@@ -143,10 +171,11 @@ class InProcessRuntime(Runtime):
                     {"cursor": current, "state": _public(st), "trace": _rows(trace)},
                 )
             steps += 1
-            if steps > _MAX_STEPS:
+            if steps > self.max_steps:
                 raise RuntimeError(
-                    "plan %r exceeded %d steps (cyclic plan with no exit?)"
-                    % (plan.name, _MAX_STEPS)
+                    "plan %r exceeded %d steps (cyclic plan with no exit?); "
+                    "raise config/project.json `runtimes.max_steps` if the plan "
+                    "is meant to run longer" % (plan.name, self.max_steps)
                 )
         if checkpointer is not None:
             checkpointer.clear(run_key)

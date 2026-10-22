@@ -251,6 +251,14 @@ version rather than a bare commit:
   before make runs or any edit is made. So `scripts/apply_refactor.py` and the agents' baseline
   gate now wait up to 14400 s per gate call, not 1800 s; a hung gate in an
   agent run holds it eight times longer before it is ended.
+- **The transports' and runtime's limits are configured, not typed in.**
+  config/project.json `runtimes.max_steps` caps one in-process run (10000),
+  `transports.grpc.port` and `transports.grpc.workers` set the gRPC server's
+  port (50051) and threads (8), and `models.timeout_seconds` gives each model
+  adapter that calls out its time limit (`openai-compatible` 60 seconds), each
+  read through scripts/config_loader.py with a bound it refuses past. An
+  adapter missing from `models.timeout_seconds` is refused, never left
+  unbounded.
 - **`make verify` is red until `make secrets-install` has run once.** A fresh
   clone has no scanner record, so `make secret-scan` exits 11 naming the
   install. The README Quickstart now commits the generated project, installs

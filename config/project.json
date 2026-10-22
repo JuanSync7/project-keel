@@ -359,7 +359,7 @@
     }
   },
   "transports": {
-    "_comment": "enabled lists the transports this project serves and available maps each declared transport to its directory (check_H). extras maps an enabled transport to the pyproject.toml extra that installs its packages: scripts/check_venv.py judges that extra installed before make verify runs a goal, and tests/optional_deps.py turns a test's skip over one of its packages into a failure while the transport is enabled.",
+    "_comment": "The transports this project serves (CONVENTIONS section 15): enabled lists the ones it runs, available maps each declared transport to its directory (check_H). extras maps an enabled transport to the pyproject.toml extra that installs its packages: scripts/check_venv.py judges that extra installed before make verify runs a goal, and tests/optional_deps.py turns a test's skip over one of its packages into a failure while the transport is enabled. grpc holds the gRPC server's own limits, read by api/grpc/server.py through scripts/config_loader.py: port is the TCP port it listens on, workers how many threads answer calls.",
     "extras": {"rest": "transport"},
     "enabled": ["rest", "mcp"],
     "available": {
@@ -367,7 +367,8 @@
       "grpc": "api/grpc",
       "edge_nginx": "api/edge_nginx",
       "mcp": "mcp"
-    }
+    },
+    "grpc": {"port": 50051, "workers": 8}
   },
   "e2e": {
     "_comment": "End-to-end coverage (CONVENTIONS section 17): every endpoint an enabled transport serves is named by a scenario under scenario_dir with @pytest.mark.<marker>(\"<transport> <id>\"), or exempt here with a reason. tests/integration/test_e2e_coverage.py derives the endpoints from the code, never from a list: sources maps a transport to how (openapi: the app's OpenAPI document, written by openapi_exporter inside the REST transport directory; mcp-stdio: each __main__-guarded server asked over its stdio, with mcp_env added to its environment; proto: the transport's .proto service methods; none: the transport serves no endpoint of its own). list_timeout_s bounds each child a derivation or a scenario starts: the walk over the routes the REST app serves, the exporter, and each MCP server. exempt maps an endpoint id to the reason it has no scenario; a stale, redundant or reasonless entry is red. server is how tests/live_server.py starts the REST app for a scenario: uvicorn serving app on host, ready when probe_path answers 200 within ready_timeout_s (polled every probe_interval_s), each request bounded by request_timeout_s, and stopped by SIGTERM then SIGKILL after stop_timeout_s. There is no port: the OS assigns a free one. make run-api's fixed port is a separate value.",
@@ -462,15 +463,16 @@
     "matrix_schema": "config/traceability/matrix.schema.json"
   },
   "runtimes": {
-    "_comment": "Agent control-flow engines this project makes available (registered in runtimes/registry.py, CONVENTIONS section 16). 'default' is declarative: check_H requires it to be in 'available' and each engine's directory to exist, but runtimes/registry.py DEFAULT_RUNTIME decides what get_runtime() returns with no name, and nothing ties the two together.",
+    "_comment": "Agent control-flow engines this project makes available (registered in runtimes/registry.py, CONVENTIONS section 16). 'default' is declarative: check_H requires it to be in 'available' and each engine's directory to exist, but runtimes/registry.py DEFAULT_RUNTIME decides what get_runtime() returns with no name, and nothing ties the two together. max_steps is how many steps one in-process run may take before runtimes/_inprocess.py refuses it as a plan that never reaches its end; the langgraph engine keeps its own recursion limit.",
     "default": "inprocess",
+    "max_steps": 10000,
     "available": {
       "inprocess": "runtimes",
       "langgraph": "runtimes"
     }
   },
   "models": {
-    "_comment": "Model/provider adapters this project makes available (registered in models/registry.py). 'default' is declarative: check_H requires it to be in 'available' and the showcase marks it, but models/registry.py DEFAULT_MODEL decides what get_model() returns with no name, and nothing ties the two together; the showcase surfaces this list. credential_env names, per adapter, the credential environment variables it may use: for an adapter that starts a process, what that process gets on top of child_env (scripts/child_env.py build_child_env(credentials_for=<adapter>)), an adapter absent from it getting the base allowlist only; for openai-compatible, which sends a credential itself, the only names its api_key_env argument accepts. Add a name here, not in code, when a CLI needs one more (for example a cloud provider's region). allowed_hosts names, per adapter that sends a credential itself, the `host` or `host:port` entries it may send it to, each in its one canonical form (scripts/child_env.py canonical_host_entry: a lower-case ASCII name, a dotted-quad IPv4 address or a bracketed compressed IPv6 address); `host` matches only the scheme's default port and nothing matches by suffix, prefix or wildcard. It ships empty, so openai-compatible refuses every base_url, its default included, until the project lists the endpoint's host; an adapter absent from it may send its credential nowhere. Defence in depth, not a sandbox (docs/adr/keel/K-0018-model-endpoint-host-allowlist.md).",
+    "_comment": "Model/provider adapters this project makes available (registered in models/registry.py). 'default' is declarative: check_H requires it to be in 'available' and the showcase marks it, but models/registry.py DEFAULT_MODEL decides what get_model() returns with no name, and nothing ties the two together; the showcase surfaces this list. credential_env names, per adapter, the credential environment variables it may use: for an adapter that starts a process, what that process gets on top of child_env (scripts/child_env.py build_child_env(credentials_for=<adapter>)), an adapter absent from it getting the base allowlist only; for openai-compatible, which sends a credential itself, the only names its api_key_env argument accepts. Add a name here, not in code, when a CLI needs one more (for example a cloud provider's region). allowed_hosts names, per adapter that sends a credential itself, the `host` or `host:port` entries it may send it to, each in its one canonical form (scripts/child_env.py canonical_host_entry: a lower-case ASCII name, a dotted-quad IPv4 address or a bracketed compressed IPv6 address); `host` matches only the scheme's default port and nothing matches by suffix, prefix or wildcard. It ships empty, so openai-compatible refuses every base_url, its default included, until the project lists the endpoint's host; an adapter absent from it may send its credential nowhere. Defence in depth, not a sandbox (docs/adr/keel/K-0018-model-endpoint-host-allowlist.md). timeout_seconds maps each adapter that calls out to the seconds one call may take before the adapter gives up on it (read by models/limits.py); an adapter missing from it is refused, never left unbounded.",
     "default": "claude-code-headless",
     "available": {
       "claude-code-headless": "models",
@@ -483,6 +485,10 @@
     "credential_env": {
       "claude-code-headless": ["ANTHROPIC_API_KEY", "CLAUDE_CONFIG_DIR"],
       "openai-compatible": ["OPENAI_API_KEY"]
+    },
+    "timeout_seconds": {
+      "claude-code-headless": 600,
+      "openai-compatible": 60
     }
   },
   "import_layers": {

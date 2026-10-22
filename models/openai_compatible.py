@@ -2,7 +2,7 @@
 title: OpenAI-compatible model backend
 layer: backend
 public_api: no
-summary: Adapter for any HTTP endpoint speaking the OpenAI chat-completions API. It is built only for a `base_url` that is an http or https URL with a host and no user part, query or fragment, written in unreserved URL characters, and, for http, only when the host is a loopback address literal (127.0.0.0/8 or ::1 by the stdlib ipaddress module, read through scripts/child_env.py canonical_host_entry; the name localhost is refused, since a name resolves through DNS or a hosts file), so the bearer token never crosses a network in clear text; and only for an `api_key_env` that config/project.json `models.credential_env` declares for this adapter (scripts/child_env.py load_policy), so no caller, and no config a caller forwards, can choose another environment variable to send as the bearer token; either refusal is a ValueError that names the argument and never a value. Between the two, the base_url's host and port must be listed in config/project.json `models.allowed_hosts` for this adapter, compared exactly in scripts/child_env.py canonical_host_entry's one form (an entry `host` matches only the scheme's default port, `host:port` only that port, nothing by suffix, prefix or wildcard); the shipped list is empty, so every host, the default one included, is refused until a project lists it, and the refusal names that key and the entry to add, never the path, before the credential variable is read, which it is through scripts/config_loader.py `env`, at each call. base_url is read-only after that check. A redirect is never followed: urllib's default handler would re-send a 301, 302 or 303 as a GET with the Authorization header to a host nobody listed, so any 3xx is a RuntimeError naming the endpoint and the status, never the Location. Defence in depth, not a sandbox (docs/adr/keel/K-0018-model-endpoint-host-allowlist.md). An unreachable endpoint is ModelUnavailable (absent); an endpoint that answers with an error, or with a body that is not a chat completion, is broken, and that body is described by its keys, never quoted. An error names the endpoint by scheme, host and port, never by its path.
+summary: Adapter for any HTTP endpoint speaking the OpenAI chat-completions API. It is built only for a `base_url` that is an http or https URL with a host and no user part, query or fragment, written in unreserved URL characters, and, for http, only when the host is a loopback address literal (127.0.0.0/8 or ::1 by the stdlib ipaddress module, read through scripts/child_env.py canonical_host_entry; the name localhost is refused, since a name resolves through DNS or a hosts file), so the bearer token never crosses a network in clear text; and only for an `api_key_env` that config/project.json `models.credential_env` declares for this adapter (scripts/child_env.py load_policy), so no caller, and no config a caller forwards, can choose another environment variable to send as the bearer token; either refusal is a ValueError that names the argument and never a value. Between the two, the base_url's host and port must be listed in config/project.json `models.allowed_hosts` for this adapter, compared exactly in scripts/child_env.py canonical_host_entry's one form (an entry `host` matches only the scheme's default port, `host:port` only that port, nothing by suffix, prefix or wildcard); the shipped list is empty, so every host, the default one included, is refused until a project lists it, and the refusal names that key and the entry to add, never the path, before the credential variable is read, which it is through scripts/config_loader.py `env`, at each call. base_url is read-only after that check. Each request waits at most `timeout` seconds, config/project.json `models.timeout_seconds` for this adapter (models/limits.py) when the caller names none. A redirect is never followed: urllib's default handler would re-send a 301, 302 or 303 as a GET with the Authorization header to a host nobody listed, so any 3xx is a RuntimeError naming the endpoint and the status, never the Location. Defence in depth, not a sandbox (docs/adr/keel/K-0018-model-endpoint-host-allowlist.md). An unreachable endpoint is ModelUnavailable (absent); an endpoint that answers with an error, or with a body that is not a chat completion, is broken, and that body is described by its keys, never quoted. An error names the endpoint by scheme, host and port, never by its path.
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ from scripts import config_loader
 from scripts.child_env import canonical_host_entry, load_policy
 
 from .contracts import ModelBackend, ModelUnavailable
+from .limits import timeout_seconds
 
 __all__ = ["OpenAICompatible"]
 
@@ -275,7 +276,7 @@ class OpenAICompatible(ModelBackend):
         base_url: str = "https://api.openai.com/v1",
         model: str = "gpt-4o-mini",
         api_key_env: str = "OPENAI_API_KEY",
-        timeout: float = 60.0,
+        timeout: Optional[float] = None,
         transport: Optional[Transport] = None,
     ):
         parts = _checked_base_url(base_url)
@@ -298,7 +299,8 @@ class OpenAICompatible(ModelBackend):
         self.api_key_env = _checked_key_env(
             self.name, api_key_env, policy.credentials.get(self.name, ())
         )
-        self.timeout = timeout
+        # None: the configured limit, so no call waits on a socket unbounded.
+        self.timeout = timeout_seconds(self.name) if timeout is None else timeout
         self._transport = transport or _post_json
 
     @property
