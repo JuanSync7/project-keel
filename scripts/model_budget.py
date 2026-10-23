@@ -2,18 +2,16 @@
 title: model_budget — the approved model-call cap an agent run is held to
 kind: script
 layer: n/a
-summary: Shared by the agents' thin CLIs (scripts/doc_review.py, scripts/refactor_practice.py and the two hooks under scripts/hooks/). cap(root) reads config/project.json `agents.max_model_calls` through scripts/config_loader.py, so an absent key is the default 0, which approves no call, and a wrong value is a ConfigError. approve(needed, cap, flag) returns None for a run whose upper bound of model calls is within the cap and raises SpendRefused, carrying the three report() parts, for a bound over the cap or a run with no bound (None or negative); the unit is the model call, since the cost of one call depends on the model and is not known before the run. announce(prog, model) is the line naming the registry default and why, when no model was named, from models.choose_model. It ends no process: the entry point returns report(...) for a refusal.
+summary: Shared by the agents' thin CLIs (scripts/doc_review.py, scripts/refactor_practice.py and the two hooks under scripts/hooks/). cap(root) reads config/project.json `agents.max_model_calls` through models.approved_cap, which uses scripts/config_loader.py, so an absent key is the default 0, which approves no call, and a wrong value is a ConfigError. approve(needed, cap, flag) returns None for a run whose upper bound of model calls is within the cap and raises SpendRefused, carrying the three report() parts, for a bound over the cap or a run with no bound (None or negative); the unit is the model call, since the cost of one call depends on the model and is not known before the run. stopped(exc, flag) is report()'s three parts for a run its counted backend (models.CountedModel) stopped at the approved count. announce(prog, model) is the line naming the registry default and why, when no model was named, from models.choose_model. It ends no process: the entry point returns report(...) for a refusal.
 effect: read-only
 """
 
 from __future__ import annotations
 
-import config_loader
-from models import choose_model
+from models import CAP_KEY, CallCapReached, approved_cap, choose_model
 
-__all__ = ["CAP_KEY", "SpendRefused", "announce", "approve", "cap"]
+__all__ = ["CAP_KEY", "SpendRefused", "announce", "approve", "cap", "stopped"]
 
-CAP_KEY = ("agents", "max_model_calls")
 _DOTTED = ".".join(CAP_KEY)
 
 
@@ -35,13 +33,7 @@ def cap(root: str) -> int:
     """The model calls config/project.json at *root* approves for one run.
     Raises config_loader.ConfigError when the file or the value cannot be
     used."""
-    values = config_loader.resolve(
-        config_loader.read(root),
-        config_loader.rows(CAP_KEY),
-        config_loader.CONFIG_FILE,
-    )
-    approved: int = values[CAP_KEY]
-    return approved
+    return approved_cap(root)
 
 
 def approve(needed: int | None, cap: int, flag: str | None) -> None:
@@ -74,4 +66,16 @@ def announce(prog: str, model: str | None) -> str | None:
     return (
         "%s: no --model given; using %r, the registry default "
         "(models/registry.py DEFAULT_MODEL)" % (prog, choice.name)
+    )
+
+
+def stopped(exc: CallCapReached, flag: str | None) -> tuple[str, str, str]:
+    """report()'s three parts for a run its counted backend stopped at the
+    approved count *exc* carries; *flag* names the run's bound, as in approve."""
+    return (
+        "the run was stopped at its approved %d model call(s)" % exc.cap,
+        "%s, held under config/project.json %s"
+        % (flag or "the run's one call", _DOTTED),
+        "rerun to resume a saved run where it stopped; if the work needs more calls, "
+        "raise %s within %s" % (flag or "the cap", _DOTTED),
     )

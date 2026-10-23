@@ -114,6 +114,8 @@ def _chunk_edit(prompt):
 
 
 class _Model:
+    name = "model"
+
     """A model that returns one bounded edit spec per chunk (or a scripted reply)."""
 
     def __init__(self, replies=None):
@@ -163,6 +165,7 @@ def test_red_baseline_attempts_no_refactor(tmp_path, monkeypatch):
     rep = refactor(
         "precise-container-types",
         execute=True,
+        max_model_calls=8,
         root=str(_ROOT),
         checkpointer=_checkpointer(tmp_path),
     )
@@ -182,6 +185,7 @@ def test_execute_applies_each_accepted_chunk_and_the_gate_keeps_it(
     rep = refactor(
         "precise-container-types",
         execute=True,
+        max_model_calls=8,
         root=str(_ROOT),
         checkpointer=_checkpointer(tmp_path),
     )
@@ -202,6 +206,7 @@ def test_gate_red_rolls_back_so_the_chunk_is_skipped_not_refactored(
     rep = refactor(
         "precise-container-types",
         execute=True,
+        max_model_calls=8,
         root=str(_ROOT),
         checkpointer=_checkpointer(tmp_path),
     )
@@ -220,6 +225,7 @@ def test_model_declining_a_chunk_skips_it_without_touching_apply(tmp_path, monke
     rep = refactor(
         "precise-container-types",
         execute=True,
+        max_model_calls=8,
         root=str(_ROOT),
         checkpointer=_checkpointer(tmp_path),
     )
@@ -242,6 +248,7 @@ def test_a_reply_that_names_a_gate_is_declined_and_never_applied(tmp_path, monke
     rep = refactor(
         "precise-container-types",
         execute=True,
+        max_model_calls=8,
         root=str(_ROOT),
         checkpointer=_checkpointer(tmp_path),
     )
@@ -272,6 +279,7 @@ def test_each_apply_is_bound_to_the_chunks_own_file(tmp_path, monkeypatch):
     rep = refactor(
         "precise-container-types",
         execute=True,
+        max_model_calls=8,
         root=str(_ROOT),
         checkpointer=_checkpointer(tmp_path),
         gate="verify",
@@ -308,6 +316,8 @@ def test_crash_mid_refactor_resumes_without_reapplying(engine, tmp_path, monkeyp
     calls = {"n": 0}
 
     class _Crashy:
+        name = "crashy"
+
         def run(self, prompt):
             calls["n"] += 1
             if calls["n"] == 2:  # SIGKILL-ish on the 2nd chunk's propose
@@ -321,6 +331,7 @@ def test_crash_mid_refactor_resumes_without_reapplying(engine, tmp_path, monkeyp
         refactor(
             "precise-container-types",
             execute=True,
+            max_model_calls=8,
             root=str(tmp_path),
             runtime=engine,
             run_key="job",
@@ -330,6 +341,7 @@ def test_crash_mid_refactor_resumes_without_reapplying(engine, tmp_path, monkeyp
     rep = refactor(
         "precise-container-types",
         execute=True,
+        max_model_calls=8,
         root=str(tmp_path),
         runtime=engine,
         run_key="job",

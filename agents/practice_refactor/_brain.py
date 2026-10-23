@@ -2,7 +2,7 @@
 title: Practice refactor brain
 layer: backend
 public_api: no
-summary: Plan: walk the corpus KG -> gate a green baseline -> (propose -> apply+gate+rollback) one chunk per step; on a durable Runtime.
+summary: Plan: walk the corpus KG -> gate a green baseline -> (propose -> apply+gate+rollback) one chunk per step; on a durable Runtime. An execute run needs its approved count of model calls: every call goes through one run's models.ModelMeter, and a resumed run is first checked against the approved model and count (models.approve_resume).
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 
-from models import ModelBackend, get_model
+from models import ModelBackend, ModelMeter, approve_resume, get_model
 from runtimes import (
     END,
     MODEL_CALL,
@@ -244,8 +244,9 @@ def _baseline(state):
     return {"baseline_green": bool(res.get("ok"))}
 
 
-def _propose(state):
-    """Model-call: draft ONE bounded edit spec for the chunk at the cursor.
+def _propose(state, meter):
+    """Model-call: draft ONE bounded edit spec for the chunk at the cursor, on
+    the run's counted backend (*meter*).
 
     One chunk per step (not the whole loop) so the runtime checkpoints after each
     apply — a crash mid-refactor resumes at the cursor and accepted chunks are not
@@ -256,10 +257,9 @@ def _propose(state):
         # Checked here as well as in propose, so a pathless chunk never builds
         # a backend.
         return {"spec": None}
-    backend = get_model(state.get("model"))
     return {
         "spec": propose(
-            state["practice"], state.get("practice_def"), node, backend=backend
+            state["practice"], state.get("practice_def"), node, backend=meter.backend()
         )
     }
 
@@ -335,26 +335,29 @@ def _more(state):
     return bool(state.get("execute")) and _remaining(state)
 
 
-_PLAN = Plan(
-    name="practice_refactor",
-    entry="walk",
-    steps=(
-        Step("walk", READ_ONLY, _walk),
-        Step("baseline", READ_ONLY, _baseline),
-        Step("propose", MODEL_CALL, _propose),
-        Step("apply", WRITES, _apply),
-    ),
-    edges=(
-        Edge("walk", "baseline"),
-        Edge(
-            "baseline", "propose", when=_wants_refactor
-        ),  # green tree + work -> refactor
-        Edge("baseline", END),  # dry-run / red / nothing to do
-        Edge("propose", "apply"),
-        Edge("apply", "propose", when=_more),  # durable loop: one chunk/step
-        Edge("apply", END),
-    ),
-)
+def _plan(meter):
+    """The refactor plan, its model step bound to this run's counted backend:
+    the backend is the run's own, never one a step builds from saved state."""
+    return Plan(
+        name="practice_refactor",
+        entry="walk",
+        steps=(
+            Step("walk", READ_ONLY, _walk),
+            Step("baseline", READ_ONLY, _baseline),
+            Step("propose", MODEL_CALL, lambda state: _propose(state, meter)),
+            Step("apply", WRITES, _apply),
+        ),
+        edges=(
+            Edge("walk", "baseline"),
+            Edge(
+                "baseline", "propose", when=_wants_refactor
+            ),  # green tree + work -> refactor
+            Edge("baseline", END),  # dry-run / red / nothing to do
+            Edge("propose", "apply"),
+            Edge("apply", "propose", when=_more),  # durable loop: one chunk/step
+            Edge("apply", END),
+        ),
+    )
 
 
 def refactor(
@@ -369,6 +372,7 @@ def refactor(
     runtime=None,
     checkpointer=None,
     run_key="practice_refactor",
+    max_model_calls=None,
 ):
     """Walk the corpus KG for a NAMED practice and refactor each chunk toward it,
     gating every applied edit on ``make <gate>`` (default ``verify``).
@@ -387,7 +391,17 @@ def refactor(
     (from a prior crash) is auto-resumed; pass your own ``checkpointer`` to
     override. The model comes via ``models.get_model(model)`` — never a provider;
     edits land only through the gated ``apply_refactor`` doer, never a raw write.
+
+    An execute run needs ``max_model_calls``, the approved count, or raises
+    ValueError: every model call goes through one ``models.CountedModel`` of
+    that count, so the call past it raises ``models.CallCapReached``. A saved
+    run is resumed only on the same model and with no more chunks left than
+    that count; otherwise ``models.RunNotApproved`` is raised before any step.
     """
+    if execute and max_model_calls is None:
+        raise ValueError(
+            "refactor(execute=True) needs max_model_calls, the approved model-call count"
+        )
     root = root or _REPO
     corpus = corpus or os.path.join(root, _CORPUS)
     if checkpointer is None and execute:
@@ -405,9 +419,20 @@ def refactor(
     if checkpointer is not None:
         kwargs["checkpointer"] = checkpointer
         kwargs["run_key"] = run_key
-        if checkpointer.load(run_key) is not None:  # a prior run crashed -> resume
+        saved = checkpointer.load(run_key)
+        if saved is not None:  # a prior run crashed -> resume
+            if execute:
+                left = saved["state"]
+                approve_resume(
+                    where=checkpointer.where(run_key),
+                    saved_model=left.get("model"),
+                    model=model,
+                    left=len(left.get("chunks", ())) - left.get("cursor", 0),
+                    cap=max_model_calls,
+                )
             kwargs["resume"] = None
-    st = get_runtime(runtime).run(_PLAN, init, **kwargs).state
+    meter = ModelMeter(model, max_model_calls or 0, get_model)
+    st = get_runtime(runtime).run(_plan(meter), init, **kwargs).state
     return RefactorReport(
         practice=practice,
         baseline_green=bool(st.get("baseline_green", False)),

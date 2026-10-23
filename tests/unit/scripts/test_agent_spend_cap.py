@@ -2,7 +2,7 @@
 title: Unit — every agent CLI holds an --execute run to the model-call cap and says which model it chose
 kind: tests
 layer: n/a
-summary: scripts/doc_review.py, scripts/refactor_practice.py, scripts/hooks/on_stop_doc_review.py and scripts/hooks/on_stop_triage.py each check, before the agent runs, that the run's upper bound of model calls (--max-chunks, --max-nodes, or the one call triage makes) is within config/project.json `agents.max_model_calls` (read through scripts/model_budget.py): a bound over the cap, or a negative bound that sets none, returns USAGE with the agent never called, a cap the config cannot give returns CONFIG, and a dry run is never refused, since it calls no model. With --execute and no --model, each writes to stderr which model the registry default chose and why; with --model it writes no such line. The agent function is replaced by a recorder, so no model is built and nothing is written.
+summary: scripts/doc_review.py, scripts/refactor_practice.py, scripts/hooks/on_stop_doc_review.py and scripts/hooks/on_stop_triage.py each check, before the agent runs, that the run's upper bound of model calls (--max-chunks, --max-nodes, or the one call triage makes) is within config/project.json `agents.max_model_calls` (read through scripts/model_budget.py): a bound over the cap, or a negative bound that sets none, returns USAGE with the agent never called, a cap the config cannot give returns CONFIG, and a dry run is never refused, since it calls no model. An approved run hands the agent its bound as `max_model_calls`, the count its counted backend stops at; the agent stopping at that count (models.CallCapReached) returns FAILURE and a saved run the approval does not cover (models.RunNotApproved) returns USAGE, each naming what to do next. With --execute and no --model, each writes to stderr which model the registry default chose and why; with --model it writes no such line. The agent function is replaced by a recorder, so no model is built and nothing is written.
 """
 
 import sys
@@ -24,6 +24,7 @@ import refactor_practice  # noqa: E402
 from agents.doc_reviewer import DocReviewReport  # noqa: E402
 from agents.practice_refactor import RefactorReport  # noqa: E402
 from exit_codes import ExitCode  # noqa: E402
+from models import CallCapReached, RunNotApproved  # noqa: E402
 from models.registry import DEFAULT_MODEL  # noqa: E402
 
 pytestmark = pytest.mark.unit
@@ -102,7 +103,43 @@ def test_a_bound_over_the_cap_is_refused_and_the_bound_is_what_runs(
     assert calls == [] and flag in capsys.readouterr().err
     assert module.main(argv + ["--execute", flag, "3"]) is ExitCode.SUCCESS
     bound = {"--max-chunks": "max_chunks", "--max-nodes": "max_nodes"}[flag]
-    assert calls[0][bound] == 3
+    assert calls[0][bound] == 3 and calls[0]["max_model_calls"] == 3
+
+
+def test_triage_is_approved_its_one_call(monkeypatch):
+    module, argv, _flag, calls = _wire(monkeypatch, "on_stop_triage", 8)
+    assert module.main(argv + ["--execute"]) is ExitCode.SUCCESS
+    assert calls[0]["max_model_calls"] == 1
+
+
+def _raising(monkeypatch, name, exc):
+    module, argv, _flag, _calls = _wire(monkeypatch, name, 8)
+    _module, attr = _CLIS[name][:2]
+
+    def agent(*args, **kwargs):
+        raise exc
+
+    monkeypatch.setattr(module, attr, agent)
+    return module, argv
+
+
+@pytest.mark.parametrize("name", sorted(_CLIS))
+def test_a_run_stopped_at_its_count_is_a_failure_naming_the_count(
+    name, monkeypatch, capsys
+):
+    module, argv = _raising(monkeypatch, name, CallCapReached(3, 3))
+    assert module.main(argv + ["--execute"]) is ExitCode.FAILURE
+    err = capsys.readouterr().err
+    assert "approved 3 model call(s)" in err and "agents.max_model_calls" in err
+
+
+@pytest.mark.parametrize("name", sorted(n for n in _CLIS if _CLIS[n][3]))
+def test_a_saved_run_the_approval_does_not_cover_is_refused(name, monkeypatch, capsys):
+    refusal = RunNotApproved("the saved run differs", "s.json", "remove s.json")
+    module, argv = _raising(monkeypatch, name, refusal)
+    assert module.main(argv + ["--execute"]) is ExitCode.USAGE
+    err = capsys.readouterr().err
+    assert "the saved run differs" in err and "remove s.json" in err
 
 
 @pytest.mark.parametrize("name", sorted(n for n in _CLIS if _CLIS[n][3]))

@@ -29,7 +29,7 @@ def _approved(monkeypatch):
 
 
 def test_an_unavailable_model_is_a_stated_skip_at_exit_zero(monkeypatch, capsys):
-    def no_model(payload, execute, model):
+    def no_model(payload, execute, model, max_model_calls):
         raise ModelUnavailable("claude binary 'claude' is not on PATH")
 
     monkeypatch.setattr(hook, "triage", no_model)
@@ -39,7 +39,7 @@ def test_an_unavailable_model_is_a_stated_skip_at_exit_zero(monkeypatch, capsys)
 
 
 def test_a_model_that_runs_and_fails_still_raises(monkeypatch):
-    def broken(payload, execute, model):
+    def broken(payload, execute, model, max_model_calls):
         raise RuntimeError("claude headless failed: boom")
 
     monkeypatch.setattr(hook, "triage", broken)
@@ -51,7 +51,9 @@ def test_dry_run_prints_the_preview_and_needs_no_model(monkeypatch, capsys):
     monkeypatch.setattr(
         hook,
         "triage",
-        lambda payload, execute, model: "PREVIEW %s %s" % (payload, execute),
+        lambda payload, execute, model, max_model_calls: (
+            "PREVIEW %s %s" % (payload, execute)
+        ),
     )
     assert hook.main(["payload"]) == 0
     assert "PREVIEW payload False" in capsys.readouterr().out

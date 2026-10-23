@@ -80,6 +80,8 @@ class _Runner:
 
 
 class _Model:
+    name = "model"
+
     def __init__(self, reply):
         self.reply, self.prompts = reply, []
 
@@ -130,7 +132,7 @@ def test_dry_run_gathers_retrieves_gates_and_writes_nothing(seams):
 
 def test_execute_applies_each_accepted_chunk_through_the_gated_doer(seams):
     runner, model, root = seams
-    r = review(execute=True, root=str(root), checkpointer=None)
+    r = review(execute=True, max_model_calls=8, root=str(root), checkpointer=None)
     assert not r.dry_run
     assert len(model.prompts) == 2 and runner.calls.count("apply_refactor") == 2
     assert r.applied == ("docs/a.md",) * 2 and r.skipped == ()
@@ -139,7 +141,7 @@ def test_execute_applies_each_accepted_chunk_through_the_gated_doer(seams):
 def test_a_declined_chunk_is_skipped_without_touching_apply(seams, monkeypatch):
     runner, model, root = seams
     model.reply = '{"edits": []}'
-    r = review(execute=True, root=str(root), max_chunks=1)
+    r = review(execute=True, max_model_calls=8, root=str(root), max_chunks=1)
     assert r.skipped == ("mention:docs/b.md:4",) and r.applied == ()
     assert "apply_refactor" not in runner.calls
 
@@ -160,7 +162,7 @@ def test_a_reply_that_names_a_gate_is_declined_and_each_apply_is_bound_to_its_ch
     gated["gate"] = "none"
     replies = iter([json.dumps(gated), _SPEC])
     model.run = lambda prompt, **opts: (model.prompts.append(prompt), next(replies))[1]
-    r = review(execute=True, root=str(root), checkpointer=None)
+    r = review(execute=True, max_model_calls=8, root=str(root), checkpointer=None)
     assert r.skipped == ("mention:docs/b.md:4",)
     applies = runner.argvs["apply_refactor.py"]
     assert [_flag(a, "--allow") for a in applies] == ["scripts/README.md"]
@@ -178,7 +180,7 @@ def test_a_red_gate_rolls_back_so_the_chunk_is_skipped(monkeypatch, tmp_path):
     monkeypatch.setattr(_BRAIN + "._run", runner)
     monkeypatch.setattr(_BRAIN + ".get_model", lambda name=None: _Model(_SPEC))
     monkeypatch.setattr(_BRAIN + "._read_lines", lambda *a, **k: "")
-    r = review(execute=True, root=str(tmp_path), max_chunks=1)
+    r = review(execute=True, max_model_calls=8, root=str(tmp_path), max_chunks=1)
     assert r.applied == () and r.skipped == ("mention:docs/b.md:4",)
 
 
@@ -188,7 +190,7 @@ def test_a_red_baseline_attempts_nothing(monkeypatch, tmp_path):
     monkeypatch.setattr(_BRAIN + "._run", runner)
     monkeypatch.setattr(_BRAIN + ".get_model", lambda name=None: model)
     monkeypatch.setattr(_BRAIN + "._read_lines", lambda *a, **k: "")
-    r = review(execute=True, root=str(tmp_path))
+    r = review(execute=True, max_model_calls=8, root=str(tmp_path))
     assert (
         not r.baseline_green
         and model.prompts == []
@@ -239,6 +241,6 @@ def test_a_stale_stamp_is_never_sent_to_the_model(monkeypatch, tmp_path):
     monkeypatch.setattr(_BRAIN + "._run", run)
     monkeypatch.setattr(_BRAIN + ".get_model", lambda name=None: model)
     monkeypatch.setattr(_BRAIN + "._read_lines", lambda *a, **k: "")
-    r = review(execute=True, root=str(tmp_path))
+    r = review(execute=True, max_model_calls=8, root=str(tmp_path))
     assert r.stale == 1 and r.candidates == ()
     assert model.prompts == [] and "apply_refactor" not in runner.calls

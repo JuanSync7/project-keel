@@ -3,7 +3,7 @@
 title: Refactor toward a named practice (LLM-doer entrypoint)
 kind: script
 layer: n/a
-summary: Thin CLI over the agents/practice_refactor brain — walk the corpus KG and refactor each chunk toward a named coding practice, gating every edit on make verify. The vendor-agnostic doer behind the practice-refactor skill (trigger). `--execute` is first held to config/project.json `agents.max_model_calls` (scripts/model_budget.py): a --max-nodes over the cap, or a negative one that bounds nothing, is refused (exit 2) and a cap the config cannot give is exit 14, both before the agent runs; with no --model it names on stderr the registry default it will use.
+summary: Thin CLI over the agents/practice_refactor brain — walk the corpus KG and refactor each chunk toward a named coding practice, gating every edit on make verify. The vendor-agnostic doer behind the practice-refactor skill (trigger). `--execute` is first held to config/project.json `agents.max_model_calls` (scripts/model_budget.py): a --max-nodes over the cap, or a negative one that bounds nothing, is refused (exit 2) and a cap the config cannot give is exit 14, both before the agent runs; with no --model it names on stderr the registry default it will use. The run is then held to that bound as it goes: every model call is counted (models.CountedModel), and the call past it is never made, a failure (exit 1) naming the count; a saved run under wiki/.runtime/ that would resume on another model or with more calls left than the bound is refused (exit 2) naming the snapshot to remove.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ import config_loader  # noqa: E402
 import exit_codes  # noqa: E402
 import model_budget  # noqa: E402
 from agents.practice_refactor import refactor  # noqa: E402  (after sys.path setup)
-from models import ModelUnavailable  # noqa: E402
+from models import CallCapReached, ModelUnavailable, RunNotApproved  # noqa: E402
 
 
 def _as_dict(report):
@@ -106,6 +106,17 @@ def main(argv=None):
             corpus=args.corpus,
             root=args.root,
             runtime=args.runtime,
+            max_model_calls=args.max_nodes if args.execute else None,
+        )
+    except RunNotApproved as exc:
+        what, on, next_step = exc.parts
+        return exit_codes.report(
+            exit_codes.ExitCode.USAGE, "refactor_practice: " + what, on, next_step
+        )
+    except CallCapReached as exc:
+        what, on, next_step = model_budget.stopped(exc, "--max-nodes")
+        return exit_codes.report(
+            exit_codes.ExitCode.FAILURE, "refactor_practice: " + what, on, next_step
         )
     except ModelUnavailable as exc:
         # Absent, not broken: say so, write nothing, exit 0. A present model

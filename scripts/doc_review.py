@@ -3,7 +3,7 @@
 title: doc_review — thin CLI over the doc reviewer agent
 kind: script
 layer: n/a
-summary: Runs agents.doc_reviewer.review(): dry-run by default (gathers findings, retrieves the rules, gates the baseline, writes nothing), `--execute` proposes and applies gated edits, first held to config/project.json `agents.max_model_calls` (scripts/model_budget.py): a --max-chunks over the cap, or a negative one that bounds nothing, is refused (exit 2) and a cap the config cannot give is exit 14, both before the agent runs; with no --model it names on stderr the registry default it will use. An unavailable model is a stated skip at exit 0.
+summary: Runs agents.doc_reviewer.review(): dry-run by default (gathers findings, retrieves the rules, gates the baseline, writes nothing), `--execute` proposes and applies gated edits, first held to config/project.json `agents.max_model_calls` (scripts/model_budget.py): a --max-chunks over the cap, or a negative one that bounds nothing, is refused (exit 2) and a cap the config cannot give is exit 14, both before the agent runs; with no --model it names on stderr the registry default it will use. The run is then held to that bound as it goes: every model call is counted (models.CountedModel), and the call past it is never made, a failure (exit 1) naming the count; a saved run under wiki/.runtime/ that would resume on another model or with more calls left than the bound is refused (exit 2) naming the snapshot to remove. An unavailable model is a stated skip at exit 0.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ import config_loader  # noqa: E402
 import exit_codes  # noqa: E402
 import model_budget  # noqa: E402
 from agents.doc_reviewer import review  # noqa: E402
-from models import ModelUnavailable  # noqa: E402
+from models import CallCapReached, ModelUnavailable, RunNotApproved  # noqa: E402
 
 
 def _as_dict(report):
@@ -92,6 +92,17 @@ def main(argv=None):
             gate=args.gate,
             max_chunks=args.max_chunks,
             root=args.root,
+            max_model_calls=args.max_chunks if args.execute else None,
+        )
+    except RunNotApproved as exc:
+        what, on, next_step = exc.parts
+        return exit_codes.report(
+            exit_codes.ExitCode.USAGE, "doc_review: " + what, on, next_step
+        )
+    except CallCapReached as exc:
+        what, on, next_step = model_budget.stopped(exc, "--max-chunks")
+        return exit_codes.report(
+            exit_codes.ExitCode.FAILURE, "doc_review: " + what, on, next_step
         )
     except ModelUnavailable as exc:
         # Absent, not broken: say so, write nothing, exit 0.

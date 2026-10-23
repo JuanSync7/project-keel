@@ -2,7 +2,7 @@
 title: Doc reviewer brain
 layer: backend
 public_api: no
-summary: Plan: gather the deterministic doc findings (review_docs) -> retrieve the style rules (query_corpus) -> gate a green baseline -> (propose -> apply+gate+rollback) one finding per step; on a durable Runtime. Judgment only where a rule cannot decide.
+summary: Plan: gather the deterministic doc findings (review_docs) -> retrieve the style rules (query_corpus) -> gate a green baseline -> (propose -> apply+gate+rollback) one finding per step; on a durable Runtime. Judgment only where a rule cannot decide. An execute run needs its approved count of model calls: every call goes through one run's models.ModelMeter, and a resumed run is first checked against the approved model and count (models.approve_resume).
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 
-from models import get_model
+from models import ModelMeter, approve_resume, get_model
 from runtimes import (
     END,
     MODEL_CALL,
@@ -234,12 +234,11 @@ def _baseline(state):
     return {"baseline_green": bool(res.get("ok"))}
 
 
-def _propose(state):
-    """Model-call: ONE bounded edit spec for the chunk at the cursor, or a decline."""
+def _propose(state, meter):
+    """Model-call: ONE bounded edit spec for the chunk at the cursor, or a decline,
+    from the run's counted backend (*meter*)."""
     chunk = state["chunks"][state["cursor"]]
-    reply = get_model(state.get("model")).run(
-        _propose_prompt(state.get("rules", []), chunk)
-    )
+    reply = meter.backend().run(_propose_prompt(state.get("rules", []), chunk))
     return {"spec": _parse_spec(reply)}
 
 
@@ -302,26 +301,29 @@ def _more(state):
     return bool(state.get("execute")) and _remaining(state)
 
 
-_PLAN = Plan(
-    name="doc_reviewer",
-    entry="review",
-    steps=(
-        Step("review", READ_ONLY, _review),
-        Step("retrieve", READ_ONLY, _retrieve),
-        Step("baseline", READ_ONLY, _baseline),
-        Step("propose", MODEL_CALL, _propose),
-        Step("apply", WRITES, _apply),
-    ),
-    edges=(
-        Edge("review", "retrieve"),
-        Edge("retrieve", "baseline"),
-        Edge("baseline", "propose", when=_wants_edits),
-        Edge("baseline", END),
-        Edge("propose", "apply"),
-        Edge("apply", "propose", when=_more),
-        Edge("apply", END),
-    ),
-)
+def _plan(meter):
+    """The review plan, its model step bound to this run's counted backend:
+    the backend is the run's own, never one a step builds from saved state."""
+    return Plan(
+        name="doc_reviewer",
+        entry="review",
+        steps=(
+            Step("review", READ_ONLY, _review),
+            Step("retrieve", READ_ONLY, _retrieve),
+            Step("baseline", READ_ONLY, _baseline),
+            Step("propose", MODEL_CALL, lambda state: _propose(state, meter)),
+            Step("apply", WRITES, _apply),
+        ),
+        edges=(
+            Edge("review", "retrieve"),
+            Edge("retrieve", "baseline"),
+            Edge("baseline", "propose", when=_wants_edits),
+            Edge("baseline", END),
+            Edge("propose", "apply"),
+            Edge("apply", "propose", when=_more),
+            Edge("apply", END),
+        ),
+    )
 
 
 def review(
@@ -335,6 +337,7 @@ def review(
     runtime=None,
     checkpointer=None,
     run_key="doc_reviewer",
+    max_model_calls=None,
 ):
     """Review the documentation: gather what the deterministic doer found (stale
     stamps, unresolved mentions, every roster row), retrieve the style guide's
@@ -348,7 +351,17 @@ def review(
     The loop is durable (one chunk per step, ``FileCheckpointer`` under
     ``wiki/.runtime``); a crash resumes at the cursor. The model comes from
     ``models.get_model(model)`` — never a provider.
+
+    An execute run needs ``max_model_calls``, the approved count, or raises
+    ValueError: every model call goes through one ``models.CountedModel`` of
+    that count, so the call past it raises ``models.CallCapReached``. A saved
+    run is resumed only on the same model and with no more chunks left than
+    that count; otherwise ``models.RunNotApproved`` is raised before any step.
     """
+    if execute and max_model_calls is None:
+        raise ValueError(
+            "review(execute=True) needs max_model_calls, the approved model-call count"
+        )
     root = root or _REPO
     corpus = corpus or os.path.join(root, _CORPUS)
     if checkpointer is None and execute:
@@ -365,9 +378,20 @@ def review(
     if checkpointer is not None:
         kwargs["checkpointer"] = checkpointer
         kwargs["run_key"] = run_key
-        if checkpointer.load(run_key) is not None:
+        saved = checkpointer.load(run_key)
+        if saved is not None:
+            if execute:
+                left = saved["state"]
+                approve_resume(
+                    where=checkpointer.where(run_key),
+                    saved_model=left.get("model"),
+                    model=model,
+                    left=len(left.get("chunks", ())) - left.get("cursor", 0),
+                    cap=max_model_calls,
+                )
             kwargs["resume"] = None
-    st = get_runtime(runtime).run(_PLAN, init, **kwargs).state
+    meter = ModelMeter(model, max_model_calls or 0, get_model)
+    st = get_runtime(runtime).run(_plan(meter), init, **kwargs).state
     return DocReviewReport(
         baseline_green=bool(st.get("baseline_green", False)),
         stale=int(st.get("stale", 0)),
