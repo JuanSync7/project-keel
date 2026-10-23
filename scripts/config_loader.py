@@ -55,6 +55,7 @@ __all__ = [
     "WrongValue",
     "declared_variables",
     "env",
+    "is_null_spelling",
     "is_owner_token",
     "is_unowned",
     "read",
@@ -365,11 +366,24 @@ def is_unowned(value: Any) -> bool:
     return str(value).upper() == _UNOWNED
 
 
+# How YAML writes null, as a line parser keeps it: `null` (any letter case
+# here, as for `TBD`, because no owner is called nUlL), `~`, or nothing.
+_NULL_SPELLINGS = frozenset(("", "~", "NULL"))
+
+
+def is_null_spelling(value: Any) -> bool:
+    """True when *value* is None or a way YAML writes null: empty, `~`, or
+    `null` in any letter case. Such a value names no owner."""
+    return value is None or str(value).upper() in _NULL_SPELLINGS
+
+
 def _owner_token(value: Any) -> bool:
     # A nullable row hands its bound None too; null is "no default owner".
     if value is None:
         return True
-    return is_owner_token(value) and not is_unowned(value)
+    return (
+        is_owner_token(value) and not is_unowned(value) and not is_null_spelling(value)
+    )
 
 
 _ASCII_DIGITS = "0123456789"
@@ -669,7 +683,8 @@ KEYS = tuple(
                 "null: no default, so each such document is an error",
                 accepts=(
                     _owner_token,
-                    "one owner token of letters, digits and `._@-`, never TBD in any case",
+                    "one owner token of letters, digits and `._@-`, never TBD or the "
+                    "word null in any case",
                 ),
             ),
             _row(

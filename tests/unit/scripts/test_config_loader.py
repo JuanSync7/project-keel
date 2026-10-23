@@ -306,6 +306,50 @@ def test_a_wrong_and_a_missing_key_write_every_line_and_raise_wrong_value():
     assert isinstance(exc.value, ConfigError)
 
 
+def test_a_nullable_rows_bound_is_the_strings_and_null_stands_apart():
+    """The bound judges the string, never null, so the line says null first
+    and puts the bound on the string alone."""
+    bound = (lambda v: v is None or v == "ok", "the word ok")
+    with pytest.raises(WrongValue) as exc:
+        resolve(
+            {"t": "bad"},
+            (_key(("t",), "nonempty_str_or_null", None, accepts=bound),),
+            _WHERE,
+            environ={},
+            stream=io.StringIO(),
+        )
+    (line,) = exc.value.lines
+    assert line.endswith("; accepted: null, or a non-empty string with the word ok"), (
+        line
+    )
+
+
+def test_a_wrong_type_on_a_nullable_bounded_row_names_the_type_alone():
+    bound = (lambda v: v is None or v == "ok", "the word ok")
+    with pytest.raises(WrongValue) as exc:
+        resolve(
+            {"t": 3},
+            (_key(("t",), "nonempty_str_or_null", None, accepts=bound),),
+            _WHERE,
+            environ={},
+            stream=io.StringIO(),
+        )
+    (line,) = exc.value.lines
+    assert line.endswith("; accepted: a non-empty string, or null"), line
+
+
+@pytest.mark.parametrize("value", [None, "", "~", "null", "Null", "NULL", "nUlL"])
+def test_a_null_spelling_is_every_way_yaml_writes_null(value):
+    """YAML reads `null`, `Null`, `NULL`, `~` and an empty value as null; any
+    letter case of `null` counts, as `TBD` does, so none can be an owner."""
+    assert config_loader.is_null_spelling(value)
+
+
+@pytest.mark.parametrize("value", ["ops", "nullable", "TBD", "~ops", "none", 0])
+def test_a_word_that_only_looks_like_null_is_not_a_null_spelling(value):
+    assert not config_loader.is_null_spelling(value)
+
+
 def test_null_is_set_and_refused_unless_the_type_admits_it():
     with pytest.raises(WrongValue):
         resolve(

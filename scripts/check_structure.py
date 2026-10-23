@@ -1054,8 +1054,8 @@ def _tool_spec_body_findings(relpath, text, tool_effect):
 def check_F():
     """ERROR on malformed tool specs, on a refused
     accountability.default_owner, and on a tool/agent doc whose `TBD` owner has
-    no default to inherit or whose owner is outside the §12 grammar; WARN on
-    one with no owner."""
+    no default to inherit, whose owner is a written null, or whose owner is
+    outside the §12 grammar; WARN on one with no owner."""
     agents_dir = os.path.join(ROOT, "agents")
     if os.path.isdir(agents_dir):
         # Validate EVERY *.tool.md under agents/ (not just agents/tools/), so a
@@ -1117,10 +1117,13 @@ _DEFAULT_OWNER = ".".join(_DEFAULT_OWNER_KEY)
 
 def _effective_owner(owner, default):
     """The owner a document answers to: *default* when its own is the `TBD`
-    placeholder in any letter case, else its own (None when it names none)."""
+    placeholder in any letter case, else its own (None when it names none,
+    a null spelling included)."""
     if owner and config_loader.is_unowned(owner):
         return default
-    return owner or None
+    if config_loader.is_null_spelling(owner):
+        return None
+    return owner
 
 
 def _default_owner(manifest):
@@ -1159,8 +1162,10 @@ def _owner_rollup(governed, default, refused=False):
     with no warning tier, and *refused* says the key held a value the loader
     refused rather than none. An owner outside the §12 grammar, such as a
     quoted or commented placeholder, is an error naming the document and the
-    grammar. A missing owner is a frontmatter fault the default does not
-    cover, and stays a warning. A real owner is never judged further."""
+    grammar. A written null (`null` in any letter case, or `~`) is an error
+    the default does not cover. A missing or empty owner is a frontmatter
+    fault the default does not cover, and stays a warning. A real owner is
+    never judged further."""
     errs, warns = [], []
     for path, kind, owner in governed:
         if kind not in _OWNED_KINDS:
@@ -1169,6 +1174,15 @@ def _owner_rollup(governed, default, refused=False):
             warns.append(
                 "accountability: %s (%s) has no real owner (missing 'owner')"
                 % (path, kind)
+            )
+        elif config_loader.is_null_spelling(owner):
+            # Refused, not warned like an empty value: `null` passes the token
+            # grammar by its letters alone, so it read as an owner called
+            # "null", while `~`, the same YAML value, was a grammar error.
+            errs.append(
+                "accountability: %s (%s) has owner '%s', which YAML reads as "
+                "null, so it names no owner -- write the real owner, or `TBD` "
+                "to inherit %s (CONVENTIONS §12)" % (path, kind, owner, _DEFAULT_OWNER)
             )
         elif not config_loader.is_owner_token(owner):
             errs.append(

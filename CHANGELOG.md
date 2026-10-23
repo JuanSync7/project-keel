@@ -438,6 +438,14 @@ version rather than a bare commit:
   traceback or every case scored as an error.
   `tests/unit/scripts/test_agent_spend_cap.py` fails an entry point that builds
   a model or runtime and no test holds to this.
+- **A written null is never an owner.** check_F read `owner: null` in a
+  `kind: tool` or `agent` document as an owner called `null`, while `owner: ~`,
+  the same YAML value, was an error, and the corpus took both as real owners.
+  `null` in any letter case and `~` are now a check_F error naming the
+  document, which the default owner does not cover; an empty `owner` still
+  warns, as a missing one does. `scripts/config_loader.py` `is_null_spelling`
+  is the one reading of the spellings, and `accountability.default_owner`
+  refuses the word `null` too.
 - **check_structure fails closed where it warned and skipped.** A `.py` file a
   check cannot parse was a WARN, and check_E, check_O, check_V and check_X
   skipped it in silence, so its imports, headers and spawns went unjudged. It

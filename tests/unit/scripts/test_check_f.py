@@ -2,7 +2,7 @@
 title: Unit — check_structure check_F (tool spec body contract and owner roll-up)
 kind: tests
 layer: n/a
-summary: check_F pinned. The owner half: config/project.json `accountability.default_owner` is read through scripts/config_loader.py's KEYS row (an owner token never TBD in any case, or null, null by default) on every run, so a refused value is an error with no TBD document in the tree; a `kind: tool` or `agent` document whose frontmatter owner is `TBD` in any letter case inherits it, and with no default, or a refused one, is an error naming the document and the key; an owner outside the CONVENTIONS §12 grammar (a quoted or commented placeholder) is an error naming the document and the grammar; build_corpus reads a case-variant TBD as unowned too; any other owner is never judged, and a missing owner stays a warning. The body half: a `kind: tool` spec's body is the seven sections CONVENTIONS §10 names, in that order; its `## Side effects` opens with the word that matches `tool_effect` (READ-ONLY / WRITES / MODEL-CALL); and its `## When to use` carries at least one `- NOT` bullet — the negative-scope line that says what the tool is not for and names the sibling that is. Seven specs complied by discipline (six carried the NOT line); this makes the discipline a rule so the eighth cannot quietly skip it.
+summary: check_F pinned. The owner half: config/project.json `accountability.default_owner` is read through scripts/config_loader.py's KEYS row (null, or a string that is one owner token never TBD or the word null in any case; null by default, and its refusal line puts that bound on the string, not on null) on every run, so a refused value is an error with no TBD document in the tree; a `kind: tool` or `agent` document whose frontmatter owner is `TBD` in any letter case inherits it, and with no default, or a refused one, is an error naming the document and the key; an owner outside the CONVENTIONS §12 grammar (a quoted or commented placeholder) is an error naming the document and the grammar; a written null (`null` in any letter case, or `~`) is an error the default does not cover, where an empty or missing owner stays a warning; build_corpus takes neither TBD nor a null spelling as a real owner; any other owner is never judged. The body half: a `kind: tool` spec's body is the seven sections CONVENTIONS §10 names, in that order; its `## Side effects` opens with the word that matches `tool_effect` (READ-ONLY / WRITES / MODEL-CALL); and its `## When to use` carries at least one `- NOT` bullet — the negative-scope line that says what the tool is not for and names the sibling that is. Seven specs complied by discipline (six carried the NOT line); this makes the discipline a rule so the eighth cannot quietly skip it.
 """
 
 import sys
@@ -151,14 +151,18 @@ def test_the_default_owner_row_is_an_optional_owner_token_defaulting_to_null():
     assert "TBD" in row.meaning and "null" in row.meaning
     check, _text = row.accepts
     assert check(None) and check("platform-team") and check("ops@example.org")
-    for bad in ("TBD", "tbd", "Tbd", "two words", "a/b", ""):
+    for bad in ("TBD", "tbd", "Tbd", "two words", "a/b", "", "null", "NULL", "~"):
         assert not check(bad), bad
 
 
-def test_the_refusal_names_null_once():
-    """The type text already says "or null"; the bound must not say it again."""
+def test_the_refusal_puts_the_bound_on_the_string_and_null_apart():
+    """The bound judges the string: null is accepted on its own, so the line
+    must not read as if null had to be an owner token."""
     _value, (line,) = cs._default_owner({"accountability": {"default_owner": "TBD"}})
-    assert line.count("null") == 1, line
+    assert line.endswith(
+        "; accepted: null, or a non-empty string with one owner token of "
+        "letters, digits and `._@-`, never TBD or the word null in any case"
+    ), line
 
 
 # Spellings of the placeholder: TBD in any case is TBD.
@@ -193,15 +197,41 @@ def test_an_owner_outside_the_grammar_is_an_error_naming_doc_and_grammar(
     assert "[A-Za-z0-9._@-]+" in errs[0] and "§12" in errs[0], errs
 
 
+# The ways YAML writes null that the line parser keeps as text. An empty value
+# reaches the roll-up as "", the missing-owner case, and stays a warning.
+_NULL_SPELLINGS = ["null", "Null", "NULL", "nUlL", "~"]
+
+
+@pytest.mark.parametrize("default", [None, "ops"])
+@pytest.mark.parametrize("owner", _NULL_SPELLINGS)
+@pytest.mark.parametrize("kind", ["tool", "agent"])
+def test_a_null_owner_is_an_error_the_default_does_not_cover(owner, kind, default):
+    """`owner: null` is an owner nobody is called, not the placeholder: it
+    is refused as `~` always was, and never inherits the default."""
+    errs, warns = _rollup([("agents/x/README.md", kind, owner)], default)
+    assert warns == [] and len(errs) == 1, (errs, warns)
+    assert "agents/x/README.md" in errs[0] and "null" in errs[0], errs
+    assert "TBD" in errs[0] and _DOTTED in errs[0], errs
+    assert cs._effective_owner(owner, default) is None
+
+
+@pytest.mark.parametrize("default", [None, "ops"])
+@pytest.mark.parametrize("owner", [None, ""])
+def test_an_absent_or_empty_owner_still_warns(owner, default):
+    errs, warns = _rollup([("agents/x/README.md", "agent", owner)], default)
+    assert errs == [] and len(warns) == 1, (errs, warns)
+
+
 def test_a_tbd_owner_under_a_refused_default_says_the_value_was_refused():
     errs, _warns = _rollup([("agents/x/README.md", "agent", "TBD")], None, True)
     assert len(errs) == 1 and "refused" in errs[0], errs
     assert "gives no" not in errs[0], errs
 
 
-@pytest.mark.parametrize("owner", _TBD_CASES)
-def test_the_corpus_counts_tbd_in_any_case_as_unowned(owner):
-    """build_corpus and check_F agree on what the placeholder is."""
+@pytest.mark.parametrize("owner", _TBD_CASES + _NULL_SPELLINGS + [""])
+def test_the_corpus_takes_neither_tbd_nor_null_as_a_real_owner(owner):
+    """build_corpus and check_F agree on what names nobody: the placeholder,
+    which the corpus fills from the default, and every null spelling."""
     import build_corpus as bc
 
     assert bc._real_owner(owner) is None
@@ -267,7 +297,7 @@ def test_an_absent_default_owner_is_the_keys_default_and_prints_nothing(capsys):
     assert capsys.readouterr() == ("", "")
 
 
-@pytest.mark.parametrize("bad", ["", "TBD", "two words", 7, []])
+@pytest.mark.parametrize("bad", ["", "TBD", "two words", 7, [], "null", "Null", "~"])
 def test_a_refused_default_owner_is_an_error_naming_the_key(bad):
     value, errs = cs._default_owner({"accountability": {"default_owner": bad}})
     assert value is None
@@ -351,7 +381,7 @@ def test_a_tbd_agent_under_a_refused_default_names_both(tmp_path, _isolated):
     assert any("agents/README.md" in m and "refused" in m for m in found), found
 
 
-@pytest.mark.parametrize("owner", ['"TBD"', "TBD # later"])
+@pytest.mark.parametrize("owner", ['"TBD"', "TBD # later", "null", "NULL", "~"])
 def test_a_quoted_or_commented_owner_in_frontmatter_errs(tmp_path, _isolated, owner):
     root = _agent_tree(tmp_path, {"accountability": {"default_owner": "ops"}}, owner)
     found = [f for f in cs.run_checks(root) if f[0] == "F"]

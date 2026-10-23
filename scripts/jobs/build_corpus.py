@@ -127,11 +127,12 @@ def _walk(root: str):
 
 
 def _real_owner(value):
-    """A frontmatter/marker owner counts only if present and not the TBD
-    placeholder, in any letter case (check_F's reading of it)."""
-    if value and not config_loader.is_unowned(value):
-        return value
-    return None
+    """A frontmatter/marker owner counts only if it is neither the TBD
+    placeholder, in any letter case, nor a null spelling (check_F's reading
+    of both)."""
+    if config_loader.is_null_spelling(value) or config_loader.is_unowned(value):
+        return None
+    return value
 
 
 def _keywords(*texts: str) -> list:
