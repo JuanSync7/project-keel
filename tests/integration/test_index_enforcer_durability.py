@@ -2,7 +2,7 @@
 title: Integration — index_enforcer durable gap-fill
 kind: tests
 layer: backend
-summary: A crash mid-fill resumes via the checkpointer; already-filled gaps are not re-filled and authored summaries are untouched.
+summary: A crash mid-fill resumes via the checkpointer; already-filled gaps are not re-filled and authored summaries are untouched. A filling run is held to its approved count of model calls the way the other agents are: enforce(execute=True, fix_gaps=True) with no max_model_calls is a ValueError before any step, every fill goes through one run's models.ModelMeter so the call past the count raises models.CallCapReached and never reaches the model, and a saved run is resumed only on the model the run names and with no more gaps left than its count, else models.RunNotApproved before any call with the snapshot kept. The model is a fake patched in for the brain's get_model and every tool the brain runs as a child process is a stub, so no billed model and no real tree is reached.
 """
 
 import json
@@ -15,6 +15,7 @@ _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT))
 
 from agents.index_enforcer import enforce  # noqa: E402
+from models import CallCapReached, RunNotApproved  # noqa: E402
 
 pytestmark = pytest.mark.integration
 
@@ -57,6 +58,8 @@ def test_crash_mid_fill_resumes_without_refilling(engine, tmp_path, monkeypatch)
     calls = {"n": 0}
 
     class FakeModel:
+        name = "fake"
+
         def run(self, prompt):
             calls["n"] += 1
             if calls["n"] == 2:  # SIGKILL-ish on the 2nd fill
@@ -74,12 +77,18 @@ def test_crash_mid_fill_resumes_without_refilling(engine, tmp_path, monkeypatch)
             root=str(tmp_path),
             runtime=engine,
             run_key="job",
+            max_model_calls=3,
         )
     assert calls["n"] == 2  # n1 filled, n2 in flight when it crashed
 
     # Re-running auto-resumes from the checkpoint and finishes.
     rep = enforce(
-        execute=True, fix_gaps=True, root=str(tmp_path), runtime=engine, run_key="job"
+        execute=True,
+        fix_gaps=True,
+        root=str(tmp_path),
+        runtime=engine,
+        run_key="job",
+        max_model_calls=2,  # n2 and n3 are left: the count the resume needs
     )
     assert rep.gaps_filled == 3
 
@@ -93,3 +102,74 @@ def test_crash_mid_fill_resumes_without_refilling(engine, tmp_path, monkeypatch)
     # the authored summary is never touched
     assert by_id["keep"]["summary"] == "AUTHORED"
     assert by_id["keep"]["summary_source"] == "authored"
+
+
+@pytest.fixture
+def counted(tmp_path, monkeypatch):
+    """A corpus of three gaps under *tmp_path*, every tool a stub, and the
+    model a fake that records each prompt it is sent and can be told to crash
+    on a given call; returns (prompts, crash_on)."""
+    (tmp_path / "wiki").mkdir()
+    (tmp_path / "wiki" / "corpus.json").write_text(json.dumps(_corpus()))
+    prompts = []
+    crash_on = {"call": None}
+
+    class Recording:
+        name = "fake"
+
+        def run(self, prompt):
+            prompts.append(prompt)
+            if len(prompts) == crash_on["call"]:
+                raise RuntimeError("crash mid-fill")
+            return "GEN"
+
+    monkeypatch.setattr(_BRAIN + ".get_model", lambda name=None: Recording())
+    monkeypatch.setattr(_BRAIN + "._run", _fake_run)
+    return prompts, crash_on
+
+
+def _fill(root, **kwargs):
+    return enforce(execute=True, fix_gaps=True, root=str(root), run_key="job", **kwargs)
+
+
+def _snapshot(root):
+    return root / "wiki" / ".runtime" / "job.json"
+
+
+def test_a_filling_run_with_no_approved_count_is_refused_before_any_call(
+    tmp_path, counted
+):
+    prompts, _ = counted
+    with pytest.raises(ValueError, match="max_model_calls"):
+        _fill(tmp_path, model="fake")
+    assert prompts == []
+
+
+def test_a_fill_whose_gaps_outgrow_its_count_stops_at_it(tmp_path, counted):
+    prompts, _ = counted
+    with pytest.raises(CallCapReached):
+        _fill(tmp_path, model="fake", max_model_calls=2)
+    assert len(prompts) == 2  # the third gap's call is never made
+
+
+def test_a_saved_run_with_more_gaps_left_than_approved_is_refused(tmp_path, counted):
+    prompts, crash_on = counted
+    crash_on["call"] = 1  # the first fill crashes: all three gaps are left
+    with pytest.raises(RuntimeError):
+        _fill(tmp_path, model="fake", max_model_calls=3)
+    assert _snapshot(tmp_path).is_file()
+    with pytest.raises(RunNotApproved) as exc:
+        _fill(tmp_path, model="fake", max_model_calls=2)
+    what, on, _next = exc.value.parts
+    assert "3 model call(s) left" in what and on == str(_snapshot(tmp_path))
+    assert len(prompts) == 1 and _snapshot(tmp_path).is_file()
+
+
+def test_a_saved_run_on_another_model_is_refused(tmp_path, counted):
+    prompts, crash_on = counted
+    crash_on["call"] = 1
+    with pytest.raises(RuntimeError):
+        _fill(tmp_path, model="fake", max_model_calls=3)
+    with pytest.raises(RunNotApproved, match="'fake'"):
+        _fill(tmp_path, model=None, max_model_calls=3)  # the registry default
+    assert len(prompts) == 1 and _snapshot(tmp_path).is_file()

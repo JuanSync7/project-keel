@@ -2,7 +2,7 @@
 title: Index enforcer brain
 layer: backend
 public_api: no
-summary: Plan: gate -> build -> link -> report -> (durable fill loop) -> commit; run on a neutral Runtime.
+summary: Plan: gate -> build -> link -> report -> (durable fill loop) -> commit; run on a neutral Runtime. A filling run needs its approved count of model calls: every fill goes through one run's models.ModelMeter, and a resumed run is first checked against the approved model and count (models.approve_resume).
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/integration/test_index_enforcer_durability.py
@@ -16,7 +16,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 
-from models import ModelBackend, get_model
+from models import ModelBackend, ModelMeter, approve_resume, get_model
 from runtimes import (
     END,
     MODEL_CALL,
@@ -158,8 +158,9 @@ def _report(state):
     }
 
 
-def _fill_one(state):
-    """Model-call: fill the NEXT single missing summary, in memory.
+def _fill_one(state, meter):
+    """Model-call: fill the NEXT single missing summary, in memory, from the
+    run's counted backend (*meter*).
 
     One gap per step (not the whole loop) so the runtime checkpoints after each
     fill -- a crash mid-fill (e.g. an EDR SIGKILL) resumes at the cursor and the
@@ -172,7 +173,7 @@ def _fill_one(state):
     if not todo:
         return {}
     node = todo[0]
-    node["summary"] = summarize_gap(node, backend=get_model(state.get("model")))
+    node["summary"] = summarize_gap(node, backend=meter.backend())
     node["summary_source"] = "generated"  # never "authored"
     return {"corpus": corpus, "gaps_filled": state.get("gaps_filled", 0) + 1}
 
@@ -212,29 +213,32 @@ def _more_to_fill(state):
     return bool(state.get("execute")) and bool(_ungapped(state.get("corpus", {})))
 
 
-_PLAN = Plan(
-    name="index_enforce",
-    entry="gate",
-    steps=(
-        Step("gate", READ_ONLY, _gate),
-        Step("build", WRITES, _build),
-        Step("link", WRITES, _link),
-        Step("report", READ_ONLY, _report),
-        Step("fill", MODEL_CALL, _fill_one),
-        Step("commit", WRITES, _commit),
-    ),
-    edges=(
-        Edge("gate", "build", when=_clean),  # clean tree -> rebuild
-        Edge("gate", "report"),  # dirty tree -> straight to report
-        Edge("build", "link"),
-        Edge("link", "report"),
-        Edge("report", "fill", when=_wants_fill),
-        Edge("report", END),
-        Edge("fill", "fill", when=_more_to_fill),  # durable loop: one gap per step
-        Edge("fill", "commit"),
-        Edge("commit", END),
-    ),
-)
+def _plan(meter):
+    """The enforce plan, its fill step bound to this run's counted backend:
+    the backend is the run's own, never one a step builds from saved state."""
+    return Plan(
+        name="index_enforce",
+        entry="gate",
+        steps=(
+            Step("gate", READ_ONLY, _gate),
+            Step("build", WRITES, _build),
+            Step("link", WRITES, _link),
+            Step("report", READ_ONLY, _report),
+            Step("fill", MODEL_CALL, lambda state: _fill_one(state, meter)),
+            Step("commit", WRITES, _commit),
+        ),
+        edges=(
+            Edge("gate", "build", when=_clean),  # clean tree -> rebuild
+            Edge("gate", "report"),  # dirty tree -> straight to report
+            Edge("build", "link"),
+            Edge("link", "report"),
+            Edge("report", "fill", when=_wants_fill),
+            Edge("report", END),
+            Edge("fill", "fill", when=_more_to_fill),  # durable loop: one gap per step
+            Edge("fill", "commit"),
+            Edge("commit", END),
+        ),
+    )
 
 
 def enforce(
@@ -246,6 +250,7 @@ def enforce(
     runtime=None,
     checkpointer=None,
     run_key="index_enforce",
+    max_model_calls=None,
 ):
     """Gate -> build_corpus -> link_corpus -> report -> durable fill loop -> commit.
 
@@ -260,7 +265,19 @@ def enforce(
     ``FileCheckpointer`` is used under ``wiki/.runtime`` and a leftover snapshot
     (from a prior crash) is auto-resumed; pass your own ``checkpointer`` to
     override. The model comes via ``models.get_model(model)`` -- never a provider.
+
+    A filling run (``execute=True`` and ``fix_gaps=True``, the only run that
+    reaches the model) needs ``max_model_calls``, the approved count, or
+    raises ValueError: every fill goes through one ``models.CountedModel`` of
+    that count, so the call past it raises ``models.CallCapReached``. A saved
+    run is resumed only on the same model and with no more gaps left than
+    that count; otherwise ``models.RunNotApproved`` is raised before any step.
     """
+    if execute and fix_gaps and max_model_calls is None:
+        raise ValueError(
+            "enforce(execute=True, fix_gaps=True) needs max_model_calls, "
+            "the approved model-call count"
+        )
     root = root or _REPO
     if checkpointer is None and execute and fix_gaps:
         checkpointer = FileCheckpointer(os.path.join(root, _CKPT_DIR))
@@ -269,9 +286,22 @@ def enforce(
     if checkpointer is not None:
         kwargs["checkpointer"] = checkpointer
         kwargs["run_key"] = run_key
-        if checkpointer.load(run_key) is not None:  # a prior run crashed -> resume
+        saved = checkpointer.load(run_key)
+        if saved is not None:  # a prior run crashed -> resume
+            if execute and fix_gaps:
+                left = saved["state"]
+                approve_resume(
+                    where=checkpointer.where(run_key),
+                    saved_model=left.get("model"),
+                    model=model,
+                    # One fill per gap still in the saved corpus, the one in
+                    # flight at the crash included.
+                    left=len(_ungapped(left.get("corpus", {}))),
+                    cap=max_model_calls,
+                )
             kwargs["resume"] = None
-    st = get_runtime(runtime).run(_PLAN, init, **kwargs).state
+    meter = ModelMeter(model, max_model_calls or 0, get_model)
+    st = get_runtime(runtime).run(_plan(meter), init, **kwargs).state
     return EnforceReport(
         structure_errors=st.get("s_errors", ()),
         structure_warnings=st.get("s_warnings", ()),

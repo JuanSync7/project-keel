@@ -85,7 +85,9 @@ version rather than a bare commit:
   call past the run's bound is never made: the CLIs and Stop hooks end it
   with exit 1 naming the count. A saved run resumes only on the model the
   run names and with no more calls left than its bound, else exit 2 naming
-  the snapshot. `mcp/qa_server.py` holds each question to
+  the snapshot. `agents/index_enforcer` `enforce()` holds its gap fill the
+  same way, to the `max_model_calls` its caller passes, and refuses a fill
+  with none (`ValueError`). `mcp/qa_server.py` holds each question to
   `agents.max_model_calls`, so the shipped `0` answers with a tool error.
 - **Every agent has a replayed eval with a known-good response.** The doc
   reviewer, index enforcer, practice refactor and wiki navigator each export
