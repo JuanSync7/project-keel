@@ -75,6 +75,16 @@ frontend answer.
 
 Every template file arrives except the ones below. An entry with a condition is
 left out only when the answer matches it.
+`tests/integration/test_copier_shipping.py` holds this table to what copier
+does. It judges every file git tracks, and every untracked file git does not
+ignore, with copier's own path matcher under every answer set the template
+allows. A file left out of a project needs a row here with a reason in its Why
+cell. A row that names no `_exclude` entry fails, because the file it explains
+in fact arrives. An entry that leaves out no file under any answer set fails
+too, unless `.gitignore` names its path or it is one of copier's own defaults
+that `copier.yml` re-lists. `tests/integration/test_copier_generation.py`
+renders three answer sets with copier and checks that each project holds
+exactly the files this judgment says arrive.
 
 | Path | Arrives | Why |
 |------|---------|-----|

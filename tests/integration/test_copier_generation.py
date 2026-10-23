@@ -44,6 +44,9 @@ import check_structure  # noqa: E402
 from child_env import build_child_env  # noqa: E402
 
 _ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import test_copier_shipping as shipping  # noqa: E402
+import test_reference_drift as reference_drift  # noqa: E402
 
 # Self-neutralising downstream. `_exclude` prunes these modules at GENERATION, but
 # copier's `_exclude` can never retire a file on `copier update` — it renders the old
@@ -213,6 +216,54 @@ def test_default_transports_prune_the_addon_dirs(tmp_path, generate):
     assert (dest / "mcp").is_dir()
     assert not (dest / "api" / "grpc").exists()  # add-on pruned
     assert not (dest / "api" / "edge_nginx").exists()
+
+
+# Answer sets other tests in this module render anyway, so the render cache
+# serves them: the default, the plainest skeleton, and one add-on transport.
+_SHIPPING_ANSWERS = [
+    {"project_name": "demo_proj"},
+    {"project_name": "demo_proj", "frontend_stack": "none", "showcase": False},
+    {"project_name": "demo_proj", "transports": ["grpc"]},
+]
+
+
+def _rendered_paths(dest):
+    """Every file and symlink under *dest*, relative: what a project holds."""
+    found = set()
+    for dirpath, dirnames, filenames in os.walk(dest):
+        for name in filenames + [
+            d for d in dirnames if (Path(dirpath) / d).is_symlink()
+        ]:
+            found.add((Path(dirpath) / name).relative_to(dest).as_posix())
+    return found
+
+
+@pytest.mark.parametrize(
+    "answers", _SHIPPING_ANSWERS, ids=lambda a: ",".join(sorted(a))
+)
+def test_the_shipping_model_is_what_copier_renders(
+    answers, clean_template, tmp_path, generate
+):
+    """tests/integration/test_copier_shipping.py judges what ships with copier's
+    matcher and the `.jinja` twin rule instead of a render per answer set; this
+    holds that model to a real render. The render holds exactly the paths the
+    model ships; the answers file is set aside on both sides, because copier
+    writes it from the answers whether or not its twin would render."""
+    dest = tmp_path / "proj"
+    generate(dest, **answers)
+    rules = shipping.copier_rules(clean_template)
+    full = reference_drift.complete_answers(
+        reference_drift.copier_questions(clean_template), answers
+    )
+    expected = shipping.shipped_paths(
+        shipping.visible_files(clean_template), rules, full
+    ) - {rules["answers_file"]}
+    assert expected, "the model ships nothing -- zero items"
+    got = _rendered_paths(dest) - {rules["answers_file"]}
+    assert got == expected, (
+        "rendered but not modelled: %s\nmodelled but not rendered: %s"
+        % (sorted(got - expected), sorted(expected - got))
+    )
 
 
 def test_selected_addon_transport_ships_and_is_declared(tmp_path, generate):

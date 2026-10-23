@@ -21,6 +21,15 @@ version rather than a bare commit:
   until a hard date, from a record that only shrinks.
 
 ### Added
+- **A template file cannot go missing from a generated project without a reason.**
+  `tests/integration/test_copier_shipping.py` judges every file copier can see
+  with copier's own path matcher under every answer set the template allows.
+  A file copier.yml `_exclude` leaves out needs a row with a non-blank Why in
+  the exclusion table of `docs/guides/generate-and-upgrade.md`. A row that
+  names no entry fails, because its file arrives. An entry that leaves out no
+  file under any answer set fails too, unless `.gitignore` names its path or it
+  is a copier default. `tests/integration/test_copier_generation.py` checks the
+  judgment against three real renders.
 - **Test scratch lives in memory when the host can hold it.**
   `tests/conftest.py` now takes config/project.json `tests.memory_scratch_root`
   (`/dev/shm/project_keel-tests`, `-<uid>` appended, mode 0700) before

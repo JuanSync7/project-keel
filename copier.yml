@@ -46,6 +46,12 @@ _tasks:
 # Keel's own instance/meta files that must NOT be copied verbatim into a new
 # project (their `.jinja` twins render the tailored versions; the generator's own
 # meta-scripts and generated views don't belong in a downstream project).
+# Every entry needs a row in docs/guides/generate-and-upgrade.md's exclusion table
+# whose Why cell says why a project goes without it, and must leave out a file
+# copier can see under some answer set or name a path .gitignore declares; a row
+# that names no entry here is a reason for a file that in fact ships. Copier's
+# own defaults, re-listed below, need only the row.
+# tests/integration/test_copier_shipping.py holds all of it.
 _exclude:
   # A custom _exclude REPLACES copier's built-in defaults, so re-list them here.
   - "copier.yml"
