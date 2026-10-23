@@ -459,6 +459,12 @@ version rather than a bare commit:
   goals but not exactly the Makefile's, in order; an accepted ADR is not
   read. docs/design/make-next-steps.md no longer spells the goals its counts
   predate.
+- **The evidence writer's roster row names every `make verify` goal.** The
+  `gate_evidence.py` row of scripts/README.md and its template twin quoted
+  verify's recipe line without `secret-scan` and `test-sh`. Both rows now
+  quote the Makefile's line, and `tests/integration/test_gate_evidence_record.py`
+  fails a row that does not carry that line word for word and any other
+  quote of the recipe line that differs from it.
 - **A nullable key with a bound puts null first in its refusal.** A refused
   `transports.serve.memory_cap_mb` or `tests.memory_scratch_root` now reads
   "accepted: null, or an integer with a value >= 1", where it read as if null

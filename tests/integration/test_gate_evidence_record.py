@@ -2,7 +2,7 @@
 title: Integration — the gate's evidence record, written by a real gate run
 kind: tests
 layer: n/a
-summary: A scratch git repository carrying the evidence writer, its siblings, keel's own config/project.json, schema and `test` recipe runs a real reduced gate through scripts/gate_evidence.py with real make, pytest and git. Two runs on the same tree exit 0 and write byte-identical records naming HEAD, a clean tree and pytest's own counts, with no absolute path, host or user in them, and leave what git lists unchanged (the writer's rerun_proof). A planted failing test keeps make's real exit code and leaves a red record naming the dirty tree; under `make -i` the exit is 0, as -i asks, and the record is still red (tests-failed). `make -n` runs nothing and writes nothing. The record validates against config/evidence/gate-record.schema.json and each fault twin (missing field, wrong type, extra field, unknown version) is rejected. keel and its template both ignore config/project.json `evidence.dir`; a generated project, which has no template twin, judges its own tree only. docs/guides/deterministic-checks.md's section on the record names the schema's fields and reasons and the verify recipe's goals, read back and held equal to those owners. Every document but an accepted ADR that lists most of verify's goals, as a `+`, comma, `and` or `or` list of make targets in a code line, table row, list item or prose paragraph that names verify, names exactly the Makefile's goals in its order; the reader is shown on each form, and on an example of a few goals and a unit that does not name verify, which it leaves alone.
+summary: A scratch git repository carrying the evidence writer, its siblings, keel's own config/project.json, schema and `test` recipe runs a real reduced gate through scripts/gate_evidence.py with real make, pytest and git. Two runs on the same tree exit 0 and write byte-identical records naming HEAD, a clean tree and pytest's own counts, with no absolute path, host or user in them, and leave what git lists unchanged (the writer's rerun_proof). A planted failing test keeps make's real exit code and leaves a red record naming the dirty tree; under `make -i` the exit is 0, as -i asks, and the record is still red (tests-failed). `make -n` runs nothing and writes nothing. The record validates against config/evidence/gate-record.schema.json and each fault twin (missing field, wrong type, extra field, unknown version) is rejected. keel and its template both ignore config/project.json `evidence.dir`; a generated project, which has no template twin, judges its own tree only. docs/guides/deterministic-checks.md's section on the record names the schema's fields and reasons and the verify recipe's goals, read back and held equal to those owners. Every document but an accepted ADR that lists most of verify's goals, as a `+`, comma, `and` or `or` list of make targets in a code line, table row, list item or prose paragraph that names verify, names exactly the Makefile's goals in its order; the reader is shown on each form, and on an example of a few goals and a unit that does not name verify, which it leaves alone. Every quote of verify's recipe line is the Makefile's line word for word, and the `gate_evidence.py` roster row of scripts/README.md and its template twin each carries one.
 @covers scripts/gate_evidence.py
 """
 
@@ -330,6 +330,9 @@ _LIST_SEP = r"(?:\s*\+\s*|\s*,\s*(?:(?:and|or)\s+)?|\s+(?:and|or)\s+)"
 # A unit of text names verify when it says `make verify`, `` `verify` `` or
 # verify's recipe or goals; only a list in such a unit is a claim about verify.
 _NAMES_VERIFY = re.compile(r"make verify\b|`verify`|\bverify(?:'s)? (?:recipe|goals)\b")
+# A quote of verify's recipe line: one backticked span that runs the driver
+# over `$(MAKE)` goals; it must be the Makefile's line, word for word.
+_RECIPE_QUOTE = re.compile(r"`([^`]*scripts/gate_evidence\.py[^`]*\$\(MAKE\)[^`]*)`")
 _FENCE = "```"
 
 
@@ -413,18 +416,26 @@ def test_every_document_that_spells_the_verify_goals_spells_the_makefiles():
     dev-loops full-gate row, a comma list no `+` reader saw, kept eight. Every
     list of make targets that sits in a table row, a code line, a list item or
     a prose paragraph naming verify, and names most of verify's goals, must
-    name exactly the goals keel's recipe runs, in its order."""
-    goals, _unresolved = cs._recursions(_keel_verify().recipe[0])
+    name exactly the goals keel's recipe runs, in its order; every quote of the
+    recipe line must be the Makefile's line."""
+    recipe = _keel_verify().recipe[0]
+    goals, _unresolved = cs._recursions(recipe)
     targets = _make_targets()
-    seen, stale = 0, []
+    seen, quotes, stale = 0, 0, []
     for path, text in _documents():
         where = path.relative_to(_ROOT)
         for line, named in _verify_goal_lists(text, targets, goals):
             seen += 1
             if named != goals:
                 stale.append("%s:%d lists %s" % (where, line, named))
+        for m in _RECIPE_QUOTE.finditer(text):
+            quotes += 1
+            if " ".join(m.group(1).split()) != recipe:
+                line = text.count("\n", 0, m.start()) + 1
+                stale.append("%s:%d quotes %r" % (where, line, m.group(1)))
     assert seen, "no document spells verify's goals: the reader matches nothing"
-    assert stale == [], "verify runs %s, but\n%s" % (goals, "\n".join(stale))
+    assert quotes, "no document quotes verify's recipe line: the reader matches nothing"
+    assert stale == [], "verify runs %r, but\n%s" % (recipe, "\n".join(stale))
 
 
 _GOALS = ["check-all", "lint", "test", "trace", "eval"]
@@ -477,6 +488,29 @@ def test_the_goal_list_reader_reads_a_list_in_any_form_beside_verify(text, expec
     example of a few goals, a list in a unit that does not name verify, and
     English words that share a target's name are not."""
     assert list(_verify_goal_lists(text, _TARGETS, _GOALS)) == expected
+
+
+def test_the_evidence_writers_roster_row_quotes_verifys_recipe_line():
+    """The `gate_evidence.py` row of scripts/README.md and its template twin
+    quotes verify's recipe line, which named seven goals after `secret-scan`
+    and `test-sh` joined it; each row must quote the Makefile's line, so it
+    names every goal. A generated project has no twin and judges its own."""
+    recipe = _keel_verify().recipe[0]
+    judged = []
+    for name in ("scripts/README.md", "scripts/README.md.jinja"):
+        path = _ROOT / name
+        if not path.is_file():
+            continue
+        rows = [
+            r
+            for r in path.read_text("utf-8").splitlines()
+            if r.startswith("| `gate_evidence.py` |")
+        ]
+        assert len(rows) == 1, "%s: %d gate_evidence.py rows" % (name, len(rows))
+        quoted = [" ".join(q.split()) for q in _RECIPE_QUOTE.findall(rows[0])]
+        assert quoted == [recipe], "%s: the row quotes %s" % (name, quoted)
+        judged.append(name)
+    assert "scripts/README.md" in judged, judged
 
 
 def _goal(name, counts):
