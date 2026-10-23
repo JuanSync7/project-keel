@@ -61,8 +61,10 @@ version rather than a bare commit:
   `browser_download_host` (`PLAYWRIGHT_DOWNLOAD_HOST` for `make fe-browsers`),
   printed by `scripts/install_sources.py`. Each is null by default, so no flag
   is passed and the tool's own `pip.conf`, `.npmrc` or default host holds. A
-  URL must be https with a host and no user part, query or fragment; a
-  refused value is exit 14 and never shows the user part. The scanner's mirror
+  URL must be https with a host, a valid port if any, and no `@`, `?`, `#`,
+  backslash, whitespace or control character; a refused value is exit 14 and
+  is never shown when it holds an `@`. The command `make check-venv` prints
+  quotes the index as one shell word. The scanner's mirror
   stays `secrets.scanner.release_url`. A generated project carries the block.
 - **Test scratch lives in memory when the host can hold it.**
   `tests/conftest.py` now takes config/project.json `tests.memory_scratch_root`
@@ -692,10 +694,12 @@ version rather than a bare commit:
 ### Security
 
 - **A refused setting never echoes a URL's user part.** When
-  `scripts/config_loader.py` refuses a string that holds one
-  (`https://user:token@host`, `//user@host` or a scheme-less
-  `user:token@host`), its line shows `<hidden: it holds a user part>` in place
-  of the value, whatever the key, because the user part may be a credential.
+  `scripts/config_loader.py` refuses a string that holds an `@` anywhere
+  (`https://user:token@host`, `https:/user:token@host`, a scheme-less
+  `user:token@host`), its line shows `<hidden: it holds an @>` in place of the
+  value, whatever the key, because the part before the `@` may be a
+  credential. A URL urllib cannot split, such as `https://[::1`, is a refusal
+  with exit 14, not a traceback.
   Before, a `secrets.scanner.release_url` given a token was refused with the
   token in the message.
 - **The astro app's audited dependencies move past their advisories.**

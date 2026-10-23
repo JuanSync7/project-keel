@@ -558,10 +558,12 @@ line quoted here is not one the loader writes.
 A value of the wrong type, or out of a key's range, is a third line,
 `<config file>: <key> is <JSON type> <value>; accepted: <what it accepts>`,
 with `<value>` left out for a list, an object or a secret, and also stops the
-script with exit 14. A string that holds a URL user part, such as
+script with exit 14. A refused string that holds an `@` anywhere, such as
 `https://user:token@mirror.example/simple`, shows as
-`<hidden: it holds a user part>` in place of `<value>` under any key, because
-the user part may be a credential. A value read from an environment variable is blamed on
+`<hidden: it holds an @>` in place of `<value>` under any key, because the
+part before the `@` may be a credential and a malformed URL such as
+`https:/user:token@host` hides where it ends. A value such as `a@b.com` is
+hidden too; that is the cost of not parsing the value to decide. A value read from an environment variable is blamed on
 it instead: `the environment: <variable> is <JSON type> <value>; accepted: <what it accepts>`. The loader writes every `[not set]` and wrong-value line before it stops,
 so one run names every key at fault. A script that config/project.json
 `config_reads.allowed` still lists reads its config directly: it writes its own
@@ -619,7 +621,7 @@ kept on purpose, such as a test fixture, with its reason.
 | `make secrets-install` exits 11 with `the release archive cannot be fetched` and a certificate error | a site that intercepts TLS signs with a root Python's default bundle lacks | point `SSL_CERT_FILE` at the site's CA bundle, then rerun; this is a host fact, so it is not in config |
 | `make secrets-install` exits 11 with `the release archive cannot be fetched` and no certificate error | the host cannot reach `secrets.scanner.release_url`, such as behind a firewall | point `secrets.scanner.release_url` at a mirror that holds the same release files, or a `file:///` directory holding them, then rerun; the sha256 check does not change |
 | `pip install`, `make fe-install` or `make fe-browsers` cannot reach the public index, registry or browser host | the host reaches only a company mirror | set the matching config/project.json `install_sources` key (`python_index`, `npm_registry` or `browser_download_host`) to the mirror's https URL, then rerun; a mirror's credential goes in the tool's own `pip.conf` or `.npmrc`, never in config |
-| `make fe-install`, `make fe-browsers` or `make check-venv` exits 14 naming `install_sources.<key>` | the URL is not https, has no host, or carries a user part, a query, a fragment or whitespace | set it to the mirror's bare https URL, or to null for the tool's own setting; a user part shows as `<hidden: it holds a user part>` |
+| `make fe-install`, `make fe-browsers` or `make check-venv` exits 14 naming `install_sources.<key>` | the URL is not https, has no host, has an invalid port, or carries an `@`, a `?`, a `#`, a backslash, whitespace or a control character | set it to the mirror's bare https URL, or to null for the tool's own setting; a value with an `@` shows as `<hidden: it holds an @>` |
 | `make secrets-install` exits 14 with `no gitleaks release archive is pinned for this platform` | `secrets.scanner.release_assets` has no entry for the running machine's `<system>-<machine>` | add one with the archive's file name and its sha256 from the vendor's checksums file for `secrets.scanner.rev`, or run on a listed platform |
 | `make secrets-install` exits 1 with `the archive's sha256 is` | the file at the URL is not the pinned archive: a mirror holding another build, a truncated copy, or a wrong pin | check the pin against the vendor's checksums file; never change the pin to the digest the fetch reported without that check |
 | a config-reads or exit gate test fails in a generated project with `no config/gate-baseline.json records it` | `make gate-baseline` has not run since the project was generated or updated, so the tier has no record of the project's own findings | fix the finding, or run `make gate-baseline` once after `copier update` and commit the file it writes |
