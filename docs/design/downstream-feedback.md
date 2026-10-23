@@ -2410,11 +2410,232 @@ rule.
 
 ## CMP-7 — a document answers for the features it serves
 
-The maintainer approved this campaign on 2026-10-22. It is KEEL-DOC-1, the first campaign-sized item in the queue. The cap is five slices, the read-only opening pass included, and each slice is one commit on a green `make verify`. CMP-7.S1 is the defence table, because every later documentation check reads it. The opening pass checks the candidate slices below against the tree and writes the next rows into this table; until then they are candidates. The stop point is the fifth slice or the table's last row green, whichever comes first. It starts after queue positions 1 to 9.
+The maintainer approved this campaign on 2026-10-22. It is KEEL-DOC-1, the first campaign-sized item in the queue. The cap is five slices, the read-only opening pass included, so four slices are built, CMP-7.S1 to CMP-7.S4, each one commit on a green `make verify`. CMP-7.S1 is the defence table, because every later documentation check reads it. The opening pass ran on 2026-10-23 as a design pass with no code. It checked each candidate in "KEEL-DOC-1, the candidate slices" against the tree and against the vault's documentation-system study, and wrote rows CMP-7.S2 to CMP-7.S4, which stay proposed until the maintainer approves them. The stop point is CMP-7.S4 green or the cap, whichever comes first. It starts after queue positions 1 to 9.
 
 | Slice | Gap | Status |
 |-------|-----|--------|
 | CMP-7.S1 | KEEL-DOC-1: a design or spec document can describe itself without meeting its features; nothing records which questions it answers and which it leaves open (DT-1 to DT-7 below) | planned |
+| CMP-7.S2 | KEEL-DOC-1: a document's kind is not bound to the folders it may sit in, and its status is checked against one list every kind shares: check_A reads the flat `KINDS` and `STATUSES` sets in `scripts/check_structure.py`, so a `kind: spec` file under `docs/guides/` passes while `make trace` never reads it (`read_specs` reads only `traceability.specs_root`), and an ADR marked `stable` passes; only an ADR's folder is bound, by check_Y | proposed |
+| CMP-7.S3 | KEEL-DOC-1: no check reads the headings of a README, an ADR or a design document, only a tool spec's (check_F): 3 of keel's 27 template ADRs have no `## Alternatives considered`, and of the folder READMEs only `docs/specs/README.md` shows the skeleton of the document it holds | proposed |
+| CMP-7.S4 | KEEL-DOC-1: the freshness gate skips when the tree is not a git repository, so a check that could not run reads as a pass (`tests/integration/test_doc_freshness.py`); and `test-docs/coverage/register.md` is a hand copy of what `make trace` derives, which no test holds to the matrix | proposed |
+
+### What each CMP-7 slice builds
+
+Each slice is one capability through every layer it needs: the registry or
+rule, the check, keel's own tree fixed in the same commit, the template twin
+and the generated project, and the docs that name the check. Each new check
+lands as an error in the change that makes keel's tree pass it, and reaches a
+generated project's own documents through CMP-6.S4's expiring tier, one
+`CHECKS` row in `scripts/expiring_tier_data.py` per check (rulings 3, 6, 9
+and 10).
+
+**CMP-7.S1, the defence record.** DT-1 to DT-7 under "KEEL-DOC-1, the defence
+table" are its requirements. It writes the record for keel's three
+`kind: design` documents and for the example spec the template ships.
+
+- Done when: the check is red on one fixture per rule DT-2 to DT-6 and green
+  on one that keeps them all; a hand mutation of each rule's comparison turns
+  the suite red; `docs/design/downstream-feedback.md`,
+  `docs/design/keel-hardening-plan.md`, `docs/design/documentation-quality.md`
+  and `docs/specs/example-feature.md` pass; a generated project passes its own
+  `make verify`; the "Open decisions for CMP-7" this slice owns are ruled.
+- Reads a table by the GFM rule: `\|` escapes a pipe, and a fixture holds a
+  cell with one. `_pipe_table` in `scripts/check_structure.py` splits on every
+  pipe today.
+- Not for: judging whether a question is a good one or an answer holds (DT-7;
+  `make doc-review` asks that). Not the design document's other headings;
+  CMP-7.S3 holds those.
+- Depends on: KEEL-FRAG-1 (queue position 4), which may split this plan into
+  files, so the record is written once against the files it leaves.
+
+**CMP-7.S2, kinds bound to homes and status lists.** One registry row per
+kind gives its allowed folders and its own status list. check_A, or a gate
+test beside it, reads that registry in place of the flat sets, which are
+removed, so the kind list has one home; check_Y keeps the ADR folder rule. A
+project adds
+a kind or a home through `config/project.json`, the way
+`structure.extra_toplevel` adds a top-level directory. This is the study's
+slice 2 (its PLC-01 and the membership half of PLC-02) and the inventory's
+gap 1.
+
+- Done when: a fixture with `kind: spec` under `docs/guides/` and one with an
+  ADR marked `stable` are each red, naming the file, the kind and the allowed
+  list; every governed document in keel's tree and in a generated project
+  passes; a kind with no registry row is red, never a pass; CONVENTIONS §1 and
+  `docs/guides/deterministic-checks.md` name the registry and the check.
+- Not for: a status transition, which needs the previous version from git
+  (PLC-02's other half, queued); new kinds such as `plan` or `research` ("Will
+  not do in CMP-7"); the `genre` facet (queued).
+- Depends on: CMP-7.S1, because the registry row for `design` and `spec`
+  records that the kind carries a defence record.
+
+**CMP-7.S3, heading contracts per kind.** A kind's registry row names the
+headings a document of that kind must have, in order. The check reads them for
+the root README, a directory README, a new ADR and a design document. The
+skeleton each folder README shows is rendered from the same row inside a
+fenced block, and a drift test holds the two equal, so the shape a writer
+copies is the shape the check demands. This is the study's slice 4 without the
+five-W header and the module header fields, and the inventory's gap 5.
+
+- Done when: a README with no `## What ships here`, a new ADR with no
+  `## Alternatives considered` and a design document with no defence record
+  heading are each red; an accepted ADR numbered before the slice is not
+  judged, because its body is frozen (CONVENTIONS §6); every folder README's
+  skeleton equals its kind's row; keel's tree and a generated project pass.
+- Not for: the order or wording inside a section; the five-W header and the
+  module header fields ("Open decisions for CMP-7", items 6 and 7).
+- Depends on: CMP-7.S2, whose registry carries the contract rows, and
+  CMP-7.S1, whose heading the design contract names.
+
+**CMP-7.S4, freshness fails closed, and the hand register goes.** The
+freshness gate already reads the gate-run date through
+`scripts/jobs/review_docs.py` `resolve_today`, so the study's slice 5 shrinks
+to its other two parts. With no git repository the gate ends as could not
+run, never as a skip. `test-docs/coverage/register.md` is deleted, and its
+folder README points at `make trace` and `.evidence/traceability/matrix.json`.
+A gate test fails a hand register beside the generated matrix (the study's
+TST-16).
+
+- Done when: a test removes `.git` from a scratch copy and the gate is red
+  with the could-not-run code; a restored `register.md` is red; a generated
+  project passes its first `make verify`; copier's `_tasks` in `copier.yml`
+  run no `git init` today.
+- Not for: a stale `updated:` stamp, which the gate already fails; the
+  `write-test-coverage` skill that writes a hand register, which lives outside
+  keel.
+- Depends on: no CMP-7 slice. It was ranked last on value, not on order, so
+  it can be built in a parallel lane.
+
+### How the candidates were reconciled
+
+The opening pass read each candidate in "KEEL-DOC-1, the candidate slices"
+against the tree at `4056f81` and against the study. Each row ends in a slice,
+the queue after CMP-7, another item, or a cut.
+
+| Candidate | What the tree shows | Outcome |
+|-----------|---------------------|---------|
+| The defence table | No design or spec document has one; `scripts/traceability.py` `read_specs` exists as DT-3 says | CMP-7.S1 |
+| Kind-to-folder binding | check_A reads one flat `KINDS` set and one flat `STATUSES` set; no key binds a kind to a folder | CMP-7.S2 |
+| Kinds and status lists | as above; a transition check needs git, which check_A does not run (ADR-K-0009) | CMP-7.S2 for membership; transitions queued |
+| Heading contracts | check_F reads a tool spec's body and nothing reads any other kind's; 3 of 27 template ADRs lack `## Alternatives considered` | CMP-7.S3, without the five-W header |
+| Placeholders per kind | only `docs/specs/README.md` shows a skeleton, inside a fenced block | CMP-7.S3, rendered from the contract row |
+| Freshness that fails closed | the gate already reads the gate-run date; it still calls `pytest.skip` with no git | CMP-7.S4 |
+| The coverage register | `test-docs/coverage/register.md` is `status: template`, and no test or script reads it | CMP-7.S4 |
+| Check ids and registry | `config/practices.json` holds 44 practices with `enforced_by`, and check_T refuses an unknown mechanism; no check id namespace and no fault-injection twin field exist | queued first after CMP-7 |
+| A genre for `kind: doc` | 26 tracked `kind: doc` files; the study calls the same facet `form`, under guides only | queued; the facet's name is open |
+| Changelog heading and commit message | `CHANGELOG.md` has `### Known limitation` and `### Earlier in this release`; no `commit-msg` hook | queued after KEEL-FRAG-1, which changes how the changelog is written |
+| House vocabulary | `change_comments.phrases` reads code comments only | queued; overlaps KEEL-DOC-2 (lane L8) |
+| Roadmap fields in the features catalogue | `docs/reference/features.md` has no status column; every row is a shipped feature | queued |
+| Docstring grammar | ruff `D` and pydoclint are not selected in `pyproject.toml` | moved to KEEL-LINT-1, which owns the rules a tool decides |
+
+The candidate list says the study's slices 9 to 18 are not keel's. Three of
+them are: slice 13 (the coverage report schema, keel with pyverdex), slice 15
+(the eval run record with its spend basis) and slice 16 (the `docs/internal/`
+cabinet and the document index, decision 2 of the study). They are queued
+after CMP-7, not dropped.
+
+### The defence-record schema: what the study settles
+
+The study, the vault's R-DOC-15 and the study's lane 05 report agree on four
+parts, so these are fixed:
+
+- The record is a table in the document it defends, under a heading of its
+  own. The study names that heading `## Defence record`.
+- A row carries a feature, a question, the section of the same document that
+  answers it, and a verdict.
+- A gap row is closed by a design change or by a named scope cut.
+- The record applies to a design and to a spec (R-DOC-15's checkable part); a
+  spec's feature is a requirement id, which DT-3 reads.
+
+The rest of the proposed schema is not settled by the study, and is listed
+under "Open decisions for CMP-7".
+
+### Defence record for CMP-7
+
+This record holds the campaign to R-DOC-15: each question is put to the slice
+plan as written above, with R-DOC-16's probes among them.
+
+| Feature | Question | Answered in | Verdict | Change or cut |
+|---------|----------|-------------|---------|---------------|
+| CMP-7.S1 | A cell holds an escaped `\|`: does the reader split the row wrongly? | What each CMP-7 slice builds | gap | Change: S1 reads tables by the GFM rule, with a fixture |
+| CMP-7.S1 | A plan document holds seven campaigns: is there one record or one per campaign? | Open decisions for CMP-7 | gap | Change: ruled by the maintainer before S1 (item 4) |
+| CMP-7.S1 | Zero design or spec documents: does the check pass over nothing? | Open decisions for CMP-7 | gap | Change: S1 states what zero means with a reason in config, the `traceability.no_requirements` pattern (item 5) |
+| CMP-7.S1 | A generated project arrives with older documents and no record: is `copier update` red? | What each CMP-7 slice builds | defended | — |
+| CMP-7.S2 | A project needs a kind keel does not ship: must it edit the checker? | What each CMP-7 slice builds | defended | — |
+| CMP-7.S2 | The kind list lives in check_A and in the registry: what proves the copies agree? | What each CMP-7 slice builds | gap | Change: S2 removes the flat sets, so the registry is the one list |
+| CMP-7.S2 | A kind has no registry row: does the check fail closed? | What each CMP-7 slice builds | defended | — |
+| CMP-7.S3 | An accepted ADR breaks the contract, and its body is frozen: does the check force an edit? | What each CMP-7 slice builds | defended | — |
+| CMP-7.S3 | A writer copies a folder README's skeleton: can it drift from the check? | What each CMP-7 slice builds | defended | — |
+| CMP-7.S4 | A generated project before its first `git init`: is its first `make verify` red? | What each CMP-7 slice builds | gap | Change: S4's done-condition names that path; how it passes is item 8 |
+| CMP-7.S4 | The same tree on another host or a clean home: does the verdict change? | What each CMP-7 slice builds | defended | — |
+| The campaign | A month later, a check depends on today's date | What each CMP-7 slice builds | defended | — |
+| The campaign | Can a project's own config switch a new check off? | Will not do in CMP-7 | defended | — |
+| The campaign | A new agent opens the repository: which file leads it to these rules? | What each CMP-7 slice builds | defended | — |
+| The campaign | Only four slices fit the cap: what happens to the rest? | How the candidates were reconciled | defended | — |
+
+The date row is defended because the freshness gate reads the gate-run date
+(ADR-K-0019) and no other slice reads a date. The switch-off row is defended
+because a project gets the expiring tier with its hard date, not an off switch.
+The discoverability row is defended because each slice's done-condition names
+the CONVENTIONS row or guide that states its rule, and check_U holds that an
+agent's rules name those guides.
+
+### Will not do in CMP-7
+
+- **No new document kinds**, such as `plan`, `research` or `postmortem`. Moving
+  keel's three plans from `kind: design` to `kind: plan` would take them out
+  of the defence-record check, against the ruling that they carry one.
+- **No `docs/internal/` cabinet and no document index.** Decision 2 of the
+  study settles the cabinet, but moving files is a separate slice with its own
+  export check; it is queued.
+- **No check-id namespace and no fault-injection twin registry.** Keel's
+  checks are cited as `check:<LETTER>`, `test:` or `make:` today, which check_T
+  already reads; renaming every check is a campaign of its own.
+- **No model in a gate.** A check here reads structure only; whether an answer
+  holds stays with review (DT-7, decision 15 of the study).
+- **No per-project off switch for a new check.** A project's own documents get
+  the expiring tier with its hard date; keel's own get no grace (ruling 6).
+- **No custodex, pyverdex, jarvis or openwiki work.** openwiki, the concept
+  layer the study chose, writes view pages that no gate reads.
+
+### Open decisions for CMP-7
+
+Each is a question for the maintainer, with the opening pass's
+recommendation. Items 1 to 5 block CMP-7.S1.
+
+1. **The verdict words.** R-DOC-15 says "defended or gap"; DT-5 adds
+   `partly`, and the word "partly" in the deck's R-DOC-15 row marks how far the
+   rule can be checked, not a verdict. Recommendation: two words, and a partly
+   defended feature gets two rows, one `defended` and one `gap`, so every gap
+   has its own change or cut.
+2. **The fifth column.** The study's record has four fields; the proposed
+   schema adds Change or cut. Recommendation: keep it, because DT-6 then reads
+   one cell rather than the prose around the table.
+3. **The column and heading names.** The study writes `## Defence record` and
+   a Section column; the proposal writes "defence table" and Answered in.
+   Recommendation: the heading `## Defence record`, as in the study, and the
+   column Answered in, which says what the cell must hold.
+4. **Several campaigns in one plan document.** Recommendation: one record per
+   campaign heading, because each campaign is planned and approved on its own;
+   this one is written that way.
+5. **What zero documents means**, and **the reader DT-1 names.** No shared
+   Markdown reader exists: check_structure, traceability and the corpus builder
+   each parse headings and tables. Recommendation: zero is `ok` only with a
+   reason in config; S1 makes `_pipe_table` and `_sections` the one reader and
+   names them, rather than adding a fourth.
+6. **The five-W header.** It comes from a draft vault note, not an approved
+   rule package. Recommendation: leave it out of CMP-7.S3 until a deck rule
+   carries it.
+7. **The module header fields.** Study decision 13 puts KEEL-CODE-5's fields
+   in its slice 4; the queue already gives them to KEEL-HDR-1 (lane L3).
+   Recommendation: KEEL-HDR-1 keeps them.
+8. **Freshness before `git init`.** A generated project has no repository
+   until its owner makes one. Recommendation: the project's `_tasks` run
+   `git init`, rather than a config key that excuses "not a repository",
+   which would let a checkout that lost its `.git` pass.
+9. **The cap.** Recommendation: read "five slices, the opening pass included"
+   as four built slices, so CMP-7.S4 is the last; a fifth needs the
+   maintainer's word.
 
 ## Queued after Campaign 6
 
@@ -2511,8 +2732,9 @@ a requirement id, or a feature name in a design document, which has no ids.
 Answered in is a heading in the same document. Verdict is one of `defended`,
 `partly` or `gap`. Beside the requirements sits a "Will not do" list: each
 entry is a scope cut with its reason. A gap is closed by a design change or by
-an entry in that list. The schema in this paragraph is proposed; the slice
-fixes it.
+an entry in that list. The opening pass fixed the parts the study settles
+and listed the rest as open decisions, under "The defence-record schema: what
+the study settles" and "Open decisions for CMP-7".
 
 Requirements, in EARS form, for the check the slice builds:
 
@@ -2575,10 +2797,12 @@ The slice must also decide these points, and say what it chose:
 work one campaign. It merges two lists: the keel documentation inventory's
 ten gaps, ranked by value, and the first eight slices of the
 documentation-system design study kept in the maintainer's vault (its slices
-9 to 18 belong to custodex, pyverdex, jarvis or a trial, not keel). The
+9 to 18 are mostly custodex, pyverdex, jarvis or a trial; the opening pass
+found three that are keel's). The
 opening pass checks each claim against the tree before it keeps a row,
-reconciles the two lists, and writes the approved table. Until then this is
-a candidate list, not a plan:
+reconciles the two lists, and writes the approved table. This is a
+candidate list, not a plan; the opening pass's outcome for each row is under
+"How the candidates were reconciled":
 
 | Candidate | Source | What it builds |
 |-----------|--------|----------------|
