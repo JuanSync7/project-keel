@@ -2,7 +2,7 @@
 title: config_loader — the one way a configured value enters a process
 kind: script
 layer: n/a
-summary: Every configured value comes through here: a key of config/project.json or config/practices.json, or an environment variable the config declares. KEYS is the one table of declared keys, each row a Key giving its path (a tuple of segments, since a segment may hold a dot), its type from the closed set TYPES, its default or NONE (required exactly when the default is NONE, so a default of null stays distinct from no default), whether it is a secret, a one-line meaning, the variable that may set it, the file it lives in (None for a variable-only row) and an optional bound. `read(root, relpath)` is the one open and parse of a config file: a missing file is ConfigAbsent, and an OSError, bytes that are not UTF-8, text that is not JSON (a NaN constant, a byte-order mark and a key written twice in one object included), or a top level that is not an object is ConfigUnreadable, naming a merge-conflict hunk an update left by its line through scripts/jobs/conflict_guard.py's grammar, loaded by path (when it cannot load, the parse error says the markers were not checked). `resolve(loaded, rows, where)` walks the rows in sorted path order. Precedence: a row that names a variable takes that variable when it is set and not empty, else the file's value; a row with no variable reads the file only; a variable-only row reads its variable only; an empty variable is not set. A set value of the wrong type or out of its bound is one line `<where>: <key> is <JSON type>[ <value>]; accepted: <what>`, naming the environment and the variable instead when the value came from a variable, the value never shown for a secret. An unset key with a default takes it and writes `[using default] <key> = <canonical JSON value>  (not set; to change it, set <key> in <where>)` to stderr once per (where, key) per process, a secret's value written `<hidden>`. Each unset required key is `[not set] <key>  (required, no default; set <key> in <where>)`; every wrong and every not-set line is written before one raise, WrongValue when any value is wrong, else NotSet carrying the sorted keys. It never ends the process: the entry point that called it returns report(ExitCode.CONFIG, ...). `env(name)` is the one literal-name read of a declared variable and refuses a name neither a row nor the config declares (declared_variables). `is_owner_token` and `is_unowned` are CONVENTIONS §12's owner grammar and its `TBD` placeholder in any letter case, shared by the default-owner row's bound, check_F and the corpus build. It registers itself under both `config_loader` and `scripts.config_loader`, and as the `config_loader` attribute of the `scripts` package that holds it, so either import name, in either order, gives one module, one announced set and one set of exception classes. Never run, stdlib-only and 3.6-safe: child_env and check_structure read through it under the hook interpreter. It reads and writes nothing else, and it caches nothing, so the same file and environment give the same values and lines.
+summary: Every configured value comes through here: a key of config/project.json or config/practices.json, or an environment variable the config declares. KEYS is the one table of declared keys, each row a Key giving its path (a tuple of segments, since a segment may hold a dot), its type from the closed set TYPES, its default or NONE (required exactly when the default is NONE, so a default of null stays distinct from no default), whether it is a secret, a one-line meaning, the variable that may set it, the file it lives in (None for a variable-only row) and an optional bound. `read(root, relpath)` is the one open and parse of a config file: a missing file is ConfigAbsent, and an OSError, bytes that are not UTF-8, text that is not JSON (a NaN constant, a byte-order mark and a key written twice in one object included), or a top level that is not an object is ConfigUnreadable, naming a merge-conflict hunk an update left by its line through scripts/jobs/conflict_guard.py's grammar, loaded by path (when it cannot load, the parse error says the markers were not checked). `resolve(loaded, rows, where)` walks the rows in sorted path order. Precedence: a row that names a variable takes that variable when it is set and not empty, else the file's value; a row with no variable reads the file only; a variable-only row reads its variable only; an empty variable is not set. A set value of the wrong type or out of its bound is one line `<where>: <key> is <JSON type>[ <value>]; accepted: <what>`, naming the environment and the variable instead when the value came from a variable, the value never shown for a secret, and a string holding a URL user part (`scheme://user[:password]@host`, `//user@host` or a scheme-less `user[:password]@host`), which may be a credential under any key name, shown as `<hidden: it holds a user part>`. An unset key with a default takes it and writes `[using default] <key> = <canonical JSON value>  (not set; to change it, set <key> in <where>)` to stderr once per (where, key) per process, a secret's value written `<hidden>`. Each unset required key is `[not set] <key>  (required, no default; set <key> in <where>)`; every wrong and every not-set line is written before one raise, WrongValue when any value is wrong, else NotSet carrying the sorted keys. It never ends the process: the entry point that called it returns report(ExitCode.CONFIG, ...). `env(name)` is the one literal-name read of a declared variable and refuses a name neither a row nor the config declares (declared_variables). `is_owner_token` and `is_unowned` are CONVENTIONS §12's owner grammar and its `TBD` placeholder in any letter case, shared by the default-owner row's bound, check_F and the corpus build. It registers itself under both `config_loader` and `scripts.config_loader`, and as the `config_loader` attribute of the `scripts` package that holds it, so either import name, in either order, gives one module, one announced set and one set of exception classes. Never run, stdlib-only and 3.6-safe: child_env and check_structure read through it under the hook interpreter. It reads and writes nothing else, and it caches nothing, so the same file and environment give the same values and lines.
 effect: read-only
 """
 
@@ -1689,11 +1689,32 @@ def _lookup(loaded: Mapping[str, Any], path: Tuple[str, ...]) -> Tuple[object, i
     return node, -1
 
 
+def _holds_user_part(value: object) -> bool:
+    # A user part may be a credential under any key name: a mirror URL given
+    # `user:token@` holds a secret its row does not know of, so a refusal that
+    # echoed the value would print the token. A value urllib cannot split is
+    # judged by its `@` alone, so a malformed URL is hidden rather than shown.
+    if not isinstance(value, str) or "@" not in value:
+        return False
+    try:
+        netloc = urllib.parse.urlsplit(value).netloc
+    except ValueError:
+        return True
+    if netloc:
+        return "@" in netloc
+    # No authority: a scheme-less `user[:password]@host[:port]` is one, a path
+    # that holds an `@` after a `/` is not.
+    head = value.partition("@")[0]
+    return bool(head) and not any(c in head for c in "/ \t\r\n")
+
+
 def _wrong_line(where: str, name: str, key: Key, value: object, bound: bool) -> str:
     """The one line refusing *value*, read from *where* under *name*."""
     check_text = TYPES[key.type][1]
     shown = ""
-    if not key.secret and not isinstance(value, (dict, list)):
+    if _holds_user_part(value):
+        shown = " <hidden: it holds a user part>"
+    elif not key.secret and not isinstance(value, (dict, list)):
         shown = " " + _canonical(value)
     accepted = check_text
     refused = ""

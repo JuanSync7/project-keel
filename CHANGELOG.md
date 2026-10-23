@@ -681,6 +681,13 @@ version rather than a bare commit:
 
 ### Security
 
+- **A refused setting never echoes a URL's user part.** When
+  `scripts/config_loader.py` refuses a string that holds one
+  (`https://user:token@host`, `//user@host` or a scheme-less
+  `user:token@host`), its line shows `<hidden: it holds a user part>` in place
+  of the value, whatever the key, because the user part may be a credential.
+  Before, a `secrets.scanner.release_url` given a token was refused with the
+  token in the message.
 - **The astro app's audited dependencies move past their advisories.**
   `npm audit` in `src/frontend/astro` reported 28 findings (2 critical, 17
   high); each fixable package moved in its own commit within its declared

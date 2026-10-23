@@ -558,7 +558,10 @@ line quoted here is not one the loader writes.
 A value of the wrong type, or out of a key's range, is a third line,
 `<config file>: <key> is <JSON type> <value>; accepted: <what it accepts>`,
 with `<value>` left out for a list, an object or a secret, and also stops the
-script with exit 14. A value read from an environment variable is blamed on
+script with exit 14. A string that holds a URL user part, such as
+`https://user:token@mirror.example/simple`, shows as
+`<hidden: it holds a user part>` in place of `<value>` under any key, because
+the user part may be a credential. A value read from an environment variable is blamed on
 it instead: `the environment: <variable> is <JSON type> <value>; accepted: <what it accepts>`. The loader writes every `[not set]` and wrong-value line before it stops,
 so one run names every key at fault. A script that config/project.json
 `config_reads.allowed` still lists reads its config directly: it writes its own
