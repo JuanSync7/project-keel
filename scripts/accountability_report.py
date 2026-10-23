@@ -3,7 +3,7 @@
 title: Accountability report
 kind: script
 layer: n/a
-summary: Read-only: list corpus nodes with no resolved owner (the accountability gaps).
+summary: Read-only: list corpus nodes with no resolved owner, and count those on the default owner.
 """
 
 from __future__ import annotations
@@ -25,9 +25,16 @@ def unowned(corpus: dict) -> list:
     return [n for n in corpus.get("nodes", []) if n.get("owner_source") == "none"]
 
 
+def defaulted(corpus: dict) -> list:
+    """Return nodes that answer to accountability.default_owner because a TBD
+    stands in their owner chain (owner_source == 'default')."""
+    return [n for n in corpus.get("nodes", []) if n.get("owner_source") == "default"]
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(
-        description="Report corpus nodes with no resolved owner."
+        description="Report corpus nodes with no resolved owner, and those on "
+        "the default owner."
     )
     ap.add_argument(
         "--corpus",
@@ -61,6 +68,21 @@ def main(argv=None) -> int:
     print("accountability: %d of %d nodes have no resolved owner" % (len(gaps), total))
     for n in sorted(gaps, key=lambda n: n["node_id"]):
         print("  %-9s %s  (%s)" % (n["kind"], n["node_id"], n["path"]))
+    held = defaulted(corpus)
+    # A default node is listed by its TBD, not one line per node: writing the
+    # real owner at that one place is the repair for every node under it.
+    tbds = sorted({n["owner_origin"] for n in held})
+    print(
+        "accountability: %d of %d nodes answer to the default owner until a real "
+        "one is named, from %d TBD%s"
+        % (len(held), total, len(tbds), ":" if tbds else ".")
+    )
+    for origin in tbds:
+        print("  %s" % origin)
+    print(
+        "accountability: %d of %d nodes have a real owner"
+        % (total - len(gaps) - len(held), total)
+    )
     return ExitCode.SUCCESS
 
 

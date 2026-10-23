@@ -468,7 +468,7 @@ between the markers.
 | `scripts/check_venv.py` | 0, 1, 2, 13, 14 |
 | `scripts/exit_code_table.py` | 0, 1, 2, 14 |
 | `scripts/gate_evidence.py` | 0, 2, 10, 14, 130, passes through |
-| `scripts/jobs/check_corpus.py` | 0, 1 |
+| `scripts/jobs/check_corpus.py` | 0, 1, 14 |
 | `scripts/run_evals.py` | 0, 1, 2, 11, 14 |
 | `scripts/scan_secrets.py` | 0, 1, 2, 11, 13, 14 |
 | `scripts/shell_gate.py` | 0, 2, 11, 13, 14, passes through |

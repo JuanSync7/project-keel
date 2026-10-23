@@ -32,7 +32,7 @@ class Citation:
     path: str
     summary_source: str  # "authored" | "generated" — caller can weight authored higher
     owner: str  # resolved owner ("" if unowned)
-    owner_source: str  # "marker" | "frontmatter" | "inherited" | "none"
+    owner_source: str  # "marker" | "frontmatter" | "inherited" | "default" | "none"
 
 
 @dataclass(frozen=True)

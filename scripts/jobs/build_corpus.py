@@ -135,6 +135,52 @@ def _real_owner(value):
     return value
 
 
+# A node's resolved owner: (owner, owner_source, owner_origin).
+_UNOWNED = ("", "none", None)
+_DEFAULT_OWNER_KEY = ("accountability", "default_owner")
+
+
+def _says_tbd(value):
+    return bool(value) and config_loader.is_unowned(value)
+
+
+def _resolve_owner(own, own_source, own_where, parent, default):
+    """(owner, owner_source, owner_origin) for a node whose own declaration is
+    *own* (frontmatter or marker, written at *own_where*) under *parent*'s
+    resolution. Finest-wins, then inherit (CONVENTIONS §12): a real owner of
+    its own, then a real owner above it. The default fills only what would
+    otherwise be `none` and only because a TBD says so: the node's own TBD
+    (origin: where it stands), else a parent that took the default (its origin)."""
+    real = _real_owner(own)
+    if real:
+        return real, own_source, own_where
+    p_owner, p_source, p_origin = parent
+    if p_source not in ("none", "default"):
+        return p_owner, "inherited", p_origin
+    if default and _says_tbd(own):
+        return default, "default", own_where
+    if p_source == "default":
+        return p_owner, "default", p_origin
+    return _UNOWNED
+
+
+def _default_owner(root):
+    """config/project.json `accountability.default_owner` of *root*, through
+    scripts/config_loader.py; None when it is null, absent, or there is no
+    config file. Raises config_loader.ConfigError for an unreadable file or a
+    refused value."""
+    try:
+        loaded = config_loader.read(root)
+    except config_loader.ConfigAbsent:
+        # A tree with no config (a fixture, a bare checkout) has no default
+        # owner, so every TBD stays `none`: the outcome that claims nothing.
+        loaded = {}
+    values = config_loader.resolve(
+        loaded, config_loader.rows(_DEFAULT_OWNER_KEY), config_loader.CONFIG_FILE
+    )
+    return values[_DEFAULT_OWNER_KEY]
+
+
 def _keywords(*texts: str) -> list:
     """Lowercased significant words + preserved ACRONYMS, deduped, capped."""
     out = []
@@ -315,7 +361,7 @@ def _attach_reference_edges(nodes: list, refs: list) -> None:
         ]
 
 
-def _doc_and_sections(path: str, root: str, nodes: list, refs: list):
+def _doc_and_sections(path: str, root: str, nodes: list, refs: list, default):
     rel = _rel(path, root)
     try:
         # utf-8-sig, like every .py read here: read as plain utf-8 a BOM'd file
@@ -330,7 +376,7 @@ def _doc_and_sections(path: str, root: str, nodes: list, refs: list):
     if fm is None:
         return  # only frontmatter-bearing markdown is a corpus doc
     doc_id = fm.get("id") or _path_id(rel)
-    doc_owner = _real_owner(fm.get("owner"))
+    doc_res = _resolve_owner(fm.get("owner"), "frontmatter", rel, _UNOWNED, default)
     visibility = fm.get("visibility") or "internal"
     title = fm.get("title") or rel
     summary = fm.get("summary") or ""
@@ -346,9 +392,9 @@ def _doc_and_sections(path: str, root: str, nodes: list, refs: list):
             "summary": summary,
             "summary_source": "authored" if summary else "",
             "text_excerpt": " ".join(body.split())[:400],
-            "owner": doc_owner or "",
-            "owner_source": "frontmatter" if doc_owner else "none",
-            "owner_origin": rel if doc_owner else None,
+            "owner": doc_res[0],
+            "owner_source": doc_res[1],
+            "owner_origin": doc_res[2],
             "tags": sorted(set(tags)),
             "visibility": visibility,
             "updated": fm.get("updated") or "",
@@ -357,10 +403,10 @@ def _doc_and_sections(path: str, root: str, nodes: list, refs: list):
             "links": [],
         }
     )
-    _sections(body, doc_id, rel, doc_owner, visibility, nodes, refs)
+    _sections(body, doc_id, rel, doc_res, visibility, nodes, refs, default)
 
 
-def _sections(body, doc_id, rel, doc_owner, doc_visibility, nodes, refs):
+def _sections(body, doc_id, rel, doc_res, doc_visibility, nodes, refs, default):
     lines = body.splitlines()
     blocks = []
     cur = None
@@ -396,13 +442,13 @@ def _sections(body, doc_id, rel, doc_owner, doc_visibility, nodes, refs):
         sec_id = "%s#%s" % (doc_id, anchor)
         btext = "\n".join(b["body"])
         marker = _SECTION_OWNER_RE.search("\n".join(b["body"][:3]))
-        marker_owner = _real_owner(marker.group(1)) if marker else None
-        if marker_owner:
-            owner, osrc, oorigin = marker_owner, "marker", "%s#%s" % (rel, anchor)
-        elif doc_owner:
-            owner, osrc, oorigin = doc_owner, "inherited", rel
-        else:
-            owner, osrc, oorigin = "", "none", None
+        owner, osrc, oorigin = _resolve_owner(
+            marker.group(1) if marker else None,
+            "marker",
+            "%s#%s" % (rel, anchor),
+            doc_res,
+            default,
+        )
         parent = doc_id if b["level"] == 2 else (last_h2 or doc_id)
         if b["level"] == 2:
             last_h2 = sec_id
@@ -433,8 +479,10 @@ def _sections(body, doc_id, rel, doc_owner, doc_visibility, nodes, refs):
         )
 
 
-def _nearest_readme(dirpath: str, root: str):
-    """Walk up to the repo root for a README.md; return (owner, origin, visibility)."""
+def _nearest_readme(dirpath: str, root: str, default):
+    """Walk up to the repo root for a README.md with a real owner or a
+    visibility; return (its owner resolution, its visibility), the resolution
+    `default` when that README's owner is TBD and *default* is set."""
     d = dirpath
     while True:
         readme = os.path.join(d, "README.md")
@@ -449,18 +497,24 @@ def _nearest_readme(dirpath: str, root: str):
                 # The walk must continue to the parent either way.
                 fm = None
             fm = fm or {}
-            owner = _real_owner(fm.get("owner"))
-            if owner or fm.get("visibility"):
-                return owner, _rel(readme, root), fm.get("visibility")
+            # The stop rule reads the real owner, not the resolution, so a TBD
+            # README stops the walk exactly where it did before the default
+            # existed: check_A gives every governed README a visibility.
+            if _real_owner(fm.get("owner")) or fm.get("visibility"):
+                where = _rel(readme, root)
+                res = _resolve_owner(
+                    fm.get("owner"), "frontmatter", where, _UNOWNED, default
+                )
+                return res, fm.get("visibility")
         if os.path.abspath(d) == os.path.abspath(root):
-            return None, None, None
+            return _UNOWNED, None
         parent = os.path.dirname(d)
         if parent == d:
-            return None, None, None
+            return _UNOWNED, None
         d = parent
 
 
-def _module_and_symbols(path: str, root: str, nodes: list):
+def _module_and_symbols(path: str, root: str, nodes: list, default):
     rel = _rel(path, root)
     try:
         # utf-8-sig: keep BOM'd (valid, importable) modules indexable — the
@@ -479,14 +533,8 @@ def _module_and_symbols(path: str, root: str, nodes: list):
     summary = meta.get("summary") or first
     # owner + visibility: own docstring owner is the module's "frontmatter"; else
     # inherit the nearest package README (owner_source 'inherited').
-    nr_owner, nr_origin, nr_vis = _nearest_readme(os.path.dirname(path), root)
-    mod_owner = _real_owner(meta.get("owner"))
-    if mod_owner:
-        osrc, oorigin = "frontmatter", rel
-    elif nr_owner:
-        mod_owner, osrc, oorigin = nr_owner, "inherited", nr_origin
-    else:
-        osrc, oorigin = "none", None
+    readme_res, nr_vis = _nearest_readme(os.path.dirname(path), root, default)
+    mod_res = _resolve_owner(meta.get("owner"), "frontmatter", rel, readme_res, default)
     visibility = meta.get("visibility") or nr_vis or "internal"
     nodes.append(
         {
@@ -499,9 +547,9 @@ def _module_and_symbols(path: str, root: str, nodes: list):
             "summary": summary,
             "summary_source": "authored" if summary else "",
             "text_excerpt": " ".join(doc.split())[:400],
-            "owner": mod_owner or "",
-            "owner_source": osrc,
-            "owner_origin": oorigin,
+            "owner": mod_res[0],
+            "owner_source": mod_res[1],
+            "owner_origin": mod_res[2],
             "tags": sorted(set(_keywords(title, summary))),
             "visibility": visibility,
             "updated": "",
@@ -522,13 +570,13 @@ def _module_and_symbols(path: str, root: str, nodes: list):
             continue  # re-exported from elsewhere; indexed where it is defined
         sdoc = ast.get_docstring(nd) or ""
         marker = _SYMBOL_OWNER_RE.search(sdoc)
-        marker_owner = _real_owner(marker.group(1)) if marker else None
-        if marker_owner:
-            owner, so, oo = marker_owner, "marker", "%s::%s" % (rel, name)
-        elif mod_owner:
-            owner, so, oo = mod_owner, "inherited", oorigin
-        else:
-            owner, so, oo = "", "none", None
+        owner, so, oo = _resolve_owner(
+            marker.group(1) if marker else None,
+            "marker",
+            "%s::%s" % (rel, name),
+            mod_res,
+            default,
+        )
         summ = _first_sentence(sdoc)
         nodes.append(
             {
@@ -597,6 +645,7 @@ def build_corpus(root: str) -> dict:
     """
     nodes = []
     refs = []  # (writing node, kind, via, spec) — resolved once every node exists
+    default = _default_owner(root)
     seen_real = set()
     for dirpath, _, filenames in _walk(root):
         top = _rel(dirpath, root).split(os.sep)[0]
@@ -610,9 +659,9 @@ def build_corpus(root: str) -> dict:
                 if real in seen_real:
                     continue
                 seen_real.add(real)
-                _doc_and_sections(full, root, nodes, refs)
+                _doc_and_sections(full, root, nodes, refs, default)
             elif f.endswith(".py") and top in CODE_ROOTS:
-                _module_and_symbols(full, root, nodes)
+                _module_and_symbols(full, root, nodes, default)
 
     # denormalize children from parent edges
     by_id = {n["node_id"]: n for n in nodes}
@@ -648,7 +697,16 @@ def main(argv=None) -> int:
         help="output path (default: wiki/corpus.json)",
     )
     args = ap.parse_args(argv)
-    corpus = build_corpus(args.root)
+    try:
+        corpus = build_corpus(args.root)
+    except config_loader.ConfigError as exc:
+        return report(
+            ExitCode.CONFIG,
+            "build_corpus: the default owner a TBD node answers to is refused",
+            "; ".join(exc.lines),
+            "fix accountability.default_owner in config/project.json, then "
+            "build again; nothing was written",
+        )
     dups = _duplicate_ids(corpus["nodes"])
     if dups:  # node_id is the corpus primary key — fail loudly, never silently collapse
         return report(
@@ -664,9 +722,10 @@ def main(argv=None) -> int:
         fh.write("\n")
     gaps = sum(1 for n in corpus["nodes"] if not n["summary_source"])
     unowned = sum(1 for n in corpus["nodes"] if n["owner_source"] == "none")
+    defaulted = sum(1 for n in corpus["nodes"] if n["owner_source"] == "default")
     print(
-        "wrote %s: %d nodes (%d summary gaps, %d unowned)"
-        % (_rel(out, args.root), len(corpus["nodes"]), gaps, unowned)
+        "wrote %s: %d nodes (%d summary gaps, %d unowned, %d on the default owner)"
+        % (_rel(out, args.root), len(corpus["nodes"]), gaps, unowned, defaulted)
     )
     return ExitCode.SUCCESS
 

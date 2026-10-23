@@ -20,13 +20,14 @@ if _HERE not in sys.path:
 
 sys.path.insert(0, os.path.join(ROOT, "scripts"))
 
+import config_loader  # noqa: E402
 from build_corpus import build_corpus  # noqa: E402
 from exit_codes import ExitCode, finish, report  # noqa: E402
 from link_corpus import link_corpus  # noqa: E402
 
 # Allowed enum values for the corpus contract (CONVENTIONS section 11/12).
 KINDS = {"doc", "section", "module", "symbol"}
-OWNER_SOURCES = {"frontmatter", "marker", "inherited", "none"}
+OWNER_SOURCES = {"frontmatter", "marker", "inherited", "default", "none"}
 SUMMARY_SOURCES = {"authored", "generated", ""}
 VISIBILITIES = {"public", "internal", "confidential", "restricted"}
 LINK_SOURCES = {"deterministic", "generated"}
@@ -244,6 +245,20 @@ def main(argv=None) -> int:
     )
     ap.add_argument("--max-links", type=int, default=8, help="max edges per node")
     args = ap.parse_args(argv)
+    try:
+        return _check(args)
+    except config_loader.ConfigError as exc:
+        return report(
+            ExitCode.CONFIG,
+            "check_corpus: the default owner a TBD node answers to is refused",
+            "; ".join(exc.lines),
+            "fix accountability.default_owner in config/project.json, then rerun",
+        )
+
+
+def _check(args: argparse.Namespace) -> int:
+    """Validate --corpus, or build fresh twice and validate and compare; a
+    refused config value raises config_loader.ConfigError to main."""
 
     # How many ERROR lines were written; the last line of a red run counts them.
     problems = 0
