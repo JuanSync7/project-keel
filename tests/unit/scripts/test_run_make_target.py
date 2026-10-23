@@ -2,7 +2,7 @@
 title: Unit — run_make_target (the read-only gate runner)
 kind: tests
 layer: n/a
-summary: run_target runs a make target only when its effect label, closed over its prerequisites, falls inside config/project.json `make_targets.gate_effects`; it refuses an unknown, unlabelled or wider target, an extra argument that is not a NAME=VALUE variable, a variable outside `make_targets.gate_vars` (make's control variables, the guard and the unattended variables among them), a value that is not one path-like word, a tree without git and a project without the policy, all without calling the runner. It passes the gate-runner variable last, so the Makefile's WRITE_GUARD refuses whatever the caller supplied, and fails a green run that changed the tree, naming the paths. A `make_targets.gate_vars` value found in the runner's own environment is forwarded on make's command line under the same one-word rule, an explicit one wins, and a bad one is refused before make runs. make and git get the allowlisted environment from scripts/child_env.py, never the runner's own. An allowlist that cannot be built, or that would copy a gate variable carrying a credential, is a refusal before anything runs and before any message could quote the value; a gate value, explicit or forwarded, that carries a credential is refused by name even when opted in, and no refusal quotes a value; and a ChildEnvError during the run or a tree that cannot be re-read afterwards is red, never a traceback. The runner and the snapshot are injected for those cases, so no make or git process runs in them. The default runner's own cases put a fake `make` (a short Python script) first on PATH that starts a grandchild, and prove that a timeout, a KeyboardInterrupt and a SIGTERM to the runner end the whole group, that an ignored SIGTERM is followed by SIGKILL after the grace, that a SIGTERM handler gets that grace, and that a process left behind after make exits is ended, named by pid and command, and turns a green make red while a failing make keeps its own status; each polls with a bound and kills only the pids it started. Further cases prove that the stop and the leak count reach every process in make's session, a process that left make's group for one of its own (GNU `timeout`) included; that output a process outside the session still holds makes the run red, naming it, without signalling it; that no signal goes to an id once make is reaped (an os.killpg recorder, in a child interpreter where a SIGTERM is sent at the moment under test) and that make stays unreaped while its leftovers are signalled; that a Ctrl-C or SIGTERM landing inside Popen still ends make; that a background job ending just after make is not a leak; that a make something else reaped (SIGCHLD ignored) is red at once with its freed id unsignalled, its leftovers ended through the groups they hold, or named as still running without /proc; that output held by holders the runner cannot list is still an unlisted escape; and that a SIGTERM after a timed-out make is reaped sends nothing. The time limit and grace come from config/project.json `make_targets` through scripts/config_loader.py, the loader's default when the key is absent, a bad value or one past its row's upper bound is CONFIG or a refusal naming the key, `--timeout` overrides the configured limit within the same bound, and the configured grace outlasts `e2e.server.stop_timeout_s`.
+summary: run_target runs a make target only when its effect label, closed over its prerequisites, falls inside config/project.json `make_targets.gate_effects`; it refuses an unknown, unlabelled or wider target, an extra argument that is not a NAME=VALUE variable, a variable outside `make_targets.gate_vars` (make's control variables, the guard and the unattended variables among them), a value that is not one path-like word, a tree without git and a project without the policy, all without calling the runner. It passes the gate-runner variable last, so the Makefile's WRITE_GUARD refuses whatever the caller supplied, and fails a green run that changed the tree, naming the paths. A `make_targets.gate_vars` value found in the runner's own environment is forwarded on make's command line under the same one-word rule, an explicit one wins, and a bad one is refused before make runs. make and git get the allowlisted environment from scripts/child_env.py, never the runner's own. An allowlist that cannot be built, or that would copy a gate variable carrying a credential, is a refusal before anything runs and before any message could quote the value; a gate value, explicit or forwarded, that carries a credential is refused by name even when opted in, and no refusal quotes a value; and a ChildEnvError during the run or a tree that cannot be re-read afterwards is red, never a traceback. The runner and the snapshot are injected for those cases, so no make or git process runs in them. The default runner's own cases put a fake `make` (a short Python script) first on PATH that starts a grandchild, and prove that a timeout, a KeyboardInterrupt and a SIGTERM to the runner end the whole group, that an ignored SIGTERM is followed by SIGKILL after the grace, that a SIGTERM handler gets that grace, and that a process left behind after make exits is ended, named by pid and command, and turns a green make red while a failing make keeps its own status; each polls with a bound and kills only the pids it started. Further cases prove that the stop and the leak count reach every process in make's session, a process that left make's group for one of its own (GNU `timeout`) included; that output a process outside the session still holds makes the run red, naming it, without signalling it; that no signal goes to an id once make is reaped (an os.killpg recorder, in a child interpreter where a SIGTERM is sent at the moment under test) and that make stays unreaped while its leftovers are signalled; that a Ctrl-C or SIGTERM landing inside Popen still ends make; that a background job ending just after make is not a leak; that under an ignored SIGCHLD a stop just after make exits signals only held ids, a green make keeps its status, a leftover is ended, and the caller's SIGCHLD is put back, while off the main thread the run is refused before make starts; that a make another waiter reaped is red at once, a stop after that reap sends nothing, and its leftovers are named as not ended (settled first), or said to be unlisted and possibly still running without /proc; that output held by holders the runner cannot list is still an unlisted escape; and that a SIGTERM after a timed-out make is reaped sends nothing. The time limit and grace come from config/project.json `make_targets` through scripts/config_loader.py, the loader's default when the key is absent, a bad value or one past its row's upper bound is CONFIG or a refusal naming the key, `--timeout` overrides the configured limit within the same bound, and the configured grace outlasts `e2e.server.stop_timeout_s`.
 """
 
 import base64
@@ -1500,79 +1500,283 @@ def test_a_child_exiting_just_after_make_is_not_a_leak(tree):
     assert res["ok"] is True and res["leaked"] == [], res
 
 
-# Records each os.killpg as (group id, signal, whether some running process
-# is still in that group): a group id stays taken while any member holds it,
-# so False is a signal to an id that a new process could have taken.
-_RECORD_GROUP_KILLPG = (
-    "import json, os, signal\n"
-    "def in_use(pgid):\n"
-    "    for name in os.listdir('/proc'):\n"
-    "        try:\n"
-    "            with open('/proc/%s/stat' % name) as fh:\n"
-    "                f = fh.read().rsplit(')', 1)[1].split()\n"
-    "        except (OSError, IndexError):\n"
-    "            continue\n"
-    "        if f[0] != 'Z' and int(f[2]) == pgid:\n"
-    "            return True\n"
-    "    return False\n"
-    "sent = []\n"
-    "real_killpg = os.killpg\n"
-    "def killpg(pgid, sig):\n"
-    "    sent.append((pgid, int(sig), in_use(pgid)))\n"
-    "    return real_killpg(pgid, sig)\n"
-    "os.killpg = killpg\n"
-    "signal.signal(signal.SIGCHLD, signal.SIG_IGN)\n"
-    "t = time.monotonic()\n"
+# The probe pieces for a make that is gone: _RECORD_KILLPG records every
+# os.killpg (with whether /proc still has that id), `made` gets make's pid as
+# Popen returns, and state(pid) reads one process's state letter, None once it
+# is gone.
+_MAKE_PID = (
+    "import os, time\n"
+    "real_sleep = time.sleep\n"
+    "made = []\n"
+    "real_popen = r.subprocess.Popen\n"
+    "def popen(*a, **k):\n"
+    "    proc = real_popen(*a, **k)\n"
+    "    made.append(proc.pid)\n"
+    "    return proc\n"
+    "r.subprocess.Popen = popen\n"
+    "def state(pid):\n"
+    "    try:\n"
+    "        with open('/proc/%d/stat' % pid) as fh:\n"
+    "            return fh.read().rsplit(')', 1)[1].split()[0]\n"
+    "    except OSError:\n"
+    "        return None\n"
+    "def exited(pid):\n"
+    "    deadline = time.monotonic() + 10\n"
+    "    while state(pid) not in (None, 'Z') and time.monotonic() < deadline:\n"
+    "        real_sleep(0.01)\n"
+)
+# A waiter in the runner's own process, standing in for a library that reaps
+# its children: the runner's first poll sleep waits for make to exit and reaps
+# it with os.waitpid, so the runner's Popen never learns make's status.
+_FOREIGN_WAITER = (
+    "def sleep(seconds):\n"
+    "    if made and not reaped:\n"
+    "        exited(made[0])\n"
+    "        os.waitpid(made[0], 0)\n"
+    "        reaped.append(1)\n"
+    "    real_sleep(seconds)\n"
+    "reaped = []\n"
+    "r.time.sleep = sleep\n"
 )
 
 
-def test_a_make_reaped_elsewhere_is_red_at_once_and_signals_no_freed_id(tree):
-    """With SIGCHLD ignored the kernel reaps make the moment it exits, so
-    os.waitid finds no child. make has exited, with a status nobody can read:
-    the run ends then, red, and sends nothing to make's pid, which is free."""
+@pytest.mark.parametrize("stop", ["sigterm", "interrupt"])
+def test_a_stop_just_after_make_exits_under_an_ignored_sigchld_signals_no_freed_id(
+    tree, stop
+):
+    """SIGCHLD set to ignore makes the kernel reap a child as it exits, so a
+    stop in the moment between make's exit and the runner's next poll used to
+    signal make's freed id. The runner sets SIGCHLD to its default for the run,
+    so make stays a zombie holding its id, and puts the caller's back after."""
     make = _write_script(tree / "bin", "make", "print('hi')\n")
     out = _in_child(
         tree,
-        "import time\n" + _RECORD_GROUP_KILLPG + "try:\n"
-        "    r._default_runner([%r], '.', 20, grace=2)\n"
-        "    what, output = 'returned', ''\n"
-        "except r.MakeReaped as e:\n"
-        "    what, output = 'reaped', e.output\n"
-        "except r.subprocess.TimeoutExpired:\n"
-        "    what, output = 'timed out', ''\n"
-        "print(json.dumps({'what': what, 'output': output, 'sent': sent, "
-        "'s': time.monotonic() - t}))\n" % str(make),
+        _RECORD_KILLPG + _MAKE_PID + "signal.signal(signal.SIGCHLD, signal.SIG_IGN)\n"
+        "STOP = %r\n"
+        "def sleep(seconds):\n"
+        "    if made and not stopped:\n"
+        "        exited(made[0])\n"
+        "        stopped.append(state(made[0]))\n"
+        "        if STOP == 'sigterm':\n"
+        "            os.kill(os.getpid(), signal.SIGTERM)\n"
+        "        else:\n"
+        "            raise KeyboardInterrupt\n"
+        "    real_sleep(seconds)\n"
+        "stopped = []\n"
+        "r.time.sleep = sleep\n"
+        "try:\n"
+        "    what = r._default_runner([%r], '.', 20, grace=1)[0]\n"
+        "except BaseException as e:\n"
+        "    what = type(e).__name__\n"
+        "print(json.dumps({'what': what, 'sent': sent, 'stopped': stopped, "
+        "'ignored': signal.getsignal(signal.SIGCHLD) is signal.SIG_IGN}))\n"
+        % (stop, str(make)),
     )
     got = json.loads(out)
-    assert got["what"] == "reaped" and got["output"] == "hi\n", got
-    assert got["sent"] == [], got
-    assert got["s"] < 10, got
+    assert got["what"] == (0 if stop == "sigterm" else "KeyboardInterrupt"), got
+    assert got["stopped"] == ["Z"], "make did not stay a zombie: %s" % got
+    assert all(held for _g, _s, held in got["sent"]), got
+    assert got["ignored"] is True, "the caller's SIGCHLD was not put back: %s" % got
 
 
-def test_a_leftover_of_a_make_reaped_elsewhere_is_ended_through_its_own_group(tree):
-    """make is gone, but what it left still holds its session and group ids
-    while it runs: the runner lists it by session, ends it, and signals only
-    a group some listed process is still in."""
+def test_under_an_ignored_sigchld_a_green_make_keeps_its_status(tree):
+    """The runner reads make's status even when the caller ignores SIGCHLD,
+    because make runs with SIGCHLD at its default: no timeout, no unknown."""
+    make = _write_script(tree / "bin", "make", "print('hi')\n")
+    out = _in_child(
+        tree,
+        "import json, signal, time\n"
+        "signal.signal(signal.SIGCHLD, signal.SIG_IGN)\n"
+        "t = time.monotonic()\n"
+        "rc, output = r._default_runner([%r], '.', 20, grace=1)\n"
+        "print(json.dumps({'rc': rc, 'output': output, 's': time.monotonic() - t, "
+        "'ignored': signal.getsignal(signal.SIGCHLD) is signal.SIG_IGN}))\n"
+        % str(make),
+    )
+    got = json.loads(out)
+    assert got["rc"] == 0 and got["output"] == "hi\n", got
+    assert got["s"] < 10 and got["ignored"] is True, got
+
+
+def test_under_an_ignored_sigchld_a_leftover_is_ended_through_makes_held_id(tree):
     make = _write_fake_make(tree / "bin", _SLEEPS, detach=True, exit_after=True)
     out = _in_child(
         tree,
-        "import time\n" + _RECORD_GROUP_KILLPG + "try:\n"
+        _RECORD_KILLPG + "signal.signal(signal.SIGCHLD, signal.SIG_IGN)\n"
+        "try:\n"
         "    r._default_runner([%r], '.', 60, grace=2)\n"
         "    got = {'what': 'returned'}\n"
-        "except r.MakeReaped as e:\n"
-        "    got = {'what': 'reaped', 'left': e.leftovers, 'ended': e.ended}\n"
+        "except r.LeftRunning as e:\n"
+        "    got = {'what': 'left', 'left': e.leftovers, 'ended': e.ended}\n"
         "got['sent'] = sent\n"
         "print(json.dumps(got))\n" % str(make),
     )
     pids = _pids(tree)
     try:
-        assert _gone_within(pids), "the leftover of a reaped make outlived the run"
+        assert _gone_within(pids), "the leftover outlived the run"
     finally:
         _cleanup(pids)
     got = json.loads(out)
-    assert got["what"] == "reaped" and got["ended"] is True, got
+    assert got["what"] == "left" and got["ended"] is True, got
     assert [p for p, _c in got["left"]] == [pids[1]], got
     assert got["sent"] and all(held for _g, _s, held in got["sent"]), got
+
+
+def test_off_the_main_thread_an_ignored_sigchld_is_refused_before_make_runs(tree):
+    """Python lets only the main thread change a signal's handler, so a run
+    started on another thread under an ignored SIGCHLD would race the kernel's
+    reap: it is refused, and make never starts."""
+    _write_script(
+        tree / "bin", "make", "import pathlib\npathlib.Path('ran').write_text('1')\n"
+    )
+    out = _in_child(
+        tree,
+        "import json, signal, threading\n"
+        "signal.signal(signal.SIGCHLD, signal.SIG_IGN)\n"
+        "got = {}\n"
+        "def run():\n"
+        "    res = r.run_target('check', cwd='.', timeout=20, grace=1, "
+        "snapshot=lambda root: {})\n"
+        "    got['refused'] = res['refused']\n"
+        "    try:\n"
+        "        r._default_runner(['make'], '.', 20, grace=1)\n"
+        "        got['direct'] = 'ran'\n"
+        "    except r.ChildSignalIgnored as e:\n"
+        "        got['direct'] = str(e)\n"
+        "t = threading.Thread(target=run)\n"
+        "t.start()\n"
+        "t.join()\n"
+        "print(json.dumps(got))\n",
+    )
+    got = json.loads(out)
+    assert got["refused"] and "SIGCHLD" in got["refused"], got
+    assert "SIGCHLD" in got["direct"] and "main thread" in got["direct"], got
+    assert not (tree / "ran").exists(), "make ran off the main thread"
+
+
+def test_a_make_another_waiter_reaped_is_red_and_its_leftovers_are_not_signalled(
+    tree,
+):
+    """Another waiter in the runner's process can still reap make, and then
+    make's id is free and its session id is anchored by nothing the runner
+    holds. The run is red with make's status unknown, the leftovers are named
+    from a listing of the session, and nothing is signalled, not even signal 0."""
+    make = _write_fake_make(tree / "bin", _SLEEPS, detach=True, exit_after=True)
+    out = _in_child(
+        tree,
+        _RECORD_KILLPG + _MAKE_PID + _FOREIGN_WAITER + "try:\n"
+        "    r._default_runner([%r], '.', 60, grace=2)\n"
+        "    got = {'what': 'returned'}\n"
+        "except r.MakeReaped as e:\n"
+        "    got = {'what': 'reaped', 'left': e.leftovers, 'listed': e.listed}\n"
+        "got['sent'] = sent\n"
+        "print(json.dumps(got))\n" % str(make),
+    )
+    pids = _pids(tree)
+    try:
+        assert _alive(pids[1]), "the runner signalled a leftover of a reaped make"
+    finally:
+        _cleanup(pids)
+    got = json.loads(out)
+    assert got["what"] == "reaped" and got["listed"] is True, got
+    assert [p for p, _c in got["left"]] == [pids[1]], got
+    assert got["sent"] == [], got
+
+
+@pytest.mark.parametrize("stop", ["sigterm", "interrupt"])
+def test_a_stop_after_another_waiter_reaps_make_signals_nothing(tree, stop):
+    """The window the root fix leaves: another waiter reaps make, and a stop
+    lands before the runner's next poll has seen it. The stop asks held
+    again, finds make gone, and sends nothing to make's freed id or to the
+    session it anchored; the leftover is not the runner's to end."""
+    make = _write_fake_make(tree / "bin", _SLEEPS, detach=True, exit_after=True)
+    out = _in_child(
+        tree,
+        _RECORD_KILLPG + _MAKE_PID + "STOP = %r\n"
+        "def sleep(seconds):\n"
+        "    if made and not reaped:\n"
+        "        exited(made[0])\n"
+        "        os.waitpid(made[0], 0)\n"
+        "        reaped.append(1)\n"
+        "        if STOP == 'sigterm':\n"
+        "            os.kill(os.getpid(), signal.SIGTERM)\n"
+        "        else:\n"
+        "            raise KeyboardInterrupt\n"
+        "    real_sleep(seconds)\n"
+        "reaped = []\n"
+        "r.time.sleep = sleep\n"
+        "try:\n"
+        "    r._default_runner([%r], '.', 60, grace=2)\n"
+        "    what = 'returned'\n"
+        "except BaseException as e:\n"
+        "    what = type(e).__name__\n"
+        "print(json.dumps({'what': what, 'sent': sent, 'terms': len(terms)}))\n"
+        % (stop, str(make)),
+    )
+    pids = _pids(tree)
+    try:
+        assert _alive(pids[1]), "a stop after the reap signalled the leftover"
+    finally:
+        _cleanup(pids)
+    got = json.loads(out)
+    want = "MakeReaped" if stop == "sigterm" else "KeyboardInterrupt"
+    assert got["what"] == want, got
+    assert got["terms"] == (1 if stop == "sigterm" else 0), got
+    assert got["sent"] == [], got
+
+
+def test_a_child_exiting_just_after_a_reaped_make_is_not_a_leftover(tree):
+    """The settle applies when make was reaped elsewhere too: a background
+    job ending a moment after make is not named as left running."""
+    _write_script(
+        tree / "bin",
+        "make",
+        "import pathlib, subprocess, sys\n"
+        "subprocess.Popen([sys.executable, '-c', 'import pathlib, time\\n"
+        'while not pathlib.Path("go").exists():\\n'
+        "    time.sleep(0.01)\\n"
+        "time.sleep(0.3)\\n'])\n"
+        "pathlib.Path('go').write_text('1')\n",
+    )
+    out = _in_child(
+        tree,
+        _MAKE_PID + _FOREIGN_WAITER + "import json\n"
+        "try:\n"
+        "    r._default_runner(['make'], '.', 60, grace=2)\n"
+        "    got = {'what': 'returned'}\n"
+        "except r.MakeReaped as e:\n"
+        "    got = {'what': 'reaped', 'left': e.leftovers}\n"
+        "print(json.dumps(got))\n",
+    )
+    assert json.loads(out) == {"what": "reaped", "left": []}, out
+
+
+def test_without_proc_a_reaped_makes_session_is_said_to_be_unlisted(tree):
+    """With no /proc and make reaped elsewhere, nothing in make's session can
+    be listed or signalled: the runner sends nothing, and run_target says what
+    make left could not be listed and may still run."""
+    _write_fake_make(tree / "bin", _SLEEPS, detach=True, exit_after=True)
+    out = _in_child(
+        tree,
+        _RECORD_KILLPG
+        + _MAKE_PID
+        + _FOREIGN_WAITER
+        + "r._session_members = lambda sid: None\n"
+        "res = r.run_target('check', cwd='.', timeout=60, grace=2, "
+        "snapshot=lambda root: {})\n"
+        "print(json.dumps({'res': res, 'sent': sent}))\n",
+    )
+    pids = _pids(tree)
+    try:
+        assert _alive(pids[1]), "a leftover was signalled with no /proc to list it"
+    finally:
+        _cleanup(pids)
+    got = json.loads(out)
+    res = got["res"]
+    assert got["sent"] == [], got
+    assert res["reaped"] is True and res["ok"] is False and res["leaked"] == [], res
+    assert "could not be listed" in res["output"], res["output"]
+    assert "may still run" in res["output"], res["output"]
 
 
 def test_a_make_reaped_elsewhere_fails_the_gate_naming_the_cause(
@@ -1588,10 +1792,10 @@ def test_a_make_reaped_elsewhere_fails_the_gate_naming_the_cause(
     assert code == rmt.ExitCode.FAILURE
     assert "made it" in captured.out and "-> FAIL (rc=None)" in captured.out
     last = captured.err.strip().splitlines()[-1]
-    assert "SIGCHLD" in last and "status" in last, last
+    assert "another waiter" in last and "status" in last, last
 
 
-def test_a_leftover_of_a_reaped_make_is_listed_as_a_leak(proj):
+def test_a_leftover_of_a_reaped_make_is_named_as_not_ended(proj):
     def reaped(cmd, cwd, timeout):
         raise rmt.MakeReaped("made it\n", [(4244, "python -c sleep")], True)
 
@@ -1605,7 +1809,8 @@ def test_a_leftover_of_a_reaped_make_is_listed_as_a_leak(proj):
     )
     assert res["ok"] is False and res["returncode"] is None, res
     assert res["leaked"] == ["4244 python -c sleep"], res
-    assert "SIGCHLD" in res["output"], res["output"]
+    assert "not ended" in res["output"] and "4244" in res["output"], res["output"]
+    assert "were ended" not in res["output"], res["output"]
 
 
 @pytest.mark.parametrize("unreadable", ["proc", "descriptors"])
@@ -1670,46 +1875,3 @@ def test_a_sigterm_after_a_timed_out_make_is_reaped_signals_no_freed_id(tree):
     got = json.loads(out)
     assert got["what"] == "timed out" and got["terms"] == 1, got
     assert got["sent"] and all(held for _g, _s, held in got["sent"]), got
-
-
-def test_without_proc_a_reaped_makes_leftover_is_named_but_not_signalled(tree):
-    """With no /proc to list make's session and make's pid free, nothing the
-    runner could signal is known to be make's: it sends nothing, not even
-    signal 0 to make's old id, and says the leftovers may still run."""
-    make = _write_fake_make(tree / "bin", _SLEEPS, detach=True, exit_after=True)
-    out = _in_child(
-        tree,
-        "import time\n"
-        + _RECORD_GROUP_KILLPG
-        + "r._session_members = lambda sid: None\n"
-        "try:\n"
-        "    r._default_runner([%r], '.', 60, grace=2)\n"
-        "    got = {'what': 'returned'}\n"
-        "except r.MakeReaped as e:\n"
-        "    got = {'what': 'reaped', 'left': e.leftovers, 'ended': e.ended}\n"
-        "got['sent'] = sent\n"
-        "print(json.dumps(got))\n" % str(make),
-    )
-    pids = _pids(tree)
-    try:
-        assert _alive(pids[1]), "a leftover was signalled with no /proc to list it"
-    finally:
-        _cleanup(pids)
-    got = json.loads(out)
-    assert got == {"what": "reaped", "left": [], "ended": False, "sent": []}, got
-
-
-def test_a_reaped_makes_unended_leftovers_are_named_as_still_running(proj):
-    def reaped(cmd, cwd, timeout):
-        raise rmt.MakeReaped("", [(4245, "python -c sleep")], False)
-
-    res = rmt.run_target(
-        "check",
-        cwd=str(proj),
-        runner=reaped,
-        timeout=5,
-        grace=1,
-        snapshot=_snaps({}, {}),
-    )
-    assert res["ok"] is False and res["reaped"] is True, res
-    assert "still running" in res["output"] and "kill 4245" in res["output"], res
