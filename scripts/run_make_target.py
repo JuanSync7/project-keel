@@ -718,8 +718,10 @@ def run_target(
     returncode is None and ok False). A refusal never calls the runner.
     ``timeout`` and ``grace`` are seconds; each left None is read through
     gate_limits, and a limit config/project.json gets wrong is a refusal.
-    Past the timeout, or on an interrupt, every process make started is ended
-    (SIGTERM, then SIGKILL after ``grace``); an interrupt is then re-raised. ``extra`` are NAME=VALUE make variables, each named
+    Past the timeout, or on an interrupt, make's session is ended: every
+    process in it, whatever its process group (SIGTERM, then SIGKILL after
+    ``grace``); a process that left the session (`setsid`) is not signalled.
+    An interrupt is then re-raised. ``extra`` are NAME=VALUE make variables, each named
     in ``make_targets.gate_vars`` with a one-word path-like value; a gate
     variable set in this process's environment and not in ``extra`` is
     forwarded the same way (make itself gets the allowlisted environment from
@@ -1004,8 +1006,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument(
         "--timeout",
         type=int,
-        help="seconds before every process make started is ended (default: "
-        "config/project.json make_targets.gate_timeout_seconds)",
+        help="seconds before make's session is ended, every process in it "
+        "whatever its group; one that left the session (setsid) is not "
+        "signalled (default: config/project.json "
+        "make_targets.gate_timeout_seconds)",
     )
     ap.add_argument(
         "--make-arg",

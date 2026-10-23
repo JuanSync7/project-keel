@@ -695,7 +695,9 @@ KEYS = tuple(
                 "int",
                 14400,
                 "the seconds scripts/run_make_target.py lets make run before it "
-                "ends every process make started; its --timeout overrides it",
+                "ends make's session, every process in it whatever its group "
+                "(one that left the session with setsid is not signalled); its "
+                "--timeout overrides it",
                 accepts=(_gate_timeout, "a value from 1 to %d" % _GATE_TIMEOUT_MAX),
             ),
             # 15 s: on SIGTERM a test's handler stops the uvicorn server it
