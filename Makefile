@@ -54,7 +54,7 @@ WRITE_GUARD = $(if $(findstring i,$(firstword -$(MAKEFLAGS))),$(error refusing '
 .PHONY: help new audit-project canary check-python check-venv check check-all check-corpus check-openapi check-aad check-cdmon check-exit-codes exit-codes advise check-generic long-scripts verify test trace eval eval-live unit integration e2e smoke \
         lint lint-py lint-fe fmt fmt-check typecheck typecheck-py typecheck-fe \
         test-fe test-fe-unit test-fe-e2e lint-sh fmt-sh fmt-check-sh test-sh \
-        fe-install fe-browsers secrets-install secret-scan run run-api run-web site-data site-static demo agent-surface-schema check-docs restamp-docs doc-review doc-review-apply
+        fe-install fe-browsers fe-audit secrets-install secret-scan run run-api run-web site-data site-static demo agent-surface-schema check-docs restamp-docs doc-review doc-review-apply
 
 # `make help EFFECT=tree` lists only what rewrites the tree; `AREA=` filters by a
 # `##@` area header once config/project.json make_targets.area_dir names one.
@@ -320,6 +320,12 @@ fe-browsers: ## [read] Download the browser each frontend app's journey drives (
 	command -v npm >/dev/null 2>&1 || { echo "$@: npm is not on PATH, so no journey browser was downloaded for $(strip $(FE_APPS)); install Node.js and run 'make fe-install', then run it again" >&2; exit 2; }; \
 	for app in $(FE_APPS); do [ -d "$$app/node_modules" ] || { echo "$@: $$app has no node_modules, so its journey browser was not downloaded; run 'make fe-install', then run it again" >&2; exit 2; }; done; \
 	for app in $(FE_APPS); do echo "journey browser: $$app"; (cd $$app && npm run --silent test:e2e:browsers -- $(FE_BROWSER_FLAGS)) || exit 1; done
+
+# npm audit sends each lockfile to the registry and writes nothing, so the label
+# is [read]. It runs with no app too: an accepted row for an app that is gone is
+# stale, and only the script can say so.
+fe-audit: check-python ## [read] Judge each frontend app's npm audit against config/project.json dependency_audit.accepted (scripts/audit_dependencies.py)
+	$(PY) scripts/audit_dependencies.py $(FE_APPS)
 
 # Fetches the release archive config/project.json secrets.scanner.release_assets
 # pins for this platform from secrets.scanner.release_url, with no Go toolchain

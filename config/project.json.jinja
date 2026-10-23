@@ -236,6 +236,20 @@
     "_comment": "What the venv must hold before a gate runs; read by scripts/check_venv.py, the first prerequisite of make check-all and so the first step of make verify. extras are the pyproject.toml extras the gate imports; the extra each enabled transport names in transports.extras is judged with them. Every requirement of the core dependencies and of those extras, followed through an extra that names the project itself, must be installed at a version its specifier allows, or the check fails before any other goal and names the pip command that installs them.",
     "extras": ["dev"]{% if false %}{# keel's own lists "template" too: keel's gate renders projects with copier, and a generated project is not a template #}{% endif %}
   },
+  "dependency_audit": {
+    "_comment": "Each frontend app's npm audit, judged by scripts/audit_dependencies.py (make fe-audit). fail_at is the weakest severity that fails when no accepted row covers the finding; a weaker uncovered finding is listed, not failed. accepted maps an app's directory name under layers.frontend.root to the advisories it accepts, each GHSA id mapped to the package it was found in, the reason it stays open and review_by, the last day the acceptance holds: a row past that day fails, and so does a row whose advisory and package the app's audit no longer reports, so an acceptance is renewed or removed, never forgotten. timeout_seconds bounds one app's npm audit run. docs/guides/deterministic-checks.md section 16 says how to accept a risk.",
+    "accepted": {%- if frontend_stack == "astro" %} {
+      "astro": {
+        "GHSA-rj75-hqrm-r3gf": {
+          "package": "postcss-selector-parser",
+          "reason": "the only fix npm offers is @tailwindcss/typography 0.5.4, a downgrade it marks as breaking; the parser runs at build time over the project's own stylesheets, so the slow-parsing input is written by the project, never by a visitor (KEEL-TYPO-1)",
+          "review_by": "2027-01-21"
+        }
+      }
+    }{%- else %} {}{%- endif %},
+    "fail_at": "high",
+    "timeout_seconds": 120
+  },
   "launcher": {
     "_comment": "Where a long script runs; read by scripts/launch.py, which decides, and scripts/long_scripts.py, which proposes long_scripts entries (docs/adr/keel/K-0020-shared-compute-launcher.md). own_hosts_file is a git-ignored JSON file of fnmatch patterns for the hosts that are one person's own (config/own-hosts.example.json is its shipped twin); absent, unreadable or matching nothing means the host is shared. durations_file is the git-ignored record of each script's last run, keyed by the launch key. A script is long when long_scripts lists it, when its last recorded run took more than long_after_seconds, or when nothing is recorded; long_scripts and default_size give the farm size (cpus, mem_gb, minutes). local_only maps a launch key to the reason it never goes to the farm. credentials maps a launch key to {model_adapter, names}: the only credential names its process may receive. limited.niceness is what running here limited means (os.nice, nothing else). spare.max_load_per_cpu: after the farm did not allocate, this host runs it only when max(load1, load5) / cpus is at most this. farm.adapter names the farm in farm.adapters; the default is none (no farm); an argv adapter submits through its submit argv, with its own bounded wait of wait_seconds, and its reserved not_allocated_status and farm_error_status (1 to 254, not 126, 127 or 130).",
     "own_hosts_file": "config/own-hosts.local.json",

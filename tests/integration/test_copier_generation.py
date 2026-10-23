@@ -2559,6 +2559,67 @@ _QUICKSTART_HEAD = ("git commit", "pre-commit install")
 _QUICKSTART_TAIL = ("make secrets-install", "make verify")
 
 
+_CLEAN_AUDIT = json.dumps(
+    {"auditReportVersion": 2, "vulnerabilities": {}, "metadata": {}}
+)
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
+@pytest.mark.parametrize("stack", ["astro", "react-vite", "none"])
+def test_generated_project_judges_its_accepted_risks(stack, tmp_path, generate):
+    """KEEL-RISK-1 held downstream, with no npm and no network. `make fe-audit`
+    hands the script every app the Makefile's FE_APPS finds. An astro project
+    ships keel's accepted postcss-selector-parser row, so a clean saved report
+    fails it as stale, naming the advisory, whatever the date; a react-vite
+    project ships no row and passes a clean report; a project with no frontend
+    audits nothing and says so."""
+    dest = tmp_path / "proj"
+    generate(dest, project_name="demo_proj", frontend_stack=stack)
+    shipped = json.loads((dest / "config" / "project.json").read_text())
+    accepted = shipped["dependency_audit"]["accepted"]
+    planned = subprocess.run(
+        ["make", "--no-print-directory", "-n", "PY=python3", "fe-audit"],
+        cwd=str(dest),
+        env=build_child_env(),
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert planned.returncode == 0, planned.stderr
+    apps = planned.stdout.strip().splitlines()[-1].split()[2:]
+    assert planned.stdout.strip().splitlines()[-1].split()[:2] == [
+        "python3",
+        "scripts/audit_dependencies.py",
+    ]
+    argv = [sys.executable, "scripts/audit_dependencies.py", *apps]
+    for app in apps:
+        saved = tmp_path / ("%s.json" % Path(app).name)
+        saved.write_text(_CLEAN_AUDIT)
+        argv += ["--report", "%s=%s" % (Path(app).name, saved)]
+    ran = subprocess.run(
+        argv,
+        cwd=str(dest),
+        env=build_child_env(),
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    if stack == "none":
+        assert apps == [] and accepted == {}, (apps, accepted)
+        assert ran.returncode == 0, ran.stderr
+        assert "no frontend app to audit and no accepted row" in ran.stdout
+    elif stack == "react-vite":
+        assert apps == ["src/frontend/react-vite/"] and accepted == {}, (apps, accepted)
+        assert ran.returncode == 0, ran.stderr
+        assert "1 app(s) judged" in ran.stdout
+    else:
+        assert apps == ["src/frontend/astro/"], apps
+        assert sorted(accepted) == ["astro"], accepted
+        assert ran.returncode == 1, ran.stdout + ran.stderr
+        for advisory, row in accepted["astro"].items():
+            assert "%s %s is stale" % (advisory, row["package"]) in ran.stderr
+
+
 def _assert_in_order(text, steps):
     order = [text.find(step) for step in steps]
     assert -1 not in order and order == sorted(order), (steps, order, text)
