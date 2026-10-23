@@ -334,6 +334,9 @@ version rather than a bare commit:
   scratch root.** Its no-write snapshot compared a directory's modification
   time, which moved between two snapshots with no write on a network mount; it
   now compares a file's time and the sorted listing.
+
+### Security
+
 - **The astro app's audited dependencies move past their advisories.**
   `npm audit` in `src/frontend/astro` reported 28 findings (2 critical, 17
   high); each fixable package moved in its own commit within its declared
