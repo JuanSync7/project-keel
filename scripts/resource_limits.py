@@ -391,7 +391,8 @@ class ShutdownOwner:
 
     def _handle(self, signum: int, _frame: object) -> None:
         self.signum = signum
-        # The first signal is a request; a second one ends the process at once.
+        # The first signal is a request; a second one goes to _again, which
+        # ends the bounded children's groups and then the process by it.
         for owned in _OWNED_SIGNALS:
             signal.signal(owned, self._again)
         sys.stderr.write(
