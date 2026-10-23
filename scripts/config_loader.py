@@ -341,6 +341,22 @@ def _no_parent_part(value: Any) -> bool:
     return ".." not in str(value).replace("\\", "/").split("/")
 
 
+# CONVENTIONS §12's owner token: one word of letters, digits and `._@-`.
+_OWNER_CHARS = frozenset(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._@-"
+)
+# The placeholder that counts as unowned, so it cannot be the owner it stands in for.
+_UNOWNED = "TBD"
+
+
+def _owner_token(value: Any) -> bool:
+    # A nullable row hands its bound None too; null is "no default owner".
+    if value is None:
+        return True
+    text = str(value)
+    return bool(text) and text != _UNOWNED and set(text) <= _OWNER_CHARS
+
+
 _ASCII_DIGITS = "0123456789"
 _ISO_DATE = "%Y-%m-%d"
 
@@ -628,6 +644,18 @@ KEYS = tuple(
                 secret=True,
                 env="OPENAI_API_KEY",
                 file=None,
+            ),
+            _row(
+                ("accountability", "default_owner"),
+                "nonempty_str_or_null",
+                None,
+                "the owner a kind: tool or agent document whose frontmatter "
+                "owner is TBD inherits in scripts/check_structure.py check_F; "
+                "null: no default, so each such document is an error",
+                accepts=(
+                    _owner_token,
+                    "one owner token of letters, digits and `._@-`, not TBD, or null",
+                ),
             ),
             _row(
                 ("agents", "editable_names"),

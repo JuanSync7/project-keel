@@ -36,6 +36,10 @@
       "scripts/jobs/README.md"
     ]
   },
+  "accountability": {
+    "_comment": "The owner a kind: tool or agent document whose frontmatter owner is the TBD placeholder inherits (CONVENTIONS section 12), read through scripts/config_loader.py by scripts/check_structure.py check_F. With no value (absent or null) each such document is a check_F error naming it and this key; a document with a real owner is never judged, and a missing owner is a warning. One owner token: letters, digits and ._@-, never TBD. Set it to the role that answers for the documents nobody has claimed.",
+    "default_owner": "platform-team"
+  },
   "adr": {
     "_comment": "The two ADR number spaces (docs/adr/keel/K-0013-template-and-project-adr-number-spaces.md, CONVENTIONS section 19). project_dir holds this project's own ADRs, NNNN-<slug>.md numbered from 0001; template_dir holds the ADRs the template ships, template_prefix + NNNN-<slug>.md, shown as ADR-K-NNNN; number_digits is N. Each space numbers on its own. template_adrs names every file the template ships in template_dir: it is the template's to write, and a project does not add to it, because a project's decision under a free K- number would meet the template's next ADR of that number on update. scripts/check_structure.py check_Y holds every ADR file to the space it sits in, a template-space file to template_adrs and template_adrs to the files, every kind: adr document to one of the two directories, its title to its file name, and a number to one file per space; a missing or malformed block is an error once the tree has a `kind: adr` document.",
     "project_dir": "docs/adr",

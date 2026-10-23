@@ -116,7 +116,7 @@ print but never fail the build.
   error.
 - **E. Authored coverage** — every `__all__`-exported symbol defined in-file has
   a docstring: the corpus's symbol summaries (error since ADR-K-0008).
-- **F. Tool specs governed** (error) + **accountability** (warn) — valid
+- **F. Tool specs governed** (error) + **accountability** (error) — valid
   `kind: tool` frontmatter with a resolvable `public_api`, a `tool_effect` from
   the closed set, a `tool_command` that invokes the script; and the body
   contract of CONVENTIONS §10: the seven sections in order, `## Side effects`
@@ -124,6 +124,13 @@ print but never fail the build.
   `MODEL-CALL` — the body and the frontmatter are read by different agents and
   must not disagree), and at least one `- NOT ...` bullet under `## When to
   use` — the negative-scope line that names the sibling this tool is not.
+  Accountability: a `kind: tool` or `kind: agent` document whose frontmatter
+  `owner` is `TBD` inherits `config/project.json`
+  `accountability.default_owner`, read through `scripts/config_loader.py`; with
+  no default set (absent or `null`, the loader's default) each such document
+  is an error naming it and the key, with no warning first, and a value
+  outside the CONVENTIONS §12 owner grammar, or `TBD`, is an error naming the
+  key. A real owner is never judged; a missing `owner` is a warning.
 - **G. Tool↔agent binding** — `tools.md` ↔ each spec's `## Used by` agree.
 - **H. Project facts** — `config/project.json` agrees with the tree (§15).
   An absent `config/project.json` is an error: copier never prunes it, so a

@@ -24,8 +24,9 @@ Checks:
      counting the files `make check` judges instead
   E. Authored coverage (ERR): every __all__-exported symbol defined in-file
      has a docstring — the corpus's symbol summaries (WARN until ADR-K-0008)
-  F. Tool specs governed (ERR) + accountability (WARN): tool/agent docs are
-     owned; a spec's body is the seven CONVENTIONS §10 sections in order, its
+  F. Tool specs governed (ERR) + accountability: a tool/agent doc's `TBD`
+     owner inherits config/project.json accountability.default_owner, and is
+     an ERR when none is set (a missing owner WARNs); a spec's body is the seven CONVENTIONS §10 sections in order, its
      Side effects opens with the word for its tool_effect, and its When to use
      carries a `- NOT` bullet (the negative-scope line)
   G. Tool<->agent binding (ERR): tools.md <-> '## Used by' agree; tool_command invokes public_api
@@ -1049,7 +1050,8 @@ def _tool_spec_body_findings(relpath, text, tool_effect):
 
 
 def check_F():
-    """ERROR on malformed tool specs; WARN when tool/agent docs lack a real owner."""
+    """ERROR on malformed tool specs and on a tool/agent doc whose `TBD` owner
+    has no accountability.default_owner to inherit; WARN on one with no owner."""
     agents_dir = os.path.join(ROOT, "agents")
     if os.path.isdir(agents_dir):
         # Validate EVERY *.tool.md under agents/ (not just agents/tools/), so a
@@ -1088,13 +1090,89 @@ def check_F():
                 if text is not None:
                     for m in _tool_spec_body_findings(rel(full), text, eff):
                         err(m)
-    # accountability roll-up (warning): tools/agents must name a real owner
-    for path, kind, owner in GOVERNED:
-        if kind in ("tool", "agent") and (not owner or owner == "TBD"):
-            warn(
-                "accountability: %s (%s) has no real owner (missing or 'TBD')"
+    # accountability roll-up: tools/agents must answer to a real owner
+    default = None
+    if any(k in _OWNED_KINDS and o == _UNOWNED for _p, k, o in GOVERNED):
+        default, cfg_errs = _default_owner(
+            _read_json_config(os.path.join("config", "project.json"))
+        )
+        for m in cfg_errs:
+            err(m)
+    errs, warns = _owner_rollup(GOVERNED, default)
+    for m in errs:
+        err(m)
+    for m in warns:
+        warn(m)
+
+
+# The kinds the roll-up holds to an owner, and the placeholder that names none.
+_OWNED_KINDS = ("tool", "agent")
+_UNOWNED = "TBD"
+_DEFAULT_OWNER_KEY = ("accountability", "default_owner")
+_DEFAULT_OWNER = ".".join(_DEFAULT_OWNER_KEY)
+
+
+def _effective_owner(owner, default):
+    """The owner a document answers to: *default* when its own is the `TBD`
+    placeholder, else its own (None when it names none)."""
+    if owner == _UNOWNED:
+        return default
+    return owner or None
+
+
+def _default_owner(manifest):
+    """config/project.json `accountability.default_owner` -> (value, errs).
+
+    Resolved through scripts/config_loader.py, whose KEYS row gives the type,
+    the owner-token bound and the null default, so an absent key is None, "no
+    default". A refused value is one error per loader line and None. An
+    unreadable manifest (_NO_DATA) or a top level that is not an object gives
+    None and no error here: the read, or check_H, already reports it."""
+    if not isinstance(manifest, dict):
+        return None, []
+    # The loader writes its lines to a stream; run_checks prints nothing, and
+    # every line it would write is either in the raised error, reported here,
+    # or the null default the roll-up's own error names.
+    quiet = io.StringIO()
+    try:
+        values = config_loader.resolve(
+            manifest,
+            config_loader.rows(_DEFAULT_OWNER_KEY),
+            "config/project.json",
+            environ={},
+            stream=quiet,
+        )
+    except config_loader.ConfigError as e:
+        return None, list(e.lines)
+    return values[_DEFAULT_OWNER_KEY], []
+
+
+def _owner_rollup(governed, default):
+    """(errors, warnings) for the kind tool/agent rows of *governed*, each a
+    (relpath, kind, owner). Pure.
+
+    A `TBD` owner inherits *default* (CONVENTIONS §12); with no default it is
+    an error naming the document and the key to set, at once, with no warning
+    tier. A missing owner is a frontmatter fault the default does not cover,
+    and stays a warning. A real owner is never judged."""
+    errs, warns = [], []
+    for path, kind, owner in governed:
+        if kind not in _OWNED_KINDS:
+            continue
+        if not owner:
+            warns.append(
+                "accountability: %s (%s) has no real owner (missing 'owner')"
                 % (path, kind)
             )
+        elif _effective_owner(owner, default) is None:
+            errs.append(
+                "accountability: %s (%s) has owner '%s' and config/project.json "
+                "gives no %s for it to inherit -- set %s to the role that answers "
+                "for unowned documents, or give the document a real owner "
+                "(CONVENTIONS §12)"
+                % (path, kind, owner, _DEFAULT_OWNER, _DEFAULT_OWNER)
+            )
+    return errs, warns
 
 
 def _tool_used_by(path):

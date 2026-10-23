@@ -224,6 +224,16 @@ version rather than a bare commit:
   quoting a refusal `plan_edits` raises.
 
 ### Changed
+- **A `TBD` owner inherits a configured default owner, and is an error
+  without one.** check_F warned on every run about each `kind: tool` or
+  `kind: agent` document whose frontmatter `owner` was `TBD`, six times in
+  keel. Such a document now answers to config/project.json
+  `accountability.default_owner`, read through `scripts/config_loader.py`,
+  whose default is `null`; with no default set, each one is a check_F error
+  naming the document and the key, with no warning first. Keel and generated
+  projects ship `platform-team`, the role the tool specs already name. A
+  missing `owner` still warns, and the corpus's owner report still lists a
+  `TBD` node as unowned.
 - **The generation suite renders each answer set once per test module.**
   `tests/integration/test_copier_generation.py` renders through
   `tests/render_cache.py`, one copier render per distinct answer set and day

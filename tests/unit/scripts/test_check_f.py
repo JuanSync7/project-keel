@@ -1,8 +1,8 @@
 """
-title: Unit — check_structure check_F (tool spec body contract)
+title: Unit — check_structure check_F (tool spec body contract and owner roll-up)
 kind: tests
 layer: n/a
-summary: check_F's body half, pinned: a `kind: tool` spec's body is the seven sections CONVENTIONS §10 names, in that order; its `## Side effects` opens with the word that matches `tool_effect` (READ-ONLY / WRITES / MODEL-CALL); and its `## When to use` carries at least one `- NOT` bullet — the negative-scope line that says what the tool is not for and names the sibling that is. Seven specs complied by discipline (six carried the NOT line); this makes the discipline a rule so the eighth cannot quietly skip it.
+summary: check_F pinned. The owner half: a `kind: tool` or `agent` document whose frontmatter owner is `TBD` inherits config/project.json `accountability.default_owner`, read through scripts/config_loader.py's KEYS row (an owner token or null, null by default); with no default it is an error naming the document and the key, a real owner is never judged, and a missing owner stays a warning. The body half: a `kind: tool` spec's body is the seven sections CONVENTIONS §10 names, in that order; its `## Side effects` opens with the word that matches `tool_effect` (READ-ONLY / WRITES / MODEL-CALL); and its `## When to use` carries at least one `- NOT` bullet — the negative-scope line that says what the tool is not for and names the sibling that is. Seven specs complied by discipline (six carried the NOT line); this makes the discipline a rule so the eighth cannot quietly skip it.
 """
 
 import sys
@@ -127,3 +127,151 @@ def test_headings_inside_fenced_code_are_not_sections():
         "`python scripts/query_corpus.py <q>`", "```\n## Fake\npython x\n```"
     )
     assert _find(text) == []
+
+
+# --- the owner roll-up: a TBD owner inherits accountability.default_owner ----
+
+_KEY = ("accountability", "default_owner")
+_DOTTED = "accountability.default_owner"
+
+
+def _rollup(governed, default):
+    return cs._owner_rollup(governed, default)
+
+
+def test_the_default_owner_row_is_an_optional_owner_token_defaulting_to_null():
+    """Null is "no default configured": absent, a TBD owner has nothing to
+    inherit, so it is red rather than quietly owned by a name nobody chose."""
+    (row,) = cs.config_loader.rows(_KEY)
+    assert row.type == "nonempty_str_or_null"
+    assert row.default is None and not row.required
+    assert row.file == cs.config_loader.CONFIG_FILE
+    assert row.env is None and not row.secret
+    assert "TBD" in row.meaning and "null" in row.meaning
+    check, _text = row.accepts
+    assert check(None) and check("platform-team") and check("ops@example.org")
+    for bad in ("TBD", "two words", "a/b", ""):
+        assert not check(bad), bad
+
+
+@pytest.mark.parametrize("kind", ["tool", "agent"])
+def test_a_tbd_owner_with_a_default_inherits_it_and_says_nothing(kind):
+    governed = [("agents/x/README.md", kind, "TBD")]
+    assert _rollup(governed, "platform-team") == ([], [])
+
+
+@pytest.mark.parametrize("kind", ["tool", "agent"])
+def test_a_tbd_owner_with_no_default_is_an_error_naming_the_doc_and_the_key(kind):
+    governed = [
+        ("agents/x/README.md", kind, "TBD"),
+        ("agents/y/README.md", kind, "TBD"),
+    ]
+    errs, warns = _rollup(governed, None)
+    assert warns == []
+    assert len(errs) == 2, errs
+    for path, message in zip(
+        ("agents/x/README.md", "agents/y/README.md"), errs, strict=True
+    ):
+        assert path in message and _DOTTED in message, message
+        assert "config/project.json" in message, message
+
+
+def test_the_effective_owner_is_the_default_for_tbd_and_the_doc_s_own_otherwise():
+    assert cs._effective_owner("TBD", "platform-team") == "platform-team"
+    assert cs._effective_owner("TBD", None) is None
+    assert cs._effective_owner("docs-team", "platform-team") == "docs-team"
+    assert cs._effective_owner("docs-team", None) == "docs-team"
+    assert cs._effective_owner(None, "platform-team") is None
+
+
+@pytest.mark.parametrize("default", [None, "platform-team"])
+def test_a_real_owner_is_unaffected_by_the_default(default):
+    governed = [("agents/tools/q.tool.md", "tool", "docs-team")]
+    assert _rollup(governed, default) == ([], [])
+
+
+@pytest.mark.parametrize("default", [None, "platform-team"])
+def test_a_missing_owner_still_warns_whatever_the_default(default):
+    """A missing owner is a frontmatter fault, not the placeholder: the default
+    stands in for `TBD` only."""
+    errs, warns = _rollup([("agents/x/README.md", "agent", None)], default)
+    assert errs == []
+    assert len(warns) == 1 and "agents/x/README.md" in warns[0], warns
+
+
+def test_other_kinds_are_outside_the_roll_up():
+    assert _rollup([("docs/guides/a.md", "guide", "TBD")], None) == ([], [])
+
+
+def test_the_default_owner_is_read_through_the_loader():
+    manifest = {"accountability": {"default_owner": "platform-team"}}
+    assert cs._default_owner(manifest) == ("platform-team", [])
+
+
+def test_an_absent_default_owner_is_the_keys_default_and_prints_nothing(capsys):
+    assert cs._default_owner({}) == (None, [])
+    assert capsys.readouterr() == ("", "")
+
+
+@pytest.mark.parametrize("bad", ["", "TBD", "two words", 7, []])
+def test_a_refused_default_owner_is_an_error_naming_the_key(bad):
+    value, errs = cs._default_owner({"accountability": {"default_owner": bad}})
+    assert value is None
+    assert len(errs) == 1 and _DOTTED in errs[0], errs
+
+
+def test_an_unreadable_manifest_leaves_no_default():
+    value, errs = cs._default_owner(cs._NO_DATA)
+    assert value is None and errs == []
+
+
+# --- end to end: run_checks over a tree with a TBD agent README -------------
+
+_AGENT_FM = (
+    "---\ntitle: %s\nkind: %s\nlayer: n/a\nstatus: stable\nsummary: s\nid: %s\n"
+    "created: 2026-01-01\nupdated: 2026-01-01\nvisibility: internal\n"
+    "canonical: true\nowner: %s\n---\n\n# t\n"
+)
+
+
+def _labelled(root, name, kind, owner="me"):
+    import os
+
+    d = root / name
+    d.mkdir(parents=True, exist_ok=True)
+    slug = name.replace("/", "-")
+    (d / "README.md").write_text(_AGENT_FM % (name, kind, slug + "-readme", owner))
+    (d / "AGENT.md").write_text(_AGENT_FM % (name, "rules", slug + "-rules", "me"))
+    os.symlink("AGENT.md", str(d / "CLAUDE.md"))
+
+
+def _agent_tree(root, manifest):
+    import json
+
+    for name in ("src", "tests", "docs", "config"):
+        _labelled(root, name, "readme")
+    _labelled(root, "agents", "agent", owner="TBD")
+    (root / "config" / "project.json").write_text(json.dumps(manifest))
+    return str(root)
+
+
+@pytest.fixture
+def _isolated(monkeypatch):
+    for name in ("ROOT", "errors", "warnings", "GOVERNED"):
+        monkeypatch.setattr(cs, name, getattr(cs, name))
+    monkeypatch.setattr(cs, "_CONFIG_READ", dict(cs._CONFIG_READ))
+    monkeypatch.setattr(cs, "_READ_REPORTED", set(cs._READ_REPORTED))
+
+
+def test_a_tree_whose_tbd_agent_inherits_the_default_is_clean(tmp_path, _isolated):
+    root = _agent_tree(tmp_path, {"accountability": {"default_owner": "ops"}})
+    assert [f for f in cs.run_checks(root) if f[0] == "F"] == []
+
+
+def test_a_tree_with_a_tbd_agent_and_no_default_errs_in_f(tmp_path, _isolated):
+    root = _agent_tree(tmp_path, {})
+    found = [f for f in cs.run_checks(root) if f[0] == "F"]
+    assert len(found) == 1, found
+    letter, tier, message = found[0]
+    assert tier == "error" and "agents/README.md" in message, found
+    assert _DOTTED in message, found
