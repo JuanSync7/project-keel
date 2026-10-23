@@ -2,7 +2,7 @@
 title: Integration — an exit code reaches a caller of make as 2, and make's error line carries the number
 kind: tests
 layer: n/a
-summary: Each failing ExitCode member is the status of a scratch makefile's recipe, a real child process that ends through scripts/exit_codes.py `finish`, run by real GNU make with the allowlisted environment from scripts/child_env.py. make exits 2 for every member, and the last line it writes names the recipe's own number as `Error <N>`, so a caller acts on the number alone only when it runs the script itself, as the comment above RED_RECORD in scripts/exit_codes.py, the exit-code section of docs/guides/limits-and-troubleshooting.md and docs/guides/generate-and-upgrade.md say. SUCCESS ends make with 0. A planted judge that expects the member's own number from make is the proof the cases can fail. It does not judge what a script prints before it exits (tests/integration/test_exit_codes_cli.py).
+summary: Each failing ExitCode member is the status of a scratch makefile's recipe, a real child process that ends through scripts/exit_codes.py `finish`, run by real GNU make with the allowlisted environment from scripts/child_env.py. make exits 2 for every member, and the last line it writes names the recipe's own number as `Error <N>`, so a caller acts on the number alone only when it runs the script itself, as the comment above RED_RECORD in scripts/exit_codes.py, the exit-code section of docs/guides/limits-and-troubleshooting.md and docs/guides/generate-and-upgrade.md say. SUCCESS ends make with 0. A planted judge that expects the member's own number from make is the proof the cases can fail. Each claim file's block that names `Error <N>` must also say the number alone serves only a caller that runs the script itself and that make hands back 2; the planted old claim, token kept, is refused. It does not judge what a script prints before it exits (tests/integration/test_exit_codes_cli.py).
 @covers scripts/exit_codes.py
 """
 
@@ -102,9 +102,63 @@ _CLAIMS = (
     "docs/guides/limits-and-troubleshooting.md",
     "docs/guides/generate-and-upgrade.md",
 )
+# What the block naming `Error <N>` must say, each as a pattern and the fact it
+# stands for: the bare token alone let the old false claim back in.
+_CLAIM_PARTS = (
+    (r"Error <N>", "make's error line that still carries the number"),
+    (r"runs? (?:a|the) script itself", "the number alone serves only a direct caller"),
+    (r"\b2\b", "through make the caller sees 2"),
+)
+
+
+def _blocks(text):
+    """*text* cut into the blocks a claim is made in: markdown paragraphs and
+    list items, and runs of `#` comment lines in Python."""
+    blocks, current, comment = [], [], None
+    for line in text.splitlines():
+        stripped = line.strip()
+        is_comment = stripped.startswith("#")
+        if not stripped or is_comment != comment or stripped.startswith("- "):
+            if current:
+                blocks.append(" ".join(current))
+            current = []
+        comment = is_comment
+        if stripped:
+            current.append(stripped.lstrip("#").strip() if is_comment else stripped)
+    if current:
+        blocks.append(" ".join(current))
+    return blocks
+
+
+def claim_findings(text):
+    """The findings for one claim file; empty when a block names `Error <N>`
+    and every such block says each fact in `_CLAIM_PARTS`."""
+    named = [block for block in _blocks(text) if "Error <N>" in block]
+    if not named:
+        return ["no block names make's `Error <N>` line"]
+    return [
+        "%r does not say: %s" % (block[:60], fact)
+        for block in named
+        for pattern, fact in _CLAIM_PARTS
+        if not re.search(pattern, block)
+    ]
 
 
 @pytest.mark.parametrize("path", _CLAIMS)
-def test_each_claim_names_the_line_make_carries_the_number_on(path):
-    text = (_ROOT / path).read_text("utf-8")
-    assert "Error <N>" in text, "%s does not name make's `Error <N>` line" % path
+def test_each_claim_says_what_make_leaves_of_the_number(path):
+    findings = claim_findings((_ROOT / path).read_text("utf-8"))
+    assert findings == [], (path, findings)
+
+
+def test_the_old_claim_with_the_token_kept_is_refused():
+    """Fault injection: the reviewer's planted claim, which kept `Error <N>`
+    and dropped the direct-caller limit, is what the guard reports."""
+    planted = (
+        "# A caller can then act on the number alone, through make too, which\n"
+        "# carries it as `Error <N>`.\n"
+    )
+    findings = claim_findings(planted)
+    assert [f.split(": ", 1)[1] for f in findings] == [
+        "the number alone serves only a direct caller",
+        "through make the caller sees 2",
+    ], findings
