@@ -649,8 +649,10 @@ version rather than a bare commit:
   `npm audit --json` in each frontend app and judges it against
   config/project.json `dependency_audit.accepted`: rows of advisory id,
   package, reason and `review_by` day per app. It fails a critical or high
-  finding no row covers (`dependency_audit.fail_at`), a row past its day and a
-  row whose advisory the audit no longer reports; a moderate or low finding
+  finding no row covers (`dependency_audit.fail_at`), a row past its day, a
+  row dated more than `dependency_audit.max_review_days` (90) days out, so an
+  acceptance is renewed rather than parked, and a row whose advisory the audit
+  no longer reports; a moderate or low finding
   is listed, not failed. It is not a `make verify` goal, because the
   registry's answer changes day to day. Keel's first row, also shipped to a
   generated astro project, accepts the postcss-selector-parser 6 finding

@@ -1054,7 +1054,7 @@ config/project.json `dependency_audit.accepted` is where the reason lives, and
 `make fe-audit` judges every app's audit against it on every run. It runs
 `npm audit --json` in each app the Makefile's `FE_APPS` names, under the
 allowlisted child environment and `dependency_audit.timeout_seconds`, and it
-fails, listing every failure before one closing line, on three things:
+fails, listing every failure before one closing line, on four things:
 
 - a finding at or above `dependency_audit.fail_at` (`high` by default, so a
   critical or a high) that no row names with the same advisory id and the
@@ -1062,6 +1062,9 @@ fails, listing every failure before one closing line, on three things:
 - a row whose `review_by` day has passed, judged on the date
   `scripts/run_date.py` `today` reads (the gate run's date when it is set,
   else the clock);
+- a row whose `review_by` is more than `dependency_audit.max_review_days`
+  (90 by default) days after that date: a parked acceptance, renewed rather
+  than set far out;
 - a row whose advisory and package the app's audit no longer reports, or
   whose app is not one the run audits: a stale acceptance, removed rather than
   kept.
@@ -1093,7 +1096,9 @@ The reason says why the finding stays open, in terms a reviewer can check.
 `review_by` is the last day the acceptance holds; from the next day the row
 fails as expired. To keep it, look again and write a new date; to drop it,
 fix the package and delete the row, which the stale rule otherwise forces.
-Nothing caps how far out the date may be; keel's own row is 90 days out. The
+The date may be at most `dependency_audit.max_review_days` days after the
+run's date: exactly that many passes, one more fails, so keel's own row,
+written 90 days out, passes the default cap on the day it was written. The
 loader refuses a row that is not exactly `package`, `reason` and `review_by`,
 an id not written `GHSA-xxxx-xxxx-xxxx`, a blank reason and a date not
 written `YYYY-MM-DD`, with exit 14.
