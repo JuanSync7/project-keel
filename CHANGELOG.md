@@ -373,6 +373,11 @@ version rather than a bare commit:
   guard that fails a reach past it.
 
 ### Fixed
+- **A nullable key with a bound puts null first in its refusal.** A refused
+  `transports.serve.memory_cap_mb` or `tests.memory_scratch_root` now reads
+  "accepted: null, or an integer with a value >= 1", where it read as if null
+  had to be 1 or more. The settings rows for `transports.grpc.port` and
+  `transports.grpc.workers` say they ship always, as the generated config does.
 - **A refused model or runtime setting stops a doer as CONFIG, not a
   traceback.** A setting read once the agent starts (`models.timeout_seconds`,
   `models.max_reply_bytes`, `runtimes.max_steps`) that `scripts/config_loader.py`
