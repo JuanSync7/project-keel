@@ -40,7 +40,9 @@ def _modules_proved_here() -> set[str]:
         if not base.is_dir():
             continue
         for path in base.rglob("*.py"):
-            if any(p in cs.IGNORE_DIRS for p in path.parts):
+            # Relative parts: a checkout that sits under a directory named `venv` or
+            # `build` must not hide every writer from this scan.
+            if any(p in cs.IGNORE_DIRS for p in path.relative_to(_ROOT).parts):
                 continue
             try:
                 doc = ast.get_docstring(ast.parse(path.read_text(encoding="utf-8-sig")))
