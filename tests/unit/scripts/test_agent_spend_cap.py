@@ -2,7 +2,7 @@
 title: Unit — every agent CLI holds an --execute run to the model-call cap and says which model it chose
 kind: tests
 layer: n/a
-summary: scripts/doc_review.py, scripts/refactor_practice.py, scripts/hooks/on_stop_doc_review.py and scripts/hooks/on_stop_triage.py each check, before the agent runs, that the run's upper bound of model calls (--max-chunks, --max-nodes, or the one call triage makes) is within config/project.json `agents.max_model_calls` (read through scripts/model_budget.py): a bound over the cap, or a negative bound that sets none, returns USAGE with the agent never called, a cap the config cannot give returns CONFIG, and a dry run is never refused, since it calls no model. An approved run hands the agent its bound as `max_model_calls`, the count its counted backend stops at; the agent stopping at that count (models.CallCapReached) returns FAILURE and a saved run the approval does not cover (models.RunNotApproved) returns USAGE, each naming what to do next. With --execute and no --model, each writes to stderr which model the registry default chose and why; with --model it writes no such line. A ConfigError the loader raises once the agent runs (NotSet or WrongValue) returns CONFIG with the loader line on stderr, dry run and --execute alike; two cases run the real chain against this checkout's config, changed as scripts/config_loader.py read returns it: triage on claude-code-headless with no models.timeout_seconds entry for it (PATH empty, so no CLI could start), and a doc_review dry run with runtimes.max_steps 0. Every entry point under scripts/, mcp/ and api/ that ends in finish(main()) and imports agents, evals, models or runtimes, or a scripts/ module that does (model_budget), must be one of these four or named in _HELD_ELSEWHERE with the test that holds it, and that test file must exist and name the entry point, so a new doer is not left out and a row excuses nothing it does not name. An entry point that reaches a package by importlib alone is not seen. Elsewhere the agent function is replaced by a recorder, so no model is built and nothing is written.
+summary: scripts/doc_review.py, scripts/refactor_practice.py, scripts/hooks/on_stop_doc_review.py and scripts/hooks/on_stop_triage.py each check, before the agent runs, that the run's upper bound of model calls (--max-chunks, --max-nodes, or the one call triage makes) is within config/project.json `agents.max_model_calls` (read through scripts/model_budget.py): a bound over the cap, or a negative bound that sets none, returns USAGE with the agent never called, a cap the config cannot give returns CONFIG, and a dry run is never refused, since it calls no model. An approved run hands the agent its bound as `max_model_calls`, the count its counted backend stops at; the agent stopping at that count (models.CallCapReached) returns FAILURE and a saved run the approval does not cover (models.RunNotApproved) returns USAGE, each naming what to do next. With --execute and no --model, each writes to stderr which model the registry default chose and why; with --model it writes no such line. A ConfigError the loader raises once the agent runs (NotSet or WrongValue) returns CONFIG with the loader line on stderr, dry run and --execute alike; two cases run the real chain against this checkout's config, changed as scripts/config_loader.py read returns it: triage on claude-code-headless with no models.timeout_seconds entry for it (PATH empty, so no CLI could start), and a doc_review dry run with runtimes.max_steps 0. Every entry point under scripts/, mcp/ and api/ that ends in finish(main()) and reaches agents, evals, models or runtimes through any chain of imports among the modules and packages under those three directories (model_budget is one such helper; a sibling under scripts/jobs/, a helper's helper, a package and a `from scripts import` each count, and a case for each fails if the scan stops seeing it) must be one of these four or named in _HELD_ELSEWHERE with the test that holds it, and that test file must exist and name the entry point, so a new doer is not left out and a row excuses nothing it does not name. An entry point that reaches a package by importlib alone is not seen. Elsewhere the agent function is replaced by a recorder, so no model is built and nothing is written.
 """
 
 import ast
@@ -248,30 +248,91 @@ _HELD_ELSEWHERE = {
     "scripts/run_evals.py": "tests/integration/test_evals_live_stub.py",
 }
 _AGENT_PACKAGES = ("agents", "evals", "models", "runtimes")
+_ENTRY_TOPS = ("scripts", "mcp", "api")
 
 
 def _imported_names(path):
+    """Every module name *path* imports, each dotted part on its own, and the
+    names a `from` import takes, so `from scripts import model_budget` names
+    model_budget."""
     for node in ast.walk(ast.parse(path.read_text("utf-8"))):
         if isinstance(node, ast.Import):
-            yield from (alias.name.split(".")[0] for alias in node.names)
+            for alias in node.names:
+                yield from alias.name.split(".")
         elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
-            yield node.module.split(".")[0]
+            yield from node.module.split(".")
+            yield from (alias.name for alias in node.names)
 
 
-def _agent_reaching_names():
-    """The agent packages, and every scripts/ module that imports one, such
-    as model_budget: an entry point that reaches models through a helper
-    builds a model as surely as one that imports models itself."""
-    helpers = {
-        path.stem
-        for path in (_ROOT / "scripts").glob("*.py")
-        if set(_imported_names(path)) & set(_AGENT_PACKAGES)
-    }
-    return set(_AGENT_PACKAGES) | helpers
+def _module_name(path):
+    return path.parent.name if path.name == "__init__.py" else path.stem
+
+
+def _agent_reaching_names(root=None):
+    """The agent packages, and every module or package under scripts/, mcp/
+    and api/ that reaches one through any chain of imports: an entry point
+    that reaches models through a helper, a helper's helper or a package
+    builds a model as surely as one that imports models itself. The set
+    grows until no module joins it; a module reached only through importlib
+    is not seen."""
+    root = _ROOT if root is None else root
+    modules = [
+        (_module_name(path), set(_imported_names(path)))
+        for top in _ENTRY_TOPS
+        for path in sorted((root / top).rglob("*.py"))
+    ]
+    reaching = set(_AGENT_PACKAGES)
+    grew = True
+    while grew:
+        joined = {name for name, imports in modules if imports & reaching}
+        grew = not joined <= reaching
+        reaching |= joined
+    return reaching
 
 
 def _imports_an_agent_package(path, reaching):
     return bool(set(_imported_names(path)) & reaching)
+
+
+# Each shape a doer can reach models through, as the files that build it: the
+# doer is the last file, and the scan must count it as reaching.
+_REACH_SHAPES = {
+    "a sibling under scripts/jobs/": {
+        "scripts/jobs/probe_helper.py": "import models\n",
+        "scripts/jobs/probe_doer.py": "import probe_helper\n",
+    },
+    "a helper's helper": {
+        "scripts/probe_low.py": "from models import get_model\n",
+        "scripts/probe_mid.py": "import probe_low\n",
+        "scripts/probe_doer.py": "import probe_mid\n",
+    },
+    "a package": {
+        "scripts/probe_pkg/__init__.py": "import models\n",
+        "scripts/probe_doer.py": "from probe_pkg import thing\n",
+    },
+    "a from-import of a helper": {
+        "scripts/probe_helper.py": "import runtimes\n",
+        "scripts/probe_doer.py": "from scripts import probe_helper\n",
+    },
+}
+
+
+@pytest.mark.parametrize("shape", sorted(_REACH_SHAPES))
+def test_a_doer_reaching_models_through_any_import_chain_is_seen(tmp_path, shape):
+    files = _REACH_SHAPES[shape]
+    for rel, text in files.items():
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / rel).write_text(text, "utf-8")
+    doer = tmp_path / list(files)[-1]
+    assert _imports_an_agent_package(doer, _agent_reaching_names(tmp_path)), shape
+
+
+def test_a_doer_reaching_no_agent_package_is_not_seen(tmp_path):
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts/probe_helper.py").write_text("import json\n", "utf-8")
+    doer = tmp_path / "scripts/probe_doer.py"
+    doer.write_text("import probe_helper\n", "utf-8")
+    assert not _imports_an_agent_package(doer, _agent_reaching_names(tmp_path))
 
 
 def test_every_entry_point_that_builds_a_model_or_runtime_is_held():
@@ -280,7 +341,7 @@ def test_every_entry_point_that_builds_a_model_or_runtime_is_held():
     reaching = _agent_reaching_names()
     entries = {
         str(path.relative_to(_ROOT))
-        for top in ("scripts", "mcp", "api")
+        for top in _ENTRY_TOPS
         for path in (_ROOT / top).rglob("*.py")
         if "finish(main(" in path.read_text("utf-8")
         and _imports_an_agent_package(path, reaching)
