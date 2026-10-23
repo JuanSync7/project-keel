@@ -2,7 +2,7 @@
 title: MCP Q&A server
 layer: backend
 public_api: no
-summary: Read-only MCP tools that answer questions from the corpus via the wiki_navigator agent. The model it asks is the KEEL_MCP_MODEL variable, read by configured_model through scripts/config_loader.py; unset or empty is the declared null default, the registry's own model, written to stderr once, and a blank value is refused. Each question is held to config/project.json `agents.max_model_calls`, read once at start by configured_cap (models.approved_cap): a count of 0, the shipped value and the default of build_qa_server, answers every question with a tool error naming the key and makes no model call; the count is per question, so the server's total over its lifetime is not capped. `main` is the entry: it serves through mcp/protocol.py run_stdio_server and exits 0 once the loop ends, or CONFIG through scripts/exit_codes.py report, naming the key or variable, when a setting it reads is refused before it serves.
+summary: Read-only MCP tools that answer questions from the corpus via the wiki_navigator agent. The model it asks is the KEEL_MCP_MODEL variable, read by configured_model through scripts/config_loader.py; unset or empty is the declared null default, the registry's own model, written to stderr once, and a blank value is refused. Each question is held to config/project.json `agents.max_model_calls`, read once at start by configured_cap (models.approved_cap): a count of 0, the shipped value and the default of build_qa_server, answers every question with a tool error naming the key and makes no model call. The server's total over its lifetime is held to `agents.max_session_model_calls`, read once at start by configured_session_cap (models.approved_session_cap) and counted by a models.SessionBudget: a question whose per-question count, added to the calls the process has made, would pass that total is answered with a tool error naming the key, the total and the calls made, and makes no model call; 0, the shipped value and the default of build_qa_server, admits no question that may make a call. `main` is the entry: it serves through mcp/protocol.py run_stdio_server and exits 0 once the loop ends, or CONFIG through scripts/exit_codes.py report, naming the key or variable, when a setting it reads is refused before it serves.
 """
 
 from __future__ import annotations
@@ -22,11 +22,24 @@ sys.path.insert(2, str(_ROOT / "scripts"))
 
 from agents.wiki_navigator import answer  # noqa: E402
 from exit_codes import ExitCode, finish, report  # noqa: E402
-from models import CallCapReached, approved_cap  # noqa: E402
+from models import (  # noqa: E402
+    CallCapReached,
+    SessionBudget,
+    SessionCapReached,
+    approved_cap,
+    approved_session_cap,
+    get_model,
+)
 from protocol import Tool, ToolServer, run_stdio_server  # noqa: E402
 from scripts import config_loader  # noqa: E402
 
-__all__ = ["build_qa_server", "configured_cap", "configured_model", "main"]
+__all__ = [
+    "build_qa_server",
+    "configured_cap",
+    "configured_model",
+    "configured_session_cap",
+    "main",
+]
 
 _MODEL = ("KEEL_MCP_MODEL",)
 
@@ -62,8 +75,19 @@ def configured_cap(root: str | None = None) -> int:
     return approved_cap(root or str(_ROOT))
 
 
+def configured_session_cap(root: str | None = None) -> int:
+    """The model calls this server process may make across all its questions:
+    config/project.json `agents.max_session_model_calls` at *root* (this
+    repository when None). Raises config_loader.ConfigError for a value the
+    loader refuses."""
+    return approved_session_cap(root or str(_ROOT))
+
+
 def build_qa_server(
-    model: str | None = None, corpus: str | None = None, max_model_calls: int = 0
+    model: str | None = None,
+    corpus: str | None = None,
+    max_model_calls: int = 0,
+    max_session_model_calls: int = 0,
 ) -> ToolServer:
     """Build the read-only Q&A server.
 
@@ -71,12 +95,29 @@ def build_qa_server(
     tests pass ``"fake"`` for a deterministic, offline answer. ``corpus`` is an
     optional corpus path (``None`` = the live ``wiki/corpus.json``).
     ``max_model_calls`` is the count each question is held to (0, the
-    default, approves none, so every question is a tool error). The single
-    tool delegates to ``wiki_navigator.answer`` and surfaces its citations — no
-    retrieval or synthesis logic lives here.
+    default, approves none, so every question is a tool error).
+    ``max_session_model_calls`` is the total the server's questions may make
+    together (0, the default, admits no question that may make a call). The
+    single tool delegates to ``wiki_navigator.answer`` and surfaces its
+    citations — no retrieval or synthesis logic lives here.
     """
 
+    session = SessionBudget(max_session_model_calls)
+
     def wiki_answer(args: dict) -> dict:
+        # Outside the try below: SessionCapReached is a CallCapReached, and
+        # that handler would word it as the per-question cap.
+        try:
+            session.admit(max_model_calls)
+        except SessionCapReached as exc:
+            raise SessionCapReached(
+                exc.total,
+                exc.calls,
+                exc.bound,
+                "%s; raise config/project.json agents.max_session_model_calls "
+                "(now %d) and restart the server to approve another question"
+                % (exc, max_session_model_calls),
+            ) from exc
         try:
             ans = answer(
                 args["question"],
@@ -84,6 +125,7 @@ def build_qa_server(
                 model=model,
                 corpus=corpus,
                 max_model_calls=max_model_calls,
+                backend_factory=session.counted(get_model),
             )
         except CallCapReached as exc:
             # Re-raised naming the key, since the protocol shows only this text.
@@ -127,7 +169,9 @@ def main(root: str | None = None) -> ExitCode:
     setting, the model variable included, before anything serves."""
     try:
         server = build_qa_server(
-            model=configured_model(), max_model_calls=configured_cap(root)
+            model=configured_model(),
+            max_model_calls=configured_cap(root),
+            max_session_model_calls=configured_session_cap(root),
         )
         run_stdio_server(server, root=root)
     except config_loader.ConfigError as exc:

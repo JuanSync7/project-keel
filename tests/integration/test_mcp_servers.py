@@ -76,7 +76,10 @@ def test_unknown_tool_is_a_protocol_error_not_a_crash():
 
 def test_qa_tool_answers_with_citations_using_the_fake_model(tmp_path):
     server = build_qa_server(
-        model="fake", corpus=_tiny_corpus(tmp_path), max_model_calls=1
+        model="fake",
+        corpus=_tiny_corpus(tmp_path),
+        max_model_calls=1,
+        max_session_model_calls=1,
     )
     result = server.call_tool("wiki_answer", {"question": "what is keel"})
 
@@ -94,7 +97,9 @@ def test_qa_tool_filters_non_public_nodes(tmp_path):
     p = tmp_path / "corpus.json"
     p.write_text(json.dumps(corpus), encoding="utf-8")  # overwrite with the secret node
 
-    server = build_qa_server(model="fake", corpus=str(p), max_model_calls=1)
+    server = build_qa_server(
+        model="fake", corpus=str(p), max_model_calls=1, max_session_model_calls=1
+    )
     answer = server.call_tool("wiki_answer", {"question": "what is keel"})[
         "structuredContent"
     ]
@@ -128,11 +133,110 @@ def test_qa_tool_makes_one_call_per_question_within_its_count(tmp_path, monkeypa
     monkeypatch.setitem(registry._REGISTRY, "fake", _Counted)
     monkeypatch.setattr(_Counted, "prompts", [])
     server = build_qa_server(
-        model="fake", corpus=_tiny_corpus(tmp_path), max_model_calls=1
+        model="fake",
+        corpus=_tiny_corpus(tmp_path),
+        max_model_calls=1,
+        max_session_model_calls=2,
     )
     for _ in range(2):
         assert server.call_tool("wiki_answer", {"question": "q"})["isError"] is False
     assert len(_Counted.prompts) == 2
+
+
+def _ask(server, times):
+    return [
+        server.call_tool("wiki_answer", {"question": "what is keel"})
+        for _ in range(times)
+    ]
+
+
+@pytest.mark.parametrize("total", [None, 0])
+def test_a_session_with_no_approved_total_refuses_and_calls_no_model(
+    total, tmp_path, monkeypatch
+):
+    monkeypatch.setitem(registry._REGISTRY, "fake", _Counted)
+    monkeypatch.setattr(_Counted, "prompts", [])
+    kwargs = {} if total is None else {"max_session_model_calls": total}
+    server = build_qa_server(
+        model="fake", corpus=_tiny_corpus(tmp_path), max_model_calls=1, **kwargs
+    )
+    for result in _ask(server, 2):
+        assert result["isError"] is True
+        text = result["content"][0]["text"]
+        assert "agents.max_session_model_calls (now 0)" in text, text
+        assert "(0 made)" in text and "may make 1 more" in text
+    assert _Counted.prompts == []
+
+
+def test_a_session_answers_until_its_total_then_refuses_with_no_model_call(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setitem(registry._REGISTRY, "fake", _Counted)
+    monkeypatch.setattr(_Counted, "prompts", [])
+    server = build_qa_server(
+        model="fake",
+        corpus=_tiny_corpus(tmp_path),
+        max_model_calls=1,
+        max_session_model_calls=3,
+    )
+    results = _ask(server, 5)
+    assert [r["isError"] for r in results] == [False, False, False, True, True]
+    for refused in results[3:]:
+        text = refused["content"][0]["text"]
+        assert text.startswith("SessionCapReached: "), text
+        assert "approved 3 model call(s) (3 made)" in text
+        assert "agents.max_session_model_calls (now 3)" in text
+    assert len(_Counted.prompts) == 3
+
+
+def test_the_session_counts_the_calls_made_not_the_bounds_admitted(
+    tmp_path, monkeypatch
+):
+    """A question may make 2 calls but makes 1: a total of 3 admits a second
+    question (1 made + 2 fits) and refuses a third (2 made + 2 does not)."""
+    monkeypatch.setitem(registry._REGISTRY, "fake", _Counted)
+    monkeypatch.setattr(_Counted, "prompts", [])
+    server = build_qa_server(
+        model="fake",
+        corpus=_tiny_corpus(tmp_path),
+        max_model_calls=2,
+        max_session_model_calls=3,
+    )
+    results = _ask(server, 3)
+    assert [r["isError"] for r in results] == [False, False, True]
+    assert "(2 made)" in results[2]["content"][0]["text"]
+    assert len(_Counted.prompts) == 2
+
+
+def test_a_per_question_cap_of_zero_is_refused_under_its_own_key(tmp_path):
+    """Both caps at 0, the shipped values: a question that may make no call
+    fits any total, so the refusal names agents.max_model_calls, the key the
+    owner raises first."""
+    server = build_qa_server(model="fake", corpus=_tiny_corpus(tmp_path))
+    (result,) = _ask(server, 1)
+    text = result["content"][0]["text"]
+    assert "agents.max_model_calls (now 0)" in text
+    assert "max_session_model_calls" not in text
+
+
+def test_the_server_session_total_is_read_from_config(tmp_path):
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "project.json").write_text(
+        json.dumps({"agents": {"max_session_model_calls": 5}}), encoding="utf-8"
+    )
+    assert qa_server.configured_session_cap(str(tmp_path)) == 5
+
+
+def test_a_refused_session_total_is_config_before_the_qa_server_serves(
+    tmp_path, capsys, nothing_served
+):
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "project.json").write_text(
+        json.dumps({"agents": {"max_session_model_calls": -1}}), encoding="utf-8"
+    )
+    assert qa_server.main(root=str(tmp_path)) is ExitCode.CONFIG
+    assert nothing_served == []
+    assert "agents.max_session_model_calls" in capsys.readouterr().err
 
 
 def test_the_server_count_is_read_from_config(tmp_path):
@@ -272,7 +376,7 @@ def test_main_holds_each_question_to_the_cap_its_root_configures(
     (tmp_path / "config" / "project.json").write_text(
         json.dumps(
             {
-                "agents": {"max_model_calls": 1},
+                "agents": {"max_model_calls": 1, "max_session_model_calls": 1},
                 "transports": {"serve": {"memory_cap_mb": 256}},
             }
         ),
@@ -295,4 +399,9 @@ def test_main_holds_each_question_to_the_cap_its_root_configures(
     (server,) = built
     result = server.call_tool("wiki_answer", {"question": "what is keel"})
     assert result["isError"] is False, result
+    assert len(_Counted.prompts) == 1
+    # The root's total of 1 is spent, so the next question is refused unasked.
+    again = server.call_tool("wiki_answer", {"question": "what is keel"})
+    assert again["isError"] is True
+    assert "agents.max_session_model_calls (now 1)" in again["content"][0]["text"]
     assert len(_Counted.prompts) == 1

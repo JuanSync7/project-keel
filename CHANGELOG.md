@@ -35,6 +35,15 @@ version rather than a bare commit:
   anchored at the root like `.gitignore`'s `/tmp/`, so a `tmp` directory deeper
   in a project ships. `tests/integration/test_copier_generation.py` checks the
   judgment against three real renders.
+- **The MCP Q&A server's total spend is capped, not only each question's.**
+  `mcp/qa_server.py` holds its questions together to config/project.json
+  `agents.max_session_model_calls`, read once at start and counted by
+  `models.SessionBudget`: a question whose `agents.max_model_calls`, added to
+  the calls the process has made, would pass the total gets a tool error
+  naming the key, the total and the calls made, and no model call. The key
+  ships as `0` in keel and in a generated project, so the owner approves the
+  total as well as each question's count. `agents.wiki_navigator.answer`
+  gains `backend_factory`, which the server uses to count each call.
 - **Test scratch lives in memory when the host can hold it.**
   `tests/conftest.py` now takes config/project.json `tests.memory_scratch_root`
   (`/dev/shm/project_keel-tests`, `-<uid>` appended, mode 0700) before

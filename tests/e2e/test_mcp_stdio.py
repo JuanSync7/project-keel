@@ -2,7 +2,7 @@
 title: E2E — MCP stdio JSON-RPC journey
 kind: tests
 layer: backend
-summary: A client starts each MCP server as its own process and speaks JSON-RPC to it over its real stdio - initialize, list tools, call a tool - and checks the Q&A server, under the shipped config/project.json `agents.max_model_calls` of 0, answers a question with a tool error naming that key rather than a model call (the answer it gives once a call is approved, cited from the corpus, is tests/integration/test_mcp_servers.py's), and the action server's default is a dry run that leaves the tree as it was.
+summary: A client starts each MCP server as its own process and speaks JSON-RPC to it over its real stdio - initialize, list tools, call a tool - and checks the Q&A server, under the shipped config/project.json `agents.max_model_calls` of 0, answers a question with a tool error naming that key rather than a model call (the answer it gives once a call is approved, cited from the corpus, is tests/integration/test_mcp_servers.py's); that one server process, started by a launcher under a scratch root whose config approves one call a question and `agents.max_session_model_calls` of 2, answers two questions from the corpus and refuses the third and fourth with a tool error naming the total key and the calls made, over the same stdio; and the action server's default is a dry run that leaves the tree as it was.
 """
 
 import json
@@ -67,6 +67,56 @@ def test_wiki_answer_over_real_stdio(mcp_session):
     result = by_id[3]["result"]
     assert result["isError"] is True
     assert "agents.max_model_calls" in result["content"][0]["text"]
+
+
+def _qa_launcher(scratch, config):
+    """A script that serves the real Q&A server's main under *scratch*, whose
+    config/project.json is *config*: the shipped config approves no call, and
+    main reads its limits from the root it is given, the one thing changed."""
+    (scratch / "config").mkdir()
+    (scratch / "config" / "project.json").write_text(json.dumps(config), "utf-8")
+    launcher = scratch / "serve_qa.py"
+    launcher.write_text(
+        "import sys\n"
+        "sys.path.insert(0, %r)\n"
+        "import qa_server\n"
+        "from exit_codes import finish\n"
+        "finish(qa_server.main(root=%r))\n"
+        % (str(_server("qa_server.py").parent), str(scratch)),
+        "utf-8",
+    )
+    return launcher
+
+
+@pytest.mark.endpoint("mcp keel-wiki-qa/wiki_answer")
+def test_wiki_answer_is_refused_past_the_session_total_over_real_stdio(
+    mcp_session, real_corpus, tmp_path
+):
+    total = 2
+    launcher = _qa_launcher(
+        tmp_path,
+        {"agents": {"max_model_calls": 1, "max_session_model_calls": total}},
+    )
+    questions = [
+        _call(n, "wiki_answer", {"question": "how is a child process started"})
+        for n in range(2, 6)
+    ]
+    replies = mcp_session(
+        launcher,
+        [{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}] + questions,
+    )
+    by_id = _by_id(replies)
+    assert sorted(by_id) == [1, 2, 3, 4, 5]
+    for answered in (2, 3):
+        result = by_id[answered]["result"]
+        assert result["isError"] is False, result
+        assert result["structuredContent"]["citations"], result
+    for refused in (4, 5):
+        text = by_id[refused]["result"]["content"][0]["text"]
+        assert by_id[refused]["result"]["isError"] is True
+        assert text.startswith("SessionCapReached: "), text
+        assert "(%d made)" % total in text
+        assert "agents.max_session_model_calls (now %d)" % total in text
 
 
 @pytest.mark.endpoint("mcp keel-wiki-qa/wiki_answer")
