@@ -62,7 +62,10 @@ class ExitCode(enum.IntEnum):
     # 10 to 14 are numbers no tool in a gate's path already uses: the shell
     # owns 0 and 1, argparse and make 2, pytest 1 to 5, sysexits.h 64 to 78,
     # timeout and the shell 124 to 127, a signal 128 and up, and 255 is an
-    # out-of-range status. A caller can then act on the number alone.
+    # out-of-range status. A caller that runs the script itself can then act
+    # on the number alone. Through make it cannot: GNU make exits 2 for every
+    # failing recipe, and only its `Error <N>` line still carries the number
+    # (tests/integration/test_exit_codes_through_make.py).
     RED_RECORD = (
         10,
         "every step it ran passed, and the record it wrote of the run says fail",

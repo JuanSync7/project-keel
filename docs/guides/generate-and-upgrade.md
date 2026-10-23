@@ -284,8 +284,12 @@ member to `ExitCode` in `scripts/exit_codes.py` and run `make exit-codes`. A
 later update that changes the same lines conflicts in that file, and
 `limits-and-troubleshooting.md` has the row for what you then see.
 
-One number carries one fact, so a wrapper of yours can act on the number
-alone. `scripts/gate_evidence.py` exits `RED_RECORD` (10) when every goal
+One number carries one fact, so a wrapper of yours that runs a script itself
+can act on the number alone. A wrapper that runs make, `make verify`
+included, sees 2 for every failing code, because GNU make exits 2 for a
+failed recipe; the number is then only on make's last line, `Error <N>`
+(`tests/integration/test_exit_codes_through_make.py`).
+`scripts/gate_evidence.py` exits `RED_RECORD` (10) when every goal
 passed and the record is red, and `scripts/run_evals.py` exits
 `BACKEND_ABSENT` (11) when the live backend did not answer. No keel script
 exits 3: a wrapper that tested `$? -eq 3` after either script must test 10 or

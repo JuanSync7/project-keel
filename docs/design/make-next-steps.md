@@ -84,9 +84,10 @@ collapses a recipe's exit status to 2.** A scratch makefile whose recipe runs
 `exit 13` prints `make: *** [Makefile:2: a] Error 13` and exits 2, as goal and
 as prerequisite (GNU Make 4.4.1, 2026-10-22). So `make check` failing with
 `FAILURE` (1), `CONFIG` (14) or `BACKEND_ABSENT` (11) reaches its caller as 2,
-and so does each failing goal `scripts/gate_evidence.py` runs. The comment in
-`scripts/exit_codes.py` that 10–14 let "a caller act on the number alone"
-holds for a script run directly, not for one run through make. A footer keyed
+and so does each failing goal `scripts/gate_evidence.py` runs. As
+`scripts/exit_codes.py` says, 10–14 let a caller act on the number alone only
+when it runs a script directly, not through make
+(`tests/integration/test_exit_codes_through_make.py`). A footer keyed
 on the outcome must therefore be resolved **inside make, per recipe line**,
 where the line's own status is still visible.
 
