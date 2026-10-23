@@ -2,7 +2,7 @@
 title: Integration — the docs state the agent edit policy as the code holds it
 kind: tests
 layer: n/a
-summary: The documents a reader meets the agent edit policy in are held to scripts/apply_refactor.py. The tool card whose `public_api` is scripts/apply_refactor.py, and the guide the feature catalogue's edit-policy row links as its deep doc (the one row whose Settings cell names an `agents` key), each name as a code span every config key the policy reads (each scripts/config_loader.py `KEYS` row under apply_refactor's own `agents` block). The symptom table of config/project.json `doc_drift.limits_guide` quotes the words of each refusal plan_edits raises (a protected path, a protected name, a spec that names a gate, an edit outside the run's `--allow` files, a file git does not track, and a root where git cannot say), each rendered by plan_edits itself over a placeholder policy, and the headline main writes when the policy is a config fault. Every expected item is derived from the doer, the loader or the catalogue, never typed here; a derived set of zero items fails, and each rule has a fault-injection twin that removes one item and asserts exactly one finding. Not a writer: it reads the tree and writes only under pytest's tmp_path.
+summary: The documents a reader meets the agent edit policy in are held to scripts/apply_refactor.py. The tool card whose `public_api` is scripts/apply_refactor.py, and the guide the feature catalogue's edit-policy row links as its deep doc (the one row whose Settings cell names a key the policy reads, each `*_KEY` path of scripts/apply_refactor.py that is a loader row, so agents.max_model_calls, a spend cap beside them, does not count), each name as a code span every config key the policy reads (each scripts/config_loader.py `KEYS` row under apply_refactor's own `agents` block). The symptom table of config/project.json `doc_drift.limits_guide` quotes the words of each refusal plan_edits raises (a protected path, a protected name, a spec that names a gate, an edit outside the run's `--allow` files, a file git does not track, and a root where git cannot say), each rendered by plan_edits itself over a placeholder policy, and the headline main writes when the policy is a config fault. Every expected item is derived from the doer, the loader or the catalogue, never typed here; a derived set of zero items fails, and each rule has a fault-injection twin that removes one item and asserts exactly one finding. Not a writer: it reads the tree and writes only under pytest's tmp_path.
 """
 
 import json
@@ -60,11 +60,18 @@ def _rel(path):
 
 
 def required_spans():
-    """Every config key the policy reads: each loader KEYS row under the
-    top-level key apply_refactor's own policy keys sit in."""
-    top = apply_refactor._PATHS_KEY[0]
-    keys = sorted(".".join(k.path) for k in config_loader.KEYS if k.path[0] == top)
-    assert len(keys) >= 3, "%s: %d policy keys in config_loader.KEYS" % (top, len(keys))
+    """Every config key the policy reads: each `*_KEY` path apply_refactor
+    names that is a loader KEYS row. Not every row under the same top-level
+    key: agents.max_model_calls sits there and is a spend cap, not policy."""
+    rows = {k.path for k in config_loader.KEYS}
+    keys = sorted(
+        ".".join(value)
+        for name, value in vars(apply_refactor).items()
+        if name.endswith("_KEY") and isinstance(value, tuple) and value in rows
+    )
+    assert len(keys) >= 3, "apply_refactor: %d policy keys in config_loader.KEYS" % (
+        len(keys),
+    )
     return keys
 
 
