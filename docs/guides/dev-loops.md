@@ -251,8 +251,8 @@ Why these guardrails:
   `make fmt` is `[tree]`, so it is refused before it can rewrite the code the
   pass is about to commit (CONVENTIONS §7). make gets `--timeout` seconds, else
   `make_targets.gate_timeout_seconds` (`14400`); on that timeout or an
-  interrupt the runner ends make's whole process group, so no test server or
-  copier run outlives the pass.
+  interrupt the runner ends every process in make's session, so no test server
+  or copier run outlives the pass.
 
 When you want this loop to run unattended (a program, not you, driving it), encode
 it as a durable `Plan` and let a `Runtime` checkpoint and resume it — see

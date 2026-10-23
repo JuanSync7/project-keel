@@ -284,16 +284,18 @@ version rather than a bare commit:
   guard that fails a reach past it.
 
 ### Fixed
-- **A gate that times out or is interrupted ends everything make started.**
-  `scripts/run_make_target.py` killed only make on a timeout, leaving the
-  pytest, copier and uvicorn processes it started running. make now runs in a
-  session of its own, and a timeout, Ctrl-C (exit 130), SIGTERM or SIGHUP
-  sends SIGTERM to that whole process group, then SIGKILL after the grace;
-  nothing outside the group is signalled. A timeout sets `timed_out` in the
-  JSON result. A process left in the group after make exits is ended, listed
+- **A gate that times out or is interrupted ends every process in make's
+  session.** `scripts/run_make_target.py` killed only make on a timeout,
+  leaving the pytest, copier and uvicorn processes it started running. make now
+  runs in a session of its own, and a timeout, Ctrl-C (exit 130), SIGTERM or
+  SIGHUP sends SIGTERM to every process in that session, in make's process
+  group or in one a member moved to (GNU `timeout` does), then SIGKILL after
+  the grace; nothing outside the session is signalled, so a process that
+  starts a session of its own (`setsid`) escapes it. A timeout sets `timed_out`
+  in the JSON result. A process left in the session after make exits is ended, listed
   by pid and command in `leaked`, and fails the gate closed: a make that exited
   0 is red (exit 1), and a make that failed keeps its own status. A zombie in
-  the group is not a leftover. The runner waits on make's exit rather than on
+  the session is not a leftover. The runner waits on make's exit rather than on
   its output, so a background job holding the output open no longer holds the
   run to the limit. A signal the caller ignored (`nohup`) stays ignored, a
   second interrupt during the grace still sends the SIGKILL, and a SIGTERM

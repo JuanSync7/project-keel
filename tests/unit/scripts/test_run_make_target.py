@@ -1198,3 +1198,39 @@ def test_the_runner_puts_back_the_signal_handlers_it_replaced(tree):
     finally:
         for sig, old in before.items():
             signal.signal(sig, old)
+
+
+# --- re-review findings: the session, held output, held ids, bounds ----------
+
+# A grandchild that leaves make's process group for one of its own, as GNU
+# `timeout` does, and stays in make's session.
+_OWN_GROUP = "import os\nos.setpgid(0, 0)\n" + _SLEEPS
+# One that leaves make's session too (`setsid`), keeping make's output open.
+_OWN_SESSION = "import os\nos.setsid()\n" + _SLEEPS
+
+
+def test_a_timeout_ends_a_process_that_left_makes_group_but_not_its_session(tree):
+    _write_fake_make(tree / "bin", _OWN_GROUP)
+    res = rmt.run_target(
+        "check", cwd=str(tree), timeout=3, grace=2, snapshot=_snaps({}, {})
+    )
+    pids = _pids(tree)
+    try:
+        assert _gone_within(pids), "a process in make's session outlived the timeout"
+    finally:
+        _cleanup(pids)
+    assert res["timed_out"] is True and res["ok"] is False, res
+
+
+def test_a_process_left_in_makes_session_outside_its_group_is_a_leak(tree):
+    _write_fake_make(tree / "bin", _OWN_GROUP, detach=True, exit_after=True)
+    res = rmt.run_target(
+        "check", cwd=str(tree), timeout=60, grace=2, snapshot=_snaps({}, {})
+    )
+    pids = _pids(tree)
+    try:
+        assert _gone_within(pids), "a process make left in its session still runs"
+    finally:
+        _cleanup(pids)
+    assert res["returncode"] == 0 and res["ok"] is False, res
+    assert [p.split()[0] for p in res["leaked"]] == [str(pids[1])], res

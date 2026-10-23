@@ -9,7 +9,7 @@ tags: [tool, gate, make, verify]
 summary: Run one make target a gate may run (by its effect label) and report a structured pass/fail that also fails a run which changed the tree — the refactor loop's gate.
 id: tool-run-make-target
 created: 2026-07-07
-updated: 2026-10-22
+updated: 2026-10-23
 visibility: internal
 canonical: true
 tool_command: python3 scripts/run_make_target.py verify --json
@@ -69,7 +69,7 @@ of editing on top of failures. The labels are defined in
 With `--json`, `{target, ok, returncode, output, effects, changed, refused,
 timed_out, leaked}` on stdout. `timed_out` is true when make did not finish within
 the limit. `leaked` lists `<pid> <command>` for each process still running in
-make's group after make exited; any entry makes the run red. `effects` is the target's closed label; `changed` lists the paths a run
+make's session after make exited; any entry makes the run red. `effects` is the target's closed label; `changed` lists the paths a run
 changed; `refused` is the reason when the runner did not run make, and `null`
 otherwise. Exit 0 when the target passed and changed nothing, 1 when it was red,
 timed out, changed the tree or leaked a process, 2 when it was refused or the name was unsafe, 14
@@ -83,10 +83,11 @@ in, because make hands its command line to every recipe.
 
 ## Time limit and stopping
 make runs in a session of its own. When the limit passes, or the runner gets
-Ctrl-C, SIGTERM or SIGHUP, it sends SIGTERM to make's whole process group
-(make, and the pytest, copier or uvicorn it started), waits
-`make_targets.gate_stop_grace_seconds` (10 in keel), then sends SIGKILL to
-whatever in the group is still alive. A second Ctrl-C or SIGTERM during that
+Ctrl-C, SIGTERM or SIGHUP, it sends SIGTERM to every process in make's session
+(make, and the pytest, copier or uvicorn it started), in make's process group
+or in one a member moved to while staying in the session, as GNU `timeout`
+does; it waits `make_targets.gate_stop_grace_seconds` (10 in keel), then sends
+SIGKILL to whatever in the session is still alive. A second Ctrl-C or SIGTERM during that
 wait cuts it short and still sends the SIGKILL. A signal the caller set to be
 ignored (for example SIGHUP under `nohup`) stays ignored. The limit is
 `--timeout`, else `make_targets.gate_timeout_seconds` (14400 s in keel: a full
@@ -95,20 +96,21 @@ of that again as headroom).
 
 The run ends when make exits, not when make's output closes: a background job
 that still holds the output open does not hold the run to the limit, and make's
-own status is kept. A process still in the group half a second after make exits
-is ended the same way and listed in `leaked`: a make that exited 0 is then red,
+own status is kept. A process still in the session half a second after make
+exits is ended the same way and listed in `leaked`: a make that exited 0 is then red,
 naming each leftover, because a gate target must stop every process it starts;
 a make that failed keeps its own status. A process that has exited but is not
 yet reaped (a zombie) runs nothing and is not a leftover. Membership is read
 from `/proc`; on a host without it, a group that answers signal 0 counts as
-alive and its leftovers are listed as `(unlisted)`.
+alive and its leftovers are listed as `(unlisted)`, and a process that moved
+to a group of its own is not seen.
 
-The runner signals only make's group. make is left unreaped until the group is
+The runner signals only make's session. make is left unreaped until the group is
 empty, so its process id, which is the group id, cannot pass to a new process
 meanwhile; where Python has no `os.waitid` that hold is lost. Output still
-open after the group ends is held by a process that left the group (with
+open after the session ends is held by a process that left the session (with
 `setsid`, for example); the runner stops reading it and says so in the output.
-A runner killed with SIGKILL cannot end the group, so make's session outlives
+A runner killed with SIGKILL cannot end the session, so make's session outlives
 it.
 
 ## Side effects
