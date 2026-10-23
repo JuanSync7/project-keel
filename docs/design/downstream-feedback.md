@@ -8,7 +8,7 @@ tags: [plan, template, downstream, freshness, taxonomy, effects, credentials, au
 summary: The bounded-convergence record for the defects bedrock-platform, the first real project generated from keel, reported back — a red gate on arrival, unknown directories the gate never sees, make targets whose effect nobody declares, and child processes that inherit every credential — plus the command that checks any keel-generated project for all of them. One slice per defect, five passes, each landed as one commit on a green `make verify`.
 id: docs-design-downstream-feedback
 created: 2026-10-06
-updated: 2026-10-22
+updated: 2026-10-23
 visibility: internal
 canonical: true
 ---
@@ -1985,7 +1985,7 @@ header fields and the `re` reason move to the queue as KEEL-HDR-1.
 | CMP-6.S1 | Each part of a generated project is tested on its own, but no test runs a generated project's full `make verify`, or `make verify` after `copier update` from the previous tag; nothing checks that each frontend app commits its lockfile, or that CI's Node version is the one the gate is run with | done — `make verify` green (3321 passed); the real canary passed both answer sets, fresh and updated from v0.3.0; 9 of 10 review findings confirmed and fixed; ADR-K-0023 proposed |
 | CMP-6.S2 | KEEL-TEST-1: a test can reach a live store; nothing in the suite refuses it | done — `make verify` green (3456 passed) with `KEEL_TEST_SCRATCH` on local disk; the guard caught four tests in keel's own suite, all fixed; 13 of 13 review findings confirmed and fixed; ADR-K-0024 proposed |
 | CMP-6.S3 | KEEL-SEC-1: nothing scans the tree for a committed secret | done — `make verify` green (3662 passed, with CMP-6.S5 and CMP-6.S6); the keyed gate, the scanner adapter and the wiring are built; 9 of 11 review findings confirmed and fixed; the targeted gates are green (337 passed, check-docs, check-exit-codes, mypy); the scanner installs through the pinned pre-commit hook here and is not yet run in GitHub CI; ADR-K-0025 proposed |
-| CMP-6.S4 | B1: a generated project's own code that breaks a keel gate check is red on `copier update` (the exit gate) or not judged at all (the config-reads gate skips); the ruled warn-then-fail tier is not built | built — targeted gates green; full `make verify` not yet run |
+| CMP-6.S4 | B1: a generated project's own code that breaks a keel gate check is red on `copier update` (the exit gate) or not judged at all (the config-reads gate skips); the ruled warn-then-fail tier is not built | done — full `make verify` green on the tree rebased onto main 2b7e8c3 |
 | CMP-6.S5 | The audit's suite is not hermetic: from a dirty template checkout the audit never takes copier's three-way path, so a clean checkout reaches untested code; when an `after` migration refuses over a fault the audit already reports as owed, the audit exits 2 instead of reporting it; and a test that drives `make` inherits the parent `make`'s `MAKEFLAGS` (K-0011) | done — `make verify` green (3662 passed); the old audit fails the hermetic fixture exactly as the farm run did, and the fixed audit passes it |
 | CMP-6.S6 | KEEL-AGT-1: an agent's edit can reach the code that judges it; `scripts/apply_refactor.py` refuses only a path outside the repo root | done — `make verify` green (3544 passed); an agent edit to a protected or untracked file, or a spec that names its own gate, is refused before any write; 10 of 10 review findings confirmed and fixed; ADR-K-0026 proposed |
 
@@ -2859,7 +2859,7 @@ so.
 | 8 | The gate runner judges the child environment against keel's config, not the `--dir` project's | defect | medium | `scripts/run_make_target.py` calls `build_child_env()` and `load_policy()` with no root |
 | 9 | The gate runner keeps `HOME` and the XDG directories, so host state leaks into a run | defect | medium | `scripts/run_make_target.py` |
 | 10 | `test_exit_gate` accepts `finish(passthrough(main()))` over a `main` that returns integers | missing-check | medium | closed in CMP-5.S4: `scripts/exit_code_table.py` finds a passthrough of the script's own status |
-| 11 | A project's own `sys.exit` turns red after an update and no rewriter exists | decision | medium | rewriter ruled (a) above; B1 ruled above (the template repository is red, a generated project warns until 2027-01-31); the tier is built in CMP-6.S4 (ADR-K-0027 proposed), full `make verify` not yet run |
+| 11 | A project's own `sys.exit` turns red after an update and no rewriter exists | decision | medium | rewriter ruled (a) above; B1 ruled above (the template repository is red, a generated project warns until 2027-01-31); the tier is built in CMP-6.S4 (ADR-K-0027 proposed), full `make verify` green on the merged tree |
 | 12 | `structure.extra_toplevel` directories, the project-checks directory among them, are outside `CODE_ROOTS` | missing-check | medium | `scripts/check_structure.py` `CODE_ROOTS` |
 | 13 | check_X misses a receiver it cannot resolve, a value passed through a parameter, and a spawn in a shell script | missing-check | medium | stated in `scripts/check_structure.py` |
 | 14 | A duplicate key in `config/project.json` is not refused | defect | medium | refused by `scripts/config_loader.py` `read` since CMP-5.S5; `scripts/check_structure.py`, still a direct reader, accepts one |
