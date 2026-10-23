@@ -3013,7 +3013,10 @@ def test_the_doc_drift_tests_run_and_judge_a_generated_project(
     unlisted = _doc_drift_in(dest)
     assert unlisted.returncode == 1, unlisted.stdout[-4000:] + unlisted.stderr
     assert features.name in unlisted.stdout, unlisted.stdout[-4000:]
-    assert "settings.md" not in unlisted.stdout, unlisted.stdout[-4000:]
+    # A finding line opens with its document's path and a colon; the bare name
+    # also appears in pytest's printout of any row that links the reference.
+    settings_finding = policy["doc_drift"]["settings_reference"] + ":"
+    assert settings_finding not in unlisted.stdout, unlisted.stdout[-4000:]
 
 
 @pytest.mark.parametrize("stack", ["react-vite", "astro", "none"])
