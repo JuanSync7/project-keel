@@ -311,10 +311,12 @@ version rather than a bare commit:
   nothing, so no signal goes to an id another process could hold. A Ctrl-C,
   SIGTERM or SIGHUP while make is being started is held until the runner
   has make's process id, so it no longer leaves make running. A runner
-  that inherited SIGCHLD set to ignore no longer waits out the limit on a
-  make that already exited and then signals its freed id: the run is red at
-  once with `reaped` true, make's status being unknown, and what make left in
-  its session is still ended through the groups its members hold.
+  that inherited SIGCHLD set to ignore sets it to its default for the run and
+  puts it back afterwards, so make's status is kept and its id stays held;
+  off the main thread, where that cannot be done, the run is refused. A make
+  that another waiter in the runner's process reaps first is red at once with
+  `reaped` true and its status unknown, and nothing is signalled after it;
+  the window left is the moment between the runner's check and a signal.
 - **The audit reports a migration that stops over an owed error.** A
   project that lists `GIT_DIR` in `child_env.names` made
   `scripts/audit_project.py` exit 2, because the update's first migration

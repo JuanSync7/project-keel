@@ -73,8 +73,8 @@ running in make's session after make exited; any entry makes the run red.
 `escaped` lists `<pid> <command>` for each process outside make's session that
 still held make's output when the run ended, or `(unlisted)` when `/proc` did
 not show the holder; any entry makes the run red, and the runner signals none of
-them. `reaped` is true when something other than the runner reaped make, so
-its exit status is unknown; `returncode` is then `null` and the run is red.
+them. `reaped` is true when another waiter in the runner's process reaped
+make, so its exit status is unknown; `returncode` is then `null` and the run is red.
 `effects` is the target's closed label; `changed` lists the paths a run
 changed; `refused` is the reason when the runner did not run make, and `null`
 otherwise. Exit 0 when the target passed and changed nothing, 1 when it was red,
@@ -130,17 +130,21 @@ open after the session ends is held by a process that left the session (with
 even when make exited 0, because evidence that a target started a process no
 one stops is not a pass. It never signals a holder itself: outside make's
 session it cannot tell the target's process from the caller's.
-If the runner inherited SIGCHLD set to ignore, the kernel reaps make as it
-exits, and another waiter in the runner's process can reap it first. Either way
-make's status is lost and its process id is free. The runner sees this as soon
-as make exits and fails the run, exit 1, with `reaped` true, naming the cause
-and the next step: run the gate from a process that leaves SIGCHLD at its
-default. It sends nothing to make's freed id. A process make left in its
-session still holds the session id and its own group id while it runs, so the
-runner lists it by session in `leaked` and ends it through each group `/proc`
-lists a member in, with the same small risk as any other moved group. Without
-`/proc` nothing can be listed, so nothing is signalled, and the message says
-any leftover may still run.
+If the runner inherited SIGCHLD set to ignore, the kernel would reap make as
+it exits, freeing its id while a stop could still signal it. On the main
+thread the runner sets SIGCHLD to its default for the run, so make stays a
+zombie as usual, and puts the caller's setting back afterwards. Off the main
+thread Python cannot change a handler, so the run is refused before make
+starts, naming SIGCHLD. The case that remains is another waiter in the
+runner's own process (a library that reaps its children) reaping make first.
+Before each signal the runner asks again whether make is still its child to
+wait on, so it misses such a reap only in the moment between that check and
+the signal. Once it sees the reap it fails the run, exit 1, with `reaped`
+true and the cause named. It then signals nothing: make's freed id anchors
+neither the session nor its listing. A process `/proc` lists in make's session
+is named in `leaked` as not ended, to be checked with `ps` before anyone ends
+it. Without `/proc` the session cannot be listed, and the message says what
+make left could not be listed and may still run.
 A runner killed with SIGKILL cannot end the session, so make's session outlives
 it.
 

@@ -79,9 +79,11 @@ own limits, is a row of the [feature catalogue](../reference/features.md).
   Without `/proc` the leftovers cannot be named. The runner sends a signal
   only while make is unreaped, so the id cannot have passed to another
   process; without `os.waitid` make is reaped as it exits, and a leftover is
-  then named as still running rather than ended. A make that something else
-  reaped (the runner inherited SIGCHLD set to ignore) has an unknown status:
-  the run is red at once, and make's freed id is not signalled.
+  then named as still running rather than ended. An inherited SIGCHLD set to
+  ignore is set to its default for the run on the main thread, and refused
+  off it. A make that another waiter in the runner's process reaped has an
+  unknown status: the run is red at once, nothing is signalled, and its
+  leftovers are named, or said to be unlisted without `/proc`.
   `scripts/gate_evidence.py` has no limit of its
   own: run by `make verify` under the gate runner, it is inside the group the
   runner ends.
@@ -691,5 +693,5 @@ kept on purpose, such as a test fixture, with its reason.
 | `scripts/run_make_target.py` exits 1 with `the gate timed out, and every process in make's session was ended` | make ran longer than `--timeout`, else config/project.json `make_targets.gate_timeout_seconds` (`14400` as shipped; a full `make verify` measured 3 h 12 min on the slowest host) | if the output was still progressing, raise `--timeout` or `make_targets.gate_timeout_seconds`; otherwise find the step that hung in the output |
 | `scripts/run_make_target.py` exits 1 with `the gate is red because the target leaked a process`, naming each pid and command | make exited 0 but a process it started (a server, a watcher, a background job) was still running in its session; the runner ended it | make the recipe stop or wait for everything it starts before it exits |
 | `scripts/run_make_target.py` exits 1 with `the gate is red because a process outside make's session still holds its output`, naming each pid and command | a process the target started moved itself into a session of its own (`setsid`, a daemonizing server) and still held make's output when the run ended; the runner signals nothing outside make's session, so it is still running | end it with the `kill` command the message gives, then make the recipe stop every process it starts |
-| `scripts/run_make_target.py` exits 1 with `the gate is red because make's exit status is unknown` | something other than the runner reaped make: the runner inherited SIGCHLD set to ignore, or another part of its process waits on its children; the status is lost, so the run is no verdict | run the gate from a process that leaves SIGCHLD at its default (a shell, not a wrapper that ignores it); the output says whether anything make left was ended |
+| `scripts/run_make_target.py` exits 1 with `the gate is red because make's exit status is unknown` | another waiter in the runner's process reaped make first, so the status is lost and the run is no verdict; the runner signalled nothing after it | run the gate from a process where nothing else waits on its children, and check each process `leaked` names with `ps -o pid,sid,args -p <pid>` before ending it (a shell, not a wrapper that ignores it); the output says whether anything make left was ended |
 | `scripts/run_make_target.py` exits 14 naming `make_targets.gate_timeout_seconds` or `make_targets.gate_stop_grace_seconds` | the key holds something other than a whole number in its range: 1 to 604800 for the timeout, 1 to 3600 for the grace | correct the key, or remove it to take the default [settings.md](../reference/settings.md) gives |
