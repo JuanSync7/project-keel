@@ -539,8 +539,8 @@ KEYS = tuple(
                 ("agents", "max_model_calls"),
                 "int",
                 0,
-                "the approved cap on the model calls one agent --execute run "
-                "may make; 0 approves none",
+                "the approved cap on the model calls one agent --execute run, "
+                "or one MCP question, may make; 0 approves none",
                 accepts=(_not_negative, "a value >= 0"),
             ),
             _row(

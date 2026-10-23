@@ -2,7 +2,7 @@
 title: Wiki navigator brain
 layer: backend
 public_api: no
-summary: Plan: deterministic retrieval (query_corpus) -> synthesize a cited answer; on a Runtime.
+summary: Plan: deterministic retrieval (query_corpus) -> synthesize a cited answer; on a Runtime. An execute run needs its approved count of model calls and makes its one call through a models.ModelMeter of that count.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 
-from models import ModelBackend, get_model
+from models import ModelBackend, ModelMeter, get_model
 from runtimes import END, MODEL_CALL, READ_ONLY, Edge, Plan, Step, get_runtime
 from scripts.child_env import build_child_env
 
@@ -137,30 +137,41 @@ def synthesize(question: str, nodes: list[dict], *, backend: ModelBackend) -> st
     return backend.run(_answer_prompt(question, _visible(nodes))).strip()
 
 
-def _synthesize(state):
-    """Model-call: synthesize the answer over the retrieved, visible nodes."""
-    backend = get_model(state.get("model"))
+def _synthesize(state, meter):
+    """Model-call: synthesize the answer over the retrieved, visible nodes, on
+    the run's counted backend (*meter*)."""
     return {
-        "answer_text": synthesize(state["question"], state["nodes"], backend=backend)
+        "answer_text": synthesize(
+            state["question"], state["nodes"], backend=meter.backend()
+        )
     }
 
 
-_PLAN = Plan(
-    name="wiki_answer",
-    entry="retrieve",
-    steps=(
-        Step("retrieve", READ_ONLY, _retrieve),
-        Step("synthesize", MODEL_CALL, _synthesize),
-    ),
-    edges=(
-        Edge("retrieve", "synthesize"),
-        Edge("synthesize", END),
-    ),
-)
+def _plan(meter):
+    """The answer plan, its model step bound to this run's counted backend."""
+    return Plan(
+        name="wiki_answer",
+        entry="retrieve",
+        steps=(
+            Step("retrieve", READ_ONLY, _retrieve),
+            Step("synthesize", MODEL_CALL, lambda state: _synthesize(state, meter)),
+        ),
+        edges=(
+            Edge("retrieve", "synthesize"),
+            Edge("synthesize", END),
+        ),
+    )
 
 
 def answer(
-    question, *, execute=False, model=None, corpus=None, max_nodes=8, runtime=None
+    question,
+    *,
+    execute=False,
+    model=None,
+    corpus=None,
+    max_nodes=8,
+    runtime=None,
+    max_model_calls=None,
 ):
     """Deterministically retrieve candidate nodes (tree+links, via query_corpus),
     then synthesize an answer over them. The pipeline is a neutral ``Plan`` run
@@ -168,14 +179,24 @@ def answer(
     selects another). Retrieval always runs, so ``citations`` is populated even
     in dry-run; only the model call is gated by ``execute``. Honors node
     ``visibility``. Model via ``models.get_model(model)`` -- never a provider name.
+
+    An execute run needs ``max_model_calls``, the approved count, or raises
+    ValueError; the answer's one call goes through a ``models.CountedModel``
+    of that count, so a count of 0 raises ``models.CallCapReached`` with no
+    call made.
     """
+    if execute and max_model_calls is None:
+        raise ValueError(
+            "answer(execute=True) needs max_model_calls, the approved model-call count"
+        )
     init = {
         "question": question,
         "model": model,
         "corpus": corpus or _CORPUS,
         "max_nodes": max_nodes,
     }
-    st = get_runtime(runtime).run(_PLAN, init, execute=execute).state
+    meter = ModelMeter(model, max_model_calls or 0, get_model)
+    st = get_runtime(runtime).run(_plan(meter), init, execute=execute).state
     citations = st.get("citations", ())
     if execute:
         return Answer(text=st["answer_text"], citations=citations, dry_run=False)

@@ -2,7 +2,7 @@
 title: Integration — MCP servers (Q&A + action)
 kind: tests
 layer: backend
-summary: The thin MCP servers expose schema'd tools that delegate to wiki_navigator and a jobs doer; the action tool defaults to dry-run.
+summary: The thin MCP servers expose schema'd tools that delegate to wiki_navigator and a jobs doer; the action tool defaults to dry-run. Each wiki_answer is held to the server's approved model-call count, config/project.json `agents.max_model_calls` read by configured_cap: a count of 0, the default and the shipped value, answers with a tool error naming the key and makes no model call, a FakeModel subclass in models.registry._REGISTRY counting the calls.
 """
 
 import json
@@ -16,6 +16,8 @@ sys.path.insert(0, str(_ROOT / "mcp"))
 
 import qa_server  # noqa: E402
 from action_server import build_action_server  # noqa: E402
+from models import registry  # noqa: E402
+from models.fake import FakeModel  # noqa: E402
 from qa_server import build_qa_server  # noqa: E402
 from scripts import config_loader  # noqa: E402
 
@@ -69,7 +71,9 @@ def test_unknown_tool_is_a_protocol_error_not_a_crash():
 
 
 def test_qa_tool_answers_with_citations_using_the_fake_model(tmp_path):
-    server = build_qa_server(model="fake", corpus=_tiny_corpus(tmp_path))
+    server = build_qa_server(
+        model="fake", corpus=_tiny_corpus(tmp_path), max_model_calls=1
+    )
     result = server.call_tool("wiki_answer", {"question": "what is keel"})
 
     assert result["isError"] is False
@@ -86,11 +90,53 @@ def test_qa_tool_filters_non_public_nodes(tmp_path):
     p = tmp_path / "corpus.json"
     p.write_text(json.dumps(corpus), encoding="utf-8")  # overwrite with the secret node
 
-    server = build_qa_server(model="fake", corpus=str(p))
+    server = build_qa_server(model="fake", corpus=str(p), max_model_calls=1)
     answer = server.call_tool("wiki_answer", {"question": "what is keel"})[
         "structuredContent"
     ]
     assert all(c["node_id"] != "keel" for c in answer["citations"])
+
+
+class _Counted(FakeModel):
+    prompts: list = []
+
+    def run(self, prompt, **opts):
+        _Counted.prompts.append(prompt)
+        return super().run(prompt, **opts)
+
+
+@pytest.mark.parametrize("approved", [None, 0])
+def test_qa_tool_with_no_approved_call_refuses_and_calls_no_model(
+    approved, tmp_path, monkeypatch
+):
+    monkeypatch.setitem(registry._REGISTRY, "fake", _Counted)
+    monkeypatch.setattr(_Counted, "prompts", [])
+    kwargs = {} if approved is None else {"max_model_calls": approved}
+    server = build_qa_server(model="fake", corpus=_tiny_corpus(tmp_path), **kwargs)
+    for _ in range(3):
+        result = server.call_tool("wiki_answer", {"question": "what is keel"})
+        assert result["isError"] is True
+        assert "agents.max_model_calls" in result["content"][0]["text"]
+    assert _Counted.prompts == []
+
+
+def test_qa_tool_makes_one_call_per_question_within_its_count(tmp_path, monkeypatch):
+    monkeypatch.setitem(registry._REGISTRY, "fake", _Counted)
+    monkeypatch.setattr(_Counted, "prompts", [])
+    server = build_qa_server(
+        model="fake", corpus=_tiny_corpus(tmp_path), max_model_calls=1
+    )
+    for _ in range(2):
+        assert server.call_tool("wiki_answer", {"question": "q"})["isError"] is False
+    assert len(_Counted.prompts) == 2
+
+
+def test_the_server_count_is_read_from_config(tmp_path):
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "project.json").write_text(
+        json.dumps({"agents": {"max_model_calls": 3}}), encoding="utf-8"
+    )
+    assert qa_server.configured_cap(str(tmp_path)) == 3
 
 
 # --- action server: defaults to dry-run ----------------------------------------

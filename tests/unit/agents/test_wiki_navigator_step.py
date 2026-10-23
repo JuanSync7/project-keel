@@ -2,7 +2,7 @@
 title: Unit — the wiki navigator's model step runs on an injected backend
 kind: tests
 layer: n/a
-summary: wiki_navigator.synthesize(question, nodes, backend=b) sends b the agent's real answer prompt (its prompt.md preamble, the question and each visible node cited by node_id), never a confidential or restricted node, and returns b's reply stripped; the plan's synthesize step calls the same function, so the eval harness judges the code answer() runs.
+summary: wiki_navigator.synthesize(question, nodes, backend=b) sends b the agent's real answer prompt (its prompt.md preamble, the question and each visible node cited by node_id), never a confidential or restricted node, and returns b's reply stripped; the plan's synthesize step calls the same function, so the eval harness judges the code answer() runs. answer(execute=True) with no approved count of model calls is a ValueError before any step runs.
 """
 
 import sys
@@ -13,7 +13,7 @@ import pytest
 _ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(_ROOT))
 
-from agents.wiki_navigator import synthesize  # noqa: E402
+from agents.wiki_navigator import answer, synthesize  # noqa: E402
 from models import ModelBackend  # noqa: E402
 
 pytestmark = pytest.mark.unit
@@ -79,3 +79,8 @@ def test_synthesize_with_nothing_visible_says_so():
     seen = _Seen("x")
     synthesize("q", _NODES[1:], backend=seen)
     assert "(nothing retrieved)" in seen.prompts[0]
+
+
+def test_an_execute_answer_with_no_approved_count_is_refused_before_any_step():
+    with pytest.raises(ValueError, match="max_model_calls"):
+        answer("what is keel?", execute=True, model="fake", corpus="/nonexistent")
