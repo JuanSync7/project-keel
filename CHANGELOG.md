@@ -416,8 +416,8 @@ version rather than a bare commit:
   reports one in a directory check_D does not read. Under an interpreter older
   than the floor of config/project.json `layers.backend.python`, as the
   pre-commit hook's host `python3` can be, a `SyntaxError` cannot be told from
-  newer syntax, so the run prints one warning counting those files and `make
-  check` judges them; with no floor to read, the file is the error. An absent
+  newer syntax, so the run prints one warning counting those files, and `make
+  check-all` and `make verify`, which reach `check-python` first, judge them; with no floor to read, the file is the error. An absent
   `config/project.json` (check_H), and an absent `pyproject.toml` while
   `rulesets` is declared (check_M), are errors rather than warnings: copier
   never prunes either file.

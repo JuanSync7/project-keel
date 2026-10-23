@@ -2,7 +2,7 @@
 title: Unit — check_structure, a Python source no check can parse
 kind: tests
 layer: n/a
-summary: A .py file that a check reads but cannot parse is never skipped in silence. It is one error per file, however many checks read it, naming the file and the fix, when this interpreter meets config/project.json layers.backend.python's floor or no floor can be read. When this interpreter is older than that floor, as the pre-commit hook's host python3 can be, a SyntaxError is not a finding: the run prints one warning that counts the files, names both versions and says `make check` judges them. A file that cannot be decoded is an error under any interpreter.
+summary: A .py file that a check reads but cannot parse is never skipped in silence. It is one error per file, however many checks read it, naming the file and the fix, when this interpreter meets config/project.json layers.backend.python's floor or no floor can be read. When this interpreter is older than that floor, as the pre-commit hook's host python3 can be, a SyntaxError is not a finding: the run prints one warning that counts the files, names both versions and says `make check-all` and `make verify` judge them. A file that cannot be decoded is an error under any interpreter.
 """
 
 import json
@@ -120,6 +120,23 @@ def test_a_syntax_error_under_an_older_interpreter_is_deferred(repo):
     assert sorted(cs._PARSE_DEFERRED) == ["src/new.py"], cs._PARSE_DEFERRED
 
 
+def test_an_interpreter_exactly_at_the_floor_judges_the_file(repo):
+    """The floor is the oldest Python the project supports, so an interpreter
+    that is that release is the project's own and defers nothing."""
+    _floor(repo, ">=%d.%d" % sys.version_info[:2])
+    _write(repo, "src/bad.py", _BROKEN)
+    cs.check_D()
+    assert len(_mine("src/bad.py")) == 1, cs.errors
+    assert not cs._PARSE_DEFERRED, cs._PARSE_DEFERRED
+
+
+def test_the_parse_error_names_the_interpreter_that_ran(repo):
+    _floor(repo, _PAST)
+    _write(repo, "src/bad.py", _BROKEN)
+    cs.check_D()
+    assert "`%s -m py_compile src/bad.py`" % sys.executable in cs.errors[0], cs.errors
+
+
 @pytest.mark.parametrize("spec", [None, "<4", "", 3.1, ">3.9"])
 def test_no_readable_floor_fails_closed(repo, spec):
     """With no floor to compare against, an old interpreter cannot be told from
@@ -149,7 +166,7 @@ def test_the_floor_is_read_from_the_declared_specifier(repo, spec, floor):
 
 def test_a_run_prints_the_deferral_once_and_says_why(tmp_path):
     """Through run_checks: two deferred files, one warning, nothing else about
-    them, and the warning names the count, both versions and `make check`."""
+    them, and the warning names the count, both versions and `make check-all`."""
     (tmp_path / "config").mkdir()
     _floor(tmp_path, _FUTURE)
     _write(tmp_path, "src/a.py", _BROKEN)
@@ -159,7 +176,14 @@ def test_a_run_prints_the_deferral_once_and_says_why(tmp_path):
     assert len(about) == 1 and about[0][1] == "warning", about
     note = about[0][2]
     here = "%d.%d" % sys.version_info[:2]
-    for part in ("2 Python file(s)", here, _FUTURE, "make check", "src/a.py"):
+    for part in (
+        "2 Python file(s)",
+        here,
+        _FUTURE,
+        "make check-all",
+        "make verify",
+        "src/a.py",
+    ):
         assert part in note, note
 
 

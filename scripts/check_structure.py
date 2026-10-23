@@ -446,7 +446,10 @@ def _parse_python(full):
 
     An old interpreter cannot tell newer syntax from a broken file, and the
     pre-commit hook runs the host's python3, so only there is a SyntaxError not
-    a finding; `make check` runs the project interpreter and judges the file.
+    a finding; `make check-all`, and so `make verify`, reach check-python
+    first, which refuses an interpreter below the floor, and judge the file.
+    `make check` runs whatever `PY` is (host python3 with no .venv), so it can
+    defer too.
     With no floor to compare against the file is the error (fail closed). A
     file that cannot be decoded is an error under any interpreter.
     """
@@ -467,8 +470,15 @@ def _parse_python(full):
         _PARSE_REPORTED.add(full)
         err(
             "%s: cannot be parsed under Python %d.%d (%s), so no check that reads "
-            "Python judges it -- fix it until `python -m py_compile %s` accepts it"
-            % (rel(full), sys.version_info[0], sys.version_info[1], failure, rel(full))
+            "Python judges it -- fix it until `%s -m py_compile %s` accepts it"
+            % (
+                rel(full),
+                sys.version_info[0],
+                sys.version_info[1],
+                failure,
+                sys.executable,
+                rel(full),
+            )
         )
     return None
 
@@ -482,8 +492,9 @@ def _parse_deferral_note():
     spec = proj["layers"]["backend"]["python"]
     return (
         "%d Python file(s) were not judged: Python %d.%d cannot parse them, and "
-        "config/project.json layers.backend.python asks for %s -- `make check` "
-        "runs the project interpreter, which judges them (%s)"
+        "config/project.json layers.backend.python asks for %s -- `make check-all` "
+        "and `make verify` refuse this interpreter and judge them under one that "
+        "meets it (%s)"
         % (
             len(names),
             sys.version_info[0],

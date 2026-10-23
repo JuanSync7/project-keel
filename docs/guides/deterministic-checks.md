@@ -110,8 +110,10 @@ print but never fail the build.
   older than the floor of `config/project.json` `layers.backend.python`, as the
   pre-commit hook's host `python3` can be: newer syntax cannot be told from a
   broken file there, so the run prints one warning that counts those files and
-  names both versions, and `make check`, which runs the project interpreter,
-  judges them. With no floor to read, the file is the error.
+  names both versions; `make check-all`, and so `make verify`, which reach `check-python` first (which refuses an interpreter below the floor),
+  judge them. `make check` runs `PY`, which is host `python3` when there is no
+  `.venv`, so it can defer them too. With no floor to read, the file is the
+  error.
 - **E. Authored coverage** — every `__all__`-exported symbol defined in-file has
   a docstring: the corpus's symbol summaries (error since ADR-K-0008).
 - **F. Tool specs governed** (error) + **accountability** (warn) — valid
