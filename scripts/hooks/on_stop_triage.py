@@ -3,7 +3,7 @@
 title: on-stop triage hook
 kind: script
 layer: n/a
-summary: Thin event-hook entrypoint — hands a payload to the triage agent. `--execute` is first held to config/project.json `agents.max_model_calls` (scripts/model_budget.py): triage makes one model call, so a cap of 0 refuses the run (exit 2) and a cap the config cannot give is exit 14, both before the agent runs; with no --model it names on stderr the registry default it will use. The one call goes through a models.CountedModel of 1, and a second is never made but is a failure (exit 1) naming the count. An unavailable model is a stated skip at exit 0.
+summary: Thin event-hook entrypoint — hands a payload to the triage agent. `--execute` is first held to config/project.json `agents.max_model_calls` (scripts/model_budget.py): triage makes one model call, so a cap of 0 refuses the run (exit 2) and a cap the config cannot give is exit 14, both before the agent runs; with no --model it names on stderr the registry default it will use. The one call goes through a models.CountedModel of 1, and a second is never made but is a failure (exit 1) naming the count. A setting the model or the runtime reads once the agent starts (models.timeout_seconds, models.max_reply_bytes, runtimes.max_steps) that scripts/config_loader.py refuses is exit 14 naming the key, never a traceback. An unavailable model is a stated skip at exit 0.
 """
 
 from __future__ import annotations
@@ -76,6 +76,16 @@ def main(argv: list[str] | None = None) -> int:
     except CallCapReached as exc:
         what, on, next_step = model_budget.stopped(exc, None)
         return report(ExitCode.FAILURE, "on_stop_triage: " + what, on, next_step)
+    except config_loader.ConfigError as exc:
+        # A limit the model or the runtime reads once the agent starts
+        # (models.timeout_seconds, models.max_reply_bytes,
+        # runtimes.max_steps): refused before any model is called.
+        return report(
+            ExitCode.CONFIG,
+            "on_stop_triage: a setting the model or the runtime reads is refused",
+            "; ".join(exc.lines),
+            "set each key the line names inside its bound",
+        )
     except ModelUnavailable as exc:
         # Absent, not broken: a hook that fires where no model runs must say so
         # and step aside (exit 0), never fail the event it was attached to.

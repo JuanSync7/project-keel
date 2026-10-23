@@ -3,7 +3,7 @@
 title: on-stop doc review hook
 kind: script
 layer: n/a
-summary: Thin event-hook doer — runs the doc reviewer's dry-run (deterministic; no model) when a session or turn ends, and prints the one-line report. A dry run never blocks the event: exit 0 always, an unavailable model included. `--execute` is first held to config/project.json `agents.max_model_calls` (scripts/model_budget.py): a --max-chunks over the cap, or a negative one that bounds nothing, is refused (exit 2) and a cap the config cannot give is exit 14, both before the review; with no --model it names on stderr the registry default it will use. The run is then held to that bound as it goes: every model call is counted (models.CountedModel), and the call past it is never made, a failure (exit 1) naming the count; a saved run under wiki/.runtime/ that would resume on another model or with more calls left than the bound is refused (exit 2) naming the snapshot to remove.
+summary: Thin event-hook doer — runs the doc reviewer's dry-run (deterministic; no model) when a session or turn ends, and prints the one-line report. A dry run never blocks the event: exit 0, an unavailable model included, unless a setting it reads is refused. A setting the model or the runtime reads once the review starts (models.timeout_seconds, models.max_reply_bytes, runtimes.max_steps) that scripts/config_loader.py refuses is exit 14 naming the key, in either mode, never a traceback. `--execute` is first held to config/project.json `agents.max_model_calls` (scripts/model_budget.py): a --max-chunks over the cap, or a negative one that bounds nothing, is refused (exit 2) and a cap the config cannot give is exit 14, both before the review; with no --model it names on stderr the registry default it will use. The run is then held to that bound as it goes: every model call is counted (models.CountedModel), and the call past it is never made, a failure (exit 1) naming the count; a saved run under wiki/.runtime/ that would resume on another model or with more calls left than the bound is refused (exit 2) naming the snapshot to remove.
 """
 
 from __future__ import annotations
@@ -85,6 +85,16 @@ def main(argv=None):
         what, on, next_step = model_budget.stopped(exc, "--max-chunks")
         return exit_codes.report(
             exit_codes.ExitCode.FAILURE, "on_stop_doc_review: " + what, on, next_step
+        )
+    except config_loader.ConfigError as exc:
+        # A limit the model or the runtime reads once the agent starts
+        # (models.timeout_seconds, models.max_reply_bytes,
+        # runtimes.max_steps): refused before any model is called.
+        return exit_codes.report(
+            exit_codes.ExitCode.CONFIG,
+            "on_stop_doc_review: a setting the model or the runtime reads is refused",
+            "; ".join(exc.lines),
+            "set each key the line names inside its bound",
         )
     except ModelUnavailable as exc:
         print("on_stop_doc_review: model unavailable (%s); skipping" % exc)

@@ -2,7 +2,7 @@
 title: Integration — the live eval path against a stub model server over a real socket
 kind: tests
 layer: n/a
-summary: scripts/run_evals.py --mode live runs every shipped case through models.registry.get_model with the openai-compatible adapter pointed, by config/project.json `evals.live.model_options`, at tests/stub_model_server.py on a loopback port the OS assigns, so the real HTTP path is proven with no paid call. With replies that pass, it exits 0, counts one call per case, sends exactly one request per case, writes one candidate per case under `evals.report_dir` whose hashes match the reply and the prompt the server received, leaves the tracked dataset unchanged, and a candidate promoted by hand over its case replays green. Each red path keeps its own exit: a reply that fails its scorer or an HTTP 500 is a fail (1); a case count above `evals.live.max_calls` or a null model is refused (2) before any request; a port with nothing listening is absent (BACKEND_ABSENT), the first case absent and the rest not run; and a refused or absent run leaves no candidate from an earlier run behind. An `evals.live.model_options.api_key_env` that `models.credential_env` does not declare for the adapter is refused (2) with no request sent, and the variable's value appears in neither the output nor the report. The config lists the stub's `host:port` in `models.allowed_hosts.openai-compatible`; with it unlisted the run is refused (2) with nothing sent to the server and a detail naming that key and not the path. A 301, 302, 303, 307 or 308 from a listed endpoint is a RuntimeError naming the first endpoint and the status, never the Location, and the second server receives no request, so the credential never follows a redirect.
+summary: scripts/run_evals.py --mode live runs every shipped case through models.registry.get_model with the openai-compatible adapter pointed, by config/project.json `evals.live.model_options`, at tests/stub_model_server.py on a loopback port the OS assigns, so the real HTTP path is proven with no paid call. With replies that pass, it exits 0, counts one call per case, sends exactly one request per case, writes one candidate per case under `evals.report_dir` whose hashes match the reply and the prompt the server received, leaves the tracked dataset unchanged, and a candidate promoted by hand over its case replays green. Each red path keeps its own exit: a reply that fails its scorer or an HTTP 500 is a fail (1); a case count above `evals.live.max_calls` or a null model is refused (2) before any request; a port with nothing listening is absent (BACKEND_ABSENT), the first case absent and the rest not run; and a refused or absent run leaves no candidate from an earlier run behind. An `evals.live.model_options.api_key_env` that `models.credential_env` does not declare for the adapter is refused (2) with no request sent, and the variable's value appears in neither the output nor the report. The config lists the stub's `host:port` in `models.allowed_hosts.openai-compatible`; with it unlisted the run is refused (2) with nothing sent to the server and a detail naming that key and not the path. A 301, 302, 303, 307 or 308 from a listed endpoint is a RuntimeError naming the first endpoint and the status, never the Location, and the second server receives no request, so the credential never follows a redirect. A setting the model reads that the loader refuses stops the run as CONFIG with a refused report naming the key and no candidate: models.max_reply_bytes 0, refused when the openai-compatible adapter is built, before any request; and no models.timeout_seconds entry for claude-code-headless, read at each call inside the case loop, which stops the run instead of scoring every case as an error (a stand-in `claude` first on PATH, so no paid model could be reached).
 @covers scripts/run_evals.py
 """
 
@@ -314,3 +314,71 @@ def test_a_redirect_is_refused_and_the_credential_never_reaches_the_second_serve
     assert info.value.__cause__ is None and info.value.__suppress_context__
     assert second_seen == [], second_seen
     assert [s.has_authorization for s in first_seen] == [True], first_seen
+
+
+def _set(repo, edit):
+    manifest = _manifest(repo)
+    edit(manifest)
+    (repo / "config" / "project.json").write_text(
+        json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
+    )
+
+
+def test_a_reply_cap_the_loader_refuses_is_a_config_refusal_before_any_request(
+    tmp_path,
+):
+    """The openai-compatible adapter reads models.max_reply_bytes when it is
+    built; a value out of its bound stops the run as CONFIG, with the refused
+    report naming the key, and the server receives nothing."""
+    repo, env = build_scratch(tmp_path)
+    cases = _shipped_cases(repo)
+    with stub_chat_server(_ROOT, [c["recorded"]["response"] for c in cases]) as (
+        base,
+        requests,
+    ):
+        _configure(repo, base + "/v1")
+        _set(repo, lambda m: m["models"].__setitem__("max_reply_bytes", 0))
+        out = run_cli(repo, _live_env(env), mode="live")
+        assert out.returncode == int(ExitCode.CONFIG), out.stdout
+        assert len(requests) == 0
+    assert "Traceback" not in out.stdout, out.stdout
+    report = read_report(repo, "live")
+    assert (report["result"], report["reasons"]) == ("refused", ["refused"]), report
+    assert "models.max_reply_bytes" in report["detail"], report
+    assert _candidates(repo) == []
+
+
+def test_a_time_limit_the_config_omits_is_a_config_refusal_not_a_case_error(
+    tmp_path,
+):
+    """claude-code-headless reads its models.timeout_seconds entry at each
+    call, inside the case loop that records a doer's failure as that case's
+    error; a refused setting is the run's fault, not a case's, so it stops the
+    run as CONFIG instead of scoring every case red."""
+    repo, env = build_scratch(tmp_path)
+    _set(
+        repo,
+        lambda m: (
+            m["models"].__setitem__("timeout_seconds", {_ADAPTER: 60}),
+            m["evals"]["live"].update(
+                model="claude-code-headless",
+                model_options={},
+                max_calls=len(_shipped_cases(repo)),
+            ),
+        ),
+    )
+    # A stand-in CLI first on PATH: the refusal comes before any spawn, and if
+    # it ever did not, this fails the call instead of reaching a paid model.
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "claude").write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+    (bin_dir / "claude").chmod(0o755)
+    live_env = dict(_live_env(env), PATH="%s:%s" % (bin_dir, env["PATH"]))
+    out = run_cli(repo, live_env, mode="live")
+    assert out.returncode == int(ExitCode.CONFIG), out.stdout
+    assert "Traceback" not in out.stdout, out.stdout
+    report = read_report(repo, "live")
+    assert (report["result"], report["reasons"]) == ("refused", ["refused"]), report
+    assert "models.timeout_seconds" in report["detail"], report
+    assert "claude-code-headless" in report["detail"], report
+    assert _candidates(repo) == []

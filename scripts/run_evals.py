@@ -3,7 +3,7 @@
 title: Run evals — replay the eval suites, or run them live under the spend cap, and write the report
 kind: script
 layer: n/a
-summary: The command line `make eval` (--mode replay) and `make eval-live` (--mode live) run; it calls the evals package and holds no judging logic. It reads config/project.json `evals`, refuses, before writing or deleting anything, a report_dir that reaches its report, its temporary file or the live candidates through a symlink (git's ignore rule and the config's path check both judge the text of the path, not where it leads) and a report_dir git does not ignore, and refuses a git that ran and failed when asked (scripts/git_tree.py GitFailedError, naming git's exit status and stderr: only a git that is not installed, or no repository, means there is no tracked tree to dirty), writes a red placeholder report first so a crash never leaves an earlier green one standing, and removes the earlier report (and, live, the earlier candidates) when the `evals` block is refused, since a refused block cannot say how to write one, then judges every suite and replaces `<evals.report_dir>/<mode>.json` whole with the canonical report. A live run first deletes `<evals.report_dir>/live-candidates/`, then writes one candidate file per suite there, one canonical case line per answered case; it never edits the tracked dataset. Exit 0 when every suite passed, 1 on any fail, CONFIG (scripts/exit_codes.py) when config/project.json or its `evals` block cannot be used (read through scripts/config_loader.py, every key at fault named in one run), 2 when the run was refused for anything else (a schema the block names, the dataset, the call cap, a null or unknown model, an unignored report_dir, a git that failed), and BACKEND_ABSENT (scripts/exit_codes.py) when the live backend is absent. It starts no process itself; a model adapter does, through scripts/child_env.py.
+summary: The command line `make eval` (--mode replay) and `make eval-live` (--mode live) run; it calls the evals package and holds no judging logic. It reads config/project.json `evals`, refuses, before writing or deleting anything, a report_dir that reaches its report, its temporary file or the live candidates through a symlink (git's ignore rule and the config's path check both judge the text of the path, not where it leads) and a report_dir git does not ignore, and refuses a git that ran and failed when asked (scripts/git_tree.py GitFailedError, naming git's exit status and stderr: only a git that is not installed, or no repository, means there is no tracked tree to dirty), writes a red placeholder report first so a crash never leaves an earlier green one standing, and removes the earlier report (and, live, the earlier candidates) when the `evals` block is refused, since a refused block cannot say how to write one, then judges every suite and replaces `<evals.report_dir>/<mode>.json` whole with the canonical report. A live run first deletes `<evals.report_dir>/live-candidates/`, then writes one candidate file per suite there, one canonical case line per answered case; it never edits the tracked dataset. Exit 0 when every suite passed, 1 on any fail, CONFIG (scripts/exit_codes.py) when config/project.json or its `evals` block cannot be used (read through scripts/config_loader.py, every key at fault named in one run) or, live, when a setting the model reads (models.timeout_seconds, models.max_reply_bytes) is refused, with a refused report naming the key, 2 when the run was refused for anything else (a schema the block names, the dataset, the call cap, a null or unknown model, an unignored report_dir, a git that failed), and BACKEND_ABSENT (scripts/exit_codes.py) when the live backend is absent. It starts no process itself; a model adapter does, through scripts/child_env.py.
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/integration/test_evals_gate.py
@@ -22,6 +22,8 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO = os.path.dirname(_HERE)
 sys.path.insert(0, _HERE)
 sys.path.insert(0, _REPO)
+
+import config_loader  # noqa: E402
 
 # The module, not its names: `report` here is the eval report.
 import exit_codes  # noqa: E402
@@ -266,6 +268,20 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "run_evals: the live run was refused",
                 str(exc),
                 "correct config/project.json `evals` and run it again",
+            )
+        except config_loader.ConfigError as exc:
+            # A setting the model reads (models.timeout_seconds,
+            # models.max_reply_bytes) refused when the backend is built or
+            # called; the loader has written its lines to stderr already.
+            detail = "; ".join(exc.lines)
+            report = _report(cfg, mode, "refused", ["refused"], detail=detail)
+            _write(root, rel, render(report))
+            _summary(rel, report)
+            return exit_codes.report(
+                exit_codes.ExitCode.CONFIG,
+                "run_evals: a setting the live model reads is refused",
+                detail,
+                "set each key the line names inside its bound",
             )
         except SpendCapExceeded as exc:
             report = _report(

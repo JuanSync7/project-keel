@@ -2,9 +2,10 @@
 title: Unit — every agent CLI holds an --execute run to the model-call cap and says which model it chose
 kind: tests
 layer: n/a
-summary: scripts/doc_review.py, scripts/refactor_practice.py, scripts/hooks/on_stop_doc_review.py and scripts/hooks/on_stop_triage.py each check, before the agent runs, that the run's upper bound of model calls (--max-chunks, --max-nodes, or the one call triage makes) is within config/project.json `agents.max_model_calls` (read through scripts/model_budget.py): a bound over the cap, or a negative bound that sets none, returns USAGE with the agent never called, a cap the config cannot give returns CONFIG, and a dry run is never refused, since it calls no model. An approved run hands the agent its bound as `max_model_calls`, the count its counted backend stops at; the agent stopping at that count (models.CallCapReached) returns FAILURE and a saved run the approval does not cover (models.RunNotApproved) returns USAGE, each naming what to do next. With --execute and no --model, each writes to stderr which model the registry default chose and why; with --model it writes no such line. The agent function is replaced by a recorder, so no model is built and nothing is written.
+summary: scripts/doc_review.py, scripts/refactor_practice.py, scripts/hooks/on_stop_doc_review.py and scripts/hooks/on_stop_triage.py each check, before the agent runs, that the run's upper bound of model calls (--max-chunks, --max-nodes, or the one call triage makes) is within config/project.json `agents.max_model_calls` (read through scripts/model_budget.py): a bound over the cap, or a negative bound that sets none, returns USAGE with the agent never called, a cap the config cannot give returns CONFIG, and a dry run is never refused, since it calls no model. An approved run hands the agent its bound as `max_model_calls`, the count its counted backend stops at; the agent stopping at that count (models.CallCapReached) returns FAILURE and a saved run the approval does not cover (models.RunNotApproved) returns USAGE, each naming what to do next. With --execute and no --model, each writes to stderr which model the registry default chose and why; with --model it writes no such line. A ConfigError the loader raises once the agent runs (NotSet or WrongValue) returns CONFIG with the loader line on stderr, dry run and --execute alike; two cases run the real chain against this checkout's config, changed as scripts/config_loader.py read returns it: triage on claude-code-headless with no models.timeout_seconds entry for it (PATH empty, so no CLI could start), and a doc_review dry run with runtimes.max_steps 0. Every entry point under scripts/, mcp/ and api/ that ends in finish(main()) and imports agents, evals, models or runtimes must be one of these four or named in _HELD_ELSEWHERE with the test that holds it, so a new doer is not left out. Elsewhere the agent function is replaced by a recorder, so no model is built and nothing is written.
 """
 
+import ast
 import sys
 from pathlib import Path
 
@@ -161,3 +162,118 @@ def test_a_cap_the_config_cannot_give_is_a_config_refusal(name, monkeypatch, cap
     monkeypatch.setattr(model_budget, "cap", broken)
     assert module.main(argv + ["--execute"]) is ExitCode.CONFIG
     assert calls == []
+
+
+# --- a setting the model or the runtime reads is refused -----------------------
+
+# A refusal from each kind the loader raises once the agent runs: a key missing
+# (models/limits.py timeout_seconds) and a value out of its bound (a model
+# limit, or runtimes.max_steps when the runtime is built).
+_FAULTS = {
+    "not-set": config_loader.NotSet(
+        "config/project.json",
+        ["config/project.json: models.timeout_seconds has no entry for 'x'"],
+        [("models", "timeout_seconds", "x")],
+    ),
+    "wrong-value": config_loader.WrongValue(
+        "config/project.json", ["config/project.json: runtimes.max_steps is 0"]
+    ),
+}
+
+
+@pytest.mark.parametrize("fault", sorted(_FAULTS))
+@pytest.mark.parametrize("execute", [False, True], ids=["dry-run", "execute"])
+@pytest.mark.parametrize("name", sorted(_CLIS))
+def test_a_setting_the_agent_reads_and_the_loader_refuses_is_a_config_refusal(
+    name, execute, fault, monkeypatch, capsys
+):
+    """A dry run builds the runtime too, so both modes are held."""
+    module, argv = _raising(monkeypatch, name, _FAULTS[fault])
+    assert module.main(argv + (["--execute"] if execute else [])) is ExitCode.CONFIG
+    err = capsys.readouterr().err
+    assert _FAULTS[fault].lines[0] in err and name in err, err
+
+
+def _config_read_as(monkeypatch, edit):
+    """Every config read through scripts/config_loader.py returns this
+    checkout's config/project.json changed by *edit*; the file is untouched.
+    The loader's public reader is the one seam both the model limits and the
+    runtime's step cap read through."""
+    real = config_loader.read
+
+    def read(root, *args, **kwargs):
+        loaded = real(root, *args, **kwargs)
+        edit(loaded)
+        return loaded
+
+    monkeypatch.setattr(config_loader, "read", read)
+
+
+def test_a_model_time_limit_the_config_omits_stops_triage_as_config(
+    monkeypatch, capsys
+):
+    """The reviewer's repro, in process: the real triage agent and the real
+    claude-code-headless adapter, whose limit models/limits.py reads at the
+    call, from a config that names no limit for it."""
+
+    def omit(manifest):
+        manifest["models"]["timeout_seconds"] = {"openai-compatible": 60}
+
+    _config_read_as(monkeypatch, omit)
+    monkeypatch.setattr(model_budget, "cap", lambda root: 1)
+    # No CLI can start: the refusal comes before the spawn, and nothing is paid.
+    monkeypatch.setenv("PATH", "/nonexistent")
+    result = on_stop_triage.main(["x", "--execute", "--model", "claude-code-headless"])
+    assert result is ExitCode.CONFIG
+    err = capsys.readouterr().err
+    assert "models.timeout_seconds" in err and "claude-code-headless" in err, err
+
+
+def test_a_step_cap_the_loader_refuses_stops_a_dry_run_as_config(monkeypatch, capsys):
+    """The runtime reads runtimes.max_steps when it is built, which a dry run
+    does too, so no --execute is needed to reach the refusal."""
+
+    def zero(manifest):
+        manifest["runtimes"]["max_steps"] = 0
+
+    _config_read_as(monkeypatch, zero)
+    assert doc_review.main([]) is ExitCode.CONFIG
+    assert "runtimes.max_steps" in capsys.readouterr().err
+
+
+# Each entry point that builds a model or a runtime, and the test that holds
+# it to a CONFIG refusal when the loader refuses a setting it reads.
+_HELD_ELSEWHERE = {
+    "mcp/qa_server.py": "tests/integration/test_mcp_servers.py",
+    "scripts/run_evals.py": "tests/integration/test_evals_live_stub.py",
+}
+_AGENT_PACKAGES = ("agents", "evals", "models", "runtimes")
+
+
+def _imports_an_agent_package(path):
+    for node in ast.walk(ast.parse(path.read_text("utf-8"))):
+        names = []
+        if isinstance(node, ast.Import):
+            names = [alias.name for alias in node.names]
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            names = [node.module]
+        if any(n.split(".")[0] in _AGENT_PACKAGES for n in names):
+            return True
+    return False
+
+
+def test_every_entry_point_that_builds_a_model_or_runtime_is_held():
+    """A new doer is not covered by the parametrized cases above until it is
+    named here, so the class is held, not the four CLIs that exist today."""
+    entries = {
+        str(path.relative_to(_ROOT))
+        for top in ("scripts", "mcp", "api")
+        for path in (_ROOT / top).rglob("*.py")
+        if "finish(main(" in path.read_text("utf-8") and _imports_an_agent_package(path)
+    }
+    held = {
+        str(Path(module.__file__).resolve().relative_to(_ROOT))
+        for module, *_rest in _CLIS.values()
+    } | set(_HELD_ELSEWHERE)
+    assert entries, "the scan found no entry point, so it checked nothing"
+    assert entries == held, (sorted(entries - held), sorted(held - entries))

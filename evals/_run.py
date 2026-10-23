@@ -2,7 +2,7 @@
 title: Eval runs — replay recorded responses, or a capped live run through the model registry
 layer: n/a
 public_api: no
-summary: replay drives every case's real doer against a backend that answers with the case's recorded response, so the prompt the code sends today is hashed and compared with the recording (a mismatch is stale, never scored) and no model is called. run_live checks the null model and the call cap before it constructs a backend, builds the one config/project.json `evals.live` names through models.get_model, counts every call and stops at the cap (a models.CountedModel subclass), marks the rest of the run not-run once the backend is absent, records any other exception as that case's error, and returns a candidate case line for each answer, recording the model's reply (which replay hands back to the doer) rather than the doer's output; it never edits a dataset. An option the adapter refuses (a ValueError, such as a credential variable config/project.json `models.credential_env` does not declare) is a config refusal before any call, and the value of each variable declared there for the model is replaced by `<hidden>` in every live case detail, since a backend's exception text may echo it.
+summary: replay drives every case's real doer against a backend that answers with the case's recorded response, so the prompt the code sends today is hashed and compared with the recording (a mismatch is stale, never scored) and no model is called. run_live checks the null model and the call cap before it constructs a backend, builds the one config/project.json `evals.live` names through models.get_model, counts every call and stops at the cap (a models.CountedModel subclass), marks the rest of the run not-run once the backend is absent, lets a scripts/config_loader.py ConfigError raised by the backend (such as a models.timeout_seconds entry read at the call) stop the run, since it would fail every case alike, records any other exception as that case's error, and returns a candidate case line for each answer, recording the model's reply (which replay hands back to the doer) rather than the doer's output; it never edits a dataset. An option the adapter refuses (a ValueError, such as a credential variable config/project.json `models.credential_env` does not declare) is a config refusal before any call, and the value of each variable declared there for the model is replaced by `<hidden>` in every live case detail, since a backend's exception text may echo it.
 """
 
 from __future__ import annotations
@@ -274,7 +274,10 @@ def run_live(
             try:
                 response = doers[case.doer](case.text, counting)
                 prompt = _one_prompt(counting.prompts)
-            except SpendCapExceeded:
+            except (SpendCapExceeded, config_loader.ConfigError):
+                # The run's fault, not this case's: a refused setting (such as
+                # a models.timeout_seconds entry read at the call) would fail
+                # every case the same way, so it stops the run.
                 raise
             except ModelUnavailable as exc:
                 absent = True

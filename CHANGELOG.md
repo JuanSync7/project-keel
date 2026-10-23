@@ -370,6 +370,16 @@ version rather than a bare commit:
   guard that fails a reach past it.
 
 ### Fixed
+- **A refused model or runtime setting stops a doer as CONFIG, not a
+  traceback.** A setting read once the agent starts (`models.timeout_seconds`,
+  `models.max_reply_bytes`, `runtimes.max_steps`) that `scripts/config_loader.py`
+  refuses now ends `scripts/doc_review.py`, `scripts/refactor_practice.py` and
+  both stop hooks with exit 14 and the loader's line naming the key, in a dry
+  run and with `--execute`. A live `scripts/run_evals.py` run stops at such a
+  setting with exit 14 and a refused report naming the key, instead of a
+  traceback or every case scored as an error.
+  `tests/unit/scripts/test_agent_spend_cap.py` fails an entry point that builds
+  a model or runtime and no test holds to this.
 - **A gate that times out or is interrupted ends every process in make's
   session.** `scripts/run_make_target.py` killed only make on a timeout,
   leaving the pytest, copier and uvicorn processes it started running. make now
