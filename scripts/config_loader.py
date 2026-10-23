@@ -437,15 +437,25 @@ def _carved_out_names(value: Any) -> bool:
     return _is_any_reason_map(value) and _bare_names(value)
 
 
-def _reasoned_paths(value: Any) -> bool:
+def _relative_posix_keys(value: Any) -> bool:
     # Relative POSIX parts only, each a real name: a leading or trailing `/`,
-    # an empty, `.` or `..` part would make two spellings of one protection,
-    # or one that climbs out of the root it is judged against.
-    return _is_reason_map(value) and all(
+    # an empty, `.` or `..` part would make two spellings of one entry, or one
+    # that climbs out of the root it is judged against.
+    return all(
         _is_nonempty_str(k)
         and all(part not in ("", ".", "..") for part in k.split("/"))
         for k in value
     )
+
+
+def _reasoned_paths(value: Any) -> bool:
+    return _is_reason_map(value) and _relative_posix_keys(value)
+
+
+def _any_reasoned_paths(value: Any) -> bool:
+    # Empty allowed: an exclusion list only lifts judgement, so empty is the
+    # strictest setting.
+    return _is_any_reason_map(value) and _relative_posix_keys(value)
 
 
 _REASONED_NAMES = (
@@ -462,6 +472,11 @@ _REASONED_PATHS = (
     _reasoned_paths,
     "at least one entry, each a relative POSIX path (no leading or trailing "
     "`/`, no empty, `.` or `..` part) mapped to a non-blank reason",
+)
+_ANY_REASONED_PATHS = (
+    _any_reasoned_paths,
+    "an object, empty for none, each key a relative POSIX path (no leading or "
+    "trailing `/`, no empty, `.` or `..` part) mapped to a non-blank reason",
 )
 
 
@@ -827,6 +842,15 @@ KEYS = tuple(
                 "whether scripts/shell_gate.py judges the project's shell scripts; "
                 "the copier question `shell` sets it, and false makes every shell "
                 "target say so and run no tool",
+            ),
+            _row(
+                ("shell", "excluded_paths"),
+                "object",
+                {},
+                "each repo-relative path, itself and everything under it, that "
+                "scripts/shell_gate.py never judges (a vendored script), mapped "
+                "to the reason; an entry that covers no file is refused",
+                accepts=_ANY_REASONED_PATHS,
             ),
             _row(
                 ("shell", "formatter"),

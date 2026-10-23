@@ -67,7 +67,9 @@ version rather than a bare commit:
   yet. Shell scripts with no test file, or test files with zero tests, are
   exit 13, and so is a project with no shell file unless
   `shell.no_scripts` states why it has none; that reason left in place once
-  a shell file exists is exit 14. The new copier question `shell` (default yes) sets
+  a shell file exists is exit 14. `shell.excluded_paths` keeps a
+  vendored script, or a directory of them, out of every shell gate with its
+  reason; an entry that covers no file is exit 14. The new copier question `shell` (default yes) sets
   `shell.enabled`, and no makes every shell target say so and run no tool.
 - **An agent edit cannot reach the code that judges it.**
   `scripts/apply_refactor.py` refuses, before any write and so in a dry run
