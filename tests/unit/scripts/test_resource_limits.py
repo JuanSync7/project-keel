@@ -697,3 +697,110 @@ def test_a_serve_limit_out_of_its_bound_is_refused(tmp_path, block, key):
 
 def test_the_shipped_serve_limits():
     assert resource_limits.serve_limits() == (4096, 10)
+
+
+# --- what an agent's tool child is held to: tool_limits, run_tool ----------------
+
+
+def _tools_project(tmp_path, agents_block, gate_block=None):
+    gate = {"gate_timeout_seconds": 60, "gate_stop_grace_seconds": 5}
+    gate.update(gate_block or {})
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "project.json").write_text(
+        json.dumps({"agents": agents_block, "make_targets": gate}), encoding="utf-8"
+    )
+    return str(tmp_path)
+
+
+def test_tool_limits_are_read_from_the_agents_block(tmp_path):
+    root = _tools_project(
+        tmp_path, {"tool_timeout_seconds": 66, "tool_max_output_bytes": 4096}
+    )
+    assert resource_limits.tool_limits(root) == (66, 4096)
+
+
+@pytest.mark.parametrize(
+    "block, key",
+    [
+        ({"tool_timeout_seconds": 0}, r"agents\.tool_timeout_seconds"),
+        ({"tool_timeout_seconds": 1.5}, r"agents\.tool_timeout_seconds"),
+        ({"tool_timeout_seconds": "10m"}, r"agents\.tool_timeout_seconds"),
+        (
+            {"tool_timeout_seconds": int(threading.TIMEOUT_MAX) + 1},
+            r"agents\.tool_timeout_seconds",
+        ),
+        ({"tool_max_output_bytes": 0}, r"agents\.tool_max_output_bytes"),
+        (
+            {"tool_max_output_bytes": int(threading.TIMEOUT_MAX) + 1},
+            r"agents\.tool_max_output_bytes",
+        ),
+    ],
+)
+def test_a_tool_limit_out_of_its_bound_is_refused(tmp_path, block, key):
+    agents = {"tool_timeout_seconds": 600, "tool_max_output_bytes": 4096}
+    agents.update(block)
+    with pytest.raises(config_loader.WrongValue, match=key):
+        resource_limits.tool_limits(_tools_project(tmp_path, agents))
+
+
+@pytest.mark.parametrize("seconds", [60, 65])
+def test_a_tool_limit_that_does_not_outlast_the_gate_runner_is_refused(
+    tmp_path, capsys, seconds
+):
+    # 60 + 5: a tool that runs a gate is ended no sooner than the gate runner
+    # has ended make's session, which a SIGKILL to the runner would orphan.
+    root = _tools_project(
+        tmp_path, {"tool_timeout_seconds": seconds, "tool_max_output_bytes": 4096}
+    )
+    with pytest.raises(config_loader.WrongValue) as caught:
+        resource_limits.tool_limits(root)
+    line = "; ".join(caught.value.lines)
+    for key in (
+        "agents.tool_timeout_seconds",
+        "make_targets.gate_timeout_seconds",
+        "make_targets.gate_stop_grace_seconds",
+    ):
+        assert key in line
+    assert "more than 65" in line
+    assert line in capsys.readouterr().err
+
+
+def test_the_shipped_tool_limits_outlast_the_shipped_gate_runner():
+    timeout, cap = resource_limits.tool_limits()
+    assert (timeout, cap) == (15000, 67108864)
+
+
+def test_run_tool_holds_the_child_to_the_configured_limit_and_names_the_key(tmp_path):
+    root = _tools_project(
+        tmp_path,
+        {"tool_timeout_seconds": 66, "tool_max_output_bytes": 4096},
+        {"gate_timeout_seconds": 1, "gate_stop_grace_seconds": 1},
+    )
+    done = resource_limits.run_tool(
+        [_PY, "-c", "import os, sys; print(os.getcwd()); print(sys.stdin.read())"],
+        cwd=str(tmp_path),
+        stdin_text="spec",
+        root=root,
+    )
+    assert done.stdout.split("\n")[:2] == [str(tmp_path), "spec"]
+    with pytest.raises(resource_limits.ChildOutputTooLarge) as caught:
+        resource_limits.run_tool(
+            [_PY, "-c", "import sys; sys.stdout.write('x' * 5000)"],
+            cwd=str(tmp_path),
+            root=root,
+        )
+    assert "4096 bytes" in str(caught.value)
+    assert "agents.tool_max_output_bytes" in str(caught.value)
+
+
+def test_run_tool_ends_a_child_past_the_configured_time(tmp_path, monkeypatch):
+    # One second keeps the test short; tool_limits would refuse it against any
+    # gate runner's limit, so it is handed in past the reader.
+    monkeypatch.setattr(resource_limits, "tool_limits", lambda root=None: (1, 4096))
+    started = time.monotonic()
+    with pytest.raises(resource_limits.ChildTimedOut) as caught:
+        resource_limits.run_tool(
+            [_PY, "-c", "import time; time.sleep(30)"], cwd=str(tmp_path)
+        )
+    assert time.monotonic() - started < 15
+    assert "agents.tool_timeout_seconds" in str(caught.value)

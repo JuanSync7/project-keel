@@ -320,6 +320,13 @@ def _at_least_one_second(value: Any) -> bool:
     return bool(1 <= value <= _MOST_SECONDS)
 
 
+def _one_to_most_bytes(value: Any) -> bool:
+    # The same ceiling as a seconds key: scripts/resource_limits.py run_bounded
+    # refuses a byte cap past threading.TIMEOUT_MAX, and a refusal here names
+    # the key before a child starts.
+    return bool(1 <= value <= _MOST_SECONDS)
+
+
 def _zero_to_most_seconds(value: Any) -> bool:
     return bool(0 <= value <= _MOST_SECONDS)
 
@@ -730,6 +737,40 @@ KEYS = tuple(
                 "agent edit to, itself and everything under it, mapped to the "
                 "reason",
                 accepts=_REASONED_PATHS,
+            ),
+            # 64 MiB: the largest output a tool child writes is a gate run's
+            # whole make output (scripts/run_make_target.py --json carries it),
+            # far under this; both streams together stay a small share of
+            # transports.serve.memory_cap_mb (4096).
+            _row(
+                ("agents", "tool_max_output_bytes"),
+                "int",
+                67108864,
+                "the bytes an agent's tool child, or the MCP action server's "
+                "doer, may write to stdout or to stderr before its process "
+                "group is ended and the call refused",
+                accepts=(
+                    _one_to_most_bytes,
+                    "a value >= 1 and <= %s" % _MOST_SECONDS_TEXT,
+                ),
+            ),
+            # 15000 s: a tool child that runs a gate must outlast the gate
+            # runner's own limit and stop grace (make_targets, 14400 + 15 s):
+            # a SIGKILL to the runner first leaves make's session running and
+            # apply_refactor's edit in place. The 585 s over that cover the
+            # runner's tree snapshots and apply_refactor's rollback.
+            _row(
+                ("agents", "tool_timeout_seconds"),
+                "int",
+                15000,
+                "the seconds an agent's tool child, or the MCP action server's "
+                "doer, may run before its process group is ended and the call "
+                "refused; it must be more than make_targets.gate_timeout_seconds "
+                "plus make_targets.gate_stop_grace_seconds",
+                accepts=(
+                    _at_least_one_second,
+                    "a value >= 1 and <= %s" % _MOST_SECONDS_TEXT,
+                ),
             ),
             _row(
                 ("canary", "answer_sets"),
