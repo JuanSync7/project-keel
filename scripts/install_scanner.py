@@ -3,7 +3,7 @@
 title: install_scanner — fetch the pinned secret scanner release, check its sha256, install it per user and record it
 kind: script
 layer: n/a
-summary: `make secrets-install`'s doer, which needs no Go toolchain and no build: it picks this platform's archive from config/project.json `secrets.scanner.release_assets` (the key is the lowercased `<system>-<machine>`, such as `linux-x86_64`), fetches the file name joined to `secrets.scanner.release_url` (https, or file:// for a directory the host already holds), and installs the archive's one regular member named `secrets.scanner.name` as `<install_root>/<name>/<rev>/<name>` under `secrets.scanner.install_root`, outside the checkout, only when the archive's sha256 is the pinned one. It keeps the archive beside the program and records the program through scripts/scan_secrets.py `write_record`, the record every scan runs. A second run trusts nothing written beside the program: it finds the program unchanged only when the kept archive's sha256 is the config pin and the program's sha256 is that of the archive's one member, and then fetches nothing and rewrites nothing; otherwise, a lost archive or execute bit included, it fetches and installs again. A `secrets.scanner.name` other than the scanner scripts/scan_secrets.py adapts (`ADAPTER`), an unlisted platform, an install root or program path that resolves inside the checkout, a record file git would track and a refused setting (a `rev` or `name` that is not one path part included) are CONFIG before anything is fetched; a URL that cannot be read is BACKEND_ABSENT naming `secrets.scanner.release_url`; a sha256 that differs, a reply over `secrets.scanner.download_max_bytes`, an archive that cannot be read as a .tar.gz (a cut gzip stream included) or one without exactly one regular member of that name is FAILURE, and each leaves nothing installed and no record. A file on this host that cannot be read or written (the install root, the kept archive, the program, the record, the scratch directory) is USAGE naming that path, never a network fault. Stdlib-only.
+summary: `make secrets-install`'s doer, which needs no Go toolchain and no build: it picks this platform's archive from config/project.json `secrets.scanner.release_assets` (the key is the lowercased `<system>-<machine>`, such as `linux-x86_64`), fetches the file name joined to `secrets.scanner.release_url` (https, or file:// for a directory the host already holds), and installs the archive's one regular member named `secrets.scanner.name` as `<install_root>/<name>/<rev>/<name>` under `secrets.scanner.install_root`, outside the checkout, only when the archive's sha256 is the pinned one. It keeps the archive beside the program and records the program through scripts/scan_secrets.py `write_record`, the record every scan runs. A second run trusts nothing written beside the program: it finds the program unchanged only when the kept archive's sha256 is the config pin and the program's sha256 is that of the archive's one member, and then fetches nothing and rewrites nothing; otherwise, a lost archive or execute bit included, it fetches and installs again. A `secrets.scanner.name` other than the scanner scripts/scan_secrets.py adapts (`ADAPTER`), an unlisted platform, an install root or program path that resolves inside the checkout, a record file git would track and a refused setting (a `rev` or `name` that is not one path part included) are CONFIG before anything is fetched; a URL that cannot be read is BACKEND_ABSENT naming `secrets.scanner.release_url`; a sha256 that differs, a reply over `secrets.scanner.download_max_bytes`, an archive that cannot be read as a .tar.gz (a cut gzip stream included) or one without exactly one regular member of that name is FAILURE, and each leaves nothing installed and no record. A local file that cannot be read or written (the install root, the kept archive, the program, the record, the scratch directory) is USAGE naming that path, never a network fault. Stdlib-only.
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/unit/scripts/test_install_scanner.py
@@ -63,7 +63,7 @@ class _Unfetched(Exception):
 
 
 class _Local(Exception):
-    """A file on this host could not be read or written."""
+    """A local file could not be read or written."""
 
     def __init__(self, path, error):
         super().__init__("%s: %s" % (path, error))
@@ -323,7 +323,7 @@ def _run(root, cfg, inst):
     except _Local as exc:
         return report(
             ExitCode.USAGE,
-            "a file on this host cannot be read or written (%s)" % exc.error,
+            "a local file cannot be read or written (%s)" % exc.error,
             exc.path,
             "give this user read and write access to that path, or point "
             "%s.install_root elsewhere, then rerun" % _WHERE,
