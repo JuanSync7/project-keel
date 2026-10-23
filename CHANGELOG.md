@@ -258,12 +258,17 @@ version rather than a bare commit:
   build_corpus now reads the key through `scripts/config_loader.py` and fills
   it where, and only where, a node's owner chain ends on a `TBD` in any letter
   case, with the new `owner_source` value `default` and `owner_origin` the
-  place the `TBD` stands. A real owner anywhere on the chain still wins; a node
-  that names no owner, a written null, a `null` default or a tree with no
+  nearest place a `TBD` stands. A real owner anywhere on the chain still wins,
+  so a module walks past a `TBD` package `README.md` to an owned one above it.
+  An owner outside the CONVENTIONS §12 grammar, such as a quoted or commented
+  `TBD`, names no owner and is not the placeholder, as check_F reads it. A node
+  whose chain names no owner, a written null, a `null` default or a tree with no
   config file stays `none`, and a refused default exits 14 from build_corpus
   and check_corpus. `scripts/accountability_report.py` counts the default
   nodes on their own line, listed by their `TBD`, apart from the owned and the
-  unowned, and its `--json` still lists the unowned only.
+  unowned, and its `--json` still lists the unowned only. The wiki marks a
+  default owner as a placeholder, `owner: platform-team (default)`, from the
+  node's `owner_source`.
 - **The generation suite renders each answer set once per test module.**
   `tests/integration/test_copier_generation.py` renders through
   `tests/render_cache.py`, one copier render per distinct answer set and day

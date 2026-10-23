@@ -557,21 +557,23 @@ walks the repo into `wiki/corpus.json` — a flat list of **nodes**
 
 Every corpus node resolves to an `owner`, carried by one of three
 markers (one token, `owner:`, grammar `[A-Za-z0-9._@-]+`):
-- **doc/module** — frontmatter `owner` (a module inherits its nearest
-  package `README.md` owner);
+- **doc/module** — frontmatter `owner` (a module inherits the owner of the
+  nearest package `README.md` above it that names a real one);
 - **section** — an HTML comment under the heading: `<!-- owner: x -->`;
 - **symbol** — an `owner: x` line in the docstring.
 
 Resolution is **finest-wins, then inherit**: a marker beats frontmatter
 beats the parent's resolved owner; `owner_source` records which
 (`marker` | `frontmatter` | `inherited` | `default` | `none`). The `TBD`
-placeholder, in any letter case, names no owner of its own. Where a node's
+placeholder, in any letter case, names no owner of its own, and neither does
+an owner outside the grammar, such as a quoted or commented `TBD`, which is not
+the placeholder either. Where a node's
 chain reaches no real owner and a `TBD` stands on it,
 `scripts/jobs/build_corpus.py` fills `config/project.json`
 `accountability.default_owner`, read through `scripts/config_loader.py`, as
-`owner_source: default`, and `owner_origin` is the place that `TBD` stands. A
-real owner anywhere on the chain beats the default. A node that names no
-owner, a written null (`null` in any letter case, or `~`), a `null` default
+`owner_source: default`, and `owner_origin` is the nearest place a `TBD`
+stands. A real owner anywhere on the chain beats the default, including a
+package `README.md` above a `TBD` one. A node whose chain names no owner, a written null (`null` in any letter case, or `~`), a `null` default
 and a tree with no config file all resolve to `none`.
 `scripts/accountability_report.py` lists the `none` nodes and counts the
 `default` nodes on their own line, by the `TBD` each answers to. Independently, at commit

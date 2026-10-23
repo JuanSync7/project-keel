@@ -17,6 +17,8 @@ Your permitted tools are listed in `tools.md`. Invoke each one per its spec in
 2. Run **build_corpus**, then **link_corpus**, to (re)extract nodes and add
    entity/keyword edges.
 3. Run **accountability_report** to enumerate nodes with no resolved owner.
+   A node on the default owner (`owner_source: default`) is not an owner gap:
+   `--json` lists the unowned nodes only.
 4. For summary gaps (`summary_source` empty), draft ONE sentence from the node's
    own text only, and mark it `generated`. NEVER touch an authored summary.
 
