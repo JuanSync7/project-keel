@@ -357,9 +357,12 @@ version rather than a bare commit:
   `make_targets.gate_stop_grace_seconds` is a config fault (exit 14): a tool
   child can be the gate runner, and a SIGKILL to it before its own stop would
   leave make's session running and an applied edit not rolled back. The
-  action server reads both keys at start and refuses a bad value before it
-  serves. No module under agents/ or mcp/ may import subprocess, so a new
-  tool runner goes through the same limit
+  keys are read from the tree the tool acts on, whose gate keys the gate
+  runner reads: the `--root` of `scripts/doc_review.py` and
+  `scripts/refactor_practice.py`, and the served root of each MCP server.
+  The action and Q&A servers read both keys at start and refuse a bad value
+  before they serve. No module under agents/ or mcp/ may import
+  subprocess, so a new tool runner goes through the same limit
   (tests/integration/test_agent_tool_limits.py).
 - **Every server stops cleanly on SIGTERM, under a memory cap.** The REST
   entry is now api/rest_fastapi/serve.py (what `make run-api` runs), the MCP
