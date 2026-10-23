@@ -66,13 +66,13 @@ def main(
             loaded, config_loader.rows(path), config_loader.CONFIG_FILE
         )
     except config_loader.ConfigError as exc:
-        # The loader's lines never carry a user part, so they are safe to join.
+        # The loader hides any value that holds an @, so its lines are safe to join.
         return report(
             ExitCode.CONFIG,
             "the install source %s.%s is refused" % path,
             "; ".join(exc.lines),
-            "set it to an https mirror URL with no user part, query or "
-            "fragment, or to null for the tool's own setting, then rerun",
+            "set it to a bare https mirror URL with no `@`, `?`, `#` or "
+            "backslash, or to null for the tool's own setting, then rerun",
         )
     url = values[path]
     if url is not None:

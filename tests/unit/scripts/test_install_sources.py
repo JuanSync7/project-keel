@@ -2,7 +2,7 @@
 title: Unit — install_sources (the configured mirror for each install source)
 kind: tests
 layer: n/a
-summary: scripts/install_sources.py driven with an injected config object, so no case reads config/project.json. For each source config/project.json `install_sources` names (`python_index`, `npm_registry`, `browser_download_host`) a configured https URL is printed alone on one line, from config and never a literal, and null prints nothing, so a caller passes no flag and the tool's own setting holds. An http URL, a query, a fragment, whitespace and a URL user part are each CONFIG naming the key, and a user part is never printed: the refusal shows `<hidden: it holds a user part>`. A source outside the closed list is USAGE. Keel's own config sets every source, so resolving them writes nothing to stderr.
+summary: scripts/install_sources.py driven with an injected config object, so no case reads config/project.json. For each source config/project.json `install_sources` names (`python_index`, `npm_registry`, `browser_download_host`) a configured https URL is printed alone on one line, from config and never a literal, and null prints nothing, so a caller passes no flag and the tool's own setting holds. An http URL, no host, a port that is no number from 1 to 65535, whitespace, a control character, a backslash, an `@`, a `?` or a `#` (each even empty after it), and a URL urllib cannot split are each CONFIG naming the key, never a traceback; an `@` in any spelling of a user part (one slash, three, a backslash) is never printed, the refusal showing `<hidden: it holds an @>`, while a `%40` is no `@` and prints. A source outside the closed list is USAGE. Keel's own config sets every source, so resolving them writes nothing to stderr.
 @covers scripts/install_sources.py
 """
 
@@ -58,8 +58,33 @@ def test_null_prints_nothing_so_the_tools_own_setting_holds(source, capsys):
         "https://mirror.example.invalid/a b",
         "https:///simple",
         "",
+        "https://mirror.example.invalid/\x1bsimple",
+        "https://mirror.example.invalid/\x7fsimple",
+        "https://mirror.example.invalid/simple?",
+        "https://mirror.example.invalid/simple#",
+        "https://mirror.example.invalid:99999/simple",
+        "https://mirror.example.invalid:abc/simple",
+        "https://mirror.example.invalid:0/simple",
+        "https://mirror.example.invalid\\simple",
+        "https://[::1",
     ],
-    ids=["http", "query", "fragment", "whitespace", "no-host", "empty"],
+    ids=[
+        "http",
+        "query",
+        "fragment",
+        "whitespace",
+        "no-host",
+        "empty",
+        "escape",
+        "delete",
+        "empty-query",
+        "empty-fragment",
+        "port-out-of-range",
+        "port-not-a-number",
+        "port-zero",
+        "backslash",
+        "unsplittable",
+    ],
 )
 def test_a_url_a_mirror_cannot_take_is_config(url, capsys):
     status = install_sources.main(["npm_registry"], _config(npm_registry=url))
@@ -74,18 +99,40 @@ def test_a_url_a_mirror_cannot_take_is_config(url, capsys):
     [
         "https://user:%s@mirror.example.invalid/simple" % _TOKEN,
         "https://%s@mirror.example.invalid/simple" % _TOKEN,
+        "https:/u:%s@mirror.example.invalid/" % _TOKEN,
+        "https:///u:%s@mirror.example.invalid/" % _TOKEN,
+        "https:/\\u:%s@mirror.example.invalid" % _TOKEN,
+        "https://u:%s@[::1/" % _TOKEN,
+        "https://mirror.example.invalid/%s@simple" % _TOKEN,
     ],
-    ids=["user-and-password", "token-as-user"],
+    ids=[
+        "user-and-password",
+        "token-as-user",
+        "one-slash",
+        "three-slashes",
+        "backslash",
+        "unsplittable",
+        "at-in-a-path",
+    ],
 )
 def test_a_user_part_is_refused_and_never_printed(url, capsys):
     status = install_sources.main(["python_index"], _config(python_index=url))
     assert status is ExitCode.CONFIG
     captured = capsys.readouterr()
     assert captured.out == ""
-    assert "SENTINEL" not in captured.err and "mirror.example" not in captured.err
+    assert (captured.out + captured.err).count("SENTINEL") == 0, captured
+    assert "mirror.example" not in captured.err
     assert "install_sources.python_index" in captured.err
-    assert "<hidden: it holds a user part>" in captured.err
-    assert "no user part" in captured.err
+    assert "<hidden: it holds an @>" in captured.err
+    assert "no `@`" in captured.err
+
+
+def test_a_percent_encoded_at_is_no_at_and_is_printed(capsys):
+    url = "https://mirror.example.invalid/a%40b/"
+    assert install_sources.main(["python_index"], _config(python_index=url)) is (
+        ExitCode.SUCCESS
+    )
+    assert capsys.readouterr().out == url + "\n"
 
 
 def test_a_source_outside_the_closed_list_is_usage(capsys):

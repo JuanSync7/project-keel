@@ -2,7 +2,7 @@
 title: Unit — the one config loader (declared keys, the default line, the not-set line, a refused value)
 kind: tests
 layer: n/a
-summary: scripts/config_loader.py resolves a parsed config against declared rows. An unset key with a default takes it and writes one `[using default]` line naming the key, its canonical-JSON value and the file, once per (file, key) per process under either import name, and a secret shows `<hidden>` and never its value; a set key of the wrong type or out of its bound is refused in one line naming the key, the file, the value's JSON type and what is accepted (null first for a bounded row that takes null, so the bound never reads as one on null), a secret's value never in the exception or the stream, nor a refused string that holds a URL user part, which shows as `<hidden: it holds a user part>` while an `@` in a path still shows; every unset required key is written as one `[not set]` line in sorted key order before one NotSet; a wrong value and a missing one together write every line and raise WrongValue. An environment value wins only for a row that names a variable and only when it is not empty, and `env` refuses a variable nothing declares. resolve neither mutates its input nor hands out the table's own default, and gives the same values and lines twice. A refused map names each entry that is refused on its own. Each seconds key refuses a value past threading.TIMEOUT_MAX, keeps one at it, and models.timeout_seconds refuses an empty map. The key table is well formed against keel's own config, every models.credential_env name has a secret variable-only row, the variables the config declares are derived from it, and the module parses on the oldest hook interpreter.
+summary: scripts/config_loader.py resolves a parsed config against declared rows. An unset key with a default takes it and writes one `[using default]` line naming the key, its canonical-JSON value and the file, once per (file, key) per process under either import name, and a secret shows `<hidden>` and never its value; a set key of the wrong type or out of its bound is refused in one line naming the key, the file, the value's JSON type and what is accepted (null first for a bounded row that takes null, so the bound never reads as one on null), a secret's value never in the exception or the stream, nor a refused string that holds an `@` anywhere, which may begin a URL user part however the URL is spelled and shows as `<hidden: it holds an @>`, while a `%40` still shows; a release URL urllib cannot split, or whose port is not one, is refused and never raised; every unset required key is written as one `[not set]` line in sorted key order before one NotSet; a wrong value and a missing one together write every line and raise WrongValue. An environment value wins only for a row that names a variable and only when it is not empty, and `env` refuses a variable nothing declares. resolve neither mutates its input nor hands out the table's own default, and gives the same values and lines twice. A refused map names each entry that is refused on its own. Each seconds key refuses a value past threading.TIMEOUT_MAX, keeps one at it, and models.timeout_seconds refuses an empty map. The key table is well formed against keel's own config, every models.credential_env name has a secret variable-only row, the variables the config declares are derived from it, and the module parses on the oldest hook interpreter.
 @covers scripts/config_loader.py
 """
 
@@ -277,8 +277,26 @@ def test_a_secret_set_but_wrong_never_shows_its_value():
         "https://" + _SENTINEL + "@mirror.invalid/simple",
         "//user:" + _SENTINEL + "@mirror.invalid/simple",
         "user:" + _SENTINEL + "@mirror.invalid:8080",
+        # One slash, three slashes, a backslash: urllib finds no authority in
+        # these, but a WHATWG parser (Node's, a browser's) reads user and
+        # password from each.
+        "https:/u:" + _SENTINEL + "@mirror.invalid/",
+        "https:///u:" + _SENTINEL + "@mirror.invalid/",
+        "https:/\\u:" + _SENTINEL + "@mirror.invalid",
+        "https://u:" + _SENTINEL + "@[::1/",
+        "ftp://mirror.invalid/" + _SENTINEL + "@b",
     ],
-    ids=["user-and-password", "token-as-user", "scheme-relative", "scheme-less"],
+    ids=[
+        "user-and-password",
+        "token-as-user",
+        "scheme-relative",
+        "scheme-less",
+        "one-slash",
+        "three-slashes",
+        "backslash",
+        "unsplittable",
+        "at-in-a-path",
+    ],
 )
 def test_a_refused_value_holding_a_user_part_is_never_shown(value):
     """A URL key is no secret row, so its refused value is shown; a user part
@@ -295,23 +313,45 @@ def test_a_refused_value_holding_a_user_part_is_never_shown(value):
     with pytest.raises(WrongValue) as exc:
         resolve({"mirror": {"url": value}}, rows, _WHERE, environ={}, stream=buf)
     for text in (str(exc.value), buf.getvalue(), "\n".join(exc.value.lines)):
-        assert "SENTINEL" not in text and "mirror.invalid" not in text, text
-    assert "mirror.url is string <hidden: it holds a user part>" in buf.getvalue()
+        assert text.count(_SENTINEL) == 0 and "mirror.invalid" not in text, text
+    assert "mirror.url is string <hidden: it holds an @>" in buf.getvalue()
 
 
-def test_a_refused_value_with_no_user_part_is_still_shown():
-    """The differential: an `@` in a path is no user part, so the value shows."""
+def test_a_refused_value_with_no_at_sign_is_still_shown():
+    """The differential: a percent-encoded `%40` is no `@`, so the value shows."""
     buf = io.StringIO()
     rows = (_key(("mirror", "url"), "int", NONE),)
     with pytest.raises(WrongValue):
         resolve(
-            {"mirror": {"url": "ftp://mirror.invalid/a@b"}},
+            {"mirror": {"url": "ftp://mirror.invalid/a%40b"}},
             rows,
             _WHERE,
             environ={},
             stream=buf,
         )
-    assert '"ftp://mirror.invalid/a@b"' in buf.getvalue(), buf.getvalue()
+    assert '"ftp://mirror.invalid/a%40b"' in buf.getvalue(), buf.getvalue()
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["https://[::1", "https://u:" + _SENTINEL + "@[::1/", "https://h:99999/"],
+    ids=["unclosed-bracket", "unclosed-bracket-with-user", "port-out-of-range"],
+)
+def test_a_release_url_urllib_cannot_split_is_refused_not_raised(value):
+    """urlsplit and its port raise ValueError on these; the bound refuses them,
+    so the caller reports exit 14 instead of a traceback."""
+    buf = io.StringIO()
+    path = ("secrets", "scanner", "release_url")
+    with pytest.raises(WrongValue) as exc:
+        resolve(
+            {"secrets": {"scanner": {"release_url": value}}},
+            config_loader.rows(path),
+            _WHERE,
+            environ={},
+            stream=buf,
+        )
+    assert "secrets.scanner.release_url" in buf.getvalue(), buf.getvalue()
+    assert (str(exc.value) + buf.getvalue()).count(_SENTINEL) == 0
 
 
 def test_a_parent_that_is_not_an_object_is_one_wrong_line():
