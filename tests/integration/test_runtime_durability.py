@@ -2,7 +2,7 @@
 title: Integration — durable runs via the file checkpointer
 kind: tests
 layer: backend
-summary: FileCheckpointer survives a crash on disk; a resumed run continues from the cursor.
+summary: FileCheckpointer survives a crash on disk; a resumed run continues from the cursor; a checkpointer names a saved run for a message, a FileCheckpointer by the file a user removes to start afresh.
 """
 
 import sys
@@ -19,6 +19,7 @@ from runtimes import (  # noqa: E402
     WRITES,
     Edge,
     FileCheckpointer,
+    MemoryCheckpointer,
     Plan,
     Step,
     get_runtime,
@@ -76,3 +77,11 @@ def test_file_checkpointer_survives_a_crash_and_resumes(tmp_path):
     assert res.state == {"a": 1, "b": 2, "c": 3} and res.status == COMPLETED
     assert spy2 == ["s2", "s3"]  # s1 not re-run; resumed at the cursor
     assert cp2.load("job") is None  # cleared on completion
+
+
+def test_a_file_snapshot_names_the_file_a_user_removes_to_start_afresh(tmp_path):
+    cp = FileCheckpointer(str(tmp_path / "ckpt"))
+    cp.save("job", {"cursor": "s2", "state": {}, "trace": []})
+    path = cp.where("job")
+    assert path == str(tmp_path / "ckpt" / "job.json") and Path(path).is_file()
+    assert MemoryCheckpointer().where("job") == "the checkpoint 'job'"

@@ -2,7 +2,7 @@
 title: Checkpointer implementations
 layer: backend
 public_api: no
-summary: In-memory and JSON-file Checkpointer backends for durable/ resumable runs.
+summary: In-memory and JSON-file Checkpointer backends for durable/ resumable runs; FileCheckpointer.where names the snapshot file a user removes to start a run afresh.
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/integration/test_runtime_durability.py
@@ -60,6 +60,10 @@ class FileCheckpointer(Checkpointer):
     def _path(self, key):
         safe = "".join(c if (c.isalnum() or c in "-_.") else "_" for c in key)
         return os.path.join(self.directory, safe + ".json")
+
+    def where(self, key):
+        """The snapshot file under ``key``, which a user removes to start afresh."""
+        return self._path(key)
 
     def save(self, key, snapshot):
         """Atomically write ``snapshot`` as JSON (temp file + os.replace)."""

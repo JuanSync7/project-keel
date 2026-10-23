@@ -2,7 +2,7 @@
 title: Agent runtime contract
 layer: backend
 public_api: yes
-summary: The neutral Plan/Step/Edge flowchart IR, the Runtime ABC, and the durability/HIL/fan-out capabilities every engine implements.
+summary: The neutral Plan/Step/Edge flowchart IR, the Runtime ABC, and the durability/HIL/fan-out capabilities every engine implements; Checkpointer.where names a saved snapshot for a message.
 """
 
 from __future__ import annotations
@@ -232,6 +232,11 @@ class Checkpointer(ABC):
     def clear(self, key: str) -> None:
         """Drop the snapshot under ``key`` (called when a run completes)."""
         raise NotImplementedError
+
+    def where(self, key: str) -> str:
+        """Name the snapshot under ``key`` for a message telling a user what
+        to remove; a store with a path overrides this to give it."""
+        return "the checkpoint %r" % key
 
 
 class Pause(Exception):

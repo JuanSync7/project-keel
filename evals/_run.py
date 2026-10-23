@@ -2,7 +2,7 @@
 title: Eval runs — replay recorded responses, or a capped live run through the model registry
 layer: n/a
 public_api: no
-summary: replay drives every case's real doer against a backend that answers with the case's recorded response, so the prompt the code sends today is hashed and compared with the recording (a mismatch is stale, never scored) and no model is called. run_live checks the null model and the call cap before it constructs a backend, builds the one config/project.json `evals.live` names through models.get_model, counts every call and stops at the cap, marks the rest of the run not-run once the backend is absent, records any other exception as that case's error, and returns a candidate case line for each answer, recording the model's reply (which replay hands back to the doer) rather than the doer's output; it never edits a dataset. An option the adapter refuses (a ValueError, such as a credential variable config/project.json `models.credential_env` does not declare) is a config refusal before any call, and the value of each variable declared there for the model is replaced by `<hidden>` in every live case detail, since a backend's exception text may echo it.
+summary: replay drives every case's real doer against a backend that answers with the case's recorded response, so the prompt the code sends today is hashed and compared with the recording (a mismatch is stale, never scored) and no model is called. run_live checks the null model and the call cap before it constructs a backend, builds the one config/project.json `evals.live` names through models.get_model, counts every call and stops at the cap (a models.CountedModel subclass), marks the rest of the run not-run once the backend is absent, records any other exception as that case's error, and returns a candidate case line for each answer, recording the model's reply (which replay hands back to the doer) rather than the doer's output; it never edits a dataset. An option the adapter refuses (a ValueError, such as a credential variable config/project.json `models.credential_env` does not declare) is a config refusal before any call, and the value of each variable declared there for the model is replaced by `<hidden>` in every live case detail, since a backend's exception text may echo it.
 """
 
 from __future__ import annotations
@@ -10,7 +10,13 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 
-from models import ModelBackend, ModelUnavailable, get_model
+from models import (
+    CallCapReached,
+    CountedModel,
+    ModelBackend,
+    ModelUnavailable,
+    get_model,
+)
 from scripts import config_loader
 from scripts.child_env import load_policy
 
@@ -31,18 +37,18 @@ _HIDDEN = "<hidden>"
 BackendFactory = Callable[..., ModelBackend]
 
 
-class SpendCapExceeded(Exception):
+class SpendCapExceeded(CallCapReached):
     """A live run would make, or tried to make, more model calls than
     config/project.json `evals.live.max_calls` allows."""
 
     def __init__(self, cases: int, cap: int, calls: int) -> None:
         super().__init__(
+            cap,
+            calls,
             "%d case(s) against evals.live.max_calls = %d (%d call(s) made)"
-            % (cases, cap, calls)
+            % (cases, cap, calls),
         )
         self.cases = cases
-        self.cap = cap
-        self.calls = calls
 
 
 @dataclass(frozen=True)
@@ -72,25 +78,24 @@ class _Recording(ModelBackend):
         return self.response
 
 
-class _Counting(ModelBackend):
-    """Wraps the live backend: counts every call against the cap and keeps
-    the prompts sent, and the replies received, for the current case."""
+class _Counting(CountedModel):
+    """The live backend held to the cap (models.CountedModel), keeping the
+    prompts sent, and the replies received, for the current case."""
 
     def __init__(self, inner: ModelBackend, cases: int, cap: int) -> None:
-        self.inner = inner
-        self.name = inner.name
+        super().__init__(inner, cap)
         self.cases = cases
-        self.cap = cap
-        self.calls = 0
         self.prompts: list[str] = []
         self.replies: list[str] = []
 
+    def refusal(self) -> SpendCapExceeded:
+        return SpendCapExceeded(self.cases, self.cap, self.calls)
+
     def run(self, prompt: str, **opts: object) -> str:
-        if self.calls >= self.cap:
-            raise SpendCapExceeded(self.cases, self.cap, self.calls)
-        self.calls += 1
+        reply = super().run(prompt, **opts)
+        # Kept after the call: a call that raised is that case's error, and
+        # its prompt is never read.
         self.prompts.append(prompt)
-        reply = self.inner.run(prompt, **opts)
         self.replies.append(reply)
         return reply
 
