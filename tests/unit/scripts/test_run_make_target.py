@@ -6,6 +6,8 @@ summary: run_target runs a make target only when its effect label, closed over i
 """
 
 import base64
+import contextlib
+import io
 import json
 import os
 import sys
@@ -667,6 +669,9 @@ def _alive(pid):
     try:
         with open("/proc/%d/stat" % pid, encoding="utf-8") as fh:
             return fh.read().rsplit(")", 1)[1].split()[0] != "Z"
+    except FileNotFoundError:
+        # Reaped after signal 0 found it: a verify at load average 9 hit this.
+        return False
     except OSError:
         return True
 
@@ -699,7 +704,47 @@ def _cleanup(pids):
     """A case that failed leaves its tree running; end only the pids it started."""
     for pid in pids:
         if _alive(pid):
-            os.kill(pid, signal.SIGKILL)
+            # It can still exit before the kill lands; that is the goal reached.
+            with contextlib.suppress(ProcessLookupError):
+                os.kill(pid, signal.SIGKILL)
+
+
+def _reaped_after_the_probe(monkeypatch):
+    """Signal 0 finds the pid, then it is reaped before /proc is read and
+    before any kill lands: the window a loaded host widens."""
+    real_kill = os.kill
+    gone = {"after_probe": False}
+
+    def kill(pid, sig):
+        if gone["after_probe"]:
+            raise ProcessLookupError(pid)
+        if sig == 0:
+            gone["after_probe"] = True
+            return None
+        return real_kill(pid, sig)
+
+    def no_proc(*_args, **_kwargs):
+        raise FileNotFoundError("/proc/<pid>/stat")
+
+    monkeypatch.setattr(os, "kill", kill)
+    monkeypatch.setattr("builtins.open", no_proc)
+
+
+def test_a_pid_reaped_between_the_probe_and_proc_counts_as_gone(monkeypatch):
+    _reaped_after_the_probe(monkeypatch)
+    assert _alive(999_999_999) is False
+
+
+def test_cleanup_spares_a_pid_that_exits_before_its_kill(monkeypatch):
+    """/proc shows it running, then it exits before SIGKILL lands."""
+
+    def kill(pid, sig):
+        if sig == signal.SIGKILL:
+            raise ProcessLookupError(pid)
+
+    monkeypatch.setattr(os, "kill", kill)
+    monkeypatch.setattr("builtins.open", lambda *_a, **_k: io.StringIO("1 (py) S 0"))
+    _cleanup([999_999_999])
 
 
 def test_a_timeout_ends_every_process_make_started_and_says_so(tree):
