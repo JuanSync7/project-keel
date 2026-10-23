@@ -2,7 +2,7 @@
 title: Practice refactor brain
 layer: backend
 public_api: no
-summary: Plan: walk the corpus KG -> gate a green baseline -> (propose -> apply+gate+rollback) one chunk per step; on a durable Runtime. An execute run needs its approved count of model calls: every call goes through one run's models.ModelMeter, and a resumed run is first checked against the approved model and count (models.approve_resume). Every tool child runs through scripts/resource_limits.py run_tool, held to config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes`: past either its process group is ended and the step raises ChildTimedOut or ChildOutputTooLarge naming the key.
+summary: Plan: walk the corpus KG -> gate a green baseline -> (propose -> apply+gate+rollback) one chunk per step; on a durable Runtime. An execute run needs its approved count of model calls: every call goes through one run's models.ModelMeter, and a resumed run is first checked against the approved model and count (models.approve_resume). Every tool child runs through scripts/resource_limits.py run_tool, held to the refactored root's config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes`, the root whose make_targets gate keys the gate runner it starts reads, so the time limit is checked against that runner's own limit: past either its process group is ended and the step raises ChildTimedOut or ChildOutputTooLarge naming the key.
 """
 
 from __future__ import annotations
@@ -53,7 +53,7 @@ class RefactorReport:
     dry_run: bool
 
 
-def _run(args, stdin=None):
+def _run(args, stdin=None, *, root):
     """Invoke a repo script via its CLI (tools are consumed as CLIs, never imported).
 
     Uses the SAME interpreter running this agent (sys.executable), so the tools
@@ -63,8 +63,11 @@ def _run(args, stdin=None):
     Bounded by scripts/resource_limits.py run_tool: past config/project.json
     agents.tool_timeout_seconds or agents.tool_max_output_bytes the child's
     process group is ended and ChildTimedOut or ChildOutputTooLarge names the key.
+    Both keys are read from *root*, the tree the tool acts on: the gate runner
+    reads its make_targets limit there, so the time limit is checked against
+    the limit that runner really uses, never this checkout's.
     """
-    proc = run_tool([sys.executable] + args, cwd=_REPO, stdin_text=stdin)
+    proc = run_tool([sys.executable] + args, cwd=_REPO, stdin_text=stdin, root=root)
     return proc.returncode, proc.stdout, proc.stderr
 
 
@@ -203,7 +206,8 @@ def _walk(state):
             state["corpus"],
             "--max-nodes",
             str(state["max_nodes"]),
-        ]
+        ],
+        root=state["root"],
     )
     if rc != 0:
         raise RuntimeError("query_corpus failed (rc=%d): %s" % (rc, err.strip()))
@@ -230,7 +234,8 @@ def _baseline(state):
     predicate (`_wants_refactor`) short-circuits to END and nothing is attempted.
     """
     _, out, _ = _run(
-        ["scripts/run_make_target.py", state["gate"], "--json", "--dir", state["root"]]
+        ["scripts/run_make_target.py", state["gate"], "--json", "--dir", state["root"]],
+        root=state["root"],
     )
     try:
         res = json.loads(out) if out.strip() else {}
@@ -289,6 +294,7 @@ def _apply(state):
                 "--json",
             ],
             stdin=json.dumps(spec),
+            root=state["root"],
         )
         try:
             res = json.loads(out) if out.strip() else {}

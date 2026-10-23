@@ -2,10 +2,11 @@
 title: Unit — every agent CLI holds an --execute run to the model-call cap and says which model it chose
 kind: tests
 layer: n/a
-summary: scripts/doc_review.py, scripts/refactor_practice.py, scripts/hooks/on_stop_doc_review.py and scripts/hooks/on_stop_triage.py each check, before the agent runs, that the run's upper bound of model calls (--max-chunks, --max-nodes, or the one call triage makes) is within config/project.json `agents.max_model_calls` (read through scripts/model_budget.py): a bound over the cap, or a negative bound that sets none, returns USAGE with the agent never called, a cap the config cannot give returns CONFIG, and a dry run is never refused, since it calls no model. An approved run hands the agent its bound as `max_model_calls`, the count its counted backend stops at; the agent stopping at that count (models.CallCapReached) returns FAILURE and a saved run the approval does not cover (models.RunNotApproved) returns USAGE, each naming what to do next. With --execute and no --model, each writes to stderr which model the registry default chose and why; with --model it writes no such line. A ConfigError the loader raises once the agent runs (NotSet or WrongValue) returns CONFIG with the loader line on stderr, dry run and --execute alike; two cases run the real chain against this checkout's config, changed as scripts/config_loader.py read returns it: triage on claude-code-headless with no models.timeout_seconds entry for it (PATH empty, so no CLI could start), and a doc_review dry run with runtimes.max_steps 0. A tool child the agent starts that scripts/resource_limits.py ends at config/project.json `agents.tool_timeout_seconds` or `agents.tool_max_output_bytes` (ChildTimedOut, ChildOutputTooLarge) returns FAILURE with the message naming the key and no traceback, for each CLI whose agent runs tools, dry run and --execute alike; a third real-chain case runs a doc_review dry run whose agents.tool_timeout_seconds is no longer than make_targets.gate_timeout_seconds, which run_tool refuses as CONFIG before its first child starts. Every entry point under scripts/, mcp/ and api/ that ends in finish(main()) and reaches agents, evals, models or runtimes through any chain of imports among the modules and packages under those three directories (model_budget is one such helper; a sibling under scripts/jobs/, a helper's helper, a package and a `from scripts import` each count, and a case for each fails if the scan stops seeing it) must be one of these four or named in _HELD_ELSEWHERE with the test that holds it, and that test file must exist and name the entry point, so a new doer is not left out and a row excuses nothing it does not name. A module importlib or runpy loads by a name spelled whole in literals (a `+` of literals, an f-string with no field, a module-level name assigned one), or from a `.py` path whose every part after an anchor on the doer's own `__file__` is such a literal, is an import like any other, and every directory on that path is named too, so running models/__init__.py by its path reaches models. A load whose name or path holds any part the scan cannot read (a literal prefix beside sys.argv included), an `__import__` from-list it cannot read, a loader named other than as the callee of a call (assigned to a name or passed as a value), a loader fetched by getattr from importlib or runpy by a loader's name or a name the scan cannot read, and an exec or eval of text it cannot read each count as reaching unless _DYNAMIC_LOADS names the file with the reason; an `import_module as load` alias is followed to its call, and a row whose file no longer has such a load fails. Elsewhere the agent function is replaced by a recorder, so no model is built and nothing is written.
+summary: scripts/doc_review.py, scripts/refactor_practice.py, scripts/hooks/on_stop_doc_review.py and scripts/hooks/on_stop_triage.py each check, before the agent runs, that the run's upper bound of model calls (--max-chunks, --max-nodes, or the one call triage makes) is within config/project.json `agents.max_model_calls` (read through scripts/model_budget.py): a bound over the cap, or a negative bound that sets none, returns USAGE with the agent never called, a cap the config cannot give returns CONFIG, and a dry run is never refused, since it calls no model. An approved run hands the agent its bound as `max_model_calls`, the count its counted backend stops at; the agent stopping at that count (models.CallCapReached) returns FAILURE and a saved run the approval does not cover (models.RunNotApproved) returns USAGE, each naming what to do next. With --execute and no --model, each writes to stderr which model the registry default chose and why; with --model it writes no such line. A ConfigError the loader raises once the agent runs (NotSet or WrongValue) returns CONFIG with the loader line on stderr, dry run and --execute alike; two cases run the real chain against this checkout's config, changed as scripts/config_loader.py read returns it: triage on claude-code-headless with no models.timeout_seconds entry for it (PATH empty, so no CLI could start), and a doc_review dry run with runtimes.max_steps 0. A tool child the agent starts that scripts/resource_limits.py ends at config/project.json `agents.tool_timeout_seconds` or `agents.tool_max_output_bytes` (ChildTimedOut, ChildOutputTooLarge) returns FAILURE with the message naming the key and no traceback, for each CLI whose agent runs tools, dry run and --execute alike; a third real-chain case runs a doc_review dry run whose agents.tool_timeout_seconds is no longer than make_targets.gate_timeout_seconds, which run_tool refuses as CONFIG before its first child starts; a fourth runs a doc_review and a refactor_practice dry run under a --root whose make_targets.gate_timeout_seconds outlasts the shipped tool limit, which run_tool, reading that root's config as the gate runner does, refuses as CONFIG the same way. Every entry point under scripts/, mcp/ and api/ that ends in finish(main()) and reaches agents, evals, models or runtimes through any chain of imports among the modules and packages under those three directories (model_budget is one such helper; a sibling under scripts/jobs/, a helper's helper, a package and a `from scripts import` each count, and a case for each fails if the scan stops seeing it) must be one of these four or named in _HELD_ELSEWHERE with the test that holds it, and that test file must exist and name the entry point, so a new doer is not left out and a row excuses nothing it does not name. A module importlib or runpy loads by a name spelled whole in literals (a `+` of literals, an f-string with no field, a module-level name assigned one), or from a `.py` path whose every part after an anchor on the doer's own `__file__` is such a literal, is an import like any other, and every directory on that path is named too, so running models/__init__.py by its path reaches models. A load whose name or path holds any part the scan cannot read (a literal prefix beside sys.argv included), an `__import__` from-list it cannot read, a loader named other than as the callee of a call (assigned to a name or passed as a value), a loader fetched by getattr from importlib or runpy by a loader's name or a name the scan cannot read, and an exec or eval of text it cannot read each count as reaching unless _DYNAMIC_LOADS names the file with the reason; an `import_module as load` alias is followed to its call, and a row whose file no longer has such a load fails. Elsewhere the agent function is replaced by a recorder, so no model is built and nothing is written.
 """
 
 import ast
+import json
 import sys
 from pathlib import Path
 
@@ -289,6 +290,38 @@ def test_a_tool_limit_that_does_not_outlast_the_gate_stops_a_dry_run_as_config(
     err = capsys.readouterr().err
     assert "agents.tool_timeout_seconds" in err
     assert "make_targets.gate_stop_grace_seconds" in err
+
+
+def _practice_name():
+    loaded = config_loader.read(str(_ROOT), "config/practices.json")
+    return sorted(row["id"] for row in loaded["practices"])[0]
+
+
+@pytest.mark.parametrize("name", ["doc_review", "refactor_practice"])
+def test_a_root_whose_gate_outlasts_the_tool_limit_stops_a_dry_run_as_config(
+    name, tmp_path, capsys
+):
+    """The gate runner a reviewer or refactorer starts reads its limit from
+    the --root tree, so the tool limit is held against that tree's gate keys:
+    a root whose make_targets.gate_timeout_seconds is 20000, past this
+    checkout's shipped tool limit, is refused before the first child starts,
+    though this checkout's own config passes the same check."""
+    resource_limits.tool_limits()
+    (tmp_path / "config").mkdir()
+    manifest = config_loader.read(str(_ROOT))
+    manifest["make_targets"]["gate_timeout_seconds"] = 20000
+    (tmp_path / "config" / "project.json").write_text(
+        json.dumps(manifest), encoding="utf-8"
+    )
+    practices = (_ROOT / "config" / "practices.json").read_text(encoding="utf-8")
+    (tmp_path / "config" / "practices.json").write_text(practices, encoding="utf-8")
+    if name == "doc_review":
+        result = doc_review.main(["--root", str(tmp_path)])
+    else:
+        result = refactor_practice.main([_practice_name(), "--root", str(tmp_path)])
+    assert result is ExitCode.CONFIG
+    err = capsys.readouterr().err
+    assert "agents.tool_timeout_seconds" in err and "more than 20015" in err, err
 
 
 # Each entry point that builds a model or a runtime, and the test that holds

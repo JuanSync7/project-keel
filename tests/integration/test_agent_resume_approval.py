@@ -36,7 +36,7 @@ def _edit(path):
     return json.dumps({"edits": [{"file": path, "find": "a", "replace": "b"}]})
 
 
-def _tools(args, stdin=None):
+def _tools(args, stdin=None, *, root):
     """Every tool the brains run, answered from data: a green gate, an apply
     that lands, and no findings or nodes for a fresh run to walk."""
     joined = " ".join(args)

@@ -2,7 +2,7 @@
 title: Integration — practice_refactor gated KG-walking loop
 kind: tests
 layer: backend
-summary: Dry-run walks the graph + gates the read-only baseline but proposes/writes nothing; execute proposes one bounded edit per chunk and a chunk is `refactored` only when the gated apply_refactor keeps make verify green (else rolled back -> `skipped`); a crash mid-refactor resumes at the cursor without re-applying accepted chunks. The gate is the run's: a reply that names a gate is declined before any apply, every apply is bound to its chunk's own file with `--allow`, and a chunk with no path is declined before the model is called.
+summary: Dry-run walks the graph + gates the read-only baseline but proposes/writes nothing; execute proposes one bounded edit per chunk and a chunk is `refactored` only when the gated apply_refactor keeps make verify green (else rolled back -> `skipped`); a crash mid-refactor resumes at the cursor without re-applying accepted chunks. The gate is the run's: a reply that names a gate is declined before any apply, every apply is bound to its chunk's own file with `--allow`, and a chunk with no path is declined before the model is called. Every tool call hands the refactored root to the runner, so run_tool reads the tool limits, and checks them against the gate keys, of the tree the gate runner reads.
 """
 
 import json
@@ -56,8 +56,10 @@ class _Runner:
         self.argvs = {}
         self.specs = []
         self.applied_files = []
+        self.roots = []
 
-    def __call__(self, args, stdin=None):
+    def __call__(self, args, stdin=None, *, root):
+        self.roots.append(root)
         joined = " ".join(args)
         tool = next((a for a in args if a.endswith(".py")), "")
         self.argvs.setdefault(tool.rsplit("/", 1)[-1], []).append(list(args))
@@ -195,6 +197,26 @@ def test_execute_applies_each_accepted_chunk_and_the_gate_keeps_it(
     assert rep.skipped == ()
     assert runner.calls.count("apply_refactor") == 2  # one gated apply per chunk
     assert model.n == 2
+
+
+def test_every_tool_child_is_bounded_by_the_refactored_roots_limits(
+    tmp_path, monkeypatch
+):
+    """The gate runner reads its limit from the refactored root, which is not
+    this checkout here, so each tool call must hand that root to run_tool."""
+    runner, model = _Runner(gate_ok=True), _Model()
+    _patch(monkeypatch, runner, model)
+    root = tmp_path / "tree"
+    rep = refactor(
+        "precise-container-types",
+        execute=True,
+        max_model_calls=8,
+        root=str(root),
+        checkpointer=_checkpointer(tmp_path),
+    )
+    assert rep.baseline_green is True
+    assert runner.calls.count("apply_refactor") == 2, runner.calls
+    assert runner.roots == [str(root)] * len(runner.calls)
 
 
 def test_gate_red_rolls_back_so_the_chunk_is_skipped_not_refactored(

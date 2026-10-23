@@ -29,6 +29,8 @@ _BRAINS = (
     "agents.wiki_navigator._brain",
 )
 _TAKES_STDIN = {"agents.doc_reviewer._brain", "agents.practice_refactor._brain"}
+# Runners that take, by keyword, the root whose config supplies the limits.
+_TAKES_ROOT = _TAKES_STDIN
 _SITES = _BRAINS + ("action_server",)
 
 
@@ -38,10 +40,12 @@ def _runner(site, tmp_path, monkeypatch):
     module = importlib.import_module(site)
     if site != "action_server":
         # Each brain prefixes the interpreter, so `-c` runs the code.
+        # None is this checkout; the patched tool_limits ignores it anyway.
+        rooted = {"root": None} if site in _TAKES_ROOT else {}
         return lambda code, stdin=None: (
-            module._run(["-c", code], stdin=stdin)
+            module._run(["-c", code], stdin=stdin, **rooted)
             if stdin is not None
-            else module._run(["-c", code])
+            else module._run(["-c", code], **rooted)
         )
     # The doer runs `<python> <doer> --root <root> <args>`: a doer file of
     # the test's own stands in for scripts/jobs/rebuild_index.py.

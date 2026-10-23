@@ -2,7 +2,7 @@
 title: Integration — the doc reviewer agent (dry-run, execute, decline, rollback)
 kind: tests
 layer: backend
-summary: agents.doc_reviewer.review over patched tool and model seams (no subprocess, no model): a dry-run gathers findings, retrieves rules, gates the baseline and writes nothing; execute proposes one edit per chunk and applies through the gated doer; a declined chunk or a red gate lands in skipped; a red baseline attempts nothing; a reply that names a gate is declined, the prompt never states the gate, and every apply is bound to its chunk's own file with `--allow`. The report the CLI and hook print is this report.
+summary: agents.doc_reviewer.review over patched tool and model seams (no subprocess, no model): a dry-run gathers findings, retrieves rules, gates the baseline and writes nothing; execute proposes one edit per chunk and applies through the gated doer; a declined chunk or a red gate lands in skipped; a red baseline attempts nothing; a reply that names a gate is declined, the prompt never states the gate, and every apply is bound to its chunk's own file with `--allow`. Every tool call hands the reviewed root to the runner, so run_tool reads the tool limits, and checks them against the gate keys, of the tree the gate runner reads. The report the CLI and hook print is this report.
 """
 
 import json
@@ -51,8 +51,10 @@ class _Runner:
     def __init__(self, baseline_ok=True, gate_ok=True):
         self.baseline_ok, self.gate_ok, self.calls = baseline_ok, gate_ok, []
         self.argvs = {}
+        self.roots = []
 
-    def __call__(self, args, stdin=None):
+    def __call__(self, args, stdin=None, *, root):
+        self.roots.append(root)
         joined = " ".join(args)
         tool = next((a for a in args if a.endswith(".py")), "")
         self.argvs.setdefault(tool.rsplit("/", 1)[-1], []).append(list(args))
@@ -136,6 +138,15 @@ def test_execute_applies_each_accepted_chunk_through_the_gated_doer(seams):
     assert not r.dry_run
     assert len(model.prompts) == 2 and runner.calls.count("apply_refactor") == 2
     assert r.applied == ("docs/a.md",) * 2 and r.skipped == ()
+
+
+def test_every_tool_child_is_bounded_by_the_reviewed_roots_limits(seams):
+    """The gate runner reads its limit from the reviewed root, so each tool
+    call hands that root to run_tool, whose time limit is checked against it."""
+    runner, _, root = seams
+    review(execute=True, max_model_calls=8, root=str(root), checkpointer=None)
+    assert runner.calls.count("apply_refactor") == 2, runner.calls
+    assert runner.roots == [str(root)] * len(runner.calls)
 
 
 def test_a_declined_chunk_is_skipped_without_touching_apply(seams, monkeypatch):
@@ -232,11 +243,11 @@ def test_a_stale_stamp_is_never_sent_to_the_model(monkeypatch, tmp_path):
     runner = _Runner()
     model = _Model(_SPEC)
 
-    def run(args, stdin=None):
+    def run(args, stdin=None, *, root):
         if "review_docs.py" in " ".join(args):
             runner.calls.append("review_docs")
             return 0, json.dumps(only_stale), ""
-        return runner(args, stdin)
+        return runner(args, stdin, root=root)
 
     monkeypatch.setattr(_BRAIN + "._run", run)
     monkeypatch.setattr(_BRAIN + ".get_model", lambda name=None: model)
