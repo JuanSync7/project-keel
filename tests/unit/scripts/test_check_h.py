@@ -127,3 +127,13 @@ def test_keels_own_layers_app_is_declared_and_valid(monkeypatch):
     monkeypatch.setattr(cs, "_READ_REPORTED", set())
     cs.check_H()
     assert cs.errors == [], cs.errors
+
+
+def test_an_absent_manifest_is_an_error_naming_the_fix(repo):
+    """A tree with no config/project.json has none of its facts judged, and
+    copier never prunes the file, so its absence is a fault, never a warning."""
+    cs.check_H()
+    assert cs.warnings == [], cs.warnings
+    mine = [e for e in cs.errors if e.startswith("config/project.json:")]
+    assert len(mine) == 1 and "not found" in mine[0], cs.errors
+    assert "restore it" in mine[0], mine

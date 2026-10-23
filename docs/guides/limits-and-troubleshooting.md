@@ -178,9 +178,6 @@ a decision on whether it should fail instead.
   `transport` extra.
 - `scripts/cdmon_sync.py` exits 0 when the `cdmon` program or its config is
   absent; otherwise it passes cdmon's exit code through. Queued for a decision.
-- A `.py` file that does not parse is a WARN in check_D and the other checks
-  that read the syntax tree, so its imports go unchecked. Queued for a
-  decision.
 - `scripts/jobs/check_corpus.py` passes when no local corpus has been built;
   it then judges a fresh build only. Queued for a decision.
 - `tests/integration/test_frontend_lockfile_gate.py` skips in a tree outside

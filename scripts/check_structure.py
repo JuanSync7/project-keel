@@ -18,7 +18,10 @@ Checks:
      module
   C. Each src/ directory containing *.py is a package: __init__.py with __all__
   D. The __init__ boundary: no absolute import of another package's _private module,
-     and no `from pkg import _sub` of a private submodule from outside pkg
+     and no `from pkg import _sub` of a private submodule from outside pkg. A
+     .py file any check cannot parse is one ERR, unless this interpreter is
+     older than layers.backend.python's floor: then the run prints one WARN
+     counting the files `make check` judges instead
   E. Authored coverage (ERR): every __all__-exported symbol defined in-file
      has a docstring — the corpus's symbol summaries (WARN until ADR-K-0008)
   F. Tool specs governed (ERR) + accountability (WARN): tool/agent docs are
@@ -26,8 +29,9 @@ Checks:
      Side effects opens with the word for its tool_effect, and its When to use
      carries a `- NOT` bullet (the negative-scope line)
   G. Tool<->agent binding (ERR): tools.md <-> '## Used by' agree; tool_command invokes public_api
-  H. Project facts in config/project.json agree with the tree (ERR); an
-     undeclared leftover stack/transport dir WARNs (CONVENTIONS section 15).
+  H. Project facts in config/project.json agree with the tree (ERR), and an
+     absent manifest is an ERR; an undeclared leftover stack/transport dir
+     WARNs (CONVENTIONS section 15).
      An optional 'runtimes' block is validated the same way (section 16)
   I. Agent-rules symlink (ERR): every CLAUDE.md is a symlink to its sibling
      AGENT.md, and every AGENT.md has that sibling (CONVENTIONS section 5)
@@ -406,6 +410,90 @@ def _read_json_config(relpath):
     return data
 
 
+# Python sources a check could not parse, reported once per path however many
+# checks read them; and the ones a SyntaxError kept from judgement because this
+# interpreter is older than the project's floor, which run_checks prints once.
+_PARSE_REPORTED = set()
+_PARSE_DEFERRED = set()
+_FLOOR_OPERATORS = (">=", "~=", "==")
+
+
+def _declared_python_floor():
+    """(major, minor) from config/project.json layers.backend.python's lower
+    bound (`>=`, `~=`, `==` or a bare version), or None when none can be read."""
+    proj = _read_json_config(os.path.join("config", "project.json"))
+    layers = proj.get("layers") if isinstance(proj, dict) else None
+    backend = layers.get("backend") if isinstance(layers, dict) else None
+    spec = backend.get("python") if isinstance(backend, dict) else None
+    if not isinstance(spec, str):
+        return None
+    for clause in spec.split(","):
+        version = clause.strip()
+        for op in _FLOOR_OPERATORS:
+            if version.startswith(op):
+                version = version[len(op) :].strip()
+                break
+        parts = version.split(".")
+        if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit():
+            return int(parts[0]), int(parts[1])
+    return None
+
+
+def _parse_python(full):
+    """(text, tree) for the .py file at *full*, else None once the failure is
+    accounted for: an error naming the file, or, for a SyntaxError under an
+    interpreter older than the declared floor, a deferral run_checks prints.
+
+    An old interpreter cannot tell newer syntax from a broken file, and the
+    pre-commit hook runs the host's python3, so only there is a SyntaxError not
+    a finding; `make check` runs the project interpreter and judges the file.
+    With no floor to compare against the file is the error (fail closed). A
+    file that cannot be decoded is an error under any interpreter.
+    """
+    try:
+        # utf-8-sig: a BOM file is valid importable Python (ADR-K-0008 review).
+        with open(full, encoding="utf-8-sig") as fh:
+            text = fh.read()
+        return text, ast.parse(text, filename=full)
+    except SyntaxError as e:
+        floor = _declared_python_floor()
+        if floor is not None and sys.version_info[:2] < floor:
+            _PARSE_DEFERRED.add(rel(full).replace(os.sep, "/"))
+            return None
+        failure = e
+    except UNREADABLE as e:
+        failure = e
+    if full not in _PARSE_REPORTED:
+        _PARSE_REPORTED.add(full)
+        err(
+            "%s: cannot be parsed under Python %d.%d (%s), so no check that reads "
+            "Python judges it -- fix it until `python -m py_compile %s` accepts it"
+            % (rel(full), sys.version_info[0], sys.version_info[1], failure, rel(full))
+        )
+    return None
+
+
+def _parse_deferral_note():
+    """The one warning a run prints for its deferred files, or None."""
+    if not _PARSE_DEFERRED:
+        return None
+    names = sorted(_PARSE_DEFERRED)
+    proj = _read_json_config(os.path.join("config", "project.json"))
+    spec = proj["layers"]["backend"]["python"]
+    return (
+        "%d Python file(s) were not judged: Python %d.%d cannot parse them, and "
+        "config/project.json layers.backend.python asks for %s -- `make check` "
+        "runs the project interpreter, which judges them (%s)"
+        % (
+            len(names),
+            sys.version_info[0],
+            sys.version_info[1],
+            spec,
+            ", ".join(names),
+        )
+    )
+
+
 def parse_frontmatter(path):
     try:
         with open(path, encoding="utf-8") as fh:
@@ -496,7 +584,7 @@ def _declared_toplevel():
     """The top-level names config/project.json declares beyond TAXONOMY.
 
     Reads `structure.extra_toplevel`, a plain list of names. An absent manifest
-    or key declares nothing, silently: check_H already warns on a missing
+    or key declares nothing, silently: check_H already errs on a missing
     manifest, and a project that has not run `copier update` yet has no key.
     Every entry the rule would never consult is an ERROR rather than a skip, so
     a declaration cannot sit in the manifest looking like it does something.
@@ -773,12 +861,10 @@ def check_D():
                 if not f.endswith(".py"):
                     continue
                 full = os.path.join(dirpath, f)
-                try:
-                    with open(full, encoding="utf-8-sig") as fh:
-                        tree = ast.parse(fh.read(), filename=full)
-                except UNPARSEABLE as e:
-                    warn("%s: could not parse (%s)" % (rel(full), e))
+                parsed = _parse_python(full)
+                if parsed is None:
                     continue
+                tree = parsed[1]
                 for node in ast.walk(tree):
                     if isinstance(node, ast.ImportFrom):
                         for finding in _private_submodule_findings(full, node):
@@ -847,11 +933,10 @@ def check_E():
                 if not f.endswith(".py"):
                     continue
                 full = os.path.join(dirpath, f)
-                try:
-                    with open(full, encoding="utf-8-sig") as fh:
-                        tree = ast.parse(fh.read(), filename=full)
-                except UNPARSEABLE:
-                    continue  # check_D already warns on parse failure (same roots)
+                parsed = _parse_python(full)
+                if parsed is None:
+                    continue
+                tree = parsed[1]
                 exported = _exported_names(tree)
                 if not exported:
                     continue
@@ -1182,12 +1267,18 @@ def check_H():
 
     Declared facts are enforced (errors); a stack or transport present on
     disk but absent from the manifest is a WARN (an undeclared leftover).
+    An absent manifest is an error: copier never prunes it, so a tree without
+    it is one whose every declared fact goes unjudged.
     Stdlib JSON, so it runs under the old pre-commit interpreter (no tomllib).
     See CONVENTIONS section 15.
     """
     path = os.path.join(ROOT, "config", "project.json")
     if not os.path.isfile(path):
-        warn("config/project.json: not found; project facts are unenforced")
+        err(
+            "config/project.json: not found, so no project fact is judged -- "
+            "restore it (`git checkout -- config/project.json`, or `copier "
+            "update` in a generated project)"
+        )
         return
     manifest = _read_json_config(os.path.join("config", "project.json"))
     if manifest is _NO_DATA:
@@ -1555,13 +1646,10 @@ def check_J():
                 if not f.endswith(".py"):
                     continue
                 full = os.path.join(dirpath, f)
-                try:
-                    with open(full, encoding="utf-8-sig") as fh:
-                        text = fh.read()
-                    tree = ast.parse(text, filename=full)
-                except UNPARSEABLE as e:
-                    warn("%s: could not parse (%s)" % (rel(full), e))
+                parsed = _parse_python(full)
+                if parsed is None:
                     continue
+                text, tree = parsed
                 pragma = _practice_ok_lines(text)
                 for line, name in _foreign_exception_raises(
                     tree, local_tops, stdlib_mods, pragma
@@ -1804,13 +1892,10 @@ def check_K():
                 if not f.endswith(".py"):
                     continue
                 full = os.path.join(dirpath, f)
-                try:
-                    with open(full, encoding="utf-8-sig") as fh:
-                        text = fh.read()
-                    tree = ast.parse(text, filename=full)
-                except UNPARSEABLE as e:
-                    warn("%s: could not parse (%s)" % (rel(full), e))
+                parsed = _parse_python(full)
+                if parsed is None:
                     continue
+                text, tree = parsed
                 pragma = _practice_ok_lines(text)
                 for line, name in _frozen_config_violations(tree, text, marker, pragma):
                     err(
@@ -1934,13 +2019,10 @@ def check_L():
                 if not f.endswith(".py"):
                     continue
                 full = os.path.join(dirpath, f)
-                try:
-                    with open(full, encoding="utf-8-sig") as fh:
-                        text = fh.read()
-                    tree = ast.parse(text, filename=full)
-                except UNPARSEABLE as e:
-                    warn("%s: could not parse (%s)" % (rel(full), e))
+                parsed = _parse_python(full)
+                if parsed is None:
                     continue
+                text, tree = parsed
                 for line, arg, name in _naked_tensor_params(tree, text, base_types):
                     warn(
                         "%s:%d: parameter '%s' is a naked %s (bare tensor type, "
@@ -2584,16 +2666,22 @@ def check_M():
     """Ruleset parity: pyproject.toml must not silently loosen the lint/type
     policy declared as DATA in config/practices.json rulesets. Errs on a declared
     ruff family missing from extend-select, a declared mypy flag off/absent, or a
-    'deferred' family silently selected. Degrades to a WARN if pyproject is
-    MISSING (a generated project may not carry one); a pyproject that is present
-    but unreadable ERRs, because that is this gate going dark on a file that is
-    right there. Waivable with `# practice-ok`."""
+    'deferred' family silently selected. A MISSING pyproject ERRs while rulesets
+    are declared: copier never prunes it, so a declared policy with no file to
+    hold it is one nobody enforces. A pyproject that is present but unreadable
+    ERRs too, because that is this gate going dark on a file that is right
+    there. Waivable with `# practice-ok`."""
     practices = _load_practices()
     if not isinstance(practices.get("rulesets"), dict):
         return
     path = os.path.join(ROOT, "pyproject.toml")
     if not os.path.isfile(path):
-        warn("pyproject.toml: not found; ruleset parity unenforced")
+        err(
+            "pyproject.toml: not found, while config/practices.json declares "
+            "rulesets, so no declared ruff or mypy rule is enforced -- restore it "
+            "(`git checkout -- pyproject.toml`, or `copier update` in a generated "
+            "project)"
+        )
         return
     text = _read_text(path, err)  # present but unreadable -> parity unprovable
     if text is None:
@@ -2635,10 +2723,10 @@ def _module_meta(doc):
 def _module_header_findings(files):
     """files: {relpath: source text} -> error strings. Pure; the walk is check_O's.
 
-    Unparseable sources are skipped: check_D already warns on them over the same
-    roots, and a second report here would be noise. (Corollary: on an OLD host
-    interpreter a module using newer syntax parses as SyntaxError and is skipped
-    — the project interpreter's run, in CI and `make check`, is the enforcing one.)
+    Unparseable sources are skipped: check_D reports each one over the same
+    roots through _parse_python, an error or, on an interpreter older than the
+    project's floor, the run's one deferral warning, so a second report here
+    would be noise.
     """
     errs = []
     for relpath in sorted(files):
@@ -4102,8 +4190,9 @@ def _effect_declaration_findings(
     """modules: {relpath: source}; the rest as _mechanism_reason takes them.
     -> (errors, warnings). Pure; the walk is check_V's.
 
-    Unparseable sources and modules with no docstring are skipped -- check_D and
-    check_O respectively already own those, and a second report is noise.
+    Unparseable sources and modules with no docstring are skipped -- check_D
+    (through _parse_python) and check_O respectively already own those, and a
+    second report is noise.
     """
     errs, warns_ = [], []
     for relpath in sorted(modules):
@@ -6080,26 +6169,22 @@ def check_X():
     that no allowlist source copies. Silent when nothing spawns and no block
     exists; an unreadable manifest is reported once, by the reader."""
     modules = {}
-    for name in sorted(os.listdir(ROOT)):
-        if name.endswith(".py") and os.path.isfile(os.path.join(ROOT, name)):
-            try:
-                with open(os.path.join(ROOT, name), encoding="utf-8-sig") as fh:
-                    modules[name] = fh.read()
-            except UNREADABLE:
-                continue  # unreadable is reported by the checks keyed on it
+    paths = [
+        os.path.join(ROOT, name)
+        for name in sorted(os.listdir(ROOT))
+        if name.endswith(".py") and os.path.isfile(os.path.join(ROOT, name))
+    ]
     for root in _spawn_roots():
-        base = os.path.join(ROOT, root)
-        for dirpath, _, filenames in walk(base):
-            for f in filenames:
-                if not f.endswith(".py"):
-                    continue
-                try:
-                    with open(os.path.join(dirpath, f), encoding="utf-8-sig") as fh:
-                        modules[rel(os.path.join(dirpath, f)).replace(os.sep, "/")] = (
-                            fh.read()
-                        )
-                except UNREADABLE:
-                    continue  # unreadable is reported by the checks keyed on it
+        for dirpath, _, filenames in walk(os.path.join(ROOT, root)):
+            paths.extend(
+                os.path.join(dirpath, f) for f in filenames if f.endswith(".py")
+            )
+    # Its scope is wider than check_D's, so a file only it reads would go
+    # unjudged in silence if it skipped a parse failure instead of reporting it.
+    for full in paths:
+        parsed = _parse_python(full)
+        if parsed is not None:
+            modules[rel(full).replace(os.sep, "/")] = parsed[0]
     findings = []
     spawns = False
     for path in sorted(modules):
@@ -7263,21 +7348,25 @@ def run_checks(root, project_checks=True):
     (letter `project:<stem>`). Prints nothing.
 
     Resets the state a run accumulates (errors, warnings, GOVERNED, the config
-    memo, the reported-unreadable set and the accepted project-checks
-    directory), so two runs in one process share nothing. The template's
+    memo, the reported-unreadable and reported-unparseable sets, the deferred
+    sources and the accepted project-checks directory), so two runs in one
+    process share nothing. A source an older interpreter deferred is printed
+    once, after every check, as one warning (_parse_python says why). The template's
     findings are complete before the first project module loads, and each
     module runs against fresh `errors`/`warnings` lists, so a project check that
     empties them hides nothing and what it reports through err()/warn() is its
     own finding. scripts/audit_project.py passes
     False: a project check is the audited project's code."""
     global ROOT, errors, warnings, GOVERNED, _CONFIG_READ, _READ_REPORTED
-    global _PROJECT_CHECKS
+    global _PROJECT_CHECKS, _PARSE_REPORTED, _PARSE_DEFERRED
     ROOT = os.path.abspath(root)
     errors = []
     warnings = []
     GOVERNED = []
     _CONFIG_READ = {}
     _READ_REPORTED = set()
+    _PARSE_REPORTED = set()
+    _PARSE_DEFERRED = set()
     _PROJECT_CHECKS = None
     found = []
     for letter, check in CHECKS:
@@ -7287,6 +7376,10 @@ def run_checks(root, project_checks=True):
         # but no consumer reads the order across tiers, only within one.
         found.extend((letter, "warning", m) for m in warnings[n_warn:])
         found.extend((letter, "error", m) for m in errors[n_err:])
+    # After every check, so a file several checks deferred is counted once.
+    note = _parse_deferral_note()
+    if note is not None:
+        found.append(("D", "warning", note))
     if project_checks:
         found.extend(_project_findings())
     return found

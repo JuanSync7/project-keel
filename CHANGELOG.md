@@ -409,6 +409,18 @@ version rather than a bare commit:
   traceback or every case scored as an error.
   `tests/unit/scripts/test_agent_spend_cap.py` fails an entry point that builds
   a model or runtime and no test holds to this.
+- **check_structure fails closed where it warned and skipped.** A `.py` file a
+  check cannot parse was a WARN, and check_E, check_O, check_V and check_X
+  skipped it in silence, so its imports, headers and spawns went unjudged. It
+  is now one error naming the file, however many checks read it, and check_X
+  reports one in a directory check_D does not read. Under an interpreter older
+  than the floor of config/project.json `layers.backend.python`, as the
+  pre-commit hook's host `python3` can be, a `SyntaxError` cannot be told from
+  newer syntax, so the run prints one warning counting those files and `make
+  check` judges them; with no floor to read, the file is the error. An absent
+  `config/project.json` (check_H), and an absent `pyproject.toml` while
+  `rulesets` is declared (check_M), are errors rather than warnings: copier
+  never prunes either file.
 - **A gate that times out or is interrupted ends every process in make's
   session.** `scripts/run_make_target.py` killed only make on a timeout,
   leaving the pytest, copier and uvicorn processes it started running. make now

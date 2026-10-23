@@ -357,3 +357,35 @@ def test_component_relaxation_is_silent_when_strict_is_not_declared():
         '[[tool.mypy.overrides]]\nmodule = ["m.*"]\ndisallow_untyped_defs = false\n'
     )
     assert _find_ovr(toml, {}, flags=("warn_unreachable",)) == []
+
+
+@pytest.fixture
+def bare_repo(tmp_path, monkeypatch):
+    """A root holding only config/practices.json, the gate's state isolated."""
+    (tmp_path / "config").mkdir()
+    monkeypatch.setattr(cs, "ROOT", str(tmp_path))
+    monkeypatch.setattr(cs, "errors", [])
+    monkeypatch.setattr(cs, "warnings", [])
+    monkeypatch.setattr(cs, "_CONFIG_READ", {})
+    monkeypatch.setattr(cs, "_READ_REPORTED", set())
+    return tmp_path
+
+
+def test_an_absent_pyproject_with_a_declared_ruleset_is_an_error(bare_repo):
+    """Declared rulesets with no pyproject.toml to hold them is a policy nobody
+    enforces; copier never prunes pyproject.toml, so the absence is a fault."""
+    (bare_repo / "config" / "practices.json").write_text(
+        '{"rulesets": {"ruff": {"extend_select": ["E"]}}}', encoding="utf-8"
+    )
+    cs.check_M()
+    assert cs.warnings == [], cs.warnings
+    assert len(cs.errors) == 1, cs.errors
+    assert cs.errors[0].startswith("pyproject.toml: not found"), cs.errors
+    assert "restore it" in cs.errors[0], cs.errors
+
+
+def test_no_declared_ruleset_and_no_pyproject_is_silent(bare_repo):
+    """The other side: with no rulesets there is no policy to hold, so nothing."""
+    (bare_repo / "config" / "practices.json").write_text("{}", encoding="utf-8")
+    cs.check_M()
+    assert cs.errors == [] and cs.warnings == [], (cs.errors, cs.warnings)

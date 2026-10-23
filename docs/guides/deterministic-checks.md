@@ -104,7 +104,14 @@ print but never fail the build.
 - **D. `__init__` is the API** — no absolute import of another package's
   `_private` module, and no `from pkg import _sub` of a private submodule or
   subpackage from outside `pkg/`; a relative import that climbs out of the
-  package is judged as its absolute twin would be.
+  package is judged as its absolute twin would be. A `.py` file that any check
+  reading Python cannot parse is one error, naming the file, however many
+  checks read it. The one exception is a `SyntaxError` under an interpreter
+  older than the floor of `config/project.json` `layers.backend.python`, as the
+  pre-commit hook's host `python3` can be: newer syntax cannot be told from a
+  broken file there, so the run prints one warning that counts those files and
+  names both versions, and `make check`, which runs the project interpreter,
+  judges them. With no floor to read, the file is the error.
 - **E. Authored coverage** — every `__all__`-exported symbol defined in-file has
   a docstring: the corpus's symbol summaries (error since ADR-K-0008).
 - **F. Tool specs governed** (error) + **accountability** (warn) — valid
@@ -117,6 +124,8 @@ print but never fail the build.
   use` — the negative-scope line that names the sibling this tool is not.
 - **G. Tool↔agent binding** — `tools.md` ↔ each spec's `## Used by` agree.
 - **H. Project facts** — `config/project.json` agrees with the tree (§15).
+  An absent `config/project.json` is an error: copier never prunes it, so a
+  tree without it has none of its facts judged.
   Among those facts, `layers.app` (the composition root `make run` runs) must
   name, by `path`, a package with `__main__.py` or a `.py` file, and by
   `module`, the dotted form of that path's trailing components; each problem is
@@ -141,6 +150,8 @@ print but never fail the build.
   `extend_select` family is selected, every mypy flag is enforced, no `deferred`
   (policy-off) family is selected. Reads `pyproject.toml` as text (no `tomllib`
   on 3.6); multi-line arrays, dotted-key/header forms, `# practice-ok` all handled.
+  An absent `pyproject.toml` is an error while `rulesets` is declared, since
+  copier never prunes it.
   Also enforces the two declarations that used to have no consumer: every ruff
   `per-file-ignores` pattern must be declared in `rulesets.ruff.per_file_ignores`
   (one `"**/*.py"` line could otherwise silence a family corpus-wide), and every
