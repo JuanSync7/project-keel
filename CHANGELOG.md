@@ -311,8 +311,15 @@ version rather than a bare commit:
   second run fetches nothing. The commit hook is now a local hook, so a commit
   needs no Go toolchain, and every scan, the hook's included, runs the
   recorded program and never one on PATH. `secrets.scanner.hook_repo` and
-  `scripts/scan_secrets.py --locate` are gone. A host that cannot reach the
-  vendor repoints `secrets.scanner.release_url` at a mirror. The scanner's
+  `scripts/scan_secrets.py --locate` are gone. The hook's id is now
+  `secret-scan`, not `gitleaks`, so a `SKIP=gitleaks` in a script or CI
+  setting no longer skips it: rename it to `SKIP=secret-scan`. The archive
+  stays beside the program, and a rerun proves the program from it, so a
+  swapped program is installed again. `secrets.scanner.rev` and
+  `secrets.scanner.name` must each be one path part, and the installer
+  refuses a name other than the adapted scanner's, as the scan does. A local
+  file the installer cannot read or write is exit 2 naming it, not a network
+  fault. A host that cannot reach the vendor repoints `secrets.scanner.release_url` at a mirror. The scanner's
   own config and ignore file, `.gitleaks.toml` and `.gitleaksignore`, join
   `agents.protected_names`, so an agent edit cannot add one. Upgrading: run
   `make secrets-install` once after `copier update`, before the next commit.

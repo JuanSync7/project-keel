@@ -2153,8 +2153,15 @@ Left by CMP-6.S2 so far:
 the `scripts/config_loader.py` `KEYS` rows marked secret and judges every file
 `scripts/git_tree.py` `candidate_files` lists. The scanner layer,
 `scripts/scan_secrets.py`, the gitleaks adapter, runs the scanner
-config/project.json `secrets.scanner` pins; the pre-commit hook pinned at `secrets.scanner.rev`
-builds it, and `make secrets-install` records it. The commit hook
+config/project.json `secrets.scanner` pins. `make secrets-install`
+(`scripts/install_scanner.py`) fetches the release archive
+`secrets.scanner.release_assets` pins for this platform from
+`secrets.scanner.release_url`, installs its program under the per-user
+`secrets.scanner.install_root` only when the archive's sha256 is the pinned
+one, keeps the archive beside it, and records the program; it needs no Go
+toolchain and no build. The commit hook is the local `secret-scan` hook over
+`scripts/scan_secrets.py`, and every scan runs the recorded program only. The
+commit hook
 scans what a commit adds or changes, or every commit when nothing is staged, and `make secret-scan`, a `make
 verify` goal, and CI scan every commit.
 [ADR-K-0025](../adr/keel/K-0025-committed-secrets-keyed-gate-and-scanner.md) is
@@ -2162,21 +2169,26 @@ proposed.
 
 Left by CMP-6.S3 so far:
 
-- The record is trust on first use: a program named `gitleaks` that is first
-  on `PATH` when `make secrets-install` runs is the one recorded, and a fake
-  that writes an empty report passed the history scan by hand. The record
-  catches a later swap, not the first.
+- Nothing is taken from `PATH`: the installer installs only the archive whose
+  sha256 config pins, and a rerun proves the program from the kept archive,
+  so a swapped program, a forged file beside it or a swapped archive is
+  installed again. A user who can write `secrets.scanner.install_root` or the
+  git-ignored record can still swap the program after the install, and no
+  scan sees it until `make secrets-install` runs again, because a scan checks
+  the program against the record, not the archive;
+  docs/guides/deterministic-checks.md lists it as a bypass.
 - Measured by hand in a generated project, and not caught by either layer: a
   value split across two string literals; a weak password with no known
   shape; a credential in `package-lock.json`, an `.svg`, `go.sum`, a PDF or
   under `node_modules/`, which the scanner's default rules allow. A
-  `--no-verify` or `SKIP=gitleaks` commit passes the hook and is red in the
+  `--no-verify` or `SKIP=secret-scan` commit passes the hook and is red in the
   history scan. docs/guides/deterministic-checks.md lists every bypass tried.
-- `make canary` runs `make secrets-install` in each project with
-  `XDG_CACHE_HOME` inside the run, so pre-commit builds the scanner once per
-  run. `GOPROXY` and the CA bundle variables are not in `child_env.names`, so
-  on a host whose TLS is intercepted the canary's install may fail; the
-  canary was not run in this slice.
+- `make canary` runs `make secrets-install` in each project before its
+  `make verify`, into the real per-user install root
+  (`~/.cache/<project_slug>/tools`), outside the run, so the archive is
+  fetched once per machine and each later project only records it. The fetch
+  needs the release URL reachable; `SSL_CERT_FILE` and the proxy variables
+  are in `child_env.names`. The canary was not run in this slice.
 - The README Quickstart does not install `api/rest_fastapi/requirements.txt`,
   so a generated project's first `make verify` was red in `typecheck`
   (fastapi and uvicorn not found) before it reached the secret scan, which
