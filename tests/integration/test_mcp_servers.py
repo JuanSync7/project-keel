@@ -2,7 +2,7 @@
 title: Integration — MCP servers (Q&A + action)
 kind: tests
 layer: backend
-summary: The thin MCP servers expose schema'd tools that delegate to wiki_navigator and a jobs doer; the action tool defaults to dry-run. Each wiki_answer is held to the server's approved model-call count, config/project.json `agents.max_model_calls` read by configured_cap: a count of 0, the default and the shipped value, answers with a tool error naming the key and makes no model call, a FakeModel subclass in models.registry._REGISTRY counting the calls. Each server's entry `main` turns a refused setting (a serve limit out of its bound, a blank KEEL_MCP_MODEL) into exit CONFIG through the exit helper with the key on stderr, before it caps memory or serves.
+summary: The thin MCP servers expose schema'd tools that delegate to wiki_navigator and a jobs doer; the action tool defaults to dry-run. Each wiki_answer is held to the server's approved model-call count, config/project.json `agents.max_model_calls` read by configured_cap: a count of 0, the default and the shipped value, answers with a tool error naming the key and makes no model call, a FakeModel subclass in models.registry._REGISTRY counting the calls. The Q&A server's `main` reads that count from the root it is given: under a root that approves one call a question reaches the model once, which the 0 this checkout ships would refuse. Each server's entry `main` turns a refused setting (a serve limit out of its bound, a blank KEEL_MCP_MODEL) into exit CONFIG through the exit helper with the key on stderr, before it caps memory or serves.
 """
 
 import json
@@ -260,3 +260,39 @@ def test_a_blank_model_variable_is_config_before_the_qa_server_serves(
     assert qa_server.main(root=root) is ExitCode.CONFIG
     assert nothing_served == []
     assert "KEEL_MCP_MODEL" in capsys.readouterr().err
+
+
+def test_main_holds_each_question_to_the_cap_its_root_configures(
+    tmp_path, monkeypatch, nothing_served
+):
+    """main reads the count from the root it is given: under a root that
+    approves one call, a question reaches the model once; this checkout ships
+    0, so a main that read any other config would refuse it."""
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "project.json").write_text(
+        json.dumps(
+            {
+                "agents": {"max_model_calls": 1},
+                "transports": {"serve": {"memory_cap_mb": 256}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setitem(registry._REGISTRY, "fake", _Counted)
+    monkeypatch.setattr(_Counted, "prompts", [])
+    monkeypatch.setenv("KEEL_MCP_MODEL", "fake")
+    corpus = _tiny_corpus(tmp_path)
+    built = []
+
+    def build(**kwargs):
+        # The corpus is the one thing changed; the count is main's own.
+        built.append(build_qa_server(**dict(kwargs, corpus=corpus)))
+        return built[-1]
+
+    monkeypatch.setattr(qa_server, "build_qa_server", build)
+    assert qa_server.main(root=str(tmp_path)) is ExitCode.SUCCESS
+    assert nothing_served == [256, "served"]
+    (server,) = built
+    result = server.call_tool("wiki_answer", {"question": "what is keel"})
+    assert result["isError"] is False, result
+    assert len(_Counted.prompts) == 1
