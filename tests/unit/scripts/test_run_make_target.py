@@ -1570,6 +1570,14 @@ _MAKE_PID = (
     "    while state(pid) not in (None, 'Z') and time.monotonic() < deadline:\n"
     "        real_sleep(0.01)\n"
 )
+# A fake make that holds its exit until the case says `go`, bounded so a case
+# that never says it fails on its own assertion instead of hanging.
+_MAKE_WAITS_FOR_GO = (
+    "import pathlib, time\n"
+    "deadline = time.monotonic() + 30\n"
+    "while not pathlib.Path('go').exists() and time.monotonic() < deadline:\n"
+    "    time.sleep(0.01)\n"
+)
 # A waiter in the runner's own process, standing in for a library that reaps
 # its children: the runner's first poll sleep waits for make to exit and reaps
 # it with os.waitpid, so the runner's Popen never learns make's status.
@@ -1592,14 +1600,18 @@ def test_a_stop_just_after_make_exits_under_an_ignored_sigchld_signals_no_freed_
     """SIGCHLD set to ignore makes the kernel reap a child as it exits, so a
     stop in the moment between make's exit and the runner's next poll used to
     signal make's freed id. The runner sets SIGCHLD to its default for the run,
-    so make stays a zombie holding its id, and puts the caller's back after."""
-    make = _write_script(tree / "bin", "make", "print('hi')\n")
+    so make stays a zombie holding its id, and puts the caller's back after.
+    make waits for `go`, which the runner's first poll sleep writes: a make that
+    exited before that poll left no sleep to stop in, so the case passed or
+    failed by load (seen red in a full verify at load average 9)."""
+    make = _write_script(tree / "bin", "make", _MAKE_WAITS_FOR_GO + "print('hi')\n")
     out = _in_child(
         tree,
         _RECORD_KILLPG + _MAKE_PID + "signal.signal(signal.SIGCHLD, signal.SIG_IGN)\n"
         "STOP = %r\n"
         "def sleep(seconds):\n"
         "    if made and not stopped:\n"
+        "        open('go', 'w').close()\n"
         "        exited(made[0])\n"
         "        stopped.append(state(made[0]))\n"
         "        if STOP == 'sigterm':\n"
