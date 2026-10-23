@@ -485,6 +485,25 @@ version rather than a bare commit:
   under `make verify` that is the goal's own make line, before the outer
   make's `Error 2`. `tests/integration/test_exit_codes_through_make.py` runs
   every member through real make and through keel's real verify driver.
+- **A bounded child ends with whatever stops its caller.**
+  `scripts/run_make_target.py` now runs make on `scripts/resource_limits.py`'s
+  child supervisor, the one `run_bounded` uses, so its zombie, ignored-SIGCHLD
+  and held-pipe handling is written once. A SIGKILL to the caller ends the
+  child's session through a watcher process; a SIGTERM to a plain CLI ends the
+  child before the CLI; a REST or gRPC server stopped by one signal ends the
+  bounded children still running once it returns, rather than waiting out
+  their limit. `run_bounded` now ends what its child left in its session and
+  names each process by pid and program in a log warning, and names, without
+  signalling, a process outside the session still holding its output.
+- **A model call's time limit covers name resolution.** `openai-compatible`
+  resolves a host name within the time left, refusing a lookup that does not
+  finish as ModelUnavailable naming the host, and gives each address of a
+  name only the time left.
+- **The spend-cap scan sees a module loaded through importlib.**
+  `tests/unit/scripts/test_agent_spend_cap.py` names a module
+  `importlib.import_module`, `__import__`, `runpy` or a file-path loader
+  reaches by a literal, and counts a load it cannot read as reaching an agent
+  package unless a reasoned row excuses the file.
 - **A nullable key with a bound puts null first in its refusal.** A refused
   `transports.serve.memory_cap_mb` or `tests.memory_scratch_root` now reads
   "accepted: null, or an integer with a value >= 1", where it read as if null

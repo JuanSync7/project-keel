@@ -33,7 +33,9 @@ These rules are **local and authoritative** for this directory. They inherit fro
     `child_env.py` and `config_loader.py`, the two modules it imports, and
     stays stdlib-only and 3.6-safe. It is never run. `run_bounded` reads no
     config: each caller names its own limits and the keys that set them;
-    `serve_limits` reads the servers' `transports.serve` block.
+    `serve_limits` reads the servers' `transports.serve` block. Its child
+    supervisor (`ChildSession`, `start_child`, `supervised`) is the only
+    one: `run_make_target.py` runs make on it rather than keeping a second.
   - `jobs/conflict_guard.py` is never run, so it has no `--help`. The
     `copier update` jobs in `jobs/` import it before anything else from the
     project, to refuse a job over a conflicted module it imports and the data

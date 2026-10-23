@@ -69,8 +69,10 @@ own limits, is a row of the [feature catalogue](../reference/features.md).
   whatever process group it is in (SIGTERM, then SIGKILL after
   config/project.json `make_targets.gate_stop_grace_seconds`), so a recipe's
   GNU `timeout`, which moves itself to a group of its own, is ended too. A
-  process that moved itself into a new session (`setsid`), or a runner killed
-  with SIGKILL, escapes it. The run ends when make exits, even while a
+  process that moved itself into a new session (`setsid`) escapes it. A
+  runner killed with SIGKILL does not: the watcher process
+  `scripts/resource_limits.py` starts beside make sees the runner's pipe
+  close and sends SIGKILL to every group in make's session. The run ends when make exits, even while a
   background job holds make's output open. A process still in the session
   half a second after make exits is ended and turns a green run red; a zombie
   is not counted. A process outside the session that still holds make's
@@ -269,6 +271,14 @@ a decision on whether it should fail instead.
   sits in a writable, git-ignored directory, as the gate's evidence record
   does. The evidence record lists `trace` with `tests: null`: the verdict
   counts are in `traceability.matrix_path`, not in the record.
+- **A bounded child ends with its caller.** `scripts/resource_limits.py`
+  `run_bounded` (the model CLI's runner) supervises its child the same way:
+  a SIGTERM or SIGHUP to a caller that does not handle it, a SIGKILL to the
+  caller, and a REST, gRPC or MCP server returning after a stop signal each
+  end the child's whole session. What the child left in its session after it
+  exits is ended and named by pid and program in a log warning; a process
+  outside the session that still holds its output is named the same way and
+  is not signalled.
 - **A server left behind by a killed run.** `tests/live_server.py` stops the
   REST server in a `finally`, and from a handler when SIGTERM or SIGHUP ends
   the run. A pytest killed by SIGKILL, or by the out-of-memory killer, runs
