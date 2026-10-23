@@ -107,6 +107,8 @@ def test_the_shared_render_refuses_a_write(cache, tmp_path):
         (render / "docs" / "planted.txt").write_text("x", encoding="utf-8")
     with pytest.raises(PermissionError):
         (render / "docs" / "run.sh").unlink()
+    with pytest.raises(PermissionError):
+        (render / "planted.txt").write_text("x", encoding="utf-8")
 
 
 def test_a_failed_render_is_not_cached(tmp_path):

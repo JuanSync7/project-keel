@@ -90,8 +90,12 @@ _PYPROJECT_ANSWER_FIELDS = (
 @pytest.fixture(scope="module")
 def renders(clean_template, tmp_path_factory):
     """One render of the keel template (the clean clone's HEAD, which carries
-    this checkout's working tree) per distinct answer set and day, made the
+    this checkout's tracked edits) per distinct answer set and day, made the
     first time a test asks for it and removed when the module ends.
+
+    A file that was never `git add`ed is not in the clone, so these tests do
+    not see it; copier rendering this checkout directly would have
+    (hermetic_git.clone_including_worktree says why the clone wins).
 
     `unsafe=True` is `copier copy --trust`: copier.yml's `_tasks` stamp the new
     project's documents, and copier refuses a template that runs tasks without
@@ -346,6 +350,9 @@ def test_generated_project_does_not_ship_keels_template_meta_tests(tmp_path, gen
     # `tests/integration` wipe).
     assert (dest / "tests" / "integration" / "test_showcase_api.py").is_file()
     assert (dest / "tests" / "integration" / "README.md").is_file()
+    # The render cache serves only this module, which is pruned above.
+    assert not (dest / "tests" / "render_cache.py").exists()
+    assert not (dest / "tests" / "unit" / "test_render_cache.py").exists()
 
 
 def test_generated_project_does_not_inherit_keels_template_twins(tmp_path, generate):
