@@ -2,7 +2,7 @@
 title: Unit — install_scanner (the pinned scanner release, fetched from a local fixture and checked by sha256)
 kind: tests
 layer: n/a
-summary: scripts/install_scanner.py driven against a release archive built in the test's own directory and named by a file:// `secrets.scanner.release_url`, so no test reaches the network. The archive whose sha256 config names installs its one member named `secrets.scanner.name` under `secrets.scanner.install_root`, executable, and records it through scripts/scan_secrets.py, so a scan then runs that program; a second run fetches nothing (the archive is gone by then) and leaves the program, its source note and the record byte-identical with the same modification times, which is the module's fixed point. An archive whose sha256 differs, one larger than `secrets.scanner.download_max_bytes`, one with no regular member of that name, and a URL that cannot be read each leave nothing installed and no record. A platform `secrets.scanner.release_assets` does not list, an install root inside the checkout and a record file git would track are each CONFIG before anything is fetched. An installed program that changed is fetched and installed again.
+summary: scripts/install_scanner.py driven against a release archive built in the test's own directory and named by a file:// `secrets.scanner.release_url`, so no test reaches the network. The archive whose sha256 config names installs its one member named `secrets.scanner.name` under `secrets.scanner.install_root`, executable, keeps the archive beside it, and records it through scripts/scan_secrets.py, so a scan then runs that program; a second run fetches nothing (the release is gone by then) and leaves the program, the kept archive and the record byte-identical with the same modification times, which is the module's fixed point. A rerun proves the program from the kept archive, never from a note: a swapped program beside a forged note, a swapped kept archive, a lost kept archive and a lost execute bit are each fetched and installed again. An archive whose sha256 differs, one larger than `secrets.scanner.download_max_bytes`, a cut gzip stream whose sha256 is pinned, one with no regular member of that name, and a URL that cannot be read each leave nothing installed and no record. A platform `secrets.scanner.release_assets` does not list, an install root inside the checkout, a program path a link leads into the checkout, a `rev` or `name` that is not one path part, a name other than the adapted scanner's and a record file git would track are each CONFIG before anything is fetched. An install root that cannot be written, a kept archive that cannot be read and a record that cannot be written are each USAGE naming the path, never a network fault.
 """
 
 import hashlib
@@ -324,3 +324,174 @@ def test_the_platform_key_is_the_lowercased_system_and_machine(monkeypatch):
     monkeypatch.setattr(install_scanner.platform, "system", lambda: "Linux")
     monkeypatch.setattr(install_scanner.platform, "machine", lambda: "X86_64")
     assert install_scanner._platform_key() == "linux-x86_64"
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("rev", "../../repo/bin"),
+        ("rev", "/abs/rev"),
+        ("rev", "v8/30"),
+        ("rev", "v8\\30"),
+        ("rev", ".."),
+        ("rev", ".hidden"),
+        ("rev", " v8.30.1"),
+        ("name", "../" + _NAME),
+        ("name", "bin/" + _NAME),
+        ("name", "/" + _NAME),
+    ],
+    ids=[
+        "climb",
+        "absolute",
+        "slash",
+        "backslash",
+        "dotdot",
+        "dot",
+        "padded",
+        "name-climb",
+        "name-slash",
+        "name-absolute",
+    ],
+)
+def test_a_rev_or_name_that_is_not_one_path_part_is_config(
+    project, capsys, field, value
+):
+    project.publish()
+    project.scanner(**{field: value})
+    assert project.run() == ExitCode.CONFIG
+    assert project.installed() == []
+    assert not (project.root / _RECORD).exists()
+    err = capsys.readouterr().err
+    # The loader's own refusal, so a name is held to one part even before
+    # the installer compares it with the adapted scanner's.
+    assert "secrets.scanner." + field in err and "one path part" in err, err
+
+
+def test_a_name_other_than_the_adapted_scanner_is_config(project, capsys):
+    other = "not" + _NAME
+    project.publish(members=[(other, _PROGRAM)])
+    project.scanner(name=other)
+    assert project.run() == ExitCode.CONFIG
+    assert project.installed() == []
+    err = capsys.readouterr().err
+    assert "secrets.scanner.name" in err and other in err, err
+
+
+def test_a_program_path_that_resolves_into_the_checkout_is_config(project, capsys):
+    project.publish()
+    inside = project.root / "bin"
+    inside.mkdir()
+    project.tools.mkdir()
+    (project.tools / _NAME).symlink_to(inside, target_is_directory=True)
+    assert project.run() == ExitCode.CONFIG
+    assert list(inside.iterdir()) == []
+    assert "inside the checkout" in capsys.readouterr().err
+
+
+def test_the_pinned_archive_is_kept_beside_the_program(project):
+    data = project.publish()
+    assert project.run() == ExitCode.SUCCESS
+    kept = project.program().parent / "scanner_testos.tar.gz"
+    assert kept.read_bytes() == data
+    assert project.installed() == sorted(
+        str(p.relative_to(project.tools)) for p in (project.program(), kept)
+    )
+
+
+def _swap_program(project):
+    fake = b"#!/bin/sh\necho swapped\n"
+    project.program().write_bytes(fake)
+    # A note of the kind an earlier installer trusted, forged to match.
+    (project.program().parent / (_NAME + ".source.json")).write_text(
+        json.dumps({"program": hashlib.sha256(fake).hexdigest()}), encoding="utf-8"
+    )
+
+
+def _swap_archive(project):
+    fake = b"#!/bin/sh\necho swapped\n"
+    project.program().write_bytes(fake)
+    kept = project.program().parent / "scanner_testos.tar.gz"
+    kept.write_bytes(_archive([(_NAME, fake)]))
+
+
+def _drop_archive(project):
+    (project.program().parent / "scanner_testos.tar.gz").unlink()
+
+
+@pytest.mark.parametrize("spoil", [_swap_program, _swap_archive, _drop_archive])
+def test_a_rerun_proves_the_program_from_the_pinned_archive(project, capsys, spoil):
+    data = project.publish()
+    assert project.run() == ExitCode.SUCCESS
+    spoil(project)
+    capsys.readouterr()
+    assert project.run() == ExitCode.SUCCESS
+    assert "already installed" not in capsys.readouterr().out
+    assert project.program().read_bytes() == _PROGRAM
+    kept = project.program().parent / "scanner_testos.tar.gz"
+    assert kept.read_bytes() == data
+
+
+def test_a_truncated_archive_whose_sha256_is_pinned_is_failure(project, capsys):
+    data = _archive([(_NAME, bytes(range(256)) * 4096)])
+    cut = data[: len(data) // 2]
+    (project.release_dir / "cut.tar.gz").write_bytes(cut)
+    digest = hashlib.sha256(cut).hexdigest()
+    project.scanner(
+        release_assets={_PLATFORM: {"file": "cut.tar.gz", "sha256": digest}}
+    )
+    assert project.run() == ExitCode.FAILURE
+    assert project.installed() == []
+    assert "cut.tar.gz" in capsys.readouterr().err
+
+
+def _unreadable(path):
+    path.chmod(0)
+    return path
+
+
+def test_an_unreadable_installed_file_is_usage_naming_it(project, capsys):
+    project.publish()
+    assert project.run() == ExitCode.SUCCESS
+    kept = _unreadable(project.program().parent / "scanner_testos.tar.gz")
+    try:
+        capsys.readouterr()
+        assert project.run() == ExitCode.USAGE
+        assert str(kept) in capsys.readouterr().err
+    finally:
+        kept.chmod(0o644)
+
+
+def test_a_record_that_cannot_be_written_is_usage_naming_it(project, capsys):
+    project.publish()
+    folder = (project.root / _RECORD).parent
+    folder.mkdir(parents=True)
+    folder.chmod(0o555)
+    try:
+        assert project.run() == ExitCode.USAGE
+        assert _RECORD in capsys.readouterr().err
+    finally:
+        folder.chmod(0o755)
+
+
+def test_an_install_root_that_cannot_be_written_is_usage_not_the_network(
+    project, capsys
+):
+    project.publish()
+    project.tools.mkdir()
+    project.tools.chmod(0o555)
+    try:
+        assert project.run() == ExitCode.USAGE
+        err = capsys.readouterr().err
+        assert str(project.tools) in err and "network" not in err, err
+    finally:
+        project.tools.chmod(0o755)
+
+
+def test_a_program_that_lost_its_execute_bit_is_installed_again(project, capsys):
+    project.publish()
+    assert project.run() == ExitCode.SUCCESS
+    project.program().chmod(0o644)
+    capsys.readouterr()
+    assert project.run() == ExitCode.SUCCESS
+    assert "already installed" not in capsys.readouterr().out
+    assert project.program().stat().st_mode & stat.S_IXUSR

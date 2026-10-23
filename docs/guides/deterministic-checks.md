@@ -936,8 +936,14 @@ needs no Go toolchain and no build. It picks this platform's entry in
 `secrets.scanner.release_url`, and installs the archive's one program under
 `secrets.scanner.install_root`, a per-user directory outside the checkout, only
 when the archive's sha256 is the pinned one; the pins are copied from the
-vendor's checksums file for `secrets.scanner.rev`. A second run with the same
-pins fetches nothing and rewrites nothing (`tests/unit/scripts/test_install_scanner.py`).
+vendor's checksums file for `secrets.scanner.rev`. The archive stays beside the
+program, so a second run proves the program from bytes whose sha256 is the
+pin: it fetches nothing and rewrites nothing only when the kept archive's
+sha256 is the pinned one and the program is that archive's member, byte for
+byte, and otherwise installs again (`tests/unit/scripts/test_install_scanner.py`).
+A `secrets.scanner.rev` or `secrets.scanner.name` that is not one path part,
+and a program path a link leads into the checkout, are exit 14 before any
+fetch; a local file the installer cannot read or write is exit 2 naming it.
 An unlisted platform is exit 14 naming the platforms the map lists; a sha256
 that differs is exit 1 and installs nothing. A host that cannot reach the
 vendor points `secrets.scanner.release_url` at a mirror holding the same files
@@ -964,8 +970,10 @@ or a scanner name with no adapter included. `docs/guides/limits-and-troubleshoot
 codes and each message's fix.
 
 **What each layer does not catch.** Each row but the one marked "not tried"
-was tried in a generated project against the real scanner (gitleaks v8.30.1),
-and is caught, refused, or not caught and accepted:
+and the two marked "unit-tested" was tried in a generated project against the
+real scanner (gitleaks v8.30.1), and is caught, refused, or not caught and
+accepted; the two are tried by `tests/unit/scripts/test_install_scanner.py`
+against a fixture archive:
 
 | Way past | Outcome |
 |----------|---------|
@@ -982,6 +990,8 @@ and is caught, refused, or not caught and accepted:
 | an exclusion naming a file and rule | excuses every later finding of that rule in that file |
 | a program named like the scanner, first on PATH, that writes an empty report | caught: no scan runs a program from PATH, and `make secrets-install` installs only the archive whose sha256 config pins |
 | the record file edited by hand to name another program | not caught: the record is git-ignored and per machine, so it proves the program has not changed since it was recorded, not who recorded it; CI installs its own |
+| the installed program swapped, with a note beside it forged to match | unit-tested, caught at the next `make secrets-install`: it proves the program from the kept archive, whose sha256 must be the config pin, and installs again |
+| a user who can write `secrets.scanner.install_root` (or the record) swaps the program after the install | unit-tested, not caught until `make secrets-install` runs again: a scan checks the program against the record's sha256, not against the archive, so whoever can write both runs their own program; the install root is per user for that reason, and CI installs its own |
 | a commit pushed with CI skipped (`[skip ci]`) | not tried, because it is the CI provider's behaviour: CI does not run on that commit, and `make verify` on any clone, and the next CI run, scan it |
 | a value already pushed | the history scan is red, and the value stays exposed: rotate it (`docs/guides/limits-and-troubleshooting.md`, "A credential was committed") |
 

@@ -3,7 +3,7 @@
 title: scan_secrets — the secret scanner's adapter, over what a commit would carry and over every commit
 kind: script
 layer: n/a
-summary: The gitleaks adapter: runs the scanner config/project.json `secrets.scanner` pins and prints each finding as `file:line rule`, a history finding with its commit's first 12 hex digits after it, never the value. A `secrets.scanner.name` other than gitleaks is CONFIG before anything runs, because the flags, rules file and report fields here are gitleaks's own; another scanner is a second adapter. Every mode runs only the program recorded in `secrets.scanner.record_file`, never one found on PATH: no record, one naming another program or rev, a recorded path that is gone or a program whose digest changed is BACKEND_ABSENT naming `make secrets-install`, never a skip. `write_record`, which scripts/install_scanner.py calls, records an absolute path, `secrets.scanner.rev` and the program's sha256, rewriting the file only when its bytes would change. `--staged` scans the staged diff and passes git's repository context, so the index a hook commits is the one judged; a stage that adds or changes no file (nothing staged, or deletions only) is NOTHING_JUDGED, because a scan over zero files proves nothing. `--staged-or-history`, the pre-commit hook's mode, scans the staged diff, or every commit when nothing is staged, as under `pre-commit run --all-files`. `--history` scans every commit `secrets.scanner.history_log_opts` reaches, and options that reach no commit are NOTHING_JUDGED. The scanner is handed redaction, the inline allow comments ignored, an empty ignore directory, a config that only extends its default rules, the finding status `secrets.scanner.leak_exit_code` and a JSON report in a temporary directory, under the allowlisted environment (scripts/child_env.py). Its status and its report must agree: 0 with an empty list, the finding status with findings; anything else, a report that is not a JSON list of findings included, is BACKEND_ABSENT with the scanner's stderr excerpt, because the scanner gave no verdict, so FAILURE always means a finding. A git command that ran and failed is USAGE. `secrets.scanner.exclusions` removes the findings of one rule in one exact file; one the history scan did not use is CONFIG. A scan beside the scanner's own config or ignore file (`secrets.scanner.refused_files`, anywhere git would commit it or at the root) is CONFIG before the scanner runs, because such a file decides what is judged. No repository, or a history with no commit, is NOTHING_JUDGED. Stdlib-only and 3.6-safe, because the pre-commit hook runs it under the host's python3.
+summary: The gitleaks adapter: runs the scanner config/project.json `secrets.scanner` pins and prints each finding as `file:line rule`, a history finding with its commit's first 12 hex digits after it, never the value. A `secrets.scanner.name` other than gitleaks is CONFIG before anything runs, because the flags, rules file and report fields here are gitleaks's own; another scanner is a second adapter. `other_adapter` and `OTHER_ADAPTER_NEXT` are that rule, which scripts/install_scanner.py applies too. Every mode runs only the program recorded in `secrets.scanner.record_file`, never one found on PATH: no record, one naming another program or rev, a recorded path that is gone or a program whose digest changed is BACKEND_ABSENT naming `make secrets-install`, never a skip. `write_record`, which scripts/install_scanner.py calls, records an absolute path, `secrets.scanner.rev` and the program's sha256, rewriting the file only when its bytes would change. `--staged` scans the staged diff and passes git's repository context, so the index a hook commits is the one judged; a stage that adds or changes no file (nothing staged, or deletions only) is NOTHING_JUDGED, because a scan over zero files proves nothing. `--staged-or-history`, the pre-commit hook's mode, scans the staged diff, or every commit when nothing is staged, as under `pre-commit run --all-files`. `--history` scans every commit `secrets.scanner.history_log_opts` reaches, and options that reach no commit are NOTHING_JUDGED. The scanner is handed redaction, the inline allow comments ignored, an empty ignore directory, a config that only extends its default rules, the finding status `secrets.scanner.leak_exit_code` and a JSON report in a temporary directory, under the allowlisted environment (scripts/child_env.py). Its status and its report must agree: 0 with an empty list, the finding status with findings; anything else, a report that is not a JSON list of findings included, is BACKEND_ABSENT with the scanner's stderr excerpt, because the scanner gave no verdict, so FAILURE always means a finding. A git command that ran and failed is USAGE. `secrets.scanner.exclusions` removes the findings of one rule in one exact file; one the history scan did not use is CONFIG. A scan beside the scanner's own config or ignore file (`secrets.scanner.refused_files`, anywhere git would commit it or at the root) is CONFIG before the scanner runs, because such a file decides what is judged. No repository, or a history with no commit, is NOTHING_JUDGED. Stdlib-only and 3.6-safe, because the pre-commit hook runs it under the host's python3.
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/unit/scripts/test_scan_secrets.py
@@ -43,7 +43,9 @@ _WHERE = "config/project.json secrets.scanner"
 # The scanner this module adapts: the flags _run_scanner hands it, _RULES and
 # _FINDING_FIELDS are its own. config/project.json secrets.scanner.name must
 # name it; another scanner is a second adapter, which this check then admits.
-_ADAPTER = "gitleaks"
+# scripts/install_scanner.py holds the name to it through other_adapter.
+ADAPTER = "gitleaks"
+OTHER_ADAPTER_NEXT = "name %s, or add an adapter for that scanner first" % ADAPTER
 _STAGED, _HISTORY, _STAGED_OR_HISTORY = "staged", "history", "staged-or-history"
 _INSTALL = (
     "run `make secrets-install`, which downloads the pinned scanner release, "
@@ -88,6 +90,18 @@ def settings(root):
         config_loader.read(root), keys, config_loader.CONFIG_FILE
     )
     return {field: values[_BLOCK + (field,)] for field in _FIELDS}
+
+
+def other_adapter(cfg):
+    """Why secrets.scanner.name is refused, when it is not the scanner this
+    module adapts; None when it is. Each caller reports it as CONFIG with
+    OTHER_ADAPTER_NEXT."""
+    if cfg["name"] == ADAPTER:
+        return None
+    return "secrets.scanner.name is %r, and scripts/scan_secrets.py adapts %s only" % (
+        cfg["name"],
+        ADAPTER,
+    )
 
 
 def sha256(path):
@@ -436,14 +450,9 @@ def main(argv=None, root=None):
     root = os.path.abspath(ROOT if root is None else root)
     try:
         cfg = settings(root)
-        if cfg["name"] != _ADAPTER:
-            return report(
-                ExitCode.CONFIG,
-                "secrets.scanner.name is %r, and scripts/scan_secrets.py adapts "
-                "%s only" % (cfg["name"], _ADAPTER),
-                "%s.name" % _WHERE,
-                "name %s, or add an adapter for that scanner first" % _ADAPTER,
-            )
+        why = other_adapter(cfg)
+        if why is not None:
+            return report(ExitCode.CONFIG, why, "%s.name" % _WHERE, OTHER_ADAPTER_NEXT)
         if args.staged:
             return _scan(root, cfg, _STAGED)
         if args.history:

@@ -416,6 +416,26 @@ def _user_path(value: Any) -> bool:
     return text.startswith(("/", "~/")) and _no_parent_part(text)
 
 
+def _one_path_part(value: Any) -> bool:
+    # The installer joins the value into `<root>/<name>/<rev>/<name>`, so it
+    # must name one directory entry: a separator, an absolute value or a
+    # leading `.` (`.`, `..`, a hidden name) would move the program elsewhere.
+    # No separator also means not absolute, POSIX or Windows.
+    text = str(value)
+    return (
+        bool(text)
+        and text.strip() == text
+        and not text.startswith(".")
+        and not any(c in text for c in "/\\\0")
+    )
+
+
+_ONE_PATH_PART = (
+    _one_path_part,
+    "one path part: no `/`, `\\` or NUL, not absolute, no leading `.` or "
+    "surrounding whitespace",
+)
+
 _HEX = "0123456789abcdef"
 
 
@@ -952,6 +972,7 @@ KEYS = tuple(
                 "the secret scanner's program name, the release archive member "
                 "the installer takes and the record names; scripts/scan_secrets.py "
                 "adapts gitleaks only and refuses any other name",
+                accepts=_ONE_PATH_PART,
             ),
             _row(
                 ("secrets", "scanner", "record_file"),
@@ -997,6 +1018,7 @@ KEYS = tuple(
                 "v8.30.1",
                 "the scanner release `make secrets-install` installs and the "
                 "record must name",
+                accepts=_ONE_PATH_PART,
             ),
             _row(
                 ("shell", "enabled"),
