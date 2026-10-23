@@ -3,13 +3,14 @@
 title: shell_gate — the shell scripts' lint, format and test gates
 kind: script
 layer: n/a
-summary: The one adapter between keel's shell targets and the tools that judge shell, so a make target names a role and never a vendor. `lint` runs config/project.json `shell.linter`, `format-check` and `format` run `shell.formatter` (reporting a difference, and rewriting the files in place), and `test` runs `shell.test_runner`; each name must be one this module has an adapter for (shellcheck, shfmt and bats), or every mode is CONFIG before anything runs, because the flags are the tool's own. The files judged are what a commit could carry (scripts/git_tree.py candidate_files) that are regular files and not symlinks, a deleted tracked path left out, and none that a `shell.excluded_paths` entry covers (a path, itself and everything under it, such as a vendored script; an entry that covers no such file is CONFIG): a shell script ends in a `shell.script_suffixes` suffix or opens with a shebang whose interpreter, after `env` and its options, is one of `shell.shebang_shells`, and a `shell.test_suffixes` file is a test, which only the test mode runs. The tool is looked up in the running interpreter's directory first, where a virtual environment installs one, then on PATH; one on neither is BACKEND_ABSENT naming it and its role, never a skip. It runs under the allowlisted environment (scripts/child_env.py) and its status is passed through, so a finding is the tool's own status. The test mode first asks the runner to count the tests: zero is NOTHING_JUDGED, and a count that is not a whole number, or a counting run that fails, is BACKEND_ABSENT, because the runner gave no verdict. Shell scripts with no test file are NOTHING_JUDGED, because a pass over zero tests proves nothing. With no shell script and no test file every mode is NOTHING_JUDGED, unless `shell.no_scripts` states the reason the project has none, which it prints on stdout before it exits 0 having run no tool; a reason left in place once a shell file exists is CONFIG naming the files, so it cannot outlive its truth. With `shell.enabled` false (the copier answer `shell`) every mode says why on stdout and exits 0 having run no tool. No repository is NOTHING_JUDGED, a git or file read that fails is USAGE, and a malformed shell block or child_env block is CONFIG.
+summary: The one adapter between keel's shell targets and the tools that judge shell, so a make target names a role and never a vendor. `lint` runs config/project.json `shell.linter`, `format-check` and `format` run `shell.formatter` (reporting a difference, and rewriting the files in place), and `test` runs `shell.test_runner`; each name must be one this module has an adapter for (shellcheck, shfmt and bats), or every mode is CONFIG before anything runs, because the flags are the tool's own. The files judged are what a commit could carry (scripts/git_tree.py candidate_files) that are regular files and not symlinks, a deleted tracked path left out, and none that a `shell.excluded_paths` entry covers (a path, itself and everything under it, such as a vendored script; an entry that covers no such file is CONFIG): a shell script ends in a `shell.script_suffixes` suffix or opens with a shebang whose interpreter, after `env` and its options, is one of `shell.shebang_shells`, and a `shell.test_suffixes` file is a test, which only the test mode runs; a `.jinja` file (copier.yml `_templates_suffix`) is a template's source and never either. That rule is public (`settings`, `kind`, `classify`, `shebang_interpreter`, in `__all__`), so another gate imports it rather than copies it. The tool is looked up in the running interpreter's directory first, where a virtual environment installs one, then on PATH; one on neither is BACKEND_ABSENT naming it and its role, never a skip. It runs under the allowlisted environment (scripts/child_env.py) and its status is passed through, so a finding is the tool's own status. The test mode first asks the runner to count the tests: zero is NOTHING_JUDGED, and a count that is not a whole number, or a counting run that fails, is BACKEND_ABSENT, because the runner gave no verdict. Shell scripts with no test file are NOTHING_JUDGED, because a pass over zero tests proves nothing. With no shell script and no test file every mode is NOTHING_JUDGED, unless `shell.no_scripts` states the reason the project has none, which it prints on stdout before it exits 0 having run no tool; a reason left in place once a shell file exists is CONFIG naming the files, so it cannot outlive its truth. With `shell.enabled` false (the copier answer `shell`) every mode says why on stdout and exits 0 having run no tool. No repository is NOTHING_JUDGED, a git or file read that fails is USAGE, and a malformed shell block or child_env block is CONFIG.
 effect: writes
 rerun: fixed-point
 rerun_proof: make:fmt-check-sh
 """
 
 import argparse
+import collections
 import os
 import shutil
 import subprocess
@@ -24,7 +25,22 @@ import git_tree  # noqa: E402
 from child_env import ChildEnvError, build_child_env  # noqa: E402
 from exit_codes import ExitCode, finish, passthrough, report  # noqa: E402
 
+__all__ = [
+    "SCRIPT",
+    "TEST",
+    "Classified",
+    "classify",
+    "kind",
+    "settings",
+    "shebang_interpreter",
+]
+
 ROOT = os.path.dirname(_SCRIPTS)
+SCRIPT, TEST = "script", "test"
+# copier.yml `_templates_suffix`: a file ending in it is a template's source,
+# whose Jinja no shell tool can read. copier.yml is absent in a generated
+# project, so the suffix is fixed here as check_structure's _TWIN_SUFFIX is.
+_TEMPLATE_SUFFIX = ".jinja"
 _BLOCK = ("shell",)
 _FIELDS = (
     "enabled",
@@ -88,7 +104,9 @@ def _parse(argv):
     return parser.parse_args(argv)
 
 
-def _settings(root):
+def settings(root):
+    """The `shell` block of *root*'s config/project.json, by field name,
+    resolved through scripts/config_loader.py (ConfigError when refused)."""
     keys = config_loader.rows(*[_BLOCK + (field,) for field in _FIELDS])
     values = config_loader.resolve(
         config_loader.read(root), keys, config_loader.CONFIG_FILE
@@ -104,7 +122,7 @@ def _unknown_adapter(cfg):
     return None
 
 
-def _shebang_interpreter(path):
+def shebang_interpreter(path):
     """The interpreter name a file's `#!` line runs, `env` and its options
     stepped over, or None for no shebang."""
     with open(path, "rb") as fh:
@@ -140,13 +158,30 @@ def _excluded_by(rel, excluded):
     return None
 
 
-def _classify(root, cfg):
-    """(shell scripts, shell tests, exclusions that covered no file), each a
-    sorted list of repo-relative paths or entries."""
-    scripts, tests = [], []
-    script_suffixes = tuple(cfg["script_suffixes"])
-    test_suffixes = tuple(cfg["test_suffixes"])
-    shells = frozenset(cfg["shebang_shells"])
+Classified = collections.namedtuple(
+    "Classified", ("scripts", "tests", "stale_exclusions")
+)
+
+
+def kind(rel, path, cfg):
+    """SCRIPT, TEST or None for the regular file at *path*, whose
+    repo-relative name is *rel*, under the `shell` settings *cfg*."""
+    if rel.endswith(_TEMPLATE_SUFFIX):
+        return None
+    if rel.endswith(tuple(cfg["test_suffixes"])):
+        return TEST
+    if rel.endswith(tuple(cfg["script_suffixes"])):
+        return SCRIPT
+    if shebang_interpreter(path) in frozenset(cfg["shebang_shells"]):
+        return SCRIPT
+    return None
+
+
+def classify(root, cfg):
+    """The shell scripts and shell tests a commit could carry under *root*,
+    and the `shell.excluded_paths` entries that covered no file, each a sorted
+    list. Raises git_tree's NoGitError or GitFailedError, or OSError."""
+    found = {SCRIPT: [], TEST: []}
     excluded = sorted(cfg["excluded_paths"])
     used = set()
     for rel in git_tree.candidate_files(root):
@@ -159,11 +194,14 @@ def _classify(root, cfg):
         # the project carries it; a deleted tracked path has nothing to judge.
         if os.path.islink(path) or not os.path.isfile(path):
             continue
-        if rel.endswith(test_suffixes):
-            tests.append(rel)
-        elif rel.endswith(script_suffixes) or _shebang_interpreter(path) in shells:
-            scripts.append(rel)
-    return sorted(scripts), sorted(tests), [e for e in excluded if e not in used]
+        judged_as = kind(rel, path, cfg)
+        if judged_as is not None:
+            found[judged_as].append(rel)
+    return Classified(
+        sorted(found[SCRIPT]),
+        sorted(found[TEST]),
+        [e for e in excluded if e not in used],
+    )
 
 
 def _interpreter_dir():
@@ -220,7 +258,7 @@ def _count_tests(exe, name, tests, root):
 def _gate(mode, root, cfg):
     role = _ROLE[mode]
     name = cfg[role]
-    scripts, tests, stale = _classify(root, cfg)
+    scripts, tests, stale = classify(root, cfg)
     if stale:
         return report(
             ExitCode.CONFIG,
@@ -320,7 +358,7 @@ def main(argv=None, root=None):
         )
     root = os.path.abspath(ROOT if root is None else root)
     try:
-        cfg = _settings(root)
+        cfg = settings(root)
         unknown = _unknown_adapter(cfg)
         if unknown is not None:
             role, name = unknown
