@@ -242,7 +242,10 @@ class _DeadlineReader(io.RawIOBase):
         return True
 
     def readinto(self, buffer: Any) -> Optional[int]:
-        self._sock.settimeout(_time_left())
+        # An HTTPError the call re-raises carries this reader out of the call,
+        # where no deadline is set; a read of its body keeps the last wait.
+        if _DEADLINE.get(None) is not None:
+            self._sock.settimeout(_time_left())
         return self._raw.readinto(buffer)
 
     def close(self) -> None:
@@ -275,6 +278,22 @@ class _DeadlineConnection(http.client.HTTPConnection):
 
     response_class = _DeadlineResponse
 
+    def __init__(self, *args: Any, **kwargs: Any):
+        super().__init__(*args, **kwargs)
+        # HTTPSConnection.connect wraps the TCP socket in TLS straight after
+        # this call returns, with no hook between; shrinking the socket's wait
+        # here is the one place the handshake gets the time the connect left
+        # rather than the wait fixed before it (measured: 3.07 s at a 2.0 s
+        # limit). _create_connection is http.client's own seam for this call.
+        create: Callable[..., socket.socket] = self._create_connection  # type: ignore[has-type]
+
+        def create_within_deadline(*args: Any, **kwargs: Any) -> socket.socket:
+            sock = create(*args, **kwargs)
+            sock.settimeout(_time_left())
+            return sock
+
+        self._create_connection = create_within_deadline
+
     def connect(self) -> None:
         self.timeout = _time_left()
         super().connect()
@@ -286,9 +305,9 @@ class _DeadlineConnection(http.client.HTTPConnection):
 
 
 class _DeadlineHTTPSConnection(_DeadlineConnection, http.client.HTTPSConnection):
-    """_DeadlineConnection over TLS. The handshake runs under the socket
-    timeout connect set, which CPython's ssl module applies to the handshake
-    as a whole, so the handshake too ends by the deadline."""
+    """_DeadlineConnection over TLS. The handshake runs under the wait the TCP
+    connect left on the socket, which CPython's ssl module applies to the
+    handshake as a whole, so the handshake too ends by the deadline."""
 
 
 # The connection class urllib asks for -> the one opened in its place.

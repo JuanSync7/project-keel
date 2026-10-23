@@ -2,7 +2,7 @@
 title: Integration — one openai-compatible call ends at its time limit, however slowly the server answers
 kind: tests
 layer: n/a
-summary: models/openai_compatible.py is pointed at a loopback socket server that answers one byte at a time, each byte well inside the call's time limit, so a limit applied to each socket wait alone would never fire. Whether the server drips the status line and headers or the body, the call is refused within the limit plus _SLACK_S, with a RuntimeError that is not ModelUnavailable, naming the endpoint, the limit and config/project.json `models.timeout_seconds`, and never the path. The server stops dripping after _DRIP_FOR_S, far past the limit plus the slack, so a call that waits on each byte fails the elapsed-time assertion instead of hanging the run.
+summary: models/openai_compatible.py is pointed at a loopback socket server that answers one byte at a time, each byte well inside the call's time limit, so a limit applied to each socket wait alone would never fire. Whether the server drips the status line and headers or the body, the call is refused within the limit plus _SLACK_S, with a RuntimeError that is not ModelUnavailable, naming the endpoint, the limit and config/project.json `models.timeout_seconds`, and never the path. An https call whose TCP connect takes most of the limit, to a server that never answers the ClientHello, is refused within the limit plus _SLACK_S too, so the TLS handshake waits only the time the connect left; and the TCP connect itself is never given more than the limit. The server stops dripping after _DRIP_FOR_S, far past the limit plus the slack, so a call that waits on each byte fails the elapsed-time assertion instead of hanging the run.
 @covers models/openai_compatible.py
 """
 
@@ -143,3 +143,84 @@ def test_a_server_that_drips_its_reply_is_refused_at_the_call_limit(
     message = str(info.value)
     assert base_url in message and "models.timeout_seconds" in message, message
     assert str(_LIMIT_S) in message and "/chat/completions" not in message, message
+
+
+# The TLS case: a TCP connect that takes most of the limit, then a server that
+# never answers the ClientHello. The connect's wait is fixed before it starts,
+# so a handshake that reused it would get the whole limit again and run to
+# about _TLS_LIMIT_S + _TLS_CONNECT_S (measured: 3.07 s at a 2.0 s limit).
+_TLS_LIMIT_S = 2.0
+_TLS_CONNECT_S = 1.8
+
+
+@contextmanager
+def _silent_server():
+    """A loopback server that accepts one connection and never writes to it;
+    yields its host:port and joins its thread on the way out."""
+    stop = threading.Event()
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.bind((_HOST, 0))
+    listener.listen(1)
+    listener.settimeout(_DRIP_FOR_S)
+
+    def serve():
+        try:
+            conn, _addr = listener.accept()
+        except OSError:
+            return  # no client came, or the listener was closed
+        stop.wait(_DRIP_FOR_S)
+        conn.close()
+
+    thread = threading.Thread(target=serve, daemon=True)
+    thread.start()
+    try:
+        yield "%s:%d" % (_HOST, listener.getsockname()[1])
+    finally:
+        stop.set()
+        listener.close()
+        thread.join(_DRIP_FOR_S)
+        assert not thread.is_alive(), "the silent server outlived its test"
+
+
+def _slow_connect(monkeypatch, delay, seen):
+    """Make every TCP connect take *delay* seconds longer, and record the wait
+    each one was given in *seen*."""
+    connect = socket.create_connection
+
+    def slow(address, timeout=None, *args, **kwargs):
+        seen.append(timeout)
+        time.sleep(delay)
+        return connect(address, timeout, *args, **kwargs)
+
+    monkeypatch.setattr(socket, "create_connection", slow)
+
+
+def test_a_tls_handshake_waits_only_the_time_the_connect_left(monkeypatch):
+    from models import get_model
+    from models import openai_compatible as mod
+
+    with _silent_server() as entry:
+        policy = mod.load_policy()._replace(allowed_hosts={_ADAPTER: (entry,)})
+        monkeypatch.setattr(mod, "load_policy", lambda root=None: policy)
+        monkeypatch.setenv("no_proxy", "*")
+        monkeypatch.setenv("NO_PROXY", "*")
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        backend = get_model(
+            _ADAPTER, base_url="https://%s/v1" % entry, timeout=_TLS_LIMIT_S
+        )
+        _slow_connect(monkeypatch, _TLS_CONNECT_S, [])
+        started = time.monotonic()
+        with pytest.raises(RuntimeError):
+            backend.run("ping")
+        elapsed = time.monotonic() - started
+    assert elapsed < _TLS_LIMIT_S + _SLACK_S, elapsed
+
+
+def test_the_tcp_connect_waits_at_most_the_call_limit(monkeypatch):
+    seen = []
+    with _silent_server() as entry:
+        backend = _backend(monkeypatch, "http://" + entry)
+        _slow_connect(monkeypatch, 0, seen)
+        with pytest.raises(RuntimeError):
+            backend.run("ping")
+    assert seen and all(0 < wait <= _LIMIT_S for wait in seen), seen
