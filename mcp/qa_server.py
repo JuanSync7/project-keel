@@ -2,7 +2,7 @@
 title: MCP Q&A server
 layer: backend
 public_api: no
-summary: Read-only MCP tools that answer questions from the corpus via the wiki_navigator agent. The model it asks is the KEEL_MCP_MODEL variable, read by configured_model through scripts/config_loader.py; unset or empty is the declared null default, the registry's own model, written to stderr once, and a blank value is refused. Each question is held to config/project.json `agents.max_model_calls`, read once at start by configured_cap (models.approved_cap): a count of 0, the shipped value and the default of build_qa_server, answers every question with a tool error naming the key and makes no model call. The server's total over its lifetime is held to `agents.max_session_model_calls`, read once at start by configured_session_cap (models.approved_session_cap) and counted by a models.SessionBudget: a question whose per-question count, added to the calls the process has made, would pass that total is answered with a tool error naming the key, the total and the calls made, and makes no model call; 0, the shipped value and the default of build_qa_server, admits no question that may make a call, and a nonzero total below `agents.max_model_calls` is refused at start (models.check_session_total), since no question could fit it. `main` is the entry: it serves through mcp/protocol.py run_stdio_server and exits 0 once the loop ends, or CONFIG through scripts/exit_codes.py report, naming the key or variable, when a setting it reads is refused before it serves.
+summary: Read-only MCP tools that answer questions from the corpus via the wiki_navigator agent. The model it asks is the KEEL_MCP_MODEL variable, read by configured_model through scripts/config_loader.py; unset or empty is the declared null default, the registry's own model, written to stderr once, and a blank value is refused. Each question is held to config/project.json `agents.max_model_calls`, read once at start by configured_cap (models.approved_cap): a count of 0, the shipped value and the default of build_qa_server, answers every question with a tool error naming the key and makes no model call. The server's total over its lifetime is held to `agents.max_session_model_calls`, read once at start by configured_session_cap (models.approved_session_cap) and counted by a models.SessionBudget: a question whose per-question count, added to the calls the process has made, would pass that total is answered with a tool error naming the key, the total and the calls made, and makes no model call; 0, the shipped value and the default of build_qa_server, admits no question that may make a call, and a nonzero total below `agents.max_model_calls` is refused at start (models.check_session_total), since no question could fit it. `main` is the entry: it serves through mcp/protocol.py run_stdio_server and exits 0 once the loop ends, or CONFIG through scripts/exit_codes.py report, naming the key or variable, when a setting it reads is refused before it serves. Each question's retrieval child runs through scripts/resource_limits.py run_tool under the served root's config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes`, which main checks before it serves; a question whose child is ended at either is a tool error naming the key.
 """
 
 from __future__ import annotations
@@ -33,6 +33,7 @@ from models import (  # noqa: E402
 )
 from protocol import Tool, ToolServer, run_stdio_server  # noqa: E402
 from scripts import config_loader  # noqa: E402
+from scripts.resource_limits import tool_limits  # noqa: E402
 
 __all__ = [
     "build_qa_server",
@@ -89,6 +90,7 @@ def build_qa_server(
     corpus: str | None = None,
     max_model_calls: int = 0,
     max_session_model_calls: int = 0,
+    limits_root: str | None = None,
 ) -> ToolServer:
     """Build the read-only Q&A server.
 
@@ -98,7 +100,9 @@ def build_qa_server(
     ``max_model_calls`` is the count each question is held to (0, the
     default, approves none, so every question is a tool error).
     ``max_session_model_calls`` is the total the server's questions may make
-    together (0, the default, admits no question that may make a call). The
+    together (0, the default, admits no question that may make a call).
+    ``limits_root`` is the checkout whose config bounds each question's
+    retrieval child (default: this one). The
     single tool delegates to ``wiki_navigator.answer`` and surfaces its
     citations — no retrieval or synthesis logic lives here.
     """
@@ -127,6 +131,7 @@ def build_qa_server(
                 corpus=corpus,
                 max_model_calls=max_model_calls,
                 backend_factory=session.counted(get_model),
+                limits_root=limits_root,
             )
         except CallCapReached as exc:
             # Re-raised naming the key, since the protocol shows only this text.
@@ -166,9 +171,11 @@ def build_qa_server(
 
 def main(root: str | None = None) -> ExitCode:
     """Serve the Q&A tools over stdio under *root*'s limits (this checkout
-    when None) until stdin ends or a stop signal; CONFIG for a refused
-    setting, the model variable included, before anything serves."""
+    when None), each question's retrieval child included, until stdin ends or
+    a stop signal; CONFIG for a refused setting, the model variable and the
+    tool limits included, before anything serves."""
     try:
+        tool_limits(root)
         per_question = configured_cap(root)
         total = configured_session_cap(root)
         check_session_total(per_question, total)
@@ -176,6 +183,7 @@ def main(root: str | None = None) -> ExitCode:
             model=configured_model(),
             max_model_calls=per_question,
             max_session_model_calls=total,
+            limits_root=root,
         )
         run_stdio_server(server, root=root)
     except config_loader.ConfigError as exc:

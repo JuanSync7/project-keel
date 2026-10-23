@@ -2,7 +2,7 @@
 title: Wiki navigator brain
 layer: backend
 public_api: no
-summary: Plan: deterministic retrieval (query_corpus) -> synthesize a cited answer; on a Runtime. An execute run needs its approved count of model calls and makes its one call through a models.ModelMeter of that count, whose backend the caller's backend_factory builds when it gives one (models.get_model otherwise), so a caller can count calls across answers. Every tool child runs through scripts/resource_limits.py run_tool, held to config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes`: past either its process group is ended and the step raises ChildTimedOut or ChildOutputTooLarge naming the key.
+summary: Plan: deterministic retrieval (query_corpus) -> synthesize a cited answer; on a Runtime. An execute run needs its approved count of model calls and makes its one call through a models.ModelMeter of that count, whose backend the caller's backend_factory builds when it gives one (models.get_model otherwise), so a caller can count calls across answers. Every tool child runs through scripts/resource_limits.py run_tool, held to config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes` of the checkout answer's limits_root names (this one when None): past either its process group is ended and the step raises ChildTimedOut or ChildOutputTooLarge naming the key.
 """
 
 from __future__ import annotations
@@ -43,13 +43,14 @@ class Answer:
     dry_run: bool
 
 
-def _run(args):
+def _run(args, *, root):
     """Invoke a repo script via its CLI with the SAME interpreter running us.
     Bounded by scripts/resource_limits.py run_tool: past config/project.json
     agents.tool_timeout_seconds or agents.tool_max_output_bytes the child's
     process group is ended and ChildTimedOut or ChildOutputTooLarge names the key.
+    Both keys are read from *root*'s config (this checkout when None).
     """
-    proc = run_tool([sys.executable] + args, cwd=_REPO)
+    proc = run_tool([sys.executable] + args, cwd=_REPO, root=root)
     return proc.returncode, proc.stdout, proc.stderr
 
 
@@ -99,7 +100,8 @@ def _retrieve(state):
             state["corpus"],
             "--max-nodes",
             str(state["max_nodes"]),
-        ]
+        ],
+        root=state["limits_root"],
     )
     if rc != 0:
         raise RuntimeError("query_corpus failed (rc=%d): %s" % (rc, err.strip()))
@@ -170,6 +172,7 @@ def answer(
     runtime=None,
     max_model_calls=None,
     backend_factory=None,
+    limits_root=None,
 ):
     """Deterministically retrieve candidate nodes (tree+links, via query_corpus),
     then synthesize an answer over them. The pipeline is a neutral ``Plan`` run
@@ -184,6 +187,9 @@ def answer(
     call made. ``backend_factory`` builds that backend from the model name
     (``None`` = ``models.get_model``); a caller that counts calls across
     answers, such as ``models.SessionBudget.counted``, passes its own.
+    ``limits_root`` is the checkout whose config/project.json
+    ``agents.tool_timeout_seconds`` and ``agents.tool_max_output_bytes`` bound
+    the retrieval child (``None`` = this one).
     """
     if execute and max_model_calls is None:
         raise ValueError(
@@ -194,6 +200,7 @@ def answer(
         "model": model,
         "corpus": corpus or _CORPUS,
         "max_nodes": max_nodes,
+        "limits_root": limits_root,
     }
     meter = ModelMeter(model, max_model_calls or 0, backend_factory or get_model)
     st = get_runtime(runtime).run(_plan(meter), init, execute=execute).state

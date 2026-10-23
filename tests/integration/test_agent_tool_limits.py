@@ -30,7 +30,7 @@ _BRAINS = (
 )
 _TAKES_STDIN = {"agents.doc_reviewer._brain", "agents.practice_refactor._brain"}
 # Runners that take, by keyword, the root whose config supplies the limits.
-_TAKES_ROOT = _TAKES_STDIN
+_TAKES_ROOT = _TAKES_STDIN | {"agents.wiki_navigator._brain"}
 _SITES = _BRAINS + ("action_server",)
 
 

@@ -2,7 +2,7 @@
 title: Integration — MCP servers (Q&A + action)
 kind: tests
 layer: backend
-summary: The thin MCP servers expose schema'd tools that delegate to wiki_navigator and a jobs doer; the action tool defaults to dry-run. Each wiki_answer is held to the server's approved model-call count, config/project.json `agents.max_model_calls` read by configured_cap: a count of 0, the default and the shipped value, answers with a tool error naming the key and makes no model call, a FakeModel subclass in models.registry._REGISTRY counting the calls. The Q&A server's `main` reads that count from the root it is given: under a root that approves one call a question reaches the model once, which the 0 this checkout ships would refuse. Each server's entry `main` turns a refused setting (a serve limit out of its bound, a blank KEEL_MCP_MODEL) into exit CONFIG through the exit helper with the key on stderr, before it caps memory or serves. The action server's `main` refuses a tool limit (config/project.json `agents.tool_timeout_seconds`) as CONFIG the same way, and hands its root's tool limits to the doer: under a 64-byte `agents.tool_max_output_bytes` the dry-run index build is a tool error naming that key.
+summary: The thin MCP servers expose schema'd tools that delegate to wiki_navigator and a jobs doer; the action tool defaults to dry-run. Each wiki_answer is held to the server's approved model-call count, config/project.json `agents.max_model_calls` read by configured_cap: a count of 0, the default and the shipped value, answers with a tool error naming the key and makes no model call, a FakeModel subclass in models.registry._REGISTRY counting the calls. The Q&A server's `main` reads that count from the root it is given: under a root that approves one call a question reaches the model once, which the 0 this checkout ships would refuse. Each server's entry `main` turns a refused setting (a serve limit out of its bound, a blank KEEL_MCP_MODEL) into exit CONFIG through the exit helper with the key on stderr, before it caps memory or serves. Each server's `main` refuses a tool limit (config/project.json `agents.tool_timeout_seconds`) as CONFIG the same way, and hands its root's tool limits to the child it starts: under a 64-byte `agents.tool_max_output_bytes` the action server's dry-run index build, and the Q&A server's corpus query for a question, are each a tool error naming that key, the question with no model call made.
 """
 
 import json
@@ -461,11 +461,12 @@ def _tool_block(tmp_path, agents):
     return str(tmp_path)
 
 
-def test_a_refused_tool_limit_is_config_before_the_action_server_serves(
-    tmp_path, capsys, nothing_served
+@pytest.mark.parametrize("server", [action_server, qa_server])
+def test_a_refused_tool_limit_is_config_before_the_server_serves(
+    server, tmp_path, capsys, nothing_served
 ):
     root = _tool_block(tmp_path, {"tool_timeout_seconds": 0})
-    assert action_server.main(root=root) is ExitCode.CONFIG
+    assert server.main(root=root) is ExitCode.CONFIG
     assert nothing_served == []
     assert "agents.tool_timeout_seconds" in capsys.readouterr().err
 
@@ -488,3 +489,29 @@ def test_the_action_doer_is_held_to_the_tool_limits_its_root_configures(
     result = server.call_tool("rebuild_index", {})
     assert result["isError"] is True, result
     assert "agents.tool_max_output_bytes" in json.dumps(result)
+
+
+def test_each_question_is_held_to_the_tool_limits_its_root_configures(
+    tmp_path, monkeypatch, nothing_served
+):
+    """main hands its root's tool limits to the navigator's retrieval: a
+    64-byte cap ends the corpus query, whose hit this checkout's shipped cap
+    allows, before any model call."""
+    root = _tool_block(tmp_path, {"max_model_calls": 1, "tool_max_output_bytes": 64})
+    monkeypatch.setitem(registry._REGISTRY, "fake", _Counted)
+    monkeypatch.setattr(_Counted, "prompts", [])
+    monkeypatch.setenv("KEEL_MCP_MODEL", "fake")
+    corpus = _tiny_corpus(tmp_path)
+    built = []
+
+    def build(**kwargs):
+        built.append(build_qa_server(**dict(kwargs, corpus=corpus)))
+        return built[-1]
+
+    monkeypatch.setattr(qa_server, "build_qa_server", build)
+    assert qa_server.main(root=root) is ExitCode.SUCCESS
+    (server,) = built
+    result = server.call_tool("wiki_answer", {"question": "what is keel"})
+    assert result["isError"] is True, result
+    assert "agents.tool_max_output_bytes" in json.dumps(result)
+    assert _Counted.prompts == []
