@@ -67,13 +67,15 @@ of editing on top of failures. The labels are defined in
 
 ## Output
 With `--json`, `{target, ok, returncode, output, effects, changed, refused,
-timed_out, leaked, escaped}` on stdout. `timed_out` is true when make did not
+timed_out, leaked, escaped, reaped}` on stdout. `timed_out` is true when make did not
 finish within the limit. `leaked` lists `<pid> <command>` for each process still
 running in make's session after make exited; any entry makes the run red.
 `escaped` lists `<pid> <command>` for each process outside make's session that
 still held make's output when the run ended, or `(unlisted)` when `/proc` did
 not show the holder; any entry makes the run red, and the runner signals none of
-them. `effects` is the target's closed label; `changed` lists the paths a run
+them. `reaped` is true when something other than the runner reaped make, so
+its exit status is unknown; `returncode` is then `null` and the run is red.
+`effects` is the target's closed label; `changed` lists the paths a run
 changed; `refused` is the reason when the runner did not run make, and `null`
 otherwise. Exit 0 when the target passed and changed nothing, 1 when it was red,
 timed out, changed the tree, leaked a process or left one holding its output, 2 when it was refused or the name was unsafe, 14
@@ -128,6 +130,17 @@ open after the session ends is held by a process that left the session (with
 even when make exited 0, because evidence that a target started a process no
 one stops is not a pass. It never signals a holder itself: outside make's
 session it cannot tell the target's process from the caller's.
+If the runner inherited SIGCHLD set to ignore, the kernel reaps make as it
+exits, and another waiter in the runner's process can reap it first. Either way
+make's status is lost and its process id is free. The runner sees this as soon
+as make exits and fails the run, exit 1, with `reaped` true, naming the cause
+and the next step: run the gate from a process that leaves SIGCHLD at its
+default. It sends nothing to make's freed id. A process make left in its
+session still holds the session id and its own group id while it runs, so the
+runner lists it by session in `leaked` and ends it through each group `/proc`
+lists a member in, with the same small risk as any other moved group. Without
+`/proc` nothing can be listed, so nothing is signalled, and the message says
+any leftover may still run.
 A runner killed with SIGKILL cannot end the session, so make's session outlives
 it.
 

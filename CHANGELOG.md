@@ -310,7 +310,11 @@ version rather than a bare commit:
   until the runner is done signalling, and a stop signal after that sends
   nothing, so no signal goes to an id another process could hold. A Ctrl-C,
   SIGTERM or SIGHUP while make is being started is held until the runner
-  has make's process id, so it no longer leaves make running.
+  has make's process id, so it no longer leaves make running. A runner
+  that inherited SIGCHLD set to ignore no longer waits out the limit on a
+  make that already exited and then signals its freed id: the run is red at
+  once with `reaped` true, make's status being unknown, and what make left in
+  its session is still ended through the groups its members hold.
 - **The audit reports a migration that stops over an owed error.** A
   project that lists `GIT_DIR` in `child_env.names` made
   `scripts/audit_project.py` exit 2, because the update's first migration
