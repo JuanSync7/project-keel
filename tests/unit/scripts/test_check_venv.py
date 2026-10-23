@@ -2,7 +2,7 @@
 title: Unit — check_venv (the venv holds what pyproject.toml declares)
 kind: tests
 layer: n/a
-summary: scripts/check_venv.py driven with a scratch pyproject.toml, an injected config object and an injected view of the installed distributions, so no case reads this checkout's config or venv. Every requirement of the core dependencies, of config/project.json `venv.extras` and of the extra each enabled transport names in `transports.extras` is judged, an extra that names its own project is followed, an extra a requirement asks of another distribution judges that extra's own requirements, and a requirement whose marker excludes this interpreter is not judged; an absent distribution, a version outside the specifier or an unparsable version is FAILURE naming the package, the interpreter and the exact pip command, whose extras are the fewest that reach every judged one; an extra the config names and pyproject.toml lacks is CONFIG, an unreadable pyproject.toml is USAGE, and nothing to judge is NOTHING_JUDGED. The pip command carries `--index-url <url>` when config/project.json `install_sources.python_index` sets one and no flag when it is null, and an index with a URL user part is CONFIG that never shows it. The transport extra and api/rest_fastapi/requirements.txt are held equal.
+summary: scripts/check_venv.py driven with a scratch pyproject.toml, an injected config object and an injected view of the installed distributions, so no case reads this checkout's config or venv. Every requirement of the core dependencies, of config/project.json `venv.extras` and of the extra each enabled transport names in `transports.extras` is judged, an extra that names its own project is followed, an extra a requirement asks of another distribution judges that extra's own requirements, and a requirement whose marker excludes this interpreter is not judged; an absent distribution, a version outside the specifier or an unparsable version is FAILURE naming the package, the interpreter and the exact pip command, whose extras are the fewest that reach every judged one; an extra the config names and pyproject.toml lacks is CONFIG, an unreadable pyproject.toml is USAGE, and nothing to judge is NOTHING_JUDGED. The pip command carries `--index-url <url>` when config/project.json `install_sources.python_index` sets one and no flag when it is null, quoted as one shell word, and an index holding an `@` in any spelling of a user part is CONFIG that never shows it; the hint for a missing TOML reader carries the same flag. The transport extra and api/rest_fastapi/requirements.txt are held equal.
 @covers scripts/check_venv.py
 """
 
@@ -121,11 +121,56 @@ def test_a_null_index_leaves_the_pip_command_to_pips_own_config(tmp_path, capsys
     assert "--index-url" not in err and "[using default]" not in err, err
 
 
-def test_an_index_with_a_user_part_is_config_and_never_shown(tmp_path, capsys):
-    config = _config(index="https://u:tok-SENTINEL@pypi.mirror.example.invalid/")
-    assert _run(tmp_path, config=config) is ExitCode.CONFIG
+@pytest.mark.parametrize(
+    "index",
+    [
+        "https://u:tok-SENTINEL@pypi.mirror.example.invalid/",
+        "https:/u:tok-SENTINEL@pypi.mirror.example.invalid/",
+        "https:///u:tok-SENTINEL@pypi.mirror.example.invalid/",
+        "https:/\\u:tok-SENTINEL@pypi.mirror.example.invalid",
+        "https://u:tok-SENTINEL@[::1/",
+    ],
+    ids=["two-slashes", "one-slash", "three-slashes", "backslash", "unsplittable"],
+)
+def test_an_index_with_a_user_part_is_config_and_never_shown(index, tmp_path, capsys):
+    assert _run(tmp_path, config=_config(index=index)) is ExitCode.CONFIG
+    captured = capsys.readouterr()
+    assert "install_sources.python_index" in captured.err, captured.err
+    assert (captured.out + captured.err).count("SENTINEL") == 0, captured
+
+
+@pytest.mark.parametrize(
+    "index",
+    [
+        "https://pypi.mirror.example.invalid/$(id)/",
+        "https://pypi.mirror.example.invalid/a&b/",
+        "https://pypi.mirror.example.invalid/x;id/",
+        "https://pypi.mirror.example.invalid/a%40b/",
+    ],
+    ids=["command-substitution", "ampersand", "semicolon", "percent-40"],
+)
+def test_the_printed_command_quotes_the_index_as_one_shell_word(
+    index, tmp_path, capsys
+):
+    """The command is for pasting into a shell, so the URL is one word there
+    whatever it holds."""
+    import shlex
+
+    installed = dict(_INSTALLED)
+    del installed["corelib"]
+    assert _run(tmp_path, config=_config(index=index), installed=installed) is (
+        ExitCode.FAILURE
+    )
     err = capsys.readouterr().err
-    assert "install_sources.python_index" in err and "SENTINEL" not in err, err
+    line = next(ln for ln in err.splitlines() if "--index-url" in ln)
+    # The command is the backticked span after `run`.
+    command = line.split("run `", 1)[1].split("`")[0]
+    # punctuation_chars splits on `;`, `&`, `|` and parentheses as a shell
+    # does, which shlex.split alone does not.
+    lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
+    lexer.whitespace_split = True
+    words = list(lexer)
+    assert words[words.index("--index-url") + 1] == index, (words, err)
 
 
 def test_a_version_outside_the_specifier_fails_naming_both(tmp_path, capsys):
@@ -371,3 +416,15 @@ def test_a_missing_toml_reader_fails_with_the_pip_command(
     assert _run(tmp_path) is ExitCode.FAILURE
     err = capsys.readouterr().err
     assert "tomli" in err and '%s -m pip install -e ".[dev]"' % _PY in err, err
+
+
+def test_a_missing_toml_reader_names_the_configured_index(
+    tmp_path, capsys, monkeypatch
+):
+    """The hint is the same install, so it reaches the same mirror."""
+    monkeypatch.setitem(sys.modules, "tomllib", None)
+    monkeypatch.setitem(sys.modules, "tomli", None)
+    index = "https://pypi.mirror.example.invalid/a&b/"
+    assert _run(tmp_path, config=_config(index=index)) is ExitCode.FAILURE
+    err = capsys.readouterr().err
+    assert "-m pip install -e \".[dev]\" --index-url '%s'" % index in err, err

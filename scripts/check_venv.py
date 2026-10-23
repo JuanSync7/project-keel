@@ -8,6 +8,7 @@ effect: read-only
 """
 
 import os
+import shlex
 import sys
 from importlib import metadata
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, Tuple
@@ -114,7 +115,8 @@ def index_flag(loaded: Mapping[str, Any]) -> str:
     index = config_loader.resolve(
         loaded, config_loader.rows(_INDEX), config_loader.CONFIG_FILE
     )[_INDEX]
-    return "" if index is None else " --index-url %s" % index
+    # Quoted: the command is printed for pasting into a shell.
+    return "" if index is None else " --index-url %s" % shlex.quote(index)
 
 
 def _canonical(name: str) -> str:
@@ -311,7 +313,7 @@ def main(
             "check_venv: neither tomllib nor the `tomli` distribution is "
             "importable, so %s cannot be read" % _PYPROJECT,
             python,
-            'run `%s -m pip install -e ".[dev]"`' % python,
+            'run `%s -m pip install -e ".[dev]"%s`' % (python, index),
         )
     try:
         project = read_project(root)
