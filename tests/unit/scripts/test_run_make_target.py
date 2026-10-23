@@ -2,7 +2,7 @@
 title: Unit — run_make_target (the read-only gate runner)
 kind: tests
 layer: n/a
-summary: run_target runs a make target only when its effect label, closed over its prerequisites, falls inside config/project.json `make_targets.gate_effects`; it refuses an unknown, unlabelled or wider target, an extra argument that is not a NAME=VALUE variable, a variable outside `make_targets.gate_vars` (make's control variables, the guard and the unattended variables among them), a value that is not one path-like word, a tree without git and a project without the policy, all without calling the runner. It passes the gate-runner variable last, so the Makefile's WRITE_GUARD refuses whatever the caller supplied, and fails a green run that changed the tree, naming the paths. A `make_targets.gate_vars` value found in the runner's own environment is forwarded on make's command line under the same one-word rule, an explicit one wins, and a bad one is refused before make runs. make and git get the allowlisted environment from scripts/child_env.py, never the runner's own. An allowlist that cannot be built, or that would copy a gate variable carrying a credential, is a refusal before anything runs and before any message could quote the value; a gate value, explicit or forwarded, that carries a credential is refused by name even when opted in, and no refusal quotes a value; and a ChildEnvError during the run or a tree that cannot be re-read afterwards is red, never a traceback. The runner and the snapshot are injected for those cases, so no make or git process runs in them. The default runner's own cases put a fake `make` (a short Python script) first on PATH that starts a grandchild, and prove that a timeout, a KeyboardInterrupt and a SIGTERM to the runner end the whole group, that an ignored SIGTERM is followed by SIGKILL after the grace, that a SIGTERM handler gets that grace, and that a process left behind after make exits is ended, named by pid and command, and turns a green make red while a failing make keeps its own status; each polls with a bound and kills only the pids it started. The time limit and grace come from config/project.json `make_targets` through scripts/config_loader.py, the loader's default when the key is absent, a bad value is CONFIG or a refusal naming the key, and `--timeout` overrides the configured limit.
+summary: run_target runs a make target only when its effect label, closed over its prerequisites, falls inside config/project.json `make_targets.gate_effects`; it refuses an unknown, unlabelled or wider target, an extra argument that is not a NAME=VALUE variable, a variable outside `make_targets.gate_vars` (make's control variables, the guard and the unattended variables among them), a value that is not one path-like word, a tree without git and a project without the policy, all without calling the runner. It passes the gate-runner variable last, so the Makefile's WRITE_GUARD refuses whatever the caller supplied, and fails a green run that changed the tree, naming the paths. A `make_targets.gate_vars` value found in the runner's own environment is forwarded on make's command line under the same one-word rule, an explicit one wins, and a bad one is refused before make runs. make and git get the allowlisted environment from scripts/child_env.py, never the runner's own. An allowlist that cannot be built, or that would copy a gate variable carrying a credential, is a refusal before anything runs and before any message could quote the value; a gate value, explicit or forwarded, that carries a credential is refused by name even when opted in, and no refusal quotes a value; and a ChildEnvError during the run or a tree that cannot be re-read afterwards is red, never a traceback. The runner and the snapshot are injected for those cases, so no make or git process runs in them. The default runner's own cases put a fake `make` (a short Python script) first on PATH that starts a grandchild, and prove that a timeout, a KeyboardInterrupt and a SIGTERM to the runner end the whole group, that an ignored SIGTERM is followed by SIGKILL after the grace, that a SIGTERM handler gets that grace, and that a process left behind after make exits is ended, named by pid and command, and turns a green make red while a failing make keeps its own status; each polls with a bound and kills only the pids it started. Further cases prove that the stop and the leak count reach every process in make's session, a process that left make's group for one of its own (GNU `timeout`) included; that output a process outside the session still holds makes the run red, naming it, without signalling it; that no signal goes to an id once make is reaped (an os.killpg recorder, in a child interpreter where a SIGTERM is sent at the moment under test) and that make stays unreaped while its leftovers are signalled; that a Ctrl-C or SIGTERM landing inside Popen still ends make; and that a background job ending just after make is not a leak. The time limit and grace come from config/project.json `make_targets` through scripts/config_loader.py, the loader's default when the key is absent, a bad value or one past its row's upper bound is CONFIG or a refusal naming the key, `--timeout` overrides the configured limit within the same bound, and the configured grace outlasts `e2e.server.stop_timeout_s`.
 """
 
 import base64
@@ -1453,3 +1453,50 @@ def test_the_gate_grace_outlasts_the_e2e_servers_stop_wait():
     )
     stop = live_server.load_server_config(str(_ROOT))["stop_timeout_s"]
     assert grace > stop, (grace, stop)
+
+
+def test_make_stays_unreaped_while_its_leftovers_are_signalled(tree, monkeypatch):
+    """os.waitid's WNOWAIT keeps make a zombie while the runner ends what it
+    left, so every signal goes to an id make still holds: /proc still has
+    make's entry at each one. Reaping make on its exit would free the id
+    first, and a new process could take it."""
+    _write_fake_make(tree / "bin", _SLEEPS, detach=True, exit_after=True)
+    sent = []
+    real_killpg = os.killpg
+
+    def killpg(pgid, sig):
+        sent.append((pgid, sig, os.path.exists("/proc/%d" % pgid)))
+        return real_killpg(pgid, sig)
+
+    monkeypatch.setattr(os, "killpg", killpg)
+    res = rmt.run_target(
+        "check", cwd=str(tree), timeout=60, grace=1, snapshot=_snaps({}, {})
+    )
+    pids = _pids(tree)
+    try:
+        assert _gone_within(pids), "the leftover outlived the run"
+    finally:
+        _cleanup(pids)
+    assert len(res["leaked"]) == 1, res
+    assert sent, "the leftover was never signalled"
+    assert all(held for _g, _s, held in sent), sent
+
+
+def test_a_child_exiting_just_after_make_is_not_a_leak(tree):
+    """A background job that ends a moment after make (here 0.2 s, inside
+    _SETTLE_SECONDS) is not left behind: the runner re-reads the session for
+    the settle before it counts one, so this green make stays green."""
+    _write_script(
+        tree / "bin",
+        "make",
+        "import pathlib, subprocess, sys\n"
+        "subprocess.Popen([sys.executable, '-c', 'import pathlib, time\\n"
+        'while not pathlib.Path("go").exists():\\n'
+        "    time.sleep(0.01)\\n"
+        "time.sleep(0.2)\\n'])\n"
+        "pathlib.Path('go').write_text('1')\n",
+    )
+    res = rmt.run_target(
+        "check", cwd=str(tree), timeout=60, grace=1, snapshot=_snaps({}, {})
+    )
+    assert res["ok"] is True and res["leaked"] == [], res
