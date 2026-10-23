@@ -315,7 +315,7 @@ def _at_least_one_second(value: Any) -> bool:
     return bool(1 <= value <= _MOST_SECONDS)
 
 
-def _seconds_or_none(value: Any) -> bool:
+def _zero_to_most_seconds(value: Any) -> bool:
     return bool(0 <= value <= _MOST_SECONDS)
 
 
@@ -1124,7 +1124,7 @@ KEYS = tuple(
                 "the seconds a REST or gRPC server gives the calls in flight to "
                 "finish after a stop signal before it ends them",
                 accepts=(
-                    _seconds_or_none,
+                    _zero_to_most_seconds,
                     "a value >= 0 and <= %s" % _MOST_SECONDS_TEXT,
                 ),
             ),
