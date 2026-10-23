@@ -54,6 +54,16 @@ version rather than a bare commit:
   its record fails the run. `pytest-xdist` joins the `dev` extra; a tier
   target and a direct `pytest` stay in one process, and
   `--expiring-tier-record` refuses `-n`.
+- **Each install source can point at a company mirror.** config/project.json
+  `install_sources` has `python_index` (pip's `--index-url` in every workflow's
+  `pip install` and in the command `make check-venv` prints), `npm_registry`
+  (`--registry` for `make fe-install` and the Pages workflow's `npm ci`) and
+  `browser_download_host` (`PLAYWRIGHT_DOWNLOAD_HOST` for `make fe-browsers`),
+  printed by `scripts/install_sources.py`. Each is null by default, so no flag
+  is passed and the tool's own `pip.conf`, `.npmrc` or default host holds. A
+  URL must be https with a host and no user part, query or fragment; a
+  refused value is exit 14 and never shows the user part. The scanner's mirror
+  stays `secrets.scanner.release_url`. A generated project carries the block.
 - **Test scratch lives in memory when the host can hold it.**
   `tests/conftest.py` now takes config/project.json `tests.memory_scratch_root`
   (`/dev/shm/project_keel-tests`, `-<uid>` appended, mode 0700) before
