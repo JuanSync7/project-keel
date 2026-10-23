@@ -800,7 +800,9 @@ def test_a_pre_c2_2_project_receives_the_new_child_env_keys_as_arrivals_and_owes
     `config_reads`, which the tree-wide gate tests read, `agents`, the edit
     policy scripts/apply_refactor.py reads, `rosters`, the list of roster
     READMEs check_S reads, and `canary`, `toolchain`, `tests` and
-    `expiring_tier`, whose keys the config loader declares.
+    `expiring_tier`, whose keys the config loader declares, the `venv` block
+    and `transports.extras` that check-venv reads, and the gate runner's
+    `make_targets.gate_timeout_seconds` and `gate_stop_grace_seconds`.
     `structure.project_checks` does not: the template never ships it, because a
     key beside `extra_toplevel` would conflict with every project that declared
     one."""
@@ -854,6 +856,8 @@ def test_a_pre_c2_2_project_receives_the_new_child_env_keys_as_arrivals_and_owes
         "make_targets.effect_proof_skip.test-fe",
         "make_targets.effect_proof_skip.test-fe-e2e",
         "make_targets.effect_proof_skip.test-fe-unit",
+        "make_targets.gate_stop_grace_seconds",
+        "make_targets.gate_timeout_seconds",
         "make_targets.empty_test_selections",
         "make_targets.write_shape_exempt",
         "models.allowed_hosts",
@@ -968,8 +972,11 @@ def test_a_pre_c5_2_project_receives_the_run_date_and_host_list_as_arrivals(
     check_S reads since CMP-6.S6, the `expiring_tier` block the config loader
     declares since CMP-6.S4, and one more name in
     `child_env.names`: the variable the run date travels in, without which
-    scripts/child_env.py would drop it before any goal saw it. The audit
-    reports exactly those eighteen keys as
+    scripts/child_env.py would drop it before any goal saw it. The `venv`
+    block and `transports.extras` that check-venv reads since KEEL-VENV-1, and
+    the gate runner's `make_targets.gate_timeout_seconds` and
+    `gate_stop_grace_seconds` since KEEL-RUN-1, arrive too. The audit
+    reports exactly those keys as
     arrivals and the list as changed, owes no X error, and a real
     update leaves the run date block as the template ships it with its
     variable on the allowlist."""
@@ -1008,6 +1015,8 @@ def test_a_pre_c5_2_project_receives_the_run_date_and_host_list_as_arrivals(
         "make_targets.effect_proof_skip.test-fe",
         "make_targets.effect_proof_skip.test-fe-e2e",
         "make_targets.effect_proof_skip.test-fe-unit",
+        "make_targets.gate_stop_grace_seconds",
+        "make_targets.gate_timeout_seconds",
         "models.allowed_hosts",
         "rosters",
         "secrets",
