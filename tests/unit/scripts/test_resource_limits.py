@@ -2,7 +2,7 @@
 title: Unit — resource_limits (a bounded child)
 kind: tests
 layer: n/a
-summary: scripts/resource_limits.py `run_bounded` starts a child through the child-process allowlist in its own process group and returns its status and output; a child that runs past its time limit, and one whose output passes its byte cap, has its whole group ended and is refused as ChildTimedOut or ChildOutputTooLarge, naming the program, the limit and the key the caller says sets that limit, and a grandchild holding stdout or an unread stdin open after its parent exits holds the call for one drain window only, after which the parent's status and output are returned, not a timeout; a setsid grandchild, which no group kill reaches, leaves no reader or writer thread and no pipe open behind the call, and the call returns within its limit plus the drain window, timed out or not. An exception while the child runs ends its group. A limit past threading.TIMEOUT_MAX or NaN is refused before a child starts. `shutdown_owner` makes one named owner of SIGTERM and SIGINT for a server: the first signal writes a line naming the owner and the signal and calls the owner's stop, or raises ShutdownRequested (no Exception, so a request's own handler cannot eat it) only where the server says it is idle, and a second signal, proven in a child that runs `run_bounded` under the owner, ends the bounded child's process group (its pid no longer runs) and then the owner's process by that signal, SIGTERM and SIGINT alike; the handlers before it are put back. `cap_memory` sets RLIMIT_AS, proven in a child: an allocation past the cap is a MemoryError, one below it is not, and null says the cap is off. `serve_limits` reads config/project.json `transports.serve.memory_cap_mb` and `transports.serve.shutdown_grace_seconds`, refusing a value out of its bound by its key. Every child is a short Python one-liner under this interpreter; nothing reaches a network.
+summary: scripts/resource_limits.py `run_bounded` starts a child through the child-process allowlist in its own process group and returns its status and output; a child that runs past its time limit, and one whose output passes its byte cap, has its whole group ended and is refused as ChildTimedOut or ChildOutputTooLarge, naming the program, the limit and the key the caller says sets that limit, and a grandchild holding stdout or an unread stdin open after its parent exits holds the call for one drain window only, after which the parent's status and output are returned, not a timeout; a setsid grandchild, which no group kill reaches, leaves no reader or writer thread and no pipe open behind the call, and the call returns within its limit plus the drain window, timed out or not. An exception while the child runs ends its group. A limit past threading.TIMEOUT_MAX or NaN is refused before a child starts. `shutdown_owner` makes one named owner of SIGTERM and SIGINT for a server: the first signal writes a line naming the owner and the signal and calls the owner's stop, or raises ShutdownRequested (no Exception, so a request's own handler cannot eat it) only where the server says it is idle, and a second signal, proven in a child that runs `run_bounded` under the owner, ends the bounded child's process group (its pid no longer runs) and then the owner's process by that signal, SIGTERM and SIGINT alike; the handlers before it are put back. `cap_memory` sets RLIMIT_AS, proven in a child: an allocation past the cap is a MemoryError, one below it is not, and null says the cap is off; a cap past a hard limit the child lowered first sets the hard limit and the line says it was lowered to it. `serve_limits` reads config/project.json `transports.serve.memory_cap_mb` and `transports.serve.shutdown_grace_seconds`, refusing a value out of its bound by its key. Every child is a short Python one-liner under this interpreter; nothing reaches a network.
 """
 
 import contextlib
@@ -429,6 +429,34 @@ def test_a_cap_below_one_megabyte_is_refused():
     for bad in (0, -1, True, 1.5):
         with pytest.raises(ValueError):
             resource_limits.cap_memory(bad)
+
+
+_HARD_CHILD = (
+    "import resource, sys; sys.path.insert(0, %r)\n"
+    "from scripts import resource_limits\n"
+    "resource.setrlimit(resource.RLIMIT_AS, (%d << 20, %d << 20))\n"
+    "print(resource_limits.cap_memory(%d))\n"
+    "print(*resource.getrlimit(resource.RLIMIT_AS))\n"
+)
+
+
+@pytest.mark.skipif(not hasattr(os, "fork"), reason="RLIMIT_AS is a POSIX limit")
+def test_a_cap_above_the_hard_limit_is_lowered_to_it_and_says_so():
+    """An unprivileged process cannot raise its hard limit, so a configured cap
+    past it sets the hard limit and the line names both the size and why."""
+    hard_mb = 1536
+    done = resource_limits.run_bounded(
+        [_PY, "-c", _HARD_CHILD % (str(_ROOT), hard_mb, hard_mb, hard_mb * 2)],
+        timeout=60,
+        max_output_bytes=4096,
+    )
+    assert done.returncode == 0, done.stderr
+    status, limits = done.stdout.splitlines()
+    assert status.startswith(
+        "memory cap: %d MB of address space (RLIMIT_AS, lowered to the hard limit)"
+        % hard_mb
+    ), status
+    assert limits.split() == [str(hard_mb << 20)] * 2, limits
 
 
 # --- what a server reads: serve_limits ------------------------------------------
