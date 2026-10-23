@@ -2,7 +2,7 @@
 title: Integration — the replayed eval gate, run as a real CLI over a scratch repository
 kind: tests
 layer: n/a
-summary: A scratch git repository carrying keel's evals/, models/, agents/, runtimes/, the eval CLI and its script siblings, config/ and .gitignore runs scripts/run_evals.py --mode replay as a child process. Two runs on the same tree exit 0 and write byte-identical reports with result pass under config/project.json `evals.report_dir`, and leave what git lists unchanged (the writer's rerun_proof). The shipped dataset uses every scorer in evals.SCORERS and every doer in evals.DOERS, every agent package under agents/ has a doer of its own name that a shipped case drives, and every shipped case's scorer rejects an empty answer, so no case passes whatever the model says. Each red twin is red with its own exit code: a recorded response that fails its scorer or a prompt that changed is a fail (exit 1); a stale response hash, an empty dataset, no dataset file, an unknown scorer, an id repeated across two suites and a stray file in the dataset directory are refused (exit 2). A report_dir git does not ignore is refused before anything is written, as is one whose first component is a symlink to a directory outside the project (in replay and live mode, with and without git, and when the `evals` block is itself refused) and a report temporary file that is a symlink, each leaving the outside files as they were, a red run replaces an earlier green report, and a refused `evals` block (a bad value or an unknown key) removes the earlier report, twice over, rather than leave it reading pass.
+summary: A scratch git repository carrying keel's evals/, models/, agents/, runtimes/, the eval CLI and its script siblings, config/ and .gitignore runs scripts/run_evals.py --mode replay as a child process. Two runs on the same tree exit 0 and write byte-identical reports with result pass under config/project.json `evals.report_dir`, and leave what git lists unchanged (the writer's rerun_proof). The shipped dataset uses every scorer in evals.SCORERS and every doer in evals.DOERS, every agent package under agents/ has a doer of its own name that a shipped case drives, and every shipped case's scorer rejects each of a fixed set of generic wrong replies (empty, a one-sentence shrug such as "I don't know.", a bare yes or no, an empty JSON object, and three shrugs as three lines), so no case passes whatever the model says. Each red twin is red with its own exit code: a recorded response that fails its scorer or a prompt that changed is a fail (exit 1); a stale response hash, an empty dataset, no dataset file, an unknown scorer, an id repeated across two suites and a stray file in the dataset directory are refused (exit 2). A report_dir git does not ignore is refused before anything is written, as is one whose first component is a symlink to a directory outside the project (in replay and live mode, with and without git, and when the `evals` block is itself refused) and a report temporary file that is a symlink, each leaving the outside files as they were, a red run replaces an earlier green report, and a refused `evals` block (a bad value or an unknown key) removes the earlier report, twice over, rather than leave it reading pass.
 @covers scripts/run_evals.py
 """
 
@@ -172,12 +172,33 @@ def test_every_agent_has_a_doer_and_a_shipped_case():
     assert [a for a in agents if a not in named] == []
 
 
+# Replies that answer no case: empty, a shrug in one sentence, a bare
+# yes/no, an empty JSON object, and the same shrugs as three lines, the
+# shape the triage prompt asks for.
+_GENERIC_WRONG = (
+    "",
+    "I don't know.",
+    "Nothing to add.",
+    "N/A.",
+    "Yes.",
+    "No.",
+    "OK",
+    "{}",
+    "I don't know.\nNothing to add.\nN/A.",
+)
+
+
 def test_every_shipped_case_can_fail():
     """A case its scorer passes whatever the model says proves nothing: each
-    shipped case's scorer must reject an empty answer."""
+    shipped case's scorer must reject every generic wrong reply."""
     cases = [c for s in load_suites(_CONFIG, _ROOT) for c in s.cases]
     assert cases
-    vacuous = [c.id for c in cases if SCORERS[c.scorer_name].score("", c.params)[0]]
+    vacuous = [
+        (c.id, reply)
+        for c in cases
+        for reply in _GENERIC_WRONG
+        if SCORERS[c.scorer_name].score(reply, c.params)[0]
+    ]
     assert vacuous == []
 
 
