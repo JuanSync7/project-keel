@@ -2,7 +2,7 @@
 title: Unit — every agent CLI holds an --execute run to the model-call cap and says which model it chose
 kind: tests
 layer: n/a
-summary: scripts/doc_review.py, scripts/refactor_practice.py, scripts/hooks/on_stop_doc_review.py and scripts/hooks/on_stop_triage.py each check, before the agent runs, that the run's upper bound of model calls (--max-chunks, --max-nodes, or the one call triage makes) is within config/project.json `agents.max_model_calls` (read through scripts/model_budget.py): a bound over the cap, or a negative bound that sets none, returns USAGE with the agent never called, a cap the config cannot give returns CONFIG, and a dry run is never refused, since it calls no model. An approved run hands the agent its bound as `max_model_calls`, the count its counted backend stops at; the agent stopping at that count (models.CallCapReached) returns FAILURE and a saved run the approval does not cover (models.RunNotApproved) returns USAGE, each naming what to do next. With --execute and no --model, each writes to stderr which model the registry default chose and why; with --model it writes no such line. A ConfigError the loader raises once the agent runs (NotSet or WrongValue) returns CONFIG with the loader line on stderr, dry run and --execute alike; two cases run the real chain against this checkout's config, changed as scripts/config_loader.py read returns it: triage on claude-code-headless with no models.timeout_seconds entry for it (PATH empty, so no CLI could start), and a doc_review dry run with runtimes.max_steps 0. Every entry point under scripts/, mcp/ and api/ that ends in finish(main()) and reaches agents, evals, models or runtimes through any chain of imports among the modules and packages under those three directories (model_budget is one such helper; a sibling under scripts/jobs/, a helper's helper, a package and a `from scripts import` each count, and a case for each fails if the scan stops seeing it) must be one of these four or named in _HELD_ELSEWHERE with the test that holds it, and that test file must exist and name the entry point, so a new doer is not left out and a row excuses nothing it does not name. An entry point that reaches a package by importlib alone is not seen. Elsewhere the agent function is replaced by a recorder, so no model is built and nothing is written.
+summary: scripts/doc_review.py, scripts/refactor_practice.py, scripts/hooks/on_stop_doc_review.py and scripts/hooks/on_stop_triage.py each check, before the agent runs, that the run's upper bound of model calls (--max-chunks, --max-nodes, or the one call triage makes) is within config/project.json `agents.max_model_calls` (read through scripts/model_budget.py): a bound over the cap, or a negative bound that sets none, returns USAGE with the agent never called, a cap the config cannot give returns CONFIG, and a dry run is never refused, since it calls no model. An approved run hands the agent its bound as `max_model_calls`, the count its counted backend stops at; the agent stopping at that count (models.CallCapReached) returns FAILURE and a saved run the approval does not cover (models.RunNotApproved) returns USAGE, each naming what to do next. With --execute and no --model, each writes to stderr which model the registry default chose and why; with --model it writes no such line. A ConfigError the loader raises once the agent runs (NotSet or WrongValue) returns CONFIG with the loader line on stderr, dry run and --execute alike; two cases run the real chain against this checkout's config, changed as scripts/config_loader.py read returns it: triage on claude-code-headless with no models.timeout_seconds entry for it (PATH empty, so no CLI could start), and a doc_review dry run with runtimes.max_steps 0. Every entry point under scripts/, mcp/ and api/ that ends in finish(main()) and reaches agents, evals, models or runtimes through any chain of imports among the modules and packages under those three directories (model_budget is one such helper; a sibling under scripts/jobs/, a helper's helper, a package and a `from scripts import` each count, and a case for each fails if the scan stops seeing it) must be one of these four or named in _HELD_ELSEWHERE with the test that holds it, and that test file must exist and name the entry point, so a new doer is not left out and a row excuses nothing it does not name. A module importlib or runpy loads by a literal name, or from a literal `.py` path (a module-level name assigned one included), is an import like any other; a load whose module the scan cannot read, or an exec or eval of text it cannot read, counts as reaching unless _DYNAMIC_LOADS names the file with the reason, and a row whose file no longer has such a load fails. Elsewhere the agent function is replaced by a recorder, so no model is built and nothing is written.
 """
 
 import ast
@@ -249,19 +249,103 @@ _HELD_ELSEWHERE = {
 }
 _AGENT_PACKAGES = ("agents", "evals", "models", "runtimes")
 _ENTRY_TOPS = ("scripts", "mcp", "api")
+# A load the scan cannot name stands for this, and it reaches every package
+# the scan guards: a module it cannot read is counted, not skipped.
+_DYNAMIC = "<a load the scan cannot name>"
+# Each file whose unresolvable load is known not to reach an agent package,
+# and why; a row whose file has no such load fails, so it excuses nothing.
+_DYNAMIC_LOADS = {
+    "scripts/check_structure.py": (
+        "loads the project's own checks from config/project.json "
+        "structure.project_checks, a directory outside scripts/, mcp/ and api/"
+    ),
+    "scripts/run_app.py": (
+        "runs config/project.json layers.app.module, the app under app/, "
+        "which is outside scripts/, mcp/ and api/"
+    ),
+}
+# Calls that load a module by its dotted name, and calls that load one from a
+# file path; each is matched on its last attribute, so `importlib.util.` and a
+# bare imported name both count.
+_BY_NAME = ("import_module", "__import__", "find_spec", "run_module")
+_BY_FILE = ("spec_from_file_location", "run_path", "SourceFileLoader")
+_RUNS_TEXT = ("exec", "eval")
+
+
+def _strings(node, assigned):
+    """The string constants inside *node*, following a bare name to the value
+    a module-level assignment gave it, so `_LOADER = os.path.join(...,
+    "config_loader.py")` names config_loader.py."""
+    for part in ast.walk(node):
+        if isinstance(part, ast.Constant) and isinstance(part.value, str):
+            yield part.value
+        elif isinstance(part, ast.Name) and part.id in assigned:
+            yield from _strings(assigned.pop(part.id), assigned)
+
+
+def _called(node):
+    func = node.func
+    if isinstance(func, ast.Attribute):
+        return func.attr
+    return func.id if isinstance(func, ast.Name) else None
+
+
+def _dynamic_names(node, assigned):
+    """The module names one importlib, runpy or exec call loads, or _DYNAMIC
+    when its argument is not a literal the scan can read."""
+    called = _called(node)
+    if called in _BY_NAME:
+        names = list(_strings(node.args[0], dict(assigned))) if node.args else []
+        if len(names) != 1:
+            return [_DYNAMIC]
+        return names[0].split(".")
+    if called in _BY_FILE:
+        found = [
+            Path(text).stem
+            for arg in node.args
+            for text in _strings(arg, dict(assigned))
+            if text.endswith(".py")
+        ]
+        return found or [_DYNAMIC]
+    if called in _RUNS_TEXT and node.args:
+        first = node.args[0]
+        literal = isinstance(first, ast.Constant) and isinstance(first.value, str)
+        return [] if literal and "import" not in first.value else [_DYNAMIC]
+    return []
 
 
 def _imported_names(path):
     """Every module name *path* imports, each dotted part on its own, and the
     names a `from` import takes, so `from scripts import model_budget` names
-    model_budget."""
-    for node in ast.walk(ast.parse(path.read_text("utf-8"))):
+    model_budget; a module importlib or runpy loads by a literal name or a
+    literal `.py` path is named the same way, and a load the scan cannot read
+    yields _DYNAMIC."""
+    tree = ast.parse(path.read_text("utf-8"))
+    assigned = {
+        target.id: node.value
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        for target in node.targets
+        if isinstance(target, ast.Name)
+    }
+    for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
                 yield from alias.name.split(".")
         elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
             yield from node.module.split(".")
             yield from (alias.name for alias in node.names)
+        elif isinstance(node, ast.Call):
+            yield from _dynamic_names(node, assigned)
+
+
+def _names(path, root):
+    """*path*'s imported names, with _DYNAMIC dropped when a _DYNAMIC_LOADS
+    row excuses the file."""
+    names = set(_imported_names(path))
+    if path.relative_to(root).as_posix() in _DYNAMIC_LOADS:
+        names.discard(_DYNAMIC)
+    return names
 
 
 def _module_name(path):
@@ -273,15 +357,15 @@ def _agent_reaching_names(root=None):
     and api/ that reaches one through any chain of imports: an entry point
     that reaches models through a helper, a helper's helper or a package
     builds a model as surely as one that imports models itself. The set
-    grows until no module joins it; a module reached only through importlib
-    is not seen."""
+    grows until no module joins it. A load the scan cannot name counts as
+    reaching unless a _DYNAMIC_LOADS row excuses its file."""
     root = _ROOT if root is None else root
     modules = [
-        (_module_name(path), set(_imported_names(path)))
+        (_module_name(path), _names(path, root))
         for top in _ENTRY_TOPS
         for path in sorted((root / top).rglob("*.py"))
     ]
-    reaching = set(_AGENT_PACKAGES)
+    reaching = set(_AGENT_PACKAGES) | {_DYNAMIC}
     grew = True
     while grew:
         joined = {name for name, imports in modules if imports & reaching}
@@ -290,8 +374,8 @@ def _agent_reaching_names(root=None):
     return reaching
 
 
-def _imports_an_agent_package(path, reaching):
-    return bool(set(_imported_names(path)) & reaching)
+def _imports_an_agent_package(path, reaching, root=None):
+    return bool(_names(path, _ROOT if root is None else root) & reaching)
 
 
 # Each shape a doer can reach models through, as the files that build it: the
@@ -314,6 +398,28 @@ _REACH_SHAPES = {
         "scripts/probe_helper.py": "import runtimes\n",
         "scripts/probe_doer.py": "from scripts import probe_helper\n",
     },
+    "importlib.import_module of a helper": {
+        "scripts/probe_helper.py": "import evals\n",
+        "scripts/probe_doer.py": (
+            "import importlib\nhelper = importlib.import_module('scripts.probe_helper')\n"
+        ),
+    },
+    "__import__ of a package": {
+        "scripts/probe_doer.py": "models = __import__('models')\n",
+    },
+    "a helper loaded by its file path": {
+        "scripts/probe_helper.py": "import agents\n",
+        "scripts/probe_doer.py": (
+            "import importlib.util, os\n"
+            "_HELPER = os.path.join(os.path.dirname(__file__), 'probe_helper.py')\n"
+            "spec = importlib.util.spec_from_file_location('helper', _HELPER)\n"
+        ),
+    },
+    "a load whose module the scan cannot name": {
+        "scripts/probe_doer.py": (
+            "import importlib, sys\nimportlib.import_module(sys.argv[1])\n"
+        ),
+    },
 }
 
 
@@ -324,7 +430,8 @@ def test_a_doer_reaching_models_through_any_import_chain_is_seen(tmp_path, shape
         (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / rel).write_text(text, "utf-8")
     doer = tmp_path / list(files)[-1]
-    assert _imports_an_agent_package(doer, _agent_reaching_names(tmp_path)), shape
+    reaching = _agent_reaching_names(tmp_path)
+    assert _imports_an_agent_package(doer, reaching, tmp_path), shape
 
 
 def test_a_doer_reaching_no_agent_package_is_not_seen(tmp_path):
@@ -332,7 +439,9 @@ def test_a_doer_reaching_no_agent_package_is_not_seen(tmp_path):
     (tmp_path / "scripts/probe_helper.py").write_text("import json\n", "utf-8")
     doer = tmp_path / "scripts/probe_doer.py"
     doer.write_text("import probe_helper\n", "utf-8")
-    assert not _imports_an_agent_package(doer, _agent_reaching_names(tmp_path))
+    assert not _imports_an_agent_package(
+        doer, _agent_reaching_names(tmp_path), tmp_path
+    )
 
 
 def test_every_entry_point_that_builds_a_model_or_runtime_is_held():
@@ -361,3 +470,19 @@ def test_each_entry_held_elsewhere_is_named_by_the_test_said_to_hold_it(entry):
     holder = _ROOT / _HELD_ELSEWHERE[entry]
     assert holder.is_file(), holder
     assert Path(entry).stem in holder.read_text("utf-8"), (entry, holder)
+
+
+@pytest.mark.parametrize("excused", sorted(_DYNAMIC_LOADS))
+def test_each_excused_dynamic_load_is_still_one_the_scan_cannot_name(excused):
+    """A _DYNAMIC_LOADS row is a claim; once its file no longer has a load the
+    scan cannot name, the row excuses nothing and must go."""
+    assert _DYNAMIC in set(_imported_names(_ROOT / excused)), excused
+
+
+def test_a_load_by_literal_name_or_path_is_named_not_counted_as_unknown():
+    """config_loader and child_env load a module by a literal path; the scan
+    names it, so neither needs a _DYNAMIC_LOADS row."""
+    for rel in ("scripts/config_loader.py", "scripts/child_env.py"):
+        names = set(_imported_names(_ROOT / rel))
+        assert _DYNAMIC not in names, rel
+    assert "config_loader" in set(_imported_names(_ROOT / "scripts/child_env.py"))
