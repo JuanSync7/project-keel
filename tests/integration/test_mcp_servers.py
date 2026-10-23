@@ -2,7 +2,7 @@
 title: Integration — MCP servers (Q&A + action)
 kind: tests
 layer: backend
-summary: The thin MCP servers expose schema'd tools that delegate to wiki_navigator and a jobs doer; the action tool defaults to dry-run. Each wiki_answer is held to the server's approved model-call count, config/project.json `agents.max_model_calls` read by configured_cap: a count of 0, the default and the shipped value, answers with a tool error naming the key and makes no model call, a FakeModel subclass in models.registry._REGISTRY counting the calls. The Q&A server's `main` reads that count from the root it is given: under a root that approves one call a question reaches the model once, which the 0 this checkout ships would refuse. Each server's entry `main` turns a refused setting (a serve limit out of its bound, a blank KEEL_MCP_MODEL) into exit CONFIG through the exit helper with the key on stderr, before it caps memory or serves.
+summary: The thin MCP servers expose schema'd tools that delegate to wiki_navigator and a jobs doer; the action tool defaults to dry-run. Each wiki_answer is held to the server's approved model-call count, config/project.json `agents.max_model_calls` read by configured_cap: a count of 0, the default and the shipped value, answers with a tool error naming the key and makes no model call, a FakeModel subclass in models.registry._REGISTRY counting the calls. The Q&A server's `main` reads that count from the root it is given: under a root that approves one call a question reaches the model once, which the 0 this checkout ships would refuse. Each server's entry `main` turns a refused setting (a serve limit out of its bound, a blank KEEL_MCP_MODEL) into exit CONFIG through the exit helper with the key on stderr, before it caps memory or serves. The action server's `main` refuses a tool limit (config/project.json `agents.tool_timeout_seconds`) as CONFIG the same way, and hands its root's tool limits to the doer: under a 64-byte `agents.tool_max_output_bytes` the dry-run index build is a tool error naming that key.
 """
 
 import json
@@ -450,3 +450,41 @@ def test_main_holds_each_question_to_the_cap_its_root_configures(
     assert again["isError"] is True
     assert "agents.max_session_model_calls (now 1)" in again["content"][0]["text"]
     assert len(_Counted.prompts) == 1
+
+
+def _tool_block(tmp_path, agents):
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "project.json").write_text(
+        json.dumps({"agents": agents, "transports": {"serve": {"memory_cap_mb": 256}}}),
+        encoding="utf-8",
+    )
+    return str(tmp_path)
+
+
+def test_a_refused_tool_limit_is_config_before_the_action_server_serves(
+    tmp_path, capsys, nothing_served
+):
+    root = _tool_block(tmp_path, {"tool_timeout_seconds": 0})
+    assert action_server.main(root=root) is ExitCode.CONFIG
+    assert nothing_served == []
+    assert "agents.tool_timeout_seconds" in capsys.readouterr().err
+
+
+def test_the_action_doer_is_held_to_the_tool_limits_its_root_configures(
+    tmp_path, monkeypatch, nothing_served
+):
+    """main hands its root's tool limits to the doer: a 64-byte cap ends the
+    dry-run index build, whose preview this checkout's shipped cap allows."""
+    root = _tool_block(tmp_path, {"tool_max_output_bytes": 64})
+    built = []
+
+    def build(**kwargs):
+        built.append(build_action_server(**kwargs))
+        return built[-1]
+
+    monkeypatch.setattr(action_server, "build_action_server", build)
+    assert action_server.main(root=root) is ExitCode.SUCCESS
+    (server,) = built
+    result = server.call_tool("rebuild_index", {})
+    assert result["isError"] is True, result
+    assert "agents.tool_max_output_bytes" in json.dumps(result)

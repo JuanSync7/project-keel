@@ -2,14 +2,13 @@
 title: Practice refactor brain
 layer: backend
 public_api: no
-summary: Plan: walk the corpus KG -> gate a green baseline -> (propose -> apply+gate+rollback) one chunk per step; on a durable Runtime. An execute run needs its approved count of model calls: every call goes through one run's models.ModelMeter, and a resumed run is first checked against the approved model and count (models.approve_resume).
+summary: Plan: walk the corpus KG -> gate a green baseline -> (propose -> apply+gate+rollback) one chunk per step; on a durable Runtime. An execute run needs its approved count of model calls: every call goes through one run's models.ModelMeter, and a resumed run is first checked against the approved model and count (models.approve_resume). Every tool child runs through scripts/resource_limits.py run_tool, held to config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes`: past either its process group is ended and the step raises ChildTimedOut or ChildOutputTooLarge naming the key.
 """
 
 from __future__ import annotations
 
 import json
 import os
-import subprocess
 import sys
 from dataclasses import dataclass
 
@@ -25,7 +24,7 @@ from runtimes import (
     Step,
     get_runtime,
 )
-from scripts.child_env import build_child_env
+from scripts.resource_limits import run_tool
 
 __all__ = ["refactor", "propose", "RefactorReport"]
 
@@ -61,15 +60,11 @@ def _run(args, stdin=None):
     run under a compatible Python rather than a hardcoded 'python3' on PATH.
     ``stdin`` (when given) is piped to the child — the refactor spec goes to
     apply_refactor this way.
+    Bounded by scripts/resource_limits.py run_tool: past config/project.json
+    agents.tool_timeout_seconds or agents.tool_max_output_bytes the child's
+    process group is ended and ChildTimedOut or ChildOutputTooLarge names the key.
     """
-    proc = subprocess.run(
-        [sys.executable] + args,
-        cwd=_REPO,
-        capture_output=True,
-        text=True,
-        env=build_child_env(),
-        input=stdin,
-    )
+    proc = run_tool([sys.executable] + args, cwd=_REPO, stdin_text=stdin)
     return proc.returncode, proc.stdout, proc.stderr
 
 

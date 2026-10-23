@@ -2,20 +2,19 @@
 title: Wiki navigator brain
 layer: backend
 public_api: no
-summary: Plan: deterministic retrieval (query_corpus) -> synthesize a cited answer; on a Runtime. An execute run needs its approved count of model calls and makes its one call through a models.ModelMeter of that count, whose backend the caller's backend_factory builds when it gives one (models.get_model otherwise), so a caller can count calls across answers.
+summary: Plan: deterministic retrieval (query_corpus) -> synthesize a cited answer; on a Runtime. An execute run needs its approved count of model calls and makes its one call through a models.ModelMeter of that count, whose backend the caller's backend_factory builds when it gives one (models.get_model otherwise), so a caller can count calls across answers. Every tool child runs through scripts/resource_limits.py run_tool, held to config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes`: past either its process group is ended and the step raises ChildTimedOut or ChildOutputTooLarge naming the key.
 """
 
 from __future__ import annotations
 
 import json
 import os
-import subprocess
 import sys
 from dataclasses import dataclass
 
 from models import ModelBackend, ModelMeter, get_model
 from runtimes import END, MODEL_CALL, READ_ONLY, Edge, Plan, Step, get_runtime
-from scripts.child_env import build_child_env
+from scripts.resource_limits import run_tool
 
 __all__ = ["answer", "synthesize", "Answer", "Citation"]
 
@@ -45,14 +44,12 @@ class Answer:
 
 
 def _run(args):
-    """Invoke a repo script via its CLI with the SAME interpreter running us."""
-    proc = subprocess.run(
-        [sys.executable] + args,
-        cwd=_REPO,
-        capture_output=True,
-        text=True,
-        env=build_child_env(),
-    )
+    """Invoke a repo script via its CLI with the SAME interpreter running us.
+    Bounded by scripts/resource_limits.py run_tool: past config/project.json
+    agents.tool_timeout_seconds or agents.tool_max_output_bytes the child's
+    process group is ended and ChildTimedOut or ChildOutputTooLarge names the key.
+    """
+    proc = run_tool([sys.executable] + args, cwd=_REPO)
     return proc.returncode, proc.stdout, proc.stderr
 
 
