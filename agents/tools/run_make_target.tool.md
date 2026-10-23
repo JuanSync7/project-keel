@@ -109,9 +109,18 @@ from `/proc`; on a host without it, a group that answers signal 0 counts as
 alive and its leftovers are listed as `(unlisted)`, and a process that moved
 to a group of its own is not seen.
 
-The runner signals only make's session. make is left unreaped until the group is
-empty, so its process id, which is the group id, cannot pass to a new process
-meanwhile; where Python has no `os.waitid` that hold is lost. Output still
+The runner signals only make's session, and only while make is unreaped. make
+is kept as a zombie (`os.waitid` with `WNOWAIT`) until the session has been
+ended and the output read, so its process id, which is the session and group
+id, cannot pass to a new process while a signal can still go to it; once make
+is reaped, a stop signal sends nothing. A group a member moved to is signalled
+by the id `/proc` listed just before, which could pass to a new process only if
+every member of that group exited and the id was handed out again in between.
+Where Python has no `os.waitid`, make is reaped as it exits, so the runner
+signals nothing after that: a leftover is named in `leaked` as still running,
+with the `kill` command that ends it. A Ctrl-C, SIGTERM or SIGHUP that lands
+while make is being started is held until the runner has make's process id,
+and then acts, so it cannot leave make running. Output still
 open after the session ends is held by a process that left the session (with
 `setsid`, for example). The runner stops reading it, names each holder in
 `escaped` and fails the run, exit 1, with the `kill` command that ends them,

@@ -301,7 +301,11 @@ version rather than a bare commit:
   its output, so a background job holding the output open no longer holds the
   run to the limit. A signal the caller ignored (`nohup`) stays ignored, a
   second interrupt during the grace still sends the SIGKILL, and a SIGTERM
-  during the leftover cleanup still ends the leftovers.
+  during the leftover cleanup still ends the leftovers. make stays unreaped
+  until the runner is done signalling, and a stop signal after that sends
+  nothing, so no signal goes to an id another process could hold. A Ctrl-C,
+  SIGTERM or SIGHUP while make is being started is held until the runner
+  has make's process id, so it no longer leaves make running.
 - **The audit reports a migration that stops over an owed error.** A
   project that lists `GIT_DIR` in `child_env.names` made
   `scripts/audit_project.py` exit 2, because the update's first migration

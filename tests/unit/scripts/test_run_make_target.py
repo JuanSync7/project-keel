@@ -1282,3 +1282,143 @@ def test_a_run_that_leaks_nothing_names_no_escape(proj):
         snapshot=_snaps({}, {}),
     )
     assert res["ok"] is True and res["escaped"] == [], res
+
+
+# Records each os.killpg as (group id, signal, whether /proc still has the
+# process whose id it is). make's pid is its group id, so a missing entry is a
+# signal to an id make no longer held, which a new process could have taken.
+_RECORD_KILLPG = (
+    "import json, os, signal\n"
+    "sent = []\n"
+    "real_killpg = os.killpg\n"
+    "def killpg(pgid, sig):\n"
+    "    sent.append((pgid, int(sig), os.path.exists('/proc/%d' % pgid)))\n"
+    "    return real_killpg(pgid, sig)\n"
+    "os.killpg = killpg\n"
+    "terms = []\n"
+    "signal.signal(signal.SIGTERM, lambda *_: terms.append(1))\n"
+)
+
+
+@pytest.mark.parametrize("when", ["finish", "wait"])
+def test_a_sigterm_after_make_exits_signals_no_id_make_gave_up(tree, when):
+    """The stop handler runs whenever SIGTERM lands. Once make is reaped its
+    pid, the group id, is free to pass to a new process, so a SIGTERM while
+    the output is read after make exited ("finish"), or just after make is
+    reaped ("wait"), must signal nothing that is not still held."""
+    make = _write_script(tree / "bin", "make", "print('made it')\n")
+    out = _in_child(
+        tree,
+        _RECORD_KILLPG + "when = %r\n"
+        "real_finish = r._Reader.finish\n"
+        "def finish(self, wait):\n"
+        "    if when == 'finish' and wait > 0:\n"
+        "        os.kill(os.getpid(), signal.SIGTERM)\n"
+        "    return real_finish(self, wait)\n"
+        "r._Reader.finish = finish\n"
+        "real_wait = r.subprocess.Popen.wait\n"
+        "def wait(self, *a, **k):\n"
+        "    got = real_wait(self, *a, **k)\n"
+        "    if when == 'wait' and not terms and not sent:\n"
+        "        os.kill(os.getpid(), signal.SIGTERM)\n"
+        "    return got\n"
+        "r.subprocess.Popen.wait = wait\n"
+        "rc, _ = r._default_runner([%r], '.', 30, grace=1)\n"
+        "print(json.dumps({'rc': rc, 'sent': sent, 'terms': len(terms)}))\n"
+        % (when, str(make)),
+    )
+    got = json.loads(out)
+    assert got["rc"] == 0 and got["terms"] == 1, got
+    assert all(held for _g, _s, held in got["sent"]), got
+    if when == "finish":
+        # make was still held then, so the stop reached its group.
+        assert got["sent"], got
+
+
+def test_without_waitid_a_leftover_is_named_but_not_signalled(tree, monkeypatch):
+    """Where Python has no os.waitid, make is reaped as soon as it exits, so
+    nothing holds its group id: the runner sends no signal after that, and the
+    leftover is red and named as still running, not claimed ended."""
+    _write_fake_make(tree / "bin", _SLEEPS, detach=True, exit_after=True)
+    monkeypatch.delattr(os, "waitid")
+    sent = []
+    real_killpg = os.killpg
+
+    def killpg(pgid, sig):
+        sent.append((pgid, sig, os.path.exists("/proc/%d" % pgid)))
+        return real_killpg(pgid, sig)
+
+    monkeypatch.setattr(os, "killpg", killpg)
+    res = rmt.run_target(
+        "check", cwd=str(tree), timeout=60, grace=1, snapshot=_snaps({}, {})
+    )
+    pids = _pids(tree)
+    try:
+        assert _alive(pids[1]), "the leftover was signalled after make was reaped"
+    finally:
+        _cleanup(pids)
+    assert all(held for _g, _s, held in sent), sent
+    assert res["ok"] is False and len(res["leaked"]) == 1, res
+    assert "still running" in res["output"] and "were ended" not in res["output"]
+    assert "kill %d" % pids[1] in res["output"], res["output"]
+
+
+# make sleeps; the runner's Popen is wrapped to send a signal to the runner
+# right after make has started and before Popen has returned, the moment the
+# runner has a child but no record of it.
+_SIGNAL_INSIDE_POPEN = (
+    "import json, os, pathlib, signal, time\n"
+    "real_popen = r.subprocess.Popen\n"
+    "def popen(*a, **k):\n"
+    "    proc = real_popen(*a, **k)\n"
+    "    pathlib.Path('makepid').write_text(str(proc.pid))\n"
+    "    os.kill(os.getpid(), SIG)\n"
+    "    return proc\n"
+    "r.subprocess.Popen = popen\n"
+    "def gone(pid):\n"
+    "    deadline = time.monotonic() + 10\n"
+    "    while time.monotonic() < deadline:\n"
+    "        try:\n"
+    "            os.kill(pid, 0)\n"
+    "        except ProcessLookupError:\n"
+    "            return True\n"
+    "        try:\n"
+    "            os.waitpid(pid, os.WNOHANG)\n"
+    "        except ChildProcessError:\n"
+    "            pass\n"
+    "        time.sleep(0.05)\n"
+    "    os.kill(pid, signal.SIGKILL)\n"
+    "    return False\n"
+)
+
+
+def test_a_ctrl_c_while_make_starts_still_ends_make(tree):
+    make = _write_script(tree / "bin", "make", "import time\ntime.sleep(487)\n")
+    out = _in_child(
+        tree,
+        "import signal\nSIG = signal.SIGINT\n" + _SIGNAL_INSIDE_POPEN + "try:\n"
+        "    r._default_runner([%r], '.', 30, grace=2)\n"
+        "    what = 'returned'\n"
+        "except KeyboardInterrupt:\n"
+        "    what = 'interrupted'\n"
+        "pid = int(pathlib.Path('makepid').read_text())\n"
+        "print(json.dumps({'what': what, 'gone': gone(pid)}))\n" % str(make),
+    )
+    assert json.loads(out) == {"what": "interrupted", "gone": True}, out
+
+
+def test_a_sigterm_while_make_starts_still_ends_make(tree):
+    make = _write_script(tree / "bin", "make", "import time\ntime.sleep(488)\n")
+    out = _in_child(
+        tree,
+        "import signal\nSIG = signal.SIGTERM\n" + _SIGNAL_INSIDE_POPEN + "terms = []\n"
+        "signal.signal(signal.SIGTERM, lambda *_: terms.append(1))\n"
+        "try:\n"
+        "    what = r._default_runner([%r], '.', 8, grace=2)[0]\n"
+        "except r.subprocess.TimeoutExpired:\n"
+        "    what = 'timed out'\n"
+        "pid = int(pathlib.Path('makepid').read_text())\n"
+        "print(json.dumps({'what': what, 'terms': len(terms), 'gone': gone(pid)}))\n"
+        % str(make),
+    )
+    assert json.loads(out) == {"what": -15, "terms": 1, "gone": True}, out

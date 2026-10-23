@@ -76,9 +76,10 @@ own limits, is a row of the [feature catalogue](../reference/features.md).
   is not counted. A process outside the session that still holds make's
   output is named and turns the run red, but is not ended: a person ends it.
   One that left the session and closed its output is not seen.
-  Without `/proc` the leftovers cannot be named, and without `os.waitid` make
-  is reaped at once, so its group id is not held against reuse while the group
-  is ended. `scripts/gate_evidence.py` has no limit of its
+  Without `/proc` the leftovers cannot be named. The runner sends a signal
+  only while make is unreaped, so the id cannot have passed to another
+  process; without `os.waitid` make is reaped as it exits, and a leftover is
+  then named as still running rather than ended. `scripts/gate_evidence.py` has no limit of its
   own: run by `make verify` under the gate runner, it is inside the group the
   runner ends.
 - **The evidence record is evidence, not attestation.** `make verify` writes
