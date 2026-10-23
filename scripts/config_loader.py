@@ -844,6 +844,14 @@ KEYS = tuple(
                 "by adapter name; a name it has no adapter for is refused",
             ),
             _row(
+                ("shell", "no_scripts"),
+                "nonempty_str_or_null",
+                None,
+                "the reason the project has no shell script and no shell test; "
+                "null: zero shell files is NOTHING_JUDGED, and a reason left in "
+                "place once a shell file exists is refused",
+            ),
+            _row(
                 ("shell", "script_suffixes"),
                 "list_of_str",
                 [".sh", ".bash"],

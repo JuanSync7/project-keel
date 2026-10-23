@@ -2,7 +2,7 @@
 title: Unit — shell_gate (the shell lint, format and test gates, driven through stub tools)
 kind: tests
 layer: n/a
-summary: scripts/shell_gate.py driven against stub tools, one small Python program put on a private PATH under each name config/project.json `shell.linter`, `shell.formatter` and `shell.test_runner` gives, which records its argv and environment and answers from a plan file. Every mode judges exactly the shell scripts a commit could carry, found by a `shell.script_suffixes` suffix or a `shell.shebang_shells` shebang (an `env` one with options included), never a Python file, a test file, an ignored file, a symlink or a tracked file deleted from the work tree; the test mode runs exactly the `shell.test_suffixes` files. The tool's own status is the answer, so a finding is the tool's status passed through, and each tool gets the allowlisted environment and never a planted variable. Off (`shell.enabled` false), with no shell script and no test file, the gate says why and runs nothing, exit 0; shell scripts with no test file, or test files the runner counts as zero tests, judge nothing (NOTHING_JUDGED), and a runner whose count is not a number gave no verdict (BACKEND_ABSENT). A tool on neither the interpreter's directory nor PATH is BACKEND_ABSENT naming the tool and its role, an adapter name the module does not know or a malformed suffix list is CONFIG before anything runs, and a tree that is not a git repository judges nothing. The tool names asserted are read from config/project.json through scripts/config_loader.py, never typed here.
+summary: scripts/shell_gate.py driven against stub tools, one small Python program put on a private PATH under each name config/project.json `shell.linter`, `shell.formatter` and `shell.test_runner` gives, which records its argv and environment and answers from a plan file. Every mode judges exactly the shell scripts a commit could carry, found by a `shell.script_suffixes` suffix or a `shell.shebang_shells` shebang (an `env` one with options included), never a Python file, a test file, an ignored file, a symlink or a tracked file deleted from the work tree; the test mode runs exactly the `shell.test_suffixes` files. The tool's own status is the answer, so a finding is the tool's status passed through, and each tool gets the allowlisted environment and never a planted variable. Off (`shell.enabled` false), the gate says why and runs nothing, exit 0; with no shell script and no test file it judges nothing (NOTHING_JUDGED) unless `shell.no_scripts` states the reason, which it prints before it exits 0, and a reason left beside a shell file, or a blank one, is CONFIG; shell scripts with no test file, or test files the runner counts as zero tests, judge nothing (NOTHING_JUDGED), and a runner whose count is not a number gave no verdict (BACKEND_ABSENT). A tool on neither the interpreter's directory nor PATH is BACKEND_ABSENT naming the tool and its role, an adapter name the module does not know or a malformed suffix list is CONFIG before anything runs, and a tree that is not a git repository judges nothing. The tool names asserted are read from config/project.json through scripts/config_loader.py, never typed here.
 """
 
 import json
@@ -120,6 +120,10 @@ def project(tmp_path, monkeypatch):
     shutil.copyfile(
         str(_ROOT / "config" / "project.json"), str(root / "config" / "project.json")
     )
+    proj = _Project(root, tmp_path / "bin", env)
+    # Keel's own reason for having no shell file would go stale the moment a
+    # test plants one, so each test starts from the strict null and opts in.
+    proj.shell(no_scripts=None)
     (root / ".gitignore").write_text("ignored/\n", encoding="utf-8")
     _git(root, env, "init", "-q")
     _git(root, env, "add", "-A")
@@ -135,7 +139,6 @@ def project(tmp_path, monkeypatch):
     # The interpreter's own directory is searched first in a real run (a tool a
     # venv installed); here it would let the host's tools answer for a stub.
     monkeypatch.setattr(shell_gate, "_interpreter_dir", lambda: None)
-    proj = _Project(root, bin_dir, env)
     proj.plan()
     return proj
 
@@ -235,11 +238,48 @@ def test_shell_scripts_with_no_test_file_judge_nothing(project, capsys):
     assert "scripts/build.sh" in err and _CFG["test_suffixes"][0] in err, err
 
 
-@pytest.mark.parametrize("mode", ["lint", "format-check", "format", "test"])
-def test_a_project_with_no_shell_says_so_and_runs_nothing(project, mode, capsys):
+_MODES = ["lint", "format-check", "format", "test"]
+_REASON = "this project's scripts are all Python"
+
+
+@pytest.mark.parametrize("mode", _MODES)
+def test_a_project_with_no_shell_file_and_no_reason_judged_nothing(
+    project, mode, capsys
+):
+    assert project.run(mode) == ExitCode.NOTHING_JUDGED
+    assert project.calls() == []
+    assert "shell.no_scripts" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("mode", _MODES)
+def test_a_stated_reason_lets_a_project_with_no_shell_file_pass(project, mode, capsys):
+    project.shell(no_scripts=_REASON)
     assert project.run(mode) == ExitCode.SUCCESS
     assert project.calls() == []
-    assert "no shell" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "shell.no_scripts" in out and _REASON in out, out
+
+
+@pytest.mark.parametrize("mode", _MODES)
+@pytest.mark.parametrize(
+    "rel, text",
+    [("scripts/build.sh", "echo build\n"), ("tests/shell/a.bats", "@test x { :; }\n")],
+)
+def test_a_reason_left_in_place_once_a_shell_file_exists_is_stale(
+    project, mode, rel, text, capsys
+):
+    project.shell(no_scripts=_REASON)
+    project.write(rel, text)
+    assert project.run(mode) == ExitCode.CONFIG
+    assert project.calls() == []
+    err = capsys.readouterr().err
+    assert "shell.no_scripts" in err and rel in err, err
+
+
+def test_a_blank_reason_is_refused(project, capsys):
+    project.shell(no_scripts=" ")
+    assert project.run("lint") == ExitCode.CONFIG
+    assert "shell.no_scripts" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("mode", ["lint", "format-check", "format", "test"])

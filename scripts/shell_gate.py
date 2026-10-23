@@ -3,7 +3,7 @@
 title: shell_gate — the shell scripts' lint, format and test gates
 kind: script
 layer: n/a
-summary: The one adapter between keel's shell targets and the tools that judge shell, so a make target names a role and never a vendor. `lint` runs config/project.json `shell.linter`, `format-check` and `format` run `shell.formatter` (reporting a difference, and rewriting the files in place), and `test` runs `shell.test_runner`; each name must be one this module has an adapter for (shellcheck, shfmt and bats), or every mode is CONFIG before anything runs, because the flags are the tool's own. The files judged are what a commit could carry (scripts/git_tree.py candidate_files) that are regular files and not symlinks, a deleted tracked path left out: a shell script ends in a `shell.script_suffixes` suffix or opens with a shebang whose interpreter, after `env` and its options, is one of `shell.shebang_shells`, and a `shell.test_suffixes` file is a test, which only the test mode runs. The tool is looked up in the running interpreter's directory first, where a virtual environment installs one, then on PATH; one on neither is BACKEND_ABSENT naming it and its role, never a skip. It runs under the allowlisted environment (scripts/child_env.py) and its status is passed through, so a finding is the tool's own status. The test mode first asks the runner to count the tests: zero is NOTHING_JUDGED, and a count that is not a whole number, or a counting run that fails, is BACKEND_ABSENT, because the runner gave no verdict. Shell scripts with no test file are NOTHING_JUDGED, because a pass over zero tests proves nothing. With no shell script and no test file, or with `shell.enabled` false (the copier answer `shell`), every mode says why on stdout and exits 0 having run no tool. No repository is NOTHING_JUDGED, a git or file read that fails is USAGE, and a malformed shell block or child_env block is CONFIG.
+summary: The one adapter between keel's shell targets and the tools that judge shell, so a make target names a role and never a vendor. `lint` runs config/project.json `shell.linter`, `format-check` and `format` run `shell.formatter` (reporting a difference, and rewriting the files in place), and `test` runs `shell.test_runner`; each name must be one this module has an adapter for (shellcheck, shfmt and bats), or every mode is CONFIG before anything runs, because the flags are the tool's own. The files judged are what a commit could carry (scripts/git_tree.py candidate_files) that are regular files and not symlinks, a deleted tracked path left out: a shell script ends in a `shell.script_suffixes` suffix or opens with a shebang whose interpreter, after `env` and its options, is one of `shell.shebang_shells`, and a `shell.test_suffixes` file is a test, which only the test mode runs. The tool is looked up in the running interpreter's directory first, where a virtual environment installs one, then on PATH; one on neither is BACKEND_ABSENT naming it and its role, never a skip. It runs under the allowlisted environment (scripts/child_env.py) and its status is passed through, so a finding is the tool's own status. The test mode first asks the runner to count the tests: zero is NOTHING_JUDGED, and a count that is not a whole number, or a counting run that fails, is BACKEND_ABSENT, because the runner gave no verdict. Shell scripts with no test file are NOTHING_JUDGED, because a pass over zero tests proves nothing. With no shell script and no test file every mode is NOTHING_JUDGED, unless `shell.no_scripts` states the reason the project has none, which it prints on stdout before it exits 0 having run no tool; a reason left in place once a shell file exists is CONFIG naming the files, so it cannot outlive its truth. With `shell.enabled` false (the copier answer `shell`) every mode says why on stdout and exits 0 having run no tool. No repository is NOTHING_JUDGED, a git or file read that fails is USAGE, and a malformed shell block or child_env block is CONFIG.
 effect: writes
 rerun: fixed-point
 rerun_proof: make:fmt-check-sh
@@ -30,6 +30,7 @@ _FIELDS = (
     "enabled",
     "formatter",
     "linter",
+    "no_scripts",
     "script_suffixes",
     "shebang_shells",
     "test_runner",
@@ -201,6 +202,31 @@ def _gate(mode, root, cfg):
     role = _ROLE[mode]
     name = cfg[role]
     scripts, tests = _classify(root, cfg)
+    reason = cfg["no_scripts"]
+    if reason is not None and (scripts or tests):
+        found = scripts + tests
+        return report(
+            ExitCode.CONFIG,
+            "shell.no_scripts gives a reason for having no shell file, and %d "
+            "exist (%s)" % (len(found), _named(found)),
+            "%s.no_scripts" % _WHERE,
+            "set shell.no_scripts to null, so the shell gates judge them, then rerun",
+        )
+    if not scripts and not tests:
+        if reason is None:
+            return report(
+                ExitCode.NOTHING_JUDGED,
+                "no shell script and no shell test in what a commit could carry, "
+                "and shell.no_scripts gives no reason",
+                root,
+                "add a shell file, set shell.no_scripts to the reason the project "
+                "has none, or set shell.enabled to false",
+            )
+        _say(
+            "no shell file in what a commit could carry, and shell.no_scripts "
+            "says why (%s), so %s ran no tool" % (reason, mode)
+        )
+        return ExitCode.SUCCESS
     judged = tests if mode == _TEST else scripts
     if not judged:
         if mode == _TEST and scripts:
