@@ -2,7 +2,7 @@
 title: Unit — model call limits
 kind: tests
 layer: backend
-summary: models/limits.py reads an adapter's time limit from config/project.json `models.timeout_seconds`, refuses an adapter the map does not name rather than leaving its call unbounded, and refuses a limit that is not a number above zero through scripts/config_loader.py, naming the key. `max_reply_bytes` reads `models.max_reply_bytes`, refusing a value below 1.
+summary: models/limits.py reads an adapter's time limit from config/project.json `models.timeout_seconds`, refuses an adapter the map does not name as config_loader.NotSet naming the key and the adapter rather than leaving its call unbounded, refuses an empty map, and refuses a limit that is not a number above zero or is past threading.TIMEOUT_MAX through scripts/config_loader.py, naming the key and the adapter. `max_reply_bytes` reads `models.max_reply_bytes`, refusing a value below 1.
 """
 
 import json
@@ -34,16 +34,27 @@ def test_an_adapter_s_time_limit_is_its_entry(tmp_path):
     assert limits.timeout_seconds("b", root) == 2.5
 
 
-def test_an_adapter_the_map_does_not_name_is_refused(tmp_path):
+def test_an_adapter_the_map_does_not_name_is_a_config_error_naming_it(tmp_path):
     root = _project(tmp_path, {"timeout_seconds": {"a": 7}})
-    with pytest.raises(ValueError, match=r"no entry for 'b'.*\"b\": <seconds>"):
+    with pytest.raises(config_loader.NotSet) as caught:
         limits.timeout_seconds("b", root)
+    (line,) = caught.value.lines
+    assert "models.timeout_seconds" in line and '"b": <seconds>' in line, line
+    assert caught.value.keys == [("models", "timeout_seconds", "b")]
 
 
-@pytest.mark.parametrize("bad", [0, -1, True, "60", None])
+def test_an_empty_map_is_refused_not_passed_over(tmp_path):
+    root = _project(tmp_path, {"timeout_seconds": {}})
+    with pytest.raises(config_loader.WrongValue, match=r"models\.timeout_seconds"):
+        limits.timeout_seconds("a", root)
+
+
+@pytest.mark.parametrize("bad", [0, -1, True, "60", None, 1e10])
 def test_a_limit_that_is_not_a_number_above_zero_is_refused(tmp_path, bad):
     root = _project(tmp_path, {"timeout_seconds": {"a": bad}})
-    with pytest.raises(config_loader.WrongValue, match=r"models\.timeout_seconds"):
+    with pytest.raises(
+        config_loader.WrongValue, match=r'models\.timeout_seconds.*refused entries: "a"'
+    ):
         limits.timeout_seconds("a", root)
 
 

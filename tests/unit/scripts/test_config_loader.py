@@ -2,7 +2,7 @@
 title: Unit — the one config loader (declared keys, the default line, the not-set line, a refused value)
 kind: tests
 layer: n/a
-summary: scripts/config_loader.py resolves a parsed config against declared rows. An unset key with a default takes it and writes one `[using default]` line naming the key, its canonical-JSON value and the file, once per (file, key) per process under either import name, and a secret shows `<hidden>` and never its value; a set key of the wrong type or out of its bound is refused in one line naming the key, the file, the value's JSON type and what is accepted, a secret's value never in the exception or the stream; every unset required key is written as one `[not set]` line in sorted key order before one NotSet; a wrong value and a missing one together write every line and raise WrongValue. An environment value wins only for a row that names a variable and only when it is not empty, and `env` refuses a variable nothing declares. resolve neither mutates its input nor hands out the table's own default, and gives the same values and lines twice. The key table is well formed against keel's own config, every models.credential_env name has a secret variable-only row, the variables the config declares are derived from it, and the module parses on the oldest hook interpreter.
+summary: scripts/config_loader.py resolves a parsed config against declared rows. An unset key with a default takes it and writes one `[using default]` line naming the key, its canonical-JSON value and the file, once per (file, key) per process under either import name, and a secret shows `<hidden>` and never its value; a set key of the wrong type or out of its bound is refused in one line naming the key, the file, the value's JSON type and what is accepted, a secret's value never in the exception or the stream; every unset required key is written as one `[not set]` line in sorted key order before one NotSet; a wrong value and a missing one together write every line and raise WrongValue. An environment value wins only for a row that names a variable and only when it is not empty, and `env` refuses a variable nothing declares. resolve neither mutates its input nor hands out the table's own default, and gives the same values and lines twice. A refused map names each entry that is refused on its own. Each seconds key refuses a value past threading.TIMEOUT_MAX, keeps one at it, and models.timeout_seconds refuses an empty map. The key table is well formed against keel's own config, every models.credential_env name has a secret variable-only row, the variables the config declares are derived from it, and the module parses on the oldest hook interpreter.
 @covers scripts/config_loader.py
 """
 
@@ -12,6 +12,7 @@ import importlib.util
 import io
 import json
 import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -621,3 +622,76 @@ def test_the_agents_policy_rows_are_required_and_the_templates_block_resolves():
     assert buf.getvalue() == ""
     assert got[("agents", "protected_paths")] == block["protected_paths"]
     assert all(got[p] for p in _AGENT_ROWS), "an empty policy map -- zero items"
+
+
+# Past threading.TIMEOUT_MAX a thread wait on the value raises OverflowError,
+# so each seconds key stops there.
+_SECONDS_KEYS = (
+    ("models", "timeout_seconds"),
+    ("tests", "child_timeout_seconds"),
+    ("transports", "serve", "shutdown_grace_seconds"),
+)
+
+
+def _nested(path, value):
+    block = value
+    for part in reversed(path):
+        block = {part: block}
+    return block
+
+
+@pytest.mark.parametrize(
+    "path, value",
+    [
+        (("models", "timeout_seconds"), {"a": threading.TIMEOUT_MAX * 2}),
+        (("models", "timeout_seconds"), {}),
+        (("tests", "child_timeout_seconds"), int(threading.TIMEOUT_MAX) + 1),
+        (("transports", "serve", "shutdown_grace_seconds"), threading.TIMEOUT_MAX * 2),
+    ],
+)
+def test_a_seconds_limit_no_thread_wait_takes_is_refused_by_its_key(path, value):
+    assert path in _SECONDS_KEYS
+    with pytest.raises(WrongValue) as exc:
+        resolve(
+            _nested(path, value),
+            config_loader.rows(path),
+            _WHERE,
+            environ={},
+            stream=io.StringIO(),
+        )
+    (line,) = exc.value.lines
+    assert line.startswith("%s: %s is " % (_WHERE, ".".join(path))), line
+    assert "TIMEOUT_MAX" in line, line
+
+
+@pytest.mark.parametrize(
+    "path, value",
+    [
+        (("models", "timeout_seconds"), {"a": threading.TIMEOUT_MAX}),
+        (("tests", "child_timeout_seconds"), int(threading.TIMEOUT_MAX)),
+        (("transports", "serve", "shutdown_grace_seconds"), threading.TIMEOUT_MAX),
+    ],
+)
+def test_a_seconds_limit_at_timeout_max_is_kept(path, value):
+    got = resolve(
+        _nested(path, value),
+        config_loader.rows(path),
+        _WHERE,
+        environ={},
+        stream=io.StringIO(),
+    )
+    assert got == {path: value}
+
+
+def test_a_refused_map_names_each_entry_it_refuses():
+    path = ("models", "timeout_seconds")
+    with pytest.raises(WrongValue) as exc:
+        resolve(
+            _nested(path, {"good": 5, "zero": 0, "huge": 1e10 * 1e10}),
+            config_loader.rows(path),
+            _WHERE,
+            environ={},
+            stream=io.StringIO(),
+        )
+    (line,) = exc.value.lines
+    assert line.endswith('; refused entries: "huge", "zero"'), line

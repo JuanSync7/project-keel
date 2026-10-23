@@ -257,8 +257,11 @@ version rather than a bare commit:
   port (50051) and threads (8), and `models.timeout_seconds` gives each model
   adapter that calls out its time limit (`openai-compatible` 60 seconds), each
   read through scripts/config_loader.py with a bound it refuses past. An
-  adapter missing from `models.timeout_seconds` is refused, never left
-  unbounded.
+  adapter missing from `models.timeout_seconds` is a config error naming it,
+  never left unbounded; an empty map is refused, and a refusal names each
+  adapter it refuses. Every seconds key, these and
+  `tests.child_timeout_seconds` and `transports.serve.shutdown_grace_seconds`,
+  stops at `threading.TIMEOUT_MAX`, past which a thread wait overflows.
 - **A model reply and the model CLI are bounded.** `openai-compatible` reads
   a reply body in pieces up to config/project.json `models.max_reply_bytes`
   (8 MiB) and refuses one byte more, never reading the rest.

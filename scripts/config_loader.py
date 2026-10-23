@@ -20,6 +20,7 @@ import ntpath
 import os
 import posixpath
 import sys
+import threading
 from types import ModuleType
 from typing import (
     IO,
@@ -302,14 +303,31 @@ def _port(value: Any) -> bool:
     return bool(1 <= value <= 65535)
 
 
+# The most seconds a seconds key may hold: past it a thread wait on the value
+# raises OverflowError mid-run instead of refusing it here.
+_MOST_SECONDS = threading.TIMEOUT_MAX
+_MOST_SECONDS_TEXT = "threading.TIMEOUT_MAX (%d on this platform)" % _MOST_SECONDS
+
+
+def _at_least_one_second(value: Any) -> bool:
+    return bool(1 <= value <= _MOST_SECONDS)
+
+
+def _seconds_or_none(value: Any) -> bool:
+    return bool(0 <= value <= _MOST_SECONDS)
+
+
 def _seconds_by_adapter(value: Any) -> bool:
-    # A bool is an int to isinstance, and `true` seconds is a typo, not a limit.
-    return all(
+    # Empty is refused: every adapter that calls out would then be refused at
+    # its first call, a pass over zero entries reported as a valid table. A
+    # bool is an int to isinstance, and `true` seconds is a typo, not a limit;
+    # `0 < s <= most` also refuses NaN.
+    return bool(value) and all(
         isinstance(name, str)
         and name.strip()
         and isinstance(seconds, (int, float))
         and not isinstance(seconds, bool)
-        and seconds > 0
+        and 0 < seconds <= _MOST_SECONDS
         for name, seconds in value.items()
     )
 
@@ -790,7 +808,8 @@ KEYS = tuple(
                 "adapter that calls out and is absent here is refused",
                 accepts=(
                     _seconds_by_adapter,
-                    "an object mapping an adapter name to a number of seconds > 0",
+                    "at least one entry, each an adapter name mapped to a number "
+                    "of seconds > 0 and <= %s" % _MOST_SECONDS_TEXT,
                 ),
             ),
             _row(
@@ -978,7 +997,10 @@ KEYS = tuple(
                 NONE,
                 "the seconds a test of the shipped harness lets a child process "
                 "run before it kills it and fails",
-                accepts=(_at_least_one, "a value >= 1"),
+                accepts=(
+                    _at_least_one_second,
+                    "a value >= 1 and <= %s" % _MOST_SECONDS_TEXT,
+                ),
             ),
             _row(
                 ("tests", "isolation", "exempt"),
@@ -1098,7 +1120,10 @@ KEYS = tuple(
                 10,
                 "the seconds a REST or gRPC server gives the calls in flight to "
                 "finish after a stop signal before it ends them",
-                accepts=(_not_negative, "a value >= 0"),
+                accepts=(
+                    _seconds_or_none,
+                    "a value >= 0 and <= %s" % _MOST_SECONDS_TEXT,
+                ),
             ),
             _row(
                 ("transports", "grpc", "workers"),
@@ -1304,14 +1329,25 @@ def _wrong_line(where: str, name: str, key: Key, value: object, bound: bool) -> 
     if not key.secret and not isinstance(value, (dict, list)):
         shown = " " + _canonical(value)
     accepted = check_text
+    refused = ""
     if bound and key.accepts is not None:
         accepted = "%s with %s" % (check_text, key.accepts[1])
-    return "%s: %s is %s%s; accepted: %s" % (
+        if isinstance(value, dict) and not key.secret:
+            # Each entry is judged alone, so a map with one bad entry among
+            # many says which; a bound on the whole map (empty, too few)
+            # refuses no single entry and names none.
+            names = sorted(k for k in value if not key.accepts[0]({k: value[k]}))
+            if names:
+                refused = "; refused entries: %s" % ", ".join(
+                    _canonical(k) for k in names
+                )
+    return "%s: %s is %s%s; accepted: %s%s" % (
         where,
         name,
         _json_type(value),
         shown,
         accepted,
+        refused,
     )
 
 
