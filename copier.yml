@@ -48,7 +48,8 @@ _tasks:
 # meta-scripts and generated views don't belong in a downstream project).
 # Every entry needs a row in docs/guides/generate-and-upgrade.md's exclusion table
 # whose Why cell says why a project goes without it, and must leave out a file
-# copier can see under some answer set or name a path .gitignore declares; a row
+# copier can see under some answer set or be spelled by a .gitignore line (a
+# leading or trailing `/` aside; a glob that only covers it does not count); a row
 # that names no entry here is a reason for a file that in fact ships. Copier's
 # own defaults, re-listed below, need only the row.
 # tests/integration/test_copier_shipping.py holds all of it.
@@ -80,8 +81,9 @@ _exclude:
   - ".venv"
   # Keel's own in-flight scratch (handoff notes for a branch in progress). It is
   # about THIS repo's unfinished work and would be meaningless — and misleading —
-  # in a project generated from it.
-  - "tmp"
+  # in a project generated from it. Anchored at the root, as .gitignore's `/tmp/`
+  # is: a bare `tmp` would also leave out a `tmp` directory deeper in the tree.
+  - "/tmp"
   # Same rule, for prose that is not scratch: the hardening plan is keel's worklist
   # — passes, measurements and deferrals about THIS repo, `status: draft`. Shipped
   # verbatim it lands as a new project's design document. The FILE only: the

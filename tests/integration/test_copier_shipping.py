@@ -2,10 +2,12 @@
 title: Integration — every template file ships to a generated project or is left out of it with a reason
 kind: tests
 layer: n/a
-summary: The template-shipping gate. Every file copier can see in keel's checkout (tracked, or untracked and not ignored) either renders into a generated project — at its own path, or through its `.jinja` twin — or is left out by a copier.yml `_exclude` entry, judged with copier's own path matcher under every answer set copier.yml's validators allow; each `_exclude` entry has a row in the upgrade guide's exclusion table whose Why cell is not blank, each row of that table names an `_exclude` entry (a row that names none gives a reason for a path that in fact arrives, or for one another entry leaves out), and each entry other than copier's own re-listed defaults leaves out at least one file under some answer set or names a path `.gitignore` declares, so a stale or misspelled entry fails. tests/integration/test_copier_generation.py holds the model to a real copier render. Each rule has a fault-injection twin that plants one fault and asserts exactly one more finding than the tree had before. Not a writer: it reads the tree and writes nothing.
+summary: The template-shipping gate. Every file copier can see in keel's checkout (tracked, or untracked and not ignored) either renders into a generated project — at its own path, or through its `.jinja` twin — or is left out by a copier.yml `_exclude` entry, judged with copier's own path matcher under each answer set test_reference_drift's answer_sets enumerates (free-text questions at their defaults; a multiselect with no choice, each choice alone and every choice); each `_exclude` entry has a row in the upgrade guide's exclusion table whose Why cell is not blank, each row of that table names an `_exclude` entry (a row that names none gives a reason for a path that in fact arrives, or for one another entry leaves out), and each entry other than copier's own re-listed defaults leaves out at least one file under some answer set or is spelled by a `.gitignore` line (a leading or trailing `/` aside; a glob that only covers it does not count), so a stale or misspelled entry fails. Each entry judged alone leaves out exactly what copier's matcher over all of them does, so no entry is credited with a file that ships. Only copier itself may be absent: once it imports, a private module it no longer has is a collection error, not a skip. tests/integration/test_copier_generation.py holds the model to a real copier render. Each rule has a fault-injection twin that plants one fault and asserts exactly one more finding than the tree had before. Not a writer: it reads the tree and writes nothing.
 """
 
 import functools
+import importlib
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -47,15 +49,12 @@ pathspec = optional_deps.importorskip("pathspec", extra="template")
 # copier's own matcher and defaults, not a restatement of them: copier picks the
 # pathspec pattern style by the pathspec version it finds, and a custom
 # `_exclude` replaces DEFAULT_EXCLUDE, which is why copier.yml re-lists it.
-# Both are private to copier, so they are loaded the way test_finish_update.py
-# loads copier._tools, and a copier that renames them fails this attribute read
-# loudly rather than leaving the gate judging by a stale copy of the rule.
-_pathspec_pattern = optional_deps.importorskip(
-    "copier._main", extra="template"
-)._pathspec_pattern
-DEFAULT_EXCLUDE = optional_deps.importorskip(
-    "copier._template", extra="template"
-).DEFAULT_EXCLUDE
+# Only copier itself may be absent; once it imports, these private modules are
+# loaded with a plain import, so a copier release that moves or renames one is
+# a collection error, not a skip that leaves the gate unrun where `template` is
+# not declared required.
+_pathspec_pattern = importlib.import_module("copier._main")._pathspec_pattern
+DEFAULT_EXCLUDE = importlib.import_module("copier._template").DEFAULT_EXCLUDE
 
 _WHY_COLUMN = "why"
 _PATH_COLUMN = _EXCLUSION_TABLE[0].lower()
@@ -168,36 +167,27 @@ def entry_coverage(files, rules, answer_sets_):
     return coverage
 
 
-@functools.lru_cache(maxsize=None)
-def _ignored(root, probe):
-    """True when git ignores *probe* in *root* with no file present
-    (`check-ignore --no-index`); git failing raises."""
-    result = subprocess.run(
-        ["git", "check-ignore", "-q", "--no-index", probe],
-        cwd=str(root),
-        env=build_child_env(),
-        capture_output=True,
-        text=True,
-    )
-    # 0 ignored, 1 not ignored; anything else is git failing, and a gate that
-    # read it as "not ignored" would report the wrong finding.
-    if result.returncode not in (0, 1):
-        raise DocDriftConfigError(
-            "git check-ignore failed on %r: %s" % (probe, result.stderr.strip())
-        )
-    return result.returncode == 0
+def _bare(path):
+    """*path* with its leading and trailing slashes dropped: `/tmp/`, `/tmp`
+    and `tmp/` all name `tmp`."""
+    return path.strip().strip("/")
 
 
 def gitignore_declared(root, entries):
-    """The entries whose path `.gitignore` names, so the tree is declared to
-    produce it and keep it out of git. An exclusion there guards a template
-    copied without git, where copier sees every file on disk."""
-    # An entry leaves out a file or a directory of that name, and with no file
-    # present git tells a directory pattern (`wiki/.runtime/`) only from a path
-    # that ends in a slash, so both forms are asked.
-    return {
-        e for e in entries if _ignored(str(root), e) or _ignored(str(root), e + "/")
+    """The entries a `.gitignore` line in *root* names literally, so the tree is
+    declared to produce that path and keep it out of git. An exclusion there
+    guards a template copied without git, where copier sees every file on disk.
+    A line that only matches the entry, a glob or a parent directory, declares
+    nothing: it would also pass a stale or misspelled entry. A leading slash
+    (anchored at the root) or a trailing one (a directory) is allowed on either
+    side; comments, blank lines and negations name no path."""
+    lines = (root / ".gitignore").read_text(encoding="utf-8").splitlines()
+    named = {
+        _bare(ln)
+        for ln in lines
+        if ln.strip() and not ln.lstrip().startswith(("#", "!"))
     }
+    return {e for e in entries if _bare(_stripped(e)) in named}
 
 
 def exclusion_rows(guide, text):
@@ -266,7 +256,7 @@ def shipping_findings(guide, rows, rules, coverage, declared, defaults):
             continue
         findings.append(
             "copier.yml: `_exclude` entry %r leaves out no file under any answer "
-            "set and names no path .gitignore declares: drop it, or fix the path"
+            "set and no .gitignore line spells its path: drop it, or fix the path"
             % (raw,)
         )
     return findings
@@ -357,17 +347,70 @@ def test_copier_yml_relists_copier_defaults_which_need_only_a_row(
     assert not about_defaults, "\n".join(about_defaults)
 
 
-def test_every_visible_file_ships_or_is_left_out_by_an_entry(rules, files, answers):
-    """The class the gate closes, stated over the model: under each answer set
-    a file that does not ship is left out by an entry that holds under that
-    answer set, so that entry's row is the reason it is missing."""
+def test_each_entry_judged_alone_leaves_out_what_copier_leaves_out(
+    rules, files, answers
+):
+    """The gate credits each entry with what it leaves out judged alone, while
+    copier judges every entry together, last match winning. The two agree only
+    while no later entry takes a path back (a `!` line): otherwise an entry
+    would be credited with a file that in fact ships, and a stale entry could
+    pass on that credit."""
     dests = {destination(f, rules["suffix"]) for f in files}
     memo = {}
     for a in answers:
-        by_entry = left_out_by(files, rules, a, memo)
-        covered = set().union(*by_entry.values())
-        missing = dests - shipped_paths(files, rules, a) - covered
-        assert not missing, "under %r, left out by no entry: %s" % (a, sorted(missing))
+        alone = set().union(*left_out_by(files, rules, a, memo).values())
+        together = dests - shipped_paths(files, rules, a)
+        assert alone == together, (
+            "under %r, credited but shipped: %s; left out but credited to none: %s"
+            % (a, sorted(alone - together), sorted(together - alone))
+        )
+
+
+# --- a copier that moves its private modules ------------------------------
+
+# Imported by the pytest a test starts, before collection: copier imports, then
+# its `_main` module goes missing, as a copier release that renames it would.
+_MOVED_MAIN_PLUGIN = """import sys
+
+import copier  # noqa: F401
+
+sys.modules["copier._main"] = None
+"""
+
+
+def _collect(path, plugin_dir=None):
+    """(exit status, output) of collecting *path* with no surface declared
+    required, through the plugin in *plugin_dir* when one is given."""
+    extra = {"KEEL_REQUIRED_EXTRAS": ""}
+    args = [sys.executable, "-m", "pytest", "-p", "no:cacheprovider", "--co", "-q"]
+    if plugin_dir is not None:
+        extra["PYTHONPATH"] = str(plugin_dir)
+        args += ["-p", "moved_copier_main"]
+    result = subprocess.run(
+        args + [str(path)],
+        cwd=str(_ROOT),
+        env=build_child_env(extra=extra),
+        capture_output=True,
+        text=True,
+        timeout=600,
+    )
+    return result.returncode, result.stdout + result.stderr
+
+
+def test_a_copier_that_moves_a_private_module_fails_and_spares_generation(tmp_path):
+    """Once copier imports, a private module it no longer has is an error, not
+    a skip, even where `template` is not declared required; and the generation
+    suite, which reuses this gate's model, still collects every test."""
+    (tmp_path / "moved_copier_main.py").write_text(_MOVED_MAIN_PLUGIN, encoding="utf-8")
+    here = Path(__file__).resolve()
+    status, out = _collect(here, tmp_path)
+    assert status != 0 and "copier._main" in out and "skipped" not in out, out
+    generation = here.with_name("test_copier_generation.py")
+    _, clean = _collect(generation)
+    _, moved = _collect(generation, tmp_path)
+    count = re.search(r"^(\d+) tests? collected", clean, re.MULTILINE)
+    assert count and int(count.group(1)) > 0, clean
+    assert count.group(0) in moved, moved
 
 
 # --- fault injection: one planted fault, exactly one finding --------------
@@ -457,6 +500,57 @@ def test_an_entry_for_a_path_gitignore_declares_is_no_finding(
     assert _judge(guide, planted, planted_rules, files, answers) == before
 
 
+def test_a_gitignore_line_declares_its_path_with_or_without_slashes(tmp_path):
+    """A line declares the entry it spells, a leading or trailing slash aside
+    on either side; a glob, a parent directory, a comment or a negation that
+    spells it declares nothing."""
+    (tmp_path / ".gitignore").write_text(
+        "/tmp/\nwiki/.runtime/\n/dist\nconfig/*.local.*\nbuild\n"
+        "# notes/x.md\n!keep.txt\n",
+        encoding="utf-8",
+    )
+    entries = [
+        "/tmp",
+        "tmp/",
+        "wiki/.runtime",
+        "dist/",
+        "config/old.local.json",
+        "build/x",
+        "notes/x.md",
+        "# notes/x.md",
+        "keep.txt",
+        "!keep.txt",
+    ]
+    assert gitignore_declared(tmp_path, entries) == {
+        "/tmp",
+        "tmp/",
+        "wiki/.runtime",
+        "dist/",
+    }
+
+
+@pytest.mark.parametrize(
+    "stale", ["config/old.local.json", "build/x", "node_modules/zzz"]
+)
+def test_an_entry_a_gitignore_glob_covers_is_still_a_finding(
+    stale, guide, guide_text, rules, files, answers
+):
+    """git would ignore each of these paths through a glob or a directory line,
+    but no `.gitignore` line names it, so the entry is stale or misspelled and
+    a finding."""
+    assert stale not in files
+    planted_rules = dict(rules, exclude=rules["exclude"] + [stale])
+    planted = _replace_row(
+        guide_text,
+        "scripts/canary.py",
+        "| `scripts/canary.py` | never | its reason |\n| `%s` | never | planted |"
+        % stale,
+    )
+    before = _judge(guide, guide_text, rules, files, answers)
+    findings = _judge(guide, planted, planted_rules, files, answers)
+    assert _one_more(before, findings, "leaves out no file"), findings
+
+
 def test_a_new_file_ships_unless_an_entry_with_a_reason_leaves_it_out(
     guide, guide_text, rules, files, answers
 ):
@@ -482,3 +576,17 @@ def test_a_conditional_entry_covers_what_its_answer_leaves_out(rules, files, ans
     assert probe in files
     assert all(probe not in shipped_paths(files, rules, a) for a in pruned)
     assert all(probe in shipped_paths(files, rules, a) for a in kept)
+
+
+def test_the_scratch_entry_leaves_out_the_root_tmp_and_no_nested_one(
+    rules, files, answers
+):
+    """The scratch entry is anchored at the root, as `.gitignore`'s `/tmp/` is:
+    a `tmp` directory deeper in the tree is project content and ships."""
+    root_scratch = "tmp/notes.md"
+    nested = ["src/backend/tmp/x.py", "tests/fixtures/tmp/case.json"]
+    planted = sorted(files + [root_scratch] + nested)
+    for a in answers:
+        shipped = shipped_paths(planted, rules, a)
+        assert root_scratch not in shipped, a
+        assert all(n in shipped for n in nested), (a, sorted(set(nested) - shipped))

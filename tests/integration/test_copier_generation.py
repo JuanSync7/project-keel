@@ -45,7 +45,6 @@ from child_env import build_child_env  # noqa: E402
 
 _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import test_copier_shipping as shipping  # noqa: E402
 import test_reference_drift as reference_drift  # noqa: E402
 
 # Self-neutralising downstream. `_exclude` prunes these modules at GENERATION, but
@@ -249,6 +248,10 @@ def test_the_shipping_model_is_what_copier_renders(
     holds that model to a real render. The render holds exactly the paths the
     model ships; the answers file is set aside on both sides, because copier
     writes it from the answers whether or not its twin would render."""
+    # Imported here, not at the top: a fault that stops the shipping gate from
+    # importing fails this test alone and leaves the rest of the module collected.
+    import test_copier_shipping as shipping
+
     dest = tmp_path / "proj"
     generate(dest, **answers)
     rules = shipping.copier_rules(clean_template)

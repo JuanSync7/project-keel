@@ -77,12 +77,18 @@ Every template file arrives except the ones below. An entry with a condition is
 left out only when the answer matches it.
 `tests/integration/test_copier_shipping.py` holds this table to what copier
 does. It judges every file git tracks, and every untracked file git does not
-ignore, with copier's own path matcher under every answer set the template
-allows. A file left out of a project needs a row here with a reason in its Why
-cell. A row that names no `_exclude` entry fails, because the file it explains
-in fact arrives. An entry that leaves out no file under any answer set fails
-too, unless `.gitignore` names its path or it is one of copier's own defaults
-that `copier.yml` re-lists. `tests/integration/test_copier_generation.py`
+ignore, with copier's own path matcher under each answer set
+`tests/integration/test_reference_drift.py` enumerates: both values of a yes/no
+question, each choice of a select, no choice, each choice alone and every
+choice of a multiselect, and the default of a free-text question, kept where
+`copier.yml`'s validators accept the combination. A file left out of a project
+needs a row here with a reason in its Why cell. A row that names no `_exclude`
+entry fails, because the file it explains in fact arrives. An entry that leaves
+out no file under any of those answer sets fails too, unless a `.gitignore`
+line spells its path, a leading or trailing `/` aside, or it is one of
+copier's own defaults that `copier.yml` re-lists. A `.gitignore` glob or parent
+directory that merely covers the path does not count, so a stale or misspelled
+entry under `build/` or `config/*.local.*` still fails. `tests/integration/test_copier_generation.py`
 renders three answer sets with copier and checks that each project holds
 exactly the files this judgment says arrive.
 
@@ -97,7 +103,7 @@ exactly the files this judgment says arrive.
 | `.DS_Store` | never | operating-system clutter |
 | `.svn` | never | another tool's metadata |
 | `.venv` | never | the template's own interpreter |
-| `tmp` | never | a person's scratch at the root, ignored by `.gitignore`; the entry keeps a force-added file out of every generated project |
+| `/tmp` | never | a person's scratch at the root, ignored by `.gitignore`; the entry keeps a force-added file out of every generated project, and a `tmp` directory deeper in the tree still ships |
 | `docs/design/keel-hardening-plan.md` | never | the template's own plan |
 | `docs/design/documentation-quality.md` | never | the template's own design note |
 | `docs/design/downstream-feedback.md` | never | the template's own design note |

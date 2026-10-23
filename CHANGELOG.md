@@ -23,12 +23,17 @@ version rather than a bare commit:
 ### Added
 - **A template file cannot go missing from a generated project without a reason.**
   `tests/integration/test_copier_shipping.py` judges every file copier can see
-  with copier's own path matcher under every answer set the template allows.
-  A file copier.yml `_exclude` leaves out needs a row with a non-blank Why in
-  the exclusion table of `docs/guides/generate-and-upgrade.md`. A row that
-  names no entry fails, because its file arrives. An entry that leaves out no
-  file under any answer set fails too, unless `.gitignore` names its path or it
-  is a copier default. `tests/integration/test_copier_generation.py` checks the
+  with copier's own path matcher under each answer set
+  `tests/integration/test_reference_drift.py` enumerates (free-text questions
+  at their defaults; a multiselect with no choice, each choice alone and every
+  choice). A file copier.yml `_exclude` leaves out needs a row with a non-blank
+  Why in the exclusion table of `docs/guides/generate-and-upgrade.md`. A row
+  that names no entry fails, because its file arrives. An entry that leaves out
+  no file under any of those answer sets fails too, unless a `.gitignore` line
+  spells its path (a leading or trailing `/` aside; a glob that only covers it
+  does not count) or it is a copier default. The scratch entry is `/tmp`,
+  anchored at the root like `.gitignore`'s `/tmp/`, so a `tmp` directory deeper
+  in a project ships. `tests/integration/test_copier_generation.py` checks the
   judgment against three real renders.
 - **Test scratch lives in memory when the host can hold it.**
   `tests/conftest.py` now takes config/project.json `tests.memory_scratch_root`
