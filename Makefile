@@ -187,8 +187,12 @@ verify: ## [local] Run all gates (all checks + secret scan + lint + types + test
 # writes its own junit report, the only source of the evidence record's test
 # counts (never the terminal). A make variable, not PYTEST_ADDOPTS: pytest never
 # reads it, so the nested pytest runs under tests/ write no report of their own.
-test: check-python ## [local] Run the whole test suite
-	PYTHONPATH=$(PYTHONPATH) $(PY) -m pytest $(if $(JUNIT_XML),--junitxml=$(JUNIT_XML))
+# `-n auto` runs the suite on pytest-xdist workers, as many as
+# config/project.json tests.workers says (tests/conftest.py answers xdist's
+# count with it; 0 keeps one process). Only this target asks for workers: a
+# tier target, a direct pytest and a nested session stay in one process.
+test: check-python ## [local] Run the whole test suite on config/project.json tests.workers parallel workers
+	PYTHONPATH=$(PYTHONPATH) $(PY) -m pytest -n auto $(if $(JUNIT_XML),--junitxml=$(JUNIT_XML))
 
 # The traceability gate reads specs and test files and runs no test, so it is
 # [local]. Its matrix lands on a git-ignored path, which is why it is not [tree].

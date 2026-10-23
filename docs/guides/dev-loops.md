@@ -34,9 +34,14 @@ green — never a self-assessment:
 
 ```
 make verify   # check-all + secret-scan + lint + typecheck + test + trace + eval + test-fe + test-sh   (the full bar)
-make test     # plain pytest over the whole suite (tiers: unit · integration · e2e · smoke)
+make test     # pytest over the whole suite on tests.workers parallel workers (tiers: unit · integration · e2e · smoke)
 make check    # fast, 3.6-safe structural gate (runs in pre-commit)
 ```
+
+`make test` passes pytest-xdist `-n auto`, and `tests/conftest.py` answers
+the count with config/project.json `tests.workers` (0 is one process); a tier
+target such as `make unit` and a direct `pytest` stay in one process, so pass
+`-n auto` yourself to run a narrowed selection on workers.
 
 `make verify` also writes its verdict to `.evidence/verify.json` (config/project.json
 `evidence.dir`), and the record's `source.commit` names the commit that verdict

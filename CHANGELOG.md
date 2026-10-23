@@ -46,6 +46,14 @@ version rather than a bare commit:
   ships as `0` in keel and in a generated project, so the owner approves the
   total as well as each question's count. `agents.wiki_navigator.answer`
   gains `backend_factory`, which the server uses to count each call.
+- **`make test` runs the suite on parallel workers.** Its recipe passes
+  pytest-xdist `-n auto`, and `tests/conftest.py` answers the count with
+  config/project.json `tests.workers` (`4`; 0 is one process), so `make
+  verify` does too. The isolation guard's unused-exemption check is judged by
+  the controller over every worker's record, and a worker that ends without
+  its record fails the run. `pytest-xdist` joins the `dev` extra; a tier
+  target and a direct `pytest` stay in one process, and
+  `--expiring-tier-record` refuses `-n`.
 - **Test scratch lives in memory when the host can hold it.**
   `tests/conftest.py` now takes config/project.json `tests.memory_scratch_root`
   (`/dev/shm/project_keel-tests`, `-<uid>` appended, mode 0700) before
