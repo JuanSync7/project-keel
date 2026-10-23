@@ -480,17 +480,17 @@
       "openai-compatible": "models",
       "fake": "models"
     },
+    "max_reply_bytes": 8388608,
+    "timeout_seconds": {
+      "claude-code-headless": 600,
+      "openai-compatible": 60
+    },
     "allowed_hosts": {
       "openai-compatible": []
     },
     "credential_env": {
       "claude-code-headless": ["ANTHROPIC_API_KEY", "CLAUDE_CONFIG_DIR"],
       "openai-compatible": ["OPENAI_API_KEY"]
-    },
-    "max_reply_bytes": 8388608,
-    "timeout_seconds": {
-      "claude-code-headless": 600,
-      "openai-compatible": 60
     }
   },
   "import_layers": {
