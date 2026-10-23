@@ -802,8 +802,11 @@ def test_a_pre_c2_2_project_receives_the_new_child_env_keys_as_arrivals_and_owes
     READMEs check_S reads, and `canary`, `toolchain`, `tests` and
     `expiring_tier`, whose keys the config loader declares, the `venv` block
     and `transports.extras` that check-venv reads, and the gate runner's
-    `make_targets.gate_timeout_seconds` and `gate_stop_grace_seconds`, and
-    the `shell` block scripts/shell_gate.py reads.
+    `make_targets.gate_timeout_seconds` and `gate_stop_grace_seconds`, the
+    `shell` block scripts/shell_gate.py reads, and the limits the config
+    loader declares for a model call (`models.max_reply_bytes`,
+    `models.timeout_seconds`), a runtime (`runtimes.max_steps`) and a server
+    (`transports.grpc`, `transports.serve`).
     `structure.project_checks` does not: the template never ships it, because a
     key beside `extra_toplevel` would conflict with every project that declared
     one."""
@@ -863,13 +866,18 @@ def test_a_pre_c2_2_project_receives_the_new_child_env_keys_as_arrivals_and_owes
         "make_targets.write_shape_exempt",
         "models.allowed_hosts",
         "models.credential_env.openai-compatible",
+        "models.max_reply_bytes",
+        "models.timeout_seconds",
         "rosters",
+        "runtimes.max_steps",
         "secrets",
         "shell",
         "tests",
         "toolchain",
         "traceability",
         "transports.extras",
+        "transports.grpc",
+        "transports.serve",
         "venv",
         "work_naming",
     }, arrived
@@ -978,7 +986,8 @@ def test_a_pre_c5_2_project_receives_the_run_date_and_host_list_as_arrivals(
     block and `transports.extras` that check-venv reads since KEEL-VENV-1, and
     the gate runner's `make_targets.gate_timeout_seconds` and
     `gate_stop_grace_seconds` since KEEL-RUN-1, and the `shell` block
-    scripts/shell_gate.py reads since KEEL-SHELL-1, arrive too. The audit
+    scripts/shell_gate.py reads since KEEL-SHELL-1, and the model, runtime
+    and server limits since KEEL-CFG-3 and KEEL-RES-2, arrive too. The audit
     reports exactly those keys as
     arrivals and the list as changed, owes no X error, and a real
     update leaves the run date block as the template ships it with its
@@ -1021,12 +1030,17 @@ def test_a_pre_c5_2_project_receives_the_run_date_and_host_list_as_arrivals(
         "make_targets.gate_stop_grace_seconds",
         "make_targets.gate_timeout_seconds",
         "models.allowed_hosts",
+        "models.max_reply_bytes",
+        "models.timeout_seconds",
         "rosters",
+        "runtimes.max_steps",
         "secrets",
         "shell",
         "tests",
         "toolchain",
         "transports.extras",
+        "transports.grpc",
+        "transports.serve",
         "venv",
     }, manifest
     names = [f for f in manifest if f["key"] == "child_env.names"]
