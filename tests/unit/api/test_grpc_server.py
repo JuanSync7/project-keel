@@ -2,7 +2,7 @@
 title: Unit — the gRPC transport's server entry
 kind: tests
 layer: backend
-summary: api/grpc/server.py `serve` listens on config/project.json `transports.grpc.port` with `transports.grpc.workers` threads unless the caller names others, refuses a port or worker count outside its bound through scripts/config_loader.py before a server exists, and is driven here against fake `grpc` and generated-stub modules, so neither grpcio nor a socket is needed.
+summary: api/grpc/server.py `serve` listens on config/project.json `transports.grpc.port` with `transports.grpc.workers` threads unless the caller names others, refuses a port or worker count outside its bound through scripts/config_loader.py before a server exists, and its entry `main` turns any refused setting, a serve limit included, into exit CONFIG through the exit helper with the key on stderr before anything listens, and is driven here against fake `grpc` and generated-stub modules, so neither grpcio nor a socket is needed.
 """
 
 import importlib.util
@@ -17,7 +17,9 @@ import pytest
 
 _ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(_ROOT))
+sys.path.insert(0, str(_ROOT / "scripts"))
 
+from exit_codes import ExitCode  # noqa: E402
 from scripts import config_loader  # noqa: E402
 
 pytestmark = pytest.mark.unit
@@ -166,3 +168,29 @@ def test_sigterm_while_serving_stops_the_server_with_the_configured_grace(
     assert made.events == ["start", "wait", ("stop", 3)]
     assert "gRPC server: stopping on SIGTERM" in capsys.readouterr().err
     assert signal.getsignal(signal.SIGTERM) is before
+
+
+@pytest.mark.parametrize(
+    "block, key",
+    [
+        ({"serve": {"memory_cap_mb": 0}}, "transports.serve.memory_cap_mb"),
+        ({"grpc": {"port": 0}}, "transports.grpc.port"),
+    ],
+)
+def test_main_fails_a_refused_setting_as_config_before_a_server(
+    grpc_server, tmp_path, capsys, block, key
+):
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "project.json").write_text(
+        json.dumps({"transports": block}), encoding="utf-8"
+    )
+    assert grpc_server.main(root=str(tmp_path)) is ExitCode.CONFIG
+    assert grpc_server.made == [] and grpc_server.caps == []
+    assert key in capsys.readouterr().err
+
+
+def test_main_is_success_once_the_server_has_stopped(grpc_server, tmp_path):
+    assert grpc_server.main(root=_project(tmp_path, {"port": 50123})) is (
+        ExitCode.SUCCESS
+    )
+    assert grpc_server.made[0].events[:2] == ["start", "wait"]

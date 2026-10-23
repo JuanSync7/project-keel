@@ -2,7 +2,7 @@
 title: Integration — MCP servers (Q&A + action)
 kind: tests
 layer: backend
-summary: The thin MCP servers expose schema'd tools that delegate to wiki_navigator and a jobs doer; the action tool defaults to dry-run. Each wiki_answer is held to the server's approved model-call count, config/project.json `agents.max_model_calls` read by configured_cap: a count of 0, the default and the shipped value, answers with a tool error naming the key and makes no model call, a FakeModel subclass in models.registry._REGISTRY counting the calls.
+summary: The thin MCP servers expose schema'd tools that delegate to wiki_navigator and a jobs doer; the action tool defaults to dry-run. Each wiki_answer is held to the server's approved model-call count, config/project.json `agents.max_model_calls` read by configured_cap: a count of 0, the default and the shipped value, answers with a tool error naming the key and makes no model call, a FakeModel subclass in models.registry._REGISTRY counting the calls. Each server's entry `main` turns a refused setting (a serve limit out of its bound, a blank KEEL_MCP_MODEL) into exit CONFIG through the exit helper with the key on stderr, before it caps memory or serves.
 """
 
 import json
@@ -13,9 +13,13 @@ import pytest
 
 _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT / "mcp"))
+sys.path.insert(0, str(_ROOT / "scripts"))
 
+import action_server  # noqa: E402
+import protocol  # noqa: E402
 import qa_server  # noqa: E402
 from action_server import build_action_server  # noqa: E402
+from exit_codes import ExitCode  # noqa: E402
 from models import registry  # noqa: E402
 from models.fake import FakeModel  # noqa: E402
 from qa_server import build_qa_server  # noqa: E402
@@ -206,3 +210,53 @@ def test_the_server_model_is_the_declared_variable_or_its_declared_default(capsy
             qa_server.configured_model({"KEEL_MCP_MODEL": "  "})
     finally:
         config_loader._ANNOUNCED.clear()
+
+
+def _serve_block(tmp_path, block):
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "project.json").write_text(
+        json.dumps({"transports": {"serve": block}}), encoding="utf-8"
+    )
+    return str(tmp_path)
+
+
+@pytest.fixture
+def nothing_served(monkeypatch):
+    """Records each memory cap and served loop, so no test caps this process
+    or reads its stdin."""
+    seen = []
+    monkeypatch.setattr(
+        protocol.resource_limits, "cap_memory", lambda mb: seen.append(mb) or "cap"
+    )
+    monkeypatch.setattr(protocol, "serve_stdio", lambda *a, **k: seen.append("served"))
+    monkeypatch.delenv("KEEL_MCP_MODEL", raising=False)
+    return seen
+
+
+@pytest.mark.parametrize("server", [action_server, qa_server])
+def test_a_refused_serve_limit_is_config_before_the_server_serves(
+    server, tmp_path, capsys, nothing_served
+):
+    root = _serve_block(tmp_path, {"memory_cap_mb": 0})
+    assert server.main(root=root) is ExitCode.CONFIG
+    assert nothing_served == []
+    assert "transports.serve.memory_cap_mb" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("server", [action_server, qa_server])
+def test_a_server_within_its_limits_serves_then_succeeds(
+    server, tmp_path, nothing_served
+):
+    root = _serve_block(tmp_path, {"memory_cap_mb": 256})
+    assert server.main(root=root) is ExitCode.SUCCESS
+    assert nothing_served == [256, "served"]
+
+
+def test_a_blank_model_variable_is_config_before_the_qa_server_serves(
+    tmp_path, capsys, monkeypatch, nothing_served
+):
+    monkeypatch.setenv("KEEL_MCP_MODEL", " ")
+    root = _serve_block(tmp_path, {"memory_cap_mb": 256})
+    assert qa_server.main(root=root) is ExitCode.CONFIG
+    assert nothing_served == []
+    assert "KEEL_MCP_MODEL" in capsys.readouterr().err

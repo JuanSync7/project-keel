@@ -2,7 +2,7 @@
 title: MCP action server
 layer: backend
 public_api: no
-summary: State-changing MCP tools that delegate to scripts/jobs doers; defaults to dry-run.
+summary: State-changing MCP tools that delegate to scripts/jobs doers; defaults to dry-run. `main` is the entry: it serves through mcp/protocol.py run_stdio_server and exits 0 once the loop ends, or CONFIG through scripts/exit_codes.py report, naming the key, when a setting it reads is refused before it serves.
 """
 
 from __future__ import annotations
@@ -17,11 +17,15 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(1, str(_ROOT))
+# scripts/ itself, so the exit helper imports by its one bare name.
+sys.path.insert(2, str(_ROOT / "scripts"))
 
+from exit_codes import ExitCode, finish, report  # noqa: E402
 from protocol import Tool, ToolServer, run_stdio_server  # noqa: E402
+from scripts import config_loader  # noqa: E402
 from scripts.child_env import build_child_env  # noqa: E402
 
-__all__ = ["build_action_server"]
+__all__ = ["build_action_server", "main"]
 
 _REBUILD_DOER = "scripts/jobs/rebuild_index.py"
 
@@ -113,5 +117,21 @@ def build_action_server(root: str | None = None) -> ToolServer:
     )
 
 
+def main(root: str | None = None) -> ExitCode:
+    """Serve the action tools over stdio under *root*'s limits (this checkout
+    when None) until stdin ends or a stop signal; CONFIG for a refused
+    setting, before anything serves."""
+    try:
+        run_stdio_server(build_action_server(), root=root)
+    except config_loader.ConfigError as exc:
+        return report(
+            ExitCode.CONFIG,
+            "the MCP action server's settings are refused",
+            "; ".join(exc.lines),
+            "set each key the line names inside its bound",
+        )
+    return ExitCode.SUCCESS
+
+
 if __name__ == "__main__":  # pragma: no cover — launched by an MCP client
-    run_stdio_server(build_action_server())
+    finish(main())

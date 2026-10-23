@@ -284,7 +284,9 @@ version rather than a bare commit:
   takes the first SIGTERM or SIGINT, writes `<server>: stopping on <signal>`,
   lets the calls in flight finish for `transports.serve.shutdown_grace_seconds`
   (10), and exits 0; a second signal ends the process at once. An MCP server
-  stops between requests.
+  stops between requests. A setting any of the three refuses, such as a
+  memory cap of 0, exits CONFIG (14) with one line naming the key, through
+  the exit helper, before the server caps memory or serves.
 - **`make verify` is red until `make secrets-install` has run once.** A fresh
   clone has no scanner record, so `make secret-scan` exits 11 naming the
   install. The README Quickstart now commits the generated project, installs

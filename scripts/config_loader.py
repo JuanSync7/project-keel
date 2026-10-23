@@ -295,6 +295,8 @@ def _gate_timeout(value: Any) -> bool:
 
 def _gate_grace(value: Any) -> bool:
     return bool(1 <= value <= _GATE_GRACE_MAX)
+
+
 def _null_or_at_least_one(value: Any) -> bool:
     return value is None or bool(value >= 1)
 

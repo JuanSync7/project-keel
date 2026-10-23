@@ -2,7 +2,7 @@
 title: MCP Q&A server
 layer: backend
 public_api: no
-summary: Read-only MCP tools that answer questions from the corpus via the wiki_navigator agent. The model it asks is the KEEL_MCP_MODEL variable, read by configured_model through scripts/config_loader.py; unset or empty is the declared null default, the registry's own model, written to stderr once, and a blank value is refused. Each question is held to config/project.json `agents.max_model_calls`, read once at start by configured_cap (models.approved_cap): a count of 0, the shipped value and the default of build_qa_server, answers every question with a tool error naming the key and makes no model call; the count is per question, so the server's total over its lifetime is not capped.
+summary: Read-only MCP tools that answer questions from the corpus via the wiki_navigator agent. The model it asks is the KEEL_MCP_MODEL variable, read by configured_model through scripts/config_loader.py; unset or empty is the declared null default, the registry's own model, written to stderr once, and a blank value is refused. Each question is held to config/project.json `agents.max_model_calls`, read once at start by configured_cap (models.approved_cap): a count of 0, the shipped value and the default of build_qa_server, answers every question with a tool error naming the key and makes no model call; the count is per question, so the server's total over its lifetime is not capped. `main` is the entry: it serves through mcp/protocol.py run_stdio_server and exits 0 once the loop ends, or CONFIG through scripts/exit_codes.py report, naming the key or variable, when a setting it reads is refused before it serves.
 """
 
 from __future__ import annotations
@@ -17,13 +17,16 @@ from typing import IO
 _ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+# scripts/ itself, so the exit helper imports by its one bare name.
+sys.path.insert(2, str(_ROOT / "scripts"))
 
 from agents.wiki_navigator import answer  # noqa: E402
+from exit_codes import ExitCode, finish, report  # noqa: E402
 from models import CallCapReached, approved_cap  # noqa: E402
 from protocol import Tool, ToolServer, run_stdio_server  # noqa: E402
 from scripts import config_loader  # noqa: E402
 
-__all__ = ["build_qa_server", "configured_cap", "configured_model"]
+__all__ = ["build_qa_server", "configured_cap", "configured_model", "main"]
 
 _MODEL = ("KEEL_MCP_MODEL",)
 
@@ -118,7 +121,24 @@ def build_qa_server(
     )
 
 
+def main(root: str | None = None) -> ExitCode:
+    """Serve the Q&A tools over stdio under *root*'s limits (this checkout
+    when None) until stdin ends or a stop signal; CONFIG for a refused
+    setting, the model variable included, before anything serves."""
+    try:
+        server = build_qa_server(
+            model=configured_model(), max_model_calls=configured_cap(root)
+        )
+        run_stdio_server(server, root=root)
+    except config_loader.ConfigError as exc:
+        return report(
+            ExitCode.CONFIG,
+            "the MCP Q&A server's settings are refused",
+            "; ".join(exc.lines),
+            "set each key or variable the line names inside its bound",
+        )
+    return ExitCode.SUCCESS
+
+
 if __name__ == "__main__":  # pragma: no cover — launched by an MCP client
-    run_stdio_server(
-        build_qa_server(model=configured_model(), max_model_calls=configured_cap())
-    )
+    finish(main())
