@@ -2,7 +2,7 @@
 title: Unit — every agent CLI holds an --execute run to the model-call cap and says which model it chose
 kind: tests
 layer: n/a
-summary: scripts/doc_review.py, scripts/refactor_practice.py, scripts/hooks/on_stop_doc_review.py and scripts/hooks/on_stop_triage.py each check, before the agent runs, that the run's upper bound of model calls (--max-chunks, --max-nodes, or the one call triage makes) is within config/project.json `agents.max_model_calls` (read through scripts/model_budget.py): a bound over the cap, or a negative bound that sets none, returns USAGE with the agent never called, a cap the config cannot give returns CONFIG, and a dry run is never refused, since it calls no model. An approved run hands the agent its bound as `max_model_calls`, the count its counted backend stops at; the agent stopping at that count (models.CallCapReached) returns FAILURE and a saved run the approval does not cover (models.RunNotApproved) returns USAGE, each naming what to do next. With --execute and no --model, each writes to stderr which model the registry default chose and why; with --model it writes no such line. A ConfigError the loader raises once the agent runs (NotSet or WrongValue) returns CONFIG with the loader line on stderr, dry run and --execute alike; two cases run the real chain against this checkout's config, changed as scripts/config_loader.py read returns it: triage on claude-code-headless with no models.timeout_seconds entry for it (PATH empty, so no CLI could start), and a doc_review dry run with runtimes.max_steps 0. Every entry point under scripts/, mcp/ and api/ that ends in finish(main()) and imports agents, evals, models or runtimes must be one of these four or named in _HELD_ELSEWHERE with the test that holds it, so a new doer is not left out. Elsewhere the agent function is replaced by a recorder, so no model is built and nothing is written.
+summary: scripts/doc_review.py, scripts/refactor_practice.py, scripts/hooks/on_stop_doc_review.py and scripts/hooks/on_stop_triage.py each check, before the agent runs, that the run's upper bound of model calls (--max-chunks, --max-nodes, or the one call triage makes) is within config/project.json `agents.max_model_calls` (read through scripts/model_budget.py): a bound over the cap, or a negative bound that sets none, returns USAGE with the agent never called, a cap the config cannot give returns CONFIG, and a dry run is never refused, since it calls no model. An approved run hands the agent its bound as `max_model_calls`, the count its counted backend stops at; the agent stopping at that count (models.CallCapReached) returns FAILURE and a saved run the approval does not cover (models.RunNotApproved) returns USAGE, each naming what to do next. With --execute and no --model, each writes to stderr which model the registry default chose and why; with --model it writes no such line. A ConfigError the loader raises once the agent runs (NotSet or WrongValue) returns CONFIG with the loader line on stderr, dry run and --execute alike; two cases run the real chain against this checkout's config, changed as scripts/config_loader.py read returns it: triage on claude-code-headless with no models.timeout_seconds entry for it (PATH empty, so no CLI could start), and a doc_review dry run with runtimes.max_steps 0. Every entry point under scripts/, mcp/ and api/ that ends in finish(main()) and imports agents, evals, models or runtimes, or a scripts/ module that does (model_budget), must be one of these four or named in _HELD_ELSEWHERE with the test that holds it, and that test file must exist and name the entry point, so a new doer is not left out and a row excuses nothing it does not name. An entry point that reaches a package by importlib alone is not seen. Elsewhere the agent function is replaced by a recorder, so no model is built and nothing is written.
 """
 
 import ast
@@ -250,26 +250,40 @@ _HELD_ELSEWHERE = {
 _AGENT_PACKAGES = ("agents", "evals", "models", "runtimes")
 
 
-def _imports_an_agent_package(path):
+def _imported_names(path):
     for node in ast.walk(ast.parse(path.read_text("utf-8"))):
-        names = []
         if isinstance(node, ast.Import):
-            names = [alias.name for alias in node.names]
+            yield from (alias.name.split(".")[0] for alias in node.names)
         elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
-            names = [node.module]
-        if any(n.split(".")[0] in _AGENT_PACKAGES for n in names):
-            return True
-    return False
+            yield node.module.split(".")[0]
+
+
+def _agent_reaching_names():
+    """The agent packages, and every scripts/ module that imports one, such
+    as model_budget: an entry point that reaches models through a helper
+    builds a model as surely as one that imports models itself."""
+    helpers = {
+        path.stem
+        for path in (_ROOT / "scripts").glob("*.py")
+        if set(_imported_names(path)) & set(_AGENT_PACKAGES)
+    }
+    return set(_AGENT_PACKAGES) | helpers
+
+
+def _imports_an_agent_package(path, reaching):
+    return bool(set(_imported_names(path)) & reaching)
 
 
 def test_every_entry_point_that_builds_a_model_or_runtime_is_held():
     """A new doer is not covered by the parametrized cases above until it is
     named here, so the class is held, not the four CLIs that exist today."""
+    reaching = _agent_reaching_names()
     entries = {
         str(path.relative_to(_ROOT))
         for top in ("scripts", "mcp", "api")
         for path in (_ROOT / top).rglob("*.py")
-        if "finish(main(" in path.read_text("utf-8") and _imports_an_agent_package(path)
+        if "finish(main(" in path.read_text("utf-8")
+        and _imports_an_agent_package(path, reaching)
     }
     held = {
         str(Path(module.__file__).resolve().relative_to(_ROOT))
@@ -277,3 +291,12 @@ def test_every_entry_point_that_builds_a_model_or_runtime_is_held():
     } | set(_HELD_ELSEWHERE)
     assert entries, "the scan found no entry point, so it checked nothing"
     assert entries == held, (sorted(entries - held), sorted(held - entries))
+
+
+@pytest.mark.parametrize("entry", sorted(_HELD_ELSEWHERE))
+def test_each_entry_held_elsewhere_is_named_by_the_test_said_to_hold_it(entry):
+    """A _HELD_ELSEWHERE row is a claim; the test file it names must exist and
+    name the entry point's module, or the row excuses nothing."""
+    holder = _ROOT / _HELD_ELSEWHERE[entry]
+    assert holder.is_file(), holder
+    assert Path(entry).stem in holder.read_text("utf-8"), (entry, holder)
