@@ -230,10 +230,15 @@ version rather than a bare commit:
   keel. Such a document now answers to config/project.json
   `accountability.default_owner`, read through `scripts/config_loader.py`,
   whose default is `null`; with no default set, each one is a check_F error
-  naming the document and the key, with no warning first. Keel and generated
-  projects ship `platform-team`, the role the tool specs already name. A
-  missing `owner` still warns, and the corpus's owner report still lists a
-  `TBD` node as unowned.
+  naming the document and the key, with no warning first. check_F judges the
+  key on every run, so a refused value is an error even when no document
+  needs it. `TBD` in any letter case is the placeholder, for check_F, the
+  key's bound and the corpus alike, and a tool or agent owner outside the
+  CONVENTIONS §12 grammar, such as `"TBD"` or `TBD # later`, is an error
+  naming the document and the grammar. Keel and generated projects ship
+  `platform-team`, the role the tool specs already name. A missing `owner`
+  still warns, and the corpus's owner report still lists a `TBD` node as
+  unowned.
 - **The generation suite renders each answer set once per test module.**
   `tests/integration/test_copier_generation.py` renders through
   `tests/render_cache.py`, one copier render per distinct answer set and day

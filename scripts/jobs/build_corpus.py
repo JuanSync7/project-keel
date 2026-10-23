@@ -31,6 +31,7 @@ if _SCRIPTS not in sys.path:
     sys.path.insert(0, _SCRIPTS)
 from urllib.parse import unquote  # noqa: E402
 
+import config_loader  # noqa: E402
 from check_structure import (  # noqa: E402
     _INLINE_CODE,
     _MD_LINK,
@@ -126,8 +127,9 @@ def _walk(root: str):
 
 
 def _real_owner(value):
-    """A frontmatter/marker owner counts only if present and not the TBD placeholder."""
-    if value and value != "TBD":
+    """A frontmatter/marker owner counts only if present and not the TBD
+    placeholder, in any letter case (check_F's reading of it)."""
+    if value and not config_loader.is_unowned(value):
         return value
     return None
 

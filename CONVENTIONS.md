@@ -279,7 +279,7 @@ pre-commit hook) fails the build if the conventions above drift:
 | Authored coverage (error) | every `__all__`-exported symbol defined in-file has a one-line docstring |
 | Module header (error) | every `.py` under the code roots opens with a docstring carrying explicit, non-empty `title:` and `summary:` lines — the grammar the corpus reads, its input contract (ADR-K-0008) |
 | Tool specs governed (error) | `agents/**/*.tool.md` carry valid `kind: tool` frontmatter + a resolvable `public_api` + a valid `tool_effect` |
-| Accountability (error) | a tool/agent doc whose `owner` is `TBD` inherits `config/project.json` `accountability.default_owner`, read through `scripts/config_loader.py`; with none set (absent or `null`, the loader's default) each such doc is an error naming it and the key, and a value outside the §12 owner grammar, or `TBD`, is an error naming the key; a missing `owner` warns |
+| Accountability (error) | `config/project.json` `accountability.default_owner` is read through `scripts/config_loader.py` on every run, and a value outside the §12 owner grammar, or `TBD` in any letter case, is an error naming the key; a tool/agent doc whose `owner` is `TBD`, in any letter case, inherits it, and with none set (absent or `null`, the loader's default) or a refused value each such doc is an error naming it and the key; a tool/agent doc whose `owner` is outside the §12 grammar, such as a quoted or commented placeholder, is an error naming it and the grammar; a missing `owner` warns |
 | Tool/agent binding (error) | each agent `tools.md` ↔ each spec's `## Used by` agree (both ways); `tool_command` invokes `public_api` |
 | Project facts (§15) | `config/project.json` agrees with the tree: declared `path`/`stack`/`enabled` transport dirs exist, `enabled` ⊆ `available`, `backend.python` matches `pyproject`; an absent `config/project.json` is an error; an **undeclared** leftover stack/transport dir warns |
 | Agent-rules symlink (§5) | every `CLAUDE.md` is a symlink to its sibling `AGENT.md`; every `AGENT.md` has that sibling |
@@ -564,13 +564,14 @@ markers (one token, `owner:`, grammar `[A-Za-z0-9._@-]+`):
 
 Resolution is **finest-wins, then inherit**: a marker beats frontmatter
 beats the parent's resolved owner; `owner_source` records which
-(`marker` | `frontmatter` | `inherited` | `none`). The `TBD` placeholder
-counts as unowned. Corpus nodes that resolve to `owner_source: none` are
+(`marker` | `frontmatter` | `inherited` | `none`). The `TBD` placeholder,
+in any letter case, counts as unowned. Corpus nodes that resolve to `owner_source: none` are
 reported by `scripts/accountability_report.py`. Independently, at commit
 time `check_F` holds each `kind: tool`/`agent` frontmatter doc owned (it
 inspects frontmatter only, not corpus nodes): a `TBD` owner inherits
 `config/project.json` `accountability.default_owner`, and with no default set
-the doc is an error naming the key; a missing owner warns. The corpus does not
+the doc is an error naming the key; an owner outside the grammar above is an
+error naming the doc; a missing owner warns. The corpus does not
 read the default, so `scripts/accountability_report.py` still lists a `TBD`
 node as unowned.
 

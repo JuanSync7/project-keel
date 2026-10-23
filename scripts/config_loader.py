@@ -2,7 +2,7 @@
 title: config_loader — the one way a configured value enters a process
 kind: script
 layer: n/a
-summary: Every configured value comes through here: a key of config/project.json or config/practices.json, or an environment variable the config declares. KEYS is the one table of declared keys, each row a Key giving its path (a tuple of segments, since a segment may hold a dot), its type from the closed set TYPES, its default or NONE (required exactly when the default is NONE, so a default of null stays distinct from no default), whether it is a secret, a one-line meaning, the variable that may set it, the file it lives in (None for a variable-only row) and an optional bound. `read(root, relpath)` is the one open and parse of a config file: a missing file is ConfigAbsent, and an OSError, bytes that are not UTF-8, text that is not JSON (a NaN constant, a byte-order mark and a key written twice in one object included), or a top level that is not an object is ConfigUnreadable, naming a merge-conflict hunk an update left by its line through scripts/jobs/conflict_guard.py's grammar, loaded by path (when it cannot load, the parse error says the markers were not checked). `resolve(loaded, rows, where)` walks the rows in sorted path order. Precedence: a row that names a variable takes that variable when it is set and not empty, else the file's value; a row with no variable reads the file only; a variable-only row reads its variable only; an empty variable is not set. A set value of the wrong type or out of its bound is one line `<where>: <key> is <JSON type>[ <value>]; accepted: <what>`, naming the environment and the variable instead when the value came from a variable, the value never shown for a secret. An unset key with a default takes it and writes `[using default] <key> = <canonical JSON value>  (not set; to change it, set <key> in <where>)` to stderr once per (where, key) per process, a secret's value written `<hidden>`. Each unset required key is `[not set] <key>  (required, no default; set <key> in <where>)`; every wrong and every not-set line is written before one raise, WrongValue when any value is wrong, else NotSet carrying the sorted keys. It never ends the process: the entry point that called it returns report(ExitCode.CONFIG, ...). `env(name)` is the one literal-name read of a declared variable and refuses a name neither a row nor the config declares (declared_variables). It registers itself under both `config_loader` and `scripts.config_loader`, and as the `config_loader` attribute of the `scripts` package that holds it, so either import name, in either order, gives one module, one announced set and one set of exception classes. Never run, stdlib-only and 3.6-safe: child_env and check_structure read through it under the hook interpreter. It reads and writes nothing else, and it caches nothing, so the same file and environment give the same values and lines.
+summary: Every configured value comes through here: a key of config/project.json or config/practices.json, or an environment variable the config declares. KEYS is the one table of declared keys, each row a Key giving its path (a tuple of segments, since a segment may hold a dot), its type from the closed set TYPES, its default or NONE (required exactly when the default is NONE, so a default of null stays distinct from no default), whether it is a secret, a one-line meaning, the variable that may set it, the file it lives in (None for a variable-only row) and an optional bound. `read(root, relpath)` is the one open and parse of a config file: a missing file is ConfigAbsent, and an OSError, bytes that are not UTF-8, text that is not JSON (a NaN constant, a byte-order mark and a key written twice in one object included), or a top level that is not an object is ConfigUnreadable, naming a merge-conflict hunk an update left by its line through scripts/jobs/conflict_guard.py's grammar, loaded by path (when it cannot load, the parse error says the markers were not checked). `resolve(loaded, rows, where)` walks the rows in sorted path order. Precedence: a row that names a variable takes that variable when it is set and not empty, else the file's value; a row with no variable reads the file only; a variable-only row reads its variable only; an empty variable is not set. A set value of the wrong type or out of its bound is one line `<where>: <key> is <JSON type>[ <value>]; accepted: <what>`, naming the environment and the variable instead when the value came from a variable, the value never shown for a secret. An unset key with a default takes it and writes `[using default] <key> = <canonical JSON value>  (not set; to change it, set <key> in <where>)` to stderr once per (where, key) per process, a secret's value written `<hidden>`. Each unset required key is `[not set] <key>  (required, no default; set <key> in <where>)`; every wrong and every not-set line is written before one raise, WrongValue when any value is wrong, else NotSet carrying the sorted keys. It never ends the process: the entry point that called it returns report(ExitCode.CONFIG, ...). `env(name)` is the one literal-name read of a declared variable and refuses a name neither a row nor the config declares (declared_variables). `is_owner_token` and `is_unowned` are CONVENTIONS §12's owner grammar and its `TBD` placeholder in any letter case, shared by the default-owner row's bound, check_F and the corpus build. It registers itself under both `config_loader` and `scripts.config_loader`, and as the `config_loader` attribute of the `scripts` package that holds it, so either import name, in either order, gives one module, one announced set and one set of exception classes. Never run, stdlib-only and 3.6-safe: child_env and check_structure read through it under the hook interpreter. It reads and writes nothing else, and it caches nothing, so the same file and environment give the same values and lines.
 effect: read-only
 """
 
@@ -42,6 +42,7 @@ __all__ = [
     "ENV_TYPES",
     "KEYS",
     "NONE",
+    "OWNER_GRAMMAR",
     "PRACTICES_FILE",
     "PROJECT_READS",
     "TYPES",
@@ -54,6 +55,8 @@ __all__ = [
     "WrongValue",
     "declared_variables",
     "env",
+    "is_owner_token",
+    "is_unowned",
     "read",
     "resolve",
     "rows",
@@ -342,6 +345,7 @@ def _no_parent_part(value: Any) -> bool:
 
 
 # CONVENTIONS §12's owner token: one word of letters, digits and `._@-`.
+OWNER_GRAMMAR = "[A-Za-z0-9._@-]+"
 _OWNER_CHARS = frozenset(
     "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._@-"
 )
@@ -349,12 +353,23 @@ _OWNER_CHARS = frozenset(
 _UNOWNED = "TBD"
 
 
+def is_owner_token(value: Any) -> bool:
+    """True when *value*, as text, is one token of CONVENTIONS §12's owner
+    grammar OWNER_GRAMMAR; the placeholder `TBD` is a token too."""
+    text = str(value)
+    return bool(text) and set(text) <= _OWNER_CHARS
+
+
+def is_unowned(value: Any) -> bool:
+    """True when *value* is the `TBD` placeholder, in any letter case."""
+    return str(value).upper() == _UNOWNED
+
+
 def _owner_token(value: Any) -> bool:
     # A nullable row hands its bound None too; null is "no default owner".
     if value is None:
         return True
-    text = str(value)
-    return bool(text) and text != _UNOWNED and set(text) <= _OWNER_CHARS
+    return is_owner_token(value) and not is_unowned(value)
 
 
 _ASCII_DIGITS = "0123456789"
@@ -654,7 +669,7 @@ KEYS = tuple(
                 "null: no default, so each such document is an error",
                 accepts=(
                     _owner_token,
-                    "one owner token of letters, digits and `._@-`, not TBD, or null",
+                    "one owner token of letters, digits and `._@-`, never TBD in any case",
                 ),
             ),
             _row(
