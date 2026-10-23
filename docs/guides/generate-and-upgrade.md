@@ -97,7 +97,7 @@ exactly the files this judgment says arrive.
 | `.DS_Store` | never | operating-system clutter |
 | `.svn` | never | another tool's metadata |
 | `.venv` | never | the template's own interpreter |
-| `tmp` | never | scratch space |
+| `tmp` | never | a person's scratch at the root, ignored by `.gitignore`; the entry keeps a force-added file out of every generated project |
 | `docs/design/keel-hardening-plan.md` | never | the template's own plan |
 | `docs/design/documentation-quality.md` | never | the template's own design note |
 | `docs/design/downstream-feedback.md` | never | the template's own design note |
