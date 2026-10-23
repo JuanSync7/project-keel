@@ -373,19 +373,37 @@ def _text_units(text):
         yield start, " ".join(para)
 
 
+# The form a list takes right after `make verify (` or `make verify #`: its place
+# says it is verify's list, so it is judged at any length and any `+`-joined word
+# is an item, a renamed goal or a tool name included (the a7f6760 reader's form).
+_ANCHORED_LIST = re.compile(
+    r"make verify`?[ \t]*(?:\(|#)\s*(`?[\w-]+`?(?:\s*\+\s*`?[\w-]+`?)+)"
+)
+
+
 def _verify_goal_lists(text, targets, goals):
     """Yield `(line, named)` for each list of make targets in `text` that sits in
-    a unit naming verify and names most of verify's goals: a list that names
-    more than half of them claims to be verify's list, so a stale one, missing a
-    goal or two, is still read, while an example of a few (`such as a, b or c`)
-    is not."""
+    a unit naming verify and claims to be verify's list. A list right after
+    `make verify (` or `make verify #` claims it by its place, at any length.
+    Elsewhere a list claims it by naming more than half of verify's goals, so a
+    stale one, missing a goal or two, is still read, while an example of a few
+    (`such as a, b or c`) is not. A backticked word is an item whether or not a
+    target has its name, so a list carrying a renamed goal is read whole; a bare
+    word is an item only when it names a target, so English prose is not a
+    list."""
     names = "|".join(re.escape(t) for t in sorted(targets, key=len, reverse=True))
-    item = r"(?:`(?:make )?(?:%s)`|(?<![\w`/.-])(?:%s)(?![\w`/-]))" % (names, names)
+    item = r"(?:`(?:make )?[\w-]+`|(?<![\w`/.-])(?:%s)(?![\w`/-]))" % names
     run = re.compile(r"%s(?:%s%s)+" % (item, _LIST_SEP, item))
     for line, unit in _text_units(text):
         if not _NAMES_VERIFY.search(unit):
             continue
+        anchored = []
+        for m in _ANCHORED_LIST.finditer(unit):
+            anchored.append(m.span(1))
+            yield line, [n.strip("`") for n in re.split(r"\s*\+\s*", m.group(1))]
         for m in run.finditer(unit):
+            if any(a < m.end() and m.start() < b for a, b in anchored):
+                continue
             named = [
                 n.strip("`").replace("make ", "", 1)
                 for n in re.findall(item, m.group(0))
@@ -415,9 +433,10 @@ def test_every_document_that_spells_the_verify_goals_spells_the_makefiles():
     still listed four goals, and KEEL-SHELL-1 added `test-sh` while the
     dev-loops full-gate row, a comma list no `+` reader saw, kept eight. Every
     list of make targets that sits in a table row, a code line, a list item or
-    a prose paragraph naming verify, and names most of verify's goals, must
-    name exactly the goals keel's recipe runs, in its order; every quote of the
-    recipe line must be the Makefile's line."""
+    a prose paragraph naming verify, and either follows `make verify (` or
+    `make verify #` or names most of verify's goals, must name exactly the
+    goals keel's recipe runs, in its order; every quote of the recipe line must
+    be the Makefile's line."""
     recipe = _keel_verify().recipe[0]
     goals, _unresolved = cs._recursions(recipe)
     targets = _make_targets()
@@ -466,6 +485,16 @@ _TARGETS = _GOALS + ["fmt", "secrets-install"]
         ("`make verify` runs\n\n`check-all`, `lint`, `test` and `trace`.", []),
         ("`make verify`\n```\ncheck-all, lint, test, trace\n```", []),
         ("make verify: lint, types and tests, then fmt and secrets-install.", []),
+        ("Run make verify (lint + test) first.", [(1, ["lint", "test"])]),
+        ("make verify   # check-all + lint", [(1, ["check-all", "lint"])]),
+        (
+            "make verify   # check-all + pytest + lint + test + trace + eval",
+            [(1, ["check-all", "pytest", "lint", "test", "trace", "eval"])],
+        ),
+        (
+            "| Full gate | `make verify` | `check-all`, `pytest`, `lint` and `test` |",
+            [(1, ["check-all", "pytest", "lint", "test"])],
+        ),
     ],
     ids=[
         "plus-comment",
@@ -479,14 +508,20 @@ _TARGETS = _GOALS + ["fmt", "secrets-install"]
         "a-list-past-a-blank-line",
         "a-fenced-line-not-naming-verify",
         "english-words-not-a-list",
+        "a-short-list-in-verifys-parentheses",
+        "a-short-list-in-verifys-comment",
+        "a-comment-list-with-a-word-no-target-is",
+        "a-backticked-list-with-a-word-no-target-is",
     ],
 )
 def test_the_goal_list_reader_reads_a_list_in_any_form_beside_verify(text, expected):
     """The reader the drift test relies on: a `+`, comma, `and` or `or` list
     reads the same in a code line, a table row, a list item and a paragraph
-    across a line break, and a stale list (one goal short) is still read; an
-    example of a few goals, a list in a unit that does not name verify, and
-    English words that share a target's name are not."""
+    across a line break, and a stale list (one goal short) is still read; a
+    list in verify's parentheses or comment is read at any length, and a list
+    carrying a word no target has is read whole; an example of a few goals, a
+    list in a unit that does not name verify, and English words that share a
+    target's name are not."""
     assert list(_verify_goal_lists(text, _TARGETS, _GOALS)) == expected
 
 

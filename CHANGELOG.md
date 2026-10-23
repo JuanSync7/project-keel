@@ -455,10 +455,13 @@ version rather than a bare commit:
   `+`-joined list after `make verify (` or `make verify #`, so a comma list in
   a table row or a sentence went stale unseen. It now reads a `+`, comma,
   `and` or `or` list of make targets in a code line, table row, list item or
-  paragraph that names verify, and fails one that names most of verify's
-  goals but not exactly the Makefile's, in order; an accepted ADR is not
-  read. docs/design/make-next-steps.md no longer spells the goals its counts
-  predate.
+  paragraph that names verify, and fails one that is not exactly the
+  Makefile's goals, in order, when it follows `make verify (` or
+  `make verify #` (at any length, any word an item) or names most of
+  verify's goals elsewhere (a backticked word an item whether or not a target
+  has its name); an accepted ADR is not read.
+  docs/design/make-next-steps.md no longer spells the goals
+  its counts predate.
 - **The evidence writer's roster row names every `make verify` goal.** The
   `gate_evidence.py` row of scripts/README.md and its template twin quoted
   verify's recipe line without `secret-scan` and `test-sh`. Both rows now
