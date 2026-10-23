@@ -285,9 +285,12 @@ later update that changes the same lines conflicts in that file, and
 `limits-and-troubleshooting.md` has the row for what you then see.
 
 One number carries one fact, so a wrapper of yours that runs a script itself
-can act on the number alone. A wrapper that runs make, `make verify`
-included, sees 2 for every failing code, because GNU make exits 2 for a
-failed recipe; the number is then only on make's last line, `Error <N>`
+can act on the number alone. A wrapper that runs make sees 2 for every
+failing code, because GNU make exits 2 for a failed recipe; the number is then
+only on make's error line for that recipe, `Error <N>`, and more output can
+follow it. Through `make verify` a failing goal leaves the outer make's line at
+`Error 2`, and the script's own code is on the goal's own make line, printed
+before it
 (`tests/integration/test_exit_codes_through_make.py`).
 `scripts/gate_evidence.py` exits `RED_RECORD` (10) when every goal
 passed and the record is red, and `scripts/run_evals.py` exits

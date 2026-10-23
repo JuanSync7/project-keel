@@ -64,7 +64,9 @@ class ExitCode(enum.IntEnum):
     # timeout and the shell 124 to 127, a signal 128 and up, and 255 is an
     # out-of-range status. A caller that runs the script itself can then act
     # on the number alone. Through make it cannot: GNU make exits 2 for every
-    # failing recipe, and only its `Error <N>` line still carries the number
+    # failing recipe, and only its `Error <N>` line for that recipe still
+    # carries the number. Through `make verify` that line is the goal's own
+    # make line, printed before the outer make's `Error 2`
     # (tests/integration/test_exit_codes_through_make.py).
     RED_RECORD = (
         10,

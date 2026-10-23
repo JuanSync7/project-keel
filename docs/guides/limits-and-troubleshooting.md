@@ -509,11 +509,13 @@ Three more codes come from the tools around these scripts:
 - **argparse exit 2** means a script was called with an argument it does not
   take; the usage line names the right ones.
 - **make exit 2** means make itself failed: a recipe returned non-zero, or the
-  target does not exist. make's last line,
-  `make: *** [<file>:<line>: <target>] Error <N>`, names the recipe's own code.
-  A caller therefore acts on a code from the first table by its number only
-  when it runs the script itself: through make, `make verify` included, every
-  failing code reaches the caller as 2
+  target does not exist. make's error line for the failed recipe,
+  `make: *** [<file>:<line>: <target>] Error <N>`, names the recipe's own code;
+  under `make -k` later goals print after it. A caller therefore acts on a code
+  from the first table by its number only when it runs the script itself:
+  through make every failing code reaches the caller as 2. Through
+  `make verify` the outer make's line says `Error 2` for a failing goal, and the
+  script's own code is on the goal's own make line, printed before it
   (`tests/integration/test_exit_codes_through_make.py`).
 
 ## Lines the config loader writes
