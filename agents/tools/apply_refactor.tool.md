@@ -9,7 +9,7 @@ tags: [tool, refactor, gate, apply, rollback]
 summary: Apply one bounded edit spec atomically, run a make gate, and roll back every file unless it stays green.
 id: tool-apply-refactor
 created: 2026-07-07
-updated: 2026-10-22
+updated: 2026-10-23
 visibility: internal
 canonical: true
 tool_command: python3 scripts/apply_refactor.py --spec - --root . --gate verify --json
@@ -52,7 +52,7 @@ that would break the build is reverted, never left half-applied. This is how
 | `--gate` | no | `verify` | make target to gate on; `none` skips the gate and is a human caller's flag, never an agent's |
 | `--allow` | no | none (repeatable) | a file this run may edit; an edit to any other file is refused before any write |
 | `--dry-run` | no | off | validate + list the files, write nothing |
-| `--timeout` | no | `make_targets.gate_timeout_seconds` | gate timeout in seconds, passed to `run_make_target` |
+| `--timeout` | no | `make_targets.gate_timeout_seconds` | gate timeout in seconds, passed to `run_make_target`; a whole number from 1 to 604800, else refused (exit 2) before any edit |
 | `--json` | no | off | emit the result as JSON |
 
 Spec shape: `{"practice": "...", "edits": [{"file": "p", "find": "...", "replace": "..."}] }` (an edit may use `"content"` for a whole-file replacement). The gate is the caller's `--gate`, never the spec's.

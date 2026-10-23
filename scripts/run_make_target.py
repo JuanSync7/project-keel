@@ -3,7 +3,7 @@
 title: Run make target (the read-only gate runner)
 kind: script
 layer: n/a
-summary: Deterministic doer — run a make target as a gate and report a structured pass/fail, but only a target whose effect label, closed over what it runs, falls inside config/project.json `make_targets.gate_effects`. It refuses an unknown, unlabelled or wider target, an extra argument that is not a NAME=VALUE variable named in `make_targets.gate_vars` with a one-word path-like value, a tree without git, and an allowlist scripts/child_env.py cannot build or that would copy a value carrying a credential, all before make runs; it forwards a `make_targets.gate_vars` variable found in its own environment onto make's command line under the same one-word rule (an explicit one wins), and refuses any gate value, explicit or forwarded, that carries a credential by scripts/child_env.py's carries_credential under the project's child_env policy (user information, or a `child_env.credential_value_patterns` match, named by its label), even one `child_env.credentialed_values` opts in, because make's command line reaches every recipe; every refusal names the variable and never quotes a value; because make and git get the allowlisted environment from scripts/child_env.py, never this one; it sets the gate-runner variable last so WRITE_GUARD refuses a [write] target; and it snapshots what git lists before and after (each path's porcelain status and content, by scripts/git_tree.py), failing a green run that changed it and naming the paths, and one whose tree cannot be re-read afterwards. It reads config/project.json through scripts/config_loader.py `read`, so a manifest it cannot use, a key written twice in one object included, is a refusal carrying the loader's line. It starts make in a session of its own and gives it `--timeout` seconds, else config/project.json `make_targets.gate_timeout_seconds` (scripts/config_loader.py KEYS gives its type and default; a value that is not a whole number >= 1 is ExitCode.CONFIG, or a refusal from run_target). On that timeout, on KeyboardInterrupt (ExitCode.INTERRUPTED) and on a SIGTERM or SIGHUP to itself it ends make's whole session, every process group in it included (GNU `timeout` moves itself to a group of its own and stays in the session): SIGTERM, then SIGKILL once `make_targets.gate_stop_grace_seconds` pass with any member alive (a second interrupt during that wait still sends the SIGKILL; a signal the caller ignored stays ignored); it signals no process outside that session, and signals only while make is unreaped: make is held as a zombie (os.waitid WNOWAIT) until the session is ended and its output read, so the ids cannot pass to another process while a signal can still reach them, and where Python has no os.waitid a leftover is named as still running instead of ended. A stop signal that lands while make is being started is deferred until the runner has make's pid, and then acts. It waits on make's exit, not on its output, so a background job holding the output open does not hold the run. A timeout is red with `timed_out` true in the result and ExitCode.FAILURE from the command line; a process still in the session (a zombie excepted) after make exits and a short settle is ended the same way, listed by pid and command in `leaked`, and fails closed: a make that exited 0 is red (ExitCode.FAILURE, naming each leftover), and a make that failed keeps its own status. A process outside the session that still holds make's output when the run ends is listed in `escaped` and makes the run red (ExitCode.FAILURE, giving the kill command), though the runner signals it not at all. A runner killed with SIGKILL cannot do this, so make's session outlives it. The refactor loop (agents/practice_refactor, scripts/apply_refactor.py) and tests/integration/test_make_target_effects.py gate through it. Vendor-neutral, stdlib; it writes nothing itself.
+summary: Deterministic doer — run a make target as a gate and report a structured pass/fail, but only a target whose effect label, closed over what it runs, falls inside config/project.json `make_targets.gate_effects`. It refuses an unknown, unlabelled or wider target, an extra argument that is not a NAME=VALUE variable named in `make_targets.gate_vars` with a one-word path-like value, a tree without git, and an allowlist scripts/child_env.py cannot build or that would copy a value carrying a credential, all before make runs; it forwards a `make_targets.gate_vars` variable found in its own environment onto make's command line under the same one-word rule (an explicit one wins), and refuses any gate value, explicit or forwarded, that carries a credential by scripts/child_env.py's carries_credential under the project's child_env policy (user information, or a `child_env.credential_value_patterns` match, named by its label), even one `child_env.credentialed_values` opts in, because make's command line reaches every recipe; every refusal names the variable and never quotes a value; because make and git get the allowlisted environment from scripts/child_env.py, never this one; it sets the gate-runner variable last so WRITE_GUARD refuses a [write] target; and it snapshots what git lists before and after (each path's porcelain status and content, by scripts/git_tree.py), failing a green run that changed it and naming the paths, and one whose tree cannot be re-read afterwards. It reads config/project.json through scripts/config_loader.py `read`, so a manifest it cannot use, a key written twice in one object included, is a refusal carrying the loader's line. It starts make in a session of its own and gives it `--timeout` seconds, else config/project.json `make_targets.gate_timeout_seconds` (scripts/config_loader.py KEYS gives its type and default; a value that is not a whole number from 1 to 604800 is ExitCode.CONFIG, or a refusal from run_target, and a `--timeout` outside that range is ExitCode.USAGE). On that timeout, on KeyboardInterrupt (ExitCode.INTERRUPTED) and on a SIGTERM or SIGHUP to itself it ends make's whole session, every process group in it included (GNU `timeout` moves itself to a group of its own and stays in the session): SIGTERM, then SIGKILL once `make_targets.gate_stop_grace_seconds` pass with any member alive (a second interrupt during that wait still sends the SIGKILL; a signal the caller ignored stays ignored); it signals no process outside that session, and signals only while make is unreaped: make is held as a zombie (os.waitid WNOWAIT) until the session is ended and its output read, so the ids cannot pass to another process while a signal can still reach them, and where Python has no os.waitid a leftover is named as still running instead of ended. A stop signal that lands while make is being started is deferred until the runner has make's pid, and then acts. It waits on make's exit, not on its output, so a background job holding the output open does not hold the run. A timeout is red with `timed_out` true in the result and ExitCode.FAILURE from the command line; a process still in the session (a zombie excepted) after make exits and a short settle is ended the same way, listed by pid and command in `leaked`, and fails closed: a make that exited 0 is red (ExitCode.FAILURE, naming each leftover), and a make that failed keeps its own status. A process outside the session that still holds make's output when the run ends is listed in `escaped` and makes the run red (ExitCode.FAILURE, giving the kill command), though the runner signals it not at all. A runner killed with SIGKILL cannot do this, so make's session outlives it. The refactor loop (agents/practice_refactor, scripts/apply_refactor.py) and tests/integration/test_make_target_effects.py gate through it. Vendor-neutral, stdlib; it writes nothing itself.
 """
 
 from __future__ import annotations
@@ -541,6 +541,26 @@ def _default_runner(
                 group.proc.stdout.close()
 
 
+def limit_fault(key: tuple[str, str], value: object) -> str | None:
+    """None when *value* is a limit the scripts/config_loader.py KEYS row for
+    *key* (one of LIMIT_KEYS) accepts, else what that row accepts, worded as
+    the loader words it."""
+    (row,) = config_loader.rows(key)
+    check, text = config_loader.TYPES[row.type]
+    assert row.accepts is not None, "a gate limit's row states its bound"
+    bound, bound_text = row.accepts
+    if check(value) and bound(value):
+        return None
+    return "%s with %s" % (text, bound_text)
+
+
+def shown_value(value: object) -> str:
+    """*value* for a message, cut short: a 400-digit number is a mistype, and
+    its digits would bury the line."""
+    text = repr(value)
+    return text if len(text) <= 24 else "%s... (%d characters)" % (text[:12], len(text))
+
+
 def gate_limits(
     manifest: Mapping[str, Any], timeout: int | None = None, grace: int | None = None
 ) -> tuple[int, int]:
@@ -548,11 +568,13 @@ def gate_limits(
     resolved from *manifest* (config/project.json, parsed) by
     scripts/config_loader.py, which announces a default it uses. Raises
     config_loader.ConfigError (WrongValue for a value out of its row's bound)
-    and ValueError for a given value below 1."""
-    for name, given in (("timeout", timeout), ("grace", grace)):
-        if given is not None and (type(given) is not int or given < 1):
+    and ValueError for a given value outside that bound."""
+    for key, given in zip(LIMIT_KEYS, (timeout, grace), strict=True):
+        fault = None if given is None else limit_fault(key, given)
+        if fault is not None:
             raise ValueError(
-                "the gate %s must be 1 or more seconds, not %r" % (name, given)
+                "%s must be %s seconds, not %s"
+                % (".".join(key), fault, shown_value(given))
             )
     if timeout is not None and grace is not None:
         return timeout, grace
@@ -634,9 +656,11 @@ def run_target(
     The result holds target, ok, returncode, output, effects (the target's
     closed-over label), changed (sorted paths whose git-listed state differs
     after the run), refused (None, or why the run never started) and timed_out
-    (True when make ran past ``timeout``) and leaked ("<pid> <command>" of each
-    process left in make's session after it exited, ended; any makes ok False). A
-    refusal never calls the runner.
+    (True when make ran past ``timeout``), leaked ("<pid> <command>" of each
+    process left in make's session after it exited; any makes ok False) and
+    escaped ("<pid> <command>" of each process outside make's session still
+    holding its output, never signalled; any makes ok False). A refusal never
+    calls the runner.
     ``timeout`` and ``grace`` are seconds; each left None is read through
     gate_limits, and a limit config/project.json gets wrong is a refusal.
     Past the timeout, or on an interrupt, every process make started is ended
@@ -918,12 +942,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             repr(args.target),
             "name one target `make help` lists",
         )
-    if args.timeout is not None and args.timeout < 1:
+    fault = None if args.timeout is None else limit_fault(LIMIT_KEYS[0], args.timeout)
+    if fault is not None:
         return report(
             ExitCode.USAGE,
-            "run_make_target: --timeout must be 1 or more seconds",
-            "--timeout %d" % args.timeout,
-            "pass a whole number of seconds, or leave it out to use "
+            "run_make_target: --timeout must be %s seconds" % fault,
+            "--timeout %s" % shown_value(args.timeout),
+            "pass a whole number of seconds in that range, or leave it out to use "
             "config/project.json make_targets.gate_timeout_seconds",
         )
     root = os.path.abspath(args.dir or os.getcwd())

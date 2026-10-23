@@ -654,12 +654,28 @@ def test_the_gate_runners_limits_are_optional_and_kept_when_set():
         ({"gate_timeout_seconds": True}, "gate_timeout_seconds is true"),
         (
             {"gate_stop_grace_seconds": "10"},
-            'gate_stop_grace_seconds is "10"; accepted: an integer with a value >= 1',
+            'gate_stop_grace_seconds is "10"; accepted: an integer with a value from 1 to 3600',
         ),
         ({"gate_stop_grace_seconds": -1}, "gate_stop_grace_seconds is -1"),
         ({"gate_timeout_second": 60}, "unknown key `gate_timeout_second`"),
+        (
+            {"gate_timeout_seconds": 604801},
+            "gate_timeout_seconds is 604801; accepted: an integer with a value "
+            "from 1 to 604800",
+        ),
+        ({"gate_stop_grace_seconds": 3601}, "a value from 1 to 3600"),
+        ({"gate_timeout_seconds": 10**400}, "gate_timeout_seconds is 1000"),
     ],
-    ids=["zero", "bool", "string", "negative", "typo"],
+    ids=[
+        "zero",
+        "bool",
+        "string",
+        "negative",
+        "typo",
+        "past-week",
+        "past-hour",
+        "huge",
+    ],
 )
 def test_a_bad_gate_runner_limit_is_one_error_naming_it(over, expect):
     errs = _policy_errors(_policy(**over))

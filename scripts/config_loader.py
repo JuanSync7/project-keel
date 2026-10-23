@@ -278,6 +278,24 @@ def _at_least_one(value: Any) -> bool:
     return bool(value >= 1)
 
 
+# A week. The slowest full `make verify` measured 3 h 12 min, so a longer
+# limit is a mistyped value, not a slow suite; and it keeps the deadline inside
+# what time.sleep, select and threading take (10**400 raised OverflowError).
+_GATE_TIMEOUT_MAX = 604800
+# An hour. The grace only has to outlast a test's own stop of a server it
+# started (e2e.server.stop_timeout_s), and a cleanup that needs longer is a
+# hang; the same overflow applies.
+_GATE_GRACE_MAX = 3600
+
+
+def _gate_timeout(value: Any) -> bool:
+    return bool(1 <= value <= _GATE_TIMEOUT_MAX)
+
+
+def _gate_grace(value: Any) -> bool:
+    return bool(1 <= value <= _GATE_GRACE_MAX)
+
+
 def _no_parent_part(value: Any) -> bool:
     # Absolute is allowed (a farm job's local disk); `..` never is, so a
     # relative value cannot climb out of the checkout it resolves against.
@@ -678,19 +696,22 @@ KEYS = tuple(
                 14400,
                 "the seconds scripts/run_make_target.py lets make run before it "
                 "ends every process make started; its --timeout overrides it",
-                accepts=(_at_least_one, "a value >= 1"),
+                accepts=(_gate_timeout, "a value from 1 to %d" % _GATE_TIMEOUT_MAX),
             ),
-            # 10 s: the same SIGTERM-to-SIGKILL grace tests/live_server.py gives
-            # the uvicorn server (e2e.server.stop_timeout_s); SIGTERM's default
-            # action ends pytest, copier and make at once, so only a handler
-            # that cleans up uses it.
+            # 15 s: on SIGTERM a test's handler stops the uvicorn server it
+            # started, outside make's session, with SIGTERM and then SIGKILL
+            # after e2e.server.stop_timeout_s (10 s); this grace must outlast
+            # that, or the runner's SIGKILL ends pytest first and the server is
+            # left running (tests/unit/scripts/test_run_make_target.py holds the
+            # two apart). SIGTERM's default action ends pytest, copier and make
+            # at once, so only a handler that cleans up uses the grace.
             _row(
                 ("make_targets", "gate_stop_grace_seconds"),
                 "int",
-                10,
+                15,
                 "the seconds scripts/run_make_target.py waits after SIGTERM for "
-                "make's process group to exit before it sends SIGKILL",
-                accepts=(_at_least_one, "a value >= 1"),
+                "make's session to exit before it sends SIGKILL",
+                accepts=(_gate_grace, "a value from 1 to %d" % _GATE_GRACE_MAX),
             ),
             _row(
                 ("practices", "profiles"),

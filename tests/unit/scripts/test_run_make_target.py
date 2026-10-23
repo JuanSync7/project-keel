@@ -912,8 +912,12 @@ def test_an_absent_limit_takes_the_loader_default_and_says_so(
         ("gate_timeout_seconds", 0),
         ("gate_stop_grace_seconds", "10"),
         ("gate_timeout_seconds", True),
+        ("gate_timeout_seconds", 604801),
+        ("gate_stop_grace_seconds", 3601),
+        ("gate_timeout_seconds", 10**400),
+        ("gate_stop_grace_seconds", 10**400),
     ],
-    ids=["zero", "string", "bool"],
+    ids=["zero", "string", "bool", "past-week", "past-hour", "huge", "huge-grace"],
 )
 def test_a_bad_limit_is_a_config_fault_before_make_runs(
     proj, monkeypatch, capsys, key, value
@@ -940,8 +944,10 @@ def test_the_timeout_flag_overrides_the_configured_limit(proj, monkeypatch):
     assert seen == [(11, 3), (7, 3)]
 
 
-@pytest.mark.parametrize("value", ["0", "-5"])
-def test_a_timeout_flag_below_one_second_is_refused(proj, capsys, value):
+@pytest.mark.parametrize(
+    "value", ["0", "-5", "604801", "1" + "0" * 400], ids=["0", "-5", "604801", "huge"]
+)
+def test_a_timeout_flag_outside_its_bound_is_refused(proj, capsys, value):
     assert (
         rmt.main(["check", "--dir", str(proj), "--timeout", value])
         == rmt.ExitCode.USAGE
@@ -1422,3 +1428,28 @@ def test_a_sigterm_while_make_starts_still_ends_make(tree):
         % str(make),
     )
     assert json.loads(out) == {"what": -15, "terms": 1, "gone": True}, out
+
+
+@pytest.mark.parametrize(
+    "limits", [{"timeout": 10**400}, {"grace": 3601}], ids=["huge-timeout", "grace"]
+)
+def test_a_given_limit_past_its_bound_is_refused_before_make_runs(proj, limits):
+    """run_target's own timeout and grace meet the bound the KEYS rows give,
+    so a caller cannot pass a value the stop loop would overflow on."""
+    with pytest.raises(ValueError, match="from 1 to"):
+        rmt.run_target("check", cwd=str(proj), runner=_never, snapshot=_never, **limits)
+
+
+def test_the_gate_grace_outlasts_the_e2e_servers_stop_wait():
+    """On SIGTERM a test's handler stops the e2e server, which runs in a session
+    of its own outside make's, with SIGTERM and then SIGKILL after
+    e2e.server.stop_timeout_s. The runner sends pytest SIGKILL after its own
+    grace; were that not longer, pytest could die before its SIGKILL and leave
+    the server running, unseen by the runner."""
+    import live_server
+
+    _timeout, grace = rmt.gate_limits(
+        rmt.config_loader.read(str(_ROOT), "config/project.json")
+    )
+    stop = live_server.load_server_config(str(_ROOT))["stop_timeout_s"]
+    assert grace > stop, (grace, stop)

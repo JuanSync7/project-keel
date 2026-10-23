@@ -62,7 +62,7 @@ of editing on top of failures. The labels are defined in
 | `TARGET` | yes | — | the make target to run (e.g. `verify`, `check`) |
 | `--dir` | no | `.` | directory to run `make` in |
 | `--json` | no | off | emit the result as JSON |
-| `--timeout` | no | `make_targets.gate_timeout_seconds` | gate timeout in seconds, a whole number >= 1; below 1 is refused (exit 2) |
+| `--timeout` | no | `make_targets.gate_timeout_seconds` | gate timeout in seconds, a whole number from 1 to 604800 (the bound of `make_targets.gate_timeout_seconds`); any other value is refused (exit 2) |
 | `--make-arg` | no | — | extra `NAME=VALUE` make variable (repeatable, e.g. `PY=.venv/bin/python`); NAME must be in `make_targets.gate_vars` and VALUE one path-like word (no spaces, `;`, `$`, quotes, or leading `-`/`+`/`@`) that carries no credential; anything else is refused, naming NAME and never VALUE |
 
 ## Output
@@ -77,8 +77,8 @@ them. `effects` is the target's closed label; `changed` lists the paths a run
 changed; `refused` is the reason when the runner did not run make, and `null`
 otherwise. Exit 0 when the target passed and changed nothing, 1 when it was red,
 timed out, changed the tree, leaked a process or left one holding its output, 2 when it was refused or the name was unsafe, 14
-when `make_targets.gate_timeout_seconds` or `make_targets.gate_stop_grace_seconds`
-is not a whole number >= 1, and 130 when it was interrupted.
+when `make_targets.gate_timeout_seconds` is not a whole number from 1 to 604800
+or `make_targets.gate_stop_grace_seconds` not one from 1 to 3600, and 130 when it was interrupted.
 A `make_targets.gate_vars` value present in the caller's environment and not
 given as `--make-arg` is forwarded on make's command line under the same
 one-word rule; one that is not a one-word path, or that carries a credential,
@@ -90,7 +90,8 @@ make runs in a session of its own. When the limit passes, or the runner gets
 Ctrl-C, SIGTERM or SIGHUP, it sends SIGTERM to every process in make's session
 (make, and the pytest, copier or uvicorn it started), in make's process group
 or in one a member moved to while staying in the session, as GNU `timeout`
-does; it waits `make_targets.gate_stop_grace_seconds` (10 in keel), then sends
+does; it waits `make_targets.gate_stop_grace_seconds` (15 in keel, longer than
+the 10 s `e2e.server.stop_timeout_s` a test's own stop of its server takes), then sends
 SIGKILL to whatever in the session is still alive. A second Ctrl-C or SIGTERM during that
 wait cuts it short and still sends the SIGKILL. A signal the caller set to be
 ignored (for example SIGHUP under `nohup`) stays ignored. The limit is

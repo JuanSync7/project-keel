@@ -197,11 +197,16 @@ version rather than a bare commit:
   `scripts/run_make_target.py` gives make `--timeout` seconds, else
   config/project.json `make_targets.gate_timeout_seconds` (`14400`; a full
   `make verify` measured 3 h 12 min on the slowest host, where the old fixed
-  1800 s cut it off). `make_targets.gate_stop_grace_seconds` (`10`) is the wait
-  between SIGTERM and SIGKILL. Both keys are optional; a value that is not a
-  whole number >= 1 exits 14. `scripts/apply_refactor.py --timeout` now
-  defaults to the same configured limit, and refuses a value below 1 with exit
-  2 before any edit. So `scripts/apply_refactor.py` and the agents' baseline
+  1800 s cut it off). `make_targets.gate_stop_grace_seconds` (`15`) is the wait
+  between SIGTERM and SIGKILL, longer than the `e2e.server.stop_timeout_s`
+  (`10`) a test's own stop of its e2e server takes, so the runner's SIGKILL
+  cannot end pytest before pytest ends the server. Both keys are optional; a
+  value that is not a whole number from 1 to 604800 (the timeout) or from 1 to
+  3600 (the grace) exits 14, so a huge value no longer crashes with
+  OverflowError. `scripts/run_make_target.py --timeout` and
+  `scripts/apply_refactor.py --timeout`, which now defaults to the same
+  configured limit, refuse a value outside the timeout's range with exit 2,
+  before make runs or any edit is made. So `scripts/apply_refactor.py` and the agents' baseline
   gate now wait up to 14400 s per gate call, not 1800 s; a hung gate in an
   agent run holds it eight times longer before it is ended.
 - **`make verify` is red until `make secrets-install` has run once.** A fresh
