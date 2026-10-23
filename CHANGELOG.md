@@ -335,15 +335,17 @@ version rather than a bare commit:
   time, which moved between two snapshots with no write on a network mount; it
   now compares a file's time and the sorted listing.
 - **The astro app's audited dependencies move past their advisories.**
-  `npm audit` in `src/frontend/astro` reported 28 findings (1 critical, 17
+  `npm audit` in `src/frontend/astro` reported 28 findings (2 critical, 17
   high); each fixable package moved in its own commit within its declared
   range, never with `npm audit fix --force`. `dompurify`, which sanitises
   rendered markdown in the visitor's browser, rises to `^3.4.17` and
   `mermaid` to `^11.16.1`; devalue, http-cache-semantics, smol-toml, svgo,
-  js-yaml, nanoid, source-map-js, postcss, fast-uri, brace-expansion, both
+  js-yaml, nanoid, source-map-js, postcss, the lint plugin's
+  postcss-selector-parser 7, fast-uri, brace-expansion, both
   vite copies and `@astrojs/check` move in the lockfile only. A generated
   project ships the same two files. Left open, because each fix is a breaking
-  major: `astro` itself (critical, fixed only in 7.x) with the sharp and
+  major: `astro` itself (critical from 7.2.8, every astro advisory only from
+  7.3.2) with the sharp and
   esbuild it pins, the lint plugin's `braces` chain (no fixed `braces`
   exists; the way out is eslint-plugin-astro 2 on ESLint 10), the
   postcss-selector-parser 6 that `@tailwindcss/typography` pins (moderate),
