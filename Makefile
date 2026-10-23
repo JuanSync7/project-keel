@@ -307,16 +307,24 @@ test-fe-e2e: ## [local] Run each frontend app's browser journey headless against
 # Each lockfile is resolved under one Node major, config/project.json
 # toolchain.node_major; npm under another resolves a different tree, so the
 # check runs before any install, and only when there is an app to install.
-fe-install: ## [tree,read] Install frontend deps for all FE apps, after checking the Node major
+# config/project.json install_sources.npm_registry, when set, is passed as
+# --registry; null passes nothing, so the user's own .npmrc holds.
+fe-install: ## [tree,read] Install frontend deps for all FE apps, after checking the Node major, from install_sources.npm_registry when set
 	@if [ -n "$(strip $(FE_APPS))" ]; then $(PY) scripts/check_toolchain.py node; fi
-	@for app in $(FE_APPS); do echo "npm install: $$app"; (cd $$app && npm install) || exit 1; done
+	@test -n "$(strip $(FE_APPS))" || exit 0; \
+	registry=$$($(PY) scripts/install_sources.py npm_registry) || exit $$?; \
+	for app in $(FE_APPS); do echo "npm install: $$app"; (cd $$app && npm install $${registry:+--registry "$$registry"}) || exit 1; done
 # Downloads into the browser runner's per-user cache, outside the tree, so the
 # label is [read]. Extra flags for the runner's install command go through
 # FE_BROWSER_FLAGS (CI passes --with-deps for the system libraries). The same
 # refusal as test-fe-unit: with a frontend app present it never skips.
+# config/project.json install_sources.browser_download_host, when set, is
+# exported as PLAYWRIGHT_DOWNLOAD_HOST; null leaves the caller's own.
 FE_BROWSER_FLAGS =
-fe-browsers: ## [read] Download the browser each frontend app's journey drives (npm script test:e2e:browsers)
+fe-browsers: ## [read] Download the browser each frontend app's journey drives (npm script test:e2e:browsers), from install_sources.browser_download_host when set
 	@test -n "$(strip $(FE_APPS))" || exit 0; \
+	host=$$($(PY) scripts/install_sources.py browser_download_host) || exit $$?; \
+	if [ -n "$$host" ]; then PLAYWRIGHT_DOWNLOAD_HOST=$$host; export PLAYWRIGHT_DOWNLOAD_HOST; fi; \
 	command -v npm >/dev/null 2>&1 || { echo "$@: npm is not on PATH, so no journey browser was downloaded for $(strip $(FE_APPS)); install Node.js and run 'make fe-install', then run it again" >&2; exit 2; }; \
 	for app in $(FE_APPS); do [ -d "$$app/node_modules" ] || { echo "$@: $$app has no node_modules, so its journey browser was not downloaded; run 'make fe-install', then run it again" >&2; exit 2; }; done; \
 	for app in $(FE_APPS); do echo "journey browser: $$app"; (cd $$app && npm run --silent test:e2e:browsers -- $(FE_BROWSER_FLAGS)) || exit 1; done

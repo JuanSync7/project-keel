@@ -34,7 +34,9 @@ jobs:
         with: { python-version: "${{ steps.toolchain.outputs.python }}" }
       # The doer is pure-stdlib; the editable install just makes `make`/imports
       # available and keeps this identical to the other workflows.
-      - run: pip install -e ".[dev]"
+      # config/project.json install_sources.python_index, when set, is pip's
+      # --index-url; null passes nothing, so the runner's own pip config holds.
+      - run: index=$(python scripts/install_sources.py python_index) && pip install -e ".[dev]" ${index:+--index-url "$index"}
       # Same invocation the cron/systemd adapters use -- the cadence changed, the
       # doer did not. Exit 0 here even with findings: this run REPORTS (the gate
       # is tests/integration/test_doc_freshness.py, under `make test`).

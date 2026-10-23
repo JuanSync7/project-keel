@@ -27,7 +27,9 @@ jobs:
       # uvicorn and pydantic for the REST and AAD tests; the dependency-free base
       # install stays as it is. (The langgraph engine stays optional — its
       # conformance test importorskips.)
-      - run: pip install -e ".[dev,template]"
+      # config/project.json install_sources.python_index, when set, is pip's
+      # --index-url; null passes nothing, so the runner's own pip config holds.
+      - run: index=$(python scripts/install_sources.py python_index) && pip install -e ".[dev,template]" ${index:+--index-url "$index"}
       # The secret scanner: make secrets-install fetches the release archive
       # config/project.json pins, checks its sha256 and records it, then the
       # history scan judges every commit the full checkout above carries. Both

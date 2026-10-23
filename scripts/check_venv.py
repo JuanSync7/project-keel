@@ -3,7 +3,7 @@
 title: check_venv — the venv holds what pyproject.toml declares, before a gate runs
 kind: script
 layer: n/a
-summary: Judges the interpreter's installed distributions against pyproject.toml: every requirement of the core dependencies, of config/project.json `venv.extras` and of the extra each enabled transport names in `transports.extras`, following an extra that names the project itself when its marker admits this interpreter, comparing extra names case- and separator-blind (PEP 685), and judging the requirements an extra asks of another distribution, is installed at a version its specifier allows; a requirement whose marker excludes this interpreter is not judged. An absent distribution, a version outside the specifier or an unparsable version is FAILURE naming each package, the interpreter and the exact `pip install -e ".[<extras>]"` command, which names one extra of any that reach each other and never `.[]`; no `packaging` or TOML reader is FAILURE naming the `.[dev]` install; an extra pyproject.toml does not declare (asked by config or by a self-reference), an unparsable requirement, or a config value the loader refuses, is CONFIG; a pyproject.toml it cannot read is USAGE; nothing to judge is NOTHING_JUDGED. It reads installed metadata with importlib.metadata and never the network, and writes nothing.
+summary: Judges the interpreter's installed distributions against pyproject.toml: every requirement of the core dependencies, of config/project.json `venv.extras` and of the extra each enabled transport names in `transports.extras`, following an extra that names the project itself when its marker admits this interpreter, comparing extra names case- and separator-blind (PEP 685), and judging the requirements an extra asks of another distribution, is installed at a version its specifier allows; a requirement whose marker excludes this interpreter is not judged. An absent distribution, a version outside the specifier or an unparsable version is FAILURE naming each package, the interpreter and the exact `pip install -e ".[<extras>]"` command, which names one extra of any that reach each other and never `.[]`, and carries `--index-url <url>` when config/project.json `install_sources.python_index` sets a mirror; no `packaging` or TOML reader is FAILURE naming the `.[dev]` install; an extra pyproject.toml does not declare (asked by config or by a self-reference), an unparsable requirement, or a config value the loader refuses, is CONFIG; a pyproject.toml it cannot read is USAGE; nothing to judge is NOTHING_JUDGED. It reads installed metadata with importlib.metadata and never the network, and writes nothing.
 effect: read-only
 """
 
@@ -24,6 +24,7 @@ _PYPROJECT = "pyproject.toml"
 _GATE_EXTRAS = ("venv", "extras")
 _ENABLED = ("transports", "enabled")
 _TRANSPORT_EXTRAS = ("transports", "extras")
+_INDEX = ("install_sources", "python_index")
 
 VersionOf = Callable[[str], Optional[str]]
 RequiresOf = Callable[[str], List[str]]
@@ -104,6 +105,16 @@ def wanted_extras(loaded: Mapping[str, Any]) -> List[str]:
         if extra not in out:
             out.append(extra)
     return out
+
+
+def index_flag(loaded: Mapping[str, Any]) -> str:
+    """` --index-url <url>` when config `install_sources.python_index` sets a
+    mirror, else "" so pip's own configuration holds. Raises the loader's
+    ConfigError for a value it refuses, which never shows a URL user part."""
+    index = config_loader.resolve(
+        loaded, config_loader.rows(_INDEX), config_loader.CONFIG_FILE
+    )[_INDEX]
+    return "" if index is None else " --index-url %s" % index
 
 
 def _canonical(name: str) -> str:
@@ -283,12 +294,14 @@ def main(
         if loaded is None:
             loaded = config_loader.read(root)
         extras = wanted_extras(loaded)
+        index = index_flag(loaded)
     except config_loader.ConfigError as exc:
         return report(
             ExitCode.CONFIG,
             "check_venv: the venv settings are refused",
             "; ".join(exc.lines),
-            "fix venv.extras or transports in config/project.json, then rerun",
+            "fix venv.extras, transports or install_sources.python_index in "
+            "config/project.json, then rerun",
         )
     try:
         _toml()
@@ -320,9 +333,10 @@ def main(
             "it from config/project.json",
         )
     try:
-        command = '%s -m pip install -e ".[%s]"' % (
+        command = '%s -m pip install -e ".[%s]"%s' % (
             python,
             ",".join(install_extras(project, extras)),
+            index,
         )
         judged, problems = unmet(
             project,

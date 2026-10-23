@@ -2,7 +2,7 @@
 title: Unit — check_venv (the venv holds what pyproject.toml declares)
 kind: tests
 layer: n/a
-summary: scripts/check_venv.py driven with a scratch pyproject.toml, an injected config object and an injected view of the installed distributions, so no case reads this checkout's config or venv. Every requirement of the core dependencies, of config/project.json `venv.extras` and of the extra each enabled transport names in `transports.extras` is judged, an extra that names its own project is followed, an extra a requirement asks of another distribution judges that extra's own requirements, and a requirement whose marker excludes this interpreter is not judged; an absent distribution, a version outside the specifier or an unparsable version is FAILURE naming the package, the interpreter and the exact pip command, whose extras are the fewest that reach every judged one; an extra the config names and pyproject.toml lacks is CONFIG, an unreadable pyproject.toml is USAGE, and nothing to judge is NOTHING_JUDGED. The transport extra and api/rest_fastapi/requirements.txt are held equal.
+summary: scripts/check_venv.py driven with a scratch pyproject.toml, an injected config object and an injected view of the installed distributions, so no case reads this checkout's config or venv. Every requirement of the core dependencies, of config/project.json `venv.extras` and of the extra each enabled transport names in `transports.extras` is judged, an extra that names its own project is followed, an extra a requirement asks of another distribution judges that extra's own requirements, and a requirement whose marker excludes this interpreter is not judged; an absent distribution, a version outside the specifier or an unparsable version is FAILURE naming the package, the interpreter and the exact pip command, whose extras are the fewest that reach every judged one; an extra the config names and pyproject.toml lacks is CONFIG, an unreadable pyproject.toml is USAGE, and nothing to judge is NOTHING_JUDGED. The pip command carries `--index-url <url>` when config/project.json `install_sources.python_index` sets one and no flag when it is null, and an index with a URL user part is CONFIG that never shows it. The transport extra and api/rest_fastapi/requirements.txt are held equal.
 @covers scripts/check_venv.py
 """
 
@@ -55,8 +55,9 @@ _UVICORN_REQUIRES = [
 ]
 
 
-def _config(extras=("dev",), enabled=("rest",), transport_extras=None):
+def _config(extras=("dev",), enabled=("rest",), transport_extras=None, index=None):
     return {
+        "install_sources": {"python_index": index},
         "venv": {"extras": list(extras)},
         "transports": {
             "enabled": list(enabled),
@@ -100,6 +101,31 @@ def test_an_absent_core_dependency_fails_with_the_pip_command(tmp_path, capsys):
     assert "corelib" in err and "not installed" in err, err
     assert "pyproject.toml" in err and _PY in err, err
     assert '%s -m pip install -e ".[dev]"' % _PY in err, err
+
+
+def test_a_configured_index_is_in_the_pip_command(tmp_path, capsys):
+    index = "https://pypi.mirror.example.invalid/simple/"
+    installed = dict(_INSTALLED)
+    del installed["corelib"]
+    config = _config(index=index)
+    assert _run(tmp_path, config=config, installed=installed) is ExitCode.FAILURE
+    err = capsys.readouterr().err
+    assert '%s -m pip install -e ".[dev]" --index-url %s' % (_PY, index) in err, err
+
+
+def test_a_null_index_leaves_the_pip_command_to_pips_own_config(tmp_path, capsys):
+    installed = dict(_INSTALLED)
+    del installed["corelib"]
+    assert _run(tmp_path, installed=installed) is ExitCode.FAILURE
+    err = capsys.readouterr().err
+    assert "--index-url" not in err and "[using default]" not in err, err
+
+
+def test_an_index_with_a_user_part_is_config_and_never_shown(tmp_path, capsys):
+    config = _config(index="https://u:tok-SENTINEL@pypi.mirror.example.invalid/")
+    assert _run(tmp_path, config=config) is ExitCode.CONFIG
+    err = capsys.readouterr().err
+    assert "install_sources.python_index" in err and "SENTINEL" not in err, err
 
 
 def test_a_version_outside_the_specifier_fails_naming_both(tmp_path, capsys):

@@ -51,7 +51,9 @@ jobs:
       # Makes `backend.showcase` importable for the export/corpus jobs. The
       # package declares no runtime deps, so this installs nothing extra.
       - name: Install the package
-        run: pip install -e .
+        # config/project.json install_sources.python_index, when set, is pip's
+        # --index-url; null passes nothing, so the runner's own pip config holds.
+        run: index=$(python scripts/install_sources.py python_index) && pip install -e . ${index:+--index-url "$index"}
 
       - name: Derive the site base from the repo
         id: base
@@ -78,7 +80,9 @@ jobs:
 
       - name: Install frontend deps
         working-directory: src/frontend/astro
-        run: npm ci
+        # config/project.json install_sources.npm_registry, when set, is npm's
+        # --registry, as make fe-install passes it; null leaves the .npmrc's own.
+        run: registry=$(python ../../../scripts/install_sources.py npm_registry) && npm ci ${registry:+--registry "$registry"}
 
       - name: Build the static site
         working-directory: src/frontend/astro

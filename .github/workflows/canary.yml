@@ -37,7 +37,9 @@ jobs:
       # project's .venv when it has one, else this one), so it carries what a
       # project's verify imports: the dev and template extras, `dev` bringing
       # the REST transport's `transport` extra, as ci.yml installs them.
-      - run: pip install -e ".[dev,template]"
+      # config/project.json install_sources.python_index, when set, is pip's
+      # --index-url; null passes nothing, so the runner's own pip config holds.
+      - run: index=$(python scripts/install_sources.py python_index) && pip install -e ".[dev,template]" ${index:+--index-url "$index"}
       # The browser's system libraries need root, which the canary's own
       # `make fe-browsers` in each project does not ask for: installing them once
       # here, through keel's own frontend, leaves only the per-project download.
