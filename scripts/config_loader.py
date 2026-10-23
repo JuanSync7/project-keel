@@ -509,6 +509,30 @@ def _release_url(value: Any) -> bool:
     return parts.scheme == "file" and not parts.netloc and parts.path.startswith("/")
 
 
+def _mirror_url(value: Any) -> bool:
+    # https with a host, and nothing a credential could ride in: no user part,
+    # query or fragment, and no whitespace or control character, because the
+    # Makefile hands the value to npm and pip as one shell word.
+    text = str(value)
+    if any(c.isspace() or ord(c) < 32 or ord(c) == 127 for c in text):
+        return False
+    parts = urllib.parse.urlsplit(text)
+    if parts.query or parts.fragment or "@" in parts.netloc:
+        return False
+    return parts.scheme == "https" and bool(parts.hostname)
+
+
+def _null_or_mirror_url(value: Any) -> bool:
+    # A bound is judged on null too, and null is the row's "the tool's own".
+    return value is None or _mirror_url(value)
+
+
+_MIRROR_URL = (
+    _null_or_mirror_url,
+    "an https URL with a host and no user part, query, fragment or whitespace",
+)
+
+
 def _release_assets(value: Any) -> bool:
     # {platform: {file, sha256}}: at least one, because a table that pins no
     # platform installs nothing on any; a bare .tar.gz name, because the
@@ -1051,6 +1075,30 @@ KEYS = tuple(
                 "the day a generated project's recorded findings turn red, no "
                 "later than scripts/expiring_tier_data.py CEILING",
                 accepts=(_iso_date, "a calendar date written YYYY-MM-DD"),
+            ),
+            _row(
+                ("install_sources", "browser_download_host"),
+                "nonempty_str_or_null",
+                None,
+                "the host `make fe-browsers` downloads the journey's browser "
+                "from, as PLAYWRIGHT_DOWNLOAD_HOST; null: the runner's own",
+                accepts=_MIRROR_URL,
+            ),
+            _row(
+                ("install_sources", "npm_registry"),
+                "nonempty_str_or_null",
+                None,
+                "the registry `make fe-install` passes npm as --registry; "
+                "null: npm's own configuration",
+                accepts=_MIRROR_URL,
+            ),
+            _row(
+                ("install_sources", "python_index"),
+                "nonempty_str_or_null",
+                None,
+                "the package index CI's pip install and check-venv's fix "
+                "command pass pip as --index-url; null: pip's own configuration",
+                accepts=_MIRROR_URL,
             ),
             _row(
                 ("evidence",),

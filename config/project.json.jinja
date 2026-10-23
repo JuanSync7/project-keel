@@ -226,6 +226,12 @@
     "step_timeout_minutes": 90,
     "workers": 1
   },
+  "install_sources": {
+    "_comment": "Where each install command fetches from, so a host that reaches only a company mirror can install; read through scripts/config_loader.py by scripts/install_sources.py, which prints one source's URL for the command that installs from it. python_index is pip's --index-url for CI's install and the command make check-venv names; npm_registry is npm's --registry for make fe-install; browser_download_host is PLAYWRIGHT_DOWNLOAD_HOST for make fe-browsers. null passes nothing, so the tool's own configuration (pip.conf, .npmrc, the browser runner's default host) holds, and that is the public source unless the host says otherwise. A URL is https with a host and carries no user part, query or fragment: a mirror's credential goes in the tool's own configuration, never in this committed file. The secret scanner's mirror is secrets.scanner.release_url.",
+    "browser_download_host": null,
+    "npm_registry": null,
+    "python_index": null
+  },
   "toolchain": {
     "_comment": "The toolchain versions, one home each; read by scripts/check_toolchain.py. node_major is the Node major every frontend app's lockfile is resolved under: make fe-install refuses another (check_toolchain.py node), and CI's setup-node installs it. python is the release CI's setup-python installs; it must satisfy layers.backend.python and pyproject.toml requires-python (tests/integration/test_toolchain_gate.py), and a generated project takes it from the copier answer toolchain_python, whose validator refuses a release backend_python does not allow. Each workflow job reads both from a step with id toolchain that runs check_toolchain.py versions into $GITHUB_OUTPUT, whose outputs are node and python, never a literal. runner_images is every runs-on label a workflow may use: pinned images only, never a label ending -latest, which moves under the project.",
     "node_major": 24,
