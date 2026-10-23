@@ -2,7 +2,7 @@
 title: Integration — one openai-compatible call ends at its time limit, however slowly the server answers
 kind: tests
 layer: n/a
-summary: models/openai_compatible.py is pointed at a loopback socket server that answers one byte at a time, each byte well inside the call's time limit, so a limit applied to each socket wait alone would never fire. Whether the server drips the status line and headers or the body, the call is refused within the limit plus _SLACK_S, with a RuntimeError that is not ModelUnavailable, naming the endpoint, the limit and config/project.json `models.timeout_seconds`, and never the path. An https call whose TCP connect takes most of the limit, to a server that never answers the ClientHello, is refused within the limit plus _SLACK_S too, so the TLS handshake waits only the time the connect left; and the TCP connect itself is never given more than the limit. The server stops dripping after _DRIP_FOR_S, far past the limit plus the slack, so a call that waits on each byte fails the elapsed-time assertion instead of hanging the run.
+summary: models/openai_compatible.py is pointed at a loopback socket server that answers one byte at a time, each byte well inside the call's time limit, so a limit applied to each socket wait alone would never fire. Whether the server drips the status line and headers or the body, the call is refused within the limit plus _SLACK_S, with a RuntimeError that is not ModelUnavailable, naming the endpoint, the limit and config/project.json `models.timeout_seconds`, and never the path. An https call whose TCP connect takes most of the limit, to a server that never answers the ClientHello, is refused within the limit plus _SLACK_S too, so the TLS handshake waits only the time the connect left; through a CONNECT proxy that takes most of the limit to open the tunnel, the handshake waits only the time the tunnel left (the opener is rebuilt with the proxy set, as it reads the proxy variables when it is built); and a TCP connect that starts _BEFORE_CONNECT_S into the call is given at most the limit less that time. The server stops dripping after _DRIP_FOR_S, far past the limit plus the slack, so a call that waits on each byte fails the elapsed-time assertion instead of hanging the run.
 @covers models/openai_compatible.py
 """
 
@@ -10,6 +10,7 @@ import socket
 import sys
 import threading
 import time
+import urllib.request
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -216,11 +217,90 @@ def test_a_tls_handshake_waits_only_the_time_the_connect_left(monkeypatch):
     assert elapsed < _TLS_LIMIT_S + _SLACK_S, elapsed
 
 
-def test_the_tcp_connect_waits_at_most_the_call_limit(monkeypatch):
+# The time a request spends inside its deadline before it connects; the
+# connect must be given what is left, not the whole limit again.
+_BEFORE_CONNECT_S = 0.5
+
+
+def test_the_tcp_connect_waits_only_the_time_left_before_it(monkeypatch):
+    import http.client
+
     seen = []
+    putrequest = http.client.HTTPConnection.putrequest
+
+    def late_putrequest(self, *args, **kwargs):
+        time.sleep(_BEFORE_CONNECT_S)
+        return putrequest(self, *args, **kwargs)
+
     with _silent_server() as entry:
         backend = _backend(monkeypatch, "http://" + entry)
         _slow_connect(monkeypatch, 0, seen)
+        monkeypatch.setattr(http.client.HTTPConnection, "putrequest", late_putrequest)
         with pytest.raises(RuntimeError):
             backend.run("ping")
-    assert seen and all(0 < wait <= _LIMIT_S for wait in seen), seen
+    assert seen and all(0 < wait <= _LIMIT_S - _BEFORE_CONNECT_S for wait in seen), seen
+
+
+@contextmanager
+def _slow_tunnel_proxy(delay):
+    """A loopback proxy that reads one CONNECT request, waits *delay* seconds,
+    says the tunnel is open and then never writes again, so the TLS handshake
+    through it never ends; yields its http:// URL."""
+    stop = threading.Event()
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.bind((_HOST, 0))
+    listener.listen(1)
+    listener.settimeout(_DRIP_FOR_S)
+
+    def serve():
+        try:
+            conn, _addr = listener.accept()
+        except OSError:
+            return  # no client came, or the listener was closed
+        _read_request(conn)
+        if not stop.wait(delay):
+            conn.sendall(b"HTTP/1.1 200 Connection established\r\n\r\n")
+        stop.wait(_DRIP_FOR_S)
+        conn.close()
+
+    thread = threading.Thread(target=serve, daemon=True)
+    thread.start()
+    try:
+        yield "http://%s:%d" % (_HOST, listener.getsockname()[1])
+    finally:
+        stop.set()
+        listener.close()
+        thread.join(_DRIP_FOR_S)
+        assert not thread.is_alive(), "the proxy outlived its test"
+
+
+def test_a_tls_handshake_through_a_proxy_waits_only_the_time_the_tunnel_left(
+    monkeypatch,
+):
+    from models import get_model
+    from models import openai_compatible as mod
+
+    entry = "api.example.test:443"
+    with _slow_tunnel_proxy(_TLS_CONNECT_S) as proxy:
+        policy = mod.load_policy()._replace(allowed_hosts={_ADAPTER: (entry,)})
+        monkeypatch.setattr(mod, "load_policy", lambda root=None: policy)
+        for name in ("no_proxy", "NO_PROXY"):
+            monkeypatch.delenv(name, raising=False)
+        for name in ("https_proxy", "HTTPS_PROXY"):
+            monkeypatch.setenv(name, proxy)
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        # The opener reads the proxy variables when it is built, at import;
+        # rebuilt here, it is the opener of a process started with them set.
+        opener = urllib.request.build_opener(
+            mod._NoRedirect, mod._DeadlineHTTPHandler, mod._DeadlineHTTPSHandler
+        )
+        monkeypatch.setattr(mod, "_OPENER", opener)
+        backend = get_model(
+            _ADAPTER, base_url="https://%s/v1" % entry, timeout=_TLS_LIMIT_S
+        )
+        started = time.monotonic()
+        with pytest.raises(RuntimeError) as raised:
+            backend.run("ping")
+        elapsed = time.monotonic() - started
+    assert "handshake" in str(raised.value), raised.value
+    assert elapsed < _TLS_LIMIT_S + _SLACK_S, elapsed
