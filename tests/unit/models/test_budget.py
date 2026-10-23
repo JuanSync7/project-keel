@@ -101,6 +101,12 @@ def test_a_resume_with_more_calls_left_than_approved_is_refused():
     assert "5" in what and "1" in what and on == "s.json" and "s.json" in next_step
 
 
+def test_one_call_left_past_the_approved_count_is_refused():
+    # The boundary: as many left as approved passes (above), one more refuses.
+    with pytest.raises(RunNotApproved):
+        approve_resume(where="s.json", saved_model="fake", model="fake", left=3, cap=2)
+
+
 def test_the_approved_cap_is_read_through_the_loader(tmp_path, monkeypatch):
     (tmp_path / "config").mkdir()
     path = tmp_path / "config" / "project.json"
