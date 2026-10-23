@@ -496,7 +496,8 @@ CHECKS: tuple[Check, ...] = (
         interpreter=">=3.7",
         command="make advise",
         when="Anytime; informational",
-        purpose="Lists corpus nodes that resolve to no owner.",
+        purpose="Counts corpus nodes three ways: no resolved owner (each listed), "
+        "on the default owner (listed by the TBD that holds them), and a real owner.",
     ),
     Check(
         slug="generic",

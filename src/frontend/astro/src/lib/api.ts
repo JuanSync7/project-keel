@@ -127,6 +127,7 @@ export interface NodeDetail {
   readonly summary: string
   readonly excerpt: string
   readonly owner: string
+  readonly owner_source: string
   readonly tags: readonly string[]
   readonly anchor: string
   readonly lineno: number

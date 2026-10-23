@@ -193,6 +193,8 @@ class NodeDetail:
     summary: str
     excerpt: str
     owner: str
+    # CONVENTIONS §12's closed set; `default` marks the owner as a placeholder.
+    owner_source: str
     tags: tuple[str, ...]
     anchor: str
     lineno: int

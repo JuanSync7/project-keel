@@ -72,6 +72,7 @@ def _corpus():
                 "summary": "a module",
                 "text_excerpt": "",
                 "owner": "bob",
+                "owner_source": "default",
                 "tags": ["mod"],
                 "anchor": None,
                 "lineno": 1,
@@ -425,6 +426,13 @@ def test_node_resolves_neighbours():
     assert [c.node_id for c in detail.children] == ["readme#setup"]
     assert [r.node_id for r in detail.related] == ["guide"]  # link resolved
     assert _sc().node("missing") is None
+
+
+def test_node_carries_how_its_owner_was_resolved():
+    """The wiki page marks a default owner as a placeholder, so the detail
+    carries owner_source; a corpus node without one reads as `none`."""
+    assert _sc().node("mod-py").owner_source == "default"
+    assert _sc().node("guide").owner_source == "none"
 
 
 def test_search_ranks_by_overlap():

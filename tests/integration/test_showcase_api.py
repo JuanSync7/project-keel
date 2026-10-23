@@ -116,6 +116,21 @@ def test_every_feature_link_resolves_into_the_corpus():
     assert not dead, "dead feature links (no such corpus node): %s" % dead
 
 
+def test_wiki_node_says_how_its_owner_was_resolved():
+    """The wiki marks a default owner as a placeholder only if the node payload
+    carries the corpus row's owner_source unchanged, for every source the
+    corpus holds."""
+    with open(_ROOT / "wiki" / "corpus.json", encoding="utf-8") as fh:
+        nodes = json.load(fh)["nodes"]
+    first = {}
+    for node in sorted(nodes, key=lambda n: n["node_id"]):
+        first.setdefault(node["owner_source"], node["node_id"])
+    assert first, "the corpus should hold nodes"
+    for source, node_id in sorted(first.items()):
+        detail = client.get("/api/wiki/node", params={"id": node_id}).json()
+        assert detail["owner_source"] == source, node_id
+
+
 def test_wiki_tree_node_and_404():
     tree = client.get("/api/wiki/tree").json()
     assert tree, "corpus should be built for this test"

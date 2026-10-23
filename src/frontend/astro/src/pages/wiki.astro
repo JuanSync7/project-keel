@@ -26,6 +26,7 @@ import Layout from '../layouts/Layout.astro'
     import { getTree, getNode, search } from '../lib/api'
     import type { NodeDetail } from '../lib/api'
     import { withBase } from '../lib/links'
+    import { ownerLabel } from '../lib/owner'
     import { h, mount, byId, showError } from '../lib/dom'
     import { chip, nodeRefLink, inlineEl } from '../lib/components'
     import { renderMarkdown } from '../lib/md'
@@ -52,7 +53,7 @@ import Layout from '../layouts/Layout.astro'
       mount(content,
         h('div', { class: 'flex flex-wrap items-center gap-2' },
           chip(n.kind, 'teal'),
-          n.owner ? chip('owner: ' + n.owner, 'slate') : null,
+          n.owner ? chip(ownerLabel(n.owner, n.owner_source), 'slate') : null,
           h('span', { class: 'font-mono text-xs text-muted' },
             n.path + (n.lineno ? ':' + n.lineno : ''))),
         inlineEl('h1', 'mt-3 text-3xl font-bold tracking-tight [&_code]:font-mono [&_code]:text-2xl', n.title),
