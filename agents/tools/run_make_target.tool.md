@@ -67,12 +67,16 @@ of editing on top of failures. The labels are defined in
 
 ## Output
 With `--json`, `{target, ok, returncode, output, effects, changed, refused,
-timed_out, leaked}` on stdout. `timed_out` is true when make did not finish within
-the limit. `leaked` lists `<pid> <command>` for each process still running in
-make's session after make exited; any entry makes the run red. `effects` is the target's closed label; `changed` lists the paths a run
+timed_out, leaked, escaped}` on stdout. `timed_out` is true when make did not
+finish within the limit. `leaked` lists `<pid> <command>` for each process still
+running in make's session after make exited; any entry makes the run red.
+`escaped` lists `<pid> <command>` for each process outside make's session that
+still held make's output when the run ended, or `(unlisted)` when `/proc` did
+not show the holder; any entry makes the run red, and the runner signals none of
+them. `effects` is the target's closed label; `changed` lists the paths a run
 changed; `refused` is the reason when the runner did not run make, and `null`
 otherwise. Exit 0 when the target passed and changed nothing, 1 when it was red,
-timed out, changed the tree or leaked a process, 2 when it was refused or the name was unsafe, 14
+timed out, changed the tree, leaked a process or left one holding its output, 2 when it was refused or the name was unsafe, 14
 when `make_targets.gate_timeout_seconds` or `make_targets.gate_stop_grace_seconds`
 is not a whole number >= 1, and 130 when it was interrupted.
 A `make_targets.gate_vars` value present in the caller's environment and not
@@ -109,7 +113,11 @@ The runner signals only make's session. make is left unreaped until the group is
 empty, so its process id, which is the group id, cannot pass to a new process
 meanwhile; where Python has no `os.waitid` that hold is lost. Output still
 open after the session ends is held by a process that left the session (with
-`setsid`, for example); the runner stops reading it and says so in the output.
+`setsid`, for example). The runner stops reading it, names each holder in
+`escaped` and fails the run, exit 1, with the `kill` command that ends them,
+even when make exited 0, because evidence that a target started a process no
+one stops is not a pass. It never signals a holder itself: outside make's
+session it cannot tell the target's process from the caller's.
 A runner killed with SIGKILL cannot end the session, so make's session outlives
 it.
 

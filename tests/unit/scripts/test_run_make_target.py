@@ -1234,3 +1234,51 @@ def test_a_process_left_in_makes_session_outside_its_group_is_a_leak(tree):
         _cleanup(pids)
     assert res["returncode"] == 0 and res["ok"] is False, res
     assert [p.split()[0] for p in res["leaked"]] == [str(pids[1])], res
+
+
+def test_a_process_outside_makes_session_holding_its_output_turns_the_run_red(tree):
+    """Fail closed on positive evidence: output still open once make's session
+    has ended is held by a process that escaped it, which the runner does not
+    signal; the run is red and names it, so a person can end it."""
+    _write_fake_make(tree / "bin", _OWN_SESSION, exit_after=True)
+    res = rmt.run_target(
+        "check", cwd=str(tree), timeout=60, grace=1, snapshot=_snaps({}, {})
+    )
+    pids = _pids(tree)
+    try:
+        assert _alive(pids[1]), "the runner signalled a process outside make's session"
+    finally:
+        _cleanup(pids)
+    assert res["returncode"] == 0 and res["leaked"] == [], res
+    assert res["ok"] is False, res
+    assert [p.split()[0] for p in res["escaped"]] == [str(pids[1])], res
+    assert "-c" in res["escaped"][0], res
+    assert str(pids[1]) in res["output"] and "kill" in res["output"], res["output"]
+
+
+def test_the_cli_fails_a_run_whose_output_a_process_outside_the_session_holds(
+    proj, monkeypatch, capsys
+):
+    def held(cmd, cwd, timeout, grace):
+        raise rmt.OutputHeld(0, "made it\n", [(4243, "python -c sleep")])
+
+    monkeypatch.setattr(rmt, "_default_runner", held)
+    monkeypatch.setattr(rmt, "tree_snapshot", lambda root: {})
+    code = rmt.main(["check", "--dir", str(proj)])
+    captured = capsys.readouterr()
+    assert code == rmt.ExitCode.FAILURE
+    assert "made it" in captured.out and "-> FAIL" in captured.out, captured.out
+    last = captured.err.strip().splitlines()[-1]
+    assert "4243 python -c sleep" in last and "kill 4243" in last, last
+
+
+def test_a_run_that_leaks_nothing_names_no_escape(proj):
+    res = rmt.run_target(
+        "check",
+        cwd=str(proj),
+        runner=_fake(0),
+        timeout=5,
+        grace=1,
+        snapshot=_snaps({}, {}),
+    )
+    assert res["ok"] is True and res["escaped"] == [], res

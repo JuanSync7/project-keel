@@ -291,7 +291,9 @@ version rather than a bare commit:
   SIGHUP sends SIGTERM to every process in that session, in make's process
   group or in one a member moved to (GNU `timeout` does), then SIGKILL after
   the grace; nothing outside the session is signalled, so a process that
-  starts a session of its own (`setsid`) escapes it. A timeout sets `timed_out`
+  starts a session of its own (`setsid`) escapes the signals, but one that
+  still holds make's output is listed by pid and command in `escaped` and
+  fails the run (exit 1) with the `kill` command that ends it. A timeout sets `timed_out`
   in the JSON result. A process left in the session after make exits is ended, listed
   by pid and command in `leaked`, and fails the gate closed: a make that exited
   0 is red (exit 1), and a make that failed keeps its own status. A zombie in

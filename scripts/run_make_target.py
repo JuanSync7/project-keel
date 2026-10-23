@@ -3,7 +3,7 @@
 title: Run make target (the read-only gate runner)
 kind: script
 layer: n/a
-summary: Deterministic doer — run a make target as a gate and report a structured pass/fail, but only a target whose effect label, closed over what it runs, falls inside config/project.json `make_targets.gate_effects`. It refuses an unknown, unlabelled or wider target, an extra argument that is not a NAME=VALUE variable named in `make_targets.gate_vars` with a one-word path-like value, a tree without git, and an allowlist scripts/child_env.py cannot build or that would copy a value carrying a credential, all before make runs; it forwards a `make_targets.gate_vars` variable found in its own environment onto make's command line under the same one-word rule (an explicit one wins), and refuses any gate value, explicit or forwarded, that carries a credential by scripts/child_env.py's carries_credential under the project's child_env policy (user information, or a `child_env.credential_value_patterns` match, named by its label), even one `child_env.credentialed_values` opts in, because make's command line reaches every recipe; every refusal names the variable and never quotes a value; because make and git get the allowlisted environment from scripts/child_env.py, never this one; it sets the gate-runner variable last so WRITE_GUARD refuses a [write] target; and it snapshots what git lists before and after (each path's porcelain status and content, by scripts/git_tree.py), failing a green run that changed it and naming the paths, and one whose tree cannot be re-read afterwards. It reads config/project.json through scripts/config_loader.py `read`, so a manifest it cannot use, a key written twice in one object included, is a refusal carrying the loader's line. It starts make in a session of its own and gives it `--timeout` seconds, else config/project.json `make_targets.gate_timeout_seconds` (scripts/config_loader.py KEYS gives its type and default; a value that is not a whole number >= 1 is ExitCode.CONFIG, or a refusal from run_target). On that timeout, on KeyboardInterrupt (ExitCode.INTERRUPTED) and on a SIGTERM or SIGHUP to itself it ends make's whole session, every process group in it included (GNU `timeout` moves itself to a group of its own and stays in the session): SIGTERM, then SIGKILL once `make_targets.gate_stop_grace_seconds` pass with any member alive (a second interrupt during that wait still sends the SIGKILL; a signal the caller ignored stays ignored); it signals no process outside that session, and holds make unreaped (os.waitid WNOWAIT, where Python has it) so the group id cannot be reused meanwhile. It waits on make's exit, not on its output, so a background job holding the output open does not hold the run. A timeout is red with `timed_out` true in the result and ExitCode.FAILURE from the command line; a process still in the session (a zombie excepted) after make exits and a short settle is ended the same way, listed by pid and command in `leaked`, and fails closed: a make that exited 0 is red (ExitCode.FAILURE, naming each leftover), and a make that failed keeps its own status. A runner killed with SIGKILL cannot do this, so make's session outlives it. The refactor loop (agents/practice_refactor, scripts/apply_refactor.py) and tests/integration/test_make_target_effects.py gate through it. Vendor-neutral, stdlib; it writes nothing itself.
+summary: Deterministic doer — run a make target as a gate and report a structured pass/fail, but only a target whose effect label, closed over what it runs, falls inside config/project.json `make_targets.gate_effects`. It refuses an unknown, unlabelled or wider target, an extra argument that is not a NAME=VALUE variable named in `make_targets.gate_vars` with a one-word path-like value, a tree without git, and an allowlist scripts/child_env.py cannot build or that would copy a value carrying a credential, all before make runs; it forwards a `make_targets.gate_vars` variable found in its own environment onto make's command line under the same one-word rule (an explicit one wins), and refuses any gate value, explicit or forwarded, that carries a credential by scripts/child_env.py's carries_credential under the project's child_env policy (user information, or a `child_env.credential_value_patterns` match, named by its label), even one `child_env.credentialed_values` opts in, because make's command line reaches every recipe; every refusal names the variable and never quotes a value; because make and git get the allowlisted environment from scripts/child_env.py, never this one; it sets the gate-runner variable last so WRITE_GUARD refuses a [write] target; and it snapshots what git lists before and after (each path's porcelain status and content, by scripts/git_tree.py), failing a green run that changed it and naming the paths, and one whose tree cannot be re-read afterwards. It reads config/project.json through scripts/config_loader.py `read`, so a manifest it cannot use, a key written twice in one object included, is a refusal carrying the loader's line. It starts make in a session of its own and gives it `--timeout` seconds, else config/project.json `make_targets.gate_timeout_seconds` (scripts/config_loader.py KEYS gives its type and default; a value that is not a whole number >= 1 is ExitCode.CONFIG, or a refusal from run_target). On that timeout, on KeyboardInterrupt (ExitCode.INTERRUPTED) and on a SIGTERM or SIGHUP to itself it ends make's whole session, every process group in it included (GNU `timeout` moves itself to a group of its own and stays in the session): SIGTERM, then SIGKILL once `make_targets.gate_stop_grace_seconds` pass with any member alive (a second interrupt during that wait still sends the SIGKILL; a signal the caller ignored stays ignored); it signals no process outside that session, and holds make unreaped (os.waitid WNOWAIT, where Python has it) so the group id cannot be reused meanwhile. It waits on make's exit, not on its output, so a background job holding the output open does not hold the run. A timeout is red with `timed_out` true in the result and ExitCode.FAILURE from the command line; a process still in the session (a zombie excepted) after make exits and a short settle is ended the same way, listed by pid and command in `leaked`, and fails closed: a make that exited 0 is red (ExitCode.FAILURE, naming each leftover), and a make that failed keeps its own status. A process outside the session that still holds make's output when the run ends is listed in `escaped` and makes the run red (ExitCode.FAILURE, giving the kill command), though the runner signals it not at all. A runner killed with SIGKILL cannot do this, so make's session outlives it. The refactor loop (agents/practice_refactor, scripts/apply_refactor.py) and tests/integration/test_make_target_effects.py gate through it. Vendor-neutral, stdlib; it writes nothing itself.
 """
 
 from __future__ import annotations
@@ -138,6 +138,33 @@ def _command(pid: int) -> str:
     return " ".join(a.decode("utf-8", "replace") for a in argv if a) or "?"
 
 
+def _pipe_holders(inode: int) -> list[tuple[int, str]] | None:
+    """(pid, command) of each process other than this one with a descriptor
+    open on the pipe whose inode is *inode*, read from /proc, or None on a
+    host with no /proc. A process whose descriptors cannot be read (another
+    user's) is not listed."""
+    try:
+        names = os.listdir("/proc")
+    except OSError:
+        return None
+    target = "pipe:[%d]" % inode
+    me = os.getpid()
+    holders = []
+    for name in sorted(names, key=lambda n: (len(n), n)):
+        if not name.isdigit() or int(name) == me:
+            continue
+        try:
+            links = [
+                os.readlink("/proc/%s/fd/%s" % (name, fd))
+                for fd in os.listdir("/proc/%s/fd" % name)
+            ]
+            if target in links:
+                holders.append((int(name), _command(int(name))))
+        except OSError:
+            continue
+    return holders
+
+
 def _signal_group(pgid: int, sig: int) -> None:
     """Send *sig* to group *pgid*; a group that has emptied meanwhile is the
     outcome the caller wanted, so it is not an error."""
@@ -171,12 +198,48 @@ class LeftRunning(Exception):
     raised."""
 
     def __init__(
-        self, returncode: int, output: str, leftovers: Sequence[tuple[int, str]]
+        self,
+        returncode: int,
+        output: str,
+        leftovers: Sequence[tuple[int, str]],
+        holders: Sequence[tuple[int, str]] | None = None,
     ) -> None:
-        super().__init__(returncode, output, leftovers)
+        super().__init__(returncode, output, leftovers, holders)
         self.returncode = returncode
         self.output = output
         self.leftovers = list(leftovers)
+        # As OutputHeld gives them, or None when make's output closed.
+        self.holders = None if holders is None else list(holders)
+
+
+class OutputHeld(Exception):
+    """make exited with *returncode* and *output*, its session is empty, but
+    the processes in *holders* ((pid, command) pairs; empty when they could
+    not be listed) still hold make's output open: they left make's session
+    (`setsid`), so the runner has not signalled them and they still run."""
+
+    def __init__(
+        self, returncode: int, output: str, holders: Sequence[tuple[int, str]]
+    ) -> None:
+        super().__init__(returncode, output, holders)
+        self.returncode = returncode
+        self.output = output
+        self.holders = list(holders)
+
+
+class TimedOut(subprocess.TimeoutExpired):
+    """subprocess.TimeoutExpired, with *holders* as OutputHeld gives them,
+    or None when make's output closed."""
+
+    def __init__(
+        self,
+        cmd: Sequence[str],
+        timeout: float,
+        output: str,
+        holders: Sequence[tuple[int, str]] | None = None,
+    ) -> None:
+        super().__init__(list(cmd), timeout, output=output)
+        self.holders = None if holders is None else list(holders)
 
 
 class _Group:
@@ -260,9 +323,13 @@ class _Reader:
 
     def __init__(self, stream: Any) -> None:
         self._fd = stream.fileno()
+        self._inode = os.fstat(self._fd).st_ino
         self._chunks: list[bytes] = []
         self._stop = threading.Event()
         self._eof = threading.Event()
+        self._text: str | None = None
+        # None while the output closed; else who still held it open.
+        self.holders: list[tuple[int, str]] | None = None
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
@@ -277,20 +344,39 @@ class _Reader:
                 return
             self._chunks.append(chunk)
 
+    def _drain(self) -> None:
+        """What the pipe holds now, read without waiting; end of file is set
+        when the last writer has closed it since the thread stopped."""
+        while not self._eof.is_set():
+            if not select.select([self._fd], [], [], 0)[0]:
+                return
+            chunk = os.read(self._fd, 65536)
+            if not chunk:
+                self._eof.set()
+                return
+            self._chunks.append(chunk)
+
     def finish(self, wait: float) -> str:
-        """The output read, after up to *wait* seconds for end of file. A pipe
-        still open then is held by a process outside make's group, which is
-        not this runner's to end; the output says so."""
+        """The output read, after up to *wait* seconds for end of file; a
+        second call returns the first one's. A pipe still open then is held by
+        a process outside make's session, which is not this runner's to end:
+        holders lists each one, and the output says so."""
+        if self._text is not None:
+            return self._text
         self._eof.wait(wait)
         self._stop.set()
         self._thread.join()
+        self._drain()
+        if not self._eof.is_set():
+            self.holders = _pipe_holders(self._inode) or []
         text = b"".join(self._chunks).decode("utf-8", "replace")
         text = text.replace("\r\n", "\n").replace("\r", "\n")
         if not self._eof.is_set():
             text += (
                 "run_make_target: output after this point was not read: a process "
-                "outside make's group holds make's output open\n"
+                "outside make's session holds make's output open\n"
             )
+        self._text = text
         return text
 
 
@@ -337,8 +423,10 @@ def _default_runner(
     exits, whatever still holds its output. Past *timeout* seconds, or on any
     exception while it runs (KeyboardInterrupt included), the whole session is
     ended (see _Group.end) and subprocess.TimeoutExpired, carrying the output
-    read so far, or the exception, is raised. A session member still running
-    after make exits is ended too, and LeftRunning names it."""
+    read so far (TimedOut), or the exception, is raised. A session member
+    still running after make exits is ended too, and LeftRunning names it.
+    Output a process outside the session still holds once the session is
+    empty is OutputHeld, naming the holders, which are not signalled."""
     group = _Group(grace)
     # Handlers first, so a SIGTERM that lands while make starts still ends it.
     with _group_ended_on_termination(group):
@@ -363,17 +451,20 @@ def _default_runner(
                 status = _exit_status(proc)
             if status is None:
                 group.end()
-                raise subprocess.TimeoutExpired(
-                    list(cmd), timeout, output=reader.finish(grace)
-                )
+                output = reader.finish(grace)
+                raise TimedOut(cmd, timeout, output, reader.holders)
             alive, leftovers = group.settled()
             if alive:
                 # Listed before they are ended, so the report can name them.
                 group.end()
-                raise LeftRunning(status, reader.finish(grace), leftovers)
+                output = reader.finish(grace)
+                raise LeftRunning(status, output, leftovers, reader.holders)
             proc.wait()
-            return status, reader.finish(grace)
-        except (subprocess.TimeoutExpired, LeftRunning):
+            output = reader.finish(grace)
+            if reader.holders is not None:
+                raise OutputHeld(status, output, reader.holders)
+            return status, output
+        except (subprocess.TimeoutExpired, LeftRunning, OutputHeld):
             raise
         except BaseException:
             # Any exception leaves make's session with no owner: end it, then
@@ -410,6 +501,21 @@ def gate_limits(
     )
 
 
+def _end_hint(escaped: Sequence[str]) -> str:
+    """What to do about the processes outside make's session that
+    run_target's ``escaped`` names ("<pid> <command>", or "(unlisted)" when
+    /proc did not show them): the kill command, else how to find them."""
+    pids = [entry.split()[0] for entry in escaped if entry[:1].isdigit()]
+    if not pids:
+        return (
+            "find the process holding make's output (`ps -eo pid,sid,args`) and end it"
+        )
+    return "end %s with `kill %s`" % (
+        "it" if len(pids) == 1 else "them",
+        " ".join(pids),
+    )
+
+
 def _refusal(target: str, why: str, effects: Sequence[str] = ()) -> dict[str, object]:
     return {
         "target": target,
@@ -421,6 +527,7 @@ def _refusal(target: str, why: str, effects: Sequence[str] = ()) -> dict[str, ob
         "refused": why,
         "timed_out": False,
         "leaked": [],
+        "escaped": [],
     }
 
 
@@ -602,10 +709,13 @@ def run_target(
     run = runner or functools.partial(_default_runner, grace=grace)
     timed_out = False
     leaked: list[str] = []
+    holders: list[tuple[int, str]] | None = None
     try:
         code, output = run(cmd, root, timeout)
+    except OutputHeld as exc:
+        code, output, holders = exc.returncode, exc.output, exc.holders
     except LeftRunning as exc:
-        code = exc.returncode
+        code, holders = exc.returncode, exc.holders
         leaked = ["%d %s" % pair for pair in exc.leftovers]
         output = (
             "%srun_make_target: `make %s` leaked %s: %s still running in its "
@@ -623,6 +733,7 @@ def run_target(
             leaked = ["(unlisted)"]
     except subprocess.TimeoutExpired as exc:
         timed_out = True
+        holders = exc.holders if isinstance(exc, TimedOut) else None
         partial = exc.output if isinstance(exc.output, str) else ""
         code, output = (
             None,
@@ -638,6 +749,26 @@ def run_target(
                 target,
                 exc,
             ),
+        )
+    escaped = (
+        []
+        if holders is None
+        else ["%d %s" % pair for pair in holders] or ["(unlisted)"]
+    )
+    if escaped:
+        output = (
+            "%srun_make_target: `make %s` left %s outside its session "
+            "holding its output open: %s; the runner signals nothing outside make's "
+            "session, so %s still running: %s, and make the target stop every "
+            "process it starts\n"
+            % (
+                output,
+                target,
+                "a process" if len(escaped) == 1 else "processes",
+                "; ".join(escaped),
+                "it is" if len(escaped) == 1 else "they are",
+                _end_hint(escaped),
+            )
         )
     try:
         after = snap(root)
@@ -655,6 +786,7 @@ def run_target(
             "refused": None,
             "timed_out": timed_out,
             "leaked": leaked,
+            "escaped": escaped,
         }
     changed = sorted(
         p for p in set(before) | set(after) if before.get(p) != after.get(p)
@@ -670,7 +802,7 @@ def run_target(
         )
     return {
         "target": target,
-        "ok": code == 0 and not changed and not leaked,
+        "ok": code == 0 and not changed and not leaked and not escaped,
         "returncode": code,
         "output": output,
         "effects": list(labels),
@@ -678,6 +810,7 @@ def run_target(
         "refused": None,
         "timed_out": timed_out,
         "leaked": leaked,
+        "escaped": escaped,
     }
 
 
@@ -779,6 +912,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     if result["ok"]:
         return ExitCode.SUCCESS
+    if result["escaped"]:
+        # First: these still run, so whatever else went wrong, a person has
+        # to end them.
+        return report(
+            ExitCode.FAILURE,
+            "run_make_target: the gate is red because a process outside make's "
+            "session still holds its output",
+            "`make %s`%s left %s running"
+            % (
+                result["target"],
+                " timed out and" if result["timed_out"] else "",
+                "; ".join(result["escaped"]),  # type: ignore[arg-type]
+            ),
+            "%s (the runner signals nothing outside make's session), then make "
+            "the recipe stop every process it starts" % _end_hint(result["escaped"]),  # type: ignore[arg-type]
+        )
     if result["timed_out"]:
         return report(
             ExitCode.FAILURE,
