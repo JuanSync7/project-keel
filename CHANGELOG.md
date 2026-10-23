@@ -264,7 +264,10 @@ version rather than a bare commit:
   stops at `threading.TIMEOUT_MAX`, past which a thread wait overflows.
 - **A model reply and the model CLI are bounded.** `openai-compatible` reads
   a reply body in pieces up to config/project.json `models.max_reply_bytes`
-  (8 MiB) and refuses one byte more, never reading the rest.
+  (8 MiB) and refuses one byte more, never reading the rest. Its time limit,
+  `models.timeout_seconds.openai-compatible`, is a deadline for the whole
+  call: the connect, the send and every read of the reply wait only the time
+  left, so a server answering a byte at a time no longer holds a call past it.
   `claude-code-headless` runs its CLI through the new
   scripts/resource_limits.py `run_bounded`, in a process group of its own, and
   sends the whole group SIGKILL when it outlives

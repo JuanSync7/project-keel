@@ -805,9 +805,10 @@ KEYS = tuple(
                 ("models", "timeout_seconds"),
                 "object",
                 {"claude-code-headless": 600, "openai-compatible": 60},
-                "the seconds one call of each model adapter may take before it "
-                "is ended and refused, each adapter name mapped to its limit; an "
-                "adapter that calls out and is absent here is refused",
+                "the seconds one call of each model adapter may take, counted "
+                "from the call's start, before it is ended and refused, each "
+                "adapter name mapped to its limit; an adapter that calls out and "
+                "is absent here is refused",
                 accepts=(
                     _seconds_by_adapter,
                     "at least one entry, each an adapter name mapped to a number "

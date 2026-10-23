@@ -2,17 +2,21 @@
 title: OpenAI-compatible model backend
 layer: backend
 public_api: no
-summary: Adapter for any HTTP endpoint speaking the OpenAI chat-completions API. It is built only for a `base_url` that is an http or https URL with a host and no user part, query or fragment, written in unreserved URL characters, and, for http, only when the host is a loopback address literal (127.0.0.0/8 or ::1 by the stdlib ipaddress module, read through scripts/child_env.py canonical_host_entry; the name localhost is refused, since a name resolves through DNS or a hosts file), so the bearer token never crosses a network in clear text; and only for an `api_key_env` that config/project.json `models.credential_env` declares for this adapter (scripts/child_env.py load_policy), so no caller, and no config a caller forwards, can choose another environment variable to send as the bearer token; either refusal is a ValueError that names the argument and never a value. Between the two, the base_url's host and port must be listed in config/project.json `models.allowed_hosts` for this adapter, compared exactly in scripts/child_env.py canonical_host_entry's one form (an entry `host` matches only the scheme's default port, `host:port` only that port, nothing by suffix, prefix or wildcard); the shipped list is empty, so every host, the default one included, is refused until a project lists it, and the refusal names that key and the entry to add, never the path, before the credential variable is read, which it is through scripts/config_loader.py `env`, at each call. base_url is read-only after that check. Each request waits at most `timeout` seconds, config/project.json `models.timeout_seconds` for this adapter (models/limits.py) when the caller names none, and a reply body is read in pieces up to config/project.json `models.max_reply_bytes`: one byte more is a RuntimeError naming the endpoint and the cap, and the rest is never read. A redirect is never followed: urllib's default handler would re-send a 301, 302 or 303 as a GET with the Authorization header to a host nobody listed, so any 3xx is a RuntimeError naming the endpoint and the status, never the Location. Defence in depth, not a sandbox (docs/adr/keel/K-0018-model-endpoint-host-allowlist.md). An unreachable endpoint is ModelUnavailable (absent); an endpoint that answers with an error, or with a body that is not a chat completion, is broken, and that body is described by its keys, never quoted. An error names the endpoint by scheme, host and port, never by its path.
+summary: Adapter for any HTTP endpoint speaking the OpenAI chat-completions API. It is built only for a `base_url` that is an http or https URL with a host and no user part, query or fragment, written in unreserved URL characters, and, for http, only when the host is a loopback address literal (127.0.0.0/8 or ::1 by the stdlib ipaddress module, read through scripts/child_env.py canonical_host_entry; the name localhost is refused, since a name resolves through DNS or a hosts file), so the bearer token never crosses a network in clear text; and only for an `api_key_env` that config/project.json `models.credential_env` declares for this adapter (scripts/child_env.py load_policy), so no caller, and no config a caller forwards, can choose another environment variable to send as the bearer token; either refusal is a ValueError that names the argument and never a value. Between the two, the base_url's host and port must be listed in config/project.json `models.allowed_hosts` for this adapter, compared exactly in scripts/child_env.py canonical_host_entry's one form (an entry `host` matches only the scheme's default port, `host:port` only that port, nothing by suffix, prefix or wildcard); the shipped list is empty, so every host, the default one included, is refused until a project lists it, and the refusal names that key and the entry to add, never the path, before the credential variable is read, which it is through scripts/config_loader.py `env`, at each call. base_url is read-only after that check. A call ends `timeout` seconds after it starts, config/project.json `models.timeout_seconds` for this adapter (models/limits.py) when the caller names none: the connect, the TLS handshake, the send and every read of the status line, headers and body each wait at most the time left, so a server that answers one byte at a time cannot stretch the call past it by more than one wake-up. The time running out while connecting or sending is ModelUnavailable, as urllib reports it; while the reply is read, a RuntimeError naming the endpoint, the limit and that key. Name resolution is outside the limit, and a host name with several addresses may wait the time left once per address. A reply body is read in pieces up to config/project.json `models.max_reply_bytes`: one byte more is a RuntimeError naming the endpoint and the cap, and the rest is never read. A redirect is never followed: urllib's default handler would re-send a 301, 302 or 303 as a GET with the Authorization header to a host nobody listed, so any 3xx is a RuntimeError naming the endpoint and the status, never the Location. Defence in depth, not a sandbox (docs/adr/keel/K-0018-model-endpoint-host-allowlist.md). An unreachable endpoint is ModelUnavailable (absent); an endpoint that answers with an error, or with a body that is not a chat completion, is broken, and that body is described by its keys, never quoted. An error names the endpoint by scheme, host and port, never by its path.
 """
 
 from __future__ import annotations
 
+import contextvars
 import email.message
 import functools
 import http.client
+import io
 import ipaddress
 import json
+import socket
 import string
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -206,11 +210,112 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-_OPENER = urllib.request.build_opener(_NoRedirect)
+# The monotonic time by which the call _post_json is making must end. A socket
+# timeout bounds each wait on the socket, not the call: a server that sends one
+# byte inside every wait keeps the call alive for as long as it likes
+# (measured: 23 s at timeout=1.0 for a byte every 0.5 s). So every wait below
+# is shrunk to what is left of this deadline. A context variable carries it
+# because urllib builds the connection and the response from classes.
+_DEADLINE: contextvars.ContextVar[float] = contextvars.ContextVar("_DEADLINE")
+
+
+def _time_left() -> float:
+    """The seconds left before the call's deadline, or socket.timeout once
+    none are, which urllib and http.client take as any socket timeout."""
+    left = _DEADLINE.get() - time.monotonic()
+    if left <= 0:
+        raise socket.timeout("timed out")
+    return left
+
+
+class _DeadlineReader(io.RawIOBase):
+    """A reply's socket, each read waiting at most the time left."""
+
+    def __init__(self, sock: socket.socket):
+        super().__init__()
+        self._sock = sock
+        # The socket's own unbuffered reader, which keeps the socket open
+        # after urllib closes the connection, as http.client's reader does.
+        self._raw = sock.makefile("rb", buffering=0)
+
+    def readable(self) -> bool:
+        return True
+
+    def readinto(self, buffer: Any) -> Optional[int]:
+        self._sock.settimeout(_time_left())
+        return self._raw.readinto(buffer)
+
+    def close(self) -> None:
+        self._raw.close()
+        super().close()
+
+
+class _DeadlineSocket:
+    """What a _DeadlineResponse hands http.client.HTTPResponse as its socket:
+    the one thing HTTPResponse asks of a socket is a buffered reader."""
+
+    def __init__(self, sock: socket.socket):
+        self._sock = sock
+
+    def makefile(self, mode: str) -> io.BufferedReader:
+        return io.BufferedReader(_DeadlineReader(self._sock))
+
+
+class _DeadlineResponse(http.client.HTTPResponse):
+    """A response whose status line, headers and body are each read before
+    the call's deadline."""
+
+    def __init__(self, sock: Any, *args: Any, **kwargs: Any):
+        super().__init__(_DeadlineSocket(sock), *args, **kwargs)  # type: ignore[arg-type]
+
+
+class _DeadlineConnection(http.client.HTTPConnection):
+    """An HTTP connection that connects, sends and reads its response each
+    within the time left."""
+
+    response_class = _DeadlineResponse
+
+    def connect(self) -> None:
+        self.timeout = _time_left()
+        super().connect()
+
+    def send(self, data: Any) -> None:
+        if self.sock is not None:
+            self.sock.settimeout(_time_left())
+        super().send(data)
+
+
+class _DeadlineHTTPSConnection(_DeadlineConnection, http.client.HTTPSConnection):
+    """_DeadlineConnection over TLS. The handshake runs under the socket
+    timeout connect set, which CPython's ssl module applies to the handshake
+    as a whole, so the handshake too ends by the deadline."""
+
+
+# The connection class urllib asks for -> the one opened in its place.
+_DEADLINE_CLASSES: dict = {
+    http.client.HTTPConnection: _DeadlineConnection,
+    http.client.HTTPSConnection: _DeadlineHTTPSConnection,
+}
+
+
+class _DeadlineHTTPHandler(urllib.request.HTTPHandler):
+    def do_open(self, http_class: Any, req: Any, **http_conn_args: Any) -> Any:
+        return super().do_open(_DEADLINE_CLASSES[http_class], req, **http_conn_args)
+
+
+class _DeadlineHTTPSHandler(urllib.request.HTTPSHandler):
+    def do_open(self, http_class: Any, req: Any, **http_conn_args: Any) -> Any:
+        return super().do_open(_DEADLINE_CLASSES[http_class], req, **http_conn_args)
+
+
+_OPENER = urllib.request.build_opener(
+    _NoRedirect, _DeadlineHTTPHandler, _DeadlineHTTPSHandler
+)
 
 
 def _urlopen(req: urllib.request.Request, timeout: float) -> Any:
-    """Open *req* through the opener that follows no redirect."""
+    """Open *req* through the opener that follows no redirect and waits on
+    the socket past no deadline _post_json set."""
     return _OPENER.open(req, timeout=timeout)  # noqa: S310 (own, checked URL)
 
 
@@ -236,9 +341,11 @@ def _post_json(
     url: str, payload: dict, headers: dict, timeout: float, max_bytes: int
 ) -> dict:
     """POST ``payload`` as JSON and return the decoded JSON response (stdlib),
-    refusing a body past *max_bytes*."""
+    refusing a body past *max_bytes* and a call still running *timeout*
+    seconds after it started."""
     body = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(url, data=body, headers=headers, method="POST")
+    deadline = _DEADLINE.set(time.monotonic() + timeout)
     try:
         with _urlopen(req, timeout) as resp:
             return json.loads(_read_capped(resp, max_bytes, url).decode("utf-8"))
@@ -256,6 +363,14 @@ def _post_json(
     except urllib.error.URLError as exc:
         # No route, refused, unknown host: the endpoint is not here to run.
         raise ModelUnavailable(f"cannot reach {_endpoint(url)}: {exc.reason}") from exc
+    except socket.timeout:
+        # Connected, and the reply did not finish in time; urllib turns a
+        # timeout while connecting or sending into the URLError above.
+        raise RuntimeError(
+            "the call to %s did not finish within %s seconds, so it was ended; "
+            "the limit is config/project.json models.timeout_seconds, or the "
+            "adapter's timeout argument" % (_endpoint(url), timeout)
+        ) from None
     except json.JSONDecodeError:
         # `from None`: the parser's error holds the whole body it could not
         # read, and an endpoint may echo the request's credential there.
@@ -269,6 +384,8 @@ def _post_json(
             "urllib cannot build a request for %s; check base_url's path for a "
             "character a URL cannot carry" % _endpoint(url)
         ) from None
+    finally:
+        _DEADLINE.reset(deadline)
 
 
 class OpenAICompatible(ModelBackend):
