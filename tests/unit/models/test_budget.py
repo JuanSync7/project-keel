@@ -182,10 +182,15 @@ def test_the_session_total_is_read_through_the_loader(tmp_path, capsys):
     (tmp_path / "config").mkdir()
     path = tmp_path / "config" / "project.json"
     path.write_text(json.dumps({"agents": {}}), encoding="utf-8")
-    assert approved_session_cap(str(tmp_path)) == 0
-    assert (
-        "[using default] agents.max_session_model_calls = 0" in capsys.readouterr().err
-    )
+    # The loader says a default once per process, so an earlier test that
+    # took this one would leave nothing for this assert to see.
+    config_loader._ANNOUNCED.clear()
+    try:
+        assert approved_session_cap(str(tmp_path)) == 0
+        err = capsys.readouterr().err
+        assert "[using default] agents.max_session_model_calls = 0" in err, err
+    finally:
+        config_loader._ANNOUNCED.clear()
     path.write_text(
         json.dumps({"agents": {"max_session_model_calls": 7}}), encoding="utf-8"
     )
