@@ -286,7 +286,10 @@ version rather than a bare commit:
   names a shutdown owner, scripts/resource_limits.py `shutdown_owner`, that
   takes the first SIGTERM or SIGINT, writes `<server>: stopping on <signal>`,
   lets the calls in flight finish for `transports.serve.shutdown_grace_seconds`
-  (10), and exits 0; a second signal ends the process at once. An MCP server
+  (10), and exits 0; a second signal sends SIGKILL to the process group of
+  every `run_bounded` child still running, which a signal to the server never
+  reaches, then ends the process by that signal (128 plus its number in a
+  shell). An MCP server
   stops between requests. A setting any of the three refuses, such as a
   memory cap of 0, exits CONFIG (14) with one line naming the key, through
   the exit helper, before the server caps memory or serves.
