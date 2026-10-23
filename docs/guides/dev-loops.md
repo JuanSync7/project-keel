@@ -98,7 +98,7 @@ it alone is the judge of "done".
 | Inner loop | `make check`, then `pytest <file> -k <name>` or `make unit` | structure and frontmatter; the one test you are driving, or every `unit`-marked test | after each edit in a TDD pass |
 | Before a commit | `make lint`, `make typecheck`, `make check-all` | ruff and the format check; mypy strict over the `pyproject.toml` `[tool.mypy]` roots; every deterministic check | before each commit |
 | Before a merge | `make integration`, `make e2e` | the tests that start child processes, render projects and drive transports | when a change reaches what those tests drive |
-| Full gate | `make verify` | `check-all`, `secret-scan`, `lint`, `typecheck`, `test`, `trace`, `eval` and `test-fe`, with the evidence record | before you call a slice done |
+| Full gate | `make verify` | `check-all`, `secret-scan`, `lint`, `typecheck`, `test`, `trace`, `eval`, `test-fe` and `test-sh`, with the evidence record | before you call a slice done |
 
 The `integration` tier holds most of the suite's time, so the inner loop leaves it
 out. The full gate never does: a slice is done only when `make verify` exits 0.
