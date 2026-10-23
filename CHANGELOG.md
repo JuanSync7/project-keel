@@ -342,6 +342,25 @@ version rather than a bare commit:
   process the CLI left holding a pipe, or its stdin unread, costs that window
   and no more, the CLI's own status is returned rather than a timeout, and no
   pipe or pipe thread outlives the call.
+- **An agent's tool child and the MCP action doer are bounded.** `_run` in
+  the four agents that start tools (doc_reviewer, index_enforcer,
+  practice_refactor, wiki_navigator) and `_run_doer` in mcp/action_server.py
+  start their child through scripts/resource_limits.py `run_tool`, which is
+  `run_bounded` under config/project.json `agents.tool_timeout_seconds`
+  (15000) and `agents.tool_max_output_bytes` (64 MiB); past either the
+  child's process group is sent SIGKILL and the call raises `ChildTimedOut`
+  or `ChildOutputTooLarge` naming the key, which `scripts/doc_review.py`,
+  `scripts/refactor_practice.py` and `scripts/hooks/on_stop_doc_review.py`
+  report as exit 1 rather than a traceback. The time limit stops at
+  `threading.TIMEOUT_MAX` like every seconds key, and one no longer than
+  `make_targets.gate_timeout_seconds` plus
+  `make_targets.gate_stop_grace_seconds` is a config fault (exit 14): a tool
+  child can be the gate runner, and a SIGKILL to it before its own stop would
+  leave make's session running and an applied edit not rolled back. The
+  action server reads both keys at start and refuses a bad value before it
+  serves. No module under agents/ or mcp/ may import subprocess, so a new
+  tool runner goes through the same limit
+  (tests/integration/test_agent_tool_limits.py).
 - **Every server stops cleanly on SIGTERM, under a memory cap.** The REST
   entry is now api/rest_fastapi/serve.py (what `make run-api` runs), the MCP
   servers start through mcp/protocol.py `run_stdio_server`, and gRPC's
