@@ -2,7 +2,7 @@
 title: Unit — resource_limits (a bounded child)
 kind: tests
 layer: n/a
-summary: scripts/resource_limits.py `run_bounded` starts a child through the child-process allowlist in its own process group and returns its status and output; a child that runs past its time limit, and one whose output passes its byte cap, has its whole group ended and is refused as ChildTimedOut or ChildOutputTooLarge, naming the program, the limit and the key the caller says sets that limit, and a grandchild holding stdout or an unread stdin open after its parent exits holds the call for one drain window only, after which the parent's status and output are returned, not a timeout; a setsid grandchild, which no group kill reaches, leaves no reader or writer thread and no pipe open behind the call, and the call returns within its limit plus the drain window, timed out or not. An exception while the child runs ends its group. A limit past threading.TIMEOUT_MAX or NaN is refused before a child starts. `shutdown_owner` makes one named owner of SIGTERM and SIGINT for a server: the first signal writes a line naming the owner and the signal and calls the owner's stop, or raises ShutdownRequested (no Exception, so a request's own handler cannot eat it) only where the server says it is idle, and a second signal, proven in a child that runs `run_bounded` under the owner, ends the bounded child's process group (its pid no longer runs) and then the owner's process by that signal, SIGTERM and SIGINT alike; the handlers before it are put back. `cap_memory` sets RLIMIT_AS, proven in a child: an allocation past the cap is a MemoryError, one below it is not, and null says the cap is off; a cap past a hard limit the child lowered first sets the hard limit and the line says it was lowered to it. `serve_limits` reads config/project.json `transports.serve.memory_cap_mb` and `transports.serve.shutdown_grace_seconds`, refusing a value out of its bound by its key. Every child is a short Python one-liner under this interpreter; nothing reaches a network.
+summary: scripts/resource_limits.py `run_bounded` starts a child through the child-process allowlist in its own process group and returns its status and output; a child that runs past its time limit, and one whose output passes its byte cap, has its whole group ended and is refused as ChildTimedOut or ChildOutputTooLarge, naming the program, the limit and the key the caller says sets that limit, and a grandchild holding stdout or an unread stdin open after its parent exits holds the call for one drain window only, after which the parent's status and output are returned, not a timeout; a setsid grandchild, which no group kill reaches, leaves no reader or writer thread and no pipe open behind the call, and the call returns within its limit plus the drain window, timed out or not. An exception while the child runs ends its group. A process the child left in its session is ended and named in a log warning by pid and program, never by its arguments; a holder outside the session is named and not signalled. Each of these, proven in a child interpreter, ends the bounded child: a SIGTERM to a plain CLI with no handler (the child ends, then the CLI by SIGTERM), a SIGKILL to the runner (the watcher ends the child's session), and a server stopped by one signal returning from shutdown_owner while a request thread waits on a child (the watcher disabled in that probe, so only the owner's end is measured). An ignored SIGCHLD is set to its default for the run and put back, and off the main thread the run is refused as ChildSignalIgnored. A limit past threading.TIMEOUT_MAX or NaN is refused before a child starts. `shutdown_owner` makes one named owner of SIGTERM and SIGINT for a server: the first signal writes a line naming the owner and the signal and calls the owner's stop, or raises ShutdownRequested (no Exception, so a request's own handler cannot eat it) only where the server says it is idle, and a second signal, proven in a child that runs `run_bounded` under the owner, ends the bounded child's process group (its pid no longer runs) and then the owner's process by that signal, SIGTERM and SIGINT alike; the handlers before it are put back. `cap_memory` sets RLIMIT_AS, proven in a child: an allocation past the cap is a MemoryError, one below it is not, and null says the cap is off; a cap past a hard limit the child lowered first sets the hard limit and the line says it was lowered to it. `serve_limits` reads config/project.json `transports.serve.memory_cap_mb` and `transports.serve.shutdown_grace_seconds`, refusing a value out of its bound by its key. Every child is a short Python one-liner under this interpreter; nothing reaches a network.
 """
 
 import contextlib
@@ -208,12 +208,12 @@ def test_an_exception_while_the_child_runs_ends_its_group(tmp_path, monkeypatch)
         "open(%r, 'w').write(str(p.pid)); time.sleep(60)" % str(pidfile)
     )
 
-    def interrupted(proc, deadline):
+    def interrupted(session, deadline):
         while not pidfile.exists() or not pidfile.read_text():
             time.sleep(0.02)
         raise KeyboardInterrupt
 
-    monkeypatch.setattr(resource_limits, "_await_exit", interrupted)
+    monkeypatch.setattr(resource_limits.ChildSession, "wait_exit", interrupted)
     try:
         with pytest.raises(KeyboardInterrupt):
             resource_limits.run_bounded([_PY, "-c", script], 30, 64)
@@ -287,6 +287,8 @@ def test_the_first_signal_calls_the_owner_s_stop_once_and_names_it(capsys):
 _SECOND_SIGNAL_PROBE = (
     "import sys; sys.path.insert(0, %r)\n"
     "from scripts import resource_limits\n"
+    # No watcher, so only the second signal's handler can end the child.
+    "resource_limits._watch = lambda pid: None\n"
     "with resource_limits.shutdown_owner('probe'):\n"
     "    resource_limits.run_bounded(\n"
     "        ['sh', '-c', 'echo $$ > %s; exec sleep 47'], timeout=30, "
@@ -348,6 +350,9 @@ def test_a_second_signal_ends_the_bounded_child_s_group_and_then_the_process(
             "the probe never saw the first signal",
         )
         assert probe.poll() is None, "the first signal is a request, not the end"
+        # The owner holds the first signal: a bounded child keeps running
+        # until a second one, or until the server's stop has run its course.
+        assert _running(child), "the first signal ended the bounded child"
         os.kill(probe.pid, signum)
         assert probe.wait(10) == -signum, err_file.read_text()
         _wait_for(lambda: not _running(child), 5, "the bounded child outlived it")
@@ -386,6 +391,202 @@ def test_a_signal_while_busy_is_held_until_the_owner_is_next_idle():
 def test_shutdown_requested_is_not_caught_by_a_generic_handler():
     # A server's `except Exception` around one request must not eat the stop.
     assert not issubclass(resource_limits.ShutdownRequested, Exception)
+
+
+# --- the child's session outlives no runner ------------------------------------
+#
+# Each case runs a probe interpreter that calls run_bounded, so a signal or a
+# kill reaches the probe and never this test process. The bounded child writes
+# its pid and then execs a sleep, so its pid is the session's id.
+
+_PROBE_HEAD = (
+    "import json, os, signal, sys, threading, time\n"
+    "sys.path.insert(0, %r)\n"
+    "from scripts import resource_limits\n"
+)
+# Leaves the termination handler as the only teardown a probe has, so a case
+# that proves the handler is not passed by the watcher instead.
+_NO_WATCHER = "resource_limits._watch = lambda pid: None\n"
+
+
+def _sleeper(pid_file):
+    return "['sh', '-c', 'echo $$ > %s; exec sleep 47']" % pid_file
+
+
+def _start_probe(tmp_path, body):
+    from scripts.child_env import build_child_env
+
+    # The probe keeps its own copy of the descriptor, so this one closes here.
+    with open(str(tmp_path / "probe.err"), "w") as err:
+        return subprocess.Popen(
+            [_PY, "-c", _PROBE_HEAD % str(_ROOT) + body],
+            cwd=str(tmp_path),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=err,
+            env=build_child_env(),
+        )
+
+
+def _started_child(pid_file):
+    _wait_for(
+        lambda: pid_file.read_text().endswith("\n") if pid_file.exists() else False,
+        10,
+        "the bounded child never started",
+    )
+    return int(pid_file.read_text())
+
+
+def _reap_probe(probe, child):
+    if probe.poll() is None:
+        probe.kill()
+    probe.wait()
+    probe.stdout.close()
+    if child is not None and _running(child):
+        with contextlib.suppress(ProcessLookupError, PermissionError):
+            os.killpg(child, signal.SIGKILL)
+
+
+@pytest.mark.skipif(not os.path.isdir("/proc"), reason="reads a pid's state in /proc")
+def test_a_sigterm_to_a_plain_cli_ends_its_bounded_child_then_the_cli(tmp_path):
+    """A command-line caller with no handler of its own: SIGTERM ends the
+    bounded child's session first, then the caller by the signal, with no
+    watcher to do it for the handler."""
+    pid_file = tmp_path / "child.pid"
+    probe = _start_probe(
+        tmp_path,
+        _NO_WATCHER
+        + "resource_limits.run_bounded(%s, timeout=60, max_output_bytes=1000)\n"
+        % _sleeper(pid_file),
+    )
+    child = None
+    try:
+        child = _started_child(pid_file)
+        os.kill(probe.pid, signal.SIGTERM)
+        assert probe.wait(10) == -signal.SIGTERM
+        _wait_for(lambda: not _running(child), 5, "the bounded child outlived it")
+    finally:
+        _reap_probe(probe, child)
+
+
+@pytest.mark.skipif(not os.path.isdir("/proc"), reason="reads a pid's state in /proc")
+def test_a_sigkilled_runner_leaves_no_bounded_child_running(tmp_path):
+    """SIGKILL gives the runner no handler and no unwinding; the watcher
+    started beside the child sees its pipe close and ends the session."""
+    pid_file = tmp_path / "child.pid"
+    probe = _start_probe(
+        tmp_path,
+        "resource_limits.run_bounded(%s, timeout=60, max_output_bytes=1000)\n"
+        % _sleeper(pid_file),
+    )
+    child = None
+    try:
+        child = _started_child(pid_file)
+        os.kill(probe.pid, signal.SIGKILL)
+        assert probe.wait(10) == -signal.SIGKILL
+        _wait_for(lambda: not _running(child), 10, "the bounded child outlived it")
+    finally:
+        _reap_probe(probe, child)
+
+
+@pytest.mark.skipif(not os.path.isdir("/proc"), reason="reads a pid's state in /proc")
+def test_a_server_stopped_once_ends_the_bounded_children_still_running(tmp_path):
+    """A request thread still in run_bounded when a server's stop has run
+    its course would hold the process's exit for the child's whole limit;
+    leaving the owner after a stop ends that child, so the thread returns."""
+    pid_file = tmp_path / "child.pid"
+    probe = _start_probe(
+        tmp_path,
+        "got = {}\n"
+        "def request():\n"
+        "    got['rc'] = resource_limits.run_bounded(%s, timeout=60, "
+        "max_output_bytes=1000).returncode\n"
+        "stopped = threading.Event()\n"
+        "with resource_limits.shutdown_owner('probe', stop=lambda s: stopped.set()):\n"
+        "    t = threading.Thread(target=request)\n"
+        "    t.start()\n"
+        "    while not os.path.exists(%r):\n"
+        "        time.sleep(0.02)\n"
+        "    time.sleep(0.2)\n"
+        "    os.kill(os.getpid(), signal.SIGTERM)\n"
+        "    stopped.wait(10)\n"
+        "t.join(10)\n"
+        "print(json.dumps({'returned': not t.is_alive(), 'rc': got.get('rc')}))\n"
+        % (_sleeper(pid_file), str(pid_file)),
+    )
+    try:
+        out, _ = probe.communicate(timeout=30)
+        got = json.loads(out)
+        assert got == {"returned": True, "rc": -signal.SIGKILL}, got
+    finally:
+        _reap_probe(probe, int(pid_file.read_text()) if pid_file.exists() else None)
+
+
+def test_a_leftover_in_the_session_is_ended_and_named_without_its_arguments(
+    tmp_path, caplog
+):
+    pidfile = tmp_path / "grandchild.pid"
+    with caplog.at_level("WARNING", logger=resource_limits.__name__):
+        done = resource_limits.run_bounded(
+            [_PY, "-c", _holder(pidfile, "stdout")], timeout=20, max_output_bytes=64
+        )
+    grandchild = int(pidfile.read_text())
+    assert done.returncode == 0
+    assert _gone_within(grandchild, 5)
+    (record,) = [r for r in caplog.records if "left" in r.getMessage()]
+    message = record.getMessage()
+    assert "%d (%s)" % (grandchild, os.path.basename(_PY)) in message, message
+    assert "sleep" not in message, "a leftover's arguments reached the log"
+
+
+@pytest.mark.skipif(not os.path.isdir("/proc"), reason="lists pipe holders in /proc")
+def test_a_holder_outside_the_session_is_named_and_not_signalled(tmp_path, caplog):
+    pidfile = tmp_path / "grandchild.pid"
+    try:
+        with caplog.at_level("WARNING", logger=resource_limits.__name__):
+            done = resource_limits.run_bounded(
+                [_PY, "-c", _holder(pidfile, "stdout", new_session=True)],
+                timeout=20,
+                max_output_bytes=64,
+            )
+        holder = int(pidfile.read_text())
+        assert (done.returncode, done.stdout) == (0, "done\n")
+        assert _alive(holder), "a process outside the session was signalled"
+        messages = [r.getMessage() for r in caplog.records]
+        assert any(
+            "stdout is still held open by %d (" % holder in m for m in messages
+        ), messages
+    finally:
+        _kill(pidfile)
+
+
+def test_an_ignored_sigchld_is_set_to_its_default_for_the_run_or_refused(tmp_path):
+    """Ignored, SIGCHLD would have the kernel reap the child as it exits and
+    free its id while the run can still signal it: on the main thread it is
+    at its default for the run and put back, off it the run is refused."""
+    probe = _start_probe(
+        tmp_path,
+        "signal.signal(signal.SIGCHLD, signal.SIG_IGN)\n"
+        "got = {}\n"
+        "got['rc'] = resource_limits.run_bounded([sys.executable, '-c', "
+        "'import sys; sys.exit(3)'], timeout=30, max_output_bytes=64).returncode\n"
+        "got['kept'] = signal.getsignal(signal.SIGCHLD) is signal.SIG_IGN\n"
+        "def off_main():\n"
+        "    try:\n"
+        "        resource_limits.run_bounded(['true'], 30, 64)\n"
+        "        got['off'] = 'ran'\n"
+        "    except resource_limits.ChildSignalIgnored as exc:\n"
+        "        got['off'] = str(exc)\n"
+        "t = threading.Thread(target=off_main)\n"
+        "t.start()\n"
+        "t.join()\n"
+        "print(json.dumps(got))\n",
+    )
+    out, _ = probe.communicate(timeout=60)
+    probe.stdout.close()
+    got = json.loads(out)
+    assert got["rc"] == 3 and got["kept"] is True, got
+    assert "SIGCHLD" in got["off"] and "main thread" in got["off"], got
 
 
 # --- the memory cap: cap_memory, in a child so this process keeps its limit ----

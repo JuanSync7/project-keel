@@ -23,8 +23,12 @@ _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT / "scripts"))
 
 import check_structure as cs  # noqa: E402
-import child_env  # noqa: E402
 import run_make_target as rmt  # noqa: E402
+
+# The module make's environment is built by (scripts/resource_limits.py
+# start_child imports it as scripts.child_env, a second module object beside
+# the bare `child_env`), so the cross-check and every patch reach that build.
+child_env = rmt.spawn_env
 
 pytestmark = [
     pytest.mark.integration,

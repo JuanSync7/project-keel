@@ -2,7 +2,7 @@
 title: Unit — run_make_target (the read-only gate runner)
 kind: tests
 layer: n/a
-summary: run_target runs a make target only when its effect label, closed over its prerequisites, falls inside config/project.json `make_targets.gate_effects`; it refuses an unknown, unlabelled or wider target, an extra argument that is not a NAME=VALUE variable, a variable outside `make_targets.gate_vars` (make's control variables, the guard and the unattended variables among them), a value that is not one path-like word, a tree without git and a project without the policy, all without calling the runner. It passes the gate-runner variable last, so the Makefile's WRITE_GUARD refuses whatever the caller supplied, and fails a green run that changed the tree, naming the paths. A `make_targets.gate_vars` value found in the runner's own environment is forwarded on make's command line under the same one-word rule, an explicit one wins, and a bad one is refused before make runs. make and git get the allowlisted environment from scripts/child_env.py, never the runner's own. An allowlist that cannot be built, or that would copy a gate variable carrying a credential, is a refusal before anything runs and before any message could quote the value; a gate value, explicit or forwarded, that carries a credential is refused by name even when opted in, and no refusal quotes a value; and a ChildEnvError during the run or a tree that cannot be re-read afterwards is red, never a traceback. The runner and the snapshot are injected for those cases, so no make or git process runs in them. The default runner's own cases put a fake `make` (a short Python script) first on PATH that starts a grandchild, and prove that a timeout, a KeyboardInterrupt and a SIGTERM to the runner end the whole group, that an ignored SIGTERM is followed by SIGKILL after the grace, that a SIGTERM handler gets that grace, and that a process left behind after make exits is ended, named by pid and command, and turns a green make red while a failing make keeps its own status; each polls with a bound and kills only the pids it started. Further cases prove that the stop and the leak count reach every process in make's session, a process that left make's group for one of its own (GNU `timeout`) included; that output a process outside the session still holds makes the run red, naming it, without signalling it; that no signal goes to an id once make is reaped (an os.killpg recorder, in a child interpreter where a SIGTERM is sent at the moment under test) and that make stays unreaped while its leftovers are signalled; that a Ctrl-C or SIGTERM landing inside Popen still ends make; that a background job ending just after make is not a leak; that under an ignored SIGCHLD a stop just after make exits signals only held ids, a green make keeps its status, a leftover is ended, and the caller's SIGCHLD is put back, while off the main thread the run is refused before make starts; that a make another waiter reaped is red at once, a stop after that reap sends nothing, and its leftovers are named as not ended (settled first), or said to be unlisted and possibly still running without /proc; that output held by holders the runner cannot list is still an unlisted escape; and that a SIGTERM after a timed-out make is reaped sends nothing. The time limit and grace come from config/project.json `make_targets` through scripts/config_loader.py, the loader's default when the key is absent, a bad value or one past its row's upper bound is CONFIG or a refusal naming the key, `--timeout` overrides the configured limit within the same bound, and the configured grace outlasts `e2e.server.stop_timeout_s`.
+summary: run_target runs a make target only when its effect label, closed over its prerequisites, falls inside config/project.json `make_targets.gate_effects`; it refuses an unknown, unlabelled or wider target, an extra argument that is not a NAME=VALUE variable, a variable outside `make_targets.gate_vars` (make's control variables, the guard and the unattended variables among them), a value that is not one path-like word, a tree without git and a project without the policy, all without calling the runner. It passes the gate-runner variable last, so the Makefile's WRITE_GUARD refuses whatever the caller supplied, and fails a green run that changed the tree, naming the paths. A `make_targets.gate_vars` value found in the runner's own environment is forwarded on make's command line under the same one-word rule, an explicit one wins, and a bad one is refused before make runs. make and git get the allowlisted environment from scripts/child_env.py, never the runner's own. An allowlist that cannot be built, or that would copy a gate variable carrying a credential, is a refusal before anything runs and before any message could quote the value; a gate value, explicit or forwarded, that carries a credential is refused by name even when opted in, and no refusal quotes a value; and a ChildEnvError during the run or a tree that cannot be re-read afterwards is red, never a traceback. The runner and the snapshot are injected for those cases, so no make or git process runs in them. The default runner's own cases put a fake `make` (a short Python script) first on PATH that starts a grandchild, and prove that a timeout, a KeyboardInterrupt and a SIGTERM to the runner end the whole group, that an ignored SIGTERM is followed by SIGKILL after the grace, that a SIGTERM handler gets that grace, and that a process left behind after make exits is ended, named by pid and command, and turns a green make red while a failing make keeps its own status; each polls with a bound and kills only the pids it started. Further cases prove that the stop and the leak count reach every process in make's session, a process that left make's group for one of its own (GNU `timeout`) included; that output a process outside the session still holds makes the run red, naming it, without signalling it; that no signal goes to an id once make is reaped (an os.killpg recorder, in a child interpreter where a SIGTERM is sent at the moment under test) and that make stays unreaped while its leftovers are signalled; that a Ctrl-C or SIGTERM landing inside Popen still ends make; that a background job ending just after make is not a leak; that under an ignored SIGCHLD a stop just after make exits signals only held ids, a green make keeps its status, a leftover is ended, and the caller's SIGCHLD is put back, while off the main thread the run is refused before make starts; that a make another waiter reaped is red at once, a stop after that reap sends nothing, and its leftovers are named as not ended (settled first), or said to be unlisted and possibly still running without /proc; that output held by holders the runner cannot list is still an unlisted escape; that a SIGTERM after a timed-out make is reaped sends nothing; and that a runner killed with SIGKILL leaves none of make's tree running, through the watcher scripts/resource_limits.py starts beside make. The time limit and grace come from config/project.json `make_targets` through scripts/config_loader.py, the loader's default when the key is absent, a bad value or one past its row's upper bound is CONFIG or a refusal naming the key, `--timeout` overrides the configured limit within the same bound, and the configured grace outlasts `e2e.server.stop_timeout_s`.
 """
 
 import base64
@@ -506,6 +506,8 @@ def test_make_and_git_run_with_the_allowlisted_environment(proj, monkeypatch):
 
     class _Started(_Done):
         pid = -1  # never signalled: os.killpg is replaced below
+        stdin = None
+        stderr = None
 
         def __init__(self, cmd, **kw):
             seen.append(kw)
@@ -534,7 +536,8 @@ def test_make_and_git_run_with_the_allowlisted_environment(proj, monkeypatch):
     monkeypatch.setattr(rmt.os, "killpg", no_group)
     rmt._default_runner(["make", "x"], str(proj), 5, grace=1)
     rmt._git(str(proj), "status")
-    assert len(seen) == 2
+    # make, the watcher scripts/resource_limits.py starts beside it, then git.
+    assert len(seen) == 3
     assert seen[0].get("start_new_session") is True, seen[0]
     for kw in seen:
         assert "env" in kw, kw
@@ -856,6 +859,36 @@ def test_a_sigterm_to_the_runner_ends_the_tree_and_then_the_runner(tree):
         runner.send_signal(signal.SIGTERM)
         assert runner.wait(timeout=_SETTLE) == -signal.SIGTERM
         assert _gone_within(pids), "a SIGTERM to the runner orphaned make's tree"
+    finally:
+        _cleanup(pids)
+        if runner.poll() is None:
+            runner.kill()
+            runner.wait()
+
+
+def test_a_sigkilled_runner_leaves_none_of_make_s_tree_running(tree):
+    """SIGKILL runs no handler: the watcher scripts/resource_limits.py starts
+    beside make sees the runner's pipe close and ends make's session."""
+    make = _write_fake_make(tree / "bin", _SLEEPS)
+    code = (
+        "import sys; sys.path.insert(0, %r); import run_make_target as r; "
+        "r._default_runner([%r], %r, 600, grace=5)"
+        % (str(_ROOT / "scripts"), str(make), str(tree))
+    )
+    runner = subprocess.Popen(  # noqa: S603 — argv list, never a shell string
+        [sys.executable, "-c", code],
+        cwd=str(tree),
+        env=rmt.child_env.build_child_env(),
+    )
+    pids = []
+    try:
+        deadline = time.monotonic() + _SETTLE
+        while not (tree / "pids").exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        pids = _pids(tree)
+        runner.kill()
+        assert runner.wait(timeout=_SETTLE) == -signal.SIGKILL
+        assert _gone_within(pids), "a SIGKILL to the runner orphaned make's tree"
     finally:
         _cleanup(pids)
         if runner.poll() is None:
@@ -1238,12 +1271,12 @@ def test_the_runner_puts_back_the_signal_handlers_it_replaced(tree):
     def mine(*_):
         return None
 
-    before = {s: signal.getsignal(s) for s in rmt._UNWINDLESS}
-    for sig in rmt._UNWINDLESS:
+    before = {s: signal.getsignal(s) for s in rmt.resource_limits._UNWINDLESS}
+    for sig in rmt.resource_limits._UNWINDLESS:
         signal.signal(sig, mine)
     try:
         assert rmt._default_runner([str(make)], str(tree), 30, grace=1)[0] == 0
-        assert all(signal.getsignal(s) is mine for s in rmt._UNWINDLESS)
+        assert all(signal.getsignal(s) is mine for s in rmt.resource_limits._UNWINDLESS)
     finally:
         for sig, old in before.items():
             signal.signal(sig, old)
@@ -1359,12 +1392,12 @@ def test_a_sigterm_after_make_exits_signals_no_id_make_gave_up(tree, when):
     out = _in_child(
         tree,
         _RECORD_KILLPG + "when = %r\n"
-        "real_finish = r._Reader.finish\n"
+        "real_finish = r.resource_limits.PipeReader.finish\n"
         "def finish(self, wait):\n"
         "    if when == 'finish' and wait > 0:\n"
         "        os.kill(os.getpid(), signal.SIGTERM)\n"
         "    return real_finish(self, wait)\n"
-        "r._Reader.finish = finish\n"
+        "r.resource_limits.PipeReader.finish = finish\n"
         "real_wait = r.subprocess.Popen.wait\n"
         "def wait(self, *a, **k):\n"
         "    got = real_wait(self, *a, **k)\n"
@@ -1420,8 +1453,10 @@ _SIGNAL_INSIDE_POPEN = (
     "real_popen = r.subprocess.Popen\n"
     "def popen(*a, **k):\n"
     "    proc = real_popen(*a, **k)\n"
-    "    pathlib.Path('makepid').write_text(str(proc.pid))\n"
-    "    os.kill(os.getpid(), SIG)\n"
+    # The first spawn is make; the watcher that follows it is left alone.
+    "    if not pathlib.Path('makepid').exists():\n"
+    "        pathlib.Path('makepid').write_text(str(proc.pid))\n"
+    "        os.kill(os.getpid(), SIG)\n"
     "    return proc\n"
     "r.subprocess.Popen = popen\n"
     "def gone(pid):\n"
@@ -1818,7 +1853,7 @@ def test_without_proc_a_reaped_makes_session_is_said_to_be_unlisted(tree):
         _RECORD_KILLPG
         + _MAKE_PID
         + _FOREIGN_WAITER
-        + "r._session_members = lambda sid: None\n"
+        + "r.resource_limits.session_members = lambda sid: None\n"
         "res = r.run_target('check', cwd='.', timeout=60, grace=2, "
         "snapshot=lambda root: {})\n"
         "print(json.dumps({'res': res, 'sent': sent}))\n",
@@ -1890,7 +1925,7 @@ def test_output_held_by_holders_the_runner_cannot_list_still_turns_the_run_red(
         return None
 
     if unreadable == "proc":
-        monkeypatch.setattr(rmt, "_pipe_holders", no_proc)
+        monkeypatch.setattr(rmt.resource_limits, "pipe_holders", no_proc)
     else:
         monkeypatch.setattr(rmt.os, "listdir", listdir)
     res = rmt.run_target(

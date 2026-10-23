@@ -2,7 +2,7 @@
 title: Claude Code headless backend
 layer: backend
 public_api: no
-summary: Runs a prompt via the Claude Code CLI in headless mode, through scripts/resource_limits.py run_bounded, with the allowlisted environment plus the credential names config/project.json `models.credential_env` declares for this adapter (scripts/child_env.py). The CLI runs in a process group of its own for at most `models.timeout_seconds.claude-code-headless` seconds, with at most `models.max_reply_bytes` bytes on each stream (models/limits.py); past either its whole group is sent SIGKILL and the call is ChildTimedOut or ChildOutputTooLarge, both RuntimeError naming the key. A missing binary is ModelUnavailable (absent); a non-zero exit is RuntimeError (broken); a broken allowlist is ChildEnvError, never ModelUnavailable.
+summary: Runs a prompt via the Claude Code CLI in headless mode, through scripts/resource_limits.py run_bounded, with the allowlisted environment plus the credential names config/project.json `models.credential_env` declares for this adapter (scripts/child_env.py). The CLI runs in a session of its own for at most `models.timeout_seconds.claude-code-headless` seconds, with at most `models.max_reply_bytes` bytes on each stream (models/limits.py); past either its whole session is sent SIGKILL and the call is ChildTimedOut or ChildOutputTooLarge, both RuntimeError naming the key. A missing binary is ModelUnavailable (absent); a non-zero exit is RuntimeError (broken); a broken allowlist is ChildEnvError, never ModelUnavailable.
 """
 
 from __future__ import annotations
