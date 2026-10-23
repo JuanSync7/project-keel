@@ -389,6 +389,23 @@ def test_an_owned_readme_with_no_visibility_still_ends_the_visibility_walk(tmp_p
     assert _owner(node) == ("bob", "inherited", "src/backend/README.md")
 
 
+@pytest.mark.parametrize("written", ['"alice"', "null"], ids=["quoted", "null"])
+def test_a_readme_with_a_malformed_owner_still_ends_the_visibility_walk(
+    tmp_path, written
+):
+    """The owner walk goes past a written owner that names nobody, but the
+    visibility walk stops there as it always did: any written owner other than
+    TBD ends it, so the module takes `internal` and never the looser `public`
+    of a README above."""
+    root = _tree(tmp_path)
+    _write(root, "src/README.md", _readme("src-readme", None, "public"))
+    _write(root, "src/backend/README.md", _readme("be-readme", written, None))
+    _write(root, "src/backend/m.py", _module())
+    node = _nodes(root)["src/backend/m-py"]
+    assert node["visibility"] == "internal"
+    assert _owner(node) == ("", "none", None)
+
+
 # --- the vocabulary and the report -------------------------------------------
 
 

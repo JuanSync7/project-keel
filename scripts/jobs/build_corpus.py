@@ -148,6 +148,13 @@ def _says_tbd(value):
     return bool(value) and config_loader.is_unowned(value)
 
 
+def _writes_an_owner(value):
+    # The visibility walk's stop test from before the owner walk learned the
+    # grammar: any written owner but TBD. A malformed one names nobody yet still
+    # stops it, so a module never takes a looser visibility from further up.
+    return bool(value) and not config_loader.is_unowned(value)
+
+
 def _resolve_owner(own, own_source, own_where, parent, default):
     """(owner, owner_source, owner_origin) for a node whose own declaration is
     *own* (frontmatter or marker, written at *own_where*) under *parent*'s
@@ -532,17 +539,20 @@ def _nearest_readme(dirpath: str, root: str, default):
     package READMEs. The owner is the nearest README's real owner: the walk
     goes past a README that names none (TBD, absent, malformed, unreadable),
     and only with no real owner up to *root* does the nearest TBD README hand
-    on *default*. The visibility is the nearest README's that has a real
-    owner or a visibility."""
+    on *default*. The visibility is the nearest README's that has a
+    visibility or a written owner other than TBD, as before the owner walk
+    went on past a README."""
     visibility = None
     visibility_found = False
     nearest_tbd = None
     for where, fm in _readmes_upward(dirpath, root):
         owner = _real_owner(fm.get("owner"))
         # The visibility walk keeps the stop rule it had before the owner walk
-        # learned to go on: the nearest README with a visibility, or with a
-        # real owner, whose return below ends this walk with none.
-        if not visibility_found and fm.get("visibility"):
+        # learned to go on: the nearest README with a visibility or a written
+        # owner other than TBD, and that README's visibility, none included.
+        if not visibility_found and (
+            fm.get("visibility") or _writes_an_owner(fm.get("owner"))
+        ):
             visibility_found = True
             visibility = fm.get("visibility")
         if owner:
