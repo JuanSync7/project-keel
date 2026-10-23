@@ -1004,6 +1004,15 @@ KEYS = tuple(
                 accepts=(_is_severity, "one of " + ", ".join(AUDIT_SEVERITIES)),
             ),
             _row(
+                ("dependency_audit", "max_review_days"),
+                "int",
+                90,
+                "the most days after the run's date an accepted row's review_by "
+                "may be; scripts/audit_dependencies.py fails a row set further "
+                "out, so an acceptance is renewed, not parked",
+                accepts=(_at_least_one, "a value >= 1"),
+            ),
+            _row(
                 ("dependency_audit", "timeout_seconds"),
                 "int",
                 120,

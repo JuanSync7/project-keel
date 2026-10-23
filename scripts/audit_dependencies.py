@@ -3,7 +3,7 @@
 title: audit_dependencies — judge each frontend app's npm audit against the accepted risks config records
 kind: script
 layer: n/a
-summary: `make fe-audit`'s doer. It audits each frontend app directory it is given (the Makefile passes FE_APPS) by running `npm audit --json` there under scripts/child_env.py `build_child_env` and config/project.json `dependency_audit.timeout_seconds`, or reads the saved report a `--report NAME=FILE` names instead, so a test never runs npm. A finding is one advisory a report's `via` entry names: its GHSA id (the last part of its `url`), its package and its severity. It judges each app against `dependency_audit.accepted.<app>`, rows of advisory id to package, reason and review_by day, on today's date (scripts/run_date.py `today`, read once at the entry point; a test hands in its own day). It fails (FAILURE) on three things, all listed before the one closing line: a finding at or above `dependency_audit.fail_at` that no row names with the same advisory and package; a row whose review_by day has passed; and a row whose advisory and package the app's report no longer holds, or whose app is not one it audited. A finding below fail_at that no row covers is listed and does not fail; a covered one is listed with its reason and day. A report that is not `npm audit --json` version 2 (an unknown severity, a `via` url with no advisory id) is USAGE, as is an app directory with no package.json or no package-lock.json, a saved report that cannot be read, and a `--report` name that is not an audited app; npm that cannot be started, runs past the timeout, exits other than 0 or 1, or answers an `error` object is BACKEND_ABSENT; a refused `dependency_audit` key, run date or child environment is CONFIG. Given no app and no row it says so and exits 0. It writes nothing.
+summary: `make fe-audit`'s doer. It audits each frontend app directory it is given (the Makefile passes FE_APPS) by running `npm audit --json` there under scripts/child_env.py `build_child_env` and config/project.json `dependency_audit.timeout_seconds`, or reads the saved report a `--report NAME=FILE` names instead, so a test never runs npm. A finding is one advisory a report's `via` entry names: its GHSA id (the last part of its `url`), its package and its severity. It judges each app against `dependency_audit.accepted.<app>`, rows of advisory id to package, reason and review_by day, on today's date (scripts/run_date.py `today`, read once at the entry point; a test hands in its own day). It fails (FAILURE) on four things, all listed before the one closing line: a finding at or above `dependency_audit.fail_at` that no row names with the same advisory and package; a row whose review_by day has passed; a row whose review_by is more than `dependency_audit.max_review_days` days after today, so an acceptance is renewed rather than parked; and a row whose advisory and package the app's report no longer holds, or whose app is not one it audited. A finding below fail_at that no row covers is listed and does not fail; a covered one is listed with its reason and day. A report that is not `npm audit --json` version 2 (an unknown severity, a `via` url with no advisory id) is USAGE, as is an app directory with no package.json or no package-lock.json, a saved report that cannot be read, and a `--report` name that is not an audited app; npm that cannot be started, runs past the timeout, exits other than 0 or 1, or answers an `error` object is BACKEND_ABSENT; a refused `dependency_audit` key, run date or child environment is CONFIG. Given no app and no row it says so and exits 0. It writes nothing.
 effect: read-only
 """
 
@@ -25,8 +25,9 @@ from exit_codes import ExitCode, finish, report  # noqa: E402
 
 ROOT = os.path.dirname(_SCRIPTS)
 _BLOCK = ("dependency_audit",)
-_FIELDS = ("accepted", "fail_at", "timeout_seconds")
+_FIELDS = ("accepted", "fail_at", "max_review_days", "timeout_seconds")
 _WHERE = "config/project.json dependency_audit"
+_KEY_PREFIX = "dependency_audit"
 # The one argv the audit runs; a test points it at a program it controls.
 AUDIT_ARGV = ("npm", "audit", "--json")
 _REPORT_VERSION = 2
@@ -259,7 +260,7 @@ def _findings(doc, where):
     return sorted(found)
 
 
-def _judge(apps, reports, accepted, fail_at, today):
+def _judge(apps, reports, accepted, fail_at, max_review_days, today):
     """(failure lines, listed lines) of every app's findings and every row."""
     floor = config_loader.AUDIT_SEVERITIES.index(fail_at)
     failures, listed = [], []
@@ -293,7 +294,24 @@ def _judge(apps, reports, accepted, fail_at, today):
                     "failed: %s" % (name, advisory, package, severity, fail_at, title)
                 )
         for advisory, row in sorted(rows.items()):
-            if datetime.date.fromisoformat(row["review_by"]) < today:
+            review_by = datetime.date.fromisoformat(row["review_by"])
+            ahead = (review_by - today).days
+            if ahead > max_review_days:
+                failures.append(
+                    "%s: the accepted row for %s %s is parked: review_by %s is %d "
+                    "days after %s, more than %s.max_review_days (%d)"
+                    % (
+                        name,
+                        advisory,
+                        row["package"],
+                        row["review_by"],
+                        ahead,
+                        today.isoformat(),
+                        _KEY_PREFIX,
+                        max_review_days,
+                    )
+                )
+            if review_by < today:
                 failures.append(
                     "%s: the accepted row for %s %s expired: review_by %s is before "
                     "%s"
@@ -334,7 +352,14 @@ def _run(root, args, settings, today, run_audit):
         )
         for name, path in apps.items()
     }
-    failures, listed = _judge(apps, reports, accepted, settings["fail_at"], today)
+    failures, listed = _judge(
+        apps,
+        reports,
+        accepted,
+        settings["fail_at"],
+        settings["max_review_days"],
+        today,
+    )
     for line in listed:
         sys.stdout.write(line + "\n")
     for line in failures:

@@ -2,7 +2,7 @@
 title: Unit — audit_dependencies (npm audit findings judged against the accepted risks in config)
 kind: tests
 layer: n/a
-summary: scripts/audit_dependencies.py driven in process over saved `npm audit --json` reports shaped like a real one, in a project root the test builds from keel's own config/project.json with its own `dependency_audit` block, on a day the test hands in, so no test runs npm or reaches the network. Each failure kind fails on its own and names what failed: a finding at or above `fail_at` no row covers, a covered finding whose row names another package, a row past its review_by day, a row whose advisory the report no longer holds, and a row naming an app not audited. A covered finding passes on its review_by day and is listed with its reason; a finding below `fail_at` is listed and does not fail, and lowering `fail_at` fails it. A report with no findings still judges every row. No app and no row exits 0 saying so. A report that is not version 2, one with an unknown severity or a via url with no advisory id, an app with no package.json or package-lock.json, a `--report` name that is not an audited app and a bad flag are USAGE; npm that cannot start, overruns its timeout, exits 2 or answers an error object is BACKEND_ABSENT; a refused `dependency_audit` value is CONFIG.
+summary: scripts/audit_dependencies.py driven in process over saved `npm audit --json` reports shaped like a real one, in a project root the test builds from keel's own config/project.json with its own `dependency_audit` block, on a day the test hands in, so no test runs npm or reaches the network. Each failure kind fails on its own and names what failed: a finding at or above `fail_at` no row covers, a covered finding whose row names another package, a row past its review_by day, a row dated more than `max_review_days` after today (exactly that many passes, one more fails), a row whose advisory the report no longer holds, and a row naming an app not audited. A covered finding passes on its review_by day and is listed with its reason; a finding below `fail_at` is listed and does not fail, and lowering `fail_at` fails it. A report with no findings still judges every row. No app and no row exits 0 saying so. A report that is not version 2, one with an unknown severity or a via url with no advisory id, an app with no package.json or package-lock.json, a `--report` name that is not an audited app and a bad flag are USAGE; npm that cannot start, overruns its timeout, exits 2 or answers an error object is BACKEND_ABSENT; a refused `dependency_audit` value is CONFIG.
 """
 
 import copy
@@ -118,12 +118,17 @@ _MANIFEST = json.loads((_ROOT / "config" / "project.json").read_text())
 def project(tmp_path):
     (tmp_path / "config").mkdir()
     proj = _Project(tmp_path)
-    proj.configure(accepted={}, fail_at="high", timeout_seconds=30)
+    proj.configure(accepted={}, fail_at="high", max_review_days=90, timeout_seconds=30)
     return proj
 
 
-def _judged(project, capsys, doc, accepted, fail_at="high", today=_TODAY):
-    project.configure(accepted=accepted, fail_at=fail_at, timeout_seconds=30)
+def _judged(project, capsys, doc, accepted, fail_at="high", today=_TODAY, cap=90):
+    project.configure(
+        accepted=accepted,
+        fail_at=fail_at,
+        max_review_days=cap,
+        timeout_seconds=30,
+    )
     app = project.app("astro")
     code = project.main([app, "--report", project.saved("astro", doc)], today=today)
     out, err = capsys.readouterr()
@@ -175,6 +180,31 @@ def test_a_row_past_its_review_day_fails(project, capsys):
         "astro: the accepted row for %s postcss-selector-parser expired: review_by "
         "2026-10-22 is before 2026-10-23" % _PARSER
     ) in err
+
+
+def test_a_review_day_exactly_max_review_days_out_passes(project, capsys):
+    doc = _audit((_PARSER, "postcss-selector-parser", "moderate"))
+    accepted = {"astro": {_PARSER: _row("postcss-selector-parser", "2027-01-21")}}
+    code, out, err = _judged(project, capsys, doc, accepted, today=_TODAY, cap=90)
+    assert code is ExitCode.SUCCESS, err
+    assert (
+        "accepted %s postcss-selector-parser (moderate) until 2027-01-21" % _PARSER
+        in out
+    )
+
+
+def test_a_review_day_past_max_review_days_fails(project, capsys):
+    doc = _audit((_PARSER, "postcss-selector-parser", "moderate"))
+    accepted = {"astro": {_PARSER: _row("postcss-selector-parser", "2027-01-21")}}
+    today = datetime.date(2026, 10, 22)
+    code, _, err = _judged(project, capsys, doc, accepted, today=today, cap=90)
+    assert code is ExitCode.FAILURE
+    assert (
+        "astro: the accepted row for %s postcss-selector-parser is parked: review_by "
+        "2027-01-21 is 91 days after 2026-10-22, more than "
+        "dependency_audit.max_review_days (90)" % _PARSER
+    ) in err
+    assert "1 dependency audit failure(s)" in err
 
 
 def test_a_row_whose_advisory_is_gone_fails(project, capsys):
@@ -248,7 +278,12 @@ def test_no_app_and_no_row_says_nothing_was_judged(project, capsys):
 
 
 def test_rows_with_no_app_are_stale(project, capsys):
-    project.configure(accepted={"astro": {_PARSER: _row("postcss-selector-parser")}})
+    project.configure(
+        accepted={"astro": {_PARSER: _row("postcss-selector-parser")}},
+        fail_at="high",
+        max_review_days=90,
+        timeout_seconds=30,
+    )
     assert project.main([]) is ExitCode.FAILURE
     assert "astro is not an app this run audits" in capsys.readouterr().err
 
@@ -366,7 +401,9 @@ def test_npm_that_cannot_start_is_backend_absent(project, capsys, monkeypatch):
 def test_npm_past_its_timeout_is_backend_absent(project, capsys, monkeypatch):
     sleeper = (sys.executable, "-c", "import time; time.sleep(30)")
     monkeypatch.setattr(audit_dependencies, "AUDIT_ARGV", sleeper)
-    project.configure(accepted={}, fail_at="high", timeout_seconds=1)
+    project.configure(
+        accepted={}, fail_at="high", max_review_days=90, timeout_seconds=1
+    )
     app = project.app("astro")
     assert project.main([app]) is ExitCode.BACKEND_ABSENT
     assert "ran past 1 seconds" in capsys.readouterr().err
@@ -385,6 +422,8 @@ def test_the_real_runner_judges_what_the_program_prints(project, capsys, monkeyp
     [
         {"fail_at": "severe"},
         {"timeout_seconds": 0},
+        {"max_review_days": 0},
+        {"max_review_days": True},
         {"accepted": {"astro": {}}},
         {"accepted": {"astro": {"CVE-2026-0001": _row("zod")}}},
         {"accepted": {"astro": {_HIGH: {"package": "zod", "reason": "r"}}}},
@@ -403,6 +442,7 @@ def test_a_refused_setting_is_config(project, capsys, block):
 
 def test_keel_config_reads_and_its_rows_are_well_formed(capsys):
     settings = audit_dependencies._settings(str(_ROOT))
+    assert settings["max_review_days"] == 90
     for app, rows in settings["accepted"].items():
         assert (_ROOT / "src" / "frontend" / app / "package.json").is_file(), app
         assert rows

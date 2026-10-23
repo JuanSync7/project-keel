@@ -235,7 +235,7 @@
     "extras": ["dev", "template"]
   },
   "dependency_audit": {
-    "_comment": "Each frontend app's npm audit, judged by scripts/audit_dependencies.py (make fe-audit). fail_at is the weakest severity that fails when no accepted row covers the finding; a weaker uncovered finding is listed, not failed. accepted maps an app's directory name under layers.frontend.root to the advisories it accepts, each GHSA id mapped to the package it was found in, the reason it stays open and review_by, the last day the acceptance holds: a row past that day fails, and so does a row whose advisory and package the app's audit no longer reports, so an acceptance is renewed or removed, never forgotten. timeout_seconds bounds one app's npm audit run. docs/guides/deterministic-checks.md section 16 says how to accept a risk.",
+    "_comment": "Each frontend app's npm audit, judged by scripts/audit_dependencies.py (make fe-audit). fail_at is the weakest severity that fails when no accepted row covers the finding; a weaker uncovered finding is listed, not failed. accepted maps an app's directory name under layers.frontend.root to the advisories it accepts, each GHSA id mapped to the package it was found in, the reason it stays open and review_by, the last day the acceptance holds: a row past that day fails, as does a row whose review_by is more than max_review_days after the run's date (renewed, never parked) and a row whose advisory and package the app's audit no longer reports, so an acceptance is renewed or removed, never forgotten. timeout_seconds bounds one app's npm audit run. docs/guides/deterministic-checks.md section 16 says how to accept a risk.",
     "accepted": {
       "astro": {
         "GHSA-rj75-hqrm-r3gf": {
@@ -246,6 +246,7 @@
       }
     },
     "fail_at": "high",
+    "max_review_days": 90,
     "timeout_seconds": 120
   },
   "launcher": {
