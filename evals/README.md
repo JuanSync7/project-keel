@@ -9,7 +9,7 @@ tags: []
 summary: The eval harness — typed JSONL cases, deterministic scorers, replay of recorded responses as a verify gate, and a live run capped by config.
 id: evals-readme
 created: 2026-06-17
-updated: 2026-10-22
+updated: 2026-10-23
 visibility: internal
 canonical: true
 ---

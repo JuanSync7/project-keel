@@ -7,7 +7,7 @@ owner: TBD
 summary: How to replay the eval suites, run them live under the call cap, read the report, author a case with its hashes, and promote a live answer into the dataset.
 id: evals-readme-run
 created: 2026-06-17
-updated: 2026-10-22
+updated: 2026-10-23
 visibility: internal
 canonical: true
 ---

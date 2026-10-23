@@ -9,7 +9,7 @@ tags: [agent, refactor, practices, corpus, gate]
 summary: Walks the corpus KG and refactors each chunk toward a named practice, gating every edit on make verify.
 id: agents-practice-refactor-readme
 created: 2026-07-07
-updated: 2026-10-22
+updated: 2026-10-23
 visibility: internal
 canonical: true
 ---
