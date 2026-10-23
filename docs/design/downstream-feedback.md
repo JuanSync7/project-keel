@@ -2463,6 +2463,7 @@ On 2026-10-22 the maintainer approved this order. Positions 1 to 9 come from the
 | 37 | KEEL-KATEX-1 | mermaid 11 pins katex 0.16, which has a low advisory, and the way out is mermaid 12.2.0 or later; neither dompurify nor mermaid has a runtime test, only the build and the bundle; found by KEEL-FE-AUDIT-1; owner: the maintainer | planned |
 | 38 | KEEL-GOALS-1 | The test that holds each document's list of `make verify` goals to the Makefile reads only a `+`-joined list after `make verify (` or `make verify #`, so a comma-separated list in a table row or prose escapes it; the dev-loops full-gate row went stale that way; found by the KEEL-SHELL-1 review | planned |
 | 39 | KEEL-JSONDUP-1 | `scripts/check_structure.py` parses config/project.json with plain `json.loads` (`_read_json_config`), so a key written twice in one object resolves silently to its last value, where `scripts/config_loader.py` `read` refuses it; found by the KEEL-WARN-1 review | planned |
+| 40 | KEEL-OWNER-2 | `scripts/jobs/build_corpus.py` records a `TBD` doc as unowned while check_F lets the same doc inherit config/project.json `accountability.default_owner`, so the corpus and the gate disagree on one tree; folds in the review's two Low findings, a written `null` owner read as an owner called "null", and a nullable key's refusal line that puts the bound on null; found by the KEEL-WARN-1 review | planned |
 
 ### Build lanes ahead of the merge line
 

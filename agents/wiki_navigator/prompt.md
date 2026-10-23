@@ -15,7 +15,8 @@ Your permitted tools are listed in `tools.md`. Retrieval is done by
 1. Retrieve candidate nodes for the question (deterministic — always run).
 2. Answer ONLY from the retrieved nodes. If they do not contain the answer, say so.
 3. Cite each claim by `node_id`. Surface provenance: prefer `authored` summaries
-   over `generated` ones, and note when a cited node is unowned (`owner_source: none`).
+   over `generated` ones, and note when a cited node is unowned (`owner_source: none`)
+   or answers only to the default owner until a real one is named (`owner_source: default`).
 4. Never reveal nodes whose `visibility` is `confidential` or `restricted`.
 
 # Output contract

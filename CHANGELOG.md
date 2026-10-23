@@ -251,8 +251,19 @@ version rather than a bare commit:
   CONVENTIONS §12 grammar, such as `"TBD"` or `TBD # later`, is an error
   naming the document and the grammar. Keel and generated projects ship
   `platform-team`, the role the tool specs already name. A missing `owner`
-  still warns, and the corpus's owner report still lists a `TBD` node as
-  unowned.
+  still warns.
+- **The corpus gives a `TBD` node the default owner too.** check_F let a
+  `TBD` tool or agent document inherit `accountability.default_owner` while
+  `scripts/jobs/build_corpus.py` recorded the same document as unowned.
+  build_corpus now reads the key through `scripts/config_loader.py` and fills
+  it where, and only where, a node's owner chain ends on a `TBD` in any letter
+  case, with the new `owner_source` value `default` and `owner_origin` the
+  place the `TBD` stands. A real owner anywhere on the chain still wins; a node
+  that names no owner, a written null, a `null` default or a tree with no
+  config file stays `none`, and a refused default exits 14 from build_corpus
+  and check_corpus. `scripts/accountability_report.py` counts the default
+  nodes on their own line, listed by their `TBD`, apart from the owned and the
+  unowned, and its `--json` still lists the unowned only.
 - **The generation suite renders each answer set once per test module.**
   `tests/integration/test_copier_generation.py` renders through
   `tests/render_cache.py`, one copier render per distinct answer set and day

@@ -564,16 +564,25 @@ markers (one token, `owner:`, grammar `[A-Za-z0-9._@-]+`):
 
 Resolution is **finest-wins, then inherit**: a marker beats frontmatter
 beats the parent's resolved owner; `owner_source` records which
-(`marker` | `frontmatter` | `inherited` | `none`). The `TBD` placeholder,
-in any letter case, counts as unowned. Corpus nodes that resolve to `owner_source: none` are
-reported by `scripts/accountability_report.py`. Independently, at commit
+(`marker` | `frontmatter` | `inherited` | `default` | `none`). The `TBD`
+placeholder, in any letter case, names no owner of its own. Where a node's
+chain reaches no real owner and a `TBD` stands on it,
+`scripts/jobs/build_corpus.py` fills `config/project.json`
+`accountability.default_owner`, read through `scripts/config_loader.py`, as
+`owner_source: default`, and `owner_origin` is the place that `TBD` stands. A
+real owner anywhere on the chain beats the default. A node that names no
+owner, a written null (`null` in any letter case, or `~`), a `null` default
+and a tree with no config file all resolve to `none`.
+`scripts/accountability_report.py` lists the `none` nodes and counts the
+`default` nodes on their own line, by the `TBD` each answers to. Independently, at commit
 time `check_F` holds each `kind: tool`/`agent` frontmatter doc owned (it
 inspects frontmatter only, not corpus nodes): a `TBD` owner inherits
 `config/project.json` `accountability.default_owner`, and with no default set
 the doc is an error naming the key; an owner outside the grammar above is an
-error naming the doc; a missing owner warns. The corpus does not
-read the default, so `scripts/accountability_report.py` still lists a `TBD`
-node as unowned.
+error naming the doc; a written null is an error naming the doc, which the
+default does not cover; a missing owner warns. check_F and the corpus read the
+key the same way, so a `TBD` tool or agent doc check_F holds owned is a
+`default` node in the corpus.
 
 ## 13. Authoring a new agent
 

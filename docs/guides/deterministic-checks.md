@@ -71,7 +71,7 @@ everything and therefore expect the project interpreter.
 | AAD schema drift | `scripts/agent_surface/generate_aad_schema.py --check` | error | pydantic | Committed AAD JSON Schema matches the model |
 | Code-doc drift | `scripts/cdmon_sync.py --check` | error* | any | cdmon code↔doc drift — the CONVENTIONS §9 worked example of a thin adapter over an external tool (*a stated skip, exit 0, until `cdmon` is on PATH **and** `config/cdmon/cdmon.yaml` exists; cdmon is not on PyPI). Reached from `check-all` via `make check-cdmon` |
 | Exit-code table | `scripts/exit_code_table.py --check` | error | ≥3.10 | The exit-code table in `docs/guides/limits-and-troubleshooting.md` is what `scripts/exit_codes.py` `ExitCode` and the scripts `make verify` runs say: a member with no row, a row with no member and a script row naming other codes each fail it. Reached from `check-all` via `make check-exit-codes`; `make exit-codes` regenerates |
-| Accountability | `scripts/accountability_report.py` | report | ≥3.7 | Lists corpus nodes that resolve to no owner (informational; rides `make advise`) |
+| Accountability | `scripts/accountability_report.py` | report | ≥3.7 | Lists corpus nodes that resolve to no owner and counts those on the default owner (informational; rides `make advise`) |
 | Doc review | `scripts/jobs/review_docs.py` | report | any (git) | Freshness — every governed document's `updated:` is no earlier than its last commit, and a document modified in the working tree carries today's date (gated by `tests/integration/test_doc_freshness.py`, `--strict`) — and the advisory that stays advisory: backticked repository paths that resolve to nothing. No git is a stated skip. The fix it names is `make restamp-docs` (`scripts/jobs/restamp_docs.py`) |
 | Generic-solution advisor | `scripts/check_generic.py` | report | 3.6-safe | Distinctive literals asserted as golden in tests **and** hardcoded in `src/` logic (the "answer-key" overfit smell, §18). Advisory only — never fails the build |
 | Coding-practices advisor | `scripts/check_practices.py` | report | 3.6-safe | Coding-practice smells (a provider constructed inline instead of injected, a ≥3-branch `isinstance` chain, a `# hot-path` class without `__slots__`, a resource acquired outside a `with`). Reads `config/practices.json`; advisory only — never fails the build (see [coding-practices](coding-practices.md)) |
@@ -139,7 +139,9 @@ print but never fail the build.
   error naming the document, which the default does not cover: YAML reads both
   as null, so neither names an owner, and `null` would otherwise pass the
   grammar as an owner called "null". Any other owner is never judged; a
-  missing or empty `owner` is a warning.
+  missing or empty `owner` is a warning. `scripts/jobs/build_corpus.py` reads
+  the same key the same way, so such a `TBD` document is an
+  `owner_source: default` node in the corpus (CONVENTIONS §12).
 - **G. Tool↔agent binding** — `tools.md` ↔ each spec's `## Used by` agree.
 - **H. Project facts** — `config/project.json` agrees with the tree (§15).
   An absent `config/project.json` is an error: copier never prunes it, so a
@@ -540,7 +542,7 @@ the scheme or a lettered check, and then updates **both** this script and
 
 **Purpose.** `wiki/corpus.json` is the generated "one-brain" index (CONVENTIONS
 §11). This check validates the graph — unique `node_id`s, resolvable
-`parent`/`children`/`links`, valid `kind`/`owner_source`/`visibility` and a link `kind` from the closed set, owner
+`parent`/`children`/`links`, valid `kind`/`owner_source` (`frontmatter`, `marker`, `inherited`, `default` or `none`)/`visibility` and a link `kind` from the closed set, owner
 coherence, sorted tags, **acyclic** parent chains — and proves the build is
 **deterministic** (builds twice, asserts byte-identical output). It also gates
 the **local** corpus — the file the agents actually query: absent is a loud
@@ -589,7 +591,12 @@ have drifted from the code they describe.
 ### 6. Accountability report — `scripts/accountability_report.py`
 
 **Purpose.** A *report*, not a gate: lists corpus nodes that resolve to no owner
-(CONVENTIONS §12), so ownership gaps are visible. Does not fail the build.
+(`owner_source: none`, CONVENTIONS §12), so ownership gaps are visible. On its
+own line it counts the nodes that answer to `accountability.default_owner`
+(`owner_source: default`), listed by the `TBD` each answers to, since writing
+the real owner there repairs every node under it; a last line counts the nodes
+with a real owner. `--json` lists the unowned nodes only, the shape
+`agents/index_enforcer` reads as its owner gaps. Does not fail the build.
 
 **Run.** `python scripts/accountability_report.py`
 
