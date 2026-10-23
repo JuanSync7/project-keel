@@ -450,6 +450,15 @@ version rather than a bare commit:
   guard that fails a reach past it.
 
 ### Fixed
+- **A document's list of `make verify` goals is read in every form.** The
+  drift test in `tests/integration/test_gate_evidence_record.py` read only a
+  `+`-joined list after `make verify (` or `make verify #`, so a comma list in
+  a table row or a sentence went stale unseen. It now reads a `+`, comma,
+  `and` or `or` list of make targets in a code line, table row, list item or
+  paragraph that names verify, and fails one that names most of verify's
+  goals but not exactly the Makefile's, in order; an accepted ADR is not
+  read. docs/design/make-next-steps.md no longer spells the goals its counts
+  predate.
 - **A nullable key with a bound puts null first in its refusal.** A refused
   `transports.serve.memory_cap_mb` or `tests.memory_scratch_root` now reads
   "accepted: null, or an integer with a value >= 1", where it read as if null

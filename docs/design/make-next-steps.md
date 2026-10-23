@@ -840,9 +840,9 @@ edges sit together. A target with no next targets (`→ —`) was routed to
 | `exit-codes` | `check-exit-codes` |
 
 Reachability from `help`, following these edges, Makefile prerequisites and
-the goals `verify` hands `scripts/gate_evidence.py` (`check-all`,
-`secret-scan`, `lint`, `typecheck`, `test`, `trace`, `eval`, `test-fe`), gives
-the 37 and the 14 above. Following these edges alone gives 10: `help`,
+the goals `verify` handed `scripts/gate_evidence.py` before KEEL-SHELL-1 added
+`test-sh` to them, gives the 37 and the 14 above. The Makefile's `verify`
+recipe owns that list. Following these edges alone gives 10: `help`,
 `check`, `new`, `check-docs`, `advise`, `doc-review`, `restamp-docs`,
 `check-all`, `verify`, `doc-review-apply`.
 
@@ -862,3 +862,7 @@ the 37 and the 14 above. Following these edges alone gives 10: `help`,
   there are 3 hard-coded `next:` lines (not 2). Its reachability counts are
   now labelled inferred, with the sketch's edges in the appendix. Its claim
   that every later build step depends on the first was too strong.
+- 2026-10-23: The reachability paragraph spelled out the goals `verify` ran
+  when the counts were taken. KEEL-SHELL-1 then added `test-sh` to the recipe,
+  so the list went stale. The list is gone; the paragraph now says the counts
+  predate `test-sh`, and they are not re-measured here.

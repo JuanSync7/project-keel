@@ -2,7 +2,7 @@
 title: Integration — the gate's evidence record, written by a real gate run
 kind: tests
 layer: n/a
-summary: A scratch git repository carrying the evidence writer, its siblings, keel's own config/project.json, schema and `test` recipe runs a real reduced gate through scripts/gate_evidence.py with real make, pytest and git. Two runs on the same tree exit 0 and write byte-identical records naming HEAD, a clean tree and pytest's own counts, with no absolute path, host or user in them, and leave what git lists unchanged (the writer's rerun_proof). A planted failing test keeps make's real exit code and leaves a red record naming the dirty tree; under `make -i` the exit is 0, as -i asks, and the record is still red (tests-failed). `make -n` runs nothing and writes nothing. The record validates against config/evidence/gate-record.schema.json and each fault twin (missing field, wrong type, extra field, unknown version) is rejected. keel and its template both ignore config/project.json `evidence.dir`; a generated project, which has no template twin, judges its own tree only. docs/guides/deterministic-checks.md's section on the record names the schema's fields and reasons and the verify recipe's goals, read back and held equal to those owners.
+summary: A scratch git repository carrying the evidence writer, its siblings, keel's own config/project.json, schema and `test` recipe runs a real reduced gate through scripts/gate_evidence.py with real make, pytest and git. Two runs on the same tree exit 0 and write byte-identical records naming HEAD, a clean tree and pytest's own counts, with no absolute path, host or user in them, and leave what git lists unchanged (the writer's rerun_proof). A planted failing test keeps make's real exit code and leaves a red record naming the dirty tree; under `make -i` the exit is 0, as -i asks, and the record is still red (tests-failed). `make -n` runs nothing and writes nothing. The record validates against config/evidence/gate-record.schema.json and each fault twin (missing field, wrong type, extra field, unknown version) is rejected. keel and its template both ignore config/project.json `evidence.dir`; a generated project, which has no template twin, judges its own tree only. docs/guides/deterministic-checks.md's section on the record names the schema's fields and reasons and the verify recipe's goals, read back and held equal to those owners. Every document but an accepted ADR that lists most of verify's goals, as a `+`, comma, `and` or `or` list of make targets in a code line, table row, list item or prose paragraph that names verify, names exactly the Makefile's goals in its order; the reader is shown on each form, and on an example of a few goals and a unit that does not name verify, which it leaves alone.
 @covers scripts/gate_evidence.py
 """
 
@@ -320,38 +320,163 @@ def test_keels_verify_recipe_runs_the_driver_over_the_goals_check_w_reads():
     assert any("$(JUNIT_XML)" in line for line in test_rule.recipe), test_rule.recipe
 
 
-# A goal list a document spells beside `make verify`: a `(`- or `#`-led run of
-# make-target names joined by `+`, backticked or bare, across a line break.
-_DOC_GOAL_LIST = re.compile(
-    r"make verify`?[ \t]*(?:\(|#)\s*(`?[\w-]+`?(?:\s*\+\s*`?[\w-]+`?)+)"
-)
+# What a document's goal list is made of. A list item is one make target, bare or
+# backticked (`make lint` too); a separator is `+`, a comma, `and` or `or`, so the
+# `+`-joined code comment, a table cell's comma list and a prose sentence read
+# the same way. A target name that is also an English word ("test", "lint") is
+# only an item beside a separator, so a sentence names a list only where it
+# joins two targets.
+_LIST_SEP = r"(?:\s*\+\s*|\s*,\s*(?:(?:and|or)\s+)?|\s+(?:and|or)\s+)"
+# A unit of text names verify when it says `make verify`, `` `verify` `` or
+# verify's recipe or goals; only a list in such a unit is a claim about verify.
+_NAMES_VERIFY = re.compile(r"make verify\b|`verify`|\bverify(?:'s)? (?:recipe|goals)\b")
+_FENCE = "```"
 
 
-def test_every_document_that_spells_the_verify_goals_spells_the_makefiles():
-    """CMP-4.S5 added `test-fe` to verify while CONVENTIONS.md and two guides
-    still listed four goals. Every document that writes verify's goals out as
-    `make verify (a + b + ...)` or `make verify  # a + b + ...` must name
-    exactly the goals keel's recipe runs, in its order. The tree is walked as
-    check_structure walks it, not listed by git: a generated project runs this
-    suite before it has a repository."""
-    goals, _unresolved = cs._recursions(_keel_verify().recipe[0])
-    seen, stale = 0, []
+def _make_targets():
+    """Every plain target keel's Makefile defines (no pattern or variable rule)."""
+    text = (_ROOT / "Makefile").read_text("utf-8")
+    return sorted(
+        {
+            r.target
+            for r in cs.make_target_rules(text)
+            if re.fullmatch(r"[\w-]+", r.target)
+        }
+    )
+
+
+def _text_units(text):
+    """Yield `(line, text)` for each unit a list cannot cross: a table row, a line
+    of a fenced block, a list item, or a prose paragraph joined across its line
+    breaks and numbered by its first line. Blank lines, fences, rows and item
+    markers end a paragraph."""
+    para, start, fenced = [], 0, False
+    for number, raw in enumerate(text.split("\n"), 1):
+        line = raw.strip()
+        item = bool(re.match(r"(?:[-*]|\d+\.)\s", line))
+        ends = fenced or item or not line or line.startswith((_FENCE, "|"))
+        if ends and para:
+            yield start, " ".join(para)
+            para = []
+        if line.startswith(_FENCE):
+            fenced = not fenced
+        elif line and (fenced or line.startswith("|")):
+            yield number, line
+        elif line:
+            if not para:
+                start = number
+            para.append(line)
+    if para:
+        yield start, " ".join(para)
+
+
+def _verify_goal_lists(text, targets, goals):
+    """Yield `(line, named)` for each list of make targets in `text` that sits in
+    a unit naming verify and names most of verify's goals: a list that names
+    more than half of them claims to be verify's list, so a stale one, missing a
+    goal or two, is still read, while an example of a few (`such as a, b or c`)
+    is not."""
+    names = "|".join(re.escape(t) for t in sorted(targets, key=len, reverse=True))
+    item = r"(?:`(?:make )?(?:%s)`|(?<![\w`/.-])(?:%s)(?![\w`/-]))" % (names, names)
+    run = re.compile(r"%s(?:%s%s)+" % (item, _LIST_SEP, item))
+    for line, unit in _text_units(text):
+        if not _NAMES_VERIFY.search(unit):
+            continue
+        for m in run.finditer(unit):
+            named = [
+                n.strip("`").replace("make ", "", 1)
+                for n in re.findall(item, m.group(0))
+            ]
+            if 2 * len(set(named) & set(goals)) > len(goals):
+                yield line, named
+
+
+def _documents():
+    """Yield `(path, text)` for each document a goal list can sit in, walked as
+    check_structure walks the tree, not listed by git: a generated project runs
+    this suite before it has a repository. An accepted ADR is left out: its
+    decision text is never edited (docs/guides/doc-style.md §8), so a goal list
+    in it records the recipe on the day it was decided."""
     for dirpath, _dirs, files in sorted(cs.walk(str(_ROOT))):
         for name in sorted(files):
             if not name.endswith((".md", ".md.jinja")):
                 continue
             path = Path(dirpath) / name
-            text = path.read_text("utf-8")
-            for m in _DOC_GOAL_LIST.finditer(text):
-                seen += 1
-                named = [g.strip().strip("`") for g in m.group(1).split("+")]
-                if named != goals:
-                    line = text.count("\n", 0, m.start()) + 1
-                    stale.append(
-                        "%s:%d lists %s" % (path.relative_to(_ROOT), line, named)
-                    )
-    assert seen, "no document spells verify's goals: the pattern matches nothing"
+            if (cs.parse_frontmatter(str(path)) or {}).get("kind") == "adr":
+                continue
+            yield path, path.read_text("utf-8")
+
+
+def test_every_document_that_spells_the_verify_goals_spells_the_makefiles():
+    """CMP-4.S5 added `test-fe` to verify while CONVENTIONS.md and two guides
+    still listed four goals, and KEEL-SHELL-1 added `test-sh` while the
+    dev-loops full-gate row, a comma list no `+` reader saw, kept eight. Every
+    list of make targets that sits in a table row, a code line, a list item or
+    a prose paragraph naming verify, and names most of verify's goals, must
+    name exactly the goals keel's recipe runs, in its order."""
+    goals, _unresolved = cs._recursions(_keel_verify().recipe[0])
+    targets = _make_targets()
+    seen, stale = 0, []
+    for path, text in _documents():
+        where = path.relative_to(_ROOT)
+        for line, named in _verify_goal_lists(text, targets, goals):
+            seen += 1
+            if named != goals:
+                stale.append("%s:%d lists %s" % (where, line, named))
+    assert seen, "no document spells verify's goals: the reader matches nothing"
     assert stale == [], "verify runs %s, but\n%s" % (goals, "\n".join(stale))
+
+
+_GOALS = ["check-all", "lint", "test", "trace", "eval"]
+_TARGETS = _GOALS + ["fmt", "secrets-install"]
+
+
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        ("make verify   # check-all + lint + test + trace + eval", [(1, _GOALS)]),
+        ("make verify   # check-all + lint + test + trace", [(1, _GOALS[:4])]),
+        ("make verify (check-all + lint + test + trace + eval)", [(1, _GOALS)]),
+        (
+            "| Full gate | `make verify` | `check-all`, `lint`, `test` and `trace` |",
+            [(1, _GOALS[:4])],
+        ),
+        (
+            "intro\n\nThe `verify` recipe runs each goal (`check-all`,\n"
+            "`lint`, `test`, `trace` or `eval`) in order.",
+            [(3, _GOALS)],
+        ),
+        (
+            "- `make verify` runs `make check-all`, `make lint` and `make test`.",
+            [(1, _GOALS[:3])],
+        ),
+        ("A goal such as `trace` or `eval` reports no counts to `make verify`.", []),
+        ("CI runs `check-all`, `lint`, `test` and `trace` as separate steps.", []),
+        ("`make verify` runs\n\n`check-all`, `lint`, `test` and `trace`.", []),
+        ("`make verify`\n```\ncheck-all, lint, test, trace\n```", []),
+        ("make verify: lint, types and tests, then fmt and secrets-install.", []),
+    ],
+    ids=[
+        "plus-comment",
+        "stale-plus-comment",
+        "bare-in-parentheses",
+        "table-row",
+        "prose-across-lines",
+        "list-item-make-prefixed",
+        "an-example-of-a-few",
+        "a-paragraph-not-naming-verify",
+        "a-list-past-a-blank-line",
+        "a-fenced-line-not-naming-verify",
+        "english-words-not-a-list",
+    ],
+)
+def test_the_goal_list_reader_reads_a_list_in_any_form_beside_verify(text, expected):
+    """The reader the drift test relies on: a `+`, comma, `and` or `or` list
+    reads the same in a code line, a table row, a list item and a paragraph
+    across a line break, and a stale list (one goal short) is still read; an
+    example of a few goals, a list in a unit that does not name verify, and
+    English words that share a target's name are not."""
+    assert list(_verify_goal_lists(text, _TARGETS, _GOALS)) == expected
 
 
 def _goal(name, counts):
