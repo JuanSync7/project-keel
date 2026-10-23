@@ -2,7 +2,7 @@
 title: OpenAI-compatible model backend
 layer: backend
 public_api: no
-summary: Adapter for any HTTP endpoint speaking the OpenAI chat-completions API. It is built only for a `base_url` that is an http or https URL with a host and no user part, query or fragment, written in unreserved URL characters, and, for http, only when the host is a loopback address literal (127.0.0.0/8 or ::1 by the stdlib ipaddress module, read through scripts/child_env.py canonical_host_entry; the name localhost is refused, since a name resolves through DNS or a hosts file), so the bearer token never crosses a network in clear text; and only for an `api_key_env` that config/project.json `models.credential_env` declares for this adapter (scripts/child_env.py load_policy), so no caller, and no config a caller forwards, can choose another environment variable to send as the bearer token; either refusal is a ValueError that names the argument and never a value. Between the two, the base_url's host and port must be listed in config/project.json `models.allowed_hosts` for this adapter, compared exactly in scripts/child_env.py canonical_host_entry's one form (an entry `host` matches only the scheme's default port, `host:port` only that port, nothing by suffix, prefix or wildcard); the shipped list is empty, so every host, the default one included, is refused until a project lists it, and the refusal names that key and the entry to add, never the path, before the credential variable is read, which it is through scripts/config_loader.py `env`, at each call. base_url is read-only after that check. A call ends `timeout` seconds after it starts, config/project.json `models.timeout_seconds` for this adapter (models/limits.py) when the caller names none: the connect, a proxy's CONNECT tunnel, the TLS handshake, the send and every read of the status line, headers and body each wait at most the time left, so a server that answers one byte at a time cannot stretch the call past it by more than one wake-up. The time running out while connecting or sending is ModelUnavailable, as urllib reports it; while the reply is read, a RuntimeError naming the endpoint, the limit and that key. Name resolution is outside the limit, and a host name with several addresses may wait the time left once per address. A reply body is read in pieces up to config/project.json `models.max_reply_bytes`: one byte more is a RuntimeError naming the endpoint and the cap, and the rest is never read. A redirect is never followed: urllib's default handler would re-send a 301, 302 or 303 as a GET with the Authorization header to a host nobody listed, so any 3xx is a RuntimeError naming the endpoint and the status, never the Location. Defence in depth, not a sandbox (docs/adr/keel/K-0018-model-endpoint-host-allowlist.md). An unreachable endpoint is ModelUnavailable (absent); an endpoint that answers with an error, or with a body that is not a chat completion, is broken, and that body is described by its keys, never quoted. An error names the endpoint by scheme, host and port, never by its path.
+summary: Adapter for any HTTP endpoint speaking the OpenAI chat-completions API. It is built only for a `base_url` that is an http or https URL with a host and no user part, query or fragment, written in unreserved URL characters, and, for http, only when the host is a loopback address literal (127.0.0.0/8 or ::1 by the stdlib ipaddress module, read through scripts/child_env.py canonical_host_entry; the name localhost is refused, since a name resolves through DNS or a hosts file), so the bearer token never crosses a network in clear text; and only for an `api_key_env` that config/project.json `models.credential_env` declares for this adapter (scripts/child_env.py load_policy), so no caller, and no config a caller forwards, can choose another environment variable to send as the bearer token; either refusal is a ValueError that names the argument and never a value. Between the two, the base_url's host and port must be listed in config/project.json `models.allowed_hosts` for this adapter, compared exactly in scripts/child_env.py canonical_host_entry's one form (an entry `host` matches only the scheme's default port, `host:port` only that port, nothing by suffix, prefix or wildcard); the shipped list is empty, so every host, the default one included, is refused until a project lists it, and the refusal names that key and the entry to add, never the path, before the credential variable is read, which it is through scripts/config_loader.py `env`, at each call. base_url is read-only after that check. A call ends `timeout` seconds after it starts, config/project.json `models.timeout_seconds` for this adapter (models/limits.py) when the caller names none: the connect, a proxy's CONNECT tunnel, the TLS handshake, the send and every read of the status line, headers and body each wait at most the time left, so a server that answers one byte at a time cannot stretch the call past it by more than one wake-up. The time running out while connecting or sending is ModelUnavailable, as urllib reports it; while the reply is read, a RuntimeError naming the endpoint, the limit and that key. Name resolution is inside the limit: a host name is resolved in a daemon thread waited on for the time left, a lookup still running then is ModelUnavailable naming the host (the thread is left to finish on its own, since a resolver call cannot be cancelled), and each address of a name with several is tried with only the time left. A reply body is read in pieces up to config/project.json `models.max_reply_bytes`: one byte more is a RuntimeError naming the endpoint and the cap, and the rest is never read. A redirect is never followed: urllib's default handler would re-send a 301, 302 or 303 as a GET with the Authorization header to a host nobody listed, so any 3xx is a RuntimeError naming the endpoint and the status, never the Location. Defence in depth, not a sandbox (docs/adr/keel/K-0018-model-endpoint-host-allowlist.md). An unreachable endpoint is ModelUnavailable (absent); an endpoint that answers with an error, or with a body that is not a chat completion, is broken, and that body is described by its keys, never quoted. An error names the endpoint by scheme, host and port, never by its path.
 """
 
 from __future__ import annotations
@@ -16,11 +16,12 @@ import ipaddress
 import json
 import socket
 import string
+import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import IO, Any, Callable, Optional, Tuple
+from typing import IO, Any, Callable, List, Optional, Tuple
 
 from scripts import config_loader
 from scripts.child_env import canonical_host_entry, load_policy
@@ -228,6 +229,42 @@ def _time_left() -> float:
     return left
 
 
+def _resolved(host: str, port: int) -> List[str]:
+    """The addresses *host* resolves to, as numeric host strings, each once
+    and in the resolver's order, or socket.timeout once the call's deadline
+    passes first. An address literal is its own answer. The lookup runs on a
+    daemon thread, since getaddrinfo takes no timeout: one still waiting on
+    the resolver at the deadline is left to end with the resolver's own
+    limit, and holds no socket."""
+    try:
+        return [str(ipaddress.ip_address(host.strip("[]")))]
+    except ValueError:
+        pass
+    found: dict = {}
+
+    def lookup() -> None:
+        try:
+            found["infos"] = socket.getaddrinfo(host, port, 0, socket.SOCK_STREAM)
+        except OSError as exc:  # carried to the caller's thread, not lost
+            found["error"] = exc
+
+    thread = threading.Thread(target=lookup, name="resolve " + host, daemon=True)
+    thread.start()
+    thread.join(_time_left())
+    if thread.is_alive():
+        raise socket.timeout("resolving %s did not finish in time" % host)
+    if "error" in found:
+        raise found["error"]
+    hosts: List[str] = []
+    for family, _type, _proto, _name, sockaddr in found["infos"]:
+        written = str(sockaddr[0])
+        if family == socket.AF_INET6 and len(sockaddr) > 3 and sockaddr[3]:
+            written = "%s%%%d" % (written, sockaddr[3])  # a link-local scope
+        if written not in hosts:
+            hosts.append(written)
+    return hosts
+
+
 class _DeadlineReader(io.RawIOBase):
     """A reply's socket, each read waiting at most the time left."""
 
@@ -287,10 +324,22 @@ class _DeadlineConnection(http.client.HTTPConnection):
         # limit). _create_connection is http.client's own seam for this call.
         create: Callable[..., socket.socket] = self._create_connection  # type: ignore[has-type]
 
-        def create_within_deadline(*args: Any, **kwargs: Any) -> socket.socket:
-            sock = create(*args, **kwargs)
-            sock.settimeout(_time_left())
-            return sock
+        def create_within_deadline(
+            address: Tuple[str, int], _timeout: Any = None, source: Any = None
+        ) -> socket.socket:
+            # Resolved here, within the time left, and each address then gets
+            # what is left: create alone resolves with no limit and gives
+            # every address the whole wait again.
+            failure: Optional[OSError] = None
+            for host in _resolved(address[0], address[1]):
+                try:
+                    sock = create((host, address[1]), _time_left(), source)
+                except OSError as exc:
+                    failure = exc
+                    continue
+                sock.settimeout(_time_left())
+                return sock
+            raise failure or OSError("no address for %s" % address[0])
 
         self._create_connection = create_within_deadline
 

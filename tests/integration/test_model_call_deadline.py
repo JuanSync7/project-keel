@@ -2,7 +2,7 @@
 title: Integration — one openai-compatible call ends at its time limit, however slowly the server answers
 kind: tests
 layer: n/a
-summary: models/openai_compatible.py is pointed at a loopback socket server that answers one byte at a time, each byte well inside the call's time limit, so a limit applied to each socket wait alone would never fire. Whether the server drips the status line and headers or the body, the call is refused within the limit plus _SLACK_S, with a RuntimeError that is not ModelUnavailable, naming the endpoint, the limit and config/project.json `models.timeout_seconds`, and never the path. An https call whose TCP connect takes most of the limit, to a server that never answers the ClientHello, is refused within the limit plus _SLACK_S too, so the TLS handshake waits only the time the connect left; through a CONNECT proxy that takes most of the limit to open the tunnel, the handshake waits only the time the tunnel left (the opener is rebuilt with the proxy set, as it reads the proxy variables when it is built); and a TCP connect that starts _BEFORE_CONNECT_S into the call is given at most the limit less that time. The server stops dripping after _DRIP_FOR_S, far past the limit plus the slack, so a call that waits on each byte fails the elapsed-time assertion instead of hanging the run.
+summary: models/openai_compatible.py is pointed at a loopback socket server that answers one byte at a time, each byte well inside the call's time limit, so a limit applied to each socket wait alone would never fire. Whether the server drips the status line and headers or the body, the call is refused within the limit plus _SLACK_S, with a RuntimeError that is not ModelUnavailable, naming the endpoint, the limit and config/project.json `models.timeout_seconds`, and never the path. An https call whose TCP connect takes most of the limit, to a server that never answers the ClientHello, is refused within the limit plus _SLACK_S too, so the TLS handshake waits only the time the connect left; through a CONNECT proxy that takes most of the limit to open the tunnel, the handshake waits only the time the tunnel left (the opener is rebuilt with the proxy set, as it reads the proxy variables when it is built); and a TCP connect that starts _BEFORE_CONNECT_S into the call is given at most the limit less that time. A host name whose lookup never returns is refused at the limit as ModelUnavailable naming the host, and each address of a name with two is given only the time left. The server stops dripping after _DRIP_FOR_S, far past the limit plus the slack, so a call that waits on each byte fails the elapsed-time assertion instead of hanging the run.
 @covers models/openai_compatible.py
 """
 
@@ -304,3 +304,80 @@ def test_a_tls_handshake_through_a_proxy_waits_only_the_time_the_tunnel_left(
         elapsed = time.monotonic() - started
     assert "handshake" in str(raised.value), raised.value
     assert elapsed < _TLS_LIMIT_S + _SLACK_S, elapsed
+
+
+# The name-resolution cases: a lookup that hangs (a resolver that never
+# answers) and a name with several addresses, each refusing late. Both reach
+# no network: getaddrinfo is replaced, and every address is the loopback one.
+_NAMED = "api.example.test"
+
+
+def _named_backend(monkeypatch):
+    from models import get_model
+    from models import openai_compatible as mod
+
+    entry = _NAMED + ":443"
+    policy = mod.load_policy()._replace(allowed_hosts={_ADAPTER: (entry,)})
+    monkeypatch.setattr(mod, "load_policy", lambda root=None: policy)
+    monkeypatch.setenv("no_proxy", "*")
+    monkeypatch.setenv("NO_PROXY", "*")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    return get_model(_ADAPTER, base_url="https://%s/v1" % entry, timeout=_LIMIT_S)
+
+
+def test_a_name_that_never_resolves_is_refused_at_the_call_limit(monkeypatch):
+    from models import ModelUnavailable
+
+    resolve = socket.getaddrinfo
+    release = threading.Event()
+
+    def hangs(host, *args, **kwargs):
+        if host == _NAMED:
+            release.wait(_DRIP_FOR_S)
+        return resolve(host, *args, **kwargs)
+
+    backend = _named_backend(monkeypatch)
+    monkeypatch.setattr(socket, "getaddrinfo", hangs)
+    started = time.monotonic()
+    try:
+        with pytest.raises(ModelUnavailable) as info:
+            backend.run("ping")
+        elapsed = time.monotonic() - started
+    finally:
+        release.set()
+    assert elapsed < _LIMIT_S + _SLACK_S, elapsed
+    assert _NAMED in str(info.value), info.value
+
+
+def test_each_address_of_a_name_waits_only_the_time_left(monkeypatch):
+    """Two addresses, the first refusing only after most of the limit: the
+    second connect gets what is left, not the whole limit again."""
+    late = 0.6
+    seen = []
+    calls = []
+    resolve = socket.getaddrinfo
+
+    def two_addresses(host, port, *args, **kwargs):
+        if host != _NAMED:
+            return resolve(host, port, *args, **kwargs)
+        return [
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", (ip, port))
+            for ip in ("127.0.0.2", "127.0.0.3")
+        ]
+
+    def refuses_late(address, timeout=None, *args, **kwargs):
+        seen.append(timeout)
+        calls.append(address)
+        time.sleep(late)
+        raise ConnectionRefusedError(111, "refused")
+
+    backend = _named_backend(monkeypatch)
+    monkeypatch.setattr(socket, "getaddrinfo", two_addresses)
+    monkeypatch.setattr(socket, "create_connection", refuses_late)
+    started = time.monotonic()
+    with pytest.raises(RuntimeError):
+        backend.run("ping")
+    elapsed = time.monotonic() - started
+    assert calls == [("127.0.0.2", 443), ("127.0.0.3", 443)], (seen, calls)
+    assert seen[1] <= _LIMIT_S - late, seen
+    assert elapsed < _LIMIT_S + _SLACK_S, elapsed
