@@ -2,7 +2,7 @@
 title: Unit — shell_gate (the shell lint, format and test gates, driven through stub tools)
 kind: tests
 layer: n/a
-summary: scripts/shell_gate.py driven against stub tools, one small Python program put on a private PATH under each name config/project.json `shell.linter`, `shell.formatter` and `shell.test_runner` gives, which records its argv and environment and answers from a plan file. Every mode judges exactly the shell scripts a commit could carry, found by a `shell.script_suffixes` suffix or a `shell.shebang_shells` shebang (an `env` one with options included), never a Python file, a test file, an ignored file, a symlink or a tracked file deleted from the work tree; the test mode runs exactly the `shell.test_suffixes` files. The tool's own status is the answer, so a finding is the tool's status passed through, and each tool gets the allowlisted environment and never a planted variable. Off (`shell.enabled` false), the gate says why and runs nothing, exit 0; with no shell script and no test file it judges nothing (NOTHING_JUDGED) unless `shell.no_scripts` states the reason, which it prints before it exits 0, and a reason left beside a shell file, or a blank one, is CONFIG; shell scripts with no test file, or test files the runner counts as zero tests, judge nothing (NOTHING_JUDGED), and a runner whose count is not a number gave no verdict (BACKEND_ABSENT). A tool on neither the interpreter's directory nor PATH is BACKEND_ABSENT naming the tool and its role, an adapter name the module does not know or a malformed suffix list is CONFIG before anything runs, and a tree that is not a git repository judges nothing. The tool names asserted are read from config/project.json through scripts/config_loader.py, never typed here.
+summary: scripts/shell_gate.py driven against stub tools, one small Python program put on a private PATH under each name config/project.json `shell.linter`, `shell.formatter` and `shell.test_runner` gives, which records its argv and environment and answers from a plan file. Every mode judges exactly the shell scripts a commit could carry, found by a `shell.script_suffixes` suffix or a `shell.shebang_shells` shebang (an `env` one with options included), never a Python file, a test file, an ignored file, a symlink or a tracked file deleted from the work tree; the test mode runs exactly the `shell.test_suffixes` files. The tool's own status is the answer, so a finding is the tool's status passed through, and each tool gets the allowlisted environment and never a planted variable. Off (`shell.enabled` false), the gate says why and runs nothing, exit 0; with no shell script and no test file it judges nothing (NOTHING_JUDGED) unless `shell.no_scripts` states the reason, which it prints before it exits 0, and a reason left beside a shell file, or a blank one, is CONFIG; shell scripts with no test file, or test files the runner counts as zero tests, judge nothing (NOTHING_JUDGED), and a runner whose count is not a number gave no verdict (BACKEND_ABSENT). An `env` option that takes an argument (`-u FOO`, `--chdir DIR`) never hides the shell after it, a path that starts with `-` reaches the tool as `./`-prefixed, and a tool in the running interpreter's directory answers before one on PATH, which answers when that directory has none. A tool on neither the interpreter's directory nor PATH is BACKEND_ABSENT naming the tool and its role, an adapter name the module does not know or a malformed suffix list is CONFIG before anything runs, and a tree that is not a git repository judges nothing. The tool names asserted are read from config/project.json through scripts/config_loader.py, never typed here.
 """
 
 import json
@@ -42,6 +42,8 @@ def _shell_config():
 
 
 _CFG = _shell_config()
+# Kept before the fixture patches it out, for the tests of the lookup order.
+_REAL_INTERPRETER_DIR = shell_gate._interpreter_dir
 _LINTER, _FORMATTER, _RUNNER = (_CFG[r] for r in _ROLES)
 
 # The stub stands in for every tool: it records what it was handed and answers
@@ -291,6 +293,25 @@ def test_shell_switched_off_runs_nothing_and_says_why(project, mode, capsys):
     assert "shell.enabled" in capsys.readouterr().out
 
 
+def test_an_env_option_that_takes_an_argument_does_not_hide_the_shell(project):
+    # `-u FOO` unsets FOO: FOO is the option's argument, not the interpreter.
+    project.write("ops/clean", "#!/usr/bin/env -u FOO bash\necho clean\n")
+    project.write("ops/chdir", "#!/usr/bin/env --chdir /tmp sh\necho chdir\n")
+    project.commit_all()
+    assert project.run("lint") == ExitCode.SUCCESS
+    (call,) = project.calls(_LINTER)
+    assert call["argv"][-2:] == ["ops/chdir", "ops/clean"], call["argv"]
+
+
+def test_a_path_that_starts_with_a_dash_is_handed_over_as_a_path(project):
+    project.write("-x.sh", "echo x\n")
+    project.commit_all()
+    assert project.run("lint") == ExitCode.SUCCESS
+    (call,) = project.calls(_LINTER)
+    assert call["argv"][-1] == "./-x.sh", call["argv"]
+    assert "-x.sh" not in call["argv"], call["argv"]
+
+
 # --- what each tool is handed --------------------------------------------------
 
 
@@ -305,6 +326,47 @@ def test_each_tool_gets_the_allowlisted_environment(project, monkeypatch):
     for call in calls:
         assert "KEEL_PLANTED_SECRET" not in call["env"], call["tool"]
         assert call["env"]["PATH"] == str(project.bin_dir)
+
+
+def _venv_with(project, tmp_path, monkeypatch, *tools):
+    """An interpreter directory holding a stub for each of *tools*, made the
+    running interpreter's directory the way a virtual environment is."""
+    venv_bin = tmp_path / "venv" / "bin"
+    venv_bin.mkdir(parents=True)
+    for name in tools:
+        shutil.copy2(str(project.bin_dir / name), str(venv_bin / name))
+    (venv_bin / "plan.json").write_text("{}", encoding="utf-8")
+    # The real _interpreter_dir reads sys.executable; nothing here spawns it.
+    monkeypatch.setattr(shell_gate, "_interpreter_dir", _REAL_INTERPRETER_DIR)
+    monkeypatch.setattr(sys, "executable", str(venv_bin / "python"))
+    return venv_bin
+
+
+def _calls_in(directory):
+    path = directory / "calls.jsonl"
+    if not path.exists():
+        return []
+    return [json.loads(line) for line in path.read_text().splitlines()]
+
+
+def test_a_tool_in_the_interpreters_directory_wins_over_path(
+    project, tmp_path, monkeypatch
+):
+    _plant_tree(project)
+    venv_bin = _venv_with(project, tmp_path, monkeypatch, _LINTER)
+    assert project.run("lint") == ExitCode.SUCCESS
+    assert [c["tool"] for c in _calls_in(venv_bin)] == [_LINTER]
+    assert project.calls() == [], "PATH's tool answered for the venv's"
+
+
+def test_a_tool_missing_from_the_interpreters_directory_is_found_on_path(
+    project, tmp_path, monkeypatch
+):
+    _plant_tree(project)
+    venv_bin = _venv_with(project, tmp_path, monkeypatch)
+    assert project.run("lint") == ExitCode.SUCCESS
+    assert _calls_in(venv_bin) == []
+    assert [c["tool"] for c in project.calls()] == [_LINTER]
 
 
 # --- refusals ------------------------------------------------------------------
