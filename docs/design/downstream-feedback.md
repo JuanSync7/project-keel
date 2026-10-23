@@ -2462,6 +2462,7 @@ On 2026-10-22 the maintainer approved this order. Positions 1 to 9 come from the
 | 36 | KEEL-TYPO-1 | `@tailwindcss/typography` pins postcss-selector-parser 6.0.10, which has a moderate advisory that its range cannot leave; found by KEEL-FE-AUDIT-1; owner: the maintainer, as a fix or a KEEL-RISK-1 accepted row | planned |
 | 37 | KEEL-KATEX-1 | mermaid 11 pins katex 0.16, which has a low advisory, and the way out is mermaid 12.2.0 or later; neither dompurify nor mermaid has a runtime test, only the build and the bundle; found by KEEL-FE-AUDIT-1; owner: the maintainer | planned |
 | 38 | KEEL-GOALS-1 | The test that holds each document's list of `make verify` goals to the Makefile reads only a `+`-joined list after `make verify (` or `make verify #`, so a comma-separated list in a table row or prose escapes it; the dev-loops full-gate row went stale that way; found by the KEEL-SHELL-1 review | planned |
+| 39 | KEEL-JSONDUP-1 | `scripts/check_structure.py` parses config/project.json with plain `json.loads` (`_read_json_config`), so a key written twice in one object resolves silently to its last value, where `scripts/config_loader.py` `read` refuses it; found by the KEEL-WARN-1 review | planned |
 
 ### Build lanes ahead of the merge line
 
