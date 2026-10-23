@@ -2,7 +2,7 @@
 title: Unit — the one config loader (declared keys, the default line, the not-set line, a refused value)
 kind: tests
 layer: n/a
-summary: scripts/config_loader.py resolves a parsed config against declared rows. An unset key with a default takes it and writes one `[using default]` line naming the key, its canonical-JSON value and the file, once per (file, key) per process under either import name, and a secret shows `<hidden>` and never its value; a set key of the wrong type or out of its bound is refused in one line naming the key, the file, the value's JSON type and what is accepted, a secret's value never in the exception or the stream; every unset required key is written as one `[not set]` line in sorted key order before one NotSet; a wrong value and a missing one together write every line and raise WrongValue. An environment value wins only for a row that names a variable and only when it is not empty, and `env` refuses a variable nothing declares. resolve neither mutates its input nor hands out the table's own default, and gives the same values and lines twice. A refused map names each entry that is refused on its own. Each seconds key refuses a value past threading.TIMEOUT_MAX, keeps one at it, and models.timeout_seconds refuses an empty map. The key table is well formed against keel's own config, every models.credential_env name has a secret variable-only row, the variables the config declares are derived from it, and the module parses on the oldest hook interpreter.
+summary: scripts/config_loader.py resolves a parsed config against declared rows. An unset key with a default takes it and writes one `[using default]` line naming the key, its canonical-JSON value and the file, once per (file, key) per process under either import name, and a secret shows `<hidden>` and never its value; a set key of the wrong type or out of its bound is refused in one line naming the key, the file, the value's JSON type and what is accepted (null first for a bounded row that takes null, so the bound never reads as one on null), a secret's value never in the exception or the stream; every unset required key is written as one `[not set]` line in sorted key order before one NotSet; a wrong value and a missing one together write every line and raise WrongValue. An environment value wins only for a row that names a variable and only when it is not empty, and `env` refuses a variable nothing declares. resolve neither mutates its input nor hands out the table's own default, and gives the same values and lines twice. A refused map names each entry that is refused on its own. Each seconds key refuses a value past threading.TIMEOUT_MAX, keeps one at it, and models.timeout_seconds refuses an empty map. The key table is well formed against keel's own config, every models.credential_env name has a secret variable-only row, the variables the config declares are derived from it, and the module parses on the oldest hook interpreter.
 @covers scripts/config_loader.py
 """
 
@@ -232,6 +232,22 @@ def test_a_value_out_of_its_bound_is_refused_naming_the_bound():
         stream=io.StringIO(),
     )
     assert got == {("t",): 1}
+
+
+def test_a_nullable_bounded_row_says_null_needs_no_bound():
+    """The bound is on the value, not on null: "an integer, or null with a
+    value >= 1" reads as a null that must be at least 1."""
+    bound = (lambda v: v is None or v >= 1, "a value >= 1")
+    with pytest.raises(WrongValue) as exc:
+        resolve(
+            {"m": 0},
+            (_key(("m",), "int_or_null", NONE, accepts=bound),),
+            _WHERE,
+            environ={},
+            stream=io.StringIO(),
+        )
+    (line,) = exc.value.lines
+    assert line.endswith("; accepted: null, or an integer with a value >= 1"), line
 
 
 def test_a_secret_set_but_wrong_never_shows_its_value():

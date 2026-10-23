@@ -1335,6 +1335,11 @@ def _wrong_line(where: str, name: str, key: Key, value: object, bound: bool) -> 
     refused = ""
     if bound and key.accepts is not None:
         accepted = "%s with %s" % (check_text, key.accepts[1])
+        if key.type.endswith(_NULLABLE):
+            # Null first: "an integer, or null with a value >= 1" reads as a
+            # bound on null, which takes none.
+            base_text = TYPES[key.type[: -len(_NULLABLE)]][1]
+            accepted = "null, or %s with %s" % (base_text, key.accepts[1])
         if isinstance(value, dict) and not key.secret:
             # Each entry is judged alone, so a map with one bad entry among
             # many says which; a bound on the whole map (empty, too few)
