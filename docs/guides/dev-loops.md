@@ -8,7 +8,7 @@ tags: [tdd, bounded-convergence, ralph-loop, testing, e2e, workflow, agents, gui
 summary: The default working loops any human or LLM follows in this repo — test-first, bounded convergence, and end-to-end coverage — all gated by `make verify`.
 id: docs-guides-dev-loops
 created: 2026-06-22
-updated: 2026-10-22
+updated: 2026-10-23
 visibility: internal
 canonical: true
 ---
@@ -89,8 +89,9 @@ the exit code, always (see the deterministic-checks catalogue:
 
 ### Which tier to run when
 
-The tiers below are the Makefile targets, smallest first. Each tier is a subset
-of the next, and only the last is the judge of "done".
+The tiers below are the Makefile targets, smallest first. The tiers do not
+nest: `make verify` is the only tier that runs every other tier's targets, and
+it alone is the judge of "done".
 
 | Tier | Run | What it covers | When |
 |---|---|---|---|
