@@ -459,8 +459,8 @@ version rather than a bare commit:
   Makefile's goals, in order, when it follows `make verify (` or
   `make verify #` (at any length, any word an item) or names most of
   verify's goals elsewhere (a backticked word an item whether or not a target
-  has its name); an accepted ADR is not read.
-  docs/design/make-next-steps.md no longer spells the goals
+  has its name). An accepted, superseded or deprecated ADR is not read; a
+  proposed one is. docs/design/make-next-steps.md no longer spells the goals
   its counts predate.
 - **The evidence writer's roster row names every `make verify` goal.** The
   `gate_evidence.py` row of scripts/README.md and its template twin quoted

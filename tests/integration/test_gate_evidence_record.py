@@ -412,18 +412,28 @@ def _verify_goal_lists(text, targets, goals):
                 yield line, named
 
 
+def _frozen_record(frontmatter):
+    """Whether a document is a decided ADR, whose text records a past recipe."""
+    return frontmatter.get("kind") == "adr" and frontmatter.get("status") in {
+        "accepted",
+        "superseded",
+        "deprecated",
+    }
+
+
 def _documents():
     """Yield `(path, text)` for each document a goal list can sit in, walked as
     check_structure walks the tree, not listed by git: a generated project runs
-    this suite before it has a repository. An accepted ADR is left out: its
-    decision text is never edited (docs/guides/doc-style.md §8), so a goal list
-    in it records the recipe on the day it was decided."""
+    this suite before it has a repository. A decided ADR (accepted, superseded
+    or deprecated) is left out: its decision text is never edited
+    (docs/guides/doc-style.md §8), so a goal list in it records the recipe on
+    the day it was decided. A proposed ADR is still read."""
     for dirpath, _dirs, files in sorted(cs.walk(str(_ROOT))):
         for name in sorted(files):
             if not name.endswith((".md", ".md.jinja")):
                 continue
             path = Path(dirpath) / name
-            if (cs.parse_frontmatter(str(path)) or {}).get("kind") == "adr":
+            if _frozen_record(cs.parse_frontmatter(str(path)) or {}):
                 continue
             yield path, path.read_text("utf-8")
 
@@ -523,6 +533,29 @@ def test_the_goal_list_reader_reads_a_list_in_any_form_beside_verify(text, expec
     list in a unit that does not name verify, and English words that share a
     target's name are not."""
     assert list(_verify_goal_lists(text, _TARGETS, _GOALS)) == expected
+
+
+@pytest.mark.parametrize(
+    "frontmatter, frozen",
+    [
+        ({"kind": "adr", "status": "accepted"}, True),
+        ({"kind": "adr", "status": "superseded"}, True),
+        ({"kind": "adr", "status": "deprecated"}, True),
+        ({"kind": "adr", "status": "proposed"}, False),
+        ({"kind": "adr", "status": "draft"}, False),
+        ({"kind": "adr", "status": "template"}, False),
+        ({"kind": "design", "status": "accepted"}, False),
+        ({"kind": "guide", "status": "stable"}, False),
+    ],
+    ids=lambda v: v if isinstance(v, bool) else "%(kind)s-%(status)s" % v,
+)
+def test_only_a_decided_adr_is_left_out_of_the_goal_list_check(frontmatter, frozen):
+    """An ADR's decision text is never edited once accepted
+    (docs/guides/doc-style.md §8), and a superseded or deprecated one was
+    retired, not rewritten, so their goal lists and recipe quotes record a past
+    recipe. A proposed or draft ADR is still being written and is held to the
+    Makefile like every other document."""
+    assert _frozen_record(frontmatter) is frozen
 
 
 def test_the_evidence_writers_roster_row_quotes_verifys_recipe_line():
