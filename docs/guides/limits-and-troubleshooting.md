@@ -8,7 +8,7 @@ tags: [limits, waivers, exit-codes, troubleshooting, guide]
 summary: What adopting keel costs, the risks its rails leave open, the checks that pass by skipping, what no gate can see, every waiver a project may use, every exit code the gate's scripts return, and the symptom-to-fix list for the failures a newcomer meets first.
 id: docs-guides-limits-and-troubleshooting
 created: 2026-10-09
-updated: 2026-10-22
+updated: 2026-10-23
 visibility: internal
 canonical: true
 ---

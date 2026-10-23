@@ -7,7 +7,7 @@ owner: TBD
 summary: Every setting keel reads, with its type, default, valid values, reader, effect, what it is not for, and which projects receive it. The rows are derived-equal to the code by tests/integration/test_reference_drift.py.
 id: docs-reference-settings
 created: 2026-10-09
-updated: 2026-10-22
+updated: 2026-10-23
 visibility: internal
 canonical: true
 ---

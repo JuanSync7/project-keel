@@ -9,7 +9,7 @@ tags: []
 summary: Thin FastAPI REST transport; auto-generates the OpenAPI contract.
 id: api-rest-fastapi-readme
 created: 2026-06-17
-updated: 2026-10-22
+updated: 2026-10-23
 visibility: internal
 canonical: true
 ---
