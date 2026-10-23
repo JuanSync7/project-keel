@@ -2,9 +2,10 @@
 title: Unit — the wiki navigator's model step runs on an injected backend
 kind: tests
 layer: n/a
-summary: wiki_navigator.synthesize(question, nodes, backend=b) sends b the agent's real answer prompt (its prompt.md preamble, the question and each visible node cited by node_id), never a confidential or restricted node, and returns b's reply stripped; the plan's synthesize step calls the same function, so the eval harness judges the code answer() runs. answer(execute=True) with no approved count of model calls is a ValueError before any step runs.
+summary: wiki_navigator.synthesize(question, nodes, backend=b) sends b the agent's real answer prompt (its prompt.md preamble, the question and each visible node cited by node_id), never a confidential or restricted node, and returns b's reply stripped; the plan's synthesize step calls the same function, so the eval harness judges the code answer() runs. answer(execute=True) with no approved count of model calls is a ValueError before any step runs; answer(backend_factory=f) builds its one counted backend with f from the model name, so a caller that counts calls across answers (mcp/qa_server.py's session total) sees each one, and with no factory it is models.get_model.
 """
 
+import json
 import sys
 from pathlib import Path
 
@@ -84,3 +85,31 @@ def test_synthesize_with_nothing_visible_says_so():
 def test_an_execute_answer_with_no_approved_count_is_refused_before_any_step():
     with pytest.raises(ValueError, match="max_model_calls"):
         answer("what is keel?", execute=True, model="fake", corpus="/nonexistent")
+
+
+def _one_node_corpus(tmp_path):
+    node = dict(_NODES[0], kind="doc", title="Alpha", text_excerpt="", tags=["alpha"])
+    node.update(owner="alice", owner_source="frontmatter", visibility="public")
+    node.update(anchor=None, lineno=None, parent=None, children=[], links=[])
+    path = tmp_path / "corpus.json"
+    path.write_text(json.dumps({"schema_version": 1, "nodes": [node]}), "utf-8")
+    return str(path)
+
+
+def test_an_execute_answer_builds_its_backend_with_the_factory_it_is_given(tmp_path):
+    built, seen = [], _Seen("Alpha ingests events [docs/a.md].")
+
+    def factory(name):
+        built.append(name)
+        return seen
+
+    got = answer(
+        "what is alpha",
+        execute=True,
+        model="fake",
+        corpus=_one_node_corpus(tmp_path),
+        max_model_calls=1,
+        backend_factory=factory,
+    )
+    assert built == ["fake"] and len(seen.prompts) == 1
+    assert got.text == "Alpha ingests events [docs/a.md]." and not got.dry_run

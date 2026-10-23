@@ -28,7 +28,7 @@ returning an `Answer` whose `citations` carry each source's `summary_source`
 (authored vs generated) and `owner`/`owner_source`, so a reader can weight trust
 and see accountability. It **defaults to dry-run**: retrieval always runs (so
 `citations` is populated), but `answer(question)` returns the prompt it *would*
-send; pass `execute=True` to call the model. It never surfaces
+send; pass `execute=True` to call the model. `answer(backend_factory=f)` builds the one backend with `f` from the model name instead of `models.get_model`, so a caller that counts calls across answers, as `mcp/qa_server.py` does with `models.SessionBudget`, sees each one. It never surfaces
 `confidential`/`restricted` nodes. The second public symbol, `synthesize(question, nodes,
 backend=b)`, is the one model call: it drops those nodes itself, so a caller
 cannot hand the model one. The eval harness (`evals/_doers.py`) drives it on a

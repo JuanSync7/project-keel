@@ -2,7 +2,7 @@
 title: Wiki navigator brain
 layer: backend
 public_api: no
-summary: Plan: deterministic retrieval (query_corpus) -> synthesize a cited answer; on a Runtime. An execute run needs its approved count of model calls and makes its one call through a models.ModelMeter of that count.
+summary: Plan: deterministic retrieval (query_corpus) -> synthesize a cited answer; on a Runtime. An execute run needs its approved count of model calls and makes its one call through a models.ModelMeter of that count, whose backend the caller's backend_factory builds when it gives one (models.get_model otherwise), so a caller can count calls across answers.
 """
 
 from __future__ import annotations
@@ -172,6 +172,7 @@ def answer(
     max_nodes=8,
     runtime=None,
     max_model_calls=None,
+    backend_factory=None,
 ):
     """Deterministically retrieve candidate nodes (tree+links, via query_corpus),
     then synthesize an answer over them. The pipeline is a neutral ``Plan`` run
@@ -183,7 +184,9 @@ def answer(
     An execute run needs ``max_model_calls``, the approved count, or raises
     ValueError; the answer's one call goes through a ``models.CountedModel``
     of that count, so a count of 0 raises ``models.CallCapReached`` with no
-    call made.
+    call made. ``backend_factory`` builds that backend from the model name
+    (``None`` = ``models.get_model``); a caller that counts calls across
+    answers, such as ``models.SessionBudget.counted``, passes its own.
     """
     if execute and max_model_calls is None:
         raise ValueError(
@@ -195,7 +198,7 @@ def answer(
         "corpus": corpus or _CORPUS,
         "max_nodes": max_nodes,
     }
-    meter = ModelMeter(model, max_model_calls or 0, get_model)
+    meter = ModelMeter(model, max_model_calls or 0, backend_factory or get_model)
     st = get_runtime(runtime).run(_plan(meter), init, execute=execute).state
     citations = st.get("citations", ())
     if execute:
