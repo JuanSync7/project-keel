@@ -164,7 +164,7 @@ def test_a_session_with_no_approved_total_refuses_and_calls_no_model(
         assert result["isError"] is True
         text = result["content"][0]["text"]
         assert "agents.max_session_model_calls (now 0)" in text, text
-        assert "(0 made)" in text and "may make 1 more" in text
+        assert "made 0 of its approved 0" in text and "may make 1 more" in text
     assert _Counted.prompts == []
 
 
@@ -184,7 +184,7 @@ def test_a_session_answers_until_its_total_then_refuses_with_no_model_call(
     for refused in results[3:]:
         text = refused["content"][0]["text"]
         assert text.startswith("SessionCapReached: "), text
-        assert "approved 3 model call(s) (3 made)" in text
+        assert "made 3 of its approved 3 model call(s)" in text
         assert "agents.max_session_model_calls (now 3)" in text
     assert len(_Counted.prompts) == 3
 
@@ -204,7 +204,7 @@ def test_the_session_counts_the_calls_made_not_the_bounds_admitted(
     )
     results = _ask(server, 3)
     assert [r["isError"] for r in results] == [False, False, True]
-    assert "(2 made)" in results[2]["content"][0]["text"]
+    assert "made 2 of its approved 3" in results[2]["content"][0]["text"]
     assert len(_Counted.prompts) == 2
 
 
@@ -217,6 +217,51 @@ def test_a_per_question_cap_of_zero_is_refused_under_its_own_key(tmp_path):
     text = result["content"][0]["text"]
     assert "agents.max_model_calls (now 0)" in text
     assert "max_session_model_calls" not in text
+
+
+@pytest.mark.parametrize("per_question, total", [(2, 1), (5, 4)])
+def test_a_per_question_cap_over_the_session_total_is_config_before_serving(
+    per_question, total, tmp_path, capsys, nothing_served
+):
+    """No question could ever be admitted, so the server refuses to start
+    rather than serve a refusal to every question."""
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "project.json").write_text(
+        json.dumps(
+            {
+                "agents": {
+                    "max_model_calls": per_question,
+                    "max_session_model_calls": total,
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert qa_server.main(root=str(tmp_path)) is ExitCode.CONFIG
+    assert nothing_served == []
+    err = capsys.readouterr().err
+    assert "agents.max_model_calls is %d" % per_question in err
+    assert "agents.max_session_model_calls is %d" % total in err
+
+
+@pytest.mark.parametrize("per_question, total", [(3, 3), (3, 0)])
+def test_a_per_question_cap_equal_to_the_total_or_a_zero_total_serves(
+    per_question, total, tmp_path, nothing_served
+):
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "project.json").write_text(
+        json.dumps(
+            {
+                "agents": {
+                    "max_model_calls": per_question,
+                    "max_session_model_calls": total,
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert qa_server.main(root=str(tmp_path)) is ExitCode.SUCCESS
+    assert nothing_served[-1] == "served"
 
 
 def test_the_server_session_total_is_read_from_config(tmp_path):

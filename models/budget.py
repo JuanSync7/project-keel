@@ -2,7 +2,7 @@
 title: Model-call budget — a backend that counts its calls and refuses past the approved count
 layer: backend
 public_api: yes
-summary: CountedModel wraps any ModelBackend and passes each call through until the approved count is reached, then raises CallCapReached without calling the backend, so a count of 0 lets no call through; ModelMeter is one run's counted backend, built from a name on the first call only, so a run that never reaches a model step builds none. approve_resume raises RunNotApproved, carrying report()'s three parts, for a saved run that would resume on another model than the one approved or with more calls left than approved. approved_cap reads config/project.json `agents.max_model_calls` through scripts/config_loader.py and raises its ConfigError for a value it cannot use. SessionBudget is the total a long-lived caller (the MCP Q&A server) is held to across all its runs: admit raises SessionCapReached, a CallCapReached, for a run whose bound added to the calls made so far would pass the total, before any model is called, and the backends its counted() factory builds add every call they pass on to that count; approved_session_cap reads that total from `agents.max_session_model_calls`, absent being the declared default 0, which admits no run that may make a call. Shared by the agents, the eval harness and the MCP server, which sit above models in config/project.json `import_layers.order`.
+summary: CountedModel wraps any ModelBackend and passes each call through until the approved count is reached, then raises CallCapReached without calling the backend, so a count of 0 lets no call through; ModelMeter is one run's counted backend, built from a name on the first call only, so a run that never reaches a model step builds none. approve_resume raises RunNotApproved, carrying report()'s three parts, for a saved run that would resume on another model than the one approved or with more calls left than approved. approved_cap reads config/project.json `agents.max_model_calls` through scripts/config_loader.py and raises its ConfigError for a value it cannot use. SessionBudget is the total a long-lived caller (the MCP Q&A server) is held to across all its runs: admit raises SessionCapReached, a CallCapReached, for a run whose bound added to the calls made so far would pass the total, before any model is called, and the backends its counted() factory builds add every call they pass on to that count; approved_session_cap reads that total from `agents.max_session_model_calls`, absent being the declared default 0, which admits no run that may make a call; check_session_total raises config_loader.WrongValue, naming both keys and values, for a per-run cap over a nonzero total, a pair under which no run could ever be admitted. Shared by the agents, the eval harness and the MCP server, which sit above models in config/project.json `import_layers.order`.
 """
 
 from __future__ import annotations
@@ -26,6 +26,7 @@ __all__ = [
     "approve_resume",
     "approved_cap",
     "approved_session_cap",
+    "check_session_total",
 ]
 
 CAP_KEY = ("agents", "max_model_calls")
@@ -55,9 +56,9 @@ class SessionCapReached(CallCapReached):
             total,
             calls,
             message
-            or "the session reached its approved %d model call(s) (%d made), and "
-            "the next run may make %d more"
-            % (total, calls, bound),
+            or "the session has made %d of its approved %d model call(s), and "
+            "the next run may make %d more, which would pass %d"
+            % (calls, total, bound, total),
         )
         self.total = total
         self.bound = bound
@@ -220,3 +221,29 @@ def approved_session_cap(root: str) -> int:
     )
     total: int = values[SESSION_CAP_KEY]
     return total
+
+
+def check_session_total(per_run: int, total: int) -> None:
+    """Pass a per-run cap (`agents.max_model_calls`) that fits within the
+    session *total* (`agents.max_session_model_calls`), or a total of 0, which
+    approves no run. Raises config_loader.WrongValue naming both keys and
+    values otherwise: no run could ever be admitted, so a caller that started
+    anyway would refuse every run with none made."""
+    if total > 0 and per_run > total:
+        raise config_loader.WrongValue(
+            config_loader.CONFIG_FILE,
+            [
+                "%s: %s is %d, over %s is %d, so no question could be admitted; "
+                "accepted: %s at most %s, or %s 0 to approve none"
+                % (
+                    config_loader.CONFIG_FILE,
+                    ".".join(CAP_KEY),
+                    per_run,
+                    ".".join(SESSION_CAP_KEY),
+                    total,
+                    ".".join(CAP_KEY),
+                    ".".join(SESSION_CAP_KEY),
+                    ".".join(SESSION_CAP_KEY),
+                )
+            ],
+        )

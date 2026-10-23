@@ -115,7 +115,7 @@ def test_wiki_answer_is_refused_past_the_session_total_over_real_stdio(
         text = by_id[refused]["result"]["content"][0]["text"]
         assert by_id[refused]["result"]["isError"] is True
         assert text.startswith("SessionCapReached: "), text
-        assert "(%d made)" % total in text
+        assert "made %d of its approved %d" % (total, total) in text
         assert "agents.max_session_model_calls (now %d)" % total in text
 
 

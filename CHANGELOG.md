@@ -40,7 +40,9 @@ version rather than a bare commit:
   `agents.max_session_model_calls`, read once at start and counted by
   `models.SessionBudget`: a question whose `agents.max_model_calls`, added to
   the calls the process has made, would pass the total gets a tool error
-  naming the key, the total and the calls made, and no model call. The key
+  naming the key, the total and the calls made, and no model call; a
+  per-question count over a nonzero total stops the server with exit 14
+  before it serves, naming both keys. The key
   ships as `0` in keel and in a generated project, so the owner approves the
   total as well as each question's count. `agents.wiki_navigator.answer`
   gains `backend_factory`, which the server uses to count each call.

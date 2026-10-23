@@ -2,7 +2,7 @@
 title: MCP Q&A server
 layer: backend
 public_api: no
-summary: Read-only MCP tools that answer questions from the corpus via the wiki_navigator agent. The model it asks is the KEEL_MCP_MODEL variable, read by configured_model through scripts/config_loader.py; unset or empty is the declared null default, the registry's own model, written to stderr once, and a blank value is refused. Each question is held to config/project.json `agents.max_model_calls`, read once at start by configured_cap (models.approved_cap): a count of 0, the shipped value and the default of build_qa_server, answers every question with a tool error naming the key and makes no model call. The server's total over its lifetime is held to `agents.max_session_model_calls`, read once at start by configured_session_cap (models.approved_session_cap) and counted by a models.SessionBudget: a question whose per-question count, added to the calls the process has made, would pass that total is answered with a tool error naming the key, the total and the calls made, and makes no model call; 0, the shipped value and the default of build_qa_server, admits no question that may make a call. `main` is the entry: it serves through mcp/protocol.py run_stdio_server and exits 0 once the loop ends, or CONFIG through scripts/exit_codes.py report, naming the key or variable, when a setting it reads is refused before it serves.
+summary: Read-only MCP tools that answer questions from the corpus via the wiki_navigator agent. The model it asks is the KEEL_MCP_MODEL variable, read by configured_model through scripts/config_loader.py; unset or empty is the declared null default, the registry's own model, written to stderr once, and a blank value is refused. Each question is held to config/project.json `agents.max_model_calls`, read once at start by configured_cap (models.approved_cap): a count of 0, the shipped value and the default of build_qa_server, answers every question with a tool error naming the key and makes no model call. The server's total over its lifetime is held to `agents.max_session_model_calls`, read once at start by configured_session_cap (models.approved_session_cap) and counted by a models.SessionBudget: a question whose per-question count, added to the calls the process has made, would pass that total is answered with a tool error naming the key, the total and the calls made, and makes no model call; 0, the shipped value and the default of build_qa_server, admits no question that may make a call, and a nonzero total below `agents.max_model_calls` is refused at start (models.check_session_total), since no question could fit it. `main` is the entry: it serves through mcp/protocol.py run_stdio_server and exits 0 once the loop ends, or CONFIG through scripts/exit_codes.py report, naming the key or variable, when a setting it reads is refused before it serves.
 """
 
 from __future__ import annotations
@@ -28,6 +28,7 @@ from models import (  # noqa: E402
     SessionCapReached,
     approved_cap,
     approved_session_cap,
+    check_session_total,
     get_model,
 )
 from protocol import Tool, ToolServer, run_stdio_server  # noqa: E402
@@ -168,10 +169,13 @@ def main(root: str | None = None) -> ExitCode:
     when None) until stdin ends or a stop signal; CONFIG for a refused
     setting, the model variable included, before anything serves."""
     try:
+        per_question = configured_cap(root)
+        total = configured_session_cap(root)
+        check_session_total(per_question, total)
         server = build_qa_server(
             model=configured_model(),
-            max_model_calls=configured_cap(root),
-            max_session_model_calls=configured_session_cap(root),
+            max_model_calls=per_question,
+            max_session_model_calls=total,
         )
         run_stdio_server(server, root=root)
     except config_loader.ConfigError as exc:

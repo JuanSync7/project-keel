@@ -25,6 +25,7 @@ from models import (  # noqa: E402
     approve_resume,
     approved_cap,
     approved_session_cap,
+    check_session_total,
 )
 from models.registry import DEFAULT_MODEL  # noqa: E402
 from scripts import config_loader  # noqa: E402
@@ -135,7 +136,20 @@ def test_a_session_refuses_a_question_one_call_past_its_total():
         session.admit(2)
     assert isinstance(exc.value, CallCapReached)
     assert (exc.value.total, exc.value.calls, exc.value.bound) == (3, 2, 2)
-    assert "3" in str(exc.value) and "2 made" in str(exc.value)
+    assert str(exc.value) == (
+        "the session has made 2 of its approved 3 model call(s), and the next "
+        "run may make 2 more, which would pass 3"
+    )
+
+
+def test_an_early_refusal_states_the_calls_made_not_a_total_reached():
+    session = SessionBudget(10)
+    session.calls = 5
+    with pytest.raises(SessionCapReached) as exc:
+        session.admit(8)
+    text = str(exc.value)
+    assert "made 5 of its approved 10" in text and "8 more" in text
+    assert "reached" not in text
 
 
 def test_a_session_total_of_zero_admits_only_a_question_that_may_make_none():
@@ -201,3 +215,19 @@ def test_the_session_total_is_read_through_the_loader(tmp_path, capsys):
         )
         with pytest.raises(config_loader.ConfigError):
             approved_session_cap(str(tmp_path))
+
+
+@pytest.mark.parametrize("per_question, total", [(1, 1), (3, 3), (1, 5), (9, 0)])
+def test_a_per_question_cap_within_the_total_or_a_total_of_zero_passes(
+    per_question, total
+):
+    check_session_total(per_question, total)
+
+
+def test_a_per_question_cap_over_a_nonzero_total_is_a_config_fault():
+    with pytest.raises(config_loader.WrongValue) as exc:
+        check_session_total(4, 3)
+    (line,) = exc.value.lines
+    assert "agents.max_model_calls is 4" in line
+    assert "agents.max_session_model_calls is 3" in line
+    assert exc.value.path == config_loader.CONFIG_FILE
