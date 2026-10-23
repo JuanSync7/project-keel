@@ -217,6 +217,178 @@ def test_the_gate_exits_config_on_a_refused_default(tmp_path, capsys):
     assert "accountability.default_owner" in capsys.readouterr().err
 
 
+_REFUSED = 'accountability.default_owner is string "TBD"'
+
+
+@pytest.mark.parametrize("run", ["job", "gate"])
+def test_a_refused_default_prints_the_loaders_line_once(tmp_path, capsys, run):
+    root = _tree(tmp_path, default="TBD")
+    _write(root, "docs/d.md", _doc("TBD"))
+    assert _main(run, root, tmp_path) == ExitCode.CONFIG
+    assert capsys.readouterr().err.count(_REFUSED) == 1
+
+
+@pytest.mark.parametrize("run", ["job", "gate"])
+def test_an_unreadable_config_names_the_file_not_the_default_owner(
+    tmp_path, capsys, run
+):
+    """A broken file is not a refused default: the line names the file and
+    why it cannot be read, so the repair is in the right place."""
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "project.json").write_text('{"accountability": ')
+    _write(tmp_path, "docs/d.md", _doc("TBD"))
+    assert _main(run, tmp_path, tmp_path) == ExitCode.CONFIG
+    err = capsys.readouterr().err
+    assert "config/project.json cannot be read as JSON" in err
+    assert "accountability.default_owner" not in err
+
+
+def _main(run, root, tmp_path):
+    if run == "job":
+        return bc.main(["--root", str(root), "--out", str(tmp_path / "out.json")])
+    return cc.main(["--root", str(root)])
+
+
+# --- an owner outside the grammar names nobody --------------------------------
+
+# How a line parser keeps a commented, quoted or otherwise malformed owner.
+# check_F refuses each of these in a tool or agent doc, so none is owned there.
+_MALFORMED = ["~ # nobody yet", "TBD  # later", '"TBD"', "'null'", '"alice"']
+
+
+@pytest.mark.parametrize("owner", _MALFORMED)
+def test_a_doc_owner_outside_the_grammar_is_unowned_not_defaulted(tmp_path, owner):
+    """A quoted or commented TBD is not the placeholder: check_F refuses it
+    rather than handing it the default, and the corpus agrees."""
+    root = _tree(tmp_path)
+    _write(root, "docs/d.md", _doc(owner))
+    nodes = _nodes(root)
+    assert _owner(nodes["d"]) == ("", "none", None)
+    assert _owner(nodes["d#plain"]) == ("", "none", None)
+
+
+@pytest.mark.parametrize("owner", _MALFORMED)
+def test_a_module_owner_outside_the_grammar_resolves_through_its_readme(
+    tmp_path, owner
+):
+    root = _tree(tmp_path)
+    _write(root, "src/README.md", _fm("src-readme", "dave") + "# src\n")
+    _write(root, "src/m.py", _module(owner=owner))
+    assert _owner(_nodes(root)["src/m-py"]) == ("dave", "inherited", "src/README.md")
+
+
+@pytest.mark.parametrize("owner", _MALFORMED)
+def test_a_readme_owner_outside_the_grammar_is_not_inherited(tmp_path, owner):
+    root = _tree(tmp_path)
+    _write(root, "src/README.md", _readme("src-readme", owner, "internal"))
+    _write(root, "src/m.py", _module())
+    assert _owner(_nodes(root)["src/m-py"]) == ("", "none", None)
+
+
+# --- the package README walk -------------------------------------------------
+
+
+def _readme(doc_id, owner=None, visibility=None):
+    head = "---\ntitle: %s\nkind: doc\nsummary: About %s.\nid: %s\n" % (
+        doc_id,
+        doc_id,
+        doc_id,
+    )
+    if owner is not None:
+        head += "owner: %s\n" % owner
+    if visibility is not None:
+        head += "visibility: %s\n" % visibility
+    return head + "---\n# %s\n" % doc_id
+
+
+@pytest.mark.parametrize("vis", [None, "internal"], ids=["no-visibility", "visible"])
+def test_a_real_owner_above_a_tbd_readme_beats_the_default(tmp_path, vis):
+    """CONVENTIONS §12: a real owner anywhere on the chain beats the default,
+    whether or not the nearer TBD README declares a visibility."""
+    root = _tree(tmp_path)
+    _write(root, "src/README.md", _readme("src-readme", "alice", "public"))
+    _write(root, "src/backend/README.md", _readme("be-readme", "TBD", vis))
+    _write(root, "src/backend/m.py", _module())
+    nodes = _nodes(root)
+    assert _owner(nodes["src/backend/m-py"]) == ("alice", "inherited", "src/README.md")
+    assert _owner(nodes["src/backend/m-py::g"]) == (
+        "alice",
+        "inherited",
+        "src/README.md",
+    )
+
+
+@pytest.mark.parametrize("vis", [None, "internal"], ids=["no-visibility", "visible"])
+def test_a_tbd_readme_with_no_real_owner_above_takes_the_default(tmp_path, vis):
+    root = _tree(tmp_path)
+    _write(root, "src/README.md", _readme("src-readme", None, "public"))
+    _write(root, "src/backend/README.md", _readme("be-readme", "TBD", vis))
+    _write(root, "src/backend/m.py", _module())
+    assert _owner(_nodes(root)["src/backend/m-py"]) == (
+        _DEFAULT,
+        "default",
+        "src/backend/README.md",
+    )
+
+
+def test_the_nearest_tbd_readme_is_the_default_origin(tmp_path):
+    root = _tree(tmp_path)
+    _write(root, "src/README.md", _readme("src-readme", "TBD", "public"))
+    _write(root, "src/backend/README.md", _readme("be-readme", "tbd", "internal"))
+    _write(root, "src/backend/m.py", _module())
+    assert _owner(_nodes(root)["src/backend/m-py"])[2] == "src/backend/README.md"
+
+
+def test_a_readme_with_no_owner_does_not_cut_the_owner_chain(tmp_path):
+    """A README that names no owner names nothing to inherit, so the walk
+    goes on to the README above, as it does past a TBD one."""
+    root = _tree(tmp_path)
+    _write(root, "src/README.md", _readme("src-readme", "alice", "public"))
+    _write(root, "src/backend/README.md", _readme("be-readme", None, "internal"))
+    _write(root, "src/backend/m.py", _module())
+    assert _owner(_nodes(root)["src/backend/m-py"]) == (
+        "alice",
+        "inherited",
+        "src/README.md",
+    )
+
+
+def test_visibility_still_comes_from_the_nearest_readme_that_declares_one(tmp_path):
+    """The owner walk goes past a README the visibility walk stops at: the
+    nearer README's visibility still wins over an owned one above it."""
+    root = _tree(tmp_path)
+    _write(root, "src/README.md", _readme("src-readme", "alice", "public"))
+    _write(root, "src/backend/README.md", _readme("be-readme", "TBD", "confidential"))
+    _write(root, "src/backend/m.py", _module())
+    nodes = _nodes(root)
+    assert nodes["src/backend/m-py"]["visibility"] == "confidential"
+    assert nodes["src/backend/m-py::g"]["visibility"] == "confidential"
+
+
+def test_a_readme_with_neither_owner_nor_visibility_passes_visibility_on(tmp_path):
+    root = _tree(tmp_path)
+    _write(root, "src/README.md", _readme("src-readme", None, "confidential"))
+    _write(root, "src/backend/README.md", _readme("be-readme", "TBD", None))
+    _write(root, "src/backend/m.py", _module())
+    node = _nodes(root)["src/backend/m-py"]
+    assert node["visibility"] == "confidential"
+    assert _owner(node) == (_DEFAULT, "default", "src/backend/README.md")
+
+
+def test_an_owned_readme_with_no_visibility_still_ends_the_visibility_walk(tmp_path):
+    """Today's visibility rule, kept as it was: the walk stops at the nearest
+    README with a real owner or a visibility, so an owned README that declares
+    none gives its modules the `internal` fallback, not the parent's
+    visibility. check_A gives every governed README a visibility."""
+    root = _tree(tmp_path)
+    _write(root, "src/README.md", _readme("src-readme", None, "confidential"))
+    _write(root, "src/backend/README.md", _readme("be-readme", "bob", None))
+    _write(root, "src/backend/m.py", _module())
+    node = _nodes(root)["src/backend/m-py"]
+    assert node["visibility"] == "internal"
+    assert _owner(node) == ("bob", "inherited", "src/backend/README.md")
+
+
 # --- the vocabulary and the report -------------------------------------------
 
 

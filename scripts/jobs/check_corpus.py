@@ -21,7 +21,7 @@ if _HERE not in sys.path:
 sys.path.insert(0, os.path.join(ROOT, "scripts"))
 
 import config_loader  # noqa: E402
-from build_corpus import build_corpus  # noqa: E402
+from build_corpus import build_corpus, config_fault  # noqa: E402
 from exit_codes import ExitCode, finish, report  # noqa: E402
 from link_corpus import link_corpus  # noqa: E402
 
@@ -248,12 +248,8 @@ def main(argv=None) -> int:
     try:
         return _check(args)
     except config_loader.ConfigError as exc:
-        return report(
-            ExitCode.CONFIG,
-            "check_corpus: the default owner a TBD node answers to is refused",
-            "; ".join(exc.lines),
-            "fix accountability.default_owner in config/project.json, then rerun",
-        )
+        what, where, then = config_fault(exc, "check_corpus", "rerun")
+        return report(ExitCode.CONFIG, what, where, then)
 
 
 def _check(args: argparse.Namespace) -> int:

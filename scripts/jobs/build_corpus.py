@@ -127,10 +127,14 @@ def _walk(root: str):
 
 
 def _real_owner(value):
-    """A frontmatter/marker owner counts only if it is neither the TBD
-    placeholder, in any letter case, nor a null spelling (check_F's reading
-    of both)."""
-    if config_loader.is_null_spelling(value) or config_loader.is_unowned(value):
+    """A frontmatter/marker owner counts only if it is one token of
+    config_loader.OWNER_GRAMMAR and neither the TBD placeholder, in any letter
+    case, nor a null spelling: check_F's reading of a tool or agent owner."""
+    if (
+        config_loader.is_null_spelling(value)
+        or not config_loader.is_owner_token(value)
+        or config_loader.is_unowned(value)
+    ):
         return None
     return value
 
@@ -179,6 +183,25 @@ def _default_owner(root):
         loaded, config_loader.rows(_DEFAULT_OWNER_KEY), config_loader.CONFIG_FILE
     )
     return values[_DEFAULT_OWNER_KEY]
+
+
+def config_fault(exc: config_loader.ConfigError, who: str, again: str) -> tuple:
+    """(what failed, on which input, what to do next) for `report`, when
+    *who* could not use config/project.json. resolve has already written a
+    refused value's own line, so that line is not repeated; a file that
+    cannot be read is named with the reason, since nothing was written."""
+    if isinstance(exc, config_loader.ConfigUnreadable):
+        return (
+            "%s: config/project.json cannot be used" % who,
+            "; ".join(exc.lines),
+            "repair the file the line names, then %s" % again,
+        )
+    return (
+        "%s: the default owner a TBD node answers to is refused" % who,
+        "accountability.default_owner in %s, as the line above says"
+        % (exc.path or config_loader.CONFIG_FILE),
+        "set it to one owner token or null, then %s" % again,
+    )
 
 
 def _keywords(*texts: str) -> list:
@@ -479,10 +502,9 @@ def _sections(body, doc_id, rel, doc_res, doc_visibility, nodes, refs, default):
         )
 
 
-def _nearest_readme(dirpath: str, root: str, default):
-    """Walk up to the repo root for a README.md with a real owner or a
-    visibility; return (its owner resolution, its visibility), the resolution
-    `default` when that README's owner is TBD and *default* is set."""
+def _readmes_upward(dirpath: str, root: str):
+    """Yield (path relative to *root*, frontmatter dict) for each README.md
+    from *dirpath* up to *root*, nearest first."""
     d = dirpath
     while True:
         readme = os.path.join(d, "README.md")
@@ -496,22 +518,40 @@ def _nearest_readme(dirpath: str, root: str, default):
                 # it — exactly what scripts/accountability_report.py reports on.
                 # The walk must continue to the parent either way.
                 fm = None
-            fm = fm or {}
-            # The stop rule reads the real owner, not the resolution, so a TBD
-            # README stops the walk exactly where it did before the default
-            # existed: check_A gives every governed README a visibility.
-            if _real_owner(fm.get("owner")) or fm.get("visibility"):
-                where = _rel(readme, root)
-                res = _resolve_owner(
-                    fm.get("owner"), "frontmatter", where, _UNOWNED, default
-                )
-                return res, fm.get("visibility")
+            yield _rel(readme, root), fm or {}
         if os.path.abspath(d) == os.path.abspath(root):
-            return _UNOWNED, None
+            return
         parent = os.path.dirname(d)
         if parent == d:
-            return _UNOWNED, None
+            return
         d = parent
+
+
+def _nearest_readme(dirpath: str, root: str, default):
+    """(owner resolution, visibility) a module in *dirpath* inherits from its
+    package READMEs. The owner is the nearest README's real owner: the walk
+    goes past a README that names none (TBD, absent, malformed, unreadable),
+    and only with no real owner up to *root* does the nearest TBD README hand
+    on *default*. The visibility is the nearest README's that has a real
+    owner or a visibility."""
+    visibility = None
+    visibility_found = False
+    nearest_tbd = None
+    for where, fm in _readmes_upward(dirpath, root):
+        owner = _real_owner(fm.get("owner"))
+        # The visibility walk keeps the stop rule it had before the owner walk
+        # learned to go on: the nearest README with a visibility, or with a
+        # real owner, whose return below ends this walk with none.
+        if not visibility_found and fm.get("visibility"):
+            visibility_found = True
+            visibility = fm.get("visibility")
+        if owner:
+            return (owner, "frontmatter", where), visibility
+        if nearest_tbd is None and _says_tbd(fm.get("owner")):
+            nearest_tbd = where
+    if default and nearest_tbd:
+        return (default, "default", nearest_tbd), visibility
+    return _UNOWNED, visibility
 
 
 def _module_and_symbols(path: str, root: str, nodes: list, default):
@@ -700,13 +740,10 @@ def main(argv=None) -> int:
     try:
         corpus = build_corpus(args.root)
     except config_loader.ConfigError as exc:
-        return report(
-            ExitCode.CONFIG,
-            "build_corpus: the default owner a TBD node answers to is refused",
-            "; ".join(exc.lines),
-            "fix accountability.default_owner in config/project.json, then "
-            "build again; nothing was written",
+        what, where, then = config_fault(
+            exc, "build_corpus", "build again; nothing was written"
         )
+        return report(ExitCode.CONFIG, what, where, then)
     dups = _duplicate_ids(corpus["nodes"])
     if dups:  # node_id is the corpus primary key — fail loudly, never silently collapse
         return report(
