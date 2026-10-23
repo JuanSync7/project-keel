@@ -2449,6 +2449,7 @@ On 2026-10-22 the maintainer approved this order. Positions 1 to 9 come from the
 | 35 | KEEL-ROSTER-1 | The `gate_evidence.py` row in `scripts/README.md` and its twin spells `make verify`'s goals without `secret-scan`, and nothing tests the row; found by KEEL-SHELL-1 | planned |
 | 36 | KEEL-TYPO-1 | `@tailwindcss/typography` pins postcss-selector-parser 6.0.10, which has a moderate advisory that its range cannot leave; found by KEEL-FE-AUDIT-1; owner: the maintainer, as a fix or a KEEL-RISK-1 accepted row | planned |
 | 37 | KEEL-KATEX-1 | mermaid 11 pins katex 0.16, which has a low advisory, and the way out is mermaid 12.2.0 or later; neither dompurify nor mermaid has a runtime test, only the build and the bundle; found by KEEL-FE-AUDIT-1; owner: the maintainer | planned |
+| 38 | KEEL-GOALS-1 | The test that holds each document's list of `make verify` goals to the Makefile reads only a `+`-joined list after `make verify (` or `make verify #`, so a comma-separated list in a table row or prose escapes it; the dev-loops full-gate row went stale that way; found by the KEEL-SHELL-1 review | planned |
 
 ### Build lanes ahead of the merge line
 
