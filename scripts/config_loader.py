@@ -38,6 +38,7 @@ from typing import (
 )
 
 __all__ = [
+    "AUDIT_SEVERITIES",
     "CONFIG_FILE",
     "ENV_TYPES",
     "KEYS",
@@ -55,6 +56,7 @@ __all__ = [
     "WrongValue",
     "declared_variables",
     "env",
+    "is_advisory_id",
     "is_null_spelling",
     "is_owner_token",
     "is_unowned",
@@ -638,6 +640,68 @@ _ANY_REASONED_PATHS = (
     "trailing `/`, no empty, `.` or `..` part) mapped to a non-blank reason",
 )
 
+# The severities a dependency audit reports, weakest first: the order is what
+# `dependency_audit.fail_at` compares against.
+AUDIT_SEVERITIES = ("info", "low", "moderate", "high", "critical")
+_ADVISORY_PREFIX = "GHSA"
+_ADVISORY_CHARS = "abcdefghijklmnopqrstuvwxyz0123456789"
+_ACCEPTED_FIELDS = ("package", "reason", "review_by")
+
+
+def is_advisory_id(value: Any) -> bool:
+    """True for a GitHub advisory id as an audit report spells it:
+    `GHSA-xxxx-xxxx-xxxx`, each group four lower-case letters or digits."""
+    if not isinstance(value, str):
+        return False
+    parts = value.split("-")
+    return (
+        len(parts) == 4
+        and parts[0] == _ADVISORY_PREFIX
+        and all(len(p) == 4 and not p.strip(_ADVISORY_CHARS) for p in parts[1:])
+    )
+
+
+def _is_severity(value: Any) -> bool:
+    return value in AUDIT_SEVERITIES
+
+
+def _accepted_row(row: Any) -> bool:
+    # Exactly the three fields: a misspelt `reviewby` would otherwise leave a
+    # row with no date, accepted for ever.
+    return (
+        isinstance(row, dict)
+        and sorted(row) == sorted(_ACCEPTED_FIELDS)
+        and _is_nonempty_str(row["package"])
+        and row["package"].split() == [row["package"]]
+        and _is_nonempty_str(row["reason"])
+        and _iso_date(row["review_by"])
+    )
+
+
+def _accepted_risks(value: Any) -> bool:
+    # Empty allowed: an acceptance only lifts a failure, so none is the
+    # strictest setting. An app with no advisory under it is a typo'd
+    # leftover, refused rather than read as nothing accepted.
+    return isinstance(value, dict) and all(
+        _one_path_part(app)
+        and isinstance(advisories, dict)
+        and bool(advisories)
+        and all(
+            is_advisory_id(advisory) and _accepted_row(row)
+            for advisory, row in advisories.items()
+        )
+        for app, advisories in value.items()
+    )
+
+
+_ACCEPTED_RISKS = (
+    _accepted_risks,
+    "an object, empty for none, each key a frontend app's directory name (one "
+    "path part) mapped to at least one advisory id written GHSA-xxxx-xxxx-xxxx, "
+    'each mapped to exactly {"package": <npm package name, no whitespace>, '
+    '"reason": <non-blank>, "review_by": <a calendar date written YYYY-MM-DD>}',
+)
+
 
 # The one table of declared keys, sorted by path. A block a typed validator
 # owns (child_env, evidence) is one `object` row, and the validator stays the
@@ -920,6 +984,32 @@ KEYS = tuple(
                 "repo_path",
                 NONE,
                 "the JSON schema an eval report follows",
+            ),
+            _row(
+                ("dependency_audit", "accepted"),
+                "object",
+                {},
+                "each frontend app's accepted dependency advisories, each with "
+                "the package, the reason and the day it must be reviewed by; "
+                "scripts/audit_dependencies.py fails a row past that day or one "
+                "whose advisory the audit no longer reports",
+                accepts=_ACCEPTED_RISKS,
+            ),
+            _row(
+                ("dependency_audit", "fail_at"),
+                "nonempty_str",
+                "high",
+                "the weakest severity scripts/audit_dependencies.py fails when "
+                "no accepted row covers the finding; a weaker one is listed",
+                accepts=(_is_severity, "one of " + ", ".join(AUDIT_SEVERITIES)),
+            ),
+            _row(
+                ("dependency_audit", "timeout_seconds"),
+                "int",
+                120,
+                "the seconds one app's `npm audit --json` may run before "
+                "scripts/audit_dependencies.py ends it",
+                accepts=(_at_least_one_second, "1 <= value <= " + _MOST_SECONDS_TEXT),
             ),
             _row(
                 ("evals", "threshold"),
