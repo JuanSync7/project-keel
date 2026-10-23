@@ -1230,6 +1230,14 @@ KEYS = tuple(
                 accepts=(_not_negative, "a value >= 0"),
             ),
             _row(
+                ("tests", "workers"),
+                "int",
+                0,
+                "how many pytest-xdist workers `make test` starts (`-n auto`); "
+                "0 runs the suite in one process",
+                accepts=(_not_negative, "a value >= 0"),
+            ),
+            _row(
                 ("toolchain", "node_major"),
                 "int",
                 24,

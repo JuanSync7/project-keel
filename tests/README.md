@@ -9,7 +9,7 @@ tags: []
 summary: Unit tests mirror src/; integration/e2e/smoke go by scenario.
 id: tests-readme
 created: 2026-06-17
-updated: 2026-10-21
+updated: 2026-10-23
 visibility: internal
 canonical: true
 ---
@@ -76,6 +76,25 @@ pytest before any test runs. A root that holds the checkout is accepted, and
 the checkout stays outside it. A test that starts a child process gives it the
 seconds `tests.child_timeout_seconds` names. `pyproject.toml` keeps a failed test's directory,
 named after the test, and removes a passed one's.
+
+## `make test` runs on parallel workers
+
+`make test`, and so `make verify`, passes pytest-xdist `-n auto`, and
+`conftest.py` answers xdist's count with `tests.workers` (read by
+`isolation_guard.py` `worker_count`); 0 runs the suite in one process. A tier
+target, a direct `pytest` and a nested session pass no `-n`, so they stay in
+one process. Each worker judges its own tests' reaches. The unused-exemption
+check needs every test that ran, so a worker hands its record (`usage`) to the
+controller when it ends, the controller adds the records up (`merge_usage`)
+and judges once; a worker that ended without its record, such as one that
+crashed, fails the run naming it, because its tests could not be judged.
+`--expiring-tier-record` refuses to run with `-n`: each worker would write its
+own share of the record to one path.
+
+A module-scoped fixture runs once on each worker that runs one of the
+module's tests, so its cost is paid once per such worker. An exemption is still per node id: a reach a module-scoped
+fixture makes is judged in the setup of whichever test on that worker asked
+for it first.
 
 ## A run in which zero tests ran fails
 

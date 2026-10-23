@@ -32,6 +32,9 @@ dependencies = []
 dev = [
   "pytest>=7.3",
   "pytest-cov",
+  # `make test` runs the suite on config/project.json tests.workers workers
+  # (`-n auto`, answered by tests/conftest.py).
+  "pytest-xdist>=3.0",
   "ruff==0.15.18",
   "mypy==2.1.0",
   # Installs and runs the pinned secret scanner (`make secrets-install`); 4.6.2

@@ -113,8 +113,16 @@ def _tier():
 
 
 def pytest_configure(config):
-    if config.getoption(_RECORD_OPTION):
-        _tier().start_recording()
+    if not config.getoption(_RECORD_OPTION):
+        return
+    if getattr(config.option, "numprocesses", None):
+        # Each worker would write its own share of the record to one PATH,
+        # and the last to finish would stand as the whole of it.
+        raise pytest.UsageError(
+            "%s records one process's findings; run it without -n "
+            "(pytest-xdist workers)" % _RECORD_OPTION
+        )
+    _tier().start_recording()
 
 
 def _write_record(config):
@@ -266,11 +274,47 @@ def _say(config, message):
         sys.stderr.write(message + "\n")
 
 
+# Parallel workers (pytest-xdist). `make test` asks for `-n auto`, and the
+# count is config/project.json tests.workers, so it is set in one place; 0
+# runs the session in this process. Each worker judges its own tests, so the
+# unused-exemption check moves to the controller: a worker hands over what it
+# saw, and a worker that ended without handing it over leaves the check
+# unable to judge its tests, which fails the run rather than passing it.
+_USAGE = "isolation_usage"
+_LOST = []
+
+
+@pytest.hookimpl(optionalhook=True)
+def pytest_xdist_auto_num_workers(config):
+    try:
+        return isolation_guard.worker_count(_ROOT)
+    except isolation_guard.ConfigError as exc:
+        # A usage error stops pytest before any test runs (exit 4), as a
+        # refused scratch root does, rather than as an internal error.
+        raise pytest.UsageError(str(exc)) from exc
+
+
+@pytest.hookimpl(optionalhook=True)
+def pytest_testnodedown(node, error):
+    record = getattr(node, "workeroutput", {}).get(_USAGE)
+    if record is None:
+        _LOST.append(node.gateway.id)
+        return
+    isolation_guard.merge_usage(record)
+
+
 @pytest.hookimpl(trylast=True)
 def pytest_sessionfinish(session, exitstatus):
     config = session.config
     _write_record(config)
-    unused = isolation_guard.unused_exemptions()
+    if hasattr(config, "workerinput"):
+        config.workeroutput[_USAGE] = isolation_guard.usage()
+        return  # the controller judges, over every worker's tests
+    unused = isolation_guard.unused_exemptions() + [
+        "isolation guard: worker %s ended without its exemption record, so the "
+        "unused-exemption check could not judge its tests; run again" % gateway
+        for gateway in sorted(_LOST)
+    ]
     if unused:
         _say(config, "\n".join(unused))
         if exitstatus == 0:
@@ -279,10 +323,8 @@ def pytest_sessionfinish(session, exitstatus):
         config.option.collectonly
         or getattr(config.option, "setupplan", False)
         or getattr(config.option, "setuponly", False)
-        or hasattr(config, "workerinput")
     ):
-        # A listing, --setup-plan and --setup-only execute no test by design;
-        # an xdist worker's controller judges.
+        # A listing, --setup-plan and --setup-only execute no test by design.
         return
     if exitstatus not in (0, 5):
         return  # a failure, an interrupt or a usage error already says why

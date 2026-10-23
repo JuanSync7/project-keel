@@ -8,7 +8,7 @@ tags: [adr, tests, isolation, scratch, guard]
 summary: "A test's rule for the network, writes and stores is a row of config/project.json tests.isolation.tiers, picked by the test's closest tier marker, and tests/isolation_guard.py, which tests/conftest.py installs as a Python audit hook, fails a test that reaches past it, even when the test caught the error. A reach a test needs is a per-test exemption with a reason, and an unused one is red. Test scratch lives in a per-user memory directory, tests.memory_scratch_root, when the host can hold it, else under tests.scratch_root, never the system temporary directory or the checkout. Defence-in-depth, not a sandbox: a child process is not audited."
 id: docs-adr-0024-what-a-test-may-reach
 created: 2026-10-18
-updated: 2026-10-21
+updated: 2026-10-23
 visibility: internal
 canonical: true
 ---
@@ -161,6 +161,8 @@ under its own `tmp_path`, so the suite ships with no exemption.
 Not built:
 - auditing a child process, for example with a `sitecustomize` the child
   imports;
-- a judgement under pytest-xdist, which the suite does not use;
+- a judgement under pytest-xdist, which the suite did not use when this was
+  decided; `make test` has since run on workers, and the controller judges
+  the unused exemptions over every worker's record (`tests/README.md`);
 - a live store in keel itself, so `store_copy` has no consumer in keel's own
   suite.

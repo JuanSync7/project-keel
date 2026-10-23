@@ -5,6 +5,7 @@ layer: n/a
 summary: tests/isolation_guard.py's pure parts. `classify` returns no violation for a reach inside the roots and one naming its axis, event and resolved target outside them, for every judged event: an open for writing (by mode or by flags; a read is allowed, a file descriptor skipped), a rename's source and destination, a remove, rmdir, mkdir, truncate and rmtree, a symlink's or link's destination only, an entry removed through a directory file descriptor (resolved through /proc, skipped when /proc is absent), a change of mode, times, owner or an extended attribute (at the link and through it, or at the link alone when the caller stays on it, so a tree copied with a link that points outside reaches nothing), a bytecode write in a `__pycache__` allowed and any other write there refused, a socket connect, sendto or sendmsg (loopback v4, v6, v4-mapped and the literal `localhost` allowed under `loopback`, a hostname refused, an AF_UNIX path judged by the roots, an abstract one refused, a sendmsg with no address allowed), an AF_UNIX bind to a path, a sqlite connect (`:memory:`, an empty name and a memory URI allowed, a `file:` name judged as a URI and as a file in the working directory, bytes decoded), and an open in any mode of a listed store. A root that holds the checkout leaves the checkout outside it, and one inside the checkout is scratch again. The closest tier marker wins, an unmarked test gets the strictest rule, this project's policy loads one rule per configured tier, each a declared marker, an empty scratch variable leaves the configured root, `choose_scratch` takes the variable, else the memory root with `-<uid>` appended and mode 0700, made 0700 under a umask that narrows mkdir, never through a link at the configured name, and with a trailing separator dropped, else the disk root with a note when memory is null, absent, missing, under its free-space floor, in a parent others may write without the sticky bit, or not this user's directory with mode 0700 (an open mode, a link, a file, another owner, no owner write), and refuses an unsafe memory root or a negative floor naming its key, and `load_policy` refuses an unknown value, an unknown axis, a tier missing an axis and a blank reason, naming the key. The message has its fixed shape, and a second store copy changes nothing.
 """
 
+import dataclasses
 import ipaddress
 import json
 import os
@@ -744,6 +745,105 @@ def test_an_exempt_axis_left_out_exempts_nothing(tmp_path):
 def test_install_is_idempotent():
     # conftest installed the guard when this session started.
     assert ig.install(ig.load_policy(str(_ROOT))) is False
+
+
+# --- parallel workers --------------------------------------------------------
+
+
+@pytest.fixture
+def fresh_usage(monkeypatch, tmp_path):
+    """The guard's record of what ran and what an exemption covered, empty for
+    this test and the session's own put back after it, under a policy that
+    exempts `t::a` on writes and `t::b` on network."""
+    exempt = {"writes": {"t::a": "a reason"}, "network": {"t::b": "a"}}
+    # The session's own policy with these exemptions: a policy loaded from
+    # tmp_path would fence tmp_path as the checkout and refuse its removal.
+    policy = dataclasses.replace(
+        ig._STATE["policy"], exempt=_policy(tmp_path, exempt=exempt).exempt
+    )
+    monkeypatch.setitem(ig._STATE, "seen", set())
+    monkeypatch.setitem(ig._STATE, "used", set())
+    monkeypatch.setitem(ig._STATE, "policy", policy)
+
+
+def test_usage_is_what_the_unused_exemption_check_reads(fresh_usage):
+    # Set as begin and the hook set them: calling begin here would end the
+    # session's own judgement of this test.
+    ig._STATE["seen"].update(("t::a", "t::c"))
+    ig._STATE["used"].add(("network", "t::b"))
+    record = ig.usage()
+    assert sorted(record) == ["seen", "used"]
+    # This test's own call phase began too, so it is seen beside the two.
+    assert [row for row in record["seen"] if row[0].startswith("t::")] == [
+        ["t::a"],
+        ["t::c"],
+    ]
+    assert record["used"] == [["network", "t::b"]]
+    assert json.loads(json.dumps(record)) == record
+
+
+def test_merged_records_are_judged_as_one_process(fresh_usage):
+    # Worker one ran t::a and reached nothing; worker two ran t::b and used
+    # its exemption. Neither alone sees both.
+    ig.merge_usage({"seen": [["t::a"]], "used": []})
+    ig.merge_usage({"seen": [["t::b"]], "used": [["network", "t::b"]]})
+    assert ig.unused_exemptions() == [ig.unused_line("writes", "t::a")]
+    ig.merge_usage({"seen": [], "used": [["writes", "t::a"]]})
+    assert ig.unused_exemptions() == []
+
+
+def test_a_merge_twice_changes_nothing(fresh_usage):
+    record = {"seen": [["t::a"]], "used": [["writes", "t::a"]]}
+    ig.merge_usage(record)
+    once = ig.usage()
+    ig.merge_usage(record)
+    assert ig.usage() == once
+
+
+@pytest.mark.parametrize(
+    "record, part",
+    [
+        (None, "seen and used"),
+        ({"seen": []}, "seen and used"),
+        ({"seen": [], "used": [], "more": []}, "seen and used"),
+        ({"seen": "t::a", "used": []}, "seen"),
+        ({"seen": [["t::a", "x"]], "used": []}, "seen"),
+        ({"seen": [], "used": [["t::a"]]}, "used"),
+        ({"seen": [], "used": [["writes", 3]]}, "used"),
+    ],
+)
+def test_a_record_of_another_shape_is_refused_whole(fresh_usage, record, part):
+    ig.merge_usage({"seen": [["t::b"]], "used": []})
+    before = ig.usage()
+    with pytest.raises(ValueError) as caught:
+        ig.merge_usage(record)
+    assert part in str(caught.value)
+    assert ig.usage() == before
+
+
+def _workers_config(tmp_path, **tests):
+    (tmp_path / "config").mkdir(exist_ok=True)
+    (tmp_path / "config" / "project.json").write_text(
+        json.dumps({"tests": tests}), encoding="utf-8"
+    )
+    return str(tmp_path)
+
+
+@pytest.mark.parametrize("count", [0, 1, 4])
+def test_the_worker_count_is_the_configured_one(tmp_path, count):
+    assert ig.worker_count(_workers_config(tmp_path, workers=count)) == count
+
+
+def test_no_configured_worker_count_is_one_process(tmp_path, capsys):
+    assert ig.worker_count(_workers_config(tmp_path)) == 0
+    assert "[using default] tests.workers = 0" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("value", [-1, "4", 2.5, None])
+def test_a_worker_count_the_loader_refuses_names_the_key(tmp_path, value):
+    with pytest.raises(ig.ConfigError) as caught:
+        ig.worker_count(_workers_config(tmp_path, workers=value))
+    assert "tests.workers" in str(caught.value)
 
 
 # --- the store copy ----------------------------------------------------------

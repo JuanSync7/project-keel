@@ -1,6 +1,6 @@
 """
 title: isolation guard — a test reaches the network, the disk and the stores only as its tier allows
-summary: Judges each reach a test makes against config/project.json `tests.isolation`, read through scripts/config_loader.py. A tier has a rule on three axes — network (none, loopback, any), writes (temp, any) and stores (temp, any) — and the closest tier marker on a test picks the rule; a test with none that names a configured tier gets the strictest value on every axis. `install` adds one Python audit hook per process, active only while `begin` has named a test and phase; it raises IsolationError, which is not an OSError, at the reach itself, and `end` returns every violation of the phase, so tests/conftest.py fails a test whose code caught the error. `classify` is the judgement: a file created, changed or removed outside the temp roots (an open for writing, rename, remove, rmdir, mkdir, truncate, rmtree, a link's destination, a change of mode, owner, flags, times or an extended attribute, judged at the link and at what it points to unless the caller is shutil's own copy saying it stays on the link, and an AF_UNIX socket bound to a path; a bytecode file in a `__pycache__` and the null device aside), a socket connect, sendto or sendmsg that leaves the tier's network, a sqlite database opened outside the roots (a `file:` name judged both as a URI and as a file of that name in the working directory, because the event does not say which sqlite reads), and an open in any mode of a listed store. A root that holds the checkout leaves the checkout outside it: of the roots and the checkout, the deepest that holds a path decides. An exemption is config only, per axis and node id, with a reason; `unused_exemptions` names one whose test ran and reached nothing on its axis. `copy_store` copies a listed store with its -wal, -shm and -journal siblings into a test's own directory. `scratch_root` reads the test scratch root, config/project.json `tests.scratch_root` or KEEL_TEST_SCRATCH over it, with `~` expanded, and refuses one that is relative, has a `..` part, or sits under the system temporary directory (`system_tempdir`, computed with TMPDIR, TEMP and TMP removed) or inside the checkout, naming the key; `choose_scratch` picks the session's root: KEEL_TEST_SCRATCH when set; else `tests.memory_scratch_root` with `-<uid>` appended, held to the same refusals with its parent resolved and its last part not (a link another user plants at the configured name is never followed) and a trailing separator dropped, when its parent exists and is not writable by others without the sticky bit, its file system has `tests.memory_scratch_min_free_mb` megabytes free, and the directory is this user's with mode 0700 (made so, whatever the umask, when absent); else `tests.scratch_root`, with a note saying why memory was passed over. `point_temp_at` makes the root and points tempfile, TMPDIR, KEEL_TEST_SCRATCH (so a nested session inherits the root) and GIT_CEILING_DIRECTORIES at it, and a second call changes nothing. Not caught, because no audit event carries it: a write by a child process, a C extension's own file or socket calls, a FIFO or device node (os.mkfifo and os.mknod raise no event), and the directory an os.open with a relative path and a dir_fd lands in (the open event has no dir_fd, so the path is judged against the working directory). A name lookup is not judged, by choice: library code looks names up without reaching anywhere, and the connect that follows is judged.
+summary: Judges each reach a test makes against config/project.json `tests.isolation`, read through scripts/config_loader.py. A tier has a rule on three axes — network (none, loopback, any), writes (temp, any) and stores (temp, any) — and the closest tier marker on a test picks the rule; a test with none that names a configured tier gets the strictest value on every axis. `install` adds one Python audit hook per process, active only while `begin` has named a test and phase; it raises IsolationError, which is not an OSError, at the reach itself, and `end` returns every violation of the phase, so tests/conftest.py fails a test whose code caught the error. `classify` is the judgement: a file created, changed or removed outside the temp roots (an open for writing, rename, remove, rmdir, mkdir, truncate, rmtree, a link's destination, a change of mode, owner, flags, times or an extended attribute, judged at the link and at what it points to unless the caller is shutil's own copy saying it stays on the link, and an AF_UNIX socket bound to a path; a bytecode file in a `__pycache__` and the null device aside), a socket connect, sendto or sendmsg that leaves the tier's network, a sqlite database opened outside the roots (a `file:` name judged both as a URI and as a file of that name in the working directory, because the event does not say which sqlite reads), and an open in any mode of a listed store. A root that holds the checkout leaves the checkout outside it: of the roots and the checkout, the deepest that holds a path decides. An exemption is config only, per axis and node id, with a reason; `unused_exemptions` names one whose test ran and reached nothing on its axis; under pytest-xdist each worker hands `usage` to the controller, which `merge_usage` adds up so the check judges every worker's tests at once. `copy_store` copies a listed store with its -wal, -shm and -journal siblings into a test's own directory. `scratch_root` reads the test scratch root, config/project.json `tests.scratch_root` or KEEL_TEST_SCRATCH over it, with `~` expanded, and refuses one that is relative, has a `..` part, or sits under the system temporary directory (`system_tempdir`, computed with TMPDIR, TEMP and TMP removed) or inside the checkout, naming the key; `choose_scratch` picks the session's root: KEEL_TEST_SCRATCH when set; else `tests.memory_scratch_root` with `-<uid>` appended, held to the same refusals with its parent resolved and its last part not (a link another user plants at the configured name is never followed) and a trailing separator dropped, when its parent exists and is not writable by others without the sticky bit, its file system has `tests.memory_scratch_min_free_mb` megabytes free, and the directory is this user's with mode 0700 (made so, whatever the umask, when absent); else `tests.scratch_root`, with a note saying why memory was passed over. `point_temp_at` makes the root and points tempfile, TMPDIR, KEEL_TEST_SCRATCH (so a nested session inherits the root) and GIT_CEILING_DIRECTORIES at it, and a second call changes nothing. Not caught, because no audit event carries it: a write by a child process, a C extension's own file or socket calls, a FIFO or device node (os.mkfifo and os.mknod raise no event), and the directory an os.open with a relative path and a dir_fd lands in (the open event has no dir_fd, so the path is judged against the working directory). A name lookup is not judged, by choice: library code looks names up without reaching anywhere, and the connect that follows is judged.
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/unit/test_isolation_guard.py
@@ -265,6 +265,20 @@ SCRATCH_KEY = ("tests", "scratch_root")
 # directory, in the order it reads them.
 _TEMP_VARS = ("TMPDIR", "TEMP", "TMP")
 _CEILINGS = "GIT_CEILING_DIRECTORIES"
+
+
+WORKERS_KEY = ("tests", "workers")
+
+
+def worker_count(root: str) -> int:
+    """config/project.json `tests.workers` under *root*: how many pytest-xdist
+    workers `-n auto` starts, 0 for none. Raises config_loader.ConfigError,
+    naming the key, for a value the loader refuses."""
+    keys = config_loader.rows(WORKERS_KEY)
+    values = config_loader.resolve(
+        config_loader.read(root), keys, config_loader.CONFIG_FILE
+    )
+    return int(values[WORKERS_KEY])
 
 
 def system_tempdir() -> str:
@@ -881,6 +895,39 @@ def unused_exemptions() -> List[str]:
         for nodeid in sorted(policy.exempt[axis])
         if nodeid in _STATE["seen"] and (axis, nodeid) not in _STATE["used"]
     ]
+
+
+def usage() -> Dict[str, List[List[str]]]:
+    """What this process saw for `unused_exemptions`, as plain lists a
+    pytest-xdist worker can hand its controller: the node ids whose call
+    phase began, and each (axis, node id) whose exemption a reach used."""
+    return {
+        "seen": [[nodeid] for nodeid in sorted(_STATE["seen"])],
+        "used": [[axis, nodeid] for axis, nodeid in sorted(_STATE["used"])],
+    }
+
+
+def merge_usage(record: object) -> None:
+    """Add another process's `usage` *record* to this one's, so the
+    controller of a pytest-xdist run judges `unused_exemptions` over every
+    worker. Raises ValueError, naming the part, for a record of another shape:
+    a part dropped would read as an exemption no test used."""
+    if not isinstance(record, dict) or sorted(record) != ["seen", "used"]:
+        raise ValueError("an exemption record holds seen and used, not %r" % (record,))
+    for part, width in (("seen", 1), ("used", 2)):
+        rows = record[part]
+        if not isinstance(rows, (list, tuple)) or not all(
+            isinstance(row, (list, tuple))
+            and len(row) == width
+            and all(isinstance(item, str) for item in row)
+            for row in rows
+        ):
+            raise ValueError(
+                "an exemption record's %s holds rows of %d strings, not %r"
+                % (part, width, rows)
+            )
+    _STATE["seen"].update(row[0] for row in record["seen"])
+    _STATE["used"].update((row[0], row[1]) for row in record["used"])
 
 
 @contextlib.contextmanager

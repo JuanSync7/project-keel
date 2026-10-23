@@ -7,6 +7,7 @@ summary: Runs the shipped conftest over the tests/fixtures/isolation case files 
 
 import json
 import os
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -54,9 +55,10 @@ _OUTSIDE_CASES = {
 _INSIDE_CASES = ("test_inside_socket", "test_inside_write", "test_inside_sqlite")
 
 
-def _project(tmp_path, cases, exempt=None, stores=None):
+def _project(tmp_path, cases, exempt=None, stores=None, workers=None):
     """A scratch project holding the shipped test harness and `cases` as unit
-    test files; `exempt` and `stores` replace tests.isolation's own."""
+    test files; `exempt` and `stores` replace tests.isolation's own, and
+    `workers` replaces tests.workers."""
     root = tmp_path / "proj"
     for rel in _SHIPPED:
         (root / rel).parent.mkdir(parents=True, exist_ok=True)
@@ -75,6 +77,8 @@ def _project(tmp_path, cases, exempt=None, stores=None):
         isolation["exempt"] = exempt
     if stores is not None:
         isolation["stores"] = stores
+    if workers is not None:
+        manifest["tests"]["workers"] = workers
     path.write_text(json.dumps(manifest), encoding="utf-8")
     return root
 
@@ -206,6 +210,77 @@ def test_an_exemption_whose_test_did_not_run_is_not_judged(tmp_path):
     code, out, outcomes = _run(tmp_path, root, "-k", "inside")
     assert len(outcomes) == 3 and not _red(outcomes), out[-3000:]
     assert code == 0, out[-3000:]
+
+
+# `-n auto` is how `make test` asks for workers: the count is tests.workers,
+# which the shipped conftest hands pytest-xdist.
+_WORKERS = ("-n", "auto")
+
+
+def _created(out):
+    """The worker count pytest-xdist says it started; None for no worker."""
+    found = re.findall(r"created: (\d+)/\1 workers", out)
+    return int(found[-1]) if found else None
+
+
+@pytest.mark.parametrize("workers", [0, 3])
+def test_the_worker_count_is_tests_workers(tmp_path, workers):
+    root = _project(tmp_path, ["reach"], workers=workers)
+    code, out, outcomes = _run(tmp_path, root, *_WORKERS, "-k", "inside")
+    assert len(outcomes) == 3 and not _red(outcomes), out[-3000:]
+    assert code == 0, out[-3000:]
+    assert _created(out) == (workers or None), out[-3000:]
+
+
+def test_a_worker_count_the_loader_refuses_stops_pytest_naming_the_key(tmp_path):
+    root = _project(tmp_path, ["reach"], workers=-1)
+    code, out, outcomes = _run(tmp_path, root, *_WORKERS)
+    assert code == 4 and not outcomes, out[-3000:]
+    assert "tests.workers" in out, out[-3000:]
+
+
+def test_under_workers_an_exemption_whose_test_reached_nothing_fails_the_run(
+    tmp_path,
+):
+    stale = (_REACH + "test_inside_write", _REACH + "test_inside_socket")
+    exempt = {"writes": {stale[0]: "stale"}, "network": {stale[1]: "stale"}}
+    root = _project(tmp_path, ["reach"], exempt=exempt, workers=2)
+    code, out, outcomes = _run(tmp_path, root, *_WORKERS, "-k", "inside")
+    assert _created(out) == 2, out[-3000:]
+    assert len(outcomes) == 3 and not _red(outcomes), out[-3000:]
+    assert code == 1, out[-3000:]
+    assert 'tests.isolation.exempt.writes."%s"' % stale[0] in out, out[-3000:]
+    assert 'tests.isolation.exempt.network."%s"' % stale[1] in out, out[-3000:]
+
+
+def test_under_workers_a_used_exemption_and_one_whose_test_did_not_run_hold(
+    tmp_path,
+):
+    exempt = {
+        "network": {_REACH + "test_outside_socket": "the case proves an exemption"},
+        "writes": {_REACH + "test_outside_write": "the case proves an exemption"},
+        "stores": {_REACH + "test_outside_sqlite": "the case proves an exemption"},
+    }
+    root = _project(tmp_path, ["reach"], exempt=exempt, workers=2)
+    code, out, outcomes = _run(tmp_path, root, *_WORKERS, "-k", "not swallowed")
+    assert _created(out) == 2, out[-3000:]
+    assert len(outcomes) == 6 and not _red(outcomes), out[-3000:]
+    assert code == 0, out[-3000:]
+    code, out, outcomes = _run(tmp_path, root, *_WORKERS, "-k", "inside")
+    assert len(outcomes) == 3 and not _red(outcomes), out[-3000:]
+    assert code == 0, out[-3000:]
+
+
+def test_a_worker_that_dies_leaves_the_exemption_check_unjudged_and_red(tmp_path):
+    root = _project(tmp_path, ["reach"], workers=2)
+    (root / "tests" / "unit" / "test_dies.py").write_text(
+        "import os\n\nimport pytest\n\npytestmark = pytest.mark.unit\n\n\n"
+        "def test_the_worker_dies():\n    os._exit(3)\n",
+        encoding="utf-8",
+    )
+    code, out, _outcomes = _run(tmp_path, root, *_WORKERS, "-k", "inside or dies")
+    assert code == 1, out[-3000:]
+    assert "ended without its exemption record" in out, out[-3000:]
 
 
 @pytest.mark.parametrize("reason", ["", "   "])
