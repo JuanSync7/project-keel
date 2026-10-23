@@ -38,7 +38,10 @@ prose written from scratch.
    ```
    An execute run makes up to `--max-chunks` model calls, and it refuses with
    exit 2 unless `config/project.json` `agents.max_model_calls` approves that
-   many (the default 0 approves none). Ask the user before raising the cap:
+   many (the default 0 approves none). Each call is counted, and a run whose
+   work needs more stops at the bound with exit 1; rerun to resume it. A saved
+   run on another model, or with more left than the bound, is refused with
+   exit 2 naming the snapshot. Ask the user before raising the cap:
    model calls cost money.
 
 3. **Report** `applied` (files whose edit passed the gate) vs `skipped` (chunks

@@ -80,6 +80,13 @@ version rather than a bare commit:
   loader refuses is exit 14 (`scripts/model_budget.py`). With no `--model`,
   each names on stderr the registry default it will use
   (`models.choose_model`). The doc-review Stop hook gains `--max-chunks`.
+- **An agent run is held to its approved count of model calls as it runs.**
+  Every call goes through `models.CountedModel` (`models/budget.py`), and the
+  call past the run's bound is never made: the CLIs and Stop hooks end it
+  with exit 1 naming the count. A saved run resumes only on the model the
+  run names and with no more calls left than its bound, else exit 2 naming
+  the snapshot. `mcp/qa_server.py` holds each question to
+  `agents.max_model_calls`, so the shipped `0` answers with a tool error.
 - **Every agent has a replayed eval with a known-good response.** The doc
   reviewer, index enforcer, practice refactor and wiki navigator each export
   their one model call as a step on an injected backend (`propose`,
