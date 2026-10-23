@@ -180,13 +180,18 @@ def gitignore_declared(root, entries):
     A line that only matches the entry, a glob or a parent directory, declares
     nothing: it would also pass a stale or misspelled entry. A leading slash
     (anchored at the root) or a trailing one (a directory) is allowed on either
-    side; comments, blank lines and negations name no path."""
+    side; comments and blank lines name no path, and a negation takes back an
+    earlier line that named its path, as git reads the file top to bottom."""
     lines = (root / ".gitignore").read_text(encoding="utf-8").splitlines()
-    named = {
-        _bare(ln)
-        for ln in lines
-        if ln.strip() and not ln.lstrip().startswith(("#", "!"))
-    }
+    named: set[str] = set()
+    for ln in lines:
+        line = ln.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("!"):
+            named.discard(_bare(line[1:]))
+        else:
+            named.add(_bare(line))
     return {e for e in entries if _bare(_stripped(e)) in named}
 
 
@@ -527,6 +532,16 @@ def test_a_gitignore_line_declares_its_path_with_or_without_slashes(tmp_path):
         "wiki/.runtime",
         "dist/",
     }
+
+
+def test_a_later_negation_takes_back_the_line_that_declared_a_path(tmp_path):
+    """git reads `.gitignore` top to bottom, so `!scratch/` after `scratch/`
+    leaves the path tracked and the entry undeclared; a line after the
+    negation declares it again."""
+    (tmp_path / ".gitignore").write_text(
+        "scratch/\n!scratch/\nagain\n!/again\nagain/\n", encoding="utf-8"
+    )
+    assert gitignore_declared(tmp_path, ["scratch", "again"]) == {"again"}
 
 
 @pytest.mark.parametrize(
