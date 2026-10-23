@@ -2,7 +2,7 @@
 title: Model-call budget — a backend that counts its calls and refuses past the approved count
 layer: backend
 public_api: yes
-summary: CountedModel wraps any ModelBackend and passes each call through until the approved count is reached, then raises CallCapReached without calling the backend, so a count of 0 lets no call through; ModelMeter is one run's counted backend, built from a name on the first call only, so a run that never reaches a model step builds none. approve_resume raises RunNotApproved, carrying report()'s three parts, for a saved run that would resume on another model than the one approved or with more calls left than approved. approved_cap reads config/project.json `agents.max_model_calls` through scripts/config_loader.py and raises its ConfigError for a value it cannot use. Shared by the agents, the eval harness and the MCP server, which sit above models in config/project.json `import_layers.order`.
+summary: CountedModel wraps any ModelBackend and passes each call through until the approved count is reached, then raises CallCapReached without calling the backend, so a count of 0 lets no call through; ModelMeter is one run's counted backend, built from a name on the first call only, so a run that never reaches a model step builds none. approve_resume raises RunNotApproved, carrying report()'s three parts, for a saved run that would resume on another model than the one approved or with more calls left than approved. approved_cap reads config/project.json `agents.max_model_calls` through scripts/config_loader.py and raises its ConfigError for a value it cannot use. SessionBudget is the total a long-lived caller (the MCP Q&A server) is held to across all its runs: admit raises SessionCapReached, a CallCapReached, for a run whose bound added to the calls made so far would pass the total, before any model is called, and the backends its counted() factory builds add every call they pass on to that count; approved_session_cap reads that total from `agents.max_session_model_calls`, absent being the declared default 0, which admits no run that may make a call. Shared by the agents, the eval harness and the MCP server, which sit above models in config/project.json `import_layers.order`.
 """
 
 from __future__ import annotations
@@ -20,11 +20,16 @@ __all__ = [
     "CountedModel",
     "ModelMeter",
     "RunNotApproved",
+    "SESSION_CAP_KEY",
+    "SessionBudget",
+    "SessionCapReached",
     "approve_resume",
     "approved_cap",
+    "approved_session_cap",
 ]
 
 CAP_KEY = ("agents", "max_model_calls")
+SESSION_CAP_KEY = ("agents", "max_session_model_calls")
 
 
 class CallCapReached(Exception):
@@ -37,6 +42,25 @@ class CallCapReached(Exception):
         )
         self.cap = cap
         self.calls = calls
+
+
+class SessionCapReached(CallCapReached):
+    """A run refused before it starts: *calls* were made of the *total*
+    approved, and the run's *bound* would take the count past it."""
+
+    def __init__(
+        self, total: int, calls: int, bound: int, message: str | None = None
+    ) -> None:
+        super().__init__(
+            total,
+            calls,
+            message
+            or "the session reached its approved %d model call(s) (%d made), and "
+            "the next run may make %d more"
+            % (total, calls, bound),
+        )
+        self.total = total
+        self.bound = bound
 
 
 class RunNotApproved(Exception):
@@ -99,6 +123,55 @@ class ModelMeter:
         return 0 if self._counted is None else self._counted.calls
 
 
+def _not_negative(what: str, value: int) -> int:
+    if value < 0:
+        raise ValueError("a %s is 0 or more, not %d" % (what, value))
+    return value
+
+
+class _SessionCounted(ModelBackend):
+    """The backend *inner*, each call it passes on added to *session*."""
+
+    def __init__(self, inner: ModelBackend, session: SessionBudget) -> None:
+        self.inner = inner
+        self.name = inner.name
+        self.session = session
+
+    def run(self, prompt: str, **opts: object) -> str:
+        # Counted before the call: a call that raises still spent what it sent.
+        self.session.calls += 1
+        return self.inner.run(prompt, **opts)
+
+
+class SessionBudget:
+    """The model calls one long-lived caller may make over its lifetime,
+    across every run it starts: *total* approved, *calls* made so far."""
+
+    def __init__(self, total: int) -> None:
+        self.total = _not_negative("session model-call total", total)
+        self.calls = 0
+
+    def admit(self, bound: int) -> None:
+        """Pass a run that may make up to *bound* calls when the calls made so
+        far plus *bound* stay within the total, or raise SessionCapReached.
+        The whole bound must fit, so no run the session admits can take the
+        count past the total, however many of its calls it makes."""
+        _not_negative("model-call bound", bound)
+        if self.calls + bound > self.total:
+            raise SessionCapReached(self.total, self.calls, bound)
+
+    def counted(
+        self, factory: Callable[[str | None], ModelBackend]
+    ) -> Callable[[str | None], ModelBackend]:
+        """A factory like *factory* whose backends add each call they pass on
+        to this session's count."""
+
+        def build(name: str | None) -> ModelBackend:
+            return _SessionCounted(factory(name), self)
+
+        return build
+
+
 def approve_resume(
     *, where: str, saved_model: str | None, model: str | None, left: int, cap: int
 ) -> None:
@@ -134,3 +207,16 @@ def approved_cap(root: str) -> int:
     )
     approved: int = values[CAP_KEY]
     return approved
+
+
+def approved_session_cap(root: str) -> int:
+    """The model calls config/project.json at *root* approves for one
+    long-lived caller over its lifetime. Raises config_loader.ConfigError when
+    the file or the value cannot be used."""
+    values = config_loader.resolve(
+        config_loader.read(root),
+        config_loader.rows(SESSION_CAP_KEY),
+        config_loader.CONFIG_FILE,
+    )
+    total: int = values[SESSION_CAP_KEY]
+    return total

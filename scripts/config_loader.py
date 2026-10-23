@@ -705,6 +705,16 @@ KEYS = tuple(
                 accepts=(_not_negative, "a value >= 0"),
             ),
             _row(
+                ("agents", "max_session_model_calls"),
+                "int",
+                0,
+                "the approved cap on the model calls one MCP Q&A server process "
+                "may make across all its questions, from start to exit; 0 "
+                "approves none, since a total keel chose would be a spend no "
+                "owner approved",
+                accepts=(_not_negative, "a value >= 0"),
+            ),
+            _row(
                 ("agents", "protected_names"),
                 "object",
                 NONE,
