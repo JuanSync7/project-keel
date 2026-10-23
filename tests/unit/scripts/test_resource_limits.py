@@ -2,13 +2,15 @@
 title: Unit — resource_limits (a bounded child)
 kind: tests
 layer: n/a
-summary: scripts/resource_limits.py `run_bounded` starts a child through the child-process allowlist in its own process group and returns its status and output; a child that runs past its time limit, and one whose output passes its byte cap, has its whole group ended and is refused as ChildTimedOut or ChildOutputTooLarge, naming the program, the limit and the key the caller says sets that limit, and a grandchild holding the pipe open after its parent exits does not hold the call past the limit. `shutdown_owner` makes one named owner of SIGTERM and SIGINT for a server: the first signal writes a line naming the owner and the signal and calls the owner's stop, or raises ShutdownRequested (no Exception, so a request's own handler cannot eat it) only where the server says it is idle, and a second signal ends the process the default way; the handlers before it are put back. `cap_memory` sets RLIMIT_AS, proven in a child: an allocation past the cap is a MemoryError, one below it is not, and null says the cap is off. `serve_limits` reads config/project.json `transports.serve.memory_cap_mb` and `transports.serve.shutdown_grace_seconds`, refusing a value out of its bound by its key. Every child is a short Python one-liner under this interpreter; nothing reaches a network.
+summary: scripts/resource_limits.py `run_bounded` starts a child through the child-process allowlist in its own process group and returns its status and output; a child that runs past its time limit, and one whose output passes its byte cap, has its whole group ended and is refused as ChildTimedOut or ChildOutputTooLarge, naming the program, the limit and the key the caller says sets that limit, and a grandchild holding stdout or an unread stdin open after its parent exits holds the call for one drain window only, after which the parent's status and output are returned, not a timeout; a setsid grandchild, which no group kill reaches, leaves no reader or writer thread and no pipe open behind the call, and the call returns within its limit plus the drain window, timed out or not. An exception while the child runs ends its group. A limit past threading.TIMEOUT_MAX or NaN is refused before a child starts. `shutdown_owner` makes one named owner of SIGTERM and SIGINT for a server: the first signal writes a line naming the owner and the signal and calls the owner's stop, or raises ShutdownRequested (no Exception, so a request's own handler cannot eat it) only where the server says it is idle, and a second signal ends the process the default way; the handlers before it are put back. `cap_memory` sets RLIMIT_AS, proven in a child: an allocation past the cap is a MemoryError, one below it is not, and null says the cap is off. `serve_limits` reads config/project.json `transports.serve.memory_cap_mb` and `transports.serve.shutdown_grace_seconds`, refusing a value out of its bound by its key. Every child is a short Python one-liner under this interpreter; nothing reaches a network.
 """
 
+import contextlib
 import json
 import os
 import signal
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -94,18 +96,129 @@ def test_a_child_past_its_time_limit_has_its_group_ended_and_is_refused(tmp_path
     assert _gone_within(int(pidfile.read_text()), 5)
 
 
-def test_a_grandchild_holding_the_pipe_does_not_hold_the_call(tmp_path):
+def _kill(pidfile):
+    # Cleanup for a test whose grandchild is outside run_bounded's reach.
+    if pidfile.exists():
+        with contextlib.suppress(ProcessLookupError):
+            os.kill(int(pidfile.read_text()), signal.SIGKILL)
+
+
+def _holder(pidfile, holds, new_session=False):
+    """A child that starts a grandchild holding the pipes *holds* names
+    (stdin, stdout) open without reading or writing them, prints `done`, and
+    exits 0 at once."""
+    redirect = {
+        "stdin": "stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL",
+        "stdout": "stdin=subprocess.DEVNULL",
+    }[holds]
+    return (
+        "import subprocess, sys;"
+        "p = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'],"
+        " %s, start_new_session=%r);"
+        "open(%r, 'w').write(str(p.pid)); print('done')"
+        % (redirect, new_session, str(pidfile))
+    )
+
+
+def _open_fds():
+    return len(os.listdir("/proc/self/fd"))
+
+
+def test_a_child_that_exits_while_a_grandchild_holds_the_pipe_returns_its_status(
+    tmp_path,
+):
+    # The leader's exit ends the call: the grandchild gets one short drain
+    # window, then its group is ended; the leader's status and output stand.
+    pidfile = tmp_path / "grandchild.pid"
+    started = time.monotonic()
+    done = resource_limits.run_bounded(
+        [_PY, "-c", _holder(pidfile, "stdout")], timeout=20, max_output_bytes=64
+    )
+    elapsed = time.monotonic() - started
+    assert (done.returncode, done.stdout) == (0, "done\n")
+    assert elapsed < 20 - 5, "the call waited on the grandchild, not the child"
+    assert _gone_within(int(pidfile.read_text()), 5)
+
+
+@pytest.mark.skipif(not os.path.isdir("/proc/self/fd"), reason="counts /proc fds")
+@pytest.mark.parametrize("new_session", [False, True])
+def test_a_grandchild_holding_stdin_unread_does_not_hold_the_call(
+    tmp_path, new_session
+):
+    # A megabyte cannot fit the pipe, so the writer blocks until the drain
+    # window stops it; a setsid grandchild is never ended, so only the stop
+    # releases the writer's thread and pipe.
+    pidfile = tmp_path / "grandchild.pid"
+    threads, fds = threading.active_count(), _open_fds()
+    started = time.monotonic()
+    try:
+        done = resource_limits.run_bounded(
+            [_PY, "-c", _holder(pidfile, "stdin", new_session)],
+            timeout=20,
+            max_output_bytes=64,
+            stdin_text="x" * 1000000,
+        )
+        elapsed = time.monotonic() - started
+        assert (threading.active_count(), _open_fds()) == (threads, fds)
+    finally:
+        _kill(pidfile)
+    assert done.returncode == 0
+    assert elapsed < 20 - 5, "the stdin writer was waited on with no limit"
+
+
+@pytest.mark.skipif(not os.path.isdir("/proc/self/fd"), reason="counts /proc fds")
+@pytest.mark.parametrize("leader_sleeps", [0, 60])
+def test_a_setsid_process_holding_the_pipe_leaks_no_thread_or_file(
+    tmp_path, leader_sleeps
+):
+    # setsid takes the grandchild out of the group, so nothing ends it; the
+    # call still returns within its limit plus one drain window, and releases
+    # every reader thread and pipe it opened.
+    pidfile = tmp_path / "grandchild.pid"
+    script = _holder(pidfile, "stdout", new_session=True)
+    script += "; import time; time.sleep(%d)" % leader_sleeps
+    threads, fds = threading.active_count(), _open_fds()
+    started = time.monotonic()
+    try:
+        if leader_sleeps:
+            with pytest.raises(resource_limits.ChildTimedOut):
+                resource_limits.run_bounded(
+                    [_PY, "-c", script], timeout=2, max_output_bytes=64
+                )
+        else:
+            done = resource_limits.run_bounded(
+                [_PY, "-c", script], timeout=2, max_output_bytes=64
+            )
+            assert done.returncode == 0
+        elapsed = time.monotonic() - started
+        assert (threading.active_count(), _open_fds()) == (threads, fds)
+    finally:
+        _kill(pidfile)
+    assert elapsed < 2 + resource_limits._DRAIN_S + 1.5
+
+
+def test_an_exception_while_the_child_runs_ends_its_group(tmp_path, monkeypatch):
+    # A KeyboardInterrupt in the wait stands in for any exception there: the
+    # caller loses the child, so nothing else would end its group.
     pidfile = tmp_path / "grandchild.pid"
     script = (
-        "import subprocess, sys;"
+        "import subprocess, sys, time;"
         "p = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)']);"
-        "open(%r, 'w').write(str(p.pid))" % str(pidfile)
+        "open(%r, 'w').write(str(p.pid)); time.sleep(60)" % str(pidfile)
     )
-    started = time.monotonic()
-    with pytest.raises(resource_limits.ChildTimedOut):
-        resource_limits.run_bounded([_PY, "-c", script], timeout=2, max_output_bytes=64)
-    assert time.monotonic() - started < 15
-    assert _gone_within(int(pidfile.read_text()), 5)
+
+    def interrupted(proc, deadline):
+        while not pidfile.exists() or not pidfile.read_text():
+            time.sleep(0.02)
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(resource_limits, "_await_exit", interrupted)
+    try:
+        with pytest.raises(KeyboardInterrupt):
+            resource_limits.run_bounded([_PY, "-c", script], 30, 64)
+        assert _gone_within(int(pidfile.read_text()), 5)
+    finally:
+        _kill(pidfile)
 
 
 @pytest.mark.parametrize("stream", ["stdout", "stderr"])
@@ -142,10 +255,13 @@ def test_a_program_that_does_not_exist_is_file_not_found():
         )
 
 
-def test_a_limit_below_one_is_refused_before_a_child_starts():
+def test_a_limit_out_of_its_bound_is_refused_before_a_child_starts():
+    # Past threading.TIMEOUT_MAX a thread wait raises OverflowError mid-call.
     for kwargs in (
         {"timeout": 0, "max_output_bytes": 64},
         {"timeout": 5, "max_output_bytes": 0},
+        {"timeout": threading.TIMEOUT_MAX * 2, "max_output_bytes": 64},
+        {"timeout": float("nan"), "max_output_bytes": 64},
     ):
         with pytest.raises(ValueError):
             resource_limits.run_bounded(["/nonexistent/keel-no-such-program"], **kwargs)

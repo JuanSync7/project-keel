@@ -267,7 +267,11 @@ version rather than a bare commit:
   sends the whole group SIGKILL when it outlives
   `models.timeout_seconds.claude-code-headless` (600 seconds) or writes past
   the reply cap on either stream, raising `ChildTimedOut` or
-  `ChildOutputTooLarge`, both a `RuntimeError` naming the key.
+  `ChildOutputTooLarge`, both a `RuntimeError` naming the key. The call waits
+  on the CLI's own exit, then gives its pipes one 2-second drain window: a
+  process the CLI left holding a pipe, or its stdin unread, costs that window
+  and no more, the CLI's own status is returned rather than a timeout, and no
+  pipe or pipe thread outlives the call.
 - **Every server stops cleanly on SIGTERM, under a memory cap.** The REST
   entry is now api/rest_fastapi/serve.py (what `make run-api` runs), the MCP
   servers start through mcp/protocol.py `run_stdio_server`, and gRPC's
