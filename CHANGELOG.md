@@ -644,6 +644,19 @@ version rather than a bare commit:
   postcss-selector-parser 6 that `@tailwindcss/typography` pins (moderate),
   and the katex 0.16 that mermaid 11 pins (low). `src/frontend/react-vite`
   audits clean.
+- **An audit finding left open has one place to say why, and an end date.**
+  `make fe-audit` (`[read]`, `scripts/audit_dependencies.py`) runs
+  `npm audit --json` in each frontend app and judges it against
+  config/project.json `dependency_audit.accepted`: rows of advisory id,
+  package, reason and `review_by` day per app. It fails a critical or high
+  finding no row covers (`dependency_audit.fail_at`), a row past its day and a
+  row whose advisory the audit no longer reports; a moderate or low finding
+  is listed, not failed. It is not a `make verify` goal, because the
+  registry's answer changes day to day. Keel's first row, also shipped to a
+  generated astro project, accepts the postcss-selector-parser 6 finding
+  until 2027-01-21: its only fix is a breaking downgrade of
+  `@tailwindcss/typography`, and it parses the project's own stylesheets.
+  `docs/guides/deterministic-checks.md` section 16 says how to accept a risk.
 
 ## [0.3.0] — 2026-10-15
 

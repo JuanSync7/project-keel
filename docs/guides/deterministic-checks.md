@@ -1044,6 +1044,79 @@ because it needs the recorded build, which a fresh clone does not have.
 
 ---
 
+### 16. Dependency audit and accepted risks — `scripts/audit_dependencies.py`
+
+**Purpose.** `npm audit` reports every advisory against an app's locked
+dependency tree, and some stay open for a reason: the only fix is a breaking
+downgrade, or the vulnerable code never sees outside input. A reason kept in a
+note expires silently, and a fixed advisory leaves the note behind.
+config/project.json `dependency_audit.accepted` is where the reason lives, and
+`make fe-audit` judges every app's audit against it on every run. It runs
+`npm audit --json` in each app the Makefile's `FE_APPS` names, under the
+allowlisted child environment and `dependency_audit.timeout_seconds`, and it
+fails, listing every failure before one closing line, on three things:
+
+- a finding at or above `dependency_audit.fail_at` (`high` by default, so a
+  critical or a high) that no row names with the same advisory id and the
+  same package;
+- a row whose `review_by` day has passed, judged on the date
+  `scripts/run_date.py` `today` reads (the gate run's date when it is set,
+  else the clock);
+- a row whose advisory and package the app's audit no longer reports, or
+  whose app is not one the run audits: a stale acceptance, removed rather than
+  kept.
+
+A moderate or low finding no row covers is listed on stdout and does not
+fail. That is the rule the frontend audit's queue rows already follow: a
+weaker finding is tracked as owned work with its own row, not as a red gate,
+and `dependency_audit.fail_at` lowers the floor for a project that wants it
+red. A covered finding is listed with its reason and day.
+
+**How to accept a risk.** Run `make fe-audit`, take the advisory id and the
+package from the failing line, and add a row under the app's directory name:
+
+```json
+"dependency_audit": {
+  "accepted": {
+    "astro": {
+      "GHSA-rj75-hqrm-r3gf": {
+        "package": "postcss-selector-parser",
+        "reason": "the only fix is a breaking downgrade; the parser reads the project's own stylesheets",
+        "review_by": "2027-01-21"
+      }
+    }
+  }
+}
+```
+
+The reason says why the finding stays open, in terms a reviewer can check.
+`review_by` is the last day the acceptance holds; from the next day the row
+fails as expired. To keep it, look again and write a new date; to drop it,
+fix the package and delete the row, which the stale rule otherwise forces.
+Nothing caps how far out the date may be; keel's own row is 90 days out. The
+loader refuses a row that is not exactly `package`, `reason` and `review_by`,
+an id not written `GHSA-xxxx-xxxx-xxxx`, a blank reason and a date not
+written `YYYY-MM-DD`, with exit 14.
+
+**What it does not prove.** It judges the advisories the registry knows on the
+day it runs, so a pass today can fail tomorrow with no change in the tree; that
+is why `make verify` does not run it. It judges `npm audit`'s own reading of
+the lockfile and does not inspect `node_modules`. It reads a finding's
+severity from the report and never weighs whether the vulnerable code is
+reached; the reason is the human's claim, not a proof. A report it cannot read
+as `npm audit --json` version 2 is exit 2, and npm that cannot start, overruns
+the timeout, exits other than 0 or 1 or answers an `error` object is exit 11;
+none of these is a pass.
+
+**Cost.** One registry request per app, seconds each. The script is not in the
+catalogue table above, and `make check-all` does not run it, because it reads
+the network. `tests/unit/scripts/test_audit_dependencies.py` judges saved
+reports through `--report NAME=FILE` and never runs npm.
+
+**Run.** `make fe-audit` · `python3 scripts/audit_dependencies.py src/frontend/astro --report astro=audit.json` · `pytest tests/unit/scripts/test_audit_dependencies.py`
+
+---
+
 ## How the hooks are wired
 
 ### Pre-commit (event trigger)
