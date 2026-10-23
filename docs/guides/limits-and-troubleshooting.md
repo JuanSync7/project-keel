@@ -116,6 +116,12 @@ own limits, is a row of the [feature catalogue](../reference/features.md).
   exits 0 in both runners, and the evidence record lists `test-fe` with
   `tests: null`, so nothing counts those skips. CI runs `make test-fe` as a
   step of its own, after `make fe-install` and `make fe-browsers`.
+- **The shell suite counts tests, not runs.** `make test-sh` asks the runner
+  (`shell.test_runner`) to count the tests before it runs them, and zero is
+  exit 13. A bats file whose every test calls `skip` still counts as that many
+  tests, and the run exits 0, so a suite of skips passes as the frontend
+  suites' does. The evidence record lists `test-sh` with `tests: null`, so
+  nothing counts those skips either.
 - **CI downloads the journey's browser on every run.** A fresh CI machine has
   no browser cache, so the `make fe-browsers FE_BROWSER_FLAGS=--with-deps`
   step reads the network each run; nothing caches it between runs.

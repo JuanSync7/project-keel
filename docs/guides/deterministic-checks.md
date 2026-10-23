@@ -1127,8 +1127,8 @@ the ledger across runs and repositories is a consumer's, such as
 project-jarvis, which ingests the record
 (`docs/adr/keel/K-0017-gate-evidence-record.md`). It is unsigned and sits in a writable directory, so it is evidence, not
 attestation (`docs/guides/limits-and-troubleshooting.md`). CI runs `secrets-install`,
-`secret-scan`, `check-all`, `lint`, `typecheck`, `test`, `trace`, `eval` and
-`test-fe` as separate steps (`.github/workflows/ci.yml`), so CI writes no
+`secret-scan`, `check-all`, `lint`, `typecheck`, `test`, `trace`, `eval`,
+`test-fe` and `test-sh` as separate steps (`.github/workflows/ci.yml`), so CI writes no
 record.
 
 **How a consumer reads it.**

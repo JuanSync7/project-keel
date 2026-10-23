@@ -477,6 +477,33 @@ edit of the data file shows as a diff on the next update.
 [ADR-K-0027](../adr/keel/K-0027-a-project-s-own-code-warns-until-a-hard-date.md)
 is the proposed decision.
 
+### Your shell scripts meet the shell gates
+
+The update asks a new question, `shell`, whose default is yes; taking the
+default, as `--defaults` does, answers yes. It writes `shell.enabled`, and
+the update brings `scripts/shell_gate.py` and four make targets: `make lint`
+gains `make lint-sh` and `make fmt-check-sh`, `make verify` gains
+`make test-sh`, and the CI workflow gains a `make test-sh` step. Keel installs
+none of the tools they run. Answered yes, a project that carries a shell
+script (a `shell.script_suffixes` suffix or a `shell.shebang_shells` shebang)
+meets three refusals, and `scripts/shell_gate.py` checks them in this order:
+
+1. **The arriving reason is stale.** The update writes `shell.no_scripts`,
+   the reason a fresh project has no shell file. Beside a shell file every
+   shell target exits 14 naming the files. Set it to `null`.
+2. **The scripts have no test.** `make test-sh` exits 13 while no file ends
+   in a `shell.test_suffixes` suffix (`.bats`). Add a test for the scripts.
+3. **The tools are missing.** `make lint` exits 11 naming the tool
+   `shell.linter` or `shell.formatter` names, and `make test-sh` the one
+   `shell.test_runner` names. Install it in the interpreter's directory or on
+   PATH.
+
+A vendored script goes in `shell.excluded_paths` with its reason instead of
+being edited. A project that wants no shell gate answers no
+(`--data shell=false`), or sets `shell.enabled` to `false` later: every shell
+target then says so and exits 0. A project with no shell file keeps the
+arriving reason and stays green.
+
 ### Your Node, Python and runner images come from config
 
 The update brings the config/project.json `toolchain` block,
