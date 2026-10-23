@@ -468,6 +468,14 @@ version rather than a bare commit:
   quote the Makefile's line, and `tests/integration/test_gate_evidence_record.py`
   fails a row that does not carry that line word for word and any other
   quote of the recipe line that differs from it.
+- **The exit-code docs say what make leaves of a code.** GNU make exits 2 for
+  every failing recipe, so codes 10 to 14 reach a caller by number only when it
+  runs the script itself. `scripts/exit_codes.py`,
+  `docs/guides/limits-and-troubleshooting.md` and
+  `docs/guides/generate-and-upgrade.md` now say so and name make's last line,
+  `Error <N>`, as the one place the number survives; the guide had said that
+  line sat above make's own. `tests/integration/test_exit_codes_through_make.py`
+  runs every member through real make.
 - **A nullable key with a bound puts null first in its refusal.** A refused
   `transports.serve.memory_cap_mb` or `tests.memory_scratch_root` now reads
   "accepted: null, or an integer with a value >= 1", where it read as if null
