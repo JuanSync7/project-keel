@@ -1242,7 +1242,7 @@ def test_a_generated_project_runs_and_smokes(tmp_path, answers, generate):
 )
 def test_a_generated_project_replays_its_evals(tmp_path, answers, generate):
     """Slice CMP-4.S7 held downstream: every answer set ships keel's `evals`
-    block, the harness, the agent doers it drives and the datasets that uses every
+    block, the harness, the agent doers it drives and the datasets that use every
     shipped scorer, and `make eval` run twice in the committed project exits 0,
     writes the same passing report both times and leaves what git lists alone.
     No agent under agents/ is pruned, so no answer set may skip this."""
