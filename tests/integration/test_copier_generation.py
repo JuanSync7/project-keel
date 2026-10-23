@@ -3563,8 +3563,14 @@ def test_a_generated_project_refuses_an_agent_edit_to_its_judge_on_arrival(
 
 
 @pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
-@pytest.mark.parametrize("shell", [True, False], ids=["shell-kept", "shell-declined"])
-def test_the_shell_answer_switches_the_shell_targets(tmp_path, generate, shell):
+# Kept is copier's default: passing no answer shares the render of every other
+# test with these answers, where an explicit `shell=True` keys a render of its own.
+@pytest.mark.parametrize(
+    ("shell", "answer"),
+    [(True, {}), (False, {"shell": False})],
+    ids=["shell-kept", "shell-declined"],
+)
+def test_the_shell_answer_switches_the_shell_targets(tmp_path, generate, shell, answer):
     """KEEL-SHELL-1: the copier answer `shell` lands in config/project.json
     `shell.enabled`, and every project carries the four shell targets and their
     adapter either way. A fresh project has no shell file: declined, each target
@@ -3575,7 +3581,7 @@ def test_the_shell_answer_switches_the_shell_targets(tmp_path, generate, shell):
     linter, red, exit 11 naming the tool when none is installed, never a stated
     skip. Declined, the targets still say the switch is off over the script."""
     dest = tmp_path / "proj"
-    generate(dest, project_name="demo_proj", frontend_stack="none", shell=shell)
+    generate(dest, project_name="demo_proj", frontend_stack="none", **answer)
     manifest_path = dest / "config" / "project.json"
     manifest = json.loads(manifest_path.read_text("utf-8"))
     assert manifest["shell"]["enabled"] is shell
