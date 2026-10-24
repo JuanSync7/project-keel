@@ -9,7 +9,7 @@ tags: [agent, documentation, review, rosters, freshness]
 summary: Reviews the documentation against docs/guides/doc-style.md — the deterministic findings first, then one judged edit per chunk, each gated on make check-docs and rolled back if red.
 id: agents-doc-reviewer
 created: 2026-09-02
-updated: 2026-10-23
+updated: 2026-10-24
 visibility: internal
 canonical: true
 ---
@@ -43,6 +43,18 @@ and reports the candidate chunks plus the prompt it *would* send, calling no mod
 and writing nothing; `review(execute=True)` proposes and applies the gated edits
 in a durable per-chunk loop that resumes after a crash. An unavailable model is a
 stated skip in its callers (`ModelUnavailable`, `models/`).
+
+A finding is sent to a model only when `wiki/corpus.json` has a node for its
+file and `config_loader.is_served` keeps every such node at the project's
+`corpus.served_visibilities`. Any other finding is **withheld**: the report keeps
+it in `withheld` as (chunk id, why), its file's text is never read, and no prompt,
+preview or apply carries it. The check fails closed: a corpus or config that
+cannot be read withholds every finding, and a file with no corpus node is
+withheld because its level is unknown. `propose` asks the corpus again, so a run
+resumed after its file left the served levels declines that chunk with no model
+call. `scripts/doc_review.py` prints one `withheld <id>: <why>` line per finding,
+and the hook's line counts them. `tests/integration/test_doc_reviewer.py` holds
+each case.
 
 Its thin CLI is `scripts/doc_review.py` (`make doc-review`); its event trigger is
 `scripts/hooks/on_stop_doc_review.py`, fired by `.claude/settings.json`; its

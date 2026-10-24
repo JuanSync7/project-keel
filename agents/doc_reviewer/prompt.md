@@ -51,9 +51,13 @@ once per chunk. **Your job on each call is step 4 only.**
 
 # Output contract
 Return a `DocReviewReport`: `baseline_green`, `stale`, `unresolved`, `rosters`,
-`candidates`, `applied`, `skipped`, `preview`, `dry_run`.
+`candidates`, `applied`, `skipped`, `withheld`, `preview`, `dry_run`.
 
 # Safety
+- Never see a finding whose file the corpus does not place at a
+  `corpus.served_visibilities` level: the agent withholds it before any prompt
+  and reports it in `withheld` with why, and it withholds every finding when the
+  corpus or config cannot be read.
 - Default to **dry-run** (`execute=False`): gather, retrieve and gate the read-only
   baseline so the report is real, but propose nothing and write nothing.
 - Never mark a chunk done unless it satisfies the gate — the gate, not your

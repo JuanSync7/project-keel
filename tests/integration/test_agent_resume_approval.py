@@ -2,7 +2,7 @@
 title: Integration — an agent run resumed from a saved snapshot is held to the approved model and count
 kind: tests
 layer: n/a
-summary: scripts/doc_review.py and scripts/refactor_practice.py `--execute` with a snapshot under <root>/wiki/.runtime left by an earlier run refuse (USAGE, no model call, snapshot kept) when the snapshot has more chunks left than the bound the run approves, or was saved on another model than the run names, the registry default included, naming the snapshot to remove; a snapshot the approval covers resumes and calls the model once per chunk left. The brains hold every call to one counted backend: a run whose work outgrows its approved count stops at it with models.CallCapReached, and an execute run with no count is a ValueError before any call. The model is a FakeModel subclass patched into models.registry._REGISTRY under its own name and under the registry default's, so no billed model is reachable, and every tool the brains run as a child process is a stub.
+summary: scripts/doc_review.py and scripts/refactor_practice.py `--execute` with a snapshot under <root>/wiki/.runtime left by an earlier run refuse (USAGE, no model call, snapshot kept) when the snapshot has more chunks left than the bound the run approves, or was saved on another model than the run names, the registry default included, naming the snapshot to remove; a snapshot the approval covers resumes and calls the model once per chunk left. The brains hold every call to one counted backend: a run whose work outgrows its approved count stops at it with models.CallCapReached, and an execute run with no count is a ValueError before any call. The model is a FakeModel subclass patched into models.registry._REGISTRY under its own name and under the registry default's, so no billed model is reachable, and every tool the brains run as a child process is a stub; each case runs in a project whose corpus places every finding's file at `internal`, so the doc reviewer sends it.
 """
 
 import json
@@ -68,6 +68,26 @@ _FRESH_NODES = [
     }
     for i in range(5)
 ]
+
+
+@pytest.fixture(autouse=True)
+def _served_docs(tmp_path):
+    """The project every case runs in: a config with the default served
+    levels and a corpus placing each finding's file at `internal`, so the
+    doc reviewer sends them (agents/doc_reviewer withholds a file it cannot
+    place)."""
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "project.json").write_text("{}")
+    (tmp_path / "wiki").mkdir()
+    nodes = [
+        {
+            "node_id": "docs/d%d.md" % i,
+            "path": "docs/d%d.md" % i,
+            "visibility": "internal",
+        }
+        for i in range(5)
+    ]
+    (tmp_path / "wiki" / "corpus.json").write_text(json.dumps({"nodes": nodes}))
 
 
 @pytest.fixture

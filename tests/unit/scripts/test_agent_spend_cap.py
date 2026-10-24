@@ -32,7 +32,7 @@ from scripts import resource_limits  # noqa: E402
 
 pytestmark = pytest.mark.unit
 
-_DOC = DocReviewReport(True, 0, 0, 0, (), (), (), "", False)
+_DOC = DocReviewReport(True, 0, 0, 0, (), (), (), (), "", False)
 _REF = RefactorReport("p", True, (), (), (), "", False)
 
 # name -> (module, agent attribute, argv before flags, bound flag, what it returns)

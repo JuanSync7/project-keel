@@ -3,7 +3,7 @@
 title: doc_review — thin CLI over the doc reviewer agent
 kind: script
 layer: n/a
-summary: Runs agents.doc_reviewer.review(): dry-run by default (gathers findings, retrieves the rules, gates the baseline, writes nothing), `--execute` proposes and applies gated edits, first held to config/project.json `agents.max_model_calls` (scripts/model_budget.py): a --max-chunks over the cap, or a negative one that bounds nothing, is refused (exit 2) and a cap the config cannot give is exit 14, both before the agent runs; with no --model it names on stderr the registry default it will use. The run is then held to that bound as it goes: every model call is counted (models.CountedModel), and the call past it is never made, a failure (exit 1) naming the count; a saved run under wiki/.runtime/ that would resume on another model or with more calls left than the bound is refused (exit 2) naming the snapshot to remove. A setting the model or the runtime reads once the agent starts (models.timeout_seconds, models.max_reply_bytes, runtimes.max_steps, agents.tool_timeout_seconds, agents.tool_max_output_bytes) that scripts/config_loader.py refuses is exit 14 naming the key, in either mode, never a traceback; a tool child the agent runs that is ended at agents.tool_timeout_seconds or agents.tool_max_output_bytes (scripts/resource_limits.py run_tool) is a failure (exit 1) naming the key. An unavailable model is a stated skip at exit 0.
+summary: Runs agents.doc_reviewer.review(): dry-run by default (gathers findings, retrieves the rules, gates the baseline, writes nothing), `--execute` proposes and applies gated edits, first held to config/project.json `agents.max_model_calls` (scripts/model_budget.py): a --max-chunks over the cap, or a negative one that bounds nothing, is refused (exit 2) and a cap the config cannot give is exit 14, both before the agent runs; with no --model it names on stderr the registry default it will use. The run is then held to that bound as it goes: every model call is counted (models.CountedModel), and the call past it is never made, a failure (exit 1) naming the count; a saved run under wiki/.runtime/ that would resume on another model or with more calls left than the bound is refused (exit 2) naming the snapshot to remove. A setting the model or the runtime reads once the agent starts (models.timeout_seconds, models.max_reply_bytes, runtimes.max_steps, agents.tool_timeout_seconds, agents.tool_max_output_bytes) that scripts/config_loader.py refuses is exit 14 naming the key, in either mode, never a traceback; a tool child the agent runs that is ended at agents.tool_timeout_seconds or agents.tool_max_output_bytes (scripts/resource_limits.py run_tool) is a failure (exit 1) naming the key. An unavailable model is a stated skip at exit 0. A finding the agent withholds from the model, its file at no corpus.served_visibilities level or the corpus unreadable, is printed as one `withheld <id>: <why>` line (a `withheld` list in --json).
 """
 
 from __future__ import annotations
@@ -37,6 +37,7 @@ def _as_dict(report):
         "candidates": list(report.candidates),
         "applied": list(report.applied),
         "skipped": list(report.skipped),
+        "withheld": [{"id": cid, "why": why} for cid, why in report.withheld],
         "preview": report.preview,
         "dry_run": report.dry_run,
     }
@@ -152,6 +153,8 @@ def main(argv=None):
                 len(report.skipped),
             )
         )
+        for cid, why in report.withheld:
+            sys.stdout.write("  withheld %s: %s\n" % (cid, why))
         if report.dry_run and report.candidates:
             sys.stdout.write(
                 "  next: `make doc-review-apply` (or `--execute`) to propose and apply gated edits\n"

@@ -3,7 +3,7 @@
 title: on-stop doc review hook
 kind: script
 layer: n/a
-summary: Thin event-hook doer — runs the doc reviewer's dry-run (deterministic; no model) when a session or turn ends, and prints the one-line report. A dry run never blocks the event: exit 0, an unavailable model included, unless a setting it reads is refused. A setting the model or the runtime reads once the review starts (models.timeout_seconds, models.max_reply_bytes, runtimes.max_steps, agents.tool_timeout_seconds, agents.tool_max_output_bytes) that scripts/config_loader.py refuses is exit 14 naming the key, in either mode, never a traceback; a tool child the agent runs that is ended at agents.tool_timeout_seconds or agents.tool_max_output_bytes (scripts/resource_limits.py run_tool) is a failure (exit 1) naming the key. `--execute` is first held to config/project.json `agents.max_model_calls` (scripts/model_budget.py): a --max-chunks over the cap, or a negative one that bounds nothing, is refused (exit 2) and a cap the config cannot give is exit 14, both before the review; with no --model it names on stderr the registry default it will use. The run is then held to that bound as it goes: every model call is counted (models.CountedModel), and the call past it is never made, a failure (exit 1) naming the count; a saved run under wiki/.runtime/ that would resume on another model or with more calls left than the bound is refused (exit 2) naming the snapshot to remove.
+summary: Thin event-hook doer — runs the doc reviewer's dry-run (deterministic; no model) when a session or turn ends, and prints the one-line report, which counts the findings withheld from the model because the corpus does not place their file at a corpus.served_visibilities level. A dry run never blocks the event: exit 0, an unavailable model included, unless a setting it reads is refused. A setting the model or the runtime reads once the review starts (models.timeout_seconds, models.max_reply_bytes, runtimes.max_steps, agents.tool_timeout_seconds, agents.tool_max_output_bytes) that scripts/config_loader.py refuses is exit 14 naming the key, in either mode, never a traceback; a tool child the agent runs that is ended at agents.tool_timeout_seconds or agents.tool_max_output_bytes (scripts/resource_limits.py run_tool) is a failure (exit 1) naming the key. `--execute` is first held to config/project.json `agents.max_model_calls` (scripts/model_budget.py): a --max-chunks over the cap, or a negative one that bounds nothing, is refused (exit 2) and a cap the config cannot give is exit 14, both before the review; with no --model it names on stderr the registry default it will use. The run is then held to that bound as it goes: every model call is counted (models.CountedModel), and the call past it is never made, a failure (exit 1) naming the count; a saved run under wiki/.runtime/ that would resume on another model or with more calls left than the bound is refused (exit 2) naming the snapshot to remove.
 """
 
 from __future__ import annotations
@@ -116,12 +116,13 @@ def main(argv=None):
         return exit_codes.ExitCode.SUCCESS
     print(
         "on_stop_doc_review: %d stale stamp(s), %d unresolved mention(s), %d roster row(s); "
-        "%d chunk(s) queued%s"
+        "%d chunk(s) queued, %d withheld from the model%s"
         % (
             report.stale,
             report.unresolved,
             report.rosters,
             len(report.candidates),
+            len(report.withheld),
             "" if report.dry_run else "; %d applied" % len(report.applied),
         )
     )

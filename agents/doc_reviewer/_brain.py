@@ -2,7 +2,7 @@
 title: Doc reviewer brain
 layer: backend
 public_api: no
-summary: Plan: gather the deterministic doc findings (review_docs) -> retrieve the style rules (query_corpus) -> gate a green baseline -> (propose -> apply+gate+rollback) one finding per step; on a durable Runtime. Judgment only where a rule cannot decide. An execute run needs its approved count of model calls: every call goes through one run's models.ModelMeter, and a resumed run is first checked against the approved model and count (models.approve_resume). Every tool child runs through scripts/resource_limits.py run_tool, held to the reviewed root's config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes`, the root whose make_targets gate keys the gate runner it starts reads, so the time limit is checked against that runner's own limit: past either its session is ended and the step raises ChildTimedOut or ChildOutputTooLarge naming the key.
+summary: Plan: gather the deterministic doc findings (review_docs) -> retrieve the style rules (query_corpus) -> gate a green baseline -> (propose -> apply+gate+rollback) one finding per step; on a durable Runtime. Judgment only where a rule cannot decide. An execute run needs its approved count of model calls: every call goes through one run's models.ModelMeter, and a resumed run is first checked against the approved model and count (models.approve_resume). Every tool child runs through scripts/resource_limits.py run_tool, held to the reviewed root's config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes`, the root whose make_targets gate keys the gate runner it starts reads, so the time limit is checked against that runner's own limit: past either its session is ended and the step raises ChildTimedOut or ChildOutputTooLarge naming the key. A finding on a file the corpus does not place at a corpus.served_visibilities level (config_loader.is_served), or on any file when the corpus cannot be read, is withheld: reported with why, never sent.
 """
 
 from __future__ import annotations
@@ -24,6 +24,7 @@ from runtimes import (
     Step,
     get_runtime,
 )
+from scripts import config_loader
 from scripts.resource_limits import run_tool
 
 __all__ = ["review", "DocReviewReport"]
@@ -44,7 +45,9 @@ class DocReviewReport:
     `stale`, `unresolved` and `rosters` are the deterministic facts
     (`review_docs.py`); `candidates` are the chunks the model was (or would be)
     asked about, in order; `applied` are files whose edit kept the gate green;
-    `skipped` are chunks the model declined or whose edit was rolled back.
+    `skipped` are chunks the model declined or whose edit was rolled back;
+    `withheld` are (chunk id, why) pairs for findings never sent to a model,
+    because the corpus does not place their file at a served level.
     """
 
     baseline_green: bool
@@ -54,6 +57,7 @@ class DocReviewReport:
     candidates: tuple  # tuple[str, ...] — chunk ids, e.g. "mention:docs/a.md:4"
     applied: tuple  # tuple[str, ...] — files whose edit passed the gate
     skipped: tuple  # tuple[str, ...] — chunk ids with no accepted edit
+    withheld: tuple  # tuple[tuple[str, str], ...] — (chunk id, why), never sent
     preview: str  # the prompt the first chunk WOULD send (dry-run)
     dry_run: bool
 
@@ -91,35 +95,92 @@ def _read_lines(root, relpath, lineno, around=3):
     return "\n".join("%d: %s" % (i + 1, lines[i]) for i in range(lo, hi))
 
 
-def _chunks(report, root, max_chunks):
-    """The ordered work list from a review_docs JSON report: unresolved mentions,
-    then roster rows to judge. Stale stamps are counted (`stale`) but never a
-    chunk: a rule decides them, so the deterministic writer clears them
-    (`make restamp-docs`), and while one is outstanding `make check-docs` is red,
-    so a gated edit could never land and the baseline stops the run."""
-    mentions = [
+def _withhold(root, corpus_path):
+    """A function giving, for a document's path, why a finding on it must
+    not be sent to a model, or None when it may be.
+
+    A file may be sent only when the corpus at *corpus_path* has a node for
+    it and config_loader.is_served keeps every such node at *root*'s
+    `corpus.served_visibilities`. Fail closed: a corpus or config that cannot
+    be read withholds every finding, and a file the corpus has no node for
+    is withheld, its level unknown."""
+    try:
+        served = config_loader.served_visibilities(root)
+    except config_loader.ConfigError as exc:
+        refused = "corpus.served_visibilities cannot be read (%s)" % (
+            "; ".join(exc.lines) or exc.path or config_loader.CONFIG_FILE
+        )
+        return lambda path: refused
+    try:
+        with open(corpus_path, encoding="utf-8") as fh:
+            corpus = json.load(fh)
+        nodes = corpus.get("nodes", []) if isinstance(corpus, dict) else None
+        if not isinstance(nodes, list):
+            raise ValueError("it holds no list of nodes")
+    except (OSError, ValueError) as exc:
+        unread = "the corpus at %s cannot be read (%s), so no file's level is known" % (
+            corpus_path,
+            exc,
+        )
+        return lambda path: unread
+    by_path: dict = {}
+    for n in nodes:
+        if isinstance(n, dict) and n.get("path"):
+            by_path.setdefault(n["path"], []).append(n)
+
+    def why(path):
+        found = by_path.get(path)
+        if not found:
+            return "%s has no corpus node, so its level is unknown" % path
+        if not all(config_loader.is_served(n, served) for n in found):
+            return "%s is at a level outside corpus.served_visibilities" % path
+        return None
+
+    return why
+
+
+def _chunks(report, root, max_chunks, withhold):
+    """The ordered work list from a review_docs JSON report, unresolved
+    mentions then roster rows to judge, as (chunks, withheld): the first
+    *max_chunks* findings *withhold* clears, each with its file's text, and a
+    (chunk id, why) pair for every finding it does not, whose text is never
+    read. Stale stamps are counted (`stale`) but never a chunk: a rule
+    decides them, so the deterministic writer clears them
+    (`make restamp-docs`), and while one is outstanding `make check-docs` is
+    red, so a gated edit could never land and the baseline stops the run."""
+    findings = [
         {
             "id": "mention:%s:%d" % (m["path"], m["line"]),
             "kind": "mention",
             "path": m["path"],
             "line": m["line"],
             "finding": "`%s` resolves to nothing" % m["mention"],
-            "text": _read_lines(root, m["path"], m["line"]),
+            "around": 3,
         }
         for m in report.get("unresolved_mentions", [])
-    ]
-    rosters = [
+    ] + [
         {
             "id": "roster:%s:%s" % (r["path"], r["member"]),
             "kind": "roster",
             "path": r["path"],
             "line": r["line"],
             "finding": "Not for: %s" % r["not_for"],
-            "text": _read_lines(root, r["path"], r["line"], around=0),
+            "around": 0,
         }
         for r in report.get("rosters", [])
     ]
-    return (mentions + rosters)[:max_chunks]
+    chunks: list = []
+    withheld: list = []
+    for f in findings:
+        why = withhold(f["path"])
+        if why is not None:
+            withheld.append((f["id"], why))
+            continue
+        if len(chunks) < max_chunks:
+            around = f.pop("around")
+            f["text"] = _read_lines(root, f["path"], f["line"], around=around)
+            chunks.append(f)
+    return chunks, tuple(withheld)
 
 
 def _propose_prompt(rules, chunk):
@@ -185,13 +246,19 @@ def _review(state):
         report = json.loads(out) if out.strip() else {}
     except ValueError:
         report = {}
-    chunks = _chunks(report, state["root"], state["max_chunks"])
+    chunks, withheld = _chunks(
+        report,
+        state["root"],
+        state["max_chunks"],
+        _withhold(state["root"], state["corpus"]),
+    )
     return {
         "stale": len(report.get("findings", [])),
         "unresolved": len(report.get("unresolved_mentions", [])),
         "rosters": len(report.get("rosters", [])),
         "chunks": chunks,
         "candidates": tuple(c["id"] for c in chunks),
+        "withheld": withheld,
         "cursor": 0,
         "applied": (),
         "skipped": (),
@@ -238,8 +305,12 @@ def _baseline(state):
 
 def _propose(state, meter):
     """Model-call: ONE bounded edit spec for the chunk at the cursor, or a decline,
-    from the run's counted backend (*meter*)."""
+    from the run's counted backend (*meter*). The chunk's level is asked of
+    the corpus again, so a run resumed from a snapshot taken before its file
+    left the served levels declines it with no model call."""
     chunk = state["chunks"][state["cursor"]]
+    if _withhold(state["root"], state["corpus"])(chunk["path"]) is not None:
+        return {"spec": None}
     reply = meter.backend().run(_propose_prompt(state.get("rules", []), chunk))
     return {"spec": _parse_spec(reply)}
 
@@ -403,6 +474,7 @@ def review(
         candidates=tuple(st.get("candidates", ())),
         applied=tuple(st.get("applied", ())),
         skipped=tuple(st.get("skipped", ())),
+        withheld=tuple(tuple(pair) for pair in st.get("withheld", ())),
         preview=st.get("preview", ""),
         dry_run=not execute,
     )
