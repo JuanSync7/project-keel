@@ -23,12 +23,12 @@ sys.path.insert(0, os.path.join(ROOT, "scripts"))
 import config_loader  # noqa: E402
 from build_corpus import build_corpus, config_fault  # noqa: E402
 from check_structure import VISIBILITY_ORDER  # noqa: E402
+from corpus_vocabulary import OWNER_SOURCES  # noqa: E402
 from exit_codes import ExitCode, finish, report  # noqa: E402
 from link_corpus import link_corpus  # noqa: E402
 
 # Allowed enum values for the corpus contract (CONVENTIONS section 11/12).
 KINDS = {"doc", "section", "module", "symbol"}
-OWNER_SOURCES = {"frontmatter", "marker", "inherited", "default", "none"}
 # What a null owner_source means, appended to its invalid-owner_source error:
 # build_corpus writes owner, owner_source and owner_origin null together.
 _UNKNOWN_OWNER = (

@@ -625,14 +625,41 @@ def test_the_json_report_shows_a_missing_field_as_null(tmp_path, capsys):
 
 def test_the_report_s_real_sources_are_check_corpus_s_vocabulary(monkeypatch):
     """The report derives the sources that name a real owner from
-    check_corpus OWNER_SOURCES, so a source added there is counted owned here
-    with no second edit."""
+    corpus_vocabulary OWNER_SOURCES, the set check_corpus judges by, so a
+    source added there is counted owned here with no second edit."""
     import importlib
 
-    assert set(ar._REAL_SOURCES) | {"none", "default"} == cc.OWNER_SOURCES
-    monkeypatch.setattr(cc, "OWNER_SOURCES", cc.OWNER_SOURCES | {"bequeathed"})
+    import corpus_vocabulary as cv
+
+    assert cc.OWNER_SOURCES is cv.OWNER_SOURCES
+    assert set(ar._REAL_SOURCES) | {"none", "default"} == cv.OWNER_SOURCES
+    monkeypatch.setattr(cv, "OWNER_SOURCES", cv.OWNER_SOURCES | {"bequeathed"})
     try:
         assert "bequeathed" in importlib.reload(ar)._REAL_SOURCES
     finally:
         monkeypatch.undo()
         importlib.reload(ar)
+
+
+def _imports(path):
+    """The top-level module names *path* imports."""
+    import ast
+
+    names = set()
+    for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+        if isinstance(node, ast.Import):
+            names |= {a.name.split(".")[0] for a in node.names}
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            names.add(node.module.split(".")[0])
+    return names
+
+
+def test_the_report_reads_the_owner_vocabulary_without_the_corpus_gate():
+    """The report takes OWNER_SOURCES from a module that imports nothing of
+    the project, so reading a corpus never loads check_corpus, and through
+    it build_corpus and check_structure."""
+    report = _imports(_ROOT / "scripts" / "accountability_report.py")
+    assert "corpus_vocabulary" in report, report
+    assert not report & {"check_corpus", "build_corpus", "check_structure"}, report
+    vocabulary = _imports(_ROOT / "scripts" / "corpus_vocabulary.py")
+    assert vocabulary <= set(sys.stdlib_module_names), vocabulary

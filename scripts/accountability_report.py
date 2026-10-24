@@ -13,13 +13,10 @@ import json
 import os
 import sys
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_JOBS = os.path.join(ROOT, "scripts", "jobs")
-if _JOBS not in sys.path:
-    sys.path.insert(0, _JOBS)
+from corpus_vocabulary import OWNER_SOURCES
+from exit_codes import ExitCode, finish
 
-from check_corpus import OWNER_SOURCES  # noqa: E402
-from exit_codes import ExitCode, finish  # noqa: E402
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 DEFAULT_CORPUS = os.path.join("wiki", "corpus.json")
 
@@ -50,8 +47,8 @@ def unowned(corpus: dict) -> list:
     return [n for n in _rows(corpus) if n.get("owner_source") == "none"]
 
 
-# The CONVENTIONS §12 sources that name a real owner: check_corpus's closed
-# set less `none` (no owner) and `default` (the stand-in for a TBD).
+# The CONVENTIONS §12 sources that name a real owner: the closed set
+# check_corpus judges by, less `none` (no owner) and `default` (the stand-in for a TBD).
 _REAL_SOURCES = tuple(sorted(OWNER_SOURCES - {"none", "default"}))
 
 
