@@ -586,10 +586,11 @@ version rather than a bare commit:
   there is read at its stated level, and one that cannot be read (a dangling
   or looping link, a directory, a mode-000 file) or that states a value such
   as `secret` is a check_A error naming it, where check_A said nothing before.
-  This fixes the level the corpus records. Only the wiki
-  navigator, and the MCP Q&A server through it, drop `confidential` and
-  `restricted` nodes; the showcase API, its `/llms-full.txt` and the static
-  site export do not filter by visibility yet.
+  This fixes the level the corpus records and changes no reader of it: the
+  wiki navigator, and the MCP Q&A server through it, drop `confidential` and
+  `restricted` nodes as they did before. Filtering the showcase API, its
+  `/llms-full.txt` and the static site export by that level is KEEL-VIS-2's
+  (queue row 43), not this entry's.
 - **A nullable key with a bound puts null first in its refusal.** A refused
   `transports.serve.memory_cap_mb` or `tests.memory_scratch_root` now reads
   "accepted: null, or an integer with a value >= 1", where it read as if null
