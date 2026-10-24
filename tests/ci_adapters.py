@@ -2,7 +2,7 @@
 title: Test helper — read each CI adapter's steps and judge it against config/project.json ci_pipeline
 kind: tests
 layer: n/a
-summary: config/project.json `ci_pipeline` states the CI pipeline once, as an ordered list of shell steps; each adapter file (`ci_pipeline.adapters`, github's .github/workflows/ci.yml and gitlab's .gitlab-ci.yml) runs them. adapter_steps reads the neutral steps an adapter file runs, stdlib line-scanning so a test that imports nothing optional can use it: in a GitHub workflow they are the `run` steps after the last `uses:` setup step, with their `env` map and whether `continue-on-error` lets the job carry on; in a GitLab file they are the `test` job's `script` lines, a leading upper-case NAME=value being the step's env and `allow_failure` making every step soft. judged names the adapter files that are keel's, and shipped adds, in the template, an adapter present only as its `.jinja` twin, so a test about what CI runs reads every adapter keel ships. gitlab_line is the one way a step is written as a GitLab script line. parity_faults names every way the adapters under a root differ from the config: no step configured, no adapter present, a chosen adapter missing, a missing marker line, steps that differ in content or order, and for gitlab an image other than `gitlab_image` filled from `toolchain`, a `GIT_DEPTH` other than "0", or any key that decides whether or how the `test` job runs (top-level `before_script`, `default`, `include`, `workflow`; the job's `before_script`, `except`, `extends`, `only`, `rules`, `when` or a `<<` merge key), none of which keel's twin sets. The GitHub reader has no such check: a job-level `if:` or a changed `on:` passes (KEEL-CIGATE-1). Which adapters are judged follows the `ci_pipeline` answer in .copier-answers.yml: every chosen one, and an unchosen one only when it carries keel's marker line, so a file the project wrote itself, which `copier update` also keeps, is not held to keel's steps; the template has no answers file and judges every adapter present, and an answers file that records no valid answer is a fault. A layout the scanner cannot read gives steps that differ from the config, so the judge fails closed. It reads files and writes nothing.
+summary: config/project.json `ci_pipeline` states the CI pipeline once, as an ordered list of shell steps; each adapter file (`ci_pipeline.adapters`, github's .github/workflows/ci.yml and gitlab's .gitlab-ci.yml) runs them. adapter_steps reads the neutral steps an adapter file runs, stdlib line-scanning so a test that imports nothing optional can use it: in a GitHub workflow they are the `run` steps after the last `uses:` setup step, with their `env` map and whether `continue-on-error` lets the job carry on; in a GitLab file they are the `test` job's `script` lines, a leading upper-case NAME=value being the step's env and `allow_failure` making every step soft. judged names the adapter files that are keel's, and shipped adds, in the template, an adapter present only as its `.jinja` twin, so a test about what CI runs reads every adapter keel ships. gitlab_line is the one way a step is written as a GitLab script line. parity_faults names every way the adapters under a root differ from the config: no step configured, no adapter present, a chosen adapter missing, a missing marker line, steps that differ in content or order, and for gitlab an image other than `gitlab_image` filled from `toolchain`, a `GIT_DEPTH` other than "0", or any key that decides whether or how the `test` job runs (top-level `before_script`, `default`, `include`, `workflow`; the job's `before_script`, `except`, `extends`, `only`, `rules`, `when` or a `<<` merge key), none of which keel's twin sets. The GitHub reader has no such check: a job-level `if:` or a changed `on:` passes (KEEL-CIGATE-1). Which adapters are judged follows the `ci_pipeline` answer in .copier-answers.yml: every chosen one, and an unchosen one only when it carries keel's marker line, so a file the project wrote itself, which `copier update` also keeps, is not held to keel's steps; the template has no answers file and judges every adapter present, and an answers file that records no valid answer, or answers twice (YAML would read the last line, a scan the first), is a fault that shows each line as written. A layout the scanner cannot read gives steps that differ from the config, so the judge fails closed. It reads files and writes nothing.
 """
 
 import json
@@ -41,20 +41,32 @@ def chosen(root):
     if not path.is_file():
         return None, None
     names = sorted(pipeline(root)["adapters"])
-    for line in path.read_text("utf-8").splitlines():
-        match = re.fullmatch(r"ci_pipeline:(.*)", line)
-        if match:
-            value = _scalar(match.group(1))
-            if value == "both":
-                return names, None
-            if value in names:
-                return [value], None
-            return [], "%s: ci_pipeline %r is not 'both' or one of %s" % (
-                ANSWERS,
-                value,
-                names,
-            )
-    return [], "%s records no ci_pipeline answer" % ANSWERS
+    answers = [
+        (number, line)
+        for number, line in enumerate(path.read_text("utf-8").splitlines(), 1)
+        if re.fullmatch(r"ci_pipeline:(.*)", line)
+    ]
+    if not answers:
+        return [], "%s records no ci_pipeline answer" % ANSWERS
+    if len(answers) > 1:
+        # YAML reads the last and this scan would read the first, so neither
+        # may decide what is judged.
+        return [], "%s answers ci_pipeline more than once (%s): keep one" % (
+            ANSWERS,
+            ", ".join("line %d `%s`" % answer for answer in answers),
+        )
+    number, line = answers[0]
+    value = _scalar(line[len("ci_pipeline:") :])
+    if value == "both":
+        return names, None
+    if value in names:
+        return [value], None
+    return [], "%s line %d `%s` is not ci_pipeline 'both' or one of %s" % (
+        ANSWERS,
+        number,
+        line,
+        names,
+    )
 
 
 def marker(root, name):

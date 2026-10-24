@@ -2,7 +2,7 @@
 title: Integration — the settings reference and the feature catalogue list what the code holds
 kind: tests
 layer: n/a
-summary: The reference-drift gate. config/project.json `doc_drift.settings_reference` names the settings reference; each of its keyed sections holds one table with the columns Key, Type, Default, Valid values, Read by, What changing it does, Not for and Ships, and each row is derived-equal to the code; a key listed twice is a finding. The JSON sections are exactly the files check_structure's JSON_CONFIGS reads, each heading naming its file, and every key path of that file (`_comment` dropped at any depth, `[]` for a list-of-object element, `<name>` for one segment of an open-keyed map) matches exactly one row; in the template each literal-path JSON row's Default states the value the file holds, or its twin renders under copier's default answers; the rendered project.json twin is judged under every answer set copier.yml's validators allow, rendered with StrictUndefined; the copier question rows equal copier.yml's questions and name what each prunes; the make variable rows equal what the makefiles assign and reference; the environment variable rows cover every literal read in code, recipes, workflows and the manifest, and every variable a scripts/config_loader.py `KEYS` row names; the command-line flag rows equal every `add_argument` in the code roots, with each literal default stated verbatim; the `models.default` and `runtimes.default` rows state the registry constant that decides. Every expected set is derived, never typed here; a missing or malformed `doc_drift` key fails, a section over zero items fails, and only the copier.yml-derived tests skip, with a stated reason, in a generated project. `doc_drift.features_reference` names the feature catalogue; every `## ` section table with the columns Feature, What it does and why, How to run, Settings, Limits / not for, Deep doc and Ships is keyed by its Feature cell's first code span, and the keys of the derived shapes equal what the tree declares: each check letter, each `## `-annotated make target with its effect label, each script `make check-all` reaches or the catalogue of deterministic checks lists, each copier job (a script beside conflict_guard's finish command that runs its guard), each gate test (a `test_*_gate.py` file directly in tests/integration), each shared script module (a scripts module that a module outside tests/ imports, read from the import graph tests/source_tree.py `import_edges` resolves through config/project.json `import_layers.search_roots`), each agent directory, each MCP server with a `__main__` guard, each registry model and runtime, each workflow and each agent skill. In a generated project the rows need only cover the derived set, and a derived-shaped row the project lacks must say in Ships which answer brings it. Every row states its limits, every Ships cell is `always`, `keel maintainers only`, `when <question>[=<value>]` or `when <question>!=<value>`, naming a question copier.yml asks and a value it offers, every Settings cell links to a heading of the settings reference, and in the template each derived row's Ships matches copier.yml's excludes under the answers it names and under those it leaves out, and no link lands on an excluded path. The CONVENTIONS section 2 scripts note names `derived_features`, this file and the catalogue's `Shared script modules` section, and states no count, in words or as the derived size, so the note cannot drift from the set. Each rule has a fault-injection twin that plants one fault and asserts exactly one more finding than the document had before. Not a writer: it reads the tree and writes nothing.
+summary: The reference-drift gate. config/project.json `doc_drift.settings_reference` names the settings reference; each of its keyed sections holds one table with the columns Key, Type, Default, Valid values, Read by, What changing it does, Not for and Ships, and each row is derived-equal to the code; a key listed twice is a finding. The JSON sections are exactly the files check_structure's JSON_CONFIGS reads, each heading naming its file, and every key path of that file (`_comment` dropped at any depth, `[]` for a list-of-object element, `<name>` for one segment of an open-keyed map) matches exactly one row; in the template each literal-path JSON row's Default states the value the file holds, or its twin renders under copier's default answers; the rendered project.json twin is judged under every answer set copier.yml's validators allow, rendered with StrictUndefined; the copier question rows equal copier.yml's questions and name what each prunes; the make variable rows equal what the makefiles assign and reference; the environment variable rows cover every literal read in code, recipes, workflows and the manifest, and every variable a scripts/config_loader.py `KEYS` row names; the command-line flag rows equal every `add_argument` in the code roots, with each literal default stated verbatim; the `models.default` and `runtimes.default` rows state the registry constant that decides. Every expected set is derived, never typed here; a missing or malformed `doc_drift` key fails, a section over zero items fails, and only the copier.yml-derived tests skip, with a stated reason, in a generated project. `doc_drift.features_reference` names the feature catalogue; every `## ` section table with the columns Feature, What it does and why, How to run, Settings, Limits / not for, Deep doc and Ships is keyed by its Feature cell's first code span, and the keys of the derived shapes equal what the tree declares: each check letter, each `## `-annotated make target with its effect label, each script `make check-all` reaches or the catalogue of deterministic checks lists, each copier job (a script beside conflict_guard's finish command that runs its guard), each gate test (a `test_*_gate.py` file directly in tests/integration), each shared script module (a scripts module that a module outside tests/ imports, read from the import graph tests/source_tree.py `import_edges` resolves through config/project.json `import_layers.search_roots`), each agent directory, each MCP server with a `__main__` guard, each registry model and runtime, each workflow and each agent skill. In a generated project the rows need only cover the derived set, and a derived-shaped row the project lacks must say in Ships which answer brings it. Every row states its limits, every Ships cell is `always`, `keel maintainers only`, `when <question>[=<value>]`, `when <question>!=<value>` or `when <question> is [not] <value>`, naming a question copier.yml asks and a value it offers, every Settings cell links to a heading of the settings reference, and in the template each derived row's Ships matches copier.yml's excludes under the answers it names and under those it leaves out, and no link lands on an excluded path. The CONVENTIONS section 2 scripts note names `derived_features`, this file and the catalogue's `Shared script modules` section, and states no count, in words or as the derived size, so the note cannot drift from the set. Each rule has a fault-injection twin that plants one fault and asserts exactly one more finding than the document had before. Not a writer: it reads the tree and writes nothing.
 """
 
 import ast
@@ -487,6 +487,12 @@ def excluded(path, exclude_conditions, answers):
 _SHIPS_CLAUSE = re.compile(
     r"^when ([a-z_]+)(?:(?:\s*(=|!=)\s*|\s+is\s+(not\s+)?)([\w-]+))?$"
 )
+# Every form _SHIPS_CLAUSE takes, as a finding names them, so a fix it asks
+# for is one the reader accepts.
+_SHIPS_FORMS = (
+    "when <question>[=<value>], when <question>!=<value> or "
+    "when <question> is [not] <value>"
+)
 _TRUE, _FALSE = "true", "false"
 
 
@@ -497,9 +503,7 @@ def ships_claim(cell, questions):
     claims a yes/no question's yes, or a multiselect's every choice."""
     m = _SHIPS_CLAUSE.match(cell.replace("`", "").strip().lower())
     if m is None:
-        return (
-            "is not `when <question>[=<value>]` or `when <question> is [not] <value>`"
-        )
+        return "is not one of %s" % _SHIPS_FORMS
     name, negate, value = m.group(1), bool(m.group(2) == "!=" or m.group(3)), m.group(4)
     spec = questions.get(name)
     if spec is None:
@@ -1281,9 +1285,8 @@ def ships_grammar_findings(doc, rows, questions):
         m = _SHIPS_CLAUSE.match(cell.replace("`", "").strip())
         if m is None:
             findings.append(
-                "%s: row `%s` says Ships %r; write always, %s, when <question>[=<value>] "
-                "or when <question>!=<value>"
-                % (doc, row["key"], row["Ships"], _MAINTAINERS)
+                "%s: row `%s` says Ships %r; write always, %s, %s"
+                % (doc, row["key"], row["Ships"], _MAINTAINERS, _SHIPS_FORMS)
             )
         elif questions is not None:
             claim = ships_claim(cell, questions)
@@ -2171,7 +2174,12 @@ def test_every_ships_cell_is_well_formed(features):
     assert not findings, "\n".join(findings)
     victim = rows[0]["key"]
     broken = [dict(r, Ships="sometimes") if r["key"] == victim else r for r in rows]
-    assert len(ships_grammar_findings(doc, broken, questions)) == 1
+    said = ships_grammar_findings(doc, broken, questions)
+    assert len(said) == 1
+    # The finding names every form the reader takes, so the fix it asks for
+    # is one the reader accepts.
+    for form in ("[=<value>]", "!=<value>", "is [not] <value>"):
+        assert form in said[0], said
     if questions is not None:
         unasked = sorted(questions)[0] + "_unasked"
         assert unasked not in questions

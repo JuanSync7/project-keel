@@ -64,7 +64,8 @@ version rather than a bare commit:
   whether or how its `test` job runs (`when`, `rules`, `only`, `except`,
   `extends`, a job, `default:` or top-level `before_script`, `workflow`,
   `include`), which keel's file never sets; the GitHub side has no such
-  check yet. Each adapter keel writes carries the line
+  check yet. An answers file that answers `ci_pipeline` twice is a fault
+  naming both lines, since YAML reads the last. Each adapter keel writes carries the line
   `# keel-adapter: <name>` (`ci_pipeline.marker`). When an update changes the
   answer, `scripts/jobs/keep_edited_retired.py` removes an adapter that is no
   longer chosen only if the file is byte-equal to what keel last rendered (the
