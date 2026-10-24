@@ -758,8 +758,10 @@ KEYS = tuple(
                     "a value >= 1 and <= %s" % _MOST_BYTES_TEXT,
                 ),
             ),
-            # 60 s: a margin for the gate runner's start and its two tree
-            # snapshots, not what the shipped tool limit happens to leave over
+            # 60 s: a margin for the tool child's start, the gated apply's
+            # plan_edits and writes before the gate and its rollback after a
+            # red one (scripts/apply_refactor.py, run by an agent's _run), and
+            # the gate runner's start and its two tree snapshots, not what the shipped tool limit happens to leave over
             # the gate keys; both took about 0.3 s on a small tree, and 60 s
             # leaves room for the snapshots of a large one.
             _row(
@@ -768,8 +770,9 @@ KEYS = tuple(
                 60,
                 "the seconds agents.tool_timeout_seconds must leave, over "
                 "make_targets.gate_timeout_seconds plus twice "
-                "make_targets.gate_stop_grace_seconds, for the gate runner's "
-                "own start and its two tree snapshots",
+                "make_targets.gate_stop_grace_seconds, for the tool child's "
+                "start, the gated apply's plan_edits, writes and rollback, and "
+                "the gate runner's start and its two tree snapshots",
                 accepts=(
                     _at_least_one_second,
                     "a value >= 1 and <= %s" % _MOST_SECONDS_TEXT,
