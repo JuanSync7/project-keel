@@ -761,9 +761,10 @@ KEYS = tuple(
             # 60 s: a margin for the tool child's start, the gated apply's
             # plan_edits and writes before the gate and its rollback after a
             # red one (scripts/apply_refactor.py, run by an agent's _run), and
-            # the gate runner's start and its two tree snapshots, not what the shipped tool limit happens to leave over
-            # the gate keys; both took about 0.3 s on a small tree, and 60 s
-            # leaves room for the snapshots of a large one.
+            # the gate runner's start and its two tree snapshots. Measured: the
+            # start and both snapshots took about 0.3 s on a small tree, and
+            # two snapshots of a 200,000-file tree on local disk about 7 s;
+            # 60 s keeps the large-tree case well inside it.
             _row(
                 ("agents", "tool_gate_margin_seconds"),
                 "int",
