@@ -579,6 +579,11 @@ def test_a_masked_userinfo_keeps_the_cause(project, capsys):
         ("npm error connect ECONNREFUSED 127.0.0.1:9", "check the registry is"),
         ("npm error ETIMEDOUT while asking", "check the registry is reachable"),
         ("npm error ESOMETHINGELSE", "run it by hand in the app directory"),
+        # npm's words for a registry setting it cannot parse as a URL: no
+        # request was made, so neither credentials nor reach is the cause.
+        ("npm error code ERR_INVALID_URL", "check the registry URL in .npmrc"),
+        ("npm error Invalid URL", "check the registry URL in .npmrc"),
+        ("npm error code ERR_INVALID_URL npm error 401", "check the registry URL"),
     ],
 )
 def test_the_advice_follows_the_cause(project, capsys, said, advice):

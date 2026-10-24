@@ -221,10 +221,17 @@ _UUID = re.compile(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", re.IGNORECASE
 # A word part of a label: two or more letters, one outside a to f, so a
 # fragment of a hex token is no word.
 _WORD = re.compile(r"(?=[A-Za-z]*[G-Zg-z])[A-Za-z]{2,}")
-# The advice a diagnostic's cause earns: a refused credential, then a registry
-# that cannot be reached; anything else keeps the caller's advice.
+# The advice a diagnostic's cause earns: a registry setting npm cannot parse
+# as a URL, which stops it before any request; then a refused credential,
+# then a registry that cannot be reached; anything else keeps the caller's
+# advice.
+_CONFIG_CAUSE = re.compile(r"\bERR_INVALID_URL\b|\bInvalid URL\b")
 _CREDENTIAL_CAUSE = re.compile(r"\bE40[13]\b|\b40[13]\b|authenticat", re.IGNORECASE)
 _REACH_CAUSE = re.compile(r"\b(?:ENOTFOUND|ECONNREFUSED|ETIMEDOUT)\b")
+_CONFIG_ADVICE = (
+    "check the registry URL in .npmrc or npm config is a full http:// or "
+    "https:// URL (values not shown)"
+)
 _CREDENTIAL_ADVICE = "check the registry credentials in .npmrc (values not shown)"
 _REACH_ADVICE = "check the registry is reachable from this host"
 _CUT = "<cut to %d characters>"
@@ -508,6 +515,8 @@ def _redacted(line):
 
 def _advice(said, fallback):
     """The next step *said*, npm's raw diagnostic, points at, else *fallback*."""
+    if _CONFIG_CAUSE.search(said):
+        return _CONFIG_ADVICE
     if _CREDENTIAL_CAUSE.search(said):
         return _CREDENTIAL_ADVICE
     if _REACH_CAUSE.search(said):
