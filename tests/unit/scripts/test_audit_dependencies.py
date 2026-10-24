@@ -19,6 +19,7 @@ _ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(_ROOT / "scripts"))
 
 import audit_dependencies  # noqa: E402
+import audit_dependencies_data  # noqa: E402
 from child_env import build_child_env  # noqa: E402
 from exit_codes import ExitCode  # noqa: E402
 
@@ -733,12 +734,46 @@ def test_only_the_credential_span_is_rewritten(text, shown):
         ("ENOTFOUND the token is now FAKEval9", "ENOTFOUND the token is now <hidden>"),
         (
             "ENOTFOUND secret set to FAKEval9 here",
-            "ENOTFOUND secret set to <hidden> here",
+            "ENOTFOUND secret set to <hidden>",
         ),
         ("ENOTFOUND password is: FAKEval9", "ENOTFOUND password is: <hidden>"),
         ("ENOTFOUND PASSWORD WAS FAKEval9", "ENOTFOUND PASSWORD WAS <hidden>"),
+        # A third linking word, a capitalised word with a mark, and a word
+        # between the secret word and its value: each is a word no rule names.
+        (
+            "npm error the password was set to hunter2",
+            "npm error the password was set to <hidden>",
+        ),
+        ("npm error password is Swordfish!", "npm error password is <hidden>"),
+        (
+            "npm error the password for bob is hunter2",
+            "npm error the password for <hidden> is <hidden>",
+        ),
+        # The clause ends with its sentence, and a word past its end is kept.
+        (
+            "npm error password Swordfish. Then npm stopped",
+            "npm error password <hidden> Then npm stopped",
+        ),
+        # A clause past CLAUSE_WORDS has the rest of its sentence hidden whole.
+        (
+            "npm error password " + "is " * 20 + "hunter2. Then npm stopped",
+            "npm error password " + "is " * 16 + "<hidden> Then npm stopped",
+        ),
     ],
-    ids=["is", "was", "colon", "is-now", "set-to", "is-colon", "upper"],
+    ids=[
+        "is",
+        "was",
+        "colon",
+        "is-now",
+        "set-to",
+        "is-colon",
+        "upper",
+        "third-linking-word",
+        "capitalised-mark",
+        "word-between",
+        "sentence-end",
+        "clause-bound",
+    ],
 )
 def test_a_secret_word_in_prose_hides_its_value(text, shown):
     assert audit_dependencies._redacted(text) == shown
@@ -776,23 +811,61 @@ def test_a_raw_at_in_userinfo_hides_up_to_the_last_at(text, shown):
     assert audit_dependencies._redacted(text) == shown
 
 
-# After whitespace or a linking word alone, a secret word is prose: a plain
-# word there (letters only, lower case after the first) is the cause, not a
-# value, and is kept. A quote before the secret word opens no value.
+# After whitespace or a linking word alone, a secret word is prose: a word of
+# audit_dependencies_data's closed vocabulary, in any case, is kept. A quote
+# before the secret word opens no value. The last three are npm's own lines.
 @pytest.mark.parametrize(
     "text",
     [
         'npm error "token expired',
         "npm error password required",
         "npm error Password Required.",
+        "npm error PASSWORD REQUIRED",
+        "npm error token expired",
+        "npm error token is self-signed",
         "npm error the token is invalid",
-        "npm error the token has expired, log in again",
-        "npm error the keyboard is broken",
+        "npm error the token has expired, please try logging in again",
+        "npm error Unable to authenticate, your authentication token seems to be "
+        "invalid.",
+        "npm error Incorrect or missing password.",
+        "npm error This operation requires a one-time password from your "
+        "authenticator.",
     ],
-    ids=["open-quote", "required", "capitalised", "is-invalid", "has", "keyboard"],
+    ids=[
+        "open-quote",
+        "required",
+        "capitalised",
+        "upper",
+        "expired",
+        "self-signed",
+        "is-invalid",
+        "has",
+        "npm-bearer",
+        "npm-basic",
+        "npm-otp",
+    ],
 )
-def test_a_plain_word_after_a_secret_word_is_kept(text):
+def test_a_vocabulary_word_after_a_secret_word_is_kept(text):
     assert audit_dependencies._redacted(text) == text
+
+
+# The cost of a closed vocabulary: a cause word it does not hold is hidden.
+# The advice reads npm's raw text, so it is the same either way.
+def test_a_cause_word_outside_the_vocabulary_is_hidden():
+    assert audit_dependencies._redacted("npm error the keyboard is broken") == (
+        "npm error the keyboard is <hidden>"
+    )
+
+
+@pytest.mark.parametrize(
+    "word",
+    sorted(audit_dependencies_data.LINKING_WORDS)
+    + sorted(audit_dependencies_data.CAUSE_WORDS),
+)
+def test_each_vocabulary_word_is_kept_and_a_value_beside_it_hidden(word):
+    assert audit_dependencies._redacted("npm error token %s FAKEval" % word) == (
+        "npm error token %s <hidden>" % word
+    )
 
 
 # The same places still hide a value: after `=` or `:` whatever it is, since
@@ -808,8 +881,19 @@ def test_a_plain_word_after_a_secret_word_is_kept(text):
         ('npm error password "hunter"', "npm error password <hidden>"),
         ('npm error password "correct horse', "npm error password <hidden>"),
         ("npm error password Hunter-two", "npm error password <hidden>"),
+        # A quoted vocabulary word is still a value.
+        ('npm error password "required"', "npm error password <hidden>"),
     ],
-    ids=["colon", "equals", "digit", "mixed-case", "quoted", "open-quote", "hyphen"],
+    ids=[
+        "colon",
+        "equals",
+        "digit",
+        "mixed-case",
+        "quoted",
+        "open-quote",
+        "hyphen",
+        "quoted-word",
+    ],
 )
 def test_a_value_that_is_no_plain_word_is_still_hidden(text, shown):
     assert audit_dependencies._redacted(text) == shown
@@ -1326,6 +1410,8 @@ _TIMED_REDACTION = (
         ("a.bc/x ", 1600, False),
         (" a.a.a.a.a.a.a.a", 1000, True),
         ("ENOTFOUND acme2024-111122223333.d.x ", 600, True),
+        ("password the is ", 1600, True),
+        ("token " + "x " * 20, 200, False),
     ],
     ids=[
         "a",
@@ -1337,6 +1423,8 @@ _TIMED_REDACTION = (
         "bare-path",
         "dotted",
         "word-number",
+        "clause-words",
+        "clause-bound",
     ],
 )
 def test_a_hostile_line_is_redacted_within_a_second(unit, times, unchanged):

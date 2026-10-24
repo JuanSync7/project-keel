@@ -20,6 +20,7 @@ _SCRIPTS = os.path.dirname(os.path.abspath(__file__))
 if _SCRIPTS not in sys.path:
     sys.path.insert(0, _SCRIPTS)
 
+import audit_dependencies_data  # noqa: E402
 import child_env  # noqa: E402
 import config_loader  # noqa: E402
 import run_date  # noqa: E402
@@ -66,10 +67,12 @@ _DECLARING_FIELDS = (
 #     its value, with any separator; a `realm="..."` parameter is kept;
 # (b) a value after a key holding one of _SECRET_WORDS is hidden. After `=`
 #     or `:` (an assignment) it is hidden whatever it is, and an unquoted one
-#     runs on over spaces (_MORE_VALUE). After whitespace or up to two
-#     _LINKING_WORDS (prose) one value is read, and a plain word there is the
-#     cause and is kept (_PLAIN_WORD); a quoted value is hidden in both, and
-#     one with no closing quote runs to the end of the line;
+#     runs on over spaces (_MORE_VALUE). After whitespace (prose) the clause
+#     that follows is read word by word, and a word is kept only when
+#     scripts/audit_dependencies_data.py's closed vocabulary holds it: an
+#     open list of "plain words" showed `hunter2` after a third linking word,
+#     so an unknown word is hidden, cause words included. A quoted value is
+#     hidden in both, and one with no closing quote runs to the line's end;
 # (a') a scheme-less `user:pass@host` loses everything before its last `@`;
 # (e) a scheme-less host (_BARE_HOST) loses its path as in (a);
 # (d) any remaining run of 20 or more token characters that mixes letters and
@@ -159,46 +162,37 @@ _SECRET_WORDS = (
     "credential",
     "cookie",
 )
-# The words prose puts between a secret word and its value (`the password
-# was X`, `token is now X`); at most two are read, so a linking word is never
-# the span hidden in the value's place.
-_LINKING_WORDS = (
-    "is",
-    "was",
-    "are",
-    "were",
-    "be",
-    "been",
-    "now",
-    "set",
-    "to",
-    "equals",
-)
-_KEY_SEPARATOR = r"((?:\s{1,4}(?:%s)\b){0,2}(?:%s))" % (
-    "|".join(_LINKING_WORDS),
-    _SEPARATOR_FORMS,
+# Up to two linking words may stand between a secret word and an `=` or `:`
+# (`password is: X`); the alternation is built from the data module.
+_ASSIGNMENT = re.compile(
+    r"(?:\s{1,4}(?:%s)\b){0,2}\s{0,4}[=:]\s{0,4}"
+    % "|".join(map(re.escape, audit_dependencies_data.LINKING_WORDS)),
+    re.IGNORECASE,
 )
 # The match starts at the secret word and leaves the key's text before it in
 # place: matching that text too is what made the old pattern cubic.
-_KEY_VALUE = re.compile(
-    r"((?:%s)[\w.\-]{0,64}[\"']?)" % "|".join(_SECRET_WORDS)
-    + _KEY_SEPARATOR
-    + r"(?!<hidden>|(?:Bearer|Basic)\b)"
-    + "(%s)" % _VALUE,
-    re.IGNORECASE,
-)
-# The separators that state a value: after one, a value is hidden whatever it
-# is. After whitespace or a linking word alone the secret word is prose, and a
-# plain word there, letters only and lower case after the first, with one
-# closing mark at most, is the cause (`password required`, `token is invalid`)
-# and is kept; any other value, a quoted one included, is hidden.
-_ASSIGNING = frozenset("=:")
-_PLAIN_WORD = re.compile(r"[A-Za-z][a-z]{1,63}[.!?]?")
+_KEY = re.compile(r"(?:%s)[\w.\-]{0,64}[\"']?" % "|".join(_SECRET_WORDS), re.IGNORECASE)
+# A value another rule already wrote, or a scheme name (c) keeps.
+_DONE_VALUE = re.compile(r"<hidden>|(?:Bearer|Basic)\b", re.IGNORECASE)
+_ASSIGNED_VALUE = re.compile(_VALUE)
 # After an assignment an unquoted value runs on, one word at a time, since a
 # passphrase has spaces in it. It ends at a `,`, a `;`, a quote, the next
 # `name=` or `name:`, a word opening with `<` (a marker this module writes)
 # or the line's end.
 _MORE_VALUE = re.compile(r"\s{1,4}(?![A-Za-z][\w.\-]{0,63}\s{0,4}[=:]|<)[^\s\"',;]+")
+# One word of a prose clause: a URL (a) rewrote is one word with its marker,
+# and any other word runs to the next whitespace. The literal fixes where
+# the marker's lazy run stops, so each word is read once.
+_CLAUSE_WORD = re.compile(r"\s{1,4}(\S*?%s\S*|\S+)" % re.escape(_PATH_HIDDEN))
+# The marks a word may carry that are no part of it for the vocabulary.
+_WORD_MARKS = "\"'()[],;:.!?"
+# The rest of a word a closing quote lands inside.
+_CLAUSE_TAIL = re.compile(r"\S*")
+_SPACE = re.compile(r"\s{0,4}")
+_SENTENCE_END = re.compile(r"[.!?][\"')\]]*(?=\s|$)")
+_VOCABULARY = frozenset(audit_dependencies_data.LINKING_WORDS) | frozenset(
+    audit_dependencies_data.CAUSE_WORDS
+)
 # As in a URL, the password runs to the last `@` before a space or `/`.
 _BARE_USERINFO = re.compile(r"(?<![\w/])[\w.\-]{1,64}:[^\s/]{1,256}@(?=[\w\-])")
 # The places a host sits, which (d) judges by _host_shown rather than by the
@@ -412,24 +406,82 @@ def _scheme_shown(match):
 
 
 def _key_values_shown(line):
-    """*line* with the value after each secret word hidden: a plain word in
-    prose is kept, and an unquoted value after `=` or `:` is hidden to its end
-    (see _MORE_VALUE)."""
+    """*line* with the value after each secret word hidden: after `=` or `:`
+    whatever it is (see _assigned_end), and in prose every word of the clause
+    that follows the vocabulary does not hold (see _clause_shown)."""
     shown, at = [], 0
-    while match := _KEY_VALUE.search(line, at):
-        key, separator, value = match.groups()
+    while match := _KEY.search(line, at):
         end = match.end()
-        if not _ASSIGNING & set(separator):
-            if _PLAIN_WORD.fullmatch(value):
-                shown.append(line[at:end])
-                at = end
+        shown.append(line[at:end])
+        assigned = _ASSIGNMENT.match(line, end)
+        start = (assigned or _SPACE.match(line, end)).end()
+        if _DONE_VALUE.match(line, start):
+            at = end
+            continue
+        if assigned:
+            value_end = _assigned_end(line, start)
+            if value_end > start:
+                shown.append(line[end:start] + _HIDDEN)
+                at = value_end
                 continue
-        elif value[0] not in "\"'":
-            while more := _MORE_VALUE.match(line, end):
-                end = more.end()
-        shown.append(line[at : match.start()] + key + separator + _HIDDEN)
-        at = end
+            at = end
+            continue
+        clause, at = _clause_shown(line, end)
+        shown.append(clause)
     return "".join(shown) + line[at:]
+
+
+def _assigned_end(line, start):
+    """Where the value an assignment states, from *start*, ends; *start* when
+    it states none."""
+    value = _ASSIGNED_VALUE.match(line, start)
+    if not value:
+        return start
+    end = value.end()
+    if line[start] not in "\"'":
+        while more := _MORE_VALUE.match(line, end):
+            end = more.end()
+    return end
+
+
+def _clause_shown(line, at):
+    """(the prose clause from *at* with each word outside the vocabulary
+    hidden, where the clause ended). A run of hidden words is one marker, so
+    a reader learns no word count. A quoted word is a value whatever it says,
+    and it runs to its closing quote. The clause ends after a word that ends a
+    sentence, before another secret word, at the line's end, or after
+    CLAUSE_WORDS words, when the rest of its sentence is hidden whole."""
+    pieces, words = [], 0
+    while word := _CLAUSE_WORD.match(line, at):
+        text = word.group(1)
+        bare = text.strip(_WORD_MARKS).lower()
+        if bare in _SECRET_WORDS:
+            break
+        if words == audit_dependencies_data.CLAUSE_WORDS:
+            stop = _SENTENCE_END.search(line, at)
+            at = stop.end() if stop else len(line)
+            pieces.append((line[word.start() : word.start(1)], None))
+            break
+        words += 1
+        end = word.end()
+        if text[0] in "\"'":
+            close = line.find(text[0], word.start(1) + 1)
+            end = len(line) if close < 0 else _CLAUSE_TAIL.match(line, close + 1).end()
+            pieces.append((line[word.start() : word.start(1)], None))
+        elif bare in _VOCABULARY or text == _HIDDEN or _PATH_HIDDEN in text:
+            pieces.append((line[at:end], text))
+        else:
+            pieces.append((line[word.start() : word.start(1)], None))
+        at = end
+        if _SENTENCE_END.search(line[word.start(1) : end]):
+            break
+    shown = []
+    for index, (text, kept) in enumerate(pieces):
+        if kept is not None:
+            shown.append(text)
+        elif index == 0 or pieces[index - 1][1] is not None:
+            shown.append(text + _HIDDEN)
+    return "".join(shown), at
 
 
 def _is_token(run):
