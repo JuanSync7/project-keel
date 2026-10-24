@@ -2,7 +2,7 @@
 title: Unit — audit_dependencies (npm audit findings judged against the accepted risks in config)
 kind: tests
 layer: n/a
-summary: scripts/audit_dependencies.py driven in process over saved `npm audit --json` reports shaped like a real one, in a project root the test builds from keel's own config/project.json with its own `dependency_audit` block, on a day the test hands in, so no test runs npm or reaches the network. Each failure kind fails on its own and names what failed: a finding at or above `fail_at` no row covers, a covered finding whose row names another package, a row past its review_by day, a row dated more than `max_review_days` after today (exactly that many passes, one more fails), a row whose advisory the report no longer holds, and a row naming an app not audited. A covered finding passes on its review_by day and is listed with its reason; a finding below `fail_at` is listed and does not fail, and lowering `fail_at` fails it. A report with no findings still judges every row. No app and no row exits 0 saying so. A report that is not version 2, one with an unknown severity or a via url with no advisory id, an app with no package.json or package-lock.json, a `--report` name that is not an audited app and a bad flag are USAGE; npm that cannot start, overruns its timeout, exits 2 or answers an error object is BACKEND_ABSENT; a refused `dependency_audit` value is CONFIG.
+summary: scripts/audit_dependencies.py driven in process over saved `npm audit --json` reports shaped like a real one, in a project root the test builds from keel's own config/project.json with its own `dependency_audit` block, on a day the test hands in, so no test runs npm or reaches the network. Each failure kind fails on its own and names what failed: a finding at or above `fail_at` no row covers, a covered finding whose row names another package, a row past its review_by day, a row dated more than `max_review_days` after today (exactly that many passes, one more fails), a row whose advisory the report no longer holds, and a row naming an app not audited. A covered finding passes on its review_by day and is listed with its reason; a finding below `fail_at` is listed and does not fail, and lowering `fail_at` fails it. A report with no findings still judges every row. No app and no row exits 0 saying so. A report that is not version 2, one with an unknown severity, a via url with no advisory id, a via item that is neither an advisory nor an entry's name, counts that disagree with its entries, or no audited dependency while package.json declares one is USAGE from a saved file and BACKEND_ABSENT from a run; so is a run's output that is not JSON, and npm exiting 1 with no finding. An app with no package.json, an unreadable one or no package-lock.json, a `--report` name that is not an audited app and a bad flag are USAGE; npm that cannot start, overruns its timeout, exits 2, is killed by a signal or answers an error object is BACKEND_ABSENT, showing the error's message or summary, or npm's last stderr line and no other, and `<hidden>` for a line naming a registry token. The argv includes every dependency type an .npmrc could omit. A refused `dependency_audit` value is CONFIG.
 """
 
 import copy
@@ -41,10 +41,11 @@ def _via(advisory, package, severity, title):
     }
 
 
-def _audit(*advisories):
+def _audit(*advisories, dependencies=5):
     """An `npm audit --json` version 2 report holding *advisories*, each
     (advisory, package, severity), with the string `via` entry a dependent
-    package carries."""
+    package carries, and the metadata npm derives from them: one count per
+    entry's severity and the number of dependencies it audited."""
     vulnerabilities = {}
     for advisory, package, severity in advisories:
         entry = vulnerabilities.setdefault(
@@ -72,10 +73,17 @@ def _audit(*advisories):
             "nodes": ["node_modules/parent-pkg"],
             "fixAvailable": False,
         }
+    counts = dict.fromkeys(("info", "low", "moderate", "high", "critical"), 0)
+    for entry in vulnerabilities.values():
+        counts[entry["severity"]] += 1
+    counts["total"] = len(vulnerabilities)
     return {
         "auditReportVersion": 2,
         "vulnerabilities": vulnerabilities,
-        "metadata": {"vulnerabilities": {"total": len(advisories)}},
+        "metadata": {
+            "vulnerabilities": counts,
+            "dependencies": {"prod": dependencies, "total": dependencies},
+        },
     }
 
 
@@ -92,10 +100,10 @@ class _Project:
         manifest["dependency_audit"] = block
         (self.root / "config" / "project.json").write_text(json.dumps(manifest))
 
-    def app(self, name, lockfile=True):
+    def app(self, name, lockfile=True, manifest=None):
         app = self.root / "src" / "frontend" / name
         app.mkdir(parents=True, exist_ok=True)
-        (app / "package.json").write_text("{}")
+        (app / "package.json").write_text(json.dumps(manifest or {}))
         if lockfile:
             (app / "package-lock.json").write_text("{}")
         return "src/frontend/" + name
@@ -122,14 +130,16 @@ def project(tmp_path):
     return proj
 
 
-def _judged(project, capsys, doc, accepted, fail_at="high", today=_TODAY, cap=90):
+def _judged(
+    project, capsys, doc, accepted, fail_at="high", today=_TODAY, cap=90, manifest=None
+):
     project.configure(
         accepted=accepted,
         fail_at=fail_at,
         max_review_days=cap,
         timeout_seconds=30,
     )
-    app = project.app("astro")
+    app = project.app("astro", manifest=manifest)
     code = project.main([app, "--report", project.saved("astro", doc)], today=today)
     out, err = capsys.readouterr()
     return code, out, err
@@ -371,7 +381,7 @@ def test_a_run_judges_npm_output_with_the_configured_timeout(project, capsys):
 
     def run(app_dir, root, timeout):
         seen.append((app_dir, timeout))
-        return 1, json.dumps(_audit((_HIGH, "zod", "high"))).encode()
+        return 1, json.dumps(_audit((_HIGH, "zod", "high"))).encode(), b""
 
     assert project.main([app], run_audit=run) is ExitCode.FAILURE
     assert seen == [(str(project.root / "src" / "frontend" / "astro"), 30)]
@@ -381,14 +391,160 @@ def test_a_run_judges_npm_output_with_the_configured_timeout(project, capsys):
     "status, out, why",
     [
         (2, "{}", "npm audit exited 2"),
+        (-9, "{}", "npm audit exited -9"),
         (1, json.dumps({"error": {"code": "ENOTFOUND"}}), "answered an error"),
+        (1, json.dumps(_audit()), "exited 1, which says it found something"),
+        (0, "", "is not JSON"),
+        (1, "npm warn config this is not json\n" + json.dumps(_audit()), "not JSON"),
+        (0, json.dumps({"auditReportVersion": 1}), "auditReportVersion"),
     ],
 )
 def test_npm_that_does_not_answer_is_backend_absent(project, capsys, status, out, why):
     app = project.app("astro")
-    code = project.main([app], run_audit=lambda *_: (status, out))
+    code = project.main([app], run_audit=lambda *_: (status, out, b""))
+    err = capsys.readouterr().err
+    assert code is ExitCode.BACKEND_ABSENT, err
+    assert why in err
+    assert "npm audit --json --include=dev" in err
+
+
+@pytest.mark.parametrize(
+    "status, out, stderr, shown",
+    [
+        (2, "{}", b"npm error first line\nnpm error the last line\n", "the last line"),
+        (-9, "", b"npm error killed\n", "npm error killed"),
+        (0, "", b"npm warn one\nnpm warn unreadable\n", "npm warn unreadable"),
+        (
+            1,
+            json.dumps({"error": {"code": "ENOLOCK", "summary": "needs a lockfile"}}),
+            b"",
+            "needs a lockfile",
+        ),
+        (
+            1,
+            json.dumps({"error": {"code": "E401", "message": "the registry said 401"}}),
+            b"",
+            "the registry said 401",
+        ),
+    ],
+)
+def test_npm_diagnostic_is_shown(project, capsys, status, out, stderr, shown):
+    app = project.app("astro")
+    code = project.main([app], run_audit=lambda *_: (status, out, stderr))
+    err = capsys.readouterr().err
+    assert code is ExitCode.BACKEND_ABSENT
+    assert shown in err
+    assert "first line" not in err
+    assert "npm warn one" not in err
+
+
+@pytest.mark.parametrize(
+    "out, stderr",
+    [
+        ("{}", b"npm error //registry.example.invalid/:_authToken=s3cr3t\n"),
+        ("{}", b"npm error //registry.example.invalid/:_auth=s3cr3t\n"),
+        (json.dumps({"error": {"summary": "bad _authToken s3cr3t"}}), b""),
+        (json.dumps({"error": {"message": "//host.invalid/:_auth s3cr3t"}}), b""),
+    ],
+)
+def test_a_diagnostic_carrying_an_auth_token_is_hidden(project, capsys, out, stderr):
+    app = project.app("astro")
+    status = 1 if "error" in out else 2
+    code = project.main([app], run_audit=lambda *_: (status, out, stderr))
+    err = capsys.readouterr().err
+    assert code is ExitCode.BACKEND_ABSENT
+    assert "<hidden>" in err
+    assert "s3cr3t" not in err
+
+
+_DECLARED = {"dependencies": {"zod": "^3.0.0"}}
+
+
+@pytest.mark.parametrize(
+    "field", ["dependencies", "devDependencies", "optionalDependencies"]
+)
+@pytest.mark.parametrize("total", [0, None])
+def test_a_saved_report_auditing_no_dependency_is_usage(project, capsys, field, total):
+    doc = _audit(dependencies=total)
+    if total is None:
+        del doc["metadata"]["dependencies"]
+    code, _, err = _judged(
+        project, capsys, doc, {}, manifest={field: {"zod": "^3.0.0"}}
+    )
+    assert code is ExitCode.USAGE, err
+    assert "astro" in err
+    assert "metadata.dependencies.total" in err
+    assert "make fe-install" in err
+
+
+def test_a_live_run_auditing_no_dependency_is_backend_absent(project, capsys):
+    app = project.app("astro", manifest=_DECLARED)
+    out = json.dumps(_audit(dependencies=0))
+    code = project.main([app], run_audit=lambda *_: (0, out, b""))
+    err = capsys.readouterr().err
+    assert code is ExitCode.BACKEND_ABSENT, err
+    assert "metadata.dependencies.total" in err
+
+
+def test_a_report_auditing_dependencies_the_manifest_declares_passes(project, capsys):
+    code, out, err = _judged(project, capsys, _audit(), {}, manifest=_DECLARED)
+    assert code is ExitCode.SUCCESS, err
+    assert "1 app(s) judged" in out
+
+
+def test_an_unreadable_package_json_is_usage(project, capsys):
+    app = project.app("astro")
+    (project.root / app / "package.json").write_text("[]")
+    assert project.main([app], run_audit=_never) is ExitCode.USAGE
+    assert "package.json" in capsys.readouterr().err
+
+
+def _miscounted(**counts):
+    doc = _audit((_HIGH, "zod", "high"))
+    doc["metadata"]["vulnerabilities"].update(counts)
+    return doc
+
+
+@pytest.mark.parametrize(
+    "doc, why",
+    [
+        (_miscounted(high=0), "high"),
+        (_miscounted(moderate=2), "moderate"),
+        (_miscounted(total=1), "total"),
+        (_miscounted(high=True), "high"),
+        (dict(_audit(), metadata={}), "metadata.vulnerabilities"),
+    ],
+)
+def test_counts_that_disagree_with_the_entries_are_refused(project, capsys, doc, why):
+    code, _, err = _judged(project, capsys, doc, {})
+    assert code is ExitCode.USAGE, err
+    assert why in err
+    app = "src/frontend/astro"
+    code = project.main([app], run_audit=lambda *_: (1, json.dumps(doc), b""))
     assert code is ExitCode.BACKEND_ABSENT
     assert why in capsys.readouterr().err
+
+
+def test_a_via_item_that_is_neither_advisory_nor_package_is_refused(project, capsys):
+    doc = _audit((_HIGH, "zod", "high"))
+    doc["vulnerabilities"]["parent-pkg"]["via"].append(7)
+    code, _, err = _judged(project, capsys, doc, {})
+    assert code is ExitCode.USAGE
+    assert "a via item that is neither" in err
+
+
+def test_a_via_string_naming_no_entry_is_refused(project, capsys):
+    doc = _audit((_HIGH, "zod", "high"))
+    doc["vulnerabilities"]["parent-pkg"]["via"].append("not-in-the-report")
+    code, _, err = _judged(project, capsys, doc, {})
+    assert code is ExitCode.USAGE
+    assert "'not-in-the-report'" in err
+
+
+def test_npm_audits_every_dependency_type_an_npmrc_could_omit():
+    assert audit_dependencies.AUDIT_ARGV[:3] == ("npm", "audit", "--json")
+    for kind in ("dev", "optional", "peer"):
+        assert "--include=" + kind in audit_dependencies.AUDIT_ARGV
 
 
 def test_npm_that_cannot_start_is_backend_absent(project, capsys, monkeypatch):

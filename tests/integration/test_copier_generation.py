@@ -2559,8 +2559,32 @@ _QUICKSTART_HEAD = ("git commit", "pre-commit install")
 _QUICKSTART_TAIL = ("make secrets-install", "make verify")
 
 
+# What npm 11 writes for a clean audit of a non-empty tree: the script refuses
+# counts that disagree with the entries and a report that audited no dependency
+# while package.json declares some.
 _CLEAN_AUDIT = json.dumps(
-    {"auditReportVersion": 2, "vulnerabilities": {}, "metadata": {}}
+    {
+        "auditReportVersion": 2,
+        "vulnerabilities": {},
+        "metadata": {
+            "vulnerabilities": {
+                "info": 0,
+                "low": 0,
+                "moderate": 0,
+                "high": 0,
+                "critical": 0,
+                "total": 0,
+            },
+            "dependencies": {
+                "prod": 40,
+                "dev": 60,
+                "optional": 0,
+                "peer": 0,
+                "peerOptional": 0,
+                "total": 100,
+            },
+        },
+    }
 )
 
 

@@ -3,7 +3,7 @@
 title: audit_dependencies — judge each frontend app's npm audit against the accepted risks config records
 kind: script
 layer: n/a
-summary: `make fe-audit`'s doer. It audits each frontend app directory it is given (the Makefile passes FE_APPS) by running `npm audit --json` there under scripts/child_env.py `build_child_env` and config/project.json `dependency_audit.timeout_seconds`, or reads the saved report a `--report NAME=FILE` names instead, so a test never runs npm. A finding is one advisory a report's `via` entry names: its GHSA id (the last part of its `url`), its package and its severity. It judges each app against `dependency_audit.accepted.<app>`, rows of advisory id to package, reason and review_by day, on today's date (scripts/run_date.py `today`, read once at the entry point; a test hands in its own day). It fails (FAILURE) on four things, all listed before the one closing line: a finding at or above `dependency_audit.fail_at` that no row names with the same advisory and package; a row whose review_by day has passed; a row whose review_by is more than `dependency_audit.max_review_days` days after today, so an acceptance is renewed rather than parked; and a row whose advisory and package the app's report no longer holds, or whose app is not one it audited. A finding below fail_at that no row covers is listed and does not fail; a covered one is listed with its reason and day. A report that is not `npm audit --json` version 2 (an unknown severity, a `via` url with no advisory id) is USAGE, as is an app directory with no package.json or no package-lock.json, a saved report that cannot be read, and a `--report` name that is not an audited app; npm that cannot be started, runs past the timeout, exits other than 0 or 1, or answers an `error` object is BACKEND_ABSENT; a refused `dependency_audit` key, run date or child environment is CONFIG. Given no app and no row it says so and exits 0. It writes nothing.
+summary: `make fe-audit`'s doer. It audits each frontend app directory it is given (the Makefile passes FE_APPS) by running `npm audit --json` there, with `--include` naming dev, optional and peer so an .npmrc `omit=` cannot narrow it, under scripts/child_env.py `build_child_env` and config/project.json `dependency_audit.timeout_seconds`, or reads the saved report a `--report NAME=FILE` names instead, so a test never runs npm. A finding is one advisory a report's `via` entry names: its GHSA id (the last part of its `url`), its package and its severity. It judges each app against `dependency_audit.accepted.<app>`, rows of advisory id to package, reason and review_by day, on today's date (scripts/run_date.py `today`, read once at the entry point; a test hands in its own day). It fails (FAILURE) on four things, all listed before the one closing line: a finding at or above `dependency_audit.fail_at` that no row names with the same advisory and package; a row whose review_by day has passed; a row whose review_by is more than `dependency_audit.max_review_days` days after today, so an acceptance is renewed rather than parked; and a row whose advisory and package the app's report no longer holds, or whose app is not one it audited. A finding below fail_at that no row covers is listed and does not fail; a covered one is listed with its reason and day. It refuses a report it cannot trust rather than pass it: one that is not JSON, not `npm audit --json` version 2 (an unknown severity, a `via` url with no advisory id, a `via` item that is neither an advisory nor the name of another entry), whose `metadata.vulnerabilities` counts disagree with its entries, or whose `metadata.dependencies.total` is 0 or missing while the app's package.json declares a dependency, which is what an empty or root-only lockfile audits as. Such a report is USAGE from a saved file and BACKEND_ABSENT from a run, as is npm exiting 1 with no finding. An app directory with no package.json, one that is not a JSON object, no package-lock.json, a saved report that cannot be read and a `--report` name that is not an audited app are USAGE; npm that cannot be started, runs past the timeout, exits other than 0 or 1, or answers an `error` object is BACKEND_ABSENT, and the line carries npm's own diagnostic: the error's `message` (npm 11 writes `summary`) or npm's last stderr line, never all of stderr, and `<hidden>` in place of any text that names `_authToken` or a `//host/:_auth` key. A refused `dependency_audit` key, run date or child environment is CONFIG. Given no app and no row it says so and exits 0. It writes nothing in the tree; npm writes its own per-user log and cache.
 effect: read-only
 """
 
@@ -28,8 +28,29 @@ _BLOCK = ("dependency_audit",)
 _FIELDS = ("accepted", "fail_at", "max_review_days", "timeout_seconds")
 _WHERE = "config/project.json dependency_audit"
 _KEY_PREFIX = "dependency_audit"
-# The one argv the audit runs; a test points it at a program it controls.
-AUDIT_ARGV = ("npm", "audit", "--json")
+# The one argv the audit runs; a test points it at a program it controls. Each
+# --include names a dependency type `npm audit --omit` accepts, so a user or
+# project .npmrc `omit=` cannot narrow the audit: npm lets include win.
+AUDIT_ARGV = (
+    "npm",
+    "audit",
+    "--json",
+    "--include=dev",
+    "--include=optional",
+    "--include=peer",
+)
+# The package.json fields whose packages npm puts in the tree it audits.
+_DECLARING_FIELDS = (
+    "dependencies",
+    "devDependencies",
+    "optionalDependencies",
+    "peerDependencies",
+)
+# Text that can carry a registry credential, from .npmrc's `_authToken` and
+# `//host/:_auth` keys; a diagnostic holding one is shown as _HIDDEN.
+_TOKEN_MARK = "_authToken"
+_AUTH_KEY = ":_auth"
+_HIDDEN = "<hidden>"
 _REPORT_VERSION = 2
 # npm audit's own statuses: 0 found nothing, 1 found something; any other is
 # npm failing, not an answer.
@@ -131,7 +152,7 @@ def _saved(pairs, apps):
 
 
 def npm_audit(app_dir, root, timeout):
-    """(status, stdout) of AUDIT_ARGV run in *app_dir* under the allowlisted
+    """(status, stdout, stderr) of AUDIT_ARGV run in *app_dir* under the allowlisted
     environment, or _Unanswered when it cannot be started or runs
     past *timeout* seconds. The audit reads the lockfile and the registry, so
     the app needs no node_modules."""
@@ -165,11 +186,69 @@ def npm_audit(app_dir, root, timeout):
             app_dir,
             "check the registry is reachable, or raise %s.timeout_seconds" % _WHERE,
         ) from exc
-    return done.returncode, done.stdout
+    return done.returncode, done.stdout, done.stderr
+
+
+def _text(data):
+    return data.decode("utf-8", "replace") if isinstance(data, bytes) else data
+
+
+def _shown(text):
+    """*text* on one line, or _HIDDEN when it could carry a registry token."""
+    line = " ".join(text.split())
+    if _TOKEN_MARK in line:
+        return _HIDDEN
+    for word in line.split():
+        head, sep, _ = word.partition(_AUTH_KEY)
+        if sep and "//" in head:
+            return _HIDDEN
+    return line
+
+
+def _last_line(stderr):
+    """npm's last stderr line, shown; never the whole stream, which carries
+    its log path and every warning."""
+    lines = [line for line in _text(stderr or "").splitlines() if line.strip()]
+    return _shown(lines[-1]) if lines else "nothing on stderr"
+
+
+def _error_text(error):
+    """What npm's `error` object says: its `message`, else the `summary` npm
+    11 writes, shown."""
+    if isinstance(error, dict):
+        for key in ("message", "summary"):
+            if isinstance(error.get(key), str) and error[key].strip():
+                return _shown(error[key])
+    return "no message"
+
+
+def _declares_dependencies(app_dir):
+    """Whether the app's package.json names any package npm would audit."""
+    path = os.path.join(app_dir, "package.json")
+    try:
+        with open(path, encoding="utf-8") as handle:
+            manifest = json.load(handle)
+    except (OSError, ValueError) as exc:
+        raise _Unusable(
+            "the app's package.json cannot be read as JSON (%s)" % exc,
+            path,
+            "fix the app's package.json, then rerun",
+        ) from exc
+    if not isinstance(manifest, dict):
+        raise _Unusable(
+            "the app's package.json is not a JSON object",
+            path,
+            "fix the app's package.json, then rerun",
+        )
+    return any(manifest.get(field) for field in _DECLARING_FIELDS)
 
 
 def _report_of(name, app_dir, saved, root, timeout, run_audit):
-    """The parsed audit report of one app, from its saved file or a run."""
+    """The findings of one app, from its saved file or a run. A report that
+    cannot be judged is USAGE from a saved file, which the caller chose, and
+    BACKEND_ABSENT from a run, where npm gave no usable answer."""
+    declares = _declares_dependencies(app_dir)
+    status, err = None, b""
     if name in saved:
         path = saved[name]
         try:
@@ -181,7 +260,8 @@ def _report_of(name, app_dir, saved, root, timeout, run_audit):
                 path,
                 "save it with `npm audit --json > FILE` in the app directory",
             ) from exc
-        where = path
+        where = "app %s, the saved report %s" % (name, path)
+        refuse, redo = _Unusable, "save it again with `npm audit --json > FILE`"
     else:
         if not os.path.isfile(os.path.join(app_dir, "package-lock.json")):
             raise _Unusable(
@@ -189,34 +269,44 @@ def _report_of(name, app_dir, saved, root, timeout, run_audit):
                 app_dir,
                 "run `make fe-install` to write it, then rerun",
             )
-        status, out = run_audit(app_dir, root, timeout)
-        where = "`%s` in %s" % (" ".join(AUDIT_ARGV), app_dir)
-        text = out.decode("utf-8", "replace") if isinstance(out, bytes) else out
+        status, out, err = run_audit(app_dir, root, timeout)
+        where = "app %s, `%s` in %s" % (name, " ".join(AUDIT_ARGV), app_dir)
+        refuse, redo = _Unanswered, "run it by hand in the app directory to see why"
+        text = _text(out)
         if status not in _ANSWERED:
             raise _Unanswered(
-                "npm audit exited %d, which is not an answer" % status,
+                "npm audit exited %d, which is not an answer; npm's last stderr "
+                "line: %s" % (status, _last_line(err)),
                 where,
                 "run it by hand in the app directory to see why, then rerun",
             )
     try:
         doc = json.loads(text)
     except ValueError as exc:
-        raise _Unusable(
-            "the audit report is not JSON (%s)" % exc,
-            where,
-            "give it the output of `npm audit --json`",
-        ) from exc
+        why = "the audit report is not JSON (%s)" % exc
+        if status is not None:
+            why += "; npm's last stderr line: %s" % _last_line(err)
+        raise refuse(why, where, redo + ", then rerun") from exc
     if isinstance(doc, dict) and "error" in doc:
         raise _Unanswered(
-            "npm audit answered an error, not a report",
+            "npm audit answered an error, not a report: %s" % _error_text(doc["error"]),
             where,
             "check the registry is reachable from this host, then rerun",
         )
-    return _findings(doc, where)
+    found = _findings(doc, where, refuse)
+    _check_dependencies(doc, declares, where, refuse)
+    if status == 1 and not found:
+        raise _Unanswered(
+            "npm audit exited 1, which says it found something, and its report "
+            "holds no finding",
+            where,
+            "run it by hand in the app directory to see why, then rerun",
+        )
+    return found
 
 
-def _not_a_report(where, why):
-    return _Unusable(
+def _not_a_report(where, why, refuse):
+    return refuse(
         "the audit report is not npm audit --json version %d (%s)"
         % (_REPORT_VERSION, why),
         where,
@@ -224,39 +314,96 @@ def _not_a_report(where, why):
     )
 
 
-def _findings(doc, where):
+def _check_dependencies(doc, declares, where, refuse):
+    """Refuse a report that audited nothing while package.json declares a
+    dependency: an empty or root-only lockfile audits as clean."""
+    # _check_counts has already refused a report whose metadata is not an object.
+    counted = doc["metadata"].get("dependencies")
+    total = counted.get("total") if isinstance(counted, dict) else None
+    if declares and (type(total) is not int or total < 1):
+        raise refuse(
+            "the report audited no dependency (metadata.dependencies.total is %r) "
+            "and the app's package.json declares some" % (total,),
+            where,
+            "run `make fe-install` so package-lock.json holds the tree, then audit "
+            "again",
+        )
+
+
+def _check_counts(doc, entries, where, refuse):
+    """Refuse a report whose metadata.vulnerabilities disagrees with the
+    entries it holds: npm counts one per entry, by the entry's severity."""
+    metadata = doc.get("metadata")
+    counts = metadata.get("vulnerabilities") if isinstance(metadata, dict) else None
+    if not isinstance(counts, dict):
+        raise _not_a_report(where, "no metadata.vulnerabilities", refuse)
+    tally = dict.fromkeys(config_loader.AUDIT_SEVERITIES, 0)
+    for severity in entries:
+        tally[severity] += 1
+    tally["total"] = len(entries)
+    for key, want in tally.items():
+        # type() and not isinstance: a JSON true is not a count of 1.
+        if type(counts.get(key)) is not int or counts[key] != want:
+            raise _not_a_report(
+                where,
+                "metadata.vulnerabilities.%s is %r and the report holds %d such "
+                "entries" % (key, counts.get(key), want),
+                refuse,
+            )
+
+
+def _findings(doc, where, refuse=_Unusable):
     """The sorted set of (advisory, package, severity, title) a report holds."""
     if not isinstance(doc, dict) or doc.get("auditReportVersion") != _REPORT_VERSION:
-        raise _not_a_report(where, "auditReportVersion")
+        raise _not_a_report(where, "auditReportVersion", refuse)
     vulnerabilities = doc.get("vulnerabilities")
     if not isinstance(vulnerabilities, dict):
-        raise _not_a_report(where, "vulnerabilities")
+        raise _not_a_report(where, "vulnerabilities", refuse)
     found = set()
+    entries = []
     for entry in vulnerabilities.values():
         via = entry.get("via") if isinstance(entry, dict) else None
         if not isinstance(via, list):
-            raise _not_a_report(where, "an entry with no via list")
-        # A string entry names another vulnerable package, which has its own
-        # entry carrying the advisory; only a dict is an advisory.
+            raise _not_a_report(where, "an entry with no via list", refuse)
+        # A string item names another vulnerable package, which has its own
+        # entry carrying the advisory; a dict is an advisory.
         for item in via:
-            if not isinstance(item, dict):
+            if isinstance(item, str):
+                if item not in vulnerabilities:
+                    raise _not_a_report(
+                        where, "a via item naming no entry: %r" % (item,), refuse
+                    )
                 continue
+            if not isinstance(item, dict):
+                raise _not_a_report(
+                    where,
+                    "a via item that is neither an advisory nor a package: %r"
+                    % (item,),
+                    refuse,
+                )
             url = item.get("url")
             advisory = (
                 url.rstrip("/").rsplit("/", 1)[-1] if isinstance(url, str) else None
             )
             if not config_loader.is_advisory_id(advisory):
-                raise _not_a_report(where, "a via url with no GHSA id: %r" % (url,))
+                raise _not_a_report(
+                    where, "a via url with no GHSA id: %r" % (url,), refuse
+                )
             severity = item.get("severity")
             if severity not in config_loader.AUDIT_SEVERITIES:
-                raise _not_a_report(where, "severity %r" % (severity,))
+                raise _not_a_report(where, "severity %r" % (severity,), refuse)
             package = item.get("name")
             if not isinstance(package, str) or not package:
-                raise _not_a_report(where, "a via entry with no package name")
+                raise _not_a_report(where, "a via entry with no package name", refuse)
             title = item.get("title")
             found.add(
                 (advisory, package, severity, title if isinstance(title, str) else "")
             )
+        severity = entry.get("severity")
+        if severity not in config_loader.AUDIT_SEVERITIES:
+            raise _not_a_report(where, "entry severity %r" % (severity,), refuse)
+        entries.append(severity)
+    _check_counts(doc, entries, where, refuse)
     return sorted(found)
 
 
