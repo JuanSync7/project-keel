@@ -2,7 +2,7 @@
 title: Unit — audit_dependencies (npm audit findings judged against the accepted risks in config)
 kind: tests
 layer: n/a
-summary: scripts/audit_dependencies.py driven in process over saved `npm audit --json` reports shaped like a real one, in a project root the test builds from keel's own config/project.json with its own `dependency_audit` block, on a day the test hands in, so no test runs npm or reaches the network. Each failure kind fails on its own and names what failed: a finding at or above `fail_at` no row covers, a covered finding whose row names another package, a row past its review_by day, a row dated more than `max_review_days` after today (exactly that many passes, one more fails), a row whose advisory the report no longer holds, and a row naming an app not audited. A covered finding passes on its review_by day and is listed with its reason; a finding below `fail_at` is listed and does not fail, and lowering `fail_at` fails it. A report with no findings still judges every row. No app and no row exits 0 saying so. A report that is not version 2, one with an unknown severity, a via url with no advisory id, a via item that is neither an advisory nor an entry's name, counts that disagree with its entries, or no audited dependency while package.json declares one is USAGE from a saved file and BACKEND_ABSENT from a run; so is a run's output that is not JSON, and npm exiting 1 with no finding. An app with no package.json, an unreadable one or no package-lock.json, a `--report` name that is not an audited app and a bad flag are USAGE; npm that cannot start, overruns its timeout, exits 2, is killed by a signal or answers an error object is BACKEND_ABSENT, showing the error's message or summary, else the top-level message npm 11 writes for an unreachable registry (its real shape, with a placeholder host), else npm's last stderr line other than its log pointer and no other, and `<hidden>` for a line holding any of the credential shapes, each tested with its secret absent from the output. A 16 000-character line and "token" * 2000 are redacted in under a second, timed in a child the test can kill; a diagnostic longer than `max_shown_chars` is cut, dropping the word the cut lands in, and marked, and a shorter one is not. The 20-character rule keeps a URL's scheme, host and port, a bracketed IPv6 host among them, and the dotted host after ENOTFOUND or getaddrinfo, such as an AWS CodeArtifact host; a dotless operand and a token beside a kept host are still hidden. Each dependency field and both forms of `workspaces` count as declaring a dependency, and an empty one does not. The argv includes every dependency type an .npmrc could omit. A refused `dependency_audit` value is CONFIG.
+summary: scripts/audit_dependencies.py driven in process over saved `npm audit --json` reports shaped like a real one, in a project root the test builds from keel's own config/project.json with its own `dependency_audit` block, on a day the test hands in, so no test runs npm or reaches the network. Each failure kind fails on its own and names what failed: a finding at or above `fail_at` no row covers, a covered finding whose row names another package, a row past its review_by day, a row dated more than `max_review_days` after today (exactly that many passes, one more fails), a row whose advisory the report no longer holds, and a row naming an app not audited. A covered finding passes on its review_by day and is listed with its reason; a finding below `fail_at` is listed and does not fail, and lowering `fail_at` fails it. A report with no findings still judges every row. No app and no row exits 0 saying so. A report that is not version 2, one with an unknown severity, a via url with no advisory id, a via item that is neither an advisory nor an entry's name, counts that disagree with its entries, or no audited dependency while package.json declares one is USAGE from a saved file and BACKEND_ABSENT from a run; so is a run's output that is not JSON, and npm exiting 1 with no finding. An app with no package.json, an unreadable one or no package-lock.json, a `--report` name that is not an audited app and a bad flag are USAGE; npm that cannot start, overruns its timeout, exits 2, is killed by a signal or answers an error object is BACKEND_ABSENT, showing the error's message or summary, else the top-level message npm 11 writes for an unreachable registry (its real shape, with a placeholder host), else npm's last stderr line other than its log pointer and no other, and `<hidden>` for a line holding any of the credential shapes, each tested with its secret absent from the output. A 16 000-character line and "token" * 2000 are redacted in under a second, timed in a child the test can kill; a diagnostic longer than `max_shown_chars` is cut, dropping the word the cut lands in, and marked, and a shorter one is not. The 20-character rule keeps a URL's scheme, host and port, a bracketed IPv6 host among them, and the dotted host after ENOTFOUND or getaddrinfo, such as an AWS CodeArtifact host; a dotless operand and a token beside a kept host are still hidden. Each secret word the credential rule names hides the value of a key that holds only that word, so dropping any one word from the rule fails its own case. Each dependency field and both forms of `workspaces` count as declaring a dependency, and an empty one does not. The argv includes every dependency type an .npmrc could omit. A refused `dependency_audit` value is CONFIG.
 """
 
 import copy
@@ -669,6 +669,31 @@ def test_a_credential_is_hidden_and_the_cause_kept(project, capsys, line, secret
     # A URL's rule writes "<path hidden>"; every other rule writes "<hidden>".
     assert "hidden>" in err
     assert "ENOTFOUND" in err
+
+
+# Each secret word section 16 names, in a key that holds that word and no
+# other, so rule (b) alone hides the value: dropping a word shows its value.
+# Each value is shorter than rule (d)'s 20 characters, so (d) cannot hide it.
+_KEY_OF_WORD = {
+    "auth": "_auth",
+    "token": "npmToken",
+    "password": "password",
+    "passwd": "passwd",
+    "secret": "client_secret",
+    "key": "apikey",
+    "credential": "credentials",
+    "cookie": "Cookie",
+}
+
+
+@pytest.mark.parametrize("word", sorted(_KEY_OF_WORD))
+def test_each_documented_secret_word_hides_its_value(word):
+    key = _KEY_OF_WORD[word]
+    others = [w for w in _KEY_OF_WORD if w != word and w in key.lower()]
+    assert word in key.lower() and not others, (key, others)
+    assert audit_dependencies._redacted("ENOTFOUND %s=FAKEval" % key) == (
+        "ENOTFOUND %s=<hidden>" % key
+    )
 
 
 @pytest.mark.parametrize(
