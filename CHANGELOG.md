@@ -661,10 +661,12 @@ version rather than a bare commit:
   userinfo and credential value hidden. The registry's host is kept when it
   is a DNS name or a bracketed IPv6 address with its zone id; any other host
   that mixes letters and digits, such as a token passed as the registry or as
-  one of its labels, is hidden whole. An AWS CodeArtifact host is kept when
-  its domain has a word part, as `my-domain-111122223333.d.codeartifact...`
-  does through `my` and `domain`; one whose domain has no word part, such as
-  `acme2024-111122223333.d.codeartifact...`, is hidden whole. The line is cut to
+  one of its labels, is hidden whole. A label is kept when it is under 20
+  characters, or when it has a word part and no part that is itself a token:
+  an AWS CodeArtifact host such as `my-domain-111122223333.d.codeartifact...`
+  is kept through `my` and `domain`, and one whose 20-or-more-character label
+  has no word part, such as `acme2024-111122223333.d.codeartifact...`, is
+  hidden whole. The line is cut to
   `dependency_audit.max_shown_chars` (500) characters so a registry's long
   body can neither flood the line nor stall the redaction, and a quoted
   value the cut splits is hidden whole. The run says to check `.npmrc`
