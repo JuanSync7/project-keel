@@ -221,6 +221,11 @@ _UUID = re.compile(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", re.IGNORECASE
 # A word part of a label: two or more letters, one outside a to f, so a
 # fragment of a hex token is no word.
 _WORD = re.compile(r"(?=[A-Za-z]*[G-Zg-z])[A-Za-z]{2,}")
+# A run that is one word and then a number, digits and hyphens only, is a
+# name's shape (`acme2024-111122223333`, `nexus3`): it turns from letters to
+# digits once, where a random token's characters turn many times. Its input
+# is one label, at most 63 characters.
+_WORD_NUMBER = re.compile(r"(?=[A-Za-z]*[G-Zg-z])[A-Za-z]{2,63}[0-9\-]{1,63}")
 # The advice a diagnostic's cause earns: a registry setting npm cannot parse
 # as a URL, which stops it before any request; then a refused credential,
 # then a registry that cannot be reached; anything else keeps the caller's
@@ -454,7 +459,13 @@ def _is_label(label):
             runs.append([])
         else:
             runs[-1].append(part)
-    return not any(_is_token("-".join(run)) for run in runs)
+    return not any(_is_hidden_run("-".join(run)) for run in runs)
+
+
+def _is_hidden_run(run):
+    """Whether *run*, the parts of a label between its word parts, is a token
+    (d) hides: one that is a word and then a number is not."""
+    return _is_token(run) and not _WORD_NUMBER.fullmatch(run)
 
 
 def _address_shown(host):
@@ -468,14 +479,15 @@ def _address_shown(host):
 
 
 def _host_shown(host):
-    """*host* whole when it is a DNS name, and a bracketed address whole but
-    for a zone id that can be no interface's (see _address_shown). Any other
-    host that mixes letters and digits is hidden whole, whatever its length,
-    since a token split at a symbol has pieces too short for (d); one that
-    does not, such as `localhost`, is no token and stays."""
+    """*host* whole when it is a DNS name or one label _is_label keeps
+    (`nexus3`), and a bracketed address whole but for a zone id that can be
+    no interface's (see _address_shown). Any other host that mixes letters
+    and digits is hidden whole, whatever its length, since a token split at a
+    symbol no label holds has pieces too short for (d); one that does not,
+    such as `localhost`, is no token and stays."""
     if host.startswith("["):
         return _address_shown(host)
-    if _is_name(host):
+    if _is_name(host) or _is_label(host):
         return host
     return _HIDDEN if _LETTER_AND_DIGIT.match(host) else host
 

@@ -1197,6 +1197,58 @@ def test_short_runs_between_words_are_kept(host):
     assert audit_dependencies._redacted(line) == line
 
 
+# A run that is one word and then a number, its digits and hyphens only, is a
+# name's shape and no token's: it turns from letters to digits once, where a
+# random token turns many times. So a CodeArtifact domain named with digits
+# is kept, and so is a dotless host that is a valid label, such as a
+# registry's short name.
+@pytest.mark.parametrize(
+    "line",
+    [
+        "npm error ENOTFOUND acme2024-111122223333.d.codeartifact.eu-west-1.example",
+        "request to https://acme2024-111122223333.d.codeartifact.x/<path hidden> failed",
+        "npm error ENOTFOUND nexus3",
+        "npm error ENOTFOUND artifactory2",
+        "request to http://nexus3:8081/<path hidden> failed",
+        "request to https://artifactory2/<path hidden> failed",
+        # The cost of the line: a word and then a long number is kept.
+        "npm error ENOTFOUND mirror12345678901234567890.example",
+    ],
+    ids=[
+        "artifact-operand",
+        "artifact-url",
+        "nexus3",
+        "artifactory2",
+        "nexus3-url",
+        "artifactory2-url",
+        "word-number",
+    ],
+)
+def test_a_word_then_a_number_is_a_name(line):
+    said = line.replace("<path hidden>", "s3cr3t/pkg")
+    assert audit_dependencies._redacted(said) == line
+
+
+# Any other run of 20 or more that mixes letters and digits is still hidden,
+# dotted or not: one that turns back to letters, or opens with digits or with
+# a letter that is no word.
+@pytest.mark.parametrize(
+    "host",
+    [
+        "acme2024-111122223333x.d.codeartifact.example",
+        "FAKE0123456789abcdefghij",
+        "FAKE0123456789abcdefghij.example",
+        "2024acme-111122223333.example",
+        "Q0123456789012345678901.example",
+        "ab12cd34ef56ab78cd90xy",
+    ],
+    ids=["back-to-letters", "dotless", "dotted", "digits-first", "one-letter", "hex"],
+)
+def test_a_mixed_run_that_turns_more_than_once_is_hidden(host):
+    shown = audit_dependencies._redacted("npm error ENOTFOUND %s" % host)
+    assert shown.startswith("npm error ENOTFOUND <hidden>"), shown
+
+
 # A token holding `=`, `+` or a `%`-escape: split there, each piece is under
 # rule (d)'s 20 characters, so only a judgement of the whole run hides it.
 _SPLIT_TOKENS = {
@@ -1273,6 +1325,7 @@ _TIMED_REDACTION = (
         ("token=x y z ", 1600, False),
         ("a.bc/x ", 1600, False),
         (" a.a.a.a.a.a.a.a", 1000, True),
+        ("ENOTFOUND acme2024-111122223333.d.x ", 600, True),
     ],
     ids=[
         "a",
@@ -1283,6 +1336,7 @@ _TIMED_REDACTION = (
         "value-words",
         "bare-path",
         "dotted",
+        "word-number",
     ],
 )
 def test_a_hostile_line_is_redacted_within_a_second(unit, times, unchanged):
