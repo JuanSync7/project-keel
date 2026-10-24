@@ -1133,7 +1133,16 @@ diagnostic: the `error` object's `message` or `summary`, else the top-level
 `message` npm 11 writes, with `error` left blank, when the registry cannot be
 reached or refuses the request (a 401 adds `statusCode`, `uri` and `headers`
 beside it), else npm's last stderr line other than its `A complete log of
-this run can be found in:` pointer. The line is redacted by structure, not by
+this run can be found in:` pointer. That diagnostic is first cut to
+`dependency_audit.max_shown_chars` characters (500 by default); the word the
+cut lands in is dropped, because a token's fragment can be too short for the
+last rule below, and the line ends `<cut to N characters>`. The next step is
+chosen from the whole diagnostic, not the cut one. A registry or proxy writes
+this text, so every redaction pattern bounds a character run unless a literal
+fixes where it starts or it is the whole pattern;
+`tests/unit/scripts/test_audit_dependencies.py` fails when redacting a
+16 000-character line takes a second, which the unbounded key rule took nine
+times over. The line is redacted by structure, not by
 a list of token shapes, because a list leaks every shape it does not name;
 each rule rewrites only its own span, so the cause (`ENOTFOUND`, `E401`,
 `Unable to authenticate`) stays readable. A URL keeps its scheme, host and port

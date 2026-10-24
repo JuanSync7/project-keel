@@ -658,8 +658,10 @@ version rather than a bare commit:
   dependency while `package.json` declares one (a workspaces root's
   `workspaces` included, a peer marked optional not), which is how an empty
   lockfile audits. A failed run shows npm's own cause with every URL path,
-  userinfo and credential value hidden, and says to check `.npmrc`
-  credentials when the registry refused the login. It runs npm with every dependency type included, so an
+  userinfo and credential value hidden, cut to
+  `dependency_audit.max_shown_chars` (500) characters so a registry's long
+  body can neither flood the line nor stall the redaction, and says to check
+  `.npmrc` credentials when the registry refused the login. It runs npm with every dependency type included, so an
   `.npmrc` `omit=` cannot narrow it, and writes nothing in the tree; npm
   writes its own per-user log and cache. It is not a `make verify` goal, because the
   registry's answer changes day to day. Keel's first row, also shipped to a

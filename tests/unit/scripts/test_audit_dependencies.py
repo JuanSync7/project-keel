@@ -2,12 +2,13 @@
 title: Unit — audit_dependencies (npm audit findings judged against the accepted risks in config)
 kind: tests
 layer: n/a
-summary: scripts/audit_dependencies.py driven in process over saved `npm audit --json` reports shaped like a real one, in a project root the test builds from keel's own config/project.json with its own `dependency_audit` block, on a day the test hands in, so no test runs npm or reaches the network. Each failure kind fails on its own and names what failed: a finding at or above `fail_at` no row covers, a covered finding whose row names another package, a row past its review_by day, a row dated more than `max_review_days` after today (exactly that many passes, one more fails), a row whose advisory the report no longer holds, and a row naming an app not audited. A covered finding passes on its review_by day and is listed with its reason; a finding below `fail_at` is listed and does not fail, and lowering `fail_at` fails it. A report with no findings still judges every row. No app and no row exits 0 saying so. A report that is not version 2, one with an unknown severity, a via url with no advisory id, a via item that is neither an advisory nor an entry's name, counts that disagree with its entries, or no audited dependency while package.json declares one is USAGE from a saved file and BACKEND_ABSENT from a run; so is a run's output that is not JSON, and npm exiting 1 with no finding. An app with no package.json, an unreadable one or no package-lock.json, a `--report` name that is not an audited app and a bad flag are USAGE; npm that cannot start, overruns its timeout, exits 2, is killed by a signal or answers an error object is BACKEND_ABSENT, showing the error's message or summary, else the top-level message npm 11 writes for an unreachable registry (its real shape, with a placeholder host), else npm's last stderr line other than its log pointer and no other, and `<hidden>` for a line holding any of the credential shapes, each tested with its secret absent from the output. Each dependency field and both forms of `workspaces` count as declaring a dependency, and an empty one does not. The argv includes every dependency type an .npmrc could omit. A refused `dependency_audit` value is CONFIG.
+summary: scripts/audit_dependencies.py driven in process over saved `npm audit --json` reports shaped like a real one, in a project root the test builds from keel's own config/project.json with its own `dependency_audit` block, on a day the test hands in, so no test runs npm or reaches the network. Each failure kind fails on its own and names what failed: a finding at or above `fail_at` no row covers, a covered finding whose row names another package, a row past its review_by day, a row dated more than `max_review_days` after today (exactly that many passes, one more fails), a row whose advisory the report no longer holds, and a row naming an app not audited. A covered finding passes on its review_by day and is listed with its reason; a finding below `fail_at` is listed and does not fail, and lowering `fail_at` fails it. A report with no findings still judges every row. No app and no row exits 0 saying so. A report that is not version 2, one with an unknown severity, a via url with no advisory id, a via item that is neither an advisory nor an entry's name, counts that disagree with its entries, or no audited dependency while package.json declares one is USAGE from a saved file and BACKEND_ABSENT from a run; so is a run's output that is not JSON, and npm exiting 1 with no finding. An app with no package.json, an unreadable one or no package-lock.json, a `--report` name that is not an audited app and a bad flag are USAGE; npm that cannot start, overruns its timeout, exits 2, is killed by a signal or answers an error object is BACKEND_ABSENT, showing the error's message or summary, else the top-level message npm 11 writes for an unreachable registry (its real shape, with a placeholder host), else npm's last stderr line other than its log pointer and no other, and `<hidden>` for a line holding any of the credential shapes, each tested with its secret absent from the output. A 16 000-character line and "token" * 2000 are redacted in under a second, timed in a child the test can kill; a diagnostic longer than `max_shown_chars` is cut, dropping the word the cut lands in, and marked, and a shorter one is not. Each dependency field and both forms of `workspaces` count as declaring a dependency, and an empty one does not. The argv includes every dependency type an .npmrc could omit. A refused `dependency_audit` value is CONFIG.
 """
 
 import copy
 import datetime
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -17,6 +18,7 @@ _ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(_ROOT / "scripts"))
 
 import audit_dependencies  # noqa: E402
+from child_env import build_child_env  # noqa: E402
 from exit_codes import ExitCode  # noqa: E402
 
 pytestmark = pytest.mark.unit
@@ -685,7 +687,88 @@ def test_a_credential_is_hidden_and_the_cause_kept(project, capsys, line, secret
     ],
 )
 def test_only_the_credential_span_is_rewritten(text, shown):
-    assert audit_dependencies._shown(text) == (text if shown is None else shown)
+    assert audit_dependencies._redacted(text) == (text if shown is None else shown)
+
+
+# A registry's 403 body reaches the redaction through npm's `message`, so a
+# proxy chooses this text. Before the patterns were bounded, "token" * 300 took
+# 7 s and "a" * 16000 took 9 s; bounded, each takes milliseconds, so 1 s is a
+# wide margin that a pattern which backtracks again still overruns.
+# The redaction runs in a child the test can kill, because a regex holds the
+# interpreter until it returns: the old "token" pattern on this line runs for
+# hours, and a test that hangs is no red run.
+_TIMED_REDACTION = (
+    "import sys, time\n"
+    "sys.path.insert(0, sys.argv[1])\n"
+    "import audit_dependencies\n"
+    "line = sys.argv[2] * int(sys.argv[3])\n"
+    "started = time.perf_counter()\n"
+    "shown = audit_dependencies._redacted(line)\n"
+    "print(time.perf_counter() - started, shown == line)\n"
+)
+
+
+@pytest.mark.parametrize("unit, times", [("a", 16000), ("token", 2000)])
+def test_a_hostile_line_is_redacted_within_a_second(unit, times):
+    argv = [sys.executable, "-c", _TIMED_REDACTION, str(_ROOT / "scripts")]
+    try:
+        done = subprocess.run(
+            argv + [unit, str(times)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
+            env=build_child_env(),
+            timeout=10,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail("redacting %r * %d ran past 10 s" % (unit, times))
+    assert done.returncode == 0, done.stderr
+    took, unchanged = done.stdout.split()
+    assert float(took) < 1.0, "redacting %r * %d took %s s" % (unit, times, took)
+    # Neither line mixes letters and digits, so no rule rewrites it.
+    assert unchanged == "True"
+
+
+def _cut_run(project, capsys, said, limit):
+    project.configure(
+        accepted={},
+        fail_at="high",
+        max_review_days=90,
+        timeout_seconds=30,
+        max_shown_chars=limit,
+    )
+    app = project.app("astro")
+    out = json.dumps({"message": said, "error": {"summary": "", "detail": ""}})
+    code = project.main([app], run_audit=lambda *_: (1, out, b""))
+    err = capsys.readouterr().err
+    assert code is ExitCode.BACKEND_ABSENT, err
+    return err
+
+
+def test_a_long_diagnostic_is_cut_to_max_shown_chars_and_says_so(project, capsys):
+    said = "getaddrinfo ENOTFOUND registry.example.invalid " + "word " * 4000
+    err = _cut_run(project, capsys, said, 60)
+    assert "getaddrinfo ENOTFOUND registry.example.invalid word" in err
+    assert "<cut to 60 characters>" in err
+    assert "word " * 20 not in err
+    # The cause past the cut still picks the advice, which reads the whole text.
+    assert "check the registry is reachable" in err
+
+
+def test_a_token_the_cut_splits_is_not_shown_in_part(project, capsys):
+    # The cut lands inside the token, leaving a 16-character fragment, too
+    # short for rule (d); the cut drops the partial word instead.
+    said = "ENOTFOUND x.invalid refused " + _GHP
+    err = _cut_run(project, capsys, said, len("ENOTFOUND x.invalid refused ") + 16)
+    assert _GHP[:16] not in err
+    assert "ENOTFOUND x.invalid refused <cut to" in err
+
+
+def test_a_line_within_max_shown_chars_is_not_marked(project, capsys):
+    err = _cut_run(project, capsys, "getaddrinfo ENOTFOUND r.invalid", 500)
+    assert "getaddrinfo ENOTFOUND r.invalid" in err
+    assert "<cut to" not in err
 
 
 _DECLARED = {"dependencies": {"zod": "^3.0.0"}}
@@ -872,6 +955,8 @@ def test_the_real_runner_judges_what_the_program_prints(project, capsys, monkeyp
         {"timeout_seconds": 0},
         {"max_review_days": 0},
         {"max_review_days": True},
+        {"max_shown_chars": 0},
+        {"max_shown_chars": True},
         {"accepted": {"astro": {}}},
         {"accepted": {"astro": {"CVE-2026-0001": _row("zod")}}},
         {"accepted": {"astro": {_HIGH: {"package": "zod", "reason": "r"}}}},
@@ -891,6 +976,7 @@ def test_a_refused_setting_is_config(project, capsys, block):
 def test_keel_config_reads_and_its_rows_are_well_formed(capsys):
     settings = audit_dependencies._settings(str(_ROOT))
     assert settings["max_review_days"] == 90
+    assert settings["max_shown_chars"] == 500
     for app, rows in settings["accepted"].items():
         assert (_ROOT / "src" / "frontend" / app / "package.json").is_file(), app
         assert rows

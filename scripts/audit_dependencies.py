@@ -3,7 +3,7 @@
 title: audit_dependencies — judge each frontend app's npm audit against the accepted risks config records
 kind: script
 layer: n/a
-summary: `make fe-audit`'s doer. It audits each frontend app directory it is given (the Makefile passes FE_APPS) by running `npm audit --json` there, with `--include` naming dev, optional and peer so an .npmrc `omit=` cannot narrow it, under scripts/child_env.py `build_child_env` and config/project.json `dependency_audit.timeout_seconds`, or reads the saved report a `--report NAME=FILE` names instead, so a test never runs npm. A finding is one advisory a report's `via` entry names: its GHSA id (the last part of its `url`), its package and its severity. It judges each app against `dependency_audit.accepted.<app>`, rows of advisory id to package, reason and review_by day, on today's date (scripts/run_date.py `today`, read once at the entry point; a test hands in its own day). It fails (FAILURE) on four things, all listed before the one closing line: a finding at or above `dependency_audit.fail_at` that no row names with the same advisory and package; a row whose review_by day has passed; a row whose review_by is more than `dependency_audit.max_review_days` days after today, so an acceptance is renewed rather than parked; and a row whose advisory and package the app's report no longer holds, or whose app is not one it audited. A finding below fail_at that no row covers is listed and does not fail; a covered one is listed with its reason and day. It refuses a report it cannot trust rather than pass it: one that is not JSON, not `npm audit --json` version 2 (an unknown severity, a `via` url with no advisory id, a `via` item that is neither an advisory nor the name of another entry), whose `metadata.vulnerabilities` counts disagree with its entries, or whose `metadata.dependencies.total` is 0 or missing while the app's package.json declares a dependency, which is what an empty or root-only lockfile audits as. A package.json declares one when any of `dependencies`, `devDependencies` or `optionalDependencies` is non-empty, `peerDependencies` names a peer `peerDependenciesMeta` does not mark `optional: true`, or `workspaces` names a package glob, as a list or as an object's `packages` list, and then the next step also names a workspaces pattern that matches no directory. Such a report is USAGE from a saved file and BACKEND_ABSENT from a run, as is npm exiting 1 with no finding. An app directory with no package.json, one that is not a JSON object, no package-lock.json, a saved report that cannot be read and a `--report` name that is not an audited app are USAGE; npm that cannot be started, runs past the timeout, exits other than 0 or 1, or answers an `error` object is BACKEND_ABSENT, and the line carries npm's own diagnostic: the `error` object's `message` or `summary`, else the top-level `message` npm 11 writes when the registry cannot be reached or refuses the request, else npm's last stderr line other than its log pointer (`A complete log of this run can be found in:` and a path line split from it), never all of stderr. That text is redacted by structure, each rule rewriting only its own span so the cause stays: a URL loses its userinfo and its path or query (`<path hidden>`); an `Authorization`/`Bearer`/`Basic` value, the value of a key holding auth, token, password, passwd, secret, key, credential or cookie in any case, a scheme-less `user:pass@` and any 20-character run mixing letters and digits are `<hidden>`. The next step follows the cause: registry credentials for a 401, 403 or authenticate failure, reachability for ENOTFOUND, ECONNREFUSED or ETIMEDOUT. A refused `dependency_audit` key, run date or child environment is CONFIG. Given no app and no row it says so and exits 0. It writes nothing in the tree; npm writes its own per-user log and cache.
+summary: `make fe-audit`'s doer. It audits each frontend app directory it is given (the Makefile passes FE_APPS) by running `npm audit --json` there, with `--include` naming dev, optional and peer so an .npmrc `omit=` cannot narrow it, under scripts/child_env.py `build_child_env` and config/project.json `dependency_audit.timeout_seconds`, or reads the saved report a `--report NAME=FILE` names instead, so a test never runs npm. A finding is one advisory a report's `via` entry names: its GHSA id (the last part of its `url`), its package and its severity. It judges each app against `dependency_audit.accepted.<app>`, rows of advisory id to package, reason and review_by day, on today's date (scripts/run_date.py `today`, read once at the entry point; a test hands in its own day). It fails (FAILURE) on four things, all listed before the one closing line: a finding at or above `dependency_audit.fail_at` that no row names with the same advisory and package; a row whose review_by day has passed; a row whose review_by is more than `dependency_audit.max_review_days` days after today, so an acceptance is renewed rather than parked; and a row whose advisory and package the app's report no longer holds, or whose app is not one it audited. A finding below fail_at that no row covers is listed and does not fail; a covered one is listed with its reason and day. It refuses a report it cannot trust rather than pass it: one that is not JSON, not `npm audit --json` version 2 (an unknown severity, a `via` url with no advisory id, a `via` item that is neither an advisory nor the name of another entry), whose `metadata.vulnerabilities` counts disagree with its entries, or whose `metadata.dependencies.total` is 0 or missing while the app's package.json declares a dependency, which is what an empty or root-only lockfile audits as. A package.json declares one when any of `dependencies`, `devDependencies` or `optionalDependencies` is non-empty, `peerDependencies` names a peer `peerDependenciesMeta` does not mark `optional: true`, or `workspaces` names a package glob, as a list or as an object's `packages` list, and then the next step also names a workspaces pattern that matches no directory. Such a report is USAGE from a saved file and BACKEND_ABSENT from a run, as is npm exiting 1 with no finding. An app directory with no package.json, one that is not a JSON object, no package-lock.json, a saved report that cannot be read and a `--report` name that is not an audited app are USAGE; npm that cannot be started, runs past the timeout, exits other than 0 or 1, or answers an `error` object is BACKEND_ABSENT, and the line carries npm's own diagnostic: the `error` object's `message` or `summary`, else the top-level `message` npm 11 writes when the registry cannot be reached or refuses the request, else npm's last stderr line other than its log pointer (`A complete log of this run can be found in:` and a path line split from it), never all of stderr. That text is first cut to `dependency_audit.max_shown_chars` characters, dropping the word the cut lands in and saying where it was cut, and every redaction pattern bounds its runs, so a registry's long or hostile body can neither flood the line nor stall the run. It is then redacted by structure, each rule rewriting only its own span so the cause stays: a URL loses its userinfo and its path or query (`<path hidden>`); an `Authorization`/`Bearer`/`Basic` value, the value of a key holding auth, token, password, passwd, secret, key, credential or cookie in any case, a scheme-less `user:pass@` and any 20-character run mixing letters and digits are `<hidden>`. The next step follows the cause: registry credentials for a 401, 403 or authenticate failure, reachability for ENOTFOUND, ECONNREFUSED or ETIMEDOUT. A refused `dependency_audit` key, run date or child environment is CONFIG. Given no app and no row it says so and exits 0. It writes nothing in the tree; npm writes its own per-user log and cache.
 effect: read-only
 """
 
@@ -26,7 +26,13 @@ from exit_codes import ExitCode, finish, report  # noqa: E402
 
 ROOT = os.path.dirname(_SCRIPTS)
 _BLOCK = ("dependency_audit",)
-_FIELDS = ("accepted", "fail_at", "max_review_days", "timeout_seconds")
+_FIELDS = (
+    "accepted",
+    "fail_at",
+    "max_review_days",
+    "max_shown_chars",
+    "timeout_seconds",
+)
 _WHERE = "config/project.json dependency_audit"
 _KEY_PREFIX = "dependency_audit"
 # The one argv the audit runs; a test points it at a program it controls. Each
@@ -66,20 +72,28 @@ _DECLARING_FIELDS = (
 #     costs the diagnostic that detail and keeps its cause word.
 # (c) runs before (b) because `Authorization` is itself a secret-word key, and
 # (b) skips a value that is already hidden or is a scheme name.
+# A registry or proxy chooses this text, so no pattern may backtrack more than
+# linearly. A run is bounded unless a literal fixes where it starts (a URL's
+# `://`, a separator, a quote) or it is the whole pattern, so no two open runs
+# can trade characters. Unbounded, (b) took 7 s on "token" * 300 and 9 s on
+# "a" * 16000.
 _URL = re.compile(
-    r"\b([a-z][a-z0-9+.\-]*)://"
+    r"\b([a-z][a-z0-9+.\-]{0,31})://"
     r"(?:[^\s/@\"'<>]*@)?"
     r"([^\s/:?#@\"'<>,;]+)"
-    r"(:\d+)?"
+    r"(:\d{1,5})?"
     r"([/?#][^\s\"'<>]*)?",
     re.IGNORECASE,
 )
 _PATH_HIDDEN = "<path hidden>"
 _VALUE = r"(?:\"[^\"]*\"|'[^']*'|[^\s\"',;]+)"
+# The line has had its whitespace collapsed, so a run longer than 4 is not met.
+_SEPARATOR = r"(\s{0,4}[=:]\s{0,4}|\s{1,4})"
 _SCHEME_VALUE = re.compile(
-    r"\b(Authorization|Bearer|Basic)(\s*[=:]\s*|\s+)"
-    r"(?:(Bearer|Basic|Token|Digest)(\s+))?"
-    r"(?!realm\b)" + _VALUE,
+    r"\b(Authorization|Bearer|Basic)"
+    + _SEPARATOR
+    + r"(?:(Bearer|Basic|Token|Digest)(\s{1,4}))?(?!realm\b)"
+    + _VALUE,
     re.IGNORECASE,
 )
 _SECRET_WORDS = (
@@ -92,12 +106,16 @@ _SECRET_WORDS = (
     "credential",
     "cookie",
 )
+# The match starts at the secret word and leaves the key's text before it in
+# place: matching that text too is what made the old pattern cubic.
 _KEY_VALUE = re.compile(
-    r"([\"']?[\w.\-]*(?:%s)[\w.\-]*[\"']?)(\s*[=:]\s*|\s+)"
-    r"(?!<hidden>|(?:Bearer|Basic)\b)" % "|".join(_SECRET_WORDS) + _VALUE,
+    r"((?:%s)[\w.\-]{0,64}[\"']?)" % "|".join(_SECRET_WORDS)
+    + _SEPARATOR
+    + r"(?!<hidden>|(?:Bearer|Basic)\b)"
+    + _VALUE,
     re.IGNORECASE,
 )
-_BARE_USERINFO = re.compile(r"(?<![\w/])[\w.\-]+:[^\s@/]+@(?=[\w\-])")
+_BARE_USERINFO = re.compile(r"(?<![\w/])[\w.\-]{1,64}:[^\s@/]{1,256}@(?=[\w\-])")
 _TOKEN_RUN = re.compile(r"[A-Za-z0-9_\-+/=]{20,}")
 _LETTER_AND_DIGIT = re.compile(r"(?=.*[A-Za-z])(?=.*[0-9])")
 # The advice a diagnostic's cause earns: a refused credential, then a registry
@@ -107,6 +125,7 @@ _REACH_CAUSE = re.compile(r"\b(?:ENOTFOUND|ECONNREFUSED|ETIMEDOUT)\b")
 _CREDENTIAL_ADVICE = "check the registry credentials in .npmrc (values not shown)"
 _REACH_ADVICE = "check the registry is reachable from this host"
 _HIDDEN = "<hidden>"
+_CUT = "<cut to %d characters>"
 # npm's closing pointer at its debug log, which names the log's path and not
 # the cause; when the path is split onto the next line, that line goes too.
 _LOG_POINTER = "A complete log of this run can be found in:"
@@ -276,10 +295,22 @@ def _token_shown(match):
     return _HIDDEN if _LETTER_AND_DIGIT.match(run) else run
 
 
-def _shown(text):
-    """*text* on one line, with every span that could carry a credential
-    rewritten by the rules above and the rest of the line kept."""
+def _shown(text, limit):
+    """*text* on one line, cut to *limit* characters and then redacted. A cut
+    drops the word it lands in, since a token's fragment can be too short for
+    rule (d), and the line says where it was cut."""
     line = " ".join(text.split())
+    if len(line) <= limit:
+        return _redacted(line)
+    head = line[:limit]
+    if line[limit] != " ":
+        head = head.rpartition(" ")[0]
+    return (_redacted(head) + " " + _CUT % limit).lstrip()
+
+
+def _redacted(line):
+    """*line* with every span that could carry a credential rewritten by the
+    rules above and the rest of it kept."""
     line = _URL.sub(_url_shown, line)
     line = _SCHEME_VALUE.sub(_scheme_shown, line)
     line = _KEY_VALUE.sub(lambda m: m.group(1) + m.group(2) + _HIDDEN, line)
@@ -376,10 +407,12 @@ def _required_peers(manifest):
     return [name for name in peers if not optional(name)]
 
 
-def _report_of(name, app_dir, saved, root, timeout, run_audit):
+def _report_of(name, app_dir, saved, root, settings, run_audit):
     """The findings of one app, from its saved file or a run. A report that
     cannot be judged is USAGE from a saved file, which the caller chose, and
-    BACKEND_ABSENT from a run, where npm gave no usable answer."""
+    BACKEND_ABSENT from a run, where npm gave no usable answer. *settings*
+    gives npm's timeout and how much of its diagnostic a line shows."""
+    timeout, limit = settings["timeout_seconds"], settings["max_shown_chars"]
     declares, patterned = _declares_dependencies(app_dir)
     status, err = None, b""
     if name in saved:
@@ -409,7 +442,7 @@ def _report_of(name, app_dir, saved, root, timeout, run_audit):
         if status not in _ANSWERED:
             raise _Unanswered(
                 "npm audit exited %d, which is not an answer; npm's last stderr "
-                "line: %s" % (status, _shown(_last_line(err))),
+                "line: %s" % (status, _shown(_last_line(err), limit)),
                 where,
                 _advice(
                     _last_line(err), "run it by hand in the app directory to see why"
@@ -421,7 +454,7 @@ def _report_of(name, app_dir, saved, root, timeout, run_audit):
     except ValueError as exc:
         why = "the audit report is not JSON (%s)" % exc
         if status is not None:
-            why += "; npm's last stderr line: %s" % _shown(_last_line(err))
+            why += "; npm's last stderr line: %s" % _shown(_last_line(err), limit)
         raise refuse(why, where, redo + ", then rerun") from exc
     if isinstance(doc, dict) and "error" in doc:
         said = _error_text(doc, err)
@@ -429,7 +462,7 @@ def _report_of(name, app_dir, saved, root, timeout, run_audit):
         code = error.get("code") if isinstance(error, dict) else None
         cause = " ".join(str(part) for part in (said, code, doc.get("statusCode")))
         raise _Unanswered(
-            "npm audit answered an error, not a report: %s" % _shown(said),
+            "npm audit answered an error, not a report: %s" % _shown(said, limit),
             where,
             _advice(cause, _REACH_ADVICE) + ", then rerun",
         )
@@ -640,9 +673,7 @@ def _run(root, args, settings, today, run_audit):
         )
         return ExitCode.SUCCESS
     reports = {
-        name: _report_of(
-            name, path, saved, root, settings["timeout_seconds"], run_audit
-        )
+        name: _report_of(name, path, saved, root, settings, run_audit)
         for name, path in apps.items()
     }
     failures, listed = _judge(

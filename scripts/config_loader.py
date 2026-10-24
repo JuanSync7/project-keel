@@ -1013,6 +1013,15 @@ KEYS = tuple(
                 accepts=(_at_least_one, "a value >= 1"),
             ),
             _row(
+                ("dependency_audit", "max_shown_chars"),
+                "int",
+                500,
+                "the most characters of npm's diagnostic one "
+                "scripts/audit_dependencies.py line shows; a longer one is cut "
+                "before it is redacted, and the cut is marked",
+                accepts=(_at_least_one, "a value >= 1"),
+            ),
+            _row(
                 ("dependency_audit", "timeout_seconds"),
                 "int",
                 120,
