@@ -1119,12 +1119,19 @@ cannot trust rather than pass it: one that is not JSON or not `npm audit
 another entry, `metadata.vulnerabilities` counts that disagree with the
 entries, and a `metadata.dependencies.total` of 0 or none while the app's
 `package.json` declares a dependency, which is what an empty or root-only
-lockfile audits as. Such a report is exit 2 from a saved `--report` file and
+lockfile audits as. A `package.json` declares one when any of `dependencies`,
+`devDependencies`, `optionalDependencies` or `peerDependencies` is non-empty,
+or when `workspaces` names a package glob, as a list or as an object's
+`packages` list. Such a report is exit 2 from a saved `--report` file and
 exit 11 from a run, as is npm exiting 1 with no finding, and npm that cannot
 start, overruns the timeout, exits other than 0 or 1 or answers an `error`
 object is exit 11; none of these is a pass. An exit 11 line carries npm's own
-diagnostic, the error's `message` or `summary` or npm's last stderr line, and
-`<hidden>` in its place when it names `_authToken` or a `//host/:_auth` key.
+diagnostic: the `error` object's `message` or `summary`, else the top-level
+`message` npm 11 writes when the registry cannot be reached, else npm's last
+stderr line other than its `A complete log of this run can be found in:`
+pointer. It shows `<hidden>` instead when that text names `_authToken`,
+`_password`, `_auth=` or a `//host/:_auth` key, or holds a `Bearer` value, an
+`npm_` token of 36 letters or digits or a URL's `user:pass@`.
 npm runs with `--include=dev --include=optional --include=peer`, which npm
 lets win over a user or project `.npmrc` `omit=`; an `.npmrc` can still change
 the registry it asks, and the audit trusts that registry's answer. It writes

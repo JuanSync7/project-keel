@@ -655,8 +655,8 @@ version rather than a bare commit:
   no longer reports; a moderate or low finding
   is listed, not failed. It refuses a report it cannot trust instead of
   passing it: counts that disagree with the entries, or no audited
-  dependency while `package.json` declares one, which is how an empty
-  lockfile audits. It runs npm with every dependency type included, so an
+  dependency while `package.json` declares one (a workspaces root's
+  `workspaces` included), which is how an empty lockfile audits. It runs npm with every dependency type included, so an
   `.npmrc` `omit=` cannot narrow it, and writes nothing in the tree; npm
   writes its own per-user log and cache. It is not a `make verify` goal, because the
   registry's answer changes day to day. Keel's first row, also shipped to a
