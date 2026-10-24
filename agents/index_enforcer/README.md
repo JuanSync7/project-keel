@@ -9,7 +9,7 @@ tags: [agent, enforcer, index, corpus]
 summary: Enforces conventions and builds/maintains the accountable wiki corpus.
 id: agents-index-enforcer-readme
 created: 2026-06-17
-updated: 2026-10-23
+updated: 2026-10-24
 visibility: internal
 canonical: true
 ---
@@ -35,4 +35,7 @@ run's `models.ModelMeter`, so the call past the count raises
 `models.CallCapReached` and is never made, and a saved run resumes only on the
 same model with no more gaps left than the count (`models.approve_resume`,
 else `models.RunNotApproved`); `tests/integration/test_index_enforcer_durability.py`
-holds all three.
+holds all three. The fill sends only gaps at a level in `config/project.json`
+`corpus.served_visibilities`, decided by `scripts/config_loader.py` `is_served`:
+a confidential gap, or one that states no level, is reported but never
+filled, so its text reaches no prompt (the same test file holds it).

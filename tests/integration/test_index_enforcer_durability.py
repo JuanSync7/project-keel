@@ -2,7 +2,7 @@
 title: Integration — index_enforcer durable gap-fill
 kind: tests
 layer: backend
-summary: A crash mid-fill resumes via the checkpointer; already-filled gaps are not re-filled and authored summaries are untouched. A filling run is held to its approved count of model calls the way the other agents are: enforce(execute=True, fix_gaps=True) with no max_model_calls is a ValueError before any step, every fill goes through one run's models.ModelMeter so the call past the count raises models.CallCapReached and never reaches the model, and a saved run is resumed only on the model the run names and with no more gaps left than its count, else models.RunNotApproved before any call with the snapshot kept. The model is a fake patched in for the brain's get_model and every tool the brain runs as a child process is a stub, so no billed model and no real tree is reached.
+summary: A crash mid-fill resumes via the checkpointer; already-filled gaps are not re-filled and authored summaries are untouched. A filling run is held to its approved count of model calls the way the other agents are: enforce(execute=True, fix_gaps=True) with no max_model_calls is a ValueError before any step, every fill goes through one run's models.ModelMeter so the call past the count raises models.CallCapReached and never reaches the model, and a saved run is resumed only on the model the run names and with no more gaps left than its count, else models.RunNotApproved before any call with the snapshot kept. The model is a fake patched in for the brain's get_model and every tool the brain runs as a child process is a stub, so no billed model and no real tree is reached. A confidential gap, or one that states no level, is never sent: no prompt names it or carries its text, and it stays unfilled.
 """
 
 import json
@@ -27,18 +27,46 @@ _BRAIN = "agents.index_enforcer._brain"
 def _corpus():
     return {
         "nodes": [
-            {"node_id": "n1", "title": "a", "path": "p", "text_excerpt": "x"},
-            {"node_id": "n2", "title": "b", "path": "p", "text_excerpt": "x"},
-            {"node_id": "n3", "title": "c", "path": "p", "text_excerpt": "x"},
+            {
+                "node_id": "n1",
+                "title": "a",
+                "path": "p",
+                "text_excerpt": "x",
+                "visibility": "internal",
+            },
+            {
+                "node_id": "n2",
+                "title": "b",
+                "path": "p",
+                "text_excerpt": "x",
+                "visibility": "internal",
+            },
+            {
+                "node_id": "n3",
+                "title": "c",
+                "path": "p",
+                "text_excerpt": "x",
+                "visibility": "internal",
+            },
             {
                 "node_id": "keep",
                 "title": "k",
                 "path": "p",
                 "summary": "AUTHORED",
                 "summary_source": "authored",
+                "visibility": "internal",
             },
         ]
     }
+
+
+def _project(root, corpus):
+    """A scratch project at *root*: an empty config/project.json, so the
+    served levels are the shipped default, and *corpus* as its corpus."""
+    (root / "config").mkdir()
+    (root / "config" / "project.json").write_text("{}")
+    (root / "wiki").mkdir()
+    (root / "wiki" / "corpus.json").write_text(json.dumps(corpus))
 
 
 def _fake_run(args):
@@ -52,8 +80,7 @@ def _fake_run(args):
 def test_crash_mid_fill_resumes_without_refilling(engine, tmp_path, monkeypatch):
     if engine == "langgraph":
         pytest.importorskip("langgraph")
-    (tmp_path / "wiki").mkdir()
-    (tmp_path / "wiki" / "corpus.json").write_text(json.dumps(_corpus()))
+    _project(tmp_path, _corpus())
 
     calls = {"n": 0}
 
@@ -109,8 +136,7 @@ def counted(tmp_path, monkeypatch):
     """A corpus of three gaps under *tmp_path*, every tool a stub, and the
     model a fake that records each prompt it is sent and can be told to crash
     on a given call; returns (prompts, crash_on)."""
-    (tmp_path / "wiki").mkdir()
-    (tmp_path / "wiki" / "corpus.json").write_text(json.dumps(_corpus()))
+    _project(tmp_path, _corpus())
     prompts = []
     crash_on = {"call": None}
 
@@ -173,3 +199,59 @@ def test_a_saved_run_on_another_model_is_refused(tmp_path, counted):
     with pytest.raises(RunNotApproved, match="'fake'"):
         _fill(tmp_path, model=None, max_model_calls=3)  # the registry default
     assert len(prompts) == 1 and _snapshot(tmp_path).is_file()
+
+
+_CODEWORD = "CODEWORD-ZEBRA"
+
+
+def test_a_hidden_gap_is_never_sent_to_the_model(tmp_path, monkeypatch):
+    """A confidential gap and one that states no level are never filled: no
+    prompt names either node or carries its text, and the served gap is."""
+    corpus = {
+        "nodes": [
+            {
+                "node_id": "open",
+                "title": "open",
+                "path": "docs/open.md",
+                "text_excerpt": "x",
+                "visibility": "internal",
+            },
+            {
+                "node_id": "secret-doc",
+                "title": "secret-doc",
+                "path": "docs/secret/README.md",
+                "text_excerpt": _CODEWORD,
+                "visibility": "confidential",
+            },
+            {
+                "node_id": "unstated-doc",
+                "title": "unstated-doc",
+                "path": "docs/unstated.md",
+                "text_excerpt": _CODEWORD,
+            },
+        ]
+    }
+    _project(tmp_path, corpus)
+    prompts = []
+
+    class Recording:
+        name = "fake"
+
+        def run(self, prompt):
+            prompts.append(prompt)
+            return "GEN"
+
+    monkeypatch.setattr(_BRAIN + ".get_model", lambda name=None: Recording())
+    monkeypatch.setattr(_BRAIN + "._run", _fake_run)
+    rep = _fill(tmp_path, model="fake", max_model_calls=3)
+    assert rep.gaps_filled == 1 and len(prompts) == 1
+    for prompt in prompts:
+        assert _CODEWORD not in prompt
+        assert "secret" not in prompt and "unstated" not in prompt
+    by_id = {
+        n["node_id"]: n
+        for n in json.loads((tmp_path / "wiki" / "corpus.json").read_text())["nodes"]
+    }
+    assert by_id["open"]["summary_source"] == "generated"
+    assert "summary_source" not in by_id["secret-doc"]
+    assert "summary_source" not in by_id["unstated-doc"]

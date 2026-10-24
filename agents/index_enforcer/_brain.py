@@ -2,7 +2,7 @@
 title: Index enforcer brain
 layer: backend
 public_api: no
-summary: Plan: gate -> build -> link -> report -> (durable fill loop) -> commit; run on a neutral Runtime. A filling run needs its approved count of model calls: every fill goes through one run's models.ModelMeter, and a resumed run is first checked against the approved model and count (models.approve_resume). Every tool child runs through scripts/resource_limits.py run_tool, held to config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes`: past either its session is ended and the step raises ChildTimedOut or ChildOutputTooLarge naming the key.
+summary: Plan: gate -> build -> link -> report -> (durable fill loop) -> commit; run on a neutral Runtime. A filling run needs its approved count of model calls: every fill goes through one run's models.ModelMeter, and a resumed run is first checked against the approved model and count (models.approve_resume). Every tool child runs through scripts/resource_limits.py run_tool, held to config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes`: past either its session is ended and the step raises ChildTimedOut or ChildOutputTooLarge naming the key. The fill sends only gaps at a level in config/project.json corpus.served_visibilities (scripts/config_loader.py is_served), so a hidden gap is reported and never filled.
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/integration/test_index_enforcer_durability.py
@@ -27,6 +27,7 @@ from runtimes import (
     Step,
     get_runtime,
 )
+from scripts import config_loader
 from scripts.resource_limits import run_tool
 
 __all__ = ["enforce", "summarize_gap", "EnforceReport"]
@@ -96,8 +97,17 @@ def summarize_gap(node: dict, *, backend: ModelBackend) -> str:
 
 
 def _ungapped(corpus):
-    """Nodes still missing a summary_source, in corpus order (the fill work-list)."""
+    """Nodes still missing a summary_source, in corpus order (the gaps the
+    report lists)."""
     return [n for n in corpus.get("nodes", []) if not n.get("summary_source")]
+
+
+def _fillable(corpus, served):
+    """The gaps at a level in *served*, in corpus order: the fill work-list.
+    A hidden gap, one that states no level included, never reaches
+    summarize_gap, so its text is in no prompt; it stays a reported gap for
+    its owner to author."""
+    return [n for n in _ungapped(corpus) if config_loader.is_served(n, served)]
 
 
 # --- plan steps: each returns a dict merged into the run state -----------------
@@ -154,9 +164,9 @@ def _report(state):
     }
 
 
-def _fill_one(state, meter):
-    """Model-call: fill the NEXT single missing summary, in memory, from the
-    run's counted backend (*meter*).
+def _fill_one(state, meter, served):
+    """Model-call: fill the NEXT single missing summary at a level in
+    *served*, in memory, from the run's counted backend (*meter*).
 
     One gap per step (not the whole loop) so the runtime checkpoints after each
     fill -- a crash mid-fill (e.g. an EDR SIGKILL) resumes at the cursor and the
@@ -165,7 +175,7 @@ def _fill_one(state, meter):
     never touched (only nodes lacking summary_source are filled).
     """
     corpus = state["corpus"]
-    todo = _ungapped(corpus)
+    todo = _fillable(corpus, served)
     if not todo:
         return {}
     node = todo[0]
@@ -195,23 +205,28 @@ def _clean(state):
     return not state.get("s_errors")
 
 
-def _wants_fill(state):
-    """True when gap-fill is requested and there is a clean tree with gaps."""
+def _wants_fill(state, served):
+    """True when gap-fill is requested and there is a clean tree with gaps
+    at a level in *served*."""
     return (
         bool(state.get("fix_gaps"))
-        and bool(_ungapped(state.get("corpus", {})))
+        and bool(_fillable(state.get("corpus", {}), served))
         and not state.get("s_errors")
     )
 
 
-def _more_to_fill(state):
-    """True when authorized to fill and at least one gap remains (loop guard)."""
-    return bool(state.get("execute")) and bool(_ungapped(state.get("corpus", {})))
+def _more_to_fill(state, served):
+    """True when authorized to fill and at least one gap at a level in
+    *served* remains (loop guard)."""
+    return bool(state.get("execute")) and bool(
+        _fillable(state.get("corpus", {}), served)
+    )
 
 
-def _plan(meter):
-    """The enforce plan, its fill step bound to this run's counted backend:
-    the backend is the run's own, never one a step builds from saved state."""
+def _plan(meter, served):
+    """The enforce plan, its fill step bound to this run's counted backend
+    and the levels *served* it may send: both are the run's own, never values
+    a step builds from saved state."""
     return Plan(
         name="index_enforce",
         entry="gate",
@@ -220,7 +235,7 @@ def _plan(meter):
             Step("build", WRITES, _build),
             Step("link", WRITES, _link),
             Step("report", READ_ONLY, _report),
-            Step("fill", MODEL_CALL, lambda state: _fill_one(state, meter)),
+            Step("fill", MODEL_CALL, lambda state: _fill_one(state, meter, served)),
             Step("commit", WRITES, _commit),
         ),
         edges=(
@@ -228,9 +243,10 @@ def _plan(meter):
             Edge("gate", "report"),  # dirty tree -> straight to report
             Edge("build", "link"),
             Edge("link", "report"),
-            Edge("report", "fill", when=_wants_fill),
+            Edge("report", "fill", when=lambda state: _wants_fill(state, served)),
             Edge("report", END),
-            Edge("fill", "fill", when=_more_to_fill),  # durable loop: one gap per step
+            # durable loop: one gap per step
+            Edge("fill", "fill", when=lambda state: _more_to_fill(state, served)),
             Edge("fill", "commit"),
             Edge("commit", END),
         ),
@@ -275,6 +291,10 @@ def enforce(
             "the approved model-call count"
         )
     root = root or _REPO
+    # Read only when a fill is asked for: a run without fix_gaps never reaches
+    # the fill step, so it needs no levels and fills nothing. A refused or
+    # unreadable config raises config_loader.ConfigError before any step.
+    served = config_loader.served_visibilities(root) if fix_gaps else frozenset()
     if checkpointer is None and execute and fix_gaps:
         checkpointer = FileCheckpointer(os.path.join(root, _CKPT_DIR))
     init = {"root": root, "model": model, "fix_gaps": fix_gaps, "execute": execute}
@@ -292,12 +312,12 @@ def enforce(
                     model=model,
                     # One fill per gap still in the saved corpus, the one in
                     # flight at the crash included.
-                    left=len(_ungapped(left.get("corpus", {}))),
+                    left=len(_fillable(left.get("corpus", {}), served)),
                     cap=max_model_calls,
                 )
             kwargs["resume"] = None
     meter = ModelMeter(model, max_model_calls or 0, get_model)
-    st = get_runtime(runtime).run(_plan(meter), init, **kwargs).state
+    st = get_runtime(runtime).run(_plan(meter, served), init, **kwargs).state
     return EnforceReport(
         structure_errors=st.get("s_errors", ()),
         structure_warnings=st.get("s_warnings", ()),
