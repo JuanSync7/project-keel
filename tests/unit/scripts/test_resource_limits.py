@@ -825,9 +825,11 @@ def test_the_shipped_tool_limits_outlast_the_shipped_gate_runner():
     assert (timeout, cap) == (15000, 67108864)
     gate = config_loader.read(str(_ROOT))["make_targets"]
     margin = config_loader.read(str(_ROOT))["agents"]["tool_gate_margin_seconds"]
-    assert timeout >= (
-        gate["gate_timeout_seconds"] + 2 * gate["gate_stop_grace_seconds"] + margin
-    )
+    assert margin == 60
+    least = gate["gate_timeout_seconds"] + 2 * gate["gate_stop_grace_seconds"] + margin
+    # Slack over the bound, so raising a gate key a little does not refuse
+    # every agent tool at once.
+    assert timeout > least
 
 
 def test_run_tool_holds_the_child_to_the_configured_limit_and_names_the_key(tmp_path):

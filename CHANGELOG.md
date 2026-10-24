@@ -355,10 +355,10 @@ version rather than a bare commit:
   `threading.TIMEOUT_MAX` like every seconds key, and one shorter than
   `make_targets.gate_timeout_seconds` plus twice
   `make_targets.gate_stop_grace_seconds` plus
-  `agents.tool_gate_margin_seconds` (570) is a config fault (exit 14): a
+  `agents.tool_gate_margin_seconds` (60) is a config fault (exit 14): a
   timed-out gate run waits its grace once for make's session and once more
-  for make's output, the margin covers the runner's start, its tree
-  snapshots and the rollback around it, and a tool
+  for make's output, the margin covers the runner's start and its two tree
+  snapshots, and a tool
   child can be the gate runner, and a SIGKILL to it before its own stop would
   cut make's SIGTERM grace short, lose the runner's structured result and
   leave an applied edit not rolled back. The

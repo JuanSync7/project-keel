@@ -321,7 +321,7 @@ def test_a_root_whose_gate_outlasts_the_tool_limit_stops_a_dry_run_as_config(
         result = refactor_practice.main([_practice_name(), "--root", str(tmp_path)])
     assert result is ExitCode.CONFIG
     err = capsys.readouterr().err
-    assert "agents.tool_timeout_seconds" in err and "at least 20600" in err, err
+    assert "agents.tool_timeout_seconds" in err and "at least 20090" in err, err
 
 
 # Each entry point that builds a model or a runtime, and the test that holds
