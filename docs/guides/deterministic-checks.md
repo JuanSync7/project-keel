@@ -823,6 +823,13 @@ a `fail` or `finish` call outside the entry block of a module another project
 module imports, because only an entry point may end the process; config/project.json
 `import_layers.may_end_the_process` names the one module that may, with its
 reason, and a stale entry fails. `passthrough` ends nothing and is allowed.
+The same test reads every shell script `scripts/shell_gate.py` finds, less
+`scripts/exit_codes.sh`: it fails one that does not source that helper, an
+`exit` with a number, `$?` or nothing, an `exit_fail` with `SUCCESS` or a
+blank part, and an `exit_passthrough` of a number or a member, each at its
+file and line; `exit_passthrough "$status"` over a wrapped tool's status
+is the shell `passthrough`. No shell script is a failure unless
+config/project.json `shell.no_scripts` gives the reason.
 `scripts/exit_code_table.py --check` compares the region between the
 `<!-- exit-codes:begin -->` and `<!-- exit-codes:end -->` lines of
 `docs/guides/limits-and-troubleshooting.md` with what it would write: one row
@@ -833,7 +840,8 @@ runs.
 sees a blank literal, not a vague one, and `report` refuses a blank value at
 run time. It does not see an exit reached through `getattr`, `os.abort`,
 `os.kill` or an uncaught exception, argparse's own `--help` (exit 0) and
-usage (exit 2) exits, or a `python -c` line in a makefile. The hand-written
+usage (exit 2) exits, a `python -c` line in a makefile, or a shell
+`set -e`, `trap`, `exec` or `eval` string. The hand-written
 table below the generated region is compared with nothing.
 
 **Run.** `make check-exit-codes` · `make exit-codes` · `pytest tests/integration/test_exit_gate.py`

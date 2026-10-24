@@ -7,7 +7,7 @@ owner: TBD
 summary: Global rules for any agent working in this repo.
 id: agent
 created: 2026-06-17
-updated: 2026-10-20
+updated: 2026-10-24
 visibility: internal
 canonical: true
 ---
@@ -75,7 +75,10 @@ of truth for labeling and the directory taxonomy. Each directory's own
   `tests/integration/test_exit_gate.py` fails any other exit and a blank
   message part. `make exit-codes` regenerates the exit-code table in
   `docs/guides/limits-and-troubleshooting.md`, and `make check-exit-codes`
-  fails a stale one.
+  fails a stale one. A shell script sources `scripts/exit_codes.sh` and ends
+  through it: `exit "$EXIT_<NAME>"`, `exit_fail "$EXIT_<NAME>" WHAT ON NEXT`
+  for a failure, `exit_passthrough "$status"` for a wrapped tool's status;
+  the same test fails a bare `exit 3` or `exit $?` with its file and line.
 - **Read a configured value through the loader.** Read `config/project.json`,
   `config/practices.json` or a variable they declare through
   `scripts/config_loader.py` (`read`, `resolve`, `env`), and give a key its

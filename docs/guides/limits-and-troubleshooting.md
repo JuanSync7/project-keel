@@ -506,6 +506,27 @@ the helper under `/bin/sh`, and config/project.json `shell.excluded_paths`
 keeps it from the shell linter, formatter and test runner, so a project with no
 shell script of its own needs none of those tools.
 
+`tests/integration/test_exit_gate.py` holds every other shell script to
+the helper: each file `scripts/shell_gate.py` calls a shell script, less
+the helper and what `shell.excluded_paths` names. A script must source a
+path ending in `/exit_codes.sh`, as
+`. "$(dirname "$0")/exit_codes.sh"`, and end through it. These pass:
+`exit "$EXIT_USAGE"`, `exit ${EXIT_FAILURE}`, `exit_fail` with a member
+other than `SUCCESS` and three non-blank parts, and
+`exit_passthrough "$status"` or `exit_passthrough "$?"` over a wrapped
+tool's status. These are findings at their file and line: `exit 3`,
+`exit "3"`, `exit $?`, a bare `exit`, a member the helper does not set,
+and `exit_passthrough` handed a number or a member, which is the script's
+own status. An ending in a subshell, `$(...)` or backquotes is judged
+the same; one in a comment, a quoted word or a here-document body is not a
+command. A `return` in a function ends nothing. A script that sources the
+helper and never ends through it is a finding, and so is a file the gate
+cannot read to its end. With no shell script at all the gate fails unless
+config/project.json `shell.no_scripts` gives the reason. It cannot see
+`set -e`, `trap`, `exec`, `kill`, an `eval` or `sh -c` string, a `case`
+pattern inside `$(...)`, or a script that falls off its end after some
+other ending.
+
 The table below is written by hand and no test compares it with the code. It
 says when each script returns each code.
 
@@ -742,6 +763,9 @@ kept on purpose, such as a test fixture, with its reason.
 | `test_exit_gate` says `import_layers.may_end_the_process names <path>, which is no shared module that ends the process` | the exemption is stale: the module no longer ends the process, or nothing imports it | delete the entry |
 | `test_exit_gate` says `passthrough wraps a wrapped tool's status, never this script's own` | `passthrough` is handed the entry function's result, an int literal, a member, or a function of the same module whose every return is one of those, also under a sign, combined with `or` or arithmetic, or through a builtin such as `int`, so a script's own status would pass as a wrapped tool's | return `ExitCode` members from `main` through `report`, and call `passthrough` only on the status of the tool the script ran, where it reads it (`subprocess.run(...).returncode`) |
 | `test_exit_gate` says `the entry line is finish(main()); call passthrough inside main where the wrapped tool's status is read` | the entry block hands `finish` a `passthrough(...)` call, or a name bound to one | write the entry line as `finish(main())`, and return `passthrough(<the tool's status>)` from `main` |
+| `test_exit_gate` says `<file>:<line>: `exit 3` writes a number` or `` `exit $?` is not a member`` | a shell script ends with a number or the last command's status, not through scripts/exit_codes.sh | end with `exit "$EXIT_<NAME>"`, `exit_fail "$EXIT_<NAME>" WHAT ON NEXT`, or `exit_passthrough "$status"` where the script read a wrapped tool's status |
+| `test_exit_gate` says `<file>:1: does not source scripts/exit_codes.sh` | a shell script never sources the helper, so it cannot end through it | add `. "$(dirname "$0")/exit_codes.sh"` before its first command, with the path to `scripts/` from the script |
+| `test_exit_gate` says `no shell script to judge and shell.no_scripts gives no reason` | the project holds no shell script but the generated helper, and config/project.json `shell.no_scripts` is null | state in `shell.no_scripts` why the project has none, or answer the copier question `shell` no |
 | `test_swallowed_error_gate` says `<handler> swallows the error, so the caller reads a failure as a success` | a bare `except:`, or a broad handler whose body only passes, continues, breaks, or returns or assigns a fixed value such as `None`, `-1` or `[]` | catch the exception you can name, raise or return the failure, or give the reason on the clause: `# noqa: BLE001 -- <why>` |
 | `test_swallowed_error_gate` says ``# noqa: BLE001` gives no reason`` | a blind-except suppression has no text after its codes | write after the codes why the error may be dropped, or handle it |
 | `test_change_comment_gate` says `the comment opens with <phrase>, which reports a change` | the comment tells what changed, not why the code is as it is | rewrite it as the reason, and leave the change to the commit message |

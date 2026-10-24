@@ -2,13 +2,16 @@
 title: Integration — a process ends only through the exit helper, and the exit-code table is the enum
 kind: tests
 layer: n/a
-summary: Three tree-wide gates over every Python file tests/source_tree.py `python_files` lists (the walk `check_structure.walk` uses), read from the syntax tree. The first fails an exit written anywhere but scripts/exit_codes.py (`sys.exit`, `os._exit`, any `.exit(...)` attribute such as argparse's, `raise SystemExit`, a SystemExit subclass, the builtins `exit` and `quit`, each of those as an attribute of `builtins` or `__builtins__`, and an import that renames any of them), an entry block that hands `finish` nothing while its module imports the helper, or that calls a function of its module and drops the value it returns, a return scripts/exit_code_table.py `read_script` cannot follow to an ExitCode member (a returned name bound by anything but a plain assignment included), a `report` or `fail` call missing one of its three message parts or holding a blank literal one, or handed a code that is not a failure member, a `passthrough` handed the script's own status (the entry function's result, directly or through a name, an int literal, a member, or a function of the module whose every return is one of those, also under a sign, in an arithmetic or `and`/`or` of them, or through a builtin such as `int`), an entry line `finish(passthrough(...))`, and an import of the helper under a second name. The second fails an ExitCode member the generated table in the limits guide does not name and a table row no member backs (scripts/exit_code_table.py `table_findings`). The third fails a `fail` or `finish` call outside the entry block of a module another project module imports (an import from tests/ does not count, and scripts/exit_codes.py is the helper), because a shared module raises or returns and only an entry point ends the process; `passthrough` is no ending, it marks a status and returns it. config/project.json `import_layers.may_end_the_process` names a module that may, with a non-blank reason, and an entry naming no such module is a finding. A walk that finds no Python file, or no entry block, is a failure, never a pass. It does not judge whether a message part is useful, and it cannot see an exit reached through `getattr`, `os.abort`, `os.kill`, an uncaught exception, argparse's own `--help` and usage exits, a `python -c` line in a makefile, or a status dropped by another callable (`asyncio.run(main())`); and it does not check a `passthrough` over a helper that returns another process's status (scripts/run_app.py `_app_status`), which passes by design, nor one over a function some of whose returns are the script's own literals and others a tool's status. The first and third hand their findings to scripts/expiring_tier.py as the checks `exit-helper` and `exit-shared-module`: in the template repository, which holds copier.yml, every finding is red; in a generated project a finding its `expiring_tier.baseline` records warns until `expiring_tier.expires`, and any other is red. Catching SystemExit is not an exit and is not a finding: the exception itself, or a tuple holding it, as the type of an `except` clause or an argument of pytest's `raises`; anywhere deeper in those expressions, and in a `raises` that is not pytest's, it is one. Not a check_* letter: the letters A to Z are taken.
+summary: Three tree-wide gates over every Python file tests/source_tree.py `python_files` lists, and the first over every shell script too (the walk `check_structure.walk` uses), read from the syntax tree. The first fails an exit written anywhere but scripts/exit_codes.py (`sys.exit`, `os._exit`, any `.exit(...)` attribute such as argparse's, `raise SystemExit`, a SystemExit subclass, the builtins `exit` and `quit`, each of those as an attribute of `builtins` or `__builtins__`, and an import that renames any of them), an entry block that hands `finish` nothing while its module imports the helper, or that calls a function of its module and drops the value it returns, a return scripts/exit_code_table.py `read_script` cannot follow to an ExitCode member (a returned name bound by anything but a plain assignment included), a `report` or `fail` call missing one of its three message parts or holding a blank literal one, or handed a code that is not a failure member, a `passthrough` handed the script's own status (the entry function's result, directly or through a name, an int literal, a member, or a function of the module whose every return is one of those, also under a sign, in an arithmetic or `and`/`or` of them, or through a builtin such as `int`), an entry line `finish(passthrough(...))`, and an import of the helper under a second name. The second fails an ExitCode member the generated table in the limits guide does not name and a table row no member backs (scripts/exit_code_table.py `table_findings`). The third fails a `fail` or `finish` call outside the entry block of a module another project module imports (an import from tests/ does not count, and scripts/exit_codes.py is the helper), because a shared module raises or returns and only an entry point ends the process; `passthrough` is no ending, it marks a status and returns it. config/project.json `import_layers.may_end_the_process` names a module that may, with a non-blank reason, and an entry naming no such module is a finding. A walk that finds no Python file, or no entry block, is a failure, never a pass. It does not judge whether a message part is useful, and it cannot see an exit reached through `getattr`, `os.abort`, `os.kill`, an uncaught exception, argparse's own `--help` and usage exits, a `python -c` line in a makefile, or a status dropped by another callable (`asyncio.run(main())`); and it does not check a `passthrough` over a helper that returns another process's status (scripts/run_app.py `_app_status`), which passes by design, nor one over a function some of whose returns are the script's own literals and others a tool's status. The first also reads every file scripts/shell_gate.py `classify` calls a shell script, less scripts/exit_codes.sh itself: a script must source that helper by a path ending in `/exit_codes.sh` and end through it, as `exit "$EXIT_<NAME>"`, `exit_fail "$EXIT_<NAME>" WHAT ON NEXT` with a member other than SUCCESS and no blank part, or `exit_passthrough "$status"` for a wrapped tool's status, never a number or a member; a bare `exit 3`, `exit $?` or `exit` is a finding at its file and line, in a subshell, `$(...)` or backquotes too. Comments, quoted words and here-document bodies are not commands; a file it cannot read to its end, such as one with an open quote, is a finding. No shell script is a finding unless config/project.json `shell.no_scripts` gives the reason. It cannot see `set -e`, `trap`, `exec`, `kill`, an `eval` or `sh -c` string, a `case` pattern inside `$(...)`, or a script that falls off its end after some other ending. The first and third hand their findings to scripts/expiring_tier.py as the checks `exit-helper` and `exit-shared-module`: in the template repository, which holds copier.yml, every finding is red; in a generated project a finding its `expiring_tier.baseline` records warns until `expiring_tier.expires`, and any other is red. Catching SystemExit is not an exit and is not a finding: the exception itself, or a tuple holding it, as the type of an `except` clause or an argument of pytest's `raises`; anywhere deeper in those expressions, and in a `raises` that is not pytest's, it is one. Not a check_* letter: the letters A to Z are taken.
 """
 
 import ast
+import io
 import json
 import os
+import re
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -19,9 +22,12 @@ sys.path.insert(0, str(_ROOT / "scripts"))
 sys.path.insert(0, str(_ROOT / "tests"))
 
 import check_structure as cs  # noqa: E402
+import config_loader  # noqa: E402
 import exit_code_table as et  # noqa: E402
 import expiring_tier  # noqa: E402
+import shell_gate  # noqa: E402
 
+import hermetic_git  # noqa: E402
 import source_tree as st  # noqa: E402
 
 pytestmark = pytest.mark.integration
@@ -374,13 +380,387 @@ def library_findings(root):
     return {"modules": len(importers), "findings": sorted(findings)}
 
 
+# --- shell scripts -----------------------------------------------------------------
+
+# The words that open or close a compound command and never name a command.
+_SH_RESERVED = frozenset(
+    ("!", "{", "}", "if", "then", "else", "elif", "fi", "do", "done", "while")
+    + ("until", "case", "esac", "time")
+)
+_SH_EXIT, _SH_FAIL, _SH_PASS = "exit", "exit_fail", "exit_passthrough"
+_SH_ENDINGS = (_SH_EXIT, _SH_FAIL, _SH_PASS)
+_SH_SOURCE = (".", "source")
+_SH_HELPER_NAME = os.path.basename(et.HELPER_SH)
+_SH_ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
+# `$EXIT_NAME` or `${EXIT_NAME}`, bare or inside one pair of double quotes.
+_SH_MEMBER = re.compile(r'(")?\$(?:EXIT_([A-Z0-9_]+)|\{EXIT_([A-Z0-9_]+)\})(?(1)")\Z')
+_SH_NUMBER = re.compile(r"""(["']?)[0-9]+\1\Z""")
+_SH_BLANK = re.compile(r"""(["'])\s*\1\Z""")
+# The characters that end a here-document's delimiter word.
+_SH_DELIMITER_ENDS = " \t\n;&|<>()"
+_SH_ENDS_WELL = 'exit "$EXIT_<NAME>" from %s' % et.HELPER_SH
+
+
+class ShellScanError(Exception):
+    """A shell file the reader cannot read to its end, at *line*."""
+
+    def __init__(self, line, reason):
+        super().__init__(reason)
+        self.line, self.reason = line, reason
+
+
+class _ShellReader:
+    """Splits POSIX shell text into its simple commands, each (line, words).
+
+    A word keeps its quotes, so `"$EXIT_USAGE"` and `exit` stay tellable
+    apart. A comment, a quoted span and a here-document body are no command;
+    the inside of `$(...)` and of backquotes is read as commands too. A
+    redirection and its target are no word. It does not read a `case`
+    pattern inside `$(...)` or a command a string later runs (`trap`, `eval`,
+    `sh -c`)."""
+
+    def __init__(self, text, line=1):
+        self.text, self.i, self.line = text, 0, line
+        self.commands, self._heredocs = [], []
+        self.words, self.word, self.word_line = [], None, line
+        self.start, self.skip = line, False
+
+    def _add(self, chars):
+        if self.word is None:
+            self.word, self.word_line = [], self.line
+        self.word.append(chars)
+
+    def _end_word(self):
+        if self.word is None:
+            return
+        if self.skip:
+            self.skip = False
+        else:
+            if not self.words:
+                self.start = self.word_line
+            self.words.append("".join(self.word))
+        self.word = None
+
+    def _end_command(self):
+        self._end_word()
+        if self.skip:
+            raise ShellScanError(self.line, "a redirection names no target")
+        if self.words:
+            self.commands.append((self.start, self.words))
+        self.words = []
+
+    def _span(self, end, what):
+        """Add text[i:end+1] to the word, counting its lines."""
+        if end < 0:
+            raise ShellScanError(self.line, "%s is never closed" % what)
+        chunk = self.text[self.i : end + 1]
+        self._add(chunk)
+        self.line += chunk.count("\n")
+        self.i = end + 1
+
+    def _closing(self, j, quote):
+        """The index of the *quote* that closes the span from j, a backslash
+        escaping the next character, or -1."""
+        t = self.text
+        while j < len(t) and t[j] != quote:
+            j += 2 if t[j] == "\\" else 1
+        return j if j < len(t) else -1
+
+    def _matching(self, j, opener, closer):
+        """The index of the *closer* that balances the *opener* at j, or -1."""
+        depth = 0
+        for k in range(j, len(self.text)):
+            if self.text[k] == opener:
+                depth += 1
+            elif self.text[k] == closer:
+                depth -= 1
+                if depth == 0:
+                    return k
+        return -1
+
+    def _substitution(self):
+        """`$(...)`: its commands are read; the whole is one part of a word."""
+        begin, line = self.i, self.line
+        saved = (self.words, self.word, self.word_line, self.start, self.skip)
+        self.words, self.word, self.skip = [], None, False
+        self.i += 2
+        self.run(closer=")")
+        raw = self.text[begin : self.i]
+        self.words, self.word, self.word_line, self.start, self.skip = saved
+        if self.word is None:
+            self.word, self.word_line = [], line
+        self.word.append(raw)
+
+    def _backquote(self):
+        end = self._closing(self.i + 1, "`")
+        if end < 0:
+            raise ShellScanError(self.line, "a backquote is never closed")
+        inner = _ShellReader(self.text[self.i + 1 : end], self.line)
+        inner.run()
+        self.commands.extend(inner.commands)
+        self._span(end, "a backquote")
+
+    def _redirect(self):
+        t = self.text
+        # A descriptor number written against the operator belongs to it.
+        if self.word is not None and "".join(self.word).isdigit():
+            self.word = None
+        else:
+            self._end_word()
+        if t.startswith("<<", self.i) and not t.startswith("<<<", self.i):
+            self.i += 2
+            strip = t.startswith("-", self.i)
+            self.i += strip
+            self._heredoc_delimiter(strip)
+            return
+        while self.i < len(t) and t[self.i] in "<>&|":
+            self.i += 1
+        if t.startswith("-", self.i):
+            # `>&-` closes a descriptor and names no target.
+            self.i += 1
+            return
+        self.skip = True
+
+    def _heredoc_delimiter(self, strip):
+        t = self.text
+        while self.i < len(t) and t[self.i] in " \t":
+            self.i += 1
+        parts = []
+        while self.i < len(t) and t[self.i] not in _SH_DELIMITER_ENDS:
+            c = t[self.i]
+            if c in "'\"":
+                end = t.find(c, self.i + 1)
+                if end < 0:
+                    raise ShellScanError(self.line, "a quote is never closed")
+                parts.append(t[self.i + 1 : end])
+                self.i = end + 1
+            elif c == "\\":
+                parts.append(t[self.i + 1 : self.i + 2])
+                self.i += 2
+            else:
+                parts.append(c)
+                self.i += 1
+        if not parts:
+            raise ShellScanError(self.line, "a here-document names no delimiter")
+        self._heredocs.append(("".join(parts), strip, self.line))
+
+    def _heredoc_bodies(self):
+        t = self.text
+        while self._heredocs:
+            delimiter, strip, opened = self._heredocs.pop(0)
+            while True:
+                if self.i >= len(t):
+                    raise ShellScanError(
+                        opened, "a here-document is never closed by %s" % delimiter
+                    )
+                newline = t.find("\n", self.i)
+                end = len(t) if newline < 0 else newline
+                body = t[self.i : end]
+                self.i, self.line = end + 1, self.line + 1
+                if (body.lstrip("\t") if strip else body) == delimiter:
+                    break
+
+    def run(self, closer=None):
+        """Read from i to the end, or to the unbalanced *closer*."""
+        t, depth = self.text, 0
+        while self.i < len(t):
+            c = t[self.i]
+            if c == "#" and self.word is None:
+                newline = t.find("\n", self.i)
+                self.i = len(t) if newline < 0 else newline
+            elif c == "\\" and t.startswith("\\\n", self.i):
+                self.i, self.line = self.i + 2, self.line + 1
+            elif c == "\\":
+                self._add(t[self.i : self.i + 2])
+                self.i += 2
+            elif c == "'":
+                self._span(t.find("'", self.i + 1), "a single quote")
+            elif c == '"':
+                self._span(self._closing(self.i + 1, '"'), "a double quote")
+            elif c == "`":
+                self._backquote()
+            elif t.startswith("$((", self.i):
+                self._span(self._matching(self.i + 1, "(", ")"), "a `$((`")
+            elif t.startswith("$(", self.i):
+                self._substitution()
+            elif t.startswith("${", self.i):
+                self._span(self._matching(self.i + 1, "{", "}"), "a `${`")
+            elif c == "\n":
+                self._end_command()
+                self.i, self.line = self.i + 1, self.line + 1
+                self._heredoc_bodies()
+            elif c in ";&|(":
+                self._end_command()
+                depth += c == "("
+                self.i += 1
+            elif c == ")":
+                self._end_command()
+                self.i += 1
+                if depth:
+                    depth -= 1
+                elif closer:
+                    return
+            elif c in "<>":
+                self._redirect()
+            elif c in " \t":
+                self._end_word()
+                self.i += 1
+            else:
+                self._add(c)
+                self.i += 1
+        if closer:
+            raise ShellScanError(self.line, "a `$(` is never closed")
+        self._end_command()
+        if self._heredocs:
+            _delimiter, _strip, opened = self._heredocs[0]
+            raise ShellScanError(opened, "a here-document has no body")
+
+
+def shell_commands(text):
+    """[(line, [command word, argument words...])] for each simple command of
+    *text*, the assignments and reserved words before it stepped over.
+    Raises ShellScanError when the text cannot be read to its end."""
+    reader = _ShellReader(text)
+    reader.run()
+    commands = []
+    for line, words in sorted(reader.commands, key=lambda c: c[0]):
+        k = 0
+        while k < len(words) and (
+            words[k] in _SH_RESERVED or _SH_ASSIGNMENT.match(words[k])
+        ):
+            k += 1
+        if k < len(words):
+            commands.append((line, words[k:]))
+    return commands
+
+
+def _sh_member(word):
+    """The member name `$EXIT_<NAME>` in *word* names, or None."""
+    match = _SH_MEMBER.match(word)
+    return None if match is None else (match.group(2) or match.group(3))
+
+
+def _sh_ending_findings(head, args, known, quiet):
+    """What is wrong with one `exit`, `exit_fail` or `exit_passthrough`."""
+    said = " ".join([head] + args)
+    member = _sh_member(args[0]) if args else None
+    if member is not None and member not in known:
+        return [
+            "`%s` names EXIT_%s, which %s does not set" % (said, member, et.HELPER_SH)
+        ]
+    if head == _SH_EXIT:
+        if not args:
+            return [
+                "`exit` with no status ends on the last command's; end with %s, "
+                'or exit_passthrough "$?" for a wrapped tool\'s status' % _SH_ENDS_WELL
+            ]
+        if len(args) == 1 and member is not None:
+            return []
+        if len(args) == 1 and _SH_NUMBER.match(args[0]):
+            return ["`%s` writes a number; end with %s" % (said, _SH_ENDS_WELL)]
+        return [
+            '`%s` is not a member; end with %s, or exit_passthrough "$?" for a '
+            "wrapped tool's status" % (said, _SH_ENDS_WELL)
+        ]
+    if head == _SH_FAIL:
+        if len(args) != 4:
+            return ["`%s` takes CODE WHAT ON NEXT, four arguments" % said]
+        out = []
+        if member is None or member in quiet:
+            out.append(
+                '`%s` takes "$EXIT_<NAME>" of a member other than SUCCESS first' % said
+            )
+        if any(_SH_BLANK.match(part) for part in args[1:]):
+            out.append(
+                "`%s` has a blank message part; say what failed, on which input and "
+                "what to do next" % said
+            )
+        return out
+    if len(args) != 1:
+        return ["`%s` takes one argument, the wrapped tool's status" % said]
+    if member is not None or _SH_NUMBER.match(args[0]):
+        return [
+            "`%s` hands the script's own status, not a wrapped tool's; end with %s"
+            % (said, _SH_ENDS_WELL)
+        ]
+    return []
+
+
+def shell_file_findings(text, relpath, known, quiet):
+    """Every finding of the exit gate over one shell script: an ending not
+    through the helper, a script that does not source the helper, and one
+    that sources it but never ends through it."""
+    try:
+        commands = shell_commands(text)
+    except ShellScanError as exc:
+        return [
+            "%s:%d: cannot be read to its end: %s; close it so the exit gate can "
+            "judge the script" % (relpath, exc.line, exc.reason)
+        ]
+    findings, sourced, ends = [], False, 0
+    for line, (head, *args) in commands:
+        if head in _SH_SOURCE and args:
+            target = args[0].replace('"', "").replace("'", "")
+            sourced = sourced or target.endswith("/" + _SH_HELPER_NAME)
+        if head in _SH_ENDINGS:
+            ends += 1
+            findings.extend(
+                "%s:%d: %s" % (relpath, line, finding)
+                for finding in _sh_ending_findings(head, args, known, quiet)
+            )
+    if not sourced:
+        findings.append(
+            "%s:1: does not source %s, so it cannot end through it; add "
+            '`. "$(dirname "$0")/%s"` before its first command'
+            % (relpath, et.HELPER_SH, _SH_HELPER_NAME)
+        )
+    elif not ends:
+        findings.append(
+            "%s:1: never ends through %s, so it exits on its last command's "
+            "status; end it with %s" % (relpath, et.HELPER_SH, _SH_ENDS_WELL)
+        )
+    return findings
+
+
+def shell_findings(root):
+    """Every finding of the exit gate over the shell scripts of *root*: the
+    files scripts/shell_gate.py `classify` calls scripts, so the shell tools
+    and this gate judge the same files, less the helper itself. A tree with
+    none is a finding unless config/project.json `shell.no_scripts` gives
+    the reason. Raises config_loader.ConfigError, git_tree's errors and
+    OSError rather than judging nothing."""
+    cfg = shell_gate.settings(str(root), stream=io.StringIO())
+    scripts = [
+        relpath
+        for relpath in shell_gate.classify(str(root), cfg).scripts
+        if relpath != et.HELPER_SH
+    ]
+    members = et.read_members(str(root))
+    known = {m.name for m in members}
+    quiet = {m.name for m in members if m.value == 0}
+    findings = []
+    for relpath in scripts:
+        text = (Path(root) / relpath).read_text(encoding="utf-8")
+        findings.extend(shell_file_findings(text, relpath, known, quiet))
+    if not scripts and not (cfg["no_scripts"] or "").strip():
+        findings.append(
+            "config/project.json:1: no shell script to judge and shell.no_scripts "
+            "gives no reason -- zero items; add a script or state the reason"
+        )
+    return {"files": len(scripts), "findings": sorted(findings)}
+
+
 # --- the tree itself -------------------------------------------------------------
 
 
 def test_no_process_in_the_tree_ends_outside_the_helper():
     result = helper_findings(_ROOT)
     assert result["entries"] > 0, "no entry block was judged -- zero items"
-    red = expiring_tier.apply("exit-helper", result["findings"], str(_ROOT))
+    # A shell script is held by the same check, so one baseline covers both.
+    shell = shell_findings(_ROOT)
+    red = expiring_tier.apply(
+        "exit-helper", result["findings"] + shell["findings"], str(_ROOT)
+    )
     assert not red, "\n".join(red)
 
 
@@ -972,3 +1352,189 @@ def test_an_exemption_with_a_blank_reason_is_an_error_not_a_pass(tmp_path):
     root = _shared(tmp_path, _FAIL_IN_A_FUNCTION, {"scripts/lib.py": " -- "})
     with pytest.raises(st.SourceTreeError, match="may_end_the_process"):
         library_findings(root)
+
+
+# --- fixtures: a shell script ends only through the helper ------------------------
+
+_SH_HEAD = '#!/bin/sh\n. "$(dirname "$0")/exit_codes.sh"\n'
+_SH_TAIL = 'exit "$EXIT_SUCCESS"\n'
+_SH_GOOD = (
+    _SH_HEAD
+    + '[ "$#" -eq 0 ] || exit_fail "$EXIT_USAGE" "tool: no argument" "$1" "drop it"\n'
+    + "shellcheck tool.sh\n"
+    + "status=$?\n"
+    + '[ "$status" -eq 0 ] || exit_passthrough "$status"\n'
+    + _SH_TAIL
+)
+
+
+def _sh_tree(tmp_path, monkeypatch, scripts, no_scripts=None, excluded=None):
+    """A git work tree holding the real Python helper, a shell block and
+    *scripts* {relpath: text}; nothing is committed, and git lists untracked
+    files, as a commit could carry them."""
+    work = tmp_path / "work"
+    work.mkdir()
+    for key, value in hermetic_git.git_env_vars(work).items():
+        monkeypatch.setenv(key, value)
+    root = tmp_path / "proj"
+    (root / "scripts").mkdir(parents=True)
+    (root / "config").mkdir()
+    shutil.copy(str(_ROOT / et.HELPER), str(root / et.HELPER))
+    shell = {"no_scripts": no_scripts, "excluded_paths": excluded or {}}
+    (root / "config" / "project.json").write_text(
+        json.dumps({"shell": shell}, sort_keys=True), encoding="utf-8"
+    )
+    for relpath, text in scripts.items():
+        (root / relpath).parent.mkdir(parents=True, exist_ok=True)
+        (root / relpath).write_text(text, encoding="utf-8")
+    subprocess.run(
+        ["git", "init", "-q"],
+        cwd=str(root),
+        env=hermetic_git.git_env(work),
+        check=True,
+        capture_output=True,
+    )
+    return root
+
+
+_SH_PASSES = {
+    "the good script": "",
+    "a braced member": 'exit "${EXIT_USAGE}"\n',
+    "an unquoted member": "exit $EXIT_USAGE\n",
+    "a wrapped status": 'shellcheck x.sh || exit_passthrough "$?"\n',
+    "a comment": "# exit 3\n",
+    "a double-quoted word": 'echo "exit 3; exit $?"\n',
+    "a single-quoted word": "echo 'exit 3'\n",
+    "a here-document body": "cat <<EOF\nexit 3\nEOF\n",
+    "a quoted here-document": "cat <<-'END'\n\texit 3\n\tEND\n",
+    "a member under a keyword": 'if true; then exit "$EXIT_FAILURE"; fi\n',
+    "a function that returns": "f() {\n    return 3\n}\n",
+    "a descriptor redirection": 'echo x >&2 2>/dev/null\nexit "$EXIT_USAGE" 2>&1\n',
+}
+
+
+@pytest.mark.parametrize("body", list(_SH_PASSES.values()), ids=list(_SH_PASSES))
+def test_a_shell_script_that_ends_through_the_helper_has_no_finding(
+    tmp_path, monkeypatch, body
+):
+    script = _SH_GOOD.replace(_SH_TAIL, body + _SH_TAIL)
+    root = _sh_tree(tmp_path, monkeypatch, {"scripts/tool.sh": script})
+    assert shell_findings(root) == {"files": 1, "findings": []}
+
+
+# (body placed on line 3, its finding's line, a fragment of the finding)
+_SH_FINDINGS = {
+    "a number": ("exit 3\n", 3, "`exit 3` writes a number"),
+    "a quoted number": ('exit "3"\n', 3, "writes a number"),
+    "the last status": ("exit $?\n", 3, "`exit $?` is not a member"),
+    "no status": ("exit\n", 3, "`exit` with no status"),
+    "an unknown member": ('exit "$EXIT_NOPE"\n', 3, "names EXIT_NOPE"),
+    "two words": ('exit "$EXIT_USAGE" 2\n', 3, "is not a member"),
+    "a failure that is SUCCESS": (
+        'exit_fail "$EXIT_SUCCESS" a b c\n',
+        3,
+        "a member other than SUCCESS",
+    ),
+    "a failure that is a number": ("exit_fail 3 a b c\n", 3, "other than SUCCESS"),
+    "a failure of three parts": ('exit_fail "$EXIT_USAGE" a b\n', 3, "four"),
+    "a blank part": ('exit_fail "$EXIT_USAGE" a "" c\n', 3, "blank message part"),
+    "a space part": ("exit_fail \"$EXIT_USAGE\" a ' ' c\n", 3, "blank message part"),
+    "a passthrough of a number": ("exit_passthrough 3\n", 3, "own status"),
+    "a passthrough of a member": (
+        'exit_passthrough "$EXIT_FAILURE"\n',
+        3,
+        "own status",
+    ),
+    "a passthrough of nothing": ("exit_passthrough\n", 3, "takes one argument"),
+    "under a keyword": ("if true; then exit 1; fi\n", 3, "`exit 1`"),
+    "after an and": ("true && exit 1\n", 3, "`exit 1`"),
+    "after an or": ("false || exit 1\n", 3, "`exit 1`"),
+    "in a subshell": ("(exit 1)\n", 3, "`exit 1`"),
+    "in a substitution": ("x=$(exit 1)\n", 3, "`exit 1`"),
+    "in a backquote": ("x=`exit 1`\n", 3, "`exit 1`"),
+    "after an assignment": ("x=1 exit 1\n", 3, "`exit 1`"),
+    "before a comment": ("exit 1 # done\n", 3, "`exit 1`"),
+    "after a here-document": ("cat <<EOF\nx\nEOF\nexit 1\n", 6, "`exit 1`"),
+    "after a continued line": ("echo a \\\n  b\nexit 1\n", 5, "`exit 1`"),
+    "after a quoted newline": ('echo "a\nb"\nexit 1\n', 5, "`exit 1`"),
+    "a descriptor taken for a status": ("exit 1>&2\n", 3, "`exit` with no status"),
+    "an open quote": ("echo 'a\n", 3, "a single quote is never closed"),
+    "an open here-document": ("cat <<EOF\nx\n", 3, "never closed by EOF"),
+}
+
+
+@pytest.mark.parametrize("case", list(_SH_FINDINGS.values()), ids=list(_SH_FINDINGS))
+def test_each_shell_ending_outside_the_helper_is_a_finding_at_its_line(
+    tmp_path, monkeypatch, case
+):
+    body, line, fragment = case
+    script = _SH_HEAD + body + _SH_TAIL
+    root = _sh_tree(tmp_path, monkeypatch, {"scripts/tool.sh": script})
+    result = shell_findings(root)
+    assert result["files"] == 1
+    assert len(result["findings"]) == 1, result
+    (finding,) = result["findings"]
+    assert finding.startswith("scripts/tool.sh:%d: " % line), finding
+    assert fragment in finding, finding
+
+
+def test_a_shell_script_that_does_not_source_the_helper_is_a_finding(
+    tmp_path, monkeypatch
+):
+    script = _SH_GOOD.replace(_SH_HEAD, "#!/bin/sh\n")
+    root = _sh_tree(tmp_path, monkeypatch, {"scripts/tool.sh": script})
+    assert shell_findings(root)["findings"] == [
+        "scripts/tool.sh:1: does not source %s, so it cannot end through it; add "
+        '`. "$(dirname "$0")/%s"` before its first command'
+        % (et.HELPER_SH, os.path.basename(et.HELPER_SH))
+    ]
+
+
+def test_a_shell_script_that_never_ends_through_the_helper_is_a_finding(
+    tmp_path, monkeypatch
+):
+    root = _sh_tree(tmp_path, monkeypatch, {"scripts/tool.sh": _SH_HEAD + "true\n"})
+    (finding,) = shell_findings(root)["findings"]
+    assert finding.startswith("scripts/tool.sh:1: never ends through"), finding
+
+
+def test_the_helper_and_an_excluded_script_are_not_judged(tmp_path, monkeypatch):
+    members = et.read_members(str(_ROOT))
+    root = _sh_tree(
+        tmp_path,
+        monkeypatch,
+        {
+            et.HELPER_SH: et.render_shell(members),
+            "vendor/tool.sh": "exit 3\n",
+            "scripts/tool.sh": _SH_GOOD,
+        },
+        excluded={"vendor": "a vendored tool"},
+    )
+    assert shell_findings(root) == {"files": 1, "findings": []}
+
+
+def test_a_shell_script_found_by_its_shebang_is_judged(tmp_path, monkeypatch):
+    root = _sh_tree(
+        tmp_path, monkeypatch, {"bin/tool": "#!/usr/bin/env bash\nexit 3\n"}
+    )
+    findings = shell_findings(root)["findings"]
+    assert findings[0].startswith("bin/tool:1: does not source"), findings
+    assert findings[1].startswith("bin/tool:2: `exit 3` writes a number"), findings
+
+
+def test_no_shell_script_and_no_reason_is_a_finding_not_a_pass(tmp_path, monkeypatch):
+    root = _sh_tree(tmp_path, monkeypatch, {})
+    result = shell_findings(root)
+    assert result["files"] == 0
+    assert len(result["findings"]) == 1 and "zero items" in result["findings"][0]
+
+
+def test_no_shell_script_with_a_reason_passes(tmp_path, monkeypatch):
+    root = _sh_tree(tmp_path, monkeypatch, {}, no_scripts="its gates are Python")
+    assert shell_findings(root) == {"files": 0, "findings": []}
+
+
+def test_a_blank_no_scripts_reason_is_refused_not_a_pass(tmp_path, monkeypatch):
+    root = _sh_tree(tmp_path, monkeypatch, {}, no_scripts="   ")
+    with pytest.raises(config_loader.ConfigError, match="shell.no_scripts"):
+        shell_findings(root)
