@@ -704,3 +704,31 @@ def test_the_report_reads_the_owner_vocabulary_without_the_corpus_gate():
     assert not report & {"check_corpus", "build_corpus", "check_structure"}, report
     vocabulary = _imports(_ROOT / "scripts" / "corpus_vocabulary.py")
     assert vocabulary <= set(sys.stdlib_module_names), vocabulary
+
+
+_NOT_A_CORPUS = [
+    pytest.param('{"nodes": null}', "`nodes` is null, not a list", id="nodes-null"),
+    pytest.param('{"nodes": "ab"}', "`nodes` is a str, not a list", id="nodes-str"),
+    pytest.param("{}", "`nodes` is missing", id="nodes-missing"),
+    pytest.param("[]", "is a list, not an object", id="not-an-object"),
+    pytest.param("{", "is not JSON", id="not-json"),
+]
+
+
+@pytest.mark.parametrize("flags", [(), ("--json",)], ids=["text", "json"])
+@pytest.mark.parametrize("text, why", _NOT_A_CORPUS)
+def test_a_corpus_without_a_nodes_list_is_refused_as_an_input_fault(
+    tmp_path, capsys, text, why, flags
+):
+    """A corpus that is not an object with a `nodes` list cannot be counted:
+    the report refuses it with USAGE and one line naming the file, what is
+    wrong with it and how to get a good one, instead of a traceback or a
+    count over nothing."""
+    out = tmp_path / "corpus.json"
+    out.write_text(text)
+    assert ar.main(["--corpus", str(out), *flags]) == ExitCode.USAGE
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    (line,) = captured.err.splitlines()
+    assert why in line and str(out) in line, line
+    assert "build_corpus.py" in line, line

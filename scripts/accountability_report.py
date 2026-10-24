@@ -14,7 +14,7 @@ import os
 import sys
 
 from corpus_vocabulary import OWNER_SOURCES
-from exit_codes import ExitCode, finish
+from exit_codes import ExitCode, finish, report
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -23,6 +23,26 @@ DEFAULT_CORPUS = os.path.join("wiki", "corpus.json")
 # What the text report prints for a field a corpus row does not carry; the
 # `--json` report gives such a field as null.
 MISSING = "(missing)"
+
+
+def _read_corpus(path: str) -> dict:
+    """The corpus at *path*, an object whose `nodes` is a list; ValueError
+    saying what it is instead when it is not one."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            corpus = json.load(fh)
+    except ValueError as exc:  # JSONDecodeError and UnicodeDecodeError
+        raise ValueError("it is not JSON (%s)" % exc) from exc
+    if not isinstance(corpus, dict):
+        raise ValueError("it is a %s, not an object" % type(corpus).__name__)
+    if "nodes" not in corpus:
+        raise ValueError("its `nodes` is missing")
+    nodes = corpus["nodes"]
+    if nodes is None:
+        raise ValueError("its `nodes` is null, not a list")
+    if not isinstance(nodes, list):
+        raise ValueError("its `nodes` is a %s, not a list" % type(nodes).__name__)
+    return corpus
 
 
 def _rows(corpus: dict) -> list:
@@ -88,8 +108,16 @@ def main(argv=None) -> int:
     if not os.path.exists(path):
         print("no corpus at %s; run build_corpus.py first." % args.corpus)
         return ExitCode.SUCCESS
-    with open(path, encoding="utf-8") as fh:
-        corpus = json.load(fh)
+    try:
+        corpus = _read_corpus(path)
+    except (OSError, ValueError) as exc:
+        return report(
+            ExitCode.USAGE,
+            "accountability: the corpus has no `nodes` list to count, since %s" % exc,
+            path,
+            "rebuild it with scripts/jobs/build_corpus.py (`make site-data`), or "
+            "pass --corpus a file build_corpus wrote",
+        )
     gaps = unowned(corpus)
     if args.json:
         json.dump(

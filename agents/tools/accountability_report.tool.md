@@ -40,8 +40,8 @@ and the report counts it on its own line. build_corpus writes that where a
 - When the `index_enforcer` reports owner gaps, to enumerate exactly which
   docs/sections/symbols need an owner assigned.
 - In CI/review to keep accountability from rotting.
-- NOT to gate the tree (that is `structure_check`, which errors; this always
-  exits 0) and NOT to build the corpus it reads (that is `build_corpus`).
+- NOT to gate the tree (that is `structure_check`, which errors; this exits
+  0 on any corpus it can count) and NOT to build the corpus it reads (that is `build_corpus`).
 
 ## Args
 | Flag | Required | Default | Meaning |
@@ -59,7 +59,10 @@ list of the unowned nodes only (`node_id`, `kind`, `path`), the owner gaps
 `index_enforcer` reads. A row that lacks a field the report shows is still
 listed: the field reads `(missing)` in text and `null` in JSON, and a row that
 is not an object counts as one with every field missing. No corpus present →
-prints a notice and exits 0.
+prints a notice and exits 0. A corpus that is not JSON, not an object, or has
+no `nodes` list (missing, null or another type) → prints nothing on stdout,
+one stderr line naming the file and what is wrong with it, and exits 2
+(`USAGE`).
 
 ## Side effects
 READ-ONLY. Reads the corpus; writes nothing; no model call.

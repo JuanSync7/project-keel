@@ -548,7 +548,9 @@ version rather than a bare commit:
   which claimed nothing owns it, and `scripts/accountability_report.py` counts
   and lists such nodes on their own line instead of counting them as owned;
   a row that lacks a field the report shows is listed with that field
-  missing, and the report still exits 0.
+  missing, and the report still exits 0. A corpus that is not JSON or has no
+  `nodes` list, a `{"nodes": null}` included, is refused with exit 2 and one
+  line naming the file, rather than a traceback or a count over nothing.
   A package `README.md` that cannot be read stops a module's owner walk, so
   the module and its symbols have an unknown owner (`owner` and
   `owner_source` null) rather than the owner above it or the default: the
