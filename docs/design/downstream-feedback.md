@@ -2886,6 +2886,7 @@ On 2026-10-22 the maintainer approved this order. Positions 1 to 9 come from the
 | 40 | KEEL-OWNER-2 | `scripts/jobs/build_corpus.py` records a `TBD` doc as unowned while check_F lets the same doc inherit config/project.json `accountability.default_owner`, so the corpus and the gate disagree on one tree; folds in the review's two Low findings, a written `null` owner read as an owner called "null", and a nullable key's refusal line that puts the bound on null; found by the KEEL-WARN-1 review Done: the corpus gives a TBD owner `accountability.default_owner` with owner source `default`, as check_F does, a written null is never an owner, and the wiki marks a default owner as a placeholder; the merged tree's full verify passed 4426 tests in 1 h 58 min | done |
 | 41 | KEEL-VIS-1 | Visibility resolution in `scripts/jobs/build_corpus.py` fails open: an owned child `README.md` with no `visibility` ends the walk, so it hides a confidential parent and its modules come out `internal`; the behaviour predates KEEL-OWNER-2, and only check_A's required `visibility` key keeps it off keel's tree; the decision to name is whether a node takes the most restrictive visibility on its chain; found by the KEEL-OWNER-2 review | planned |
 | 42 | KEEL-OWNER-3 | A doc or `README.md` owner outside `scripts/config_loader.py` `OWNER_GRAMMAR`, such as a quoted `"alice"`, silently becomes no owner in the corpus, and no gate names the grammar for it, because check_F judges only `kind: tool` and `kind: agent` documents; folds in two test gaps: `tests/integration/test_showcase_api.py::test_wiki_node_says_how_its_owner_was_resolved` reads the gitignored corpus, so it passes on a corpus with no `default` node, and a node with no `owner_source` field reads as `none` rather than unknown; found by the KEEL-OWNER-2 review | planned |
+| 39 | KEEL-RISK-2 | KEEL-RISK-1's redaction of npm's diagnostic leaks or over-hides in ten shapes its review found: a secret word in prose (`the password was X`) hides the linking word and shows the value; a raw `@` in a URL's userinfo shows the password's tail as the host; a plain word after a secret word (`password required`) is hidden; an unquoted value of several words shows every second word; a scheme-less `host/path` shows its path; a token as an IPv6 zone id is shown; npm's `Invalid URL` gets the generic advice; a word-prefixed token cut by hyphens passes as a host label; a CodeArtifact domain with no word part and a dotless host with a digit are hidden; and open item 17 still says react-vite ships no lockfile. Found by the KEEL-RISK-1 review; one commit per item | planned |
 
 The CMP-7 opening pass proposes the rows below. Their positions are proposals that the maintainer has not approved, and each row joins the table above only when the maintainer gives it a position. They start at 44 because position 43 is KEEL-VIS-2's, which lands first from its own branch.
 
@@ -3164,6 +3165,25 @@ Slice 4 is blocked on the pyverdex prerequisite above; slices 2 and 3 are
 not.
 
 KEEL-SHELL-1 follows KEEL-TESTQ-1.
+
+**KEEL-RISK-2, the redaction residuals.** Each item is one commit, built test
+first in `tests/unit/scripts/test_audit_dependencies.py` and shown red before
+`scripts/audit_dependencies.py` changes; each fixes the class its rule names,
+not the one sample (CONVENTIONS §18). Every changed pattern stays bounded, and
+`test_a_hostile_line_is_redacted_within_a_second` gains a case for each new one.
+
+| Item | Test it names | Rule it implements |
+|---|---|---|
+| 1 | `test_a_secret_word_in_prose_hides_its_value` | A secret word, then at most two linking words (`is`, `was`, `are`, `were`, `be`, `been`, `now`, `set`, `to`, `equals`), then a value: the value is judged, never the linking word |
+| 2 | `test_a_raw_at_in_userinfo_hides_up_to_the_last_at` | A URL's userinfo is everything before the last `@` of its authority, so a raw `@` in a password, or a userinfo with no password, is dropped and the host after it kept; a scheme-less `user:pass@host` likewise |
+| 3 | `test_a_plain_word_after_a_secret_word_is_kept` | After `=` or `:` a value is always hidden, since an assignment states one; after whitespace or a linking word alone the text is prose, and a plain word (letters only, lower case after the first) is kept, any other value hidden; a quote that opens no value there is punctuation |
+| 4 | `test_an_unquoted_value_of_several_words_is_hidden_whole` | An unquoted value after `=` or `:` runs to a comma, a semicolon, a quote, the next `name=` or `name:` pair, or the end of the line, and all of it is hidden |
+| 5 | `test_a_scheme_less_path_after_a_host_is_hidden` | A host with no scheme (a dotted name whose last label is letters, an IPv4 address, or any name with a port) followed by `/` loses its path to `<path hidden>`, as a URL does, and its host is judged as a URL's is |
+| 6 | `test_an_ipv6_zone_id_that_is_a_token_is_hidden` | A zone id longer than an interface name can be (15 characters on Linux), decoded from `%25`, is hidden; `%eth0` is kept |
+| 7 | `test_the_advice_follows_the_cause` (new rows) | `ERR_INVALID_URL` or `Invalid URL` names the registry URL in `.npmrc` as the thing to check |
+| 8 | `test_a_word_prefixed_token_label_is_hidden` | A label with a word part is a name only when no run of its non-word parts, hyphens kept, is itself a token, whatever word comes first |
+| 9 | `test_a_name_then_a_number_is_kept` | A 20-or-more-character label with no word part is a name when all its letters come before all its digits (`acme2024-111122223333`), and a single label is a host whether or not it holds a dot (`nexus3`); a label whose letters and digits interleave is a token |
+| 10 | none: a document row | Open item 17 says what the tree holds: both frontend apps commit `package-lock.json` |
 
 **The audit against the rule packages, version 0.10.0.** On 2026-10-17 a
 read-only audit compared keel with every rule id in the maintainer's four
