@@ -846,6 +846,25 @@ def test_a_margin_no_tool_limit_can_cover_is_refused_naming_the_margin(
     assert line in capsys.readouterr().err
 
 
+def test_the_loader_states_the_margin_s_cross_key_bound():
+    # The loader checks the margin alone; its accepted text must still give
+    # the bound tool_limits holds it to, so the two lines a user can see agree.
+    with pytest.raises(config_loader.WrongValue) as caught:
+        config_loader.resolve(
+            {"agents": {"tool_gate_margin_seconds": 0}},
+            config_loader.rows(("agents", "tool_gate_margin_seconds")),
+            config_loader.CONFIG_FILE,
+        )
+    accepted = "; ".join(caught.value.lines).split("accepted: ", 1)[1]
+    for named in (
+        "threading.TIMEOUT_MAX",
+        "make_targets.gate_timeout_seconds",
+        "make_targets.gate_stop_grace_seconds",
+        "tool_limits",
+    ):
+        assert named in accepted
+
+
 def test_the_largest_margin_a_tool_limit_can_cover_is_accepted(tmp_path):
     most = int(threading.TIMEOUT_MAX) - 70
     root = _tools_project(

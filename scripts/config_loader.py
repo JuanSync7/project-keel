@@ -776,7 +776,10 @@ KEYS = tuple(
                 "the gate runner's start and its two tree snapshots",
                 accepts=(
                     _at_least_one_second,
-                    "a value >= 1 and <= %s" % _MOST_SECONDS_TEXT,
+                    "a value >= 1 and <= %s less make_targets.gate_timeout_seconds "
+                    "and twice make_targets.gate_stop_grace_seconds of the "
+                    "same tree (that sum checked by scripts/resource_limits.py "
+                    "tool_limits)" % _MOST_SECONDS_TEXT,
                 ),
             ),
             # 15000 s: a tool child that runs a gate must outlast the gate
