@@ -272,9 +272,11 @@ _NEXT_ASSIGNMENT = re.compile(r"(?<![\s;,])\s{1,4}[A-Za-z_][\w.\-]{0,63}=")
 # its runs. The cap is not what keeps "token" * 10000 fast: a key glued to a
 # letter or digit opens no clause, so no clause word is read there at all,
 # and with the cap raised to 1 000 000 every 50 000-character row of the
-# timing test stays under 0.11 s. A longer word is split into
-# words of that length, each judged, so the split shows nothing a whole word
-# would hide. The cap is above a host and port (253 + 6 characters).
+# timing test stays under 0.11 s. A longer word is split into words of
+# that length, each judged, so a part after the first shows only when it is
+# a vocabulary word or up to three marks: `password` then 300 `x` and
+# `required` reads `password <hidden>required`, where the whole word would
+# be one `<hidden>`. The cap is above a host and port (253 + 6 characters).
 _CLAUSE_WORD_LIMIT = 300
 _CLAUSE_WORD = re.compile(
     r"\s{0,4}((?i:%s)[^\s\"'<>/,;]{0,%d}(?:/%s)?[^\w\s<]{0,3}|%s"

@@ -1148,7 +1148,10 @@ the line's end. A key followed by a letter or digit opens no clause, and
 that is what keeps such a line fast. A clause word is also read at most 300
 characters at a time, so its runs are bounded as every other pattern's are;
 `tests/unit/scripts/test_audit_dependencies.py` fails when that cap is
-raised. The line is redacted by structure, not by
+raised. A longer word is judged in 300-character parts, so a part after the
+first shows when it is a vocabulary word or up to three marks:
+`password` then 300 `x` and `required` reads `password <hidden>required`.
+The line is redacted by structure, not by
 a list of token shapes, because a list leaks every shape it does not name;
 each rule rewrites only its own span, so the cause (`ENOTFOUND`, `E401`,
 `Unable to authenticate`) stays readable.
