@@ -810,6 +810,58 @@ def test_a_value_that_is_no_plain_word_is_still_hidden(text, shown):
     assert audit_dependencies._redacted(text) == shown
 
 
+# After `=` or `:` an unquoted value runs on over spaces to a `,`, a `;`, a
+# quote, the next `name=` or `name:`, a word opening with `<`, or the line's
+# end, and all of it is hidden: a passphrase has spaces in it.
+@pytest.mark.parametrize(
+    "text, shown",
+    [
+        ("npm error password=my secret phrase", "npm error password=<hidden>"),
+        ("npm error token: correct horse battery", "npm error token: <hidden>"),
+        (
+            "password=my secret phrase, then npm stopped",
+            "password=<hidden>, then npm stopped",
+        ),
+        ("password=my secret; retry", "password=<hidden>; retry"),
+        (
+            "password=my secret user=bob",
+            "password=<hidden> user=bob",
+        ),
+        (
+            "password=my secret username: bob",
+            "password=<hidden> username: bob",
+        ),
+        (
+            "password=my secret token=other words",
+            "password=<hidden> token=<hidden>",
+        ),
+        ('password=my secret "quoted"', 'password=<hidden> "quoted"'),
+        ("password=my secret <cut to 9 characters>", None),
+        # Prose keeps the word after its value: only an assignment runs on.
+        (
+            "npm error password hunter2 was refused",
+            "npm error password <hidden> was refused",
+        ),
+    ],
+    ids=[
+        "equals",
+        "colon",
+        "comma",
+        "semicolon",
+        "next-key",
+        "next-key-colon",
+        "next-secret",
+        "quote",
+        "cut-marker",
+        "prose",
+    ],
+)
+def test_an_unquoted_value_of_several_words_is_hidden_whole(text, shown):
+    if shown is None:
+        shown = "password=<hidden> <cut to 9 characters>"
+    assert audit_dependencies._redacted(text) == shown
+
+
 # An AWS CodeArtifact registry's host: its first label mixes letters and
 # digits over 20 characters, the shape rule (d) hides elsewhere.
 _ARTIFACT_HOST = "my-domain-111122223333.d.codeartifact.invalid"
@@ -1060,8 +1112,9 @@ _TIMED_REDACTION = (
         ("token was x1 ", 1600, False),
         ("https://a@", 1600, False),
         ("a:", 8000, True),
+        ("token=x y z ", 1600, False),
     ],
-    ids=["a", "token", "token-was", "url-userinfo", "bare-userinfo"],
+    ids=["a", "token", "token-was", "url-userinfo", "bare-userinfo", "value-words"],
 )
 def test_a_hostile_line_is_redacted_within_a_second(unit, times, unchanged):
     argv = [sys.executable, "-c", _TIMED_REDACTION, str(_ROOT / "scripts")]

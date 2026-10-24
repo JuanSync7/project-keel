@@ -165,6 +165,11 @@ _KEY_VALUE = re.compile(
 # and is kept; any other value, a quoted one included, is hidden.
 _ASSIGNING = frozenset("=:")
 _PLAIN_WORD = re.compile(r"[A-Za-z][a-z]{1,63}[.!?]?")
+# After an assignment an unquoted value runs on, one word at a time, since a
+# passphrase has spaces in it. It ends at a `,`, a `;`, a quote, the next
+# `name=` or `name:`, a word opening with `<` (a marker this module writes)
+# or the line's end.
+_MORE_VALUE = re.compile(r"\s{1,4}(?![A-Za-z][\w.\-]{0,63}\s{0,4}[=:]|<)[^\s\"',;]+")
 # As in a URL, the password runs to the last `@` before a space or `/`.
 _BARE_USERINFO = re.compile(r"(?<![\w/])[\w.\-]{1,64}:[^\s/]{1,256}@(?=[\w\-])")
 # The places a host sits, which (d) judges by _host_shown rather than by the
@@ -359,11 +364,25 @@ def _scheme_shown(match):
     )
 
 
-def _key_value_shown(match):
-    key, separator, value = match.groups()
-    if not _ASSIGNING & set(separator) and _PLAIN_WORD.fullmatch(value):
-        return match.group(0)
-    return key + separator + _HIDDEN
+def _key_values_shown(line):
+    """*line* with the value after each secret word hidden: a plain word in
+    prose is kept, and an unquoted value after `=` or `:` is hidden to its end
+    (see _MORE_VALUE)."""
+    shown, at = [], 0
+    while match := _KEY_VALUE.search(line, at):
+        key, separator, value = match.groups()
+        end = match.end()
+        if not _ASSIGNING & set(separator):
+            if _PLAIN_WORD.fullmatch(value):
+                shown.append(line[at:end])
+                at = end
+                continue
+        elif value[0] not in "\"'":
+            while more := _MORE_VALUE.match(line, end):
+                end = more.end()
+        shown.append(line[at : match.start()] + key + separator + _HIDDEN)
+        at = end
+    return "".join(shown) + line[at:]
 
 
 def _is_token(run):
@@ -438,7 +457,7 @@ def _redacted(line):
     rules above and the rest of it kept."""
     line = _URL.sub(_url_shown, line)
     line = _SCHEME_VALUE.sub(_scheme_shown, line)
-    line = _KEY_VALUE.sub(_key_value_shown, line)
+    line = _key_values_shown(line)
     line = _BARE_USERINFO.sub(_HIDDEN + "@", line)
     return _TOKEN_RUN.sub(_token_shown, line)
 
