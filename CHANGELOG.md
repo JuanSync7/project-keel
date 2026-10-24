@@ -563,8 +563,8 @@ version rather than a bare commit:
   only when the chain states none; a document now takes the `README.md`s above
   it too. A file reached through a symlink also takes the chain of the file it
   really is, and a `README.md` that cannot be read, a dangling or looping link
-  included, passes on a value
-  check_corpus refuses rather than nothing. check_A fails a governed document
+  or a link to a directory included, passes on a value
+  check_corpus refuses rather than nothing, so it blocks every node below it. check_A fails a governed document
   that states a less restrictive visibility than a `README.md` above it, naming
   that `README.md`; it judges a file reached by a link and by its target once,
   at the path build_corpus keeps for it (the first in a sorted walk,

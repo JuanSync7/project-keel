@@ -2,7 +2,7 @@
 title: Unit — the corpus's visibility fails closed along each node's README chain
 kind: tests
 layer: n/a
-summary: build_corpus gives each doc, section, module and symbol the most restrictive visibility stated on its chain — its own frontmatter or docstring and every README.md from its directory up to the root — in scripts/check_structure.py VISIBILITY_ORDER, so a child README that states none, or states a looser level, can never hide a confidential parent; with nothing stated anywhere a node is `internal`, and a value outside the vocabulary outranks every member so check_corpus refuses each node under it. A file reached through a symlink takes the strictest of the path chain and its target's chain inside the root, and a README.md that cannot be read, a dangling or looping link included, passes on a marker that outranks every level.
+summary: build_corpus gives each doc, section, module and symbol the most restrictive visibility stated on its chain — its own frontmatter or docstring and every README.md from its directory up to the root — in scripts/check_structure.py VISIBILITY_ORDER, so a child README that states none, or states a looser level, can never hide a confidential parent; with nothing stated anywhere a node is `internal`, and a value outside the vocabulary outranks every member so check_corpus refuses each node under it. A file reached through a symlink takes the strictest of the path chain and its target's chain inside the root, and a README.md that cannot be read, a dangling or looping link or a link to a directory included, passes on a marker that outranks every level, so it blocks every node below it.
 """
 
 import itertools
@@ -309,3 +309,26 @@ def test_a_readme_link_that_reaches_no_file_is_unreadable(tmp_path, target):
     for node_id in ("src/pkg/m-py", "src/pkg/m-py::f", "d", "d#part"):
         assert vis[node_id] == bc.UNREADABLE_VISIBILITY, (node_id, vis[node_id])
     assert vis["src-readme"] == "public"
+
+
+@pytest.mark.parametrize("target", [".", "../other"])
+def test_a_readme_link_to_a_directory_blocks_every_node_below_it(tmp_path, target):
+    """A README.md that is a link to a directory is a name that cannot be
+    read as a file, so it is unreadable: every doc, section, module and
+    symbol below it, in its own directory and deeper, passes on the marker,
+    and check_corpus refuses each one."""
+    _write(tmp_path, "src/README.md", _readme("src-readme", None, "public"))
+    (tmp_path / "src" / "other").mkdir()
+    (tmp_path / "src" / "pkg").mkdir()
+    (tmp_path / "src" / "pkg" / "README.md").symlink_to(target)
+    _write(tmp_path, "src/pkg/m.py", _module("public"))
+    _write(tmp_path, "src/pkg/deep/d.md", _readme("d", None, "public"))
+    corpus = bc.build_corpus(str(tmp_path))
+    vis = {n["node_id"]: n["visibility"] for n in corpus["nodes"]}
+    below = ("src/pkg/m-py", "src/pkg/m-py::f", "d", "d#part")
+    for node_id in below:
+        assert vis[node_id] == bc.UNREADABLE_VISIBILITY, (node_id, vis[node_id])
+    assert vis["src-readme"] == "public"
+    refused = [e for e in cc.validate(corpus) if "invalid visibility" in e]
+    for node_id in below:
+        assert any(repr(node_id) in e for e in refused), (node_id, refused)

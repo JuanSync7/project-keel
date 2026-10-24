@@ -563,6 +563,12 @@ present-but-stale is an **error** naming `make site-data`. Staleness is judged
 on the *deterministic projection* — `index_enforcer`'s `"generated"` summary
 fills and semantic links are enrichment, not rot (ADR-K-0008).
 
+A node below a `README.md` that build_corpus cannot read (a decode fault, a
+dangling or looping link, or a link to a directory) has the visibility
+`unreadable-readme`, which this check refuses as an invalid visibility. One
+such `README.md` therefore blocks every doc, section, module and symbol in its
+directory and below until it is repaired (CONVENTIONS §1).
+
 **When to run.** In CI, and after any change to the corpus builders or to
 content that feeds the corpus.
 
