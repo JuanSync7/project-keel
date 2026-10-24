@@ -881,6 +881,47 @@ def test_a_served_level_outside_the_vocabulary_is_refused(tmp_path, value):
     assert "corpus.served_visibilities" in str(exc.value)
 
 
+@pytest.mark.parametrize(
+    "value, ending",
+    [
+        (["public", "secret"], '; refused members: "secret"'),
+        (["unreadable-readme"], '; refused members: "unreadable-readme"'),
+        (["secret", "public", "hush", "secret"], '; refused members: "secret", "hush"'),
+        (["public", None], "; refused members: null"),
+        (["public", "internal", "public"], '; repeated members: "public"'),
+        (None, "; accepted: a list of strings"),
+    ],
+    ids=["unknown", "marker", "each-once", "null-member", "repeated", "null"],
+)
+def test_a_refused_served_level_names_the_member_it_refuses(tmp_path, value, ending):
+    """The line names each member the list is refused for, once each in
+    the order written, rather than only `is array`, and a null is named
+    once, by its type."""
+    root = _root_with(tmp_path, {"corpus": {"served_visibilities": value}})
+    with pytest.raises(WrongValue) as exc:
+        config_loader.served_visibilities(root, stream=io.StringIO())
+    (line,) = exc.value.lines
+    assert line.endswith(ending), line
+    if value is None:
+        assert line.count("null") == 1, line
+
+
+def test_a_list_refused_as_a_whole_names_no_member():
+    """A bound on the whole list (here: not empty) refuses no single member,
+    so the line names none."""
+    bound = (lambda v: bool(v), "at least one member")
+    with pytest.raises(WrongValue) as exc:
+        resolve(
+            {"k": {"x": []}},
+            (_key(("k", "x"), "list_of_str", NONE, accepts=bound),),
+            _WHERE,
+            environ={},
+            stream=io.StringIO(),
+        )
+    (line,) = exc.value.lines
+    assert line.endswith("; accepted: a list of strings with at least one member"), line
+
+
 def test_the_visibility_vocabulary_matches_the_gates_copy():
     sys.path.insert(0, str(_ROOT / "scripts" / "jobs"))
     import check_corpus
