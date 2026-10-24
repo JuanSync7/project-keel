@@ -99,7 +99,10 @@ states it: the level build_corpus serves the node at.
 
 Every reader the project serves acts on the level, through one allowlist:
 `config/project.json` `corpus.served_visibilities`, `public` and `internal` by
-default, read by `scripts/config_loader.py` `served_visibilities`. The readers
+default, read by `scripts/config_loader.py` `served_visibilities`. Each reader
+decides served-or-not through `config_loader.is_served`, the one copy of that
+decision, and cuts the ids of hidden nodes out of a served node's links,
+children and parent through `config_loader.cut_hidden`. The readers
 are the showcase API (node detail, search, the doc tree, links, children,
 parent and counts), its `/llms.txt` and `/llms-full.txt`, the static site
 export `make site-static` publishes, the wiki navigator agent and the MCP Q&A

@@ -901,3 +901,60 @@ def test_the_visibility_vocabulary_matches_the_gates_copy():
 def test_the_served_levels_row_ships_its_default():
     (row,) = config_loader.rows(_SERVED)
     assert row.default == ["public", "internal"] and row.file == CONFIG_FILE
+
+
+_LEVELS = frozenset({"public", "internal"})
+
+
+@pytest.mark.parametrize(
+    "node, served",
+    [
+        ({"visibility": "public"}, True),
+        ({"visibility": "internal"}, True),
+        ({"visibility": "confidential"}, False),
+        ({"visibility": "restricted"}, False),
+        ({"visibility": "unreadable-readme"}, False),
+        ({}, False),
+        ({"visibility": None}, False),
+        ({"visibility": ["public"]}, False),
+    ],
+    ids=[
+        "public",
+        "internal",
+        "confidential",
+        "restricted",
+        "unreadable",
+        "no-field",
+        "null",
+        "a-list",
+    ],
+)
+def test_a_node_is_served_only_at_a_stated_level_in_the_allowlist(node, served):
+    """A node with no `visibility` field, or one that is not a level string,
+    is not served: fail closed, never assumed internal."""
+    assert config_loader.is_served(node, _LEVELS) is served
+
+
+def test_the_cut_drops_every_hidden_id_from_links_children_and_parent():
+    node = {
+        "node_id": "a",
+        "visibility": "public",
+        "parent": "secret",
+        "children": ["b", "secret#1"],
+        "links": [{"to": "b", "kind": "mention"}, {"to": "secret"}, "secret"],
+    }
+    got = config_loader.cut_hidden(node, {"a", "b"})
+    assert got == {
+        "node_id": "a",
+        "visibility": "public",
+        "parent": None,
+        "children": ["b"],
+        "links": [{"to": "b", "kind": "mention"}],
+    }
+    # A copy: the corpus the caller holds is never edited behind its back.
+    assert node["parent"] == "secret" and len(node["links"]) == 3
+
+
+def test_the_cut_keeps_a_served_parent_and_leaves_an_absent_field_absent():
+    node = {"node_id": "a#1", "parent": "a"}
+    assert config_loader.cut_hidden(node, {"a", "a#1"}) == node

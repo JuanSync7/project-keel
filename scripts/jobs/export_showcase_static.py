@@ -22,6 +22,9 @@ WHO = "export_showcase_static"
 # The read model lives in the domain (src/backend/showcase), reused by the live
 # API (api/rest_fastapi/showcase_api.py) and this static export — one source of
 # truth, so the snapshot matches the live JSON byte-for-byte in shape.
+# The root too: the domain reads the served levels through the package
+# `scripts`, whose config_loader is the one served-or-not decision.
+sys.path.insert(0, ROOT)
 sys.path.insert(0, os.path.join(ROOT, "src"))
 sys.path.insert(0, os.path.join(ROOT, "scripts"))
 

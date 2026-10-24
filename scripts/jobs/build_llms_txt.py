@@ -20,6 +20,9 @@ ROOT = os.path.dirname(os.path.dirname(_HERE))
 WHO = "build_llms_txt"
 # The rendering logic lives in the domain (src/backend/showcase), reused by both
 # the API (live) and this job (static files) — one source of truth.
+# The root too: the domain reads the served levels through the package
+# `scripts`, whose config_loader is the one served-or-not decision.
+sys.path.insert(0, ROOT)
 sys.path.insert(0, os.path.join(ROOT, "src"))
 sys.path.insert(0, os.path.join(ROOT, "scripts"))
 

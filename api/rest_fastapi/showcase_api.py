@@ -13,14 +13,15 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query, Response
 
-from backend.showcase import load_showcase, to_jsonable
-
 # The repository root, so the bottom-layer config reader imports as the package
-# `scripts`, the way serve.py reaches it.
+# `scripts`, the way serve.py reaches it; before the domain, which reads its
+# served-or-not decision from there too.
 _REPO = str(Path(__file__).resolve().parents[2])
 if _REPO not in sys.path:
     sys.path.insert(0, _REPO)
 from scripts import config_loader  # noqa: E402
+
+from backend.showcase import load_showcase, to_jsonable  # noqa: E402
 
 _MD = "text/markdown; charset=utf-8"
 

@@ -67,10 +67,11 @@ def _system_prompt():
 def _visible(nodes, served=None):
     """The members of *nodes* at a level in *served*, or in this repository's
     ``corpus.served_visibilities`` when None. A node that states no level, or a
-    level outside the vocabulary, is dropped: absent, never assumed open."""
+    level outside the vocabulary, is dropped: absent, never assumed open, by
+    config_loader.is_served, the decision every corpus reader shares."""
     if served is None:
         served = config_loader.served_visibilities(_REPO)
-    return [n for n in nodes if n.get("visibility") in served]
+    return [n for n in nodes if config_loader.is_served(n, served)]
 
 
 def _answer_prompt(question, nodes):

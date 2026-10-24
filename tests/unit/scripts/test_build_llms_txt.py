@@ -2,10 +2,11 @@
 title: Unit — llms.txt and llms-full.txt hold only the levels the project serves
 kind: tests
 layer: n/a
-summary: scripts/jobs/build_llms_txt.py writes the agent front door into wiki/; a node outside config/project.json corpus.served_visibilities is absent from both files, the configured list rather than a literal decides which nodes those are, and a refused level exits CONFIG with nothing written.
+summary: scripts/jobs/build_llms_txt.py writes the agent front door into wiki/; a node outside config/project.json corpus.served_visibilities is absent from both files, the configured list rather than a literal decides which nodes those are, a refused level exits CONFIG with nothing written, and the job run as its own process from outside the repository writes both files rather than skipping.
 """
 
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -17,6 +18,7 @@ sys.path.insert(0, str(_ROOT / "scripts" / "jobs"))
 
 import build_corpus as bc  # noqa: E402
 import build_llms_txt as llms  # noqa: E402
+from child_env import build_child_env  # noqa: E402
 from exit_codes import ExitCode  # noqa: E402
 
 pytestmark = pytest.mark.unit
@@ -96,3 +98,20 @@ def test_a_refused_served_level_writes_nothing(tmp_path, capsys):
     )
     assert not out.exists()
     assert "corpus.served_visibilities" in capsys.readouterr().err
+
+
+def test_the_job_run_as_its_own_process_writes_both_files(tmp_path):
+    """Run as make runs it, from outside the repository: the domain must import
+    on the job's own path, or the job skips with exit 0 and writes nothing."""
+    _project(tmp_path)
+    out = tmp_path / "site"
+    proc = subprocess.run(
+        [sys.executable, "-I", str(_ROOT / "scripts" / "jobs" / "build_llms_txt.py")]
+        + ["--root", str(tmp_path), "--out-dir", str(out)],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        env=build_child_env(root=str(_ROOT)),
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert sorted(_written(out)) == ["llms-full.txt", "llms.txt"]

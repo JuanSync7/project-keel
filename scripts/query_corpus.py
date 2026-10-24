@@ -80,7 +80,7 @@ def query(
     nodes = {
         n["node_id"]: n
         for n in corpus.get("nodes", [])
-        if n.get("visibility") in served
+        if config_loader.is_served(n, served)
     }
     q = _tokens(question)
     if not q:

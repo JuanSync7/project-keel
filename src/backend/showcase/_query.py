@@ -11,6 +11,8 @@ import re
 from collections.abc import Collection
 from typing import Any
 
+from scripts import config_loader
+
 from ._models import DocGroup, NodeDetail, NodeRef, SearchHit
 
 # A corpus is {"schema_version": int, "nodes": [<node>, ...]}; a node is a flat
@@ -43,10 +45,16 @@ def served(corpus: _Corpus, visibilities: Collection[str]) -> _Corpus:
 
     A node with no level, or one outside the vocabulary such as the corpus's
     `unreadable-readme` marker, is in no allowlist the config loader accepts,
-    so it is dropped too: absent, never redacted.
+    so it is dropped too: absent, never redacted. Each kept node's links,
+    children and parent are cut to the kept ids, so no served node names a
+    hidden one. Both decisions are scripts/config_loader.py's, the one copy
+    every corpus reader shares.
     """
-    nodes = [n for n in corpus.get("nodes", []) if n.get("visibility") in visibilities]
-    return {**corpus, "nodes": nodes}
+    kept = [
+        n for n in corpus.get("nodes", []) if config_loader.is_served(n, visibilities)
+    ]
+    shown = {n.get("node_id") for n in kept}
+    return {**corpus, "nodes": [config_loader.cut_hidden(n, shown) for n in kept]}
 
 
 def count_kinds(corpus: _Corpus) -> dict[str, int]:
