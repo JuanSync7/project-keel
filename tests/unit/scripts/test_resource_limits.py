@@ -129,7 +129,7 @@ def test_a_child_that_exits_while_a_grandchild_holds_the_pipe_returns_its_status
     tmp_path,
 ):
     # The leader's exit ends the call: the grandchild gets one short drain
-    # window, then its group is ended; the leader's status and output stand.
+    # window, then its session is ended; the leader's status and output stand.
     pidfile = tmp_path / "grandchild.pid"
     started = time.monotonic()
     done = resource_limits.run_bounded(
@@ -172,7 +172,7 @@ def test_a_grandchild_holding_stdin_unread_does_not_hold_the_call(
 def test_a_setsid_process_holding_the_pipe_leaks_no_thread_or_file(
     tmp_path, leader_sleeps
 ):
-    # setsid takes the grandchild out of the group, so nothing ends it; the
+    # setsid takes the grandchild out of the child's session, so nothing ends it; the
     # call still returns within its limit plus one drain window, and releases
     # every reader thread and pipe it opened.
     pidfile = tmp_path / "grandchild.pid"
@@ -198,9 +198,9 @@ def test_a_setsid_process_holding_the_pipe_leaks_no_thread_or_file(
     assert elapsed < 2 + resource_limits._DRAIN_S + 1.5
 
 
-def test_an_exception_while_the_child_runs_ends_its_group(tmp_path, monkeypatch):
+def test_an_exception_while_the_child_runs_ends_its_session(tmp_path, monkeypatch):
     # A KeyboardInterrupt in the wait stands in for any exception there: the
-    # caller loses the child, so nothing else would end its group.
+    # caller loses the child, so nothing else would end its session.
     pidfile = tmp_path / "grandchild.pid"
     script = (
         "import subprocess, sys, time;"
