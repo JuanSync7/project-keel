@@ -141,6 +141,16 @@ chain of every other path that links to it (`scripts/check_structure.py`
 `served_chain`). A README.md that only another link's path passes through, made
 stricter after the build, takes effect at the next build.
 
+One residual risk is authored, not a corpus leak, and no reader removes it. A
+served document's own text is served as written, so a link in it can name a
+hidden document's path in its link text or target. A node's default id is
+derived from its path (`scripts/jobs/build_corpus.py` uses a document's `id:`
+frontmatter, else its path), so that path can match the hidden node's id. The
+reader still answers that id as an unknown node and never serves its body. The
+name itself is content the served document's author wrote and published, so
+keep a hidden document's path out of a served document's text. A hidden
+document can also state an `id:` that does not echo its path.
+
 Readers that never show a node to an audience need no check:
 
 - `scripts/jobs/build_corpus.py`, `scripts/jobs/link_corpus.py` and

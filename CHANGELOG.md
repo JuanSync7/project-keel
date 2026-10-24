@@ -757,7 +757,9 @@ version rather than a bare commit:
   `config_loader.is_served_now` serves the body only when the stricter of
   that level and the corpus's is served, so a document reclassified after
   the corpus was built is not sent or served. A file whose level cannot be
-  read now is not served either.
+  read now is not served either. CONVENTIONS §1 names the residual risk: a
+  served document's own link text can name a hidden document's path, which a
+  default id is derived from.
   (KEEL-VIS-2)
 - **The astro app's audited dependencies move past their advisories.**
   `npm audit` in `src/frontend/astro` reported 28 findings (2 critical, 17
