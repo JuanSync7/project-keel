@@ -2449,7 +2449,11 @@ The slices touch shared files, so their order is fixed:
   `docs/guides/deterministic-checks.md`); keel-exit, keel-goals and
   keel-xdist edit `config/project.json` and its twin as well. CMP-7.S1 to
   CMP-7.S4 start after those have merged, and each slice repeats the
-  measurement before it starts.
+  measurement before it starts. keel-lint-pre-rebase is a backup of
+  keel-lint and edits the same files. Every unmerged branch edits
+  `docs/design/downstream-feedback.md`, and most edit
+  `scripts/config_loader.py`. keel-exit, keel-goals and keel-xdist also edit
+  `docs/design/make-next-steps.md`.
 - CMP-7.S1, CMP-7.S2 and CMP-7.S3 each edit `scripts/check_structure.py` (the
   reader, the kind sets, the README rules). They run in series, S1 then S2
   then S3.
@@ -2546,13 +2550,14 @@ does not judge it a second time. This is the study's slice 4 without the
 five-W header and the module header fields, and the inventory's gap 5.
 
 The ADR contract is judged per number space (CONVENTIONS §19). An accepted
-ADR is immutable (`docs/adr/README.md`, ADR-K-0001), so in keel's template
+ADR is immutable (`docs/adr/README.md`, ADR-K-0001). So in keel's template
 space, `adr.template_dir` with the `K-` prefix, an ADR numbered below a
-cut-off is not judged, and keel's three that lack the heading (K-0001,
+cut-off is not judged. Keel's three ADRs that lack the heading (K-0001,
 K-0003 and K-0004) are exempt by number. The cut-off is K-0005, the first
-`K-` number after the last ADR that lacks the heading, not the next free
-number: an accepted ADR never changes, so judging K-0002 and K-0005 to K-0027
-costs nothing today and holds them to the contract. It is a new key,
+`K-` number after the last ADR that lacks the heading. It is not the next
+free number. Judging K-0002 and K-0005 to K-0027 costs nothing today,
+because an accepted ADR never changes, and it holds them to the contract.
+The cut-off is a new key,
 `adr.template_contract_from` (5), which sits beside `adr.template_prefix` in
 both `config/project.json` and its `config/project.json.jinja` twin, so it
 renders into every generated project; it is read through
@@ -2563,8 +2568,8 @@ project's `NNNN` space in `adr.project_dir`, which is judged from 0001.
 - Done when: a fixture root README missing a contract heading is red; a new
   `K-` ADR fixture, numbered at the cut-off, with no
   `## Alternatives considered` is red, and a `K-` fixture numbered below it is
-  not judged; K-0002 and K-0005 to K-0027 pass; a project-space fixture `0001-…` with no
-  `## Alternatives considered` is red whatever `adr.template_contract_from`
+  not judged; K-0002 and K-0005 to K-0027 pass; a project-space fixture
+  `0001-…` with no `## Alternatives considered` is red whatever `adr.template_contract_from`
   holds; every rendered skeleton equals its kind's row; a hand mutation of the
   heading comparison, of the cut-off comparison and of the space test each
   turns the suite red; keel's tree and a generated project pass;
@@ -2594,14 +2599,24 @@ becomes a thin wrapper over it, which `scripts/audit_project.py` and the
 other callers keep calling. The runner raises `GitFailedError` on a git that
 ran and failed (a corrupt `.git`, a repository git refuses as unsafe), so the
 gate stops with git's status quoted rather than skipping. Exit 128 is git's
-generic failure and is never an answer. Two non-zero exits are expected, each
-named at its call (measured): `rev-parse --verify -q HEAD` with an unborn HEAD
-exits 1, which the runner answers by reusing `git_tree.head_commit` returning
-None rather than a second rule; and `config --get-regexp` with no key matched
-exits 1. `log -1 --format=%cs -- <file>` over a file never committed, in a
-repository with a commit, exits 0 with empty output, which is the answer
-"no commit". With an unborn HEAD the judge does not run `log` at all, because
-`log -1` there exits 128, the same as a corrupt repository.
+generic failure and is never an answer. Two non-zero exits are expected, and
+each is named at its call (measured). `rev-parse --verify -q HEAD^{commit}`,
+as `git_tree.head_commit` runs it, exits 1 with an unborn HEAD. The runner
+answers that exit by reusing `git_tree.head_commit`, which returns None, rather
+than by a second rule. `config --get-regexp` with no key matched exits 1.
+`log -1 --format=%cs -- <file>` over a file never committed, in a repository
+with a commit, exits 0 with empty output. That empty output is the answer
+"no commit". With an unborn HEAD the judge does not run `log` at all. `log -1`
+there exits 128, the same as a corrupt repository.
+A corrupt `.git` nested inside another repository does not fail: git skips the
+unreadable `.git` and answers from the parent, and `rev-parse --show-toplevel`
+names the parent with exit 0. So S4 also makes the judge compare
+`rev-parse --show-toplevel` with the directory whose `.git` entry
+`git_tree.inside_a_repository`'s walk finds first, and raise `GitFailedError`
+on a mismatch. S4 makes that walk return the directory it found, and
+`inside_a_repository` keeps its true-or-false answer over it. A project
+generated as a subproject ("Open decisions for CMP-7", item 8) is the layout
+that reaches this case.
 `scripts/jobs/review_docs.py` calls the runner in place of its own `_git`.
 `test-docs/coverage/register.md` is deleted. With `coverage/` empty,
 `test-docs/README.md` stops naming a coverage register: its frontmatter
@@ -2618,8 +2633,16 @@ matrix (the study's TST-16).
   --get-regexp` that matches nothing, a `log -1` over a never-committed file
   in a repository with a commit, which exits 0 with empty output) returns it
   and does not raise; a case with an unborn HEAD and staged documents passes
-  and runs no `log`; a hand mutation whose runner accepts exit 128 from `log`
-  turns the corrupt-`.git` case red; a case runs the judge over a
+  and runs no `log`; the corrupt-`.git` case stops the gate through
+  `git_tree.head_commit`'s `GitFailedError`; a fault-injected runner returns
+  128 for `log` alone while `rev-parse`, `ls-files` and `status` answer, the
+  gate stops on it, and a hand mutation whose runner accepts exit 128 from
+  `log` turns that case red; in a scratch repository holding a nested
+  directory whose `.git` is corrupt, with `GIT_CEILING_DIRECTORIES` set to
+  the scratch repository's parent so the verdict does not depend on where
+  pytest's scratch lives, the judge run over the nested directory stops on
+  the top-level mismatch, and a hand mutation that drops the comparison turns
+  that case red; a case runs the judge over a
   repository whose config names a filter driver that would write a marker
   file, and shows no marker is written, no `.git/index.lock` appears and
   `.git/index` is unchanged; every case runs under `tests/hermetic_git.py`
@@ -2705,6 +2728,7 @@ as if they are taken as recommended; a different ruling rewrites it.
 | CMP-7.S3 | A writer copies a folder README's skeleton: can it drift from the check? | What each CMP-7 slice builds | defended | — |
 | CMP-7.S4 | A generated project before its first `git init`: is its first `make verify` red? | What each CMP-7 slice builds | defended | — |
 | CMP-7.S4 | A corrupt `.git`: does the freshness gate read it as no git and skip? | What each CMP-7 slice builds | gap | Change: S4 reads git through `scripts/git_tree.py` and stops on `GitFailedError` |
+| CMP-7.S4 | A corrupt `.git` nested inside another repository: does git answer from the parent, so the judge judges the wrong repository? | What each CMP-7 slice builds, the nested corrupt-`.git` case | defended | — |
 | CMP-7.S4 | Is the judge's git truly read-only: can it take the index lock or run the judged repository's filter? | What each CMP-7 slice builds | gap | Change: S4's runner keeps the read-only prefix, and a case shows no lock file and no filter run |
 | CMP-7.S4 | The same tree on another host or a clean home: does the verdict change? | What each CMP-7 slice builds | gap | Change: S4's cases run under `tests/hermetic_git.py` `git_env`. Cut: no case runs on a second host or interpreter |
 | The campaign | A month later, a check depends on today's date | What each CMP-7 slice builds | defended | — |
@@ -2796,7 +2820,8 @@ recommendation. Items 1 to 5 block CMP-7.S1.
    `git init` in copier's `_tasks` nor a config key is added. A `git init`
    would create a second repository inside an existing one when a project is
    generated as a subproject, which `copier.yml`'s migration notes allow for;
-   a config key would excuse what the skip already states.
+   a config key would excuse what the skip already states. CMP-7.S4's
+   nested corrupt-`.git` case covers a subproject inside a parent repository.
 9. **The cap.** Recommendation: read "five slices, the opening pass included"
    as four built slices, so CMP-7.S4 is the last; a fifth needs the
    maintainer's word.
