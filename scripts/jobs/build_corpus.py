@@ -43,6 +43,8 @@ from check_structure import (  # noqa: E402
     _prose_lines,
     _resolve_link,
     _unfenced_lines,
+    readme_chain,
+    readmes_upward,
     strictest_visibility,
 )
 from exit_codes import ExitCode, finish, report  # noqa: E402
@@ -510,12 +512,10 @@ def _sections(body, doc_id, rel, doc_res, doc_visibility, nodes, refs, default):
         )
 
 
-def _readmes_upward(dirpath: str, root: str):
-    """Yield (path relative to *root*, frontmatter dict) for each README.md
-    from *dirpath* up to *root*, nearest first."""
-    d = dirpath
-    while True:
-        readme = os.path.join(d, "README.md")
+def _readme_pairs(readmes, root):
+    """(path relative to *root*, frontmatter dict) for each README.md in
+    *readmes*, in order, skipping one that is not there."""
+    for readme in readmes:
         if os.path.isfile(readme):
             try:
                 with open(readme, encoding="utf-8-sig") as fh:
@@ -528,31 +528,28 @@ def _readmes_upward(dirpath: str, root: str):
                 # check_corpus refuses each node below it rather than serve it
                 # at a looser level. The walk continues to the parent.
                 fm = {"visibility": UNREADABLE_VISIBILITY}
-            yield _rel(readme, root), fm or {}
-        if os.path.abspath(d) == os.path.abspath(root):
-            return
-        parent = os.path.dirname(d)
-        if parent == d:
-            return
-        d = parent
+            yield _tree_rel(readme, root), fm or {}
+
+
+def _tree_rel(path, root):
+    """*path* relative to *root*, or to the real *root* for a path
+    scripts/check_structure.py readme_chain reached through it."""
+    if os.path.abspath(path).startswith(os.path.abspath(root) + os.sep):
+        return _rel(path, root)
+    return _rel(path, os.path.realpath(root))
+
+
+def _readmes_upward(dirpath: str, root: str):
+    """Yield (path relative to *root*, frontmatter dict) for each README.md
+    from *dirpath* up to *root*, nearest first."""
+    return _readme_pairs(readmes_upward(dirpath, root), root)
 
 
 def _visibility_readmes(path, root):
-    """The README.md chain a node at *path* takes its visibility from: the
-    chain of the path the walk reached it by, then, when *path* is a symlink
-    to a file elsewhere in *root*, the chain of the file it really is. A
-    link into an open directory therefore cannot publish a confidential
-    file. A target outside *root* has no README.md in the tree to add."""
-    readmes = list(_readmes_upward(os.path.dirname(path), root))
-    real_root = os.path.realpath(root)
-    real = os.path.realpath(path)
-    real_dir = os.path.dirname(real)
-    walked_dir = os.path.realpath(os.path.dirname(path))
-    if real_dir != walked_dir and (
-        real_dir == real_root or real_dir.startswith(real_root + os.sep)
-    ):
-        readmes.extend(_readmes_upward(real_dir, real_root))
-    return readmes
+    """The (rel path, frontmatter) pairs of scripts/check_structure.py
+    readme_chain for a node at *path*: the chain check_A judges the same file
+    by."""
+    return list(_readme_pairs(readme_chain(path, root), root))
 
 
 def _chain_visibility(own, readmes):

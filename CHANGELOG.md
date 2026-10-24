@@ -559,7 +559,10 @@ version rather than a bare commit:
   really is, and a `README.md` that cannot be read passes on a value
   check_corpus refuses rather than nothing. check_A fails a governed document
   that states a less restrictive visibility than a `README.md` above it, naming
-  that `README.md`. This fixes the level the corpus records. Only the wiki
+  that `README.md`; it judges a symlinked file at the path of the file it
+  really is, against the `README.md` chain build_corpus ranks it by, so a link
+  walked first can no longer hide the contradiction or name the wrong level.
+  This fixes the level the corpus records. Only the wiki
   navigator, and the MCP Q&A server through it, drop `confidential` and
   `restricted` nodes; the showcase API, its `/llms-full.txt` and the static
   site export do not filter by visibility yet.

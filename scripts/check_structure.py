@@ -595,35 +595,73 @@ def check_frontmatter(path, seen_ids):
         warn("%s: frontmatter missing 'owner'" % rel(path))
 
 
-def _visibility_contradictions(stated):
+def readmes_upward(dirpath, root):
+    """The README.md path of each directory from *dirpath* up to *root*,
+    nearest first, each joined the way *dirpath* is and whether or not it
+    exists; a caller keeps the ones it can find. Pure."""
+    chain = []
+    d = dirpath
+    while True:
+        chain.append(os.path.join(d, "README.md"))
+        if os.path.abspath(d) == os.path.abspath(root):
+            return chain
+        parent = os.path.dirname(d)
+        if parent == d:
+            return chain
+        d = parent
+
+
+def readme_chain(path, root):
+    """The README.md paths a node at *path* takes its visibility from,
+    nearest first: readmes_upward of the path the walk reached it by, then,
+    when *path* is a symlink to a file elsewhere inside *root*, readmes_upward
+    of the file it really is. build_corpus ranks a node by this chain and
+    check_A judges a file by it, so the two cannot disagree. A link into an
+    open directory therefore cannot publish a confidential file; a target
+    outside *root* adds nothing, so the walk never climbs out of the tree."""
+    chain = readmes_upward(os.path.dirname(path), root)
+    real_root = os.path.realpath(root)
+    real_dir = os.path.dirname(os.path.realpath(path))
+    walked_dir = os.path.realpath(os.path.dirname(path))
+    if real_dir != walked_dir and (
+        real_dir == real_root or real_dir.startswith(real_root + os.sep)
+    ):
+        chain += readmes_upward(real_dir, real_root)
+    return chain
+
+
+def _relative_chain(path):
+    """readmes_upward of *path*'s directory, for a *path* relative to the root."""
+    return readmes_upward(os.path.dirname(path), "")
+
+
+def _visibility_contradictions(stated, chain=None):
     """One message per governed file that states a visibility less
-    restrictive than a README.md above it, from *stated*: {relpath: stated
-    visibility}. The ancestors are the READMEs of the file's own directory
-    and every directory up to the root (a README is never looser than
-    itself, so it needs no exception); a value outside
-    VISIBILITY_ORDER is left to the invalid-visibility error. Pure.
+    restrictive than a README.md on its chain, from *stated*: {path: stated
+    visibility}. *chain* maps a path in *stated* to the README.md paths, as
+    *stated* keys them, it takes its visibility from; by default the README
+    of the file's own directory and of every directory up to the root (a
+    README is never looser than itself, so it needs no exception). A value
+    outside VISIBILITY_ORDER is left to the invalid-visibility error. Pure
+    when *chain* is.
 
     The corpus gives a node the strictest visibility on its chain, so the
     looser level would be overridden in silence; the message names the
     README that wins and both ways to agree with it."""
+    chain = chain or _relative_chain
     found = []
     for path in sorted(stated):
         own = stated[path]
         if own not in VISIBILITY_ORDER:
             continue
         strictest, where = None, None
-        d = os.path.dirname(path)
-        while True:
-            readme = os.path.join(d, "README.md")
+        for readme in chain(path):
             above = stated.get(readme)
             if above in VISIBILITY_ORDER and (
                 strictest is None
                 or VISIBILITY_ORDER.index(above) > VISIBILITY_ORDER.index(strictest)
             ):
                 strictest, where = above, readme
-            if not d:
-                break
-            d = os.path.dirname(d)
         if strictest and VISIBILITY_ORDER.index(own) < VISIBILITY_ORDER.index(
             strictest
         ):
@@ -636,14 +674,27 @@ def _visibility_contradictions(stated):
     return found
 
 
+def _real_rel(path):
+    """*path* relative to ROOT by the file it really is, when that file is
+    inside ROOT; else by *path* itself. One file reached by two paths (a link
+    and its target) has one key, so check_A judges it once, where it is."""
+    real_root = os.path.realpath(ROOT)
+    real = os.path.realpath(path)
+    if real.startswith(real_root + os.sep):
+        return os.path.relpath(real, real_root)
+    return rel(path)
+
+
 def check_A():
     seen_ids = {}
     seen_real = set()  # dedupe symlink + target (CLAUDE.md -> AGENT.md)
-    stated = {}  # relpath -> the visibility its frontmatter states
-    for dirpath, _, filenames in walk(ROOT):
+    stated = {}  # the _real_rel key -> the visibility its frontmatter states
+    for dirpath, dirnames, filenames in walk(ROOT):
+        # Sorted, so the path the dedupe keeps is the same on every host.
+        dirnames.sort()
         top = rel(dirpath).split(os.sep)[0]
         in_docs = top in ("docs", "test-docs")
-        for f in filenames:
+        for f in sorted(filenames):
             is_tool = f.endswith(".tool.md") and top == "agents"
             if (
                 f in ("README.md", "AGENT.md", "CLAUDE.md")
@@ -660,8 +711,14 @@ def check_A():
                 if fm:
                     GOVERNED.append((rel(full), fm.get("kind"), fm.get("owner")))
                     if fm.get("visibility"):
-                        stated[rel(full)] = fm["visibility"]
-    for message in _visibility_contradictions(stated):
+                        stated[_real_rel(full)] = fm["visibility"]
+
+    def chain(key):
+        # A key is the file's real path, so its chain is the real path's: the
+        # chain build_corpus ranks the node at that path by.
+        return [_real_rel(r) for r in readme_chain(os.path.join(ROOT, key), ROOT)]
+
+    for message in _visibility_contradictions(stated, chain):
         err(message)
 
 

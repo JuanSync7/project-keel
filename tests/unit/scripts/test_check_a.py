@@ -2,7 +2,7 @@
 title: Unit — check_structure check_A (frontmatter lifecycle symmetry)
 kind: tests
 layer: n/a
-summary: check_A's lifecycle rule, pinned: a document whose status says it has been replaced must name its replacement. `deprecated` has required `superseded_by` since the first frontmatter check; `superseded` — the ADR lifecycle's word for the same fact — did not, so an ADR could be marked superseded by nothing and the corpus's "follow the chain to the live version" promise ended at a dead end. The two statuses are one rule with two vocabularies.
+summary: check_A's lifecycle rule, pinned: a document whose status says it has been replaced must name its replacement. `deprecated` has required `superseded_by` since the first frontmatter check; `superseded` — the ADR lifecycle's word for the same fact — did not, so an ADR could be marked superseded by nothing and the corpus's "follow the chain to the live version" promise ended at a dead end. The two statuses are one rule with two vocabularies. A document stating a looser visibility than a README.md on its chain is an error, and a symlinked file is judged once, at its real path, against the chain build_corpus ranks it by.
 """
 
 import sys
@@ -149,3 +149,58 @@ def test_check_a_reports_the_contradiction_over_a_tree(repo):
     cs.check_A()
     found = [e for e in cs.errors if "less restrictive" in e]
     assert len(found) == 1 and found[0].startswith("docs/plan.md:"), cs.errors
+
+
+def _stated(path, visibility):
+    """A governed document at *path* that states *visibility*."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    text = _doc(path, "stable").read_text(encoding="utf-8")
+    path.write_text(
+        text.replace("visibility: internal", "visibility: %s" % visibility),
+        encoding="utf-8",
+    )
+
+
+def _linked_secret_tree(repo, plan_visibility):
+    """`docs/a-open/plan.md` links to `docs/z-secret/plan.md`, under a
+    confidential README; the walk meets the link first if it is sorted."""
+    _stated(repo / "README.md", "internal")
+    _stated(repo / "docs" / "z-secret" / "README.md", "confidential")
+    _stated(repo / "docs" / "z-secret" / "plan.md", plan_visibility)
+    (repo / "docs" / "a-open").mkdir()
+    (repo / "docs" / "a-open" / "plan.md").symlink_to("../z-secret/plan.md")
+
+
+@pytest.mark.parametrize("plan_visibility", ["public", "internal"])
+def test_check_a_judges_a_linked_file_at_its_real_path(repo, plan_visibility):
+    """The corpus serves the file at the strictest level of its real path's
+    README chain, so the message names that file, that level and that README,
+    whichever path the walk met first."""
+    _linked_secret_tree(repo, plan_visibility)
+    cs.check_A()
+    found = [e for e in cs.errors if "less restrictive" in e]
+    assert len(found) == 1, cs.errors
+    message = found[0]
+    assert message.startswith(
+        "docs/z-secret/plan.md: visibility '%s'" % plan_visibility
+    ), message
+    assert "stated by docs/z-secret/README.md" in message, message
+    assert "serves it as 'confidential'" in message, message
+
+
+def test_check_a_names_the_level_build_corpus_serves(repo):
+    """check_A and build_corpus read one README chain, so the level the
+    message names is the level the corpus records for the node."""
+    sys.path.insert(0, str(_ROOT / "scripts" / "jobs"))
+    import build_corpus as bc
+
+    _linked_secret_tree(repo, "public")
+    cs.check_A()
+    (message,) = [e for e in cs.errors if "less restrictive" in e]
+    served = {
+        n["node_id"]: n["visibility"] for n in bc.build_corpus(str(repo))["nodes"]
+    }
+    assert "serves it as '%s'" % served["plan"] in message, (
+        message,
+        served,
+    )

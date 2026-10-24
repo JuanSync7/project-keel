@@ -82,7 +82,10 @@ so check_corpus refuses each node below it. So in the corpus no child is ever
 at a looser level than a `README.md` above it: to make a child `public`, lower
 the `README.md` above it. A governed document that states a less restrictive
 level than a `README.md` above it is an error naming that `README.md`
-(check A), because the corpus would override it in silence.
+(check A), because the corpus would override it in silence. Check A judges a
+file reached through a symlink once, at the path of the file it really is,
+against that path's `README.md` chain: `scripts/check_structure.py`
+`readme_chain`, the function build_corpus ranks the node by.
 
 The level is a label, and only some readers act on it. The wiki navigator
 agent, and the MCP Q&A server through it, drop `confidential` and `restricted`

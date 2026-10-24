@@ -94,8 +94,11 @@ print but never fail the build.
   `public` under a `confidential` `README.md`, is an error naming that
   `README.md`: the corpus gives every node the most restrictive visibility on
   its chain (CONVENTIONS §1), so the looser level would be overridden in
-  silence. A value outside the vocabulary is the invalid-visibility error
-  instead.
+  silence. A file reached through a symlink is judged once, at the path of
+  the file it really is, against that path's `README.md` chain
+  (`readme_chain`, which build_corpus ranks the node by), and the message
+  names the level the corpus serves it at. A value outside the vocabulary is
+  the invalid-visibility error instead.
 - **B. Closed taxonomy** — every non-hidden top-level directory is a §2 row or
   declared in `config/project.json` `structure.extra_toplevel` (§15); a
   declaration names a directory that exists and is not already a row; every
