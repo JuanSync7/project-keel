@@ -25,14 +25,9 @@ DEFAULT_CORPUS = os.path.join("wiki", "corpus.json")
 MISSING = "(missing)"
 
 
-def _read_corpus(path: str) -> dict:
-    """The corpus at *path*, an object whose `nodes` is a list; ValueError
-    saying what it is instead when it is not one."""
-    try:
-        with open(path, encoding="utf-8") as fh:
-            corpus = json.load(fh)
-    except ValueError as exc:  # JSONDecodeError and UnicodeDecodeError
-        raise ValueError("it is not JSON (%s)" % exc) from exc
+def _nodes(corpus) -> list:
+    """*corpus*'s `nodes`, when *corpus* is an object whose `nodes` is a
+    list; ValueError saying what it is instead when it is not one."""
     if not isinstance(corpus, dict):
         raise ValueError("it is a %s, not an object" % type(corpus).__name__)
     if "nodes" not in corpus:
@@ -42,13 +37,27 @@ def _read_corpus(path: str) -> dict:
         raise ValueError("its `nodes` is null, not a list")
     if not isinstance(nodes, list):
         raise ValueError("its `nodes` is a %s, not a list" % type(nodes).__name__)
+    return nodes
+
+
+def _read_corpus(path: str) -> dict:
+    """The corpus at *path*, an object whose `nodes` is a list; ValueError
+    saying what it is instead when it is not one."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            corpus = json.load(fh)
+    except ValueError as exc:  # JSONDecodeError and UnicodeDecodeError
+        raise ValueError("it is not JSON (%s)" % exc) from exc
+    _nodes(corpus)
     return corpus
 
 
 def _rows(corpus: dict) -> list:
     """The corpus's node rows; a row that is not an object stands as a row
-    with every field missing, so it is counted and listed, not dropped."""
-    return [n if isinstance(n, dict) else {} for n in corpus.get("nodes", [])]
+    with every field missing, so it is counted and listed, not dropped. A
+    corpus with no `nodes` list raises _nodes's ValueError, so a library
+    caller of unowned, unknown or defaulted is refused it as main is."""
+    return [n if isinstance(n, dict) else {} for n in _nodes(corpus)]
 
 
 def _shown(node: dict, field: str) -> str:

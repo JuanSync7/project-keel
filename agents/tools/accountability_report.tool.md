@@ -62,7 +62,9 @@ is not an object counts as one with every field missing. No corpus present →
 prints a notice and exits 0. A corpus that is not JSON, not an object, or has
 no `nodes` list (missing, null or another type) → prints nothing on stdout,
 one stderr line naming the file and what is wrong with it, and exits 2
-(`USAGE`).
+(`USAGE`). A module that imports the report and passes such a corpus to
+`unowned`, `unknown` or `defaulted` gets a ValueError saying what is wrong
+with it, never an empty list.
 
 ## Side effects
 READ-ONLY. Reads the corpus; writes nothing; no model call.

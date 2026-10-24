@@ -2,7 +2,7 @@
 title: Unit — the corpus's owner resolution and the configured default owner
 kind: tests
 layer: n/a
-summary: build_corpus resolves each node's owner finest-wins then inherit, and fills config/project.json `accountability.default_owner`, read through scripts/config_loader.py, where and only where the resolution ends on a `TBD` (in any letter case) in frontmatter, a marker or a package README, recording `owner_source: default` and the place the TBD stands as `owner_origin`. A real owner anywhere on the chain beats the default; a package README that cannot be read stops the walk, so a module and its symbols that name no owner of their own have owner and owner_source null, unknown; a node that names no owner, or a null spelling, stays `none`; with the default null or no config file every TBD stays `none`; a refused default raises, and the job exits CONFIG. check_corpus accepts `default` and still refuses an unknown source, and the accountability report, which lists a row missing a field with that field missing and never tracebacks, counts the default as its own line, apart from the owned and the unowned, while `--json` still lists the unowned only.
+summary: build_corpus resolves each node's owner finest-wins then inherit, and fills config/project.json `accountability.default_owner`, read through scripts/config_loader.py, where and only where the resolution ends on a `TBD` (in any letter case) in frontmatter, a marker or a package README, recording `owner_source: default` and the place the TBD stands as `owner_origin`. A real owner anywhere on the chain beats the default; a package README that cannot be read stops the walk, so a module and its symbols that name no owner of their own have owner and owner_source null, unknown; a node that names no owner, or a null spelling, stays `none`; with the default null or no config file every TBD stays `none`; a refused default raises, and the job exits CONFIG. check_corpus accepts `default` and still refuses an unknown source, and the accountability report, which lists a row missing a field with that field missing and never tracebacks, counts the default as its own line, apart from the owned and the unowned, while `--json` still lists the unowned only; a corpus with no `nodes` list is refused by the report and by each bucket a library caller asks for.
 """
 
 import json
@@ -732,3 +732,21 @@ def test_a_corpus_without_a_nodes_list_is_refused_as_an_input_fault(
     (line,) = captured.err.splitlines()
     assert why in line and str(out) in line, line
     assert "build_corpus.py" in line, line
+
+
+@pytest.mark.parametrize("bucket", ["unowned", "unknown", "defaulted"])
+@pytest.mark.parametrize(
+    "corpus, why",
+    [
+        pytest.param({}, "`nodes` is missing", id="nodes-missing"),
+        pytest.param({"nodes": None}, "`nodes` is null", id="nodes-null"),
+        pytest.param({"nodes": "ab"}, "`nodes` is a str", id="nodes-str"),
+        pytest.param([], "is a list, not an object", id="not-an-object"),
+    ],
+)
+def test_a_library_caller_s_corpus_without_a_nodes_list_is_refused(bucket, corpus, why):
+    """A caller that imports the report and hands a bucket a corpus with no
+    `nodes` list gets the ValueError the report's own reader raises, never
+    an empty bucket that reads as every node owned."""
+    with pytest.raises(ValueError, match=why):
+        getattr(ar, bucket)(corpus)
