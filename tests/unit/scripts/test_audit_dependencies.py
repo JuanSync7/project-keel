@@ -882,6 +882,23 @@ def test_a_value_glued_to_a_scheme_npm_does_not_use_is_hidden_in_a_clause():
     assert audit_dependencies._redacted(text) == "token <hidden>"
 
 
+# A scheme-less userinfo before a bracketed IPv6 host is hidden as in a URL,
+# with or without a password, a zone id or a port, and the host is kept.
+@pytest.mark.parametrize(
+    "userinfo, host",
+    [
+        (_VALUE, "[::1]:4873"),
+        ("u:" + _VALUE, "[::1]:4873"),
+        (_VALUE, "[fe80::1%25eth0]"),
+        (_VALUE, "[2001:db8::1]"),
+    ],
+    ids=["user-port", "pair-port", "zone", "no-port"],
+)
+def test_a_bare_userinfo_before_a_bracketed_host_is_hidden(userinfo, host):
+    shown = audit_dependencies._redacted("request to %s@%s/x failed" % (userinfo, host))
+    assert shown == "request to <hidden>@%s/<path hidden> failed" % host
+
+
 # A URL's userinfo is everything before the last `@` of its authority, so a
 # raw `@` in a password shows no part of it, and the host after it stays.
 @pytest.mark.parametrize(
@@ -1660,6 +1677,8 @@ _TIMED_REDACTION = (
         ("x://", 12500, False),
         ("token e.g. x ", 3847, False),
         ("token" + " x" * 17 + " a. b ", 1087, False),
+        ("a@[::1]:1/x ", 4167, False),
+        ("a@[" + ":" * 46, 1020, True),
     ],
     ids=[
         "a",
@@ -1684,6 +1703,8 @@ _TIMED_REDACTION = (
         "other-scheme-run",
         "abbreviation",
         "sentence-bound",
+        "bracketed-bare",
+        "bracketed-open",
     ],
 )
 def test_a_hostile_line_is_redacted_within_a_second(unit, times, unchanged):

@@ -169,7 +169,8 @@ _HIDDEN = "<hidden>"
 _ZONE_LIMIT = 15
 # A host with no scheme, as npm writes a registry in a `.npmrc` key or a
 # fetch line, is one of: a dotted name whose last label is letters, an IPv4
-# address, or any name with a port. It starts a word, or follows `//` or a
+# address, a bracketed IPv6 address with its zone id if it has one, as (a)
+# reads it, or any name with a port. It starts a word, or follows `//` or a
 # userinfo's `@`, so the dotted part of a file path's later segment is no
 # host. Its path, from the `/` on, is hidden as in (a); a host with nothing
 # after its `/` is left. It runs after (b) and (a'), so a secret word in the
@@ -178,6 +179,7 @@ _BARE_START = r"(?<![\w.\-~%+=/:])"
 _BARE_HOST = (
     r"(?:[A-Za-z0-9\-]{1,63}\.){1,126}[A-Za-z]{2,63}\.?"
     r"|\d{1,3}(?:\.\d{1,3}){3}"
+    r"|\[[0-9A-Fa-f:.]{2,45}(?:%[\w.\-~%]*)?\]"
     r"|[A-Za-z0-9\-]{1,63}(?=:\d)"
 )
 _BARE_URL = re.compile(
