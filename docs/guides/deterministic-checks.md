@@ -1172,7 +1172,11 @@ each rule rewrites only its own span, so the cause (`ENOTFOUND`, `E401`,
   (`is`, `was`, `set`, `to`, `for`, `the`, `not`, ...) and `CAUSE_WORDS`
   (`required`, `expired`, `invalid`, `incorrect`, `missing`, `denied`,
   `self-signed`, `empty`, ...), each cause word mapped to the npm, Node.js,
-  libuv or HTTP message it was read from. A word in the vocabulary, matched
+  libuv or HTTP message it was read from. The cause words include the HTTP
+  methods `GET`, `HEAD`, `POST`, `PUT`, `PATCH` and `DELETE`, because
+  npm-registry-fetch writes an HTTP error as `status statusText - METHOD uri`
+  and the secret word `auth` inside `Unauthorized` opens a clause there, so
+  `401 Unauthorized - POST <url>` keeps its method. A word in the vocabulary, matched
   without case and without the punctuation around it, is kept, so
   `password required`, `PASSWORD REQUIRED` and `the token is invalid` read
   as written; every other word is hidden, a run of them as one `<hidden>`, so

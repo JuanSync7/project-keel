@@ -873,6 +873,23 @@ def test_a_vocabulary_word_after_a_secret_word_is_kept(text):
     assert audit_dependencies._redacted(text) == text
 
 
+# npm-registry-fetch writes an HTTP error as `status statusText - METHOD uri`,
+# and the secret word `auth` inside `Unauthorized` opens a clause there, so
+# the method is a vocabulary word and stays; a value later in the line is
+# still hidden.
+@pytest.mark.parametrize("method", ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"])
+def test_an_http_error_line_keeps_its_method(method):
+    value = "FAKE" + "val" + "42"
+    text = (
+        "401 Unauthorized - %s http://127.0.0.1:4873/-/npm/v1/security - "
+        "the password was set to %s" % (method, value)
+    )
+    assert audit_dependencies._redacted(text) == (
+        "401 Unauthorized <hidden> %s http://127.0.0.1:4873/<path hidden> <hidden> "
+        "the password was set to <hidden>" % method
+    )
+
+
 # The cost of a closed vocabulary: a cause word it does not hold is hidden.
 # The advice reads npm's raw text, so it is the same either way.
 def test_a_cause_word_outside_the_vocabulary_is_hidden():

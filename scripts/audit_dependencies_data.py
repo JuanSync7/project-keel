@@ -55,17 +55,24 @@ _NPM_FETCH = "npm-registry-fetch lib/errors.js: "
 _NODE_TLS = "Node.js TLS error: "
 _LIBUV = "libuv strerror, which Node.js prints: "
 _HTTP = "HTTP reason phrase, which npm prints after the status: "
+_HTTP_METHOD = (
+    "npm-registry-fetch lib/errors.js: an HTTP error reads"
+    " `status statusText - METHOD uri`, method "
+)
 
 CAUSE_WORDS = {
     "authentication": _NPM_FETCH + "OTP required for authentication",
     "authenticator": _NPM_MESSAGES
     + "This operation requires a one-time password from your authenticator.",
     "date": _NPM_MESSAGES + "your saved credentials are probably out of date.",
+    "delete": _HTTP_METHOD + "DELETE",
     "denied": _LIBUV + "permission denied",
     "empty": "npm @npmcli/config lib/env-replace.js: a ${VAR?} reference to an"
     " unset variable evaluates to empty",
     "expired": _NODE_TLS + "certificate has expired",
     "forbidden": _HTTP + "403 Forbidden",
+    "get": _HTTP_METHOD + "GET",
+    "head": _HTTP_METHOD + "HEAD",
     "incorrect": _NPM_MESSAGES + "Incorrect or missing password.",
     "invalid": _NPM_MESSAGES + "your authentication token seems to be invalid.",
     "logging": _NPM_MESSAGES + "please try logging in again with:",
@@ -75,7 +82,10 @@ CAUSE_WORDS = {
     "one-time": _NPM_MESSAGES + "This operation requires a one-time password.",
     "otp": _NPM_FETCH + "OTP required for authentication",
     "out": _NPM_MESSAGES + "your saved credentials are probably out of date.",
+    "patch": _HTTP_METHOD + "PATCH",
+    "post": _HTTP_METHOD + "POST",
     "provided": _NPM_MESSAGES + "If you already provided a one-time password",
+    "put": _HTTP_METHOD + "PUT",
     "refused": _LIBUV + "connection refused",
     "rejected": _NPM_MESSAGES + "The operation was rejected by your operating system.",
     "required": _NPM_FETCH + "OTP required for authentication",

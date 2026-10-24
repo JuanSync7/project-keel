@@ -666,7 +666,8 @@ version rather than a bare commit:
   the secret word is hidden unless it is in the closed vocabulary of linking
   and cause words `scripts/audit_dependencies_data.py` lists, each cause
   word with the npm or Node.js message it came from, so `password required`
-  and `token is self-signed` read as written and a cause word not listed is
+  and `token is self-signed` read as written, as does the HTTP method in
+  npm's `401 Unauthorized - POST <url>`, and a cause word not listed is
   hidden; the advice reads the raw text and is unchanged. The registry's host is kept when it is a DNS name,
   a single valid label such as `nexus3`, or a bracketed IPv6 address whose
   zone id, with only a leading `%25` decoded, is no longer than an interface
