@@ -686,8 +686,9 @@ version rather than a bare commit:
   period after a single letter (`e.g.`). The costs: a password that is a
   vocabulary word, a capitalised value after a real sentence end, a secret of
   three marks or fewer, a value written as a URL's named host after a secret
-  word or as the realm after `Bearer` or `Basic`, and a value joined to the secret word by `-`, `.` or `_`, which reads
-  as part of the key's name, are shown; a cause word the vocabulary lacks is
+  word or as the realm after `Bearer` or `Basic`, and a value joined to the
+  secret word by `-`, `.`, `_` or nothing, which reads as part of the key's
+  name, are shown; a cause word the vocabulary lacks is
   hidden, a single-label host such as `localhost` after a secret word is
   hidden, and a secret word inside a longer word (`monkey`, `Unauthorized`)
   hides the words after it.

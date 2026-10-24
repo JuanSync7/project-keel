@@ -1234,8 +1234,9 @@ each rule rewrites only its own span, so the cause (`ENOTFOUND`, `E401`,
     registry host after one (`token for http://localhost:4873/`) is hidden.
   - A value that opens with a capital after a real sentence end is read as
     the next sentence and is shown.
-  - A value joined to the secret word by `-`, `.` or `_` (`password-<value>`)
-    reads as part of the key's name and is shown.
+  - A value joined to the secret word by `-`, `.`, `_` or nothing
+    (`password-<value>`, `password<value>`) reads as part of the key's name
+    and is shown.
   - A secret word inside a longer word (`monkey`, `Unauthorized`, `Basically`) opens a
     clause, so the words after it are hidden unless the vocabulary holds them.
   - Cause text after an assignment on the same line is hidden with its value.
