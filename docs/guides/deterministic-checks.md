@@ -351,7 +351,9 @@ print but never fail the build.
   is a WARN reading *unverified*, never a silent pass and never an error, since
   the honest declaration must not be the one that fails the build. `check_V`
   proves the claim was made; `tests/integration/test_idempotence.py` re-runs the
-  doers that claim it. See [idempotency](idempotency.md).
+  doers that claim it. A shell script outside `tests/` declares the same
+  fields in the comment block that opens it, and states `effect:` every
+  time, because no detector reads shell. See [idempotency](idempotency.md).
 - **W. Make targets declare their effect** — every `## `-annotated target opens
   its help with one bracketed label from `local`, `tree`, `read`, `cost`,
   `write` (comma-joined in that order, no duplicates, `local` alone, one

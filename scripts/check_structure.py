@@ -99,7 +99,9 @@ Checks:
      a `rerun_proof:` in check_T's grammar. The detector resolves the base of
      each call (`os.replace`, never `str.replace`), so it under-reports rather
      than over-reports: a write behind subprocess is invisible to it, and a
-     declared write it cannot see is a stated WARN ('unverified'), never a pass
+     declared write it cannot see is a stated WARN ('unverified'), never a pass.
+     A shell script under the same roots states `effect:` in its opening
+     comment block every time, since no detector reads shell
   W. Make targets declare their effect (ERR): every `## `-annotated target
      opens its help with one bracketed label of EFFECT_LABELS words in
      canonical order (`local` alone), the same label on every rule that
@@ -4601,6 +4603,89 @@ def _write_sites(tree):
     return sites
 
 
+def _declaration_findings(relpath, meta, sites, mechanism_reason):
+    """(errors, warnings) for one file's `effect:`/`rerun:`/`rerun_proof:`
+    fields *meta*. *sites* is the sorted (lineno, what) writes a detector
+    proved, or None for a language no detector reads: there an unstated
+    effect is an error, because silence would pass a write nobody can see,
+    and a declared write is never warned unverified, because nothing could
+    verify it. *mechanism_reason* maps a proof to why it does not resolve,
+    or to "" when it does."""
+    errs, warns_ = [], []
+    effect = meta.get("effect", "")
+    rerun = meta.get("rerun", "")
+    proof = meta.get("rerun_proof", "")
+    if effect and effect not in _EFFECTS:
+        errs.append(
+            "%s: `effect: %s` is not one of %s -- the CONVENTIONS §10 "
+            "tool_effect vocabulary, one word for what a unit does to the world"
+            % (relpath, effect, "/".join(_EFFECTS))
+        )
+        return errs, warns_
+    if sites is None and not effect:
+        errs.append(
+            "%s: states no `effect:` -- no detector reads shell, so its header "
+            "is the one place a reader learns whether it writes: add `# effect:` "
+            "(%s), and for `writes` a `# rerun:` (docs/guides/idempotency.md)"
+            % (relpath, "/".join(_EFFECTS))
+        )
+        return errs, warns_
+    if effect != "writes":
+        if sites:
+            lineno, what = sites[0]
+            errs.append(
+                "%s:%d: writes to the filesystem (%s) but its header %s -- add "
+                "`effect: writes` and a `rerun:` saying what a second run does, "
+                "so nobody has to read the body to find out "
+                "(docs/guides/idempotency.md)"
+                % (
+                    relpath,
+                    lineno,
+                    what,
+                    "says `effect: %s`" % effect if effect else "does not say so",
+                )
+            )
+        elif rerun or proof:
+            errs.append(
+                "%s: declares `rerun:`/`rerun_proof:` without `effect: writes` "
+                "-- a statement about a second run of something that never "
+                "claims to write the first time" % relpath
+            )
+        return errs, warns_
+    if sites is not None and not sites:
+        warns_.append(
+            "%s: declares `effect: writes`, and no write is visible in its "
+            "source -- unverified, not disproven (a write behind subprocess "
+            "reads this way; so does a header left behind by a removed write)" % relpath
+        )
+    if not rerun:
+        errs.append(
+            "%s: declares `effect: writes` with no `rerun:` -- say what a "
+            "second run does (%s); an unstated one is the assumption every "
+            "caller makes and nobody checked (docs/guides/idempotency.md)"
+            % (relpath, "/".join(_RERUNS))
+        )
+        return errs, warns_
+    if rerun not in _RERUNS:
+        errs.append(
+            "%s: `rerun: %s` is not one of %s" % (relpath, rerun, "/".join(_RERUNS))
+        )
+        return errs, warns_
+    if rerun != _RERUN_NEEDING_PROOF:
+        return errs, warns_
+    if not proof:
+        errs.append(
+            "%s: claims `rerun: %s` and names no `rerun_proof:` -- the strong "
+            "claim is the one that needs evidence (%s)"
+            % (relpath, _RERUN_NEEDING_PROOF, _MECHANISM_FORMS)
+        )
+        return errs, warns_
+    reason = mechanism_reason(proof)
+    if reason:
+        errs.append("%s: its `rerun_proof:` %s" % (relpath, reason))
+    return errs, warns_
+
+
 def _effect_declaration_findings(
     modules, check_letters, tree, make_targets, sections_of
 ):
@@ -4611,6 +4696,10 @@ def _effect_declaration_findings(
     (through _parse_python) and check_O respectively already own those, and a
     second report is noise.
     """
+
+    def reason(proof):
+        return _mechanism_reason(proof, check_letters, tree, make_targets, sections_of)
+
     errs, warns_ = [], []
     for relpath in sorted(modules):
         try:
@@ -4620,74 +4709,31 @@ def _effect_declaration_findings(
         doc = ast.get_docstring(parsed)
         if not doc:
             continue
-        meta = _module_meta(doc)
-        effect = meta.get("effect", "")
-        rerun = meta.get("rerun", "")
-        proof = meta.get("rerun_proof", "")
-        sites = _write_sites(parsed)
-        if effect and effect not in _EFFECTS:
-            errs.append(
-                "%s: `effect: %s` is not one of %s -- the CONVENTIONS §10 "
-                "tool_effect vocabulary, one word for what a unit does to the world"
-                % (relpath, effect, "/".join(_EFFECTS))
-            )
-            continue
-        if effect != "writes":
-            if sites:
-                lineno, what = sites[0]
-                errs.append(
-                    "%s:%d: writes to the filesystem (%s) but its header %s -- add "
-                    "`effect: writes` and a `rerun:` saying what a second run does, "
-                    "so nobody has to read the body to find out "
-                    "(docs/guides/idempotency.md)"
-                    % (
-                        relpath,
-                        lineno,
-                        what,
-                        "says `effect: %s`" % effect if effect else "does not say so",
-                    )
-                )
-            elif rerun or proof:
-                errs.append(
-                    "%s: declares `rerun:`/`rerun_proof:` without `effect: writes` "
-                    "-- a statement about a second run of something that never "
-                    "claims to write the first time" % relpath
-                )
-            continue
-        if not sites:
-            warns_.append(
-                "%s: declares `effect: writes`, and no write is visible in its "
-                "source -- unverified, not disproven (a write behind subprocess "
-                "reads this way; so does a header left behind by a removed write)"
-                % relpath
-            )
-        if not rerun:
-            errs.append(
-                "%s: declares `effect: writes` with no `rerun:` -- say what a "
-                "second run does (%s); an unstated one is the assumption every "
-                "caller makes and nobody checked (docs/guides/idempotency.md)"
-                % (relpath, "/".join(_RERUNS))
-            )
-            continue
-        if rerun not in _RERUNS:
-            errs.append(
-                "%s: `rerun: %s` is not one of %s" % (relpath, rerun, "/".join(_RERUNS))
-            )
-            continue
-        if rerun != _RERUN_NEEDING_PROOF:
-            continue
-        if not proof:
-            errs.append(
-                "%s: claims `rerun: %s` and names no `rerun_proof:` -- the strong "
-                "claim is the one that needs evidence (%s)"
-                % (relpath, _RERUN_NEEDING_PROOF, _MECHANISM_FORMS)
-            )
-            continue
-        reason = _mechanism_reason(
-            proof, check_letters, tree, make_targets, sections_of
+        e_, w_ = _declaration_findings(
+            relpath, _module_meta(doc), _write_sites(parsed), reason
         )
-        if reason:
-            errs.append("%s: its `rerun_proof:` %s" % (relpath, reason))
+        errs += e_
+        warns_ += w_
+    return errs, warns_
+
+
+def _shell_effect_findings(scripts, check_letters, tree, make_targets, sections_of):
+    """scripts: {relpath: shell source} -> (errors, warnings), the module
+    rules read from the header _shell_header finds, with no write detector
+    (_declaration_findings' sites None). Pure; the walk is check_V's. A
+    file with no header is check_O's to report."""
+
+    def reason(proof):
+        return _mechanism_reason(proof, check_letters, tree, make_targets, sections_of)
+
+    errs, warns_ = [], []
+    for relpath in sorted(scripts):
+        block = _shell_header(scripts[relpath])
+        if block is None:
+            continue
+        e_, w_ = _declaration_findings(relpath, _module_meta(block), None, reason)
+        errs += e_
+        warns_ += w_
     return errs, warns_
 
 
@@ -4695,7 +4741,10 @@ def check_V():
     """ERROR when a module that writes to the filesystem does not declare it
     (`effect: writes`), does not say what a second run does (`rerun:`), or claims
     `rerun: fixed-point` without naming a proof that resolves. WARN when a module
-    declares a write this check cannot see. Silent over `tests/`."""
+    declares a write this check cannot see. A shell script (scripts/shell_gate.py
+    `kind`) is held to the same fields in its opening comment block, and must
+    state its `effect:`, because no detector reads shell. Silent over `tests/`
+    and over shell tests."""
     modules = {}
     for wroot in WRITER_ROOTS:
         base = os.path.join(ROOT, wroot)
@@ -4732,9 +4781,21 @@ def check_V():
     errs, warns_ = _effect_declaration_findings(
         modules, letters, tree, targets, sections_of
     )
-    for m in errs:
+    # A refused shell block is check_O's error; here it leaves no file to read.
+    shell, _ = _shell_files(WRITER_ROOTS)
+    scripts = {}
+    for relpath in sorted(shell):
+        if shell[relpath] != shell_gate.SCRIPT:
+            continue
+        text = _read_text(os.path.join(ROOT, relpath), err)
+        if text is not None:
+            scripts[relpath] = text
+    sh_errs, sh_warns = _shell_effect_findings(
+        scripts, letters, tree, targets, sections_of
+    )
+    for m in errs + sh_errs:
         err(m)
-    for m in warns_:
+    for m in warns_ + sh_warns:
         warn(m)
 
 

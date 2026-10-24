@@ -2,7 +2,7 @@
 title: Unit — check_structure check_V (a writer declares how it behaves on a second run)
 kind: tests
 layer: n/a
-summary: A module that writes to the filesystem must say so in its gated header (`effect:`) and say what a second run does (`rerun:`), and a `rerun: fixed-point` claim must name a proof that resolves. Pins the detector against the false positive that makes this checkable at all — `text.replace(...)` is not `os.replace(...)` — and against the silent-green case a naive version would ship: an undeclared write is an ERROR naming the line, while a declaration with no write it can see is a WARN saying unverified, never a pass.
+summary: A module that writes to the filesystem must say so in its gated header (`effect:`) and say what a second run does (`rerun:`), and a `rerun: fixed-point` claim must name a proof that resolves. Pins the detector against the false positive that makes this checkable at all — `text.replace(...)` is not `os.replace(...)` — and against the silent-green case a naive version would ship: an undeclared write is an ERROR naming the line, while a declaration with no write it can see is a WARN saying unverified, never a pass. A shell script outside tests/ (scripts/shell_gate.py `kind`) declares the same fields in the comment block that opens it and must state `effect:`, because no detector reads shell; it is held to the same vocabularies and proof grammar, is never warned unverified, and a shell test, a file with no header and a `shell.excluded_paths` path are not judged.
 """
 
 import sys
@@ -254,6 +254,9 @@ def gate(tmp_path, monkeypatch):
     monkeypatch.setattr(cs, "WRITER_ROOTS", ["scripts"])
     monkeypatch.setattr(cs, "errors", [])
     monkeypatch.setattr(cs, "warnings", [])
+    # The config read is memoised per run; each test is a run of its own.
+    monkeypatch.setattr(cs, "_CONFIG_READ", {})
+    monkeypatch.setattr(cs, "_READ_REPORTED", set())
     (tmp_path / "scripts").mkdir()
     return tmp_path
 
@@ -280,5 +283,100 @@ def test_check_v_does_not_read_the_test_suite(gate, monkeypatch):
     (gate / "tests" / "test_x.py").write_text(
         _header() + "open(p, 'w')\n", encoding="utf-8"
     )
+    cs.check_V()
+    assert cs.errors == [], cs.errors
+
+
+# --- a shell script's declaration (KEEL-SHELL-1 slice 2) -----------------------
+#
+# The same fields, read from the comment block that opens the file (check_O's
+# header). No detector reads shell, so a shell script outside tests/ states its
+# effect every time: silence would be a pass over a write nobody can see.
+
+
+def _sh_find(scripts):
+    """scripts: {relpath: shell source} -> (errors, warnings)."""
+    return cs._shell_effect_findings(scripts, _LETTERS, _TREE, _TARGETS, lambda p: None)
+
+
+def _sh(**keys):
+    """A shell script whose header carries title, summary and the given keys."""
+    body = "".join("# %s: %s\n" % (k, v) for k, v in keys.items())
+    return "#!/bin/sh\n# title: T\n# summary: S\n%sset -eu\n" % body
+
+
+def test_a_shell_script_that_states_its_effect_passes():
+    assert _sh_find({"scripts/r.sh": _sh(effect="read-only")}) == ([], [])
+    src = _sh(effect="writes", rerun="fixed-point", rerun_proof=_PROOF)
+    assert _sh_find({"scripts/w.sh": src}) == ([], [])
+
+
+def test_a_shell_script_that_states_no_effect_errors_naming_it():
+    errs, warns = _sh_find({"scripts/s.sh": _sh()})
+    assert warns == [], warns
+    assert len(errs) == 1, errs
+    assert errs[0].startswith("scripts/s.sh: ") and "effect:" in errs[0], errs
+
+
+def test_a_shell_effect_outside_the_closed_set_errors():
+    errs, _warns = _sh_find({"scripts/s.sh": _sh(effect="mutates")})
+    assert len(errs) == 1 and "mutates" in errs[0], errs
+
+
+def test_a_shell_writer_with_no_rerun_errors():
+    errs, _warns = _sh_find({"scripts/s.sh": _sh(effect="writes")})
+    assert len(errs) == 1 and "rerun:" in errs[0], errs
+
+
+def test_a_shell_fixed_point_claim_needs_a_proof_that_resolves():
+    errs, _warns = _sh_find({"scripts/s.sh": _sh(effect="writes", rerun="fixed-point")})
+    assert len(errs) == 1 and "rerun_proof:" in errs[0], errs
+    src = _sh(effect="writes", rerun="fixed-point", rerun_proof="test:tests/nope.py")
+    errs, _warns = _sh_find({"scripts/s.sh": src})
+    assert len(errs) == 1 and "tests/nope.py" in errs[0], errs
+
+
+def test_a_shell_rerun_without_a_writes_effect_errors():
+    src = _sh(effect="read-only", rerun="unsafe")
+    errs, _warns = _sh_find({"scripts/s.sh": src})
+    assert len(errs) == 1 and "effect: writes" in errs[0], errs
+
+
+def test_a_shell_writer_is_never_warned_unverified():
+    """Nothing could be verified in a language no detector reads, so the
+    Python warning would fire on every honest shell writer and teach authors
+    to ignore it."""
+    src = _sh(effect="writes", rerun="append-only")
+    assert _sh_find({"scripts/s.sh": src}) == ([], [])
+
+
+def test_a_shell_file_with_no_header_is_left_to_check_O():
+    assert _sh_find({"scripts/s.sh": "#!/bin/sh\nset -eu\n"}) == ([], [])
+
+
+def test_check_v_reads_shell_scripts_through_the_gate(gate):
+    (gate / "scripts" / "bad.sh").write_text(_sh(), encoding="utf-8")
+    (gate / "scripts" / "good.sh").write_text(_sh(effect="read-only"), encoding="utf-8")
+    (gate / "scripts" / "t.bats").write_text(
+        "#!/usr/bin/env bats\n# title: T\n# summary: S\n", encoding="utf-8"
+    )
+    cs.check_V()
+    assert [e.split(":", 1)[0] for e in cs.errors] == ["scripts/bad.sh"], cs.errors
+
+
+def test_check_v_does_not_read_a_shell_script_under_tests(gate):
+    (gate / "tests").mkdir()
+    (gate / "tests" / "helper.sh").write_text(_sh(), encoding="utf-8")
+    cs.check_V()
+    assert cs.errors == [], cs.errors
+
+
+def test_check_v_skips_a_shell_script_in_excluded_paths(gate):
+    (gate / "config").mkdir()
+    (gate / "config" / "project.json").write_text(
+        '{"shell": {"excluded_paths": {"scripts/vendor.sh": "vendored"}}}',
+        encoding="utf-8",
+    )
+    (gate / "scripts" / "vendor.sh").write_text(_sh(), encoding="utf-8")
     cs.check_V()
     assert cs.errors == [], cs.errors

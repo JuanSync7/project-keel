@@ -8,7 +8,7 @@ tags: [idempotency, writers, fixed-point, determinism, guide]
 summary: How a doer that writes into the tree is built so that running it twice changes nothing the first run did not, and how that is declared and proven here — the `effect:` / `rerun:` / `rerun_proof:` header check_V gates, the recipe for reaching a fixed point, the ladder of proofs, and the honest declarations for the writers that cannot reach one. The code twin of doc-style.md §6, which governs how the claim is written down rather than how it is made true.
 id: docs-guides-idempotency
 created: 2026-09-12
-updated: 2026-10-15
+updated: 2026-10-24
 visibility: internal
 canonical: true
 ---
@@ -91,7 +91,26 @@ invisible to it. A module that declares `effect: writes` with no write the check
 can see gets a WARN that reads *unverified*, never a silent pass and never an
 error, because the honest declaration must not be the one that fails the build.
 
-It also sees only **Python modules**. A Makefile recipe that writes by running
+**A shell script declares the same three fields** in the comment block that
+opens it, the header CONVENTIONS §1 gives a shell file:
+
+```sh
+#!/bin/sh
+# title: Release notes
+# summary: Writes dist/notes.txt from the tags.
+# effect: writes
+# rerun: fixed-point
+# rerun_proof: make:check-notes
+```
+
+No detector reads shell, so `check_V` cannot see a shell write. A shell
+script outside `tests/` therefore states `effect:` every time, and `check_V`
+fails one that does not; `read-only` is the honest value for one that writes
+nothing. The other rules are the module rules, and no shell writer is warned
+*unverified*, because nothing could verify it. A shell test is not held, as a
+Python test is not.
+
+The detector itself sees only **Python modules**. A Makefile recipe that writes by running
 another program is outside it: `make fmt` rewrites source with a formatter, and
 `make fe-install` writes a lockfile. Only `fmt` has a proof target: `fmt-check`
 rides `make verify`, which is the strongest proof available anywhere here,
@@ -253,6 +272,8 @@ the agent working in it is told the rule before it writes the tenth doer.
 | Claim | Held by | Tier |
 |-------|---------|------|
 | A module that writes declares `effect: writes` | `check_V` | gate |
+| A shell script outside `tests/` states its `effect:` | `check_V` | gate |
+| A shell script that writes says so, rather than `read-only` | — | judged (no detector reads shell) |
 | `effect:` / `rerun:` are in the closed vocabularies | `check_V` | gate |
 | A `rerun: fixed-point` claim names a proof that resolves | `check_V` | gate |
 | Every module naming `test_idempotence.py` as its proof is actually re-run there | `tests/integration/test_idempotence.py` | gate |
