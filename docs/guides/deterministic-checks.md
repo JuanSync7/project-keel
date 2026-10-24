@@ -1167,7 +1167,7 @@ with any `+`, `=` or `%`-escape in it, and the operand after `ENOTFOUND` or
 `getaddrinfo` up to a space, quote, comma or semicolon, since a token split
 at a symbol has pieces too short for this rule. The host stays whole only
 when it is a bracketed address or a DNS name: two or more dot-separated
-labels of letters, digits and hyphens, where no label is a UUID (npm's legacy
+labels of letters, digits and hyphens, with at most one trailing dot, where no label is a UUID (npm's legacy
 token shape) and no part of a label between its hyphens is itself a run this
 rule hides. Any other host that mixes letters and digits is `<hidden>` whole;
 one that mixes in no digit, such as `localhost`, stays. So an AWS
