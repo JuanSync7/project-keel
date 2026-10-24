@@ -18,6 +18,7 @@ sys.path.insert(0, str(_ROOT / "scripts" / "jobs"))
 import accountability_report as ar  # noqa: E402
 import build_corpus as bc  # noqa: E402
 import check_corpus as cc  # noqa: E402
+import check_structure as cs  # noqa: E402
 import config_loader  # noqa: E402
 from exit_codes import ExitCode  # noqa: E402
 
@@ -399,7 +400,7 @@ def test_a_readable_readme_stating_the_unreadable_marker_does_not_stop_the_walk(
     _write(
         root,
         "src/pkg/README.md",
-        "---\nvisibility: %s\n---\n# P\n" % bc.UNREADABLE_VISIBILITY,
+        "---\nvisibility: %s\n---\n# P\n" % cs.UNREADABLE_VISIBILITY,
     )
     _write(root, "src/pkg/m.py", _module())
     assert _owner(_nodes(root)["src/pkg/m-py"]) == (

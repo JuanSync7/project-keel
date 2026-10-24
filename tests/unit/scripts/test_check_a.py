@@ -2,9 +2,10 @@
 title: Unit — check_structure check_A (frontmatter lifecycle symmetry)
 kind: tests
 layer: n/a
-summary: check_A's lifecycle rule, pinned: a document whose status says it has been replaced must name its replacement. `deprecated` has required `superseded_by` since the first frontmatter check; `superseded` — the ADR lifecycle's word for the same fact — did not, so an ADR could be marked superseded by nothing and the corpus's "follow the chain to the live version" promise ended at a dead end. The two statuses are one rule with two vocabularies. A document stating a looser visibility than a README.md on its chain is an error, and a file reached by a link and its target is judged once, at the path build_corpus keeps for it, against the chain build_corpus ranks the node by: the chain of every path the walk reaches the one real file by, so the level it names is the strictest of them whichever directory sorts first.
+summary: check_A's lifecycle rule, pinned: a document whose status says it has been replaced must name its replacement. `deprecated` has required `superseded_by` since the first frontmatter check; `superseded` — the ADR lifecycle's word for the same fact — did not, so an ADR could be marked superseded by nothing and the corpus's "follow the chain to the live version" promise ended at a dead end. The two statuses are one rule with two vocabularies. A document stating a looser visibility than a README.md on its chain is an error, and a file reached by a link and its target is judged once, at the path build_corpus keeps for it, against the chain build_corpus ranks the node by: the chain of every path the walk reaches the one real file by, so the level it names is the strictest of them whichever directory sorts first. A README.md the walk skips (in `build/`, or a directory named README.md) is read by the one reader build_corpus ranks a node by, so a BOM-saved one, a dangling or looping link, a directory, a mode-000 file and a value outside the vocabulary each get the level the corpus serves and the check_A error a walked README.md of that shape gets.
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -430,3 +431,96 @@ def test_a_link_into_a_directory_the_walk_skips_is_judged_by_its_target_s_chain(
     assert message.startswith("docs/plan.md: visibility 'public'"), message
     assert "stated by %s/x/README.md" % ignored in message, message
     assert _served(repo)["plan"] == ("docs/plan.md", "confidential")
+
+
+# --- a README.md the walk skips is read as build_corpus reads it ------------
+#
+# scripts/check_structure.py read_readme is the one reader of a README.md's
+# stated level: build_corpus ranks a node by what it returns, and check_A
+# judges a README.md the walk never entered by the same value.
+
+
+def _bom_readme(path):
+    _stated(path, "confidential")
+    path.write_bytes(b"\xef\xbb\xbf" + path.read_bytes())
+
+
+def _dangling_readme(path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.symlink_to("gone.md")
+
+
+def _looping_readme(path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.symlink_to("README.md")
+
+
+def _directory_readme(path):
+    path.mkdir(parents=True)
+
+
+def _invalid_readme(path):
+    _stated(path, "secret")
+
+
+# (how build/x/README.md is made, the level the corpus serves docs/plan.md
+# at, the check_A error that names build/x/README.md)
+_SKIPPED_README = [
+    pytest.param(_bom_readme, "confidential", "less restrictive", id="bom"),
+    pytest.param(_dangling_readme, "unreadable-readme", "cannot read", id="dangling"),
+    pytest.param(_looping_readme, "unreadable-readme", "cannot read", id="looping"),
+    pytest.param(_directory_readme, "unreadable-readme", "cannot read", id="directory"),
+    pytest.param(
+        _invalid_readme, "secret", "invalid visibility 'secret'", id="invalid"
+    ),
+]
+
+
+@pytest.mark.parametrize("make, served, verdict", _SKIPPED_README)
+def test_check_a_judges_a_skipped_readme_by_the_level_the_corpus_serves(
+    repo, make, served, verdict
+):
+    """`docs/plan.md` links to `build/x/plan.md`, which states `public`; the
+    walk never enters `build/`, so check_A meets `build/x/README.md` only on
+    the doc's chain. Whatever shape that README.md has, the corpus serves the
+    doc at the level read_readme returns, and check_A names that README.md:
+    a contradiction for a level it ranks, else the error it gives a walked
+    README.md of the same shape."""
+    _stated(repo / "README.md", "public")
+    make(repo / "build" / "x" / "README.md")
+    _stated(repo / "build" / "x" / "plan.md", "public")
+    (repo / "docs").mkdir()
+    (repo / "docs" / "plan.md").symlink_to("../build/x/plan.md")
+    cs.check_A()
+    found = [e for e in cs.errors if verdict in e]
+    assert len(found) == 1, cs.errors
+    if verdict == "less restrictive":
+        assert found[0].startswith("docs/plan.md: visibility 'public'"), found
+        assert "stated by build/x/README.md" in found[0], found
+    else:
+        assert found[0].startswith("build/x/README.md: "), found
+    assert _served(repo)["plan"] == ("docs/plan.md", served)
+
+
+@pytest.mark.skipif(
+    hasattr(os, "geteuid") and os.geteuid() == 0, reason="root reads a mode-000 file"
+)
+def test_a_skipped_readme_no_one_may_read_is_named_cannot_read(repo):
+    """A mode-000 README.md in `build/` is a file the run cannot open: check_A
+    names it `cannot read` with the fault, and the corpus serves the doc
+    below it as unreadable."""
+    _stated(repo / "README.md", "public")
+    readme = repo / "build" / "x" / "README.md"
+    _stated(readme, "public")
+    _stated(repo / "build" / "x" / "plan.md", "public")
+    (repo / "docs").mkdir()
+    (repo / "docs" / "plan.md").symlink_to("../build/x/plan.md")
+    readme.chmod(0)
+    try:
+        cs.check_A()
+        served = _served(repo)["plan"]
+    finally:
+        readme.chmod(0o644)
+    found = [e for e in cs.errors if e.startswith("build/x/README.md: cannot read (")]
+    assert len(found) == 1 and "Permission denied" in found[0], cs.errors
+    assert served == ("docs/plan.md", "unreadable-readme")

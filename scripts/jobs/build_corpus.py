@@ -38,14 +38,17 @@ from check_structure import (  # noqa: E402
     _SECTION_CITE,
     _URL_SCHEME,
     CODE_ROOTS,
+    UNREADABLE_README,
     _heading_slug,
     _prose_lines,
     _resolve_link,
     _unfenced_lines,
     kept_markdown,
+    read_readme,
     readmes_upward,
     served_chain,
     sorted_walk,
+    split_frontmatter,
     strictest_visibility,
     walked_paths,
 )
@@ -136,11 +139,6 @@ def _real_owner(value):
     return value
 
 
-# The visibility a README.md that cannot be read passes on. It is outside
-# scripts/check_structure.py VISIBILITY_ORDER on purpose, so it outranks every
-# level and check_corpus refuses each node it reaches.
-UNREADABLE_VISIBILITY = "unreadable-readme"
-
 # A node's resolved owner: (owner, owner_source, owner_origin).
 _UNOWNED = ("", "none", None)
 # The owner of a node below a README.md that cannot be read: unknown, not
@@ -148,10 +146,6 @@ _UNOWNED = ("", "none", None)
 # accountability_report.py counts it in its unknown bucket.
 _UNKNOWN_OWNER = (None, None, None)
 
-# The frontmatter a README.md that cannot be read stands for. Matched by
-# identity, so a README that writes `visibility: unreadable-readme` is still
-# a readable README with an invalid level, for check_A to refuse.
-_UNREADABLE_FM = {"visibility": UNREADABLE_VISIBILITY}
 _DEFAULT_OWNER_KEY = ("accountability", "default_owner")
 
 
@@ -238,26 +232,6 @@ def _keywords(*texts: str) -> list:
             seen.add(w)
             out.append(w)
     return out[:12]
-
-
-def _parse_frontmatter(text: str):
-    """Return (frontmatter dict or None, body string after the closing ---)."""
-    if not text.startswith("---"):
-        return None, text
-    lines = text.splitlines()
-    data = {}
-    body_start = len(lines)
-    for i in range(1, len(lines)):
-        if lines[i].strip() == "---":
-            body_start = i + 1
-            break
-        line = lines[i]
-        if line[:1] in (" ", "\t"):
-            continue
-        if ":" in line:
-            k, _, v = line.partition(":")
-            data[k.strip()] = v.strip()
-    return data, "\n".join(lines[body_start:])
 
 
 def _parse_tags(raw) -> list:
@@ -406,14 +380,14 @@ def _doc_and_sections(
     rel = _rel(path, root)
     try:
         # utf-8-sig, like every .py read here: read as plain utf-8 a BOM'd file
-        # keeps its U+FEFF, so _parse_frontmatter never sees a leading `---` and
+        # keeps its U+FEFF, so split_frontmatter never sees a leading `---` and
         # the doc drops out of the corpus silently — the ADR-K-0008 drop class,
         # for the node kind that dominates the graph. Byte-identical otherwise.
         with open(path, encoding="utf-8-sig") as fh:
             text = fh.read()
     except (OSError, ValueError):  # ValueError covers UnicodeDecodeError
         return  # not decodable -> not a corpus doc
-    fm, body = _parse_frontmatter(text)
+    fm, body = split_frontmatter(text)
     if fm is None:
         return  # only frontmatter-bearing markdown is a corpus doc
     doc_id = fm.get("id") or _path_id(rel)
@@ -524,22 +498,17 @@ def _sections(body, doc_id, rel, doc_res, doc_visibility, nodes, refs, default):
 
 def _readme_pairs(readmes, root):
     """(path relative to *root*, frontmatter dict) for each README.md in
-    *readmes*, in order, skipping one that is not there. A name that is
-    there but cannot be read (a dangling or looping link, a directory, a
-    permission or decode fault) is unreadable, never absent."""
+    *readmes*, in order, read by scripts/check_structure.py read_readme, the
+    reader check_A judges a README.md by, skipping one that is not there."""
     for readme in readmes:
-        if os.path.lexists(readme):
-            try:
-                with open(readme, encoding="utf-8-sig") as fh:
-                    fm, _ = _parse_frontmatter(fh.read())
-            except (OSError, ValueError):  # ValueError covers UnicodeDecodeError
-                # An unreadable README may state any level and name any owner.
-                # It passes on a visibility no level ranks above, so
-                # check_corpus refuses each node below it rather than serve it
-                # at a looser level, and _nearest_readme stops the owner walk
-                # at it, so each node below it has an unknown owner.
-                fm = _UNREADABLE_FM
-            yield _rel(readme, root), fm or {}
+        fm, _ = read_readme(readme)
+        if fm is not None:
+            # An unreadable README may state any level and name any owner.
+            # It passes on a visibility no level ranks above, so check_corpus
+            # refuses each node below it rather than serve it at a looser
+            # level, and _nearest_readme stops the owner walk at it, so each
+            # node below it has an unknown owner.
+            yield _rel(readme, root), fm
 
 
 def _readmes_upward(dirpath: str, root: str):
@@ -578,7 +547,7 @@ def _nearest_readme(readmes, default):
     lies above it and the default."""
     nearest_tbd = None
     for where, fm in readmes:
-        if fm is _UNREADABLE_FM:
+        if fm is UNREADABLE_README:
             return _UNKNOWN_OWNER
         owner = _real_owner(fm.get("owner"))
         if owner:

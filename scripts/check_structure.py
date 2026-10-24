@@ -554,6 +554,58 @@ def parse_frontmatter(path):
     return None  # block never closed
 
 
+def split_frontmatter(text):
+    """(frontmatter dict or None, body after the closing `---`) of a document's
+    *text*: None when it does not open with `---`, and every top-level
+    `key: value` up to the end of the text when the block never closes. The
+    corpus's parse, which build_corpus reads every document by. Pure."""
+    if not text.startswith("---"):
+        return None, text
+    lines = text.splitlines()
+    data = {}
+    body_start = len(lines)
+    for i in range(1, len(lines)):
+        if lines[i].strip() == "---":
+            body_start = i + 1
+            break
+        line = lines[i]
+        if line[:1] in (" ", "\t"):
+            continue
+        if ":" in line:
+            k, _, v = line.partition(":")
+            data[k.strip()] = v.strip()
+    return data, "\n".join(lines[body_start:])
+
+
+# The visibility a README.md that cannot be read passes on. It is outside
+# VISIBILITY_ORDER on purpose, so it outranks every level and check_corpus
+# refuses each node it reaches.
+UNREADABLE_VISIBILITY = "unreadable-readme"
+# The frontmatter a README.md that cannot be read stands for. Matched by
+# identity, so a README that writes `visibility: unreadable-readme` is still
+# a readable README with an invalid level, for check_A to refuse.
+UNREADABLE_README = {"visibility": UNREADABLE_VISIBILITY}
+
+
+def read_readme(path):
+    """(frontmatter, fault) of the README.md at *path*, the one read of the
+    level a README states: build_corpus ranks a node by it and check_A judges
+    a README.md the walk skips by it, so the two cannot disagree. (None, None)
+    when no name is at *path*; ({}, None) for a file with no frontmatter
+    block. A name that is there but cannot be read (a dangling or looping
+    link, a directory, a permission or decode fault) is (UNREADABLE_README,
+    the fault): it may state any level, so it is never absent. utf-8-sig, so
+    a BOM-saved README states the level it shows."""
+    if not os.path.lexists(path):
+        return None, None
+    try:
+        with open(path, encoding="utf-8-sig") as fh:
+            fm, _ = split_frontmatter(fh.read())
+    except UNREADABLE as e:
+        return UNREADABLE_README, e
+    return fm or {}, None
+
+
 def check_frontmatter(path, seen_ids):
     fm = parse_frontmatter(path)
     if fm is None:
@@ -740,6 +792,7 @@ def check_A():
     def served(path):
         return rel(kept.get(os.path.realpath(path), path))
 
+    judged = []  # the served path of every governed file, in walk order
     stated = {}  # the served path -> the visibility its frontmatter states
     for dirpath, _, filenames in sorted_walk(ROOT):
         top = rel(dirpath).split(os.sep)[0]
@@ -756,6 +809,7 @@ def check_A():
                 if real in seen_real:
                     continue
                 seen_real.add(real)
+                judged.append(served(full))
                 check_frontmatter(full, seen_ids)
                 fm = parse_frontmatter(full)  # cheap re-parse for the roll-up
                 if fm:
@@ -765,19 +819,28 @@ def check_A():
 
     chains = {
         path: [served(r) for r in served_chain(os.path.join(ROOT, path), ROOT, walked)]
-        for path in stated
+        for path in judged
     }
     # The walk never enters an IGNORE_DIRS directory, so a README.md there is
-    # met only on the chain of a file linked in from it. build_corpus reads its
-    # level, so check_A reads it too, and judges by the level the corpus serves.
+    # met only on the chain of a file linked in from it, and a directory named
+    # README.md is never a walked file. build_corpus ranks a node by read_readme
+    # of each, so check_A reads each by it too: it judges by the level the
+    # corpus serves, and names a fault or a value outside the vocabulary as it
+    # does for a walked README.md.
     unwalked = {}
     for readme in sorted({r for c in chains.values() for r in c}):
         full = os.path.join(ROOT, readme)
-        if os.path.realpath(full) in kept or not os.path.isfile(full):
-            continue  # walked, so check_A has read it; or nothing to read
-        fm = parse_frontmatter(full)
-        if fm and fm.get("visibility"):
-            unwalked[readme] = fm["visibility"]
+        if os.path.realpath(full) in kept:
+            continue  # walked: check_frontmatter has judged it
+        fm, fault = read_readme(full)
+        if fault is not None:
+            err("%s: cannot read (%s)" % (readme, fault))
+            continue
+        level = fm.get("visibility") if fm else None
+        if level and level not in VISIBILITIES:
+            err("%s: invalid visibility '%s'" % (readme, level))
+        if level:
+            unwalked[readme] = level
     for message in _visibility_contradictions(stated, chains.__getitem__, unwalked):
         err(message)
 

@@ -581,7 +581,11 @@ version rather than a bare commit:
   directory can no longer publish it; a module reached by several paths is a
   node at each, every one at that level. check_A also reads the level of a
   `README.md` in a directory its walk skips, such as `build/`, when a linked
-  file's chain reaches it, as build_corpus does.
+  file's chain reaches it, through the one reader build_corpus ranks a node by
+  (`scripts/check_structure.py` `read_readme`), so a BOM-saved `README.md`
+  there is read at its stated level, and one that cannot be read (a dangling
+  or looping link, a directory, a mode-000 file) or that states a value such
+  as `secret` is a check_A error naming it, where check_A said nothing before.
   This fixes the level the corpus records. Only the wiki
   navigator, and the MCP Q&A server through it, drop `confidential` and
   `restricted` nodes; the showcase API, its `/llms-full.txt` and the static

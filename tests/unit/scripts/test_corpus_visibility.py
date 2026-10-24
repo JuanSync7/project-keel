@@ -383,7 +383,7 @@ def test_a_readme_link_that_reaches_no_file_is_unreadable(tmp_path, target):
     _write(tmp_path, "src/pkg/d.md", _readme("d", None, "public"))
     vis = _visibility(tmp_path)
     for node_id in ("src/pkg/m-py", "src/pkg/m-py::f", "d", "d#part"):
-        assert vis[node_id] == bc.UNREADABLE_VISIBILITY, (node_id, vis[node_id])
+        assert vis[node_id] == cs.UNREADABLE_VISIBILITY, (node_id, vis[node_id])
     assert vis["src-readme"] == "public"
 
 
@@ -403,7 +403,7 @@ def test_a_readme_link_to_a_directory_blocks_every_node_below_it(tmp_path, targe
     vis = {n["node_id"]: n["visibility"] for n in corpus["nodes"]}
     below = ("src/pkg/m-py", "src/pkg/m-py::f", "d", "d#part")
     for node_id in below:
-        assert vis[node_id] == bc.UNREADABLE_VISIBILITY, (node_id, vis[node_id])
+        assert vis[node_id] == cs.UNREADABLE_VISIBILITY, (node_id, vis[node_id])
     assert vis["src-readme"] == "public"
     refused = [e for e in cc.validate(corpus) if "invalid visibility" in e]
     for node_id in below:

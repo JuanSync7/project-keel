@@ -102,9 +102,16 @@ print but never fail the build.
   first. The message names that path, the level the corpus serves it at and
   the `README.md` that states that level. A `README.md` in a directory the
   walk skips (`IGNORE_DIRS`, such as `build/`) is met only on the chain of a
-  file linked in from there; check A reads its level as build_corpus does, so
-  it judges that file by the level the corpus serves. A value outside the
-  vocabulary is the invalid-visibility error instead.
+  file linked in from there, and a directory named `README.md` is never a
+  walked file. check A reads each such `README.md` through
+  `scripts/check_structure.py` `read_readme`, the one reader build_corpus also
+  ranks a node by, so it judges the linked file by the level the corpus
+  serves it at. That reader decodes `utf-8-sig`, so a BOM-saved `README.md`
+  states the level it shows. A dangling or looping link, a directory or a file
+  the run may not open is a `cannot read` error naming the `README.md`, where
+  the corpus serves every node below it as `unreadable-readme`; a value outside
+  the vocabulary, such as `secret`, is the invalid-visibility error naming it,
+  as for a walked `README.md`.
 - **B. Closed taxonomy** — every non-hidden top-level directory is a §2 row or
   declared in `config/project.json` `structure.extra_toplevel` (§15); a
   declaration names a directory that exists and is not already a row; every
