@@ -101,19 +101,47 @@ Every reader the project serves acts on the level, through one allowlist:
 `config/project.json` `corpus.served_visibilities`, `public` and `internal` by
 default, read by `scripts/config_loader.py` `served_visibilities`. Each reader
 decides served-or-not through `config_loader.is_served`, the one copy of that
-decision, and cuts the ids of hidden nodes out of a served node's links,
-children and parent through `config_loader.cut_hidden`. The readers
-are the showcase API (node detail, search, the doc tree, links, children,
-parent and counts), its `/llms.txt` and `/llms-full.txt`, the static site
-export `make site-static` publishes, the wiki navigator agent and the MCP Q&A
-server through it, the practice refactor agent, and `scripts/query_corpus.py`,
-the retrieval the agents call. A node at any other level, or one that states
-none, is absent from each of them, not redacted: a request for it is answered
-as an unknown node. The key's bound refuses a level outside the vocabulary, the
-`unreadable-readme` marker included, so a reader serves nothing rather than
-guess. Each reader's unit test holds it to the key, and
-`tests/e2e/test_showcase_journey.py` drives a real server and the export over a
-confidential node.
+decision. A reader that shows a node's neighbours cuts the ids of hidden nodes
+out of its links, children and parent through `config_loader.cut_hidden`. The
+readers that show or send a node are these:
+
+- the showcase API: node detail, search, the doc tree, links, children,
+  parent and counts;
+- its `/llms.txt` and `/llms-full.txt`;
+- the static site export that `make site-static` publishes;
+- the wiki navigator agent, and the MCP Q&A server through it;
+- the practice refactor agent;
+- `scripts/query_corpus.py`, the retrieval the agents call;
+- the index enforcer agent, which asks a model to fill a missing summary only
+  for a served node, so a hidden gap stays a reported gap;
+- the doc reviewer agent, which never sends a model a finding on a file the
+  corpus does not place at a served level. When the corpus or the config
+  cannot be read, it sends no finding at all.
+
+A node at any other level is absent from each of them, not redacted. A
+request for it is answered as an unknown node. A document that states no
+level is built as `internal` (above), so the default serves it. Only a corpus
+row with no `visibility` field at all is treated as hidden: the readers fail
+closed rather than assume a level.
+
+Readers that never show a node to an audience need no check:
+
+- `scripts/jobs/build_corpus.py`, `scripts/jobs/link_corpus.py` and
+  `scripts/jobs/check_corpus.py` build and validate the corpus, which must hold every node to record its
+  level.
+- `scripts/accountability_report.py` and the index enforcer's gap report list
+  node ids to the maintainer who runs them. Nothing is served and no model is
+  called.
+- `evals/_doers.py` drives the agents' model calls on an eval case's own
+  input, never on the corpus.
+- The Astro frontend reads only the showcase API and the static export, which
+  are already filtered.
+
+The key's bound refuses a level outside the vocabulary, the
+`unreadable-readme` marker included, and a refusal names the member it
+refuses, so a reader serves nothing rather than guess. Each reader's test
+holds it to the key, and `tests/e2e/test_showcase_journey.py` drives a real
+server and the export over an internal doc that links to a confidential one.
 
 ### Code files
 Source files can't carry YAML, so the **module docstring** is the

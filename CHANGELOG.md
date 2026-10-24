@@ -729,19 +729,27 @@ version rather than a bare commit:
   token in the message.
 - **A confidential document reaches no reader the project serves.** The
   corpus recorded each node's visibility, but nothing in `src/backend/showcase`
-  read it, so a `confidential` document's text came back from
-  `/api/wiki/node`, `/api/search` and `/llms-full.txt`, and went into the static
-  export `make site-static` publishes; the practice refactor agent put any
-  chunk's text in a model prompt, and `scripts/query_corpus.py` printed any
-  node. One allowlist, config/project.json `corpus.served_visibilities`
-  (`public` and `internal` by default), now decides for every reader: the
-  showcase API, both llms files, the static export, the wiki navigator (its
-  own literal is gone, a class fix), the practice refactor agent and
-  `scripts/query_corpus.py`. A node at any other level, or one that states
-  none, is absent rather than redacted, and a request for it is answered as an
-  unknown node. A level outside the vocabulary, the corpus's
-  `unreadable-readme` marker included, is refused as a config fault (exit 14),
-  so nothing is served. A generated project gets the key with its config.
+  read it. So a `confidential` document's text came back from
+  `/api/wiki/node`, `/api/search` and `/llms-full.txt`, and went into the
+  static export `make site-static` publishes. The practice refactor agent, the
+  index enforcer's summary fill and the doc reviewer could each put a hidden
+  document's text in a model prompt. `scripts/query_corpus.py` printed any
+  node, and a served node's links still named a hidden one by id.
+  One allowlist, config/project.json `corpus.served_visibilities` (`public` and
+  `internal` by default), now decides for every reader: the showcase API, both
+  llms files, the static export, the wiki navigator, the practice refactor
+  agent, `scripts/query_corpus.py`, the index enforcer and the doc reviewer.
+  `scripts/config_loader.py` `is_served` is the one copy of the decision; four
+  copies of the filter are gone, a class fix. `cut_hidden` drops hidden ids
+  from a served node's links, children and parent. A node at any other level
+  is absent rather than redacted, and a request for it is answered as an
+  unknown node. A document that states no level is built as `internal` and
+  served by default; only a corpus row with no `visibility` field is treated
+  as hidden. The doc reviewer reports a finding it withholds, with the reason,
+  and withholds every finding when the corpus or config cannot be read. A
+  level outside the vocabulary, the corpus's `unreadable-readme` marker
+  included, is refused as a config fault (exit 14) naming the member, so
+  nothing is served. A generated project gets the key with its config.
   (KEEL-VIS-2)
 - **The astro app's audited dependencies move past their advisories.**
   `npm audit` in `src/frontend/astro` reported 28 findings (2 critical, 17

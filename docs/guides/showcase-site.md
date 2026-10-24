@@ -64,8 +64,9 @@ The read model holds only the corpus nodes at a level in
 `config/project.json` `corpus.served_visibilities`, `public` and `internal` by
 default (CONVENTIONS §1). `Showcase` cuts the corpus once, when it is built, so
 node detail, search, the doc tree, links, children, parent, counts and both
-llms files read the same cut. A node at any other level, or one that states
-none, is absent rather than redacted: `/api/wiki/node` answers 404
+llms files read the same cut. A node at any other level is absent rather than
+redacted, and so is a corpus row with no `visibility` field (a document that
+states no level is built as `internal`, so it is served): `/api/wiki/node` answers 404
 `unknown node`, as for an id the corpus never had. The router reads the key on
 each reload, and the export and llms jobs on each run, so a project that serves
 only `public` changes the key, not code. A level outside the vocabulary is a

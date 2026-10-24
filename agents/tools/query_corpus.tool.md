@@ -45,7 +45,9 @@ provenance and accountability.
 ## Output
 A JSON array of node objects on stdout, best match first, drawn only from the
 nodes at a level in `config/project.json` `corpus.served_visibilities`: a node
-at any other level, or one that states none, is neither a hit nor a neighbour.
+at any other level, or a corpus row with no `visibility` field, is neither a hit
+nor a neighbour. A document that states no level is built as `internal`, so the
+default serves it.
 `scripts/config_loader.py` `is_served` makes that decision. A printed node's
 `links`, `children` and `parent` name only other served nodes, because
 `cut_hidden` drops every hidden id from them.

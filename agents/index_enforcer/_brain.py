@@ -104,7 +104,7 @@ def _ungapped(corpus):
 
 def _fillable(corpus, served):
     """The gaps at a level in *served*, in corpus order: the fill work-list.
-    A hidden gap, one that states no level included, never reaches
+    A hidden gap, a corpus row with no `visibility` field included, never reaches
     summarize_gap, so its text is in no prompt; it stays a reported gap for
     its owner to author."""
     return [n for n in _ungapped(corpus) if config_loader.is_served(n, served)]

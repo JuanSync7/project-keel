@@ -73,8 +73,8 @@ def query(
     with its tags/title/summary (weight 2) and with its body excerpt (weight 1,
     so a body-only match never outranks a summary match), then pull in each
     hit's parent and linked nodes so the caller gets a connected neighbourhood
-    (tree + links) to reason over. A node at any other level, one that states
-    none included, is cut before scoring, so it is neither a hit nor a
+    (tree + links) to reason over. A node at any other level, a corpus row
+    with no `visibility` field included, is cut before scoring, so it is neither a hit nor a
     neighbour, and config_loader.cut_hidden drops its id from every returned
     node's links, children and parent.
     """
