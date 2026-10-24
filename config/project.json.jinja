@@ -13,7 +13,8 @@
     "scripts/README.md": "parity",
       ".gitignore": "divergence",
       "CHANGELOG.md": "divergence",
-      ".copier-answers.yml": "generated"
+      ".copier-answers.yml": "generated",
+      ".gitlab-ci.yml": "generated"
     }
   },
   {%- endif %}
@@ -90,6 +91,8 @@
       ".git": "git's own state: .git/config can set core.fsmonitor, which runs inside the gate's own git status, .git/hooks run on commit, and in a linked worktree .git is the file naming the repository",
       ".github": "the CI workflows that run make verify and gate a release",
       ".gitignore.jinja": "the twin .gitignore renders from; absent in a generated project",
+      ".gitlab-ci.yml": "the GitLab CI adapter, which runs make verify's gates like the CI workflows; absent in the template",
+      ".gitlab-ci.yml.jinja": "the twin .gitlab-ci.yml renders from; absent in a generated project",
       ".pre-commit-config.yaml": "the commit-time gate",
       "CONVENTIONS.md": "the taxonomy check_structure enforces; approved text (R-AGT-33)",
       "agents": "the brains, prompts and tool cards: an agent may not rewrite its own instructions or orchestration",
@@ -225,6 +228,28 @@
     "scratch_root": ".canary",
     "step_timeout_minutes": 90,
     "workers": 1
+  },
+  "ci_pipeline": {
+    "_comment": "The CI pipeline, stated once and vendor-neutral: `steps` is the ordered list of shell commands every CI adapter runs, each with an optional `env` map of variables set for that command alone. `adapters` maps each adapter a project may ship to its file: the copier question ci_pipeline picks the set, and keel itself ships github only. An adapter is hand-written, not generated: tests/integration/test_ci_pipeline_gate.py holds each adapter file present to exactly these steps, in order, fails an empty list and a project with no adapter, and requires the file to carry the line `marker` names, filled with the adapter's name. The marker is how the copier update migration knows keel wrote the file: it removes an adapter the answer no longer chooses only when that exact line is in it. In ci.yml the steps are the run steps after the last `uses:` setup step; in .gitlab-ci.yml they are the `test` job's script lines, an `env` entry written before the command as NAME=value. `gitlab_image` is the image the GitLab job runs in, filled from `toolchain` (`{python}`, `{node_major}`), because GitLab has no setup step for either toolchain. Keel has verified no public image that carries both, so the default names no real registry and the job cannot pull until the owner points this key, and the image line, at one that does.",
+    "adapters": {"github": ".github/workflows/ci.yml", "gitlab": ".gitlab-ci.yml"},
+    "gitlab_image": "ci-image.example.invalid/python{python}-node{node_major}",
+    "marker": "# keel-adapter: {adapter}",
+    "steps": [
+      {"run": "index=$(python scripts/install_sources.py python_index) && pip install -e \".[dev,template]\" ${index:+--index-url \"$index\"}"},
+      {"run": "make secrets-install"},
+      {"run": "make secret-scan"},
+      {"run": "make fe-install"},
+      {"run": "make check-all"},
+      {"run": "make lint"},
+      {"run": "make typecheck"},
+      {"run": "make site-data"},
+      {"run": "make test", "env": {"KEEL_REQUIRED_EXTRAS": "template,dev,transport,secrets"}},
+      {"run": "make trace"},
+      {"run": "make eval"},
+      {"run": "make fe-browsers FE_BROWSER_FLAGS=--with-deps"},
+      {"run": "make test-fe"},
+      {"run": "make test-sh"}
+    ]
   },
   "install_sources": {
     "_comment": "Where each install command fetches from, so a host that reaches only a company mirror can install; read through scripts/config_loader.py by scripts/install_sources.py, which prints one source's URL for the command that installs from it. python_index is pip's --index-url for CI's install and the command make check-venv names; npm_registry is npm's --registry for make fe-install; browser_download_host is PLAYWRIGHT_DOWNLOAD_HOST for make fe-browsers. null passes nothing, so the tool's own configuration (pip.conf, .npmrc, the browser runner's default host) holds, and that is the public source unless the host says otherwise. A URL is https with a host, a valid port if any, and no `@`, `?`, `#` or backslash: a mirror's credential goes in the tool's own configuration, never in this committed file. The secret scanner's mirror is secrets.scanner.release_url.",

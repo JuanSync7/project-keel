@@ -1,0 +1,35 @@
+# keel-adapter: gitlab
+# The GitLab adapter of the CI pipeline. The `test` job's script is
+# config/project.json ci_pipeline.steps, in order, a step's env written before
+# its command, and tests/integration/test_ci_pipeline_gate.py fails any
+# difference: change a step there and in every adapter the project ships. The
+# line above tells `copier update` keel wrote this file, so a later ci_pipeline
+# answer that drops gitlab removes it; without that line the update keeps it.
+variables:
+  # Full history and tags, set for the same reason ci.yml checks out with
+  # fetch-depth: 0: copier resolves a template by git ref, and a shallow clone
+  # carries no tags.
+  GIT_DEPTH: "0"
+test:
+  # GitLab has no setup step for Python or Node, so the image must carry the
+  # Python config/project.json toolchain.python names and the Node major
+  # toolchain.node_major names. It is ci_pipeline.gitlab_image filled from
+  # toolchain. Keel has verified no public image that carries both, so the
+  # default names no real registry and the job cannot pull until you point
+  # the key, and this line, at one that does.
+  image: ci-image.example.invalid/python{{ toolchain_python }}-node24
+  script:
+    - index=$(python scripts/install_sources.py python_index) && pip install -e ".[dev,template]" ${index:+--index-url "$index"}
+    - make secrets-install
+    - make secret-scan
+    - make fe-install
+    - make check-all
+    - make lint
+    - make typecheck
+    - make site-data
+    - KEEL_REQUIRED_EXTRAS=template,dev,transport,secrets make test
+    - make trace
+    - make eval
+    - make fe-browsers FE_BROWSER_FLAGS=--with-deps
+    - make test-fe
+    - make test-sh
