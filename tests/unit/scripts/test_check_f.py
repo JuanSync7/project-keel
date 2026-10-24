@@ -287,6 +287,39 @@ def test_other_kinds_are_outside_the_roll_up():
     assert _rollup([("docs/guides/a.md", "guide", "TBD")], None) == ([], [])
 
 
+# Kinds the roll-up does not hold to an owner, each a governed document whose
+# owner the corpus still reads. None is a document whose `kind` is missing.
+_OTHER_KINDS = ["readme", "guide", "rules", "design", "spec", None]
+
+
+@pytest.mark.parametrize("default", [None, "ops"])
+@pytest.mark.parametrize("kind", _OTHER_KINDS)
+@pytest.mark.parametrize("owner", _OFF_GRAMMAR)
+def test_an_owner_outside_the_grammar_in_any_kind_is_an_error_naming_the_grammar(
+    owner, kind, default
+):
+    """KEEL-OWNER-3: a quoted `"alice"` on a README read as no owner in the
+    corpus and no gate named the grammar, because only tools and agents were
+    judged. The grammar holds for every governed document."""
+    errs, warns = _rollup([("docs/x/README.md", kind, owner)], default)
+    assert warns == [] and len(errs) == 1, (errs, warns)
+    assert "docs/x/README.md" in errs[0] and owner in errs[0], errs
+    assert "[A-Za-z0-9._@-]+" in errs[0] and "§12" in errs[0], errs
+
+
+@pytest.mark.parametrize("default", [None, "ops"])
+@pytest.mark.parametrize("kind", _OTHER_KINDS)
+@pytest.mark.parametrize(
+    "owner", [None, "", "alice", "docs-team", "a.b@c"] + _TBD_CASES + _NULL_SPELLINGS
+)
+def test_other_kinds_with_no_owner_a_real_owner_tbd_or_null_say_nothing(
+    owner, kind, default
+):
+    """Only the grammar reaches past tools and agents: an owner is not required
+    there, so an absent, null or placeholder owner is no finding."""
+    assert _rollup([("docs/x/README.md", kind, owner)], default) == ([], [])
+
+
 def test_the_default_owner_is_read_through_the_loader():
     manifest = {"accountability": {"default_owner": "platform-team"}}
     assert cs._default_owner(manifest) == ("platform-team", [])
@@ -379,6 +412,17 @@ def test_a_tbd_agent_under_a_refused_default_names_both(tmp_path, _isolated):
     assert len(found) == 2, found
     assert any("accepted:" in m for m in found), found
     assert any("agents/README.md" in m and "refused" in m for m in found), found
+
+
+@pytest.mark.parametrize("owner", ['"alice"', "'alice'", "alice # later"])
+def test_a_quoted_owner_on_a_plain_readme_errs_in_f(tmp_path, _isolated, owner):
+    root = _agent_tree(tmp_path, {"accountability": {"default_owner": "ops"}}, "me")
+    _labelled(tmp_path, "docs/guides", "readme", owner=owner)
+    found = [f for f in cs.run_checks(root) if f[0] == "F"]
+    assert len(found) == 1, found
+    _letter, tier, message = found[0]
+    assert tier == "error" and "docs/guides/README.md" in message, found
+    assert "[A-Za-z0-9._@-]+" in message, found
 
 
 @pytest.mark.parametrize("owner", ['"TBD"', "TBD # later", "null", "NULL", "~"])

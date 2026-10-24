@@ -1225,20 +1225,33 @@ def _default_owner(manifest):
 
 
 def _owner_rollup(governed, default, refused=False):
-    """(errors, warnings) for the kind tool/agent rows of *governed*, each a
-    (relpath, kind, owner). Pure.
+    """(errors, warnings) for *governed*, each a (relpath, kind, owner). Pure.
 
-    A `TBD` owner, in any letter case, inherits *default* (CONVENTIONS §12);
+    An owner outside the §12 grammar, such as a quoted or commented
+    placeholder, is an error naming the document and the grammar whatever the
+    document's kind, because build_corpus reads it as no owner. Every other
+    rule holds for the kind tool/agent rows only. A `TBD` owner, in any letter case, inherits *default* (CONVENTIONS §12);
     with no default it is an error naming the document and the key, at once,
     with no warning tier, and *refused* says the key held a value the loader
-    refused rather than none. An owner outside the §12 grammar, such as a
-    quoted or commented placeholder, is an error naming the document and the
-    grammar. A written null (`null` in any letter case, or `~`) is an error
+    refused rather than none. A written null (`null` in any letter case, or `~`) is an error
     the default does not cover. A missing or empty owner is a frontmatter
     fault the default does not cover, and stays a warning. A real owner is
     never judged further."""
     errs, warns = [], []
     for path, kind, owner in governed:
+        if (
+            owner
+            and not config_loader.is_null_spelling(owner)
+            and not config_loader.is_owner_token(owner)
+        ):
+            errs.append(
+                "accountability: %s (%s) has owner '%s', which is not one owner "
+                "token of the CONVENTIONS §12 grammar `%s`, so the corpus reads "
+                "it as no owner -- write the owner bare, with no quotes or "
+                "trailing comment, or `TBD` to inherit %s"
+                % (path, kind, owner, config_loader.OWNER_GRAMMAR, _DEFAULT_OWNER)
+            )
+            continue
         if kind not in _OWNED_KINDS:
             continue
         if not owner:
@@ -1254,13 +1267,6 @@ def _owner_rollup(governed, default, refused=False):
                 "accountability: %s (%s) has owner '%s', which YAML reads as "
                 "null, so it names no owner -- write the real owner, or `TBD` "
                 "to inherit %s (CONVENTIONS §12)" % (path, kind, owner, _DEFAULT_OWNER)
-            )
-        elif not config_loader.is_owner_token(owner):
-            errs.append(
-                "accountability: %s (%s) has owner '%s', which is not one owner "
-                "token of the CONVENTIONS §12 grammar `%s` -- write the owner "
-                "bare, with no quotes or trailing comment, or `TBD` to inherit %s"
-                % (path, kind, owner, config_loader.OWNER_GRAMMAR, _DEFAULT_OWNER)
             )
         elif _effective_owner(owner, default) is None and refused:
             errs.append(
