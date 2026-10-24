@@ -319,14 +319,15 @@ fe-install: ## [tree,read] Install frontend deps for all FE apps, after checking
 # FE_BROWSER_FLAGS (CI passes --with-deps for the system libraries). The same
 # refusal as test-fe-unit: with a frontend app present it never skips.
 # config/project.json install_sources.browser_download_host, when set, is
-# exported as PLAYWRIGHT_DOWNLOAD_HOST; null leaves the caller's own.
+# exported as PLAYWRIGHT_DOWNLOAD_HOST; null leaves the caller's own. It is
+# read after the refusals, so a host with no npm is refused before any Python runs.
 FE_BROWSER_FLAGS =
 fe-browsers: ## [read] Download the browser each frontend app's journey drives (npm script test:e2e:browsers), from install_sources.browser_download_host when set
 	@test -n "$(strip $(FE_APPS))" || exit 0; \
-	host=$$($(PY) scripts/install_sources.py browser_download_host) || exit $$?; \
-	if [ -n "$$host" ]; then PLAYWRIGHT_DOWNLOAD_HOST=$$host; export PLAYWRIGHT_DOWNLOAD_HOST; fi; \
 	command -v npm >/dev/null 2>&1 || { echo "$@: npm is not on PATH, so no journey browser was downloaded for $(strip $(FE_APPS)); install Node.js and run 'make fe-install', then run it again" >&2; exit 2; }; \
 	for app in $(FE_APPS); do [ -d "$$app/node_modules" ] || { echo "$@: $$app has no node_modules, so its journey browser was not downloaded; run 'make fe-install', then run it again" >&2; exit 2; }; done; \
+	host=$$($(PY) scripts/install_sources.py browser_download_host) || exit $$?; \
+	if [ -n "$$host" ]; then PLAYWRIGHT_DOWNLOAD_HOST=$$host; export PLAYWRIGHT_DOWNLOAD_HOST; fi; \
 	for app in $(FE_APPS); do echo "journey browser: $$app"; (cd $$app && npm run --silent test:e2e:browsers -- $(FE_BROWSER_FLAGS)) || exit 1; done
 
 # npm audit sends each lockfile to the registry and writes nothing in the tree;

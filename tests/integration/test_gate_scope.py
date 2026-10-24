@@ -254,11 +254,13 @@ def _fe_app(tmp_path, name="webapp", node_modules=True):
     return str(app) + "/"
 
 
-def _run_make(target, fe_apps, path_env):
+def _run_make(target, fe_apps, path_env, py=None):
+    """make *target* under *path_env*; *py*, when given, is the PY make runs,
+    so a test can stand where a generated project without a venv stands."""
     make = shutil.which("make")
     env = {"PATH": path_env, "HOME": os.environ.get("HOME", "/tmp")}
     return subprocess.run(
-        [make, target, "FE_APPS=%s" % fe_apps],
+        [make, target, "FE_APPS=%s" % fe_apps] + (["PY=%s" % py] if py else []),
         cwd=str(_ROOT),
         capture_output=True,
         text=True,
@@ -293,11 +295,13 @@ def test_fe_gate_skips_when_npm_is_absent(tmp_path, target):
 def test_fe_suite_refuses_when_npm_is_absent(tmp_path, target):
     """A frontend suite that could not run tested nothing, so it exits 2, the
     refusal code run-web uses, naming itself, the app and the fix. PATH is an
-    empty directory, as above."""
+    empty directory, as above, and PY is the bare `python3` a generated project
+    without a venv runs, so a recipe that runs Python before it checks npm dies
+    on a missing interpreter instead of refusing."""
     emptybin = tmp_path / "emptybin"
     emptybin.mkdir()
     app = _fe_app(tmp_path)
-    r = _run_make(target, app, str(emptybin))
+    r = _run_make(target, app, str(emptybin), py="python3")
     assert r.returncode == 2 and "Error 2" in r.stderr, r.stdout + r.stderr
     assert target + ": npm is not on PATH" in r.stderr, r.stderr
     assert app in r.stderr and _FE_INSTALL in r.stderr, r.stderr
