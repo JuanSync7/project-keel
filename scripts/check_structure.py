@@ -638,18 +638,20 @@ def readme_chain(path, root):
     """The README.md paths a node at *path* takes its visibility from,
     nearest first: readmes_upward of the path the walk reached it by, then,
     when *path* is a symlink to a file elsewhere inside *root*, readmes_upward
-    of the file it really is. build_corpus ranks a node by this chain and
-    check_A judges a file by it, so the two cannot disagree. A link into an
-    open directory therefore cannot publish a confidential file; a target
-    outside *root* adds nothing, so the walk never climbs out of the tree."""
+    of the file it really is, each spelled under *root* as given.
+    build_corpus ranks a node by this chain and check_A judges a file by it,
+    so the two cannot disagree. A link into an open directory therefore
+    cannot publish a confidential file; a target outside *root* adds nothing,
+    so the walk never climbs out of the tree."""
     chain = readmes_upward(os.path.dirname(path), root)
     real_root = os.path.realpath(root)
     real_dir = os.path.dirname(os.path.realpath(path))
     walked_dir = os.path.realpath(os.path.dirname(path))
-    if real_dir != walked_dir and (
-        real_dir == real_root or real_dir.startswith(real_root + os.sep)
-    ):
-        chain += readmes_upward(real_dir, real_root)
+    # A target in the root directory itself adds nothing: the root README.md
+    # ends every walked chain already.
+    if real_dir != walked_dir and real_dir.startswith(real_root + os.sep):
+        under_root = os.path.join(root, os.path.relpath(real_dir, real_root))
+        chain += readmes_upward(under_root, root)
     return chain
 
 

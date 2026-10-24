@@ -536,15 +536,7 @@ def _readme_pairs(readmes, root):
                 # at a looser level, and _nearest_readme stops the owner walk
                 # at it, so each node below it has an unknown owner.
                 fm = _UNREADABLE_FM
-            yield _tree_rel(readme, root), fm or {}
-
-
-def _tree_rel(path, root):
-    """*path* relative to *root*, or to the real *root* for a path
-    scripts/check_structure.py readme_chain reached through it."""
-    if os.path.abspath(path).startswith(os.path.abspath(root) + os.sep):
-        return _rel(path, root)
-    return _rel(path, os.path.realpath(root))
+            yield _rel(readme, root), fm or {}
 
 
 def _readmes_upward(dirpath: str, root: str):

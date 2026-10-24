@@ -244,6 +244,23 @@ def test_a_symlink_into_a_sibling_whose_name_extends_the_root_s_is_outside_it(
     assert _visibility(repo)["x"] == "internal"
 
 
+def test_a_root_reached_through_a_link_spells_the_whole_chain_under_it(tmp_path):
+    """A root given as a link (a checkout under a linked work directory) still
+    spells every README.md on a linked file's chain under the root as given,
+    the target's included, so a reader can name each one relative to it."""
+    real = tmp_path / "real"
+    _write(real, "docs/z/README.md", _readme("z-readme", None, "confidential"))
+    _write(real, "docs/z/plan.md", _readme("plan", None, None))
+    (real / "docs" / "a").mkdir()
+    (real / "docs" / "a" / "plan.md").symlink_to("../z/plan.md")
+    root = tmp_path / "linked"
+    root.symlink_to(real)
+    chain = cs.readme_chain(str(root / "docs" / "a" / "plan.md"), str(root))
+    assert str(root / "docs" / "z" / "README.md") in chain, chain
+    assert all(r.startswith(str(root) + "/") for r in chain), chain
+    assert _visibility(root)["plan"] == "confidential"
+
+
 def test_a_symlink_changes_no_owner(tmp_path):
     """Only visibility reads the target's chain; a module still inherits the
     owner of the package README.md on the path it was walked by."""
