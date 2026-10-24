@@ -3991,3 +3991,97 @@ def test_the_shell_answer_switches_the_shell_targets(tmp_path, generate, shell, 
     if shutil.which(linter) is None and shutil.which(linter, path=here) is None:
         assert ran.returncode != 0, out
         assert "%s (shell.linter) is not installed" % linter in out, out
+
+
+_EXIT_GATE = "tests/integration/test_exit_gate.py"
+_EXIT_GATE_TREE = _EXIT_GATE + "::test_no_process_in_the_tree_ends_outside_the_helper"
+
+
+def _exit_gate_tree(project):
+    """The generated project's tree-wide exit gate, run as its `make test`
+    recipe runs pytest (PYTHONPATH=src:.)."""
+    return subprocess.run(
+        [sys.executable, "-m", "pytest", "-q", "-rs", "-p", "no:cacheprovider"]
+        + [_EXIT_GATE_TREE],
+        cwd=str(project),
+        env=build_child_env(root=str(project), extra={"PYTHONPATH": "src:."}),
+        capture_output=True,
+        text=True,
+        timeout=900,
+    )
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
+@pytest.mark.parametrize(
+    ("shell", "answer"),
+    [(True, {}), (False, {"shell": False})],
+    ids=["shell-kept", "shell-declined"],
+)
+def test_the_shell_answer_ships_the_helper_the_exit_gate_holds_a_script_to(
+    tmp_path, generate, shell, answer
+):
+    """KEEL-SHELL-1: kept, the project ships scripts/exit_codes.sh, current
+    for its enum and named in `shell.excluded_paths`; declined, it ships no
+    helper and names none. Either way `make check` and
+    `make check-exit-codes` pass and the tree exit gate passes with no shell
+    script of the project's own. Kept, a script beside it that sources the
+    helper ends with the three-part line and its member's code under
+    /bin/sh, and a bare `exit 3` turns the exit gate red at its file and
+    line; declined, the gate judges no shell script, so the same file is no
+    finding."""
+    dest = tmp_path / "proj"
+    generate(dest, project_name="demo_proj", frontend_stack="none", **answer)
+    manifest = json.loads((dest / "config" / "project.json").read_text("utf-8"))
+    helper = dest / "scripts" / "exit_codes.sh"
+    assert helper.is_file() is shell
+    assert ("scripts/exit_codes.sh" in manifest["shell"]["excluded_paths"]) is shell
+    env = _hermetic_git_env(tmp_path)
+
+    def add_all():
+        for argv in (["git", "init", "-q"], ["git", "add", "-A"]):
+            r = subprocess.run(
+                argv, cwd=str(dest), capture_output=True, text=True, env=env
+            )
+            assert r.returncode == 0, r.stdout + r.stderr
+
+    add_all()
+    for target in ("check", "check-exit-codes"):
+        ran = _make_in(dest, target)
+        assert ran.returncode == 0, (target, ran.stdout[-3000:], ran.stderr[-3000:])
+    ran = _exit_gate_tree(dest)
+    assert ran.returncode == 0, ran.stdout[-4000:] + ran.stderr[-2000:]
+    assert "1 passed" in ran.stdout, ran.stdout[-2000:]
+
+    (dest / "scripts" / "bad.sh").write_text("#!/bin/sh\nexit 3\n", encoding="utf-8")
+    add_all()
+    ran = _exit_gate_tree(dest)
+    if not shell:
+        assert ran.returncode == 0, ran.stdout[-4000:] + ran.stderr[-2000:]
+        return
+    assert ran.returncode != 0, ran.stdout[-4000:]
+    assert "scripts/bad.sh:2: `exit 3` writes a number" in ran.stdout, ran.stdout[
+        -4000:
+    ]
+
+    good = dest / "scripts" / "good.sh"
+    good.write_text(
+        '#!/bin/sh\n. "$(dirname "$0")/exit_codes.sh"\n'
+        'exit_fail "$EXIT_USAGE" "good: no input" "none given" "pass one"\n',
+        encoding="utf-8",
+    )
+    ran = subprocess.run(
+        ["/bin/sh", str(good)],
+        cwd=str(dest),
+        env=build_child_env(),
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert ran.returncode == 2, (ran.stdout, ran.stderr)
+    assert ran.stderr.strip().endswith("good: no input: none given; pass one"), (
+        ran.stderr
+    )
+    (dest / "scripts" / "bad.sh").unlink()
+    add_all()
+    ran = _exit_gate_tree(dest)
+    assert ran.returncode == 0, ran.stdout[-4000:] + ran.stderr[-2000:]

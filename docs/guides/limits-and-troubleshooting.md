@@ -508,7 +508,8 @@ shell script of its own needs none of those tools.
 
 `tests/integration/test_exit_gate.py` holds every other shell script to
 the helper: each file `scripts/shell_gate.py` calls a shell script, less
-the helper and what `shell.excluded_paths` names. A script must source a
+the helper and what `shell.excluded_paths` names; in a tree with no git
+repository yet, every one the structure walk reaches. A script must source a
 path ending in `/exit_codes.sh`, as
 `. "$(dirname "$0")/exit_codes.sh"`, and end through it. These pass:
 `exit "$EXIT_USAGE"`, `exit ${EXIT_FAILURE}`, `exit_fail` with a member
@@ -522,7 +523,9 @@ the same; one in a comment, a quoted word or a here-document body is not a
 command. A `return` in a function ends nothing. A script that sources the
 helper and never ends through it is a finding, and so is a file the gate
 cannot read to its end. With no shell script at all the gate fails unless
-config/project.json `shell.no_scripts` gives the reason. It cannot see
+config/project.json `shell.no_scripts` gives the reason. With
+`shell.enabled` false it judges no shell script, because no helper ships
+to source. It cannot see
 `set -e`, `trap`, `exec`, `kill`, an `eval` or `sh -c` string, a `case`
 pattern inside `$(...)`, or a script that falls off its end after some
 other ending.

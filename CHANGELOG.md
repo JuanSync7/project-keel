@@ -154,7 +154,7 @@ version rather than a bare commit:
   `tests/integration/test_exit_gate.py` fails a shell script that does not
   source it or ends with a bare `exit 3`, `exit $?` or `exit`, at its file
   and line, and a project with no shell script unless `shell.no_scripts`
-  states why.
+  states why; with `shell` no it judges no shell script.
 - **An agent `--execute` run is held to an approved model-call cap.**
   `scripts/doc_review.py`, `scripts/refactor_practice.py` and the two Stop
   hooks refuse an execute run with exit 2 before any model is built when its

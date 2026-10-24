@@ -829,7 +829,8 @@ The same test reads every shell script `scripts/shell_gate.py` finds, less
 blank part, and an `exit_passthrough` of a number or a member, each at its
 file and line; `exit_passthrough "$status"` over a wrapped tool's status
 is the shell `passthrough`. No shell script is a failure unless
-config/project.json `shell.no_scripts` gives the reason.
+config/project.json `shell.no_scripts` gives the reason, and with
+`shell.enabled` false it judges none.
 `scripts/exit_code_table.py --check` compares the region between the
 `<!-- exit-codes:begin -->` and `<!-- exit-codes:end -->` lines of
 `docs/guides/limits-and-troubleshooting.md` with what it would write: one row
