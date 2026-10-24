@@ -452,3 +452,37 @@ def test_the_json_report_still_lists_the_unowned_only(tmp_path, capsys):
     assert ar.main(["--corpus", str(out), "--json"]) == ExitCode.SUCCESS
     listed = json.loads(capsys.readouterr().out)
     assert [n["node_id"] for n in listed] == ["f"]
+
+
+def _with_unknown(corpus):
+    """Four rows that name no CONVENTIONS §12 source: a corpus written before
+    owner_source existed, or by hand. Each is unknown, neither owned nor not."""
+    rows = []
+    for i, stored in enumerate(["absent", None, "", "bogus"]):
+        row = {"node_id": "u%d" % i, "kind": "doc", "path": "u%d.md" % i}
+        row["owner"] = "alice"
+        if stored != "absent":
+            row["owner_source"] = stored
+        rows.append(row)
+    corpus["nodes"] = corpus["nodes"] + rows
+    return corpus
+
+
+def test_the_report_counts_an_unknown_owner_source_as_its_own_bucket(tmp_path):
+    corpus = _with_unknown(_report_corpus(_tree(tmp_path)))
+    assert [n["node_id"] for n in ar.unknown(corpus)] == ["u0", "u1", "u2", "u3"]
+    assert [n["node_id"] for n in ar.unowned(corpus)] == ["f"]
+
+
+def test_the_report_prints_the_unknown_apart_and_never_counts_it_owned(
+    tmp_path, capsys
+):
+    out = tmp_path / "corpus.json"
+    out.write_text(json.dumps(_with_unknown(_report_corpus(_tree(tmp_path)))))
+    assert ar.main(["--corpus", str(out)]) == ExitCode.SUCCESS
+    text = capsys.readouterr().out
+    assert "accountability: 1 of 8 nodes have no resolved owner" in text
+    assert "accountability: 4 of 8 nodes name no owner source" in text
+    for node_id in ("u0", "u1", "u2", "u3"):
+        assert " %s  (%s.md)" % (node_id, node_id) in text
+    assert "accountability: 1 of 8 nodes have a real owner" in text

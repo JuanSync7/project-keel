@@ -3,7 +3,7 @@
 title: Accountability report
 kind: script
 layer: n/a
-summary: Read-only: list corpus nodes with no resolved owner, and count those on the default owner.
+summary: Read-only: list corpus nodes with no resolved owner and those that name no owner source, and count those on the default owner.
 """
 
 from __future__ import annotations
@@ -23,6 +23,19 @@ DEFAULT_CORPUS = os.path.join("wiki", "corpus.json")
 def unowned(corpus: dict) -> list:
     """Return nodes whose owner could not be resolved (owner_source == 'none')."""
     return [n for n in corpus.get("nodes", []) if n.get("owner_source") == "none"]
+
+
+# The CONVENTIONS §12 sources that name a real owner; with `none` and `default`
+# they are the closed set scripts/jobs/check_corpus.py OWNER_SOURCES holds.
+_REAL_SOURCES = ("frontmatter", "marker", "inherited")
+
+
+def unknown(corpus: dict) -> list:
+    """Return nodes that name no CONVENTIONS §12 owner source (missing, null,
+    empty or outside the set), whose owner is unknown: neither owned nor
+    `none`."""
+    known = _REAL_SOURCES + ("none", "default")
+    return [n for n in corpus.get("nodes", []) if n.get("owner_source") not in known]
 
 
 def defaulted(corpus: dict) -> list:
@@ -79,10 +92,18 @@ def main(argv=None) -> int:
     )
     for origin in tbds:
         print("  %s" % origin)
+    blind = unknown(corpus)
     print(
-        "accountability: %d of %d nodes have a real owner"
-        % (total - len(gaps) - len(held), total)
+        "accountability: %d of %d nodes name no owner source, so their owner is "
+        "unknown -- rebuild the corpus with scripts/jobs/build_corpus.py%s"
+        % (len(blind), total, ":" if blind else ".")
     )
+    for n in sorted(blind, key=lambda n: n["node_id"]):
+        print("  %-9s %s  (%s)" % (n["kind"], n["node_id"], n["path"]))
+    real = [
+        n for n in corpus.get("nodes", []) if n.get("owner_source") in _REAL_SOURCES
+    ]
+    print("accountability: %d of %d nodes have a real owner" % (len(real), total))
     return ExitCode.SUCCESS
 
 

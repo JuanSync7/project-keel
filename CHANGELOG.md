@@ -545,7 +545,8 @@ version rather than a bare commit:
   error naming it and the grammar. A wiki node whose corpus row names no
   `owner_source` now reads as unknown, `null` in the API, "source unknown" on
   the owner chip and `None` in a wiki navigator citation, rather than `none`,
-  which claimed nothing owns it.
+  which claimed nothing owns it, and `scripts/accountability_report.py` counts
+  and lists such nodes on their own line instead of counting them as owned.
 - **A child README can no longer hide a confidential parent.** The corpus
   ended a module's visibility walk at the nearest `README.md` with an owner or
   a visibility, so an owned child `README.md` that stated none gave its

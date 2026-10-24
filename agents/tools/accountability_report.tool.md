@@ -9,7 +9,7 @@ tags: [tool, accountability, owner, governance]
 summary: Read-only list of corpus nodes with no resolved owner (accountability gaps).
 id: tool-accountability-report
 created: 2026-06-17
-updated: 2026-10-23
+updated: 2026-10-24
 visibility: internal
 canonical: true
 tool_command: python3 scripts/accountability_report.py --corpus wiki/corpus.json
@@ -30,7 +30,10 @@ nodes that resolve to nothing are listed. A node whose chain ends on the `TBD`
 placeholder answers to `accountability.default_owner` when one is set
 (`owner_source: default`): the report counts those on their own line, listed
 by the `TBD` each answers to, because writing the real owner there repairs
-every node under it.
+every node under it. A node that names no owner source at all (missing,
+null, or outside CONVENTIONS §12's set) is unknown, neither owned nor `none`,
+and the report counts it on its own line: the repair is to rebuild the
+corpus, not to name an owner.
 
 ## When to use
 - When the `index_enforcer` reports owner gaps, to enumerate exactly which
@@ -48,7 +51,9 @@ every node under it.
 ## Output
 A count plus one line per unowned node (`kind  node_id  (path)`); then a count
 of the nodes on the default owner, from how many `TBD`s, with one line per
-`TBD` location; then a count of the nodes with a real owner. With `--json`, a
+`TBD` location; then a count plus one line per node that names no owner
+source; then a count of the nodes with a real owner (`frontmatter`, `marker`
+or `inherited`). With `--json`, a
 list of the unowned nodes only (`node_id`, `kind`, `path`), the owner gaps
 `index_enforcer` reads. No corpus present → prints a notice and exits 0.
 
