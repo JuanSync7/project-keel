@@ -257,13 +257,28 @@ _NEXT_ASSIGNMENT = re.compile(r"(?<![\s;,])\s{1,4}[A-Za-z_][\w.\-]{0,63}=")
 # (`V,https://...`) or after one (`https://host:1,V`) is a word of its own,
 # judged as any word is. Each alternative's end is fixed by a literal or a class, so
 # each character is read once. The first word needs a space or a mark before
-# it (_clause_shown checks): a mark after the secret word (`password,`,
-# `password's`, `token]:`, `password/`, `password` and a dash) opens the
-# clause as a space does, while a word character there continues a key
-# longer than _KEY's bound.
+# it (_clause_shown checks the character before it matches one): a mark
+# after the secret word (`password,`, `password's`, `token]:`, `password/`,
+# `password` and a dash) opens the clause as a space does, while a word
+# character there continues a key longer than _KEY's bound.
+# Each open run is capped at _CLAUSE_WORD_LIMIT, so one match reads at most
+# that many characters whatever follows: uncapped, "token" * 10000 read the
+# rest of the line once per key and took 4 s. A longer word is split into
+# words of that length, each judged, so the split shows nothing a whole word
+# would hide. The cap is above a host and port (253 + 6 characters).
+_CLAUSE_WORD_LIMIT = 300
 _CLAUSE_WORD = re.compile(
-    r"\s{0,4}((?i:%s)[^\s\"'<>/,;]*(?:/%s)?[^\w\s<]{0,3}|%s|(?:(?!(?i:%s)|%s)\S)+)"
-    % (_SCHEME, re.escape(_PATH_HIDDEN), _HIDDEN, _SCHEME, _HIDDEN)
+    r"\s{0,4}((?i:%s)[^\s\"'<>/,;]{0,%d}(?:/%s)?[^\w\s<]{0,3}|%s"
+    r"|(?:(?!(?i:%s)|%s)\S){1,%d})"
+    % (
+        _SCHEME,
+        _CLAUSE_WORD_LIMIT,
+        re.escape(_PATH_HIDDEN),
+        _HIDDEN,
+        _SCHEME,
+        _HIDDEN,
+        _CLAUSE_WORD_LIMIT,
+    )
 )
 _URL_WORD = re.compile(r"(?i:%s)" % _SCHEME)
 # A URL word's scheme, its host as (a) left it and the rest. In a clause the
@@ -572,10 +587,10 @@ def _clause_shown(line, at):
     sentence, before another secret word, at the line's end, or after
     CLAUSE_WORDS words, when the rest of its sentence is hidden whole."""
     pieces, words = [], 0
+    if line[at : at + 1].isalnum():
+        return "", at
     while word := _CLAUSE_WORD.match(line, at):
         text = word.group(1)
-        if not words and word.start(1) == at and text[0].isalnum():
-            break
         bare = text.strip(_WORD_MARKS).lower()
         if bare in _KEY_WORDS:
             break
