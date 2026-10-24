@@ -2,7 +2,7 @@
 title: Integration — every CI adapter runs exactly config/project.json ci_pipeline.steps, in order
 kind: tests
 layer: n/a
-summary: config/project.json `ci_pipeline.steps` is the one statement of what CI runs, and each adapter file present (`ci_pipeline.adapters`: .github/workflows/ci.yml, .gitlab-ci.yml) is held to it through tests/ci_adapters.py parity_faults. The adapters in this tree have no fault; an empty step list, a tree with no adapter, a missing marker line or one that is not the whole line, a dropped, added, reordered or changed step, a changed env value, and a GitLab image or GIT_DEPTH other than the configured one each turn the judge red on a copy. In a project, the `ci_pipeline` answer in .copier-answers.yml picks what is judged: a chosen adapter that is missing, or one that lost its marker, is a fault, and so is an answers file with no valid answer; an unchosen file the project wrote, with no marker, is not judged, and an unchosen one carrying the marker still is. The GitLab cases render the template's .gitlab-ci.yml.jinja with the toolchain answer, so the shipped twin is judged too, and yaml reads the rendered file to the same script lines the stdlib scanner does.
+summary: config/project.json `ci_pipeline.steps` is the one statement of what CI runs, and each adapter file present (`ci_pipeline.adapters`: .github/workflows/ci.yml, .gitlab-ci.yml) is held to it through tests/ci_adapters.py parity_faults. The adapters in this tree have no fault; an empty step list, a tree with no adapter, a missing marker line or one that is not the whole line, a dropped, added, reordered or changed step, a changed env value, and a GitLab image or GIT_DEPTH other than the configured one each turn the judge red on a copy, and so does each GitLab key that decides whether or how the `test` job runs (`when: manual`, `rules` with `when: never`, `only`, `except`, a job or `default:` `before_script` that exits 0, `extends`, top-level `before_script`, `workflow` and `include`), with one fault naming the key. In a project, the `ci_pipeline` answer in .copier-answers.yml picks what is judged: a chosen adapter that is missing, or one that lost its marker, is a fault, and so is an answers file with no valid answer; an unchosen file the project wrote, with no marker, is not judged, and an unchosen one carrying the marker still is. The GitLab cases render the template's .gitlab-ci.yml.jinja with the toolchain answer, so the shipped twin is judged too, and yaml reads the rendered file to the same script lines the stdlib scanner does.
 """
 
 import json
@@ -148,6 +148,43 @@ def test_a_gitlab_adapter_that_drifts_is_a_fault(tmp_path, old, new):
     root = _copy(tmp_path, gitlab=True)
     _edit(root / ".gitlab-ci.yml", old, new)
     assert ci_adapters.parity_faults(root) != []
+
+
+# Each key that decides whether, or how, the GitLab `test` job runs its
+# script, as a shape the review measured passing the judge: (key named in the
+# fault, the line it is planted after, the planted text). keel's twin sets
+# none of them.
+_GITLAB_RUN_KEYS = [
+    ("test.when", "test:\n", "  when: manual\n"),
+    ("test.rules", "test:\n", "  rules:\n    - when: never\n"),
+    ("test.only", "test:\n", "  only:\n    - tags\n"),
+    ("test.except", "test:\n", "  except:\n    - branches\n"),
+    ("test.before_script", "test:\n", "  before_script:\n    - exit 0\n"),
+    ("test.extends", "test:\n", "  extends: .quiet\n"),
+    ("test.<<", "test:\n", "  <<: *quiet\n"),
+    ("default", 'GIT_DEPTH: "0"\n', "default:\n  before_script:\n    - exit 0\n"),
+    ("before_script", 'GIT_DEPTH: "0"\n', "before_script:\n  - exit 0\n"),
+    ("workflow", 'GIT_DEPTH: "0"\n', "workflow:\n  rules:\n    - when: never\n"),
+    ("include", 'GIT_DEPTH: "0"\n', "include:\n  - local: more-ci.yml\n"),
+]
+
+
+@pytest.mark.parametrize(
+    "key, after, planted",
+    _GITLAB_RUN_KEYS,
+    ids=[c[0] for c in _GITLAB_RUN_KEYS],
+)
+def test_a_gitlab_key_that_decides_whether_the_job_runs_is_a_fault(
+    tmp_path, key, after, planted
+):
+    """A `test` job whose steps match but that runs them only by hand, never,
+    on tags only, or after a `before_script` that exits 0 passes no step: the
+    judge names the key, and nothing else."""
+    root = _copy(tmp_path, gitlab=True)
+    _edit(root / ".gitlab-ci.yml", after, after + planted)
+    faults = ci_adapters.parity_faults(root)
+    assert len(faults) == 1, faults
+    assert "`%s`" % key in faults[0], faults
 
 
 def test_a_config_step_no_adapter_runs_is_a_fault(tmp_path):

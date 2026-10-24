@@ -2,7 +2,7 @@
 title: Test helper — read each CI adapter's steps and judge it against config/project.json ci_pipeline
 kind: tests
 layer: n/a
-summary: config/project.json `ci_pipeline` states the CI pipeline once, as an ordered list of shell steps; each adapter file (`ci_pipeline.adapters`, github's .github/workflows/ci.yml and gitlab's .gitlab-ci.yml) runs them. adapter_steps reads the neutral steps an adapter file runs, stdlib line-scanning so a test that imports nothing optional can use it: in a GitHub workflow they are the `run` steps after the last `uses:` setup step, with their `env` map and whether `continue-on-error` lets the job carry on; in a GitLab file they are the `test` job's `script` lines, a leading upper-case NAME=value being the step's env and `allow_failure` making every step soft. judged names the adapter files that are keel's, and shipped adds, in the template, an adapter present only as its `.jinja` twin, so a test about what CI runs reads every adapter keel ships. gitlab_line is the one way a step is written as a GitLab script line. parity_faults names every way the adapters under a root differ from the config: no step configured, no adapter present, a chosen adapter missing, a missing marker line, steps that differ in content or order, and for gitlab an image other than `gitlab_image` filled from `toolchain` or a `GIT_DEPTH` other than "0". Which adapters are judged follows the `ci_pipeline` answer in .copier-answers.yml: every chosen one, and an unchosen one only when it carries keel's marker line, so a file the project wrote itself, which `copier update` also keeps, is not held to keel's steps; the template has no answers file and judges every adapter present, and an answers file that records no valid answer is a fault. A layout the scanner cannot read gives steps that differ from the config, so the judge fails closed. It reads files and writes nothing.
+summary: config/project.json `ci_pipeline` states the CI pipeline once, as an ordered list of shell steps; each adapter file (`ci_pipeline.adapters`, github's .github/workflows/ci.yml and gitlab's .gitlab-ci.yml) runs them. adapter_steps reads the neutral steps an adapter file runs, stdlib line-scanning so a test that imports nothing optional can use it: in a GitHub workflow they are the `run` steps after the last `uses:` setup step, with their `env` map and whether `continue-on-error` lets the job carry on; in a GitLab file they are the `test` job's `script` lines, a leading upper-case NAME=value being the step's env and `allow_failure` making every step soft. judged names the adapter files that are keel's, and shipped adds, in the template, an adapter present only as its `.jinja` twin, so a test about what CI runs reads every adapter keel ships. gitlab_line is the one way a step is written as a GitLab script line. parity_faults names every way the adapters under a root differ from the config: no step configured, no adapter present, a chosen adapter missing, a missing marker line, steps that differ in content or order, and for gitlab an image other than `gitlab_image` filled from `toolchain`, a `GIT_DEPTH` other than "0", or any key that decides whether or how the `test` job runs (top-level `before_script`, `default`, `include`, `workflow`; the job's `before_script`, `except`, `extends`, `only`, `rules`, `when` or a `<<` merge key), none of which keel's twin sets. The GitHub reader has no such check: a job-level `if:` or a changed `on:` passes (KEEL-CIGATE-1). Which adapters are judged follows the `ci_pipeline` answer in .copier-answers.yml: every chosen one, and an unchosen one only when it carries keel's marker line, so a file the project wrote itself, which `copier update` also keeps, is not held to keel's steps; the template has no answers file and judges every adapter present, and an answers file that records no valid answer is a fault. A layout the scanner cannot read gives steps that differ from the config, so the judge fails closed. It reads files and writes nothing.
 """
 
 import json
@@ -158,6 +158,41 @@ def _gitlab_steps(text):
     return steps
 
 
+# The GitLab keys that decide whether, and how, the `test` job runs its
+# script: a top-level one applies to every job, a `test.` one to that job.
+# keel's twin sets none of them, so any is a fault; each is a shape that
+# passed the step check while running no step (`when: manual`, `rules` with
+# `when: never`, a `before_script` that exits 0, an `extends` or `include`
+# that replaces the job).
+_GITLAB_TOP_RUN_KEYS = ("before_script", "default", "include", "workflow")
+_GITLAB_JOB_RUN_KEYS = ("before_script", "except", "extends", "only", "rules", "when")
+
+
+def _gitlab_run_keys(text):
+    """The run-deciding keys a GitLab file sets, in file order: each top-level
+    one by name, each of the `test` job's own as `test.<key>`; a YAML merge
+    key (`<<`) under `test` counts too, since it can carry any of them."""
+    found, section, child = [], None, None
+    for line in text.splitlines():
+        body = line.strip()
+        if not body or body.startswith("#"):
+            continue
+        indent = _indent(line)
+        key = body.partition(":")[0].strip()
+        if indent == 0:
+            section, child = key, None
+            if key in _GITLAB_TOP_RUN_KEYS:
+                found.append(key)
+            continue
+        if section != "test":
+            continue
+        if child is None:
+            child = indent
+        if indent == child and (key in _GITLAB_JOB_RUN_KEYS or key == "<<"):
+            found.append("test." + key)
+    return found
+
+
 _READERS = {"github": _github_steps, "gitlab": _gitlab_steps}
 
 
@@ -247,6 +282,12 @@ def parity_faults(root):
                     "%s: image %r, not ci_pipeline.gitlab_image filled from toolchain %r"
                     % (path.name, keys.get("test.image"), image)
                 )
+            faults.extend(
+                "%s: `%s` decides whether or how the test job runs, and keel's "
+                "adapter sets no `%s`: remove it, or the job may pass without "
+                "running a step" % (path.name, key, key)
+                for key in _gitlab_run_keys(text)
+            )
             if keys.get("variables.GIT_DEPTH") != "0":
                 faults.append(
                     '%s: GIT_DEPTH %r, not "0"'
