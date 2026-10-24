@@ -571,8 +571,13 @@ version rather than a bare commit:
   that `README.md`; it judges a file reached by a link and by its target once,
   at the path build_corpus keeps for it (the first in a sorted walk,
   `scripts/check_structure.py` `kept_markdown`), against the `README.md` chain
-  build_corpus ranks that path by, so neither a stricter link directory nor a
+  build_corpus ranks the node by, so neither a stricter link directory nor a
   stricter target directory can hide the contradiction or name the wrong level.
+  That chain (`served_chain`) is the chain of every path the walk reaches one
+  real file by, a link, several links or a chain of links, and of the file it
+  really is, so a file is served at the strictest of them and renaming a
+  directory can no longer publish it; a module reached by several paths is a
+  node at each, every one at that level.
   This fixes the level the corpus records. Only the wiki
   navigator, and the MCP Q&A server through it, drop `confidential` and
   `restricted` nodes; the showcase API, its `/llms-full.txt` and the static

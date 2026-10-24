@@ -43,10 +43,11 @@ from check_structure import (  # noqa: E402
     _resolve_link,
     _unfenced_lines,
     kept_markdown,
-    readme_chain,
     readmes_upward,
+    served_chain,
     sorted_walk,
     strictest_visibility,
+    walked_paths,
 )
 from exit_codes import ExitCode, finish, report  # noqa: E402
 
@@ -399,7 +400,9 @@ def _attach_reference_edges(nodes: list, refs: list) -> None:
         ]
 
 
-def _doc_and_sections(path: str, root: str, nodes: list, refs: list, default):
+def _doc_and_sections(
+    path: str, root: str, walked: dict, nodes: list, refs: list, default
+):
     rel = _rel(path, root)
     try:
         # utf-8-sig, like every .py read here: read as plain utf-8 a BOM'd file
@@ -416,7 +419,7 @@ def _doc_and_sections(path: str, root: str, nodes: list, refs: list, default):
     doc_id = fm.get("id") or _path_id(rel)
     doc_res = _resolve_owner(fm.get("owner"), "frontmatter", rel, _UNOWNED, default)
     visibility = _chain_visibility(
-        fm.get("visibility"), _visibility_readmes(path, root)
+        fm.get("visibility"), _visibility_readmes(path, root, walked)
     )
     title = fm.get("title") or rel
     summary = fm.get("summary") or ""
@@ -545,11 +548,11 @@ def _readmes_upward(dirpath: str, root: str):
     return _readme_pairs(readmes_upward(dirpath, root), root)
 
 
-def _visibility_readmes(path, root):
+def _visibility_readmes(path, root, walked):
     """The (rel path, frontmatter) pairs of scripts/check_structure.py
-    readme_chain for a node at *path*: the chain check_A judges the same file
-    by."""
-    return list(_readme_pairs(readme_chain(path, root), root))
+    served_chain for a node at *path*, every path in *walked* to the same
+    real file included: the chain check_A judges the same file by."""
+    return list(_readme_pairs(served_chain(path, root, walked), root))
 
 
 def _chain_visibility(own, readmes):
@@ -587,7 +590,7 @@ def _nearest_readme(readmes, default):
     return _UNOWNED
 
 
-def _module_and_symbols(path: str, root: str, nodes: list, default):
+def _module_and_symbols(path: str, root: str, walked: dict, nodes: list, default):
     rel = _rel(path, root)
     try:
         # utf-8-sig: keep BOM'd (valid, importable) modules indexable — the
@@ -610,7 +613,7 @@ def _module_and_symbols(path: str, root: str, nodes: list, default):
     readme_res = _nearest_readme(readmes, default)
     mod_res = _resolve_owner(meta.get("owner"), "frontmatter", rel, readme_res, default)
     visibility = _chain_visibility(
-        meta.get("visibility"), _visibility_readmes(path, root)
+        meta.get("visibility"), _visibility_readmes(path, root, walked)
     )
     nodes.append(
         {
@@ -722,7 +725,8 @@ def build_corpus(root: str) -> dict:
     nodes = []
     refs = []  # (writing node, kind, via, spec) — resolved once every node exists
     default = _default_owner(root)
-    kept = kept_markdown(root)
+    walked = walked_paths(root)
+    kept = kept_markdown(root, walked)
     for dirpath, _, filenames in sorted_walk(root):
         top = _rel(dirpath, root).split(os.sep)[0]
         for f in filenames:
@@ -734,9 +738,9 @@ def build_corpus(root: str) -> dict:
                 # doc, under the path kept_markdown keeps, which check_A judges.
                 if kept[os.path.realpath(full)] != full:
                     continue
-                _doc_and_sections(full, root, nodes, refs, default)
+                _doc_and_sections(full, root, walked, nodes, refs, default)
             elif f.endswith(".py") and top in CODE_ROOTS:
-                _module_and_symbols(full, root, nodes, default)
+                _module_and_symbols(full, root, walked, nodes, default)
 
     # denormalize children from parent edges
     by_id = {n["node_id"]: n for n in nodes}

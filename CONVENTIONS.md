@@ -75,8 +75,13 @@ from its directory up to the root, in the order the table above lists
 (`scripts/check_structure.py` `VISIBILITY_ORDER`). A section or symbol takes
 its document's or module's. A `README.md` that states none passes on what is
 stated above it, and with nothing stated anywhere a node is `internal`. A file
-reached through a symlink also takes the chain of the file it really is, when
-that file is in the tree. A `README.md` that cannot be read, a dangling or
+reached by more than one path, through one link, several links or a chain of
+links, takes the strictest level of every chain that reaches it: the chain of
+each path the sorted walk of the tree reaches it by, and the chain of the file
+it really is, when that file is in the tree (`scripts/check_structure.py`
+`served_chain`, which build_corpus and check A both call). So no directory
+name, and no sort order, decides its level, and renaming a directory cannot
+publish it. A `README.md` that cannot be read, a dangling or
 looping link or a link to a directory included, passes on
 `unreadable-readme`, a value outside the vocabulary that outranks every level,
 so check_corpus refuses each node below it: one such `README.md` blocks every
@@ -88,8 +93,9 @@ level than a `README.md` above it is an error naming that `README.md`
 reached by more than one path, a link and its target, is one corpus node,
 under the first of those paths in a sorted walk of the tree
 (`scripts/check_structure.py` `kept_markdown`, which build_corpus and check A
-both call). Check A judges that file once, at that path, against
-`readme_chain` of that path: the chain build_corpus ranks the node by.
+both call). Check A judges that file once, at that path, against its
+`served_chain`, and names the strictest level on it and the `README.md` that
+states it: the level build_corpus serves the node at.
 
 The level is a label, and only some readers act on it. The wiki navigator
 agent, and the MCP Q&A server through it, drop `confidential` and `restricted`

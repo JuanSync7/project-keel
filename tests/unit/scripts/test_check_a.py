@@ -2,7 +2,7 @@
 title: Unit — check_structure check_A (frontmatter lifecycle symmetry)
 kind: tests
 layer: n/a
-summary: check_A's lifecycle rule, pinned: a document whose status says it has been replaced must name its replacement. `deprecated` has required `superseded_by` since the first frontmatter check; `superseded` — the ADR lifecycle's word for the same fact — did not, so an ADR could be marked superseded by nothing and the corpus's "follow the chain to the live version" promise ended at a dead end. The two statuses are one rule with two vocabularies. A document stating a looser visibility than a README.md on its chain is an error, and a file reached by a link and its target is judged once, at the path build_corpus keeps for it, against the chain build_corpus ranks that path by.
+summary: check_A's lifecycle rule, pinned: a document whose status says it has been replaced must name its replacement. `deprecated` has required `superseded_by` since the first frontmatter check; `superseded` — the ADR lifecycle's word for the same fact — did not, so an ADR could be marked superseded by nothing and the corpus's "follow the chain to the live version" promise ended at a dead end. The two statuses are one rule with two vocabularies. A document stating a looser visibility than a README.md on its chain is an error, and a file reached by a link and its target is judged once, at the path build_corpus keeps for it, against the chain build_corpus ranks the node by: the chain of every path the walk reaches the one real file by, so the level it names is the strictest of them whichever directory sorts first.
 """
 
 import sys
@@ -229,10 +229,10 @@ def test_check_a_judges_a_linked_file_where_the_corpus_serves_it(
     repo, link_dir, target_dir, own, where, level
 ):
     """build_corpus keeps a linked doc under the first path of its sorted
-    walk and ranks it by readme_chain of that path; check_A judges the file
-    at that path by that chain, so it names that path, the README that wins
-    and the level the corpus serves, whether the link's directory or the
-    target's is the stricter."""
+    walk and ranks it by served_chain; check_A judges the file at that path
+    by that chain, so it names that path, the README that wins and the level
+    the corpus serves, whether the link's directory or the target's is the
+    stricter."""
     _linked_tree(repo, link_dir, target_dir, own)
     cs.check_A()
     found = [e for e in cs.errors if "less restrictive" in e]
@@ -298,3 +298,71 @@ def test_check_a_names_a_linked_file_where_the_corpus_does_in_any_walk_order(
     assert named == ["docs/a-open/plan.md"], cs.errors
     assert any("title" in e for e in cs.errors), cs.errors
     assert any("less restrictive" in e for e in cs.errors), cs.errors
+
+
+# --- one real file reached by several paths ---------------------------------
+#
+# (a README level per directory role, the links as (link role, target role),
+# the level the corpus serves), each tree given twice with its directory names
+# swapped: the strictest chain of every path decides, whichever sorts first.
+_REACHED = [
+    pytest.param(
+        {"target": "public", "link": "confidential"},
+        [("link", "target")],
+        "confidential",
+        id="stricter-link-directory",
+    ),
+    pytest.param(
+        {"target": "public", "low": "internal", "high": "restricted"},
+        [("low", "target"), ("high", "target")],
+        "restricted",
+        id="two-links-of-different-levels",
+    ),
+    pytest.param(
+        {"first": "public", "middle": "restricted", "last": "internal"},
+        [("first", "middle"), ("middle", "last")],
+        "restricted",
+        id="a-chain-of-links",
+    ),
+]
+
+
+def _reached_tree(repo, levels, links, names):
+    """Each role in *levels* a directory under `docs/` named from *names* in
+    role order, its README.md stating the role's level; `plan.md` stating
+    `public` is real in the one role no link starts from, and every other
+    role holds a link to the role it names. Returns {role: directory}."""
+    name = dict(zip(levels, names[: len(levels)], strict=True))
+    _stated(repo / "README.md", "public")
+    for role, level in levels.items():
+        _stated(repo / "docs" / name[role] / "README.md", level)
+    linked = {start for start, _ in links}
+    (real,) = [role for role in levels if role not in linked]
+    _stated(repo / "docs" / name[real] / "plan.md", "public")
+    for start, to in links:
+        (repo / "docs" / name[start] / "plan.md").symlink_to("../%s/plan.md" % name[to])
+    return {role: "docs/%s" % name[role] for role in levels}
+
+
+@pytest.mark.parametrize(
+    "names", [("a", "m", "z"), ("z", "m", "a")], ids=["a-first", "z-first"]
+)
+@pytest.mark.parametrize("levels, links, level", _REACHED)
+def test_check_a_judges_a_file_reached_by_several_paths_by_the_strictest_chain(
+    repo, levels, links, level, names
+):
+    """build_corpus serves one real file at the strictest level of every
+    chain that reaches it; check_A judges the file once, at the path the
+    corpus keeps, against that level, and names it and a README.md that
+    states it, so swapping the directory names changes neither."""
+    dirs = _reached_tree(repo, levels, links, names)
+    cs.check_A()
+    found = [e for e in cs.errors if "less restrictive" in e]
+    assert len(found) == 1, cs.errors
+    message = found[0]
+    kept = "%s/plan.md" % min(dirs.values())  # the sorted walk meets it first
+    assert message.startswith("%s: visibility 'public'" % kept), message
+    assert "serves it as '%s'" % level in message, message
+    stating = [r for r, v in levels.items() if v == level]
+    assert any("stated by %s/README.md" % dirs[r] in message for r in stating), message
+    assert _served(repo)["plan"] == (kept, level)

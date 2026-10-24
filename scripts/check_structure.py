@@ -620,18 +620,45 @@ def sorted_walk(root):
         yield dirpath, dirnames, sorted(filenames)
 
 
-def kept_markdown(root):
-    """{real path: the path build_corpus keeps} for every `.md` file under
-    *root*: the first path to it in sorted_walk. A doc reached by a link and
-    by its target is one corpus node, under this path, ranked by
-    readme_chain of this path."""
-    kept = {}
+def walked_paths(root):
+    """{real path: every path sorted_walk reaches it by, in walk order} for
+    every file under *root*: the paths served_chain ranks one real file by."""
+    walked = {}
     for dirpath, _, filenames in sorted_walk(root):
         for f in filenames:
-            if f.endswith(".md"):
-                full = os.path.join(dirpath, f)
-                kept.setdefault(os.path.realpath(full), full)
+            full = os.path.join(dirpath, f)
+            walked.setdefault(os.path.realpath(full), []).append(full)
+    return walked
+
+
+def kept_markdown(root, walked=None):
+    """{real path: the path build_corpus keeps} for every `.md` file under
+    *root*: the first `.md` path to it in sorted_walk, from *walked*
+    (walked_paths of *root* when not given). A doc reached by a link and by
+    its target is one corpus node, under this path, ranked by served_chain."""
+    walked = walked_paths(root) if walked is None else walked
+    kept = {}
+    for real, paths in walked.items():
+        named = [p for p in paths if p.endswith(".md")]
+        if named:
+            kept[real] = named[0]
     return kept
+
+
+def served_chain(path, root, walked):
+    """The README.md paths a file at *path* is served by: readme_chain of
+    every path in *walked* (walked_paths of *root*) to the same real file,
+    and of *path* itself, in walk order, each once. Each readme_chain holds
+    the real file's own chain too, so the strictest level on this chain is
+    the strictest of every chain that reaches the file: no directory name,
+    and so no sort order, decides which chain is left out. build_corpus
+    ranks a node by it and check_A judges the file by it."""
+    chain = []
+    for reached in walked.get(os.path.realpath(path), []) + [path]:
+        for readme in readme_chain(reached, root):
+            if readme not in chain:
+                chain.append(readme)
+    return chain
 
 
 def readme_chain(path, root):
@@ -702,9 +729,10 @@ def _visibility_contradictions(stated, chain=None):
 def check_A():
     seen_ids = {}
     seen_real = set()  # dedupe symlink + target (CLAUDE.md -> AGENT.md)
-    # A file is judged at the path build_corpus keeps for it, by that path's
-    # readme_chain: the node and the chain the corpus serves.
-    kept = kept_markdown(ROOT)
+    # A file is judged at the path build_corpus keeps for it, by served_chain:
+    # the node and the chain the corpus serves.
+    walked = walked_paths(ROOT)
+    kept = kept_markdown(ROOT, walked)
 
     def served(path):
         return rel(kept.get(os.path.realpath(path), path))
@@ -733,7 +761,7 @@ def check_A():
                         stated[served(full)] = fm["visibility"]
 
     def chain(path):
-        return [served(r) for r in readme_chain(os.path.join(ROOT, path), ROOT)]
+        return [served(r) for r in served_chain(os.path.join(ROOT, path), ROOT, walked)]
 
     for message in _visibility_contradictions(stated, chain):
         err(message)

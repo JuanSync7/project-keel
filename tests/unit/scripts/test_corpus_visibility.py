@@ -2,7 +2,7 @@
 title: Unit — the corpus's visibility fails closed along each node's README chain
 kind: tests
 layer: n/a
-summary: build_corpus gives each doc, section, module and symbol the most restrictive visibility stated on its chain — its own frontmatter or docstring and every README.md from its directory up to the root — in scripts/check_structure.py VISIBILITY_ORDER, so a child README that states none, or states a looser level, can never hide a confidential parent; with nothing stated anywhere a node is `internal`, and a value outside the vocabulary outranks every member so check_corpus refuses each node under it. A file reached through a symlink takes the strictest of the path chain and its target's chain inside the root, and a README.md that cannot be read, a dangling or looping link or a link to a directory included, passes on a marker that outranks every level, so it blocks every node below it.
+summary: build_corpus gives each doc, section, module and symbol the most restrictive visibility stated on its chain — its own frontmatter or docstring and every README.md from its directory up to the root — in scripts/check_structure.py VISIBILITY_ORDER, so a child README that states none, or states a looser level, can never hide a confidential parent; with nothing stated anywhere a node is `internal`, and a value outside the vocabulary outranks every member so check_corpus refuses each node under it. A file reached by several paths, one link, several links or a chain of links, takes the strictest chain of every path the walk reaches it by and of its target inside the root, whichever directory name sorts first, and a README.md that cannot be read, a dangling or looping link or a link to a directory included, passes on a marker that outranks every level, so it blocks every node below it.
 """
 
 import itertools
@@ -218,6 +218,82 @@ def test_a_module_symlinked_into_an_open_package_keeps_its_target_s_level(tmp_pa
     vis = _visibility(tmp_path)
     assert vis["src/a/m-py"] == "restricted"
     assert vis["src/z/m-py"] == "restricted"
+
+
+# Every path to one real file, each tree given twice with its directory names
+# swapped: (a README level per directory role, the links as (link role, target
+# role), the level the corpus must serve). The level is the strictest chain
+# that reaches the file, so it cannot depend on which name sorts first.
+_REACHED = [
+    pytest.param(
+        {"target": "public", "link": "confidential"},
+        [("link", "target")],
+        "confidential",
+        id="stricter-link-directory",
+    ),
+    pytest.param(
+        {"target": "public", "low": "internal", "high": "restricted"},
+        [("low", "target"), ("high", "target")],
+        "restricted",
+        id="two-links-of-different-levels",
+    ),
+    pytest.param(
+        {"first": "public", "middle": "restricted", "last": "internal"},
+        [("first", "middle"), ("middle", "last")],
+        "restricted",
+        id="a-chain-of-links",
+    ),
+]
+
+# The directory names given to the roles in order, then the same names swapped.
+_NAMES = [("a", "m", "z"), ("z", "m", "a")]
+
+
+def _reached_tree(root, kind, levels, links, names):
+    """The tree a _REACHED row describes, its directory roles named from
+    *names* in role order, under `docs/` for a doc and `src/` for a module.
+    The file is real in the one role no link starts from; every other role
+    holds a link to the role it names."""
+    top, leaf = ("docs", "plan.md") if kind == "doc" else ("src", "m.py")
+    name = dict(zip(levels, names[: len(levels)], strict=True))
+    _write(root, "README.md", _readme("root-readme", None, "public"))
+    for role, level in levels.items():
+        _write(root, "%s/%s/README.md" % (top, name[role]), _readme(role, "o", level))
+    linked = {start for start, _ in links}
+    (real,) = [role for role in levels if role not in linked]
+    body = _readme("plan", None, "public") if kind == "doc" else _module("public")
+    _write(root, "%s/%s/%s" % (top, name[real], leaf), body)
+    for start, to in links:
+        (root / top / name[start] / leaf).symlink_to("../%s/%s" % (name[to], leaf))
+
+
+@pytest.mark.parametrize("names", _NAMES, ids=["a-first", "z-first"])
+@pytest.mark.parametrize("levels, links, level", _REACHED)
+def test_a_doc_reached_by_several_paths_takes_the_strictest_chain_of_all(
+    tmp_path, levels, links, level, names
+):
+    """One real file is one doc whichever path the walk keeps, at the
+    strictest level of every chain that reaches it, so renaming a directory
+    cannot publish it."""
+    _reached_tree(tmp_path, "doc", levels, links, names)
+    vis = _visibility(tmp_path)
+    assert vis["plan"] == level
+    assert vis["plan#part"] == level
+
+
+@pytest.mark.parametrize("names", _NAMES, ids=["a-first", "z-first"])
+@pytest.mark.parametrize("levels, links, level", _REACHED)
+def test_a_module_reached_by_several_paths_takes_the_strictest_chain_of_all(
+    tmp_path, levels, links, level, names
+):
+    """A module is a node at every path the walk reaches it by, and every
+    one of them, with its symbols, is served at the strictest chain of the
+    one real file."""
+    _reached_tree(tmp_path, "module", levels, links, names)
+    corpus = bc.build_corpus(str(tmp_path))
+    modules = [n for n in corpus["nodes"] if n["kind"] in ("module", "symbol")]
+    assert len(modules) == 2 * len(levels), modules
+    assert {n["visibility"] for n in modules} == {level}, modules
 
 
 def test_a_symlink_to_a_file_outside_the_root_reads_no_readme_outside_it(tmp_path):
