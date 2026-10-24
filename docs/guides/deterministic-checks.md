@@ -1154,7 +1154,13 @@ each rule rewrites only its own span, so the cause (`ENOTFOUND`, `E401`,
   `<path hidden>` unless it opens with a comma or semicolon, which end the
   URL. The path runs up to a space, quote, `<` or `>`, so a query or a token
   glued on past a `)` goes with it: npm masks only a userinfo password, and a
-  registry token can sit in the userinfo or the path.
+  registry token can sit in the userinfo or the path. A URL's scheme is one
+  npm reaches: `http` and `https` (npm-registry-fetch), `socks`, `socks4`,
+  `socks4a`, `socks5` and `socks5h` (socks-proxy-agent), `git`, `git+http`,
+  `git+https`, `git+ssh`, `git+file` and `file` (npm-package-arg) and `ssh`
+  (hosted-git-info), listed in `_NPM_SCHEMES`. Text glued before a scheme is
+  no part of it. After any other `://` the userinfo and path are hidden the
+  same way and the name before it stays.
 - **An `Authorization`, `Bearer` or `Basic` scheme** keeps its name and its
   `realm="..."` and loses its value.
 - **A secret word** (`auth`, `token`, `password`, `passwd`, `secret`, `key`,
@@ -1165,9 +1171,13 @@ each rule rewrites only its own span, so the cause (`ENOTFOUND`, `E401`,
   a space, through any quote, comma, `;` or `name:` inside it, because a
   passphrase has spaces and any of those can sit in one; a `name=` after `; `
   or `, ` is a cookie's next pair and is hidden with it, and a quoted value is
-  hidden at least to its closing quote. After whitespace the secret word is
-  prose, and the clause after it, to the end of its sentence (a `.`, `!` or
-  `?` before a space) or of the line, is read word by word against a closed
+  hidden at least to its closing quote. After whitespace or any mark
+  (`password,`, `password's`, `[token]:`, `(password)`, `password/`, a dash)
+  the secret word is prose. The clause after it runs to the end of its
+  sentence or of the line. A sentence ends at `!`, `?` or a period, with any
+  closing quote or bracket, when the next word opens with a capital or the
+  line ends; a period after a single letter (`e.g.`, `i.e.`, `a.m.`) and a
+  word of marks alone end none. The clause is read word by word against a closed
   vocabulary in `scripts/audit_dependencies_data.py`: `LINKING_WORDS`
   (`is`, `was`, `set`, `to`, `for`, `the`, `not`, ...) and `CAUSE_WORDS`
   (`required`, `expired`, `invalid`, `incorrect`, `missing`, `denied`,
@@ -1180,7 +1190,10 @@ each rule rewrites only its own span, so the cause (`ENOTFOUND`, `E401`,
   `401 Unauthorized - POST <url>` keeps its method. A word in the vocabulary, matched
   without case and without the punctuation around it, is kept, so
   `password required`, `PASSWORD REQUIRED` and `the token is invalid` read
-  as written; every other word is hidden, a run of them as one `<hidden>`, so
+  as written. A word of three marks or fewer, such as npm-registry-fetch's
+  ` - ` separator, is kept too, and so is a word that starts with a URL the
+  first rule wrote; text glued before or after that URL is a word of its own.
+  Every other word is hidden, a run of them as one `<hidden>`, so
   `the password was set to <value>` and `the password for bob is <value>`
   show neither name nor value. A quoted word is a value whatever it says and
   is hidden to its closing quote, and another secret word starts its own
@@ -1188,24 +1201,36 @@ each rule rewrites only its own span, so the cause (`ENOTFOUND`, `E401`,
   three more than npm's longest such clause, and hides the rest of a longer
   sentence whole. A quoted value with no closing quote, which is what the cut
   leaves when it lands inside one, is hidden from its quote to the end of the
-  line. The costs: a cause word the vocabulary lacks is hidden, so a new npm
-  message after a secret word reads less well until its word is added; a
-  password that is a vocabulary word is shown; and cause text after an
-  assignment on the same line is hidden with its value. The next step is
-  chosen from the raw text, so the advice is the same either way.
+  line. The costs:
+  - A cause word the vocabulary lacks is hidden, so a new npm message after a
+    secret word reads less well until its word is added.
+  - A password that is a vocabulary word is shown.
+  - A secret of three marks or fewer is shown.
+  - A value that opens with a capital after a real sentence end is read as
+    the next sentence and is shown.
+  - A value joined to the secret word by `-`, `.` or `_` (`password-<value>`)
+    reads as part of the key's name and is shown.
+  - A secret word inside a longer word (`monkey`, `Unauthorized`) opens a
+    clause, so the words after it are hidden unless the vocabulary holds them.
+  - Cause text after an assignment on the same line is hidden with its value.
+
+  The next step is chosen from the raw text, so the advice is the same either
+  way.
 - **A scheme-less userinfo**, `user:pass@` or a bare `user@` before a
-  host as the next bullet defines one, loses everything before its last `@`.
+  host as the next bullet defines one, a bracketed IPv6 host included
+  (`<value>@[::1]:4873/x`), loses everything before its last `@`.
 - **A host with no scheme**, as a `.npmrc` key or a fetch line writes one,
   loses its path as a URL does. It is a dotted name whose last label is
-  letters, an IPv4 address or any name with a port, at the start of a word or
+  letters, an IPv4 address, a bracketed IPv6 address with its zone id if it
+  has one, or any name with a port, at the start of a word or
   after `//` or a userinfo's `@`. A file path whose first part has no dot,
   such as `src/frontend/astro/package-lock.json`, and a host with nothing
   after its `/` are kept.
 - **Last, any remaining run of 20 or more token characters** that mixes
   letters and digits is `<hidden>`: that catches a bare token of any shape,
   and it also hides an integrity hash or a timestamped log name, a cost the
-  script takes to fail closed. A URL's scheme, which is at most 16
-  characters, and its port stay.
+  script takes to fail closed. A URL's scheme, one of npm's, and its port
+  stay.
 
 A host is judged as one run where one sits: a URL's host with any `+`, `=` or
 `%`-escape in it, the host a scheme-less path was hidden after, and the

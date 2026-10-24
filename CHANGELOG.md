@@ -657,18 +657,29 @@ version rather than a bare commit:
   passing it: counts that disagree with the entries, or no audited
   dependency while `package.json` declares one (a workspaces root's
   `workspaces` included, a peer marked optional not), which is how an empty
-  lockfile audits. A failed run shows npm's own cause with every URL path,
-  a scheme-less host's path included, every userinfo up to its last `@` and
-  every credential value hidden, a bare `user@` before a host included. A
-  secret word's value is hidden after `=` or `:` whatever it is, to the end
-  of the line or the next `name=`, so cause text after it on that line goes
-  too. In prose (`the password was set to X`) every word of the clause after
-  the secret word is hidden unless it is in the closed vocabulary of linking
-  and cause words `scripts/audit_dependencies_data.py` lists, each cause
-  word with the npm or Node.js message it came from, so `password required`
-  and `token is self-signed` read as written, as does the HTTP method in
-  npm's `401 Unauthorized - POST <url>`, and a cause word not listed is
-  hidden; the advice reads the raw text and is unchanged. The registry's host is kept when it is a DNS name,
+  lockfile audits. A failed run shows npm's own cause with every URL path
+  hidden, a scheme-less host's path included, and every userinfo up to its
+  last `@` hidden, a bare `user@` before a host or a bracketed IPv6 host
+  included. A URL keeps its scheme only when npm reaches that scheme (http,
+  https, the socks forms, git and its `git+` forms, ssh and file); after any
+  other `://` the userinfo and path are hidden as well. A secret word's value
+  is hidden after `=` or `:` whatever it is, to the end of the line or the
+  next `name=`, so cause text after it on that line goes too. In prose the
+  clause after the secret word opens after a space or any mark (`password,`,
+  `password's`, `[token]:`, `password/`), and each of its words is hidden
+  unless the closed vocabulary `scripts/audit_dependencies_data.py` lists
+  holds it, it is three marks or fewer, or it starts with a URL; text glued
+  before a URL is a word of its own. Each cause word cites the npm or Node.js
+  message that holds it, so `password required`, `token is self-signed` and
+  npm's `401 Unauthorized - POST <url>` read as written. The clause ends at
+  `.`, `!` or `?` only before a capital or the line's end, and never at a
+  period after a single letter (`e.g.`). The costs: a password that is a
+  vocabulary word, a capitalised value after a real sentence end, a secret of
+  three marks or fewer, and a value joined to the secret word by `-`, `.` or
+  `_`, which reads as part of the key's name, are shown; a cause word the
+  vocabulary lacks is hidden, and a secret word inside a longer word
+  (`monkey`, `Unauthorized`) hides the words after it.
+  The advice reads the raw text and is unchanged. The registry's host is kept when it is a DNS name,
   a single valid label such as `nexus3`, or a bracketed IPv6 address whose
   zone id, with only a leading `%25` decoded, is no longer than an interface
   name (a longer zone is hidden and the host kept); any other host that mixes
