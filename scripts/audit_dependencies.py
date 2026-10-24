@@ -255,7 +255,8 @@ _REALM_FORMS = r"realm=(?:\"[^\"]{0,256}\"|[^\s\",;]{0,256})"
 _REALM = re.compile(r"(?i:%s)" % _REALM_FORMS)
 # The run of done values an assignment opens with, a scheme name's
 # `realm=` parameter included, quoted or not. Each part is bounded, so a
-# realm with no closing quote is no realm and falls into the value.
+# realm with no closing quote keeps only `realm=`, and the text after it is
+# judged as the value.
 _DONE_RUN = re.compile(
     r"(?:(?:<hidden>|(?:Bearer|Basic)\b(?:\s{1,4}%s)?)\s{0,4}){1,8}" % _REALM_FORMS,
     re.IGNORECASE,

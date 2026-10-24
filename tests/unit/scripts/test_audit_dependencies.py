@@ -1168,9 +1168,10 @@ def test_an_auth_challenge_keeps_its_realm_as_written(header, shown):
 # A realm is read at most 256 characters, so _REALM bounds its runs as every
 # redaction pattern does. An unquoted realm longer than that shows its first
 # 256 characters and the rest is judged as a word glued to it; a quoted one
-# whose closing quote lies past 256 is no realm, so the quoted word is hidden
-# whole. Inside a kept quoted realm no secret word is read, so a value
-# written there shows, as section 16 declares.
+# whose closing quote lies past 256 matches as an empty unquoted realm, so
+# `realm=` is kept and the clause after it is judged. Inside a kept quoted
+# realm no secret word is read, so a value written there shows, as section
+# 16 declares.
 @pytest.mark.parametrize(
     "realm, shown",
     [
