@@ -4021,7 +4021,7 @@ def test_the_shell_answer_ships_the_helper_the_exit_gate_holds_a_script_to(
     tmp_path, generate, shell, answer
 ):
     """KEEL-SHELL-1: kept, the project ships scripts/exit_codes.sh, current
-    for its enum and named in `shell.excluded_paths`; declined, it ships no
+    for its enum with no `shell.excluded_paths` entry; declined, it ships no
     helper and names none. Either way `make check` and
     `make check-exit-codes` pass and the tree exit gate passes with no shell
     script of the project's own. Kept, a script beside it that sources the
@@ -4034,7 +4034,7 @@ def test_the_shell_answer_ships_the_helper_the_exit_gate_holds_a_script_to(
     manifest = json.loads((dest / "config" / "project.json").read_text("utf-8"))
     helper = dest / "scripts" / "exit_codes.sh"
     assert helper.is_file() is shell
-    assert ("scripts/exit_codes.sh" in manifest["shell"]["excluded_paths"]) is shell
+    assert manifest["shell"]["excluded_paths"] == {}
     env = _hermetic_git_env(tmp_path)
 
     def add_all():

@@ -24,6 +24,7 @@ import check_structure as cs  # noqa: E402
 import config_loader  # noqa: E402
 import exit_codes as _helper  # noqa: E402
 import git_tree  # noqa: E402
+import shell_gate  # noqa: E402
 
 __all__ = [
     "BEGIN",
@@ -63,8 +64,10 @@ GUIDE_KEY = "limits_guide"
 TARGET_KEY = "gate_target"
 # Where the enum lives, and the names this reader follows from it.
 HELPER = "scripts/exit_codes.py"
-# The shell twin of the helper, generated from its enum.
-HELPER_SH = "scripts/exit_codes.sh"
+# The shell twin of the helper, generated from its enum; shell_gate owns the
+# path, because check_structure imports shell_gate and this module imports
+# check_structure.
+HELPER_SH = shell_gate.HELPER_SH
 HELPER_MODULE = "exit_codes"
 ENUM = "ExitCode"
 _REPORT, _PASSTHROUGH, _FINISH, _FAIL = "report", "passthrough", "finish", "fail"

@@ -540,9 +540,9 @@ Answered yes, the update also brings `scripts/exit_codes.sh`, the shell form
 of the exit codes, which a shell script sources to end through
 `exit "$EXIT_<NAME>"`, `exit_fail` or `exit_passthrough`. It is generated
 from `scripts/exit_codes.py`: never edit it, and run `make exit-codes-sh`
-after a change to the enum, or `make check-exit-codes` fails. The arriving
-`shell.excluded_paths` entry keeps it from the shell tools, so it does not
-make the arriving `shell.no_scripts` reason stale. A project that answers no
+after a change to the enum, or `make check-exit-codes` fails. No shell tool
+judges it and it needs no `shell.excluded_paths` entry (`scripts/shell_gate.py`
+`HELPER_SH`), so it does not make the arriving `shell.no_scripts` reason stale. A project that answers no
 gets no helper, and one that turns `shell.enabled` on later runs
 `make exit-codes-sh` once.
 

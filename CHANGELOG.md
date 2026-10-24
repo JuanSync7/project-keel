@@ -150,7 +150,8 @@ version rather than a bare commit:
   `scripts/exit_codes.py` and `make check-exit-codes` fails when stale: an
   `EXIT_<NAME>` variable per member, `exit_fail` for the three-part failure
   line and `exit_passthrough` for a wrapped tool's status. It ships only with
-  `shell` yes, and `shell.excluded_paths` keeps it from the shell tools.
+  `shell` yes, and no shell tool judges it, with no `shell.excluded_paths`
+  entry.
   `tests/integration/test_exit_gate.py` fails a shell script that does not
   source it or ends with a bare `exit 3`, `exit $?` or `exit`, at its file
   and line, and a project with no shell script unless `shell.no_scripts`

@@ -502,13 +502,13 @@ anything else. Inside `$(...)` both end only that subshell, not the script.
 The helper ships only when the copier answer `shell` is yes; with
 config/project.json `shell.enabled` false, `make exit-codes-sh` and the check
 say so and act on nothing. `tests/unit/scripts/test_exit_code_table.py` runs
-the helper under `/bin/sh`, and config/project.json `shell.excluded_paths`
-keeps it from the shell linter, formatter and test runner, so a project with no
+the helper under `/bin/sh`, and `scripts/shell_gate.py` `HELPER_SH`, never a
+`shell.excluded_paths` entry, keeps it from the shell linter, formatter and test runner, so a project with no
 shell script of its own needs none of those tools.
 
 `tests/integration/test_exit_gate.py` holds every other shell script to
 the helper: each file `scripts/shell_gate.py` calls a shell script, less
-the helper and what `shell.excluded_paths` names; in a tree with no git
+what `shell.excluded_paths` names (the helper is never one); in a tree with no git
 repository yet, every one the structure walk reaches. A script must source a
 path ending in `/exit_codes.sh`, as
 `. "$(dirname "$0")/exit_codes.sh"`, and end through it. These pass:

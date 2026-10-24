@@ -3,7 +3,7 @@
 title: shell_gate — the shell scripts' lint, format and test gates
 kind: script
 layer: n/a
-summary: The one adapter between keel's shell targets and the tools that judge shell, so a make target names a role and never a vendor. `lint` runs config/project.json `shell.linter`, `format-check` and `format` run `shell.formatter` (reporting a difference, and rewriting the files in place), and `test` runs `shell.test_runner`; each name must be one this module has an adapter for (shellcheck, shfmt and bats), or every mode is CONFIG before anything runs, because the flags are the tool's own. The files judged are what a commit could carry (scripts/git_tree.py candidate_files) that are regular files and not symlinks, a deleted tracked path left out, and none that a `shell.excluded_paths` entry covers (a path, itself and everything under it, such as a vendored script; an entry that covers no such file is CONFIG): a shell script ends in a `shell.script_suffixes` suffix or opens with a shebang whose interpreter, after `env` and its options, is one of `shell.shebang_shells`, and a `shell.test_suffixes` file is a test, which only the test mode runs; a `.jinja` file (copier.yml `_templates_suffix`) is a template's source and never either. That rule is public (`settings`, `kind`, `classify`, `excluded_by`, `shebang_interpreter`, in `__all__`), so another gate imports it rather than copies it. The tool is looked up in the running interpreter's directory first, where a virtual environment installs one, then on PATH; one on neither is BACKEND_ABSENT naming it and its role, never a skip. It runs under the allowlisted environment (scripts/child_env.py) and its status is passed through, so a finding is the tool's own status. The test mode first asks the runner to count the tests: zero is NOTHING_JUDGED, and a count that is not a whole number, or a counting run that fails, is BACKEND_ABSENT, because the runner gave no verdict. Shell scripts with no test file are NOTHING_JUDGED, because a pass over zero tests proves nothing. With no shell script and no test file every mode is NOTHING_JUDGED, unless `shell.no_scripts` states the reason the project has none, which it prints on stdout before it exits 0 having run no tool; a reason left in place once a shell file exists is CONFIG naming the files, so it cannot outlive its truth. With `shell.enabled` false (the copier answer `shell`) every mode says why on stdout and exits 0 having run no tool. No repository is NOTHING_JUDGED, a git or file read that fails is USAGE, and a malformed shell block or child_env block is CONFIG. A tool name, the `no_scripts` reason and an excluded path are shown through scripts/config_loader.py `quoted` and `shown`, hidden when they hold an `@`; a file the tree holds is named as written.
+summary: The one adapter between keel's shell targets and the tools that judge shell, so a make target names a role and never a vendor. `lint` runs config/project.json `shell.linter`, `format-check` and `format` run `shell.formatter` (reporting a difference, and rewriting the files in place), and `test` runs `shell.test_runner`; each name must be one this module has an adapter for (shellcheck, shfmt and bats), or every mode is CONFIG before anything runs, because the flags are the tool's own. The files judged are what a commit could carry (scripts/git_tree.py candidate_files) that are regular files and not symlinks, a deleted tracked path left out, never the generated helper `HELPER_SH` (scripts/exit_codes.sh, which `make check-exit-codes` judges, so it needs no entry), and none that a `shell.excluded_paths` entry covers (a path, itself and everything under it, such as a vendored script; an entry that covers no such file is CONFIG): a shell script ends in a `shell.script_suffixes` suffix or opens with a shebang whose interpreter, after `env` and its options, is one of `shell.shebang_shells`, and a `shell.test_suffixes` file is a test, which only the test mode runs; a `.jinja` file (copier.yml `_templates_suffix`) is a template's source and never either. That rule is public (`HELPER_SH`, `settings`, `kind`, `classify`, `excluded_by`, `shebang_interpreter`, in `__all__`), so another gate imports it rather than copies it. The tool is looked up in the running interpreter's directory first, where a virtual environment installs one, then on PATH; one on neither is BACKEND_ABSENT naming it and its role, never a skip. It runs under the allowlisted environment (scripts/child_env.py) and its status is passed through, so a finding is the tool's own status. The test mode first asks the runner to count the tests: zero is NOTHING_JUDGED, and a count that is not a whole number, or a counting run that fails, is BACKEND_ABSENT, because the runner gave no verdict. Shell scripts with no test file are NOTHING_JUDGED, because a pass over zero tests proves nothing. With no shell script and no test file every mode is NOTHING_JUDGED, unless `shell.no_scripts` states the reason the project has none, which it prints on stdout before it exits 0 having run no tool; a reason left in place once a shell file exists is CONFIG naming the files, so it cannot outlive its truth. With `shell.enabled` false (the copier answer `shell`) every mode says why on stdout and exits 0 having run no tool. No repository is NOTHING_JUDGED, a git or file read that fails is USAGE, and a malformed shell block or child_env block is CONFIG. A tool name, the `no_scripts` reason and an excluded path are shown through scripts/config_loader.py `quoted` and `shown`, hidden when they hold an `@`; a file the tree holds is named as written.
 effect: writes
 rerun: fixed-point
 rerun_proof: make:fmt-check-sh
@@ -26,6 +26,7 @@ from child_env import ChildEnvError, build_child_env  # noqa: E402
 from exit_codes import ExitCode, finish, passthrough, report  # noqa: E402
 
 __all__ = [
+    "HELPER_SH",
     "SCRIPT",
     "TEST",
     "Classified",
@@ -38,6 +39,9 @@ __all__ = [
 
 ROOT = os.path.dirname(_SCRIPTS)
 SCRIPT, TEST = "script", "test"
+# The shell twin of scripts/exit_codes.py, which scripts/exit_code_table.py
+# generates: the gates' own output, never a script of the project's.
+HELPER_SH = "scripts/exit_codes.sh"
 # copier.yml `_templates_suffix`: a file ending in it is a template's source,
 # whose Jinja no shell tool can read. copier.yml is absent in a generated
 # project, so the suffix is fixed here as check_structure's _TWIN_SUFFIX is.
@@ -184,12 +188,17 @@ def kind(rel, path, cfg):
 
 def classify(root, cfg):
     """The shell scripts and shell tests a commit could carry under *root*,
-    and the `shell.excluded_paths` entries that covered no file, each a sorted
-    list. Raises git_tree's NoGitError or GitFailedError, or OSError."""
+    less the generated helper HELPER_SH, and the `shell.excluded_paths`
+    entries that covered no file, each a sorted list. Raises git_tree's
+    NoGitError or GitFailedError, or OSError."""
     found = {SCRIPT: [], TEST: []}
     excluded = sorted(cfg["excluded_paths"])
     used = set()
     for rel in git_tree.candidate_files(root):
+        if rel == HELPER_SH:
+            # Generated and judged by `make check-exit-codes`, so turning shell
+            # on needs no exclusion entry for it.
+            continue
         entry = excluded_by(rel, excluded)
         if entry is not None:
             used.add(entry)

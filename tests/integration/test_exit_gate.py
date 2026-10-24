@@ -727,7 +727,8 @@ def _walked_shell_scripts(root, cfg):
     """The shell scripts under *root* by scripts/shell_gate.py's rule, from
     the structure walk rather than git, as
     tests/integration/test_committed_secrets_gate.py `candidates` falls back:
-    regular files, not symlinks, none `shell.excluded_paths` covers."""
+    regular files, not symlinks, never shell_gate.HELPER_SH, none
+    `shell.excluded_paths` covers."""
     excluded = sorted(cfg["excluded_paths"])
     out = []
     for dirpath, _dirs, files in cs.walk(str(root)):
@@ -735,6 +736,8 @@ def _walked_shell_scripts(root, cfg):
             full = os.path.join(dirpath, name)
             relpath = os.path.relpath(full, str(root)).replace(os.sep, "/")
             if os.path.islink(full) or not os.path.isfile(full):
+                continue
+            if relpath == shell_gate.HELPER_SH:
                 continue
             if shell_gate.excluded_by(relpath, excluded) is not None:
                 continue
@@ -746,7 +749,7 @@ def _walked_shell_scripts(root, cfg):
 def shell_findings(root):
     """Every finding of the exit gate over the shell scripts of *root*: the
     files scripts/shell_gate.py `classify` calls scripts, so the shell tools
-    and this gate judge the same files, less the helper itself. A tree with
+    and this gate judge the same files, which never include the helper. A tree with
     none is a finding unless config/project.json `shell.no_scripts` gives
     the reason; with `shell.enabled` false it judges none. With no
     repository, as in a project generated a moment ago, it judges every
@@ -758,10 +761,9 @@ def shell_findings(root):
         # Off ships no helper to source, so the switch is the stated reason.
         return {"files": 0, "findings": []}
     try:
-        found = shell_gate.classify(str(root), cfg).scripts
+        scripts = shell_gate.classify(str(root), cfg).scripts
     except git_tree.NoGitError:
-        found = _walked_shell_scripts(root, cfg)
-    scripts = [relpath for relpath in found if relpath != et.HELPER_SH]
+        scripts = _walked_shell_scripts(root, cfg)
     members = et.read_members(str(root))
     known = {m.name for m in members}
     quiet = {m.name for m in members if m.value == 0}

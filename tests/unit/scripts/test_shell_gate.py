@@ -2,7 +2,7 @@
 title: Unit — shell_gate (the shell lint, format and test gates, driven through stub tools)
 kind: tests
 layer: n/a
-summary: scripts/shell_gate.py driven against stub tools, one small Python program put on a private PATH under each name config/project.json `shell.linter`, `shell.formatter` and `shell.test_runner` gives, which records its argv and environment and answers from a plan file. Every mode judges exactly the shell scripts a commit could carry, found by a `shell.script_suffixes` suffix or a `shell.shebang_shells` shebang (an `env` one with options included), never a Python file, a test file, an ignored file, a symlink, a tracked file deleted from the work tree, a `.jinja` template source whatever its shebang, or a file a `shell.excluded_paths` entry covers by whole path parts, an entry that covers no file being CONFIG; the test mode runs exactly the `shell.test_suffixes` files. The tool's own status is the answer, so a finding is the tool's status passed through, and each tool gets the allowlisted environment and never a planted variable. Off (`shell.enabled` false), the gate says why and runs nothing, exit 0; with no shell script and no test file it judges nothing (NOTHING_JUDGED) unless `shell.no_scripts` states the reason, which it prints before it exits 0, and a reason left beside a shell file, or a blank one, is CONFIG; shell scripts with no test file, or test files the runner counts as zero tests, judge nothing (NOTHING_JUDGED), and a runner whose count is not a number gave no verdict (BACKEND_ABSENT). An `env` option that takes an argument (`-u FOO`, `--chdir DIR`) never hides the shell after it, a path that starts with `-` reaches the tool as `./`-prefixed, and a tool in the running interpreter's directory answers before one on PATH, which answers when that directory has none. A tool on neither the interpreter's directory nor PATH is BACKEND_ABSENT naming the tool and its role, an adapter name the module does not know or a malformed suffix list is CONFIG before anything runs, and a tree that is not a git repository judges nothing. The rule is public, in `__all__`, for the other gates to import. The tool names asserted are read from config/project.json through scripts/config_loader.py, never typed here.
+summary: scripts/shell_gate.py driven against stub tools, one small Python program put on a private PATH under each name config/project.json `shell.linter`, `shell.formatter` and `shell.test_runner` gives, which records its argv and environment and answers from a plan file. Every mode judges exactly the shell scripts a commit could carry, found by a `shell.script_suffixes` suffix or a `shell.shebang_shells` shebang (an `env` one with options included), never a Python file, a test file, an ignored file, a symlink, a tracked file deleted from the work tree, a `.jinja` template source whatever its shebang, the generated helper `HELPER_SH` though no entry names it, or a file a `shell.excluded_paths` entry covers by whole path parts, an entry that covers no file being CONFIG; the test mode runs exactly the `shell.test_suffixes` files. The tool's own status is the answer, so a finding is the tool's status passed through, and each tool gets the allowlisted environment and never a planted variable. Off (`shell.enabled` false), the gate says why and runs nothing, exit 0; with no shell script and no test file it judges nothing (NOTHING_JUDGED) unless `shell.no_scripts` states the reason, which it prints before it exits 0, and a reason left beside a shell file, or a blank one, is CONFIG; shell scripts with no test file, or test files the runner counts as zero tests, judge nothing (NOTHING_JUDGED), and a runner whose count is not a number gave no verdict (BACKEND_ABSENT). An `env` option that takes an argument (`-u FOO`, `--chdir DIR`) never hides the shell after it, a path that starts with `-` reaches the tool as `./`-prefixed, and a tool in the running interpreter's directory answers before one on PATH, which answers when that directory has none. A tool on neither the interpreter's directory nor PATH is BACKEND_ABSENT naming the tool and its role, an adapter name the module does not know or a malformed suffix list is CONFIG before anything runs, and a tree that is not a git repository judges nothing. The rule is public, in `__all__`, for the other gates to import. The tool names asserted are read from config/project.json through scripts/config_loader.py, never typed here.
 """
 
 import io
@@ -126,8 +126,6 @@ def project(tmp_path, monkeypatch):
     proj = _Project(root, tmp_path / "bin", env)
     # Keel's own reason for having no shell file would go stale the moment a
     # test plants one, so each test starts from the strict null and opts in.
-    # Keel's exclusion of its generated helper covers no file here, which is
-    # CONFIG, so each test starts with none and opts in the same way.
     proj.shell(no_scripts=None, excluded_paths={})
     (root / ".gitignore").write_text("ignored/\n", encoding="utf-8")
     _git(root, env, "init", "-q")
@@ -263,6 +261,31 @@ def test_a_stated_reason_lets_a_project_with_no_shell_file_pass(project, mode, c
     assert project.calls() == []
     out = capsys.readouterr().out
     assert "shell.no_scripts" in out and _REASON in out, out
+
+
+@pytest.mark.parametrize("mode", ["lint", "test"])
+def test_the_generated_helper_is_never_judged_and_needs_no_exclusion(
+    project, mode, capsys
+):
+    """The helper is the gates' own output, so with `shell.excluded_paths`
+    empty and it present a project with no script of its own still gives the
+    zero-scripts answer, never CONFIG for a stale `shell.no_scripts`."""
+    project.shell(no_scripts=_REASON)
+    project.write(shell_gate.HELPER_SH, "#!/bin/sh\nEXIT_SUCCESS=0\n")
+    project.commit_all()
+    assert project.run(mode) == ExitCode.SUCCESS
+    assert project.calls() == []
+    assert _REASON in capsys.readouterr().out
+
+
+def test_the_generated_helper_is_not_handed_to_a_tool_beside_a_script(project):
+    project.write(shell_gate.HELPER_SH, "#!/bin/sh\nEXIT_SUCCESS=0\n")
+    project.write("scripts/build.sh", "echo build\n")
+    project.commit_all()
+    assert project.run("lint") == ExitCode.SUCCESS
+    (call,) = project.calls(_LINTER)
+    assert call["argv"][-1] == "scripts/build.sh", call["argv"]
+    assert shell_gate.HELPER_SH not in call["argv"], call["argv"]
 
 
 @pytest.mark.parametrize("mode", _MODES)
