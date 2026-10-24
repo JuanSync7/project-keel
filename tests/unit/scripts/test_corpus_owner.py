@@ -2,7 +2,7 @@
 title: Unit — the corpus's owner resolution and the configured default owner
 kind: tests
 layer: n/a
-summary: build_corpus resolves each node's owner finest-wins then inherit, and fills config/project.json `accountability.default_owner`, read through scripts/config_loader.py, where and only where the resolution ends on a `TBD` (in any letter case) in frontmatter, a marker or a package README, recording `owner_source: default` and the place the TBD stands as `owner_origin`. A real owner anywhere on the chain beats the default; a node that names no owner, or a null spelling, stays `none`; with the default null or no config file every TBD stays `none`; a refused default raises, and the job exits CONFIG. check_corpus accepts `default` and still refuses an unknown source, and the accountability report counts the default as its own line, apart from the owned and the unowned, while `--json` still lists the unowned only.
+summary: build_corpus resolves each node's owner finest-wins then inherit, and fills config/project.json `accountability.default_owner`, read through scripts/config_loader.py, where and only where the resolution ends on a `TBD` (in any letter case) in frontmatter, a marker or a package README, recording `owner_source: default` and the place the TBD stands as `owner_origin`. A real owner anywhere on the chain beats the default; a package README that cannot be read stops the walk, so a module and its symbols that name no owner of their own have owner and owner_source null, unknown; a node that names no owner, or a null spelling, stays `none`; with the default null or no config file every TBD stays `none`; a refused default raises, and the job exits CONFIG. check_corpus accepts `default` and still refuses an unknown source, and the accountability report counts the default as its own line, apart from the owned and the unowned, while `--json` still lists the unowned only.
 """
 
 import json
@@ -351,6 +351,52 @@ def test_a_readme_with_no_owner_does_not_cut_the_owner_chain(tmp_path):
         "inherited",
         "src/README.md",
     )
+
+
+_UNKNOWN = (None, None, None)
+_UNDECODABLE = b"---\ntitle: P\nowner: zed\n\xff---\n"
+
+
+def test_an_unreadable_readme_stops_the_owner_walk_at_unknown(tmp_path):
+    """An unreadable README.md may name any owner, so nothing below it
+    inherits the owner above it: the module and its symbols have owner and
+    owner_source null, and the accountability report counts them unknown."""
+    root = _tree(tmp_path)
+    _write(root, "src/README.md", _readme("src-readme", "alice", "public"))
+    (root / "src" / "pkg").mkdir()
+    (root / "src" / "pkg" / "README.md").write_bytes(_UNDECODABLE)
+    _write(root, "src/pkg/m.py", _module())
+    corpus = bc.build_corpus(str(root))
+    nodes = {n["node_id"]: n for n in corpus["nodes"]}
+    for node_id in ("src/pkg/m-py", "src/pkg/m-py::f", "src/pkg/m-py::g"):
+        assert _owner(nodes[node_id]) == _UNKNOWN, (node_id, _owner(nodes[node_id]))
+    blind = {n["node_id"] for n in ar.unknown(corpus)}
+    assert {"src/pkg/m-py", "src/pkg/m-py::f", "src/pkg/m-py::g"} <= blind, blind
+    assert nodes["src-readme"]["owner"] == "alice"
+
+
+def test_an_unreadable_readme_above_a_tbd_readme_leaves_the_owner_unknown(tmp_path):
+    """The unreadable README.md may name the real owner that beats the
+    default, so a TBD below it does not take the default."""
+    root = _tree(tmp_path)
+    (root / "src").mkdir()
+    (root / "src" / "README.md").write_bytes(_UNDECODABLE)
+    _write(root, "src/pkg/README.md", _readme("pkg-readme", "TBD", None))
+    _write(root, "src/pkg/m.py", _module(symbol_marker="TBD"))
+    nodes = _nodes(root)
+    assert _owner(nodes["src/pkg/m-py"]) == _UNKNOWN
+    assert _owner(nodes["src/pkg/m-py::f"]) == _UNKNOWN
+
+
+def test_a_module_s_own_owner_stands_under_an_unreadable_readme(tmp_path):
+    root = _tree(tmp_path)
+    (root / "src" / "pkg").mkdir(parents=True)
+    (root / "src" / "pkg" / "README.md").write_bytes(_UNDECODABLE)
+    _write(root, "src/pkg/m.py", _module("bob", symbol_marker="carol"))
+    nodes = _nodes(root)
+    assert _owner(nodes["src/pkg/m-py"]) == ("bob", "frontmatter", "src/pkg/m.py")
+    assert _owner(nodes["src/pkg/m-py::g"])[:2] == ("bob", "inherited")
+    assert _owner(nodes["src/pkg/m-py::f"])[:2] == ("carol", "marker")
 
 
 def test_the_owner_walk_and_the_visibility_chain_are_independent(tmp_path):

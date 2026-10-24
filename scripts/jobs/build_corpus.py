@@ -149,6 +149,15 @@ UNREADABLE_VISIBILITY = "unreadable-readme"
 
 # A node's resolved owner: (owner, owner_source, owner_origin).
 _UNOWNED = ("", "none", None)
+# The owner of a node below a README.md that cannot be read: unknown, not
+# `none`, because that README may name a real owner; scripts/
+# accountability_report.py counts it in its unknown bucket.
+_UNKNOWN_OWNER = (None, None, None)
+
+# The frontmatter a README.md that cannot be read stands for. Matched by
+# identity, so a README that writes `visibility: unreadable-readme` is still
+# a readable README with an invalid level, for check_A to refuse.
+_UNREADABLE_FM = {"visibility": UNREADABLE_VISIBILITY}
 _DEFAULT_OWNER_KEY = ("accountability", "default_owner")
 
 
@@ -162,11 +171,16 @@ def _resolve_owner(own, own_source, own_where, parent, default):
     resolution. Finest-wins, then inherit (CONVENTIONS §12): a real owner of
     its own, then a real owner above it. The default fills only what would
     otherwise be `none` and only because a TBD says so: the node's own TBD
-    (origin: where it stands), else a parent that took the default (its origin)."""
+    (origin: where it stands), else a parent that took the default (its origin).
+    With no real owner of its own, a node under an unknown owner is unknown."""
     real = _real_owner(own)
     if real:
         return real, own_source, own_where
     p_owner, p_source, p_origin = parent
+    if p_source is None:
+        # Under an unknown owner a node's own TBD cannot take the default: the
+        # real owner the unreadable README may name would beat it.
+        return _UNKNOWN_OWNER
     if p_source not in ("none", "default"):
         return p_owner, "inherited", p_origin
     if default and _says_tbd(own):
@@ -523,13 +537,12 @@ def _readme_pairs(readmes, root):
                 with open(readme, encoding="utf-8-sig") as fh:
                     fm, _ = _parse_frontmatter(fh.read())
             except (OSError, ValueError):  # ValueError covers UnicodeDecodeError
-                # An unreadable README names no owner, which surfaces as
-                # owner_source == "none" for every node below it, the gap
-                # scripts/accountability_report.py lists. It may state any
-                # level, so it passes on a visibility no level ranks above:
+                # An unreadable README may state any level and name any owner.
+                # It passes on a visibility no level ranks above, so
                 # check_corpus refuses each node below it rather than serve it
-                # at a looser level. The walk continues to the parent.
-                fm = {"visibility": UNREADABLE_VISIBILITY}
+                # at a looser level, and _nearest_readme stops the owner walk
+                # at it, so each node below it has an unknown owner.
+                fm = _UNREADABLE_FM
             yield _tree_rel(readme, root), fm or {}
 
 
@@ -571,10 +584,14 @@ def _nearest_readme(readmes, default):
     """The owner resolution a module inherits from *readmes*, its package
     READMEs as (rel path, frontmatter) pairs, nearest first: the nearest
     README's real owner. The walk goes past a README that names none (TBD,
-    absent, malformed, unreadable), and only with no real owner up to the root
-    does the nearest TBD README hand on *default*."""
+    absent, malformed), and only with no real owner up to the root does the
+    nearest TBD README hand on *default*. A README that cannot be read stops
+    the walk at an unknown owner: it may name the real owner that beats what
+    lies above it and the default."""
     nearest_tbd = None
     for where, fm in readmes:
+        if fm is _UNREADABLE_FM:
+            return _UNKNOWN_OWNER
         owner = _real_owner(fm.get("owner"))
         if owner:
             return owner, "frontmatter", where

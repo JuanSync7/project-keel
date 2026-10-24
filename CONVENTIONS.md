@@ -598,9 +598,13 @@ chain reaches no real owner and a `TBD` stands on it,
 `owner_source: default`, and `owner_origin` is the nearest place a `TBD`
 stands. A real owner anywhere on the chain beats the default, including a
 package `README.md` above a `TBD` one. A node whose chain names no owner, a written null (`null` in any letter case, or `~`), a `null` default
-and a tree with no config file all resolve to `none`.
+and a tree with no config file all resolve to `none`. A package `README.md`
+that cannot be read stops a module's walk: it may name the real owner, so the
+module and its symbols, unless they name their own, have `owner` and
+`owner_source` null, unknown, never the owner above it or the default.
 `scripts/accountability_report.py` lists the `none` nodes and counts the
-`default` nodes on their own line, by the `TBD` each answers to. Independently, at commit
+`default` nodes on their own line, by the `TBD` each answers to, and lists the
+unknown ones on a third. Independently, at commit
 time `check_F` holds each `kind: tool`/`agent` frontmatter doc owned (it
 inspects frontmatter only, not corpus nodes): a `TBD` owner inherits
 `config/project.json` `accountability.default_owner`, and with no default set

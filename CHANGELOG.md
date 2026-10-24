@@ -547,6 +547,10 @@ version rather than a bare commit:
   the owner chip and `None` in a wiki navigator citation, rather than `none`,
   which claimed nothing owns it, and `scripts/accountability_report.py` counts
   and lists such nodes on their own line instead of counting them as owned.
+  A package `README.md` that cannot be read stops a module's owner walk, so
+  the module and its symbols have an unknown owner (`owner` and
+  `owner_source` null) rather than the owner above it or the default: the
+  unreadable `README.md` may name the real one.
 - **A child README can no longer hide a confidential parent.** The corpus
   ended a module's visibility walk at the nearest `README.md` with an owner or
   a visibility, so an owned child `README.md` that stated none gave its
