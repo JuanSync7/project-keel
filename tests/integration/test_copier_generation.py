@@ -3767,9 +3767,10 @@ def test_a_generated_project_passes_its_own_install_source_tests(
     printer and both tests, and its own copy of each passes with nothing
     skipped: null passes no flag, a set mirror reaches npm, pip and the browser
     runner, and a URL user part is refused unseen, in its own Makefile and
-    workflows."""
+    workflows. It answers `ci_pipeline: both`, so the project's own GitLab file
+    is judged too rather than skipped."""
     dest = tmp_path / "proj"
-    generate(dest, project_name="demo_proj", frontend_stack=stack)
+    generate(dest, project_name="demo_proj", frontend_stack=stack, ci_pipeline="both")
     config = json.loads((dest / "config" / "project.json").read_text("utf-8"))
     assert set(config["install_sources"]) - {"_comment"} == {
         "browser_download_host",
