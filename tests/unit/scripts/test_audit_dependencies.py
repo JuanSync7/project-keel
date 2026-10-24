@@ -900,6 +900,9 @@ _SPLIT_TOKENS = {
     # A first piece with no digit is no token on its own, so only the whole
     # run, `=` included, shows it is one.
     "word-first": "abcdefghijklm=1234567890ABCDEFG",
+    # The same with `+`: a URL host that stops at the `+` keeps the digitless
+    # first piece and shows 13 of the token's characters.
+    "word-first-plus": "abcdefghijklm+1234567890ABCDEFG",
 }
 
 
