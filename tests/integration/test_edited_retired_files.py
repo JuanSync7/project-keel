@@ -313,8 +313,8 @@ def test_an_edited_retired_adapter_is_kept_and_named_with_what_to_do(
         assert r.stderr == (
             "kept %s: it carries the line `# keel-adapter: %s`, so keel wrote it, "
             "and the project edited it; ci_pipeline no longer chooses %s, so CI "
-            "keeps running this file's steps beside the chosen adapter's until "
-            "you remove it (`git rm %s`)\n" % (rel, name, name, rel)
+            "runs this file's %s steps beside the job of the adapter it chooses "
+            "now until you remove it (`git rm %s`)\n" % (rel, name, name, name, rel)
         ), r.stderr
 
 

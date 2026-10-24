@@ -576,9 +576,27 @@ the top of `ci.yml`. You may meet the change three ways.
    default names no real registry, so the job cannot pull until you point the
    key, and the file's `image:` line, at an image that carries both
    toolchains. Answering `gitlab` removes `ci.yml` only when it is byte-equal
-   to what keel rendered. An edited `ci.yml` is kept, marker line or not, and
-   one stderr line names it and says to remove it with `git rm`, because CI
-   runs its steps beside the GitLab job until you do.
+   to what keel rendered at the ref you generated from, and there are four
+   paths:
+   - **Unedited, marker line or not.** copier itself deletes it before any
+     migration runs, because the new render lacks it, and
+     `scripts/jobs/keep_edited_retired.py` leaves it deleted without a word.
+     A project generated before the `ci_pipeline` question has a `ci.yml`
+     with no marker line, and this is how it goes.
+   - **Edited, with the marker line.** The job puts it back, byte-identical,
+     and one stderr line says it carries the line, so keel wrote it, and that
+     you edited it.
+   - **Edited, without the marker line, from before the question.** The job
+     puts it back, and its stderr line says the file has no marker line
+     because keel wrote it before that line existed, and that the edit is why
+     it stays.
+   - **Edited, with the marker line removed.** Keel's render had the line and
+     yours does not, so the job puts it back and its stderr line says you
+     wrote the file or removed that line.
+
+   Every kept line ends the same way: CI runs the file's github steps beside
+   the GitLab job until you remove it with the `git rm` command the line
+   names.
 3. **You wrote your own `.gitlab-ci.yml` before.** An update that does not
    choose gitlab keeps it byte-identical, because it is not what keel
    rendered, and says on stderr that it has no `# keel-adapter: gitlab` line.

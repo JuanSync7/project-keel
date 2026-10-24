@@ -355,9 +355,9 @@ def _retired_reason(rel, ref, data, keel, why, name, marker):
             "existed, and the project edited it" % line
         )
     return (
-        "%s; ci_pipeline no longer chooses %s, so CI keeps running this file's "
-        "steps beside the chosen adapter's until you remove it (`git rm %s`)"
-        % (reason, name, rel)
+        "%s; ci_pipeline no longer chooses %s, so CI runs this file's %s steps "
+        "beside the job of the adapter it chooses now until you remove it "
+        "(`git rm %s`)" % (reason, name, name, rel)
     )
 
 
