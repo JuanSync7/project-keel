@@ -14,6 +14,7 @@ import os
 import re
 import subprocess
 import sys
+import urllib.parse
 
 _SCRIPTS = os.path.dirname(os.path.abspath(__file__))
 if _SCRIPTS not in sys.path:
@@ -108,6 +109,9 @@ _URL = re.compile(
 )
 _PATH_HIDDEN = "<path hidden>"
 _HIDDEN = "<hidden>"
+# An IPv6 zone id names an interface, and Linux caps an interface name at
+# IFNAMSIZ, 16 bytes with its NUL; a longer zone id is no interface's.
+_ZONE_LIMIT = 15
 # A host with no scheme, as npm writes a registry in a `.npmrc` key or a
 # fetch line, is one of: a dotted name whose last label is letters, an IPv4
 # address, or any name with a port. It starts a word, or follows `//` or a
@@ -444,12 +448,25 @@ def _is_label(label):
     )
 
 
+def _address_shown(host):
+    """The bracketed IPv6 *host* whole, or with its zone id hidden when that
+    id, its `%25` escape decoded, is longer than any interface name."""
+    at = host.find("%")
+    if at < 0:
+        return host
+    zone = urllib.parse.unquote(host[at:-1]).removeprefix("%")
+    return host[:at] + "%" + _HIDDEN + "]" if len(zone) > _ZONE_LIMIT else host
+
+
 def _host_shown(host):
-    """*host* whole when it is a bracketed address or a DNS name. Any other
+    """*host* whole when it is a DNS name, and a bracketed address whole but
+    for a zone id that can be no interface's (see _address_shown). Any other
     host that mixes letters and digits is hidden whole, whatever its length,
     since a token split at a symbol has pieces too short for (d); one that
     does not, such as `localhost`, is no token and stays."""
-    if host.startswith("[") or _is_name(host):
+    if host.startswith("["):
+        return _address_shown(host)
+    if _is_name(host):
         return host
     return _HIDDEN if _LETTER_AND_DIGIT.match(host) else host
 

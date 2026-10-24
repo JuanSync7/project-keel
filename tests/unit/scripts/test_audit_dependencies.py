@@ -1076,6 +1076,41 @@ def test_a_path_after_an_odd_host_or_port_is_hidden(text, shown):
     assert audit_dependencies._redacted(text) == shown
 
 
+# An IPv6 zone id names an interface, and no interface name is longer than 15
+# characters (Linux's IFNAMSIZ less its NUL), so a longer zone id, `%25`
+# escape decoded, is hidden; an interface name or number is kept.
+@pytest.mark.parametrize(
+    "zone, shown",
+    [
+        ("%25eth0", "%25eth0"),
+        ("%eth0", "%eth0"),
+        ("%25enp0s31f6", "%25enp0s31f6"),
+        ("%2", "%2"),
+        ("%25abcdefghijklmno", "%25abcdefghijklmno"),
+        ("%25FAKE0123456789abcdefghij", "%<hidden>"),
+        ("%FAKE0123456789abcdefghij", "%<hidden>"),
+        ("%25abcdefghijklmnop", "%<hidden>"),
+        ("%25ab%2Dcd%2Def%2Dgh", "%25ab%2Dcd%2Def%2Dgh"),
+    ],
+    ids=[
+        "escaped",
+        "raw",
+        "long-name",
+        "number",
+        "fifteen",
+        "escaped-token",
+        "raw-token",
+        "sixteen",
+        "escaped-dashes",
+    ],
+)
+def test_an_ipv6_zone_id_longer_than_an_interface_name_is_hidden(zone, shown):
+    text = "request to http://[fe80::1%s]:8080/x failed" % zone
+    assert audit_dependencies._redacted(text) == (
+        "request to http://[fe80::1%s]:8080/<path hidden> failed" % shown
+    )
+
+
 # A label of 20 or more characters that mixes letters and digits is a name
 # only when one part between its hyphens is a word: two or more letters, one
 # outside a to f, so a hex fragment is no word. A token cut into short parts
