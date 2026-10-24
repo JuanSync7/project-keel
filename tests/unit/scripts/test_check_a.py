@@ -592,7 +592,15 @@ def test_check_a_names_a_skipped_readme_on_the_chain_of_a_doc_that_states_no_lev
     )
     (repo / "docs").mkdir()
     (repo / "docs" / "plan.md").symlink_to("../build/x/plan.md")
-    cs.check_A()
+    readme = repo / "build" / "x" / "README.md"
+    try:
+        cs.check_A()
+        served_at = _served(repo)["plan"]
+    finally:
+        # A mode-000 README.md left behind outlives the test in a kept tmp
+        # directory; a link or a directory has no mode of its own to restore.
+        if not readme.is_symlink() and readme.is_file():
+            readme.chmod(0o644)
     found = [e for e in cs.errors if e.startswith("build/x/README.md: " + verdict)]
     assert len(found) == 1, cs.errors
-    assert _served(repo)["plan"] == ("docs/plan.md", served)
+    assert served_at == ("docs/plan.md", served)
