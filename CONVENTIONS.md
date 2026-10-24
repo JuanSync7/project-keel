@@ -76,7 +76,8 @@ from its directory up to the root, in the order the table above lists
 its document's or module's. A `README.md` that states none passes on what is
 stated above it, and with nothing stated anywhere a node is `internal`. A file
 reached through a symlink also takes the chain of the file it really is, when
-that file is in the tree. A `README.md` that cannot be read passes on
+that file is in the tree. A `README.md` that cannot be read, a dangling or
+looping link included, passes on
 `unreadable-readme`, a value outside the vocabulary that outranks every level,
 so check_corpus refuses each node below it. So in the corpus no child is ever
 at a looser level than a `README.md` above it: to make a child `public`, lower

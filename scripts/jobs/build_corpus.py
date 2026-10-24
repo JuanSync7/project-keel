@@ -514,9 +514,11 @@ def _sections(body, doc_id, rel, doc_res, doc_visibility, nodes, refs, default):
 
 def _readme_pairs(readmes, root):
     """(path relative to *root*, frontmatter dict) for each README.md in
-    *readmes*, in order, skipping one that is not there."""
+    *readmes*, in order, skipping one that is not there. A name that is
+    there but cannot be read (a dangling or looping link, a directory, a
+    permission or decode fault) is unreadable, never absent."""
     for readme in readmes:
-        if os.path.isfile(readme):
+        if os.path.lexists(readme):
             try:
                 with open(readme, encoding="utf-8-sig") as fh:
                     fm, _ = _parse_frontmatter(fh.read())

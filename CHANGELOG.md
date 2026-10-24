@@ -556,7 +556,8 @@ version rather than a bare commit:
   root), in `scripts/check_structure.py` `VISIBILITY_ORDER`, and `internal`
   only when the chain states none; a document now takes the `README.md`s above
   it too. A file reached through a symlink also takes the chain of the file it
-  really is, and a `README.md` that cannot be read passes on a value
+  really is, and a `README.md` that cannot be read, a dangling or looping link
+  included, passes on a value
   check_corpus refuses rather than nothing. check_A fails a governed document
   that states a less restrictive visibility than a `README.md` above it, naming
   that `README.md`; it judges a symlinked file at the path of the file it

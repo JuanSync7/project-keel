@@ -2,7 +2,7 @@
 title: Unit — the corpus's visibility fails closed along each node's README chain
 kind: tests
 layer: n/a
-summary: build_corpus gives each doc, section, module and symbol the most restrictive visibility stated on its chain — its own frontmatter or docstring and every README.md from its directory up to the root — in scripts/check_structure.py VISIBILITY_ORDER, so a child README that states none, or states a looser level, can never hide a confidential parent; with nothing stated anywhere a node is `internal`, and a value outside the vocabulary outranks every member so check_corpus refuses each node under it. A file reached through a symlink takes the strictest of the path chain and its target's chain inside the root, and a README.md that cannot be read passes on a marker that outranks every level.
+summary: build_corpus gives each doc, section, module and symbol the most restrictive visibility stated on its chain — its own frontmatter or docstring and every README.md from its directory up to the root — in scripts/check_structure.py VISIBILITY_ORDER, so a child README that states none, or states a looser level, can never hide a confidential parent; with nothing stated anywhere a node is `internal`, and a value outside the vocabulary outranks every member so check_corpus refuses each node under it. A file reached through a symlink takes the strictest of the path chain and its target's chain inside the root, and a README.md that cannot be read, a dangling or looping link included, passes on a marker that outranks every level.
 """
 
 import itertools
@@ -263,3 +263,19 @@ def test_an_unreadable_readme_makes_every_node_below_it_unrankable(tmp_path):
     assert vis["src-readme"] == "public"
     refused = [e for e in cc.validate(corpus) if "invalid visibility" in e]
     assert any("src/pkg/m-py" in e for e in refused), refused
+
+
+@pytest.mark.parametrize("target", ["../../gone/README.md", "README.md"])
+def test_a_readme_link_that_reaches_no_file_is_unreadable(tmp_path, target):
+    """A README.md that exists as a name but cannot be opened (a dangling
+    link, or one that loops to itself) may state any level, so it is
+    unreadable like a decode fault, never absent."""
+    _write(tmp_path, "src/README.md", _readme("src-readme", None, "public"))
+    (tmp_path / "src" / "pkg").mkdir()
+    (tmp_path / "src" / "pkg" / "README.md").symlink_to(target)
+    _write(tmp_path, "src/pkg/m.py", _module("public"))
+    _write(tmp_path, "src/pkg/d.md", _readme("d", None, "public"))
+    vis = _visibility(tmp_path)
+    for node_id in ("src/pkg/m-py", "src/pkg/m-py::f", "d", "d#part"):
+        assert vis[node_id] == bc.UNREADABLE_VISIBILITY, (node_id, vis[node_id])
+    assert vis["src-readme"] == "public"
