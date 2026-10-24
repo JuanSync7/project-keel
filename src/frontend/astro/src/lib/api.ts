@@ -127,7 +127,8 @@ export interface NodeDetail {
   readonly summary: string
   readonly excerpt: string
   readonly owner: string
-  readonly owner_source: string
+  // null when the corpus row names no source: unknown, distinct from `none`.
+  readonly owner_source: string | null
   readonly tags: readonly string[]
   readonly anchor: string
   readonly lineno: number

@@ -2,10 +2,12 @@
 title: E2E — showcase visitor journey
 kind: tests
 layer: n/a
-summary: A visitor walks the whole showcase surface over a real socket - every page payload, every curated link into the live corpus, a search, and the llms.txt files - against the REST server running as its own process.
+summary: A visitor walks the whole showcase surface over a real socket - every page payload, every curated link into the live corpus, the owner source each node payload names, a search, and the llms.txt files - against the REST server running as its own process.
 """
 
 import re
+import sys
+from pathlib import Path
 from urllib.parse import quote
 
 import pytest
@@ -16,6 +18,8 @@ import pytest
 # project (9 of them) while its README said to run `make verify`. The
 # `rest_server` fixture depends on it.
 pytestmark = [pytest.mark.e2e]
+
+_ROOT = Path(__file__).resolve().parents[2]
 
 # Every backend payload a visitor's session loads as they walk the nav.
 PAGE_FEEDS = (
@@ -79,6 +83,33 @@ def test_curated_links_resolve_into_the_corpus(rest_server):
         if rest_server.request("GET", "/api/wiki/node?id=" + _quote(h))[0] != 200
     ]
     assert not dead, "dead curated links (no such corpus node): %s" % dead
+
+
+@pytest.mark.endpoint("rest GET /api/features")
+@pytest.mark.endpoint("rest GET /api/wiki/node")
+def test_a_wiki_node_says_how_its_owner_was_resolved(rest_server):
+    """The node page's owner chip reads owner_source off the payload: the live
+    corpus names one of CONVENTIONS §12's sources for every node it writes, and
+    a payload's null, unknown, would mean the corpus row lost it."""
+    sys.path.insert(0, str(_ROOT / "scripts"))
+    sys.path.insert(0, str(_ROOT / "scripts" / "jobs"))
+    import check_corpus as cc
+
+    hrefs = sorted(
+        {
+            link["href"]
+            for item in rest_server.json("GET", "/api/features")[1]
+            for link in item["links"]
+        }
+    )
+    assert hrefs, "there should be curated links to open"
+    sources = {}
+    for h in hrefs:
+        status, node = rest_server.json("GET", "/api/wiki/node?id=" + _quote(h))
+        assert status == 200, h
+        sources[h] = node["owner_source"]
+    off = {h: s for h, s in sources.items() if s not in cc.OWNER_SOURCES}
+    assert not off, "nodes whose payload names no CONVENTIONS §12 source: %s" % off
 
 
 def _quote(value):

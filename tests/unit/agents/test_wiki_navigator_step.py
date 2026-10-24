@@ -2,7 +2,7 @@
 title: Unit — the wiki navigator's model step runs on an injected backend
 kind: tests
 layer: n/a
-summary: wiki_navigator.synthesize(question, nodes, backend=b) sends b the agent's real answer prompt (its prompt.md preamble, the question and each visible node cited by node_id), never a confidential or restricted node, and returns b's reply stripped; the plan's synthesize step calls the same function, so the eval harness judges the code answer() runs. answer(execute=True) with no approved count of model calls is a ValueError before any step runs; answer(backend_factory=f) builds its one counted backend with f from the model name, so a caller that counts calls across answers (mcp/qa_server.py's session total) sees each one, and with no factory it is models.get_model.
+summary: wiki_navigator.synthesize(question, nodes, backend=b) sends b the agent's real answer prompt (its prompt.md preamble, the question and each visible node cited by node_id), never a confidential or restricted node, and returns b's reply stripped; the plan's synthesize step calls the same function, so the eval harness judges the code answer() runs. answer(execute=True) with no approved count of model calls is a ValueError before any step runs; answer(backend_factory=f) builds its one counted backend with f from the model name, so a caller that counts calls across answers (mcp/qa_server.py's session total) sees each one, and with no factory it is models.get_model. A citation whose node names no owner_source carries None, unknown, never `none`.
 """
 
 import json
@@ -113,3 +113,20 @@ def test_an_execute_answer_builds_its_backend_with_the_factory_it_is_given(tmp_p
     )
     assert built == ["fake"] and len(seen.prompts) == 1
     assert got.text == "Alpha ingests events [docs/a.md]." and not got.dry_run
+
+
+@pytest.mark.parametrize("stored", ["absent", None, "", "frontmatter"])
+def test_a_citation_says_unknown_when_its_node_names_no_owner_source(tmp_path, stored):
+    """A corpus row with no owner_source says nothing about its owner, so the
+    citation's source is None, never `none`, the claim that nothing owns it."""
+    path = _one_node_corpus(tmp_path)
+    corpus = json.loads(Path(path).read_text("utf-8"))
+    if stored == "absent":
+        del corpus["nodes"][0]["owner_source"]
+    else:
+        corpus["nodes"][0]["owner_source"] = stored
+    Path(path).write_text(json.dumps(corpus), "utf-8")
+    got = answer("what is alpha", corpus=path)
+    assert [c.node_id for c in got.citations] == ["docs/a.md"], got.citations
+    want = "frontmatter" if stored == "frontmatter" else None
+    assert got.citations[0].owner_source == want

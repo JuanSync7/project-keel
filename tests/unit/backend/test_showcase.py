@@ -430,9 +430,10 @@ def test_node_resolves_neighbours():
 
 def test_node_carries_how_its_owner_was_resolved():
     """The wiki page marks a default owner as a placeholder, so the detail
-    carries owner_source; a corpus node without one reads as `none`."""
+    carries owner_source; a corpus node without one reads as unknown (None),
+    never as `none`, the claim that nothing owns it."""
     assert _sc().node("mod-py").owner_source == "default"
-    assert _sc().node("guide").owner_source == "none"
+    assert _sc().node("guide").owner_source is None
 
 
 def test_search_ranks_by_overlap():

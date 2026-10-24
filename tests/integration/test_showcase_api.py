@@ -116,19 +116,96 @@ def test_every_feature_link_resolves_into_the_corpus():
     assert not dead, "dead feature links (no such corpus node): %s" % dead
 
 
-def test_wiki_node_says_how_its_owner_was_resolved():
+def _owner_tree(root):
+    """A scratch tree whose corpus holds every CONVENTIONS §12 owner source:
+    a README's own owner (frontmatter) and its sections (inherited), a section
+    marker (marker), a TBD document under a configured default (default), and
+    a document nothing owns (none)."""
+    files = {
+        "config/project.json": json.dumps(
+            {"accountability": {"default_owner": "platform-team"}}
+        ),
+        "docs/README.md": _md("docs-readme", "alice", "## Part\n\ntext\n"),
+        "docs/plan.md": _md("plan", "TBD", "## Owned\n\n<!-- owner: bob -->\n\ntext\n"),
+        "notes.md": _md("notes", None, "## Loose\n\ntext\n"),
+    }
+    for rel, text in files.items():
+        path = root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+
+def _md(doc_id, owner, body):
+    head = "---\ntitle: %s\nkind: guide\nsummary: About %s.\nid: %s\n" % (
+        doc_id,
+        doc_id,
+        doc_id,
+    )
+    if owner is not None:
+        head += "owner: %s\n" % owner
+    return head + "---\n# %s\n\n%s" % (doc_id, body)
+
+
+def _scratch_client(root, nodes):
+    from fastapi import FastAPI
+    from showcase_api import build_showcase_router
+
+    (root / "wiki").mkdir(exist_ok=True)
+    (root / "wiki" / "corpus.json").write_text(
+        json.dumps({"schema_version": 1, "nodes": nodes}), encoding="utf-8"
+    )
+    scratch = FastAPI()
+    scratch.include_router(build_showcase_router(str(root)))
+    return TestClient(scratch)
+
+
+def test_wiki_node_says_how_its_owner_was_resolved(tmp_path):
     """The wiki marks a default owner as a placeholder only if the node payload
-    carries the corpus row's owner_source unchanged, for every source the
-    corpus holds."""
-    with open(_ROOT / "wiki" / "corpus.json", encoding="utf-8") as fh:
-        nodes = json.load(fh)["nodes"]
+    carries the corpus row's owner_source unchanged. The corpus is built here,
+    in scratch, so every source is present: the gitignored repo corpus may
+    hold no `default` node, and a test over it would then prove nothing."""
+    sys.path.insert(0, str(_ROOT / "scripts"))
+    sys.path.insert(0, str(_ROOT / "scripts" / "jobs"))
+    import build_corpus as bc
+    import check_corpus as cc
+
+    _owner_tree(tmp_path)
+    nodes = bc.build_corpus(str(tmp_path))["nodes"]
     first = {}
     for node in sorted(nodes, key=lambda n: n["node_id"]):
         first.setdefault(node["owner_source"], node["node_id"])
-    assert first, "the corpus should hold nodes"
+    # Every member of the closed set, or a source the payload drops goes unseen.
+    assert set(first) == cc.OWNER_SOURCES, sorted(first)
+    scratch = _scratch_client(tmp_path, nodes)
     for source, node_id in sorted(first.items()):
-        detail = client.get("/api/wiki/node", params={"id": node_id}).json()
+        detail = scratch.get("/api/wiki/node", params={"id": node_id}).json()
         assert detail["owner_source"] == source, node_id
+
+
+@pytest.mark.parametrize("stored", ["absent", None, ""])
+def test_a_node_with_no_owner_source_reads_as_unknown_not_none(tmp_path, stored):
+    """A corpus row that carries no owner_source, such as one written before
+    the field existed, says nothing about its owner: the payload is null, not
+    `none`, the claim that nothing owns the node."""
+    _owner_tree(tmp_path)
+    node = {
+        "node_id": "old",
+        "kind": "doc",
+        "title": "Old",
+        "path": "notes.md",
+        "summary": "An old row.",
+        "owner": "alice",
+        "children": [],
+        "links": [],
+    }
+    if stored != "absent":
+        node["owner_source"] = stored
+    detail = (
+        _scratch_client(tmp_path, [node])
+        .get("/api/wiki/node", params={"id": "old"})
+        .json()
+    )
+    assert detail["owner_source"] is None, detail
 
 
 def test_wiki_tree_node_and_404():

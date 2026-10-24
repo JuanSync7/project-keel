@@ -82,8 +82,9 @@ def node_detail(corpus: _Corpus, node_id: str) -> NodeDetail | None:
         summary=n.get("summary", ""),
         excerpt=n.get("text_excerpt", ""),
         owner=n.get("owner", ""),
-        # A corpus built before owner_source existed names no source: `none`.
-        owner_source=n.get("owner_source") or "none",
+        # No source on the row (a corpus built before the field existed) is
+        # unknown, None, and never `none`, which claims nothing owns the node.
+        owner_source=n.get("owner_source") or None,
         tags=tuple(n.get("tags", []) or ()),
         anchor=n.get("anchor") or "",
         lineno=n.get("lineno") or 0,

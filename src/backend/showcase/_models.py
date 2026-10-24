@@ -194,7 +194,8 @@ class NodeDetail:
     excerpt: str
     owner: str
     # CONVENTIONS §12's closed set; `default` marks the owner as a placeholder.
-    owner_source: str
+    # None when the corpus row names no source: unknown, distinct from `none`.
+    owner_source: str | None
     tags: tuple[str, ...]
     anchor: str
     lineno: int

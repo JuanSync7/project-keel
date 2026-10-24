@@ -31,7 +31,9 @@ class Citation:
     path: str
     summary_source: str  # "authored" | "generated" — caller can weight authored higher
     owner: str  # resolved owner ("" if unowned)
-    owner_source: str  # "marker" | "frontmatter" | "inherited" | "default" | "none"
+    # "marker" | "frontmatter" | "inherited" | "default" | "none", or None
+    # when the node names no source: unknown, distinct from `none`.
+    owner_source: str | None
 
 
 @dataclass(frozen=True)
@@ -116,7 +118,7 @@ def _retrieve(state):
             path=h.get("path", ""),
             summary_source=h.get("summary_source") or "",
             owner=h.get("owner") or "",
-            owner_source=h.get("owner_source") or "none",
+            owner_source=h.get("owner_source") or None,
         )
         for h in visible
     )
