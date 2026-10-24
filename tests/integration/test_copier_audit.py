@@ -806,8 +806,9 @@ def test_a_pre_c2_2_project_receives_the_new_child_env_keys_as_arrivals_and_owes
     `shell` block scripts/shell_gate.py reads, the limits the config
     loader declares for a model call (`models.max_reply_bytes`,
     `models.timeout_seconds`), a runtime (`runtimes.max_steps`) and a server
-    (`transports.grpc`, `transports.serve`), and the `accountability` block
-    whose default owner check_F reads.
+    (`transports.grpc`, `transports.serve`), the `accountability` block
+    whose default owner check_F reads, and the `corpus` block whose
+    served levels every corpus reader acts on.
     `structure.project_checks` does not: the template never ships it, because a
     key beside `extra_toplevel` would conflict with every project that declared
     one."""
@@ -849,6 +850,7 @@ def test_a_pre_c2_2_project_receives_the_new_child_env_keys_as_arrivals_and_owes
         "child_env.login_name_schemes",
         "ci_pipeline",
         "config_reads",
+        "corpus",
         "dependency_audit",
         "doc_drift",
         "e2e",
@@ -994,7 +996,8 @@ def test_a_pre_c5_2_project_receives_the_run_date_and_host_list_as_arrivals(
     scripts/shell_gate.py reads since KEEL-SHELL-1, the model, runtime
     and server limits since KEEL-CFG-3 and KEEL-RES-2, and the
     `accountability` block whose default owner check_F reads since
-    KEEL-WARN-1, arrive too. The audit
+    KEEL-WARN-1, and the `corpus` block whose served levels every corpus
+    reader acts on since KEEL-VIS-2, arrive too. The audit
     reports exactly those keys as
     arrivals and the list as changed, owes no X error, and a real
     update leaves the run date block as the template ships it with its
@@ -1027,6 +1030,7 @@ def test_a_pre_c5_2_project_receives_the_run_date_and_host_list_as_arrivals(
         "change_comments",
         "ci_pipeline",
         "config_reads",
+        "corpus",
         "dependency_audit",
         "evidence.run_date",
         "expiring_tier",

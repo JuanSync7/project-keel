@@ -839,3 +839,65 @@ def test_a_refused_map_names_each_entry_it_refuses():
         )
     (line,) = exc.value.lines
     assert line.endswith('; refused entries: "huge", "zero"'), line
+
+
+_SERVED = ("corpus", "served_visibilities")
+
+
+def _root_with(tmp_path, block):
+    """A project root whose config/project.json holds *block* and nothing else."""
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "project.json").write_text(json.dumps(block), "utf-8")
+    return str(tmp_path)
+
+
+def test_the_served_levels_default_to_public_and_internal_and_say_so(tmp_path):
+    stream = io.StringIO()
+    got = config_loader.served_visibilities(_root_with(tmp_path, {}), stream=stream)
+    assert got == frozenset({"public", "internal"})
+    assert stream.getvalue().startswith(
+        '[using default] corpus.served_visibilities = ["public", "internal"]'
+    ), stream.getvalue()
+
+
+def test_the_served_levels_are_the_configured_list(tmp_path):
+    root = _root_with(tmp_path, {"corpus": {"served_visibilities": ["public"]}})
+    assert config_loader.served_visibilities(root, stream=io.StringIO()) == frozenset(
+        {"public"}
+    )
+
+
+@pytest.mark.parametrize(
+    "value",
+    [["public", "secret"], ["unreadable-readme"], ["public", "public"], "public"],
+)
+def test_a_served_level_outside_the_vocabulary_is_refused(tmp_path, value):
+    """The corpus's unreadable-readme marker is outside the vocabulary on
+    purpose, so no configuration can ask for the nodes it marks; a repeated
+    member is a typo, and a bare string is not a list."""
+    root = _root_with(tmp_path, {"corpus": {"served_visibilities": value}})
+    with pytest.raises(WrongValue) as exc:
+        config_loader.served_visibilities(root, stream=io.StringIO())
+    assert "corpus.served_visibilities" in str(exc.value)
+
+
+def test_the_visibility_vocabulary_matches_the_gates_copy():
+    sys.path.insert(0, str(_ROOT / "scripts" / "jobs"))
+    import check_corpus
+    import check_structure
+
+    assert config_loader.VISIBILITY_ORDER == (
+        "public",
+        "internal",
+        "confidential",
+        "restricted",
+    )
+    # Two copies until check_structure re-exports the loader's: a VIS-1 fix
+    # round owns scripts/check_structure.py while this one lands.
+    assert check_structure.VISIBILITY_ORDER == config_loader.VISIBILITY_ORDER
+    assert frozenset(config_loader.VISIBILITY_ORDER) == check_corpus.VISIBILITIES
+
+
+def test_the_served_levels_row_ships_its_default():
+    (row,) = config_loader.rows(_SERVED)
+    assert row.default == ["public", "internal"] and row.file == CONFIG_FILE
