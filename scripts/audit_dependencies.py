@@ -75,8 +75,10 @@ _DECLARING_FIELDS = (
 #     URL's scheme and port, and keeps whole a URL's host or the host after
 #     `ENOTFOUND` or `getaddrinfo` that _is_name accepts, since a host label
 #     such as an AWS CodeArtifact domain-account pair has the token shape and
-#     is the cause a reader needs; any other host is judged run by run, so a
-#     token passed as the registry is still hidden.
+#     is the cause a reader needs. A host in either place that is neither
+#     such a name nor a bracketed address is hidden whole when it mixes
+#     letters and digits, so a token passed as the registry is still hidden,
+#     and is kept when it does not, as `localhost` is (_host_shown).
 # (c) runs before (b) because `Authorization` is itself a secret-word key, and
 # (b) skips a value that is already hidden or is a scheme name.
 # A registry or proxy chooses this text, so no pattern may backtrack more than
@@ -88,10 +90,11 @@ _DECLARING_FIELDS = (
 # drift. A host is a bracketed IPv6 address, with its zone id if it has one,
 # or a run of the characters a registry name may hold; a port is at most five
 # digits, so a longer number is no port and falls into the path. Whatever
-# follows the host and port, up to a space, quote or list separator, is the
-# path, so a token glued on past a `)` or a stray character is hidden with
-# it. A scheme is at most 16 characters, too short for (d), so keeping it can
-# keep no token.
+# follows the host and port is the path unless it opens with a comma or
+# semicolon, which end the URL as a list does; the path then runs up to a
+# space, quote, `<` or `>`, so a token glued on past a `)`, a comma or a
+# stray character is hidden with it. A scheme is at most 16 characters, too
+# short for (d), so keeping it can keep no token.
 _SCHEME = r"\b[a-z][a-z0-9+.\-]{0,15}://"
 _HOST = r"\[[0-9a-f:.]{2,45}(?:%[\w.\-~%]{1,32})?\]|[\w.\-~%+=]{1,253}"
 _PORT = r":\d{1,5}(?!\d)"
@@ -136,9 +139,9 @@ _BARE_USERINFO = re.compile(r"(?<![\w/])[\w.\-]{1,64}:[^\s@/]{1,256}@(?=[\w\-])"
 # The places a host sits, which (d) judges by _host_shown rather than by the
 # run alone: a URL's scheme, host and port as (a) left them, and the operand
 # npm's resolver names after its error code, which is everything up to a
-# space, quote, comma or semicolon. Each host is judged as one run, `+`, `=`
-# and `%`-escapes included: split there, every piece of a token can be under
-# 20 characters.
+# space, quote, comma, semicolon, `<` or `>`. Each host is judged as one
+# run, `+`, `=` and `%`-escapes included: split there, every piece of a token
+# can be under 20 characters.
 _URL_HOST = r"(?i:(%s)(%s)?(%s)?)" % (_SCHEME, _HOST, _PORT)
 _RESOLVER_HOST = r"(\b(?:getaddrinfo(?: E[A-Z_]{1,31})?|ENOTFOUND) )([^\s\"'<>,;]+)"
 _RUN = r"[A-Za-z0-9_\-+/=]{20,}"
