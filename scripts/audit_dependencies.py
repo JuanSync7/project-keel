@@ -268,8 +268,11 @@ _NEXT_ASSIGNMENT = re.compile(r"(?<![\s;,])\s{1,4}[A-Za-z_][\w.\-]{0,63}=")
 # `password` and a dash) opens the clause as a space does, while a word
 # character there continues a key longer than _KEY's bound.
 # Each open run is capped at _CLAUSE_WORD_LIMIT, so one match reads at most
-# that many characters whatever follows: uncapped, "token" * 10000 read the
-# rest of the line once per key and took 4 s. A longer word is split into
+# that many characters whatever follows, as every redaction pattern bounds
+# its runs. The cap is not what keeps "token" * 10000 fast: a key glued to a
+# letter or digit opens no clause, so no clause word is read there at all,
+# and with the cap raised to 1 000 000 every 50 000-character row of the
+# timing test stays under 0.11 s. A longer word is split into
 # words of that length, each judged, so the split shows nothing a whole word
 # would hide. The cap is above a host and port (253 + 6 characters).
 _CLAUSE_WORD_LIMIT = 300

@@ -705,7 +705,10 @@ version rather than a bare commit:
   `acme2024-111122223333.d.codeartifact...` stay readable. The line is cut to
   `dependency_audit.max_shown_chars` (500) characters so a registry's long
   body can neither flood the line nor stall the redaction, and a quoted
-  value the cut splits is hidden whole. The run says to check the registry
+  value the cut splits is hidden whole. A secret word glued to a letter
+  or digit opens no clause, so a line of `token` repeated is read once
+  rather than once per key, and a clause word is read at most 300 characters
+  at a time, so that pattern's runs are bounded as every other's are. The run says to check the registry
   URL when npm reports `Invalid URL`, the `.npmrc` credentials when the
   registry refused the login, and reachability when it could not be reached.
   It runs npm with every

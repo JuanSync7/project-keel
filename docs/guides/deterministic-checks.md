@@ -1143,8 +1143,12 @@ fixes where it starts or it is the whole pattern;
 `tests/unit/scripts/test_audit_dependencies.py` fails when redacting a
 16 000-character line takes a second, which the unbounded key rule took nine
 times over, and so does a 50 000-character one such as `token` repeated,
-which a clause word read to the line's end once per key took four seconds
-on: a clause word is read at most 300 characters at a time. The line is redacted by structure, not by
+which took four seconds while each glued key opened a clause that read to
+the line's end. A key followed by a letter or digit opens no clause, and
+that is what keeps such a line fast. A clause word is also read at most 300
+characters at a time, so its runs are bounded as every other pattern's are;
+`tests/unit/scripts/test_audit_dependencies.py` fails when that cap is
+raised. The line is redacted by structure, not by
 a list of token shapes, because a list leaks every shape it does not name;
 each rule rewrites only its own span, so the cause (`ENOTFOUND`, `E401`,
 `Unable to authenticate`) stays readable.
