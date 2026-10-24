@@ -772,7 +772,10 @@ KEYS = tuple(
             ),
             # 15000 s: a tool child that runs a gate must outlast the gate
             # runner's timed-out run, its limit and its grace spent twice
-            # (make_targets, 14400 + 2 * 15 s), plus the margin above.
+            # (make_targets, 14400 + 2 * 15 s), plus the margin above. Ended
+            # sooner, the runner's watcher sends make's session SIGKILL at
+            # once: make's SIGTERM grace is cut short, the runner's structured
+            # result is lost, and apply_refactor's edit is not rolled back.
             _row(
                 ("agents", "tool_timeout_seconds"),
                 "int",

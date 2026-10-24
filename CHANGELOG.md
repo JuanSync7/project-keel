@@ -360,7 +360,8 @@ version rather than a bare commit:
   for make's output, the margin covers the runner's start, its tree
   snapshots and the rollback around it, and a tool
   child can be the gate runner, and a SIGKILL to it before its own stop would
-  leave make's session running and an applied edit not rolled back. The
+  cut make's SIGTERM grace short, lose the runner's structured result and
+  leave an applied edit not rolled back. The
   keys are read from the tree the tool acts on, whose gate keys the gate
   runner reads: the `--root` of `scripts/doc_review.py` and
   `scripts/refactor_practice.py`, and the served root of each MCP server.
