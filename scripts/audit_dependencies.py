@@ -3,7 +3,7 @@
 title: audit_dependencies — judge each frontend app's npm audit against the accepted risks config records
 kind: script
 layer: n/a
-summary: `make fe-audit`'s doer. It audits each frontend app directory it is given (the Makefile passes FE_APPS) by running `npm audit --json` there, with `--include` naming dev, optional and peer so an .npmrc `omit=` cannot narrow it, under scripts/child_env.py `build_child_env` and config/project.json `dependency_audit.timeout_seconds`, or reads the saved report a `--report NAME=FILE` names instead, so a test never runs npm. A finding is one advisory a report's `via` entry names: its GHSA id (the last part of its `url`), its package and its severity. It judges each app against `dependency_audit.accepted.<app>`, rows of advisory id to package, reason and review_by day, on today's date (scripts/run_date.py `today`, read once at the entry point; a test hands in its own day). It fails (FAILURE) on four things, all listed before the one closing line: a finding at or above `dependency_audit.fail_at` that no row names with the same advisory and package; a row whose review_by day has passed; a row whose review_by is more than `dependency_audit.max_review_days` days after today, so an acceptance is renewed rather than parked; and a row whose advisory and package the app's report no longer holds, or whose app is not one it audited. A finding below fail_at that no row covers is listed and does not fail; a covered one is listed with its reason and day. It refuses a report it cannot trust rather than pass it: one that is not JSON, not `npm audit --json` version 2 (an unknown severity, a `via` url with no advisory id, a `via` item that is neither an advisory nor the name of another entry), whose `metadata.vulnerabilities` counts disagree with its entries, or whose `metadata.dependencies.total` is 0 or missing while the app's package.json declares a dependency, which is what an empty or root-only lockfile audits as. A package.json declares one when any of `dependencies`, `devDependencies` or `optionalDependencies` is non-empty, `peerDependencies` names a peer `peerDependenciesMeta` does not mark `optional: true`, or `workspaces` names a package glob, as a list or as an object's `packages` list, and then the next step also names a workspaces pattern that matches no directory. Such a report is USAGE from a saved file and BACKEND_ABSENT from a run, as is npm exiting 1 with no finding. An app directory with no package.json, one that is not a JSON object, no package-lock.json, a saved report that cannot be read and a `--report` name that is not an audited app are USAGE; npm that cannot be started, runs past the timeout, exits other than 0 or 1, or answers an `error` object is BACKEND_ABSENT, and the line carries npm's own diagnostic: the `error` object's `message` or `summary`, else the top-level `message` npm 11 writes when the registry cannot be reached or refuses the request, else npm's last stderr line other than its log pointer (`A complete log of this run can be found in:` and a path line split from it), never all of stderr. That text is first cut to `dependency_audit.max_shown_chars` characters, dropping the word the cut lands in and saying where it was cut, and every redaction pattern bounds its runs, so a registry's long or hostile body can neither flood the line nor stall the run. It is then redacted by structure, each rule rewriting only its own span so the cause stays: a URL loses its userinfo and its path or query (`<path hidden>`); an `Authorization`/`Bearer`/`Basic` value, the value of a key holding auth, token, password, passwd, secret, key, credential or cookie in any case, a scheme-less `user:pass@` and any 20-character run mixing letters and digits are `<hidden>`. The next step follows the cause: registry credentials for a 401, 403 or authenticate failure, reachability for ENOTFOUND, ECONNREFUSED or ETIMEDOUT. A refused `dependency_audit` key, run date or child environment is CONFIG. Given no app and no row it says so and exits 0. It writes nothing in the tree; npm writes its own per-user log and cache.
+summary: `make fe-audit`'s doer. It audits each frontend app directory it is given (the Makefile passes FE_APPS) by running `npm audit --json` there, with `--include` naming dev, optional and peer so an .npmrc `omit=` cannot narrow it, under scripts/child_env.py `build_child_env` and config/project.json `dependency_audit.timeout_seconds`, or reads the saved report a `--report NAME=FILE` names instead, so a test never runs npm. A finding is one advisory a report's `via` entry names: its GHSA id (the last part of its `url`), its package and its severity. It judges each app against `dependency_audit.accepted.<app>`, rows of advisory id to package, reason and review_by day, on today's date (scripts/run_date.py `today`, read once at the entry point; a test hands in its own day). It fails (FAILURE) on four things, all listed before the one closing line: a finding at or above `dependency_audit.fail_at` that no row names with the same advisory and package; a row whose review_by day has passed; a row whose review_by is more than `dependency_audit.max_review_days` days after today, so an acceptance is renewed rather than parked; and a row whose advisory and package the app's report no longer holds, or whose app is not one it audited. A finding below fail_at that no row covers is listed and does not fail; a covered one is listed with its reason and day. It refuses a report it cannot trust rather than pass it: one that is not JSON, not `npm audit --json` version 2 (an unknown severity, a `via` url with no advisory id, a `via` item that is neither an advisory nor the name of another entry), whose `metadata.vulnerabilities` counts disagree with its entries, or whose `metadata.dependencies.total` is 0 or missing while the app's package.json declares a dependency, which is what an empty or root-only lockfile audits as. A package.json declares one when any of `dependencies`, `devDependencies` or `optionalDependencies` is non-empty, `peerDependencies` names a peer `peerDependenciesMeta` does not mark `optional: true`, or `workspaces` names a package glob, as a list or as an object's `packages` list, and then the next step also names a workspaces pattern that matches no directory. Such a report is USAGE from a saved file and BACKEND_ABSENT from a run, as is npm exiting 1 with no finding. An app directory with no package.json, one that is not a JSON object, no package-lock.json, a saved report that cannot be read and a `--report` name that is not an audited app are USAGE; npm that cannot be started, runs past the timeout, exits other than 0 or 1, or answers an `error` object is BACKEND_ABSENT, and the line carries npm's own diagnostic: the `error` object's `message` or `summary`, else the top-level `message` npm 11 writes when the registry cannot be reached or refuses the request, else npm's last stderr line other than its log pointer (`A complete log of this run can be found in:` and a path line split from it), never all of stderr. That text is first cut to `dependency_audit.max_shown_chars` characters, dropping the word the cut lands in and saying where it was cut, and every redaction pattern bounds its runs, so a registry's long or hostile body can neither flood the line nor stall the run. It is then redacted by structure, each rule rewriting only its own span so the cause stays: a URL, a bracketed IPv6 host included, keeps its scheme, host and port and loses its userinfo and its path or query (`<path hidden>`); an `Authorization`/`Bearer`/`Basic` value, the value of a key holding auth, token, password, passwd, secret, key, credential or cookie in any case, a scheme-less `user:pass@` and any 20-character run mixing letters and digits are `<hidden>`, except within a URL's scheme, host and port and the dotted host after `ENOTFOUND` or `getaddrinfo`, which name the registry. The next step follows the cause: registry credentials for a 401, 403 or authenticate failure, reachability for ENOTFOUND, ECONNREFUSED or ETIMEDOUT. A refused `dependency_audit` key, run date or child environment is CONFIG. Given no app and no row it says so and exits 0. It writes nothing in the tree; npm writes its own per-user log and cache.
 effect: read-only
 """
 
@@ -69,7 +69,11 @@ _DECLARING_FIELDS = (
 #     digits becomes _HIDDEN. It is the fail-closed catch for a bare token of
 #     a shape no rule above names (an npm, GitHub or legacy UUID token); it
 #     also hides an integrity hash or a log file's timestamped name, which
-#     costs the diagnostic that detail and keeps its cause word.
+#     costs the diagnostic that detail and keeps its cause word. It skips the
+#     spans that name the registry (_NAMED_HOST): a URL's scheme, host and
+#     port as (a) left them, and the host after `ENOTFOUND` or `getaddrinfo`,
+#     since a host label such as an AWS CodeArtifact domain-account pair has
+#     the token shape and is the cause a reader needs.
 # (c) runs before (b) because `Authorization` is itself a secret-word key, and
 # (b) skips a value that is already hidden or is a scheme name.
 # A registry or proxy chooses this text, so no pattern may backtrack more than
@@ -77,12 +81,13 @@ _DECLARING_FIELDS = (
 # `://`, a separator, a quote) or it is the whole pattern, so no two open runs
 # can trade characters. Unbounded, (b) took 7 s on "token" * 300 and 9 s on
 # "a" * 16000.
+# A URL's parts, shared by (a) and the spans (d) skips so the two cannot
+# drift. A host is a bracketed IPv6 address or a run up to its port or path.
+_SCHEME = r"\b[a-z][a-z0-9+.\-]{0,31}://"
+_HOST = r"\[[0-9a-f:.]{2,45}\]|[^\s/:?#@\"'<>,;]+"
+_PORT = r":\d{1,5}"
 _URL = re.compile(
-    r"\b([a-z][a-z0-9+.\-]{0,31})://"
-    r"(?:[^\s/@\"'<>]*@)?"
-    r"([^\s/:?#@\"'<>,;]+)"
-    r"(:\d{1,5})?"
-    r"([/?#][^\s\"'<>]*)?",
+    r"(%s)(?:[^\s/@\"'<>]*@)?(%s)(%s)?([/?#][^\s\"'<>]*)?" % (_SCHEME, _HOST, _PORT),
     re.IGNORECASE,
 )
 _PATH_HIDDEN = "<path hidden>"
@@ -116,7 +121,15 @@ _KEY_VALUE = re.compile(
     re.IGNORECASE,
 )
 _BARE_USERINFO = re.compile(r"(?<![\w/])[\w.\-]{1,64}:[^\s@/]{1,256}@(?=[\w\-])")
-_TOKEN_RUN = re.compile(r"[A-Za-z0-9_\-+/=]{20,}")
+# The spans (d) skips: a URL as (a) left it, and the host npm's resolver names
+# after its error code, a DNS name of two or more labels of at most 63
+# characters each. Requiring a dot keeps a bare token in that place hidden.
+_URL_HOST = r"(?i:%s(?:%s)(?:%s)?)" % (_SCHEME, _HOST, _PORT)
+_DNS_NAME = r"[A-Za-z0-9\-]{1,63}(?:\.[A-Za-z0-9\-]{1,63}){1,126}"
+_RESOLVER_HOST = r"\b(?:getaddrinfo(?: E[A-Z_]{1,31})?|ENOTFOUND) " + _DNS_NAME
+_NAMED_HOST = _URL_HOST + "|" + _RESOLVER_HOST
+# One pass: at each place a named host is tried first and kept as it is.
+_TOKEN_RUN = re.compile(r"(%s)|[A-Za-z0-9_\-+/=]{20,}" % _NAMED_HOST)
 _LETTER_AND_DIGIT = re.compile(r"(?=.*[A-Za-z])(?=.*[0-9])")
 # The advice a diagnostic's cause earns: a refused credential, then a registry
 # that cannot be reached; anything else keeps the caller's advice.
@@ -273,7 +286,7 @@ def _text(data):
 
 def _url_shown(match):
     scheme, host, port, path = match.groups()
-    return "%s://%s%s%s" % (
+    return "%s%s%s%s" % (
         scheme,
         host,
         port or "",
@@ -292,6 +305,8 @@ def _scheme_shown(match):
 
 def _token_shown(match):
     run = match.group(0)
+    if match.group(1) is not None:
+        return run
     return _HIDDEN if _LETTER_AND_DIGIT.match(run) else run
 
 

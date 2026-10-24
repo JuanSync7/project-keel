@@ -658,7 +658,8 @@ version rather than a bare commit:
   dependency while `package.json` declares one (a workspaces root's
   `workspaces` included, a peer marked optional not), which is how an empty
   lockfile audits. A failed run shows npm's own cause with every URL path,
-  userinfo and credential value hidden, cut to
+  userinfo and credential value hidden and the registry's host kept, an
+  AWS CodeArtifact or bracketed IPv6 host included, cut to
   `dependency_audit.max_shown_chars` (500) characters so a registry's long
   body can neither flood the line nor stall the redaction, and says to check
   `.npmrc` credentials when the registry refused the login. It runs npm with every dependency type included, so an
