@@ -2,7 +2,7 @@
 title: Unit — audit_dependencies (npm audit findings judged against the accepted risks in config)
 kind: tests
 layer: n/a
-summary: scripts/audit_dependencies.py driven in process over saved `npm audit --json` reports shaped like a real one, in a project root the test builds from keel's own config/project.json with its own `dependency_audit` block, on a day the test hands in, so no test runs npm or reaches the network. Each failure kind fails on its own and names what failed: a finding at or above `fail_at` no row covers, a covered finding whose row names another package, a row past its review_by day, a row dated more than `max_review_days` after today (exactly that many passes, one more fails), a row whose advisory the report no longer holds, and a row naming an app not audited. A covered finding passes on its review_by day and is listed with its reason; a finding below `fail_at` is listed and does not fail, and lowering `fail_at` fails it. A report with no findings still judges every row. No app and no row exits 0 saying so. A report that is not version 2, one with an unknown severity, a via url with no advisory id, a via item that is neither an advisory nor an entry's name, counts that disagree with its entries, or no audited dependency while package.json declares one is USAGE from a saved file and BACKEND_ABSENT from a run; so is a run's output that is not JSON, and npm exiting 1 with no finding. An app with no package.json, an unreadable one or no package-lock.json, a `--report` name that is not an audited app and a bad flag are USAGE; npm that cannot start, overruns its timeout, exits 2, is killed by a signal or answers an error object is BACKEND_ABSENT, showing the error's message or summary, else the top-level message npm 11 writes for an unreachable registry (its real shape, with a placeholder host), else npm's last stderr line other than its log pointer and no other, and `<hidden>` for a line holding any of the credential shapes, each tested with its secret absent from the output. A 16 000-character line, "token" * 2000 and one hostile line per newer pattern (a prose key, a URL userinfo, a bare userinfo, an assigned value of several words, a scheme-less path, a dotted run, a word-number label), and 50 000-character lines of a repeated key (`token`, `key`, `token.`, `Bearer`) of one long word and of a realm, closed or open, are redacted in under a second, timed in a child the test can kill; a diagnostic longer than `max_shown_chars` is cut, its advice still chosen from an E401 past the cut, dropping the word the cut lands in, and marked, and a shorter one is not; a quoted value the cut splits, bare or in JSON, is hidden from its quote. A secret word in prose keeps each word of its clause that scripts/audit_dependencies_data.py lists, in any case (`password required`, `PASSWORD REQUIRED`, `token is self-signed`, `"token expired` with its open quote, npm's own lines), and hides every other word, a cause word it does not list included, each listed word being tried beside a value, up to the sentence's end and past the clause bound; a value after `=` or `:` or a quoted one is hidden, an assigned one to the line's end or the next `name=` through any quote, comma, `;` or `name:` in it, and the cut marker follows it. A userinfo with a raw `@`, several `@`, no password or no scheme, a bare `user@` before a host included, is hidden up to its last `@`, while a package's `name@version` is kept. A scheme-less host (a dotted name, an IPv4 address, a name with a port, after `//` or `@` too) loses its path, a token as that host is hidden, and a file path or a host with nothing after its `/` is kept. The advice for `ERR_INVALID_URL` or `Invalid URL` names the registry URL, ahead of a 401 in the same text. The rule for a run of 20 or more characters keeps a URL's scheme, host and port, a bracketed IPv6 host among them, and the dotted host after ENOTFOUND or getaddrinfo, such as an AWS CodeArtifact host, with one trailing dot or none, a long mixed label with a word part such as `my-domain`, short runs between word parts, a word then a number (`acme2024-111122223333`) and a dotless label such as `nexus3`; a dotless token operand, a hyphenated one and a token beside a kept host are still hidden, and so is a token used as a URL's host, as one of its labels (a UUID included, a long label cut by hyphens into short token parts, hex ones too, and a token behind or between word parts), glued on past a `)`, or as the resolver's operand, and a mixed run that turns back to letters or opens with digits or one letter, and a host split at `=`, `+` or `%2B` is hidden whole in a URL and after ENOTFOUND, while `localhost` stays. A path after an IPv6 zone id or after a six-digit number where a port goes is hidden, and a zone id longer than 15 characters once a leading `%25` is dropped, raw escapes undecoded and at any length with the host kept, is `%<hidden>` while an interface name or number is kept. Each secret word the credential rule names hides the value of a key that holds only that word, so dropping any one word from the rule fails its own case. Each dependency field and both forms of `workspaces` count as declaring a dependency, and an empty one does not. The argv includes every dependency type an .npmrc could omit. A mark after a secret word opens its clause as a space does; a word of three marks or fewer is kept; a value glued before a URL is hidden and the URL kept; a URL keeps its scheme only for a scheme npm reaches, and after any other `://` the userinfo and path are hidden; a period after a single letter, or before a lower-case word, ends no sentence while one before a capital or the text's end does; a scheme-less userinfo before a bracketed IPv6 host is hidden; each cause word stands in the message it cites, and `empty` and `refused` are no cause words. A generated grammar, each secret word and the `Authorization`, `Bearer` and `Basic` forms, by each joiner, by each context a value sits in (bare, glued after a URL by `,`, `;` or a port and `,`, as a URL's host, after `<hidden>` with a space or none, after a second value, after `and`, in quotes), by each stand-in value, shows no value but the leaks section 16 declares, each named with its reason, and each declared leak, one per joiner a key's name takes, must still occur, and section 16 and the CHANGELOG list exactly those joiners. An auth challenge npm-registry-fetch prints (`Unable to authenticate, need: Basic realm="..."`) keeps its realm as written, and a value after it or a realm after a secret word alone is hidden. A clause word longer than 300 characters is judged in 300-character parts, of which only a vocabulary word or up to three marks shows, so a raised cap fails its case. A realm is kept up to 256 characters: an unquoted one past that is hidden after its 256th, a quoted one whose quote closes past it is hidden whole, and a secret word inside a kept quoted realm hides nothing. A refused `dependency_audit` value is CONFIG.
+summary: scripts/audit_dependencies.py driven in process over saved `npm audit --json` reports shaped like a real one, in a project root the test builds from keel's own config/project.json with its own `dependency_audit` block, on a day the test hands in, so no test runs npm or reaches the network. Each failure kind fails on its own and names what failed: a finding at or above `fail_at` no row covers, a covered finding whose row names another package, a row past its review_by day, a row dated more than `max_review_days` after today (exactly that many passes, one more fails), a row whose advisory the report no longer holds, and a row naming an app not audited. A covered finding passes on its review_by day and is listed with its reason; a finding below `fail_at` is listed and does not fail, and lowering `fail_at` fails it. A report with no findings still judges every row. No app and no row exits 0 saying so. A report that is not version 2, one with an unknown severity, a via url with no advisory id, a via item that is neither an advisory nor an entry's name, counts that disagree with its entries, or no audited dependency while package.json declares one is USAGE from a saved file and BACKEND_ABSENT from a run; so is a run's output that is not JSON, and npm exiting 1 with no finding. An app with no package.json, an unreadable one or no package-lock.json, a `--report` name that is not an audited app and a bad flag are USAGE; npm that cannot start, overruns its timeout, exits 2, is killed by a signal or answers an error object is BACKEND_ABSENT, showing the error's message or summary, else the top-level message npm 11 writes for an unreachable registry (its real shape, with a placeholder host), else npm's last stderr line other than its log pointer and no other, and `<hidden>` for a line holding any of the credential shapes, each tested with its secret absent from the output. A 16 000-character line, "token" * 2000 and one hostile line per newer pattern (a prose key, a URL userinfo, a bare userinfo, an assigned value of several words, a scheme-less path, a dotted run, a word-number label), and 50 000-character lines of a repeated key (`token`, `key`, `token.`, `Bearer`) of one long word and of a realm, closed or open, are redacted in under a second, timed in a child the test can kill; a diagnostic longer than `max_shown_chars` is cut, its advice still chosen from an E401 past the cut, dropping the word the cut lands in, and marked, and a shorter one is not; a quoted value the cut splits, bare or in JSON, is hidden from its quote. A secret word in prose keeps each word of its clause that scripts/audit_dependencies_data.py lists, in any case (`password required`, `PASSWORD REQUIRED`, `token is self-signed`, `"token expired` with its open quote, npm's own lines), and hides every other word, a cause word it does not list included, each listed word being tried beside a value, up to the sentence's end and past the clause bound; a value after `=` or `:` or a quoted one is hidden, an assigned one to the line's end or the next `name=` through any quote, comma, `;` or `name:` in it, and the cut marker follows it. A userinfo with a raw `@`, several `@`, no password or no scheme, a bare `user@` before a host included, is hidden up to its last `@`, while a package's `name@version` is kept. A scheme-less host (a dotted name, an IPv4 address, a name with a port, after `//` or `@` too) loses its path, a token as that host is hidden, and a file path or a host with nothing after its `/` is kept. The advice for `ERR_INVALID_URL` or `Invalid URL` names the registry URL, ahead of a 401 in the same text. The rule for a run of 20 or more characters keeps a URL's scheme, host and port, a bracketed IPv6 host among them, and the dotted host after ENOTFOUND or getaddrinfo, such as an AWS CodeArtifact host, with one trailing dot or none, a long mixed label with a word part such as `my-domain`, short runs between word parts, a word then a number (`acme2024-111122223333`) and a dotless label such as `nexus3`; a dotless token operand, a hyphenated one and a token beside a kept host are still hidden, and so is a token used as a URL's host, as one of its labels (a UUID included, a long label cut by hyphens into short token parts, hex ones too, and a token behind or between word parts), glued on past a `)`, or as the resolver's operand, and a mixed run that turns back to letters or opens with digits or one letter, and a host split at `=`, `+` or `%2B` is hidden whole in a URL and after ENOTFOUND, while `localhost` stays. A path after an IPv6 zone id or after a six-digit number where a port goes is hidden, and a zone id longer than 15 characters once a leading `%25` is dropped, raw escapes undecoded and at any length with the host kept, is `%<hidden>` while an interface name or number is kept. Each secret word the credential rule names hides the value of a key that holds only that word, so dropping any one word from the rule fails its own case. Each dependency field and both forms of `workspaces` count as declaring a dependency, and an empty one does not. The argv includes every dependency type an .npmrc could omit. A mark after a secret word opens its clause as a space does; a word of three marks or fewer is kept; a value glued before a URL is hidden and the URL kept; a URL keeps its scheme only for a scheme npm reaches, and after any other `://` the userinfo and path are hidden; a period after a single letter, or before a lower-case word, ends no sentence while one before a capital or the text's end does; a scheme-less userinfo before a bracketed IPv6 host is hidden; each cause word stands in the message it cites, and `empty` and `refused` are no cause words. A generated grammar, each secret word and the `Authorization`, `Bearer` and `Basic` forms, by each joiner, by each context a value sits in (bare, glued after a URL by `,`, `;` or a port and `,`, as a URL's host, after `<hidden>` with a space or none, after a second value, after `and`, in quotes), by each stand-in value, shows no value but the leaks section 16 declares, each named with its reason, and each declared leak, one per joiner a key's name takes, must still occur; section 16 and the CHANGELOG list exactly those joiners and every key word the leaks hold for (the secret words, `Bearer`, `Basic` and `Authorization`), and both say a key followed by a letter or digit opens no clause. An auth challenge npm-registry-fetch prints (`Unable to authenticate, need: Basic realm="..."`) keeps its realm as written, and a value after it or a realm after a secret word alone is hidden. A clause word longer than 300 characters is judged in 300-character parts, of which a vocabulary word or up to three marks shows and a secret word, `Bearer` or `Basic` opens its own clause, a scheme name's realm included, so a raised cap fails its case. A realm is kept up to 256 characters: an unquoted one past that is judged after its 256th as a word glued to it, and one of a token's shape is hidden whole by the run rule; a quoted one whose quote closes past it keeps `realm=` and the clause after it is judged, its quoted word hidden and a secret word opening it starting its own clause; inside a kept realm no secret word is read, in prose, after `:` or after `=`, and only the run rule hides a token there. Each of those redactions section 16 quotes as an example is what the code prints. A refused `dependency_audit` value is CONFIG.
 """
 
 import copy
@@ -1006,23 +1006,53 @@ def test_no_grammar_case_shows_its_value_but_a_declared_leak():
 # of the key's name by: each opening phrase, once in its document, and the
 # text that ends the list. `nothing` stands for the empty joiner.
 _JOINER_LISTS = {
-    "docs/guides/deterministic-checks.md": (
-        "A value joined to the secret word by ",
-        " (`",
-    ),
-    "CHANGELOG.md": ("a value joined to the secret word by ", ", which reads"),
+    "docs/guides/deterministic-checks.md": ("A value joined by ", " to a key word"),
+    "CHANGELOG.md": ("a value joined by ", " to a key word"),
 }
+# The key words a joined value leaks after: every word of the grammar that
+# is one key, since the joined-to-the-key leaks hold for each of them.
+_KEY_NAME_WORDS = tuple(word for word in _LEAK_WORDS if ":" not in word)
+_DOCS = sorted(_JOINER_LISTS)
 
 
-@pytest.mark.parametrize("doc", sorted(_JOINER_LISTS))
-def test_the_docs_list_the_joiners_a_key_name_takes(doc):
-    opening, closing = _JOINER_LISTS[doc]
-    text = " ".join((_ROOT / doc).read_text(encoding="utf-8").split())
+def _folded(doc):
+    """The text of *doc* with each run of whitespace folded to one space."""
+    return " ".join((_ROOT / doc).read_text(encoding="utf-8").split())
+
+
+def _listed(doc, opening, closing):
+    """The text of *doc*, whitespace folded, between *opening*, which must
+    stand there once, and the next *closing*."""
+    text = _folded(doc)
     assert text.count(opening) == 1, "%s: %r is not there once" % (doc, opening)
     start = text.index(opening) + len(opening)
-    listed = text[start : text.index(closing, start)]
+    return text[start : text.index(closing, start)]
+
+
+@pytest.mark.parametrize("doc", _DOCS)
+def test_the_docs_list_the_joiners_a_key_name_takes(doc):
+    listed = _listed(doc, *_JOINER_LISTS[doc])
     named = re.findall(r"`([^`]+)`", listed) + [""] * listed.count("nothing")
     assert sorted(named) == sorted(_KEY_NAME_JOINERS), (doc, listed)
+
+
+@pytest.mark.parametrize("doc", _DOCS)
+def test_the_docs_list_every_key_word_a_joined_value_leaks_after(doc):
+    listed = _listed(doc, _JOINER_LISTS[doc][1] + " (", ")")
+    assert sorted(re.findall(r"`([^`]+)`", listed)) == sorted(_KEY_NAME_WORDS), (
+        doc,
+        listed,
+    )
+
+
+# Section 16 and the CHANGELOG state the fast-path rule in one wording, the
+# one that names what _clause_shown checks: the character after the key.
+_NO_CLAUSE = "A key followed by a letter or digit opens no clause"
+
+
+@pytest.mark.parametrize("doc", _DOCS)
+def test_the_docs_say_a_key_followed_by_a_letter_or_digit_opens_no_clause(doc):
+    assert _folded(doc).count(_NO_CLAUSE) == 1, doc
 
 
 # H1 of review round 3: a URL word in a clause ends at a comma or semicolon
@@ -1156,6 +1186,59 @@ def test_a_realm_is_kept_up_to_256_characters(realm, shown):
     line = _NEED + "Basic " + realm
     expected = line if shown is None else _NEED + "Basic " + shown
     assert audit_dependencies._redacted(line) == expected
+
+
+# Each redaction section 16 quotes as an example, beside the line that
+# makes it: the code must still print it, as the line's end, and section 16
+# must still quote it, with `<value>` for the stand-in. A realm or clause
+# change that moves either fails here until the other moves with it.
+_PAST_THE_CAP = "npm error password " + "x" * 300
+_QUOTED_EXAMPLES = [
+    (_PAST_THE_CAP + "required", "password <hidden>required"),
+    (_PAST_THE_CAP + "token", "password <hidden>token"),
+    (
+        _PAST_THE_CAP + 'Basic realm="%s"' % _VALUE,
+        'password <hidden>Basic realm="<value>"',
+    ),
+    (_NEED + 'Basic realm="' + "R" * 257 + '"', "realm=<hidden>"),
+    (
+        _NEED + 'Basic realm="password ' + "R" * 257 + '"',
+        'realm="password <hidden>',
+    ),
+    (_NEED + 'Basic realm="password %s"' % _VALUE, 'realm="password <value>"'),
+    (_NEED + 'Basic realm="password: %s"' % _VALUE, 'realm="password: <value>"'),
+    (_NEED + 'Basic realm="password=%s"' % _VALUE, 'realm="password=<value>"'),
+    (_NEED + "Basic realm=" + "ab12" * 70, "Basic <hidden><hidden>"),
+]
+
+
+@pytest.mark.parametrize(
+    "line, quoted",
+    _QUOTED_EXAMPLES,
+    ids=[
+        "cap-vocabulary",
+        "cap-secret-word",
+        "cap-realm",
+        "quoted-over",
+        "quoted-over-secret-word",
+        "kept-prose",
+        "kept-colon",
+        "kept-equals",
+        "unquoted-over-token",
+    ],
+)
+def test_section_16_quotes_what_the_code_prints(line, quoted):
+    shown = audit_dependencies._redacted(line)
+    assert shown.endswith(quoted.replace("<value>", _VALUE)), shown
+    text = _folded("docs/guides/deterministic-checks.md")
+    assert "`%s`" % quoted in text, quoted
+
+
+# Only the last rule reaches inside a kept realm: a run of 20 or more mixed
+# token characters there is hidden, the `=` form's value included.
+def test_the_long_run_rule_reaches_inside_a_kept_realm():
+    line = _NEED + 'Basic realm="password=%s"' % (_VALUE * 4)
+    assert audit_dependencies._redacted(line) == _NEED + 'Basic realm="<hidden>"'
 
 
 def test_a_realm_after_a_secret_word_alone_is_hidden():

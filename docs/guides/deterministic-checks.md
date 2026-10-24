@@ -1149,12 +1149,16 @@ that is what keeps such a line fast. A clause word is also read at most 300
 characters at a time, so its runs are bounded as every other pattern's are;
 `tests/unit/scripts/test_audit_dependencies.py` fails when that cap is
 raised. A longer word is judged in 300-character parts, so a part after the
-first shows when it is a vocabulary word or up to three marks:
-`password` then 300 `x` and `required` reads `password <hidden>required`.
-The line is redacted by structure, not by
-a list of token shapes, because a list leaks every shape it does not name;
-each rule rewrites only its own span, so the cause (`ENOTFOUND`, `E401`,
-`Unable to authenticate`) stays readable.
+first shows when it is a vocabulary word or up to three marks, and a part
+that is a secret word, `Bearer` or `Basic` opens its own clause, as one after
+a space does, a scheme name's realm included. So `password` then 300 `x` and
+`required` reads `password <hidden>required`, with `token` in place of
+`required` it reads `password <hidden>token`, and with `Basic realm="<value>"`
+it reads `password <hidden>Basic realm="<value>"`, the realm kept as the
+scheme rule below keeps one. The line is redacted by structure, not by a list
+of token shapes, because a list leaks every shape it does not name; each rule
+rewrites only its own span, so the cause (`ENOTFOUND`, `E401`, `Unable to
+authenticate`) stays readable.
 
 - **A URL** keeps its scheme, host and port, a bracketed IPv6 host included,
   and loses its userinfo: everything before the authority's last `@`, so a
@@ -1178,10 +1182,18 @@ each rule rewrites only its own span, so the cause (`ENOTFOUND`, `E401`,
   as written, so npm-registry-fetch's `Unable to authenticate, need: Basic
   realm="Sonatype Nexus Repository Manager"` reads in full, and the words
   after it are judged. An unquoted realm longer than 256 characters shows its
-  first 256 and then `<hidden>`; a quoted one whose closing quote lies past
-  256 characters is hidden whole (`realm=<hidden>`). Inside a kept quoted
-  realm the secret-word rule is off: `realm="password <value>"` shows the
-  value.
+  first 256 and the rest is judged as a word glued to it, so a realm of
+  letters reads its first 256 and then `<hidden>`. A quoted one whose closing
+  quote lies past 256 characters is read as an empty unquoted realm: `realm=`
+  is kept and the clause after it is judged, so a quoted word there is hidden
+  to its closing quote (`realm=<hidden>`) and a secret word opening it starts
+  its own clause (`realm="password <hidden>`). Inside a kept realm no secret
+  word is read, in prose, after `:` or after `=`: `realm="password <value>"`,
+  `realm="password: <value>"` and `realm="password=<value>"` show the value.
+  Only the last rule below reaches inside a kept realm, so a run of 20 or more
+  token characters there that mixes letters and digits is hidden, and an
+  unquoted realm of that shape longer than 256 characters is hidden whole
+  (`Basic <hidden><hidden>`).
 - **A secret word** (`auth`, `token`, `password`, `passwd`, `secret`, `key`,
   `credential` or `cookie`, in any case, inside a longer key too) hides the
   value after it, by how the value is stated. After `=` or `:`, up to two
@@ -1245,9 +1257,11 @@ each rule rewrites only its own span, so the cause (`ENOTFOUND`, `E401`,
     registry host after one (`token for http://localhost:4873/`) is hidden.
   - A value that opens with a capital after a real sentence end is read as
     the next sentence and is shown.
-  - A value joined to the secret word by `-`, `.`, `_` or nothing
-    (`password-<value>`, `password<value>`) reads as part of the key's name
-    and is shown.
+  - A value joined by `-`, `.`, `_` or nothing to a key word (`auth`,
+    `token`, `password`, `passwd`, `secret`, `key`, `credential`, `cookie`,
+    `Bearer`, `Basic` or `Authorization`), as in `password-<value>` and
+    `Bearer<value>`, reads as part of the key's name and is shown, unless the
+    last rule hides the joined run.
   - A secret word inside a longer word (`monkey`, `Unauthorized`, `Basically`) opens a
     clause, so the words after it are hidden unless the vocabulary holds them.
   - Cause text after an assignment on the same line is hidden with its value.

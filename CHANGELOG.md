@@ -686,9 +686,11 @@ version rather than a bare commit:
   period after a single letter (`e.g.`). The costs: a password that is a
   vocabulary word, a capitalised value after a real sentence end, a secret of
   three marks or fewer, a value written as a URL's named host after a secret
-  word or as the realm after `Bearer` or `Basic`, and a value joined to the
-  secret word by `-`, `.`, `_` or nothing, which reads as part of the key's
-  name, are shown; a cause word the vocabulary lacks is
+  word or as the realm after `Bearer` or `Basic`, and a value joined by `-`,
+  `.`, `_` or nothing to a key word (`auth`, `token`, `password`, `passwd`,
+  `secret`, `key`, `credential`, `cookie`, `Bearer`, `Basic` or
+  `Authorization`), which reads as part of the key's name, are shown; a cause
+  word the vocabulary lacks is
   hidden, a single-label host such as `localhost` after a secret word is
   hidden, and a secret word inside a longer word (`monkey`, `Unauthorized`)
   hides the words after it.
@@ -705,12 +707,13 @@ version rather than a bare commit:
   `acme2024-111122223333.d.codeartifact...` stay readable. The line is cut to
   `dependency_audit.max_shown_chars` (500) characters so a registry's long
   body can neither flood the line nor stall the redaction, and a quoted
-  value the cut splits is hidden whole. A secret word glued to a letter
-  or digit opens no clause, so a line of `token` repeated is read once
-  rather than once per key, and a clause word is read at most 300 characters
-  at a time, so that pattern's runs are bounded as every other's are. The run says to check the registry
-  URL when npm reports `Invalid URL`, the `.npmrc` credentials when the
-  registry refused the login, and reachability when it could not be reached.
+  value the cut splits is hidden whole. A key followed by a letter or digit
+  opens no clause, so a line of `token` repeated is read once rather than
+  once per key, and a clause word is read at most 300 characters at a time,
+  so that pattern's runs are bounded as every other's are. The run says to
+  check the registry URL when npm reports `Invalid URL`, the `.npmrc`
+  credentials when the registry refused the login, and reachability when it
+  could not be reached.
   It runs npm with every
   dependency type included, so an
   `.npmrc` `omit=` cannot narrow it, and writes nothing in the tree; npm

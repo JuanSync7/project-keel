@@ -242,9 +242,15 @@ _DONE_VALUE = re.compile(r"<hidden>|(?:Bearer|Basic)\b", re.IGNORECASE)
 # WWW-Authenticate challenge sends it and npm-registry-fetch prints it
 # ('Unable to authenticate, need: ' + the header). Each form is read at most
 # 256 characters, so an unquoted realm longer than that keeps its first 256
-# and the rest is judged as a word glued to it (`<hidden>`), and a quoted one
-# whose closing quote lies past 256, or is missing, is no realm: its quoted
-# word is hidden whole. No secret word is read inside a kept realm.
+# and the rest is judged as a word glued to it (`<hidden>`). A quoted one
+# whose closing quote lies past 256, or is missing, matches as an empty
+# unquoted realm: `realm=` is kept and the clause after it is judged, so its
+# quoted word is hidden to the closing quote (`realm=<hidden>`) and a secret
+# word opening it starts its own clause (`realm="password <hidden>`). No
+# secret word is read inside a kept realm, in prose, after `:` or after `=`
+# (`realm="password=<value>"` shows the value); only the last rule reaches
+# inside, so a run of 20 or more mixed token characters there is hidden, an
+# unquoted realm past 256 of that shape whole (`Basic <hidden><hidden>`).
 _REALM_FORMS = r"realm=(?:\"[^\"]{0,256}\"|[^\s\",;]{0,256})"
 _REALM = re.compile(r"(?i:%s)" % _REALM_FORMS)
 # The run of done values an assignment opens with, a scheme name's
@@ -276,10 +282,14 @@ _NEXT_ASSIGNMENT = re.compile(r"(?<![\s;,])\s{1,4}[A-Za-z_][\w.\-]{0,63}=")
 # letter or digit opens no clause, so no clause word is read there at all,
 # and with the cap raised to 1 000 000 every 50 000-character row of the
 # timing test stays under 0.11 s. A longer word is split into words of
-# that length, each judged, so a part after the first shows only when it is
-# a vocabulary word or up to three marks: `password` then 300 `x` and
-# `required` reads `password <hidden>required`, where the whole word would
-# be one `<hidden>`. The cap is above a host and port (253 + 6 characters).
+# that length, each judged, so a part after the first shows when it is a
+# vocabulary word or up to three marks, and one that is a secret word,
+# `Bearer` or `Basic` opens its own clause, a scheme name's realm included:
+# `password` then 300 `x` and `required` reads `password <hidden>required`,
+# where the whole word would be one `<hidden>`, with `token` it reads
+# `password <hidden>token` and with `Basic realm="<value>"` it reads
+# `password <hidden>Basic realm="<value>"`. The cap is above a host and port
+# (253 + 6 characters).
 _CLAUSE_WORD_LIMIT = 300
 _CLAUSE_WORD = re.compile(
     r"\s{0,4}((?i:%s)[^\s\"'<>/,;]{0,%d}(?:/%s)?[^\w\s<]{0,3}|%s"
