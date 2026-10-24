@@ -804,8 +804,32 @@ def test_a_secret_word_in_prose_hides_its_value(text, shown):
             "ENOTFOUND someone:FAKE@pass@registry.example.invalid",
             "ENOTFOUND <hidden>@registry.example.invalid",
         ),
+        # With no scheme and no password, as in a URL: before a host.
+        (
+            "request to hunter2@registry.example/pkg failed",
+            "request to <hidden>@registry.example/<path hidden> failed",
+        ),
+        (
+            "ENOTFOUND hunter2@registry.example.invalid",
+            "ENOTFOUND <hidden>@registry.example.invalid",
+        ),
+        (
+            "fetch hun@ter2@localhost:4873/pkg",
+            "fetch <hidden>@localhost:4873/<path hidden>",
+        ),
+        ("fetch hunt!er2@10.0.0.5/pkg", "fetch <hidden>@10.0.0.5/<path hidden>"),
     ],
-    ids=["raw-at", "many-ats-port", "double-at", "no-password", "scheme-less"],
+    ids=[
+        "raw-at",
+        "many-ats-port",
+        "double-at",
+        "no-password",
+        "scheme-less",
+        "scheme-less-no-password",
+        "scheme-less-no-path",
+        "scheme-less-raw-at-port",
+        "scheme-less-ipv4",
+    ],
 )
 def test_a_raw_at_in_userinfo_hides_up_to_the_last_at(text, shown):
     assert audit_dependencies._redacted(text) == shown
@@ -1016,18 +1040,30 @@ def test_a_host_with_no_scheme_loses_its_path(text, shown):
 
 
 # A file path is no host: its first part has no dot, or the dotted part sits
-# inside the path, so it is kept, as is a host with nothing after its `/`.
+# inside the path, so it is kept, as is a host with nothing after its `/`. A
+# package's `name@version` is no userinfo, since a version is no host.
 @pytest.mark.parametrize(
     "text",
     [
         "npm error path /work/app/package.json",
+        "npm error lodash@4.17.21 and @types/node@20.1.0 are vulnerable",
+        "npm error react@latest",
         "reading src/frontend/astro/package-lock.json",
         "see node_modules/foo/bar.js/x",
         "npm@10.2.4 /usr/bin",
         "request to registry.example/ failed",
         "at ./lib/x.js",
     ],
-    ids=["absolute", "relative", "dotted-inside", "version", "bare-slash", "dot-slash"],
+    ids=[
+        "absolute",
+        "package-versions",
+        "dist-tag",
+        "relative",
+        "dotted-inside",
+        "version",
+        "bare-slash",
+        "dot-slash",
+    ],
 )
 def test_a_file_path_is_no_host(text):
     assert audit_dependencies._redacted(text) == text
@@ -1434,6 +1470,7 @@ _TIMED_REDACTION = (
         ("token " + "x " * 20, 200, False),
         ("password=a,b;c'd e=f ", 1600, False),
         ("http://[::1%25" + "a" * 60 + "]/x ", 300, False),
+        ("a@b.cd/x a@1.2.3 ", 1000, False),
     ],
     ids=[
         "a",
@@ -1449,6 +1486,7 @@ _TIMED_REDACTION = (
         "clause-bound",
         "assigned-run",
         "zone-id",
+        "bare-user",
     ],
 )
 def test_a_hostile_line_is_redacted_within_a_second(unit, times, unchanged):

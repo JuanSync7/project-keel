@@ -72,7 +72,8 @@ _DECLARING_FIELDS = (
 #     open list of "plain words" showed `hunter2` after a third linking word,
 #     so an unknown word is hidden, cause words included. A quoted value is
 #     hidden in both at least to its closing quote, or to the line's end;
-# (a') a scheme-less `user:pass@host` loses everything before its last `@`;
+# (a') a scheme-less `user:pass@host` loses everything before its last `@`,
+#     and so does a `user@host` with no password before a host (_BARE_USER);
 # (e) a scheme-less host (_BARE_HOST) loses its path as in (a);
 # (d) any remaining run of 20 or more token characters that mixes letters and
 #     digits becomes _HIDDEN. It is the fail-closed catch for a bare token of
@@ -250,6 +251,12 @@ _REPORT_VERSION = 2
 # npm failing, not an answer.
 _ANSWERED = (0, 1)
 _GUIDE = "docs/guides/deterministic-checks.md, section 16"
+# A scheme-less userinfo with no password (`TOKEN@host/path`) is hidden as
+# a URL's is: a word up to its last `@` before a host of _BARE_HOST's shape.
+# The host must follow, so a package's `name@1.2.3` or `name@latest` is kept.
+_BARE_USER = re.compile(
+    r"(?<![^\s\"'(=,;])[^\s/\"'<>]{1,256}@(?=(?:%s)(?::\d|[/\s,;]|$))" % _BARE_HOST
+)
 
 
 class _Refused(Exception):
@@ -577,6 +584,7 @@ def _redacted(line):
     line = _SCHEME_VALUE.sub(_scheme_shown, line)
     line = _key_values_shown(line)
     line = _BARE_USERINFO.sub(_HIDDEN + "@", line)
+    line = _BARE_USER.sub(_HIDDEN + "@", line)
     line = _BARE_URL.sub(r"\1/" + _PATH_HIDDEN, line)
     return _TOKEN_RUN.sub(_token_shown, line)
 
