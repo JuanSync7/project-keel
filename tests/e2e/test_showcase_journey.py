@@ -2,15 +2,21 @@
 title: E2E — showcase visitor journey
 kind: tests
 layer: n/a
-summary: A visitor walks the whole showcase surface over a real socket - every page payload, every curated link into the live corpus, the owner source each node payload names, a search, and the llms.txt files - against the REST server running as its own process.
+summary: A visitor walks the whole showcase surface over a real socket - every page payload, every curated link into the live corpus, the owner source each node payload names, a search, and the llms.txt files - against the REST server running as its own process; and a confidential node in a scratch corpus, absent from every route of a real server over it and from every file of the static export.
 """
 
+import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 from urllib.parse import quote
 
 import pytest
+from scripts.child_env import build_child_env
+
+import live_server
+import optional_deps
 
 # The showcase read model reads wiki/corpus.json, a GENERATED view that a
 # fresh clone and a freshly generated project do not have. Declared as a
@@ -180,3 +186,125 @@ def test_llms_files_open_with_the_project_title(rest_server):
         text = body.decode("utf-8")
         assert text.startswith("# " + title), (path, text[:80])
         assert len(text.splitlines()) > 1, path
+
+
+# ---- a confidential node reaches no reader the project serves ---------------
+_CODEWORD = "CODEWORD-ZEBRA"
+_SCRATCH_APP = """
+import sys
+sys.path.insert(0, {src!r})
+sys.path.insert(0, {rest!r})
+from fastapi import FastAPI
+from showcase_api import build_showcase_router
+
+app = FastAPI()
+
+
+@app.get("/health")
+def health():
+    return {{"status": "ok"}}
+
+
+app.include_router(build_showcase_router({root!r}))
+"""
+
+
+def _doc(doc_id, body, visibility=None):
+    head = "---\ntitle: %s\nkind: doc\nsummary: About %s.\nid: %s\nowner: alice\n" % (
+        doc_id,
+        doc_id,
+        doc_id,
+    )
+    if visibility is not None:
+        head += "visibility: %s\n" % visibility
+    return head + "---\n# %s\n\n## Zebra part\n\n%s\n" % (doc_id, body)
+
+
+def _confidential_project(root):
+    """A scratch project whose corpus holds an internal doc and a confidential
+    README whose body is the codeword; returns the confidential node ids."""
+    sys.path.insert(0, str(_ROOT / "scripts" / "jobs"))
+    import build_corpus
+
+    files = {
+        "config/project.json": "{}",
+        "docs/open.md": _doc("open", "zebra text"),
+        "docs/secret/README.md": _doc("secret", _CODEWORD, "confidential"),
+    }
+    for rel, text in files.items():
+        path = root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    nodes = build_corpus.build_corpus(str(root))["nodes"]
+    (root / "wiki").mkdir()
+    (root / "wiki" / "corpus.json").write_text(
+        json.dumps({"schema_version": 1, "nodes": nodes}), encoding="utf-8"
+    )
+    hidden = sorted(n["node_id"] for n in nodes if n["visibility"] == "confidential")
+    assert hidden, "the scratch corpus must hold a confidential node"
+    return hidden
+
+
+@pytest.mark.endpoint("rest GET /api/overview")
+@pytest.mark.endpoint("rest GET /api/wiki/tree")
+@pytest.mark.endpoint("rest GET /api/wiki/node")
+@pytest.mark.endpoint("rest GET /api/search")
+@pytest.mark.endpoint("rest GET /llms.txt")
+@pytest.mark.endpoint("rest GET /llms-full.txt")
+def test_a_confidential_node_reaches_neither_the_server_nor_the_static_site(tmp_path):
+    """The default `corpus.served_visibilities` serves public and internal
+    nodes. A confidential README is absent from every route of a real server
+    over that corpus, a request for it is an unknown node, and the static
+    export that make site-static publishes holds it in no file."""
+    optional_deps.importorskip("uvicorn", extra="transport")
+    optional_deps.importorskip("fastapi", extra="transport")
+    project = tmp_path / "project"
+    hidden = _confidential_project(project)
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+    (app_dir / "scratch_showcase_app.py").write_text(
+        _SCRATCH_APP.format(
+            src=str(_ROOT / "src"),
+            rest=str(live_server.rest_dir(str(_ROOT))),
+            root=str(project),
+        ),
+        encoding="utf-8",
+    )
+    pages = ["/api/overview", "/api/wiki/tree", "/llms.txt", "/llms-full.txt"]
+    pages += ["/api/search?q=zebra+secret+plan&limit=%d" % _SEARCH_LIMIT]
+    with live_server.live_server(
+        str(_ROOT), str(app_dir), app="scratch_showcase_app:app"
+    ) as server:
+        status, body = server.json("GET", "/api/wiki/node?id=open")
+        assert status == 200 and "zebra text" in body["markdown"]
+        for node_id in hidden:
+            status, body = server.json("GET", "/api/wiki/node?id=%s" % quote(node_id))
+            assert status == 404 and body == {"detail": "unknown node %r" % node_id}
+        for page in pages:
+            status, _headers, raw = server.request("GET", page)
+            text = raw.decode("utf-8")
+            assert status == 200, page
+            assert _CODEWORD not in text and "docs/secret" not in text, page
+
+    site = tmp_path / "site"
+    export = subprocess.run(
+        [
+            sys.executable,
+            str(_ROOT / "scripts" / "jobs" / "export_showcase_static.py"),
+            "--root",
+            str(project),
+            "--out-dir",
+            str(site),
+        ],
+        cwd=str(_ROOT),
+        env=build_child_env(root=str(_ROOT)),
+        capture_output=True,
+        text=True,
+    )
+    assert export.returncode == 0, export.stderr
+    written = sorted(p for p in site.rglob("*") if p.is_file())
+    assert written, "the export wrote nothing"
+    for path in written:
+        assert _CODEWORD not in path.read_text(encoding="utf-8"), path
+    nodes = json.loads((site / "api" / "wiki" / "nodes.json").read_text("utf-8"))
+    assert "open" in nodes and not set(hidden) & set(nodes)

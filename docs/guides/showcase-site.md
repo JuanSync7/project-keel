@@ -8,7 +8,7 @@ tags: [showcase, demo, frontend, astro, fastapi, wiki, guide]
 summary: How the docs/wiki frontend presents the template as a product and stays in sync with the backend.
 id: docs-guides-showcase-site
 created: 2026-06-19
-updated: 2026-10-09
+updated: 2026-10-24
 visibility: internal
 canonical: true
 ---
@@ -58,6 +58,21 @@ Astro pages ──fetch──▶ FastAPI /api/* ──▶ backend.showcase ─�
 So the loop is real: change a doc → `make site-data` (rebuild the corpus) →
 reload the page → the wiki, counts, and search reflect it. No frontend rebuild.
 
+## What the site never shows
+
+The read model holds only the corpus nodes at a level in
+`config/project.json` `corpus.served_visibilities`, `public` and `internal` by
+default (CONVENTIONS §1). `Showcase` cuts the corpus once, when it is built, so
+node detail, search, the doc tree, links, children, parent, counts and both
+llms files read the same cut. A node at any other level, or one that states
+none, is absent rather than redacted: `/api/wiki/node` answers 404
+`unknown node`, as for an id the corpus never had. The router reads the key on
+each reload, and the export and llms jobs on each run, so a project that serves
+only `public` changes the key, not code. A level outside the vocabulary is a
+config fault: the router answers 500 and each job exits 14 with nothing
+written. `tests/e2e/test_showcase_journey.py` serves a scratch corpus with a
+confidential README and finds its text in no route and no exported file.
+
 ## Agent front door (`llms.txt`)
 
 The same backend serves the **agent-facing** projection at the site root, following
@@ -65,8 +80,8 @@ the [`llms.txt` convention](https://llmstxt.org):
 
 - **`/llms.txt`** — a curated map: an H1 + summary, then the corpus docs grouped by
   directory as markdown link lists (the agent reads this first).
-- **`/llms-full.txt`** — every document's body inlined, so an agent can ingest the
-  whole corpus in one fetch.
+- **`/llms-full.txt`** — every served document's body inlined, so an agent can
+  ingest the whole served corpus in one fetch.
 
 Both are rendered from the same corpus the wiki uses (the `Showcase.llms_index`
 and `Showcase.llms_full` methods), served live, and also written to `wiki/llms.txt` /

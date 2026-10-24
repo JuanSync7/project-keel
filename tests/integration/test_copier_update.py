@@ -941,6 +941,8 @@ def test_update_retires_the_showcase_the_new_answer_declined(unshowcased):
             "tests/unit/backend/test_showcase.py",
             "tests/integration/test_showcase_repo.py",
             "tests/integration/test_showcase_api.py",
+            "tests/unit/scripts/test_export_showcase_static.py",
+            "tests/unit/scripts/test_build_llms_txt.py",
             "docs/guides/showcase-site.md",
         )
         if (unshowcased / p).exists()

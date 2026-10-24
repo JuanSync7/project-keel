@@ -142,6 +142,8 @@ exactly the files this judgment says arrive.
 | `tests/unit/backend/test_showcase.py` | only with `showcase` | the showcase demo |
 | `tests/integration/test_showcase_repo.py` | only with `showcase` | the showcase demo |
 | `tests/integration/test_showcase_api.py` | only with `showcase` | the showcase demo |
+| `tests/unit/scripts/test_export_showcase_static.py` | only with `showcase` | the showcase demo |
+| `tests/unit/scripts/test_build_llms_txt.py` | only with `showcase` | the showcase demo |
 | `tests/e2e/test_showcase_journey.py` | only with `showcase` | the showcase demo |
 | `docs/guides/showcase-site.md` | only with `showcase` | the showcase demo |
 
@@ -634,7 +636,7 @@ brings back a file a step removed, as long as you committed it first.
 | `rm -f tests/unit/api/test_grpc_server.py` | `transports` lacks `grpc` | removes the transport's test | none | `git checkout -- tests/unit/api/test_grpc_server.py` |
 | `rm -rf api/edge_nginx` | `transports` lacks `edge_nginx` | removes the transport | none | `git checkout -- api/edge_nginx` |
 | `rm -rf src/backend/showcase` | `showcase` is off | removes the showcase read model | none | `git checkout -- src/backend/showcase` |
-| `rm -f api/rest_fastapi/showcase_api.py` `scripts/jobs/export_showcase_static.py` `scripts/jobs/build_llms_txt.py` `tests/unit/backend/test_showcase.py` `tests/integration/test_showcase_repo.py` `tests/integration/test_showcase_api.py` `tests/e2e/test_showcase_journey.py` `docs/guides/showcase-site.md` | `showcase` is off | removes the showcase's files | none | `git checkout -- <path>` |
+| `rm -f api/rest_fastapi/showcase_api.py` `scripts/jobs/export_showcase_static.py` `scripts/jobs/build_llms_txt.py` `tests/unit/backend/test_showcase.py` `tests/integration/test_showcase_repo.py` `tests/integration/test_showcase_api.py` `tests/unit/scripts/test_export_showcase_static.py` `tests/unit/scripts/test_build_llms_txt.py` `tests/e2e/test_showcase_journey.py` `docs/guides/showcase-site.md` | `showcase` is off | removes the showcase's files | none | `git checkout -- <path>` |
 | `rm -f wiki/llms.txt` `wiki/llms-full.txt` | `showcase` is off | removes the agent front door | none | `make site-data` |
 | `rm -f tests/integration/test_copier_generation.py` `tests/integration/test_copier_generator_contract.py` `tests/integration/test_copier_update.py` | every update | removes tests of the template a project generated before they were excluded still has | none | none needed |
 | `rm -f docs/design/keel-hardening-plan.md` | every update | removes the template's plan from a project that still has it | none | none needed |

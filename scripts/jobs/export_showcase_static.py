@@ -18,13 +18,15 @@ import sys
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(_HERE))
+WHO = "export_showcase_static"
 # The read model lives in the domain (src/backend/showcase), reused by the live
 # API (api/rest_fastapi/showcase_api.py) and this static export — one source of
 # truth, so the snapshot matches the live JSON byte-for-byte in shape.
 sys.path.insert(0, os.path.join(ROOT, "src"))
 sys.path.insert(0, os.path.join(ROOT, "scripts"))
 
-from exit_codes import ExitCode, finish  # noqa: E402
+import config_loader  # noqa: E402
+from exit_codes import ExitCode, finish, report  # noqa: E402
 
 
 def _declared_frontend_public(root: str) -> str | None:
@@ -96,7 +98,21 @@ def main(argv=None) -> int:
         )
         return ExitCode.SUCCESS
 
-    sc = load_showcase(args.root)
+    try:
+        served = config_loader.served_visibilities(args.root)
+    except config_loader.ConfigError as exc:
+        # resolve has already written a refused value's own line; a file that
+        # cannot be read is named here. Nothing is written either way.
+        return report(
+            ExitCode.CONFIG,
+            "%s: the levels a served node may carry cannot be read" % WHO,
+            "; ".join(exc.lines)
+            or "corpus.served_visibilities in %s"
+            % (exc.path or config_loader.CONFIG_FILE),
+            "set corpus.served_visibilities to members of %s, then rerun; nothing was written"
+            % ", ".join(config_loader.VISIBILITY_ORDER),
+        )
+    sc = load_showcase(args.root, served_visibilities=served)
     out = out_dir if os.path.isabs(out_dir) else os.path.join(args.root, out_dir)
     api = os.path.join(out, "api")
 
@@ -134,6 +150,8 @@ def main(argv=None) -> int:
     for n in corpus.get("nodes", []):
         nid = n.get("node_id")
         detail = sc.node(nid)
+        # None for a node outside corpus.served_visibilities too: the read model
+        # never holds one, so a hidden node is absent from the snapshot.
         if detail is None:
             continue
         payload = to_jsonable(detail)

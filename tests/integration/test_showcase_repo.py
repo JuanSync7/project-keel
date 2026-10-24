@@ -8,6 +8,7 @@ summary: load_showcase reads config/project.json + wiki/corpus.json from the rea
 import os
 
 import pytest
+from scripts import config_loader
 
 from backend.showcase import load_showcase
 
@@ -21,7 +22,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 
 
 def test_load_showcase_reads_real_repo():
-    sc = load_showcase(ROOT)
+    sc = load_showcase(
+        ROOT, served_visibilities=config_loader.served_visibilities(ROOT)
+    )
     ov = sc.overview()
     assert ov.name  # from config/project.json
     # The repo has docs and at least the backend layer.
@@ -34,7 +37,9 @@ def test_load_showcase_reads_real_repo():
 
 
 def test_known_doc_node_resolves():
-    sc = load_showcase(ROOT)
+    sc = load_showcase(
+        ROOT, served_visibilities=config_loader.served_visibilities(ROOT)
+    )
     # The conventions doc is a stable corpus node id.
     detail = sc.node("conventions")
     if detail is not None:  # corpus may be unbuilt in a fresh checkout
@@ -43,14 +48,18 @@ def test_known_doc_node_resolves():
 
 
 def test_search_finds_something():
-    sc = load_showcase(ROOT)
+    sc = load_showcase(
+        ROOT, served_visibilities=config_loader.served_visibilities(ROOT)
+    )
     if sc.doc_tree():  # only meaningful once the corpus is built
         hits = sc.search("conventions frontmatter", limit=5)
         assert hits
 
 
 def test_markdown_body_is_real_markdown():
-    sc = load_showcase(ROOT)
+    sc = load_showcase(
+        ROOT, served_visibilities=config_loader.served_visibilities(ROOT)
+    )
     if sc.node("conventions") is not None:
         md = sc.markdown("conventions")
         assert "## " in md  # real markdown headings
@@ -63,7 +72,9 @@ def test_markdown_body_is_real_markdown():
 def test_code_node_markdown_is_not_a_fenced_block():
     """Module/symbol docstrings render AS markdown (so `backtick` terms become
     code), not wrapped in a verbatim ``` fence that would show backticks."""
-    sc = load_showcase(ROOT)
+    sc = load_showcase(
+        ROOT, served_visibilities=config_loader.served_visibilities(ROOT)
+    )
     mod = next((g for g in sc.doc_tree()), None)
     # find any module/symbol node id from the corpus via search
     hits = sc.search("showcase repository facade", limit=10)

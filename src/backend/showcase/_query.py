@@ -8,6 +8,7 @@ summary: Pure, disk-free navigation and search over an in-memory corpus dict.
 from __future__ import annotations
 
 import re
+from collections.abc import Collection
 from typing import Any
 
 from ._models import DocGroup, NodeDetail, NodeRef, SearchHit
@@ -34,6 +35,18 @@ def _ref(node: _Node) -> NodeRef:
 def _index(corpus: _Corpus) -> dict[str, _Node]:
     """node_id -> node, for O(1) neighbour resolution."""
     return {n["node_id"]: n for n in corpus.get("nodes", [])}
+
+
+def served(corpus: _Corpus, visibilities: Collection[str]) -> _Corpus:
+    """Return *corpus* holding only the nodes whose `visibility` is one of
+    *visibilities*, so every query over the result is blind to the rest.
+
+    A node with no level, or one outside the vocabulary such as the corpus's
+    `unreadable-readme` marker, is in no allowlist the config loader accepts,
+    so it is dropped too: absent, never redacted.
+    """
+    nodes = [n for n in corpus.get("nodes", []) if n.get("visibility") in visibilities]
+    return {**corpus, "nodes": nodes}
 
 
 def count_kinds(corpus: _Corpus) -> dict[str, int]:
@@ -120,4 +133,4 @@ def search(corpus: _Corpus, query: str, limit: int = 10) -> tuple[SearchHit, ...
     return tuple(hits[:limit])
 
 
-__all__ = ["count_kinds", "doc_tree", "node_detail", "search"]
+__all__ = ["count_kinds", "doc_tree", "node_detail", "search", "served"]

@@ -17,12 +17,14 @@ import sys
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(_HERE))
+WHO = "build_llms_txt"
 # The rendering logic lives in the domain (src/backend/showcase), reused by both
 # the API (live) and this job (static files) — one source of truth.
 sys.path.insert(0, os.path.join(ROOT, "src"))
 sys.path.insert(0, os.path.join(ROOT, "scripts"))
 
-from exit_codes import ExitCode, finish  # noqa: E402
+import config_loader  # noqa: E402
+from exit_codes import ExitCode, finish, report  # noqa: E402
 
 
 def main(argv=None) -> int:
@@ -53,7 +55,21 @@ def main(argv=None) -> int:
         )
         return ExitCode.SUCCESS
 
-    sc = load_showcase(args.root)
+    try:
+        served = config_loader.served_visibilities(args.root)
+    except config_loader.ConfigError as exc:
+        # resolve has already written a refused value's own line; a file that
+        # cannot be read is named here. Nothing is written either way.
+        return report(
+            ExitCode.CONFIG,
+            "%s: the levels a served node may carry cannot be read" % WHO,
+            "; ".join(exc.lines)
+            or "corpus.served_visibilities in %s"
+            % (exc.path or config_loader.CONFIG_FILE),
+            "set corpus.served_visibilities to members of %s, then rerun; nothing was written"
+            % ", ".join(config_loader.VISIBILITY_ORDER),
+        )
+    sc = load_showcase(args.root, served_visibilities=served)
     out_dir = (
         args.out_dir
         if os.path.isabs(args.out_dir)

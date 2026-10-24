@@ -1030,6 +1030,8 @@ _SHOWCASE_PATHS = (
     "tests/unit/backend/test_showcase.py",
     "tests/integration/test_showcase_repo.py",
     "tests/integration/test_showcase_api.py",
+    "tests/unit/scripts/test_export_showcase_static.py",
+    "tests/unit/scripts/test_build_llms_txt.py",
     "tests/e2e/test_showcase_journey.py",
     "docs/guides/showcase-site.md",
     "src/frontend/astro",

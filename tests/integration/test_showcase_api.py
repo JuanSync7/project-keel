@@ -197,6 +197,7 @@ def test_a_node_with_no_owner_source_reads_as_unknown_not_none(tmp_path, stored)
         "owner": "alice",
         "children": [],
         "links": [],
+        "visibility": "internal",
     }
     if stored != "absent":
         node["owner_source"] = stored
@@ -246,3 +247,82 @@ def test_llms_full_txt_inlines_documents():
     # full text inlines doc bodies (markdown headings present, not just links)
     assert "— full text" in r.text
     assert r.text.count("## ") >= 2
+
+
+# ---- visibility: a node outside corpus.served_visibilities is absent ---------
+_CODEWORD = "CODEWORD-ZEBRA"
+
+
+def _visibility_tree(root, served=None):
+    """A scratch project: an open doc, a confidential `docs/secret/README.md`
+    whose body is the codeword, and a config that sets
+    `corpus.served_visibilities` to *served* (absent, the default, when None)."""
+    config = {} if served is None else {"corpus": {"served_visibilities": served}}
+    files = {
+        "config/project.json": json.dumps(config),
+        "docs/open.md": _md("open", "alice", "## Open part\n\nzebra text\n"),
+        "docs/secret/README.md": _md(
+            "secret", "alice", "## Zebra plan\n\n%s\n" % _CODEWORD
+        ).replace("---\n#", "visibility: confidential\n---\n#", 1),
+    }
+    for rel, text in files.items():
+        path = root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    sys.path.insert(0, str(_ROOT / "scripts" / "jobs"))
+    import build_corpus as bc
+
+    nodes = bc.build_corpus(str(root))["nodes"]
+    hidden = sorted(n["node_id"] for n in nodes if n["visibility"] == "confidential")
+    assert hidden, "the scratch corpus must hold a confidential node"
+    return nodes, hidden
+
+
+def _every_answer(scratch, ids):
+    """The text of every showcase route a visitor or agent can reach."""
+    pages = ["/api/overview", "/api/wiki/tree", "/llms.txt", "/llms-full.txt"]
+    pages += ["/api/search?q=zebra+plan+secret&limit=50"]
+    pages += ["/api/wiki/node?id=%s" % i for i in ids]
+    return {page: scratch.get(page) for page in pages}
+
+
+def test_a_confidential_node_reaches_no_showcase_route(tmp_path):
+    nodes, hidden = _visibility_tree(tmp_path)
+    scratch = _scratch_client(tmp_path, nodes)
+    for node_id in hidden:
+        r = scratch.get("/api/wiki/node", params={"id": node_id})
+        assert r.status_code == 404, node_id
+        assert r.json() == {"detail": "unknown node %r" % node_id}
+    for page, r in _every_answer(scratch, [n["node_id"] for n in nodes]).items():
+        assert _CODEWORD not in r.text, page
+        # A request for a hidden id is answered as unknown, echoing the id asked.
+        if not page.startswith("/api/wiki/node"):
+            for node_id in hidden:
+                assert node_id not in r.text, (page, node_id)
+    assert scratch.get("/api/overview").json()["stats"]["docs"] == 1
+
+
+def test_the_router_serves_the_configured_levels(tmp_path):
+    """With `corpus.served_visibilities` set to `["public"]`, the internal doc
+    goes too, so the router reads the key rather than a literal of its own."""
+    nodes, _hidden = _visibility_tree(tmp_path, served=["public"])
+    scratch = _scratch_client(tmp_path, nodes)
+    assert scratch.get("/api/wiki/tree").json() == []
+    assert scratch.get("/api/wiki/node", params={"id": "open"}).status_code == 404
+
+
+def test_a_refused_served_level_serves_nothing(tmp_path):
+    """A level outside the vocabulary is a config fault, and the router
+    answers an error rather than guess which nodes to serve."""
+    nodes, _hidden = _visibility_tree(tmp_path, served=["unreadable-readme"])
+    from fastapi import FastAPI
+    from showcase_api import build_showcase_router
+
+    (tmp_path / "wiki").mkdir(exist_ok=True)
+    (tmp_path / "wiki" / "corpus.json").write_text(
+        json.dumps({"schema_version": 1, "nodes": nodes}), encoding="utf-8"
+    )
+    scratch = FastAPI()
+    scratch.include_router(build_showcase_router(str(tmp_path)))
+    r = TestClient(scratch, raise_server_exceptions=False).get("/llms-full.txt")
+    assert r.status_code == 500 and _CODEWORD not in r.text

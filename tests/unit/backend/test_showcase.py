@@ -13,6 +13,9 @@ from backend.showcase import CHECKS, FEATURES, Showcase, to_jsonable
 
 pytestmark = pytest.mark.unit
 
+# config/project.json `corpus.served_visibilities` as keel ships it.
+_SERVED = frozenset({"public", "internal"})
+
 
 def _corpus():
     """A tiny in-memory corpus: one doc with two sections + one module/symbol."""
@@ -33,6 +36,7 @@ def _corpus():
                 "parent": None,
                 "children": ["readme#setup"],
                 "links": [{"to": "guide"}],
+                "visibility": "internal",
             },
             {
                 "node_id": "readme#setup",
@@ -48,6 +52,7 @@ def _corpus():
                 "parent": "readme",
                 "children": [],
                 "links": [],
+                "visibility": "internal",
             },
             {
                 "node_id": "guide",
@@ -63,6 +68,7 @@ def _corpus():
                 "parent": None,
                 "children": [],
                 "links": [{"to": "readme"}],
+                "visibility": "public",
             },
             {
                 "node_id": "mod-py",
@@ -79,6 +85,7 @@ def _corpus():
                 "parent": None,
                 "children": ["mod-py::fn"],
                 "links": [],
+                "visibility": "internal",
             },
             {
                 "node_id": "mod-py::fn",
@@ -94,6 +101,7 @@ def _corpus():
                 "parent": "mod-py",
                 "children": [],
                 "links": [],
+                "visibility": "internal",
             },
         ],
     }
@@ -120,7 +128,11 @@ def _project():
 
 def _sc(present=frozenset()):
     return Showcase(
-        name="demoproj", project=_project(), corpus=_corpus(), present_scripts=present
+        name="demoproj",
+        project=_project(),
+        corpus=_corpus(),
+        present_scripts=present,
+        served_visibilities=_SERVED,
     )
 
 
@@ -295,6 +307,7 @@ def test_model_adapters_projected_from_the_manifest():
         project=_project_with_models(),
         corpus=_corpus(),
         present_scripts=frozenset(),
+        served_visibilities=_SERVED,
     )
     adapters = sc.model_adapters()
     names = [m.name for m in adapters]
@@ -352,6 +365,7 @@ def test_practice_items_projected_and_sorted_by_row():
         corpus=_corpus(),
         practices=_practices(),
         present_scripts=frozenset(),
+        served_visibilities=_SERVED,
     )
     items = sc.practice_items()
     assert [p.id for p in items] == [
@@ -394,6 +408,7 @@ def test_domain_profiles_join_definitions_with_enable_flags():
         corpus=_corpus(),
         practices=_profiles_registry(),
         present_scripts=frozenset(),
+        served_visibilities=_SERVED,
     )
     profs = sc.domain_profiles()
     assert [p.name for p in profs] == [
@@ -466,3 +481,128 @@ def test_to_jsonable_roundtrips_overview():
     import json
 
     json.dumps(payload)  # must be JSON-serialisable
+
+
+# ---- visibility: a node outside the served levels is absent, not redacted ----
+_CODEWORD = "CODEWORD-ZEBRA"
+
+
+def _hidden_corpus():
+    """_corpus() plus a confidential doc with a section, a restricted module, a
+    node at the corpus's unreadable-readme marker and one with no level; the
+    readme names the confidential doc as a child and a link."""
+    corpus = _corpus()
+    readme = corpus["nodes"][0]
+    readme["children"] = ["readme#setup", "secret"]
+    readme["links"] = [{"to": "guide"}, {"to": "secret"}]
+
+    def node(node_id, kind, path, visibility, **extra):
+        out = {
+            "node_id": node_id,
+            "kind": kind,
+            "title": "Zebra %s" % node_id,
+            "path": path,
+            "summary": "zebra %s" % _CODEWORD,
+            "text_excerpt": _CODEWORD,
+            "owner": "carol",
+            "tags": ["zebra", "axi"],
+            "anchor": None,
+            "lineno": None,
+            "parent": None,
+            "children": [],
+            "links": [{"to": "guide"}],
+            "visibility": visibility,
+        }
+        out.update(extra)
+        return out
+
+    corpus["nodes"] += [
+        node(
+            "secret",
+            "doc",
+            "docs/secret/README.md",
+            "confidential",
+            parent="readme",
+            children=["secret#plan"],
+        ),
+        node(
+            "secret#plan",
+            "section",
+            "docs/secret/README.md",
+            "confidential",
+            parent="secret",
+            anchor="plan",
+            lineno=3,
+        ),
+        node("vault-py", "module", "src/vault.py", "restricted"),
+        node("broken", "doc", "hidden/README.md", "unreadable-readme"),
+        node("unstated", "doc", "old/README.md", None),
+    ]
+    del corpus["nodes"][-1]["visibility"]
+    return corpus
+
+
+_HIDDEN = ("secret", "secret#plan", "vault-py", "broken", "unstated")
+
+
+def _hidden_sc(tmp_path, served=_SERVED):
+    (tmp_path / "docs" / "secret").mkdir(parents=True)
+    (tmp_path / "docs" / "secret" / "README.md").write_text(
+        "---\nvisibility: confidential\n---\n# Secret\n\n## Plan\n%s\n" % _CODEWORD,
+        "utf-8",
+    )
+    (tmp_path / "README.md").write_text("# Readme\nbody\n", "utf-8")
+    return Showcase(
+        name="demoproj",
+        project=_project(),
+        corpus=_hidden_corpus(),
+        present_scripts=frozenset(),
+        root=str(tmp_path),
+        served_visibilities=served,
+    )
+
+
+@pytest.mark.parametrize("node_id", _HIDDEN)
+def test_a_hidden_node_answers_as_an_unknown_node(tmp_path, node_id):
+    sc = _hidden_sc(tmp_path)
+    assert sc.node(node_id) is None
+    assert sc.markdown(node_id) == ""
+
+
+def test_no_listing_count_or_link_names_a_hidden_node(tmp_path):
+    sc = _hidden_sc(tmp_path)
+    ids = {r.node_id for g in sc.doc_tree() for r in g.docs}
+    assert ids == {"readme", "guide"}
+    assert {g.directory for g in sc.doc_tree()} == {".", "docs"}
+    stats = sc.overview().stats
+    assert (stats.docs, stats.sections, stats.modules) == (2, 1, 1)
+    readme = sc.node("readme")
+    assert [c.node_id for c in readme.children] == ["readme#setup"]
+    assert [r.node_id for r in readme.related] == ["guide"]
+    assert sc.node("readme#setup").parent.node_id == "readme"
+    assert [h.node.node_id for h in sc.search("zebra axi", limit=50)] == [
+        "guide",
+        "readme",
+    ]
+
+
+def test_no_llms_text_carries_a_hidden_node(tmp_path):
+    sc = _hidden_sc(tmp_path)
+    full, index = sc.llms_full(), sc.llms_index()
+    for text in (full, index):
+        assert _CODEWORD not in text and "Zebra" not in text
+    assert "# Readme" in full
+
+
+def test_the_served_levels_are_the_configured_ones(tmp_path):
+    """The allowlist is what the caller read from config, not a literal: with
+    only `public` served, the internal readme is gone too."""
+    sc = _hidden_sc(tmp_path, served=frozenset({"public"}))
+    assert sc.node("readme") is None and sc.node("guide") is not None
+    assert [r.node_id for g in sc.doc_tree() for r in g.docs] == ["guide"]
+    assert sc.node("guide").related == ()
+
+
+def test_a_showcase_needs_its_served_levels():
+    with pytest.raises(TypeError, match="served_visibilities"):
+        Showcase(name="x", project={}, corpus=_corpus())  # type: ignore[call-arg]

@@ -190,6 +190,8 @@ _exclude:
   - "{% if not showcase %}tests/unit/backend/test_showcase.py{% endif %}"
   - "{% if not showcase %}tests/integration/test_showcase_repo.py{% endif %}"
   - "{% if not showcase %}tests/integration/test_showcase_api.py{% endif %}"
+  - "{% if not showcase %}tests/unit/scripts/test_export_showcase_static.py{% endif %}"
+  - "{% if not showcase %}tests/unit/scripts/test_build_llms_txt.py{% endif %}"
   # The e2e journey walks the /api/* surface the prune above deletes, so shipping
   # it to a project that declined the showcase is two hard failures on that
   # project's first CI run. It was missed here because the decline test asserted
@@ -455,6 +457,8 @@ _migrations:
               tests/unit/backend/test_showcase.py
               tests/integration/test_showcase_repo.py
               tests/integration/test_showcase_api.py
+              tests/unit/scripts/test_export_showcase_static.py
+              tests/unit/scripts/test_build_llms_txt.py
               tests/e2e/test_showcase_journey.py
               docs/guides/showcase-site.md"
     when: "{{ _stage == 'after' and not showcase }}"

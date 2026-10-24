@@ -8,10 +8,19 @@ summary: Thin FastAPI router exposing backend.showcase as JSON + the agent llms.
 from __future__ import annotations
 
 import os
+import sys
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query, Response
 
 from backend.showcase import load_showcase, to_jsonable
+
+# The repository root, so the bottom-layer config reader imports as the package
+# `scripts`, the way serve.py reaches it.
+_REPO = str(Path(__file__).resolve().parents[2])
+if _REPO not in sys.path:
+    sys.path.insert(0, _REPO)
+from scripts import config_loader  # noqa: E402
 
 _MD = "text/markdown; charset=utf-8"
 
@@ -23,6 +32,9 @@ def build_showcase_router(root: str) -> APIRouter:
     ``backend.showcase``, and shapes the response. The model is reloaded whenever
     config/project.json or wiki/corpus.json changes on disk, so both the human
     wiki (/api/*) and the agent front door (/llms.txt) stay in sync with the repo.
+    Each reload reads ``corpus.served_visibilities`` from *root*'s config, so a
+    node at any other level is absent from every route; a refused value raises
+    ``config_loader.ConfigError`` and the route answers 500, never the corpus.
     """
     router = APIRouter()
     _watched = (
@@ -35,8 +47,11 @@ def build_showcase_router(root: str) -> APIRouter:
     def current():
         sig = tuple(os.path.getmtime(f) if os.path.exists(f) else 0.0 for f in _watched)
         if _cache.get("sig") != sig:
+            served = config_loader.served_visibilities(root)
+            _cache["showcase"] = load_showcase(root, served_visibilities=served)
+            # Set after the load: a refused config must not leave a cached model
+            # that a later request with the same mtimes would reuse.
             _cache["sig"] = sig
-            _cache["showcase"] = load_showcase(root)
         return _cache["showcase"]
 
     # -- human/agent JSON API ------------------------------------------------

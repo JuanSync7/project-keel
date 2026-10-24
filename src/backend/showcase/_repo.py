@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Collection
 from typing import Any
 
 from backend.shared import display_title
@@ -39,6 +40,10 @@ class Showcase:
     ``corpus`` dicts (so unit tests need no filesystem). ``load_showcase`` is the
     thin shell that reads the live repo and builds one. Every accessor returns
     frozen value objects (``_models``) the transport layer serialises as-is.
+
+    ``served_visibilities`` is config/project.json
+    ``corpus.served_visibilities`` as the caller resolved it: the corpus is
+    cut to those levels once, here, so no accessor can name a node at another.
     """
 
     def __init__(
@@ -50,10 +55,11 @@ class Showcase:
         practices: dict[str, Any] | None = None,
         present_scripts: frozenset[str] = frozenset(),
         root: str = "",
+        served_visibilities: Collection[str],
     ) -> None:
         self._name = name
         self._project = project or {}
-        self._corpus = corpus or {"nodes": []}
+        self._corpus = _query.served(corpus or {"nodes": []}, served_visibilities)
         self._practices = practices or {}
         self._present = present_scripts
         self._root = root
@@ -271,8 +277,12 @@ def _read_json(path: str) -> dict[str, Any]:
         return {}
 
 
-def load_showcase(root: str) -> Showcase:
+def load_showcase(root: str, *, served_visibilities: Collection[str]) -> Showcase:
     """Read config/project.json + wiki/corpus.json + config/practices.json into a Showcase.
+
+    ``served_visibilities`` comes from the caller, which reads
+    ``corpus.served_visibilities`` through scripts/config_loader.py: the domain
+    takes the allowlist as a value and never picks a default for it.
 
     The corpus is a generated view; if it is missing, the Showcase is still
     usable (empty corpus) so the overview/features/checks pages render and the
@@ -295,6 +305,7 @@ def load_showcase(root: str) -> Showcase:
         practices=practices,
         present_scripts=present,
         root=root,
+        served_visibilities=served_visibilities,
     )
 
 
