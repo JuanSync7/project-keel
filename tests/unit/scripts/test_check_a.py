@@ -248,3 +248,26 @@ def test_a_linked_file_as_strict_as_its_served_chain_is_no_contradiction(repo):
     _linked_tree(repo, "restricted", "public", "restricted")
     cs.check_A()
     assert [e for e in cs.errors if "less restrictive" in e] == [], cs.errors
+
+
+def test_a_link_into_a_sibling_whose_name_extends_the_root_s_takes_no_chain_there(
+    tmp_path, monkeypatch
+):
+    """`repo-x` starts with the text `repo` but is not inside it, so a file
+    linked in from `repo-x` takes only the chain of the path it is walked by.
+    The tree links `repo-x`'s restricted README.md in elsewhere, so a chain
+    that climbed `repo-x` would reach a README check_A has read, and the
+    public file would be a false contradiction."""
+    repo = tmp_path / "repo"
+    monkeypatch.setattr(cs, "ROOT", str(repo))
+    monkeypatch.setattr(cs, "errors", [])
+    monkeypatch.setattr(cs, "warnings", [])
+    _stated(repo / "README.md", "public")
+    _stated(tmp_path / "repo-x" / "README.md", "restricted")
+    _stated(tmp_path / "repo-x" / "plan.md", "public")
+    (repo / "docs" / "a").mkdir(parents=True)
+    (repo / "docs" / "a" / "README.md").symlink_to(tmp_path / "repo-x" / "README.md")
+    (repo / "docs" / "plan.md").symlink_to(tmp_path / "repo-x" / "plan.md")
+    cs.check_A()
+    assert [e for e in cs.errors if "less restrictive" in e] == [], cs.errors
+    assert _served(repo)["plan"] == ("docs/plan.md", "public")
