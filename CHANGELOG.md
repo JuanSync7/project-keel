@@ -661,7 +661,8 @@ version rather than a bare commit:
   userinfo and credential value hidden. The registry's host is kept when it
   is a DNS name, an AWS CodeArtifact one included, or a bracketed IPv6
   address with its zone id; any other host that mixes letters and digits,
-  such as a token passed as the registry, is hidden whole. The line is cut to
+  such as a token passed as the registry or as one of its labels, is hidden
+  whole. The line is cut to
   `dependency_audit.max_shown_chars` (500) characters so a registry's long
   body can neither flood the line nor stall the redaction, and a quoted
   value the cut splits is hidden whole. The run says to check `.npmrc`

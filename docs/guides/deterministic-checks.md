@@ -1167,13 +1167,16 @@ with any `+`, `=` or `%`-escape in it, and the operand after `ENOTFOUND` or
 `getaddrinfo` up to a space, quote, comma or semicolon, since a token split
 at a symbol has pieces too short for this rule. The host stays whole only
 when it is a bracketed address or a DNS name: two or more dot-separated
-labels of letters, digits and hyphens, with at most one trailing dot, where no label is a UUID (npm's legacy
-token shape) and no part of a label between its hyphens is itself a run this
-rule hides. Any other host that mixes letters and digits is `<hidden>` whole;
+labels of letters, digits and hyphens, with at most one trailing dot, where
+no label is a UUID (npm's legacy token shape), no part of a label between its
+hyphens is itself a run this rule hides, and a label this rule would hide
+whole has a part that is a word: two or more letters, one outside a to f, so
+a fragment of a hex token is no word. Any other host that mixes letters and digits is `<hidden>` whole;
 one that mixes in no digit, such as `localhost`, stays. So an AWS
 CodeArtifact host such as `my-domain-111122223333.d.codeartifact.invalid`
-stays readable, while a token used as the host, as one of its labels or as
-the operand, split at a symbol or not, is `<hidden>` with the whole host. The next step
+stays readable through its word parts `my` and `domain`, while a token used
+as the host, as one of its labels (cut into short parts by hyphens or not) or
+as the operand, split at a symbol or not, is `<hidden>` with the whole host. The next step
 follows the cause: a 401 or 403 status, `E401`, `E403` or "authenticate" says
 to check the registry credentials in `.npmrc` (values not shown); `ENOTFOUND`,
 `ECONNREFUSED` or `ETIMEDOUT` says to check the registry is reachable.
