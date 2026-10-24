@@ -566,9 +566,11 @@ version rather than a bare commit:
   included, passes on a value
   check_corpus refuses rather than nothing. check_A fails a governed document
   that states a less restrictive visibility than a `README.md` above it, naming
-  that `README.md`; it judges a symlinked file at the path of the file it
-  really is, against the `README.md` chain build_corpus ranks it by, so a link
-  walked first can no longer hide the contradiction or name the wrong level.
+  that `README.md`; it judges a file reached by a link and by its target once,
+  at the path build_corpus keeps for it (the first in a sorted walk,
+  `scripts/check_structure.py` `kept_markdown`), against the `README.md` chain
+  build_corpus ranks that path by, so neither a stricter link directory nor a
+  stricter target directory can hide the contradiction or name the wrong level.
   This fixes the level the corpus records. Only the wiki
   navigator, and the MCP Q&A server through it, drop `confidential` and
   `restricted` nodes; the showcase API, its `/llms-full.txt` and the static

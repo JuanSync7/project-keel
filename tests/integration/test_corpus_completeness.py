@@ -48,7 +48,8 @@ def test_the_corpus_scope_is_the_gates_scope():
     query while make verify stayed green — from the initial commit onward.
     One list, imported."""
     assert list(bc.CODE_ROOTS) == list(cs.CODE_ROOTS)
-    assert set(bc.IGNORE_DIRS) == set(cs.IGNORE_DIRS)
+    # The walk, and the IGNORE_DIRS it skips, is the gate's own function.
+    assert bc.sorted_walk is cs.sorted_walk
 
 
 def test_every_module_on_disk_is_a_corpus_node(fresh_nodes):

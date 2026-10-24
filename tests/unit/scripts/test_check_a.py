@@ -2,7 +2,7 @@
 title: Unit — check_structure check_A (frontmatter lifecycle symmetry)
 kind: tests
 layer: n/a
-summary: check_A's lifecycle rule, pinned: a document whose status says it has been replaced must name its replacement. `deprecated` has required `superseded_by` since the first frontmatter check; `superseded` — the ADR lifecycle's word for the same fact — did not, so an ADR could be marked superseded by nothing and the corpus's "follow the chain to the live version" promise ended at a dead end. The two statuses are one rule with two vocabularies. A document stating a looser visibility than a README.md on its chain is an error, and a symlinked file is judged once, at its real path, against the chain build_corpus ranks it by.
+summary: check_A's lifecycle rule, pinned: a document whose status says it has been replaced must name its replacement. `deprecated` has required `superseded_by` since the first frontmatter check; `superseded` — the ADR lifecycle's word for the same fact — did not, so an ADR could be marked superseded by nothing and the corpus's "follow the chain to the live version" promise ended at a dead end. The two statuses are one rule with two vocabularies. A document stating a looser visibility than a README.md on its chain is an error, and a file reached by a link and its target is judged once, at the path build_corpus keeps for it, against the chain build_corpus ranks that path by.
 """
 
 import sys
@@ -161,46 +161,90 @@ def _stated(path, visibility):
     )
 
 
-def _linked_secret_tree(repo, plan_visibility):
-    """`docs/a-open/plan.md` links to `docs/z-secret/plan.md`, under a
-    confidential README; the walk meets the link first if it is sorted."""
-    _stated(repo / "README.md", "internal")
-    _stated(repo / "docs" / "z-secret" / "README.md", "confidential")
+def _linked_tree(repo, link_dir, target_dir, plan_visibility):
+    """`docs/a-open/plan.md` links to `docs/z-secret/plan.md`, which states
+    *plan_visibility*; the directories' README.md files state *link_dir* and
+    *target_dir* (None states none). The sorted walk meets the link first, so
+    build_corpus keeps the doc under the link's path."""
+    _stated(repo / "README.md", "public")
+    if link_dir:
+        _stated(repo / "docs" / "a-open" / "README.md", link_dir)
+    if target_dir:
+        _stated(repo / "docs" / "z-secret" / "README.md", target_dir)
     _stated(repo / "docs" / "z-secret" / "plan.md", plan_visibility)
-    (repo / "docs" / "a-open").mkdir()
+    (repo / "docs" / "a-open").mkdir(exist_ok=True)
     (repo / "docs" / "a-open" / "plan.md").symlink_to("../z-secret/plan.md")
 
 
-@pytest.mark.parametrize("plan_visibility", ["public", "internal"])
-def test_check_a_judges_a_linked_file_at_its_real_path(repo, plan_visibility):
-    """The corpus serves the file at the strictest level of its real path's
-    README chain, so the message names that file, that level and that README,
-    whichever path the walk met first."""
-    _linked_secret_tree(repo, plan_visibility)
+def _served(repo):
+    sys.path.insert(0, str(_ROOT / "scripts" / "jobs"))
+    import build_corpus as bc
+
+    return {
+        n["node_id"]: (n["path"], n["visibility"])
+        for n in bc.build_corpus(str(repo))["nodes"]
+    }
+
+
+# (link directory's README, target directory's README, the doc's own level,
+# the README the message names, the level the corpus serves)
+_LINKED = [
+    pytest.param(
+        None,
+        "confidential",
+        "public",
+        "docs/z-secret/README.md",
+        "confidential",
+        id="target-stricter-public",
+    ),
+    pytest.param(
+        None,
+        "confidential",
+        "internal",
+        "docs/z-secret/README.md",
+        "confidential",
+        id="target-stricter-internal",
+    ),
+    pytest.param(
+        "restricted",
+        "public",
+        "public",
+        "docs/a-open/README.md",
+        "restricted",
+        id="link-stricter",
+    ),
+    pytest.param(
+        "restricted",
+        "confidential",
+        "public",
+        "docs/a-open/README.md",
+        "restricted",
+        id="link-strictest-of-two",
+    ),
+]
+
+
+@pytest.mark.parametrize("link_dir, target_dir, own, where, level", _LINKED)
+def test_check_a_judges_a_linked_file_where_the_corpus_serves_it(
+    repo, link_dir, target_dir, own, where, level
+):
+    """build_corpus keeps a linked doc under the first path of its sorted
+    walk and ranks it by readme_chain of that path; check_A judges the file
+    at that path by that chain, so it names that path, the README that wins
+    and the level the corpus serves, whether the link's directory or the
+    target's is the stricter."""
+    _linked_tree(repo, link_dir, target_dir, own)
     cs.check_A()
     found = [e for e in cs.errors if "less restrictive" in e]
     assert len(found) == 1, cs.errors
     message = found[0]
-    assert message.startswith(
-        "docs/z-secret/plan.md: visibility '%s'" % plan_visibility
-    ), message
-    assert "stated by docs/z-secret/README.md" in message, message
-    assert "serves it as 'confidential'" in message, message
+    assert message.startswith("docs/a-open/plan.md: visibility '%s'" % own), message
+    assert "stated by %s" % where in message, message
+    assert "serves it as '%s'" % level in message, message
+    assert _served(repo)["plan"] == ("docs/a-open/plan.md", level)
 
 
-def test_check_a_names_the_level_build_corpus_serves(repo):
-    """check_A and build_corpus read one README chain, so the level the
-    message names is the level the corpus records for the node."""
-    sys.path.insert(0, str(_ROOT / "scripts" / "jobs"))
-    import build_corpus as bc
-
-    _linked_secret_tree(repo, "public")
+def test_a_linked_file_as_strict_as_its_served_chain_is_no_contradiction(repo):
+    _linked_tree(repo, "restricted", "public", "restricted")
     cs.check_A()
-    (message,) = [e for e in cs.errors if "less restrictive" in e]
-    served = {
-        n["node_id"]: n["visibility"] for n in bc.build_corpus(str(repo))["nodes"]
-    }
-    assert "serves it as '%s'" % served["plan"] in message, (
-        message,
-        served,
-    )
+    assert [e for e in cs.errors if "less restrictive" in e] == [], cs.errors

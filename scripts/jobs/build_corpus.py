@@ -38,13 +38,14 @@ from check_structure import (  # noqa: E402
     _SECTION_CITE,
     _URL_SCHEME,
     CODE_ROOTS,
-    IGNORE_DIRS,
     _heading_slug,
     _prose_lines,
     _resolve_link,
     _unfenced_lines,
+    kept_markdown,
     readme_chain,
     readmes_upward,
+    sorted_walk,
     strictest_visibility,
 )
 from exit_codes import ExitCode, finish, report  # noqa: E402
@@ -119,14 +120,6 @@ def _path_id(rel: str) -> str:
 
 def _rel(path: str, root: str) -> str:
     return os.path.relpath(path, root)
-
-
-def _walk(root: str):
-    for dirpath, dirnames, filenames in os.walk(root):
-        # Sort dirnames so traversal order (hence cross-dir symlink dedup) is
-        # deterministic across hosts/filesystems, not os.walk-entry-order.
-        dirnames[:] = sorted(d for d in dirnames if d not in IGNORE_DIRS)
-        yield dirpath, dirnames, filenames
 
 
 def _real_owner(value):
@@ -737,19 +730,18 @@ def build_corpus(root: str) -> dict:
     nodes = []
     refs = []  # (writing node, kind, via, spec) — resolved once every node exists
     default = _default_owner(root)
-    seen_real = set()
-    for dirpath, _, filenames in _walk(root):
+    kept = kept_markdown(root)
+    for dirpath, _, filenames in sorted_walk(root):
         top = _rel(dirpath, root).split(os.sep)[0]
-        for f in sorted(filenames):
+        for f in filenames:
             full = os.path.join(dirpath, f)
-            real = os.path.realpath(full)
             if f.endswith(".md"):
                 # Any frontmatter-bearing markdown is a corpus doc (the "one
-                # brain" ingests every labeled doc, not just README/AGENT). The
-                # realpath dedup collapses the CLAUDE.md -> AGENT.md symlink.
-                if real in seen_real:
+                # brain" ingests every labeled doc, not just README/AGENT). One
+                # file reached by several paths (CLAUDE.md -> AGENT.md) is one
+                # doc, under the path kept_markdown keeps, which check_A judges.
+                if kept[os.path.realpath(full)] != full:
                     continue
-                seen_real.add(real)
                 _doc_and_sections(full, root, nodes, refs, default)
             elif f.endswith(".py") and top in CODE_ROOTS:
                 _module_and_symbols(full, root, nodes, default)

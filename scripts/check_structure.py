@@ -611,6 +611,29 @@ def readmes_upward(dirpath, root):
         d = parent
 
 
+def sorted_walk(root):
+    """os.walk of *root* outside IGNORE_DIRS, directories and file names
+    sorted, so every reader that keeps the first path to a file keeps the
+    same one on every host and filesystem."""
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(d for d in dirnames if d not in IGNORE_DIRS)
+        yield dirpath, dirnames, sorted(filenames)
+
+
+def kept_markdown(root):
+    """{real path: the path build_corpus keeps} for every `.md` file under
+    *root*: the first path to it in sorted_walk. A doc reached by a link and
+    by its target is one corpus node, under this path, ranked by
+    readme_chain of this path."""
+    kept = {}
+    for dirpath, _, filenames in sorted_walk(root):
+        for f in filenames:
+            if f.endswith(".md"):
+                full = os.path.join(dirpath, f)
+                kept.setdefault(os.path.realpath(full), full)
+    return kept
+
+
 def readme_chain(path, root):
     """The README.md paths a node at *path* takes its visibility from,
     nearest first: readmes_upward of the path the walk reached it by, then,
@@ -674,27 +697,21 @@ def _visibility_contradictions(stated, chain=None):
     return found
 
 
-def _real_rel(path):
-    """*path* relative to ROOT by the file it really is, when that file is
-    inside ROOT; else by *path* itself. One file reached by two paths (a link
-    and its target) has one key, so check_A judges it once, where it is."""
-    real_root = os.path.realpath(ROOT)
-    real = os.path.realpath(path)
-    if real.startswith(real_root + os.sep):
-        return os.path.relpath(real, real_root)
-    return rel(path)
-
-
 def check_A():
     seen_ids = {}
     seen_real = set()  # dedupe symlink + target (CLAUDE.md -> AGENT.md)
-    stated = {}  # the _real_rel key -> the visibility its frontmatter states
-    for dirpath, dirnames, filenames in walk(ROOT):
-        # Sorted, so the path the dedupe keeps is the same on every host.
-        dirnames.sort()
+    # A file is judged at the path build_corpus keeps for it, by that path's
+    # readme_chain: the node and the chain the corpus serves.
+    kept = kept_markdown(ROOT)
+
+    def served(path):
+        return rel(kept.get(os.path.realpath(path), path))
+
+    stated = {}  # the served path -> the visibility its frontmatter states
+    for dirpath, _, filenames in sorted_walk(ROOT):
         top = rel(dirpath).split(os.sep)[0]
         in_docs = top in ("docs", "test-docs")
-        for f in sorted(filenames):
+        for f in filenames:
             is_tool = f.endswith(".tool.md") and top == "agents"
             if (
                 f in ("README.md", "AGENT.md", "CLAUDE.md")
@@ -711,12 +728,10 @@ def check_A():
                 if fm:
                     GOVERNED.append((rel(full), fm.get("kind"), fm.get("owner")))
                     if fm.get("visibility"):
-                        stated[_real_rel(full)] = fm["visibility"]
+                        stated[served(full)] = fm["visibility"]
 
-    def chain(key):
-        # A key is the file's real path, so its chain is the real path's: the
-        # chain build_corpus ranks the node at that path by.
-        return [_real_rel(r) for r in readme_chain(os.path.join(ROOT, key), ROOT)]
+    def chain(path):
+        return [served(r) for r in readme_chain(os.path.join(ROOT, path), ROOT)]
 
     for message in _visibility_contradictions(stated, chain):
         err(message)
