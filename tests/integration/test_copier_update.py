@@ -2,7 +2,7 @@
 title: Integration — `copier update` carries template improvements downstream
 kind: tests
 layer: n/a
-summary: The upgrade channel ADR-K-0004 chose copier for, exercised end to end against the REAL template — clone keel into a scratch dir, generate a project, commit it, evolve the clone, then `copier update`. Proves new template files arrive, template edits land, the project's own edits survive, the `.gitignore` divergence twin holds, `_commit` advances and `_src_path` stays resolvable. Skipped on a bare local clone without the optional `template` extra; CI installs `.[dev,template]` and declares the surface required (KEEL_REQUIRED_EXTRAS), so there a missing copier is a hard failure instead of a silent skip.
+summary: The upgrade channel ADR-K-0004 chose copier for, exercised end to end against the REAL template — clone keel into a scratch dir, generate a project, commit it, evolve the clone, then `copier update`. Proves new template files arrive, a re-answered `ci_pipeline` retires the keel adapter it declines and delivers the one it chooses, a repeated answer changes nothing, and a CI file the project wrote without keel's marker survives a declining answer byte-identical, while a no-op update leaves the tree clean under every `ci_pipeline` answer; template edits land, the project's own edits survive, the `.gitignore` divergence twin holds, `_commit` advances and `_src_path` stays resolvable. Skipped on a bare local clone without the optional `template` extra; CI installs `.[dev,template]` and declares the surface required (KEEL_REQUIRED_EXTRAS), so there a missing copier is a hard failure instead of a silent skip.
 """
 
 import shutil
@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+import ci_adapters
 import doc_stamps
 import hermetic_git
 import optional_deps
@@ -556,6 +557,157 @@ def test_update_without_trust_refuses_a_template_carrying_migrations(restacked):
     assert "migrations" in str(refusal)
 
 
+def _update(project, **data):
+    copier.run_update(
+        str(project),
+        defaults=True,
+        overwrite=True,
+        data=data,
+        vcs_ref="HEAD",
+        unsafe=True,
+        quiet=True,
+    )
+
+
+def _ci_files(project):
+    """{adapter name: bytes} for each CI adapter file in *project*."""
+    return {
+        name: path.read_bytes()
+        for name, path in sorted(ci_adapters.present(project).items())
+    }
+
+
+def _structure_rc(project):
+    r = subprocess.run(
+        [sys.executable, "scripts/check_structure.py"],
+        cwd=str(project),
+        capture_output=True,
+        text=True,
+    )
+    return r.returncode, r.stdout + r.stderr
+
+
+@pytest.fixture(scope="module")
+def ci_rechosen(tmp_path_factory):
+    """Two projects re-answering ci_pipeline through `copier update`.
+
+    The first is generated with github, updated to gitlab, updated to gitlab
+    again, then back to github, committing after each. The second is generated
+    with both and the project replaces .gitlab-ci.yml with its own file, which
+    carries no marker line, before updating to github. Yields {stage: (answers,
+    adapter files, git status, check_structure rc and output, parity faults)} plus the
+    second project's own file and its state after the update."""
+    mp = pytest.MonkeyPatch()
+    work = tmp_path_factory.mktemp("copier_ci_rechosen")
+    for var, value in hermetic_git.git_env_vars(work).items():
+        mp.setenv(var, value)
+    mp.setenv("COPIER_CACHE_DIR", str(work / "copier-cache"))
+
+    def generate(project, answer):
+        copier.run_copy(
+            str(template),
+            str(project),
+            data={
+                "project_name": "demo_proj",
+                "frontend_stack": "none",
+                "ci_pipeline": answer,
+            },
+            defaults=True,
+            vcs_ref="HEAD",
+            unsafe=True,
+            quiet=True,
+        )
+        _git("init", "--quiet", "-b", "main", cwd=project)
+        _git("add", "-A", cwd=project)
+        _git("commit", "--quiet", "-m", "generated from keel", cwd=project)
+
+    def state(project):
+        status = _git("status", "--porcelain", cwd=project)
+        record = (
+            _answers(project)["ci_pipeline"],
+            _ci_files(project),
+            status,
+            _structure_rc(project),
+            ci_adapters.parity_faults(project),
+        )
+        _git("add", "-A", cwd=project)
+        if status:
+            _git("commit", "--quiet", "-m", "update", cwd=project)
+        return record
+
+    try:
+        template = _clone_template(work / "template", work)
+        stages = {}
+        moved = work / "moved"
+        generate(moved, "github")
+        stages["generated github"] = state(moved)
+        for stage, answer in (
+            ("to gitlab", "gitlab"),
+            ("gitlab again", "gitlab"),
+            ("back to github", "github"),
+        ):
+            _update(moved, ci_pipeline=answer)
+            stages[stage] = state(moved)
+
+        owned = work / "owned"
+        generate(owned, "both")
+        own = (
+            b"# the project's own GitLab pipeline\nlint:\n  script:\n    - make lint\n"
+        )
+        (owned / ".gitlab-ci.yml").write_bytes(own)
+        _git("commit", "--quiet", "-am", "our own gitlab pipeline", cwd=owned)
+        _update(owned, ci_pipeline="github")
+        stages["own file, to github"] = state(owned)
+        yield stages, own
+    finally:
+        mp.undo()
+
+
+def test_update_moves_a_project_between_ci_adapters(ci_rechosen):
+    """Re-answering ci_pipeline retires the keel adapter not chosen and
+    delivers the chosen one: disk and answers agree at every stage, the
+    delivered adapter runs config/project.json ci_pipeline.steps, and the
+    project's own check_structure stays green."""
+    stages, _ = ci_rechosen
+    want = {
+        "generated github": ["github"],
+        "to gitlab": ["gitlab"],
+        "gitlab again": ["gitlab"],
+        "back to github": ["github"],
+    }
+    for stage, adapters in want.items():
+        answer, files, _, (rc, out), faults = stages[stage]
+        assert answer == adapters[0], (stage, answer)
+        assert faults == [], (stage, faults)
+        assert sorted(files) == adapters, (stage, sorted(files))
+        assert rc == 0, (stage, out)
+    for stage in ("to gitlab", "back to github"):
+        assert stages[stage][2], "%s changed nothing in the tree" % stage
+
+
+def test_a_repeated_ci_answer_update_changes_nothing(ci_rechosen):
+    """The retirement migration runs on every update whose answer declines
+    github; with ci.yml already gone it must be a no-op, so a second update
+    to the same answer leaves the tree clean and the adapter's bytes alone."""
+    stages, _ = ci_rechosen
+    assert stages["gitlab again"][2] == ""
+    assert stages["gitlab again"][1] == stages["to gitlab"][1]
+
+
+def test_update_keeps_a_ci_file_the_project_wrote_itself(ci_rechosen):
+    """A `.gitlab-ci.yml` with no `# keel-adapter: gitlab` line is the
+    project's own, so declining gitlab keeps it byte-identical: the marker is
+    the only licence the migration has to delete."""
+    stages, own = ci_rechosen
+    answer, files, status, (rc, out), faults = stages["own file, to github"]
+    assert faults == [], faults
+    assert answer == "github"
+    assert files.get("gitlab") == own, sorted(files)
+    assert "github" in files
+    assert ".gitlab-ci.yml" not in status, status
+    assert rc == 0, out
+
+
 @pytest.fixture(scope="module")
 def unshowcased(tmp_path_factory):
     """generate WITH the showcase -> commit -> `copier update` declining it.
@@ -674,11 +826,13 @@ def test_unshowcased_project_records_the_new_answer_and_passes_its_own_gate(
 # --- update reaches a fixed point (docs/guides/idempotency.md §6) ----------------
 
 
-@pytest.fixture(scope="module")
-def unmoved(tmp_path_factory):
+@pytest.fixture(scope="module", params=["github", "gitlab", "both"])
+def unmoved(tmp_path_factory, request):
     """A project generated, committed, and then UPDATED against the very revision
-    it was generated from. Yields the project path, with git clean-or-not as the
-    whole assertion below."""
+    it was generated from, once per ci_pipeline answer: each answer ships a
+    different CI adapter set and runs a different retirement migration on
+    update. Yields the project path, with git clean-or-not as the whole
+    assertion below."""
     mp = pytest.MonkeyPatch()
     work = tmp_path_factory.mktemp("copier_update_noop")
     for var, value in hermetic_git.git_env_vars(work).items():
@@ -690,7 +844,11 @@ def unmoved(tmp_path_factory):
         copier.run_copy(
             str(template),
             str(project),
-            data={"project_name": "demo_proj", "frontend_stack": "none"},
+            data={
+                "project_name": "demo_proj",
+                "frontend_stack": "none",
+                "ci_pipeline": request.param,
+            },
             defaults=True,
             vcs_ref="HEAD",
             unsafe=True,

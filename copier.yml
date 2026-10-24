@@ -152,6 +152,14 @@ _exclude:
   # sense for one answer. Pinned by tests/integration/test_copier_generation.py, which
   # scans every shipped Makefile/workflow/script for a pruned frontend path.
   - "{% if frontend_stack != 'astro' %}.github/workflows/pages.yml{% endif %}"
+  # CI pipeline adapters: keep the one file per ci_pipeline answer, both for
+  # `both`. Each runs config/project.json ci_pipeline.steps, which
+  # tests/integration/test_ci_pipeline_gate.py holds it to, and
+  # tests/integration/test_copier_generation.py holds every answer to keeping
+  # exactly the chosen set, never none. The GitLab file is a `.jinja` twin, so
+  # keel itself runs GitHub's alone.
+  - "{% if ci_pipeline == 'gitlab' %}.github/workflows/ci.yml{% endif %}"
+  - "{% if ci_pipeline == 'github' %}.gitlab-ci.yml{% endif %}"
   # Transport pruning: api/grpc and api/edge_nginx are self-contained add-ons (no
   # code imports them), so drop each unless it was selected. REST (api/rest_fastapi)
   # and MCP (mcp/) are NOT pruned: they are the always-shipped transport foundation —
@@ -338,6 +346,19 @@ shell:
   help: "Gate shell scripts (lint, format and test targets that `make verify` runs)? 'no' runs no shell tool"
   default: true
 
+# Which CI service runs the pipeline config/project.json ci_pipeline.steps
+# states: each choice but `both` is a key of ci_pipeline.adapters, the file
+# that service reads. Prunes the adapter not chosen, and its `_migrations`
+# mirror retires it on update only when keel's marker line is in it.
+ci_pipeline:
+  type: str
+  help: "CI service that runs the gate: 'github' (.github/workflows/ci.yml), 'gitlab' (.gitlab-ci.yml) or 'both'"
+  choices:
+    - github
+    - gitlab
+    - both
+  default: github
+
 # ---- Retirement: what `copier update` must REMOVE ----------------------------
 # `_exclude` above is a GENERATION-time filter and nothing more. On update copier
 # renders the OLD template copy with the UNION of the old and new excludes — on
@@ -366,6 +387,11 @@ shell:
 # preconditions: update refuses a dirty subproject and requires git, so the deleted
 # tree is always recoverable with `git checkout -- <path>`. Do not extend this list
 # to a path a project could have authored FROM SCRATCH, where no such history exists.
+# The one exception is a CI adapter (config/project.json ci_pipeline.adapters): a
+# project may write its own `.gitlab-ci.yml` or `ci.yml`, so its entry removes the
+# file only when it holds keel's marker line (`# keel-adapter: <name>`, matched as
+# a whole line), which a file the project wrote does not carry, and otherwise
+# keeps it and says why on stderr.
 #
 # `_stage == 'after'` on every entry: they must see the NEW answers, which are only
 # on disk in the `after` stage. The conditions re-read the answer rather than
@@ -402,6 +428,12 @@ _migrations:
   # in the directory the entry above just removed.
   - command: "rm -f .github/workflows/pages.yml"
     when: "{{ _stage == 'after' and frontend_stack != 'astro' }}"
+  # Mirrors the CI adapter prunes, under the marker exception stated above: an
+  # unchosen adapter goes only when keel's marker line is in it.
+  - command: "if [ -e .github/workflows/ci.yml ]; then if grep -qxF '# keel-adapter: github' .github/workflows/ci.yml; then rm -f .github/workflows/ci.yml; else echo 'kept .github/workflows/ci.yml: it has no line # keel-adapter: github, so keel did not write it' >&2; fi; fi"
+    when: "{{ _stage == 'after' and ci_pipeline == 'gitlab' }}"
+  - command: "if [ -e .gitlab-ci.yml ]; then if grep -qxF '# keel-adapter: gitlab' .gitlab-ci.yml; then rm -f .gitlab-ci.yml; else echo 'kept .gitlab-ci.yml: it has no line # keel-adapter: gitlab, so keel did not write it' >&2; fi; fi"
+    when: "{{ _stage == 'after' and ci_pipeline == 'github' }}"
   # Mirrors the transport prunes.
   - command: "rm -rf api/grpc"
     when: "{{ _stage == 'after' and 'grpc' not in transports }}"
