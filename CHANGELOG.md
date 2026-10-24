@@ -668,17 +668,22 @@ version rather than a bare commit:
   clause after the secret word opens after a space or any mark (`password,`,
   `password's`, `[token]:`, `password/`), and each of its words is hidden
   unless the closed vocabulary `scripts/audit_dependencies_data.py` lists
-  holds it, it is three marks or fewer, or it starts with a URL; text glued
-  before a URL is a word of its own. Each cause word cites the npm or Node.js
+  holds it, it is three marks or fewer, or it starts with a URL; the URL word
+  ends where the URL does, at a comma or semicolon after its host and port
+  too, so text glued before it or after that mark is a word of its own, and
+  its host is kept only when it is a named host (a dotted name, an IPv4 or a
+  bracketed IPv6 address) and is `<hidden>` otherwise. Each cause word cites the npm or Node.js
   message that holds it, so `password required`, `token is self-signed` and
   npm's `401 Unauthorized - POST <url>` read as written. The clause ends at
   `.`, `!` or `?` only before a capital or the line's end, and never at a
   period after a single letter (`e.g.`). The costs: a password that is a
   vocabulary word, a capitalised value after a real sentence end, a secret of
-  three marks or fewer, and a value joined to the secret word by `-`, `.` or
-  `_`, which reads as part of the key's name, are shown; a cause word the
-  vocabulary lacks is hidden, and a secret word inside a longer word
-  (`monkey`, `Unauthorized`) hides the words after it.
+  three marks or fewer, a value written as a URL's named host after a secret
+  word, and a value joined to the secret word by `-`, `.` or `_`, which reads
+  as part of the key's name, are shown; a cause word the vocabulary lacks is
+  hidden, a single-label host such as `localhost` after a secret word is
+  hidden, and a secret word inside a longer word (`monkey`, `Unauthorized`)
+  hides the words after it.
   The advice reads the raw text and is unchanged. The registry's host is kept when it is a DNS name,
   a single valid label such as `nexus3`, or a bracketed IPv6 address whose
   zone id, with only a leading `%25` decoded, is no longer than an interface

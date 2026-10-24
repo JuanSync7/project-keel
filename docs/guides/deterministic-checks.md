@@ -1192,7 +1192,15 @@ each rule rewrites only its own span, so the cause (`ENOTFOUND`, `E401`,
   `password required`, `PASSWORD REQUIRED` and `the token is invalid` read
   as written. A word of three marks or fewer, such as npm-registry-fetch's
   ` - ` separator, is kept too, and so is a word that starts with a URL the
-  first rule wrote; text glued before or after that URL is a word of its own.
+  first rule wrote. That word ends where the URL does: at a space, quote,
+  `<` or `>`, or at a comma or semicolon right after its host and port, and
+  up to three marks after it stay with it. So text glued before the URL, or
+  after that comma or semicolon (`https://host:8080,<value>`), is a word of
+  its own and is judged as any word is. The URL's host is kept only when it
+  is a named host: a dotted name whose last label is letters, an IPv4
+  address or a bracketed IPv6 address. Any other host there, a single label
+  such as `localhost` included, is `<hidden>`, so `password https://<value>`
+  reads `password https://<hidden>`.
   Every other word is hidden, a run of them as one `<hidden>`, so
   `the password was set to <value>` and `the password for bob is <value>`
   show neither name nor value. A quoted word is a value whatever it says and
@@ -1206,6 +1214,9 @@ each rule rewrites only its own span, so the cause (`ENOTFOUND`, `E401`,
     secret word reads less well until its word is added.
   - A password that is a vocabulary word is shown.
   - A secret of three marks or fewer is shown.
+  - A value written as a URL's named host after a secret word
+    (`password https://<value>.example`) is shown, and a single-label
+    registry host after one (`token for http://localhost:4873/`) is hidden.
   - A value that opens with a capital after a real sentence end is read as
     the next sentence and is shown.
   - A value joined to the secret word by `-`, `.` or `_` (`password-<value>`)

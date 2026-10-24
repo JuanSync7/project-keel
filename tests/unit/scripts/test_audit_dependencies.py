@@ -967,6 +967,41 @@ def test_no_grammar_case_shows_its_value_but_a_declared_leak():
     assert not stale, "declared leaks that no case shows any more: %r" % stale
 
 
+# H1 of review round 3: a URL word in a clause ends at a comma or semicolon
+# where _URL does, so the tail glued on is judged; and a URL's host after a
+# secret word is kept only when it is a named host, so a value written
+# after `://` is hidden while a registry's name stays.
+@pytest.mark.parametrize(
+    "form, shown",
+    [
+        (
+            "npm error password https://r.example.invalid:8080,{}",
+            "npm error password https://r.example.invalid:8080,<hidden>",
+        ),
+        (
+            "npm error password https://r.example.invalid;{}",
+            "npm error password https://r.example.invalid;<hidden>",
+        ),
+        ("npm error password https://{}", "npm error password https://<hidden>"),
+        (
+            "npm error password https://{}/",
+            "npm error password https://<hidden>/<path hidden>",
+        ),
+        (
+            "npm error token for https://r.example.invalid/x is invalid",
+            "npm error token for https://r.example.invalid/<path hidden> is invalid",
+        ),
+        (
+            "npm error token for http://127.0.0.1:4873/x is invalid",
+            "npm error token for http://127.0.0.1:4873/<path hidden> is invalid",
+        ),
+    ],
+    ids=["port-comma", "semicolon", "host", "host-slash", "named-host", "ipv4"],
+)
+def test_a_url_in_a_clause_ends_where_the_url_does_and_keeps_a_named_host(form, shown):
+    assert audit_dependencies._redacted(form.format(_VALUE)) == shown
+
+
 # A scheme-less userinfo before a bracketed IPv6 host is hidden as in a URL,
 # with or without a password, a zone id or a port, and the host is kept.
 @pytest.mark.parametrize(
