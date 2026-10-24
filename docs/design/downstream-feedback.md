@@ -2450,9 +2450,11 @@ The slices touch shared files, so their order is fixed:
   keel-xdist edit `config/project.json` and its twin as well. CMP-7.S1 to
   CMP-7.S4 start after those have merged, and each slice repeats the
   measurement before it starts. keel-lint-pre-rebase is a backup of
-  keel-lint and edits the same files. Every unmerged branch edits
-  `docs/design/downstream-feedback.md`, and most edit
-  `scripts/config_loader.py`. keel-exit, keel-goals and keel-xdist also edit
+  keel-lint and edits the same files; it never merges, and no slice waits
+  for it. Every unmerged branch except keel-lint and its backup edits
+  `docs/design/downstream-feedback.md`. Every unmerged branch except keel-vis
+  edits `scripts/config_loader.py`. keel-exit, keel-goals and keel-xdist also
+  edit
   `docs/design/make-next-steps.md`.
 - CMP-7.S1, CMP-7.S2 and CMP-7.S3 each edit `scripts/check_structure.py` (the
   reader, the kind sets, the README rules). They run in series, S1 then S2
@@ -2569,8 +2571,9 @@ project's `NNNN` space in `adr.project_dir`, which is judged from 0001.
   `K-` ADR fixture, numbered at the cut-off, with no
   `## Alternatives considered` is red, and a `K-` fixture numbered below it is
   not judged; K-0002 and K-0005 to K-0027 pass; a project-space fixture
-  `0001-…` with no `## Alternatives considered` is red whatever `adr.template_contract_from`
-  holds; every rendered skeleton equals its kind's row; a hand mutation of the
+  `0001-…` with no `## Alternatives considered` is red whatever
+  `adr.template_contract_from` holds; every rendered skeleton equals its
+  kind's row; a hand mutation of the
   heading comparison, of the cut-off comparison and of the space test each
   turns the suite red; keel's tree and a generated project pass;
   CONVENTIONS §2, `docs/guides/doc-style.md` and
@@ -2606,14 +2609,18 @@ answers that exit by reusing `git_tree.head_commit`, which returns None, rather
 than by a second rule. `config --get-regexp` with no key matched exits 1.
 `log -1 --format=%cs -- <file>` over a file never committed, in a repository
 with a commit, exits 0 with empty output. That empty output is the answer
-"no commit". With an unborn HEAD the judge does not run `log` at all. `log -1`
-there exits 128, the same as a corrupt repository.
-A corrupt `.git` nested inside another repository does not fail: git skips the
-unreadable `.git` and answers from the parent, and `rev-parse --show-toplevel`
-names the parent with exit 0. So S4 also makes the judge compare
-`rev-parse --show-toplevel` with the directory whose `.git` entry
-`git_tree.inside_a_repository`'s walk finds first, and raise `GitFailedError`
-on a mismatch. S4 makes that walk return the directory it found, and
+"no commit". On main the judge runs `log -1` for every file even with an
+unborn HEAD, and reads the 128 as None. S4 makes the judge ask
+`git_tree.head_commit` before `ls-files`, and run no `log` when it returns
+None. `log -1` with an unborn HEAD exits 128, the same as a corrupt repository.
+A corrupt `.git` nested inside another repository does not fail (measured).
+Git skips the unreadable `.git` and answers from the parent.
+`rev-parse --show-toplevel` then names the parent with exit 0.
+S4 makes the judge compare `rev-parse --show-toplevel` with the directory
+whose `.git` entry `git_tree.inside_a_repository`'s walk finds first.
+On a mismatch the judge raises an error that names both directories; git's
+exit 0 is not quoted as a failure status.
+S4 makes that walk return the directory it found.
 `inside_a_repository` keeps its true-or-false answer over it. A project
 generated as a subproject ("Open decisions for CMP-7", item 8) is the layout
 that reaches this case.
@@ -2623,8 +2630,8 @@ that reaches this case.
 `summary:` (line 9) and its opening line (line 19), which both say "coverage
 register", and the `coverage/` bullet, which calls it "a living register",
 point at `make trace` and `.evidence/traceability/matrix.json` instead;
-`test-docs/coverage/` has no README of its own. A gate test fails a hand register beside the generated
-matrix (the study's TST-16).
+`test-docs/coverage/` has no README of its own. A gate test fails a hand
+register beside the generated matrix (the study's TST-16).
 
 - Done when: in a scratch copy with `.git` removed, the freshness test skips
   with its stated reason; in a scratch copy whose `.git/HEAD` is overwritten
@@ -2633,8 +2640,9 @@ matrix (the study's TST-16).
   --get-regexp` that matches nothing, a `log -1` over a never-committed file
   in a repository with a commit, which exits 0 with empty output) returns it
   and does not raise; a case with an unborn HEAD and staged documents passes
-  and runs no `log`; the corrupt-`.git` case stops the gate through
-  `git_tree.head_commit`'s `GitFailedError`; a fault-injected runner returns
+  and runs no `log`; the corrupt-`.git` case stops the gate on the first
+  git call, `head_commit`'s `rev-parse`, which exits 128; a fault-injected
+  runner returns
   128 for `log` alone while `rev-parse`, `ls-files` and `status` answer, the
   gate stops on it, and a hand mutation whose runner accepts exit 128 from
   `log` turns that case red; in a scratch repository holding a nested
