@@ -3245,8 +3245,8 @@ out at the ancestor's. Why: confidentiality must not leak through a child's
 - KEEL-VIS-1 fixes the level the corpus records and changes no reader of it:
   the wiki navigator, and the MCP Q&A server through it, filter on that level
   as they did before. Filtering the showcase API, its `/llms-full.txt` and
-  the static site export by it is KEEL-VIS-2's (queue row 43), not built
-  here.
+  the static site export by it is KEEL-VIS-2's, a follow-up this entry does
+  not build.
 
 **KEEL-OWNER-3, an owner outside the grammar is a finding.** The
 maintainer's call for row 42: an owner outside `scripts/config_loader.py`
