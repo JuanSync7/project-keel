@@ -1016,6 +1016,43 @@ def test_a_word_of_three_marks_or_fewer_is_kept(marks, kept):
     assert shown == "npm error token " + hidden
 
 
+# A sentence ends at `.`, `!` or `?` only when the next word opens with a
+# capital or the text ends, and a period after a single letter (`e.g.`) ends
+# none; a word of marks alone ends none either. Each case's clause runs on.
+# A value that opens with a capital after a real end is the next sentence,
+# the rule's stated cost, so the last two cases try only a lower-case one.
+@pytest.mark.parametrize(
+    "form, values",
+    [
+        ("the password e.g. %s was rejected", (_VALUE, _WORD_VALUE)),
+        ("the password, i.e. %s", (_VALUE, _WORD_VALUE)),
+        ("the password set at 9 a.m. %s", (_VALUE, _WORD_VALUE)),
+        ("the password . %s", (_VALUE, _WORD_VALUE)),
+        ("the password is required. %s next", (_VALUE,)),
+        ("the password is required? %s", (_VALUE,)),
+    ],
+    ids=["e-g", "i-e", "a-m", "lone-period", "lower-case-next", "question-lower"],
+)
+def test_a_period_that_ends_no_sentence_leaves_the_clause_open(form, values):
+    for value in values:
+        shown = audit_dependencies._redacted(form % value)
+        assert value not in shown
+        assert "<hidden>" in shown
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "the password is required. Run npm login",
+        "the password is required.",
+        "the password is required! Run npm login",
+    ],
+    ids=["capital-next", "text-end", "exclamation"],
+)
+def test_a_sentence_end_closes_the_clause(line):
+    assert audit_dependencies._redacted(line) == line
+
+
 # The cost of a closed vocabulary: a cause word it does not hold is hidden.
 # The advice reads npm's raw text, so it is the same either way.
 def test_a_cause_word_outside_the_vocabulary_is_hidden():
@@ -1621,6 +1658,8 @@ _TIMED_REDACTION = (
         ("token x,https://a.b/c ", 2273, False),
         ("gopher://u:v@h/ ", 3125, False),
         ("x://", 12500, False),
+        ("token e.g. x ", 3847, False),
+        ("token" + " x" * 17 + " a. b ", 1087, False),
     ],
     ids=[
         "a",
@@ -1643,6 +1682,8 @@ _TIMED_REDACTION = (
         "glued-url",
         "other-scheme",
         "other-scheme-run",
+        "abbreviation",
+        "sentence-bound",
     ],
 )
 def test_a_hostile_line_is_redacted_within_a_second(unit, times, unchanged):

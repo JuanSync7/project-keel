@@ -252,7 +252,14 @@ _MARKS_ONLY = re.compile(r"[^\w\s]{1,3}")
 # The rest of a word a closing quote lands inside.
 _CLAUSE_TAIL = re.compile(r"\S*")
 _SPACE = re.compile(r"\s{0,4}")
-_SENTENCE_END = re.compile(r"[.!?][\"')\]]*(?=\s|$)")
+# A sentence ends at `!`, `?` or a period, with any closing marks, when the
+# next word opens with a capital or the text ends: a lower-case word after
+# it is the same clause running on. A period after a single letter (`e.g.`,
+# `i.e.`, `a.m.`) is an abbreviation's and ends none. Both fail closed: a
+# clause read too long hides more words, one cut short shows a value.
+_SENTENCE_END = re.compile(r"(?:[!?]|(?<!\b[A-Za-z])\.)[\"')\]]*(?=\s{1,4}[A-Z]|$)")
+# The marks that may close a sentence after its end mark.
+_CLOSING_MARKS = "\"')]"
 _VOCABULARY = frozenset(audit_dependencies_data.LINKING_WORDS) | frozenset(
     audit_dependencies_data.CAUSE_WORDS
 )
@@ -549,7 +556,17 @@ def _clause_shown(line, at):
         else:
             pieces.append((line[word.start() : word.start(1)], None))
         at = end
-        if _SENTENCE_END.search(line[word.start(1) : end]):
+        # The end mark is the span's last character before its closing
+        # marks; it is matched in the line, which holds the next word. A
+        # word of marks alone ends no sentence, so a lone `.` cannot cut
+        # the clause before a value.
+        span = line[word.start(1) : end]
+        mark = word.start(1) + len(span.rstrip(_CLOSING_MARKS)) - 1
+        if (
+            mark >= word.start(1)
+            and not _MARKS_ONLY.fullmatch(span)
+            and _SENTENCE_END.match(line, mark)
+        ):
             break
     shown = []
     for index, (text, kept) in enumerate(pieces):
