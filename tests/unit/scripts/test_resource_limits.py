@@ -713,10 +713,17 @@ def _tools_project(tmp_path, agents_block, gate_block=None):
 
 
 def test_tool_limits_are_read_from_the_agents_block(tmp_path):
+    # 60 + 2 * 5 + 3: the least time limit the gate runner's 60 s limit, its
+    # 5 s grace spent twice and a 3 s margin accept.
     root = _tools_project(
-        tmp_path, {"tool_timeout_seconds": 66, "tool_max_output_bytes": 4096}
+        tmp_path,
+        {
+            "tool_timeout_seconds": 73,
+            "tool_max_output_bytes": 4096,
+            "tool_gate_margin_seconds": 3,
+        },
     )
-    assert resource_limits.tool_limits(root) == (66, 4096)
+    assert resource_limits.tool_limits(root) == (73, 4096)
 
 
 @pytest.mark.parametrize(
@@ -729,6 +736,8 @@ def test_tool_limits_are_read_from_the_agents_block(tmp_path):
             {"tool_timeout_seconds": int(threading.TIMEOUT_MAX) + 1},
             r"agents\.tool_timeout_seconds",
         ),
+        ({"tool_gate_margin_seconds": 0}, r"agents\.tool_gate_margin_seconds"),
+        ({"tool_gate_margin_seconds": 1.5}, r"agents\.tool_gate_margin_seconds"),
         ({"tool_max_output_bytes": 0}, r"agents\.tool_max_output_bytes"),
         (
             {"tool_max_output_bytes": int(threading.TIMEOUT_MAX) + 1},
@@ -737,20 +746,30 @@ def test_tool_limits_are_read_from_the_agents_block(tmp_path):
     ],
 )
 def test_a_tool_limit_out_of_its_bound_is_refused(tmp_path, block, key):
-    agents = {"tool_timeout_seconds": 600, "tool_max_output_bytes": 4096}
+    agents = {
+        "tool_timeout_seconds": 600,
+        "tool_max_output_bytes": 4096,
+        "tool_gate_margin_seconds": 3,
+    }
     agents.update(block)
     with pytest.raises(config_loader.WrongValue, match=key):
         resource_limits.tool_limits(_tools_project(tmp_path, agents))
 
 
-@pytest.mark.parametrize("seconds", [60, 65])
+@pytest.mark.parametrize("seconds", [60, 65, 66, 72])
 def test_a_tool_limit_that_does_not_outlast_the_gate_runner_is_refused(
     tmp_path, capsys, seconds
 ):
-    # 60 + 5: a tool that runs a gate is ended no sooner than the gate runner
-    # has ended make's session, which a SIGKILL to the runner would orphan.
+    # 60 + 2 * 5 + 3: on its timeout the gate runner waits its grace once for
+    # make's session to end and once more for make's output, then snapshots
+    # the tree, so 66 (the limit plus one grace plus one) is refused too.
     root = _tools_project(
-        tmp_path, {"tool_timeout_seconds": seconds, "tool_max_output_bytes": 4096}
+        tmp_path,
+        {
+            "tool_timeout_seconds": seconds,
+            "tool_max_output_bytes": 4096,
+            "tool_gate_margin_seconds": 3,
+        },
     )
     with pytest.raises(config_loader.WrongValue) as caught:
         resource_limits.tool_limits(root)
@@ -759,21 +778,31 @@ def test_a_tool_limit_that_does_not_outlast_the_gate_runner_is_refused(
         "agents.tool_timeout_seconds",
         "make_targets.gate_timeout_seconds",
         "make_targets.gate_stop_grace_seconds",
+        "agents.tool_gate_margin_seconds",
     ):
         assert key in line
-    assert "more than 65" in line
+    assert "at least 73" in line
     assert line in capsys.readouterr().err
 
 
 def test_the_shipped_tool_limits_outlast_the_shipped_gate_runner():
     timeout, cap = resource_limits.tool_limits()
     assert (timeout, cap) == (15000, 67108864)
+    gate = config_loader.read(str(_ROOT))["make_targets"]
+    margin = config_loader.read(str(_ROOT))["agents"]["tool_gate_margin_seconds"]
+    assert timeout >= (
+        gate["gate_timeout_seconds"] + 2 * gate["gate_stop_grace_seconds"] + margin
+    )
 
 
 def test_run_tool_holds_the_child_to_the_configured_limit_and_names_the_key(tmp_path):
     root = _tools_project(
         tmp_path,
-        {"tool_timeout_seconds": 66, "tool_max_output_bytes": 4096},
+        {
+            "tool_timeout_seconds": 66,
+            "tool_max_output_bytes": 4096,
+            "tool_gate_margin_seconds": 3,
+        },
         {"gate_timeout_seconds": 1, "gate_stop_grace_seconds": 1},
     )
     done = resource_limits.run_tool(

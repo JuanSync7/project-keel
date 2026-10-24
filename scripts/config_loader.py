@@ -754,19 +754,34 @@ KEYS = tuple(
                     "a value >= 1 and <= %s" % _MOST_SECONDS_TEXT,
                 ),
             ),
+            # 570 s: what the shipped tool limit (15000 s) leaves over the gate
+            # runner's longest timed-out run (14400 + 2 * 15 s), for its start,
+            # its two tree snapshots and apply_refactor's rollback around it.
+            _row(
+                ("agents", "tool_gate_margin_seconds"),
+                "int",
+                570,
+                "the seconds agents.tool_timeout_seconds must leave, over "
+                "make_targets.gate_timeout_seconds plus twice "
+                "make_targets.gate_stop_grace_seconds, for the gate runner's "
+                "own start, tree snapshots and the rollback around it",
+                accepts=(
+                    _at_least_one_second,
+                    "a value >= 1 and <= %s" % _MOST_SECONDS_TEXT,
+                ),
+            ),
             # 15000 s: a tool child that runs a gate must outlast the gate
-            # runner's own limit and stop grace (make_targets, 14400 + 15 s):
-            # a SIGKILL to the runner first leaves make's session running and
-            # apply_refactor's edit in place. The 585 s over that cover the
-            # runner's tree snapshots and apply_refactor's rollback.
+            # runner's timed-out run, its limit and its grace spent twice
+            # (make_targets, 14400 + 2 * 15 s), plus the margin above.
             _row(
                 ("agents", "tool_timeout_seconds"),
                 "int",
                 15000,
                 "the seconds an agent's tool child, or the MCP action server's "
                 "doer, may run before its process group is ended and the call "
-                "refused; it must be more than make_targets.gate_timeout_seconds "
-                "plus make_targets.gate_stop_grace_seconds",
+                "refused; it must be at least make_targets.gate_timeout_seconds "
+                "plus twice make_targets.gate_stop_grace_seconds plus "
+                "agents.tool_gate_margin_seconds",
                 accepts=(
                     _at_least_one_second,
                     "a value >= 1 and <= %s" % _MOST_SECONDS_TEXT,

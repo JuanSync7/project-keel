@@ -352,9 +352,13 @@ version rather than a bare commit:
   or `ChildOutputTooLarge` naming the key, which `scripts/doc_review.py`,
   `scripts/refactor_practice.py` and `scripts/hooks/on_stop_doc_review.py`
   report as exit 1 rather than a traceback. The time limit stops at
-  `threading.TIMEOUT_MAX` like every seconds key, and one no longer than
-  `make_targets.gate_timeout_seconds` plus
-  `make_targets.gate_stop_grace_seconds` is a config fault (exit 14): a tool
+  `threading.TIMEOUT_MAX` like every seconds key, and one shorter than
+  `make_targets.gate_timeout_seconds` plus twice
+  `make_targets.gate_stop_grace_seconds` plus
+  `agents.tool_gate_margin_seconds` (570) is a config fault (exit 14): a
+  timed-out gate run waits its grace once for make's session and once more
+  for make's output, the margin covers the runner's start, its tree
+  snapshots and the rollback around it, and a tool
   child can be the gate runner, and a SIGKILL to it before its own stop would
   leave make's session running and an applied edit not rolled back. The
   keys are read from the tree the tool acts on, whose gate keys the gate
