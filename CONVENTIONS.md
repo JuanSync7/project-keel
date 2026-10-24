@@ -74,11 +74,20 @@ stated on its chain: its own frontmatter or docstring, and every `README.md`
 from its directory up to the root, in the order the table above lists
 (`scripts/check_structure.py` `VISIBILITY_ORDER`). A section or symbol takes
 its document's or module's. A `README.md` that states none passes on what is
-stated above it, and with nothing stated anywhere a node is `internal`. So a
-child can never publish what a `README.md` above it keeps confidential: to
-publish a child, lower the `README.md` above it. A governed document that
-states a less restrictive level than a `README.md` above it is an error naming
-that `README.md` (check A), because the corpus would override it in silence.
+stated above it, and with nothing stated anywhere a node is `internal`. A file
+reached through a symlink also takes the chain of the file it really is, when
+that file is in the tree. A `README.md` that cannot be read passes on
+`unreadable-readme`, a value outside the vocabulary that outranks every level,
+so check_corpus refuses each node below it. So in the corpus no child is ever
+at a looser level than a `README.md` above it: to make a child `public`, lower
+the `README.md` above it. A governed document that states a less restrictive
+level than a `README.md` above it is an error naming that `README.md`
+(check A), because the corpus would override it in silence.
+
+The level is a label, and only some readers act on it. The wiki navigator
+agent, and the MCP Q&A server through it, drop `confidential` and `restricted`
+nodes. The showcase API, its `/llms-full.txt` text and the static site export
+do not filter by visibility yet, and they serve every node in the corpus.
 
 ### Code files
 Source files can't carry YAML, so the **module docstring** is the

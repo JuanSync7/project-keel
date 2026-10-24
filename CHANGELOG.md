@@ -554,8 +554,14 @@ version rather than a bare commit:
   visibility stated on its chain (its own and every `README.md` up to the
   root), in `scripts/check_structure.py` `VISIBILITY_ORDER`, and `internal`
   only when the chain states none; a document now takes the `README.md`s above
-  it too. check_A fails a governed document that states a less restrictive
-  visibility than a `README.md` above it, naming that `README.md`.
+  it too. A file reached through a symlink also takes the chain of the file it
+  really is, and a `README.md` that cannot be read passes on a value
+  check_corpus refuses rather than nothing. check_A fails a governed document
+  that states a less restrictive visibility than a `README.md` above it, naming
+  that `README.md`. This fixes the level the corpus records. Only the wiki
+  navigator, and the MCP Q&A server through it, drop `confidential` and
+  `restricted` nodes; the showcase API, its `/llms-full.txt` and the static
+  site export do not filter by visibility yet.
 - **A nullable key with a bound puts null first in its refusal.** A refused
   `transports.serve.memory_cap_mb` or `tests.memory_scratch_root` now reads
   "accepted: null, or an integer with a value >= 1", where it read as if null

@@ -3235,6 +3235,17 @@ out at the ancestor's. Why: confidentiality must not leak through a child's
   not a warning, because the stated level is false in the served corpus. A
   module docstring that states a looser `visibility` is resolved closed but
   not flagged; none in the tree states one.
+- Fix round 1 closed two more ways around the chain. A file reached
+  through a symlink takes the strictest of its walked path's chain and its
+  target's chain inside the root, so a link into an open directory cannot
+  lower a confidential file; the owner walk still follows the walked path.
+  A `README.md` that cannot be read or decoded passes on
+  `unreadable-readme`, which outranks every level, so check_corpus refuses
+  every node below it rather than serve it at a level from further up.
+- The level is what the corpus records. Only the wiki navigator, and the MCP
+  Q&A server through it, filter on it today; the showcase API, its
+  `/llms-full.txt` and the static site export serve every node. Filtering
+  there is KEEL-VIS-2, queued, not built here.
 
 **KEEL-OWNER-3, an owner outside the grammar is a finding.** The
 maintainer's call for row 42: an owner outside `scripts/config_loader.py`
