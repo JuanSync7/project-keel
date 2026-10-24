@@ -815,6 +815,73 @@ def test_a_mark_after_a_secret_word_still_opens_its_clause(form, kept):
         assert words in shown, shown
 
 
+# A clause keeps a word that opens with a URL (a) rewrote; text glued in
+# front of the URL is a word of its own and is judged, and a word after the
+# URL is still in the clause.
+@pytest.mark.parametrize(
+    "glue",
+    [",", "(", "", "-", "="],
+    ids=["comma", "parenthesis", "letters", "hyphen", "equals"],
+)
+def test_a_value_glued_to_a_url_is_hidden(glue):
+    text = "npm error token %s%shttps://r.example.invalid/x %s" % (_VALUE, glue, _VALUE)
+    shown = audit_dependencies._redacted(text)
+    assert _VALUE not in shown, shown
+    assert "https://r.example.invalid/<path hidden>" in shown, shown
+
+
+# A URL opens with a scheme npm uses: http and https for a registry or a
+# proxy, the socks schemes @npmcli/agent hands to socks-proxy-agent, and the
+# git, ssh and file schemes npm-package-arg reads in a dependency spec. No
+# other letters run into the scheme, so text before it is no part of it.
+@pytest.mark.parametrize(
+    "scheme",
+    [
+        "http",
+        "https",
+        "HTTPS",
+        "socks",
+        "socks4",
+        "socks4a",
+        "socks5",
+        "socks5h",
+        "git",
+        "git+http",
+        "git+https",
+        "git+ssh",
+        "git+file",
+        "ssh",
+        "file",
+    ],
+)
+def test_a_url_opens_with_a_scheme_npm_uses(scheme):
+    text = "request to %s%s://registry.example.invalid/x failed" % (_VALUE, scheme)
+    assert audit_dependencies._redacted(text) == (
+        "request to %s%s://registry.example.invalid/<path hidden> failed"
+        % (_VALUE, scheme)
+    )
+
+
+# Bounding the scheme must show no userinfo or path: after any other `://`
+# both are lost as in a URL npm reaches.
+@pytest.mark.parametrize(
+    "userinfo", ["u:%s@" % _VALUE, _VALUE + "@", ""], ids=["pair", "user", "none"]
+)
+def test_a_scheme_npm_does_not_use_loses_its_userinfo_and_path(userinfo):
+    text = "request to gopher://%sregistry.example.invalid/%s failed" % (
+        userinfo,
+        _VALUE,
+    )
+    assert audit_dependencies._redacted(text) == (
+        "request to gopher://registry.example.invalid/<path hidden> failed"
+    )
+
+
+def test_a_value_glued_to_a_scheme_npm_does_not_use_is_hidden_in_a_clause():
+    text = "token %sgopher://registry.example.invalid/x" % _VALUE
+    assert audit_dependencies._redacted(text) == "token <hidden>"
+
+
 # A URL's userinfo is everything before the last `@` of its authority, so a
 # raw `@` in a password shows no part of it, and the host after it stays.
 @pytest.mark.parametrize(
@@ -1551,6 +1618,9 @@ _TIMED_REDACTION = (
         ("token - x ", 5000, False),
         ("token, x1 ", 5000, False),
         ("token's x ", 5000, False),
+        ("token x,https://a.b/c ", 2273, False),
+        ("gopher://u:v@h/ ", 3125, False),
+        ("x://", 12500, False),
     ],
     ids=[
         "a",
@@ -1570,6 +1640,9 @@ _TIMED_REDACTION = (
         "marks-word",
         "mark-opens-clause",
         "possessive",
+        "glued-url",
+        "other-scheme",
+        "other-scheme-run",
     ],
 )
 def test_a_hostile_line_is_redacted_within_a_second(unit, times, unchanged):

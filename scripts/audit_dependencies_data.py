@@ -92,6 +92,7 @@ CAUSE_WORDS = {
     "post": _HTTP_METHOD + "POST",
     "provided": _NPM_MESSAGES + "If you already provided a one-time password",
     "put": _HTTP_METHOD + "PUT",
+    "realm": _NEED_AUTH + "the auth-param of a WWW-Authenticate challenge, realm=",
     "refused": _LIBUV + "connection refused",
     "rejected": _NPM_MESSAGES + "The operation was rejected by your operating system.",
     "required": _NPM_FETCH + "OTP required for authentication",

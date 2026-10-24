@@ -61,7 +61,9 @@ _DECLARING_FIELDS = (
 # (a) a URL keeps its scheme, host and port; its userinfo, everything before
 #     the authority's last `@`, is dropped and the rest, its path or query or
 #     anything glued on, becomes _PATH_HIDDEN, since a registry token can sit
-#     in either (`http://TOKEN@host/`, a `/TOKEN/` path);
+#     in either (`http://TOKEN@host/`, a `/TOKEN/` path). Its scheme is one
+#     npm reaches (_SCHEME); after any other `://` the userinfo and path are
+#     lost the same way (_OTHER_URL);
 # (c) an `Authorization`, `Bearer` or `Basic` scheme keeps its name and loses
 #     its value, with any separator; a `realm="..."` parameter is kept;
 # (b) a value after a key holding one of _SECRET_WORDS is hidden. After `=`
@@ -69,9 +71,10 @@ _DECLARING_FIELDS = (
 #     or the next assignment (_NEXT_ASSIGNMENT). After whitespace or any mark
 #     (prose) the clause that follows is read word by word, and a word is
 #     kept only when scripts/audit_dependencies_data.py's closed vocabulary
-#     holds it or it is three marks or fewer: an open list of "plain words"
-#     showed a value after a third linking word, so an unknown word is
-#     hidden, cause words included. A quoted value is
+#     holds it, it is three marks or fewer, or it starts with a URL (a)
+#     wrote, text glued before the URL being a word of its own: an open list
+#     of "plain words" showed a value after a third linking word, so an
+#     unknown word is hidden, cause words included. A quoted value is
 #     hidden in both at least to its closing quote, or to the line's end;
 # (a') a scheme-less `user:pass@host` loses everything before its last `@`,
 #     and so does a `user@host` with no password before a host (_BARE_USER);
@@ -108,9 +111,31 @@ _DECLARING_FIELDS = (
 # follows the host and port is the path unless it opens with a comma or
 # semicolon, which end the URL as a list does; the path then runs up to a
 # space, quote, `<` or `>`, so a token glued on past a `)`, a comma or a
-# stray character is hidden with it. A scheme is at most 16 characters, too
-# short for (d), so keeping it can keep no token.
-_SCHEME = r"\b[a-z][a-z0-9+.\-]{0,15}://"
+# stray character is hidden with it. A scheme is one npm reaches a registry,
+# proxy or package through: http and https (npm-registry-fetch), socks,
+# socks4, socks4a, socks5 and socks5h (socks-proxy-agent, for a proxy), git,
+# git+http, git+https, git+ssh, git+file and file (npm-package-arg), and ssh
+# (hosted-git-info). Text glued before a scheme is no part of it, so a value
+# written against a URL stays a word of its own; no scheme is long enough for
+# (d), so keeping it can keep no token. The longer name of a pair comes first,
+# so `https` is not read as `http`.
+_NPM_SCHEMES = (
+    "git+https",
+    "git+http",
+    "git+file",
+    "git+ssh",
+    "socks4a",
+    "socks5h",
+    "socks4",
+    "socks5",
+    "socks",
+    "https",
+    "http",
+    "file",
+    "git",
+    "ssh",
+)
+_SCHEME = r"(?:%s)://" % "|".join(map(re.escape, _NPM_SCHEMES))
 _HOST = r"\[[0-9a-f:.]{2,45}(?:%[\w.\-~%]*)?\]|[\w.\-~%+=]{1,253}"
 _PORT = r":\d{1,5}(?!\d)"
 # A userinfo is everything before the last `@` of the authority, which ends
@@ -119,6 +144,22 @@ _PORT = r":\d{1,5}(?!\d)"
 _USERINFO = r"(?:[^\s/?#\"'<>]*@)?"
 _URL = re.compile(
     r"(%s)%s(%s)?(%s)?([^\s\"'<>,;][^\s\"'<>]*)?" % (_SCHEME, _USERINFO, _HOST, _PORT),
+    re.IGNORECASE,
+)
+# Any other scheme's `://`, which npm never reaches but a registry may echo:
+# its userinfo and path are lost as in (a), so bounding _SCHEME shows neither.
+# Its name is no part of the match, so a value glued to it is shown only
+# outside a clause, and inside one the word is not a URL word and is hidden.
+# One fixed-width lookbehind per npm scheme, since `re` takes no
+# variable-width one.
+_OTHER_URL = re.compile(
+    r"%s(://)%s(%s)?(%s)?([^\s\"'<>,;][^\s\"'<>]*)?"
+    % (
+        "".join("(?<!%s)" % re.escape(name) for name in _NPM_SCHEMES),
+        _USERINFO,
+        _HOST,
+        _PORT,
+    ),
     re.IGNORECASE,
 )
 _PATH_HIDDEN = "<path hidden>"
@@ -187,18 +228,23 @@ _DONE_VALUE = re.compile(r"<hidden>|(?:Bearer|Basic)\b", re.IGNORECASE)
 # is a cookie's next pair. A quote, a comma, a `;` or a `name:` can sit inside
 # a passphrase, so none of them ends it.
 _NEXT_ASSIGNMENT = re.compile(r"(?<![\s;,])\s{1,4}[A-Za-z_][\w.\-]{0,63}=")
-# One word of a prose clause: a URL (a) rewrote is one word with its marker,
-# and any other word runs to the next whitespace. The literal fixes where
-# the marker's lazy run stops, so each word is read once. A word needs no
-# whitespace before it when it opens with a mark: a mark after the secret
-# word (`password,`, `password's`, `token]:`, `password/`, `password` and a
-# dash) opens the clause as a space does, so the value after it is judged. A
-# word character there continues a key longer than _KEY's bound, no clause.
+# One word of a prose clause: a URL (a) rewrote, from its scheme to its
+# marker and up to three marks after it; a `<hidden>` another rule wrote; or
+# any other run up to whitespace, a scheme or a `<hidden>`. So text glued
+# before a URL (`V,https://...`) or after one is a word of its own, judged as
+# any word is. Each alternative's end is fixed by a literal or a class, so
+# each character is read once. The first word needs a space or a mark before
+# it (_clause_shown checks): a mark after the secret word (`password,`,
+# `password's`, `token]:`, `password/`, `password` and a dash) opens the
+# clause as a space does, while a word character there continues a key
+# longer than _KEY's bound.
 _CLAUSE_WORD = re.compile(
-    r"(?:\s{1,4}|(?=[^\w\s]))(\S*?%s\S*|\S+)" % re.escape(_PATH_HIDDEN)
+    r"\s{0,4}((?i:%s)[^\s\"'<>/]*(?:/%s)?[^\w\s<]{0,3}|%s|(?:(?!(?i:%s)|%s)\S)+)"
+    % (_SCHEME, re.escape(_PATH_HIDDEN), _HIDDEN, _SCHEME, _HIDDEN)
 )
+_URL_WORD = re.compile(r"(?i:%s)" % _SCHEME)
 # The marks a word may carry that are no part of it for the vocabulary.
-_WORD_MARKS = "\"'()[],;:.!?"
+_WORD_MARKS = "\"'()[],;:.!?="
 # A word of marks alone, as npm-registry-fetch's ` - ` separator is, carries
 # no value of the shape a credential has: one to three of them are kept.
 # The cost: a secret of three marks or fewer is shown.
@@ -477,6 +523,8 @@ def _clause_shown(line, at):
     pieces, words = [], 0
     while word := _CLAUSE_WORD.match(line, at):
         text = word.group(1)
+        if not words and word.start(1) == at and text[0].isalnum():
+            break
         bare = text.strip(_WORD_MARKS).lower()
         if bare in _SECRET_WORDS:
             break
@@ -494,7 +542,7 @@ def _clause_shown(line, at):
         elif (
             bare in _VOCABULARY
             or text == _HIDDEN
-            or _PATH_HIDDEN in text
+            or _URL_WORD.match(text)
             or _MARKS_ONLY.fullmatch(text)
         ):
             pieces.append((line[at:end], text))
@@ -601,6 +649,7 @@ def _redacted(line):
     """*line* with every span that could carry a credential rewritten by the
     rules above and the rest of it kept."""
     line = _URL.sub(_url_shown, line)
+    line = _OTHER_URL.sub(_url_shown, line)
     line = _SCHEME_VALUE.sub(_scheme_shown, line)
     line = _key_values_shown(line)
     line = _BARE_USERINFO.sub(_HIDDEN + "@", line)
