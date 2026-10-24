@@ -2,11 +2,12 @@
 title: Unit — audit_dependencies (npm audit findings judged against the accepted risks in config)
 kind: tests
 layer: n/a
-summary: scripts/audit_dependencies.py driven in process over saved `npm audit --json` reports shaped like a real one, in a project root the test builds from keel's own config/project.json with its own `dependency_audit` block, on a day the test hands in, so no test runs npm or reaches the network. Each failure kind fails on its own and names what failed: a finding at or above `fail_at` no row covers, a covered finding whose row names another package, a row past its review_by day, a row dated more than `max_review_days` after today (exactly that many passes, one more fails), a row whose advisory the report no longer holds, and a row naming an app not audited. A covered finding passes on its review_by day and is listed with its reason; a finding below `fail_at` is listed and does not fail, and lowering `fail_at` fails it. A report with no findings still judges every row. No app and no row exits 0 saying so. A report that is not version 2, one with an unknown severity, a via url with no advisory id, a via item that is neither an advisory nor an entry's name, counts that disagree with its entries, or no audited dependency while package.json declares one is USAGE from a saved file and BACKEND_ABSENT from a run; so is a run's output that is not JSON, and npm exiting 1 with no finding. An app with no package.json, an unreadable one or no package-lock.json, a `--report` name that is not an audited app and a bad flag are USAGE; npm that cannot start, overruns its timeout, exits 2, is killed by a signal or answers an error object is BACKEND_ABSENT, showing the error's message or summary, else the top-level message npm 11 writes for an unreachable registry (its real shape, with a placeholder host), else npm's last stderr line other than its log pointer and no other, and `<hidden>` for a line holding any of the credential shapes, each tested with its secret absent from the output. A 16 000-character line, "token" * 2000 and one hostile line per newer pattern (a prose key, a URL userinfo, a bare userinfo, an assigned value of several words, a scheme-less path, a dotted run, a word-number label) are redacted in under a second, timed in a child the test can kill; a diagnostic longer than `max_shown_chars` is cut, its advice still chosen from an E401 past the cut, dropping the word the cut lands in, and marked, and a shorter one is not; a quoted value the cut splits, bare or in JSON, is hidden from its quote. A secret word in prose keeps each word of its clause that scripts/audit_dependencies_data.py lists, in any case (`password required`, `PASSWORD REQUIRED`, `token is self-signed`, `"token expired` with its open quote, npm's own lines), and hides every other word, a cause word it does not list included, each listed word being tried beside a value, up to the sentence's end and past the clause bound; a value after `=` or `:` or a quoted one is hidden, an assigned one to the line's end or the next `name=` through any quote, comma, `;` or `name:` in it, and the cut marker follows it. A userinfo with a raw `@`, several `@`, no password or no scheme, a bare `user@` before a host included, is hidden up to its last `@`, while a package's `name@version` is kept. A scheme-less host (a dotted name, an IPv4 address, a name with a port, after `//` or `@` too) loses its path, a token as that host is hidden, and a file path or a host with nothing after its `/` is kept. The advice for `ERR_INVALID_URL` or `Invalid URL` names the registry URL, ahead of a 401 in the same text. The rule for a run of 20 or more characters keeps a URL's scheme, host and port, a bracketed IPv6 host among them, and the dotted host after ENOTFOUND or getaddrinfo, such as an AWS CodeArtifact host, with one trailing dot or none, a long mixed label with a word part such as `my-domain`, short runs between word parts, a word then a number (`acme2024-111122223333`) and a dotless label such as `nexus3`; a dotless token operand, a hyphenated one and a token beside a kept host are still hidden, and so is a token used as a URL's host, as one of its labels (a UUID included, a long label cut by hyphens into short token parts, hex ones too, and a token behind or between word parts), glued on past a `)`, or as the resolver's operand, and a mixed run that turns back to letters or opens with digits or one letter, and a host split at `=`, `+` or `%2B` is hidden whole in a URL and after ENOTFOUND, while `localhost` stays. A path after an IPv6 zone id or after a six-digit number where a port goes is hidden, and a zone id longer than 15 characters once a leading `%25` is dropped, raw escapes undecoded and at any length with the host kept, is `%<hidden>` while an interface name or number is kept. Each secret word the credential rule names hides the value of a key that holds only that word, so dropping any one word from the rule fails its own case. Each dependency field and both forms of `workspaces` count as declaring a dependency, and an empty one does not. The argv includes every dependency type an .npmrc could omit. A mark after a secret word opens its clause as a space does; a word of three marks or fewer is kept; a value glued before a URL is hidden and the URL kept; a URL keeps its scheme only for a scheme npm reaches, and after any other `://` the userinfo and path are hidden; a period after a single letter, or before a lower-case word, ends no sentence while one before a capital or the text's end does; a scheme-less userinfo before a bracketed IPv6 host is hidden; each cause word stands in the message it cites, and `empty` and `refused` are no cause words. A refused `dependency_audit` value is CONFIG.
+summary: scripts/audit_dependencies.py driven in process over saved `npm audit --json` reports shaped like a real one, in a project root the test builds from keel's own config/project.json with its own `dependency_audit` block, on a day the test hands in, so no test runs npm or reaches the network. Each failure kind fails on its own and names what failed: a finding at or above `fail_at` no row covers, a covered finding whose row names another package, a row past its review_by day, a row dated more than `max_review_days` after today (exactly that many passes, one more fails), a row whose advisory the report no longer holds, and a row naming an app not audited. A covered finding passes on its review_by day and is listed with its reason; a finding below `fail_at` is listed and does not fail, and lowering `fail_at` fails it. A report with no findings still judges every row. No app and no row exits 0 saying so. A report that is not version 2, one with an unknown severity, a via url with no advisory id, a via item that is neither an advisory nor an entry's name, counts that disagree with its entries, or no audited dependency while package.json declares one is USAGE from a saved file and BACKEND_ABSENT from a run; so is a run's output that is not JSON, and npm exiting 1 with no finding. An app with no package.json, an unreadable one or no package-lock.json, a `--report` name that is not an audited app and a bad flag are USAGE; npm that cannot start, overruns its timeout, exits 2, is killed by a signal or answers an error object is BACKEND_ABSENT, showing the error's message or summary, else the top-level message npm 11 writes for an unreachable registry (its real shape, with a placeholder host), else npm's last stderr line other than its log pointer and no other, and `<hidden>` for a line holding any of the credential shapes, each tested with its secret absent from the output. A 16 000-character line, "token" * 2000 and one hostile line per newer pattern (a prose key, a URL userinfo, a bare userinfo, an assigned value of several words, a scheme-less path, a dotted run, a word-number label) are redacted in under a second, timed in a child the test can kill; a diagnostic longer than `max_shown_chars` is cut, its advice still chosen from an E401 past the cut, dropping the word the cut lands in, and marked, and a shorter one is not; a quoted value the cut splits, bare or in JSON, is hidden from its quote. A secret word in prose keeps each word of its clause that scripts/audit_dependencies_data.py lists, in any case (`password required`, `PASSWORD REQUIRED`, `token is self-signed`, `"token expired` with its open quote, npm's own lines), and hides every other word, a cause word it does not list included, each listed word being tried beside a value, up to the sentence's end and past the clause bound; a value after `=` or `:` or a quoted one is hidden, an assigned one to the line's end or the next `name=` through any quote, comma, `;` or `name:` in it, and the cut marker follows it. A userinfo with a raw `@`, several `@`, no password or no scheme, a bare `user@` before a host included, is hidden up to its last `@`, while a package's `name@version` is kept. A scheme-less host (a dotted name, an IPv4 address, a name with a port, after `//` or `@` too) loses its path, a token as that host is hidden, and a file path or a host with nothing after its `/` is kept. The advice for `ERR_INVALID_URL` or `Invalid URL` names the registry URL, ahead of a 401 in the same text. The rule for a run of 20 or more characters keeps a URL's scheme, host and port, a bracketed IPv6 host among them, and the dotted host after ENOTFOUND or getaddrinfo, such as an AWS CodeArtifact host, with one trailing dot or none, a long mixed label with a word part such as `my-domain`, short runs between word parts, a word then a number (`acme2024-111122223333`) and a dotless label such as `nexus3`; a dotless token operand, a hyphenated one and a token beside a kept host are still hidden, and so is a token used as a URL's host, as one of its labels (a UUID included, a long label cut by hyphens into short token parts, hex ones too, and a token behind or between word parts), glued on past a `)`, or as the resolver's operand, and a mixed run that turns back to letters or opens with digits or one letter, and a host split at `=`, `+` or `%2B` is hidden whole in a URL and after ENOTFOUND, while `localhost` stays. A path after an IPv6 zone id or after a six-digit number where a port goes is hidden, and a zone id longer than 15 characters once a leading `%25` is dropped, raw escapes undecoded and at any length with the host kept, is `%<hidden>` while an interface name or number is kept. Each secret word the credential rule names hides the value of a key that holds only that word, so dropping any one word from the rule fails its own case. Each dependency field and both forms of `workspaces` count as declaring a dependency, and an empty one does not. The argv includes every dependency type an .npmrc could omit. A mark after a secret word opens its clause as a space does; a word of three marks or fewer is kept; a value glued before a URL is hidden and the URL kept; a URL keeps its scheme only for a scheme npm reaches, and after any other `://` the userinfo and path are hidden; a period after a single letter, or before a lower-case word, ends no sentence while one before a capital or the text's end does; a scheme-less userinfo before a bracketed IPv6 host is hidden; each cause word stands in the message it cites, and `empty` and `refused` are no cause words. A generated grammar, each secret word and the `Authorization`, `Bearer` and `Basic` forms, by each joiner, by each context a value sits in (bare, glued after a URL by `,`, `;` or a port and `,`, as a URL's host, after `<hidden>` with a space or none, after a second value, after `and`, in quotes), by each stand-in value, shows no value but the leaks section 16 declares, each named with its reason, and each declared leak must still occur. A refused `dependency_audit` value is CONFIG.
 """
 
 import copy
 import datetime
+import itertools
 import json
 import re
 import subprocess
@@ -880,6 +881,90 @@ def test_a_scheme_npm_does_not_use_loses_its_userinfo_and_path(userinfo):
 def test_a_value_glued_to_a_scheme_npm_does_not_use_is_hidden_in_a_clause():
     text = "token %sgopher://registry.example.invalid/x" % _VALUE
     assert audit_dependencies._redacted(text) == "token <hidden>"
+
+
+# The generative leak test: every word that opens a value, every joiner
+# between it and what follows, and every context a value can sit in, with
+# each stand-in value. A hand-picked row shows only the shape its author
+# thought of; this grammar is how fix rounds 1 and 2 were broken. Each
+# context is a format over the value `{v}`.
+_LEAK_WORDS = tuple(audit_dependencies._SECRET_WORDS) + (
+    "Authorization",
+    "Authorization: Bearer",
+    "Authorization: Basic",
+    "Bearer",
+    "Basic",
+)
+_LEAK_JOINERS = (" ", ":", "=", ",", ";", "-", ".", "_", "")
+_SECOND_VALUE = "m4" + "pkrd"
+_LEAK_CONTEXTS = {
+    "bare": "{v}",
+    "url-comma": "https://r.example.invalid,{v}",
+    "url-semicolon": "https://r.example.invalid;{v}",
+    "url-port-comma": "https://r.example.invalid:8080,{v}",
+    "url-host": "https://{v}",
+    "url-host-slash": "https://{v}/",
+    "hidden-space": "<hidden> {v}",
+    "hidden-glued": "<hidden>{v}",
+    "second-value": _SECOND_VALUE + " {v}",
+    "and": "and {v}",
+    "double-quote": '"{v}"',
+    "single-quote": "'{v}'",
+}
+_LEAK_FRAMES = (
+    ("", ""),
+    ("npm error ", ""),
+    ("", " failed"),
+    ("npm error ", " failed"),
+)
+# The leaks section 16 and the CHANGELOG declare, each a predicate over
+# (word, joiner, context) and the reason it is left. Every one must still
+# leak somewhere, so a fix that closes it fails here until it is dropped.
+_KEY_NAME_JOINERS = ("-", ".", "_", "")
+_DECLARED_LEAKS = {
+    # _KEY reads letters, digits, `-`, `.` and `_` after a secret word as
+    # more of the key's name (`_authToken`, `password_file`,
+    # `npm_config_password`), so a value joined there is read as key, not
+    # as value. Hiding it would hide the key names a reader needs.
+    "joined-to-the-key": lambda word, joiner, context: (
+        joiner in _KEY_NAME_JOINERS and context == "bare" and ":" not in word
+    ),
+}
+
+
+def _leak_cases():
+    for word, joiner, context, value, (lead, tail) in itertools.product(
+        _LEAK_WORDS, _LEAK_JOINERS, _LEAK_CONTEXTS, (_VALUE, _WORD_VALUE), _LEAK_FRAMES
+    ):
+        said = _LEAK_CONTEXTS[context].format(v=value)
+        yield (word, joiner, context), value, lead + word + joiner + said + tail
+
+
+def test_no_grammar_case_shows_its_value_but_a_declared_leak():
+    cases = list(_leak_cases())
+    leaks = [
+        (key, line, shown)
+        for key, value, line in cases
+        if value in (shown := audit_dependencies._redacted(line))
+    ]
+    undeclared = [
+        (line, shown)
+        for key, line, shown in leaks
+        if not any(declared(*key) for declared in _DECLARED_LEAKS.values())
+    ]
+    stale = [
+        name
+        for name, declared in _DECLARED_LEAKS.items()
+        if not any(declared(*key) for key, _, _ in leaks)
+    ]
+    assert len(cases) == (
+        len(_LEAK_WORDS) * len(_LEAK_JOINERS) * len(_LEAK_CONTEXTS) * 2 * 4
+    )
+    assert not undeclared, "%d undeclared leaks, first: %r" % (
+        len(undeclared),
+        undeclared[:10],
+    )
+    assert not stale, "declared leaks that no case shows any more: %r" % stale
 
 
 # A scheme-less userinfo before a bracketed IPv6 host is hidden as in a URL,
