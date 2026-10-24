@@ -1166,7 +1166,11 @@ each rule rewrites only its own span, so the cause (`ENOTFOUND`, `E401`,
 - **An `Authorization`, `Bearer` or `Basic` scheme** keeps its name and its
   `realm="..."` and loses its value. `Bearer` and `Basic` are then keys as a
   secret word is, so the words after the hidden value are judged by the next
-  rule: `Bearer <value> <value>` shows neither.
+  rule: `Bearer <value> <value>` shows neither. A `realm=` parameter right
+  after `Bearer` or `Basic`, quoted or not and up to 256 characters, is kept
+  as written, so npm-registry-fetch's `Unable to authenticate, need: Basic
+  realm="Sonatype Nexus Repository Manager"` reads in full, and the words
+  after it are judged.
 - **A secret word** (`auth`, `token`, `password`, `passwd`, `secret`, `key`,
   `credential` or `cookie`, in any case, inside a longer key too) hides the
   value after it, by how the value is stated. After `=` or `:`, up to two
@@ -1223,6 +1227,8 @@ each rule rewrites only its own span, so the cause (`ENOTFOUND`, `E401`,
     secret word reads less well until its word is added.
   - A password that is a vocabulary word is shown.
   - A secret of three marks or fewer is shown.
+  - A value written as the `realm=` parameter right after `Bearer` or
+    `Basic` is shown, as the registry's realm is.
   - A value written as a URL's named host after a secret word
     (`password https://<value>.example`) is shown, and a single-label
     registry host after one (`token for http://localhost:4873/`) is hidden.

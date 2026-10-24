@@ -667,7 +667,9 @@ version rather than a bare commit:
   next `name=`, so cause text after it on that line goes too; a `<hidden>`
   another rule wrote, or a scheme name, at the value's start is kept and the
   rest is still hidden. `Bearer` and `Basic` are keys as a secret word is, so
-  the words after the value the scheme rule hid are judged too. In prose the
+  the words after the value the scheme rule hid are judged too, and a
+  `realm=` right after either is kept as written, so npm's `Unable to
+  authenticate, need: Basic realm="..."` keeps the registry's realm. In prose the
   clause after the secret word opens after a space or any mark (`password,`,
   `password's`, `[token]:`, `password/`) and goes on past a `<hidden>`
   another rule wrote, and each of its words is hidden
@@ -683,7 +685,7 @@ version rather than a bare commit:
   period after a single letter (`e.g.`). The costs: a password that is a
   vocabulary word, a capitalised value after a real sentence end, a secret of
   three marks or fewer, a value written as a URL's named host after a secret
-  word, and a value joined to the secret word by `-`, `.` or `_`, which reads
+  word or as the realm after `Bearer` or `Basic`, and a value joined to the secret word by `-`, `.` or `_`, which reads
   as part of the key's name, are shown; a cause word the vocabulary lacks is
   hidden, a single-label host such as `localhost` after a secret word is
   hidden, and a secret word inside a longer word (`monkey`, `Unauthorized`)
