@@ -863,6 +863,30 @@ def test_a_url_opens_with_a_scheme_npm_uses(scheme):
     )
 
 
+# The scheme lists the docs print, each the backticked words between an
+# opening phrase and a closing one: section 16 and the CHANGELOG fe-audit
+# row must name exactly _NPM_SCHEMES, so a scheme dropped from the code, or
+# from a doc, fails here.
+_SCHEME_LISTS = {
+    "docs/guides/deterministic-checks.md": (
+        "A URL's scheme is one\n  npm reaches:",
+        "listed in `_NPM_SCHEMES`",
+    ),
+    "CHANGELOG.md": ("only when npm reaches that scheme (", ")"),
+}
+
+
+@pytest.mark.parametrize("doc", sorted(_SCHEME_LISTS))
+def test_the_docs_list_the_schemes_the_code_keeps(doc):
+    opening, closing = _SCHEME_LISTS[doc]
+    text = (_ROOT / doc).read_text(encoding="utf-8")
+    assert text.count(opening) == 1, "%s: %r is not there once" % (doc, opening)
+    start = text.index(opening) + len(opening)
+    listed = text[start : text.index(closing, start)]
+    named = re.findall(r"`([a-z0-9+]+)`", listed)
+    assert sorted(named) == sorted(audit_dependencies._NPM_SCHEMES), (doc, named)
+
+
 # Bounding the scheme must show no userinfo or path: after any other `://`
 # both are lost as in a URL npm reaches.
 @pytest.mark.parametrize(

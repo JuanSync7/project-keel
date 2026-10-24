@@ -660,8 +660,9 @@ version rather than a bare commit:
   lockfile audits. A failed run shows npm's own cause with every URL path
   hidden, a scheme-less host's path included, and every userinfo up to its
   last `@` hidden, a bare `user@` before a host or a bracketed IPv6 host
-  included. A URL keeps its scheme only when npm reaches that scheme (http,
-  https, the socks forms, git and its `git+` forms, ssh and file); after any
+  included. A URL keeps its scheme only when npm reaches that scheme (`http`,
+  `https`, `socks`, `socks4`, `socks4a`, `socks5`, `socks5h`, `git`,
+  `git+http`, `git+https`, `git+ssh`, `git+file`, `ssh` and `file`); after any
   other `://` the userinfo and path are hidden as well. A secret word's value
   is hidden after `=` or `:` whatever it is, to the end of the line or the
   next `name=`, so cause text after it on that line goes too; a `<hidden>`
