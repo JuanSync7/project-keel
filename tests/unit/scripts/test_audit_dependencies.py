@@ -2,7 +2,7 @@
 title: Unit — audit_dependencies (npm audit findings judged against the accepted risks in config)
 kind: tests
 layer: n/a
-summary: scripts/audit_dependencies.py driven in process over saved `npm audit --json` reports shaped like a real one, in a project root the test builds from keel's own config/project.json with its own `dependency_audit` block, on a day the test hands in, so no test runs npm or reaches the network. Each failure kind fails on its own and names what failed: a finding at or above `fail_at` no row covers, a covered finding whose row names another package, a row past its review_by day, a row dated more than `max_review_days` after today (exactly that many passes, one more fails), a row whose advisory the report no longer holds, and a row naming an app not audited. A covered finding passes on its review_by day and is listed with its reason; a finding below `fail_at` is listed and does not fail, and lowering `fail_at` fails it. A report with no findings still judges every row. No app and no row exits 0 saying so. A report that is not version 2, one with an unknown severity, a via url with no advisory id, a via item that is neither an advisory nor an entry's name, counts that disagree with its entries, or no audited dependency while package.json declares one is USAGE from a saved file and BACKEND_ABSENT from a run; so is a run's output that is not JSON, and npm exiting 1 with no finding. An app with no package.json, an unreadable one or no package-lock.json, a `--report` name that is not an audited app and a bad flag are USAGE; npm that cannot start, overruns its timeout, exits 2, is killed by a signal or answers an error object is BACKEND_ABSENT, showing the error's message or summary, or npm's last stderr line and no other, and `<hidden>` for a line naming a registry token. The argv includes every dependency type an .npmrc could omit. A refused `dependency_audit` value is CONFIG.
+summary: scripts/audit_dependencies.py driven in process over saved `npm audit --json` reports shaped like a real one, in a project root the test builds from keel's own config/project.json with its own `dependency_audit` block, on a day the test hands in, so no test runs npm or reaches the network. Each failure kind fails on its own and names what failed: a finding at or above `fail_at` no row covers, a covered finding whose row names another package, a row past its review_by day, a row dated more than `max_review_days` after today (exactly that many passes, one more fails), a row whose advisory the report no longer holds, and a row naming an app not audited. A covered finding passes on its review_by day and is listed with its reason; a finding below `fail_at` is listed and does not fail, and lowering `fail_at` fails it. A report with no findings still judges every row. No app and no row exits 0 saying so. A report that is not version 2, one with an unknown severity, a via url with no advisory id, a via item that is neither an advisory nor an entry's name, counts that disagree with its entries, or no audited dependency while package.json declares one is USAGE from a saved file and BACKEND_ABSENT from a run; so is a run's output that is not JSON, and npm exiting 1 with no finding. An app with no package.json, an unreadable one or no package-lock.json, a `--report` name that is not an audited app and a bad flag are USAGE; npm that cannot start, overruns its timeout, exits 2, is killed by a signal or answers an error object is BACKEND_ABSENT, showing the error's message or summary, else the top-level message npm 11 writes for an unreachable registry (its real shape, with a placeholder host), else npm's last stderr line other than its log pointer and no other, and `<hidden>` for a line holding any of the credential shapes, each tested with its secret absent from the output. Each dependency field and both forms of `workspaces` count as declaring a dependency, and an empty one does not. The argv includes every dependency type an .npmrc could omit. A refused `dependency_audit` value is CONFIG.
 """
 
 import copy
@@ -438,9 +438,71 @@ def test_npm_diagnostic_is_shown(project, capsys, status, out, stderr, shown):
     assert "npm warn one" not in err
 
 
+# What npm 11.12.1 writes when the registry cannot be reached, its host made a
+# placeholder: the cause is a top-level `message`, and `error` is blank.
+_UNREACHABLE_OUT = json.dumps(
+    {
+        "message": "request to http://registry.example.invalid/-/npm/v1/security/"
+        "advisories/bulk failed, reason: getaddrinfo ENOTFOUND "
+        "registry.example.invalid",
+        "error": {"summary": "", "detail": ""},
+    },
+    indent=2,
+)
+_UNREACHABLE_ERR = (
+    b"npm warn audit request to http://registry.example.invalid/-/npm/v1/security/"
+    b"advisories/bulk failed, reason: getaddrinfo ENOTFOUND registry.example.invalid\n"
+    b"npm error audit endpoint returned an error\n"
+    b"npm error A complete log of this run can be found in: "
+    b"/home/someone/.npm/_logs/2026-10-24T00_50_26_999Z-debug-0.log\n"
+)
+
+
+def test_an_unreachable_registry_shows_npm_top_level_message(project, capsys):
+    app = project.app("astro")
+    run = lambda *_: (1, _UNREACHABLE_OUT, _UNREACHABLE_ERR)  # noqa: E731
+    assert project.main([app], run_audit=run) is ExitCode.BACKEND_ABSENT
+    err = capsys.readouterr().err
+    assert "getaddrinfo ENOTFOUND registry.example.invalid" in err
+    assert "no message" not in err
+
+
+def test_a_blank_error_falls_back_to_the_last_stderr_line(project, capsys):
+    app = project.app("astro")
+    out = json.dumps({"error": {"summary": "", "detail": ""}})
+    run = lambda *_: (1, out, _UNREACHABLE_ERR)  # noqa: E731
+    assert project.main([app], run_audit=run) is ExitCode.BACKEND_ABSENT
+    err = capsys.readouterr().err
+    assert "npm error audit endpoint returned an error" in err
+    assert "no message" not in err
+
+
+@pytest.mark.parametrize(
+    "stderr",
+    [
+        _UNREACHABLE_ERR,
+        b"npm error the cause\nnpm error A complete log of this run can be found "
+        b"in:\nnpm error     /home/someone/.npm/_logs/x-debug-0.log\n",
+    ],
+)
+def test_the_last_stderr_line_skips_npm_log_path(project, capsys, stderr):
+    app = project.app("astro")
+    run = lambda *_: (2, "{}", stderr)  # noqa: E731
+    assert project.main([app], run_audit=run) is ExitCode.BACKEND_ABSENT
+    err = capsys.readouterr().err
+    assert "A complete log" not in err
+    assert "_logs" not in err
+    assert ("endpoint returned an error" in err) or ("the cause" in err)
+
+
 @pytest.mark.parametrize(
     "out, stderr",
     [
+        ("{}", b"npm error //registry.example.invalid/:_password=s3cr3t\n"),
+        ("{}", b"npm error _auth=s3cr3t\n"),
+        ("{}", b"npm error Authorization: Bearer s3cr3t\n"),
+        ("{}", b"npm error token npm_" + b"s3cr3t" + b"A" * 30 + b" refused\n"),
+        ("{}", b"npm error GET https://someone:s3cr3t@registry.example.invalid/x\n"),
         ("{}", b"npm error //registry.example.invalid/:_authToken=s3cr3t\n"),
         ("{}", b"npm error //registry.example.invalid/:_auth=s3cr3t\n"),
         (json.dumps({"error": {"summary": "bad _authToken s3cr3t"}}), b""),
@@ -461,16 +523,24 @@ _DECLARED = {"dependencies": {"zod": "^3.0.0"}}
 
 
 @pytest.mark.parametrize(
-    "field", ["dependencies", "devDependencies", "optionalDependencies"]
+    "declared",
+    [
+        {"dependencies": {"zod": "^3.0.0"}},
+        {"devDependencies": {"zod": "^3.0.0"}},
+        {"optionalDependencies": {"zod": "^3.0.0"}},
+        {"peerDependencies": {"zod": "^3.0.0"}},
+        {"workspaces": ["packages/*"]},
+        {"workspaces": {"packages": ["packages/*"]}},
+    ],
 )
 @pytest.mark.parametrize("total", [0, None])
-def test_a_saved_report_auditing_no_dependency_is_usage(project, capsys, field, total):
+def test_a_saved_report_auditing_no_dependency_is_usage(
+    project, capsys, declared, total
+):
     doc = _audit(dependencies=total)
     if total is None:
         del doc["metadata"]["dependencies"]
-    code, _, err = _judged(
-        project, capsys, doc, {}, manifest={field: {"zod": "^3.0.0"}}
-    )
+    code, _, err = _judged(project, capsys, doc, {}, manifest=declared)
     assert code is ExitCode.USAGE, err
     assert "astro" in err
     assert "metadata.dependencies.total" in err
@@ -484,6 +554,19 @@ def test_a_live_run_auditing_no_dependency_is_backend_absent(project, capsys):
     err = capsys.readouterr().err
     assert code is ExitCode.BACKEND_ABSENT, err
     assert "metadata.dependencies.total" in err
+
+
+@pytest.mark.parametrize(
+    "declared",
+    [{"workspaces": []}, {"workspaces": {"packages": []}}, {"dependencies": {}}],
+)
+def test_an_empty_declaration_with_no_audited_dependency_passes(
+    project, capsys, declared
+):
+    doc = _audit(dependencies=0)
+    code, out, err = _judged(project, capsys, doc, {}, manifest=declared)
+    assert code is ExitCode.SUCCESS, err
+    assert "1 app(s) judged" in out
 
 
 def test_a_report_auditing_dependencies_the_manifest_declares_passes(project, capsys):
