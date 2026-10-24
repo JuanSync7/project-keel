@@ -658,19 +658,26 @@ version rather than a bare commit:
   dependency while `package.json` declares one (a workspaces root's
   `workspaces` included, a peer marked optional not), which is how an empty
   lockfile audits. A failed run shows npm's own cause with every URL path,
-  userinfo and credential value hidden. The registry's host is kept when it
-  is a DNS name or a bracketed IPv6 address with its zone id; any other host
-  that mixes letters and digits, such as a token passed as the registry or as
-  one of its labels, is hidden whole. A label is kept when it is under 20
-  characters, or when it has a word part and no part that is itself a token:
-  an AWS CodeArtifact host such as `my-domain-111122223333.d.codeartifact...`
-  is kept through `my` and `domain`, and one whose 20-or-more-character label
-  has no word part, such as `acme2024-111122223333.d.codeartifact...`, is
-  hidden whole. The line is cut to
+  a scheme-less host's path included, every userinfo up to its last `@` and
+  every credential value hidden. A secret word's value is hidden after `=`
+  or `:` whatever it is, an unquoted one over its spaces, and after prose
+  (`the password was X`) unless it is a plain word that names the cause
+  (`password required`). The registry's host is kept when it is a DNS name,
+  a single valid label such as `nexus3`, or a bracketed IPv6 address whose
+  zone id is no longer than an interface name; any other host that mixes
+  letters and digits, such as a token passed as the registry or as one of
+  its labels, is hidden whole. A label is kept unless the parts between its
+  word parts form a run of 20 or more mixed characters, so a token behind a
+  word prefix is hidden; a run that is one word and then a number is a
+  name's shape and is kept, so both
+  `my-domain-111122223333.d.codeartifact...` and
+  `acme2024-111122223333.d.codeartifact...` stay readable. The line is cut to
   `dependency_audit.max_shown_chars` (500) characters so a registry's long
   body can neither flood the line nor stall the redaction, and a quoted
-  value the cut splits is hidden whole. The run says to check `.npmrc`
-  credentials when the registry refused the login. It runs npm with every
+  value the cut splits is hidden whole. The run says to check the registry
+  URL when npm reports `Invalid URL`, the `.npmrc` credentials when the
+  registry refused the login, and reachability when it could not be reached.
+  It runs npm with every
   dependency type included, so an
   `.npmrc` `omit=` cannot narrow it, and writes nothing in the tree; npm
   writes its own per-user log and cache. It is not a `make verify` goal, because the

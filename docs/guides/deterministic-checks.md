@@ -1145,42 +1145,82 @@ fixes where it starts or it is the whole pattern;
 times over. The line is redacted by structure, not by
 a list of token shapes, because a list leaks every shape it does not name;
 each rule rewrites only its own span, so the cause (`ENOTFOUND`, `E401`,
-`Unable to authenticate`) stays readable. A URL keeps its scheme, host and port,
-a bracketed IPv6 host with its zone id included, and loses its userinfo; a
-port is at most five digits, and whatever follows the host and port, a
-longer number included, becomes `<path hidden>` unless it opens with a comma
-or semicolon, which end the URL; the path runs up to a space, quote, `<` or
-`>`, so a path, a query or a token glued on past a `)` goes with
-it, since npm masks only a userinfo password and a registry token can sit in
-the userinfo or the path. An `Authorization`, `Bearer` or `Basic` scheme keeps its
-name and its `realm="..."` and loses its value. A key holding `auth`, `token`,
-`password`, `passwd`, `secret`, `key`, `credential` or `cookie`, in any case,
-loses the value after its `=`, `:` or whitespace; a quoted value with no
-closing quote, which is what the cut leaves when it lands inside one, is
-hidden from its quote to the end of the line, so no word of a multi-word
-secret is shown. A scheme-less `user:pass@`
-loses `user:pass`. Last, any remaining run of 20 or more token characters that
-mixes letters and digits is `<hidden>`: that catches a bare token of any
-shape, and it also hides an integrity hash or a timestamped log name, a cost
-the script takes to fail closed. A URL's scheme, which is at most 16
-characters, and its port stay. A host is judged as one run: a URL's host
-with any `+`, `=` or `%`-escape in it, and the operand after `ENOTFOUND` or
-`getaddrinfo` up to a space, quote, comma, semicolon, `<` or `>`, since a token split
-at a symbol has pieces too short for this rule. The host stays whole only
-when it is a bracketed address or a DNS name: two or more dot-separated
-labels of letters, digits and hyphens, with at most one trailing dot, where
-no label is a UUID (npm's legacy token shape), no part of a label between its
-hyphens is itself a run this rule hides, and a label this rule would hide
-whole has a part that is a word: two or more letters, one outside a to f, so
-a fragment of a hex token is no word. Any other host that mixes letters and digits is `<hidden>` whole;
-one that mixes in no digit, such as `localhost`, stays. So an AWS
-CodeArtifact host such as `my-domain-111122223333.d.codeartifact.invalid`
-stays readable through its word parts `my` and `domain`, while a token used
-as the host, as one of its labels (cut into short parts by hyphens or not) or
-as the operand, split at a symbol or not, is `<hidden>` with the whole host. The next step
-follows the cause: a 401 or 403 status, `E401`, `E403` or "authenticate" says
-to check the registry credentials in `.npmrc` (values not shown); `ENOTFOUND`,
-`ECONNREFUSED` or `ETIMEDOUT` says to check the registry is reachable.
+`Unable to authenticate`) stays readable.
+
+- **A URL** keeps its scheme, host and port, a bracketed IPv6 host included,
+  and loses its userinfo: everything before the authority's last `@`, so a
+  raw `@` in a password shows no part of it. A port is at most five digits,
+  and whatever follows the host and port, a longer number included, becomes
+  `<path hidden>` unless it opens with a comma or semicolon, which end the
+  URL. The path runs up to a space, quote, `<` or `>`, so a query or a token
+  glued on past a `)` goes with it: npm masks only a userinfo password, and a
+  registry token can sit in the userinfo or the path.
+- **An `Authorization`, `Bearer` or `Basic` scheme** keeps its name and its
+  `realm="..."` and loses its value.
+- **A secret word** (`auth`, `token`, `password`, `passwd`, `secret`, `key`,
+  `credential` or `cookie`, in any case, inside a longer key too) hides the
+  value after it, by how the value is stated. After `=` or `:` the value is
+  an assignment and is hidden whatever it is; an unquoted one runs on over
+  its spaces, because a passphrase has spaces, up to a comma, semicolon,
+  quote, the next `name=` or `name:`, a word opening with `<` or the end of
+  the line. After whitespace or up to two linking words (`is`, `was`, `are`,
+  `were`, `be`, `been`, `now`, `set`, `to`, `equals`) the secret word is
+  prose and one value is read: a plain word there (letters, lower case after
+  the first, one closing `.`, `!` or `?` at most) is the cause, as in
+  `password required` or `the token is invalid`, and is kept; any other
+  value, `hunter2` or `FAKEval` or a quoted one, is hidden. A quoted value
+  with no closing quote, which is what the cut leaves when it lands inside
+  one, is hidden from its quote to the end of the line. The costs: an
+  all-lower-case, letters-only password written in prose is shown, and after
+  an assignment any cause words that follow the value with no comma or key
+  between are hidden with it; the next step is still chosen from the raw
+  text.
+- **A scheme-less `user:pass@`** loses everything before its last `@`.
+- **A host with no scheme**, as a `.npmrc` key or a fetch line writes one,
+  loses its path as a URL does. It is a dotted name whose last label is
+  letters, an IPv4 address or any name with a port, at the start of a word or
+  after `//` or a userinfo's `@`. A file path whose first part has no dot,
+  such as `src/frontend/astro/package-lock.json`, and a host with nothing
+  after its `/` are kept.
+- **Last, any remaining run of 20 or more token characters** that mixes
+  letters and digits is `<hidden>`: that catches a bare token of any shape,
+  and it also hides an integrity hash or a timestamped log name, a cost the
+  script takes to fail closed. A URL's scheme, which is at most 16
+  characters, and its port stay.
+
+A host is judged as one run where one sits: a URL's host with any `+`, `=` or
+`%`-escape in it, the host a scheme-less path was hidden after, and the
+operand after `ENOTFOUND` or `getaddrinfo` up to a space, quote, comma,
+semicolon, `<` or `>`, since a token split at a symbol has pieces too short
+for the last rule. The host stays whole when it is a DNS name, two or more
+dot-separated labels with at most one trailing dot, or one label, where every
+label is letters, digits and hyphens, is no UUID (npm's legacy token shape),
+and holds no run this rule would hide among the parts between its word
+parts. A word part is two or more letters, one outside a to f, so a fragment
+of a hex token is no word; the parts between word parts are joined again by
+their hyphens and judged as one run, so a word excuses only itself and a
+token behind a word prefix, such as a vendor's token prefix and then random
+characters cut by hyphens, is `<hidden>` with the whole host. One run shape
+is a name's and stays: one word and then digits and hyphens only, which turns
+from letters to digits once, where a random token's characters turn many
+times. So `my-domain-111122223333.d.codeartifact.invalid` stays through its
+word parts, `acme2024-111122223333.d.codeartifact.invalid` and a dotless
+`nexus3` or `artifactory2` stay as a word and then a number, and a mixed run
+that turns back to letters, opens with digits or opens with one letter is
+`<hidden>`. The cost of that line: a secret that is a word and then a long
+number is shown when it stands as a host; in prose the last rule still hides
+it. A bracketed address stays, but a zone id longer than 15 characters once
+its `%25` escape is decoded, which no Linux interface name can be, is
+`%<hidden>`; `%eth0` stays. Any other host that mixes letters and digits is
+`<hidden>` whole; one that mixes in no digit, such as `localhost`, stays.
+
+The next step follows the cause: npm's `ERR_INVALID_URL` or `Invalid URL`,
+which it writes before any request when the registry setting is no URL, says
+to check the registry URL in `.npmrc` or npm config is a full `http://` or
+`https://` URL; else a 401 or 403 status, `E401`, `E403` or "authenticate"
+says to check the registry credentials in `.npmrc` (values not shown); else
+`ENOTFOUND`, `ECONNREFUSED` or `ETIMEDOUT` says to check the registry is
+reachable.
 npm runs with `--include=dev --include=optional --include=peer`, which npm
 lets win over a user or project `.npmrc` `omit=`; an `.npmrc` can still change
 the registry it asks, and the audit trusts that registry's answer. It writes
