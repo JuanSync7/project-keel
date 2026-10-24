@@ -497,7 +497,16 @@ def test_each_question_is_held_to_the_tool_limits_its_root_configures(
     """main hands its root's tool limits to the navigator's retrieval: a
     64-byte cap ends the corpus query, whose hit this checkout's shipped cap
     allows, before any model call."""
-    root = _tool_block(tmp_path, {"max_model_calls": 1, "tool_max_output_bytes": 64})
+    # A session total of 1, so the question reaches retrieval at all: the
+    # default of 0 refuses it before the tool limit could be what stops it.
+    root = _tool_block(
+        tmp_path,
+        {
+            "max_model_calls": 1,
+            "max_session_model_calls": 1,
+            "tool_max_output_bytes": 64,
+        },
+    )
     monkeypatch.setitem(registry._REGISTRY, "fake", _Counted)
     monkeypatch.setattr(_Counted, "prompts", [])
     monkeypatch.setenv("KEEL_MCP_MODEL", "fake")
