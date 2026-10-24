@@ -659,7 +659,7 @@ version rather than a bare commit:
   `workspaces` included, a peer marked optional not), which is how an empty
   lockfile audits. A failed run shows npm's own cause with every URL path,
   userinfo and credential value hidden and the registry's host kept, an
-  AWS CodeArtifact or bracketed IPv6 host included, while a token passed as
+  AWS CodeArtifact or bracketed IPv6 host, zone id and all, included, while a token passed as
   the host or as one of its labels is hidden, cut to
   `dependency_audit.max_shown_chars` (500) characters so a registry's long
   body can neither flood the line nor stall the redaction, and says to check

@@ -1146,8 +1146,9 @@ times over. The line is redacted by structure, not by
 a list of token shapes, because a list leaks every shape it does not name;
 each rule rewrites only its own span, so the cause (`ENOTFOUND`, `E401`,
 `Unable to authenticate`) stays readable. A URL keeps its scheme, host and port,
-a bracketed IPv6 host included, and loses its userinfo; whatever follows the
-host and port up to a space, quote, comma or semicolon becomes
+a bracketed IPv6 host with its zone id included, and loses its userinfo; a
+port is at most five digits, and whatever follows the host and port up to a
+space, quote, comma or semicolon, a longer number included, becomes
 `<path hidden>`, so a path, a query or a token glued on past a `)` goes with
 it, since npm masks only a userinfo password and a registry token can sit in
 the userinfo or the path. An `Authorization`, `Bearer` or `Basic` scheme keeps its
