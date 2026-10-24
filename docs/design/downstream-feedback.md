@@ -3341,7 +3341,7 @@ so.
 | 14 | A duplicate key in `config/project.json` is not refused | defect | medium | refused by `scripts/config_loader.py` `read` since CMP-5.S5; `scripts/check_structure.py`, still a direct reader, accepts one |
 | 15 | An `rm` migration in `copier.yml` deletes after the keep-edited guard runs | defect | medium | `copier.yml` `_migrations` |
 | 16 | The optional surfaces (wiki, evals, containers) have no copier question, and a deleted one returns on update | feature | medium | `copier.yml` questions |
-| 17 | `react-vite` ships no lockfile | defect | medium | only astro has `package-lock.json` |
+| 17 | `react-vite` ships no lockfile | defect | medium | closed: `src/frontend/react-vite` and `src/frontend/astro` each commit `package-lock.json`, so `make fe-audit` audits both apps the Makefile's `FE_APPS` lists |
 | 18 | `docs/specs/example-feature.md` arrives on update and turns `make trace` red | defect | medium | unchanged |
 | 19 | `api/grpc/Makefile` is outside the effect-label walk | missing-check | medium | its `gen` target has no label |
 | 20 | The `PY` gate variable names a program | defect | medium | `make_targets.gate_vars` |
