@@ -155,9 +155,16 @@ _KEY_VALUE = re.compile(
     r"((?:%s)[\w.\-]{0,64}[\"']?)" % "|".join(_SECRET_WORDS)
     + _KEY_SEPARATOR
     + r"(?!<hidden>|(?:Bearer|Basic)\b)"
-    + _VALUE,
+    + "(%s)" % _VALUE,
     re.IGNORECASE,
 )
+# The separators that state a value: after one, a value is hidden whatever it
+# is. After whitespace or a linking word alone the secret word is prose, and a
+# plain word there, letters only and lower case after the first, with one
+# closing mark at most, is the cause (`password required`, `token is invalid`)
+# and is kept; any other value, a quoted one included, is hidden.
+_ASSIGNING = frozenset("=:")
+_PLAIN_WORD = re.compile(r"[A-Za-z][a-z]{1,63}[.!?]?")
 # As in a URL, the password runs to the last `@` before a space or `/`.
 _BARE_USERINFO = re.compile(r"(?<![\w/])[\w.\-]{1,64}:[^\s/]{1,256}@(?=[\w\-])")
 # The places a host sits, which (d) judges by _host_shown rather than by the
@@ -352,6 +359,13 @@ def _scheme_shown(match):
     )
 
 
+def _key_value_shown(match):
+    key, separator, value = match.groups()
+    if not _ASSIGNING & set(separator) and _PLAIN_WORD.fullmatch(value):
+        return match.group(0)
+    return key + separator + _HIDDEN
+
+
 def _is_token(run):
     """Whether *run* is one (d) hides: 20 or more token characters mixing
     letters and digits."""
@@ -424,7 +438,7 @@ def _redacted(line):
     rules above and the rest of it kept."""
     line = _URL.sub(_url_shown, line)
     line = _SCHEME_VALUE.sub(_scheme_shown, line)
-    line = _KEY_VALUE.sub(lambda m: m.group(1) + m.group(2) + _HIDDEN, line)
+    line = _KEY_VALUE.sub(_key_value_shown, line)
     line = _BARE_USERINFO.sub(_HIDDEN + "@", line)
     return _TOKEN_RUN.sub(_token_shown, line)
 

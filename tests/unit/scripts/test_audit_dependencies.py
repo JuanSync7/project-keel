@@ -771,6 +771,45 @@ def test_a_raw_at_in_userinfo_hides_up_to_the_last_at(text, shown):
     assert audit_dependencies._redacted(text) == shown
 
 
+# After whitespace or a linking word alone, a secret word is prose: a plain
+# word there (letters only, lower case after the first) is the cause, not a
+# value, and is kept. A quote before the secret word opens no value.
+@pytest.mark.parametrize(
+    "text",
+    [
+        'npm error "token expired',
+        "npm error password required",
+        "npm error Password Required.",
+        "npm error the token is invalid",
+        "npm error the token has expired, log in again",
+        "npm error the keyboard is broken",
+    ],
+    ids=["open-quote", "required", "capitalised", "is-invalid", "has", "keyboard"],
+)
+def test_a_plain_word_after_a_secret_word_is_kept(text):
+    assert audit_dependencies._redacted(text) == text
+
+
+# The same places still hide a value: after `=` or `:` whatever it is, since
+# an assignment states one, and after prose any value that is no plain word
+# or that is quoted.
+@pytest.mark.parametrize(
+    "text, shown",
+    [
+        ("npm error token: expired", "npm error token: <hidden>"),
+        ("npm error password=required", "npm error password=<hidden>"),
+        ("npm error password hunter2", "npm error password <hidden>"),
+        ("npm error password is FAKEval", "npm error password is <hidden>"),
+        ('npm error password "hunter"', "npm error password <hidden>"),
+        ('npm error password "correct horse', "npm error password <hidden>"),
+        ("npm error password Hunter-two", "npm error password <hidden>"),
+    ],
+    ids=["colon", "equals", "digit", "mixed-case", "quoted", "open-quote", "hyphen"],
+)
+def test_a_value_that_is_no_plain_word_is_still_hidden(text, shown):
+    assert audit_dependencies._redacted(text) == shown
+
+
 # An AWS CodeArtifact registry's host: its first label mixes letters and
 # digits over 20 characters, the shape rule (d) hides elsewhere.
 _ARTIFACT_HOST = "my-domain-111122223333.d.codeartifact.invalid"
@@ -1018,7 +1057,7 @@ _TIMED_REDACTION = (
     [
         ("a", 16000, True),
         ("token", 2000, True),
-        ("token was ", 1600, False),
+        ("token was x1 ", 1600, False),
         ("https://a@", 1600, False),
         ("a:", 8000, True),
     ],
