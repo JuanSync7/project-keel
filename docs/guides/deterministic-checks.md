@@ -1147,9 +1147,10 @@ a list of token shapes, because a list leaks every shape it does not name;
 each rule rewrites only its own span, so the cause (`ENOTFOUND`, `E401`,
 `Unable to authenticate`) stays readable. A URL keeps its scheme, host and port,
 a bracketed IPv6 host with its zone id included, and loses its userinfo; a
-port is at most five digits, and whatever follows the host and port up to a
-space, quote, comma or semicolon, a longer number included, becomes
-`<path hidden>`, so a path, a query or a token glued on past a `)` goes with
+port is at most five digits, and whatever follows the host and port, a
+longer number included, becomes `<path hidden>` unless it opens with a comma
+or semicolon, which end the URL; the path runs up to a space, quote, `<` or
+`>`, so a path, a query or a token glued on past a `)` goes with
 it, since npm masks only a userinfo password and a registry token can sit in
 the userinfo or the path. An `Authorization`, `Bearer` or `Basic` scheme keeps its
 name and its `realm="..."` and loses its value. A key holding `auth`, `token`,
@@ -1164,7 +1165,7 @@ shape, and it also hides an integrity hash or a timestamped log name, a cost
 the script takes to fail closed. A URL's scheme, which is at most 16
 characters, and its port stay. A host is judged as one run: a URL's host
 with any `+`, `=` or `%`-escape in it, and the operand after `ENOTFOUND` or
-`getaddrinfo` up to a space, quote, comma or semicolon, since a token split
+`getaddrinfo` up to a space, quote, comma, semicolon, `<` or `>`, since a token split
 at a symbol has pieces too short for this rule. The host stays whole only
 when it is a bracketed address or a DNS name: two or more dot-separated
 labels of letters, digits and hyphens, with at most one trailing dot, where
