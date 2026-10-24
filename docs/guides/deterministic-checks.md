@@ -1162,12 +1162,17 @@ each rule rewrites only its own span, so the cause (`ENOTFOUND`, `E401`,
   no part of it. After any other `://` the userinfo and path are hidden the
   same way and the name before it stays.
 - **An `Authorization`, `Bearer` or `Basic` scheme** keeps its name and its
-  `realm="..."` and loses its value.
+  `realm="..."` and loses its value. `Bearer` and `Basic` are then keys as a
+  secret word is, so the words after the hidden value are judged by the next
+  rule: `Bearer <value> <value>` shows neither.
 - **A secret word** (`auth`, `token`, `password`, `passwd`, `secret`, `key`,
   `credential` or `cookie`, in any case, inside a longer key too) hides the
   value after it, by how the value is stated. After `=` or `:`, up to two
   linking words before it allowed, the value is an assignment and is hidden
-  whatever it is: it runs to the end of the line or to the next `name=` after
+  whatever it is: a value another rule already hid, or a scheme name with
+  its `realm=` parameter, is kept, and the rest of the value is still hidden
+  (`auth=<hidden> <value>` reads `auth=<hidden>`). It runs to the end of the
+  line or to the next `name=` after
   a space, through any quote, comma, `;` or `name:` inside it, because a
   passphrase has spaces and any of those can sit in one; a `name=` after `; `
   or `, ` is a cookie's next pair and is hidden with it, and a quoted value is
@@ -1204,8 +1209,10 @@ each rule rewrites only its own span, so the cause (`ENOTFOUND`, `E401`,
   Every other word is hidden, a run of them as one `<hidden>`, so
   `the password was set to <value>` and `the password for bob is <value>`
   show neither name nor value. A quoted word is a value whatever it says and
-  is hidden to its closing quote, and another secret word starts its own
-  clause. The clause judges at most `CLAUSE_WORDS` (16) words one at a time,
+  is hidden to its closing quote, and another secret word, `Bearer` or
+  `Basic` starts its own clause. A `<hidden>` another rule wrote is kept and
+  the clause goes on after it, so `password <hidden> and <value>` shows no
+  value. The clause judges at most `CLAUSE_WORDS` (16) words one at a time,
   three more than npm's longest such clause, and hides the rest of a longer
   sentence whole. A quoted value with no closing quote, which is what the cut
   leaves when it lands inside one, is hidden from its quote to the end of the
@@ -1221,7 +1228,7 @@ each rule rewrites only its own span, so the cause (`ENOTFOUND`, `E401`,
     the next sentence and is shown.
   - A value joined to the secret word by `-`, `.` or `_` (`password-<value>`)
     reads as part of the key's name and is shown.
-  - A secret word inside a longer word (`monkey`, `Unauthorized`) opens a
+  - A secret word inside a longer word (`monkey`, `Unauthorized`, `Basically`) opens a
     clause, so the words after it are hidden unless the vocabulary holds them.
   - Cause text after an assignment on the same line is hidden with its value.
 

@@ -664,9 +664,13 @@ version rather than a bare commit:
   https, the socks forms, git and its `git+` forms, ssh and file); after any
   other `://` the userinfo and path are hidden as well. A secret word's value
   is hidden after `=` or `:` whatever it is, to the end of the line or the
-  next `name=`, so cause text after it on that line goes too. In prose the
+  next `name=`, so cause text after it on that line goes too; a `<hidden>`
+  another rule wrote, or a scheme name, at the value's start is kept and the
+  rest is still hidden. `Bearer` and `Basic` are keys as a secret word is, so
+  the words after the value the scheme rule hid are judged too. In prose the
   clause after the secret word opens after a space or any mark (`password,`,
-  `password's`, `[token]:`, `password/`), and each of its words is hidden
+  `password's`, `[token]:`, `password/`) and goes on past a `<hidden>`
+  another rule wrote, and each of its words is hidden
   unless the closed vocabulary `scripts/audit_dependencies_data.py` lists
   holds it, it is three marks or fewer, or it starts with a URL; the URL word
   ends where the URL does, at a comma or semicolon after its host and port

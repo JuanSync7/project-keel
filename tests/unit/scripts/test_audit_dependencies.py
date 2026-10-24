@@ -1002,6 +1002,40 @@ def test_a_url_in_a_clause_ends_where_the_url_does_and_keeps_a_named_host(form, 
     assert audit_dependencies._redacted(form.format(_VALUE)) == shown
 
 
+# M3 of review round 3: a done value (`<hidden>`, or a scheme name and the
+# value (c) hid) no longer ends the judging. In prose the clause goes on
+# from its end; after `=` or `:` the rest of the value is hidden with it.
+@pytest.mark.parametrize(
+    "form, shown",
+    [
+        ("password <hidden> and {v}", "password <hidden> and <hidden>"),
+        ("token Bearer {w} {v}", "token Bearer <hidden>"),
+        ("password bearer {v} {v}", "password bearer <hidden>"),
+        ("Authorization: Bearer {w} {v}", "Authorization: Bearer <hidden>"),
+        ("token <hidden>{v}", "token <hidden>"),
+        ("Bearer {w} {v}", "Bearer <hidden>"),
+        ("auth=<hidden> {v}", "auth=<hidden>"),
+        (
+            'WWW-Authenticate: Basic realm="Nexus" {v}',
+            'WWW-Authenticate: Basic realm="Nexus" <hidden>',
+        ),
+    ],
+    ids=[
+        "hidden-and",
+        "bearer-second-value",
+        "bearer-twice",
+        "authorization-second-value",
+        "hidden-glued",
+        "bare-bearer",
+        "assigned-hidden",
+        "assigned-realm",
+    ],
+)
+def test_the_clause_goes_on_after_a_done_value(form, shown):
+    line = form.format(v=_VALUE, w=_SECOND_VALUE)
+    assert audit_dependencies._redacted(line) == shown
+
+
 # A scheme-less userinfo before a bracketed IPv6 host is hidden as in a URL,
 # with or without a password, a zone id or a port, and the host is kept.
 @pytest.mark.parametrize(

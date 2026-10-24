@@ -3,7 +3,7 @@
 title: audit_dependencies — judge each frontend app's npm audit against the accepted risks config records
 kind: script
 layer: n/a
-summary: `make fe-audit`'s doer. It audits each frontend app directory it is given (the Makefile passes FE_APPS) by running `npm audit --json` there, with `--include` naming dev, optional and peer so an .npmrc `omit=` cannot narrow it, under scripts/child_env.py `build_child_env` and config/project.json `dependency_audit.timeout_seconds`, or reads the saved report a `--report NAME=FILE` names instead, so a test never runs npm. A finding is one advisory a report's `via` entry names: its GHSA id (the last part of its `url`), its package and its severity. It judges each app against `dependency_audit.accepted.<app>`, rows of advisory id to package, reason and review_by day, on today's date (scripts/run_date.py `today`, read once at the entry point; a test hands in its own day). It fails (FAILURE) on four things, all listed before the one closing line: a finding at or above `dependency_audit.fail_at` that no row names with the same advisory and package; a row whose review_by day has passed; a row whose review_by is more than `dependency_audit.max_review_days` days after today, so an acceptance is renewed rather than parked; and a row whose advisory and package the app's report no longer holds, or whose app is not one it audited. A finding below fail_at that no row covers is listed and does not fail; a covered one is listed with its reason and day. It refuses a report it cannot trust rather than pass it: one that is not JSON, not `npm audit --json` version 2 (an unknown severity, a `via` url with no advisory id, a `via` item that is neither an advisory nor the name of another entry), whose `metadata.vulnerabilities` counts disagree with its entries, or whose `metadata.dependencies.total` is 0 or missing while the app's package.json declares a dependency, which is what an empty or root-only lockfile audits as. A package.json declares one when any of `dependencies`, `devDependencies` or `optionalDependencies` is non-empty, `peerDependencies` names a peer `peerDependenciesMeta` does not mark `optional: true`, or `workspaces` names a package glob, as a list or as an object's `packages` list, and then the next step also names a workspaces pattern that matches no directory. Such a report is USAGE from a saved file and BACKEND_ABSENT from a run, as is npm exiting 1 with no finding. An app directory with no package.json, one that is not a JSON object, no package-lock.json, a saved report that cannot be read and a `--report` name that is not an audited app are USAGE; npm that cannot be started, runs past the timeout, exits other than 0 or 1, or answers an `error` object is BACKEND_ABSENT, and the line carries npm's own diagnostic: the `error` object's `message` or `summary`, else the top-level `message` npm 11 writes when the registry cannot be reached or refuses the request, else npm's last stderr line other than its log pointer (`A complete log of this run can be found in:` and a path line split from it), never all of stderr. That text is first cut to `dependency_audit.max_shown_chars` characters, dropping the word the cut lands in and saying where it was cut, and every redaction pattern bounds its runs, so a registry's long or hostile body can neither flood the line nor stall the run. It is then redacted by structure, each rule rewriting only its own span so the cause stays: a URL keeps its scheme, one npm reaches (http, https, socks, socks4, socks4a, socks5, socks5h, git, git+http, git+https, git+ssh, git+file, file or ssh), host and port of at most five digits and loses its userinfo, everything before the authority's last `@`, and its path or query (`<path hidden>`), as one after any other `://` does; a host with no scheme, a dotted name whose last label is letters, an IPv4 address, a bracketed IPv6 address or any name with a port, at a word's start or after `//` or `@`, loses its path the same way, while a file path whose first part has no dot is kept; an `Authorization`/`Bearer`/`Basic` value, a scheme-less `user:pass@` up to its last `@` or `user@` before such a host, and any run of 20 or more token characters mixing letters and digits are `<hidden>`, except within a URL's scheme and port; so is the value after a key holding auth, token, password, passwd, secret, key, credential or cookie in any case: after `=` or `:` whatever it is, running to the line's end or the next `name=` after a space, through any quote, comma, `;` or `name:` inside it, a quoted one at least to its closing quote; and after whitespace or any mark every word of the clause up to its line's end or its sentence's, a `.`, `!` or `?` before a capital or the text's end where a period after a single letter ends none, `CLAUSE_WORDS` words judged one at a time and the rest of a longer sentence hidden whole, except a word scripts/audit_dependencies_data.py lists as a linking or cause word, matched without case or the marks around it, a word of three marks or fewer, and a word that starts with a URL, which ends where the URL does, at a comma or semicolon after its host and port too, so text glued before it or after that mark is a word of its own, which are kept, the URL's host `<hidden>` unless it is a dotted name whose last label is letters, an IPv4 or a bracketed IPv6 address, a run of hidden words being one `<hidden>`; so an unknown cause word is hidden, and cause text after an assignment on its line is hidden with the value, while the advice, read from the raw text, is unchanged; a quoted value the cut leaves open is hidden from its quote to the end. A host, in a URL, before a scheme-less host's hidden path, or as the operand after `ENOTFOUND` or `getaddrinfo` up to a space, quote, comma, semicolon, `<` or `>`, is judged as one run, `+`, `=` and `%`-escapes included: kept when it is a DNS name of two or more labels with at most one trailing dot, or one label, each of letters, digits and hyphens, no UUID, and whose parts that are no word (a word is two or more letters, one outside a to f), joined by their hyphens and taken together, are not 20 or more mixed characters, unless that run is one word and then digits and hyphens only (`acme2024-111122223333`, `nexus3`), so a token behind a word prefix is hidden; a bracketed address is kept but for a zone id that, a leading `%25` dropped and no other escape decoded, is longer than 15 characters, no interface name's length, which is `%<hidden>` at any length with the host kept; any other host is kept when it mixes in no digit, as `localhost` does, and otherwise `<hidden>` whole. Whatever follows a URL's host and port is its path unless it opens with a comma or semicolon, which end the URL, and the path runs up to a space, quote, `<` or `>`. The next step follows the cause: the registry URL for npm's `ERR_INVALID_URL` or `Invalid URL`, registry credentials for a 401, 403 or authenticate failure, reachability for ENOTFOUND, ECONNREFUSED or ETIMEDOUT. A refused `dependency_audit` key, run date or child environment is CONFIG. Given no app and no row it says so and exits 0. It writes nothing in the tree; npm writes its own per-user log and cache.
+summary: `make fe-audit`'s doer. It audits each frontend app directory it is given (the Makefile passes FE_APPS) by running `npm audit --json` there, with `--include` naming dev, optional and peer so an .npmrc `omit=` cannot narrow it, under scripts/child_env.py `build_child_env` and config/project.json `dependency_audit.timeout_seconds`, or reads the saved report a `--report NAME=FILE` names instead, so a test never runs npm. A finding is one advisory a report's `via` entry names: its GHSA id (the last part of its `url`), its package and its severity. It judges each app against `dependency_audit.accepted.<app>`, rows of advisory id to package, reason and review_by day, on today's date (scripts/run_date.py `today`, read once at the entry point; a test hands in its own day). It fails (FAILURE) on four things, all listed before the one closing line: a finding at or above `dependency_audit.fail_at` that no row names with the same advisory and package; a row whose review_by day has passed; a row whose review_by is more than `dependency_audit.max_review_days` days after today, so an acceptance is renewed rather than parked; and a row whose advisory and package the app's report no longer holds, or whose app is not one it audited. A finding below fail_at that no row covers is listed and does not fail; a covered one is listed with its reason and day. It refuses a report it cannot trust rather than pass it: one that is not JSON, not `npm audit --json` version 2 (an unknown severity, a `via` url with no advisory id, a `via` item that is neither an advisory nor the name of another entry), whose `metadata.vulnerabilities` counts disagree with its entries, or whose `metadata.dependencies.total` is 0 or missing while the app's package.json declares a dependency, which is what an empty or root-only lockfile audits as. A package.json declares one when any of `dependencies`, `devDependencies` or `optionalDependencies` is non-empty, `peerDependencies` names a peer `peerDependenciesMeta` does not mark `optional: true`, or `workspaces` names a package glob, as a list or as an object's `packages` list, and then the next step also names a workspaces pattern that matches no directory. Such a report is USAGE from a saved file and BACKEND_ABSENT from a run, as is npm exiting 1 with no finding. An app directory with no package.json, one that is not a JSON object, no package-lock.json, a saved report that cannot be read and a `--report` name that is not an audited app are USAGE; npm that cannot be started, runs past the timeout, exits other than 0 or 1, or answers an `error` object is BACKEND_ABSENT, and the line carries npm's own diagnostic: the `error` object's `message` or `summary`, else the top-level `message` npm 11 writes when the registry cannot be reached or refuses the request, else npm's last stderr line other than its log pointer (`A complete log of this run can be found in:` and a path line split from it), never all of stderr. That text is first cut to `dependency_audit.max_shown_chars` characters, dropping the word the cut lands in and saying where it was cut, and every redaction pattern bounds its runs, so a registry's long or hostile body can neither flood the line nor stall the run. It is then redacted by structure, each rule rewriting only its own span so the cause stays: a URL keeps its scheme, one npm reaches (http, https, socks, socks4, socks4a, socks5, socks5h, git, git+http, git+https, git+ssh, git+file, file or ssh), host and port of at most five digits and loses its userinfo, everything before the authority's last `@`, and its path or query (`<path hidden>`), as one after any other `://` does; a host with no scheme, a dotted name whose last label is letters, an IPv4 address, a bracketed IPv6 address or any name with a port, at a word's start or after `//` or `@`, loses its path the same way, while a file path whose first part has no dot is kept; an `Authorization`/`Bearer`/`Basic` value, a scheme-less `user:pass@` up to its last `@` or `user@` before such a host, and any run of 20 or more token characters mixing letters and digits are `<hidden>`, except within a URL's scheme and port; so is the value after a key holding auth, token, password, passwd, secret, key, credential or cookie, or the scheme name bearer or basic, in any case, a value another rule hid or a scheme name and its realm kept and the judging going on after it: after `=` or `:` whatever it is, running to the line's end or the next `name=` after a space, through any quote, comma, `;` or `name:` inside it, a quoted one at least to its closing quote; and after whitespace or any mark every word of the clause up to its line's end or its sentence's, a `.`, `!` or `?` before a capital or the text's end where a period after a single letter ends none, `CLAUSE_WORDS` words judged one at a time and the rest of a longer sentence hidden whole, except a word scripts/audit_dependencies_data.py lists as a linking or cause word, matched without case or the marks around it, a word of three marks or fewer, and a word that starts with a URL, which ends where the URL does, at a comma or semicolon after its host and port too, so text glued before it or after that mark is a word of its own, which are kept, the URL's host `<hidden>` unless it is a dotted name whose last label is letters, an IPv4 or a bracketed IPv6 address, a run of hidden words being one `<hidden>`; so an unknown cause word is hidden, and cause text after an assignment on its line is hidden with the value, while the advice, read from the raw text, is unchanged; a quoted value the cut leaves open is hidden from its quote to the end. A host, in a URL, before a scheme-less host's hidden path, or as the operand after `ENOTFOUND` or `getaddrinfo` up to a space, quote, comma, semicolon, `<` or `>`, is judged as one run, `+`, `=` and `%`-escapes included: kept when it is a DNS name of two or more labels with at most one trailing dot, or one label, each of letters, digits and hyphens, no UUID, and whose parts that are no word (a word is two or more letters, one outside a to f), joined by their hyphens and taken together, are not 20 or more mixed characters, unless that run is one word and then digits and hyphens only (`acme2024-111122223333`, `nexus3`), so a token behind a word prefix is hidden; a bracketed address is kept but for a zone id that, a leading `%25` dropped and no other escape decoded, is longer than 15 characters, no interface name's length, which is `%<hidden>` at any length with the host kept; any other host is kept when it mixes in no digit, as `localhost` does, and otherwise `<hidden>` whole. Whatever follows a URL's host and port is its path unless it opens with a comma or semicolon, which end the URL, and the path runs up to a space, quote, `<` or `>`. The next step follows the cause: the registry URL for npm's `ERR_INVALID_URL` or `Invalid URL`, registry credentials for a 401, 403 or authenticate failure, reachability for ENOTFOUND, ECONNREFUSED or ETIMEDOUT. A refused `dependency_audit` key, run date or child environment is CONFIG. Given no app and no row it says so and exits 0. It writes nothing in the tree; npm writes its own per-user log and cache.
 effect: read-only
 """
 
@@ -95,9 +95,12 @@ _DECLARING_FIELDS = (
 #     interface name; any other host that mixes letters and digits is hidden
 #     whole, so a token passed as the registry is still hidden, and one that
 #     does not, as `localhost`, is kept.
-# (c) runs before (b) because `Authorization` is itself a secret-word key, and
-# (b) skips a value that is already hidden or is a scheme name. (e) runs after
-# (b) so a secret word inside a path has its value hidden first.
+# (c) runs before (b) because `Authorization` is itself a secret-word key and
+# `Bearer` and `Basic` are keys too (_SCHEME_WORDS). (b) keeps a value that is
+# already hidden or is a scheme name, and goes on judging after it: in prose
+# the clause runs on, and after `=` or `:` the rest of the value is hidden.
+# (e) runs after (b) so a secret word inside a path has its value hidden
+# first.
 # A registry or proxy chooses this text, so no pattern may backtrack more than
 # linearly. A run is bounded unless a literal fixes where it starts (a URL's
 # `://`, a separator, a quote) or it is the whole pattern, so no two open runs
@@ -213,6 +216,11 @@ _SECRET_WORDS = (
     "credential",
     "cookie",
 )
+# The scheme names (c) keeps: each is a key too, so the words after the
+# value (c) hid are judged as a clause after a secret word's are, and
+# `Bearer <hidden> <value>` shows no second value.
+_SCHEME_WORDS = ("bearer", "basic")
+_KEY_WORDS = _SECRET_WORDS + _SCHEME_WORDS
 # Up to two linking words may stand between a secret word and an `=` or `:`
 # (`password is: X`); the alternation is built from the data module.
 _ASSIGNMENT = re.compile(
@@ -225,10 +233,18 @@ _ASSIGNMENT = re.compile(
 # after the key closes it (`"password":`) only when no word character
 # follows, so the `'` of `password's` opens the clause instead.
 _KEY = re.compile(
-    r"(?:%s)[\w.\-]{0,64}(?:[\"'](?!\w))?" % "|".join(_SECRET_WORDS), re.IGNORECASE
+    r"(?:%s)[\w.\-]{0,64}(?:[\"'](?!\w))?" % "|".join(_KEY_WORDS), re.IGNORECASE
 )
 # A value another rule already wrote, or a scheme name (c) keeps.
 _DONE_VALUE = re.compile(r"<hidden>|(?:Bearer|Basic)\b", re.IGNORECASE)
+# The run of done values an assignment opens with, a scheme name's
+# `realm=` parameter included, quoted or not. Each part is bounded, so a
+# realm with no closing quote is no realm and falls into the value.
+_DONE_RUN = re.compile(
+    r"(?:(?:<hidden>|(?:Bearer|Basic)\b"
+    r"(?:\s{1,4}realm=(?:\"[^\"]{0,256}\"|[^\s\",;]{0,256}))?)\s{0,4}){1,8}",
+    re.IGNORECASE,
+)
 # An assigned value runs to the line's end or to the next assignment: a
 # `name=` after a space that no `;` or `,` comes before, since after one it
 # is a cookie's next pair. A quote, a comma, a `;` or a `name:` can sit inside
@@ -503,8 +519,8 @@ def _key_values_shown(line):
         shown.append(line[at:end])
         assigned = _ASSIGNMENT.match(line, end)
         start = (assigned or _SPACE.match(line, end)).end()
-        if _DONE_VALUE.match(line, start):
-            at = end
+        if assigned and _DONE_VALUE.match(line, start):
+            at = _after_done(line, end, start, shown)
             continue
         if assigned:
             value_end = _assigned_end(line, start)
@@ -517,6 +533,22 @@ def _key_values_shown(line):
         clause, at = _clause_shown(line, end)
         shown.append(clause)
     return "".join(shown) + line[at:]
+
+
+def _after_done(line, end, start, shown):
+    """Append to *shown* the assignment from *end*, the key's end, whose
+    value at *start* opens with done values (_DONE_RUN): those are kept and
+    whatever the value holds after them is one `<hidden>`, as any assigned
+    value is. Returns where the value ended."""
+    done = _DONE_RUN.match(line, start).end()
+    value_end = _assigned_end(line, done)
+    kept = line[end:done]
+    if not line[done:value_end].strip():
+        shown.append(line[end:value_end])
+        return value_end
+    kept = kept.rstrip()
+    shown.append(kept if kept.endswith(_HIDDEN) else kept + " " + _HIDDEN)
+    return value_end
 
 
 def _assigned_end(line, start):
@@ -545,7 +577,7 @@ def _clause_shown(line, at):
         if not words and word.start(1) == at and text[0].isalnum():
             break
         bare = text.strip(_WORD_MARKS).lower()
-        if bare in _SECRET_WORDS:
+        if bare in _KEY_WORDS:
             break
         if words == audit_dependencies_data.CLAUSE_WORDS:
             stop = _SENTENCE_END.search(line, at)
@@ -582,7 +614,7 @@ def _clause_shown(line, at):
     for index, (text, kept) in enumerate(pieces):
         if kept is not None:
             shown.append(text)
-        elif index == 0 or pieces[index - 1][1] is not None:
+        elif index == 0 or pieces[index - 1][1] not in (None, _HIDDEN):
             shown.append(text + _HIDDEN)
     return "".join(shown), at
 
