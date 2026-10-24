@@ -1159,23 +1159,37 @@ each rule rewrites only its own span, so the cause (`ENOTFOUND`, `E401`,
   `realm="..."` and loses its value.
 - **A secret word** (`auth`, `token`, `password`, `passwd`, `secret`, `key`,
   `credential` or `cookie`, in any case, inside a longer key too) hides the
-  value after it, by how the value is stated. After `=` or `:` the value is
-  an assignment and is hidden whatever it is; an unquoted one runs on over
-  its spaces, because a passphrase has spaces, up to a comma, semicolon,
-  quote, the next `name=` or `name:`, a word opening with `<` or the end of
-  the line. After whitespace or up to two linking words (`is`, `was`, `are`,
-  `were`, `be`, `been`, `now`, `set`, `to`, `equals`) the secret word is
-  prose and one value is read: a plain word there (letters, lower case after
-  the first, one closing `.`, `!` or `?` at most) is the cause, as in
-  `password required` or `the token is invalid`, and is kept; any other
-  value, `hunter2` or `FAKEval` or a quoted one, is hidden. A quoted value
-  with no closing quote, which is what the cut leaves when it lands inside
-  one, is hidden from its quote to the end of the line. The costs: an
-  all-lower-case, letters-only password written in prose is shown, and after
-  an assignment any cause words that follow the value with no comma or key
-  between are hidden with it; the next step is still chosen from the raw
-  text.
-- **A scheme-less `user:pass@`** loses everything before its last `@`.
+  value after it, by how the value is stated. After `=` or `:`, up to two
+  linking words before it allowed, the value is an assignment and is hidden
+  whatever it is: it runs to the end of the line or to the next `name=` after
+  a space, through any quote, comma, `;` or `name:` inside it, because a
+  passphrase has spaces and any of those can sit in one; a `name=` after `; `
+  or `, ` is a cookie's next pair and is hidden with it, and a quoted value is
+  hidden at least to its closing quote. After whitespace the secret word is
+  prose, and the clause after it, to the end of its sentence (a `.`, `!` or
+  `?` before a space) or of the line, is read word by word against a closed
+  vocabulary in `scripts/audit_dependencies_data.py`: `LINKING_WORDS`
+  (`is`, `was`, `set`, `to`, `for`, `the`, `not`, ...) and `CAUSE_WORDS`
+  (`required`, `expired`, `invalid`, `incorrect`, `missing`, `denied`,
+  `self-signed`, `empty`, ...), each cause word mapped to the npm, Node.js,
+  libuv or HTTP message it was read from. A word in the vocabulary, matched
+  without case and without the punctuation around it, is kept, so
+  `password required`, `PASSWORD REQUIRED` and `the token is invalid` read
+  as written; every other word is hidden, a run of them as one `<hidden>`, so
+  `the password was set to hunter2` and `the password for bob is hunter2`
+  show neither name nor value. A quoted word is a value whatever it says and
+  is hidden to its closing quote, and another secret word starts its own
+  clause. The clause judges at most `CLAUSE_WORDS` (16) words one at a time,
+  three more than npm's longest such clause, and hides the rest of a longer
+  sentence whole. A quoted value with no closing quote, which is what the cut
+  leaves when it lands inside one, is hidden from its quote to the end of the
+  line. The costs: a cause word the vocabulary lacks is hidden, so a new npm
+  message after a secret word reads less well until its word is added; a
+  password that is a vocabulary word is shown; and cause text after an
+  assignment on the same line is hidden with its value. The next step is
+  chosen from the raw text, so the advice is the same either way.
+- **A scheme-less userinfo**, `user:pass@` or a bare `user@` before a
+  host as the next bullet defines one, loses everything before its last `@`.
 - **A host with no scheme**, as a `.npmrc` key or a fetch line writes one,
   loses its path as a URL does. It is a dotted name whose last label is
   letters, an IPv4 address or any name with a port, at the start of a word or
@@ -1195,12 +1209,12 @@ semicolon, `<` or `>`, since a token split at a symbol has pieces too short
 for the last rule. The host stays whole when it is a DNS name, two or more
 dot-separated labels with at most one trailing dot, or one label, where every
 label is letters, digits and hyphens, is no UUID (npm's legacy token shape),
-and holds no run this rule would hide among the parts between its word
-parts. A word part is two or more letters, one outside a to f, so a fragment
-of a hex token is no word; the parts between word parts are joined again by
-their hyphens and judged as one run, so a word excuses only itself and a
-token behind a word prefix, such as a vendor's token prefix and then random
-characters cut by hyphens, is `<hidden>` with the whole host. One run shape
+and whose parts that are no word, joined by their hyphens and taken
+together, are no run this rule would hide. A word part is two or more
+letters, one outside a to f, so a fragment of a hex token is no word; a word
+excuses only itself, so a token behind or between word parts, such as a
+vendor's token prefix and then random characters cut by hyphens, is
+`<hidden>` with the whole host. One run shape
 is a name's and stays: one word and then digits and hyphens only, which turns
 from letters to digits once, where a random token's characters turn many
 times. So `my-domain-111122223333.d.codeartifact.invalid` stays through its
@@ -1209,9 +1223,11 @@ word parts, `acme2024-111122223333.d.codeartifact.invalid` and a dotless
 that turns back to letters, opens with digits or opens with one letter is
 `<hidden>`. The cost of that line: a secret that is a word and then a long
 number is shown when it stands as a host; in prose the last rule still hides
-it. A bracketed address stays, but a zone id longer than 15 characters once
-its `%25` escape is decoded, which no Linux interface name can be, is
-`%<hidden>`; `%eth0` stays. Any other host that mixes letters and digits is
+it. A bracketed address stays, but a zone id longer than 15 characters once a
+leading `%25` escape is dropped, which no Linux interface name can be, is
+`%<hidden>`, whatever its length, and the host before it stays; no other
+`%`-escape is decoded, so a raw `%A1A1...` is judged as written. `%eth0`
+stays. Any other host that mixes letters and digits is
 `<hidden>` whole; one that mixes in no digit, such as `localhost`, stays.
 
 The next step follows the cause: npm's `ERR_INVALID_URL` or `Invalid URL`,

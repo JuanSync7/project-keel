@@ -659,16 +659,22 @@ version rather than a bare commit:
   `workspaces` included, a peer marked optional not), which is how an empty
   lockfile audits. A failed run shows npm's own cause with every URL path,
   a scheme-less host's path included, every userinfo up to its last `@` and
-  every credential value hidden. A secret word's value is hidden after `=`
-  or `:` whatever it is, an unquoted one over its spaces, and after prose
-  (`the password was X`) unless it is a plain word that names the cause
-  (`password required`). The registry's host is kept when it is a DNS name,
+  every credential value hidden, a bare `user@` before a host included. A
+  secret word's value is hidden after `=` or `:` whatever it is, to the end
+  of the line or the next `name=`, so cause text after it on that line goes
+  too. In prose (`the password was set to X`) every word of the clause after
+  the secret word is hidden unless it is in the closed vocabulary of linking
+  and cause words `scripts/audit_dependencies_data.py` lists, each cause
+  word with the npm or Node.js message it came from, so `password required`
+  and `token is self-signed` read as written and a cause word not listed is
+  hidden; the advice reads the raw text and is unchanged. The registry's host is kept when it is a DNS name,
   a single valid label such as `nexus3`, or a bracketed IPv6 address whose
-  zone id is no longer than an interface name; any other host that mixes
+  zone id, with only a leading `%25` decoded, is no longer than an interface
+  name (a longer zone is hidden and the host kept); any other host that mixes
   letters and digits, such as a token passed as the registry or as one of
-  its labels, is hidden whole. A label is kept unless the parts between its
-  word parts form a run of 20 or more mixed characters, so a token behind a
-  word prefix is hidden; a run that is one word and then a number is a
+  its labels, is hidden whole. A label is kept unless its parts that are no
+  word, taken together, form a run of 20 or more mixed characters, so a token
+  behind or between word parts is hidden; a run that is one word and then a number is a
   name's shape and is kept, so both
   `my-domain-111122223333.d.codeartifact...` and
   `acme2024-111122223333.d.codeartifact...` stay readable. The line is cut to
