@@ -532,3 +532,23 @@ def test_the_report_prints_the_unknown_apart_and_never_counts_it_owned(
     for node_id in ("u0", "u1", "u2", "u3"):
         assert " %s  (%s.md)" % (node_id, node_id) in text
     assert "accountability: 1 of 8 nodes have a real owner" in text
+
+
+@pytest.mark.parametrize("readme", ["scripts/README.md", "scripts/README.md.jinja"])
+def test_the_scripts_roster_names_every_bucket_the_report_prints(readme):
+    """The accountability_report row in each twin names the four buckets the
+    text report prints: unowned (`none`), on the default owner, unknown (no
+    owner source) and owned."""
+    text = (_ROOT / readme).read_text(encoding="utf-8")
+    (row,) = [
+        line
+        for line in text.splitlines()
+        if line.startswith("| `accountability_report.py` |")
+    ]
+    for bucket in (
+        "`owner_source` is `none`",
+        "`owner_source: default`",
+        "name no owner source",
+        "a real owner",
+    ):
+        assert bucket in row, (readme, bucket)
