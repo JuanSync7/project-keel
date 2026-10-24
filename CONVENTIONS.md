@@ -235,6 +235,23 @@ are what the corpus — and therefore every agent — reads. A module without th
 either vanishes from the index or is filed under its filename with an
 accidental first line as its summary, labeled as if someone wrote it.
 
+A shell file cannot carry a docstring, so its label is the comment block that
+opens it, after the `#!` line when there is one:
+
+```sh
+#!/bin/sh
+# title: Example task
+# summary: Does the one thing this script does.
+```
+
+The block ends at the first line that does not start with `#`, so a blank line
+ends it. Each line loses its first `#` and is then read with the docstring's
+grammar, one field to a line. A shell file is what `scripts/shell_gate.py`
+`kind` says it is: a `shell.script_suffixes` or `shell.test_suffixes` suffix,
+or a `shell.shebang_shells` shebang. `check_O` requires `title:` and `summary:`
+in every shell file under the code roots, whatever `shell.enabled` says, and
+skips a path `shell.excluded_paths` covers.
+
 ## 2. Directory taxonomy
 
 | Dir | kind | What goes in | What does NOT |
@@ -424,7 +441,7 @@ pre-commit hook) fails the build if the conventions above drift:
 | Swallowed errors (`docs/guides/python-style.md`) | not a `check_structure.py` letter: `tests/integration/test_swallowed_error_gate.py` (`make test`) fails a bare `except:`, and an `except Exception` or `except BaseException` with no `raise` whose body only passes, continues, breaks, or returns or assigns a fixed value such as `None`, `-1` or `[]`, unless a `# noqa: BLE001` or `# noqa: E722` on its clause gives a reason; it also fails every such suppression with a blank reason. It cannot see `contextlib.suppress`, or a handler that does work but never looks at the error |
 | Change-reporting comments (`docs/guides/python-style.md`) | not a `check_structure.py` letter, and a heuristic: `tests/integration/test_change_comment_gate.py` (`make test`) fails a comment that opens a thought with a `change_comments.phrases` phrase as a whole word (`# now uses X`, `# Fixed the off-by-one`), read through tokenize so a string is never a comment. It cannot see a phrase in mid-sentence or a change reported in other words |
 | Authored coverage (error) | every `__all__`-exported symbol defined in-file has a one-line docstring |
-| Module header (error) | every `.py` under the code roots opens with a docstring carrying explicit, non-empty `title:` and `summary:` lines — the grammar the corpus reads, its input contract (ADR-K-0008) |
+| Module header (error) | every `.py` under the code roots opens with a docstring carrying explicit, non-empty `title:` and `summary:` lines — the grammar the corpus reads, its input contract (ADR-K-0008); every shell file under them opens with a comment block carrying the same two lines (§1), and a refused config/project.json `shell` block is an error |
 | Tool specs governed (error) | `agents/**/*.tool.md` carry valid `kind: tool` frontmatter + a resolvable `public_api` + a valid `tool_effect` |
 | Accountability (error) | `config/project.json` `accountability.default_owner` is read through `scripts/config_loader.py` on every run, and a value outside the §12 owner grammar, or `TBD` or the word `null` in any letter case, is an error naming the key; a tool/agent doc whose `owner` is `TBD`, in any letter case, inherits it, and with none set (absent or `null`, the loader's default) or a refused value each such doc is an error naming it and the key; any governed doc or `README.md` whose `owner` is outside the §12 grammar, such as a quoted or commented placeholder, is an error naming it and the grammar, whatever its `kind`; a tool/agent doc whose `owner` is a written null (`null` in any letter case, or `~`) is an error naming it; a missing or empty `owner` warns |
 | Tool/agent binding (error) | each agent `tools.md` ↔ each spec's `## Used by` agree (both ways); `tool_command` invokes `public_api` |

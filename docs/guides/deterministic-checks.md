@@ -226,7 +226,10 @@ print but never fail the build.
   `build_corpus` reads (pinned by a parity test, not a shared import — this
   script stays 3.6-safe). Without them the corpus falls back to
   filename/first-prose-line and labels the result `authored`, and an
-  undocumented module is silently dropped from the index (ADR-K-0008).
+  undocumented module is silently dropped from the index (ADR-K-0008). A
+  shell file under the same roots carries the same two lines in the comment
+  block that opens it (CONVENTIONS §1), found by `scripts/shell_gate.py`'s
+  `kind` and skipped when `shell.excluded_paths` covers it.
 - **P. Makefile help parity** — every target line carrying a `## ` annotation
   is one the `help` recipe's own grep pattern lists. The pattern is read out of
   the recipe (`grep -hE '<pattern>' $(MAKEFILE_LIST)`), not restated in the

@@ -2,7 +2,7 @@
 title: Unit — check_structure check_O (module header contract) + promoted check_E
 kind: tests
 layer: n/a
-summary: check_O errors on any CODE_ROOTS module whose docstring lacks the explicit, non-empty title:/summary: lines the corpus reads — a docstring that merely EXISTS is the defect (filename-as-title fallback, first-prose-line summary, both then labeled authored). The grammar is a copy of scripts/corpus_level.py docstring_meta, pinned here by a parity test over tricky docstrings. check_E is an ERROR now (ADR-K-0008): an __all__-exported symbol with no docstring is a gap in the corpus, not a note.
+summary: check_O errors on any CODE_ROOTS module whose docstring lacks the explicit, non-empty title:/summary: lines the corpus reads — a docstring that merely EXISTS is the defect (filename-as-title fallback, first-prose-line summary, both then labeled authored). The grammar is a copy of scripts/corpus_level.py docstring_meta, pinned here by a parity test over tricky docstrings. check_E is an ERROR now (ADR-K-0008): an __all__-exported symbol with no docstring is a gap in the corpus, not a note. A shell file under the code roots, as scripts/shell_gate.py `kind` finds it, carries the same two lines in the comment block that opens it (after a `#!` line, up to the first line not starting with `#`), read with the same grammar; a `.jinja` source, a symlink, a `shell.excluded_paths` path and a dangling link are not judged, and a refused `shell` block is an error, never the defaults.
 """
 
 import sys
@@ -107,6 +107,9 @@ def gate(tmp_path, monkeypatch):
     monkeypatch.setattr(cs, "CODE_ROOTS", ["src"])
     monkeypatch.setattr(cs, "errors", [])
     monkeypatch.setattr(cs, "warnings", [])
+    # The config read is memoised per run; each test is a run of its own.
+    monkeypatch.setattr(cs, "_CONFIG_READ", {})
+    monkeypatch.setattr(cs, "_READ_REPORTED", set())
     (tmp_path / "src").mkdir()
     return tmp_path
 
@@ -174,4 +177,126 @@ def test_documented_exported_symbol_stays_clean(gate):
         encoding="utf-8",
     )
     cs.check_E()
+    assert cs.errors == []
+
+
+# --- the shell header (KEEL-SHELL-1 slice 2) -----------------------------------
+#
+# A shell file cannot carry a docstring, so its header is the comment block that
+# opens it: after a `#!` line when there is one, every line up to the first that
+# does not start with `#`, each read with that one `#` removed and then by the
+# grammar _module_meta reads a docstring with.
+
+_SH_OK = "#!/bin/sh\n# title: A thing\n# summary: Does a thing.\nset -eu\n"
+
+
+def _sh_findings(files):
+    """files: {relpath: shell source} -> check_O's error strings."""
+    return cs._shell_header_findings(files)
+
+
+def test_a_shell_script_with_its_header_passes():
+    assert _sh_findings({"scripts/a.sh": _SH_OK}) == []
+
+
+def test_a_shell_header_with_no_shebang_passes():
+    assert _sh_findings({"scripts/a.sh": "# title: A\n# summary: B\n"}) == []
+
+
+def test_a_shell_script_with_no_comment_block_errors_naming_the_file():
+    errs = _sh_findings({"scripts/a.sh": "#!/bin/sh\nset -eu\n"})
+    assert len(errs) == 1, errs
+    assert errs[0].startswith("scripts/a.sh: has no header"), errs
+
+
+def test_a_blank_shell_field_counts_as_missing():
+    errs = _sh_findings({"scripts/a.sh": "#!/bin/sh\n# title:\n# summary: B\n"})
+    assert len(errs) == 1, errs
+    assert "title:" in errs[0] and "summary:" not in errs[0], errs
+
+
+def test_a_shell_field_after_the_block_ends_is_not_read():
+    """A blank line ends the header, so a `# summary:` lower in the file is a
+    comment on the code, not the file's label."""
+    text = "#!/bin/sh\n# title: A\n\n# summary: B\n"
+    errs = _sh_findings({"scripts/a.sh": text})
+    assert len(errs) == 1, errs
+    assert "summary:" in errs[0] and "title:" not in errs[0], errs
+
+
+def test_a_shell_block_with_neither_field_names_both():
+    errs = _sh_findings({"scripts/a.sh": "#!/bin/sh\n# shellcheck shell=sh\nx=1\n"})
+    assert len(errs) == 1, errs
+    assert "title:" in errs[0] and "summary:" in errs[0], errs
+
+
+def test_the_shell_header_is_read_with_the_module_grammar():
+    """One grammar for both languages: the block, its `#` removed, is what
+    _module_meta reads, so a later key wins and the value is stripped."""
+    text = "#!/bin/sh\n#  title: first\n# title:  second \n# summary: B\n"
+    assert cs._module_meta(cs._shell_header(text)) == {
+        "title": "second",
+        "summary": "B",
+    }
+
+
+def test_check_o_reads_shell_scripts_and_tests_through_the_gate(gate):
+    (gate / "src" / "bad.sh").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    (gate / "src" / "bad.bats").write_text("@test x { true; }\n", encoding="utf-8")
+    (gate / "src" / "good.sh").write_text(_SH_OK, encoding="utf-8")
+    cs.check_O()
+    assert sorted(e.split(":", 1)[0] for e in cs.errors) == [
+        "src/bad.bats",
+        "src/bad.sh",
+    ], cs.errors
+
+
+def test_check_o_reads_a_shell_script_by_its_shebang(gate):
+    (gate / "src" / "tool").write_text(
+        "#!/usr/bin/env bash\nexit 0\n", encoding="utf-8"
+    )
+    cs.check_O()
+    assert [e.split(":", 1)[0] for e in cs.errors] == ["src/tool"], cs.errors
+
+
+def test_check_o_skips_a_shell_template_source(gate):
+    """A `.jinja` file is copier's source, and the file it renders is the one
+    judged (shell_gate.kind)."""
+    (gate / "src" / "bad.sh.jinja").write_text("#!/bin/sh\n", encoding="utf-8")
+    cs.check_O()
+    assert cs.errors == []
+
+
+def test_check_o_skips_a_shell_file_in_excluded_paths(gate):
+    (gate / "config").mkdir()
+    (gate / "config" / "project.json").write_text(
+        '{"shell": {"excluded_paths": {"src/vendor": "vendored as shipped"}}}',
+        encoding="utf-8",
+    )
+    (gate / "src" / "vendor").mkdir()
+    (gate / "src" / "vendor" / "bad.sh").write_text("#!/bin/sh\n", encoding="utf-8")
+    (gate / "src" / "bad.sh").write_text("#!/bin/sh\n", encoding="utf-8")
+    cs.check_O()
+    assert [e.split(":", 1)[0] for e in cs.errors] == ["src/bad.sh"], cs.errors
+
+
+def test_check_o_reports_a_refused_shell_block(gate):
+    """Fail closed: a shell block the loader refuses is an error, never a
+    quiet fall back to the default suffixes."""
+    (gate / "config").mkdir()
+    (gate / "config" / "project.json").write_text(
+        '{"shell": {"script_suffixes": "sh"}}', encoding="utf-8"
+    )
+    cs.check_O()
+    assert any("shell.script_suffixes" in e for e in cs.errors), cs.errors
+
+
+def test_check_o_holds_a_shell_symlink_at_its_target_only(gate):
+    """A link is judged where its target lives, so a target outside the walk
+    is not judged through the link, and a dangling link is nothing to read."""
+    (gate / "elsewhere").mkdir()
+    (gate / "elsewhere" / "bad.sh").write_text("#!/bin/sh\n", encoding="utf-8")
+    (gate / "src" / "link.sh").symlink_to("../elsewhere/bad.sh")
+    (gate / "src" / "dangling.sh").symlink_to("absent.sh")
+    cs.check_O()
     assert cs.errors == []

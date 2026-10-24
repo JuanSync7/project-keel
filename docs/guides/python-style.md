@@ -8,7 +8,7 @@ tags: [practices, style, readability, robustness, docstrings, comments, agents, 
 summary: The canonical statement of how Python is written in this project — readability and loud failure modes outrank speed; the machine-readable module header; comment and docstring discipline; and how a code agent works here. The provable floor is gated (check_O/E, ruff, mypy); this guide is the judgment above it.
 id: docs-guides-python-style
 created: 2026-08-18
-updated: 2026-10-17
+updated: 2026-10-24
 visibility: internal
 canonical: true
 ---
@@ -60,6 +60,9 @@ wrapped continuation line is silently dropped from what the corpus stores, so
 a wrapped summary reads fine to a human and truncates mid-sentence for every
 agent. Let the line run long — `E501` is deferred here for exactly these
 header lines.
+
+A shell file carries the same two lines in the comment block that opens it,
+and `check_O` holds it to them (CONVENTIONS §1).
 
 This is not paperwork. The corpus — the knowledge graph every agent queries —
 is built **from these lines**. A module without them is either invisible to

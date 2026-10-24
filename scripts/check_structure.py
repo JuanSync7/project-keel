@@ -64,7 +64,9 @@ Checks:
      explicit, non-empty title:/summary: lines — the grammar build_corpus
      reads. Without them the corpus falls back to filename/first-prose-line
      and labels the result 'authored'; an undocumented module is silently
-     DROPPED from the corpus entirely (ADR-K-0008)
+     DROPPED from the corpus entirely (ADR-K-0008). Every shell file under
+     the same roots (scripts/shell_gate.py `kind`, minus shell.excluded_paths)
+     opens with a comment block carrying the same two lines (CONVENTIONS §1)
   P. Makefile help parity (ERR): every `## `-annotated target is one the
      `help` recipe's own grep pattern lists. The pattern is read out of the
      recipe, not restated here, so the check cannot agree with a wrong one;
@@ -179,6 +181,7 @@ import child_env  # noqa: E402
 import config_loader  # noqa: E402
 import exit_codes  # noqa: E402
 import run_date  # noqa: E402
+import shell_gate  # noqa: E402
 from corpus_level import (  # noqa: E402,F401 - re-exported for check_A's readers
     UNREADABLE_README,
     UNREADABLE_VISIBILITY,
@@ -3065,13 +3068,98 @@ def _module_header_findings(files):
     return errs
 
 
+def _shell_header(text):
+    """The header of a shell file: the comment block that opens it, after a
+    `#!` first line when there is one, each line with its leading `#`
+    removed, up to the first line that does not start with `#`. None when
+    the file opens with no such block. The fields are then read with
+    _module_meta, so a shell header and a module docstring share one
+    grammar (CONVENTIONS §1)."""
+    lines = text.splitlines()
+    if lines and lines[0].startswith("#!"):
+        lines = lines[1:]
+    block = []
+    for line in lines:
+        if not line.startswith("#"):
+            break
+        block.append(line[1:])
+    return "\n".join(block) if block else None
+
+
+def _shell_header_findings(files):
+    """files: {relpath: shell source} -> error strings. Pure; the walk is
+    _shell_files'."""
+    errs = []
+    for relpath in sorted(files):
+        block = _shell_header(files[relpath])
+        if block is None:
+            errs.append(
+                "%s: has no header -- a shell file opens, after its `#!` line, "
+                "with a comment block holding `# title:` and `# summary:` lines, "
+                "so a reader learns what it does without running it "
+                "(CONVENTIONS §1)" % relpath
+            )
+            continue
+        missing = [k for k in ("title", "summary") if not _module_meta(block).get(k)]
+        if missing:
+            errs.append(
+                "%s: shell header lacks explicit %s -- the comment block that "
+                "opens the file must carry each, non-empty (CONVENTIONS §1)"
+                % (relpath, " and ".join(m + ":" for m in missing))
+            )
+    return errs
+
+
+def _shell_files(roots):
+    """({relpath: shell_gate.SCRIPT or shell_gate.TEST}, errs) for the shell
+    files under the *roots* directories of ROOT, by scripts/shell_gate.py's
+    rule (`kind`) and its `shell.excluded_paths`, so the gates agree on what
+    a shell file is. A symlink is held at its target, which is walked in its
+    own place. The rule holds whatever `shell.enabled` says: that setting
+    switches the shell tools, not the header. An absent config/project.json
+    gives the loader's defaults; a refused shell block is errs and no files,
+    never a fall back to the defaults."""
+    manifest = _read_json_config(os.path.join("config", "project.json"))
+    if not isinstance(manifest, dict):
+        # Absent: the defaults hold. Unreadable or not an object: the read,
+        # or check_H, already reports it.
+        manifest = {}
+    try:
+        cfg = shell_gate.settings(ROOT, loaded=manifest, stream=io.StringIO())
+    except config_loader.ConfigError as e:
+        return {}, list(e.lines)
+    excluded = sorted(cfg["excluded_paths"])
+    found, errs = {}, []
+    for croot in roots:
+        base = os.path.join(ROOT, croot)
+        if not os.path.isdir(base):
+            continue
+        for dirpath, _, filenames in walk(base):
+            for f in filenames:
+                full = os.path.join(dirpath, f)
+                relpath = rel(full).replace(os.sep, "/")
+                if os.path.islink(full) or not os.path.isfile(full):
+                    continue
+                if shell_gate.excluded_by(relpath, excluded) is not None:
+                    continue
+                try:
+                    judged_as = shell_gate.kind(relpath, full, cfg)
+                except UNREADABLE as e:
+                    errs.append("%s: unreadable (%s)" % (relpath, e))
+                    continue
+                if judged_as is not None:
+                    found[relpath] = judged_as
+    return found, errs
+
+
 def check_O():
     """ERROR when a CODE_ROOTS module lacks the machine-readable header the
     corpus reads (ADR-K-0008). A docstring that merely EXISTS is the trap this
     closes: build_corpus falls back to the filename and the first prose line
     and labels the result 'authored', and a module with no docstring at all is
     silently dropped from the corpus — an agent's map of the project is then
-    confidently incomplete, at exit 0."""
+    confidently incomplete, at exit 0. A shell file is held to the same two
+    lines in its opening comment block (_shell_header)."""
     files = {}
     for croot in CODE_ROOTS:
         base = os.path.join(ROOT, croot)
@@ -3094,6 +3182,16 @@ def check_O():
                 except UNREADABLE:
                     continue  # unreadable is reported by the checks keyed on it
     for e_ in _module_header_findings(files):
+        err(e_)
+    shell, shell_errs = _shell_files(CODE_ROOTS)
+    for e_ in shell_errs:
+        err(e_)
+    texts = {}
+    for relpath in sorted(shell):
+        text = _read_text(os.path.join(ROOT, relpath), err)
+        if text is not None:
+            texts[relpath] = text
+    for e_ in _shell_header_findings(texts):
         err(e_)
 
 

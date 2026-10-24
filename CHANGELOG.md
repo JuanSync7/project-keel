@@ -141,6 +141,8 @@ version rather than a bare commit:
   vendored script, or a directory of them, out of every shell gate with its
   reason; an entry that covers no file is exit 14. The new copier question `shell` (default yes) sets
   `shell.enabled`, and no makes every shell target say so and run no tool.
+  A shell file is held to the Python rules too: `check_O` requires the
+  `# title:` and `# summary:` lines in the comment block that opens it.
 - **An agent `--execute` run is held to an approved model-call cap.**
   `scripts/doc_review.py`, `scripts/refactor_practice.py` and the two Stop
   hooks refuse an execute run with exit 2 before any model is built when its

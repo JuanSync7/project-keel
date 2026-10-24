@@ -5,6 +5,7 @@ layer: n/a
 summary: scripts/shell_gate.py driven against stub tools, one small Python program put on a private PATH under each name config/project.json `shell.linter`, `shell.formatter` and `shell.test_runner` gives, which records its argv and environment and answers from a plan file. Every mode judges exactly the shell scripts a commit could carry, found by a `shell.script_suffixes` suffix or a `shell.shebang_shells` shebang (an `env` one with options included), never a Python file, a test file, an ignored file, a symlink, a tracked file deleted from the work tree, a `.jinja` template source whatever its shebang, or a file a `shell.excluded_paths` entry covers by whole path parts, an entry that covers no file being CONFIG; the test mode runs exactly the `shell.test_suffixes` files. The tool's own status is the answer, so a finding is the tool's status passed through, and each tool gets the allowlisted environment and never a planted variable. Off (`shell.enabled` false), the gate says why and runs nothing, exit 0; with no shell script and no test file it judges nothing (NOTHING_JUDGED) unless `shell.no_scripts` states the reason, which it prints before it exits 0, and a reason left beside a shell file, or a blank one, is CONFIG; shell scripts with no test file, or test files the runner counts as zero tests, judge nothing (NOTHING_JUDGED), and a runner whose count is not a number gave no verdict (BACKEND_ABSENT). An `env` option that takes an argument (`-u FOO`, `--chdir DIR`) never hides the shell after it, a path that starts with `-` reaches the tool as `./`-prefixed, and a tool in the running interpreter's directory answers before one on PATH, which answers when that directory has none. A tool on neither the interpreter's directory nor PATH is BACKEND_ABSENT naming the tool and its role, an adapter name the module does not know or a malformed suffix list is CONFIG before anything runs, and a tree that is not a git repository judges nothing. The rule is public, in `__all__`, for the other gates to import. The tool names asserted are read from config/project.json through scripts/config_loader.py, never typed here.
 """
 
+import io
 import json
 import os
 import shutil
@@ -365,7 +366,15 @@ def test_a_template_source_is_never_judged_whatever_it_opens_with(project):
 
 def test_the_classification_rule_is_public_for_the_other_gates(project):
     # Slice 2's header and exit gates import the rule rather than copy it.
-    for name in ("Classified", "classify", "kind", "settings", "shebang_interpreter"):
+    public = (
+        "Classified",
+        "classify",
+        "excluded_by",
+        "kind",
+        "settings",
+        "shebang_interpreter",
+    )
+    for name in public:
         assert name in shell_gate.__all__, name
         assert callable(getattr(shell_gate, name)), name
     _plant_tree(project)
@@ -375,6 +384,23 @@ def test_the_classification_rule_is_public_for_the_other_gates(project):
     release = project.root / "scripts" / "release"
     assert shell_gate.kind("scripts/release", str(release), cfg) == shell_gate.SCRIPT
     assert shell_gate.shebang_interpreter(str(release)) == "sh"
+    excluded = ["scripts/bu", "vendor"]
+    assert shell_gate.excluded_by("vendor/a/b.sh", excluded) == "vendor"
+    assert shell_gate.excluded_by("scripts/build.sh", excluded) is None
+
+
+def test_settings_reads_a_parsed_manifest_and_writes_to_a_given_stream(project):
+    """check_structure hands over the manifest it already read and a stream
+    of its own, so the gate's report carries the loader's lines once."""
+    stream = io.StringIO()
+    cfg = shell_gate.settings(
+        str(project.root), loaded={"shell": {"enabled": False}}, stream=stream
+    )
+    assert cfg["enabled"] is False
+    assert (
+        cfg["script_suffixes"]
+        == config_loader.rows(("shell", "script_suffixes"))[0].default
+    )
 
 
 # --- what each tool is handed --------------------------------------------------
