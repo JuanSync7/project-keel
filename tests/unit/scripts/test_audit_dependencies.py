@@ -495,28 +495,197 @@ def test_the_last_stderr_line_skips_npm_log_path(project, capsys, stderr):
     assert ("endpoint returned an error" in err) or ("the cause" in err)
 
 
+# npm 11.12.1's answer to a registry that refuses the audit with 401, captured
+# against a loopback server and its host made a placeholder: the cause is the
+# top-level `message`, with no E401 code, and `error` is blank.
+_UNAUTHORISED_OUT = json.dumps(
+    {
+        "message": 'Unable to authenticate, need: Bearer realm="https://registry'
+        '.example.invalid/auth"',
+        "method": "POST",
+        "uri": "http://FAKEtok@registry.example.invalid/-/npm/v1/security/"
+        "advisories/bulk",
+        "statusCode": 401,
+        "body": {"error": "Unable to authenticate"},
+        "error": {"summary": "", "detail": ""},
+    },
+    indent=2,
+)
+# npm 11.12.1's answer when `.npmrc` gives the registry a `user:pass@`: npm
+# masks the password itself, and the cause is still ENOTFOUND.
+_MASKED_OUT = json.dumps(
+    {
+        "message": "request to http://someone:***@registry.example.invalid/-/npm/"
+        "v1/security/advisories/bulk failed, reason: getaddrinfo ENOTFOUND "
+        "registry.example.invalid",
+        "error": {"summary": "", "detail": ""},
+    },
+    indent=2,
+)
+
+
+def test_a_401_shows_its_cause_and_names_the_credentials(project, capsys):
+    app = project.app("astro")
+    run = lambda *_: (1, _UNAUTHORISED_OUT, _UNREACHABLE_ERR)  # noqa: E731
+    assert project.main([app], run_audit=run) is ExitCode.BACKEND_ABSENT
+    err = capsys.readouterr().err
+    assert 'Unable to authenticate, need: Bearer realm="' in err
+    assert "check the registry credentials in .npmrc (values not shown)" in err
+    assert "reachable" not in err
+    assert "FAKEtok" not in err
+
+
+@pytest.mark.parametrize("status_code", [401, 403])
+def test_a_refusing_status_code_names_the_credentials(project, capsys, status_code):
+    app = project.app("astro")
+    out = json.dumps(
+        {
+            "message": "request refused",
+            "statusCode": status_code,
+            "error": {"summary": "", "detail": ""},
+        }
+    )
+    assert project.main([app], run_audit=lambda *_: (1, out, b"")) is (
+        ExitCode.BACKEND_ABSENT
+    )
+    err = capsys.readouterr().err
+    assert "request refused" in err
+    assert "check the registry credentials in .npmrc (values not shown)" in err
+
+
+def test_a_masked_userinfo_keeps_the_cause(project, capsys):
+    app = project.app("astro")
+    run = lambda *_: (1, _MASKED_OUT, b"")  # noqa: E731
+    assert project.main([app], run_audit=run) is ExitCode.BACKEND_ABSENT
+    err = capsys.readouterr().err
+    assert (
+        "request to http://registry.example.invalid/<path hidden> failed, reason: "
+        "getaddrinfo ENOTFOUND registry.example.invalid"
+    ) in err
+    assert "someone" not in err
+    assert "check the registry is reachable" in err
+
+
 @pytest.mark.parametrize(
-    "out, stderr",
+    "said, advice",
     [
-        ("{}", b"npm error //registry.example.invalid/:_password=s3cr3t\n"),
-        ("{}", b"npm error _auth=s3cr3t\n"),
-        ("{}", b"npm error Authorization: Bearer s3cr3t\n"),
-        ("{}", b"npm error token npm_" + b"s3cr3t" + b"A" * 30 + b" refused\n"),
-        ("{}", b"npm error GET https://someone:s3cr3t@registry.example.invalid/x\n"),
-        ("{}", b"npm error //registry.example.invalid/:_authToken=s3cr3t\n"),
-        ("{}", b"npm error //registry.example.invalid/:_auth=s3cr3t\n"),
-        (json.dumps({"error": {"summary": "bad _authToken s3cr3t"}}), b""),
-        (json.dumps({"error": {"message": "//host.invalid/:_auth s3cr3t"}}), b""),
+        ("npm error code E401", "check the registry credentials in .npmrc"),
+        ("npm error code E403", "check the registry credentials in .npmrc"),
+        ("npm error Unable to authenticate", "check the registry credentials"),
+        ("npm error getaddrinfo ENOTFOUND host.invalid", "check the registry is"),
+        ("npm error connect ECONNREFUSED 127.0.0.1:9", "check the registry is"),
+        ("npm error ETIMEDOUT while asking", "check the registry is reachable"),
+        ("npm error ESOMETHINGELSE", "run it by hand in the app directory"),
     ],
 )
-def test_a_diagnostic_carrying_an_auth_token_is_hidden(project, capsys, out, stderr):
+def test_the_advice_follows_the_cause(project, capsys, said, advice):
     app = project.app("astro")
-    status = 1 if "error" in out else 2
-    code = project.main([app], run_audit=lambda *_: (status, out, stderr))
+    run = lambda *_: (2, "{}", said.encode() + b"\n")  # noqa: E731
+    assert project.main([app], run_audit=run) is ExitCode.BACKEND_ABSENT
+    err = capsys.readouterr().err
+    assert said.split()[-1] in err
+    assert advice in err
+
+
+@pytest.mark.parametrize(
+    "error, top, shown, not_shown",
+    [
+        ({"message": "M-cause", "summary": "S-other"}, "T-other", "M-cause", "S-other"),
+        ({"summary": "S-cause"}, "T-other", "S-cause", "T-other"),
+        ({"summary": ""}, "T-cause", "T-cause", "nothing on stderr"),
+    ],
+)
+def test_the_diagnostic_reads_message_then_summary_then_top_level(
+    project, capsys, error, top, shown, not_shown
+):
+    app = project.app("astro")
+    out = json.dumps({"message": top, "error": error})
+    assert project.main([app], run_audit=lambda *_: (1, out, b"")) is (
+        ExitCode.BACKEND_ABSENT
+    )
+    err = capsys.readouterr().err
+    assert shown in err
+    assert not_shown not in err
+
+
+_UUID = "1b2c3d4e-0000-4abc-8def-123456789abc"
+_GHP = "ghp_" + "FAKE0123456789abcdefghijABCDEFGHIJ0123"
+_NPM = "npm_" + "FAKE0123456789abcdefghijABCDEFGHIJ"
+
+
+@pytest.mark.parametrize(
+    "line, secret",
+    [
+        # H1: a bare token as URL userinfo, and a token in a URL path.
+        (
+            "request to http://FAKEtok@registry.example.invalid/-/npm/v1/security/"
+            "advisories/bulk failed, reason: getaddrinfo ENOTFOUND x.invalid",
+            "FAKEtok",
+        ),
+        (
+            "request to https://npm.fury.example.invalid/FAKEfurytok/-/npm/v1/x "
+            "failed, reason: getaddrinfo ENOTFOUND npm.fury.example.invalid",
+            "FAKEfurytok",
+        ),
+        (
+            "GET https://someone:FAKEpass@registry.example.invalid/x ENOTFOUND",
+            "FAKEpass",
+        ),
+        # M1: key and value with any separator, quoted or not.
+        ("ENOTFOUND _auth = FAKEval", "FAKEval"),
+        ('ENOTFOUND "_auth": "FAKEval"', "FAKEval"),
+        ("ENOTFOUND _auth: FAKEval", "FAKEval"),
+        ("ENOTFOUND _auth\tFAKEval", "FAKEval"),
+        ("ENOTFOUND _auth=FAKEval", "FAKEval"),
+        ("ENOTFOUND //registry.example.invalid/:_password=FAKEval", "FAKEval"),
+        ("ENOTFOUND //registry.example.invalid/:_authToken=FAKEval", "FAKEval"),
+        ("ENOTFOUND //registry.example.invalid/:_auth FAKEval", "FAKEval"),
+        ("ENOTFOUND keyfile=FAKEval", "FAKEval"),
+        ("ENOTFOUND _AUTHTOKEN=FAKEval", "FAKEval"),
+        ("ENOTFOUND bad _authToken FAKEval", "FAKEval"),
+        # M1: an authorization scheme and its value.
+        ("ENOTFOUND Authorization: Basic FAKEval", "FAKEval"),
+        ("ENOTFOUND Authorization: Bearer FAKEval", "FAKEval"),
+        ('ENOTFOUND Bearer="FAKEval"', "FAKEval"),
+        ("ENOTFOUND bearer:FAKEval", "FAKEval"),
+        ("ENOTFOUND BEARER FAKEval", "FAKEval"),
+        # M1: userinfo with no scheme.
+        ("ENOTFOUND someone:FAKEval@registry.example.invalid", "FAKEval"),
+        # M1: the generic token shape.
+        ("ENOTFOUND legacy token " + _UUID + " refused", _UUID),
+        ("ENOTFOUND " + _GHP + " refused", _GHP),
+        ("ENOTFOUND " + _NPM + " refused", _NPM),
+    ],
+)
+def test_a_credential_is_hidden_and_the_cause_kept(project, capsys, line, secret):
+    app = project.app("astro")
+    stderr = ("npm error " + line + "\n").encode()
+    code = project.main([app], run_audit=lambda *_: (2, "{}", stderr))
     err = capsys.readouterr().err
     assert code is ExitCode.BACKEND_ABSENT
-    assert "<hidden>" in err
-    assert "s3cr3t" not in err
+    assert secret not in err
+    # A URL's rule writes "<path hidden>"; every other rule writes "<hidden>".
+    assert "hidden>" in err
+    assert "ENOTFOUND" in err
+
+
+@pytest.mark.parametrize(
+    "text, shown",
+    [
+        (
+            'Unable to authenticate, need: Bearer realm="https://r.example.invalid/a"',
+            'Unable to authenticate, need: Bearer realm="https://r.example.invalid/'
+            '<path hidden>"',
+        ),
+        (
+            "http://registry.example.invalid:8080",
+            "http://registry.example.invalid:8080",
+        ),
+        ("npm error audit endpoint returned an error", None),
+    ],
+)
+def test_only_the_credential_span_is_rewritten(text, shown):
+    assert audit_dependencies._shown(text) == (text if shown is None else shown)
 
 
 _DECLARED = {"dependencies": {"zod": "^3.0.0"}}
@@ -547,6 +716,35 @@ def test_a_saved_report_auditing_no_dependency_is_usage(
     assert "make fe-install" in err
 
 
+def test_a_required_peer_beside_an_optional_one_declares(project, capsys):
+    declared = {
+        "peerDependencies": {"react": "*", "vue": "*"},
+        "peerDependenciesMeta": {"react": {"optional": True}},
+    }
+    code, _, err = _judged(
+        project, capsys, _audit(dependencies=0), {}, manifest=declared
+    )
+    assert code is ExitCode.USAGE, err
+    assert "metadata.dependencies.total" in err
+
+
+@pytest.mark.parametrize(
+    "declared, named",
+    [
+        ({"workspaces": ["packages/*"]}, True),
+        ({"workspaces": {"packages": ["packages/*"]}}, True),
+        ({"dependencies": {"zod": "^3.0.0"}}, False),
+    ],
+)
+def test_a_workspaces_root_names_an_unmatched_pattern(project, capsys, declared, named):
+    code, _, err = _judged(
+        project, capsys, _audit(dependencies=0), {}, manifest=declared
+    )
+    assert code is ExitCode.USAGE, err
+    assert "make fe-install" in err
+    assert ("a workspaces pattern that matches no directory" in err) is named
+
+
 def test_a_live_run_auditing_no_dependency_is_backend_absent(project, capsys):
     app = project.app("astro", manifest=_DECLARED)
     out = json.dumps(_audit(dependencies=0))
@@ -558,7 +756,18 @@ def test_a_live_run_auditing_no_dependency_is_backend_absent(project, capsys):
 
 @pytest.mark.parametrize(
     "declared",
-    [{"workspaces": []}, {"workspaces": {"packages": []}}, {"dependencies": {}}],
+    [
+        {"workspaces": []},
+        {"workspaces": {"packages": []}},
+        {"dependencies": {}},
+        {
+            "peerDependencies": {"react": "*", "vue": "*"},
+            "peerDependenciesMeta": {
+                "react": {"optional": True},
+                "vue": {"optional": True},
+            },
+        },
+    ],
 )
 def test_an_empty_declaration_with_no_audited_dependency_passes(
     project, capsys, declared
