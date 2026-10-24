@@ -14,7 +14,11 @@ import os
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_JOBS = os.path.join(ROOT, "scripts", "jobs")
+if _JOBS not in sys.path:
+    sys.path.insert(0, _JOBS)
 
+from check_corpus import OWNER_SOURCES  # noqa: E402
 from exit_codes import ExitCode, finish  # noqa: E402
 
 DEFAULT_CORPUS = os.path.join("wiki", "corpus.json")
@@ -46,17 +50,16 @@ def unowned(corpus: dict) -> list:
     return [n for n in _rows(corpus) if n.get("owner_source") == "none"]
 
 
-# The CONVENTIONS §12 sources that name a real owner; with `none` and `default`
-# they are the closed set scripts/jobs/check_corpus.py OWNER_SOURCES holds.
-_REAL_SOURCES = ("frontmatter", "marker", "inherited")
+# The CONVENTIONS §12 sources that name a real owner: check_corpus's closed
+# set less `none` (no owner) and `default` (the stand-in for a TBD).
+_REAL_SOURCES = tuple(sorted(OWNER_SOURCES - {"none", "default"}))
 
 
 def unknown(corpus: dict) -> list:
     """Return nodes that name no CONVENTIONS §12 owner source (missing, null,
     empty or outside the set), whose owner is unknown: neither owned nor
     `none`."""
-    known = _REAL_SOURCES + ("none", "default")
-    return [n for n in _rows(corpus) if n.get("owner_source") not in known]
+    return [n for n in _rows(corpus) if n.get("owner_source") not in OWNER_SOURCES]
 
 
 def defaulted(corpus: dict) -> list:

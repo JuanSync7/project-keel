@@ -600,3 +600,18 @@ def test_the_json_report_shows_a_missing_field_as_null(tmp_path, capsys):
     )
     assert code == ExitCode.SUCCESS
     assert json.loads(out) == [{"kind": "doc", "node_id": None, "path": None}]
+
+
+def test_the_report_s_real_sources_are_check_corpus_s_vocabulary(monkeypatch):
+    """The report derives the sources that name a real owner from
+    check_corpus OWNER_SOURCES, so a source added there is counted owned here
+    with no second edit."""
+    import importlib
+
+    assert set(ar._REAL_SOURCES) | {"none", "default"} == cc.OWNER_SOURCES
+    monkeypatch.setattr(cc, "OWNER_SOURCES", cc.OWNER_SOURCES | {"bequeathed"})
+    try:
+        assert "bequeathed" in importlib.reload(ar)._REAL_SOURCES
+    finally:
+        monkeypatch.undo()
+        importlib.reload(ar)
