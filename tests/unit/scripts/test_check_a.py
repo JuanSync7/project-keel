@@ -70,3 +70,82 @@ def test_a_replaced_document_that_names_its_replacement_passes(repo, status):
 def test_a_live_document_needs_no_replacement(repo, status):
     cs.check_frontmatter(str(_doc(repo / "a.md", status)), {})
     assert _lifecycle_errors() == [], cs.errors
+
+
+# --- a child stating a looser visibility than a README above it -------------
+#
+# The corpus gives a node the strictest visibility on its README chain
+# (scripts/check_structure.py strictest_visibility), so a looser level stated
+# below a README is overridden in silence; check_A names the contradiction.
+
+_ORDER = cs.VISIBILITY_ORDER
+_PAIRS = [(a, b) for a in _ORDER for b in _ORDER]
+
+
+def _contradictions(stated):
+    return cs._visibility_contradictions(stated)
+
+
+@pytest.mark.parametrize("above, below", _PAIRS)
+def test_a_looser_child_is_named_and_an_equal_or_stricter_one_is_not(above, below):
+    found = _contradictions({"README.md": above, "docs/plan.md": below})
+    if _ORDER.index(below) < _ORDER.index(above):
+        assert len(found) == 1, found
+        message = found[0]
+        assert message.startswith("docs/plan.md: visibility '%s'" % below), message
+        assert "'%s'" % above in message and "README.md" in message, message
+    else:
+        assert found == [], found
+
+
+def test_the_message_names_the_nearest_readme_at_the_strictest_level():
+    found = _contradictions(
+        {
+            "README.md": "confidential",
+            "src/README.md": "confidential",
+            "src/backend/README.md": "public",
+            "src/backend/AGENT.md": "internal",
+        }
+    )
+    by_path = {m.split(":", 1)[0]: m for m in found}
+    assert sorted(by_path) == ["src/backend/AGENT.md", "src/backend/README.md"], found
+    assert "stated by src/README.md" in by_path["src/backend/AGENT.md"], found
+    assert "stated by src/README.md" in by_path["src/backend/README.md"], found
+    assert "CONVENTIONS §1" in by_path["src/backend/AGENT.md"], found
+
+
+def test_a_readme_is_judged_against_the_readmes_above_and_not_itself():
+    assert _contradictions({"docs/README.md": "public"}) == []
+    found = _contradictions({"README.md": "internal", "docs/README.md": "public"})
+    assert len(found) == 1 and found[0].startswith("docs/README.md:"), found
+
+
+def test_a_sibling_or_a_non_readme_above_is_not_an_ancestor():
+    assert (
+        _contradictions(
+            {
+                "docs/AGENT.md": "restricted",
+                "docs/other/README.md": "restricted",
+                "docs/plan.md": "public",
+            }
+        )
+        == []
+    )
+
+
+def test_a_value_outside_the_vocabulary_is_left_to_the_invalid_visibility_error():
+    assert _contradictions({"README.md": "secret", "docs/plan.md": "public"}) == []
+    assert _contradictions({"README.md": "internal", "docs/plan.md": "open"}) == []
+
+
+def test_check_a_reports_the_contradiction_over_a_tree(repo):
+    readme = _doc(repo / "README.md", "stable").read_text(encoding="utf-8")
+    (repo / "README.md").write_text(
+        readme.replace("visibility: internal", "visibility: confidential"),
+        encoding="utf-8",
+    )
+    (repo / "docs").mkdir()
+    _doc(repo / "docs" / "plan.md", "stable")
+    cs.check_A()
+    found = [e for e in cs.errors if "less restrictive" in e]
+    assert len(found) == 1 and found[0].startswith("docs/plan.md:"), cs.errors

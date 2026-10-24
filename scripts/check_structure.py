@@ -595,9 +595,51 @@ def check_frontmatter(path, seen_ids):
         warn("%s: frontmatter missing 'owner'" % rel(path))
 
 
+def _visibility_contradictions(stated):
+    """One message per governed file that states a visibility less
+    restrictive than a README.md above it, from *stated*: {relpath: stated
+    visibility}. The ancestors are the READMEs of the file's own directory
+    and every directory up to the root (a README is never looser than
+    itself, so it needs no exception); a value outside
+    VISIBILITY_ORDER is left to the invalid-visibility error. Pure.
+
+    The corpus gives a node the strictest visibility on its chain, so the
+    looser level would be overridden in silence; the message names the
+    README that wins and both ways to agree with it."""
+    found = []
+    for path in sorted(stated):
+        own = stated[path]
+        if own not in VISIBILITY_ORDER:
+            continue
+        strictest, where = None, None
+        d = os.path.dirname(path)
+        while True:
+            readme = os.path.join(d, "README.md")
+            above = stated.get(readme)
+            if above in VISIBILITY_ORDER and (
+                strictest is None
+                or VISIBILITY_ORDER.index(above) > VISIBILITY_ORDER.index(strictest)
+            ):
+                strictest, where = above, readme
+            if not d:
+                break
+            d = os.path.dirname(d)
+        if strictest and VISIBILITY_ORDER.index(own) < VISIBILITY_ORDER.index(
+            strictest
+        ):
+            found.append(
+                "%s: visibility '%s' is less restrictive than '%s' stated by %s, "
+                "so the corpus serves it as '%s' -- state '%s' here, or lower %s "
+                "to publish it (CONVENTIONS §1)"
+                % (path, own, strictest, where, strictest, strictest, where)
+            )
+    return found
+
+
 def check_A():
     seen_ids = {}
     seen_real = set()  # dedupe symlink + target (CLAUDE.md -> AGENT.md)
+    stated = {}  # relpath -> the visibility its frontmatter states
     for dirpath, _, filenames in walk(ROOT):
         top = rel(dirpath).split(os.sep)[0]
         in_docs = top in ("docs", "test-docs")
@@ -617,6 +659,10 @@ def check_A():
                 fm = parse_frontmatter(full)  # cheap re-parse for the roll-up
                 if fm:
                     GOVERNED.append((rel(full), fm.get("kind"), fm.get("owner")))
+                    if fm.get("visibility"):
+                        stated[rel(full)] = fm["visibility"]
+    for message in _visibility_contradictions(stated):
+        err(message)
 
 
 def _declared_toplevel():
