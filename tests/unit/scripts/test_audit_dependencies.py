@@ -1148,6 +1148,55 @@ def test_a_long_label_with_a_word_part_is_kept(host):
     assert audit_dependencies._redacted(line) == line
 
 
+_GITLAB_PREFIX = "gl" + "pat-"
+
+
+# A word part does not excuse the rest of its label: the parts between its
+# words, joined again by their hyphens, are judged as one run, so a token
+# behind a word prefix, such as GitLab's personal-token prefix, is hidden
+# however its own hyphens cut it. GitHub's and npm's tokens hold `_`, which no
+# label holds. Each is built at run time so no file holds a scanner's shape.
+@pytest.mark.parametrize(
+    "label",
+    [
+        _GITLAB_PREFIX + "ab12cd34ef-56ab78cd90xy",
+        _GITLAB_PREFIX + "ab12-cd34-ef56-ab78-cd90",
+        "ab12cd34ef-56ab78cd90xy-registry",
+        "my-ab12cd34ef-56ab78cd90xy-mirror",
+        "ghp" + "_FAKE0123456789abcdefghij",
+        "npm" + "_FAKE0123456789abcdefghij",
+    ],
+    ids=[
+        "gitlab-cut",
+        "gitlab-short-parts",
+        "word-suffix",
+        "word-both-sides",
+        "ghp",
+        "npm",
+    ],
+)
+@pytest.mark.parametrize(
+    "form", ["npm error ENOTFOUND %s.registry.example", "request to https://%s.x/p"]
+)
+def test_a_token_behind_a_word_prefix_is_hidden(form, label):
+    shown = audit_dependencies._redacted(form % label)
+    assert label not in shown and "<hidden>" in shown, shown
+    for piece in label.replace("_", "-").split("-")[1:]:
+        if len(piece) > 3:
+            assert piece not in shown, shown
+
+
+# The runs between words are judged apart, so a name whose word parts split
+# its numbers into short runs is kept.
+@pytest.mark.parametrize(
+    "host",
+    ["ip-10-0-0-1-eu-west-1.example", "ab12cd-eu-0123456789ab.example"],
+)
+def test_short_runs_between_words_are_kept(host):
+    line = "npm error ENOTFOUND %s" % host
+    assert audit_dependencies._redacted(line) == line
+
+
 # A token holding `=`, `+` or a `%`-escape: split there, each piece is under
 # rule (d)'s 20 characters, so only a judgement of the whole run hides it.
 _SPLIT_TOKENS = {

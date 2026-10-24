@@ -432,27 +432,29 @@ def _run_shown(match):
 
 
 def _is_name(host):
-    """Whether *host* is a DNS name rule (d) keeps whole: two or more labels
-    of letters, digits and hyphens, none a UUID and none holding, between its
-    hyphens, a part that (d) would hide on its own. A label that (d) would
-    hide whole passes only when one of its parts is a word, so a
-    domain-account label such as `my-domain-111122223333` passes and a token
-    cut into short parts by hyphens fails. One trailing dot, which makes a
-    name fully qualified, is allowed."""
+    """Whether *host* is a DNS name rule (d) keeps whole: two or more labels,
+    each one _is_label keeps. One trailing dot, which makes a name fully
+    qualified, is allowed."""
     labels = host.removesuffix(".").split(".")
     return len(labels) >= 2 and all(_is_label(label) for label in labels)
 
 
 def _is_label(label):
-    """Whether *label* is a DNS label rule (d) keeps, judged by its parts and
-    whole (see `_is_name`)."""
-    parts = label.split("-")
-    return bool(
-        _LABEL.fullmatch(label)
-        and not _UUID.fullmatch(label)
-        and not any(_is_token(part) for part in parts)
-        and (not _is_token(label) or any(_WORD.fullmatch(part) for part in parts))
-    )
+    """Whether *label* is a DNS label rule (d) keeps: letters, digits and
+    hyphens, no UUID, and no run of the parts between its word parts, joined
+    again by their hyphens, that (d) would hide. A word part excuses only
+    itself, so `my-domain-111122223333` is kept and a token behind a word
+    prefix, such as a vendor's token prefix and then hyphen-cut random
+    characters, or cut short by hyphens is not."""
+    if not _LABEL.fullmatch(label) or _UUID.fullmatch(label):
+        return False
+    runs = [[]]
+    for part in label.split("-"):
+        if _WORD.fullmatch(part):
+            runs.append([])
+        else:
+            runs[-1].append(part)
+    return not any(_is_token("-".join(run)) for run in runs)
 
 
 def _address_shown(host):
