@@ -716,6 +716,29 @@ def test_only_the_credential_span_is_rewritten(text, shown):
     assert audit_dependencies._redacted(text) == (text if shown is None else shown)
 
 
+# A secret word, then linking words, then the value: the value is what a
+# reader must not see, so the linking word is never the span hidden in its
+# place. Each value is shorter than rule (d)'s 20 characters.
+@pytest.mark.parametrize(
+    "text, shown",
+    [
+        ("ENOTFOUND password is FAKEval9", "ENOTFOUND password is <hidden>"),
+        ("ENOTFOUND the password was FAKEval9", "ENOTFOUND the password was <hidden>"),
+        ("ENOTFOUND token: FAKEval9", "ENOTFOUND token: <hidden>"),
+        ("ENOTFOUND the token is now FAKEval9", "ENOTFOUND the token is now <hidden>"),
+        (
+            "ENOTFOUND secret set to FAKEval9 here",
+            "ENOTFOUND secret set to <hidden> here",
+        ),
+        ("ENOTFOUND password is: FAKEval9", "ENOTFOUND password is: <hidden>"),
+        ("ENOTFOUND PASSWORD WAS FAKEval9", "ENOTFOUND PASSWORD WAS <hidden>"),
+    ],
+    ids=["is", "was", "colon", "is-now", "set-to", "is-colon", "upper"],
+)
+def test_a_secret_word_in_prose_hides_its_value(text, shown):
+    assert audit_dependencies._redacted(text) == shown
+
+
 # An AWS CodeArtifact registry's host: its first label mixes letters and
 # digits over 20 characters, the shape rule (d) hides elsewhere.
 _ARTIFACT_HOST = "my-domain-111122223333.d.codeartifact.invalid"
@@ -955,8 +978,19 @@ _TIMED_REDACTION = (
 )
 
 
-@pytest.mark.parametrize("unit, times", [("a", 16000), ("token", 2000)])
-def test_a_hostile_line_is_redacted_within_a_second(unit, times):
+# Each row after the first two repeats the shape a newer pattern reads, so a
+# pattern that backtracks on its own input overruns; those lines are
+# rewritten, so only the first two are asserted unchanged.
+@pytest.mark.parametrize(
+    "unit, times, unchanged",
+    [
+        ("a", 16000, True),
+        ("token", 2000, True),
+        ("token was ", 1600, False),
+    ],
+    ids=["a", "token", "token-was"],
+)
+def test_a_hostile_line_is_redacted_within_a_second(unit, times, unchanged):
     argv = [sys.executable, "-c", _TIMED_REDACTION, str(_ROOT / "scripts")]
     try:
         done = subprocess.run(
@@ -971,10 +1005,11 @@ def test_a_hostile_line_is_redacted_within_a_second(unit, times):
     except subprocess.TimeoutExpired:
         pytest.fail("redacting %r * %d ran past 10 s" % (unit, times))
     assert done.returncode == 0, done.stderr
-    took, unchanged = done.stdout.split()
+    took = done.stdout.split()[0]
     assert float(took) < 1.0, "redacting %r * %d took %s s" % (unit, times, took)
-    # Neither line mixes letters and digits, so no rule rewrites it.
-    assert unchanged == "True"
+    # Neither of the first two lines mixes letters and digits or names a
+    # value, so no rule rewrites it.
+    assert done.stdout.split()[1] == str(unchanged)
 
 
 def _cut_run(project, capsys, said, limit):

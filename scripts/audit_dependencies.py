@@ -108,7 +108,8 @@ _PATH_HIDDEN = "<path hidden>"
 # it; it then runs to the end of the line, so no word of it is shown.
 _VALUE = r"(?:\"[^\"]*\"?|'[^']*'?|[^\s\"',;]+)"
 # The line has had its whitespace collapsed, so a run longer than 4 is not met.
-_SEPARATOR = r"(\s{0,4}[=:]\s{0,4}|\s{1,4})"
+_SEPARATOR_FORMS = r"\s{0,4}[=:]\s{0,4}|\s{1,4}"
+_SEPARATOR = r"(%s)" % _SEPARATOR_FORMS
 _SCHEME_VALUE = re.compile(
     r"\b(Authorization|Bearer|Basic)"
     + _SEPARATOR
@@ -126,11 +127,30 @@ _SECRET_WORDS = (
     "credential",
     "cookie",
 )
+# The words prose puts between a secret word and its value (`the password
+# was X`, `token is now X`); at most two are read, so a linking word is never
+# the span hidden in the value's place.
+_LINKING_WORDS = (
+    "is",
+    "was",
+    "are",
+    "were",
+    "be",
+    "been",
+    "now",
+    "set",
+    "to",
+    "equals",
+)
+_KEY_SEPARATOR = r"((?:\s{1,4}(?:%s)\b){0,2}(?:%s))" % (
+    "|".join(_LINKING_WORDS),
+    _SEPARATOR_FORMS,
+)
 # The match starts at the secret word and leaves the key's text before it in
 # place: matching that text too is what made the old pattern cubic.
 _KEY_VALUE = re.compile(
     r"((?:%s)[\w.\-]{0,64}[\"']?)" % "|".join(_SECRET_WORDS)
-    + _SEPARATOR
+    + _KEY_SEPARATOR
     + r"(?!<hidden>|(?:Bearer|Basic)\b)"
     + _VALUE,
     re.IGNORECASE,
