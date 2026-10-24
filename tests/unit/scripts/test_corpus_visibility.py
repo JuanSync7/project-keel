@@ -231,6 +231,19 @@ def test_a_symlink_to_a_file_outside_the_root_reads_no_readme_outside_it(tmp_pat
     assert _visibility(repo)["x"] == "internal"
 
 
+def test_a_symlink_into_a_sibling_whose_name_extends_the_root_s_is_outside_it(
+    tmp_path,
+):
+    """`repo-x` starts with the text `repo` but is not inside it: the target's
+    chain is read only below the root as a directory, never by string prefix."""
+    repo = tmp_path / "repo"
+    _write(tmp_path, "repo-x/README.md", _readme("x-readme", None, "restricted"))
+    _write(tmp_path, "repo-x/x.md", _readme("x", None, None))
+    _write(repo, "docs/README.md", _readme("docs-readme", None, "internal"))
+    (repo / "docs" / "x.md").symlink_to(tmp_path / "repo-x" / "x.md")
+    assert _visibility(repo)["x"] == "internal"
+
+
 def test_a_symlink_changes_no_owner(tmp_path):
     """Only visibility reads the target's chain; a module still inherits the
     owner of the package README.md on the path it was walked by."""
