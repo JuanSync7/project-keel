@@ -2,7 +2,7 @@
 title: Unit — the corpus's visibility fails closed along each node's README chain
 kind: tests
 layer: n/a
-summary: build_corpus gives each doc, section, module and symbol the most restrictive visibility stated on its chain — its own frontmatter or docstring and every README.md from its directory up to the root — in scripts/check_structure.py VISIBILITY_ORDER, so a child README that states none, or states a looser level, can never hide a confidential parent; with nothing stated anywhere a node is `internal`, and a value outside the vocabulary outranks every member so check_corpus refuses each node under it.
+summary: build_corpus gives each doc, section, module and symbol the most restrictive visibility stated on its chain — its own frontmatter or docstring and every README.md from its directory up to the root — in scripts/check_structure.py VISIBILITY_ORDER, so a child README that states none, or states a looser level, can never hide a confidential parent; with nothing stated anywhere a node is `internal`, and a value outside the vocabulary outranks every member so check_corpus refuses each node under it. A file reached through a symlink takes the strictest of the path chain and its target's chain inside the root.
 """
 
 import itertools
@@ -189,3 +189,57 @@ def test_an_unknown_value_reaches_every_node_under_it_and_check_corpus_refuses_i
     assert vis["src/m-py"] == "secret" and vis["src/m-py::f"] == "secret"
     refused = [e for e in cc.validate(corpus) if "invalid visibility" in e]
     assert any("src/m-py::f" in e for e in refused), refused
+
+
+# --- a node's file reached through a symlink, and a README that cannot be read
+
+
+def test_a_doc_symlinked_into_an_open_directory_keeps_its_target_s_level(tmp_path):
+    """The walk reaches the doc by its link first (`a-open` sorts before
+    `z-secret`), so its level is the strictest of both chains: the path it
+    was walked by and the file it really is."""
+    _write(tmp_path, "docs/README.md", _readme("docs-readme", None, "internal"))
+    _write(
+        tmp_path, "docs/z-secret/README.md", _readme("z-readme", None, "confidential")
+    )
+    _write(tmp_path, "docs/z-secret/plan.md", _readme("plan", "alice", None))
+    (tmp_path / "docs" / "a-open").mkdir()
+    (tmp_path / "docs" / "a-open" / "plan.md").symlink_to("../z-secret/plan.md")
+    vis = _visibility(tmp_path)
+    assert vis["plan"] == "confidential"
+    assert vis["plan#part"] == "confidential"
+
+
+def test_a_module_symlinked_into_an_open_package_keeps_its_target_s_level(tmp_path):
+    _write(tmp_path, "src/a/README.md", _readme("a-readme", "bob", "public"))
+    _write(tmp_path, "src/z/README.md", _readme("z-readme", "bob", "restricted"))
+    _write(tmp_path, "src/z/m.py", _module())
+    (tmp_path / "src" / "a" / "m.py").symlink_to("../z/m.py")
+    vis = _visibility(tmp_path)
+    assert vis["src/a/m-py"] == "restricted"
+    assert vis["src/z/m-py"] == "restricted"
+
+
+def test_a_symlink_to_a_file_outside_the_root_reads_no_readme_outside_it(tmp_path):
+    """Only the tree's own README.md files are a chain: the walk never climbs
+    out of the root to a README.md that is not part of the project."""
+    repo = tmp_path / "repo"
+    _write(tmp_path, "outside/README.md", _readme("out-readme", None, "restricted"))
+    _write(tmp_path, "outside/x.md", _readme("x", None, None))
+    _write(repo, "docs/README.md", _readme("docs-readme", None, "internal"))
+    (repo / "docs" / "x.md").symlink_to(tmp_path / "outside" / "x.md")
+    assert _visibility(repo)["x"] == "internal"
+
+
+def test_a_symlink_changes_no_owner(tmp_path):
+    """Only visibility reads the target's chain; a module still inherits the
+    owner of the package README.md on the path it was walked by."""
+    _write(tmp_path, "src/a/README.md", _readme("a-readme", "alice", None))
+    _write(tmp_path, "src/z/README.md", _readme("z-readme", "zed", "restricted"))
+    _write(tmp_path, "src/z/m.py", _module())
+    (tmp_path / "src" / "a" / "m.py").symlink_to("../z/m.py")
+    nodes = {n["node_id"]: n for n in bc.build_corpus(str(tmp_path))["nodes"]}
+    linked = nodes["src/a/m-py"]
+    assert linked["visibility"] == "restricted"
+    assert (linked["owner"], linked["owner_source"]) == ("alice", "inherited")
+    assert nodes["src/z/m-py"]["owner"] == "zed"

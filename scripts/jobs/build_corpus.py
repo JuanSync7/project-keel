@@ -402,7 +402,7 @@ def _doc_and_sections(path: str, root: str, nodes: list, refs: list, default):
     doc_id = fm.get("id") or _path_id(rel)
     doc_res = _resolve_owner(fm.get("owner"), "frontmatter", rel, _UNOWNED, default)
     visibility = _chain_visibility(
-        fm.get("visibility"), _readmes_upward(os.path.dirname(path), root)
+        fm.get("visibility"), _visibility_readmes(path, root)
     )
     title = fm.get("title") or rel
     summary = fm.get("summary") or ""
@@ -530,6 +530,24 @@ def _readmes_upward(dirpath: str, root: str):
         d = parent
 
 
+def _visibility_readmes(path, root):
+    """The README.md chain a node at *path* takes its visibility from: the
+    chain of the path the walk reached it by, then, when *path* is a symlink
+    to a file elsewhere in *root*, the chain of the file it really is. A
+    link into an open directory therefore cannot publish a confidential
+    file. A target outside *root* has no README.md in the tree to add."""
+    readmes = list(_readmes_upward(os.path.dirname(path), root))
+    real_root = os.path.realpath(root)
+    real = os.path.realpath(path)
+    real_dir = os.path.dirname(real)
+    walked_dir = os.path.realpath(os.path.dirname(path))
+    if real_dir != walked_dir and (
+        real_dir == real_root or real_dir.startswith(real_root + os.sep)
+    ):
+        readmes.extend(_readmes_upward(real_dir, real_root))
+    return readmes
+
+
 def _chain_visibility(own, readmes):
     """The visibility a node takes: the most restrictive of its *own* stated
     visibility and every README's in *readmes* (rel path, frontmatter) pairs,
@@ -583,7 +601,9 @@ def _module_and_symbols(path: str, root: str, nodes: list, default):
     readmes = list(_readmes_upward(os.path.dirname(path), root))
     readme_res = _nearest_readme(readmes, default)
     mod_res = _resolve_owner(meta.get("owner"), "frontmatter", rel, readme_res, default)
-    visibility = _chain_visibility(meta.get("visibility"), readmes)
+    visibility = _chain_visibility(
+        meta.get("visibility"), _visibility_readmes(path, root)
+    )
     nodes.append(
         {
             "node_id": mod_id,
