@@ -74,10 +74,10 @@ def test_the_child_gets_the_allowlisted_environment(monkeypatch):
     assert done.stdout.strip() == "None"
 
 
-def test_a_child_past_its_time_limit_has_its_group_ended_and_is_refused(tmp_path):
+def test_a_child_past_its_time_limit_has_its_session_ended_and_is_refused(tmp_path):
     pidfile = tmp_path / "grandchild.pid"
     # The grandchild outlives a plain kill of its parent: only ending the
-    # group reaches it.
+    # session reaches it.
     script = (
         "import subprocess, sys, time;"
         "p = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)']);"
@@ -328,11 +328,11 @@ def _wait_for(predicate, seconds, what):
 
 @pytest.mark.skipif(not os.path.isdir("/proc"), reason="reads a pid's state in /proc")
 @pytest.mark.parametrize("signum", [signal.SIGTERM, signal.SIGINT])
-def test_a_second_signal_ends_the_bounded_child_s_group_and_then_the_process(
+def test_a_second_signal_ends_the_bounded_child_s_session_and_then_the_process(
     tmp_path, signum
 ):
-    """A run_bounded child runs in a process group of its own, which a signal
-    to the server never reaches; the second stop ends that group before the
+    """A run_bounded child runs in a session of its own, which a signal to
+    the server never reaches; the second stop ends that session before the
     server ends by the signal's default action (exit status 128 + signal in a
     shell), so no child outlives it."""
     from scripts.child_env import build_child_env

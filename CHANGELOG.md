@@ -333,8 +333,8 @@ version rather than a bare commit:
   call: the connect, the send and every read of the reply wait only the time
   left, so a server answering a byte at a time no longer holds a call past it.
   `claude-code-headless` runs its CLI through the new
-  scripts/resource_limits.py `run_bounded`, in a process group of its own, and
-  sends the whole group SIGKILL when it outlives
+  scripts/resource_limits.py `run_bounded`, in a session of its own, and
+  sends the whole session SIGKILL when it outlives
   `models.timeout_seconds.claude-code-headless` (600 seconds) or writes past
   the reply cap on either stream, raising `ChildTimedOut` or
   `ChildOutputTooLarge`, both a `RuntimeError` naming the key. The call waits
@@ -379,7 +379,7 @@ version rather than a bare commit:
   names a shutdown owner, scripts/resource_limits.py `shutdown_owner`, that
   takes the first SIGTERM or SIGINT, writes `<server>: stopping on <signal>`,
   lets the calls in flight finish for `transports.serve.shutdown_grace_seconds`
-  (10), and exits 0; a second signal sends SIGKILL to the process group of
+  (10), and exits 0; a second signal sends SIGKILL to the session of
   every `run_bounded` child still running, which a signal to the server never
   reaches, then ends the process by that signal (128 plus its number in a
   shell). An MCP server
