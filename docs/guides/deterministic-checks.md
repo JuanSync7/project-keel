@@ -1146,19 +1146,26 @@ times over. The line is redacted by structure, not by
 a list of token shapes, because a list leaks every shape it does not name;
 each rule rewrites only its own span, so the cause (`ENOTFOUND`, `E401`,
 `Unable to authenticate`) stays readable. A URL keeps its scheme, host and port,
-a bracketed IPv6 host included, and loses its userinfo, and any path or query becomes `<path hidden>`, since
-npm masks only a userinfo password and a registry token can sit in the
-userinfo or the path. An `Authorization`, `Bearer` or `Basic` scheme keeps its
+a bracketed IPv6 host included, and loses its userinfo; whatever follows the
+host and port up to a space, quote, comma or semicolon becomes
+`<path hidden>`, so a path, a query or a token glued on past a `)` goes with
+it, since npm masks only a userinfo password and a registry token can sit in
+the userinfo or the path. An `Authorization`, `Bearer` or `Basic` scheme keeps its
 name and its `realm="..."` and loses its value. A key holding `auth`, `token`,
 `password`, `passwd`, `secret`, `key`, `credential` or `cookie`, in any case,
 loses the value after its `=`, `:` or whitespace. A scheme-less `user:pass@`
 loses `user:pass`. Last, any remaining run of 20 or more token characters that
 mixes letters and digits is `<hidden>`: that catches a bare token of any
 shape, and it also hides an integrity hash or a timestamped log name, a cost
-the script takes to fail closed. It skips the spans that name the registry: a
-URL's scheme, host and port, and the host after `ENOTFOUND` or `getaddrinfo`
-when it is a DNS name with a dot, so an AWS CodeArtifact host such as
-`my-domain-111122223333.d.codeartifact.invalid` stays readable. The values become `<hidden>`. The next step
+the script takes to fail closed. A URL's scheme, which is at most 16
+characters, and its port stay. A URL's host and the host after `ENOTFOUND`
+or `getaddrinfo` stay whole only when the host is a bracketed address or a
+DNS name: two or more dot-separated labels of letters, digits and hyphens,
+where no label is a UUID (npm's legacy token shape) and no part of a label
+between its hyphens is itself a run this rule hides. So an AWS CodeArtifact
+host such as `my-domain-111122223333.d.codeartifact.invalid` stays readable,
+while a token used as the host, as one of its labels or as a dotless operand
+is `<hidden>` and the rest of the host is kept. The next step
 follows the cause: a 401 or 403 status, `E401`, `E403` or "authenticate" says
 to check the registry credentials in `.npmrc` (values not shown); `ENOTFOUND`,
 `ECONNREFUSED` or `ETIMEDOUT` says to check the registry is reachable.
