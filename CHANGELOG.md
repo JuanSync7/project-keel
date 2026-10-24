@@ -348,7 +348,7 @@ version rather than a bare commit:
   start their child through scripts/resource_limits.py `run_tool`, which is
   `run_bounded` under config/project.json `agents.tool_timeout_seconds`
   (15000) and `agents.tool_max_output_bytes` (64 MiB); past either the
-  child's process group is sent SIGKILL and the call raises `ChildTimedOut`
+  child's session is sent SIGKILL and the call raises `ChildTimedOut`
   or `ChildOutputTooLarge` naming the key, which `scripts/doc_review.py`,
   `scripts/refactor_practice.py` and `scripts/hooks/on_stop_doc_review.py`
   report as exit 1 rather than a traceback. The time limit stops at
