@@ -1120,18 +1120,36 @@ another entry, `metadata.vulnerabilities` counts that disagree with the
 entries, and a `metadata.dependencies.total` of 0 or none while the app's
 `package.json` declares a dependency, which is what an empty or root-only
 lockfile audits as. A `package.json` declares one when any of `dependencies`,
-`devDependencies`, `optionalDependencies` or `peerDependencies` is non-empty,
-or when `workspaces` names a package glob, as a list or as an object's
-`packages` list. Such a report is exit 2 from a saved `--report` file and
+`devDependencies` or `optionalDependencies` is non-empty, when
+`peerDependencies` names a peer that `peerDependenciesMeta` does not mark
+`optional: true`, or when `workspaces` names a package glob, as a list or as
+an object's `packages` list. When `workspaces` names one, the refusal's next
+step names a pattern that matches no directory beside `make fe-install`, since
+either leaves the report empty. Such a report is exit 2 from a saved `--report` file and
 exit 11 from a run, as is npm exiting 1 with no finding, and npm that cannot
 start, overruns the timeout, exits other than 0 or 1 or answers an `error`
 object is exit 11; none of these is a pass. An exit 11 line carries npm's own
 diagnostic: the `error` object's `message` or `summary`, else the top-level
-`message` npm 11 writes when the registry cannot be reached, else npm's last
-stderr line other than its `A complete log of this run can be found in:`
-pointer. It shows `<hidden>` instead when that text names `_authToken`,
-`_password`, `_auth=` or a `//host/:_auth` key, or holds a `Bearer` value, an
-`npm_` token of 36 letters or digits or a URL's `user:pass@`.
+`message` npm 11 writes, with `error` left blank, when the registry cannot be
+reached or refuses the request (a 401 adds `statusCode`, `uri` and `headers`
+beside it), else npm's last stderr line other than its `A complete log of
+this run can be found in:` pointer. The line is redacted by structure, not by
+a list of token shapes, because a list leaks every shape it does not name;
+each rule rewrites only its own span, so the cause (`ENOTFOUND`, `E401`,
+`Unable to authenticate`) stays readable. A URL keeps its scheme, host and port
+and loses its userinfo, and any path or query becomes `<path hidden>`, since
+npm masks only a userinfo password and a registry token can sit in the
+userinfo or the path. An `Authorization`, `Bearer` or `Basic` scheme keeps its
+name and its `realm="..."` and loses its value. A key holding `auth`, `token`,
+`password`, `passwd`, `secret`, `key`, `credential` or `cookie`, in any case,
+loses the value after its `=`, `:` or whitespace. A scheme-less `user:pass@`
+loses `user:pass`. Last, any remaining run of 20 or more token characters that
+mixes letters and digits is `<hidden>`: that catches a bare token of any
+shape, and it also hides an integrity hash or a timestamped log name, a cost
+the script takes to fail closed. The values become `<hidden>`. The next step
+follows the cause: a 401 or 403 status, `E401`, `E403` or "authenticate" says
+to check the registry credentials in `.npmrc` (values not shown); `ENOTFOUND`,
+`ECONNREFUSED` or `ETIMEDOUT` says to check the registry is reachable.
 npm runs with `--include=dev --include=optional --include=peer`, which npm
 lets win over a user or project `.npmrc` `omit=`; an `.npmrc` can still change
 the registry it asks, and the audit trusts that registry's answer. It writes
