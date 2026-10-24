@@ -537,6 +537,16 @@ version rather than a bare commit:
   unless a reasoned row excuses the file. A literal prefix beside a name it
   cannot read, a loader renamed, assigned or passed as a value, and a loader
   fetched by getattr each count as a load it cannot read.
+- **A child README can no longer hide a confidential parent.** The corpus
+  ended a module's visibility walk at the nearest `README.md` with an owner or
+  a visibility, so an owned child `README.md` that stated none gave its
+  modules `internal` under a `confidential` parent. `scripts/jobs/build_corpus.py`
+  now gives every doc, section, module and symbol the most restrictive
+  visibility stated on its chain (its own and every `README.md` up to the
+  root), in `scripts/check_structure.py` `VISIBILITY_ORDER`, and `internal`
+  only when the chain states none; a document now takes the `README.md`s above
+  it too. check_A fails a governed document that states a less restrictive
+  visibility than a `README.md` above it, naming that `README.md`.
 - **A nullable key with a bound puts null first in its refusal.** A refused
   `transports.serve.memory_cap_mb` or `tests.memory_scratch_root` now reads
   "accepted: null, or an integer with a value >= 1", where it read as if null

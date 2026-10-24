@@ -3205,6 +3205,37 @@ keel's own ADRs ship to a generated project (R-DOC-11: some name the first
 downstream project or one site's estate), and whether a finished plan is
 kept (R-DOC-8 against the plan documents kept on purpose).
 
+**KEEL-VIS-1, visibility fails closed.** The maintainer's call for row 41:
+a node's effective visibility is the most restrictive visibility stated
+anywhere on its chain, its own `README.md`, frontmatter or docstring and
+every ancestor `README.md`'s. An owned child `README.md` with no `visibility`
+inherits the nearest stated one and can never hide a confidential parent,
+and a child stating a less restrictive level than an ancestor still comes
+out at the ancestor's. Why: confidentiality must not leak through a child's
+`README.md`; to publish a child, lower the parent. How it is built:
+
+- The order is the existing closed vocabulary, made ordered where it is
+  defined: `scripts/check_structure.py` `VISIBILITY_ORDER`, `public`,
+  `internal`, `confidential`, `restricted`, least restrictive first, the
+  order CONVENTIONS §1 lists. `VISIBILITIES` is derived from it there, and
+  `scripts/jobs/check_corpus.py` imports it rather than keep a second copy.
+  No new vocabulary was invented.
+- `strictest_visibility` ranks a chain; a value outside the vocabulary
+  outranks every member, so it is kept on every node below it and
+  check_corpus refuses each one, rather than being read as a looser level.
+  With nothing stated on the whole chain a node is `internal`, as before.
+- The chain is the same for a document as for a module: a document now
+  takes the `README.md`s above it as well as its own frontmatter, because
+  a confidential `docs/<dir>/README.md` must cover the documents in that
+  directory just as a package `README.md` covers its modules. The owner
+  walk is unchanged and independent of it.
+- check_A gains the contradiction finding: a governed document that states a
+  less restrictive level than a `README.md` above it is an error naming that
+  `README.md`, the level the corpus serves, and both fixes. It is an error,
+  not a warning, because the stated level is false in the served corpus. A
+  module docstring that states a looser `visibility` is resolved closed but
+  not flagged; none in the tree states one.
+
 ## Rulings recorded after CMP-5.S3
 
 The maintainer asked for the vault's recommendations to be acted on. These

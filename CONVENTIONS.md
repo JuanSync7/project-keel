@@ -8,7 +8,7 @@ tags: [conventions, frontmatter, taxonomy]
 summary: Single source of truth for labeling (frontmatter) and the directory taxonomy.
 id: conventions
 created: 2026-06-17
-updated: 2026-10-23
+updated: 2026-10-24
 visibility: internal
 canonical: true
 ---
@@ -59,7 +59,7 @@ failure mode:
 |-------|--------|------------------------|
 | `id` | stable slug, unique | cite/track a doc across renames & moves (path is not stable) |
 | `created` / `updated` | ISO dates | rank by recency; flag stale content. `updated` means *touched*: never earlier than the file's last commit, and today's date when the file is modified — gated by `tests/integration/test_doc_freshness.py` (`scripts/jobs/review_docs.py`) |
-| `visibility` | `public`/`internal`/`confidential`/`restricted` | never surface a confidential doc to the wrong audience |
+| `visibility` | `public`/`internal`/`confidential`/`restricted`, least restrictive first | never surface a confidential doc to the wrong audience |
 | `canonical` | `true` or a path/id | dedup: when the same fact lives in N places, point mirrors at the one source of truth |
 
 Related (set when applicable, not required): `superseded_by` — **required
@@ -68,6 +68,17 @@ chain to the live version (one rule; the two words are the general and the
 ADR lifecycle's names for "replaced"). A new doc must carry `id`/dates/`visibility`/`canonical` (check A
 validates them); set **real dates/owners** rather than placeholders, and tighten
 `visibility` on anything sensitive.
+
+Visibility fails closed. A corpus node takes the most restrictive visibility
+stated on its chain: its own frontmatter or docstring, and every `README.md`
+from its directory up to the root, in the order the table above lists
+(`scripts/check_structure.py` `VISIBILITY_ORDER`). A section or symbol takes
+its document's or module's. A `README.md` that states none passes on what is
+stated above it, and with nothing stated anywhere a node is `internal`. So a
+child can never publish what a `README.md` above it keeps confidential: to
+publish a child, lower the `README.md` above it. A governed document that
+states a less restrictive level than a `README.md` above it is an error naming
+that `README.md` (check A), because the corpus would override it in silence.
 
 ### Code files
 Source files can't carry YAML, so the **module docstring** is the
@@ -265,7 +276,7 @@ pre-commit hook) fails the build if the conventions above drift:
 
 | Rule | What it verifies |
 |------|------------------|
-| Frontmatter | every `README.md`/`CLAUDE.md` (+ `docs/**`, `test-docs/**` md) has the required keys with valid `kind`/`layer`/`status`/`visibility` |
+| Frontmatter | every `README.md`/`CLAUDE.md` (+ `docs/**`, `test-docs/**` md) has the required keys with valid `kind`/`layer`/`status`/`visibility`, and states no visibility less restrictive than a `README.md` above it (§1) |
 | Corpus id | every `id` is unique across the corpus |
 | Corpus canonical | a path-like `canonical` pointer resolves to a real file |
 | Corpus lifecycle | `status: deprecated` and `status: superseded` both require `superseded_by` |

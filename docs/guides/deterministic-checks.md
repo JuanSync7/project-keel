@@ -89,7 +89,13 @@ print but never fail the build.
   `test-docs/**` markdown, and `agents/**/*.tool.md` has the required keys with
   valid `kind` / `layer` / `status` / `visibility`; `id` is unique; a path-like
   `canonical` resolves; `deprecated` and `superseded` both require
-  `superseded_by` (one rule, two lifecycle vocabularies).
+  `superseded_by` (one rule, two lifecycle vocabularies). A document that
+  states a `visibility` less restrictive than a `README.md` above it, such as
+  `public` under a `confidential` `README.md`, is an error naming that
+  `README.md`: the corpus gives every node the most restrictive visibility on
+  its chain (CONVENTIONS §1), so the looser level would be overridden in
+  silence. A value outside the vocabulary is the invalid-visibility error
+  instead.
 - **B. Closed taxonomy** — every non-hidden top-level directory is a §2 row or
   declared in `config/project.json` `structure.extra_toplevel` (§15); a
   declaration names a directory that exists and is not already a row; every
