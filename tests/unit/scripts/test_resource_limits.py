@@ -880,18 +880,27 @@ def test_the_largest_margin_a_tool_limit_can_cover_is_accepted(tmp_path):
 
 @pytest.mark.parametrize("raised", ["gate_timeout_seconds", "gate_stop_grace_seconds"])
 def test_the_shipped_tool_limits_outlast_the_shipped_gate_runner(tmp_path, raised):
+    # The shipped values come through the loader, so the test follows a
+    # retuned config rather than a copy of its numbers.
+    paths = [
+        ("agents", "tool_timeout_seconds"),
+        ("agents", "tool_max_output_bytes"),
+        ("agents", "tool_gate_margin_seconds"),
+        ("make_targets", "gate_timeout_seconds"),
+        ("make_targets", "gate_stop_grace_seconds"),
+    ]
+    shipped = config_loader.resolve(
+        config_loader.read(str(_ROOT)),
+        config_loader.rows(*paths),
+        config_loader.CONFIG_FILE,
+    )
     timeout, cap = resource_limits.tool_limits()
-    assert (timeout, cap) == (15000, 67108864)
-    shipped = config_loader.read(str(_ROOT))
-    margin = shipped["agents"]["tool_gate_margin_seconds"]
-    assert margin == 60
+    assert (timeout, cap) == (shipped[paths[0]], shipped[paths[1]])
+    margin = shipped[paths[2]]
     # Slack over the bound, so raising a gate key a little does not refuse
     # every agent tool at once: "a little" is one margin more on either gate
     # key, which the shipped tool limit must still accept.
-    gate = {
-        key: shipped["make_targets"][key]
-        for key in ("gate_timeout_seconds", "gate_stop_grace_seconds")
-    }
+    gate = {path[1]: shipped[path] for path in paths[3:]}
     gate[raised] += margin
     root = _tools_project(
         tmp_path,
