@@ -206,16 +206,12 @@ _CODEWORD = "CODEWORD-ZEBRA"
 
 def test_a_hidden_gap_is_never_sent_to_the_model(tmp_path, monkeypatch):
     """A confidential gap and one that states no level are never filled: no
-    prompt names either node or carries its text, and the served gap is."""
+    prompt names either node or carries its text, and the served gap is.
+
+    The hidden gaps come first, so a fill step that took the next gap without
+    the filter would send one of them on its first call."""
     corpus = {
         "nodes": [
-            {
-                "node_id": "open",
-                "title": "open",
-                "path": "docs/open.md",
-                "text_excerpt": "x",
-                "visibility": "internal",
-            },
             {
                 "node_id": "secret-doc",
                 "title": "secret-doc",
@@ -228,6 +224,13 @@ def test_a_hidden_gap_is_never_sent_to_the_model(tmp_path, monkeypatch):
                 "title": "unstated-doc",
                 "path": "docs/unstated.md",
                 "text_excerpt": _CODEWORD,
+            },
+            {
+                "node_id": "open",
+                "title": "open",
+                "path": "docs/open.md",
+                "text_excerpt": "x",
+                "visibility": "internal",
             },
         ]
     }
@@ -244,10 +247,11 @@ def test_a_hidden_gap_is_never_sent_to_the_model(tmp_path, monkeypatch):
     monkeypatch.setattr(_BRAIN + ".get_model", lambda name=None: Recording())
     monkeypatch.setattr(_BRAIN + "._run", _fake_run)
     rep = _fill(tmp_path, model="fake", max_model_calls=3)
-    assert rep.gaps_filled == 1 and len(prompts) == 1
+    # Content before count: a fill that ignores the filter fails on the leak.
     for prompt in prompts:
         assert _CODEWORD not in prompt
         assert "secret" not in prompt and "unstated" not in prompt
+    assert rep.gaps_filled == 1 and len(prompts) == 1
     by_id = {
         n["node_id"]: n
         for n in json.loads((tmp_path / "wiki" / "corpus.json").read_text())["nodes"]
