@@ -98,9 +98,12 @@ _DECLARING_FIELDS = (
 _SCHEME = r"\b[a-z][a-z0-9+.\-]{0,15}://"
 _HOST = r"\[[0-9a-f:.]{2,45}(?:%[\w.\-~%]{1,32})?\]|[\w.\-~%+=]{1,253}"
 _PORT = r":\d{1,5}(?!\d)"
+# A userinfo is everything before the last `@` of the authority, which ends
+# at a `/`, `?` or `#`: the run is greedy and gives back to its last `@`, so a
+# raw `@` in a password shows no part of it. `://` fixes where it starts.
+_USERINFO = r"(?:[^\s/?#\"'<>]*@)?"
 _URL = re.compile(
-    r"(%s)(?:[^\s/@\"'<>]*@)?(%s)?(%s)?([^\s\"'<>,;][^\s\"'<>]*)?"
-    % (_SCHEME, _HOST, _PORT),
+    r"(%s)%s(%s)?(%s)?([^\s\"'<>,;][^\s\"'<>]*)?" % (_SCHEME, _USERINFO, _HOST, _PORT),
     re.IGNORECASE,
 )
 _PATH_HIDDEN = "<path hidden>"
@@ -155,7 +158,8 @@ _KEY_VALUE = re.compile(
     + _VALUE,
     re.IGNORECASE,
 )
-_BARE_USERINFO = re.compile(r"(?<![\w/])[\w.\-]{1,64}:[^\s@/]{1,256}@(?=[\w\-])")
+# As in a URL, the password runs to the last `@` before a space or `/`.
+_BARE_USERINFO = re.compile(r"(?<![\w/])[\w.\-]{1,64}:[^\s/]{1,256}@(?=[\w\-])")
 # The places a host sits, which (d) judges by _host_shown rather than by the
 # run alone: a URL's scheme, host and port as (a) left them, and the operand
 # npm's resolver names after its error code, which is everything up to a

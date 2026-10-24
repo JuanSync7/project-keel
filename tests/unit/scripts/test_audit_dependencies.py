@@ -739,6 +739,38 @@ def test_a_secret_word_in_prose_hides_its_value(text, shown):
     assert audit_dependencies._redacted(text) == shown
 
 
+# A URL's userinfo is everything before the last `@` of its authority, so a
+# raw `@` in a password shows no part of it, and the host after it stays.
+@pytest.mark.parametrize(
+    "text, shown",
+    [
+        (
+            "request to https://someone:FAKE@pass@registry.example.invalid/x failed",
+            "request to https://registry.example.invalid/<path hidden> failed",
+        ),
+        (
+            "request to https://so@meone:FA@KE@pass@registry.example.invalid:8080/x",
+            "request to https://registry.example.invalid:8080/<path hidden>",
+        ),
+        (
+            "request to https://FAKEtok@@registry.example.invalid failed",
+            "request to https://registry.example.invalid failed",
+        ),
+        (
+            "request to https://someone@registry.example.invalid/x failed",
+            "request to https://registry.example.invalid/<path hidden> failed",
+        ),
+        (
+            "ENOTFOUND someone:FAKE@pass@registry.example.invalid",
+            "ENOTFOUND <hidden>@registry.example.invalid",
+        ),
+    ],
+    ids=["raw-at", "many-ats-port", "double-at", "no-password", "scheme-less"],
+)
+def test_a_raw_at_in_userinfo_hides_up_to_the_last_at(text, shown):
+    assert audit_dependencies._redacted(text) == shown
+
+
 # An AWS CodeArtifact registry's host: its first label mixes letters and
 # digits over 20 characters, the shape rule (d) hides elsewhere.
 _ARTIFACT_HOST = "my-domain-111122223333.d.codeartifact.invalid"
@@ -979,16 +1011,18 @@ _TIMED_REDACTION = (
 
 
 # Each row after the first two repeats the shape a newer pattern reads, so a
-# pattern that backtracks on its own input overruns; those lines are
-# rewritten, so only the first two are asserted unchanged.
+# pattern that backtracks on its own input overruns. `unchanged` says whether
+# the line holds a span some rule rewrites.
 @pytest.mark.parametrize(
     "unit, times, unchanged",
     [
         ("a", 16000, True),
         ("token", 2000, True),
         ("token was ", 1600, False),
+        ("https://a@", 1600, False),
+        ("a:", 8000, True),
     ],
-    ids=["a", "token", "token-was"],
+    ids=["a", "token", "token-was", "url-userinfo", "bare-userinfo"],
 )
 def test_a_hostile_line_is_redacted_within_a_second(unit, times, unchanged):
     argv = [sys.executable, "-c", _TIMED_REDACTION, str(_ROOT / "scripts")]
@@ -1007,8 +1041,6 @@ def test_a_hostile_line_is_redacted_within_a_second(unit, times, unchanged):
     assert done.returncode == 0, done.stderr
     took = done.stdout.split()[0]
     assert float(took) < 1.0, "redacting %r * %d took %s s" % (unit, times, took)
-    # Neither of the first two lines mixes letters and digits or names a
-    # value, so no rule rewrites it.
     assert done.stdout.split()[1] == str(unchanged)
 
 
