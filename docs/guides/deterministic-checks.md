@@ -1162,14 +1162,18 @@ loses `user:pass`. Last, any remaining run of 20 or more token characters that
 mixes letters and digits is `<hidden>`: that catches a bare token of any
 shape, and it also hides an integrity hash or a timestamped log name, a cost
 the script takes to fail closed. A URL's scheme, which is at most 16
-characters, and its port stay. A URL's host and the host after `ENOTFOUND`
-or `getaddrinfo` stay whole only when the host is a bracketed address or a
-DNS name: two or more dot-separated labels of letters, digits and hyphens,
-where no label is a UUID (npm's legacy token shape) and no part of a label
-between its hyphens is itself a run this rule hides. So an AWS CodeArtifact
-host such as `my-domain-111122223333.d.codeartifact.invalid` stays readable,
-while a token used as the host, as one of its labels or as a dotless operand
-is `<hidden>` and the rest of the host is kept. The next step
+characters, and its port stay. A host is judged as one run: a URL's host
+with any `+`, `=` or `%`-escape in it, and the operand after `ENOTFOUND` or
+`getaddrinfo` up to a space, quote, comma or semicolon, since a token split
+at a symbol has pieces too short for this rule. The host stays whole only
+when it is a bracketed address or a DNS name: two or more dot-separated
+labels of letters, digits and hyphens, where no label is a UUID (npm's legacy
+token shape) and no part of a label between its hyphens is itself a run this
+rule hides. Any other host that mixes letters and digits is `<hidden>` whole;
+one that mixes in no digit, such as `localhost`, stays. So an AWS
+CodeArtifact host such as `my-domain-111122223333.d.codeartifact.invalid`
+stays readable, while a token used as the host, as one of its labels or as
+the operand, split at a symbol or not, is `<hidden>` with the whole host. The next step
 follows the cause: a 401 or 403 status, `E401`, `E403` or "authenticate" says
 to check the registry credentials in `.npmrc` (values not shown); `ENOTFOUND`,
 `ECONNREFUSED` or `ETIMEDOUT` says to check the registry is reachable.

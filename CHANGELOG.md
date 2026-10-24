@@ -658,13 +658,15 @@ version rather than a bare commit:
   dependency while `package.json` declares one (a workspaces root's
   `workspaces` included, a peer marked optional not), which is how an empty
   lockfile audits. A failed run shows npm's own cause with every URL path,
-  userinfo and credential value hidden and the registry's host kept, an
-  AWS CodeArtifact or bracketed IPv6 host, zone id and all, included, while a token passed as
-  the host or as one of its labels is hidden, cut to
+  userinfo and credential value hidden. The registry's host is kept when it
+  is a DNS name, an AWS CodeArtifact one included, or a bracketed IPv6
+  address with its zone id; any other host that mixes letters and digits,
+  such as a token passed as the registry, is hidden whole. The line is cut to
   `dependency_audit.max_shown_chars` (500) characters so a registry's long
-  body can neither flood the line nor stall the redaction, with a quoted
-  value the cut splits hidden whole, and says to check
-  `.npmrc` credentials when the registry refused the login. It runs npm with every dependency type included, so an
+  body can neither flood the line nor stall the redaction, and a quoted
+  value the cut splits is hidden whole. The run says to check `.npmrc`
+  credentials when the registry refused the login. It runs npm with every
+  dependency type included, so an
   `.npmrc` `omit=` cannot narrow it, and writes nothing in the tree; npm
   writes its own per-user log and cache. It is not a `make verify` goal, because the
   registry's answer changes day to day. Keel's first row, also shipped to a

@@ -2,12 +2,13 @@
 title: Unit — audit_dependencies (npm audit findings judged against the accepted risks in config)
 kind: tests
 layer: n/a
-summary: scripts/audit_dependencies.py driven in process over saved `npm audit --json` reports shaped like a real one, in a project root the test builds from keel's own config/project.json with its own `dependency_audit` block, on a day the test hands in, so no test runs npm or reaches the network. Each failure kind fails on its own and names what failed: a finding at or above `fail_at` no row covers, a covered finding whose row names another package, a row past its review_by day, a row dated more than `max_review_days` after today (exactly that many passes, one more fails), a row whose advisory the report no longer holds, and a row naming an app not audited. A covered finding passes on its review_by day and is listed with its reason; a finding below `fail_at` is listed and does not fail, and lowering `fail_at` fails it. A report with no findings still judges every row. No app and no row exits 0 saying so. A report that is not version 2, one with an unknown severity, a via url with no advisory id, a via item that is neither an advisory nor an entry's name, counts that disagree with its entries, or no audited dependency while package.json declares one is USAGE from a saved file and BACKEND_ABSENT from a run; so is a run's output that is not JSON, and npm exiting 1 with no finding. An app with no package.json, an unreadable one or no package-lock.json, a `--report` name that is not an audited app and a bad flag are USAGE; npm that cannot start, overruns its timeout, exits 2, is killed by a signal or answers an error object is BACKEND_ABSENT, showing the error's message or summary, else the top-level message npm 11 writes for an unreachable registry (its real shape, with a placeholder host), else npm's last stderr line other than its log pointer and no other, and `<hidden>` for a line holding any of the credential shapes, each tested with its secret absent from the output. A 16 000-character line and "token" * 2000 are redacted in under a second, timed in a child the test can kill; a diagnostic longer than `max_shown_chars` is cut, its advice still chosen from an E401 past the cut, dropping the word the cut lands in, and marked, and a shorter one is not; a quoted value the cut splits, bare or in JSON, is hidden from its quote. The rule for a run of 20 or more characters keeps a URL's scheme, host and port, a bracketed IPv6 host among them, and the dotted host after ENOTFOUND or getaddrinfo, such as an AWS CodeArtifact host; a dotless operand, a hyphenated one and a token beside a kept host are still hidden, and so is a token used as a URL's host, as one of its labels (a UUID included), glued on past a `)`, or as the resolver's operand. A path after an IPv6 zone id or after a six-digit number where a port goes is hidden. Each secret word the credential rule names hides the value of a key that holds only that word, so dropping any one word from the rule fails its own case. Each dependency field and both forms of `workspaces` count as declaring a dependency, and an empty one does not. The argv includes every dependency type an .npmrc could omit. A refused `dependency_audit` value is CONFIG.
+summary: scripts/audit_dependencies.py driven in process over saved `npm audit --json` reports shaped like a real one, in a project root the test builds from keel's own config/project.json with its own `dependency_audit` block, on a day the test hands in, so no test runs npm or reaches the network. Each failure kind fails on its own and names what failed: a finding at or above `fail_at` no row covers, a covered finding whose row names another package, a row past its review_by day, a row dated more than `max_review_days` after today (exactly that many passes, one more fails), a row whose advisory the report no longer holds, and a row naming an app not audited. A covered finding passes on its review_by day and is listed with its reason; a finding below `fail_at` is listed and does not fail, and lowering `fail_at` fails it. A report with no findings still judges every row. No app and no row exits 0 saying so. A report that is not version 2, one with an unknown severity, a via url with no advisory id, a via item that is neither an advisory nor an entry's name, counts that disagree with its entries, or no audited dependency while package.json declares one is USAGE from a saved file and BACKEND_ABSENT from a run; so is a run's output that is not JSON, and npm exiting 1 with no finding. An app with no package.json, an unreadable one or no package-lock.json, a `--report` name that is not an audited app and a bad flag are USAGE; npm that cannot start, overruns its timeout, exits 2, is killed by a signal or answers an error object is BACKEND_ABSENT, showing the error's message or summary, else the top-level message npm 11 writes for an unreachable registry (its real shape, with a placeholder host), else npm's last stderr line other than its log pointer and no other, and `<hidden>` for a line holding any of the credential shapes, each tested with its secret absent from the output. A 16 000-character line and "token" * 2000 are redacted in under a second, timed in a child the test can kill; a diagnostic longer than `max_shown_chars` is cut, its advice still chosen from an E401 past the cut, dropping the word the cut lands in, and marked, and a shorter one is not; a quoted value the cut splits, bare or in JSON, is hidden from its quote. The rule for a run of 20 or more characters keeps a URL's scheme, host and port, a bracketed IPv6 host among them, and the dotted host after ENOTFOUND or getaddrinfo, such as an AWS CodeArtifact host; a dotless operand, a hyphenated one and a token beside a kept host are still hidden, and so is a token used as a URL's host, as one of its labels (a UUID included), glued on past a `)`, or as the resolver's operand, and a host split at `=`, `+` or `%2B` is hidden whole in a URL and after ENOTFOUND, while `localhost` stays. A path after an IPv6 zone id or after a six-digit number where a port goes is hidden. Each secret word the credential rule names hides the value of a key that holds only that word, so dropping any one word from the rule fails its own case. Each dependency field and both forms of `workspaces` count as declaring a dependency, and an empty one does not. The argv includes every dependency type an .npmrc could omit. A refused `dependency_audit` value is CONFIG.
 """
 
 import copy
 import datetime
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -740,6 +741,12 @@ _ARTIFACT_HOST = "my-domain-111122223333.d.codeartifact.invalid"
         ),
         ("npm error ENOTFOUND %s" % _ARTIFACT_HOST, None),
         ("getaddrinfo EAI_AGAIN %s" % _ARTIFACT_HOST, None),
+        # A host that is no DNS name and mixes no digit in, such as a local
+        # registry's, is no token and stays.
+        (
+            "request to http://localhost:4873/npm/repo failed",
+            "request to http://localhost:4873/<path hidden> failed",
+        ),
         # L1: a bracketed IPv6 host keeps host and port and loses its path.
         (
             "request to http://[::1]:8080/s3cr3t/pkg failed",
@@ -768,6 +775,7 @@ _ARTIFACT_HOST = "my-domain-111122223333.d.codeartifact.invalid"
         "getaddrinfo-enotfound",
         "enotfound",
         "getaddrinfo-eai-again",
+        "dotless-word-host",
         "ipv6",
         "token-beside",
         "dotless-operand",
@@ -790,7 +798,7 @@ _TOKEN_HOST = "npmFAKEAbCdEf1234567890abcdEFGH"
         ("request to https://%s@/repo failed" % _TOKEN_HOST, "request to https://"),
         (
             "request to https://%s.registry.example.com/x failed" % _TOKEN_HOST,
-            ".registry.example.com/<path hidden> failed",
+            "request to https://<hidden>/<path hidden> failed",
         ),
         ("getaddrinfo ENOTFOUND %s.x" % _TOKEN_HOST, "getaddrinfo ENOTFOUND "),
         (
@@ -802,7 +810,7 @@ _TOKEN_HOST = "npmFAKEAbCdEf1234567890abcdEFGH"
         # parts, so its shape is named rather than left to the hyphen rule.
         (
             "request to https://%s.registry.example.com/ failed" % _UUID,
-            ".registry.example.com/<path hidden> failed",
+            "request to https://<hidden>/<path hidden> failed",
         ),
     ],
     ids=[
@@ -837,6 +845,30 @@ def test_a_token_shaped_host_is_hidden(text, kept):
 )
 def test_a_path_after_an_odd_host_or_port_is_hidden(text, shown):
     assert audit_dependencies._redacted(text) == shown
+
+
+# A token holding `=`, `+` or a `%`-escape: split there, each piece is under
+# rule (d)'s 20 characters, so only a judgement of the whole run hides it.
+_SPLIT_TOKENS = {
+    "equals": "AbCdEf1234567=890abcdEFGHijklm",
+    "plus": "AbCdEf1234567+890abcdEFGHijklm",
+    "escape": "AbCdEf1234567%2B890abcdEFG.example",
+    # A first piece with no digit is no token on its own, so only the whole
+    # run, `=` included, shows it is one.
+    "word-first": "abcdefghijklm=1234567890ABCDEFG",
+}
+
+
+@pytest.mark.parametrize(
+    "form", ["getaddrinfo ENOTFOUND %s", "request to https://%s/x"]
+)
+@pytest.mark.parametrize("token", sorted(_SPLIT_TOKENS))
+def test_a_host_split_by_a_symbol_is_hidden_whole(form, token):
+    shown = audit_dependencies._redacted((form % _SPLIT_TOKENS[token]) + " failed")
+    # npm lowercases a host, so no piece may show in either case.
+    for piece in re.split(r"[=+]|%2B|\.example", _SPLIT_TOKENS[token]):
+        assert not piece or piece.lower() not in shown.lower(), shown
+    assert shown.startswith(form.split("%s")[0] + "<hidden>"), shown
 
 
 def test_a_codeartifact_host_is_kept_end_to_end(project, capsys):
