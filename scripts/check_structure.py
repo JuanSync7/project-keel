@@ -268,7 +268,32 @@ STATUSES = {
     "accepted",
     "superseded",  # ADR lifecycle
 }
-VISIBILITIES = {"public", "internal", "confidential", "restricted"}
+# The frontmatter `visibility` vocabulary, least restrictive first: the order
+# CONVENTIONS §1 lists it in, and the one build_corpus ranks a node's chain by.
+VISIBILITY_ORDER = ("public", "internal", "confidential", "restricted")
+VISIBILITIES = set(VISIBILITY_ORDER)
+
+
+def strictest_visibility(stated):
+    """The most restrictive of the *stated* visibilities, None and empty
+    skipped, or None when nothing is stated. A value outside VISIBILITY_ORDER
+    outranks every member: it cannot be ranked, so it is kept rather than read
+    as a looser level, and check_A and check_corpus refuse it wherever it lands."""
+    strictest = None
+    rank = -1
+    for value in stated:
+        if not value:
+            continue
+        here = (
+            VISIBILITY_ORDER.index(value)
+            if value in VISIBILITY_ORDER
+            else len(VISIBILITY_ORDER)
+        )
+        if here > rank:
+            strictest, rank = value, here
+    return strictest
+
+
 REQUIRED_KEYS = (
     "title",
     "kind",

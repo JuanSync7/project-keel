@@ -353,9 +353,10 @@ def test_a_readme_with_no_owner_does_not_cut_the_owner_chain(tmp_path):
     )
 
 
-def test_visibility_still_comes_from_the_nearest_readme_that_declares_one(tmp_path):
-    """The owner walk goes past a README the visibility walk stops at: the
-    nearer README's visibility still wins over an owned one above it."""
+def test_the_owner_walk_and_the_visibility_chain_are_independent(tmp_path):
+    """The owner walk goes past a TBD README to a real owner above it, and the
+    visibility is the strictest on the chain whichever README names the owner
+    (tests/unit/scripts/test_corpus_visibility.py holds the visibility rule)."""
     root = _tree(tmp_path)
     _write(root, "src/README.md", _readme("src-readme", "alice", "public"))
     _write(root, "src/backend/README.md", _readme("be-readme", "TBD", "confidential"))
@@ -363,47 +364,33 @@ def test_visibility_still_comes_from_the_nearest_readme_that_declares_one(tmp_pa
     nodes = _nodes(root)
     assert nodes["src/backend/m-py"]["visibility"] == "confidential"
     assert nodes["src/backend/m-py::g"]["visibility"] == "confidential"
+    assert _owner(nodes["src/backend/m-py"]) == ("alice", "inherited", "src/README.md")
 
 
-def test_a_readme_with_neither_owner_nor_visibility_passes_visibility_on(tmp_path):
-    root = _tree(tmp_path)
-    _write(root, "src/README.md", _readme("src-readme", None, "confidential"))
-    _write(root, "src/backend/README.md", _readme("be-readme", "TBD", None))
-    _write(root, "src/backend/m.py", _module())
-    node = _nodes(root)["src/backend/m-py"]
-    assert node["visibility"] == "confidential"
-    assert _owner(node) == (_DEFAULT, "default", "src/backend/README.md")
-
-
-def test_an_owned_readme_with_no_visibility_still_ends_the_visibility_walk(tmp_path):
-    """Today's visibility rule, kept as it was: the walk stops at the nearest
-    README with a real owner or a visibility, so an owned README that declares
-    none gives its modules the `internal` fallback, not the parent's
-    visibility. check_A gives every governed README a visibility."""
-    root = _tree(tmp_path)
-    _write(root, "src/README.md", _readme("src-readme", None, "confidential"))
-    _write(root, "src/backend/README.md", _readme("be-readme", "bob", None))
-    _write(root, "src/backend/m.py", _module())
-    node = _nodes(root)["src/backend/m-py"]
-    assert node["visibility"] == "internal"
-    assert _owner(node) == ("bob", "inherited", "src/backend/README.md")
-
-
-@pytest.mark.parametrize("written", ['"alice"', "null"], ids=["quoted", "null"])
-def test_a_readme_with_a_malformed_owner_still_ends_the_visibility_walk(
-    tmp_path, written
+@pytest.mark.parametrize(
+    "written, owner",
+    [
+        (None, ("", "none", None)),
+        ("TBD", (_DEFAULT, "default", "src/backend/README.md")),
+        ("bob", ("bob", "inherited", "src/backend/README.md")),
+        ('"alice"', ("", "none", None)),
+        ("null", ("", "none", None)),
+    ],
+    ids=["no-owner", "tbd", "owned", "quoted", "null"],
+)
+def test_a_readme_s_owner_has_no_say_in_the_visibility_it_passes_on(
+    tmp_path, written, owner
 ):
-    """The owner walk goes past a written owner that names nobody, but the
-    visibility walk stops there as it always did: any written owner other than
-    TBD ends it, so the module takes `internal` and never the looser `public`
-    of a README above."""
+    """A README that states no visibility passes on the one above it, however
+    its owner is written: an owned or malformed one once ended the walk and
+    gave its modules `internal` under a confidential parent (KEEL-VIS-1)."""
     root = _tree(tmp_path)
-    _write(root, "src/README.md", _readme("src-readme", None, "public"))
+    _write(root, "src/README.md", _readme("src-readme", None, "confidential"))
     _write(root, "src/backend/README.md", _readme("be-readme", written, None))
     _write(root, "src/backend/m.py", _module())
     node = _nodes(root)["src/backend/m-py"]
-    assert node["visibility"] == "internal"
-    assert _owner(node) == ("", "none", None)
+    assert node["visibility"] == "confidential"
+    assert _owner(node) == owner
 
 
 # --- the vocabulary and the report -------------------------------------------

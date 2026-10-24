@@ -22,6 +22,7 @@ sys.path.insert(0, os.path.join(ROOT, "scripts"))
 
 import config_loader  # noqa: E402
 from build_corpus import build_corpus, config_fault  # noqa: E402
+from check_structure import VISIBILITY_ORDER  # noqa: E402
 from exit_codes import ExitCode, finish, report  # noqa: E402
 from link_corpus import link_corpus  # noqa: E402
 
@@ -29,7 +30,8 @@ from link_corpus import link_corpus  # noqa: E402
 KINDS = {"doc", "section", "module", "symbol"}
 OWNER_SOURCES = {"frontmatter", "marker", "inherited", "default", "none"}
 SUMMARY_SOURCES = {"authored", "generated", ""}
-VISIBILITIES = {"public", "internal", "confidential", "restricted"}
+# The vocabulary check_A judges frontmatter by, imported so the two cannot drift.
+VISIBILITIES = frozenset(VISIBILITY_ORDER)
 LINK_SOURCES = {"deterministic", "generated"}
 # The closed set of edge kinds: keyword (link_corpus) and the three authored
 # kinds build_corpus derives from a document's own text, plus `semantic` for an

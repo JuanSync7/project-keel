@@ -43,6 +43,7 @@ from check_structure import (  # noqa: E402
     _prose_lines,
     _resolve_link,
     _unfenced_lines,
+    strictest_visibility,
 )
 from exit_codes import ExitCode, finish, report  # noqa: E402
 
@@ -146,13 +147,6 @@ _DEFAULT_OWNER_KEY = ("accountability", "default_owner")
 
 def _says_tbd(value):
     return bool(value) and config_loader.is_unowned(value)
-
-
-def _writes_an_owner(value):
-    # The visibility walk's stop test from before the owner walk learned the
-    # grammar: any written owner but TBD. A malformed one names nobody yet still
-    # stops it, so a module never takes a looser visibility from further up.
-    return bool(value) and not config_loader.is_unowned(value)
 
 
 def _resolve_owner(own, own_source, own_where, parent, default):
@@ -407,7 +401,9 @@ def _doc_and_sections(path: str, root: str, nodes: list, refs: list, default):
         return  # only frontmatter-bearing markdown is a corpus doc
     doc_id = fm.get("id") or _path_id(rel)
     doc_res = _resolve_owner(fm.get("owner"), "frontmatter", rel, _UNOWNED, default)
-    visibility = fm.get("visibility") or "internal"
+    visibility = _chain_visibility(
+        fm.get("visibility"), _readmes_upward(os.path.dirname(path), root)
+    )
     title = fm.get("title") or rel
     summary = fm.get("summary") or ""
     tags = _parse_tags(fm.get("tags")) + _keywords(title, summary)
@@ -534,34 +530,35 @@ def _readmes_upward(dirpath: str, root: str):
         d = parent
 
 
-def _nearest_readme(dirpath: str, root: str, default):
-    """(owner resolution, visibility) a module in *dirpath* inherits from its
-    package READMEs. The owner is the nearest README's real owner: the walk
-    goes past a README that names none (TBD, absent, malformed, unreadable),
-    and only with no real owner up to *root* does the nearest TBD README hand
-    on *default*. The visibility is the nearest README's that has a
-    visibility or a written owner other than TBD, as before the owner walk
-    went on past a README."""
-    visibility = None
-    visibility_found = False
+def _chain_visibility(own, readmes):
+    """The visibility a node takes: the most restrictive of its *own* stated
+    visibility and every README's in *readmes* (rel path, frontmatter) pairs,
+    else `internal`. Fails closed: a README that states none passes on what is
+    stated above it, and a child stating a looser level than an ancestor
+    still comes out at the ancestor's, so confidentiality cannot leak through
+    a child; to publish a child, lower the README above it."""
+    stated = [own] + [fm.get("visibility") for _, fm in readmes]
+    # `internal` when the whole chain is silent: the level CONVENTIONS §1's
+    # template frontmatter writes, so an unlabelled node is not published.
+    return strictest_visibility(stated) or "internal"
+
+
+def _nearest_readme(readmes, default):
+    """The owner resolution a module inherits from *readmes*, its package
+    READMEs as (rel path, frontmatter) pairs, nearest first: the nearest
+    README's real owner. The walk goes past a README that names none (TBD,
+    absent, malformed, unreadable), and only with no real owner up to the root
+    does the nearest TBD README hand on *default*."""
     nearest_tbd = None
-    for where, fm in _readmes_upward(dirpath, root):
+    for where, fm in readmes:
         owner = _real_owner(fm.get("owner"))
-        # The visibility walk keeps the stop rule it had before the owner walk
-        # learned to go on: the nearest README with a visibility or a written
-        # owner other than TBD, and that README's visibility, none included.
-        if not visibility_found and (
-            fm.get("visibility") or _writes_an_owner(fm.get("owner"))
-        ):
-            visibility_found = True
-            visibility = fm.get("visibility")
         if owner:
-            return (owner, "frontmatter", where), visibility
+            return owner, "frontmatter", where
         if nearest_tbd is None and _says_tbd(fm.get("owner")):
             nearest_tbd = where
     if default and nearest_tbd:
-        return (default, "default", nearest_tbd), visibility
-    return _UNOWNED, visibility
+        return default, "default", nearest_tbd
+    return _UNOWNED
 
 
 def _module_and_symbols(path: str, root: str, nodes: list, default):
@@ -583,9 +580,10 @@ def _module_and_symbols(path: str, root: str, nodes: list, default):
     summary = meta.get("summary") or first
     # owner + visibility: own docstring owner is the module's "frontmatter"; else
     # inherit the nearest package README (owner_source 'inherited').
-    readme_res, nr_vis = _nearest_readme(os.path.dirname(path), root, default)
+    readmes = list(_readmes_upward(os.path.dirname(path), root))
+    readme_res = _nearest_readme(readmes, default)
     mod_res = _resolve_owner(meta.get("owner"), "frontmatter", rel, readme_res, default)
-    visibility = meta.get("visibility") or nr_vis or "internal"
+    visibility = _chain_visibility(meta.get("visibility"), readmes)
     nodes.append(
         {
             "node_id": mod_id,
