@@ -13,8 +13,9 @@ from pathlib import Path
 
 import pytest
 
+import ci_adapters
+
 _ROOT = Path(__file__).resolve().parents[2]
-_CI = _ROOT / ".github" / "workflows" / "ci.yml"
 
 # Self-neutralising downstream. `_exclude` prunes these modules at GENERATION, but
 # copier's `_exclude` can never retire a file on `copier update` — it renders the old
@@ -189,38 +190,57 @@ def test_make_new_refuses_a_dirty_template(tmp_path):
     assert allowed.returncode == 0, "ALLOW_DIRTY=1 must override the refusal"
 
 
+def _shipped_ci_steps():
+    """{adapter name: its steps} for every CI adapter keel ships, the GitLab one
+    read from its `.jinja` twin (tests/ci_adapters.py shipped)."""
+    adapters = ci_adapters.shipped(_ROOT)
+    assert adapters, (
+        "keel ships no CI adapter of config/project.json ci_pipeline.adapters"
+    )
+    return {
+        name: ci_adapters.adapter_steps(path, name) for name, path in adapters.items()
+    }
+
+
 def test_ci_installs_the_optional_template_extra():
     """`template = ["copier>=9"]` is an optional extra. Until CI installs it, every
-    copier test skips and the generation/update gates are decorative."""
-    installs = [ln for ln in _CI.read_text().splitlines() if "pip install -e" in ln]
-    assert installs, "CI no longer does an editable install of the project"
-    assert any("template" in ln for ln in installs), (
-        "no CI step installs the `template` extra, so copier is absent and every "
-        "tests/integration/test_copier_*.py silently skips:\n" + "\n".join(installs)
-    )
+    copier test skips and the generation/update gates are decorative. Held for
+    every CI adapter keel ships."""
+    for name, steps in _shipped_ci_steps().items():
+        installs = [s["run"] for s in steps if "pip install -e" in s["run"]]
+        assert installs, "%s no longer does an editable install of the project" % name
+        assert any("template" in run for run in installs), (
+            "no %s step installs the `template` extra, so copier is absent and every "
+            "tests/integration/test_copier_*.py silently skips:\n"
+            % name
+            + "\n".join(installs)
+        )
 
 
 def test_ci_declares_the_template_surface_required_for_the_suite():
     """Installing the extra is not enough: a broken install would degrade back to a
     silent skip. The suite step must declare the `template` surface required so a
     missing copier is a hard collection error in CI (a bare local clone leaves the
-    declaration unset and still skips gracefully).
+    declaration unset and still skips gracefully). Held for every CI adapter keel
+    ships.
 
     Named surface, not just "the variable is present": declaring `dev,transport` and
     quietly dropping `template` would satisfy a mere-presence check while putting the
     generation and update gates straight back to sleep."""
-    lines = _CI.read_text().splitlines()
-    starts = [i for i, ln in enumerate(lines) if ln.strip() == "- run: make test"]
-    assert len(starts) == 1, "expected exactly one `- run: make test` step in CI"
-    step = "\n".join(lines[starts[0] : starts[0] + 4])
-    assert "KEEL_REQUIRED_EXTRAS" in step, (
-        "the CI step that runs the suite declares no required surfaces, so a missing "
-        "`template` extra would skip the copier tests instead of failing:\n" + step
-    )
-    assert "template" in step.split("KEEL_REQUIRED_EXTRAS", 1)[1], (
-        "the suite step declares required surfaces but not `template`, so the copier "
-        "generation/update gates can silently skip in CI again:\n" + step
-    )
+    for name, steps in _shipped_ci_steps().items():
+        suite = [s for s in steps if s["run"] == "make test"]
+        assert len(suite) == 1, "expected exactly one `make test` step in %s" % name
+        env = suite[0]["env"]
+        assert "KEEL_REQUIRED_EXTRAS" in env, (
+            "the %s step that runs the suite declares no required surfaces, so a "
+            "missing `template` extra would skip the copier tests instead of "
+            "failing: %s" % (name, env)
+        )
+        assert "template" in env["KEEL_REQUIRED_EXTRAS"].split(","), (
+            "the %s suite step declares required surfaces but not `template`, so the "
+            "copier generation/update gates can silently skip in CI again: %s"
+            % (name, env)
+        )
 
 
 def test_copier_test_modules_hard_fail_when_the_surface_is_required():

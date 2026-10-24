@@ -17,6 +17,7 @@ from pathlib import Path
 
 import pytest
 
+import ci_adapters
 import makefile_copy
 
 _ROOT = Path(__file__).resolve().parents[2]
@@ -669,33 +670,24 @@ def test_verify_reaches_the_frontend_suites():
 
 
 def _ci_run_lines():
-    """[(step index, run command, continue-on-error value or None)] for every
-    step of the CI workflow, in order. Stdlib line-scanning, for the reason
+    """{adapter name: [(step index, run command, whether a failure lets the job
+    carry on)]} for every CI adapter keel ships here (tests/ci_adapters.py
+    shipped), in order, or None with none. Stdlib line-scanning, for the reason
     _precommit_python3_entries gives: a yaml import would make this skip."""
-    ci = _ROOT / ".github" / "workflows" / "ci.yml"
-    if not ci.is_file():
+    adapters = ci_adapters.shipped(_ROOT)
+    if not adapters:
         return None
-    steps = []
-    for line in ci.read_text("utf-8").splitlines():
-        body = line.strip()
-        if body.startswith("- "):
-            steps.append({"run": None, "continue": None})
-            body = body[2:].strip()
-        if not steps:
-            continue
-        key, sep, value = body.partition(":")
-        if not sep:
-            continue
-        value = value.split("#", 1)[0].strip()
-        if key == "run":
-            steps[-1]["run"] = value
-        elif key == "continue-on-error":
-            steps[-1]["continue"] = value
-    return [(i, st["run"], st["continue"]) for i, st in enumerate(steps) if st["run"]]
+    return {
+        name: [
+            (i, step["run"], step["soft"])
+            for i, step in enumerate(ci_adapters.adapter_steps(path, name))
+        ]
+        for name, path in adapters.items()
+    }
 
 
 def _ci_step_of(runs, target):
-    hits = [i for i, run, _c in runs if run.split()[:2] == ["make", target]]
+    hits = [i for i, run, _soft in runs if run.split()[:2] == ["make", target]]
     assert hits, "no CI step runs `make %s`" % target
     return hits[0]
 
@@ -705,15 +697,16 @@ def test_ci_runs_the_frontend_suites_after_installing_them():
     that broke its own tests stayed green there. The suites run as a step after
     the packages and the journey's browser are installed, and no step may carry
     on past a failure of either."""
-    runs = _ci_run_lines()
-    if runs is None:
-        pytest.skip("no CI workflow in this project")
-    install = _ci_step_of(runs, "fe-install")
-    browsers = _ci_step_of(runs, _FE_BROWSERS)
-    suites = _ci_step_of(runs, _FE_SUITES)
-    assert install < browsers < suites, (install, browsers, suites)
-    soft = [run for i, run, cont in runs if cont not in (None, "false")]
-    assert soft == [], "CI steps that carry on past a failure: %s" % soft
+    adapters = _ci_run_lines()
+    if adapters is None:
+        pytest.skip("no CI adapter in this project")
+    for name, runs in adapters.items():
+        install = _ci_step_of(runs, "fe-install")
+        browsers = _ci_step_of(runs, _FE_BROWSERS)
+        suites = _ci_step_of(runs, _FE_SUITES)
+        assert install < browsers < suites, (name, install, browsers, suites)
+        soft = [run for _i, run, carries_on in runs if carries_on]
+        assert soft == [], "%s steps that carry on past a failure: %s" % (name, soft)
 
 
 def test_the_browser_cache_location_reaches_every_verify_goal(monkeypatch):
@@ -1289,26 +1282,34 @@ def test_every_required_surface_is_installed_by_a_ci_step():
     """A surface CI declares required but never installs would fail every run;
     one it installs but never declares is the silent skip again. Read off the real
     workflow, so the two cannot drift."""
-    ci = _ROOT / ".github" / "workflows" / "ci.yml"
-    if not ci.is_file():
-        pytest.skip("no CI workflow in this project")
-    text = ci.read_text()
-    declared = [ln for ln in text.splitlines() if optional_deps.ENV_VAR in ln]
-    assert declared, (
-        "no CI step declares %s, so every optional surface degrades to a skip and "
-        "the suite can go green with whole gates unexecuted" % optional_deps.ENV_VAR
-    )
-    names = re.findall(r"[\w-]+", declared[0].split(":", 1)[1])
-    assert names, "%s is declared empty in CI" % optional_deps.ENV_VAR
-    for name in names:
-        assert name in optional_deps.SURFACES, (
-            "CI declares unknown surface %r (known: %s) — a typo here silently "
-            "disables the guard" % (name, sorted(optional_deps.SURFACES))
+    adapters = ci_adapters.shipped(_ROOT)
+    if not adapters:
+        pytest.skip("no CI adapter in this project")
+    for adapter, path in adapters.items():
+        steps = ci_adapters.adapter_steps(path, adapter)
+        declared = [
+            s["env"][optional_deps.ENV_VAR]
+            for s in steps
+            if optional_deps.ENV_VAR in s["env"]
+        ]
+        assert declared, (
+            "no %s step declares %s, so every optional surface degrades to a skip and "
+            "the suite can go green with whole gates unexecuted"
+            % (adapter, optional_deps.ENV_VAR)
         )
-        assert optional_deps.SURFACES[name] in text, (
-            "CI declares surface %r required but no step runs %r, so every run "
-            "would fail on a missing import" % (name, optional_deps.SURFACES[name])
-        )
+        names = re.findall(r"[\w-]+", declared[0])
+        assert names, "%s is declared empty in %s" % (optional_deps.ENV_VAR, adapter)
+        runs = "\n".join(s["run"] for s in steps)
+        for name in names:
+            assert name in optional_deps.SURFACES, (
+                "%s declares unknown surface %r (known: %s) — a typo here silently "
+                "disables the guard" % (adapter, name, sorted(optional_deps.SURFACES))
+            )
+            assert optional_deps.SURFACES[name] in runs, (
+                "%s declares surface %r required but no step runs %r, so every run "
+                "would fail on a missing import"
+                % (adapter, name, optional_deps.SURFACES[name])
+            )
 
 
 _NO_SUCH_PACKAGE = "keel_no_such_transport_package"
@@ -1534,19 +1535,21 @@ def test_ci_installs_the_scanner_then_scans():
     """CI installs the pinned scanner, then scans the whole history before the suite,
     and neither step may carry on past a failure. The suite declares the
     scanner required, so its install comes before `make test` too."""
-    runs = _ci_run_lines()
-    if runs is None:
-        pytest.skip("no CI workflow in this project")
-    install = _ci_step_of(runs, _SECRETS_INSTALL)
-    scan = _ci_step_of(runs, _SECRET_SCAN)
-    suite = _ci_step_of(runs, "test")
-    assert install < scan < suite, (install, scan, suite)
-    soft = [
-        run
-        for i, run, cont in runs
-        if i in (install, scan) and cont not in (None, "false")
-    ]
-    assert soft == [], "CI scanner steps that carry on past a failure: %s" % soft
+    adapters = _ci_run_lines()
+    if adapters is None:
+        pytest.skip("no CI adapter in this project")
+    for name, runs in adapters.items():
+        install = _ci_step_of(runs, _SECRETS_INSTALL)
+        scan = _ci_step_of(runs, _SECRET_SCAN)
+        suite = _ci_step_of(runs, "test")
+        assert install < scan < suite, (name, install, scan, suite)
+        soft = [
+            run for i, run, carries_on in runs if i in (install, scan) and carries_on
+        ]
+        assert soft == [], "%s scanner steps that carry on past a failure: %s" % (
+            name,
+            soft,
+        )
 
 
 # ---- scope: what the SHIPPED documents claim the gate covers ------------------

@@ -2,7 +2,7 @@
 title: Integration — the install recipes pass config/project.json install_sources to npm and the browser runner
 kind: tests
 layer: n/a
-summary: A real `make fe-install` and `make fe-browsers` on a copy of this project with one stub app, a stub `node` printing the configured major and a stub `npm` that records its arguments and PLAYWRIGHT_DOWNLOAD_HOST. With `install_sources.npm_registry` and `browser_download_host` null, npm is called as plain `npm install` and the browser runner sees no PLAYWRIGHT_DOWNLOAD_HOST, so the user's own .npmrc and the runner's default host hold; set, npm gets `--registry <url>` and the runner gets the host, each read from the copy's config and never a literal. A workflow step is an install when one of its shell commands, split at `;`, `&&`, `|`, `(` and newlines, is pip or pip3 install, `python -m pip install`, an npm install or ci alias, or a playwright install through npx or `npm exec`; each such step is run for real under `bash -e`, from its working-directory in a copy whose config sets the sources, with every installer stubbed: pip and npm pass `--index-url` or `--registry` with the configured URL and the browser download sees the configured host, and with the sources null none of them does. A pnpm or yarn install, an installer named by path or run under sudo, and a step that fails under the stubs are faults, so the judge fails closed; a workflow tree with no install step is a failure, not a pass. Each unwired form, put in a copy of ci.yml, is a fault, and a wired pip3 step is not. A value with a URL user part stops each target before npm runs, its recipe ending 14 (CONFIG), the refusal naming the key and never the user part.
+summary: A real `make fe-install` and `make fe-browsers` on a copy of this project with one stub app, a stub `node` printing the configured major and a stub `npm` that records its arguments and PLAYWRIGHT_DOWNLOAD_HOST. With `install_sources.npm_registry` and `browser_download_host` null, npm is called as plain `npm install` and the browser runner sees no PLAYWRIGHT_DOWNLOAD_HOST, so the user's own .npmrc and the runner's default host hold; set, npm gets `--registry <url>` and the runner gets the host, each read from the copy's config and never a literal. A workflow step is an install when one of its shell commands, split at `;`, `&&`, `|`, `(` and newlines, is pip or pip3 install, `python -m pip install`, an npm install or ci alias, or a playwright install through npx or `npm exec`; each such step is run for real under `bash -e`, from its working-directory in a copy whose config sets the sources, with every installer stubbed: pip and npm pass `--index-url` or `--registry` with the configured URL and the browser download sees the configured host, and with the sources null none of them does. A pnpm or yarn install, an installer named by path or run under sudo, and a step that fails under the stubs are faults, so the judge fails closed; a workflow tree with no install step is a failure, not a pass. Each unwired form, put in a copy of ci.yml, is a fault, and a wired pip3 step is not. The GitLab adapter keel ships is judged the same way, each script line a step: its installs take the sources, and an unwired pip line put in a copy is a fault. A value with a URL user part stops each target before npm runs, its recipe ending 14 (CONFIG), the refusal naming the key and never the user part.
 @covers Makefile
 @covers scripts/install_sources.py
 """
@@ -18,6 +18,7 @@ from pathlib import Path
 
 import pytest
 
+import ci_adapters
 import makefile_copy
 import optional_deps
 
@@ -237,13 +238,21 @@ def _escapes_stubs(words):
     return bool(words) and ("/" in words[0] or words[0] == "sudo")
 
 
-def _workflow_steps(workflows):
-    """Every (workflow file, step) under *workflows* that runs a shell line."""
+def _workflow_steps(workflows, root=None):
+    """Every (workflow file, step) under *workflows* that runs a shell line,
+    then, with *root*, each script line of the GitLab adapter keel ships there
+    (tests/ci_adapters.py shipped), as a step of its own."""
     yaml = optional_deps.importorskip("yaml", extra="template")
     found = []
     for path in sorted(workflows.glob("*.yml")):
         for job in (yaml.safe_load(path.read_text("utf-8")) or {})["jobs"].values():
             found.extend((path.name, s) for s in job.get("steps", []) if "run" in s)
+    gitlab = ci_adapters.shipped(root).get("gitlab") if root else None
+    if gitlab:
+        found.extend(
+            (gitlab.name, {"run": ci_adapters.gitlab_line(step)})
+            for step in ci_adapters.adapter_steps(gitlab, "gitlab")
+        )
     return found
 
 
@@ -304,12 +313,13 @@ def _run_step(tmp_path, step, sources, tag):
     return calls
 
 
-def _faults(tmp_path, workflows):
-    """-> (installs judged, a message per install step under *workflows*
-    that ignores config/project.json install_sources)."""
+def _faults(tmp_path, workflows, root=None):
+    """-> (installs judged, a message per install step under *workflows*, and
+    with *root* in its GitLab adapter, that ignores config/project.json
+    install_sources)."""
     judged, faults = 0, []
     want = {"pip": ("--index-url", _INDEX), "npm": ("--registry", _REGISTRY)}
-    for name, step in _workflow_steps(workflows):
+    for name, step in _workflow_steps(workflows, root):
         kinds = [k for k in map(_install_kind, _commands(step["run"])) if k]
         if not kinds:
             continue
@@ -364,9 +374,34 @@ def _faults(tmp_path, workflows):
 
 
 def test_every_workflow_install_step_takes_the_configured_mirror(tmp_path):
-    judged, faults = _faults(tmp_path, _WORKFLOWS)
+    judged, faults = _faults(tmp_path, _WORKFLOWS, _ROOT)
     assert judged, "no workflow step under %s installs: nothing was judged" % _WORKFLOWS
     assert faults == [], "\n".join(faults)
+
+
+def test_the_gitlab_adapter_install_steps_are_judged_too(tmp_path):
+    """The GitLab adapter installs through the same sources: its pip and
+    install lines are judged, and an unwired line put in a copy is a fault."""
+    gitlab = ci_adapters.shipped(_ROOT).get("gitlab")
+    if gitlab is None:
+        pytest.skip("this project ships no GitLab adapter")
+    none = tmp_path / "no-workflows"
+    none.mkdir()
+    judged, faults = _faults(tmp_path / "a", none, _ROOT)
+    assert judged and faults == [], (judged, faults)
+    root = tmp_path / "copy"
+    (root / "config").mkdir(parents=True)
+    shutil.copyfile(str(_ROOT / ci_adapters.CONFIG), str(root / ci_adapters.CONFIG))
+    text = gitlab.read_text("utf-8")
+    assert text.count("    - make secrets-install\n") == 1
+    (root / gitlab.name).write_text(
+        text.replace(
+            "    - make secrets-install\n",
+            "    - make secrets-install\n    - pip install requests\n",
+        )
+    )
+    judged, faults = _faults(tmp_path / "b", none, root)
+    assert len(faults) == 1 and "pip install requests" in faults[0], faults
 
 
 @pytest.mark.parametrize(
