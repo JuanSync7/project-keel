@@ -2,7 +2,7 @@
 title: Integration — the docs show the lines the config loader writes
 kind: tests
 layer: n/a
-summary: The settings reference and the limits guide quote what scripts/config_loader.py writes to stderr, and this test holds them to it. The lines come from the loader itself, run in a fresh process (its default line prints once per process) over an empty config and an empty environment: a `[using default]` line for each KEYS row with a default, a `[not set]` line for each row without one. config/project.json `doc_drift.settings_reference` must hold, in a row for each defaulted key (the key's own row, or a row under it), the line's `[using default] <key> = <value>` part as a code span. config/project.json `doc_drift.limits_guide` must hold both line shapes as code spans with `<key>`, `<value>` and `<config file>` in place of a real row's text, and each other code span there that opens `[using default] ` or `[not set] ` must be a line, or a line's part before its reason, the loader writes for a real row; at least one of each kind is required. A table with no defaulted row, no required row or no quoted example is a failure, never a pass.
+summary: The settings reference and the limits guide quote what scripts/config_loader.py writes to stderr, and this test holds them to it. The lines come from the loader itself, run in a fresh process (its default line prints once per process) over an empty config and an empty environment: a `[using default]` line for each KEYS row with a default, a `[not set]` line for each row without one. config/project.json `doc_drift.settings_reference` must hold, in a row for each defaulted key (the key's own row, or a row under it), the line's `[using default] <key> = <value>` part as a code span, and each code span there that opens `[using default] ` or `[not set] ` must be a line, or a line's part before its reason, the loader writes, so a restated default carries the loader's value. config/project.json `doc_drift.limits_guide` must hold both line shapes as code spans with `<key>`, `<value>` and `<config file>` in place of a real row's text, and each other code span there that opens `[using default] ` or `[not set] ` must be a line, or a line's part before its reason, the loader writes for a real row; at least one of each kind is required. A table with no defaulted row, no required row or no quoted example is a failure, never a pass.
 """
 
 import json
@@ -116,6 +116,27 @@ def settings_findings(where, text, defaults):
     return out
 
 
+def _real_lines(written):
+    """Each line the loader writes, and each line's part before its reason."""
+    real = set()
+    for entry in written["defaults"] + written["not_set"]:
+        real.update((entry["line"], _fact(entry["line"])))
+    return real
+
+
+def stray_settings_findings(where, text, written):
+    """One line per code span opening `[using default] ` or `[not set] ` that
+    is no line, or a line's part before its reason, the loader writes: a row
+    that restates a default must restate the value the loader prints."""
+    real = _real_lines(written)
+    return [
+        "%s: `%s` is no line scripts/config_loader.py writes; copy it from "
+        "the loader's output" % (where, span)
+        for span in _SPAN.findall(text)
+        if span.startswith((_DEFAULT_OPENER, _NOT_SET_OPENER)) and span not in real
+    ]
+
+
 def shapes(written):
     """The two line shapes, derived from a real file row of each kind."""
     default = next(e for e in written["defaults"] if e["file"])
@@ -142,9 +163,7 @@ def guide_findings(where, text, written):
         for shape in (default_shape, not_set_shape)
         if shape not in spans
     ]
-    real = set()
-    for entry in written["defaults"] + written["not_set"]:
-        real.update((entry["line"], _fact(entry["line"])))
+    real = _real_lines(written)
     for opener in (_DEFAULT_OPENER, _NOT_SET_OPENER):
         examples = [
             s
@@ -169,6 +188,25 @@ def test_every_declared_default_is_stated_with_its_line(written, docs):
     where, text = docs["settings_reference"]
     findings = settings_findings(where, text, written["defaults"])
     assert not findings, "\n".join(findings)
+
+
+def test_every_default_line_the_settings_reference_quotes_is_the_loader_s(
+    written, docs
+):
+    where, text = docs["settings_reference"]
+    findings = stray_settings_findings(where, text, written)
+    assert not findings, "\n".join(findings)
+
+
+def test_a_restated_default_with_another_value_is_red(written, docs):
+    # The right line stays in its row, so only the stray copy can be the finding.
+    where, text = docs["settings_reference"]
+    first = written["defaults"][0]
+    stray = "`%s`" % _fact(first["line"]).replace(" = ", " = 1", 1)
+    planted = text + "\n" + stray + "\n"
+    findings = stray_settings_findings(where, planted, written)
+    before = stray_settings_findings(where, text, written)
+    assert len(findings) == len(before) + 1 and stray in findings[-1]
 
 
 def test_the_limits_guide_shows_the_lines_the_loader_writes(written, docs):
