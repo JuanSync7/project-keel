@@ -490,6 +490,22 @@ input>; <what to do next>`. `scripts/exit_codes.py` `report` refuses a blank
 part. `passes through` means the script exits with the status of the tool it
 wraps, which need not be a row of the first table.
 
+A shell script reads the same codes from `scripts/exit_codes.sh`, which
+`make exit-codes-sh` generates from the enum and `make check-exit-codes` fails
+when the enum has moved past it. It sets one `EXIT_<NAME>` variable per row of
+the first table, so a script that sources it ends with `exit "$EXIT_USAGE"`.
+`exit_fail "$EXIT_<NAME>" WHAT ON NEXT` writes the same three-part line and
+exits that code; it exits 2 instead for `SUCCESS`, a value no member has, a
+blank part or a wrong argument count. `exit_passthrough "$status"` is the shell
+`passes through`: it exits a wrapped tool's status, 0 to 255, and exits 2 for
+anything else. Inside `$(...)` both end only that subshell, not the script.
+The helper ships only when the copier answer `shell` is yes; with
+config/project.json `shell.enabled` false, `make exit-codes-sh` and the check
+say so and act on nothing. `tests/unit/scripts/test_exit_code_table.py` runs
+the helper under `/bin/sh`, and config/project.json `shell.excluded_paths`
+keeps it from the shell linter, formatter and test runner, so a project with no
+shell script of its own needs none of those tools.
+
 The table below is written by hand and no test compares it with the code. It
 says when each script returns each code.
 
@@ -501,7 +517,7 @@ says when each script returns each code.
 | `scripts/check_python_version.py` | 0: the interpreter meets `requires-python`. 1: it does not, and the message names the floor |
 | `scripts/check_venv.py` | 0: every requirement of `pyproject.toml`'s core dependencies, of config/project.json `venv.extras` and of the extra each enabled transport names in `transports.extras` is installed at a version its specifier allows. 1: one is absent, outside its specifier or has an unparsable version, or `packaging` or a TOML reader (`tomllib`, or `tomli` before Python 3.11) is not importable; the message names each package and the `pip install -e ".[<extras>]"` command. 2: `pyproject.toml` cannot be read or has no `[project]` name. 13 (`NOTHING_JUDGED`): the core and the extras hold no requirement for this interpreter. 14 (`CONFIG`): a `venv` or `transports` value is wrong, or names an extra `pyproject.toml` does not declare, or `pyproject.toml` holds a requirement `packaging` cannot parse or an extra naming the project asks for an extra it does not declare; extra names compare case- and separator-blind (PEP 685) |
 | `scripts/check_structure.py` | 0: no error. 1: at least one error, each printed. 2: a bad `--root` |
-| `scripts/exit_code_table.py` | 0: the exit-code table between the markers is current. 1: it is stale, and each differing row is one stderr line. 2: it could not build the table: a missing or repeated marker, a guide reached through a symlink, or a script whose returns it cannot read. 14: config/project.json or its `doc_drift` block cannot be used, each key at fault named on its own stderr line first |
+| `scripts/exit_code_table.py` | 0: the exit-code table between the markers is current; with `--shell`, `scripts/exit_codes.sh` is current, or `shell.enabled` is false. 1: it is stale, and each differing row is one stderr line; with `--shell`, the helper is stale or absent. 2: it could not build the table: a missing or repeated marker, a guide reached through a symlink, or a script whose returns it cannot read; with `--shell`, a helper reached through a symlink or an enum without `SUCCESS` or `USAGE`. 14: config/project.json, its `doc_drift` block or, with `--shell`, its `shell.enabled` cannot be used, each key at fault named on its own stderr line first |
 | `scripts/gate_evidence.py` | 0: every goal passed and the record is green. 2: refused before any goal ran: a malformed `--gate` or goal, zero goals, an evidence schema file that cannot be read, a record or report path that resolves through a symlink or that git does not ignore, a git command that ran and failed, or a date in the `evidence.run_date.env` variable that is not a date, is later than the clock or is older than `evidence.run_date.max_age_days` allows. 10: every goal passed but the record is red: zero tests, a failed or errored test in the junit report of a goal that exited 0, no junit report, the tree changed during the run, the checks could not run, or the writer crashed. 130: interrupted, and the red placeholder record stays. 14: refused before any goal ran because a config/project.json `evidence` value, `evidence.run_date` included, is missing or wrong, each key at fault named on its own stderr line first. Otherwise the status make exited with for the first failing goal passes through, which is 2 for a failed recipe whatever the recipe's own code |
 | `scripts/launch.py` | the launched command's own status passes through when it ran, here or on the farm. 2: refused before anything ran: a bad `launcher` block, a state path reached through a symlink or one git would list, a git that failed, no command or one that is not installed here, an environment holding a credential name `launcher.credentials` does not list for the key, an unwritable run record before the start, or a farm that refused the submission. 11: the farm's submit command is not installed. 12 (`NO_CAPACITY`): the farm did not start the command within `launcher.farm.wait_seconds` and this host was not spare, so nothing ran. 130: interrupted while the command ran, recorded as `interrupted` |
 | `scripts/jobs/check_corpus.py` | 0: the corpus is well-formed and its build is reproducible. 1: it is not, and each error is printed |

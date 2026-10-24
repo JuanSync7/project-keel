@@ -126,7 +126,9 @@ def project(tmp_path, monkeypatch):
     proj = _Project(root, tmp_path / "bin", env)
     # Keel's own reason for having no shell file would go stale the moment a
     # test plants one, so each test starts from the strict null and opts in.
-    proj.shell(no_scripts=None)
+    # Keel's exclusion of its generated helper covers no file here, which is
+    # CONFIG, so each test starts with none and opts in the same way.
+    proj.shell(no_scripts=None, excluded_paths={})
     (root / ".gitignore").write_text("ignored/\n", encoding="utf-8")
     _git(root, env, "init", "-q")
     _git(root, env, "add", "-A")

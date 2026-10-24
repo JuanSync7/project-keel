@@ -7,6 +7,7 @@ summary: read_members reads the enum from the helper's syntax tree in value orde
 
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -595,3 +596,189 @@ def test_an_empty_block_lists_both_keys_sorted_before_the_refusal(tmp_path, caps
 
 def test_the_shipped_table_is_current():
     assert et.table_findings(str(_ROOT)) == []
+
+
+# --- the shell helper --------------------------------------------------------------
+
+
+def _shell_project(tmp_path, enabled=True):
+    root = _project(tmp_path)
+    manifest = json.loads((root / et.MANIFEST).read_text(encoding="utf-8"))
+    manifest["shell"] = {"enabled": enabled}
+    (root / et.MANIFEST).write_text(json.dumps(manifest), encoding="utf-8")
+    return root
+
+
+def _helper_sh(root):
+    return root / et.HELPER_SH
+
+
+def test_render_shell_names_every_member_in_value_order_with_its_meaning(tmp_path):
+    text = et.render_shell(et.read_members(str(_project(tmp_path))))
+    assert text.startswith("#!/bin/sh\n# title: ")
+    assignments = [ln for ln in text.splitlines() if ln.startswith("EXIT_")]
+    assert assignments == ["EXIT_SUCCESS=0", "EXIT_USAGE=2", "EXIT_LATE=7"]
+    assert "# it was late -- start earlier\nEXIT_LATE=7\n" in text
+    assert "exit_fail() {" in text and "exit_passthrough() {" in text
+    assert "\r" not in text and text.endswith("}\n")
+
+
+@pytest.mark.parametrize("missing", ["SUCCESS", "USAGE"])
+def test_render_shell_refuses_an_enum_without_a_member_the_helper_uses(
+    tmp_path, missing
+):
+    members = [m for m in et.read_members(str(_project(tmp_path))) if m.name != missing]
+    with pytest.raises(et.TableError) as caught:
+        et.render_shell(members)
+    assert missing in caught.value.on and caught.value.next_step
+
+
+def test_main_shell_writes_the_helper_and_a_second_run_changes_nothing(
+    tmp_path, capsys
+):
+    root = _shell_project(tmp_path)
+    guide = _bytes(root)
+    assert et.main(["--shell", "--check"], root=str(root)) == ExitCode.FAILURE
+    assert not _helper_sh(root).exists(), "--check wrote"
+    err = capsys.readouterr().err
+    assert et.HELPER_SH in err and "make exit-codes-sh" in err
+
+    assert et.main(["--shell"], root=str(root)) is ExitCode.SUCCESS
+    first = _helper_sh(root).read_bytes()
+    assert first == et.render_shell(et.read_members(str(root))).encode("utf-8")
+    assert "wrote" in capsys.readouterr().out
+
+    assert et.main(["--shell"], root=str(root)) is ExitCode.SUCCESS
+    assert _helper_sh(root).read_bytes() == first
+    assert "unchanged" in capsys.readouterr().out
+    assert et.main(["--shell", "--check"], root=str(root)) is ExitCode.SUCCESS
+    assert "up to date" in capsys.readouterr().out
+    assert not os.path.exists(str(_helper_sh(root)) + ".tmp")
+    assert _bytes(root) == guide, "--shell touched the guide"
+
+
+def test_main_shell_check_fails_a_helper_the_enum_has_moved_past(tmp_path, capsys):
+    root = _shell_project(tmp_path)
+    assert et.main(["--shell"], root=str(root)) is ExitCode.SUCCESS
+    (root / et.HELPER).write_text(
+        _HELPER_SOURCE.replace("(7,", "(8,"), encoding="utf-8"
+    )
+    before = _helper_sh(root).read_bytes()
+    capsys.readouterr()
+    assert et.main(["--shell", "--check"], root=str(root)) == ExitCode.FAILURE
+    assert "is stale" in capsys.readouterr().err
+    assert _helper_sh(root).read_bytes() == before
+
+
+def test_main_shell_with_shell_off_writes_nothing_and_says_so(tmp_path, capsys):
+    root = _shell_project(tmp_path, enabled=False)
+    for argv in (["--shell"], ["--shell", "--check"]):
+        assert et.main(argv, root=str(root)) is ExitCode.SUCCESS
+        assert "shell.enabled is false" in capsys.readouterr().out
+    assert not _helper_sh(root).exists()
+
+
+def test_main_shell_refuses_a_shell_block_it_cannot_use(tmp_path, capsys):
+    root = _shell_project(tmp_path, enabled="yes")
+    for argv in (["--shell"], ["--shell", "--check"]):
+        assert et.main(argv, root=str(root)) == ExitCode.CONFIG
+        err = capsys.readouterr().err
+        assert "shell.enabled" in err, err
+    assert not _helper_sh(root).exists()
+
+
+def test_main_shell_refuses_a_helper_reached_through_a_symlink(tmp_path, capsys):
+    root = _shell_project(tmp_path)
+    outside = tmp_path / "outside.sh"
+    outside.write_text("old\n", encoding="utf-8")
+    os.symlink(str(outside), str(_helper_sh(root)))
+    assert et.main(["--shell"], root=str(root)) == ExitCode.USAGE
+    assert outside.read_text(encoding="utf-8") == "old\n"
+    assert "symlink" in capsys.readouterr().err
+
+
+def test_the_shipped_shell_helper_is_current_or_absent_with_shell_off(capsys):
+    assert et.main(["--shell", "--check"], root=str(_ROOT)) is ExitCode.SUCCESS
+    out = capsys.readouterr().out
+    if et.shell_enabled(str(_ROOT)):
+        assert "up to date" in out
+    else:
+        assert "shell.enabled is false" in out
+        assert not (_ROOT / et.HELPER_SH).exists(), "a shell-off project ships one"
+
+
+def test_check_exit_codes_judges_the_shell_helper_and_exit_codes_sh_writes_it():
+    import check_structure as cs
+
+    text = (_ROOT / "Makefile").read_text(encoding="utf-8")
+    recipes = {r.target: r.recipe for r in cs.make_target_rules(text)}
+    assert (
+        "$(PY) scripts/exit_code_table.py --shell --check"
+        in recipes["check-exit-codes"]
+    )
+    assert recipes["exit-codes-sh"] == ["$(PY) scripts/exit_code_table.py --shell"]
+
+
+def test_the_helper_meets_the_shell_header_and_effect_rules(tmp_path):
+    import check_structure as cs
+
+    text = et.render_shell(et.read_members(str(_ROOT)))
+    assert cs._shell_header_findings({et.HELPER_SH: text}) == []
+    assert cs._shell_effect_findings(
+        {et.HELPER_SH: text}, set(), set(), set(), lambda p: None
+    ) == ([], [])
+
+
+def _run_sh(tmp_path, body):
+    """(status, stderr) of /bin/sh sourcing the helper the shipped enum renders,
+    then *body*. Rendered, not the shipped file, so a project with shell off,
+    which has none, still proves the helper it would get."""
+    from child_env import build_child_env
+
+    helper = tmp_path / "exit_codes.sh"
+    helper.write_text(et.render_shell(et.read_members(str(_ROOT))), encoding="utf-8")
+    script = tmp_path / "use.sh"
+    script.write_text(". '%s'\n%s\nexit 99\n" % (helper, body), encoding="utf-8")
+    done = subprocess.run(
+        ["/bin/sh", str(script)],
+        env=build_child_env(),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return done.returncode, done.stderr
+
+
+@pytest.mark.parametrize(
+    ("body", "status", "said"),
+    [
+        (
+            'exit_fail "$EXIT_CONFIG" "x: bad" "a.json" "fix it"',
+            14,
+            "x: bad: a.json; fix it\n",
+        ),
+        ('exit_fail "$EXIT_FAILURE" one two three', 1, "one: two; three\n"),
+        ('exit_fail "$EXIT_SUCCESS" a b c', 2, "not a failure"),
+        ("exit_fail 7 a b c", 2, "not a failure"),
+        ('exit_fail "$EXIT_USAGE" a b', 2, "four"),
+        ('exit_fail "$EXIT_USAGE" a "  " c', 2, "blank"),
+        ("exit_passthrough 0", 0, ""),
+        ("exit_passthrough 5", 5, ""),
+        ("exit_passthrough 255", 255, ""),
+        ("exit_passthrough 256", 2, "0 to 255"),
+        # Past the shell's integer range `[` errors and its test is false.
+        ("exit_passthrough 99999999999999999999", 2, "0 to 255"),
+        ("exit_passthrough x", 2, "0 to 255"),
+        ('exit_passthrough ""', 2, "0 to 255"),
+        ("exit_passthrough", 2, "one"),
+        ('exit "$EXIT_NOTHING_JUDGED"', 13, ""),
+    ],
+)
+def test_the_helper_ends_a_shell_script_as_the_python_helper_does(
+    tmp_path, body, status, said
+):
+    got, err = _run_sh(tmp_path, body)
+    assert got == status, err
+    assert said in err
+    if not said:
+        assert err == "", err

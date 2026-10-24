@@ -146,6 +146,7 @@ exactly the files this judgment says arrive.
 | `tests/unit/scripts/test_build_llms_txt.py` | only with `showcase` | the showcase demo |
 | `tests/e2e/test_showcase_journey.py` | only with `showcase` | the showcase demo |
 | `docs/guides/showcase-site.md` | only with `showcase` | the showcase demo |
+| `scripts/exit_codes.sh` | only with `shell` | the shell helper, generated from `scripts/exit_codes.py` |
 
 Some files arrive tailored to your answers. Each is rendered from a `.jinja`
 twin that `config/project.json` `template.twins` declares, and check_N holds
@@ -535,6 +536,16 @@ being edited. A project that wants no shell gate answers no
 target then says so and exits 0. A project with no shell file keeps the
 arriving reason and stays green.
 
+Answered yes, the update also brings `scripts/exit_codes.sh`, the shell form
+of the exit codes, which a shell script sources to end through
+`exit "$EXIT_<NAME>"`, `exit_fail` or `exit_passthrough`. It is generated
+from `scripts/exit_codes.py`: never edit it, and run `make exit-codes-sh`
+after a change to the enum, or `make check-exit-codes` fails. The arriving
+`shell.excluded_paths` entry keeps it from the shell tools, so it does not
+make the arriving `shell.no_scripts` reason stale. A project that answers no
+gets no helper, and one that turns `shell.enabled` on later runs
+`make exit-codes-sh` once.
+
 ### Your Node, Python and runner images come from config
 
 The update brings the config/project.json `toolchain` block,
@@ -638,6 +649,7 @@ brings back a file a step removed, as long as you committed it first.
 | `rm -rf src/backend/showcase` | `showcase` is off | removes the showcase read model | none | `git checkout -- src/backend/showcase` |
 | `rm -f api/rest_fastapi/showcase_api.py` `scripts/jobs/export_showcase_static.py` `scripts/jobs/build_llms_txt.py` `tests/unit/backend/test_showcase.py` `tests/integration/test_showcase_repo.py` `tests/integration/test_showcase_api.py` `tests/unit/scripts/test_export_showcase_static.py` `tests/unit/scripts/test_build_llms_txt.py` `tests/e2e/test_showcase_journey.py` `docs/guides/showcase-site.md` | `showcase` is off | removes the showcase's files | none | `git checkout -- <path>` |
 | `rm -f wiki/llms.txt` `wiki/llms-full.txt` | `showcase` is off | removes the agent front door | none | `make site-data` |
+| `rm -f scripts/exit_codes.sh` | `shell` is off | removes the generated shell helper | none | `make exit-codes-sh` once `shell.enabled` is true |
 | `rm -f tests/integration/test_copier_generation.py` `tests/integration/test_copier_generator_contract.py` `tests/integration/test_copier_update.py` | every update | removes tests of the template a project generated before they were excluded still has | none | none needed |
 | `rm -f docs/design/keel-hardening-plan.md` | every update | removes the template's plan from a project that still has it | none | none needed |
 | `scripts/jobs/declare_no_app.py` | every update | when the update introduces `layers.app` for a composition root the project removed, sets it to `null` and declares the smoke marker and run target that need it | 0, 1, 2 | on 1, make the edits its message names by hand; on 2 over a conflicted file, resolve each file it names, then run the command it prints, which finishes the update; on 2 otherwise, git could not read the pre-update manifest |

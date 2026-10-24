@@ -51,7 +51,7 @@ PY_ROOTS := $(wildcard $(CODE_ROOTS))
 # the guard.
 WRITE_GUARD = $(if $(findstring i,$(firstword -$(MAKEFLAGS))),$(error refusing '$@': make is ignoring recipe errors (-i, --ignore-errors or .IGNORE), so a failing guard could not stop this [write] target; run it without that flag (docs/adr/keel/K-0011-make-target-effect-labels.md)))@if [ -n "$(CI)$(RALPH)" ]; then echo "refusing '$@': a [write] target never runs under CI or a Ralph loop (docs/adr/keel/K-0011-make-target-effect-labels.md)" >&2; exit 1; fi
 
-.PHONY: help new audit-project canary check-python check-venv check check-all check-corpus check-openapi check-aad check-cdmon check-exit-codes exit-codes advise check-generic long-scripts verify test trace eval eval-live unit integration e2e smoke \
+.PHONY: help new audit-project canary check-python check-venv check check-all check-corpus check-openapi check-aad check-cdmon check-exit-codes exit-codes exit-codes-sh advise check-generic long-scripts verify test trace eval eval-live unit integration e2e smoke \
         lint lint-py lint-fe fmt fmt-check typecheck typecheck-py typecheck-fe \
         test-fe test-fe-unit test-fe-e2e lint-sh fmt-sh fmt-check-sh test-sh \
         fe-install fe-browsers fe-audit secrets-install secret-scan run run-api run-web site-data site-static demo agent-surface-schema check-docs restamp-docs doc-review doc-review-apply
@@ -147,8 +147,9 @@ check-aad: ## [local] Committed AAD schema in sync with the model (skips if pyda
 	$(PY) scripts/agent_surface/generate_aad_schema.py --check
 check-cdmon: ## [local] cdmon code-doc drift (a stated skip until cdmon and config/cdmon/cdmon.yaml exist)
 	$(PY) scripts/cdmon_sync.py --check
-check-exit-codes: check-python ## [local] The exit-code table in the limits guide is what scripts/exit_codes.py and the gate's scripts say (needs the project interpreter)
+check-exit-codes: check-python ## [local] The exit-code table in the limits guide, and the shell helper scripts/exit_codes.sh, are what scripts/exit_codes.py and the gate's scripts say (needs the project interpreter)
 	$(PY) scripts/exit_code_table.py --check
+	$(PY) scripts/exit_code_table.py --shell --check
 check-docs: check ## [local] The structure gate + strict doc freshness: what every doc-review edit is gated on
 	$(PY) scripts/jobs/review_docs.py --strict
 
@@ -390,6 +391,8 @@ agent-surface-schema: check-python ## [tree] Regenerate the committed AAD JSON S
 	$(PY) scripts/agent_surface/generate_aad_schema.py
 exit-codes: check-python ## [tree] Regenerate the exit-code table in the limits guide from scripts/exit_codes.py and the gate's scripts
 	$(PY) scripts/exit_code_table.py
+exit-codes-sh: check-python ## [tree] Regenerate the shell helper scripts/exit_codes.sh from scripts/exit_codes.py (nothing when config/project.json shell.enabled is false)
+	$(PY) scripts/exit_code_table.py --shell
 # [tree,write], not [tree] alone: the file it rewrites is the record of what a
 # generated project's gate lets warn, so WRITE_GUARD keeps a CI job or a Ralph
 # loop from growing it unattended (docs/adr/keel/K-0027-a-project-s-own-code-warns-until-a-hard-date.md).

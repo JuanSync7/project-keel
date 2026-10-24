@@ -145,7 +145,12 @@ version rather than a bare commit:
   `# title:` and `# summary:` lines in the comment block that opens it, and
   `check_V` reads `effect:`, `rerun:` and `rerun_proof:` there; a shell
   script outside `tests/` states its `effect:` every time, because no
-  detector reads shell.
+  detector reads shell. A shell script reads the exit codes from
+  `scripts/exit_codes.sh`, which `make exit-codes-sh` generates from
+  `scripts/exit_codes.py` and `make check-exit-codes` fails when stale: an
+  `EXIT_<NAME>` variable per member, `exit_fail` for the three-part failure
+  line and `exit_passthrough` for a wrapped tool's status. It ships only with
+  `shell` yes, and `shell.excluded_paths` keeps it from the shell tools.
 - **An agent `--execute` run is held to an approved model-call cap.**
   `scripts/doc_review.py`, `scripts/refactor_practice.py` and the two Stop
   hooks refuse an execute run with exit 2 before any model is built when its

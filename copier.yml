@@ -199,6 +199,10 @@ _exclude:
   # runs the generated project's whole suite.
   - "{% if not showcase %}tests/e2e/test_showcase_journey.py{% endif %}"
   - "{% if not showcase %}docs/guides/showcase-site.md{% endif %}"
+  # The shell helper is a shell file, so a project that answered `shell` no
+  # gets none. It is generated from scripts/exit_codes.py, so turning shell on
+  # later costs one `make exit-codes-sh`, which `make check-exit-codes` names.
+  - "{% if not shell %}scripts/exit_codes.sh{% endif %}"
 
 # ---- Q&A (core facts; map 1:1 to config/project.json, enforced by check_H) -----
 project_name:
@@ -340,9 +344,11 @@ profiles:
     - langgraph
   default: []
 
-# Prunes no file: scripts/shell_gate.py ships either way and reads the answer from
+# Prunes one file: scripts/exit_codes.sh, the generated shell helper, ships only
+# with `shell` yes, and its retirement is the `_migrations` entry below.
+# scripts/shell_gate.py ships either way and reads the answer from
 # config/project.json shell.enabled, so a project that switches shell on later
-# flips one key instead of re-running copier, and `_migrations` needs no mirror.
+# flips one key and runs `make exit-codes-sh` instead of re-running copier.
 shell:
   type: bool
   help: "Gate shell scripts (lint, format and test targets that `make verify` runs)? 'no' runs no shell tool"
@@ -468,6 +474,10 @@ _migrations:
   # it and it outlives the showcase.
   - command: "rm -f wiki/llms.txt wiki/llms-full.txt"
     when: "{{ _stage == 'after' and not showcase }}"
+  # Mirrors the shell prune. Safe under the rule above: the file is generated
+  # from scripts/exit_codes.py, never authored, and `make exit-codes-sh` rebuilds it.
+  - command: "rm -f scripts/exit_codes.sh"
+    when: "{{ _stage == 'after' and not shell }}"
   # Not answer-driven, but the same defect: keel's meta-tests are pruned at
   # generation, so no CURRENT project has them — but a project generated BEFORE that
   # prune existed still carries them, and `copier update` is precisely what hands it
