@@ -502,8 +502,11 @@ version rather than a bare commit:
 - **The spend-cap scan sees a module loaded through importlib.**
   `tests/unit/scripts/test_agent_spend_cap.py` names a module
   `importlib.import_module`, `__import__`, `runpy` or a file-path loader
-  reaches by a literal, and counts a load it cannot read as reaching an agent
-  package unless a reasoned row excuses the file.
+  reaches by a name or path spelled whole in literals, with every directory on
+  the path, and counts a load it cannot read as reaching an agent package
+  unless a reasoned row excuses the file. A literal prefix beside a name it
+  cannot read, a loader renamed, assigned or passed as a value, and a loader
+  fetched by getattr each count as a load it cannot read.
 - **A nullable key with a bound puts null first in its refusal.** A refused
   `transports.serve.memory_cap_mb` or `tests.memory_scratch_root` now reads
   "accepted: null, or an integer with a value >= 1", where it read as if null
