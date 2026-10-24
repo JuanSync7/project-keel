@@ -140,6 +140,11 @@ def _real_owner(value):
     return value
 
 
+# The visibility a README.md that cannot be read passes on. It is outside
+# scripts/check_structure.py VISIBILITY_ORDER on purpose, so it outranks every
+# level and check_corpus refuses each node it reaches.
+UNREADABLE_VISIBILITY = "unreadable-readme"
+
 # A node's resolved owner: (owner, owner_source, owner_origin).
 _UNOWNED = ("", "none", None)
 _DEFAULT_OWNER_KEY = ("accountability", "default_owner")
@@ -515,12 +520,14 @@ def _readmes_upward(dirpath: str, root: str):
             try:
                 with open(readme, encoding="utf-8-sig") as fh:
                     fm, _ = _parse_frontmatter(fh.read())
-            except Exception:  # noqa: BLE001 — degrades into a VISIBLE signal
-                # An unreadable README just means no owner is discoverable here,
-                # which surfaces as owner_source == "none" for every node below
-                # it — exactly what scripts/accountability_report.py reports on.
-                # The walk must continue to the parent either way.
-                fm = None
+            except (OSError, ValueError):  # ValueError covers UnicodeDecodeError
+                # An unreadable README names no owner, which surfaces as
+                # owner_source == "none" for every node below it, the gap
+                # scripts/accountability_report.py lists. It may state any
+                # level, so it passes on a visibility no level ranks above:
+                # check_corpus refuses each node below it rather than serve it
+                # at a looser level. The walk continues to the parent.
+                fm = {"visibility": UNREADABLE_VISIBILITY}
             yield _rel(readme, root), fm or {}
         if os.path.abspath(d) == os.path.abspath(root):
             return
