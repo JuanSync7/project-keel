@@ -388,6 +388,27 @@ def test_an_unreadable_readme_above_a_tbd_readme_leaves_the_owner_unknown(tmp_pa
     assert _owner(nodes["src/pkg/m-py::f"]) == _UNKNOWN
 
 
+def test_a_readable_readme_stating_the_unreadable_marker_does_not_stop_the_walk(
+    tmp_path,
+):
+    """The owner walk stops at a README.md that could not be read, known by
+    identity, not at one that can be read and happens to state the marker's
+    value: that one names no owner, so the owner above it is inherited."""
+    root = _tree(tmp_path)
+    _write(root, "src/README.md", _readme("src-readme", "alice", None))
+    _write(
+        root,
+        "src/pkg/README.md",
+        "---\nvisibility: %s\n---\n# P\n" % bc.UNREADABLE_VISIBILITY,
+    )
+    _write(root, "src/pkg/m.py", _module())
+    assert _owner(_nodes(root)["src/pkg/m-py"]) == (
+        "alice",
+        "inherited",
+        "src/README.md",
+    )
+
+
 def test_a_module_s_own_owner_stands_under_an_unreadable_readme(tmp_path):
     root = _tree(tmp_path)
     (root / "src" / "pkg").mkdir(parents=True)
@@ -613,6 +634,26 @@ def test_rows_missing_the_fields_each_bucket_reads_are_listed(tmp_path, capsys):
     assert "  %-9s %s  (%s)" % (ar.MISSING, ar.MISSING, ar.MISSING) in text, text
     assert "from 2 TBD:" in text and "  %s\n" % ar.MISSING in text, text
     assert "accountability: 1 of 5 nodes name no owner source" in text, text
+
+
+def test_each_listed_bucket_is_in_node_id_order_whatever_the_corpus_order(
+    tmp_path, capsys
+):
+    """The report sorts each list by node_id as printed, so a row missing its
+    node_id sorts as the missing marker, and two corpora with the same rows
+    print the same report."""
+    rows = [
+        {"node_id": "b", "owner_source": "none"},
+        {"owner_source": "none"},
+        {"node_id": "a", "owner_source": "none"},
+        {"node_id": "z", "owner_source": "bogus"},
+        {"node_id": "y"},
+    ]
+    _, text = _report(tmp_path, capsys, {"nodes": rows})
+    _, again = _report(tmp_path, capsys, {"nodes": rows[::-1]})
+    assert text == again
+    listed = [line.split()[1] for line in text.splitlines() if line.startswith("  ")]
+    assert listed == sorted(["a", "b", ar.MISSING]) + ["y", "z"], text
 
 
 def test_the_json_report_shows_a_missing_field_as_null(tmp_path, capsys):

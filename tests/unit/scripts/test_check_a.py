@@ -271,3 +271,30 @@ def test_a_link_into_a_sibling_whose_name_extends_the_root_s_takes_no_chain_ther
     cs.check_A()
     assert [e for e in cs.errors if "less restrictive" in e] == [], cs.errors
     assert _served(repo)["plan"] == ("docs/plan.md", "public")
+
+
+def test_check_a_names_a_linked_file_where_the_corpus_does_in_any_walk_order(
+    repo, monkeypatch
+):
+    """os.walk yields entries in the filesystem's order. check_A sorts its
+    walk as build_corpus does, so with the order reversed it still runs the
+    frontmatter check, and names the contradiction, at the path the corpus
+    keeps."""
+    _linked_tree(repo, None, "confidential", "public")
+    plan = repo / "docs" / "z-secret" / "plan.md"
+    plan.write_text(plan.read_text(encoding="utf-8").replace("title: T\n", ""))
+    real_walk = cs.os.walk
+
+    def reversed_walk(top, *args, **kwargs):
+        for dirpath, dirnames, filenames in real_walk(top, *args, **kwargs):
+            dirnames.reverse()
+            filenames.reverse()
+            yield dirpath, dirnames, filenames
+
+    monkeypatch.setattr(cs.os, "walk", reversed_walk)
+    cs.check_A()
+    paths = {e.split(":", 1)[0] for e in cs.errors}
+    named = sorted(p for p in paths if p.endswith("plan.md"))
+    assert named == ["docs/a-open/plan.md"], cs.errors
+    assert any("title" in e for e in cs.errors), cs.errors
+    assert any("less restrictive" in e for e in cs.errors), cs.errors
