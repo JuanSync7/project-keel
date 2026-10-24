@@ -2,7 +2,7 @@
 title: Unit — query_corpus retrieval (stems and excerpts)
 kind: tests
 layer: n/a
-summary: query_corpus scores a node by query-token overlap, and before this two things made it miss: tokens were compared verbatim, so `idempotency` found nothing while `idempotent` found eight nodes; and only tags, title and summary were read, so a term that lives in the body was invisible. Tokens are now lightly stemmed on both sides and the body excerpt counts, below the title and summary, so a body-only match never outranks a summary match. A node at a level outside config/project.json corpus.served_visibilities, or that states none, is cut before scoring, so it is neither a hit nor a neighbour, and the CLI reads the configured list.
+summary: query_corpus scores a node by query-token overlap, and before this two things made it miss: tokens were compared verbatim, so `idempotency` found nothing while `idempotent` found eight nodes; and only tags, title and summary were read, so a term that lives in the body was invisible. Tokens are now lightly stemmed on both sides and the body excerpt counts, below the title and summary, so a body-only match never outranks a summary match. A node at a level outside config/project.json corpus.served_visibilities, or that states none, is cut before scoring, so it is neither a hit nor a neighbour, and the CLI reads the configured list. A served node the CLI prints names no hidden node in its links, children or parent: a public doc linking to a confidential one, built by the real build_corpus and link_corpus, prints neither the confidential doc's id nor its title.
 """
 
 import json
@@ -139,3 +139,67 @@ def test_main_refuses_a_level_outside_the_vocabulary(tmp_path, monkeypatch, caps
     assert qc.main(["zebra", "--corpus", str(path)]) is qc.ExitCode.CONFIG
     captured = capsys.readouterr()
     assert captured.out == "" and "corpus.served_visibilities" in captured.err
+
+
+# ---- a served node names no hidden node in its links, children or parent ---
+
+
+def _doc(doc_id, title, visibility, body):
+    return (
+        "---\ntitle: %s\nkind: doc\nlayer: n/a\nstatus: stable\nowner: someone\n"
+        "tags: [x]\nsummary: About %s.\nid: %s\ncreated: 2026-01-01\n"
+        "updated: 2026-01-01\nvisibility: %s\ncanonical: true\n---\n%s"
+        % (title, title, doc_id, visibility, body)
+    )
+
+
+def test_a_served_node_names_no_hidden_node_it_links_to(tmp_path, monkeypatch, capsys):
+    """The reviewer's shape, built by the real build_corpus and link_corpus:
+    a public doc links to a confidential `docs/secret/README.md`, and the
+    printed JSON names neither the secret doc's id nor its title, in
+    `links[].to`, `children`, `parent` or anywhere else."""
+    sys.path.insert(0, str(_ROOT / "scripts" / "jobs"))
+    import build_corpus as bc  # noqa: E402
+    import link_corpus as lc  # noqa: E402
+
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "project.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "docs" / "secret").mkdir(parents=True)
+    (tmp_path / "docs" / "open.md").write_text(
+        _doc(
+            "open-guide",
+            "Open guide",
+            "public",
+            "# Open guide\n\nThe zebra notes, and [more](secret/README.md).\n\n"
+            "## Zebra part\n\nZebra detail, see [the plan](secret/README.md).\n",
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "docs" / "secret" / "README.md").write_text(
+        _doc(
+            "hush-plan",
+            "Hush plan",
+            "confidential",
+            "# Hush plan\n\nZebra.\n\n## Hush part\n\nZebra too.\n",
+        ),
+        encoding="utf-8",
+    )
+    corpus = lc.link_corpus(bc.build_corpus(str(tmp_path)))
+    nodes = {n["node_id"]: n for n in corpus["nodes"]}
+    hidden = {nid for nid, n in nodes.items() if n.get("visibility") == "confidential"}
+    # The fixture is the leak's shape only if the built corpus carries it.
+    assert "hush-plan" in hidden and any(
+        e["to"] in hidden for n in nodes.values() for e in n.get("links", [])
+    )
+    path = tmp_path / "corpus.json"
+    path.write_text(json.dumps(corpus), encoding="utf-8")
+    monkeypatch.setattr(qc, "ROOT", str(tmp_path))
+    assert qc.main(["zebra", "--corpus", str(path)]) is qc.ExitCode.SUCCESS
+    out = capsys.readouterr().out
+    printed = json.loads(out)
+    assert printed and all(n["visibility"] == "public" for n in printed)
+    for n in printed:
+        assert not {e["to"] for e in n.get("links", [])} & hidden
+        assert not set(n.get("children", [])) & hidden
+        assert n.get("parent") not in hidden
+    assert "hush" not in out.lower()

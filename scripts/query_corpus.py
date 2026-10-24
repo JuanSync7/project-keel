@@ -3,7 +3,7 @@
 title: Query corpus
 kind: script
 layer: n/a
-summary: Read-only retrieval over wiki/corpus.json — the wiki_navigator's, practice_refactor's and doc_reviewer's tool — that prints only nodes at a level in config/project.json corpus.served_visibilities.
+summary: Read-only retrieval over wiki/corpus.json — the wiki_navigator's, practice_refactor's and doc_reviewer's tool — that prints only nodes at a level in config/project.json corpus.served_visibilities (config_loader.is_served), each with every other node's id cut from its links, children and parent (config_loader.cut_hidden).
 """
 
 from __future__ import annotations
@@ -75,7 +75,8 @@ def query(
     hit's parent and linked nodes so the caller gets a connected neighbourhood
     (tree + links) to reason over. A node at any other level, one that states
     none included, is cut before scoring, so it is neither a hit nor a
-    neighbour.
+    neighbour, and config_loader.cut_hidden drops its id from every returned
+    node's links, children and parent.
     """
     nodes = {
         n["node_id"]: n
@@ -118,7 +119,7 @@ def query(
                 order.append(related)
                 if len(order) >= max_nodes:
                     break
-    return [nodes[nid] for nid in order[:max_nodes]]
+    return [config_loader.cut_hidden(nodes[nid], nodes) for nid in order[:max_nodes]]
 
 
 def main(argv=None) -> int:

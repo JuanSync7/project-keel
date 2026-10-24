@@ -46,6 +46,10 @@ provenance and accountability.
 A JSON array of node objects on stdout, best match first, drawn only from the
 nodes at a level in `config/project.json` `corpus.served_visibilities`: a node
 at any other level, or one that states none, is neither a hit nor a neighbour.
+`scripts/config_loader.py` `is_served` makes that decision. A printed node's
+`links`, `children` and `parent` name only other served nodes, because
+`cut_hidden` drops every hidden id from them.
+`tests/unit/scripts/test_query_corpus.py` holds both rules.
 No corpus present → prints `[]` and exits 0. A served level outside the
 vocabulary prints nothing to stdout and exits 14.
 
