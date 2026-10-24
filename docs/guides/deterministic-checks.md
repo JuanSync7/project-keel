@@ -8,7 +8,7 @@ tags: [checks, ci, linter, determinism, pre-commit, hooks, guide]
 summary: Catalogue of every deterministic check that keeps a project-template repo honest — purpose, when to run, and how to wire as a hook.
 id: docs-guides-deterministic-checks
 created: 2026-06-19
-updated: 2026-10-23
+updated: 2026-10-24
 visibility: internal
 canonical: true
 ---
@@ -1103,15 +1103,32 @@ loader refuses a row that is not exactly `package`, `reason` and `review_by`,
 an id not written `GHSA-xxxx-xxxx-xxxx`, a blank reason and a date not
 written `YYYY-MM-DD`, with exit 14.
 
+A generated astro project inherits keel's accepted row and its `review_by`
+date, so on or after that day the project's own `make fe-audit` fails until
+its owner renews the row or fixes the advisory; that is intended, because an
+acceptance is a per-owner decision.
+
 **What it does not prove.** It judges the advisories the registry knows on the
 day it runs, so a pass today can fail tomorrow with no change in the tree; that
 is why `make verify` does not run it. It judges `npm audit`'s own reading of
 the lockfile and does not inspect `node_modules`. It reads a finding's
 severity from the report and never weighs whether the vulnerable code is
-reached; the reason is the human's claim, not a proof. A report it cannot read
-as `npm audit --json` version 2 is exit 2, and npm that cannot start, overruns
-the timeout, exits other than 0 or 1 or answers an `error` object is exit 11;
-none of these is a pass.
+reached; the reason is the human's claim, not a proof. It refuses a report it
+cannot trust rather than pass it: one that is not JSON or not `npm audit
+--json` version 2, a `via` item that is neither an advisory nor the name of
+another entry, `metadata.vulnerabilities` counts that disagree with the
+entries, and a `metadata.dependencies.total` of 0 or none while the app's
+`package.json` declares a dependency, which is what an empty or root-only
+lockfile audits as. Such a report is exit 2 from a saved `--report` file and
+exit 11 from a run, as is npm exiting 1 with no finding, and npm that cannot
+start, overruns the timeout, exits other than 0 or 1 or answers an `error`
+object is exit 11; none of these is a pass. An exit 11 line carries npm's own
+diagnostic, the error's `message` or `summary` or npm's last stderr line, and
+`<hidden>` in its place when it names `_authToken` or a `//host/:_auth` key.
+npm runs with `--include=dev --include=optional --include=peer`, which npm
+lets win over a user or project `.npmrc` `omit=`; an `.npmrc` can still change
+the registry it asks, and the audit trusts that registry's answer. It writes
+nothing in the tree; npm writes its own per-user log and cache.
 
 **Cost.** One registry request per app, seconds each. The script is not in the
 catalogue table above, and `make check-all` does not run it, because it reads

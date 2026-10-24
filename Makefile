@@ -321,8 +321,8 @@ fe-browsers: ## [read] Download the browser each frontend app's journey drives (
 	for app in $(FE_APPS); do [ -d "$$app/node_modules" ] || { echo "$@: $$app has no node_modules, so its journey browser was not downloaded; run 'make fe-install', then run it again" >&2; exit 2; }; done; \
 	for app in $(FE_APPS); do echo "journey browser: $$app"; (cd $$app && npm run --silent test:e2e:browsers -- $(FE_BROWSER_FLAGS)) || exit 1; done
 
-# npm audit sends each lockfile to the registry and writes nothing, so the label
-# is [read]. It runs with no app too: an accepted row for an app that is gone is
+# npm audit sends each lockfile to the registry and writes nothing in the tree;
+# npm writes its own per-user log and cache, so the label is [read]. It runs with no app too: an accepted row for an app that is gone is
 # stale, and only the script can say so.
 fe-audit: check-python ## [read] Judge each frontend app's npm audit against config/project.json dependency_audit.accepted (scripts/audit_dependencies.py)
 	$(PY) scripts/audit_dependencies.py $(FE_APPS)
