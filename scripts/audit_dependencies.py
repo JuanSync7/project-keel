@@ -66,13 +66,13 @@ _DECLARING_FIELDS = (
 # (c) an `Authorization`, `Bearer` or `Basic` scheme keeps its name and loses
 #     its value, with any separator; a `realm="..."` parameter is kept;
 # (b) a value after a key holding one of _SECRET_WORDS is hidden. After `=`
-#     or `:` (an assignment) it is hidden whatever it is, and an unquoted one
-#     runs on over spaces (_MORE_VALUE). After whitespace (prose) the clause
+#     or `:` (an assignment) it is hidden whatever it is, to the line's end
+#     or the next assignment (_NEXT_ASSIGNMENT). After whitespace (prose) the clause
 #     that follows is read word by word, and a word is kept only when
 #     scripts/audit_dependencies_data.py's closed vocabulary holds it: an
 #     open list of "plain words" showed `hunter2` after a third linking word,
 #     so an unknown word is hidden, cause words included. A quoted value is
-#     hidden in both, and one with no closing quote runs to the line's end;
+#     hidden in both at least to its closing quote, or to the line's end;
 # (a') a scheme-less `user:pass@host` loses everything before its last `@`;
 # (e) a scheme-less host (_BARE_HOST) loses its path as in (a);
 # (d) any remaining run of 20 or more token characters that mixes letters and
@@ -174,12 +174,11 @@ _ASSIGNMENT = re.compile(
 _KEY = re.compile(r"(?:%s)[\w.\-]{0,64}[\"']?" % "|".join(_SECRET_WORDS), re.IGNORECASE)
 # A value another rule already wrote, or a scheme name (c) keeps.
 _DONE_VALUE = re.compile(r"<hidden>|(?:Bearer|Basic)\b", re.IGNORECASE)
-_ASSIGNED_VALUE = re.compile(_VALUE)
-# After an assignment an unquoted value runs on, one word at a time, since a
-# passphrase has spaces in it. It ends at a `,`, a `;`, a quote, the next
-# `name=` or `name:`, a word opening with `<` (a marker this module writes)
-# or the line's end.
-_MORE_VALUE = re.compile(r"\s{1,4}(?![A-Za-z][\w.\-]{0,63}\s{0,4}[=:]|<)[^\s\"',;]+")
+# An assigned value runs to the line's end or to the next assignment: a
+# `name=` after a space that no `;` or `,` comes before, since after one it
+# is a cookie's next pair. A quote, a comma, a `;` or a `name:` can sit inside
+# a passphrase, so none of them ends it.
+_NEXT_ASSIGNMENT = re.compile(r"(?<![\s;,])\s{1,4}[A-Za-z_][\w.\-]{0,63}=")
 # One word of a prose clause: a URL (a) rewrote is one word with its marker,
 # and any other word runs to the next whitespace. The literal fixes where
 # the marker's lazy run stops, so each word is read once.
@@ -433,15 +432,15 @@ def _key_values_shown(line):
 
 def _assigned_end(line, start):
     """Where the value an assignment states, from *start*, ends; *start* when
-    it states none."""
-    value = _ASSIGNED_VALUE.match(line, start)
-    if not value:
+    it states none. A quoted value runs at least to its closing quote."""
+    if start >= len(line):
         return start
-    end = value.end()
-    if line[start] not in "\"'":
-        while more := _MORE_VALUE.match(line, end):
-            end = more.end()
-    return end
+    scan = start
+    if line[start] in "\"'":
+        close = line.find(line[start], start + 1)
+        scan = len(line) if close < 0 else close + 1
+    following = _NEXT_ASSIGNMENT.search(line, scan)
+    return following.start() if following else len(line)
 
 
 def _clause_shown(line, at):

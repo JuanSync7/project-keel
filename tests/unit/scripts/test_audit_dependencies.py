@@ -899,33 +899,29 @@ def test_a_value_that_is_no_plain_word_is_still_hidden(text, shown):
     assert audit_dependencies._redacted(text) == shown
 
 
-# After `=` or `:` an unquoted value runs on over spaces to a `,`, a `;`, a
-# quote, the next `name=` or `name:`, a word opening with `<`, or the line's
-# end, and all of it is hidden: a passphrase has spaces in it.
+# After `=` or `:` a value runs to the line's end or to the next `name=`
+# after a space, and all of it is hidden: a passphrase has spaces in it, and
+# a quote, comma, `;` or `name:` can sit inside one. A `name=` after `; ` or
+# `, ` is a cookie's next pair, so it is hidden too. A quoted value hides at
+# least to its closing quote.
 @pytest.mark.parametrize(
     "text, shown",
     [
         ("npm error password=my secret phrase", "npm error password=<hidden>"),
         ("npm error token: correct horse battery", "npm error token: <hidden>"),
-        (
-            "password=my secret phrase, then npm stopped",
-            "password=<hidden>, then npm stopped",
-        ),
-        ("password=my secret; retry", "password=<hidden>; retry"),
-        (
-            "password=my secret user=bob",
-            "password=<hidden> user=bob",
-        ),
-        (
-            "password=my secret username: bob",
-            "password=<hidden> username: bob",
-        ),
-        (
-            "password=my secret token=other words",
-            "password=<hidden> token=<hidden>",
-        ),
-        ('password=my secret "quoted"', 'password=<hidden> "quoted"'),
-        ("password=my secret <cut to 9 characters>", None),
+        ("password=my secret phrase, then npm stopped", "password=<hidden>"),
+        ("password=my secret; retry", "password=<hidden>"),
+        ("password=my secret user=bob", "password=<hidden> user=bob"),
+        ("password=my secret username: bob", "password=<hidden>"),
+        ("password=my secret token=other words", "password=<hidden> token=<hidden>"),
+        ('password=my secret "quoted"', "password=<hidden>"),
+        ("password=pa'ss word", "password=<hidden>"),
+        ("password=ab,hunter2", "password=<hidden>"),
+        ("password=abc hunter2:x", "password=<hidden>"),
+        ("cookie=a=b; hunter2", "cookie=<hidden>"),
+        ("cookie=a=b; session=FAKEval", "cookie=<hidden>"),
+        ('password="a b" user=bob', "password=<hidden> user=bob"),
+        ('password="a user=b" c', "password=<hidden>"),
         # Prose keeps the word after its value: only an assignment runs on.
         (
             "npm error password hunter2 was refused",
@@ -941,14 +937,26 @@ def test_a_value_that_is_no_plain_word_is_still_hidden(text, shown):
         "next-key-colon",
         "next-secret",
         "quote",
-        "cut-marker",
+        "inner-quote",
+        "inner-comma",
+        "inner-colon-key",
+        "cookie-pair",
+        "cookie-next-pair",
+        "quoted-then-key",
+        "quoted-key-inside",
         "prose",
     ],
 )
-def test_an_unquoted_value_of_several_words_is_hidden_whole(text, shown):
-    if shown is None:
-        shown = "password=<hidden> <cut to 9 characters>"
+def test_an_assigned_value_runs_to_the_line_end_or_the_next_key(text, shown):
     assert audit_dependencies._redacted(text) == shown
+
+
+# The cut marker is written after the redaction, so the value's run never
+# reaches it.
+def test_the_cut_marker_follows_a_hidden_value():
+    assert audit_dependencies._shown("password=my secret phrase", 18) == (
+        "password=<hidden> <cut to 18 characters>"
+    )
 
 
 # An AWS CodeArtifact registry's host: its first label mixes letters and
@@ -1412,6 +1420,7 @@ _TIMED_REDACTION = (
         ("ENOTFOUND acme2024-111122223333.d.x ", 600, True),
         ("password the is ", 1600, True),
         ("token " + "x " * 20, 200, False),
+        ("password=a,b;c'd e=f ", 1600, False),
     ],
     ids=[
         "a",
@@ -1425,6 +1434,7 @@ _TIMED_REDACTION = (
         "word-number",
         "clause-words",
         "clause-bound",
+        "assigned-run",
     ],
 )
 def test_a_hostile_line_is_redacted_within_a_second(unit, times, unchanged):
