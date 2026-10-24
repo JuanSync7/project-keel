@@ -54,6 +54,22 @@ version rather than a bare commit:
   its record fails the run. `pytest-xdist` joins the `dev` extra; a tier
   target and a direct `pytest` stay in one process, and
   `--expiring-tier-record` refuses `-n`.
+- **CI runs on GitHub, GitLab or both, from one step list.** The copier
+  question `ci_pipeline` (`github`, `gitlab` or `both`, default `github`)
+  picks the adapters a project ships: `.github/workflows/ci.yml`,
+  `.gitlab-ci.yml`, or both. config/project.json `ci_pipeline.steps` is the
+  ordered list of commands CI runs. Each adapter is hand-written, and
+  `tests/integration/test_ci_pipeline_gate.py` fails one whose steps, order or
+  env differ from that list. Each adapter keel writes carries the line
+  `# keel-adapter: <name>` (`ci_pipeline.marker`). When an update changes the
+  answer, keel removes an adapter that is no longer chosen only if the file
+  carries that exact line. A file without the line is kept, and the retirement
+  step prints a one-line note naming it. The GitLab job's image is `ci_pipeline.gitlab_image`,
+  filled from `toolchain`. Its default is a placeholder host, because keel has
+  verified no public image that carries both the Python and the Node version.
+  An owner sets it before the GitLab job can run. The GitLab file sets
+  `GIT_DEPTH: "0"`, the counterpart of the GitHub job's `fetch-depth: 0`.
+  Keel has not run the GitLab adapter on a GitLab runner.
 - **Each install source can point at a company mirror.** config/project.json
   `install_sources` has `python_index` (pip's `--index-url` in every workflow's
   `pip install` and in the command `make check-venv` prints), `npm_registry`

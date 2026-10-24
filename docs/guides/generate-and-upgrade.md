@@ -39,8 +39,9 @@ copier asks for the project name, whether to keep the bundled showcase demo
 needs the showcase), the backend's minimum Python (`backend_python`), the
 Python release CI installs (`toolchain_python`, which must satisfy
 `backend_python`, or copier refuses the pair before writing a file), the
-optional transports (`grpc`, `edge_nginx`) and the domain profiles (`ai`,
-`cuda`, `langgraph`). `--defaults` takes every default without asking, and
+optional transports (`grpc`, `edge_nginx`), the domain profiles (`ai`,
+`cuda`, `langgraph`), and the CI service that runs the gate (`ci_pipeline`:
+`github`, `gitlab` or `both`, default `github`). `--defaults` takes every default without asking, and
 `--data name=value` answers one question on the command line:
 
 ```bash
@@ -129,6 +130,8 @@ exactly the files this judgment says arrive.
 | `src/frontend/astro` | only when `frontend_stack` is `astro` | the stack you did not choose |
 | `src/frontend` | not when `frontend_stack` is `none` | no frontend |
 | `.github/workflows/pages.yml` | only when `frontend_stack` is `astro` | publishes the Astro site |
+| `.github/workflows/ci.yml` | not when `ci_pipeline` is `gitlab` | the GitHub CI adapter |
+| `.gitlab-ci.yml` | not when `ci_pipeline` is `github` | the GitLab CI adapter |
 | `api/grpc` | only when `transports` has `grpc` | an optional transport |
 | `tests/unit/api/test_grpc_server.py` | only when `transports` has `grpc` | the test of that transport's server |
 | `api/edge_nginx` | only when `transports` has `edge_nginx` | an optional transport |
@@ -554,6 +557,33 @@ The update brings the config/project.json `toolchain` block,
    record the dependencies its `package.json` names. Run `npm install` in the
    app and commit the lockfile.
 
+### Your CI runs one step list
+
+The update asks a new question, `ci_pipeline`, whose default is `github`;
+taking the default keeps the `.github/workflows/ci.yml` you have. The update
+brings the config/project.json `ci_pipeline` block, whose `steps` list is
+what every CI adapter runs, in order, and
+`tests/integration/test_ci_pipeline_gate.py`, which fails an adapter that
+runs anything else. The update also adds the line `# keel-adapter: github` to
+the top of `ci.yml`. You may meet the change three ways.
+
+1. **You edited `ci.yml`.** The gate fails a step you added, dropped or
+   reordered, naming the adapter and both lists. Put the step in
+   `ci_pipeline.steps` and in every adapter you ship, or move it to a
+   workflow of its own.
+2. **You answer `gitlab` or `both`.** The update writes `.gitlab-ci.yml`.
+   Its image is `ci_pipeline.gitlab_image` filled from `toolchain`, and the
+   default names no real registry, so the job cannot pull until you point the
+   key, and the file's `image:` line, at an image that carries both
+   toolchains. Answering `gitlab` removes `ci.yml` when it still has keel's
+   marker line.
+3. **You wrote your own `.gitlab-ci.yml` before.** An update that does not
+   choose gitlab keeps it byte-identical and says on stderr why, because it
+   has no `# keel-adapter: gitlab` line. The gate does not judge it unless it
+   carries that line. An update that chooses gitlab leaves the file
+   conflicted, yours above copier's `=======` line and keel's below it
+   (measured with copier 9.19), so resolve it as you would any conflict.
+
 ## Update checklist
 
 An update runs the steps below in this order. The task runs while copier renders
@@ -570,6 +600,8 @@ brings back a file a step removed, as long as you committed it first.
 | `rm -rf src/frontend/astro` | `frontend_stack` is not `astro` | removes that stack | none | `git checkout -- src/frontend/astro` |
 | `rm -rf src/frontend` | `frontend_stack` is `none` | removes the frontend | none | `git checkout -- src/frontend` |
 | `rm -f .github/workflows/pages.yml` | `frontend_stack` is not `astro` | removes the site workflow | none | `git checkout -- .github/workflows/pages.yml` |
+| `rm -f .github/workflows/ci.yml` when it has the line `# keel-adapter: github` | `ci_pipeline` is `gitlab` | removes keel's GitHub adapter; a file without that line is kept and named on stderr | none | `git checkout -- .github/workflows/ci.yml` |
+| `rm -f .gitlab-ci.yml` when it has the line `# keel-adapter: gitlab` | `ci_pipeline` is `github` | removes keel's GitLab adapter; a file without that line is kept and named on stderr | none | `git checkout -- .gitlab-ci.yml` |
 | `rm -rf api/grpc` | `transports` lacks `grpc` | removes the transport | none | `git checkout -- api/grpc` |
 | `rm -f tests/unit/api/test_grpc_server.py` | `transports` lacks `grpc` | removes the transport's test | none | `git checkout -- tests/unit/api/test_grpc_server.py` |
 | `rm -rf api/edge_nginx` | `transports` lacks `edge_nginx` | removes the transport | none | `git checkout -- api/edge_nginx` |

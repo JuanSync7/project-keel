@@ -1389,20 +1389,44 @@ Enable once: `pip install -e ".[dev]" && pre-commit install`, then `make secrets
 
 ### CI (event trigger)
 
-`.github/workflows/ci.yml` runs under the Python and the Node major
-config/project.json `toolchain.python` and `toolchain.node_major` name, which
-its `toolchain` step prints for setup-python and setup-node (section 14):
+config/project.json `ci_pipeline.steps` is the one list of what CI runs: the
+editable install, `make secrets-install`, `make secret-scan`,
+`make fe-install`, `make check-all`, `make lint`, `make typecheck`,
+`make site-data`, `make test`, `make trace`, `make eval`,
+`make fe-browsers`, `make test-fe` and `make test-sh`, in that order. A step
+is a shell line, `run`, and an optional `env` map; `make test` declares
+`KEEL_REQUIRED_EXTRAS`, so a surface the install brought cannot skip.
 
-```yaml
-- run: make secrets-install   # build the pinned secret scanner and record it
-- run: make secret-scan       # every commit the full-history checkout carries
-- run: make check-all   # structure, python floor, corpus, openapi, aad, cdmon
-- run: make lint
-- run: make typecheck
-- run: make test
-- run: make trace       # every requirement is named by a test or a documented gap
-- run: make eval        # replay every eval suite; no network, no credential
-```
+Each file `ci_pipeline.adapters` names runs that list for one CI service:
+`.github/workflows/ci.yml` for GitHub, `.gitlab-ci.yml` for GitLab. The copier
+answer `ci_pipeline` (`github`, `gitlab` or `both`) picks which ship, and keel
+itself ships GitHub's, with GitLab's as the `.gitlab-ci.yml.jinja` twin. The
+adapters are written by hand, not generated.
+`tests/integration/test_ci_pipeline_gate.py` holds each one to the list
+through `tests/ci_adapters.py`, and fails an adapter that drops, adds,
+reorders or changes a step or its env, and an empty list.
+
+The first line of each adapter keel writes is its marker,
+`ci_pipeline.marker` filled with the adapter's name (`# keel-adapter: github`,
+`# keel-adapter: gitlab`). The gate fails an adapter keel ships without it.
+A `copier update` whose answer declines an adapter removes the file only when
+that line is in it, so a CI file a project wrote itself is kept
+(`docs/guides/generate-and-upgrade.md` lists the migration).
+
+`ci.yml` runs under the Python and the Node major config/project.json
+`toolchain.python` and `toolchain.node_major` name, which its `toolchain` step
+prints for setup-python and setup-node (section 14).
+
+GitLab has no setup step, so `.gitlab-ci.yml` names an image that must carry
+both toolchains: `ci_pipeline.gitlab_image` filled from `toolchain`, which the
+gate compares with the file's `image:` line. Keel has verified no public image
+that carries both, so the default names a host under `.invalid`, which never
+resolves, and the job cannot pull until the owner points the key, and the
+file's `image:` line, at an image that does. The file sets the GitLab variable
+`GIT_DEPTH` to `"0"`, for the same reason `ci.yml` checks out with
+`fetch-depth: 0`: copier resolves a template by git ref, and a shallow clone
+carries no tags. The gate fails any other value. Keel has not run the GitLab
+adapter on a GitLab runner.
 
 ### Scheduled (time trigger)
 
