@@ -9,7 +9,7 @@ tags: [agent, refactor, practices, corpus, gate]
 summary: Walks the corpus KG and refactors each chunk toward a named practice, gating every edit on make verify.
 id: agents-practice-refactor-readme
 created: 2026-07-07
-updated: 2026-10-23
+updated: 2026-10-24
 visibility: internal
 canonical: true
 ---
@@ -23,7 +23,9 @@ The **applying** companion to the coding-practices catalogue: where the gate
 (`check_structure.py` / ruff / mypy) *enforces* the practices on new code, this
 agent brings *existing* code toward one **named** practice from
 `config/practices.json`, one bounded corpus neighbourhood at a time. It walks the
-graph with the read-only `query_corpus` tool, gates a green baseline with
+graph with the read-only `query_corpus` tool, keeping only the chunks at a level
+in `config/project.json` `corpus.served_visibilities`, so a confidential chunk's
+text never reaches a prompt, gates a green baseline with
 `run_make_target`, then for each chunk proposes one bounded edit and applies it
 through `apply_refactor` — which gates on `make verify` and **rolls back** unless
 the tree stays green. So the agent **cannot mark a chunk done unless it satisfies

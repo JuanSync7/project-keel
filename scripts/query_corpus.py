@@ -3,7 +3,7 @@
 title: Query corpus
 kind: script
 layer: n/a
-summary: Read-only retrieval over wiki/corpus.json — the wiki_navigator's tool.
+summary: Read-only retrieval over wiki/corpus.json — the wiki_navigator's, practice_refactor's and doc_reviewer's tool — that prints only nodes at a level in config/project.json corpus.served_visibilities.
 """
 
 from __future__ import annotations
@@ -13,10 +13,12 @@ import json
 import os
 import re
 import sys
+from collections.abc import Collection
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-from exit_codes import ExitCode, finish  # noqa: E402
+import config_loader  # noqa: E402
+from exit_codes import ExitCode, finish, report  # noqa: E402
 
 DEFAULT_CORPUS = os.path.join("wiki", "corpus.json")
 _WORD_RE = re.compile(r"[A-Za-z][A-Za-z0-9_]{1,}")
@@ -61,16 +63,25 @@ def _tokens(text: str) -> set:
     return out
 
 
-def query(corpus: dict, question: str, max_nodes: int = 8) -> list:
-    """Return up to max_nodes candidate nodes for the question, best first.
+def query(
+    corpus: dict, question: str, max_nodes: int = 8, *, served: Collection[str]
+) -> list:
+    """Return up to max_nodes candidate nodes for the question, best first,
+    from the nodes at a level in *served*.
 
     Deterministic retrieval: score each node by stemmed query-token overlap
     with its tags/title/summary (weight 2) and with its body excerpt (weight 1,
     so a body-only match never outranks a summary match), then pull in each
     hit's parent and linked nodes so the caller gets a connected neighbourhood
-    (tree + links) to reason over.
+    (tree + links) to reason over. A node at any other level, one that states
+    none included, is cut before scoring, so it is neither a hit nor a
+    neighbour.
     """
-    nodes = {n["node_id"]: n for n in corpus.get("nodes", [])}
+    nodes = {
+        n["node_id"]: n
+        for n in corpus.get("nodes", [])
+        if n.get("visibility") in served
+    }
     q = _tokens(question)
     if not q:
         return []
@@ -122,6 +133,20 @@ def main(argv=None) -> int:
     )
     ap.add_argument("--max-nodes", type=int, default=8, help="max candidate nodes")
     args = ap.parse_args(argv)
+    try:
+        served = config_loader.served_visibilities(ROOT)
+    except config_loader.ConfigError as exc:
+        # resolve has already written a refused value's own line; a file that
+        # cannot be read is named here. Nothing is printed to stdout either way.
+        return report(
+            ExitCode.CONFIG,
+            "query_corpus: the levels a served node may carry cannot be read",
+            "; ".join(exc.lines)
+            or "corpus.served_visibilities in %s"
+            % (exc.path or config_loader.CONFIG_FILE),
+            "set corpus.served_visibilities to members of %s, then rerun"
+            % ", ".join(config_loader.VISIBILITY_ORDER),
+        )
     path = (
         args.corpus if os.path.isabs(args.corpus) else os.path.join(ROOT, args.corpus)
     )
@@ -130,7 +155,7 @@ def main(argv=None) -> int:
         return ExitCode.SUCCESS
     with open(path, encoding="utf-8") as fh:
         corpus = json.load(fh)
-    hits = query(corpus, args.question, max_nodes=args.max_nodes)
+    hits = query(corpus, args.question, max_nodes=args.max_nodes, served=served)
     json.dump(hits, sys.stdout, indent=2, sort_keys=True)
     sys.stdout.write("\n")
     return ExitCode.SUCCESS

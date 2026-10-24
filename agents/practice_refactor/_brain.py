@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+from collections.abc import Collection
 from dataclasses import dataclass
 
 from models import ModelBackend, ModelMeter, approve_resume, get_model
@@ -24,6 +25,7 @@ from runtimes import (
     Step,
     get_runtime,
 )
+from scripts import config_loader
 from scripts.resource_limits import run_tool
 
 __all__ = ["refactor", "propose", "RefactorReport"]
@@ -170,14 +172,32 @@ def _parse_spec(reply, practice):
     return data
 
 
+def _served(nodes, served=None):
+    """The members of *nodes* at a level in *served*, or in this repository's
+    ``corpus.served_visibilities`` when None. A node that states no level, or a
+    level outside the vocabulary, is dropped: absent, never assumed open."""
+    if served is None:
+        served = config_loader.served_visibilities(_REPO)
+    return [n for n in nodes if n.get("visibility") in served]
+
+
 def propose(
-    practice: str, practice_def: dict | None, node: dict, *, backend: ModelBackend
+    practice: str,
+    practice_def: dict | None,
+    node: dict,
+    *,
+    backend: ModelBackend,
+    served: Collection[str] | None = None,
 ) -> dict | None:
     """The agent's one model call: ONE bounded edit spec moving the corpus
     *node* toward *practice* (its config/practices.json row *practice_def*, or
     None when the registry has none), from *backend*; None when the model
-    declines, the reply does not parse, or it names its own gate. The plan's
-    propose step and the eval harness (evals/_doers.py) both call it."""
+    declines, the reply does not parse, or it names its own gate. A node at a
+    level outside *served* (None reads ``corpus.served_visibilities``) is None
+    with no model call, so its text never reaches a prompt. The plan's propose
+    step and the eval harness (evals/_doers.py) both call it."""
+    if not _served([node], served):
+        return None
     if not node.get("path"):
         # An apply is bound to the chunk's own file (--allow), so a chunk with
         # no path can never be applied; declining here spends no model call.
@@ -215,6 +235,8 @@ def _walk(state):
         hits = json.loads(out) if out.strip() else []
     except ValueError:
         hits = []
+    # The preview prompt carries a chunk's text too, so the cut comes first.
+    hits = _served(hits)
     preview = _propose_prompt(state["practice"], pdef, hits[0]) if hits else ""
     return {
         "practice_def": pdef,

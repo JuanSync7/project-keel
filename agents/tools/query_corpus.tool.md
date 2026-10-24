@@ -9,7 +9,7 @@ tags: [tool, corpus, retrieval, query]
 summary: Read-only retrieval over wiki/corpus.json — candidate nodes for a question.
 id: tool-query-corpus
 created: 2026-06-17
-updated: 2026-09-02
+updated: 2026-10-24
 visibility: internal
 canonical: true
 tool_command: python3 scripts/query_corpus.py "QUESTION" --corpus wiki/corpus.json
@@ -43,8 +43,11 @@ provenance and accountability.
 | `--max-nodes` | no | 8 | retrieval budget |
 
 ## Output
-A JSON array of node objects on stdout, best match first. No corpus present →
-prints `[]` and exits 0.
+A JSON array of node objects on stdout, best match first, drawn only from the
+nodes at a level in `config/project.json` `corpus.served_visibilities`: a node
+at any other level, or one that states none, is neither a hit nor a neighbour.
+No corpus present → prints `[]` and exits 0. A served level outside the
+vocabulary prints nothing to stdout and exits 14.
 
 ## Side effects
 READ-ONLY. Reads the corpus; writes nothing; no model call (retrieval is

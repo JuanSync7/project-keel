@@ -2,7 +2,7 @@
 title: Unit — the wiki navigator's model step runs on an injected backend
 kind: tests
 layer: n/a
-summary: wiki_navigator.synthesize(question, nodes, backend=b) sends b the agent's real answer prompt (its prompt.md preamble, the question and each visible node cited by node_id), never a confidential or restricted node, and returns b's reply stripped; the plan's synthesize step calls the same function, so the eval harness judges the code answer() runs. answer(execute=True) with no approved count of model calls is a ValueError before any step runs; answer(backend_factory=f) builds its one counted backend with f from the model name, so a caller that counts calls across answers (mcp/qa_server.py's session total) sees each one, and with no factory it is models.get_model. A citation whose node names no owner_source carries None, unknown, never `none`.
+summary: wiki_navigator.synthesize(question, nodes, backend=b) sends b the agent's real answer prompt (its prompt.md preamble, the question and each visible node cited by node_id), never a node outside config/project.json corpus.served_visibilities (a confidential or restricted node, one that states no level or one outside the vocabulary), and returns b's reply stripped; the plan's synthesize step calls the same function, so the eval harness judges the code answer() runs. answer(execute=True) with no approved count of model calls is a ValueError before any step runs; answer(backend_factory=f) builds its one counted backend with f from the model name, so a caller that counts calls across answers (mcp/qa_server.py's session total) sees each one, and with no factory it is models.get_model. A citation whose node names no owner_source carries None, unknown, never `none`.
 """
 
 import json
@@ -80,6 +80,42 @@ def test_synthesize_with_nothing_visible_says_so():
     seen = _Seen("x")
     synthesize("q", _NODES[1:], backend=seen)
     assert "(nothing retrieved)" in seen.prompts[0]
+
+
+@pytest.mark.parametrize(
+    "level", [None, "unreadable-readme", "secret"], ids=["unstated", "marker", "typo"]
+)
+def test_synthesize_never_sends_a_node_outside_the_vocabulary(level):
+    """A node that states no level, or one outside the vocabulary, is dropped:
+    the old `or "internal"` fallback served it as open."""
+    node = dict(_NODES[0], node_id="docs/odd.md", summary="Odd body.")
+    if level is None:
+        del node["visibility"]
+    else:
+        node["visibility"] = level
+    seen = _Seen("x")
+    synthesize("q", [node], backend=seen)
+    assert "docs/odd.md" not in seen.prompts[0] and "Odd body." not in seen.prompts[0]
+
+
+def test_synthesize_reads_the_configured_levels(monkeypatch):
+    """With `corpus.served_visibilities` read as `["public"]`, the internal node
+    goes too, so the navigator acts on the key rather than a literal of its own."""
+    from scripts import config_loader
+
+    monkeypatch.setattr(
+        config_loader, "served_visibilities", lambda root: frozenset({"public"})
+    )
+    seen = _Seen("x")
+    synthesize("What is alpha?", _NODES, backend=seen)
+    assert "docs/a.md" not in seen.prompts[0]
+    assert "(nothing retrieved)" in seen.prompts[0]
+
+
+def test_synthesize_takes_the_levels_it_is_given():
+    seen = _Seen("x")
+    synthesize("q", _NODES, backend=seen, served=frozenset({"confidential"}))
+    assert "docs/secret.md" in seen.prompts[0] and "docs/a.md" not in seen.prompts[0]
 
 
 def test_an_execute_answer_with_no_approved_count_is_refused_before_any_step():

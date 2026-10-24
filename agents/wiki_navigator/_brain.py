@@ -10,17 +10,18 @@ from __future__ import annotations
 import json
 import os
 import sys
+from collections.abc import Collection
 from dataclasses import dataclass
 
 from models import ModelBackend, ModelMeter, get_model
 from runtimes import END, MODEL_CALL, READ_ONLY, Edge, Plan, Step, get_runtime
+from scripts import config_loader
 from scripts.resource_limits import run_tool
 
 __all__ = ["answer", "synthesize", "Answer", "Citation"]
 
 _REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 _CORPUS = os.path.join("wiki", "corpus.json")
-_VISIBLE = ("public", "internal")  # confidential/restricted are not surfaced
 
 
 @dataclass(frozen=True)
@@ -63,8 +64,13 @@ def _system_prompt():
         return fh.read()
 
 
-def _visible(nodes):
-    return [n for n in nodes if (n.get("visibility") or "internal") in _VISIBLE]
+def _visible(nodes, served=None):
+    """The members of *nodes* at a level in *served*, or in this repository's
+    ``corpus.served_visibilities`` when None. A node that states no level, or a
+    level outside the vocabulary, is dropped: absent, never assumed open."""
+    if served is None:
+        served = config_loader.served_visibilities(_REPO)
+    return [n for n in nodes if n.get("visibility") in served]
 
 
 def _answer_prompt(question, nodes):
@@ -129,13 +135,20 @@ def _retrieve(state):
     }
 
 
-def synthesize(question: str, nodes: list[dict], *, backend: ModelBackend) -> str:
+def synthesize(
+    question: str,
+    nodes: list[dict],
+    *,
+    backend: ModelBackend,
+    served: Collection[str] | None = None,
+) -> str:
     """The agent's one model call: answer *question* from the visible members of
     *nodes* (retrieved corpus nodes) on *backend*, citing each by node_id, and
-    return the reply stripped. A confidential or restricted node is dropped
-    here as well as at retrieval, so no caller can send one. The plan's
-    synthesize step and the eval harness (evals/_doers.py) both call it."""
-    return backend.run(_answer_prompt(question, _visible(nodes))).strip()
+    return the reply stripped. A node at a level outside *served* (None reads
+    ``corpus.served_visibilities``) is dropped here as well as at retrieval, so
+    no caller can send one. The plan's synthesize step and the eval harness
+    (evals/_doers.py) both call it."""
+    return backend.run(_answer_prompt(question, _visible(nodes, served))).strip()
 
 
 def _synthesize(state, meter):

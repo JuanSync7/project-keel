@@ -75,6 +75,7 @@ _VALID = {
                 "node_id": "src/a.py",
                 "path": "src/a.py",
                 "text_excerpt": "raise ValueError('x')",
+                "visibility": "internal",
             },
         },
         json.dumps({"edits": [_EDIT]}),

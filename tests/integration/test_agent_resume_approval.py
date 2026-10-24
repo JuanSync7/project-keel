@@ -60,7 +60,12 @@ _FRESH_REVIEW = {
     "rosters": [],
 }
 _FRESH_NODES = [
-    {"node_id": "n%d" % i, "path": "src/backend/m%d.py" % i, "tags": []}
+    {
+        "node_id": "n%d" % i,
+        "path": "src/backend/m%d.py" % i,
+        "tags": [],
+        "visibility": "internal",
+    }
     for i in range(5)
 ]
 
@@ -141,7 +146,12 @@ def _save_refactor_run(root, chunks, model):
         "execute": True,
         "baseline_green": True,
         "chunks": [
-            {"node_id": "n%d" % i, "path": "src/backend/m%d.py" % i, "tags": []}
+            {
+                "node_id": "n%d" % i,
+                "path": "src/backend/m%d.py" % i,
+                "tags": [],
+                "visibility": "internal",
+            }
             for i in range(chunks)
         ],
         "candidates": [],

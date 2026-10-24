@@ -2,7 +2,7 @@
 title: Integration — practice_refactor gated KG-walking loop
 kind: tests
 layer: backend
-summary: Dry-run walks the graph + gates the read-only baseline but proposes/writes nothing; execute proposes one bounded edit per chunk and a chunk is `refactored` only when the gated apply_refactor keeps make verify green (else rolled back -> `skipped`); a crash mid-refactor resumes at the cursor without re-applying accepted chunks. The gate is the run's: a reply that names a gate is declined before any apply, every apply is bound to its chunk's own file with `--allow`, and a chunk with no path is declined before the model is called. Every tool call hands the refactored root to the runner, so run_tool reads the tool limits, and checks them against the gate keys, of the tree the gate runner reads.
+summary: Dry-run walks the graph + gates the read-only baseline but proposes/writes nothing; execute proposes one bounded edit per chunk and a chunk is `refactored` only when the gated apply_refactor keeps make verify green (else rolled back -> `skipped`); a crash mid-refactor resumes at the cursor without re-applying accepted chunks. The gate is the run's: a reply that names a gate is declined before any apply, every apply is bound to its chunk's own file with `--allow`, a chunk with no path is declined before the model is called, and a chunk outside config/project.json corpus.served_visibilities is no candidate. Every tool call hands the refactored root to the runner, so run_tool reads the tool limits, and checks them against the gate keys, of the tree the gate runner reads.
 """
 
 import json
@@ -30,12 +30,14 @@ _NODES = [
         "path": "src/backend/a.py",
         "tags": ["backend"],
         "text_excerpt": "x1",
+        "visibility": "internal",
     },
     {
         "node_id": "n2",
         "path": "src/backend/b.py",
         "tags": ["backend"],
         "text_excerpt": "x2",
+        "visibility": "internal",
     },
 ]
 
@@ -158,6 +160,33 @@ def test_dry_run_walks_and_previews_but_never_proposes_or_writes(monkeypatch):
     assert model.n == 0  # MODEL_CALL step skipped in dry-run
     assert "apply_refactor" not in runner.calls  # WRITES step skipped in dry-run
     assert runner.calls == ["query_corpus", "run_make_target"]
+
+
+def test_the_walk_drops_a_node_outside_the_served_levels(tmp_path, monkeypatch):
+    """A confidential chunk the walk returns is no candidate: its text reaches
+    neither the dry-run preview nor any proposal prompt."""
+    hidden = {
+        "node_id": "n0",
+        "path": "src/backend/vault.py",
+        "tags": ["backend"],
+        "text_excerpt": "CODEWORD-ZEBRA",
+        "visibility": "confidential",
+    }
+    runner, model = _Runner(nodes=[hidden] + _NODES), _Model()
+    _patch(monkeypatch, runner, model)
+
+    rep = refactor(
+        "precise-container-types",
+        execute=True,
+        max_model_calls=8,
+        root=str(_ROOT),
+        checkpointer=_checkpointer(tmp_path),
+    )
+
+    assert rep.candidates == ("n1", "n2")
+    assert "CODEWORD-ZEBRA" not in rep.preview
+    assert model.n == 2
+    assert "src/backend/vault.py" not in rep.refactored + rep.skipped
 
 
 def test_red_baseline_attempts_no_refactor(tmp_path, monkeypatch):
@@ -287,7 +316,9 @@ def _flag(argv, name):
 
 
 def test_each_apply_is_bound_to_the_chunks_own_file(tmp_path, monkeypatch):
-    nodes = _NODES + [{"node_id": "n3", "path": "", "text_excerpt": "x3"}]
+    nodes = _NODES + [
+        {"node_id": "n3", "path": "", "text_excerpt": "x3", "visibility": "internal"}
+    ]
     runner = _Runner(nodes=nodes)
     model = _Model(
         replies=[
