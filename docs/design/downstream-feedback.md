@@ -2452,10 +2452,9 @@ The slices touch shared files, so their order is fixed:
   measurement before it starts. keel-lint-pre-rebase is a backup of
   keel-lint and edits the same files; it never merges, and no slice waits
   for it. Every unmerged branch except keel-lint and its backup edits
-  `docs/design/downstream-feedback.md`. Every unmerged branch except keel-vis
-  edits `scripts/config_loader.py`. keel-exit, keel-goals and keel-xdist also
-  edit
-  `docs/design/make-next-steps.md`.
+  `docs/design/downstream-feedback.md`. Every other unmerged branch except
+  keel-vis edits `scripts/config_loader.py`. keel-exit, keel-goals and
+  keel-xdist also edit `docs/design/make-next-steps.md`.
 - CMP-7.S1, CMP-7.S2 and CMP-7.S3 each edit `scripts/check_structure.py` (the
   reader, the kind sets, the README rules). They run in series, S1 then S2
   then S3.
@@ -2618,8 +2617,10 @@ Git skips the unreadable `.git` and answers from the parent.
 `rev-parse --show-toplevel` then names the parent with exit 0.
 S4 makes the judge compare `rev-parse --show-toplevel` with the directory
 whose `.git` entry `git_tree.inside_a_repository`'s walk finds first.
-On a mismatch the judge raises an error that names both directories; git's
-exit 0 is not quoted as a failure status.
+On a mismatch the judge raises `GitFailedError` with a message that names
+both directories; git's exit 0 is not quoted as a failure status.
+The judge's call order is `head_commit`, then the top-level comparison, then
+`ls-files`.
 S4 makes that walk return the directory it found.
 `inside_a_repository` keeps its true-or-false answer over it. A project
 generated as a subproject ("Open decisions for CMP-7", item 8) is the layout
