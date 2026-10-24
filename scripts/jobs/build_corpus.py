@@ -695,7 +695,7 @@ def build_corpus(root: str) -> dict:
     refs = []  # (writing node, kind, via, spec) — resolved once every node exists
     default = _default_owner(root)
     walked = walked_paths(root)
-    kept = kept_markdown(root, walked)
+    kept = kept_markdown(walked)
     for dirpath, _, filenames in sorted_walk(root):
         top = _rel(dirpath, root).split(os.sep)[0]
         for f in filenames:

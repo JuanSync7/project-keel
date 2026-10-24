@@ -524,3 +524,18 @@ def test_a_skipped_readme_no_one_may_read_is_named_cannot_read(repo):
     found = [e for e in cs.errors if e.startswith("build/x/README.md: cannot read (")]
     assert len(found) == 1 and "Permission denied" in found[0], cs.errors
     assert served == ("docs/plan.md", "unreadable-readme")
+
+
+def test_kept_markdown_keeps_the_first_md_path_of_the_walked_paths_it_is_given():
+    """kept_markdown reads only the walked paths it is handed, so check_A and
+    build_corpus key a file by the walk each already made: the first `.md`
+    path to each real file, and nothing for a real file with none."""
+    walked = {
+        "/r/docs/a/plan.md": ["/r/docs/a/plan.md", "/r/docs/z/plan.md"],
+        "/r/AGENT.md": ["/r/AGENT", "/r/CLAUDE.md", "/r/AGENT.md"],
+        "/r/m.py": ["/r/m.py"],
+    }
+    assert cs.kept_markdown(walked) == {
+        "/r/docs/a/plan.md": "/r/docs/a/plan.md",
+        "/r/AGENT.md": "/r/CLAUDE.md",
+    }

@@ -683,12 +683,11 @@ def walked_paths(root):
     return walked
 
 
-def kept_markdown(root, walked=None):
-    """{real path: the path build_corpus keeps} for every `.md` file under
-    *root*: the first `.md` path to it in sorted_walk, from *walked*
-    (walked_paths of *root* when not given). A doc reached by a link and by
-    its target is one corpus node, under this path, ranked by served_chain."""
-    walked = walked_paths(root) if walked is None else walked
+def kept_markdown(walked):
+    """{real path: the path build_corpus keeps} for every `.md` file in
+    *walked*, walked_paths of the root: the first `.md` path to it in
+    sorted_walk. A doc reached by a link and by its target is one corpus
+    node, under this path, ranked by served_chain. Pure."""
     kept = {}
     for real, paths in walked.items():
         named = [p for p in paths if p.endswith(".md")]
@@ -787,7 +786,7 @@ def check_A():
     # A file is judged at the path build_corpus keeps for it, by served_chain:
     # the node and the chain the corpus serves.
     walked = walked_paths(ROOT)
-    kept = kept_markdown(ROOT, walked)
+    kept = kept_markdown(walked)
 
     def served(path):
         return rel(kept.get(os.path.realpath(path), path))
