@@ -687,20 +687,23 @@ def _relative_chain(path):
     return readmes_upward(os.path.dirname(path), "")
 
 
-def _visibility_contradictions(stated, chain=None):
+def _visibility_contradictions(stated, chain=None, unwalked=None):
     """One message per governed file that states a visibility less
     restrictive than a README.md on its chain, from *stated*: {path: stated
     visibility}. *chain* maps a path in *stated* to the README.md paths, as
     *stated* keys them, it takes its visibility from; by default the README
     of the file's own directory and of every directory up to the root (a
-    README is never looser than itself, so it needs no exception). A value
-    outside VISIBILITY_ORDER is left to the invalid-visibility error. Pure
-    when *chain* is.
+    README is never looser than itself, so it needs no exception).
+    *unwalked* gives {path: stated visibility} for a README.md on a chain
+    that *stated* does not hold; it is read, never judged. A value outside
+    VISIBILITY_ORDER is left to the invalid-visibility error. Pure when
+    *chain* is.
 
     The corpus gives a node the strictest visibility on its chain, so the
     looser level would be overridden in silence; the message names the
     README that wins and both ways to agree with it."""
     chain = chain or _relative_chain
+    unwalked = unwalked or {}
     found = []
     for path in sorted(stated):
         own = stated[path]
@@ -708,7 +711,7 @@ def _visibility_contradictions(stated, chain=None):
             continue
         strictest, where = None, None
         for readme in chain(path):
-            above = stated.get(readme)
+            above = stated.get(readme, unwalked.get(readme))
             if above in VISIBILITY_ORDER and (
                 strictest is None
                 or VISIBILITY_ORDER.index(above) > VISIBILITY_ORDER.index(strictest)
@@ -760,10 +763,22 @@ def check_A():
                     if fm.get("visibility"):
                         stated[served(full)] = fm["visibility"]
 
-    def chain(path):
-        return [served(r) for r in served_chain(os.path.join(ROOT, path), ROOT, walked)]
-
-    for message in _visibility_contradictions(stated, chain):
+    chains = {
+        path: [served(r) for r in served_chain(os.path.join(ROOT, path), ROOT, walked)]
+        for path in stated
+    }
+    # The walk never enters an IGNORE_DIRS directory, so a README.md there is
+    # met only on the chain of a file linked in from it. build_corpus reads its
+    # level, so check_A reads it too, and judges by the level the corpus serves.
+    unwalked = {}
+    for readme in sorted({r for c in chains.values() for r in c}):
+        full = os.path.join(ROOT, readme)
+        if os.path.realpath(full) in kept or not os.path.isfile(full):
+            continue  # walked, so check_A has read it; or nothing to read
+        fm = parse_frontmatter(full)
+        if fm and fm.get("visibility"):
+            unwalked[readme] = fm["visibility"]
+    for message in _visibility_contradictions(stated, chains.__getitem__, unwalked):
         err(message)
 
 

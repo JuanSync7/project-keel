@@ -408,3 +408,25 @@ def test_a_file_kept_at_a_path_check_a_does_not_govern_is_named_there(repo):
     assert message.startswith("agents/plan.md: visibility 'public'"), message
     assert "stated by docs/s/README.md" in message, message
     assert _served(repo)["plan"] == ("agents/plan.md", "confidential")
+
+
+@pytest.mark.parametrize("ignored", ["build", "node_modules"])
+def test_a_link_into_a_directory_the_walk_skips_is_judged_by_its_target_s_chain(
+    repo, ignored
+):
+    """The walk never enters an IGNORE_DIRS directory, so check_A meets a
+    README.md there only on a chain. It reads that README.md's level as
+    build_corpus does, so a doc linked in from there is judged by the level
+    the corpus serves it at."""
+    _stated(repo / "README.md", "public")
+    _stated(repo / ignored / "x" / "README.md", "confidential")
+    _stated(repo / ignored / "x" / "plan.md", "public")
+    (repo / "docs").mkdir()
+    (repo / "docs" / "plan.md").symlink_to("../%s/x/plan.md" % ignored)
+    cs.check_A()
+    found = [e for e in cs.errors if "less restrictive" in e]
+    assert len(found) == 1, cs.errors
+    message = found[0]
+    assert message.startswith("docs/plan.md: visibility 'public'"), message
+    assert "stated by %s/x/README.md" % ignored in message, message
+    assert _served(repo)["plan"] == ("docs/plan.md", "confidential")
