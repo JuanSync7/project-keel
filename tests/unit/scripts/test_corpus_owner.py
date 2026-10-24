@@ -451,6 +451,22 @@ def test_check_corpus_accepts_default_and_still_refuses_an_unknown_source(tmp_pa
     assert any("invalid owner_source" in e for e in cc.validate(corpus))
 
 
+@pytest.mark.parametrize("stored", [None, "assumed"])
+def test_an_owner_source_outside_the_set_is_one_error_naming_the_set(tmp_path, stored):
+    """An unknown owner is (None, None, None): one error that says which
+    sources check_corpus accepts, not a second one calling the null owner
+    incoherent with a source the node does not have."""
+    root = _tree(tmp_path)
+    _write(root, "docs/d.md", _doc("alice"))
+    corpus = bc.build_corpus(str(root))
+    corpus["nodes"][0].update(owner=None, owner_source=stored, owner_origin=None)
+    found = [e for e in cc.validate(corpus) if "owner" in e]
+    assert len(found) == 1, found
+    assert "expected one of %s" % sorted(cc.OWNER_SOURCES) in found[0], found
+    if stored is None:
+        assert "cannot read" in found[0] and "repair that README.md" in found[0]
+
+
 def test_a_default_node_with_no_owner_is_incoherent(tmp_path):
     root = _tree(tmp_path)
     _write(root, "docs/d.md", _doc("TBD"))

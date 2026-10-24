@@ -29,6 +29,12 @@ from link_corpus import link_corpus  # noqa: E402
 # Allowed enum values for the corpus contract (CONVENTIONS section 11/12).
 KINDS = {"doc", "section", "module", "symbol"}
 OWNER_SOURCES = {"frontmatter", "marker", "inherited", "default", "none"}
+# What a null owner_source means, appended to its invalid-owner_source error:
+# build_corpus writes owner, owner_source and owner_origin null together.
+_UNKNOWN_OWNER = (
+    ": null is an unknown owner, which build_corpus writes below a README.md it "
+    "cannot read -- repair that README.md, or state an owner on the node"
+)
 SUMMARY_SOURCES = {"authored", "generated", ""}
 # The vocabulary check_A judges frontmatter by, imported so the two cannot drift.
 VISIBILITIES = frozenset(VISIBILITY_ORDER)
@@ -138,14 +144,24 @@ def validate(corpus: dict) -> list:
                 "node %r has invalid kind %r (expected %s)"
                 % (nid, n.get("kind"), sorted(KINDS))
             )
-        if n.get("owner_source") not in OWNER_SOURCES:
-            e("node %r has invalid owner_source %r" % (nid, n.get("owner_source")))
+        source = n.get("owner_source")
+        if source not in OWNER_SOURCES:
+            e(
+                "node %r has invalid owner_source %r (expected one of %s)%s"
+                % (
+                    nid,
+                    source,
+                    sorted(OWNER_SOURCES),
+                    _UNKNOWN_OWNER if source is None else "",
+                )
+            )
         if n.get("summary_source") not in SUMMARY_SOURCES:
             e("node %r has invalid summary_source %r" % (nid, n.get("summary_source")))
         if n.get("visibility") not in VISIBILITIES:
             e("node %r has invalid visibility %r" % (nid, n.get("visibility")))
-        # owner/owner_source coherence (CONVENTIONS section 12)
-        if n.get("owner_source") == "none":
+        # owner/owner_source coherence (CONVENTIONS section 12), judged only
+        # for a source in the set: an invalid one is already its own error.
+        if source == "none":
             if n.get("owner"):
                 e(
                     "node %r: owner_source 'none' but owner is %r"
@@ -153,12 +169,8 @@ def validate(corpus: dict) -> list:
                 )
             if n.get("owner_origin") is not None:
                 e("node %r: owner_source 'none' but owner_origin is set" % nid)
-        else:
-            if not n.get("owner"):
-                e(
-                    "node %r: owner_source %r but owner is empty"
-                    % (nid, n.get("owner_source"))
-                )
+        elif source in OWNER_SOURCES and not n.get("owner"):
+            e("node %r: owner_source %r but owner is empty" % (nid, source))
         tags = n.get("tags")
         if not isinstance(tags, list):
             e("node %r: tags is not a list" % nid)
