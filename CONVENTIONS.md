@@ -97,10 +97,20 @@ both call). Check A judges that file once, at that path, against its
 `served_chain`, and names the strictest level on it and the `README.md` that
 states it: the level build_corpus serves the node at.
 
-The level is a label, and only some readers act on it. The wiki navigator
-agent, and the MCP Q&A server through it, drop `confidential` and `restricted`
-nodes. The showcase API, its `/llms-full.txt` text and the static site export
-do not filter by visibility yet, and they serve every node in the corpus.
+Every reader the project serves acts on the level, through one allowlist:
+`config/project.json` `corpus.served_visibilities`, `public` and `internal` by
+default, read by `scripts/config_loader.py` `served_visibilities`. The readers
+are the showcase API (node detail, search, the doc tree, links, children,
+parent and counts), its `/llms.txt` and `/llms-full.txt`, the static site
+export `make site-static` publishes, the wiki navigator agent and the MCP Q&A
+server through it, the practice refactor agent, and `scripts/query_corpus.py`,
+the retrieval the agents call. A node at any other level, or one that states
+none, is absent from each of them, not redacted: a request for it is answered
+as an unknown node. The key's bound refuses a level outside the vocabulary, the
+`unreadable-readme` marker included, so a reader serves nothing rather than
+guess. Each reader's unit test holds it to the key, and
+`tests/e2e/test_showcase_journey.py` drives a real server and the export over a
+confidential node.
 
 ### Code files
 Source files can't carry YAML, so the **module docstring** is the

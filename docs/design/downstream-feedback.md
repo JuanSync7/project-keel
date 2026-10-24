@@ -2886,7 +2886,7 @@ On 2026-10-22 the maintainer approved this order. Positions 1 to 9 come from the
 | 40 | KEEL-OWNER-2 | `scripts/jobs/build_corpus.py` records a `TBD` doc as unowned while check_F lets the same doc inherit config/project.json `accountability.default_owner`, so the corpus and the gate disagree on one tree; folds in the review's two Low findings, a written `null` owner read as an owner called "null", and a nullable key's refusal line that puts the bound on null; found by the KEEL-WARN-1 review Done: the corpus gives a TBD owner `accountability.default_owner` with owner source `default`, as check_F does, a written null is never an owner, and the wiki marks a default owner as a placeholder; the merged tree's full verify passed 4426 tests in 1 h 58 min | done |
 | 41 | KEEL-VIS-1 | Visibility resolution in `scripts/jobs/build_corpus.py` fails open: an owned child `README.md` with no `visibility` ends the walk, so it hides a confidential parent and its modules come out `internal`; the behaviour predates KEEL-OWNER-2, and only check_A's required `visibility` key keeps it off keel's tree; the decision to name is whether a node takes the most restrictive visibility on its chain; found by the KEEL-OWNER-2 review Done: a node takes the most restrictive visibility on its README chain and check A refuses a looser one through the same reader; a README that cannot be read makes the nodes below it unrankable, and a symlinked or multiply-linked file is served at its strictest chain; the reader filter is KEEL-VIS-2; the merged tree's full verify passed 5567 tests in 1 h 11 min | done |
 | 42 | KEEL-OWNER-3 | A doc or `README.md` owner outside `scripts/config_loader.py` `OWNER_GRAMMAR`, such as a quoted `"alice"`, silently becomes no owner in the corpus, and no gate names the grammar for it, because check_F judges only `kind: tool` and `kind: agent` documents; folds in two test gaps: `tests/integration/test_showcase_api.py::test_wiki_node_says_how_its_owner_was_resolved` reads the gitignored corpus, so it passes on a corpus with no `default` node, and a node with no `owner_source` field reads as `none` rather than unknown; found by the KEEL-OWNER-2 review | planned |
-| 43 | KEEL-VIS-2 | Nothing in `src/backend/showcase` reads `visibility`: a `confidential` document's text reaches `/api/wiki/node`, `/api/search`, `/llms-full.txt` and the static export `make site-static` publishes, and the wiki navigator filters on a literal of its own; found by the KEEL-VIS-1 review | planned |
+| 43 | KEEL-VIS-2 | Nothing in `src/backend/showcase` reads `visibility`: a `confidential` document's text reaches `/api/wiki/node`, `/api/search`, `/llms-full.txt` and the static export `make site-static` publishes, and the wiki navigator filters on a literal of its own; found by the KEEL-VIS-1 review | built on branch keel-vis2: the branch gates are green; the full `make verify` has not run |
 | 53 | KEEL-RISK-2 | KEEL-RISK-1's redaction of npm's diagnostic leaks or over-hides in ten shapes its review found: a secret word in prose (`the password was X`) hides the linking word and shows the value; a raw `@` in a URL's userinfo shows the password's tail as the host; a plain word after a secret word (`password required`) is hidden; an unquoted value of several words shows every second word; a scheme-less `host/path` shows its path; a token as an IPv6 zone id is shown; npm's `Invalid URL` gets the generic advice; a word-prefixed token cut by hyphens passes as a host label; a CodeArtifact domain with no word part and a dotless host with a digit are hidden; and open item 17 still says react-vite ships no lockfile. Found by the KEEL-RISK-1 review; one commit per item Done: each of the ten shapes is fixed with its own test, and two review rounds added a generated grammar of secret words, a 300-character clause bound and a kept auth realm; open item 17 says both frontend apps commit their lockfile; the merged tree's full verify passed 5181 tests in 1 h 35 min | done |
 | 56 | KEEL-CORPUS-2 | `scripts/jobs/build_corpus.py` and `scripts/jobs/link_corpus.py` write `wiki/corpus.json` in place, so a build killed mid-write, or a `make site-data` run beside the tests, leaves a partial corpus that the next reader accepts: the KEEL-DIST-1 slice 2 review killed the build with `kill -9`, the 8 KB file it left passed the next `-n 8` session's lock, and 7 tests failed. The fix writes a temporary file beside it and moves it into place with `os.replace`, and gives the two jobs the `tests/conftest.py` `real_corpus` fixture starts a `timeout=` (a `tests/CLAUDE.md` rule), so a hung build fails the run instead of blocking every worker. The same review found that a UTF-8 byte order mark hides the CI adapter's marker line: `tests/ci_adapters.py` reports a correct `.gitlab-ci.yml` saved with one as having no line `# keel-adapter: gitlab`. Both predate KEEL-DIST-1; after KEEL-TESTCOPY-1 (55); found by the KEEL-DIST-1 slice 2 review | planned |
 
@@ -3267,10 +3267,12 @@ for row 43: one configured allowlist, `corpus.served_visibilities` in
 `scripts/config_loader.py`, whose `KEYS` row refuses a value outside the
 visibility vocabulary. A hidden node is absent, not redacted. The plan:
 
-- The vocabulary moves to `scripts/config_loader.py` `VISIBILITY_ORDER`,
+- The vocabulary is `scripts/config_loader.py` `VISIBILITY_ORDER`,
   because the row's bound needs it and the loader imports nothing of the
-  project; `scripts/check_structure.py` re-exports it, so check_A,
-  check_corpus and the corpus build keep one copy.
+  project. `scripts/check_structure.py` keeps its own copy for check_A,
+  check_corpus and the corpus build, because a KEEL-VIS-1 fix round edits
+  that file in parallel; `tests/unit/scripts/test_config_loader.py` holds the
+  two copies equal until a later slice makes check_structure import it.
   `config_loader.served_visibilities(root)` resolves the key; a value
   outside the vocabulary, the corpus's `unreadable-readme` marker included,
   is `WrongValue`.
@@ -3283,25 +3285,41 @@ visibility vocabulary. A hidden node is absent, not redacted. The plan:
   answer: 404 from `/api/wiki/node`.
 - The callers read the key and pass it in: the REST router
   (`api/rest_fastapi/showcase_api.py`, on each reload), the static export
-  (`scripts/jobs/export_showcase_static.py`, which also stops iterating the
-  raw corpus) and `scripts/jobs/build_llms_txt.py`. The wiki navigator's
-  literal `_VISIBLE` is replaced by the same key, and a node with no
-  `visibility` is no longer read as `internal`.
+  (`scripts/jobs/export_showcase_static.py`, whose loop over the corpus ids
+  gets `None` from `Showcase.node` for a hidden one and skips it) and
+  `scripts/jobs/build_llms_txt.py`; a refused level is exit 14 from a job
+  and 500 from the router. The wiki navigator's literal `_VISIBLE` is
+  replaced by the same key, and a node with no `visibility` is no longer
+  read as `internal`.
+- Two more readers ignored the level and are in this slice: the practice
+  refactor agent put any chunk's `text_excerpt` in a model prompt, and
+  `scripts/query_corpus.py`, the retrieval the agents call, printed any
+  node. `query_corpus.query` takes the levels and cuts the corpus before
+  scoring, so a hidden node is neither a hit nor a neighbour, and its CLI
+  reads the key. The refactor agent keeps only served chunks from its walk,
+  before the dry-run preview, and `propose` declines a hidden chunk with no
+  model call. The two eval cases for `propose` state `internal` on their
+  node, which leaves the prompt and its recorded hash unchanged.
 - Tests, each named by what it proves: the loader row
   (`tests/unit/scripts/test_config_loader.py`: default, refused member,
   refused marker); the query layer and facade
   (`tests/unit/backend/test_showcase.py`: node, search, tree, counts,
   links, markdown, `llms_full`, and a configured `["public"]` hiding an
   `internal` node); the navigator
-  (`tests/unit/agents/test_wiki_navigator_step.py`); the export
-  (`tests/unit/scripts/test_export_showcase_static.py`); the API
+  (`tests/unit/agents/test_wiki_navigator_step.py`); the refactor agent
+  (`tests/unit/agents/test_practice_refactor_step.py`,
+  `tests/integration/test_practice_refactor.py`); the retrieval
+  (`tests/unit/scripts/test_query_corpus.py`); the export and the llms job
+  (`tests/unit/scripts/test_export_showcase_static.py`,
+  `tests/unit/scripts/test_build_llms_txt.py`); the API
   (`tests/integration/test_showcase_api.py`); and an e2e scenario in
   `tests/e2e/test_showcase_journey.py` that builds a corpus with a
   confidential node and finds its codeword in no API answer and no
   exported file. Each reader's filter is dropped in turn to see its test
   red.
 - Docs: CONVENTIONS §1, `docs/reference/settings.md`, `features.md`, the
-  showcase READMEs and one CHANGELOG row; the `.jinja` twin of
+  showcase guide, the jobs, scripts and agent READMEs, the `query_corpus`
+  tool spec and one CHANGELOG row; the `.jinja` twin of
   `config/project.json` carries the key.
 
 ## Rulings recorded after CMP-5.S3

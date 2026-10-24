@@ -727,6 +727,22 @@ version rather than a bare commit:
   with exit 14, not a traceback.
   Before, a `secrets.scanner.release_url` given a token was refused with the
   token in the message.
+- **A confidential document reaches no reader the project serves.** The
+  corpus recorded each node's visibility, but nothing in `src/backend/showcase`
+  read it, so a `confidential` document's text came back from
+  `/api/wiki/node`, `/api/search` and `/llms-full.txt`, and went into the static
+  export `make site-static` publishes; the practice refactor agent put any
+  chunk's text in a model prompt, and `scripts/query_corpus.py` printed any
+  node. One allowlist, config/project.json `corpus.served_visibilities`
+  (`public` and `internal` by default), now decides for every reader: the
+  showcase API, both llms files, the static export, the wiki navigator (its
+  own literal is gone, a class fix), the practice refactor agent and
+  `scripts/query_corpus.py`. A node at any other level, or one that states
+  none, is absent rather than redacted, and a request for it is answered as an
+  unknown node. A level outside the vocabulary, the corpus's
+  `unreadable-readme` marker included, is refused as a config fault (exit 14),
+  so nothing is served. A generated project gets the key with its config.
+  (KEEL-VIS-2)
 - **The astro app's audited dependencies move past their advisories.**
   `npm audit` in `src/frontend/astro` reported 28 findings (2 critical, 17
   high); each fixable package moved in its own commit within its declared
