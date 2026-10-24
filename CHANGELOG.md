@@ -537,6 +537,15 @@ version rather than a bare commit:
   unless a reasoned row excuses the file. A literal prefix beside a name it
   cannot read, a loader renamed, assigned or passed as a value, and a loader
   fetched by getattr each count as a load it cannot read.
+- **An owner outside the grammar is a finding in every document.** check_F
+  refused a quoted or commented owner only on `kind: tool` and `kind: agent`
+  documents, so a `README.md` or guide whose frontmatter said `owner: "alice"`
+  went into the corpus as no owner and no gate said why. Any governed document
+  or `README.md` whose owner is outside CONVENTIONS §12's grammar is now an
+  error naming it and the grammar. A wiki node whose corpus row names no
+  `owner_source` now reads as unknown, `null` in the API, "source unknown" on
+  the owner chip and `None` in a wiki navigator citation, rather than `none`,
+  which claimed nothing owns it.
 - **A child README can no longer hide a confidential parent.** The corpus
   ended a module's visibility walk at the nearest `README.md` with an owner or
   a visibility, so an owned child `README.md` that stated none gave its

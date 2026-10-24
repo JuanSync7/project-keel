@@ -290,7 +290,7 @@ pre-commit hook) fails the build if the conventions above drift:
 | Authored coverage (error) | every `__all__`-exported symbol defined in-file has a one-line docstring |
 | Module header (error) | every `.py` under the code roots opens with a docstring carrying explicit, non-empty `title:` and `summary:` lines — the grammar the corpus reads, its input contract (ADR-K-0008) |
 | Tool specs governed (error) | `agents/**/*.tool.md` carry valid `kind: tool` frontmatter + a resolvable `public_api` + a valid `tool_effect` |
-| Accountability (error) | `config/project.json` `accountability.default_owner` is read through `scripts/config_loader.py` on every run, and a value outside the §12 owner grammar, or `TBD` or the word `null` in any letter case, is an error naming the key; a tool/agent doc whose `owner` is `TBD`, in any letter case, inherits it, and with none set (absent or `null`, the loader's default) or a refused value each such doc is an error naming it and the key; a tool/agent doc whose `owner` is outside the §12 grammar, such as a quoted or commented placeholder, is an error naming it and the grammar; a tool/agent doc whose `owner` is a written null (`null` in any letter case, or `~`) is an error naming it; a missing or empty `owner` warns |
+| Accountability (error) | `config/project.json` `accountability.default_owner` is read through `scripts/config_loader.py` on every run, and a value outside the §12 owner grammar, or `TBD` or the word `null` in any letter case, is an error naming the key; a tool/agent doc whose `owner` is `TBD`, in any letter case, inherits it, and with none set (absent or `null`, the loader's default) or a refused value each such doc is an error naming it and the key; any governed doc or `README.md` whose `owner` is outside the §12 grammar, such as a quoted or commented placeholder, is an error naming it and the grammar, whatever its `kind`; a tool/agent doc whose `owner` is a written null (`null` in any letter case, or `~`) is an error naming it; a missing or empty `owner` warns |
 | Tool/agent binding (error) | each agent `tools.md` ↔ each spec's `## Used by` agree (both ways); `tool_command` invokes `public_api` |
 | Project facts (§15) | `config/project.json` agrees with the tree: declared `path`/`stack`/`enabled` transport dirs exist, `enabled` ⊆ `available`, `backend.python` matches `pyproject`; an absent `config/project.json` is an error; an **undeclared** leftover stack/transport dir warns |
 | Agent-rules symlink (§5) | every `CLAUDE.md` is a symlink to its sibling `AGENT.md`; every `AGENT.md` has that sibling |
@@ -591,9 +591,15 @@ and a tree with no config file all resolve to `none`.
 time `check_F` holds each `kind: tool`/`agent` frontmatter doc owned (it
 inspects frontmatter only, not corpus nodes): a `TBD` owner inherits
 `config/project.json` `accountability.default_owner`, and with no default set
-the doc is an error naming the key; an owner outside the grammar above is an
-error naming the doc; a written null is an error naming the doc, which the
-default does not cover; a missing owner warns. check_F and the corpus read the
+the doc is an error naming the key; a written null is an error naming the
+doc, which the default does not cover; a missing owner warns. An owner outside
+the grammar above is an error naming the doc and the grammar in **every**
+governed document's or `README.md`'s frontmatter, whatever its `kind`, because
+the corpus would otherwise read a quoted `"alice"` as no owner with no gate
+saying why; in a document of any other kind no owner, `TBD` or a written null
+is no finding. A wiki node payload whose corpus row names no `owner_source`
+carries a null one, unknown, which is not `none`, the claim that nothing owns
+the node. check_F and the corpus read the
 key the same way, so a `TBD` tool or agent doc check_F holds owned is a
 `default` node in the corpus.
 

@@ -3236,6 +3236,16 @@ out at the ancestor's. Why: confidentiality must not leak through a child's
   module docstring that states a looser `visibility` is resolved closed but
   not flagged; none in the tree states one.
 
+**KEEL-OWNER-3, an owner outside the grammar is a finding.** The
+maintainer's call for row 42: an owner outside `scripts/config_loader.py`
+`OWNER_GRAMMAR` in any governed document or `README.md` frontmatter is a
+gate finding that names the grammar, never a silent no-owner. The two test
+gaps fold in as the row states: the showcase test that the wiki node says
+how its owner was resolved builds its own corpus in scratch rather than
+read the gitignored `wiki/corpus.json`, and fails on a corpus with no
+`default` node; and a node with no `owner_source` field reads as unknown,
+distinct from `none`, through the API and the frontend.
+
 ## Rulings recorded after CMP-5.S3
 
 The maintainer asked for the vault's recommendations to be acted on. These

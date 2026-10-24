@@ -139,9 +139,11 @@ print but never fail the build.
   set (absent or `null`, the loader's default) each such document is an error
   naming it and the key, with no warning first, and with a refused value the
   error says the value was refused. An owner outside the grammar
-  `[A-Za-z0-9._@-]+`, such as `"TBD"` or `TBD # later`, is an error naming
-  the document and the grammar, so a quoted or commented placeholder is never
-  counted as owned. A written null, `null` in any letter case or `~`, is an
+  `[A-Za-z0-9._@-]+`, such as `"TBD"`, `"alice"` or `TBD # later`, is an
+  error naming the document and the grammar in every governed document and
+  `README.md`, whatever its `kind`, so a quoted or commented owner is never
+  read as no owner in silence; outside tools and agents nothing else about the
+  owner is judged. A written null, `null` in any letter case or `~`, is an
   error naming the document, which the default does not cover: YAML reads both
   as null, so neither names an owner, and `null` would otherwise pass the
   grammar as an owner called "null". Any other owner is never judged; a
