@@ -46,6 +46,7 @@ _SCRIPTS = (
     "config_loader.py",
     "exit_codes.py",
     "run_date.py",
+    "shell_gate.py",
 )
 _IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc")
 _GAPS_WHERE = "%s %s" % (tr.MANIFEST, tr.GAPS_KEY)

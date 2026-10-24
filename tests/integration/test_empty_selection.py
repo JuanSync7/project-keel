@@ -43,7 +43,9 @@ _SHIPPED = (
     "scripts/child_env.py",
     "scripts/config_loader.py",
     "scripts/exit_codes.py",
+    "scripts/git_tree.py",
     "scripts/run_date.py",
+    "scripts/shell_gate.py",
 )
 
 _PASS = "def test_passes():\n    assert True\n"

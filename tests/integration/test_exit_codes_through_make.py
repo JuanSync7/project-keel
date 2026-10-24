@@ -158,6 +158,7 @@ _GATE_SCRIPTS = (
     "config_loader.py",
     "exit_codes.py",
     "run_date.py",
+    "shell_gate.py",
 )
 # A test run under the gate runner carries the outer make's state; the scratch
 # gate must start from none of it.
