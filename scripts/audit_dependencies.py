@@ -506,25 +506,19 @@ def _is_name(host):
 
 def _is_label(label):
     """Whether *label* is a DNS label rule (d) keeps: letters, digits and
-    hyphens, no UUID, and no run of the parts between its word parts, joined
-    again by their hyphens, that (d) would hide. A word part excuses only
-    itself, so `my-domain-111122223333` is kept and a token behind a word
-    prefix, such as a vendor's token prefix and then hyphen-cut random
-    characters, or cut short by hyphens is not."""
+    hyphens, no UUID, and its parts that are no word, joined by hyphens, no
+    run (d) would hide. A word part excuses only itself, so
+    `my-domain-111122223333` is kept, and a token behind a word prefix, cut
+    short by hyphens or by a short word inside it, is not."""
     if not _LABEL.fullmatch(label) or _UUID.fullmatch(label):
         return False
-    runs = [[]]
-    for part in label.split("-"):
-        if _WORD.fullmatch(part):
-            runs.append([])
-        else:
-            runs[-1].append(part)
-    return not any(_is_hidden_run("-".join(run)) for run in runs)
+    rest = [part for part in label.split("-") if not _WORD.fullmatch(part)]
+    return not _is_hidden_run("-".join(rest))
 
 
 def _is_hidden_run(run):
-    """Whether *run*, the parts of a label between its word parts, is a token
-    (d) hides: one that is a word and then a number is not."""
+    """Whether *run*, the parts of a label that are no word, is a token (d)
+    hides: one that is a word and then a number is not."""
     return _is_token(run) and not _WORD_NUMBER.fullmatch(run)
 
 

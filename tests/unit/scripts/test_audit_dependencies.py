@@ -1251,10 +1251,10 @@ def test_a_long_label_with_a_word_part_is_kept(host):
 _GITLAB_PREFIX = "gl" + "pat-"
 
 
-# A word part does not excuse the rest of its label: the parts between its
-# words, joined again by their hyphens, are judged as one run, so a token
-# behind a word prefix, such as GitLab's personal-token prefix, is hidden
-# however its own hyphens cut it. GitHub's and npm's tokens hold `_`, which no
+# A word part does not excuse the rest of its label: every part that is no
+# word, joined by hyphens, is judged as one run, so a token behind a word
+# prefix, such as GitLab's personal-token prefix, is hidden however its own
+# hyphens or a short word inside it cut it. GitHub's and npm's tokens hold `_`, which no
 # label holds. Each is built at run time so no file holds a scanner's shape.
 @pytest.mark.parametrize(
     "label",
@@ -1263,6 +1263,8 @@ _GITLAB_PREFIX = "gl" + "pat-"
         _GITLAB_PREFIX + "ab12-cd34-ef56-ab78-cd90",
         "ab12cd34ef-56ab78cd90xy-registry",
         "my-ab12cd34ef-56ab78cd90xy-mirror",
+        _GITLAB_PREFIX + "Ab12Cd34-Qx-Ef56Gh78Ij99",
+        "Ab12Cd34-Qx-Ef56Gh78Ij99",
         "ghp" + "_FAKE0123456789abcdefghij",
         "npm" + "_FAKE0123456789abcdefghij",
     ],
@@ -1271,6 +1273,8 @@ _GITLAB_PREFIX = "gl" + "pat-"
         "gitlab-short-parts",
         "word-suffix",
         "word-both-sides",
+        "gitlab-word-inside",
+        "word-inside",
         "ghp",
         "npm",
     ],
@@ -1286,8 +1290,8 @@ def test_a_token_behind_a_word_prefix_is_hidden(form, label):
             assert piece not in shown, shown
 
 
-# The runs between words are judged apart, so a name whose word parts split
-# its numbers into short runs is kept.
+# The parts that are no word, taken together, are under 20 characters or
+# hold no letter, so these names are kept.
 @pytest.mark.parametrize(
     "host",
     ["ip-10-0-0-1-eu-west-1.example", "ab12cd-eu-0123456789ab.example"],
