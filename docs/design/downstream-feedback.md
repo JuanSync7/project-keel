@@ -2440,17 +2440,21 @@ the suite must go red for each, and the slice reports which mutations it ran.
 
 The slices touch shared files, so their order is fixed:
 
+- Five branches still open edit files these slices edit: keel-lint
+  (KEEL-LINT-1: `scripts/check_structure.py`, `scripts/git_tree.py` and
+  `scripts/jobs/review_docs.py`), keel-doc2 (KEEL-DOC-2), keel-vis and
+  keel-vis2 (KEEL-VIS-1 and KEEL-VIS-2) and keel-shell2 (KEEL-SHELL-1).
+  CMP-7.S1 to CMP-7.S4 start after those have merged.
 - CMP-7.S1, CMP-7.S2 and CMP-7.S3 each edit `scripts/check_structure.py` (the
   reader, the kind sets, the README rules). They run in series, S1 then S2
-  then S3, and start after KEEL-WARN-1 (lane L8) has merged, because
-  KEEL-WARN-1 edits the same file.
-- CMP-7.S4 edits `scripts/jobs/review_docs.py`, which no other slice touches,
-  and `test-docs/README.md`, which CMP-7.S3 can edit when it renders a folder
-  README's skeleton. S4 may be built beside S1 and S2, and is not built beside
-  S3.
+  then S3.
+- CMP-7.S4 edits `scripts/git_tree.py` and `scripts/jobs/review_docs.py`,
+  which no other CMP-7 slice touches, and `test-docs/README.md`, which
+  CMP-7.S3 can edit when it renders a folder README's skeleton. S4 may be
+  built beside S1 and S2, and is not built beside S3.
 
 **CMP-7.S1, the defence record.** DT-1 to DT-7 under "KEEL-DOC-1, the defence
-table" are its requirements. Its gate test is
+table" are its requirements. Its gate test is a new file,
 `tests/integration/test_defence_record_gate.py`, under the `CHECKS` id
 `defence-record`. It writes the record for keel's four `kind: design`
 documents and for the example spec the template ships. The record's heading
@@ -2467,11 +2471,13 @@ beside it in the same module, and names the one it chose (item 5).
   turns the suite red; `docs/design/downstream-feedback.md`,
   `docs/design/keel-hardening-plan.md`, `docs/design/documentation-quality.md`,
   `docs/design/make-next-steps.md` and `docs/specs/example-feature.md` pass;
-  a case in the gate test shows a generated project's own design document with
-  no record warns while its finding is in `expiring_tier.baseline` and is red
-  with none, under `scripts/expiring_tier.py` `judge`; a generated project
-  passes its own `make verify`; `docs/guides/doc-style.md` and
-  `docs/specs/README.md` state the rule and name the gate test; the "Open
+  a case in the gate test, under `scripts/expiring_tier.py` `judge`, shows
+  that a generated project's own design document with no record is red while
+  the baseline file `expiring_tier.baseline` names does not record it, and
+  warns once it does; a generated project passes its own `make verify`;
+  `docs/guides/doc-style.md`, `docs/specs/README.md` and
+  `docs/guides/deterministic-checks.md` state the rule and name the gate
+  test; the "Open
   decisions for CMP-7" this slice owns are ruled.
 - Reads a table by the GFM rule: `\|` escapes a pipe, and a fixture holds a
   cell with one. `_pipe_table` in `scripts/check_structure.py` splits on every
@@ -2483,8 +2489,8 @@ beside it in the same module, and names the one it chose (item 5).
   `make doc-review` asks that). Not the design document's other headings;
   CMP-7.S3 holds those.
 - Depends on: KEEL-FRAG-1 (queue position 4), which may split this plan into
-  files, so the record is written once against the files it leaves; and
-  KEEL-WARN-1, as above.
+  files, so the record is written once against the files it leaves; and the
+  open branches named above.
 
 **CMP-7.S2, kinds bound to homes and status lists.** One registry row per
 kind gives its allowed folders and its own status list, in a stdlib-only
@@ -2492,18 +2498,23 @@ kind gives its allowed folders and its own status list, in a stdlib-only
 its membership errors and reads the kind and status names from the registry,
 so the flat `KINDS` and `STATUSES` sets are removed and the kind list has one
 home. The binding of a kind to its folders and to its own status list is new,
-so it is a gate test, `tests/integration/test_document_kinds_gate.py`, under
-the `CHECKS` id `document-kind-home`. check_Y keeps the ADR folder rule. A
-project adds a kind or a home through `config/project.json`, the way
-`structure.extra_toplevel` adds a top-level directory. This is the study's
+so it is a new gate test, `tests/integration/test_document_kinds_gate.py`,
+under the `CHECKS` id `document-kind-home`. check_Y keeps the ADR folder rule.
+A project may add a kind of its own, or a home for a kind of its own, through
+`config/project.json`, the way `structure.extra_toplevel` adds a top-level
+directory. It may not rebind a kind keel ships: an entry that names a kind in
+keel's registry, to give it another folder or another status list, is red. This is the study's
 slice 2 (its PLC-01 and the membership half of PLC-02) and the inventory's
 gap 1.
 
 - Done when: a fixture with `kind: spec` under `docs/guides/` and one with an
   ADR marked `stable` are each red, naming the file, the kind and the allowed
   list; every governed document in keel's tree and in a generated project
-  passes; a kind with no registry row is red, never a pass; a hand mutation of
-  the folder comparison and of the status comparison each turns the suite red;
+  passes; a kind with no registry row is red, never a pass; a fixture
+  `config/project.json` that adds a kind with its home is green, and one that
+  gives `spec` a second folder is red, naming the kind as keel's; a hand
+  mutation of the folder comparison, of the status comparison and of the
+  rebind comparison each turns the suite red;
   CONVENTIONS §1 and `docs/guides/deterministic-checks.md` name the registry
   and the gate test.
 - Not for: a status transition, which needs the previous version from git
@@ -2514,8 +2525,8 @@ gap 1.
   records that the kind carries a defence record.
 
 **CMP-7.S3, heading contracts per kind.** A kind's registry row names the
-headings a document of that kind must have, in order. Its gate test is
-`tests/integration/test_heading_contract_gate.py`, under the `CHECKS` id
+headings a document of that kind must have, in order. Its gate test is a new
+file, `tests/integration/test_heading_contract_gate.py`, under the `CHECKS` id
 `heading-contract`. check_S stays the one check of `## What ships here`: a
 README `rosters.readmes` lists must have it and no other README may, and S3
 neither requires nor forbids that heading anywhere, so the two never disagree
@@ -2529,18 +2540,29 @@ the check demands. A design document's defence record heading is S1's, and S3
 does not judge it a second time. This is the study's slice 4 without the
 five-W header and the module header fields, and the inventory's gap 5.
 
+The ADR contract is judged per number space (CONVENTIONS §19). An accepted
+ADR is immutable (`docs/adr/README.md`, ADR-K-0001), so in keel's template
+space, `adr.template_dir` with the `K-` prefix, an ADR numbered below a
+cut-off is not judged, and keel's three that lack the heading (K-0001,
+K-0003 and K-0004) are exempt by number. The cut-off belongs to that space
+alone: it is a new key, `adr.template_contract_from`, in keel's
+`config/project.json` beside `adr.template_prefix`, set to the next free
+`K-` number when the slice lands and read through `scripts/config_loader.py`
+with a `KEYS` row. It is not offered to a project: it judges only the
+template space, whose files keel ships and copier rewrites, and no key names a
+cut-off for a project's own `NNNN` space in `adr.project_dir`, which is judged
+from 0001.
+
 - Done when: a fixture root README missing a contract heading is red; a new
-  ADR fixture, numbered at the cut-off, with no `## Alternatives considered`
-  is red; the accepted ADRs numbered below the cut-off are not judged, because
-  an accepted ADR is immutable (`docs/adr/README.md`, ADR-K-0001), so keel's
-  three that lack the heading (K-0001, K-0003 and K-0004) are exempt by
-  number; the cut-off is a new `config/project.json` key,
-  `doc_contracts.adr_contract_from`, set to the next free number when the
-  slice lands, read through `scripts/config_loader.py` with a `KEYS` row; every
-  rendered skeleton equals its kind's row; a hand mutation of the heading
-  comparison and of the cut-off comparison each turns the suite red; keel's
-  tree and a generated project pass; CONVENTIONS §2 and
-  `docs/guides/doc-style.md` name the gate test.
+  `K-` ADR fixture, numbered at the cut-off, with no
+  `## Alternatives considered` is red, and a `K-` fixture numbered below it is
+  not judged; a project-space fixture `0001-…` with no
+  `## Alternatives considered` is red whatever `adr.template_contract_from`
+  holds; every rendered skeleton equals its kind's row; a hand mutation of the
+  heading comparison, of the cut-off comparison and of the space test each
+  turns the suite red; keel's tree and a generated project pass;
+  CONVENTIONS §2, `docs/guides/doc-style.md` and
+  `docs/guides/deterministic-checks.md` name the gate test.
 - Not for: `## What ships here`, which is check_S's; the order or wording
   inside a section; the five-W header and the module header fields ("Open
   decisions for CMP-7", items 6 and 7).
@@ -2553,37 +2575,54 @@ goes.** The freshness gate already reads the gate-run date through
 to its other two parts. No git, or not a repository, stays a stated skip:
 ADR-K-0019 is accepted and immutable, `docs/guides/generate-and-upgrade.md`
 promises that "a project with no repository, or a host with no git, runs as
-before", and `tests/integration/test_doc_freshness.py` says the same. What S4
-changes is the other half of ADR-K-0019 decision 7: the judge reads git
-through `scripts/git_tree.py`, so a git that ran and failed (a corrupt `.git`,
-a repository git refuses as unsafe) is `GitFailedError` and the gate stops
-with git's status quoted, rather than skipping. `test-docs/coverage/register.md`
-is deleted. With `coverage/` empty, the `coverage/` bullet in
-`test-docs/README.md`, which calls it "a living register", points at
-`make trace` and `.evidence/traceability/matrix.json` instead;
+before", and `tests/integration/test_doc_freshness.py` says the same. S4
+extends ADR-K-0019 decision 7 to the freshness judge. It adds one public
+read-only git runner to `scripts/git_tree.py`, exported through `__all__`,
+which keeps the read-only prefix `scripts/jobs/review_docs.py` `git_argv`
+builds today: `GIT_READ_ONLY` and a blanked clean, smudge and process command
+for every filter driver the config names. The runner raises `GitFailedError`
+on a git that ran and failed (a corrupt `.git`, a repository git refuses as
+unsafe), so the gate stops with git's status quoted rather than skipping. It
+returns three expected non-zero exits as answers, each named at its call:
+`rev-parse --verify -q HEAD` with an unborn HEAD (exit 1), `config
+--get-regexp` with no key matched (exit 1), and `log -1` over a file with no
+commit. `scripts/jobs/review_docs.py` calls it in place of its own `_git`.
+`test-docs/coverage/register.md` is deleted. With `coverage/` empty,
+`test-docs/README.md` stops naming a coverage register: its frontmatter
+`summary:` (line 9) and its opening line (line 19), which both say "coverage
+register", and the `coverage/` bullet, which calls it "a living register",
+point at `make trace` and `.evidence/traceability/matrix.json` instead;
 `test-docs/coverage/` has no README of its own. A gate test fails a hand register beside the generated
 matrix (the study's TST-16).
 
 - Done when: in a scratch copy with `.git` removed, the freshness test skips
   with its stated reason; in a scratch copy whose `.git/HEAD` is overwritten
   with bytes git cannot read, the freshness test fails and quotes git's
-  status; both cases run under `tests/hermetic_git.py` `git_env`, so the home's
-  git config cannot change the verdict; a hand mutation that reads a
-  `GitFailedError` as no git turns the suite red; a restored `register.md` is
+  status; a case for each expected exit (an unborn HEAD, a `config
+  --get-regexp` that matches nothing, a `log -1` over an uncommitted file)
+  returns its answer and does not raise; a case runs the judge over a
+  repository whose config names a filter driver that would write a marker
+  file, and shows no marker is written, no `.git/index.lock` appears and
+  `.git/index` is unchanged; every case runs under `tests/hermetic_git.py`
+  `git_env`, so the home's git config cannot change the verdict; a hand
+  mutation that reads a `GitFailedError` as no git, and one that drops the
+  read-only prefix, each turns the suite red; a restored `register.md` is
   red; a generated project passes its first `make verify`;
   `docs/guides/deterministic-checks.md`'s Doc review row says a failed git
   stops the gate.
 - Not for: a stale `updated:` stamp, which the gate already fails; a project
   with no repository, which stays a skip; the `write-test-coverage` skill
   that writes a hand register, which lives outside keel.
-- Depends on: no CMP-7 slice, and is not built beside CMP-7.S3 (above).
+- Depends on: no CMP-7 slice; the open branches named above; and is not
+  built beside CMP-7.S3.
 
 ### How the candidates were reconciled
 
 The opening pass read each candidate in "KEEL-DOC-1, the candidate slices"
 against the tree at `dc0ad1f` and against the study. Each row ends in a slice,
 a queue row after CMP-7, another item, or a cut. Every "queued" outcome is a
-row of "Queued after Campaign 6" with its own id and the state `queued`.
+row of the proposed table under "Queued after Campaign 6", with its own id, a
+proposed position the maintainer has not approved, and the state `planned`.
 
 | Candidate | What the tree shows | Outcome |
 |-----------|---------------------|---------|
@@ -2594,7 +2633,7 @@ row of "Queued after Campaign 6" with its own id and the state `queued`.
 | Placeholders per kind | only `docs/specs/README.md` shows a skeleton, inside a fenced block | CMP-7.S3, rendered from the contract row |
 | Freshness that fails closed | the gate already reads the gate-run date; it calls `pytest.skip` with no git, which ADR-K-0019 keeps, and also when git ran and failed, which it does not | CMP-7.S4, for a git that ran and failed only |
 | The coverage register | `test-docs/coverage/register.md` is `status: template`, and no test or script reads it | CMP-7.S4 |
-| Check ids and registry | `config/practices.json` holds 44 practices with `enforced_by`, and check_T refuses an unknown mechanism; no check id namespace and no fault-injection twin field exist | queued as KEEL-CHECKID-1, first after CMP-7 |
+| Check ids and registry | `config/practices.json` holds 44 practices with `enforced_by`, and check_T refuses an unknown mechanism; no check id namespace and no fault-injection twin field exist | queued as KEEL-CHECKID-1, after CMP-7, at the position the maintainer picks |
 | A genre for `kind: doc` | 26 tracked `kind: doc` files ending `.md`, 27 with the `.jinja` twin of `docs/guides/README.md`; the study calls the same facet `form`, under guides only | queued as KEEL-GENRE-1; the facet's name is open |
 | Changelog heading and commit message | `CHANGELOG.md` has `### Known limitation` and `### Earlier in this release`; no `commit-msg` hook | queued as KEEL-CHLOG-1, after KEEL-FRAG-1, which changes how the changelog is written |
 | House vocabulary | `change_comments.phrases` reads code comments only | queued as KEEL-VOCAB-1; overlaps KEEL-DOC-2 (lane L8) |
@@ -2647,21 +2686,26 @@ as if they are taken as recommended; a different ruling rewrites it.
 | CMP-7.S3 | A writer copies a folder README's skeleton: can it drift from the check? | What each CMP-7 slice builds | defended | — |
 | CMP-7.S4 | A generated project before its first `git init`: is its first `make verify` red? | What each CMP-7 slice builds | defended | — |
 | CMP-7.S4 | A corrupt `.git`: does the freshness gate read it as no git and skip? | What each CMP-7 slice builds | gap | Change: S4 reads git through `scripts/git_tree.py` and stops on `GitFailedError` |
+| CMP-7.S4 | Is the judge's git truly read-only: can it take the index lock or run the judged repository's filter? | What each CMP-7 slice builds | gap | Change: S4's runner keeps the read-only prefix, and a case shows no lock file and no filter run |
 | CMP-7.S4 | The same tree on another host or a clean home: does the verdict change? | What each CMP-7 slice builds | gap | Change: S4's cases run under `tests/hermetic_git.py` `git_env`. Cut: no case runs on a second host or interpreter |
 | The campaign | A month later, a check depends on today's date | What each CMP-7 slice builds | defended | — |
-| The campaign | Can a project's own config switch a new check off? | Will not do in CMP-7 | defended | — |
+| The campaign | Can a project's own config switch a new check off? | What each CMP-7 slice builds | defended | — |
+| CMP-7.S3 | A project edits keel's `adr.template_contract_from` to exempt more `K-` ADRs: does a check see it? | What each CMP-7 slice builds | gap | Cut: nothing inside a repository stops the edit; it shows as a diff on the next `copier update`, and review holds it, as for `scripts/expiring_tier_data.py` |
 | The campaign | A new agent opens the repository: which file leads it to these rules? | What each CMP-7 slice builds | defended | — |
 | The campaign | Only four slices fit the cap: what happens to the rest? | How the candidates were reconciled | defended | — |
 
-The `copier update` row is defended by S1's done-condition: a case shows a
-project's own design document with no record warns while the expiring tier
-records it and is red without. The first-`git init` row is defended because a
+The `copier update` row is defended by S1's done-condition, and the answer
+is yes: the first `make verify` after an update is red on a project's own
+design document with no record until the owner records a baseline with
+`make gate-baseline`, and from then it warns until `expiring_tier.expires`. The first-`git init` row is defended because a
 project with no repository stays a stated skip, which ADR-K-0019 keeps and S4
 does not change. The date row is defended because the freshness gate and the
 expiring tier both read the gate-run date (ADR-K-0019, `scripts/run_date.py`
 `today`) and no slice reads the clock itself. The switch-off row is defended
-because a project gets the expiring tier with its hard date, not an off
-switch. The discoverability row is defended because each slice's
+by two bounds, each checked by a case: a project may add a kind or a home but
+not rebind a kind keel ships (S2), and a project's own ADR space has no
+cut-off and is judged from 0001 (S3). Beyond them, a project gets the expiring
+tier with its hard date, not an off switch. The discoverability row is defended because each slice's
 done-condition names the document that states its rule: `docs/guides/doc-style.md`
 and `docs/specs/README.md` for S1, CONVENTIONS §1 and
 `docs/guides/deterministic-checks.md` for S2, CONVENTIONS §2 and
@@ -2789,15 +2833,20 @@ On 2026-10-22 the maintainer approved this order. Positions 1 to 9 come from the
 | 40 | KEEL-OWNER-2 | `scripts/jobs/build_corpus.py` records a `TBD` doc as unowned while check_F lets the same doc inherit config/project.json `accountability.default_owner`, so the corpus and the gate disagree on one tree; folds in the review's two Low findings, a written `null` owner read as an owner called "null", and a nullable key's refusal line that puts the bound on null; found by the KEEL-WARN-1 review Done: the corpus gives a TBD owner `accountability.default_owner` with owner source `default`, as check_F does, a written null is never an owner, and the wiki marks a default owner as a placeholder; the merged tree's full verify passed 4426 tests in 1 h 58 min | done |
 | 41 | KEEL-VIS-1 | Visibility resolution in `scripts/jobs/build_corpus.py` fails open: an owned child `README.md` with no `visibility` ends the walk, so it hides a confidential parent and its modules come out `internal`; the behaviour predates KEEL-OWNER-2, and only check_A's required `visibility` key keeps it off keel's tree; the decision to name is whether a node takes the most restrictive visibility on its chain; found by the KEEL-OWNER-2 review | planned |
 | 42 | KEEL-OWNER-3 | A doc or `README.md` owner outside `scripts/config_loader.py` `OWNER_GRAMMAR`, such as a quoted `"alice"`, silently becomes no owner in the corpus, and no gate names the grammar for it, because check_F judges only `kind: tool` and `kind: agent` documents; folds in two test gaps: `tests/integration/test_showcase_api.py::test_wiki_node_says_how_its_owner_was_resolved` reads the gitignored corpus, so it passes on a corpus with no `default` node, and a node with no `owner_source` field reads as `none` rather than unknown; found by the KEEL-OWNER-2 review | planned |
-| 43 | KEEL-CHECKID-1 | No check has an id of its own and no registered check names a fault-injection twin, so nothing fails a check that was never shown failing; the study's slice 1, found by the CMP-7 opening pass, first after CMP-7 | queued |
-| 44 | KEEL-GENRE-1 | 26 tracked `kind: doc` files carry no facet saying what form of document each is; the study calls the facet `form` and the inventory `genre`, and its name is open; found by the CMP-7 opening pass | queued |
-| 45 | KEEL-CHLOG-1 | An unknown `CHANGELOG.md` heading and a "wip" commit subject pass, and no `commit-msg` hook exists; the study's slice 3, after KEEL-FRAG-1, which changes how the changelog is written; found by the CMP-7 opening pass | queued |
-| 46 | KEEL-VOCAB-1 | No reject list runs over prose: `change_comments.phrases` reads code comments only; the study's slice 6, overlapping KEEL-DOC-2 (lane L8); found by the CMP-7 opening pass | queued |
-| 47 | KEEL-ROADMAP-1 | `docs/reference/features.md` has no status column, so a planned feature cannot be listed and an `implemented` row with no test cannot fail; the study's slice 7; found by the CMP-7 opening pass | queued |
-| 48 | KEEL-STATUS-1 | A document's status can move backward between commits, and no check reads the previous version from git; the transition half of the study's PLC-02, which CMP-7.S2 leaves out; found by the CMP-7 opening pass | queued |
-| 49 | KEEL-COVSCHEMA-1 | The coverage report has no schema keel and pyverdex share; the study's slice 13; found by the CMP-7 opening pass | queued |
-| 50 | KEEL-EVALREC-1 | An eval run leaves no record with its spend basis; the study's slice 15; found by the CMP-7 opening pass | queued |
-| 51 | KEEL-CABINET-1 | There is no `docs/internal/` cabinet and no document index, and moving files there needs its own export check; the study's slice 16 and its decision 2; found by the CMP-7 opening pass | queued |
+
+The CMP-7 opening pass proposes the rows below. Their positions are proposals that the maintainer has not approved, and each row joins the table above only when the maintainer gives it a position. They start at 44 because position 43 is KEEL-VIS-2's, which lands first from its own branch.
+
+| Position | Queue id | Gap | Status |
+|----------|----------|-----|--------|
+| 44 | KEEL-CHECKID-1 | No check has an id of its own and no registered check names a fault-injection twin, so nothing fails a check that was never shown failing; the study's slice 1; found by the CMP-7 opening pass; after CMP-7, at the position the maintainer picks | planned |
+| 45 | KEEL-GENRE-1 | 26 tracked `kind: doc` files ending `.md` (27 with the `.jinja` twin of `docs/guides/README.md`) carry no facet saying what form of document each is; the study calls the facet `form` and the inventory `genre`, and its name is open; found by the CMP-7 opening pass | planned |
+| 46 | KEEL-CHLOG-1 | An unknown `CHANGELOG.md` heading and a "wip" commit subject pass, and no `commit-msg` hook exists; the study's slice 3, after KEEL-FRAG-1, which changes how the changelog is written; found by the CMP-7 opening pass | planned |
+| 47 | KEEL-VOCAB-1 | No reject list runs over prose: `change_comments.phrases` reads code comments only; the study's slice 6, overlapping KEEL-DOC-2 (lane L8); found by the CMP-7 opening pass | planned |
+| 48 | KEEL-ROADMAP-1 | `docs/reference/features.md` has no status column, so a planned feature cannot be listed and an `implemented` row with no test cannot fail; the study's slice 7; found by the CMP-7 opening pass | planned |
+| 49 | KEEL-STATUS-1 | A document's status can move backward between commits, and no check reads the previous version from git; the transition half of the study's PLC-02, which CMP-7.S2 leaves out; found by the CMP-7 opening pass | planned |
+| 50 | KEEL-COVSCHEMA-1 | The coverage report has no schema keel and pyverdex share; the study's slice 13; found by the CMP-7 opening pass | planned |
+| 51 | KEEL-EVALREC-1 | An eval run leaves no record with its spend basis; the study's slice 15; found by the CMP-7 opening pass | planned |
+| 52 | KEEL-CABINET-1 | There is no `docs/internal/` cabinet and no document index, and moving files there needs its own export check; the study's slice 16 and its decision 2; found by the CMP-7 opening pass | planned |
 
 ### Build lanes ahead of the merge line
 
