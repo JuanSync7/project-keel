@@ -357,6 +357,36 @@ def test_a_finding_whose_level_the_corpus_cannot_give_is_never_sent(
     assert "apply_refactor" not in runner.calls
 
 
+def test_a_file_with_one_hidden_node_is_withheld_beside_a_served_one(
+    monkeypatch, tmp_path
+):
+    """Every node a file carries must be served, not one: a file whose corpus
+    holds a public node and a confidential one for it is withheld, though the
+    file states a served level on disk and one of its nodes is served."""
+    runner, model, read = _withholding(monkeypatch, tmp_path, _SECRET_MENTION)
+    _project(tmp_path, {"docs/secret/README.md": "public"})
+    path = "docs/secret/README.md"
+    corpus = {
+        "nodes": [
+            {"node_id": "doc", "path": path, "kind": "doc", "visibility": "public"},
+            {
+                "node_id": "doc#part",
+                "path": path,
+                "kind": "section",
+                "visibility": "confidential",
+            },
+        ]
+    }
+    (tmp_path / "wiki" / "corpus.json").write_text(json.dumps(corpus))
+    r = review(execute=True, max_model_calls=8, root=str(tmp_path))
+    assert r.candidates == () and model.prompts == [] and read == []
+    ((chunk, why),) = r.withheld
+    assert chunk == "mention:docs/secret/README.md:4"
+    # The corpus check refuses it, not the on-disk one: the file states public.
+    assert "is at a level outside corpus.served_visibilities" in why
+    assert "apply_refactor" not in runner.calls
+
+
 def test_a_served_finding_still_goes_beside_a_withheld_one(monkeypatch, tmp_path):
     both = dict(
         _SECRET_MENTION,
