@@ -893,9 +893,29 @@ def test_an_http_error_line_keeps_its_method(method):
         "the password was set to %s" % (method, value)
     )
     assert audit_dependencies._redacted(text) == (
-        "401 Unauthorized <hidden> %s http://127.0.0.1:4873/<path hidden> <hidden> "
+        "401 Unauthorized - %s http://127.0.0.1:4873/<path hidden> - "
         "the password was set to <hidden>" % method
     )
+
+
+# A word of one to three marks and nothing else, such as npm-registry-fetch's
+# ` - ` separator, is kept; a fourth mark makes it a value like any other.
+@pytest.mark.parametrize(
+    "marks, kept",
+    [
+        ("-", True),
+        ("--", True),
+        ("-/-", True),
+        ("|", True),
+        ("----", False),
+        ("!#%&", False),
+    ],
+    ids=["one", "two", "three", "bar", "four", "four-mixed"],
+)
+def test_a_word_of_three_marks_or_fewer_is_kept(marks, kept):
+    shown = audit_dependencies._redacted("npm error token %s %s" % (marks, _VALUE))
+    hidden = marks + " <hidden>" if kept else "<hidden>"
+    assert shown == "npm error token " + hidden
 
 
 # The cost of a closed vocabulary: a cause word it does not hold is hidden.
@@ -1496,6 +1516,8 @@ _TIMED_REDACTION = (
         ("password=a,b;c'd e=f ", 1600, False),
         ("http://[::1%25" + "a" * 60 + "]/x ", 300, False),
         ("a@b.cd/x a@1.2.3 ", 1000, False),
+        # 50 000 characters each, one row per pattern fix round 2 changed.
+        ("token - x ", 5000, False),
     ],
     ids=[
         "a",
@@ -1512,6 +1534,7 @@ _TIMED_REDACTION = (
         "assigned-run",
         "zone-id",
         "bare-user",
+        "marks-word",
     ],
 )
 def test_a_hostile_line_is_redacted_within_a_second(unit, times, unchanged):

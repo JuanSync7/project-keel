@@ -188,6 +188,10 @@ _NEXT_ASSIGNMENT = re.compile(r"(?<![\s;,])\s{1,4}[A-Za-z_][\w.\-]{0,63}=")
 _CLAUSE_WORD = re.compile(r"\s{1,4}(\S*?%s\S*|\S+)" % re.escape(_PATH_HIDDEN))
 # The marks a word may carry that are no part of it for the vocabulary.
 _WORD_MARKS = "\"'()[],;:.!?"
+# A word of marks alone, as npm-registry-fetch's ` - ` separator is, carries
+# no value of the shape a credential has: one to three of them are kept.
+# The cost: a secret of three marks or fewer is shown.
+_MARKS_ONLY = re.compile(r"[^\w\s]{1,3}")
 # The rest of a word a closing quote lands inside.
 _CLAUSE_TAIL = re.compile(r"\S*")
 _SPACE = re.compile(r"\s{0,4}")
@@ -476,7 +480,12 @@ def _clause_shown(line, at):
             close = line.find(text[0], word.start(1) + 1)
             end = len(line) if close < 0 else _CLAUSE_TAIL.match(line, close + 1).end()
             pieces.append((line[word.start() : word.start(1)], None))
-        elif bare in _VOCABULARY or text == _HIDDEN or _PATH_HIDDEN in text:
+        elif (
+            bare in _VOCABULARY
+            or text == _HIDDEN
+            or _PATH_HIDDEN in text
+            or _MARKS_ONLY.fullmatch(text)
+        ):
             pieces.append((line[at:end], text))
         else:
             pieces.append((line[word.start() : word.start(1)], None))
