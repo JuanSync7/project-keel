@@ -2440,11 +2440,16 @@ the suite must go red for each, and the slice reports which mutations it ran.
 
 The slices touch shared files, so their order is fixed:
 
-- Five branches still open edit files these slices edit: keel-lint
-  (KEEL-LINT-1: `scripts/check_structure.py`, `scripts/git_tree.py` and
-  `scripts/jobs/review_docs.py`), keel-doc2 (KEEL-DOC-2), keel-vis and
-  keel-vis2 (KEEL-VIS-1 and KEEL-VIS-2) and keel-shell2 (KEEL-SHELL-1).
-  CMP-7.S1 to CMP-7.S4 start after those have merged.
+- Branches not yet merged to `main` edit files these slices edit, measured
+  with `git diff --name-only main...<branch>` when this plan was written:
+  keel-lint (KEEL-LINT-1: `scripts/check_structure.py`, `scripts/git_tree.py`
+  and `scripts/jobs/review_docs.py`), keel-doc2 (KEEL-DOC-2), keel-vis and
+  keel-vis2 (KEEL-VIS-1 and KEEL-VIS-2), keel-shell2 (KEEL-SHELL-1), and
+  keel-dist, keel-risk and keel-risk2 (`config/project.json` and its twin,
+  `docs/guides/deterministic-checks.md`); keel-exit, keel-goals and
+  keel-xdist edit `config/project.json` and its twin as well. CMP-7.S1 to
+  CMP-7.S4 start after those have merged, and each slice repeats the
+  measurement before it starts.
 - CMP-7.S1, CMP-7.S2 and CMP-7.S3 each edit `scripts/check_structure.py` (the
   reader, the kind sets, the README rules). They run in series, S1 then S2
   then S3.
@@ -2544,19 +2549,21 @@ The ADR contract is judged per number space (CONVENTIONS §19). An accepted
 ADR is immutable (`docs/adr/README.md`, ADR-K-0001), so in keel's template
 space, `adr.template_dir` with the `K-` prefix, an ADR numbered below a
 cut-off is not judged, and keel's three that lack the heading (K-0001,
-K-0003 and K-0004) are exempt by number. The cut-off belongs to that space
-alone: it is a new key, `adr.template_contract_from`, in keel's
-`config/project.json` beside `adr.template_prefix`, set to the next free
-`K-` number when the slice lands and read through `scripts/config_loader.py`
-with a `KEYS` row. It is not offered to a project: it judges only the
-template space, whose files keel ships and copier rewrites, and no key names a
-cut-off for a project's own `NNNN` space in `adr.project_dir`, which is judged
-from 0001.
+K-0003 and K-0004) are exempt by number. The cut-off is K-0005, the first
+`K-` number after the last ADR that lacks the heading, not the next free
+number: an accepted ADR never changes, so judging K-0002 and K-0005 to K-0027
+costs nothing today and holds them to the contract. It is a new key,
+`adr.template_contract_from` (5), which sits beside `adr.template_prefix` in
+both `config/project.json` and its `config/project.json.jinja` twin, so it
+renders into every generated project; it is read through
+`scripts/config_loader.py` with a `KEYS` row, and only for the `K-` space.
+It is not a cut-off a project uses for its own ADRs: no key names one for the
+project's `NNNN` space in `adr.project_dir`, which is judged from 0001.
 
 - Done when: a fixture root README missing a contract heading is red; a new
   `K-` ADR fixture, numbered at the cut-off, with no
   `## Alternatives considered` is red, and a `K-` fixture numbered below it is
-  not judged; a project-space fixture `0001-…` with no
+  not judged; K-0002 and K-0005 to K-0027 pass; a project-space fixture `0001-…` with no
   `## Alternatives considered` is red whatever `adr.template_contract_from`
   holds; every rendered skeleton equals its kind's row; a hand mutation of the
   heading comparison, of the cut-off comparison and of the space test each
@@ -2579,14 +2586,23 @@ before", and `tests/integration/test_doc_freshness.py` says the same. S4
 extends ADR-K-0019 decision 7 to the freshness judge. It adds one public
 read-only git runner to `scripts/git_tree.py`, exported through `__all__`,
 which keeps the read-only prefix `scripts/jobs/review_docs.py` `git_argv`
-builds today: `GIT_READ_ONLY` and a blanked clean, smudge and process command
-for every filter driver the config names. The runner raises `GitFailedError`
-on a git that ran and failed (a corrupt `.git`, a repository git refuses as
-unsafe), so the gate stops with git's status quoted rather than skipping. It
-returns three expected non-zero exits as answers, each named at its call:
-`rev-parse --verify -q HEAD` with an unborn HEAD (exit 1), `config
---get-regexp` with no key matched (exit 1), and `log -1` over a file with no
-commit. `scripts/jobs/review_docs.py` calls it in place of its own `_git`.
+builds today: `GIT_READ_ONLY`, then, for every filter driver the config names,
+an empty `filter.<name>.clean`, `filter.<name>.smudge` and
+`filter.<name>.process` and `filter.<name>.required=false`. That prefix moves
+into `scripts/git_tree.py`, so it has one home; `review_docs.git_argv`
+becomes a thin wrapper over it, which `scripts/audit_project.py` and the
+other callers keep calling. The runner raises `GitFailedError` on a git that
+ran and failed (a corrupt `.git`, a repository git refuses as unsafe), so the
+gate stops with git's status quoted rather than skipping. Exit 128 is git's
+generic failure and is never an answer. Two non-zero exits are expected, each
+named at its call (measured): `rev-parse --verify -q HEAD` with an unborn HEAD
+exits 1, which the runner answers by reusing `git_tree.head_commit` returning
+None rather than a second rule; and `config --get-regexp` with no key matched
+exits 1. `log -1 --format=%cs -- <file>` over a file never committed, in a
+repository with a commit, exits 0 with empty output, which is the answer
+"no commit". With an unborn HEAD the judge does not run `log` at all, because
+`log -1` there exits 128, the same as a corrupt repository.
+`scripts/jobs/review_docs.py` calls the runner in place of its own `_git`.
 `test-docs/coverage/register.md` is deleted. With `coverage/` empty,
 `test-docs/README.md` stops naming a coverage register: its frontmatter
 `summary:` (line 9) and its opening line (line 19), which both say "coverage
@@ -2598,9 +2614,12 @@ matrix (the study's TST-16).
 - Done when: in a scratch copy with `.git` removed, the freshness test skips
   with its stated reason; in a scratch copy whose `.git/HEAD` is overwritten
   with bytes git cannot read, the freshness test fails and quotes git's
-  status; a case for each expected exit (an unborn HEAD, a `config
-  --get-regexp` that matches nothing, a `log -1` over an uncommitted file)
-  returns its answer and does not raise; a case runs the judge over a
+  status; a case for each expected answer (an unborn HEAD, a `config
+  --get-regexp` that matches nothing, a `log -1` over a never-committed file
+  in a repository with a commit, which exits 0 with empty output) returns it
+  and does not raise; a case with an unborn HEAD and staged documents passes
+  and runs no `log`; a hand mutation whose runner accepts exit 128 from `log`
+  turns the corrupt-`.git` case red; a case runs the judge over a
   repository whose config names a filter driver that would write a marker
   file, and shows no marker is written, no `.git/index.lock` appears and
   `.git/index` is unchanged; every case runs under `tests/hermetic_git.py`
