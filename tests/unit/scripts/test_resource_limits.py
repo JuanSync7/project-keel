@@ -878,16 +878,31 @@ def test_the_largest_margin_a_tool_limit_can_cover_is_accepted(tmp_path):
     assert resource_limits.tool_limits(root) == (int(threading.TIMEOUT_MAX), 4096)
 
 
-def test_the_shipped_tool_limits_outlast_the_shipped_gate_runner():
+@pytest.mark.parametrize("raised", ["gate_timeout_seconds", "gate_stop_grace_seconds"])
+def test_the_shipped_tool_limits_outlast_the_shipped_gate_runner(tmp_path, raised):
     timeout, cap = resource_limits.tool_limits()
     assert (timeout, cap) == (15000, 67108864)
-    gate = config_loader.read(str(_ROOT))["make_targets"]
-    margin = config_loader.read(str(_ROOT))["agents"]["tool_gate_margin_seconds"]
+    shipped = config_loader.read(str(_ROOT))
+    margin = shipped["agents"]["tool_gate_margin_seconds"]
     assert margin == 60
-    least = gate["gate_timeout_seconds"] + 2 * gate["gate_stop_grace_seconds"] + margin
     # Slack over the bound, so raising a gate key a little does not refuse
-    # every agent tool at once.
-    assert timeout > least
+    # every agent tool at once: "a little" is one margin more on either gate
+    # key, which the shipped tool limit must still accept.
+    gate = {
+        key: shipped["make_targets"][key]
+        for key in ("gate_timeout_seconds", "gate_stop_grace_seconds")
+    }
+    gate[raised] += margin
+    root = _tools_project(
+        tmp_path,
+        {
+            "tool_timeout_seconds": timeout,
+            "tool_max_output_bytes": cap,
+            "tool_gate_margin_seconds": margin,
+        },
+        gate,
+    )
+    assert resource_limits.tool_limits(root) == (timeout, cap)
 
 
 def test_run_tool_holds_the_child_to_the_configured_limit_and_names_the_key(tmp_path):
