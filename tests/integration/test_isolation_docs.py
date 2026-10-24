@@ -2,7 +2,7 @@
 title: Integration — the docs state the isolation guard as the code holds it
 kind: tests
 layer: n/a
-summary: The documents a reader meets the isolation guard in are held to the guard. The rules and the README of the guard's own directory, and the guide the feature catalogue's guard row links as its deep doc, each name as a code span the guard module, every config key it reads (each scripts/config_loader.py `KEYS` row under the scratch root's top-level key), each axis it judges, and each conftest fixture that calls into it. The symptom table of config/project.json `doc_drift.limits_guide` shows, as code spans, the guard's failure line and its unused-exemption line, each rendered from the guard with `<field>` placeholders, and quotes the words of each scratch-root refusal the guard raises. Every expected item is derived from the guard, the loader, the conftest or the catalogue, never typed here; a derived set of zero items fails, and each rule has a fault-injection twin that removes one item and asserts exactly one finding. Not a writer: it reads the tree.
+summary: The documents a reader meets the isolation guard in are held to the guard. The rules and the README of the guard's own directory, and the guide the feature catalogue's guard row links as its deep doc, each name as a code span the guard module, every config key it reads (each scripts/config_loader.py `KEYS` row under the scratch root's top-level key), each axis it judges, and each conftest fixture that calls into it. The symptom table of config/project.json `doc_drift.limits_guide` shows, as code spans, the guard's failure line and its unused-exemption line, each rendered from the guard with `<field>` placeholders, and quotes the words of each scratch-root refusal the guard raises. Every expected item is derived from the guard, the loader, the conftest or the catalogue, never typed here; a derived set of zero items fails, and each rule has a fault-injection twin that removes one item and asserts exactly one finding. While the Makefile's `test` recipe passes pytest-xdist `-n`, no markdown file at the root or under docs/ or tests/ says in the present tense that the suite does not use pytest-xdist; its twin plants one such sentence, wrapped over two lines, and asserts exactly one finding, and none once the recipe passes no `-n`. Not a writer: it reads the tree.
 """
 
 import ast
@@ -197,3 +197,73 @@ def test_dropping_a_failure_from_the_troubleshooting_guide_reds_it(fault):
     assert planted != section
     findings = symptom_findings(guide, planted)
     assert len(findings) == 1, findings
+
+
+# A present-tense claim that the suite runs without pytest-xdist workers; a
+# past-tense account of what an earlier slice chose is history and stands.
+_UNUSED_XDIST = re.compile(
+    r"pytest-xdist\s+is\s+not\s+used|(?:does|do)\s+not\s+use\s+pytest-xdist",
+    re.IGNORECASE,
+)
+_TEST_TARGET = "test:"
+# A pytest-xdist count on a recipe line: `-n auto`, `-n 4`.
+_WORKERS_FLAG = re.compile(r"(?:^|\s)-n\s+\S+")
+
+
+def make_test_recipe(makefile_text):
+    """The recipe lines of the Makefile's `test` target."""
+    lines = makefile_text.splitlines()
+    starts = [i for i, line in enumerate(lines) if line.startswith(_TEST_TARGET)]
+    assert len(starts) == 1, "%d Makefile rules open %r" % (len(starts), _TEST_TARGET)
+    recipe = []
+    for line in lines[starts[0] + 1 :]:
+        if not line.startswith("\t"):
+            break
+        recipe.append(line)
+    assert recipe, "the Makefile's test target has no recipe -- zero items"
+    return recipe
+
+
+def markdown_docs():
+    """{relpath: text} for every markdown file at the root, under docs/ and
+    under tests/."""
+    paths = sorted(
+        set(_ROOT.glob("*.md"))
+        | set((_ROOT / "docs").rglob("*.md"))
+        | set((_ROOT / "tests").rglob("*.md"))
+    )
+    assert paths, "no markdown document found -- zero items"
+    return {_rel(p): p.read_text(encoding="utf-8") for p in paths}
+
+
+def unused_xdist_findings(docs, runs_workers):
+    if not runs_workers:
+        return []
+    return [
+        "%s:%d: says pytest-xdist is unused, but `make test` passes -n"
+        % (doc, text.count("\n", 0, m.start()) + 1)
+        for doc, text in sorted(docs.items())
+        for m in _UNUSED_XDIST.finditer(text)
+    ]
+
+
+def _runs_workers():
+    recipe = make_test_recipe((_ROOT / "Makefile").read_text(encoding="utf-8"))
+    return any(_WORKERS_FLAG.search(line) for line in recipe)
+
+
+def test_no_document_says_the_suite_runs_without_xdist_while_make_test_uses_it():
+    findings = unused_xdist_findings(markdown_docs(), _runs_workers())
+    assert not findings, "\n".join(findings)
+
+
+def test_a_planted_unused_xdist_claim_reds_only_while_make_test_passes_n():
+    docs = markdown_docs()
+    assert _runs_workers(), "make test passes no -n; the planted case proves nothing"
+    assert unused_xdist_findings(docs, True) == [], "the unplanted docs must be clean"
+    doc = sorted(docs)[0]
+    planted = dict(docs)
+    planted[doc] = docs[doc] + "\npytest-xdist is not\nused by the suite.\n"
+    findings = unused_xdist_findings(planted, True)
+    assert len(findings) == 1 and findings[0].startswith(doc + ":"), findings
+    assert unused_xdist_findings(planted, False) == []

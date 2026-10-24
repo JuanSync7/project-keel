@@ -2121,8 +2121,9 @@ Left by CMP-6.S2 so far:
   session start loudly, not silently.
 - `store_copy` has no consumer in keel, which has no live store;
   `tests/integration/test_isolation_gate.py` proves it on a planted store.
-  pytest-xdist is not used by the suite, so a judgement under its workers is
-  not exercised.
+  CMP-6 shipped before the suite ran under pytest-xdist; KEEL-XDIST-1 runs
+  `make test` with `-n auto`, and `tests/integration/test_isolation_gate.py`
+  exercises the judgement under its workers.
 - Three reaches no audit event decides. `os.mkfifo` and `os.mknod` raise no
   event, so a FIFO or device node outside the roots is not seen. The `open`
   event carries no `dir_fd`, so an `os.open` with a relative path and a
