@@ -2,7 +2,7 @@
 title: Unit — the corpus's owner resolution and the configured default owner
 kind: tests
 layer: n/a
-summary: build_corpus resolves each node's owner finest-wins then inherit, and fills config/project.json `accountability.default_owner`, read through scripts/config_loader.py, where and only where the resolution ends on a `TBD` (in any letter case) in frontmatter, a marker or a package README, recording `owner_source: default` and the place the TBD stands as `owner_origin`. A real owner anywhere on the chain beats the default; a package README that cannot be read stops the walk, so a module and its symbols that name no owner of their own have owner and owner_source null, unknown; a node that names no owner, or a null spelling, stays `none`; with the default null or no config file every TBD stays `none`; a refused default raises, and the job exits CONFIG. check_corpus accepts `default` and still refuses an unknown source, and the accountability report counts the default as its own line, apart from the owned and the unowned, while `--json` still lists the unowned only.
+summary: build_corpus resolves each node's owner finest-wins then inherit, and fills config/project.json `accountability.default_owner`, read through scripts/config_loader.py, where and only where the resolution ends on a `TBD` (in any letter case) in frontmatter, a marker or a package README, recording `owner_source: default` and the place the TBD stands as `owner_origin`. A real owner anywhere on the chain beats the default; a package README that cannot be read stops the walk, so a module and its symbols that name no owner of their own have owner and owner_source null, unknown; a node that names no owner, or a null spelling, stays `none`; with the default null or no config file every TBD stays `none`; a refused default raises, and the job exits CONFIG. check_corpus accepts `default` and still refuses an unknown source, and the accountability report, which lists a row missing a field with that field missing and never tracebacks, counts the default as its own line, apart from the owned and the unowned, while `--json` still lists the unowned only.
 """
 
 import json
@@ -552,3 +552,51 @@ def test_the_scripts_roster_names_every_bucket_the_report_prints(readme):
         "a real owner",
     ):
         assert bucket in row, (readme, bucket)
+
+
+def _report(tmp_path, capsys, corpus, *flags):
+    out = tmp_path / "corpus.json"
+    out.write_text(json.dumps(corpus))
+    code = ar.main(["--corpus", str(out), *flags])
+    return code, capsys.readouterr().out
+
+
+def test_a_row_missing_its_kind_and_path_is_listed_with_them_missing(tmp_path, capsys):
+    """A hand-written or older corpus row lacks fields the report shows; the
+    row is still listed, the missing field reads as missing, and the report
+    keeps its documented exit 0."""
+    code, text = _report(tmp_path, capsys, {"nodes": [{"node_id": "x", "owner": "a"}]})
+    assert code == ExitCode.SUCCESS
+    assert "accountability: 1 of 1 nodes name no owner source" in text
+    assert "  %-9s x  (%s)" % (ar.MISSING, ar.MISSING) in text, text
+
+
+def test_rows_missing_the_fields_each_bucket_reads_are_listed(tmp_path, capsys):
+    corpus = {
+        "nodes": [
+            {"owner_source": "none"},
+            {"node_id": "n", "owner_source": "none"},
+            {"node_id": "d", "owner_source": "default", "owner": "ops"},
+            {
+                "node_id": "e",
+                "owner_source": "default",
+                "owner": "ops",
+                "owner_origin": "docs/e.md",
+            },
+            "not-a-row",
+        ]
+    }
+    code, text = _report(tmp_path, capsys, corpus)
+    assert code == ExitCode.SUCCESS
+    assert "accountability: 2 of 5 nodes have no resolved owner" in text
+    assert "  %-9s %s  (%s)" % (ar.MISSING, ar.MISSING, ar.MISSING) in text, text
+    assert "from 2 TBD:" in text and "  %s\n" % ar.MISSING in text, text
+    assert "accountability: 1 of 5 nodes name no owner source" in text, text
+
+
+def test_the_json_report_shows_a_missing_field_as_null(tmp_path, capsys):
+    code, out = _report(
+        tmp_path, capsys, {"nodes": [{"owner_source": "none", "kind": "doc"}]}, "--json"
+    )
+    assert code == ExitCode.SUCCESS
+    assert json.loads(out) == [{"kind": "doc", "node_id": None, "path": None}]

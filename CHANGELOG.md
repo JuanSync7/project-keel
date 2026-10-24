@@ -546,7 +546,9 @@ version rather than a bare commit:
   `owner_source` now reads as unknown, `null` in the API, "source unknown" on
   the owner chip and `None` in a wiki navigator citation, rather than `none`,
   which claimed nothing owns it, and `scripts/accountability_report.py` counts
-  and lists such nodes on their own line instead of counting them as owned.
+  and lists such nodes on their own line instead of counting them as owned;
+  a row that lacks a field the report shows is listed with that field
+  missing, and the report still exits 0.
   A package `README.md` that cannot be read stops a module's owner walk, so
   the module and its symbols have an unknown owner (`owner` and
   `owner_source` null) rather than the owner above it or the default: the

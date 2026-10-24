@@ -55,7 +55,10 @@ of the nodes on the default owner, from how many `TBD`s, with one line per
 source; then a count of the nodes with a real owner (`frontmatter`, `marker`
 or `inherited`). With `--json`, a
 list of the unowned nodes only (`node_id`, `kind`, `path`), the owner gaps
-`index_enforcer` reads. No corpus present → prints a notice and exits 0.
+`index_enforcer` reads. A row that lacks a field the report shows is still
+listed: the field reads `(missing)` in text and `null` in JSON, and a row that
+is not an object counts as one with every field missing. No corpus present →
+prints a notice and exits 0.
 
 ## Side effects
 READ-ONLY. Reads the corpus; writes nothing; no model call.
