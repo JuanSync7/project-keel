@@ -751,22 +751,10 @@ def exit_code_findings(guide, text, root, scripts):
 # --- rule (d): the upgrade guide names what copier does to a project --------
 
 
-# The one guarded form a string migration may take besides a bare `rm`: the
-# CI adapter retirement (copier.yml), which removes one path only when a marker
-# line is in it and otherwise names the kept file on stderr. Matched whole, so
-# a command that differs anywhere stays unreadable and raises.
-_GUARDED_RM = re.compile(
-    r"if \[ -e (?P<path>[\w./-]+) \]; then "
-    r"if grep -qxF '[^']+' (?P=path); then rm -f (?P=path); "
-    r"else echo '[^']+' >&2; fi; fi"
-)
-
-
 def _command_items(command):
     """(scripts, removed paths) one `_tasks`/`_migrations` command names: a
     list command runs its `.py`; a string command is `rm` over the paths after
-    its flags (yaml folds a multi-line string, so whitespace splits it), or the
-    guarded removal of one path _GUARDED_RM matches."""
+    its flags (yaml folds a multi-line string, so whitespace splits it)."""
     if isinstance(command, dict):
         command = command.get("command")
     if isinstance(command, list):
@@ -777,9 +765,6 @@ def _command_items(command):
         words = command.split()
         if words and words[0] == "rm":
             return [], [w for w in words[1:] if not w.startswith("-")]
-        guarded = _GUARDED_RM.fullmatch(command.strip())
-        if guarded:
-            return [], [guarded.group("path")]
     raise DocDriftConfigError(
         "copier.yml: a task or migration this gate cannot read: %r" % (command,)
     )

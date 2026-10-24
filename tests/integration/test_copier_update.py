@@ -2,9 +2,10 @@
 title: Integration — `copier update` carries template improvements downstream
 kind: tests
 layer: n/a
-summary: The upgrade channel ADR-K-0004 chose copier for, exercised end to end against the REAL template — clone keel into a scratch dir, generate a project, commit it, evolve the clone, then `copier update`. Proves new template files arrive, a re-answered `ci_pipeline` retires the keel adapter it declines and delivers the one it chooses, a repeated answer changes nothing, and a CI file the project wrote without keel's marker survives a declining answer byte-identical, while a no-op update leaves the tree clean under every `ci_pipeline` answer; template edits land, the project's own edits survive, the `.gitignore` divergence twin holds, `_commit` advances and `_src_path` stays resolvable. Skipped on a bare local clone without the optional `template` extra; CI installs `.[dev,template]` and declares the surface required (KEEL_REQUIRED_EXTRAS), so there a missing copier is a hard failure instead of a silent skip.
+summary: The upgrade channel ADR-K-0004 chose copier for, exercised end to end against the REAL template — clone keel into a scratch dir, generate a project, commit it, evolve the clone, then `copier update`. Proves new template files arrive, a re-answered `ci_pipeline` retires the keel adapter it declines and delivers the one it chooses, a repeated answer changes nothing, and a CI file the project wrote without keel's marker survives a declining answer byte-identical, a declined adapter (github or gitlab) is removed when unedited and kept with one stderr line naming `git rm` when edited, while a no-op update leaves the tree clean under every `ci_pipeline` answer; template edits land, the project's own edits survive, the `.gitignore` divergence twin holds, `_commit` advances and `_src_path` stays resolvable. Skipped on a bare local clone without the optional `template` extra; CI installs `.[dev,template]` and declares the surface required (KEEL_REQUIRED_EXTRAS), so there a missing copier is a hard failure instead of a silent skip.
 """
 
+import os
 import shutil
 import subprocess
 import sys
@@ -706,6 +707,105 @@ def test_update_keeps_a_ci_file_the_project_wrote_itself(ci_rechosen):
     assert "github" in files
     assert ".gitlab-ci.yml" not in status, status
     assert rc == 0, out
+
+
+def _update_stderr(project, work, **data):
+    """`copier update` of *project* to *data*, with what its migrations wrote
+    to stderr: they inherit the file descriptor, so it is captured there."""
+    log = work / ("stderr-%s.log" % project.name)
+    saved = os.dup(2)
+    try:
+        with open(str(log), "wb") as fh:
+            os.dup2(fh.fileno(), 2)
+            try:
+                _update(project, **data)
+            finally:
+                os.dup2(saved, 2)
+    finally:
+        os.close(saved)
+    return log.read_text("utf-8")
+
+
+_CI_EDIT = "# a line the project added\n"
+
+
+@pytest.fixture(scope="module")
+def ci_declined(tmp_path_factory):
+    """Projects whose update declines an adapter, generated with both, each
+    with the declined adapter edited or left as keel rendered it, committed,
+    then updated. Yields {(answer, "edited" | "unedited"):
+    (declined path, its bytes before, whether it is on disk after, stderr,
+    parity faults)}."""
+    mp = pytest.MonkeyPatch()
+    work = tmp_path_factory.mktemp("copier_ci_declined")
+    for var, value in hermetic_git.git_env_vars(work).items():
+        mp.setenv(var, value)
+    mp.setenv("COPIER_CACHE_DIR", str(work / "copier-cache"))
+    paths = ci_adapters.pipeline(_ROOT)["adapters"]
+    cases = [
+        ("gitlab", "edited", "both", "HEAD"),
+        ("gitlab", "unedited", "both", "HEAD"),
+        ("github", "edited", "both", "HEAD"),
+        ("github", "unedited", "both", "HEAD"),
+    ]
+    try:
+        template = _clone_template(work / "template", work)
+        found = {}
+        for answer, kind, start, ref in cases:
+            project = work / ("%s-%s" % (answer, kind))
+            data = {"project_name": "demo_proj", "frontend_stack": "none"}
+            if start:
+                data["ci_pipeline"] = start
+            copier.run_copy(
+                str(template),
+                str(project),
+                data=data,
+                defaults=True,
+                vcs_ref=ref,
+                unsafe=True,
+                quiet=True,
+            )
+            _git("init", "--quiet", "-b", "main", cwd=project)
+            _git("add", "-A", cwd=project)
+            _git("commit", "--quiet", "-m", "generated from keel", cwd=project)
+            declined = paths["github" if answer == "gitlab" else "gitlab"]
+            if kind != "unedited":
+                with (project / declined).open("a") as fh:
+                    fh.write(_CI_EDIT)
+                _git("commit", "--quiet", "-am", "our edit", cwd=project)
+            before = (project / declined).read_bytes()
+            err = _update_stderr(project, work, ci_pipeline=answer)
+            found[(answer, kind)] = (
+                declined,
+                before,
+                (project / declined).exists(),
+                err,
+                ci_adapters.parity_faults(project),
+            )
+        yield found
+    finally:
+        mp.undo()
+
+
+@pytest.mark.parametrize("answer", ["gitlab", "github"])
+def test_an_update_never_deletes_the_declined_adapter_the_project_edited(
+    ci_declined, answer
+):
+    """Declining an adapter the project edited keeps it byte-identical, though
+    it still carries keel's marker line, and one stderr line names it and what
+    to do; the one left as keel rendered it (a `.jinja` twin for gitlab) is
+    removed and nothing is said."""
+    path, before, kept, err, faults = ci_declined[(answer, "edited")]
+    assert kept, "the edited %s was deleted:\n%s" % (path, err)
+    lines = [line for line in err.splitlines() if line.startswith("kept " + path)]
+    assert len(lines) == 1, err
+    assert "the project edited it" in lines[0], lines
+    assert "git rm %s" % path in lines[0], lines
+    assert faults == [], faults
+    path, before, kept, err, faults = ci_declined[(answer, "unedited")]
+    assert not kept, "the unedited %s survived:\n%s" % (path, err)
+    assert path not in err, err
+    assert faults == [], faults
 
 
 @pytest.fixture(scope="module")

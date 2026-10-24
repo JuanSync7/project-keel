@@ -2,9 +2,9 @@
 # The GitHub adapter of the CI pipeline. Its run steps after the last `uses:`
 # setup step are config/project.json ci_pipeline.steps, in order, and
 # tests/integration/test_ci_pipeline_gate.py fails any difference: change a
-# step there and in every adapter the project ships. The line above tells
-# `copier update` keel wrote this file, so a later ci_pipeline answer that
-# drops github removes it; without that line the update keeps the file.
+# step there and in every adapter the project ships. The line above marks
+# this file as keel's adapter. A later ci_pipeline answer that drops github
+# removes it only while it is what keel rendered; an edited one is kept.
 name: ci
 on: [push, pull_request]
 jobs:

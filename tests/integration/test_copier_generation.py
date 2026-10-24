@@ -2,7 +2,7 @@
 title: Integration — copier generates a structurally valid, tailored project
 kind: tests
 layer: n/a
-summary: `copier` renders keel's root template into a new project — the manifest is tailored to the answers, the un-chosen frontend stack is pruned, CLAUDE.md->AGENT.md symlinks are preserved, keel's own template meta-tests are pruned, and check_structure passes; an undeclared top-level directory reds the project until it is declared and labelled. A bare `subprocess.run` reds a generated project through check_X until it passes `env=build_child_env()`, and the project's helper passes an adapter's declared credential and no planted secret. A credentialed proxy (a `#` in the password included) fails the project's doc judge by name and never by value, while a `LANGUAGE=sr_RS:sr@latin` locale list does not, until `child_env.credentialed_values` names it, and a stale entry there reds the gate. A generated project carries keel's `work_naming` block and no plan doc, so check_Z is silent until the project writes one; a slice row that is not a slice id then reds the gate and a well-formed one does not. A generated project runs its own doc-drift tests green, every skip there a template-only test naming why, and a prose slice id planted in its CONTRIBUTING.md reds them, and so does a row dropped from its settings reference or from its feature catalogue; its README names no `make new`, and its `run-web` line names Astro and its port only for the astro stack and is absent with no frontend. Under every transport answer, and without the showcase, a generated project's e2e coverage gate and its scenarios pass with nothing skipped, and a grpc project whose exemption is dropped is red naming the method. A project with a frontend carries keel's `layers.frontend.journey` keys and passes its own frontend-suite contract tests statically; its fresh tree's `make test-fe` refuses with exit 2 naming the app and `make fe-install`, and its README Quickstart runs `make fe-install` and `make fe-browsers` before `make verify`; one without has no frontend keys, its wiring test skips with a reason, `make test-fe` exits 0 silently, and its Quickstart names neither target. Under every answer set, `make eval` in a committed generated project replays its shipped eval dataset, which uses every scorer, green twice with the same report bytes and leaves what git lists alone, and the README's delete advice no longer offers evals/. Under every answer set, `make trace` in a committed generated project writes the same passing matrix twice and leaves what git lists alone, and a requirement added to its spec with no test turns `make trace` and the project's own traceability gate test red naming it. Skipped on a bare local clone without the optional `template` extra; CI installs `.[dev,template]` and declares the surface required (KEEL_REQUIRED_EXTRAS), so there a missing copier is a hard failure instead of a silent skip. A generated project passes its exit gate file with nothing skipped and holds a current exit-code table; a script ending on `sys.exit(main())` fails the gate test naming its line, an enum member added without regenerating fails `make check-exit-codes`, and `make exit-codes` run twice writes the same guide. A default project ships scripts/launch.py and scripts/long_scripts.py with keel's `launcher` block, the `none` farm, the placeholder own-hosts twin and no local file; committed, its `make long-scripts` finds no recorded runs and exits 13, its launcher says its own `make verify` runs here limited on a shared host, a real launch runs here limited and records the run in an ignored file with one entry per key, a failing command is recorded as failed, and its own launcher tests pass with nothing skipped. A generated project's config-reads gate passes with nothing skipped, keel's rendered files reading config only through the loader or an allowlist entry; a direct read the project adds is red naming `make gate-baseline`, the real scripts/record_gate_baseline.py records it (a second run writes the same bytes, and a second rogue reader at the same `_commit` is refused, the file left), the gate then passes warning of it, and once `expiring_tier.expires` has passed it is red. A default project sets every config/project.json key scripts/config_loader.py declares, so resolving them writes no `[using default]` or `[not set]` line, and deleting each defaulted key writes exactly one `[using default]` line per key, sorted. A generated project's `make canary` is a stub, exit 2, that names the template checkout, and the canary's doer, its snapshot module and its workflow do not ship. Under both frontend answers a generated project carries a null `install_sources` block and its own install-source unit and wiring tests pass with nothing skipped. Committed, a default project's lockfile gate and toolchain gate pass with nothing skipped, and a `frontend_stack: none` project's lockfile gate skips saying it has no frontend app while its toolchain gate passes; both ship scripts/check_toolchain.py. Committed, a default project's committed-secrets gate passes with nothing skipped, and an untracked `.env.production` that gives a credential variable a value turns its first test red naming the file and the key, never the value; its `make secret-scan`, with no scanner recorded, is red with exit 11 naming `make secrets-install`. Its README Quickstart commits the project before `pre-commit install` and runs `make secrets-install` before `make verify`, under every frontend answer. A suite run inside a project generated a moment ago drops `secrets` from the caller's KEEL_REQUIRED_EXTRAS, because that project has run no `make secrets-install`, so its scanner cases skip there rather than fail. A default project ships keel's `agents` block, and its own apply_refactor refuses an edit to scripts/check_structure.py and to AGENT.md with exit 2 naming the rule and leaving the file's bytes and time alone, refuses the same way a spec that names its own gate, while an edit to a tracked .py under src/ applies. The copier answer `shell` sets `shell.enabled`: a fresh project's shell targets pass saying the switch is off, or kept, the shipped `shell.no_scripts` reason; declined, they say so and pass over a shell script, and kept, a shell script beside that reason is exit 14 naming the key, and with it null `make lint-sh` judges the script with the configured linter and is red naming the linter when none is installed. Under every `ci_pipeline` answer exactly the chosen CI adapters survive `_exclude`, at least one, and the update migration retires exactly the others; a migration removes an adapter only when keel's marker line is in it, keeping a project's own file byte-identical and saying so on stderr, twice; and a generated project ships the chosen adapters, each running config/project.json ci_pipeline.steps in order.
+summary: `copier` renders keel's root template into a new project — the manifest is tailored to the answers, the un-chosen frontend stack is pruned, CLAUDE.md->AGENT.md symlinks are preserved, keel's own template meta-tests are pruned, and check_structure passes; an undeclared top-level directory reds the project until it is declared and labelled. A bare `subprocess.run` reds a generated project through check_X until it passes `env=build_child_env()`, and the project's helper passes an adapter's declared credential and no planted secret. A credentialed proxy (a `#` in the password included) fails the project's doc judge by name and never by value, while a `LANGUAGE=sr_RS:sr@latin` locale list does not, until `child_env.credentialed_values` names it, and a stale entry there reds the gate. A generated project carries keel's `work_naming` block and no plan doc, so check_Z is silent until the project writes one; a slice row that is not a slice id then reds the gate and a well-formed one does not. A generated project runs its own doc-drift tests green, every skip there a template-only test naming why, and a prose slice id planted in its CONTRIBUTING.md reds them, and so does a row dropped from its settings reference or from its feature catalogue; its README names no `make new`, and its `run-web` line names Astro and its port only for the astro stack and is absent with no frontend. Under every transport answer, and without the showcase, a generated project's e2e coverage gate and its scenarios pass with nothing skipped, and a grpc project whose exemption is dropped is red naming the method. A project with a frontend carries keel's `layers.frontend.journey` keys and passes its own frontend-suite contract tests statically; its fresh tree's `make test-fe` refuses with exit 2 naming the app and `make fe-install`, and its README Quickstart runs `make fe-install` and `make fe-browsers` before `make verify`; one without has no frontend keys, its wiring test skips with a reason, `make test-fe` exits 0 silently, and its Quickstart names neither target. Under every answer set, `make eval` in a committed generated project replays its shipped eval dataset, which uses every scorer, green twice with the same report bytes and leaves what git lists alone, and the README's delete advice no longer offers evals/. Under every answer set, `make trace` in a committed generated project writes the same passing matrix twice and leaves what git lists alone, and a requirement added to its spec with no test turns `make trace` and the project's own traceability gate test red naming it. Skipped on a bare local clone without the optional `template` extra; CI installs `.[dev,template]` and declares the surface required (KEEL_REQUIRED_EXTRAS), so there a missing copier is a hard failure instead of a silent skip. A generated project passes its exit gate file with nothing skipped and holds a current exit-code table; a script ending on `sys.exit(main())` fails the gate test naming its line, an enum member added without regenerating fails `make check-exit-codes`, and `make exit-codes` run twice writes the same guide. A default project ships scripts/launch.py and scripts/long_scripts.py with keel's `launcher` block, the `none` farm, the placeholder own-hosts twin and no local file; committed, its `make long-scripts` finds no recorded runs and exits 13, its launcher says its own `make verify` runs here limited on a shared host, a real launch runs here limited and records the run in an ignored file with one entry per key, a failing command is recorded as failed, and its own launcher tests pass with nothing skipped. A generated project's config-reads gate passes with nothing skipped, keel's rendered files reading config only through the loader or an allowlist entry; a direct read the project adds is red naming `make gate-baseline`, the real scripts/record_gate_baseline.py records it (a second run writes the same bytes, and a second rogue reader at the same `_commit` is refused, the file left), the gate then passes warning of it, and once `expiring_tier.expires` has passed it is red. A default project sets every config/project.json key scripts/config_loader.py declares, so resolving them writes no `[using default]` or `[not set]` line, and deleting each defaulted key writes exactly one `[using default]` line per key, sorted. A generated project's `make canary` is a stub, exit 2, that names the template checkout, and the canary's doer, its snapshot module and its workflow do not ship. Under both frontend answers a generated project carries a null `install_sources` block and its own install-source unit and wiring tests pass with nothing skipped. Committed, a default project's lockfile gate and toolchain gate pass with nothing skipped, and a `frontend_stack: none` project's lockfile gate skips saying it has no frontend app while its toolchain gate passes; both ship scripts/check_toolchain.py. Committed, a default project's committed-secrets gate passes with nothing skipped, and an untracked `.env.production` that gives a credential variable a value turns its first test red naming the file and the key, never the value; its `make secret-scan`, with no scanner recorded, is red with exit 11 naming `make secrets-install`. Its README Quickstart commits the project before `pre-commit install` and runs `make secrets-install` before `make verify`, under every frontend answer. A suite run inside a project generated a moment ago drops `secrets` from the caller's KEEL_REQUIRED_EXTRAS, because that project has run no `make secrets-install`, so its scanner cases skip there rather than fail. A default project ships keel's `agents` block, and its own apply_refactor refuses an edit to scripts/check_structure.py and to AGENT.md with exit 2 naming the rule and leaving the file's bytes and time alone, refuses the same way a spec that names its own gate, while an edit to a tracked .py under src/ applies. The copier answer `shell` sets `shell.enabled`: a fresh project's shell targets pass saying the switch is off, or kept, the shipped `shell.no_scripts` reason; declined, they say so and pass over a shell script, and kept, a shell script beside that reason is exit 14 naming the key, and with it null `make lint-sh` judges the script with the configured linter and is red naming the linter when none is installed. Under every `ci_pipeline` answer exactly the chosen CI adapters survive `_exclude`, at least one, and the update migration retires exactly the others; the one migration that retires an adapter, keep_edited_retired, is given config/project.json's adapter paths and marker; and a generated project ships the chosen adapters, each running config/project.json ci_pipeline.steps in order.
 """
 
 import ast
@@ -819,6 +819,14 @@ def _command_text(command):
     return str(command)
 
 
+def _command_parts(command):
+    """A copier task or migration command as the strings copier renders one by
+    one: each argument of a list command, or a string command whole."""
+    if isinstance(command, (list, tuple)):
+        return [str(part) for part in command]
+    return [str(command)]
+
+
 _EXCLUDE_CONDITION = re.compile(r"\{%\s*if\s+(.+?)\s*%\}")
 
 
@@ -848,7 +856,7 @@ def test_every_answer_driven_prune_has_a_retirement_migration():
 
     migrations = [
         (
-            _command_text(m["command"] if isinstance(m, dict) else m),
+            _command_parts(m["command"] if isinstance(m, dict) else m),
             str(m.get("when", "")) if isinstance(m, dict) else "",
         )
         for m in cfg.get("_migrations", [])
@@ -860,9 +868,20 @@ def test_every_answer_driven_prune_has_a_retirement_migration():
         `src/frontend/react-vite` migration would vouch for the separate
         `src/frontend` prune and pass vacuously. The condition half matters too: a
         path retired under a DIFFERENT answer is retired at the wrong time, which
-        reads as a pairing while behaving as none."""
+        reads as a pairing while behaving as none. The condition is the entry's
+        `when`, or, for one argument of a list command (keep_edited_retired's
+        `--retire`), that argument's own `{% if %}`."""
         pattern = r"(?<![\w./-])%s(?![\w./-])" % re.escape(path)
-        return any(re.search(pattern, cmd) and cond in when for cmd, when in migrations)
+
+        def guarded(part, when):
+            own = _EXCLUDE_CONDITION.search(part)
+            return cond in when or (own is not None and own.group(1).strip() == cond)
+
+        return any(
+            re.search(pattern, part) and guarded(part, when)
+            for parts, when in migrations
+            for part in parts
+        )
 
     missing = [
         (entry, path)
@@ -2256,7 +2275,12 @@ def _ci_adapters_kept(cfg, answer):
     for m in cfg.get("_migrations", []):
         if not isinstance(m, dict):
             continue
-        command = _command_text(m["command"])
+        # Only an argument with a jinja condition is rendered: the others name
+        # copier's own variables, which this context does not hold.
+        command = " ".join(
+            env.from_string(part).render(context) if "{%" in part else part
+            for part in _command_parts(m["command"])
+        )
         named = {
             n for n, path in _ci_adapter_paths().items() if _names_path(command, path)
         }
@@ -2301,66 +2325,30 @@ def test_each_ci_pipeline_answer_keeps_exactly_its_adapters():
         )
 
 
-def _ci_retirements():
-    """{adapter name: the migration command that names its path}."""
+def test_the_ci_retirement_names_the_configured_adapters_and_marker():
+    """The one migration that retires a CI adapter is keep_edited_retired, and
+    its `--retire NAME:PATH` arguments and `--marker` are config/project.json
+    `ci_pipeline.adapters` and `ci_pipeline.marker`, so the job judges the file
+    the gate judges. What the job does with them is
+    tests/integration/test_edited_retired_files.py and test_copier_update.py."""
     cfg = yaml.safe_load((_ROOT / "copier.yml").read_text())
-    found = {}
+    config = ci_adapters.pipeline(_ROOT)
+    found = []
     for m in cfg.get("_migrations", []):
-        command = _command_text(m["command"] if isinstance(m, dict) else m)
-        for name, path in _ci_adapter_paths().items():
-            if _names_path(command, path):
-                assert name not in found, "two migrations name %s" % path
-                found[name] = command
-    assert sorted(found) == sorted(_ci_adapter_paths()), found
-    return found
+        parts = _command_parts(m["command"] if isinstance(m, dict) else m)
+        retire = [
+            _JINJA_TAG_ANY.sub("", p)[len("--retire=") :]
+            for p in parts
+            if p.startswith("--retire=")
+        ]
+        if retire:
+            assert "scripts/jobs/keep_edited_retired.py" in parts, parts
+            assert parts[parts.index("--marker") + 1] == config["marker"], parts
+            found.append(dict(r.split(":", 1) for r in retire))
+    assert found == [config["adapters"]], found
 
 
-def _run_migration(command, cwd):
-    return subprocess.run(
-        ["sh", "-c", command],
-        cwd=str(cwd),
-        capture_output=True,
-        text=True,
-        env=build_child_env(),
-    )
-
-
-_KEPT_BODIES = [
-    ("no marker", "# my own pipeline\njobs: {}\n"),
-    ("indented marker", "  {marker}\n"),
-    ("suffixed marker", "{marker} (copied)\n"),
-    ("marker in a comment", "# see {marker}\n"),
-]
-
-
-@pytest.mark.parametrize("name", sorted(_ci_adapter_paths()))
-def test_a_ci_retirement_removes_only_a_file_carrying_keels_marker(name, tmp_path):
-    """A keel-written adapter goes; a file the project wrote, which carries no
-    marker line, stays byte-identical and the update says why on stderr; a
-    second run is a no-op; with no file there is nothing to do and nothing
-    said."""
-    command = _ci_retirements()[name]
-    rel = _ci_adapter_paths()[name]
-    marker = ci_adapters.marker(_ROOT, name)
-
-    keel = tmp_path / "keel"
-    (keel / rel).parent.mkdir(parents=True, exist_ok=True)
-    (keel / rel).write_text("%s\nstages: []\n" % marker)
-    for _ in range(2):
-        r = _run_migration(command, keel)
-        assert r.returncode == 0 and not (keel / rel).exists(), r.stderr
-        assert r.stderr == ""
-
-    for label, body in _KEPT_BODIES:
-        own = tmp_path / label.replace(" ", "_")
-        (own / rel).parent.mkdir(parents=True, exist_ok=True)
-        text = body.replace("{marker}", marker)
-        (own / rel).write_text(text)
-        for _ in range(2):
-            r = _run_migration(command, own)
-            assert r.returncode == 0, (label, r.stderr)
-            assert (own / rel).read_text() == text, label
-            assert rel in r.stderr and marker in r.stderr, (label, r.stderr)
+_JINJA_TAG_ANY = re.compile(r"\{%.*?%\}")
 
 
 @pytest.mark.parametrize("answer", ["github", "gitlab", "both"])

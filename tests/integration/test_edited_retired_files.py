@@ -2,7 +2,7 @@
 title: Integration — keep_edited_retired restores a retired file the project edited
 kind: tests
 layer: n/a
-summary: scripts/jobs/keep_edited_retired.py run as copier's first `after` migration runs it, in a real git project against a synthetic template whose tag v2 moves an ADR into docs/adr/keel/ as a K- file and drops a script, a symlink and a rendered document. A file the update deleted that the project had edited (any byte but the frontmatter `updated:` value) is put back from HEAD with HEAD's mode, an executable and a symlink included, and named on stderr with its successor; an unedited one stays deleted; one the template renders from a `.jinja` source, or one the template does not hold at --from, cannot be judged, so it is kept and named; a path something else now occupies is a failure, never overwritten. The index is never touched. A second run changes no byte of the tree (the fixed point check_V's rerun_proof names). An unresolvable --from ref puts back every deleted file and exits 2.
+summary: scripts/jobs/keep_edited_retired.py run as copier's first `after` migration runs it, in a real git project against a synthetic template whose tag v2 moves an ADR into docs/adr/keel/ as a K- file and drops a script, a symlink and a rendered document. A file the update deleted that the project had edited (any byte but the frontmatter `updated:` value) is put back from HEAD with HEAD's mode, an executable and a symlink included, and named on stderr with its successor; an unedited one stays deleted; one the template renders from a `.jinja` source, or one the template does not hold at --from, cannot be judged, so it is kept and named; a path something else now occupies is a failure, never overwritten. The index is never touched. A second run changes no byte of the tree (the fixed point check_V's rerun_proof names). An unresolvable --from ref puts back every deleted file and exits 2. A `--retire NAME:PATH` CI adapter, plain or rendered from a `.jinja` twin with `--answers`, is removed when it is what keel rendered and otherwise kept with one stderr line naming its marker state and `git rm PATH`, twice over; an empty `--retire` retires nothing and a malformed one exits 2.
 """
 
 import os
@@ -239,3 +239,109 @@ def test_a_path_taken_since_the_deletion_is_a_failure_never_overwritten(setup):
         "occupant\n"
     )
     assert "kept docs/adr/0002-edited.md:" in r.stderr, r.stderr
+
+
+_MARKER = "# keel-adapter: {adapter}"
+_CI = "# keel-adapter: hub\nsteps: [lint]\n"
+_LAB_TWIN = "# keel-adapter: lab\nimage: py{{ python }}\n"
+_LAB = "# keel-adapter: lab\nimage: py3.12\n"
+_EDIT = "# a line the project added\n"
+
+
+def _retire_setup(tmp_path, ci, lab, answers="python: '3.12'\n"):
+    """(template, project, env): a template tagged v1 holding a hub adapter and
+    a lab adapter's `.jinja` twin, and a committed project holding *ci* and
+    *lab* (and *answers*, when not None) on disk, as an update leaves an
+    adapter copier did not delete."""
+    work = tmp_path / "gitwork"
+    work.mkdir()
+    env = hermetic_git.git_env(work)
+    template = tmp_path / "template"
+    template.mkdir()
+    _git(template, env, "init", "-q", "-b", "main")
+    _write(template, {"ci.yml": _CI, "lab.yml.jinja": _LAB_TWIN})
+    _git(template, env, "add", "-A")
+    _git(template, env, "commit", "-qm", "v1")
+    _git(template, env, "tag", "v1")
+    project = tmp_path / "project"
+    project.mkdir()
+    _git(project, env, "init", "-q", "-b", "main")
+    files = {"ci.yml": ci, "lab.yml": lab}
+    if answers is not None:
+        files[".answers.yml"] = answers
+    _write(project, files)
+    _git(project, env, "add", "-A")
+    _git(project, env, "commit", "-qm", "generated at v1")
+    return template, project, env
+
+
+def _retire(project, env, template, *retire):
+    argv = ["--template", str(template), "--from", "v1", "--marker", _MARKER]
+    argv += ["--answers", ".answers.yml"]
+    for value in retire:
+        argv.append("--retire=" + value)
+    return _guard(project, env, *argv)
+
+
+def test_a_retired_adapter_left_as_keel_rendered_it_is_removed(tmp_path):
+    """Byte-equal to the template's blob, or to its `.jinja` twin rendered with
+    the answers HEAD holds: removed, nothing said, and a second run is a no-op."""
+    template, project, env = _retire_setup(tmp_path, _CI, _LAB)
+    for _ in range(2):
+        r = _retire(project, env, template, "hub:ci.yml", "lab:lab.yml")
+        assert r.returncode == 0, r.stdout + r.stderr
+        assert not (project / "ci.yml").exists()
+        assert not (project / "lab.yml").exists()
+        assert r.stderr == "", r.stderr
+
+
+@pytest.mark.parametrize("name, rel", [("hub", "ci.yml"), ("lab", "lab.yml")])
+def test_an_edited_retired_adapter_is_kept_and_named_with_what_to_do(
+    tmp_path, name, rel
+):
+    """An edit that keeps the marker line still keeps the file: one stderr
+    line names it, says the project edited it and how to remove it, and the
+    bytes are unchanged, twice."""
+    ci = _CI + _EDIT if rel == "ci.yml" else _CI
+    lab = _LAB + _EDIT if rel == "lab.yml" else _LAB
+    template, project, env = _retire_setup(tmp_path, ci, lab)
+    before = (project / rel).read_bytes()
+    for _ in range(2):
+        r = _retire(project, env, template, "%s:%s" % (name, rel))
+        assert r.returncode == 0, r.stdout + r.stderr
+        assert (project / rel).read_bytes() == before
+        assert r.stderr == (
+            "kept %s: it carries the line `# keel-adapter: %s`, so keel wrote it, "
+            "and the project edited it; ci_pipeline no longer chooses %s, so CI "
+            "keeps running this file's steps beside the chosen adapter's until "
+            "you remove it (`git rm %s`)\n" % (rel, name, name, rel)
+        ), r.stderr
+
+
+def test_a_retired_adapter_keel_cannot_judge_is_kept(tmp_path):
+    """No answers to render the twin with, and a path the template never held:
+    each is kept and named, never removed."""
+    template, project, env = _retire_setup(tmp_path, _CI, _LAB, answers=None)
+    (project / "own.yml").write_text("# our own pipeline\n")
+    _git(project, env, "add", "own.yml")
+    _git(project, env, "commit", "-qm", "ours")
+    r = _retire(project, env, template, "lab:lab.yml", "own:own.yml")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert (project / "lab.yml").read_text() == _LAB
+    assert (project / "own.yml").read_text() == "# our own pipeline\n"
+    assert "kept lab.yml: the template renders it from lab.yml.jinja" in r.stderr
+    assert (
+        "kept own.yml: the template held no own.yml at v1, so keel did not write it"
+        in r.stderr
+    ), r.stderr
+
+
+def test_an_empty_retire_retires_nothing_and_a_malformed_one_exits_2(tmp_path):
+    """copier renders `--retire=` when the answer declines nothing; a value
+    that is not NAME:PATH is a usage fault naming it."""
+    template, project, env = _retire_setup(tmp_path, _CI, _LAB)
+    r = _retire(project, env, template, "")
+    assert r.returncode == 0 and (project / "ci.yml").exists(), r.stderr
+    r = _retire(project, env, template, "ci.yml")
+    assert r.returncode == 2 and "'ci.yml' is not NAME:PATH" in r.stderr, r.stderr
+    assert (project / "ci.yml").exists()

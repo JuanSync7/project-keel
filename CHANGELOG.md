@@ -62,9 +62,11 @@ version rather than a bare commit:
   `tests/integration/test_ci_pipeline_gate.py` fails one whose steps, order or
   env differ from that list. Each adapter keel writes carries the line
   `# keel-adapter: <name>` (`ci_pipeline.marker`). When an update changes the
-  answer, keel removes an adapter that is no longer chosen only if the file
-  carries that exact line. A file without the line is kept, and the retirement
-  step prints a one-line note naming it. The GitLab job's image is `ci_pipeline.gitlab_image`,
+  answer, `scripts/jobs/keep_edited_retired.py` removes an adapter that is no
+  longer chosen only if the file is byte-equal to what keel last rendered (the
+  GitLab twin rendered with the project's answers). An edited file is kept,
+  marker line or not, and one stderr line names it, says why and says to
+  `git rm` it, because CI runs it beside the chosen adapter until then. The GitLab job's image is `ci_pipeline.gitlab_image`,
   filled from `toolchain`. Its default is a placeholder host, because keel has
   verified no public image that carries both the Python and the Node version.
   An owner sets it before the GitLab job can run. The GitLab file sets

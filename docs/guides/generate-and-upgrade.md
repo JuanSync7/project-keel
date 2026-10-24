@@ -575,12 +575,14 @@ the top of `ci.yml`. You may meet the change three ways.
    Its image is `ci_pipeline.gitlab_image` filled from `toolchain`, and the
    default names no real registry, so the job cannot pull until you point the
    key, and the file's `image:` line, at an image that carries both
-   toolchains. Answering `gitlab` removes `ci.yml` when it still has keel's
-   marker line.
+   toolchains. Answering `gitlab` removes `ci.yml` only when it is byte-equal
+   to what keel rendered. An edited `ci.yml` is kept, marker line or not, and
+   one stderr line names it and says to remove it with `git rm`, because CI
+   runs its steps beside the GitLab job until you do.
 3. **You wrote your own `.gitlab-ci.yml` before.** An update that does not
-   choose gitlab keeps it byte-identical and says on stderr why, because it
-   has no `# keel-adapter: gitlab` line. The gate does not judge it unless it
-   carries that line. An update that chooses gitlab leaves the file
+   choose gitlab keeps it byte-identical, because it is not what keel
+   rendered, and says on stderr that it has no `# keel-adapter: gitlab` line.
+   The gate does not judge it unless it carries that line. An update that chooses gitlab leaves the file
    conflicted, yours above copier's `=======` line and keel's below it
    (measured with copier 9.19), so resolve it as you would any conflict.
 
@@ -595,13 +597,11 @@ brings back a file a step removed, as long as you committed it first.
 | Step | When | Effect | Exit | Recovery |
 |------|------|--------|------|----------|
 | task: `scripts/jobs/restamp_docs.py` | every generation and every update | stamps with the day the `updated:` of every document git would commit (every document where there is no git), in each copy copier renders | 0, 1, 2 | `make restamp-docs` |
-| `scripts/jobs/keep_edited_retired.py` | every update | keeps an edited copy of a template file the update retires or moves, and names it on stderr | 0, 2 | on 2, resolve each file it names, then run the command it prints, which finishes the update |
+| `scripts/jobs/keep_edited_retired.py` | every update | keeps an edited copy of a template file the update retires or moves, and names it on stderr; when `ci_pipeline` declines an adapter (`.github/workflows/ci.yml` for `gitlab`, `.gitlab-ci.yml` for `github`), removes it only when it is byte-equal to what keel rendered, and otherwise keeps it and names it on stderr with what to do | 0, 2 | on 2, resolve each file it names, then run the command it prints, which finishes the update; `git checkout -- <path>` brings back an adapter it removed |
 | `rm -rf src/frontend/react-vite` | `frontend_stack` is not `react-vite` | removes that stack | none | `git checkout -- src/frontend/react-vite` |
 | `rm -rf src/frontend/astro` | `frontend_stack` is not `astro` | removes that stack | none | `git checkout -- src/frontend/astro` |
 | `rm -rf src/frontend` | `frontend_stack` is `none` | removes the frontend | none | `git checkout -- src/frontend` |
 | `rm -f .github/workflows/pages.yml` | `frontend_stack` is not `astro` | removes the site workflow | none | `git checkout -- .github/workflows/pages.yml` |
-| `rm -f .github/workflows/ci.yml` when it has the line `# keel-adapter: github` | `ci_pipeline` is `gitlab` | removes keel's GitHub adapter; a file without that line is kept and named on stderr | none | `git checkout -- .github/workflows/ci.yml` |
-| `rm -f .gitlab-ci.yml` when it has the line `# keel-adapter: gitlab` | `ci_pipeline` is `github` | removes keel's GitLab adapter; a file without that line is kept and named on stderr | none | `git checkout -- .gitlab-ci.yml` |
 | `rm -rf api/grpc` | `transports` lacks `grpc` | removes the transport | none | `git checkout -- api/grpc` |
 | `rm -f tests/unit/api/test_grpc_server.py` | `transports` lacks `grpc` | removes the transport's test | none | `git checkout -- tests/unit/api/test_grpc_server.py` |
 | `rm -rf api/edge_nginx` | `transports` lacks `edge_nginx` | removes the transport | none | `git checkout -- api/edge_nginx` |

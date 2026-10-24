@@ -349,7 +349,8 @@ shell:
 # Which CI service runs the pipeline config/project.json ci_pipeline.steps
 # states: each choice but `both` is a key of ci_pipeline.adapters, the file
 # that service reads. Prunes the adapter not chosen, and its `_migrations`
-# mirror retires it on update only when keel's marker line is in it.
+# mirror (keep_edited_retired's `--retire`) retires it on update only when the
+# project left it as keel rendered it.
 ci_pipeline:
   type: str
   help: "CI service that runs the gate: 'github' (.github/workflows/ci.yml), 'gitlab' (.gitlab-ci.yml) or 'both'"
@@ -388,10 +389,9 @@ ci_pipeline:
 # tree is always recoverable with `git checkout -- <path>`. Do not extend this list
 # to a path a project could have authored FROM SCRATCH, where no such history exists.
 # The one exception is a CI adapter (config/project.json ci_pipeline.adapters): a
-# project may write its own `.gitlab-ci.yml` or `ci.yml`, so its entry removes the
-# file only when it holds keel's marker line (`# keel-adapter: <name>`, matched as
-# a whole line), which a file the project wrote does not carry, and otherwise
-# keeps it and says why on stderr.
+# project may write its own `.gitlab-ci.yml` or edit `ci.yml`, so keep_edited_retired
+# (the first entry) removes the declined one only when it is byte-equal to what
+# keel last rendered, and otherwise keeps it and says on stderr why and what to do.
 #
 # `_stage == 'after'` on every entry: they must see the NEW answers, which are only
 # on disk in the `after` stage. The conditions re-read the answer rather than
@@ -415,7 +415,14 @@ _migrations:
   # so no shell; `--from` is the commit the project was generated from. copier
   # runs it for a `_commit` with no tag ancestry too: dunamai versions such a
   # commit `0.0.0.postN.devM` (project-jarvis's 72fd224, measured).
-  - command: ["{{ _copier_python }}", "scripts/jobs/keep_edited_retired.py", "--quiet", "--template", "{{ _copier_conf.src_path }}", "--from", "{{ _version_from }}", "--finish-with", "{{ _copier_python }}"]
+  #
+  # It is also the CI adapter retirement, under the exception stated above: each
+  # `--retire` names the adapter an answer declines (empty when it declines
+  # none), and the job removes that file only when it is byte-equal to what keel
+  # rendered at `--from` (a `.jinja` twin rendered with `--answers` read from
+  # HEAD), else keeps it and says why on stderr. One run judges every file once,
+  # so the file copier deleted and the file the answer retires get one verdict.
+  - command: ["{{ _copier_python }}", "scripts/jobs/keep_edited_retired.py", "--quiet", "--template", "{{ _copier_conf.src_path }}", "--from", "{{ _version_from }}", "--answers", "{{ _copier_conf.answers_file }}", "--marker", "# keel-adapter: {adapter}", "--retire={% if ci_pipeline == 'gitlab' %}github:.github/workflows/ci.yml{% endif %}", "--retire={% if ci_pipeline == 'github' %}gitlab:.gitlab-ci.yml{% endif %}", "--finish-with", "{{ _copier_python }}"]
     when: "{{ _stage == 'after' }}"
   # Mirrors the frontend-stack prunes.
   - command: "rm -rf src/frontend/react-vite"
@@ -428,12 +435,6 @@ _migrations:
   # in the directory the entry above just removed.
   - command: "rm -f .github/workflows/pages.yml"
     when: "{{ _stage == 'after' and frontend_stack != 'astro' }}"
-  # Mirrors the CI adapter prunes, under the marker exception stated above: an
-  # unchosen adapter goes only when keel's marker line is in it.
-  - command: "if [ -e .github/workflows/ci.yml ]; then if grep -qxF '# keel-adapter: github' .github/workflows/ci.yml; then rm -f .github/workflows/ci.yml; else echo 'kept .github/workflows/ci.yml: it has no line # keel-adapter: github, so keel did not write it' >&2; fi; fi"
-    when: "{{ _stage == 'after' and ci_pipeline == 'gitlab' }}"
-  - command: "if [ -e .gitlab-ci.yml ]; then if grep -qxF '# keel-adapter: gitlab' .gitlab-ci.yml; then rm -f .gitlab-ci.yml; else echo 'kept .gitlab-ci.yml: it has no line # keel-adapter: gitlab, so keel did not write it' >&2; fi; fi"
-    when: "{{ _stage == 'after' and ci_pipeline == 'github' }}"
   # Mirrors the transport prunes.
   - command: "rm -rf api/grpc"
     when: "{{ _stage == 'after' and 'grpc' not in transports }}"
