@@ -1019,7 +1019,7 @@ against a fixture archive:
 | a `.gitleaksignore` or `.gitleaks.toml` in the tree | refused, exit 14, before the scanner runs |
 | an access key base64-encoded in a source file | caught by the scanner's decoding |
 | an access key split across two string literals | not caught: no rule sees the joined value |
-| a weak password under a name no secret row declares (`db_password = "hunter2hunter2"`) | not caught: no rule knows its shape and no secret row its name |
+| a weak password under a name no secret row declares (`db_password = "<value>"`) | not caught: no rule knows its shape and no secret row its name |
 | an access key under a non-secret JSON key | caught by the scanner; the keyed gate does not see it |
 | a secret name with a value in a `.env.production` added with `git add -f` | caught by the keyed gate |
 | an access key in a file the scanner's default allowlist skips (`package-lock.json`, `go.sum`, `*.svg`, `*.pdf`, under `node_modules/`) | not caught |
@@ -1180,7 +1180,7 @@ each rule rewrites only its own span, so the cause (`ENOTFOUND`, `E401`,
   without case and without the punctuation around it, is kept, so
   `password required`, `PASSWORD REQUIRED` and `the token is invalid` read
   as written; every other word is hidden, a run of them as one `<hidden>`, so
-  `the password was set to hunter2` and `the password for bob is hunter2`
+  `the password was set to <value>` and `the password for bob is <value>`
   show neither name nor value. A quoted word is a value whatever it says and
   is hidden to its closing quote, and another secret word starts its own
   clause. The clause judges at most `CLAUSE_WORDS` (16) words one at a time,

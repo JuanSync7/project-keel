@@ -29,6 +29,11 @@ _TODAY = datetime.date(2026, 10, 23)
 _PARSER = "GHSA-rj75-hqrm-r3gf"
 _HIGH = "GHSA-mrhx-c7xc-m3w5"
 _LOW = "GHSA-238p-pmpm-9mq7"
+# Stand-in secrets, built here so no file holds a password-shaped literal:
+# one mixing letters and a digit, and one of capitalised letters only, the
+# shape an open "plain word" rule would show.
+_VALUE = "q7" + "zxwv"
+_WORD_VALUE = "Qz" + "xwv"
 
 
 def _via(advisory, package, severity, title):
@@ -741,22 +746,22 @@ def test_only_the_credential_span_is_rewritten(text, shown):
         # A third linking word, a capitalised word with a mark, and a word
         # between the secret word and its value: each is a word no rule names.
         (
-            "npm error the password was set to hunter2",
+            "npm error the password was set to " + _VALUE,
             "npm error the password was set to <hidden>",
         ),
-        ("npm error password is Swordfish!", "npm error password is <hidden>"),
+        ("npm error password is %s!" % _WORD_VALUE, "npm error password is <hidden>"),
         (
-            "npm error the password for bob is hunter2",
+            "npm error the password for bob is " + _VALUE,
             "npm error the password for <hidden> is <hidden>",
         ),
         # The clause ends with its sentence, and a word past its end is kept.
         (
-            "npm error password Swordfish. Then npm stopped",
+            "npm error password %s. Then npm stopped" % _WORD_VALUE,
             "npm error password <hidden> Then npm stopped",
         ),
         # A clause past CLAUSE_WORDS has the rest of its sentence hidden whole.
         (
-            "npm error password " + "is " * 20 + "hunter2. Then npm stopped",
+            "npm error password " + "is " * 20 + _VALUE + ". Then npm stopped",
             "npm error password " + "is " * 16 + "<hidden> Then npm stopped",
         ),
     ],
@@ -806,18 +811,21 @@ def test_a_secret_word_in_prose_hides_its_value(text, shown):
         ),
         # With no scheme and no password, as in a URL: before a host.
         (
-            "request to hunter2@registry.example/pkg failed",
+            "request to %s@registry.example/pkg failed" % _VALUE,
             "request to <hidden>@registry.example/<path hidden> failed",
         ),
         (
-            "ENOTFOUND hunter2@registry.example.invalid",
+            "ENOTFOUND %s@registry.example.invalid" % _VALUE,
             "ENOTFOUND <hidden>@registry.example.invalid",
         ),
         (
-            "fetch hun@ter2@localhost:4873/pkg",
+            "fetch %s@%s@localhost:4873/pkg" % (_VALUE[:2], _VALUE[2:]),
             "fetch <hidden>@localhost:4873/<path hidden>",
         ),
-        ("fetch hunt!er2@10.0.0.5/pkg", "fetch <hidden>@10.0.0.5/<path hidden>"),
+        (
+            "fetch %s!%s@10.0.0.5/pkg" % (_VALUE[:2], _VALUE[2:]),
+            "fetch <hidden>@10.0.0.5/<path hidden>",
+        ),
     ],
     ids=[
         "raw-at",
@@ -917,7 +925,7 @@ def test_each_vocabulary_word_is_kept_and_a_value_beside_it_hidden(word):
     [
         ("npm error token: expired", "npm error token: <hidden>"),
         ("npm error password=required", "npm error password=<hidden>"),
-        ("npm error password hunter2", "npm error password <hidden>"),
+        ("npm error password " + _VALUE, "npm error password <hidden>"),
         ("npm error password is FAKEval", "npm error password is <hidden>"),
         ('npm error password "hunter"', "npm error password <hidden>"),
         ('npm error password "correct horse', "npm error password <hidden>"),
@@ -957,15 +965,15 @@ def test_a_value_that_is_no_plain_word_is_still_hidden(text, shown):
         ("password=my secret token=other words", "password=<hidden> token=<hidden>"),
         ('password=my secret "quoted"', "password=<hidden>"),
         ("password=pa'ss word", "password=<hidden>"),
-        ("password=ab,hunter2", "password=<hidden>"),
-        ("password=abc hunter2:x", "password=<hidden>"),
-        ("cookie=a=b; hunter2", "cookie=<hidden>"),
+        ("password=ab," + _VALUE, "password=<hidden>"),
+        ("password=abc %s:x" % _VALUE, "password=<hidden>"),
+        ("cookie=a=b; " + _VALUE, "cookie=<hidden>"),
         ("cookie=a=b; session=FAKEval", "cookie=<hidden>"),
         ('password="a b" user=bob', "password=<hidden> user=bob"),
         ('password="a user=b" c', "password=<hidden>"),
         # Prose keeps the word after its value: only an assignment runs on.
         (
-            "npm error password hunter2 was refused",
+            "npm error password %s was refused" % _VALUE,
             "npm error password <hidden> was refused",
         ),
     ],

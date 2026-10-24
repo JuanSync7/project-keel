@@ -69,7 +69,7 @@ _DECLARING_FIELDS = (
 #     or the next assignment (_NEXT_ASSIGNMENT). After whitespace (prose) the clause
 #     that follows is read word by word, and a word is kept only when
 #     scripts/audit_dependencies_data.py's closed vocabulary holds it: an
-#     open list of "plain words" showed `hunter2` after a third linking word,
+#     open list of "plain words" showed a value after a third linking word,
 #     so an unknown word is hidden, cause words included. A quoted value is
 #     hidden in both at least to its closing quote, or to the line's end;
 # (a') a scheme-less `user:pass@host` loses everything before its last `@`,
