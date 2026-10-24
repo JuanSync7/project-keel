@@ -1154,7 +1154,10 @@ it, since npm masks only a userinfo password and a registry token can sit in
 the userinfo or the path. An `Authorization`, `Bearer` or `Basic` scheme keeps its
 name and its `realm="..."` and loses its value. A key holding `auth`, `token`,
 `password`, `passwd`, `secret`, `key`, `credential` or `cookie`, in any case,
-loses the value after its `=`, `:` or whitespace. A scheme-less `user:pass@`
+loses the value after its `=`, `:` or whitespace; a quoted value with no
+closing quote, which is what the cut leaves when it lands inside one, is
+hidden from its quote to the end of the line, so no word of a multi-word
+secret is shown. A scheme-less `user:pass@`
 loses `user:pass`. Last, any remaining run of 20 or more token characters that
 mixes letters and digits is `<hidden>`: that catches a bare token of any
 shape, and it also hides an integrity hash or a timestamped log name, a cost
