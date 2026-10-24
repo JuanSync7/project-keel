@@ -539,3 +539,60 @@ def test_kept_markdown_keeps_the_first_md_path_of_the_walked_paths_it_is_given()
         "/r/docs/a/plan.md": "/r/docs/a/plan.md",
         "/r/AGENT.md": "/r/CLAUDE.md",
     }
+
+
+def _mode_000_readme(path):
+    _stated(path, "public")
+    path.chmod(0)
+
+
+def _bad_utf8_readme(path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"---\ntitle: R\nvisibility: public\n\xff---\n")
+
+
+_ROOT_IS_ROOT = hasattr(os, "geteuid") and os.geteuid() == 0
+
+# (how build/x/README.md is made, the level the corpus serves docs/plan.md
+# at, the check_A error that names build/x/README.md)
+_SKIPPED_README_UNDER_A_SILENT_DOC = [
+    pytest.param(_dangling_readme, "unreadable-readme", "cannot read", id="dangling"),
+    pytest.param(_looping_readme, "unreadable-readme", "cannot read", id="looping"),
+    pytest.param(_directory_readme, "unreadable-readme", "cannot read", id="directory"),
+    pytest.param(
+        _mode_000_readme,
+        "unreadable-readme",
+        "cannot read",
+        id="mode-000",
+        marks=pytest.mark.skipif(_ROOT_IS_ROOT, reason="root reads a mode-000 file"),
+    ),
+    pytest.param(_bad_utf8_readme, "unreadable-readme", "cannot read", id="bad-utf8"),
+    pytest.param(
+        _invalid_readme, "secret", "invalid visibility 'secret'", id="invalid"
+    ),
+]
+
+
+@pytest.mark.parametrize("make, served, verdict", _SKIPPED_README_UNDER_A_SILENT_DOC)
+def test_check_a_names_a_skipped_readme_on_the_chain_of_a_doc_that_states_no_level(
+    repo, make, served, verdict
+):
+    """`docs/plan.md` links to `build/x/plan.md`, which states no visibility,
+    so there is no contradiction to find; the corpus still serves the doc at
+    the level read_readme gives `build/x/README.md`. check_A reads the chain
+    of every governed file, not only one that states a level, so it names a
+    README.md it cannot read or whose value is outside the vocabulary."""
+    _stated(repo / "README.md", "public")
+    make(repo / "build" / "x" / "README.md")
+    silent = repo / "build" / "x" / "plan.md"
+    _stated(silent, "public")
+    silent.write_text(
+        silent.read_text(encoding="utf-8").replace("visibility: public\n", ""),
+        encoding="utf-8",
+    )
+    (repo / "docs").mkdir()
+    (repo / "docs" / "plan.md").symlink_to("../build/x/plan.md")
+    cs.check_A()
+    found = [e for e in cs.errors if e.startswith("build/x/README.md: " + verdict)]
+    assert len(found) == 1, cs.errors
+    assert _served(repo)["plan"] == ("docs/plan.md", served)

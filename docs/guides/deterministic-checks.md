@@ -103,12 +103,14 @@ print but never fail the build.
   the `README.md` that states that level. A `README.md` in a directory the
   walk skips (`IGNORE_DIRS`, such as `build/`) is met only on the chain of a
   file linked in from there, and a directory named `README.md` is never a
-  walked file. check A reads each such `README.md` through
+  walked file. check A reads each such `README.md` on the chain of every
+  governed file, one that states no level included, through
   `scripts/check_structure.py` `read_readme`, the one reader build_corpus also
   ranks a node by, so it judges the linked file by the level the corpus
   serves it at. That reader decodes `utf-8-sig`, so a BOM-saved `README.md`
-  states the level it shows. A dangling or looping link, a directory or a file
-  the run may not open is a `cannot read` error naming the `README.md`, where
+  states the level it shows. A dangling or looping link, a directory, a file
+  the run may not open or one that is not valid UTF-8 is a `cannot read`
+  error naming the `README.md`, where
   the corpus serves every node below it as `unreadable-readme`; a value outside
   the vocabulary, such as `secret`, is the invalid-visibility error naming it,
   as for a walked `README.md`.
