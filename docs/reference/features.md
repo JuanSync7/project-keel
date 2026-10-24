@@ -7,7 +7,7 @@ owner: TBD
 summary: Every feature keel ships, with what it does and why, how to run it, the settings it reads, where it stops and what it is not for, the guide that explains it, and which projects receive it. The rows of the shapes the tree declares are derived-equal to the tree by tests/integration/test_reference_drift.py.
 id: docs-reference-features
 created: 2026-10-09
-updated: 2026-10-23
+updated: 2026-10-24
 visibility: internal
 canonical: true
 ---
@@ -239,7 +239,7 @@ A provider is a thin adapter behind a registry, so no doer names a vendor.
 
 | Feature | What it does and why | How to run | Settings | Limits / not for | Deep doc | Ships |
 |---------|----------------------|------------|----------|------------------|----------|-------|
-| `mcp/qa_server.py` | Read-only MCP tools that answer questions from the corpus through the wiki navigator. | `python3 mcp/qa_server.py` | [`agents.max_model_calls`](settings.md#configprojectjson) | Read-only; it answers from the built corpus. Each question is held to `agents.max_model_calls`, read once at start, so the shipped `0` answers every question with a tool error naming the key; the server's total over its lifetime is not capped. | [agent-surface.md](../guides/agent-surface.md) | always |
+| `mcp/qa_server.py` | Read-only MCP tools that answer questions from the corpus through the wiki navigator. | `python3 mcp/qa_server.py` | [`agents.max_model_calls`](settings.md#configprojectjson), [`agents.max_session_model_calls`](settings.md#configprojectjson) | Read-only; it answers from the built corpus. Each question is held to `agents.max_model_calls` and all of one server process's questions together to `agents.max_session_model_calls`, both read once at start, so the shipped `0`s answer every question with a tool error naming the key; a per-question cap over a nonzero total stops the server at start with exit 14. | [agent-surface.md](../guides/agent-surface.md) | always |
 | `mcp/action_server.py` | State-changing MCP tools that delegate to `scripts/jobs/` doers, dry-run by default. | `python3 mcp/action_server.py` | — | A dry run unless the caller asks to execute. | [agent-surface.md](../guides/agent-surface.md) | always |
 | `REST API` | A thin FastAPI app over `src/`, with a health route and an example resource. | `make run-api` | [`transports.enabled`](settings.md#configprojectjson) | Holds no domain logic; `api/` stays thin. | [agent-surface.md](../guides/agent-surface.md) | always |
 | `REST CORS default` | The REST app allows any origin, `GET` only, so a browser frontend can read it in development. | `make run-api` | — | Not a production policy: narrow the origins before you deploy. | [limits-and-troubleshooting.md](../guides/limits-and-troubleshooting.md) | always |
