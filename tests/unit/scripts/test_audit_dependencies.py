@@ -867,6 +867,75 @@ def test_an_unquoted_value_of_several_words_is_hidden_whole(text, shown):
 _ARTIFACT_HOST = "my-domain-111122223333.d.codeartifact.invalid"
 
 
+# A host with no scheme loses its path as a URL does: a dotted name ending in
+# a letter label, an IPv4 address, or any name with a port, at the start of
+# a word, after `//` or after a userinfo's `@`.
+@pytest.mark.parametrize(
+    "text, shown",
+    [
+        (
+            "request to registry.example/s3cr3t/pkg failed",
+            "request to registry.example/<path hidden> failed",
+        ),
+        (
+            "GET registry.npmjs.org/-/npm/v1/security/advisories/bulk",
+            "GET registry.npmjs.org/<path hidden>",
+        ),
+        ("fetch 10.0.0.5:4873/s3cr3t/pkg", "fetch 10.0.0.5:4873/<path hidden>"),
+        ("fetch 10.0.0.5/s3cr3t", "fetch 10.0.0.5/<path hidden>"),
+        ("fetch localhost:4873/s3cr3t", "fetch localhost:4873/<path hidden>"),
+        (
+            "//registry.example/s3cr3t/:_authToken=x",
+            "//registry.example/<path hidden>",
+        ),
+        (
+            "user:pw@registry.example/s3cr3t/pkg",
+            "<hidden>@registry.example/<path hidden>",
+        ),
+        (
+            "fetch %s/npm/repo/s3cr3t" % _ARTIFACT_HOST,
+            "fetch %s/<path hidden>" % _ARTIFACT_HOST,
+        ),
+        # A token as the host is still hidden, by rule (d).
+        (
+            "fetch FAKE0123456789abcdefghij.example/s3cr3t",
+            "fetch <hidden>/<path hidden>",
+        ),
+    ],
+    ids=[
+        "name",
+        "registry",
+        "ipv4-port",
+        "ipv4",
+        "name-port",
+        "npmrc-key",
+        "userinfo",
+        "artifact",
+        "token-host",
+    ],
+)
+def test_a_host_with_no_scheme_loses_its_path(text, shown):
+    assert audit_dependencies._redacted(text) == shown
+
+
+# A file path is no host: its first part has no dot, or the dotted part sits
+# inside the path, so it is kept, as is a host with nothing after its `/`.
+@pytest.mark.parametrize(
+    "text",
+    [
+        "npm error path /work/app/package.json",
+        "reading src/frontend/astro/package-lock.json",
+        "see node_modules/foo/bar.js/x",
+        "npm@10.2.4 /usr/bin",
+        "request to registry.example/ failed",
+        "at ./lib/x.js",
+    ],
+    ids=["absolute", "relative", "dotted-inside", "version", "bare-slash", "dot-slash"],
+)
+def test_a_file_path_is_no_host(text):
+    assert audit_dependencies._redacted(text) == text
+
+
 @pytest.mark.parametrize(
     "text, shown",
     [
@@ -1113,8 +1182,19 @@ _TIMED_REDACTION = (
         ("https://a@", 1600, False),
         ("a:", 8000, True),
         ("token=x y z ", 1600, False),
+        ("a.bc/x ", 1600, False),
+        (" a.a.a.a.a.a.a.a", 1000, True),
     ],
-    ids=["a", "token", "token-was", "url-userinfo", "bare-userinfo", "value-words"],
+    ids=[
+        "a",
+        "token",
+        "token-was",
+        "url-userinfo",
+        "bare-userinfo",
+        "value-words",
+        "bare-path",
+        "dotted",
+    ],
 )
 def test_a_hostile_line_is_redacted_within_a_second(unit, times, unchanged):
     argv = [sys.executable, "-c", _TIMED_REDACTION, str(_ROOT / "scripts")]

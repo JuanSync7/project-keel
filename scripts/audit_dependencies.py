@@ -107,6 +107,24 @@ _URL = re.compile(
     re.IGNORECASE,
 )
 _PATH_HIDDEN = "<path hidden>"
+_HIDDEN = "<hidden>"
+# A host with no scheme, as npm writes a registry in a `.npmrc` key or a
+# fetch line, is one of: a dotted name whose last label is letters, an IPv4
+# address, or any name with a port. It starts a word, or follows `//` or a
+# userinfo's `@`, so the dotted part of a file path's later segment is no
+# host. Its path, from the `/` on, is hidden as in (a); a host with nothing
+# after its `/` is left. It runs after (b) and (a'), so a secret word in the
+# path has had its value hidden, and that `<hidden>` is part of the path.
+_BARE_START = r"(?<![\w.\-~%+=/:])"
+_BARE_HOST = (
+    r"(?:[A-Za-z0-9\-]{1,63}\.){1,126}[A-Za-z]{2,63}\.?"
+    r"|\d{1,3}(?:\.\d{1,3}){3}"
+    r"|[A-Za-z0-9\-]{1,63}(?=:\d)"
+)
+_BARE_URL = re.compile(
+    r"%s((?://)?(?:%s)(?:%s)?)/(?:[^\s\"'<>,;]|%s)(?:[^\s\"'<>]|%s)*"
+    % (_BARE_START, _BARE_HOST, _PORT, _HIDDEN, _HIDDEN)
+)
 # A quoted value may lack its closing quote, as when the cut lands inside
 # it; it then runs to the end of the line, so no word of it is shown.
 _VALUE = r"(?:\"[^\"]*\"?|'[^']*'?|[^\s\"',;]+)"
@@ -179,10 +197,17 @@ _BARE_USERINFO = re.compile(r"(?<![\w/])[\w.\-]{1,64}:[^\s/]{1,256}@(?=[\w\-])")
 # run, `+`, `=` and `%`-escapes included: split there, every piece of a token
 # can be under 20 characters.
 _URL_HOST = r"(?i:(%s)(%s)?(%s)?)" % (_SCHEME, _HOST, _PORT)
+_BARE_URL_HOST = r"(?:(?<=//)|%s)([\w.\-]{1,253})(?=(?:%s)?/%s)" % (
+    _BARE_START,
+    _PORT,
+    re.escape(_PATH_HIDDEN),
+)
 _RESOLVER_HOST = r"(\b(?:getaddrinfo(?: E[A-Z_]{1,31})?|ENOTFOUND) )([^\s\"'<>,;]+)"
 _RUN = r"[A-Za-z0-9_\-+/=]{20,}"
 # One pass: at each place a host is tried first, then a bare run.
-_TOKEN_RUN = re.compile(r"%s|%s|%s" % (_URL_HOST, _RESOLVER_HOST, _RUN))
+_TOKEN_RUN = re.compile(
+    r"%s|%s|%s|%s" % (_URL_HOST, _RESOLVER_HOST, _BARE_URL_HOST, _RUN)
+)
 _BARE_RUN = re.compile(_RUN)
 _LETTER_AND_DIGIT = re.compile(r"(?=.*[A-Za-z])(?=.*[0-9])")
 # A DNS label, and the shape of npm's legacy token, a UUID: its hyphens split
@@ -198,7 +223,6 @@ _CREDENTIAL_CAUSE = re.compile(r"\bE40[13]\b|\b40[13]\b|authenticat", re.IGNOREC
 _REACH_CAUSE = re.compile(r"\b(?:ENOTFOUND|ECONNREFUSED|ETIMEDOUT)\b")
 _CREDENTIAL_ADVICE = "check the registry credentials in .npmrc (values not shown)"
 _REACH_ADVICE = "check the registry is reachable from this host"
-_HIDDEN = "<hidden>"
 _CUT = "<cut to %d characters>"
 # npm's closing pointer at its debug log, which names the log's path and not
 # the cause; when the path is split onto the next line, that line goes too.
@@ -431,11 +455,13 @@ def _host_shown(host):
 
 
 def _token_shown(match):
-    scheme, host, port, said, operand = match.groups()
+    scheme, host, port, said, operand, bare = match.groups()
     if scheme is not None:
         return scheme + _host_shown(host or "") + (port or "")
     if said is not None:
         return said + _host_shown(operand)
+    if bare is not None:
+        return _host_shown(bare)
     return _run_shown(match)
 
 
@@ -459,6 +485,7 @@ def _redacted(line):
     line = _SCHEME_VALUE.sub(_scheme_shown, line)
     line = _key_values_shown(line)
     line = _BARE_USERINFO.sub(_HIDDEN + "@", line)
+    line = _BARE_URL.sub(r"\1/" + _PATH_HIDDEN, line)
     return _TOKEN_RUN.sub(_token_shown, line)
 
 
