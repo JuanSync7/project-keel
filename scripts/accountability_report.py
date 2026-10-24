@@ -121,7 +121,8 @@ def main(argv=None) -> int:
     blind = unknown(corpus)
     print(
         "accountability: %d of %d nodes name no owner source, so their owner is "
-        "unknown -- rebuild the corpus with scripts/jobs/build_corpus.py%s"
+        "unknown -- repair the unreadable README.md above it (or state an owner "
+        "on the node), then run scripts/jobs/build_corpus.py%s"
         % (len(blind), total, ":" if blind else ".")
     )
     for n in _by_id(blind):

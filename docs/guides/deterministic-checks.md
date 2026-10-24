@@ -608,8 +608,9 @@ own line it counts the nodes that answer to `accountability.default_owner`
 (`owner_source: default`), listed by the `TBD` each answers to, since writing
 the real owner there repairs every node under it. Another line counts, and
 lists, the nodes that name no owner source (missing, null, or outside the
-CONVENTIONS §12 set): their owner is unknown, which is not `none`, and rebuilding the
-corpus repairs them. A last line counts the nodes with a real owner. `--json` lists the unowned nodes only, the shape
+CONVENTIONS §12 set): their owner is unknown, which is not `none`. build_corpus
+writes that where a `README.md` above the node cannot be read, so the line
+says to repair that `README.md`, or state an owner on the node, then rebuild. A last line counts the nodes with a real owner. `--json` lists the unowned nodes only, the shape
 `agents/index_enforcer` reads as its owner gaps. Does not fail the build.
 
 **Run.** `python scripts/accountability_report.py`

@@ -529,6 +529,11 @@ def test_the_report_prints_the_unknown_apart_and_never_counts_it_owned(
     text = capsys.readouterr().out
     assert "accountability: 1 of 8 nodes have no resolved owner" in text
     assert "accountability: 4 of 8 nodes name no owner source" in text
+    # build_corpus writes an unknown owner where a README.md above the node
+    # cannot be read, so rebuilding alone repeats it; the repair is the README.
+    (advice,) = [line for line in text.splitlines() if "name no owner source" in line]
+    assert "repair the unreadable README.md above it (or state an owner" in advice
+    assert "-- rebuild" not in advice, advice
     for node_id in ("u0", "u1", "u2", "u3"):
         assert " %s  (%s.md)" % (node_id, node_id) in text
     assert "accountability: 1 of 8 nodes have a real owner" in text

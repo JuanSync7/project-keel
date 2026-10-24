@@ -32,8 +32,9 @@ placeholder answers to `accountability.default_owner` when one is set
 by the `TBD` each answers to, because writing the real owner there repairs
 every node under it. A node that names no owner source at all (missing,
 null, or outside CONVENTIONS §12's set) is unknown, neither owned nor `none`,
-and the report counts it on its own line: the repair is to rebuild the
-corpus, not to name an owner.
+and the report counts it on its own line. build_corpus writes that where a
+`README.md` above the node cannot be read, so the repair is to repair that
+`README.md`, or to state an owner on the node, then rebuild the corpus.
 
 ## When to use
 - When the `index_enforcer` reports owner gaps, to enumerate exactly which
