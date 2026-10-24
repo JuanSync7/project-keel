@@ -361,7 +361,9 @@ version rather than a bare commit:
   snapshots, and a tool
   child can be the gate runner, and a SIGKILL to it before its own stop would
   cut make's SIGTERM grace short, lose the runner's structured result and
-  leave an applied edit not rolled back. The
+  leave an applied edit not rolled back. A margin that puts that sum past
+  `threading.TIMEOUT_MAX`, the time limit's own ceiling, is a config fault
+  too, the line naming the margin key and the most it can be. The
   keys are read from the tree the tool acts on, whose gate keys the gate
   runner reads: the `--root` of `scripts/doc_review.py` and
   `scripts/refactor_practice.py`, and the served root of each MCP server.

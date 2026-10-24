@@ -2,7 +2,7 @@
 title: Unit — resource_limits (a bounded child)
 kind: tests
 layer: n/a
-summary: scripts/resource_limits.py `run_bounded` starts a child through the child-process allowlist in a session of its own and returns its status and output; a child that runs past its time limit, and one whose output passes its byte cap, has its whole session ended and is refused as ChildTimedOut or ChildOutputTooLarge, naming the program, the limit and the key the caller says sets that limit, and a grandchild holding stdout or an unread stdin open after its parent exits holds the call for one drain window only, after which the parent's status and output are returned, not a timeout; a setsid grandchild, which leaves the session and so no session end reaches, leaves no reader or writer thread and no pipe open behind the call, and the call returns within its limit plus the drain window, timed out or not. An exception while the child runs ends its session. A process the child left in its session is ended and named in a log warning by pid and program, never by its arguments; a holder outside the session is named and not signalled. Each of these, proven in a child interpreter, ends the bounded child: a SIGTERM to a plain CLI with no handler (the child ends, then the CLI by SIGTERM), a SIGKILL to the runner (the watcher ends the child's session), and a server stopped by one signal returning from shutdown_owner while a request thread waits on a child (the watcher disabled in that probe, so only the owner's end is measured). An ignored SIGCHLD is set to its default for the run and put back, and off the main thread the run is refused as ChildSignalIgnored. A time limit past threading.TIMEOUT_MAX or NaN, and a byte cap that is no whole number or past sys.maxsize, are refused before a child starts; a byte cap past threading.TIMEOUT_MAX, a seconds constant, is accepted by run_bounded and by tool_limits. `shutdown_owner` makes one named owner of SIGTERM and SIGINT for a server: the first signal writes a line naming the owner and the signal and calls the owner's stop, or raises ShutdownRequested (no Exception, so a request's own handler cannot eat it) only where the server says it is idle, and a second signal, proven in a child that runs `run_bounded` under the owner, ends the bounded child's session (its pid no longer runs) and then the owner's process by that signal, SIGTERM and SIGINT alike; the handlers before it are put back. `cap_memory` sets RLIMIT_AS, proven in a child: an allocation past the cap is a MemoryError, one below it is not, and null says the cap is off; a cap past a hard limit the child lowered first sets the hard limit and the line says it was lowered to it. `serve_limits` reads config/project.json `transports.serve.memory_cap_mb` and `transports.serve.shutdown_grace_seconds`, refusing a value out of its bound by its key. Every child is a short Python one-liner under this interpreter; nothing reaches a network.
+summary: scripts/resource_limits.py `run_bounded` starts a child through the child-process allowlist in a session of its own and returns its status and output; a child that runs past its time limit, and one whose output passes its byte cap, has its whole session ended and is refused as ChildTimedOut or ChildOutputTooLarge, naming the program, the limit and the key the caller says sets that limit, and a grandchild holding stdout or an unread stdin open after its parent exits holds the call for one drain window only, after which the parent's status and output are returned, not a timeout; a setsid grandchild, which leaves the session and so no session end reaches, leaves no reader or writer thread and no pipe open behind the call, and the call returns within its limit plus the drain window, timed out or not. An exception while the child runs ends its session. A process the child left in its session is ended and named in a log warning by pid and program, never by its arguments; a holder outside the session is named and not signalled. Each of these, proven in a child interpreter, ends the bounded child: a SIGTERM to a plain CLI with no handler (the child ends, then the CLI by SIGTERM), a SIGKILL to the runner (the watcher ends the child's session), and a server stopped by one signal returning from shutdown_owner while a request thread waits on a child (the watcher disabled in that probe, so only the owner's end is measured). An ignored SIGCHLD is set to its default for the run and put back, and off the main thread the run is refused as ChildSignalIgnored. A time limit past threading.TIMEOUT_MAX or NaN, and a byte cap that is no whole number or past sys.maxsize, are refused before a child starts; a byte cap past threading.TIMEOUT_MAX, a seconds constant, is accepted by run_bounded and by tool_limits. tool_limits refuses a margin one past the most that leaves the gate keys plus it within threading.TIMEOUT_MAX, naming the margin and that most, and accepts that most. `shutdown_owner` makes one named owner of SIGTERM and SIGINT for a server: the first signal writes a line naming the owner and the signal and calls the owner's stop, or raises ShutdownRequested (no Exception, so a request's own handler cannot eat it) only where the server says it is idle, and a second signal, proven in a child that runs `run_bounded` under the owner, ends the bounded child's session (its pid no longer runs) and then the owner's process by that signal, SIGTERM and SIGINT alike; the handlers before it are put back. `cap_memory` sets RLIMIT_AS, proven in a child: an allocation past the cap is a MemoryError, one below it is not, and null says the cap is off; a cap past a hard limit the child lowered first sets the hard limit and the line says it was lowered to it. `serve_limits` reads config/project.json `transports.serve.memory_cap_mb` and `transports.serve.shutdown_grace_seconds`, refusing a value out of its bound by its key. Every child is a short Python one-liner under this interpreter; nothing reaches a network.
 """
 
 import contextlib
@@ -818,6 +818,45 @@ def test_a_tool_limit_that_does_not_outlast_the_gate_runner_is_refused(
         assert key in line
     assert "at least 73" in line
     assert line in capsys.readouterr().err
+
+
+def test_a_margin_no_tool_limit_can_cover_is_refused_naming_the_margin(
+    tmp_path, capsys
+):
+    # 60 + 2 * 5 leaves threading.TIMEOUT_MAX - 70 for the margin: one more and
+    # no agents.tool_timeout_seconds within its own ceiling meets the bound, so
+    # the fault is the margin's, not the tool limit's.
+    most = int(threading.TIMEOUT_MAX) - 70
+    root = _tools_project(
+        tmp_path,
+        {
+            "tool_timeout_seconds": int(threading.TIMEOUT_MAX),
+            "tool_max_output_bytes": 4096,
+            "tool_gate_margin_seconds": most + 1,
+        },
+    )
+    with pytest.raises(config_loader.WrongValue) as caught:
+        resource_limits.tool_limits(root)
+    line = "; ".join(caught.value.lines)
+    assert line.startswith(
+        "%s: agents.tool_gate_margin_seconds is %d"
+        % (config_loader.CONFIG_FILE, most + 1)
+    )
+    assert "at most %d" % most in line
+    assert line in capsys.readouterr().err
+
+
+def test_the_largest_margin_a_tool_limit_can_cover_is_accepted(tmp_path):
+    most = int(threading.TIMEOUT_MAX) - 70
+    root = _tools_project(
+        tmp_path,
+        {
+            "tool_timeout_seconds": int(threading.TIMEOUT_MAX),
+            "tool_max_output_bytes": 4096,
+            "tool_gate_margin_seconds": most,
+        },
+    )
+    assert resource_limits.tool_limits(root) == (int(threading.TIMEOUT_MAX), 4096)
 
 
 def test_the_shipped_tool_limits_outlast_the_shipped_gate_runner():

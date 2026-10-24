@@ -2,7 +2,7 @@
 title: resource_limits — a bounded child process, and a server's memory cap and stop
 kind: script
 layer: n/a
-summary: The one supervisor for a child process, which scripts/run_make_target.py and `run_bounded` both run on. `start_child` starts a program through the child-process allowlist (scripts/child_env.py build_child_env, called inside the spawn so check_X sees it) in a session of its own, and on POSIX starts a watcher beside it: a stdlib one-liner holding a pipe only this process writes to, so when this process dies without unwinding (SIGKILL included) the pipe reaches end of file and the watcher sends SIGKILL to every process group in the child's session. `supervised` holds one run: a SIGCHLD the caller ignores is set to its default for the run and put back afterwards (ChildSignalIgnored off the main thread, where Python cannot change it, before anything starts); a SIGTERM or SIGHUP the caller neither ignores nor gives to a ShutdownOwner ends the child's session and then this process as it would have ended; a stop signal that lands while the child is being started is deferred until its pid is known, then acts. `ChildSession` holds the child as a zombie (os.waitid WNOWAIT) until its session is ended, so no signal goes to an id that could pass to another process, lists the session's members through /proc (`session_members`), and ends them SIGTERM-then-SIGKILL after its grace; a child another waiter reaped is ChildReaped. `PipeReader` reads a pipe in a thread up to an optional byte cap, and names the processes still holding it open (`pipe_holders`). `run_bounded` feeds a program the caller's stdin text and returns a subprocess.CompletedProcess with its status and its output decoded as UTF-8. It waits on the child's own exit; what the child left running in its session after a short settle is sent SIGKILL and named in a log warning by pid and program name, never by its arguments; its pipes then get one shared drain window of _DRAIN_S (2) seconds, a module constant rather than a config key, since it bounds only how long output a stray process still writes is waited for, so the call returns within its limit plus that window. A process outside the session that still holds a pipe after the window is named in a log warning the same way and is not signalled; what it writes after the window is not read, every pipe is closed, every thread the call started has ended, and the child's own status and output are returned. A child still running when the caller's time limit passes has its session sent SIGKILL and is refused as ChildTimedOut; a child that writes more than the caller's byte cap to either stream has its session ended the same way and is refused as ChildOutputTooLarge. Both are RuntimeError subclasses whose message names the program by its file name only (never its arguments, which may carry a prompt), the limit, and the config key the caller says sets it. A limit below or equal to zero, a time limit past threading.TIMEOUT_MAX (where a thread wait overflows), and a byte cap that is no whole number or past sys.maxsize (the longest bytes object) are a ValueError before anything starts; an exception while the child runs (KeyboardInterrupt included) ends its session before it propagates; a program that does not exist is the FileNotFoundError the spawn raises. Off POSIX there is no session, process group or watcher, so only the child itself is ended, and a pipe a stray process holds is left open with its thread until the process ends. run_bounded reads no configuration of its own. For an agent's tool child and the MCP action server's doer, tool_limits reads config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes` through scripts/config_loader.py, and refuses as config_loader.WrongValue a time limit below `make_targets.gate_timeout_seconds` plus twice `make_targets.gate_stop_grace_seconds` plus `agents.tool_gate_margin_seconds`, since a tool child can be the gate runner, whose timed-out run waits its grace once for make's session and once more for make's output, and a SIGKILL to it first would cut make's SIGTERM grace short, lose its structured result and leave an applied edit not rolled back; run_tool is run_bounded under those two limits, with this checkout's allowlisted environment and no credential, its refusals naming the key. For a server entry point, serve_limits reads config/project.json `transports.serve` (memory_cap_mb, shutdown_grace_seconds) through scripts/config_loader.py; cap_memory sets RLIMIT_AS to that many megabytes and returns a line naming what it set and what it does not cover (a file in a memory-backed directory, the processes the server starts, resident memory), or that it set nothing (null, or no setrlimit on this platform); shutdown_owner owns SIGTERM and SIGINT while a server runs: the first writes `<name>: stopping on <signal>` to stderr and calls the server's stop, or raises ShutdownRequested, a BaseException, where the server waits idle; once the server returns after a stop signal, every supervised child still running has its session sent SIGKILL, so a request thread waiting on one cannot hold the exit for that child's whole limit; and a second signal sends that SIGKILL at once, then ends the process by that signal's default action, so its exit status names the signal (128 plus its number in a shell). A child that dies in the instant between its own spawn and its watcher's, a process a child moved to a session of its own with setsid, and a process that inherited the watcher's pipe through a fork with no exec are not reached. It writes no file.
+summary: The one supervisor for a child process, which scripts/run_make_target.py and `run_bounded` both run on. `start_child` starts a program through the child-process allowlist (scripts/child_env.py build_child_env, called inside the spawn so check_X sees it) in a session of its own, and on POSIX starts a watcher beside it: a stdlib one-liner holding a pipe only this process writes to, so when this process dies without unwinding (SIGKILL included) the pipe reaches end of file and the watcher sends SIGKILL to every process group in the child's session. `supervised` holds one run: a SIGCHLD the caller ignores is set to its default for the run and put back afterwards (ChildSignalIgnored off the main thread, where Python cannot change it, before anything starts); a SIGTERM or SIGHUP the caller neither ignores nor gives to a ShutdownOwner ends the child's session and then this process as it would have ended; a stop signal that lands while the child is being started is deferred until its pid is known, then acts. `ChildSession` holds the child as a zombie (os.waitid WNOWAIT) until its session is ended, so no signal goes to an id that could pass to another process, lists the session's members through /proc (`session_members`), and ends them SIGTERM-then-SIGKILL after its grace; a child another waiter reaped is ChildReaped. `PipeReader` reads a pipe in a thread up to an optional byte cap, and names the processes still holding it open (`pipe_holders`). `run_bounded` feeds a program the caller's stdin text and returns a subprocess.CompletedProcess with its status and its output decoded as UTF-8. It waits on the child's own exit; what the child left running in its session after a short settle is sent SIGKILL and named in a log warning by pid and program name, never by its arguments; its pipes then get one shared drain window of _DRAIN_S (2) seconds, a module constant rather than a config key, since it bounds only how long output a stray process still writes is waited for, so the call returns within its limit plus that window. A process outside the session that still holds a pipe after the window is named in a log warning the same way and is not signalled; what it writes after the window is not read, every pipe is closed, every thread the call started has ended, and the child's own status and output are returned. A child still running when the caller's time limit passes has its session sent SIGKILL and is refused as ChildTimedOut; a child that writes more than the caller's byte cap to either stream has its session ended the same way and is refused as ChildOutputTooLarge. Both are RuntimeError subclasses whose message names the program by its file name only (never its arguments, which may carry a prompt), the limit, and the config key the caller says sets it. A limit below or equal to zero, a time limit past threading.TIMEOUT_MAX (where a thread wait overflows), and a byte cap that is no whole number or past sys.maxsize (the longest bytes object) are a ValueError before anything starts; an exception while the child runs (KeyboardInterrupt included) ends its session before it propagates; a program that does not exist is the FileNotFoundError the spawn raises. Off POSIX there is no session, process group or watcher, so only the child itself is ended, and a pipe a stray process holds is left open with its thread until the process ends. run_bounded reads no configuration of its own. For an agent's tool child and the MCP action server's doer, tool_limits reads config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes` through scripts/config_loader.py, and refuses as config_loader.WrongValue a time limit below `make_targets.gate_timeout_seconds` plus twice `make_targets.gate_stop_grace_seconds` plus `agents.tool_gate_margin_seconds`, since a tool child can be the gate runner, whose timed-out run waits its grace once for make's session and once more for make's output, and a SIGKILL to it first would cut make's SIGTERM grace short, lose its structured result and leave an applied edit not rolled back, and refuses a margin that puts that sum past `agents.tool_timeout_seconds`'s own ceiling, threading.TIMEOUT_MAX, naming the margin and the most it can be; run_tool is run_bounded under those two limits, with this checkout's allowlisted environment and no credential, its refusals naming the key. For a server entry point, serve_limits reads config/project.json `transports.serve` (memory_cap_mb, shutdown_grace_seconds) through scripts/config_loader.py; cap_memory sets RLIMIT_AS to that many megabytes and returns a line naming what it set and what it does not cover (a file in a memory-backed directory, the processes the server starts, resident memory), or that it set nothing (null, or no setrlimit on this platform); shutdown_owner owns SIGTERM and SIGINT while a server runs: the first writes `<name>: stopping on <signal>` to stderr and calls the server's stop, or raises ShutdownRequested, a BaseException, where the server waits idle; once the server returns after a stop signal, every supervised child still running has its session sent SIGKILL, so a request thread waiting on one cannot hold the exit for that child's whole limit; and a second signal sends that SIGKILL at once, then ends the process by that signal's default action, so its exit status names the signal (128 plus its number in a shell). A child that dies in the instant between its own spawn and its watcher's, a process a child moved to a session of its own with setsid, and a process that inherited the watcher's pipe through a fork with no exec are not reached. It writes no file.
 """
 
 # NB: stdlib only, no `from __future__ import annotations`, no f-strings, no walrus,
@@ -19,7 +19,18 @@ import subprocess
 import sys
 import threading
 import time
-from typing import IO, Any, Callable, Dict, Iterator, List, Optional, Sequence, Tuple
+from typing import (
+    IO,
+    Any,
+    Callable,
+    Dict,
+    Iterator,
+    List,
+    NoReturn,
+    Optional,
+    Sequence,
+    Tuple,
+)
 
 from scripts import config_loader
 from scripts.child_env import build_child_env
@@ -914,7 +925,8 @@ def tool_limits(root: Optional[str] = None) -> Tuple[int, int]:
     config/project.json `agents` block (this checkout when None);
     config_loader.WrongValue for a value out of its bound, and for a time
     limit below make_targets.gate_timeout_seconds plus twice
-    make_targets.gate_stop_grace_seconds plus agents.tool_gate_margin_seconds."""
+    make_targets.gate_stop_grace_seconds plus agents.tool_gate_margin_seconds,
+    and for a margin that puts that sum past the time limit's own ceiling."""
     loaded = config_loader.read(_REPO if root is None else root)
     values = config_loader.resolve(
         loaded,
@@ -927,15 +939,33 @@ def tool_limits(root: Optional[str] = None) -> Tuple[int, int]:
     cap = values[_TOOL_OUTPUT]
     # A timed-out gate run spends the grace twice: ChildSession.end waits it
     # for make's session, then the runner waits it again for make's output.
-    least = values[_GATE_TIMEOUT] + 2 * values[_GATE_GRACE] + values[_GATE_MARGIN]
+    gate = values[_GATE_TIMEOUT] + 2 * values[_GATE_GRACE]
+    least = gate + values[_GATE_MARGIN]
     assert isinstance(timeout, int) and isinstance(cap, int)  # the KEYS rows' type
+    # The time limit's row stops at threading.TIMEOUT_MAX, so a margin that puts
+    # the bound past it leaves no tool limit to accept: the fault is the margin's.
+    most_margin = int(threading.TIMEOUT_MAX) - gate
+    if values[_GATE_MARGIN] > most_margin:
+        _refuse(
+            "%s: %s is %d; accepted: at most %d, so that %s plus twice %s plus "
+            "it stays within %s's ceiling, threading.TIMEOUT_MAX"
+            % (
+                config_loader.CONFIG_FILE,
+                _dotted(_GATE_MARGIN),
+                values[_GATE_MARGIN],
+                most_margin,
+                _dotted(_GATE_TIMEOUT),
+                _dotted(_GATE_GRACE),
+                _dotted(_TOOL_TIMEOUT),
+            )
+        )
     if timeout < least:
         # A tool child may be scripts/run_make_target.py. A SIGKILL to it
         # before its timeout path ends has the watcher send make's session
         # SIGKILL at once, so make's SIGTERM grace is cut short, the runner's
         # structured result is lost, and an applied edit is not rolled back;
         # the order is refused, not trusted.
-        line = (
+        _refuse(
             "%s: %s is %d; accepted: at least %d, %s plus twice %s plus %s, so "
             "a tool that runs a gate is not ended before the gate runner "
             "returns its result"
@@ -949,10 +979,13 @@ def tool_limits(root: Optional[str] = None) -> Tuple[int, int]:
                 _dotted(_GATE_MARGIN),
             )
         )
-        # The loader's contract for a ConfigError: its lines are on stderr.
-        sys.stderr.write(line + "\n")
-        raise config_loader.WrongValue(config_loader.CONFIG_FILE, [line])
     return timeout, cap
+
+
+def _refuse(line: str) -> NoReturn:
+    # The loader's contract for a ConfigError: its lines are on stderr.
+    sys.stderr.write(line + "\n")
+    raise config_loader.WrongValue(config_loader.CONFIG_FILE, [line])
 
 
 def run_tool(
