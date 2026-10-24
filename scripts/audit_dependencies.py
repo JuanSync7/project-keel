@@ -240,8 +240,11 @@ _KEY = re.compile(
 _DONE_VALUE = re.compile(r"<hidden>|(?:Bearer|Basic)\b", re.IGNORECASE)
 # A scheme name's `realm=` parameter, quoted or not, as a registry's
 # WWW-Authenticate challenge sends it and npm-registry-fetch prints it
-# ('Unable to authenticate, need: ' + the header). Each form is bounded, so a
-# realm with no closing quote is no realm and its text is judged.
+# ('Unable to authenticate, need: ' + the header). Each form is read at most
+# 256 characters, so an unquoted realm longer than that keeps its first 256
+# and the rest is judged as a word glued to it (`<hidden>`), and a quoted one
+# whose closing quote lies past 256, or is missing, is no realm: its quoted
+# word is hidden whole. No secret word is read inside a kept realm.
 _REALM_FORMS = r"realm=(?:\"[^\"]{0,256}\"|[^\s\",;]{0,256})"
 _REALM = re.compile(r"(?i:%s)" % _REALM_FORMS)
 # The run of done values an assignment opens with, a scheme name's

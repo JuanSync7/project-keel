@@ -1177,7 +1177,11 @@ each rule rewrites only its own span, so the cause (`ENOTFOUND`, `E401`,
   after `Bearer` or `Basic`, quoted or not and up to 256 characters, is kept
   as written, so npm-registry-fetch's `Unable to authenticate, need: Basic
   realm="Sonatype Nexus Repository Manager"` reads in full, and the words
-  after it are judged.
+  after it are judged. An unquoted realm longer than 256 characters shows its
+  first 256 and then `<hidden>`; a quoted one whose closing quote lies past
+  256 characters is hidden whole (`realm=<hidden>`). Inside a kept quoted
+  realm the secret-word rule is off: `realm="password <value>"` shows the
+  value.
 - **A secret word** (`auth`, `token`, `password`, `passwd`, `secret`, `key`,
   `credential` or `cookie`, in any case, inside a longer key too) hides the
   value after it, by how the value is stated. After `=` or `:`, up to two
