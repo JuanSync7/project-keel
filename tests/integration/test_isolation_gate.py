@@ -2,7 +2,7 @@
 title: Integration — a test that reaches outside its tier fails, named
 kind: tests
 layer: n/a
-summary: Runs the shipped conftest over the tests/fixtures/isolation case files in a scratch project of their own, with a scratch root and a basetemp of the run's own and a directory beside the project that neither contains. Each outside reach fails (a socket to a routable address under unit, a write, a sqlite database, a write whose refusal the test swallows; a mode change, a time change direct or through a link, a sendmsg to a routable address, an AF_UNIX bind, a file in a `__pycache__` that is not bytecode, a `file:` database name opened in the checkout) and each inside one passes, a tree copied with a link that points outside among them, and the count is exact, never zero. The failure names the test, its phase and tier, the event, the target and the fix. An exemption with a reason in config/project.json `tests.isolation.exempt.<axis>` turns its case green; an exemption whose test ran and reached nothing on that axis fails the run, one whose test did not run is not judged, and a blank reason is refused before any test runs. The closest tier marker wins, a reach under xfail fails rather than counting as the expected failure, and the store_copy fixture hands a test its own copy of a listed store, leaving the live one unchanged, while a direct open of the live store, before a copy, after one and after one that failed, and a request for an unlisted one fail naming the key.
+summary: Runs the shipped conftest over the tests/fixtures/isolation case files in a scratch project of their own, with a scratch root and a basetemp of the run's own and a directory beside the project that neither contains. Each outside reach fails (a socket to a routable address under unit, a write, a sqlite database, a write whose refusal the test swallows; a mode change, a time change direct or through a link, a sendmsg to a routable address, an AF_UNIX bind, a file in a `__pycache__` that is not bytecode, a `file:` database name opened in the checkout) and each inside one passes, a tree copied with a link that points outside among them, and the count is exact, never zero. The failure names the test, its phase and tier, the event, the target and the fix. An exemption with a reason in config/project.json `tests.isolation.exempt.<axis>` turns its case green; an exemption whose test ran and reached nothing on that axis fails the run, one whose test did not run is not judged, and a blank reason is refused before any test runs. The closest tier marker wins, a reach under xfail fails rather than counting as the expected failure, and the store_copy fixture hands a test its own copy of a listed store, leaving the live one unchanged, while a direct open of the live store, before a copy, after one and after one that failed, and a request for an unlisted one fail naming the key. Under `-n auto` the worker count is config/project.json `tests.workers` and a count the loader refuses exits 4; the exemption check judges across workers, and a worker that dies leaves it unjudged and the run red; `--expiring-tier-record` is refused under workers, exit 4 with no record written, and runs when `-n auto` resolves to one process.
 """
 
 import json
@@ -281,6 +281,37 @@ def test_a_worker_that_dies_leaves_the_exemption_check_unjudged_and_red(tmp_path
     code, out, _outcomes = _run(tmp_path, root, *_WORKERS, "-k", "inside or dies")
     assert code == 1, out[-3000:]
     assert "ended without its exemption record" in out, out[-3000:]
+
+
+def _recording_project(tmp_path, workers):
+    """A scratch project that can record the expiring tier's findings."""
+    root = _project(tmp_path, ["reach"], workers=workers)
+    for rel in ("scripts/expiring_tier.py", "scripts/expiring_tier_data.py"):
+        shutil.copy(str(_ROOT / rel), str(root / rel))
+    return root
+
+
+@pytest.mark.parametrize("count", ["2", "auto"])
+def test_the_expiring_tier_record_is_refused_under_workers(tmp_path, count):
+    root = _recording_project(tmp_path, workers=2)
+    record = tmp_path / "record.json"
+    code, out, outcomes = _run(
+        tmp_path, root, "-n", count, "--expiring-tier-record=%s" % record
+    )
+    assert code == 4 and not outcomes, out[-3000:]
+    assert "run it without -n" in out, out[-3000:]
+    assert not record.exists(), out[-3000:]
+
+
+def test_the_expiring_tier_record_runs_when_auto_resolves_to_one_process(tmp_path):
+    root = _recording_project(tmp_path, workers=0)
+    record = tmp_path / "record.json"
+    code, out, outcomes = _run(
+        tmp_path, root, *_WORKERS, "-k", "inside", "--expiring-tier-record=%s" % record
+    )
+    assert len(outcomes) == 3 and not _red(outcomes), out[-3000:]
+    assert code == 0, out[-3000:]
+    assert json.loads(record.read_text(encoding="utf-8")) == {}, out[-3000:]
 
 
 @pytest.mark.parametrize("reason", ["", "   "])
