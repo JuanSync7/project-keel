@@ -2,7 +2,7 @@
 title: E2E — showcase visitor journey
 kind: tests
 layer: n/a
-summary: A visitor walks the whole showcase surface over a real socket - every page payload, every curated link into the live corpus, the owner source each node payload names, a search, and the llms.txt files - against the REST server running as its own process; and a confidential node in a scratch corpus, absent from every route of a real server over it and from every file of the static export.
+summary: A visitor walks the whole showcase surface over a real socket - every page payload, every curated link into the live corpus, the owner source each node payload names, a search, and the llms.txt files - against the REST server running as its own process; and a confidential node in a scratch corpus built by the real build_corpus and link_corpus, which an internal doc links to, absent from every route of a real server over it and from every file of the static export: no served page, node detail, search or llms file names its id or its title.
 """
 
 import json
@@ -209,40 +209,65 @@ app.include_router(build_showcase_router({root!r}))
 """
 
 
-def _doc(doc_id, body, visibility=None):
+def _doc(doc_id, body, visibility=None, title=None):
+    title = title or doc_id
     head = "---\ntitle: %s\nkind: doc\nsummary: About %s.\nid: %s\nowner: alice\n" % (
-        doc_id,
-        doc_id,
+        title,
+        title,
         doc_id,
     )
     if visibility is not None:
         head += "visibility: %s\n" % visibility
-    return head + "---\n# %s\n\n## Zebra part\n\n%s\n" % (doc_id, body)
+    return head + "---\n# %s\n\n## Zebra part\n\n%s\n" % (title, body)
+
+
+# The confidential doc's id and title: no served page may name either. The
+# id is not "secret" because the open doc's link text names its path.
+_HIDDEN_ID, _HIDDEN_TITLE = "hush-plan", "Hush plan"
 
 
 def _confidential_project(root):
-    """A scratch project whose corpus holds an internal doc and a confidential
-    README whose body is the codeword; returns the confidential node ids."""
+    """A scratch project whose corpus, built by the real build_corpus and
+    link_corpus, holds an internal doc that links to a confidential README
+    whose body is the codeword; returns the confidential node ids."""
     sys.path.insert(0, str(_ROOT / "scripts" / "jobs"))
     import build_corpus
+    import link_corpus
 
     files = {
         "config/project.json": "{}",
-        "docs/open.md": _doc("open", "zebra text"),
-        "docs/secret/README.md": _doc("secret", _CODEWORD, "confidential"),
+        "docs/open.md": _doc(
+            "open", "zebra text, and [the zebra plan](secret/README.md)"
+        ),
+        "docs/secret/README.md": _doc(
+            _HIDDEN_ID, _CODEWORD, "confidential", title=_HIDDEN_TITLE
+        ),
     }
     for rel, text in files.items():
         path = root / rel
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8")
-    nodes = build_corpus.build_corpus(str(root))["nodes"]
+    nodes = link_corpus.link_corpus(build_corpus.build_corpus(str(root)))["nodes"]
     (root / "wiki").mkdir()
     (root / "wiki" / "corpus.json").write_text(
         json.dumps({"schema_version": 1, "nodes": nodes}), encoding="utf-8"
     )
     hidden = sorted(n["node_id"] for n in nodes if n["visibility"] == "confidential")
-    assert hidden, "the scratch corpus must hold a confidential node"
+    assert _HIDDEN_ID in hidden, "the scratch corpus must hold the confidential doc"
+    # The leak's shape is only tested if a served node's link names a hidden one.
+    assert any(
+        e["to"] in hidden
+        for n in nodes
+        if n["visibility"] != "confidential"
+        for e in n.get("links", [])
+    ), "the open doc must link to the confidential one"
     return hidden
+
+
+def _names_hidden(text, hidden):
+    """The hidden ids and the hidden title that *text* names."""
+    named = [node_id for node_id in hidden if node_id in text]
+    return named + ([_HIDDEN_TITLE] if _HIDDEN_TITLE.lower() in text.lower() else [])
 
 
 @pytest.mark.endpoint("rest GET /api/overview")
@@ -253,9 +278,11 @@ def _confidential_project(root):
 @pytest.mark.endpoint("rest GET /llms-full.txt")
 def test_a_confidential_node_reaches_neither_the_server_nor_the_static_site(tmp_path):
     """The default `corpus.served_visibilities` serves public and internal
-    nodes. A confidential README is absent from every route of a real server
-    over that corpus, a request for it is an unknown node, and the static
-    export that make site-static publishes holds it in no file."""
+    nodes. A confidential README that an internal doc links to is absent from
+    every route of a real server over that corpus: no served page, node
+    detail, search or llms file names its id or its title, a request for it
+    is an unknown node, and the static export that make site-static
+    publishes holds it in no file."""
     optional_deps.importorskip("uvicorn", extra="transport")
     optional_deps.importorskip("fastapi", extra="transport")
     project = tmp_path / "project"
@@ -271,12 +298,18 @@ def test_a_confidential_node_reaches_neither_the_server_nor_the_static_site(tmp_
         encoding="utf-8",
     )
     pages = ["/api/overview", "/api/wiki/tree", "/llms.txt", "/llms-full.txt"]
-    pages += ["/api/search?q=zebra+secret+plan&limit=%d" % _SEARCH_LIMIT]
+    pages += ["/api/search?q=zebra+secret+hush+plan&limit=%d" % _SEARCH_LIMIT]
     with live_server.live_server(
         str(_ROOT), str(app_dir), app="scratch_showcase_app:app"
     ) as server:
         status, body = server.json("GET", "/api/wiki/node?id=open")
         assert status == 200 and "zebra text" in body["markdown"]
+        corpus = json.loads((project / "wiki" / "corpus.json").read_text("utf-8"))
+        served = sorted(
+            n["node_id"] for n in corpus["nodes"] if n["node_id"] not in hidden
+        )
+        assert "open" in served
+        pages += ["/api/wiki/node?id=%s" % quote(node_id) for node_id in served]
         for node_id in hidden:
             status, body = server.json("GET", "/api/wiki/node?id=%s" % quote(node_id))
             assert status == 404 and body == {"detail": "unknown node %r" % node_id}
@@ -285,6 +318,7 @@ def test_a_confidential_node_reaches_neither_the_server_nor_the_static_site(tmp_
             text = raw.decode("utf-8")
             assert status == 200, page
             assert _CODEWORD not in text and "docs/secret" not in text, page
+            assert _names_hidden(text, hidden) == [], page
 
     site = tmp_path / "site"
     export = subprocess.run(
@@ -305,6 +339,7 @@ def test_a_confidential_node_reaches_neither_the_server_nor_the_static_site(tmp_
     written = sorted(p for p in site.rglob("*") if p.is_file())
     assert written, "the export wrote nothing"
     for path in written:
-        assert _CODEWORD not in path.read_text(encoding="utf-8"), path
+        text = path.read_text(encoding="utf-8")
+        assert _CODEWORD not in text and _names_hidden(text, hidden) == [], path
     nodes = json.loads((site / "api" / "wiki" / "nodes.json").read_text("utf-8"))
     assert "open" in nodes and not set(hidden) & set(nodes)
