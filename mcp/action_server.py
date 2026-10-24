@@ -2,7 +2,7 @@
 title: MCP action server
 layer: backend
 public_api: no
-summary: State-changing MCP tools that delegate to scripts/jobs doers; defaults to dry-run. A doer runs through scripts/resource_limits.py run_tool, held to config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes`; past either its process group is ended and the tool call is an error naming the key. `main` is the entry: it serves through mcp/protocol.py run_stdio_server and exits 0 once the loop ends, or CONFIG through scripts/exit_codes.py report, naming the key, when a setting it reads, those two included, is refused before it serves.
+summary: State-changing MCP tools that delegate to scripts/jobs doers; defaults to dry-run. A doer runs through scripts/resource_limits.py run_tool, held to config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes`; past either its session is ended and the tool call is an error naming the key. `main` is the entry: it serves through mcp/protocol.py run_stdio_server and exits 0 once the loop ends, or CONFIG through scripts/exit_codes.py report, naming the key, when a setting it reads, those two included, is refused before it serves.
 """
 
 from __future__ import annotations

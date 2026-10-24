@@ -2,7 +2,7 @@
 title: Practice refactor brain
 layer: backend
 public_api: no
-summary: Plan: walk the corpus KG -> gate a green baseline -> (propose -> apply+gate+rollback) one chunk per step; on a durable Runtime. An execute run needs its approved count of model calls: every call goes through one run's models.ModelMeter, and a resumed run is first checked against the approved model and count (models.approve_resume). Every tool child runs through scripts/resource_limits.py run_tool, held to the refactored root's config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes`, the root whose make_targets gate keys the gate runner it starts reads, so the time limit is checked against that runner's own limit: past either its process group is ended and the step raises ChildTimedOut or ChildOutputTooLarge naming the key.
+summary: Plan: walk the corpus KG -> gate a green baseline -> (propose -> apply+gate+rollback) one chunk per step; on a durable Runtime. An execute run needs its approved count of model calls: every call goes through one run's models.ModelMeter, and a resumed run is first checked against the approved model and count (models.approve_resume). Every tool child runs through scripts/resource_limits.py run_tool, held to the refactored root's config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes`, the root whose make_targets gate keys the gate runner it starts reads, so the time limit is checked against that runner's own limit: past either its session is ended and the step raises ChildTimedOut or ChildOutputTooLarge naming the key.
 """
 
 from __future__ import annotations
@@ -62,7 +62,7 @@ def _run(args, stdin=None, *, root):
     apply_refactor this way.
     Bounded by scripts/resource_limits.py run_tool: past config/project.json
     agents.tool_timeout_seconds or agents.tool_max_output_bytes the child's
-    process group is ended and ChildTimedOut or ChildOutputTooLarge names the key.
+    session is ended and ChildTimedOut or ChildOutputTooLarge names the key.
     Both keys are read from *root*, the tree the tool acts on: the gate runner
     reads its make_targets limit there, so the time limit is checked against
     the limit that runner really uses, never this checkout's.

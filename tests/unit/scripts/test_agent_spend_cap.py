@@ -200,13 +200,13 @@ def test_a_setting_the_agent_reads_and_the_loader_refuses_is_a_config_refusal(
 _TOOL_CLIS = sorted(n for n in _CLIS if n != "on_stop_triage")
 _TOOL_ENDS = {
     "timed-out": resource_limits.ChildTimedOut(
-        "run_make_target.py did not finish within 15000 seconds, so its process "
-        "group was ended; the limit is config/project.json "
+        "run_make_target.py did not finish within 15000 seconds, so its session "
+        "was ended; the limit is config/project.json "
         "agents.tool_timeout_seconds"
     ),
     "flooded": resource_limits.ChildOutputTooLarge(
-        "query_corpus.py wrote more than 64 bytes to stdout, so its process "
-        "group was ended; the limit is config/project.json "
+        "query_corpus.py wrote more than 64 bytes to stdout, so its session "
+        "was ended; the limit is config/project.json "
         "agents.tool_max_output_bytes"
     ),
 }

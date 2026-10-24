@@ -2,7 +2,7 @@
 title: Index enforcer brain
 layer: backend
 public_api: no
-summary: Plan: gate -> build -> link -> report -> (durable fill loop) -> commit; run on a neutral Runtime. A filling run needs its approved count of model calls: every fill goes through one run's models.ModelMeter, and a resumed run is first checked against the approved model and count (models.approve_resume). Every tool child runs through scripts/resource_limits.py run_tool, held to config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes`: past either its process group is ended and the step raises ChildTimedOut or ChildOutputTooLarge naming the key.
+summary: Plan: gate -> build -> link -> report -> (durable fill loop) -> commit; run on a neutral Runtime. A filling run needs its approved count of model calls: every fill goes through one run's models.ModelMeter, and a resumed run is first checked against the approved model and count (models.approve_resume). Every tool child runs through scripts/resource_limits.py run_tool, held to config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes`: past either its session is ended and the step raises ChildTimedOut or ChildOutputTooLarge naming the key.
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/integration/test_index_enforcer_durability.py
@@ -57,7 +57,7 @@ def _run(args):
     run under a compatible Python rather than a hardcoded 'python3' on PATH.
     Bounded by scripts/resource_limits.py run_tool: past config/project.json
     agents.tool_timeout_seconds or agents.tool_max_output_bytes the child's
-    process group is ended and ChildTimedOut or ChildOutputTooLarge names the key.
+    session is ended and ChildTimedOut or ChildOutputTooLarge names the key.
     """
     proc = run_tool([sys.executable] + args, cwd=_REPO)
     return proc.returncode, proc.stdout, proc.stderr

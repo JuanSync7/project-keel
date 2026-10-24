@@ -747,8 +747,8 @@ KEYS = tuple(
                 "int",
                 67108864,
                 "the bytes an agent's tool child, or the MCP action server's "
-                "doer, may write to stdout or to stderr before its process "
-                "group is ended and the call refused",
+                "doer, may write to stdout or to stderr before its session is "
+                "ended and the call refused",
                 accepts=(
                     _one_to_most_bytes,
                     "a value >= 1 and <= %s" % _MOST_SECONDS_TEXT,
@@ -781,7 +781,7 @@ KEYS = tuple(
                 "int",
                 15000,
                 "the seconds an agent's tool child, or the MCP action server's "
-                "doer, may run before its process group is ended and the call "
+                "doer, may run before its session is ended and the call "
                 "refused; it must be at least make_targets.gate_timeout_seconds "
                 "plus twice make_targets.gate_stop_grace_seconds plus "
                 "agents.tool_gate_margin_seconds",
