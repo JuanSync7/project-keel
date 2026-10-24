@@ -14,7 +14,6 @@ import os
 import re
 import subprocess
 import sys
-import urllib.parse
 
 _SCRIPTS = os.path.dirname(os.path.abspath(__file__))
 if _SCRIPTS not in sys.path:
@@ -99,7 +98,10 @@ _DECLARING_FIELDS = (
 # "a" * 16000.
 # A URL's parts, shared by (a) and the spans (d) skips so the two cannot
 # drift. A host is a bracketed IPv6 address, with its zone id if it has one,
-# or a run of the characters a registry name may hold; a port is at most five
+# or a run of the characters a registry name may hold. The zone id's run has
+# no bound, so a zone of any length is one host whose zone is hidden rather
+# than no host at all: its `%` fixes where it starts, since the address part
+# holds none, and `]` where it ends. A port is at most five
 # digits, so a longer number is no port and falls into the path. Whatever
 # follows the host and port is the path unless it opens with a comma or
 # semicolon, which end the URL as a list does; the path then runs up to a
@@ -107,7 +109,7 @@ _DECLARING_FIELDS = (
 # stray character is hidden with it. A scheme is at most 16 characters, too
 # short for (d), so keeping it can keep no token.
 _SCHEME = r"\b[a-z][a-z0-9+.\-]{0,15}://"
-_HOST = r"\[[0-9a-f:.]{2,45}(?:%[\w.\-~%]{1,32})?\]|[\w.\-~%+=]{1,253}"
+_HOST = r"\[[0-9a-f:.]{2,45}(?:%[\w.\-~%]*)?\]|[\w.\-~%+=]{1,253}"
 _PORT = r":\d{1,5}(?!\d)"
 # A userinfo is everything before the last `@` of the authority, which ends
 # at a `/`, `?` or `#`: the run is greedy and gives back to its last `@`, so a
@@ -528,11 +530,11 @@ def _is_hidden_run(run):
 
 def _address_shown(host):
     """The bracketed IPv6 *host* whole, or with its zone id hidden when that
-    id, its `%25` escape decoded, is longer than any interface name."""
+    id, the `%25` that opens it decoded, is longer than any interface name."""
     at = host.find("%")
     if at < 0:
         return host
-    zone = urllib.parse.unquote(host[at:-1]).removeprefix("%")
+    zone = host[at + 1 : -1].removeprefix("25")
     return host[:at] + "%" + _HIDDEN + "]" if len(zone) > _ZONE_LIMIT else host
 
 

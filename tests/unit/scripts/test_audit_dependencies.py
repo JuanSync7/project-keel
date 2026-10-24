@@ -1174,8 +1174,10 @@ def test_a_path_after_an_odd_host_or_port_is_hidden(text, shown):
 
 
 # An IPv6 zone id names an interface, and no interface name is longer than 15
-# characters (Linux's IFNAMSIZ less its NUL), so a longer zone id, `%25`
-# escape decoded, is hidden; an interface name or number is kept.
+# characters (Linux's IFNAMSIZ less its NUL), so a longer zone id is hidden;
+# an interface name or number is kept. Only the `%25` that opens a zone id is
+# decoded, since that is the escape RFC 6874 puts there: any other `%XY` is
+# three characters of the id, so an escape cannot shrink a token under 16.
 @pytest.mark.parametrize(
     "zone, shown",
     [
@@ -1187,7 +1189,10 @@ def test_a_path_after_an_odd_host_or_port_is_hidden(text, shown):
         ("%25FAKE0123456789abcdefghij", "%<hidden>"),
         ("%FAKE0123456789abcdefghij", "%<hidden>"),
         ("%25abcdefghijklmnop", "%<hidden>"),
-        ("%25ab%2Dcd%2Def%2Dgh", "%25ab%2Dcd%2Def%2Dgh"),
+        ("%25ab%2Dcd%2Def%2Dgh", "%<hidden>"),
+        ("%A1A1A1A1A1A1A1A1", "%<hidden>"),
+        ("%25" + "a" * 40, "%<hidden>"),
+        ("%25" + "a" * 300, "%<hidden>"),
     ],
     ids=[
         "escaped",
@@ -1199,6 +1204,9 @@ def test_a_path_after_an_odd_host_or_port_is_hidden(text, shown):
         "raw-token",
         "sixteen",
         "escaped-dashes",
+        "raw-escapes",
+        "longer-than-a-host-run",
+        "longer-than-a-host",
     ],
 )
 def test_an_ipv6_zone_id_longer_than_an_interface_name_is_hidden(zone, shown):
@@ -1421,6 +1429,7 @@ _TIMED_REDACTION = (
         ("password the is ", 1600, True),
         ("token " + "x " * 20, 200, False),
         ("password=a,b;c'd e=f ", 1600, False),
+        ("http://[::1%25" + "a" * 60 + "]/x ", 300, False),
     ],
     ids=[
         "a",
@@ -1435,6 +1444,7 @@ _TIMED_REDACTION = (
         "clause-words",
         "clause-bound",
         "assigned-run",
+        "zone-id",
     ],
 )
 def test_a_hostile_line_is_redacted_within_a_second(unit, times, unchanged):
