@@ -1171,8 +1171,9 @@ each rule rewrites only its own span, so the cause (`ENOTFOUND`, `E401`,
   vocabulary in `scripts/audit_dependencies_data.py`: `LINKING_WORDS`
   (`is`, `was`, `set`, `to`, `for`, `the`, `not`, ...) and `CAUSE_WORDS`
   (`required`, `expired`, `invalid`, `incorrect`, `missing`, `denied`,
-  `self-signed`, `empty`, ...), each cause word mapped to the npm, Node.js,
-  libuv or HTTP message it was read from. The cause words include the HTTP
+  `self-signed`, `forbidden`, ...), each cause word mapped to the npm or
+  Node.js message it was read from, which holds it (the unit test checks
+  that). The cause words include the HTTP
   methods `GET`, `HEAD`, `POST`, `PUT`, `PATCH` and `DELETE`, because
   npm-registry-fetch writes an HTTP error as `status statusText - METHOD uri`
   and the secret word `auth` inside `Unauthorized` opens a clause there, so

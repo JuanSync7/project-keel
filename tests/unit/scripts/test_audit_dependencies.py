@@ -1089,6 +1089,23 @@ def test_each_vocabulary_word_is_kept_and_a_value_beside_it_hidden(word):
     )
 
 
+# A cause word is one an npm or Node.js message prints, and its source quotes
+# that message, so the word stands in the quote.
+@pytest.mark.parametrize("word", sorted(audit_dependencies_data.CAUSE_WORDS))
+def test_each_cause_word_stands_in_the_message_it_cites(word):
+    assert word in audit_dependencies_data.CAUSE_WORDS[word].lower()
+
+
+# A word no message npm or Node.js prints holds is no cause word, so a value
+# that is one is hidden: Node.js prints `connect ECONNREFUSED`, not
+# "refused", and "empty" stood only in a code comment.
+@pytest.mark.parametrize("word", ["empty", "refused"])
+def test_a_word_no_printed_message_holds_is_hidden(word):
+    assert audit_dependencies._redacted("npm error token %s" % word) == (
+        "npm error token <hidden>"
+    )
+
+
 # The same places still hide a value: after `=` or `:` whatever it is, since
 # an assignment states one, and after prose any value that is no plain word
 # or that is quoted.
@@ -1145,8 +1162,8 @@ def test_a_value_that_is_no_plain_word_is_still_hidden(text, shown):
         ('password="a user=b" c', "password=<hidden>"),
         # Prose keeps the word after its value: only an assignment runs on.
         (
-            "npm error password %s was refused" % _VALUE,
-            "npm error password <hidden> was refused",
+            "npm error password %s was rejected" % _VALUE,
+            "npm error password <hidden> was rejected",
         ),
     ],
     ids=[
