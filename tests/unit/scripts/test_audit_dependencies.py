@@ -871,8 +871,10 @@ def test_a_path_after_an_odd_host_or_port_is_hidden(text, shown):
         "FAKE1234-abcd5678-WXYZ9012",
         "0123456789abcdef-0123456789abcdef",
         "0123456789-abcdef-0123456789",
+        # One letter alone is no word, even outside a to f.
+        "Q-0123456789abcdef-0123456789",
     ],
-    ids=["mixed-parts", "hex-parts", "hex-word"],
+    ids=["mixed-parts", "hex-parts", "hex-word", "one-letter-part"],
 )
 @pytest.mark.parametrize(
     "form", ["npm error ENOTFOUND %s.registry.example", "request to https://%s.x/p"]
