@@ -2,7 +2,7 @@
 title: Unit — resource_limits (a bounded child)
 kind: tests
 layer: n/a
-summary: scripts/resource_limits.py `run_bounded` starts a child through the child-process allowlist in its own process group and returns its status and output; a child that runs past its time limit, and one whose output passes its byte cap, has its whole group ended and is refused as ChildTimedOut or ChildOutputTooLarge, naming the program, the limit and the key the caller says sets that limit, and a grandchild holding stdout or an unread stdin open after its parent exits holds the call for one drain window only, after which the parent's status and output are returned, not a timeout; a setsid grandchild, which no group kill reaches, leaves no reader or writer thread and no pipe open behind the call, and the call returns within its limit plus the drain window, timed out or not. An exception while the child runs ends its group. A process the child left in its session is ended and named in a log warning by pid and program, never by its arguments; a holder outside the session is named and not signalled. Each of these, proven in a child interpreter, ends the bounded child: a SIGTERM to a plain CLI with no handler (the child ends, then the CLI by SIGTERM), a SIGKILL to the runner (the watcher ends the child's session), and a server stopped by one signal returning from shutdown_owner while a request thread waits on a child (the watcher disabled in that probe, so only the owner's end is measured). An ignored SIGCHLD is set to its default for the run and put back, and off the main thread the run is refused as ChildSignalIgnored. A limit past threading.TIMEOUT_MAX or NaN is refused before a child starts. `shutdown_owner` makes one named owner of SIGTERM and SIGINT for a server: the first signal writes a line naming the owner and the signal and calls the owner's stop, or raises ShutdownRequested (no Exception, so a request's own handler cannot eat it) only where the server says it is idle, and a second signal, proven in a child that runs `run_bounded` under the owner, ends the bounded child's process group (its pid no longer runs) and then the owner's process by that signal, SIGTERM and SIGINT alike; the handlers before it are put back. `cap_memory` sets RLIMIT_AS, proven in a child: an allocation past the cap is a MemoryError, one below it is not, and null says the cap is off; a cap past a hard limit the child lowered first sets the hard limit and the line says it was lowered to it. `serve_limits` reads config/project.json `transports.serve.memory_cap_mb` and `transports.serve.shutdown_grace_seconds`, refusing a value out of its bound by its key. Every child is a short Python one-liner under this interpreter; nothing reaches a network.
+summary: scripts/resource_limits.py `run_bounded` starts a child through the child-process allowlist in its own process group and returns its status and output; a child that runs past its time limit, and one whose output passes its byte cap, has its whole group ended and is refused as ChildTimedOut or ChildOutputTooLarge, naming the program, the limit and the key the caller says sets that limit, and a grandchild holding stdout or an unread stdin open after its parent exits holds the call for one drain window only, after which the parent's status and output are returned, not a timeout; a setsid grandchild, which no group kill reaches, leaves no reader or writer thread and no pipe open behind the call, and the call returns within its limit plus the drain window, timed out or not. An exception while the child runs ends its group. A process the child left in its session is ended and named in a log warning by pid and program, never by its arguments; a holder outside the session is named and not signalled. Each of these, proven in a child interpreter, ends the bounded child: a SIGTERM to a plain CLI with no handler (the child ends, then the CLI by SIGTERM), a SIGKILL to the runner (the watcher ends the child's session), and a server stopped by one signal returning from shutdown_owner while a request thread waits on a child (the watcher disabled in that probe, so only the owner's end is measured). An ignored SIGCHLD is set to its default for the run and put back, and off the main thread the run is refused as ChildSignalIgnored. A time limit past threading.TIMEOUT_MAX or NaN, and a byte cap that is no whole number or past sys.maxsize, are refused before a child starts; a byte cap past threading.TIMEOUT_MAX, a seconds constant, is accepted by run_bounded and by tool_limits. `shutdown_owner` makes one named owner of SIGTERM and SIGINT for a server: the first signal writes a line naming the owner and the signal and calls the owner's stop, or raises ShutdownRequested (no Exception, so a request's own handler cannot eat it) only where the server says it is idle, and a second signal, proven in a child that runs `run_bounded` under the owner, ends the bounded child's process group (its pid no longer runs) and then the owner's process by that signal, SIGTERM and SIGINT alike; the handlers before it are put back. `cap_memory` sets RLIMIT_AS, proven in a child: an allocation past the cap is a MemoryError, one below it is not, and null says the cap is off; a cap past a hard limit the child lowered first sets the hard limit and the line says it was lowered to it. `serve_limits` reads config/project.json `transports.serve.memory_cap_mb` and `transports.serve.shutdown_grace_seconds`, refusing a value out of its bound by its key. Every child is a short Python one-liner under this interpreter; nothing reaches a network.
 """
 
 import contextlib
@@ -263,9 +263,22 @@ def test_a_limit_out_of_its_bound_is_refused_before_a_child_starts():
         {"timeout": 5, "max_output_bytes": 0},
         {"timeout": threading.TIMEOUT_MAX * 2, "max_output_bytes": 64},
         {"timeout": float("nan"), "max_output_bytes": 64},
+        {"timeout": 5, "max_output_bytes": sys.maxsize + 1},
+        {"timeout": 5, "max_output_bytes": 64.0},
     ):
         with pytest.raises(ValueError):
             resource_limits.run_bounded(["/nonexistent/keel-no-such-program"], **kwargs)
+
+
+def test_a_byte_cap_past_the_seconds_ceiling_is_accepted():
+    # A byte cap is a length, bounded by sys.maxsize, not by
+    # threading.TIMEOUT_MAX, which bounds a number of seconds.
+    done = resource_limits.run_bounded(
+        [_PY, "-c", "print('ok')"],
+        timeout=30,
+        max_output_bytes=int(threading.TIMEOUT_MAX) + 1,
+    )
+    assert (done.returncode, done.stdout) == (0, "ok\n")
 
 
 # --- the end of a server: shutdown_owner ---------------------------------------
@@ -740,7 +753,7 @@ def test_tool_limits_are_read_from_the_agents_block(tmp_path):
         ({"tool_gate_margin_seconds": 1.5}, r"agents\.tool_gate_margin_seconds"),
         ({"tool_max_output_bytes": 0}, r"agents\.tool_max_output_bytes"),
         (
-            {"tool_max_output_bytes": int(threading.TIMEOUT_MAX) + 1},
+            {"tool_max_output_bytes": sys.maxsize + 1},
             r"agents\.tool_max_output_bytes",
         ),
     ],
@@ -754,6 +767,28 @@ def test_a_tool_limit_out_of_its_bound_is_refused(tmp_path, block, key):
     agents.update(block)
     with pytest.raises(config_loader.WrongValue, match=key):
         resource_limits.tool_limits(_tools_project(tmp_path, agents))
+
+
+def test_a_byte_cap_is_bounded_by_the_largest_length_not_a_seconds_constant(tmp_path):
+    # threading.TIMEOUT_MAX is a number of seconds; a byte cap past it is a
+    # length Python can still hold, so only sys.maxsize bounds it.
+    cap = int(threading.TIMEOUT_MAX) + 1
+    root = _tools_project(
+        tmp_path,
+        {
+            "tool_timeout_seconds": 600,
+            "tool_max_output_bytes": cap,
+            "tool_gate_margin_seconds": 3,
+        },
+    )
+    assert resource_limits.tool_limits(root) == (600, cap)
+    with pytest.raises(config_loader.WrongValue) as caught:
+        config_loader.resolve(
+            {"agents": {"tool_max_output_bytes": sys.maxsize + 1}},
+            config_loader.rows(("agents", "tool_max_output_bytes")),
+            config_loader.CONFIG_FILE,
+        )
+    assert "sys.maxsize" in "; ".join(caught.value.lines)
 
 
 @pytest.mark.parametrize("seconds", [60, 65, 66, 72])

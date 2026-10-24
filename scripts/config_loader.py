@@ -320,11 +320,15 @@ def _at_least_one_second(value: Any) -> bool:
     return bool(1 <= value <= _MOST_SECONDS)
 
 
+# The most bytes a byte cap may hold: the longest a Python bytes object, and
+# so a kept stream, can be. scripts/resource_limits.py run_bounded refuses a
+# cap past it too; a refusal here names the key before a child starts.
+_MOST_BYTES = sys.maxsize
+_MOST_BYTES_TEXT = "sys.maxsize (%d on this platform)" % _MOST_BYTES
+
+
 def _one_to_most_bytes(value: Any) -> bool:
-    # The same ceiling as a seconds key: scripts/resource_limits.py run_bounded
-    # refuses a byte cap past threading.TIMEOUT_MAX, and a refusal here names
-    # the key before a child starts.
-    return bool(1 <= value <= _MOST_SECONDS)
+    return bool(1 <= value <= _MOST_BYTES)
 
 
 def _zero_to_most_seconds(value: Any) -> bool:
@@ -751,7 +755,7 @@ KEYS = tuple(
                 "ended and the call refused",
                 accepts=(
                     _one_to_most_bytes,
-                    "a value >= 1 and <= %s" % _MOST_SECONDS_TEXT,
+                    "a value >= 1 and <= %s" % _MOST_BYTES_TEXT,
                 ),
             ),
             # 570 s: what the shipped tool limit (15000 s) leaves over the gate
