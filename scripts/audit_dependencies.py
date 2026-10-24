@@ -66,11 +66,12 @@ _DECLARING_FIELDS = (
 #     its value, with any separator; a `realm="..."` parameter is kept;
 # (b) a value after a key holding one of _SECRET_WORDS is hidden. After `=`
 #     or `:` (an assignment) it is hidden whatever it is, to the line's end
-#     or the next assignment (_NEXT_ASSIGNMENT). After whitespace (prose) the clause
-#     that follows is read word by word, and a word is kept only when
-#     scripts/audit_dependencies_data.py's closed vocabulary holds it: an
-#     open list of "plain words" showed a value after a third linking word,
-#     so an unknown word is hidden, cause words included. A quoted value is
+#     or the next assignment (_NEXT_ASSIGNMENT). After whitespace or any mark
+#     (prose) the clause that follows is read word by word, and a word is
+#     kept only when scripts/audit_dependencies_data.py's closed vocabulary
+#     holds it or it is three marks or fewer: an open list of "plain words"
+#     showed a value after a third linking word, so an unknown word is
+#     hidden, cause words included. A quoted value is
 #     hidden in both at least to its closing quote, or to the line's end;
 # (a') a scheme-less `user:pass@host` loses everything before its last `@`,
 #     and so does a `user@host` with no password before a host (_BARE_USER);
@@ -173,8 +174,12 @@ _ASSIGNMENT = re.compile(
     re.IGNORECASE,
 )
 # The match starts at the secret word and leaves the key's text before it in
-# place: matching that text too is what made the old pattern cubic.
-_KEY = re.compile(r"(?:%s)[\w.\-]{0,64}[\"']?" % "|".join(_SECRET_WORDS), re.IGNORECASE)
+# place: matching that text too is what made the old pattern cubic. A quote
+# after the key closes it (`"password":`) only when no word character
+# follows, so the `'` of `password's` opens the clause instead.
+_KEY = re.compile(
+    r"(?:%s)[\w.\-]{0,64}(?:[\"'](?!\w))?" % "|".join(_SECRET_WORDS), re.IGNORECASE
+)
 # A value another rule already wrote, or a scheme name (c) keeps.
 _DONE_VALUE = re.compile(r"<hidden>|(?:Bearer|Basic)\b", re.IGNORECASE)
 # An assigned value runs to the line's end or to the next assignment: a
@@ -184,8 +189,14 @@ _DONE_VALUE = re.compile(r"<hidden>|(?:Bearer|Basic)\b", re.IGNORECASE)
 _NEXT_ASSIGNMENT = re.compile(r"(?<![\s;,])\s{1,4}[A-Za-z_][\w.\-]{0,63}=")
 # One word of a prose clause: a URL (a) rewrote is one word with its marker,
 # and any other word runs to the next whitespace. The literal fixes where
-# the marker's lazy run stops, so each word is read once.
-_CLAUSE_WORD = re.compile(r"\s{1,4}(\S*?%s\S*|\S+)" % re.escape(_PATH_HIDDEN))
+# the marker's lazy run stops, so each word is read once. A word needs no
+# whitespace before it when it opens with a mark: a mark after the secret
+# word (`password,`, `password's`, `token]:`, `password/`, `password` and a
+# dash) opens the clause as a space does, so the value after it is judged. A
+# word character there continues a key longer than _KEY's bound, no clause.
+_CLAUSE_WORD = re.compile(
+    r"(?:\s{1,4}|(?=[^\w\s]))(\S*?%s\S*|\S+)" % re.escape(_PATH_HIDDEN)
+)
 # The marks a word may carry that are no part of it for the vocabulary.
 _WORD_MARKS = "\"'()[],;:.!?"
 # A word of marks alone, as npm-registry-fetch's ` - ` separator is, carries

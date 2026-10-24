@@ -784,6 +784,37 @@ def test_a_secret_word_in_prose_hides_its_value(text, shown):
     assert audit_dependencies._redacted(text) == shown
 
 
+# A clause opens right after the secret word whatever follows it: a comma, a
+# possessive, a bracket, a slash or a dash. A second secret word in
+# any wrapping opens its own clause. Each form is "{}" around the value.
+@pytest.mark.parametrize(
+    "form, kept",
+    [
+        ("npm error the password, {}, was rejected", ["the password", "was rejected"]),
+        ("npm error the password's value {}", ["the password"]),
+        ("npm error [token]: {}", ["[token"]),
+        ("npm error (password) {}", ["(password"]),
+        ("npm error password/ {}", ["password"]),
+        ("npm error the password\u2014{}", ["the password"]),
+        ("npm error the password is (token) {} here", ["the password is", "(token"]),
+    ],
+    ids=[
+        "comma",
+        "possessive",
+        "bracket-colon",
+        "parenthesis",
+        "slash",
+        "dash",
+        "second-secret-word",
+    ],
+)
+def test_a_mark_after_a_secret_word_still_opens_its_clause(form, kept):
+    shown = audit_dependencies._redacted(form.format(_VALUE))
+    assert _VALUE not in shown and "<hidden>" in shown, shown
+    for words in kept:
+        assert words in shown, shown
+
+
 # A URL's userinfo is everything before the last `@` of its authority, so a
 # raw `@` in a password shows no part of it, and the host after it stays.
 @pytest.mark.parametrize(
@@ -1518,6 +1549,8 @@ _TIMED_REDACTION = (
         ("a@b.cd/x a@1.2.3 ", 1000, False),
         # 50 000 characters each, one row per pattern fix round 2 changed.
         ("token - x ", 5000, False),
+        ("token, x1 ", 5000, False),
+        ("token's x ", 5000, False),
     ],
     ids=[
         "a",
@@ -1535,6 +1568,8 @@ _TIMED_REDACTION = (
         "zone-id",
         "bare-user",
         "marks-word",
+        "mark-opens-clause",
+        "possessive",
     ],
 )
 def test_a_hostile_line_is_redacted_within_a_second(unit, times, unchanged):

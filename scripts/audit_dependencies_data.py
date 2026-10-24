@@ -55,6 +55,9 @@ _NPM_FETCH = "npm-registry-fetch lib/errors.js: "
 _NODE_TLS = "Node.js TLS error: "
 _LIBUV = "libuv strerror, which Node.js prints: "
 _HTTP = "HTTP reason phrase, which npm prints after the status: "
+# npm-registry-fetch lib/errors.js AuthError: the scheme names the registry's
+# WWW-Authenticate header gives, printed after the phrase.
+_NEED_AUTH = "npm-registry-fetch lib/errors.js: 'Unable to authenticate, need: ' + "
 _HTTP_METHOD = (
     "npm-registry-fetch lib/errors.js: an HTTP error reads"
     " `status statusText - METHOD uri`, method "
@@ -64,6 +67,8 @@ CAUSE_WORDS = {
     "authentication": _NPM_FETCH + "OTP required for authentication",
     "authenticator": _NPM_MESSAGES
     + "This operation requires a one-time password from your authenticator.",
+    "basic": _NEED_AUTH + "the WWW-Authenticate scheme Basic",
+    "bearer": _NEED_AUTH + "the WWW-Authenticate scheme Bearer",
     "date": _NPM_MESSAGES + "your saved credentials are probably out of date.",
     "delete": _HTTP_METHOD + "DELETE",
     "denied": _LIBUV + "permission denied",
@@ -79,6 +84,7 @@ CAUSE_WORDS = {
     "login": _NPM_MESSAGES
     + "To correct this please try logging in again with: npm login",
     "missing": _NPM_MESSAGES + "Incorrect or missing password.",
+    "need": _NEED_AUTH + "res.headers.get('www-authenticate')",
     "one-time": _NPM_MESSAGES + "This operation requires a one-time password.",
     "otp": _NPM_FETCH + "OTP required for authentication",
     "out": _NPM_MESSAGES + "your saved credentials are probably out of date.",
