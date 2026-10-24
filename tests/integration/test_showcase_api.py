@@ -2,7 +2,7 @@
 title: Integration — showcase REST API
 kind: tests
 layer: backend
-summary: The FastAPI showcase router serves overview/features/checks/wiki/search over the live repo.
+summary: The FastAPI showcase router serves overview/features/checks/wiki/search over the live repo. Over a scratch project it serves no node outside corpus.served_visibilities, and a config the loader refuses answers 500 on every request, including one that replaces a config whose model was already loaded, so that model is never reused.
 """
 
 import json
@@ -326,3 +326,37 @@ def test_a_refused_served_level_serves_nothing(tmp_path):
     scratch.include_router(build_showcase_router(str(tmp_path)))
     r = TestClient(scratch, raise_server_exceptions=False).get("/llms-full.txt")
     assert r.status_code == 500 and _CODEWORD not in r.text
+
+
+def test_a_refused_config_after_a_served_one_leaves_no_model_to_reuse(tmp_path):
+    """The router caches its model by the watched files' mtimes. A config
+    that serves the confidential doc loads, then one the loader refuses
+    replaces it: every request after answers 500, the second one included,
+    so the model loaded under the earlier config is never reused."""
+    import os
+
+    from fastapi import FastAPI
+    from showcase_api import build_showcase_router
+
+    every = ["public", "internal", "confidential", "restricted"]
+    nodes, _hidden = _visibility_tree(tmp_path, served=every)
+    (tmp_path / "wiki").mkdir(exist_ok=True)
+    (tmp_path / "wiki" / "corpus.json").write_text(
+        json.dumps({"schema_version": 1, "nodes": nodes}), encoding="utf-8"
+    )
+    scratch = FastAPI()
+    scratch.include_router(build_showcase_router(str(tmp_path)))
+    client = TestClient(scratch, raise_server_exceptions=False)
+    first = client.get("/llms-full.txt")
+    # The earlier model holds the codeword, so reusing it would serve it.
+    assert first.status_code == 200 and _CODEWORD in first.text
+    config = tmp_path / "config" / "project.json"
+    config.write_text(
+        json.dumps({"corpus": {"served_visibilities": ["unreadable-readme"]}}),
+        encoding="utf-8",
+    )
+    later = os.path.getmtime(config) + 10
+    os.utime(config, (later, later))
+    for _ in range(2):
+        r = client.get("/llms-full.txt")
+        assert r.status_code == 500 and _CODEWORD not in r.text
