@@ -9,7 +9,7 @@ tags: []
 summary: Model Context Protocol servers — tool gateways over the app.
 id: mcp-readme
 created: 2026-06-17
-updated: 2026-10-23
+updated: 2026-10-24
 visibility: internal
 canonical: true
 ---
