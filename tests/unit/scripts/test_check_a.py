@@ -366,3 +366,45 @@ def test_check_a_judges_a_file_reached_by_several_paths_by_the_strictest_chain(
     stating = [r for r, v in levels.items() if v == level]
     assert any("stated by %s/README.md" % dirs[r] in message for r in stating), message
     assert _served(repo)["plan"] == (kept, level)
+
+
+# --- the path check_A keys a file by is the path the corpus keeps -----------
+
+
+def test_a_readme_link_that_sorts_after_its_target_passes_the_target_s_level_on(
+    repo,
+):
+    """`docs/z/README.md` links to the confidential `docs/a/README.md`, which
+    the walk meets first, so check_A reads the level at the kept path; a doc
+    in `docs/z` is judged by it, as build_corpus serves it."""
+    _stated(repo / "README.md", "public")
+    _stated(repo / "docs" / "a" / "README.md", "confidential")
+    (repo / "docs" / "z").mkdir()
+    (repo / "docs" / "z" / "README.md").symlink_to("../a/README.md")
+    _stated(repo / "docs" / "z" / "plan.md", "public")
+    cs.check_A()
+    found = [e for e in cs.errors if "less restrictive" in e]
+    assert len(found) == 1, cs.errors
+    message = found[0]
+    assert message.startswith("docs/z/plan.md: visibility 'public'"), message
+    assert "stated by docs/a/README.md" in message, message
+    assert _served(repo)["plan"] == ("docs/z/plan.md", "confidential")
+
+
+def test_a_file_kept_at_a_path_check_a_does_not_govern_is_named_there(repo):
+    """`agents/plan.md` links to `docs/s/plan.md`. The walk meets the link
+    first, so the corpus keeps the doc at `agents/plan.md`, a path check_A
+    does not govern; check_A reads the file at `docs/s/plan.md` and names
+    the contradiction at the path the corpus serves."""
+    _stated(repo / "README.md", "public")
+    _stated(repo / "docs" / "s" / "README.md", "confidential")
+    _stated(repo / "docs" / "s" / "plan.md", "public")
+    (repo / "agents").mkdir()
+    (repo / "agents" / "plan.md").symlink_to("../docs/s/plan.md")
+    cs.check_A()
+    found = [e for e in cs.errors if "less restrictive" in e]
+    assert len(found) == 1, cs.errors
+    message = found[0]
+    assert message.startswith("agents/plan.md: visibility 'public'"), message
+    assert "stated by docs/s/README.md" in message, message
+    assert _served(repo)["plan"] == ("agents/plan.md", "confidential")
