@@ -9,7 +9,7 @@ tags: [tools, agents, adapters]
 summary: Shared, thin TOOL.md tool-use specs — how an agent invokes a scripts/ doer.
 id: agents-tools-readme
 created: 2026-06-17
-updated: 2026-10-24
+updated: 2026-10-25
 visibility: internal
 canonical: true
 ---
