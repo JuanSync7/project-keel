@@ -7,7 +7,7 @@ owner: TBD
 summary: Every feature keel ships, with what it does and why, how to run it, the settings it reads, where it stops and what it is not for, the guide that explains it, and which projects receive it. The rows of the shapes the tree declares are derived-equal to the tree by tests/integration/test_reference_drift.py.
 id: docs-reference-features
 created: 2026-10-09
-updated: 2026-10-24
+updated: 2026-10-25
 visibility: internal
 canonical: true
 ---
