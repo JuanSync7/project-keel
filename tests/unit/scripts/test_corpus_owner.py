@@ -579,7 +579,7 @@ def test_the_report_prints_the_unknown_apart_and_never_counts_it_owned(
 
 # The `.jinja` twin exists in keel only (copier consumes the suffix), so a
 # generated project checks its one rendered roster; the rendered file is always
-# shipped, so the set is never empty.
+# shipped, so the set is never empty, and keel's own tree always checks both.
 _SCRIPTS_ROSTERS = [
     name
     for name in ("scripts/README.md", "scripts/README.md.jinja")
@@ -589,6 +589,10 @@ _SCRIPTS_ROSTERS = [
 
 def test_the_rendered_scripts_roster_is_always_among_the_rosters_checked():
     assert "scripts/README.md" in _SCRIPTS_ROSTERS
+    # copier.yml marks keel's own tree, where the twin must exist: without this
+    # a deleted twin would drop its case from the parametrize unnoticed.
+    if (_ROOT / "copier.yml").is_file():
+        assert "scripts/README.md.jinja" in _SCRIPTS_ROSTERS
 
 
 @pytest.mark.parametrize("readme", _SCRIPTS_ROSTERS)
