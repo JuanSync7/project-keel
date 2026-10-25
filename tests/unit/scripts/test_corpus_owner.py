@@ -577,7 +577,21 @@ def test_the_report_prints_the_unknown_apart_and_never_counts_it_owned(
     assert "accountability: 1 of 8 nodes have a real owner" in text
 
 
-@pytest.mark.parametrize("readme", ["scripts/README.md", "scripts/README.md.jinja"])
+# The `.jinja` twin exists in keel only (copier consumes the suffix), so a
+# generated project checks its one rendered roster; the rendered file is always
+# shipped, so the set is never empty.
+_SCRIPTS_ROSTERS = [
+    name
+    for name in ("scripts/README.md", "scripts/README.md.jinja")
+    if (_ROOT / name).is_file()
+]
+
+
+def test_the_rendered_scripts_roster_is_always_among_the_rosters_checked():
+    assert "scripts/README.md" in _SCRIPTS_ROSTERS
+
+
+@pytest.mark.parametrize("readme", _SCRIPTS_ROSTERS)
 def test_the_scripts_roster_names_every_bucket_the_report_prints(readme):
     """The accountability_report row in each twin names the four buckets the
     text report prints: unowned (`none`), on the default owner, unknown (no
