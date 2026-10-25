@@ -863,6 +863,15 @@ def test_a_url_opens_with_a_scheme_npm_uses(scheme):
     )
 
 
+def _docs_here(lists):
+    """The docs of *lists* this tree holds, sorted. keel's CHANGELOG.md is
+    keel's history and a generated project starts its own (copier.yml exists
+    in the template only), so a project checks the guide alone; the guide
+    always ships, so the set is never empty."""
+    in_template = (_ROOT / "copier.yml").is_file()
+    return sorted(doc for doc in lists if doc != "CHANGELOG.md" or in_template)
+
+
 # The scheme lists the docs print, each the backticked words between an
 # opening phrase and a closing one: section 16 and the CHANGELOG fe-audit
 # row must name exactly _NPM_SCHEMES, so a scheme dropped from the code, or
@@ -876,7 +885,7 @@ _SCHEME_LISTS = {
 }
 
 
-@pytest.mark.parametrize("doc", sorted(_SCHEME_LISTS))
+@pytest.mark.parametrize("doc", _docs_here(_SCHEME_LISTS))
 def test_the_docs_list_the_schemes_the_code_keeps(doc):
     opening, closing = _SCHEME_LISTS[doc]
     text = (_ROOT / doc).read_text(encoding="utf-8")
@@ -1012,7 +1021,12 @@ _JOINER_LISTS = {
 # The key words a joined value leaks after: every word of the grammar that
 # is one key, since the joined-to-the-key leaks hold for each of them.
 _KEY_NAME_WORDS = tuple(word for word in _LEAK_WORDS if ":" not in word)
-_DOCS = sorted(_JOINER_LISTS)
+_DOCS = _docs_here(_JOINER_LISTS)
+
+
+def test_the_shipped_guide_is_always_among_the_docs_checked():
+    assert "docs/guides/deterministic-checks.md" in _DOCS
+    assert "docs/guides/deterministic-checks.md" in _docs_here(_SCHEME_LISTS)
 
 
 def _folded(doc):
