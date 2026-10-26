@@ -9,7 +9,7 @@ tags: []
 summary: Dev and CI automation, one-shots, and the deterministic checks.
 id: scripts-readme
 created: 2026-06-17
-updated: 2026-10-25
+updated: 2026-10-26
 visibility: internal
 canonical: true
 ---
