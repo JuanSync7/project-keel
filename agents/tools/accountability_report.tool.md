@@ -9,7 +9,7 @@ tags: [tool, accountability, owner, governance]
 summary: Read-only list of corpus nodes with no resolved owner (accountability gaps).
 id: tool-accountability-report
 created: 2026-06-17
-updated: 2026-10-25
+updated: 2026-10-26
 visibility: internal
 canonical: true
 tool_command: python3 scripts/accountability_report.py --corpus wiki/corpus.json
