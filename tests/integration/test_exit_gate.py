@@ -525,6 +525,12 @@ class _ShellReader:
             if not self.words:
                 self.start = self.word_line
             self.words.append(word)
+            # `function f` is a whole definition head: the `{` after it on
+            # the same line opens the body, whose commands are read as such.
+            if self.words[-2:-1] == ["function"] and all(
+                w in _SH_RESERVED for w in self.words[:-2]
+            ):
+                self._end_command()
 
     def _case_state(self):
         return self.cases[-1][0] if self.cases else None
@@ -2247,6 +2253,16 @@ _SH_FINDINGS = {
     "an exit in an array's substitution": ("a=($(exit 3))\n", 3, "`exit 3`"),
     "an exit after an array": ("a=(x\n  y)\nexit 3\n", 5, "`exit 3`"),
     "an array never closed": ("a=(x\n", 3, "an array is never closed"),
+    "an exit in a function defined with the keyword": (
+        "function f { exit 3; }\n",
+        3,
+        "`exit 3`",
+    ),
+    "an exit in a keyword function with its brace below": (
+        "if true; then function f\n{\n  exit 3\n}\nfi\n",
+        5,
+        "`exit 3`",
+    ),
     "a return of a renamed status": (
         'f() { s=2; return "$s"; }\n',
         3,
