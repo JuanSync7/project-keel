@@ -546,7 +546,10 @@ and a `$'...'` decoded as bash decodes it, so `"exit"`, `\exit`,
 (`x=exit; $x 3`, `"$cmd" 3`, `"$@"`, a backquote) and an `eval` are each a
 finding that says the gate cannot judge them, where the command could end
 the script: anywhere but inside `$(...)`, backquotes, a process
-substitution or `( ... )`, or before a single `|` or `&`. A `$'...'` is
+substitution or `( ... )`, or before a `|` or `|&` that pipes it on or a `&`
+that runs it in the background. No other operator excuses one: `&&`, `||`,
+`;`, `;&` and `;;&` leave it in the main shell, and `&>`, `&>>`, `>&` and
+`<&` are redirections, so `eval "exit 3" &>/dev/null` is a finding. A `$'...'` is
 read to its closing quote, so `echo $'it\'s'` reads. An ending in a subshell, `$(...)` or backquotes is judged
 the same, inside double quotes too (`x="$(exit 3)"`), and so is one in a
 process substitution `<(...)` or `>(...)`, which is a word, so

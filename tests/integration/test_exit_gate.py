@@ -475,7 +475,9 @@ class _ShellReader:
     """Splits POSIX shell text into its simple commands, each (line, words,
     main), main false where the command cannot end the script: inside
     `$(...)`, backquotes, a process substitution or `( ... )`, or ended by a
-    single `|` or `&`.
+    `|` or `|&` that pipes it on or a `&` that runs it in the background.
+    `&&`, `||`, `;`, `;&`, `;;&` and the redirections `&>`, `&>>`, `>&` and
+    `<&` leave a command in the main shell.
 
     A word keeps its quotes, so `"$EXIT_USAGE"` and `exit` stay tellable
     apart. A comment, a quoted span and a here-document body are no command;
@@ -574,8 +576,8 @@ class _ShellReader:
             )
 
     def _end_command(self, alone=True):
-        """End the command being read; *alone* is false when a single `|`
-        or `&` ends it, which runs it in a subshell."""
+        """End the command being read; *alone* is false when a `|`, `|&`
+        or background `&` ends it, which runs it in a subshell."""
         self._end_word()
         if self.skip:
             raise ShellScanError(self.line, "a redirection names no target")
@@ -730,8 +732,9 @@ class _ShellReader:
 
     def _redirect(self):
         t = self.text
-        # A descriptor number written against the operator belongs to it.
-        if self.word is not None and "".join(self.word).isdigit():
+        # A descriptor number written against the operator belongs to it;
+        # `&>` and `&>>` take none, so `echo 1&>f` echoes 1.
+        if t[self.i] != "&" and self.word is not None and "".join(self.word).isdigit():
             self.word = None
         else:
             self._end_word()
@@ -825,6 +828,9 @@ class _ShellReader:
                 self._end_command()
                 self.i, self.line = self.i + 1, self.line + 1
                 self._heredoc_bodies()
+            elif t.startswith("&>", self.i):
+                # `&>` and `&>>` redirect both outputs; no background `&`.
+                self._redirect()
             elif c in ";&|()":
                 if self._case_mark(c):
                     continue
@@ -1950,6 +1956,8 @@ _SH_PASSES = {
     "an expansion named command in a subshell": '( "$cmd" 3 )\nexit_passthrough "$?"\n',
     "an expansion named command piped on": '"$cmd" 3 | cat\n"$@" |& cat\n',
     "an expansion named command in the background": '"$cmd" 3 &\nwait\n',
+    "an eval piped on with |&": 'eval "$x" |& cat\n',
+    "an eval in the background before a redirection": 'eval "$x" & >log\nwait\n',
     "an eval in a process substitution": 'cat <(eval "$x")\n',
     "an eval in a backquote": 'v=`eval "$x"`\n',
     "an ANSI-C quoted word": "echo $'it\\'s'\n",
@@ -2147,6 +2155,26 @@ _SH_FINDINGS = {
         'cat | "$x" 3\n',
         3,
         _SH_UNJUDGED_NAME,
+    ),
+    "a command named by an expansion before &>": (
+        "x=exit; $x 3 &>/dev/null\n",
+        3,
+        _SH_UNJUDGED_NAME,
+    ),
+    "an eval before &>": ('eval "exit 3" &>/dev/null\n', 3, _SH_UNREAD_STRING),
+    "an eval before &>>": ('eval "exit 3" &>>log\n', 3, _SH_UNREAD_STRING),
+    "an eval before >&": ('eval "exit 3" >&2\n', 3, _SH_UNREAD_STRING),
+    "an eval before <&": ('eval "exit 3" <&0\n', 3, _SH_UNREAD_STRING),
+    "an eval after &&": ('true && eval "exit 3"\n', 3, _SH_UNREAD_STRING),
+    "an eval in a case clause ended by ;&": (
+        'case x in a) eval "exit 3" ;& b) : ;; esac\n',
+        3,
+        _SH_UNREAD_STRING,
+    ),
+    "an eval in a case clause ended by ;;&": (
+        'case x in a) eval "exit 3" ;;& b) : ;; esac\n',
+        3,
+        _SH_UNREAD_STRING,
     ),
     "all arguments run in a function": ('f() { "$@"; }\n', 3, _SH_UNJUDGED_NAME),
     "an eval": ('eval "exit 3"\n', 3, _SH_UNREAD_STRING),
