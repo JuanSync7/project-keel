@@ -602,9 +602,15 @@ the top of `ci.yml`. You may meet the change three ways.
    the GitLab job until you remove it with the `git rm` command the line
    names.
 3. **You wrote your own `.gitlab-ci.yml` before.** An update that does not
-   choose gitlab keeps it byte-identical, because it is not what keel
-   rendered, and says on stderr that it has no `# keel-adapter: gitlab` line.
-   The gate does not judge it unless it carries that line. An update that chooses gitlab leaves the file
+   choose gitlab keeps it byte-identical. When the answer you had chose
+   `github`, keel never rendered a gitlab file, so the file is yours and the
+   job says nothing about it, even if its bytes equal keel's: it reads that
+   answer with `--answer-key ci_pipeline` from the answers file your last
+   commit holds, which copier has not yet rewritten. When that answers file
+   records no `ci_pipeline` answer, the job cannot tell, so it keeps the file
+   and its stderr line says `ci_pipeline does not choose gitlab`, never that
+   it no longer does. The gate does not judge the file unless it carries the
+   `# keel-adapter: gitlab` line. An update that chooses gitlab leaves the file
    conflicted, yours above copier's `=======` line and keel's below it
    (measured with copier 9.19), so resolve it as you would any conflict.
 

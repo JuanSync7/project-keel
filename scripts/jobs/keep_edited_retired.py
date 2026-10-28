@@ -3,7 +3,7 @@
 title: keep_edited_retired — puts back a file the template retired but the project edited
 kind: script
 layer: n/a
-summary: Copier's first `after` migration on update. copier's `_remove_old_files` deletes every file the old render had and the new one lacks before any migration runs, whether the project edited it or not (measured on copier 9.17), so an edit to a file the template retired or moved -- an ADR that became docs/adr/keel/K-NNNN-<slug>.md -- would be lost without a word. This job lists the files the update deleted (`git diff-index --name-only --diff-filter=D HEAD` in the project, read-only: plumbing that writes no index, `--no-optional-locks`, filters off through review_docs' `git_argv`) and compares each one's HEAD bytes with the template's blob at `--from` (the commit the project was generated from). `is_edited` calls a copy unedited only when the two differ in nothing but the frontmatter `updated:` value, read through review_docs' `updated_span`; an edited copy is put back from HEAD with HEAD's mode (an executable, a symlink) and named on stderr with its successor in the template where a rename says so. A file the template renders from `<path>.jinja` is judged against that twin rendered (jinja2's sandbox, strict undefined) with the answers file HEAD holds (`--answers`); one that will not render is put back and named, and so is a path the template does not hold at `--from`. Each `--retire NAME:PATH` is a CI adapter the `ci_pipeline` answer declines, judged in the same run by the same verdict, so one file never gets two: removed when it is byte-equal to keel's render, else kept with one stderr line that says whether it carries the `--marker` line filled with NAME (or that it is not a regular file), why it is kept, and that CI runs it beside the chosen adapter until `git rm PATH`. The index is never written. An unresolvable `--from` or a git failure puts back every deleted file and exits 2, because without a base nothing may stay deleted. scripts/audit_project.py's `retired` group imports `is_edited`, so the guard and the audit cannot disagree. It runs before the other answer-driven `rm` migrations, which still win, and before the restamp, which stays last. Run as a script, it first asks scripts/jobs/conflict_guard.py whether a module it imports from the project, or a fixed project file those modules declare reading in `PROJECT_READS`, holds a conflict hunk, and if one does it names each file and the rerun command (run as a migration with `--finish-with`, the command that finishes the update) and exits 2 instead of dying on the import or the read.
+summary: Copier's first `after` migration on update. copier's `_remove_old_files` deletes every file the old render had and the new one lacks before any migration runs, whether the project edited it or not (measured on copier 9.17), so an edit to a file the template retired or moved -- an ADR that became docs/adr/keel/K-NNNN-<slug>.md -- would be lost without a word. This job lists the files the update deleted (`git diff-index --name-only --diff-filter=D HEAD` in the project, read-only: plumbing that writes no index, `--no-optional-locks`, filters off through review_docs' `git_argv`) and compares each one's HEAD bytes with the template's blob at `--from` (the commit the project was generated from). `is_edited` calls a copy unedited only when the two differ in nothing but the frontmatter `updated:` value, read through review_docs' `updated_span`; an edited copy is put back from HEAD with HEAD's mode (an executable, a symlink) and named on stderr with its successor in the template where a rename says so. A file the template renders from `<path>.jinja` is judged against that twin rendered (jinja2's sandbox, strict undefined) with the answers file HEAD holds (`--answers`); one that will not render is put back and named, and so is a path the template does not hold at `--from`. Each `--retire NAME:PATH` is a CI adapter the `ci_pipeline` answer declines, judged in the same run by the same verdict, so one file never gets two: removed when it is byte-equal to keel's render, else kept with one stderr line that says whether it carries the `--marker` line filled with NAME (or that it is not a regular file), why it is kept, and that CI runs it beside the chosen adapter until `git rm PATH`. Which adapters the old render held is read from the `--answer-key` value in HEAD's answers file (copier commits nothing before the migrations run, so HEAD holds the old answer; `--answer-all` names the value that chose every adapter): a path copier did not delete whose adapter that value did not choose is the project's own file and is neither removed nor named, even byte-equal to keel's; the kept line says the answer "no longer chooses" NAME only when copier deleted the path or the old value chose it, and "does not choose" it when the answers cannot say. The index is never written. An unresolvable `--from` or a git failure puts back every deleted file and exits 2, because without a base nothing may stay deleted. scripts/audit_project.py's `retired` group imports `is_edited`, so the guard and the audit cannot disagree. It runs before the other answer-driven `rm` migrations, which still win, and before the restamp, which stays last. Run as a script, it first asks scripts/jobs/conflict_guard.py whether a module it imports from the project, or a fixed project file those modules declare reading in `PROJECT_READS`, holds a conflict hunk, and if one does it names each file and the rerun command (run as a migration with `--finish-with`, the command that finishes the update) and exits 2 instead of dying on the import or the read.
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/integration/test_edited_retired_files.py
@@ -237,13 +237,25 @@ def _restore_all(project, paths):
     return failed
 
 
-def judge(project, src, ref, retire=None, marker=None, answers_rel=None):
+def judge(
+    project,
+    src,
+    ref,
+    retire=None,
+    marker=None,
+    answers_rel=None,
+    answer_key=None,
+    answer_all=None,
+):
     """(kept, stays_deleted, failures): each judged path either kept with a
     reason, left deleted (or removed), or a failure message. The paths judged
     are the ones the update deleted plus each path of *retire* ({path: adapter
-    name}, the files the answers retire) still on disk; *marker* is the line
-    format keel's adapter carries and the answers file a `.jinja`
-    twin renders with (*answers_rel*, read from HEAD). Raises GuardError when the worklist cannot be read;
+    name}, the files the answers retire) still on disk, less one whose adapter
+    the old answer (*answer_key* in HEAD's answers) provably did not choose;
+    *marker* is the line format keel's adapter carries and the answers file a
+    `.jinja` twin renders with (*answers_rel*, read from HEAD), and
+    *answer_all* the answer value that chose every adapter. Raises GuardError
+    when the worklist cannot be read;
     when *ref* cannot be resolved or git fails while judging, every deleted
     path still missing is put back first, then GuardError is raised."""
     retire = retire or {}
@@ -256,7 +268,17 @@ def judge(project, src, ref, retire=None, marker=None, answers_rel=None):
     if not paths and not on_disk:
         return [], [], []
     try:
-        return _judge(project, src, ref, paths, on_disk, retire, marker, answers_rel)
+        return _judge(
+            project,
+            src,
+            ref,
+            paths,
+            on_disk,
+            retire,
+            marker,
+            answers_rel,
+            (answer_key, answer_all),
+        )
     except GuardError as e:
         missing = [
             p
@@ -286,6 +308,19 @@ def _answers(project, entry):
     except (yaml.YAMLError, UnicodeDecodeError):
         return None
     return found if isinstance(found, dict) else None
+
+
+def _old_choice(answers, choice, name):
+    """Whether the answer HEAD records chose adapter *name*: True or False when
+    *answers* records *choice*'s key (key, the value choosing every adapter) as
+    a string, None when it cannot say (no answers, no such key, another type).
+    HEAD's answers are the ones the project was last rendered with, because
+    copier commits nothing before the migrations run."""
+    key, every = choice
+    value = answers.get(key) if answers is not None and key else None
+    if not isinstance(value, str):
+        return None
+    return value == name or (every is not None and value == every)
 
 
 def _render(data, answers):
@@ -327,11 +362,13 @@ def _has_line(data, line):
         return False
 
 
-def _retired_reason(rel, ref, data, keel, why, name, marker):
+def _retired_reason(rel, ref, data, keel, why, name, marker, key, chose):
     """Why an answer-retired file is kept, and what the user must do, in one
     clause pair: whether it still carries keel's marker line (or, for *why*
     "irregular", that it is not a regular file), and that the adapter it is
-    keeps running until the user removes it."""
+    keeps running until the user removes it. The answer *key* "no longer
+    chooses" the adapter only when *chose* says the old answer did; when that
+    is unknown it "does not choose" it, which is all the answers can say."""
     line = marker.format(adapter=name)
     if why == "irregular":
         reason = "it is not a regular file, so it is not keel's"
@@ -358,19 +395,35 @@ def _retired_reason(rel, ref, data, keel, why, name, marker):
             "existed, and the project edited it" % line
         )
     return (
-        "%s; ci_pipeline no longer chooses %s, so CI runs this file's %s steps "
-        "beside the job of the adapter it chooses now until you remove it "
-        "(`git rm %s`)" % (reason, name, name, rel)
+        "%s; %s %s %s, so CI runs this file's %s steps beside the job of the "
+        "adapter it chooses now until you remove it (`git rm %s`)"
+        % (
+            reason,
+            key,
+            "no longer chooses" if chose else "does not choose",
+            name,
+            name,
+            rel,
+        )
     )
 
 
-def _judge(project, src, ref, paths, on_disk, retire, marker, answers_rel):
+def _judge(project, src, ref, paths, on_disk, retire, marker, answers_rel, choice):
     base = _resolve(src, ref)
-    worklist = sorted(set(paths) | set(on_disk))
     heads = _tree(
-        project, "HEAD", worklist + ([answers_rel] if answers_rel else []), False
+        project,
+        "HEAD",
+        sorted(set(paths) | set(on_disk)) + ([answers_rel] if answers_rel else []),
+        False,
     )
     answers = _answers(project, heads.get(answers_rel)) if answers_rel else None
+    chose = {p: _old_choice(answers, choice, retire[p]) for p in on_disk}
+    # An adapter the old answer did not choose was never in keel's render, and
+    # copier did not delete it: the project wrote it, so it is not judged.
+    on_disk = [p for p in on_disk if chose[p] is not False]
+    worklist = sorted(set(paths) | set(on_disk))
+    if not worklist:
+        return [], [], []
     asked = []
     for p in worklist:
         asked.extend((p, p + _TEMPLATE_SUFFIX))
@@ -387,7 +440,15 @@ def _judge(project, src, ref, paths, on_disk, retire, marker, answers_rel):
                     (
                         rel,
                         _retired_reason(
-                            rel, ref, None, None, "irregular", retire[rel], marker
+                            rel,
+                            ref,
+                            None,
+                            None,
+                            "irregular",
+                            retire[rel],
+                            marker,
+                            choice[0],
+                            chose[rel],
                         ),
                     )
                 )
@@ -412,7 +473,19 @@ def _judge(project, src, ref, paths, on_disk, retire, marker, answers_rel):
             gone.append(rel)
             continue
         if rel in retire:
-            reason = _retired_reason(rel, ref, data, keel, why, retire[rel], marker)
+            # A path copier deleted was in the old render, so the old answer
+            # chose it whatever the answers file says.
+            reason = _retired_reason(
+                rel,
+                ref,
+                data,
+                keel,
+                why,
+                retire[rel],
+                marker,
+                choice[0],
+                True if head is not None else chose[rel],
+            )
         elif why == "absent":
             reason = (
                 "the template holds no %s at %s, so whether the project "
@@ -438,11 +511,11 @@ def _judge(project, src, ref, paths, on_disk, retire, marker, answers_rel):
     return kept, gone, failed
 
 
-def _retire_map(values, marker):
+def _retire_map(values, marker, answer_key):
     """{path: adapter name} from each `--retire NAME:PATH`; an empty value, the
     form copier renders when the answer retires nothing, is skipped. Raises
     GuardError on a value that is not NAME:PATH, or on one given without
-    `--marker`."""
+    `--marker` or `--answer-key`."""
     found = {}
     for value in values:
         if not value:
@@ -453,6 +526,8 @@ def _retire_map(values, marker):
         found[path] = name
     if found and not marker:
         raise GuardError("--retire needs --marker, the line keel's adapter carries")
+    if found and not answer_key:
+        raise GuardError("--retire needs --answer-key, the answer choosing adapters")
     return found
 
 
@@ -488,6 +563,17 @@ def main(argv=None):
         help="the answers file a `.jinja` twin renders with, read from HEAD",
     )
     parser.add_argument(
+        "--answer-key",
+        default=None,
+        help="the answer choosing the --retire adapters; one its HEAD value "
+        "did not choose is the project's own file and is not judged",
+    )
+    parser.add_argument(
+        "--answer-all",
+        default=None,
+        help="the --answer-key value that chooses every adapter",
+    )
+    parser.add_argument(
         conflict_guard.FINISH_FLAG,
         dest="finish_with",
         metavar="PYTHON",
@@ -499,9 +585,16 @@ def main(argv=None):
     project = os.getcwd()
     src = os.path.abspath(args.template)
     try:
-        retire = _retire_map(args.retire, args.marker)
+        retire = _retire_map(args.retire, args.marker, args.answer_key)
         kept, gone, failed = judge(
-            project, src, args.ref, retire, args.marker, args.answers
+            project,
+            src,
+            args.ref,
+            retire,
+            args.marker,
+            args.answers,
+            args.answer_key,
+            args.answer_all,
         )
     except GuardError as e:
         return report(

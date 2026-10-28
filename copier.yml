@@ -422,7 +422,9 @@ _migrations:
   # rendered at `--from` (a `.jinja` twin rendered with `--answers` read from
   # HEAD), else keeps it and says why on stderr. One run judges every file once,
   # so the file copier deleted and the file the answer retires get one verdict.
-  - command: ["{{ _copier_python }}", "scripts/jobs/keep_edited_retired.py", "--quiet", "--template", "{{ _copier_conf.src_path }}", "--from", "{{ _version_from }}", "--answers", "{{ _copier_conf.answers_file }}", "--marker", "# keel-adapter: {adapter}", "--retire={% if ci_pipeline == 'gitlab' %}github:.github/workflows/ci.yml{% endif %}", "--retire={% if ci_pipeline == 'github' %}gitlab:.gitlab-ci.yml{% endif %}", "--finish-with", "{{ _copier_python }}"]
+  # `--answer-key` lets it read the old answer from HEAD's answers file, so an
+  # adapter that answer never chose is the project's own file and is left alone.
+  - command: ["{{ _copier_python }}", "scripts/jobs/keep_edited_retired.py", "--quiet", "--template", "{{ _copier_conf.src_path }}", "--from", "{{ _version_from }}", "--answers", "{{ _copier_conf.answers_file }}", "--answer-key", "ci_pipeline", "--answer-all", "both", "--marker", "# keel-adapter: {adapter}", "--retire={% if ci_pipeline == 'gitlab' %}github:.github/workflows/ci.yml{% endif %}", "--retire={% if ci_pipeline == 'github' %}gitlab:.gitlab-ci.yml{% endif %}", "--finish-with", "{{ _copier_python }}"]
     when: "{{ _stage == 'after' }}"
   # Mirrors the frontend-stack prunes.
   - command: "rm -rf src/frontend/react-vite"

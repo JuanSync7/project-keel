@@ -2,7 +2,7 @@
 title: Integration — `copier update` carries template improvements downstream
 kind: tests
 layer: n/a
-summary: The upgrade channel ADR-K-0004 chose copier for, exercised end to end against the REAL template — clone keel into a scratch dir, generate a project, commit it, evolve the clone, then `copier update`. Proves new template files arrive, a re-answered `ci_pipeline` retires the keel adapter it declines and delivers the one it chooses, a repeated answer changes nothing, and a CI file the project wrote without keel's marker survives a declining answer byte-identical, a declined adapter (github or gitlab) is removed when unedited and kept with one stderr line naming `git rm` when edited, and a ci.yml from before the marker line is kept when edited, its line saying it predates the marker, and silently removed when not, while a no-op update leaves the tree clean under every `ci_pipeline` answer; template edits land, the project's own edits survive, the `.gitignore` divergence twin holds, `_commit` advances and `_src_path` stays resolvable. Skipped on a bare local clone without the optional `template` extra; CI installs `.[dev,template]` and declares the surface required (KEEL_REQUIRED_EXTRAS), so there a missing copier is a hard failure instead of a silent skip.
+summary: The upgrade channel ADR-K-0004 chose copier for, exercised end to end against the REAL template — clone keel into a scratch dir, generate a project, commit it, evolve the clone, then `copier update`. Proves new template files arrive, a re-answered `ci_pipeline` retires the keel adapter it declines and delivers the one it chooses, a repeated answer changes nothing, and a CI file the project wrote without keel's marker survives a declining answer byte-identical, and when no answer ever chose it the update names it nowhere, a declined adapter (github or gitlab) is removed when unedited and kept with one stderr line naming `git rm` when edited, and a ci.yml from before the marker line is kept when edited, its line saying it predates the marker, and silently removed when not, while a no-op update leaves the tree clean under every `ci_pipeline` answer; template edits land, the project's own edits survive, the `.gitignore` divergence twin holds, `_commit` advances and `_src_path` stays resolvable. Skipped on a bare local clone without the optional `template` extra; CI installs `.[dev,template]` and declares the surface required (KEEL_REQUIRED_EXTRAS), so there a missing copier is a hard failure instead of a silent skip.
 """
 
 import os
@@ -727,13 +727,17 @@ def _update_stderr(project, work, **data):
 
 
 _CI_EDIT = "# a line the project added\n"
+_OWN_GITLAB = (
+    b"# the project's own GitLab pipeline\nlint:\n  script:\n    - make lint\n"
+)
 
 
 @pytest.fixture(scope="module")
 def ci_declined(tmp_path_factory):
     """Projects whose update declines an adapter, generated with both, each
     with the declined adapter edited or left as keel rendered it, committed,
-    then updated, and two generated before the ci_pipeline question. Yields
+    then updated, two generated before the ci_pipeline question, and a github
+    project that wrote its own .gitlab-ci.yml, updated to github again. Yields
     {(answer, kind): (declined path, its bytes before, its bytes after or None
     when it is gone, stderr, parity faults)}."""
     mp = pytest.MonkeyPatch()
@@ -749,6 +753,7 @@ def ci_declined(tmp_path_factory):
         ("github", "unedited", "both", "HEAD"),
         ("gitlab", "pre-question edited", None, None),
         ("gitlab", "pre-question unedited", None, None),
+        ("github", "own, never chosen", "github", "HEAD"),
     ]
     try:
         template = _clone_template(work / "template", work)
@@ -784,7 +789,11 @@ def ci_declined(tmp_path_factory):
             _git("add", "-A", cwd=project)
             _git("commit", "--quiet", "-m", "generated from keel", cwd=project)
             declined = paths["github" if answer == "gitlab" else "gitlab"]
-            if not kind.endswith(" unedited") and kind != "unedited":
+            if kind == "own, never chosen":
+                (project / declined).write_bytes(_OWN_GITLAB)
+                _git("add", declined, cwd=project)
+                _git("commit", "--quiet", "-m", "our own pipeline", cwd=project)
+            elif not kind.endswith(" unedited") and kind != "unedited":
                 with (project / declined).open("a") as fh:
                     fh.write(_CI_EDIT)
                 _git("commit", "--quiet", "-am", "our edit", cwd=project)
@@ -849,6 +858,17 @@ def test_a_ci_yml_from_before_the_marker_is_judged_by_its_edit_not_its_line(
     path, before, after, err, faults = ci_declined[("gitlab", "pre-question unedited")]
     assert after is None, "the unedited %s survived:\n%s" % (path, err)
     assert path not in err, err
+    assert faults == [], faults
+
+
+def test_an_update_says_nothing_of_a_ci_file_no_answer_ever_chose(ci_declined):
+    """A github project that wrote its own .gitlab-ci.yml, updated github to
+    github: ci_pipeline never chose gitlab, so the file is kept byte-identical
+    and no line says ci_pipeline no longer chooses it."""
+    path, before, after, err, faults = ci_declined[("github", "own, never chosen")]
+    assert after == before == _OWN_GITLAB, err
+    assert path not in err, err
+    assert "no longer chooses" not in err, err
     assert faults == [], faults
 
 

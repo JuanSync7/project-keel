@@ -70,7 +70,10 @@ version rather than a bare commit:
   longer chosen only if the file is byte-equal to what keel last rendered (the
   GitLab twin rendered with the project's answers). An edited file is kept,
   marker line or not, and one stderr line names it, says why and says to
-  `git rm` it, because CI runs it beside the chosen adapter until then. The GitLab job's image is `ci_pipeline.gitlab_image`,
+  `git rm` it, because CI runs it beside the chosen adapter until then. An
+  adapter the old answer never chose is the project's own file: the job reads
+  that answer from the answers file the project's last commit holds and
+  leaves such a file alone, without a line. The GitLab job's image is `ci_pipeline.gitlab_image`,
   filled from `toolchain`. Its default is a placeholder host, because keel has
   verified no public image that carries both the Python and the Node version.
   An owner sets it before the GitLab job can run. The GitLab file sets
