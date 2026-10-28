@@ -799,7 +799,10 @@ def _alive(pid):
 def test_a_hung_shell_is_stopped_at_the_bound_with_every_child(tmp_path, monkeypatch):
     """_run_sh never waits on a shell longer than _SH_TIMEOUT_SECONDS, and
     stops the shell's whole process group, so a child it started is gone
-    too rather than left running under PID 1."""
+    too rather than left running under PID 1. The child holds the shell's
+    pipes, so a runner that killed the shell alone and read them to their
+    end would wait out the child; its read after the kill is bounded, and
+    the child is still alive when it gives up."""
     monkeypatch.setattr(sys.modules[__name__], "_SH_TIMEOUT_SECONDS", 1)
     pidfile = tmp_path / "child.pid"
     body = "sleep 30 &\necho $! > '%s'\nwait" % pidfile
@@ -840,7 +843,9 @@ def _run_sh(tmp_path, body, shell):
             _out, err = proc.communicate(timeout=_SH_TIMEOUT_SECONDS)
         except subprocess.TimeoutExpired:
             os.killpg(proc.pid, signal.SIGKILL)
-            proc.communicate()
+            # Bounded too: a child the kill missed holds the pipes open, and
+            # an unbounded read would wait for that child to exit.
+            proc.communicate(timeout=_GONE_SECONDS)
             raise
     return proc.returncode, err
 

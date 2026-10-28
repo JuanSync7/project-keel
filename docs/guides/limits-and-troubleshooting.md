@@ -504,7 +504,8 @@ The helper ships whatever the copier answer `shell`, and
 `shell.enabled` says, because that switches the shell tools only.
 `tests/unit/scripts/test_exit_code_table.py` runs the helper under
 `/bin/sh`, `bash` and `bash --posix`, each run bounded at 30 seconds, past
-which the test stops the shell's whole process group, so no child outlives it.
+which the test stops the shell's whole process group, so no child outlives it,
+and reads what is left of the shell's output with a bound too.
 Where `/bin/sh` is bash, as on the host keel is built on, those runs prove
 the helper under bash only. The same test fails a helper that uses `[[`,
 `local`, `function`, an array, `==` in a test, `$'`, `<(` or `>(`,
