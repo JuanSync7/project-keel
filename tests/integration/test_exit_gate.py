@@ -965,11 +965,17 @@ def _sh_name_uses(text, unread, name):
     _SH_STATUS_BINDING states."""
     bound, other = [], []
     pattern = re.compile(r"(?<![A-Za-z0-9_])%s(?![A-Za-z0-9_])" % re.escape(name))
+    # The matches come in text order, so one pass over the sorted spans and
+    # the newlines between matches keeps the scan linear: a script with 25k
+    # comments and 25k reads took 31 s when each match walked every span.
+    spans, k, line, counted = sorted(unread), 0, 1, 0
     for match in pattern.finditer(text):
         start, end = match.span()
-        if any(begin <= start < stop for begin, stop in unread):
+        while k < len(spans) and spans[k][1] <= start:
+            k += 1
+        if k < len(spans) and spans[k][0] <= start:
             continue
-        line = text.count("\n", 0, start) + 1
+        line, counted = line + text.count("\n", counted, start), start
         before = text[start - 1] if start else "\n"
         braced = text[start - 2 : start] == "${" and text[end : end + 1] == "}"
         if before == "$" or braced:
@@ -2287,6 +2293,47 @@ def test_a_carriage_return_line_end_is_one_finding_that_names_it(
     (finding,) = shell_findings(root)["findings"]
     assert finding.startswith("scripts/tool.sh:%d: " % line), finding
     assert "carriage return" in finding and "LF line endings" in finding, finding
+
+
+class _Visits(list):
+    """A list that counts each item it hands out, by iteration or by index."""
+
+    def __init__(self, items):
+        super().__init__(items)
+        self.visits = 0
+
+    def __iter__(self):
+        for item in super().__iter__():
+            self.visits += 1
+            yield item
+
+    def __getitem__(self, k):
+        self.visits += 1
+        return super().__getitem__(k)
+
+
+def test_the_held_status_scan_visits_each_span_a_bounded_number_of_times():
+    """The scan of a held name walks the spans no command reads once, not
+    once per use of the name: twice the comments and reads costs at most a
+    little over twice the visits. A count, not a clock, so a slow host
+    cannot fail it and a quadratic scan cannot pass it."""
+
+    def visits(n):
+        text = (
+            _SH_HEAD
+            + "false\nrc=$?\n"
+            + '# a comment\necho "$rc"\n' * n
+            + 'exit_passthrough "$rc"\n'
+            + _SH_TAIL
+        )
+        _commands, spans = shell_commands(text)
+        counted = _Visits(spans)
+        _sh_name_uses(text, counted, "rc")
+        return counted.visits
+
+    small, large = visits(500), visits(1000)
+    assert small >= 500, small
+    assert large <= 2 * small + 10, (small, large)
 
 
 def test_a_carriage_return_inside_a_line_is_no_finding(tmp_path, monkeypatch):
