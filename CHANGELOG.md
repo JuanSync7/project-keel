@@ -153,8 +153,11 @@ version rather than a bare commit:
   the answer `shell`, and no shell tool judges it, with no `shell.excluded_paths`
   entry.
   `tests/integration/test_exit_gate.py` fails a shell script that does not
-  source it or ends with a bare `exit 3`, `exit $?` or `exit`, at its file
-  and line, and a project with no shell script unless `shell.no_scripts`
+  source it or ends with a bare `exit 3`, `exit $?` or `exit`, a script
+  that renames a status (`exit_passthrough` or `return` of anything but
+  `"$?"`, a member or a name only ever assigned `$?`), an `exit` disguised as
+  `"exit"`, `\exit`, `command exit` or `builtin exit`, and an ending before
+  the line that sources the helper, at its file and line, and a project with no shell script unless `shell.no_scripts`
   states why or `shell.enabled` is false, which switches the shell tools
   only: every other finding holds whatever it says.
 - **An agent `--execute` run is held to an approved model-call cap.**

@@ -514,15 +514,28 @@ path ending in `/exit_codes.sh`, as
 `. "$(dirname "$0")/exit_codes.sh"`, and end through it. These pass:
 `exit "$EXIT_USAGE"`, `exit ${EXIT_FAILURE}`, `exit_fail` with a member
 other than `SUCCESS` and three non-blank parts, and
-`exit_passthrough "$status"` or `exit_passthrough "$?"` over a wrapped
-tool's status. These are findings at their file and line: `exit 3`,
-`exit "3"`, `exit $?`, a bare `exit`, a member the helper does not set,
-and `exit_passthrough` handed a number or a member, which is the script's
-own status. An ending in a subshell, `$(...)` or backquotes is judged
+`exit_passthrough "$?"` over a wrapped tool's status, or
+`exit_passthrough "$status"` when every assignment of `status` in the file
+is `status=$?` (a plain assignment or a `local`, `export`, `readonly`,
+`declare` or `typeset` argument). A `return` in a function is held the same
+way: `return "$EXIT_USAGE"`, `return "$?"` or a name so assigned. These are
+findings at their file and line: `exit 3`, `exit "3"`, `exit $?`, a bare
+`exit`, `exit $((...))`, a member the helper does not set,
+`exit_passthrough` handed a number or a member, which is the script's own
+status, and `exit_passthrough` or `return` handed anything else, which
+renames a status: a name never assigned, assigned another value, or bound by
+`for`, `read` or `getopts`, a positional such as `"$1"`, or `$((...))`. A
+`return` of a number, `0` included, and a bare `return` are findings too.
+The command name is read as the shell runs it, so `"exit"`, `\exit`,
+`command exit` and `builtin exit` are `exit`; `command -v exit` only
+describes it. An ending in a subshell, `$(...)` or backquotes is judged
 the same; one in a comment, a quoted word or a here-document body is not a
-command. A `return` in a function ends nothing. A script that sources the
-helper and never ends through it is a finding, and so is a file the gate
-cannot read to its end. With no shell script at all the gate fails unless
+command. An `exit "$EXIT_<NAME>"`, `exit_fail`, `exit_passthrough` or
+`return "$EXIT_<NAME>"` on a line before the one that sources the helper is
+a finding, because the helper's names are unset there; a function defined
+above that line and called below it is one too, so source the helper first.
+A script that sources the helper and never ends through it is a finding,
+and so is a file the gate cannot read to its end. With no shell script at all the gate fails unless
 config/project.json `shell.no_scripts` gives the reason or
 `shell.enabled` is false. Every other finding holds whatever
 `shell.enabled` says. It cannot see

@@ -826,9 +826,13 @@ reason, and a stale entry fails. `passthrough` ends nothing and is allowed.
 The same test reads every shell script `scripts/shell_gate.py` finds, less
 `scripts/exit_codes.sh`: it fails one that does not source that helper, an
 `exit` with a number, `$?` or nothing, an `exit_fail` with `SUCCESS` or a
-blank part, and an `exit_passthrough` of a number or a member, each at its
-file and line; `exit_passthrough "$status"` over a wrapped tool's status
-is the shell `passthrough`. No shell script is a failure unless
+blank part, an `exit_passthrough` of a number or a member, an
+`exit_passthrough` or `return` that renames a status, a `return` of a number
+or of nothing, and an ending that needs the helper on a line before the one
+that sources it, each at its file and line; it reads `"exit"`, `\exit`,
+`command exit` and `builtin exit` as `exit`. `exit_passthrough "$?"`, or
+of a name every assignment of which in the file is `name=$?`, is the shell
+`passthrough`. No shell script is a failure unless
 config/project.json `shell.no_scripts` gives the reason or
 `shell.enabled` is false; every other finding holds whatever
 `shell.enabled` says.
