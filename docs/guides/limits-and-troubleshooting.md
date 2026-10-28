@@ -531,7 +531,12 @@ The command name is read as the shell runs it, so `"exit"`, `\exit`,
 describes it. An ending in a subshell, `$(...)` or backquotes is judged
 the same, inside double quotes too (`x="$(exit 3)"`); one in a comment, a
 single-quoted word, the rest of a double-quoted word or a here-document body
-is not a command. An `exit "$EXIT_<NAME>"`, `exit_fail`, `exit_passthrough` or
+is not a command. A `${...}` closes at its first unquoted `}`, so
+`${y:-"}"}`, `${y:-'{'}` and `echo "$(printf '"')"` read as the shell reads
+them, and a `$(...)` inside a `${...}` is judged too. Inside a
+double-quoted `${...}` a `'` is literal, as POSIX and `bash --posix` read
+it; plain bash reads `"${y:-'}'}"` differently. A `$((...))` is matched by
+its parentheses alone. An `exit "$EXIT_<NAME>"`, `exit_fail`, `exit_passthrough` or
 `return "$EXIT_<NAME>"` on a line before the one that sources the helper is
 a finding, because the helper's names are unset there; a function defined
 above that line and called below it is one too, so source the helper first.
