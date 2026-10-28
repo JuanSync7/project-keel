@@ -336,6 +336,25 @@ def test_an_unreadable_corpus_refuses_the_real_rule_retrieval(tmp_path):
     assert str(corpus) in str(raised.value)
 
 
+@pytest.mark.parametrize("execute", [False, True])
+def test_an_empty_root_is_refused_before_any_tool(seams, monkeypatch, capsys, execute):
+    """`root=""` and `--root ""` would review this checkout as if no root
+    were given: review() raises corpus_level.NotACheckout and the CLI exits
+    USAGE through the exit helper, before any tool or model call."""
+    sys.path.insert(0, str(_ROOT / "scripts"))
+    import doc_review as cli  # noqa: E402
+    import model_budget  # noqa: E402
+
+    monkeypatch.setattr(model_budget, "cap", lambda root: 8)
+    runner, model, _ = seams
+    with pytest.raises(corpus_level.NotACheckout):
+        review(execute=execute, max_model_calls=8, root="")
+    argv = ["--root", ""] + (["--execute"] if execute else [])
+    assert cli.main(argv) == cli.exit_codes.ExitCode.USAGE
+    assert capsys.readouterr().err.strip().splitlines()[-1].startswith("doc_review: ")
+    assert runner.calls == [] and model.prompts == []
+
+
 def test_a_declined_chunk_is_skipped_without_touching_apply(seams, monkeypatch):
     runner, model, root = seams
     model.reply = '{"edits": []}'

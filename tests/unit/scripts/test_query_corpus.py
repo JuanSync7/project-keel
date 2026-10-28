@@ -399,6 +399,15 @@ def test_a_corpus_that_cannot_be_read_is_refused(tmp_path, monkeypatch, capsys, 
     assert str(corpus) in err and "make site-data" in err
 
 
+def test_an_empty_root_is_refused(tmp_path, monkeypatch, capsys):
+    """`--root ""` would read the script's own checkout as if no root were
+    given; it is refused with USAGE and nothing printed."""
+    a, _, _, _ = _stale_project(tmp_path)
+    monkeypatch.setattr(qc, "ROOT", str(a))
+    code, ids, err = _main(["zebra", "--root", ""], capsys)
+    assert code is qc.ExitCode.USAGE and ids is None and "root named is empty" in err
+
+
 def test_a_root_and_a_corpus_given_together_are_refused(tmp_path, monkeypatch, capsys):
     """`--root b` beside a's corpus would read a's corpus with b's files, the
     pairing that printed a's confidential guide, so it is refused, nothing

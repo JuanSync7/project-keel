@@ -215,13 +215,14 @@ def test_a_root_that_does_not_exist_raises_with_no_model_call(tmp_path):
     assert built == [] and seen.prompts == []
 
 
-@pytest.mark.parametrize("given", ["both", "outside-wiki", "missing"])
+@pytest.mark.parametrize("given", ["both", "outside-wiki", "missing", "empty-root"])
 def test_a_corpus_that_is_not_its_roots_own_is_refused_with_no_model_call(
     tmp_path, given
 ):
     """A root given beside a corpus, or a corpus that is not some checkout's
     wiki/corpus.json, could pair one checkout's corpus with another's files,
-    and a corpus named in a folder that keeps none would answer from nothing,
+    a corpus named in a folder that keeps none would answer from nothing,
+    and an empty root would answer from this checkout as if none were given,
     so answer() raises NotACheckout, a ValueError, before any step."""
     factory, built, seen = _never_called()
     corpus = _one_node_corpus(tmp_path)
@@ -230,6 +231,8 @@ def test_a_corpus_that_is_not_its_roots_own_is_refused_with_no_model_call(
     elif given == "missing":
         (tmp_path / "d").mkdir()
         kwargs = {"corpus": str(tmp_path / "d" / "wiki" / "corpus.json")}
+    elif given == "empty-root":
+        kwargs = {"root": ""}
     else:
         moved = tmp_path / "corpus.json"
         Path(corpus).rename(moved)

@@ -71,8 +71,9 @@ exit 2. A copy of a corpus
 inside another checkout's `wiki/` is that checkout's corpus, read with that
 checkout's files.
 A checkout with no corpus, named by `--root` or the default, prints `[]`,
-exits 0 and names on stderr where the corpus would be. A root that does not exist prints nothing to stdout and exits
-2 with stderr naming it, and so does a corpus that cannot be read: not UTF-8,
+exits 0 and names on stderr where the corpus would be. An empty `--root` prints nothing to stdout and exits 2, never
+read as this checkout. A root that does not exist prints nothing to stdout and
+exits 2 with stderr naming it, and so does a corpus that cannot be read: not UTF-8,
 not JSON, or not a JSON object. A served level outside the vocabulary prints nothing
 to stdout and exits 14.
 

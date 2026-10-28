@@ -153,8 +153,8 @@ server, read a corpus only with the files of the checkout that keeps it. A
 corpus lives at `<checkout>/wiki/corpus.json`, and its checkout is that
 directory. Each reader takes a root or a corpus path and derives the other
 through `scripts/corpus_level.py` `checkout`. A root and a corpus given
-together are refused, and so is a corpus path that is not some directory's
-`wiki/corpus.json` or does not exist, so only a root can name a checkout with
+together are refused, and so are an empty root and a corpus path that is not
+some directory's `wiki/corpus.json` or does not exist, so only a root can name a checkout with
 no corpus yet. No rule can tell a stale copy or another project from the
 real checkout by the files it holds, so a reader never pairs a corpus with a
 root chosen beside it. A copy of a corpus kept in another checkout's `wiki/`

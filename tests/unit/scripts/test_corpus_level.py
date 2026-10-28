@@ -205,6 +205,14 @@ def test_a_symlinked_corpus_is_the_checkout_that_holds_the_link(
     )
 
 
+def test_an_empty_root_is_refused_not_read_as_the_default():
+    """`root=""` is a root given blank, not a root left out, so it is refused
+    rather than read as the default checkout."""
+    with pytest.raises(corpus_level.NotACheckout) as raised:
+        corpus_level.checkout("", None, "/x")
+    assert all(part.strip() for part in raised.value.parts)
+
+
 def test_a_named_corpus_that_does_not_exist_is_refused(tmp_path, monkeypatch):
     """A corpus named in a folder that keeps none would answer from nothing
     with no sign, so it is refused, naming the path and how to build it; a

@@ -265,13 +265,14 @@ def test_the_cli_refactors_the_checkout_its_corpus_names(tmp_path, monkeypatch):
     assert os.path.realpath(_flag(argv, "--root")) == os.path.realpath(str(other))
 
 
-@pytest.mark.parametrize("given", ["both", "outside-wiki", "missing"])
+@pytest.mark.parametrize("given", ["both", "outside-wiki", "missing", "empty-root"])
 def test_a_corpus_that_is_not_its_roots_own_is_refused_before_any_step(
     tmp_path, monkeypatch, capsys, given
 ):
     """A root beside a corpus, or a corpus outside some checkout's
     wiki/corpus.json, could pair one checkout's corpus with another's files,
-    and a corpus named in a folder that keeps none would walk nothing:
+    a corpus named in a folder that keeps none would walk nothing, and an
+    empty root would walk this checkout as if no root were given:
     refactor() raises corpus_level.NotACheckout and runs no tool, and the
     CLI refuses it with USAGE before the agent runs."""
     sys.path.insert(0, str(_ROOT / "scripts"))
@@ -284,13 +285,15 @@ def test_a_corpus_that_is_not_its_roots_own_is_refused_before_any_step(
         kwargs = {"root": root, "corpus": os.path.join(root, "wiki", "corpus.json")}
     elif given == "missing":
         kwargs = {"corpus": os.path.join(root, "wiki", "corpus.json")}
+    elif given == "empty-root":
+        kwargs = {"root": ""}
     else:
         kwargs = {"corpus": os.path.join(root, "corpus.json")}
     with pytest.raises(corpus_level.NotACheckout):
         refactor("precise-container-types", **kwargs)
     flags = [a for k, v in sorted(kwargs.items()) for a in ("--" + k, v)]
     assert rp.main(["precise-container-types"] + flags) == rp.exit_codes.ExitCode.USAGE
-    assert "wiki/corpus.json" in capsys.readouterr().err
+    assert "wiki/corpus.json" in capsys.readouterr().err or given == "empty-root"
     assert runner.calls == []
 
 
