@@ -168,7 +168,11 @@ withheld body; and the static export's `tree.json`. The index enforcer
 serves on the levels of the corpus its report step loaded, and never asks
 `stated_now`. A fresh run on a clean tree runs `scripts/jobs/build_corpus.py`
 on the checkout the agent ships in before that report step, and does not read
-the build's exit status. A run resumed after a crash restarts at the step its
+the build's exit status. That build, and the link check after it, act on the
+checkout the agent ships in whatever `root` names, while the report step loads
+the corpus under `root`. So a fresh run with `root` set to another checkout
+also fills from stale levels: that checkout's corpus as last built, which a
+file made stricter since the build still serves. A run resumed after a crash restarts at the step its
 last checkpoint names, with the corpus that checkpoint saved; past the report
 step it neither rebuilds nor reads a file's level again. So a file made
 stricter between the crash and the resume can still have its gap sent to a
