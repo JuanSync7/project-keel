@@ -1595,6 +1595,7 @@ _SH_PASSES = {
     "a return of a member": 'f() { return "$EXIT_USAGE"; }\n',
     "a return of the last status": 'f() { false; return "$?"; }\n',
     "a return of a held status": 'f() { false; rc=$?; return "$rc"; }\n',
+    "a continued failure": 'exit_fail "$EXIT_USAGE" \\\n  "tool: no input" none "pass one"\n',
 }
 
 
@@ -1692,6 +1693,11 @@ _SH_FINDINGS = {
         3,
         "renames",
     ),
+    "a continued failure of three parts": (
+        'exit_fail "$EXIT_USAGE" \\\n  "tool: no input" none\n',
+        3,
+        "four",
+    ),
     "a return of an unknown member": (
         'f() { return "$EXIT_NOPE"; }\n',
         3,
@@ -1748,6 +1754,25 @@ def test_an_ending_before_the_line_that_sources_the_helper_is_a_finding(
     (finding,) = shell_findings(root)["findings"]
     assert finding.startswith("scripts/tool.sh:2: "), finding
     assert "before line 3, which sources" in finding, finding
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        '"$(dirname "$0")/lib.sh"',
+        "./my_exit_codes.sh",
+        '"$(dirname "$0")/exit_codes.sh.in"',
+    ],
+)
+def test_a_shell_script_that_sources_another_file_is_a_finding(
+    tmp_path, monkeypatch, target
+):
+    """Only a path ending in `/exit_codes.sh` is the helper; sourcing any
+    other file leaves its names unset."""
+    script = _SH_GOOD.replace('"$(dirname "$0")/exit_codes.sh"', target)
+    root = _sh_tree(tmp_path, monkeypatch, {"scripts/tool.sh": script})
+    (finding,) = shell_findings(root)["findings"]
+    assert finding.startswith("scripts/tool.sh:1: does not source"), finding
 
 
 def test_a_shell_script_that_never_ends_through_the_helper_is_a_finding(
