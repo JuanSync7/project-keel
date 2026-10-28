@@ -428,6 +428,9 @@ _SH_DESCRIBE = ("-v", "-V")
 _SH_DECLARE = ("local", "export", "readonly", "declare", "typeset")
 _SH_HELPER_NAME = os.path.basename(et.HELPER_SH)
 _SH_ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
+# A word so far that a `(` turns into an array assignment, `a=(...)` or
+# `a+=(...)`.
+_SH_ARRAY_START = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\+?=\Z")
 # `$EXIT_NAME` or `${EXIT_NAME}`, bare or inside one pair of double quotes.
 _SH_MEMBER = re.compile(r'(")?\$(?:EXIT_([A-Z0-9_]+)|\{EXIT_([A-Z0-9_]+)\})(?(1)")\Z')
 _SH_NUMBER = re.compile(r"""(["']?)[0-9]+\1\Z""")
@@ -485,7 +488,8 @@ class _ShellReader:
     double quotes as well, because the shell runs it there, and so is the
     inside of a process substitution `<(...)` or `>(...)`. A
     redirection and its target are no word, and neither is a `case` header
-    or pattern, which never names a command. A `$'...'` is read to its
+    or pattern, which never names a command; the elements of an array
+    assignment `a=(...)` are part of its word. A `$'...'` is read to its
     closing quote, a backslash escaping the next character, as bash reads
     it. It does not read a command a string later runs (`trap`, `eval`,
     `sh -c`)."""
@@ -730,6 +734,46 @@ class _ShellReader:
             self.unread.extend(inner.unread)
             self._span(end, "a backquote")
 
+    def _array(self):
+        """`name=( ... )`: the elements of an array assignment, one part of
+        the assignment word, to the unquoted `)` that closes them. No element
+        is a command; a substitution inside one is read as commands, and a
+        `#` that opens an element opens a comment, as bash reads them."""
+        with self._level():
+            t, opened = self.text, self.line
+            self._add("(")
+            self.i += 1
+            while self.i < len(t):
+                c = t[self.i]
+                if c == ")":
+                    self._add(c)
+                    self.i += 1
+                    return
+                if c == "#" and t[self.i - 1] in " \t\n(":
+                    newline = t.find("\n", self.i)
+                    end = len(t) if newline < 0 else newline
+                    self.unread.append((self.offset + self.i, self.offset + end))
+                    self.i = end
+                elif c == "\\":
+                    self._span(self.i + 1, "an array")
+                elif c == "'":
+                    self._span(t.find("'", self.i + 1), "a single quote")
+                elif t.startswith("$'", self.i):
+                    self._span(self._closing(self.i + 2, "'"), "an ANSI-C quote")
+                elif c == '"':
+                    self._double_quote()
+                elif c == "`":
+                    self._backquote()
+                elif t.startswith("$((", self.i):
+                    self._span(self._matching(self.i + 1, "(", ")"), "a `$((`")
+                elif t.startswith("$(", self.i):
+                    self._substitution()
+                elif t.startswith("${", self.i):
+                    self._expansion(quoted=False)
+                else:
+                    self._span(self.i, "an array")
+            raise ShellScanError(opened, "an array is never closed")
+
     def _redirect(self):
         t = self.text
         # A descriptor number written against the operator belongs to it;
@@ -828,6 +872,8 @@ class _ShellReader:
                 self._end_command()
                 self.i, self.line = self.i + 1, self.line + 1
                 self._heredoc_bodies()
+            elif c == "(" and _SH_ARRAY_START.match("".join(self.word or ())):
+                self._array()
             elif t.startswith("&>", self.i):
                 # `&>` and `&>>` redirect both outputs; no background `&`.
                 self._redirect()
@@ -1969,6 +2015,11 @@ _SH_PASSES = {
     "an ANSI-C quoted word": "echo $'it\\'s'\n",
     "an ANSI-C quoted brace in an expansion": "echo ${y:-$'}'}\n",
     "an ANSI-C quoted name that is not exit": "$'exit 3'\n",
+    "an array assignment": "a=(exit quit)\n",
+    "an appended array": "a+=(exit)\n",
+    "an array after declare": "declare -a a=(exit)\n",
+    "an array with a quoted parenthesis": "a=(\")\" exit '(')\n",
+    "an array over two lines with a comment": "a=(exit # one\n  return)\n",
     "a held status named in a quoted here-document": (
         "false\nrc=$?\ncat <<'EOF'\nrc=3\nEOF\nexit_passthrough \"$rc\"\n"
     ),
@@ -2193,6 +2244,9 @@ _SH_FINDINGS = {
         3,
         "`exit 3`",
     ),
+    "an exit in an array's substitution": ("a=($(exit 3))\n", 3, "`exit 3`"),
+    "an exit after an array": ("a=(x\n  y)\nexit 3\n", 5, "`exit 3`"),
+    "an array never closed": ("a=(x\n", 3, "an array is never closed"),
     "a return of a renamed status": (
         'f() { s=2; return "$s"; }\n',
         3,
