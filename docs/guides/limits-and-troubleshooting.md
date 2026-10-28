@@ -564,7 +564,7 @@ it; plain bash reads `"${y:-'}'}"` differently. A `$((...))` is matched by
 its parentheses alone. `$(...)`, `${...}`, double quotes and backquotes may
 nest 100 levels deep (`_SH_MAX_DEPTH` in the test, sized to stay far under
 Python's recursion limit); a file nested deeper is one finding at the line
-the nesting opens on, and reading 3000 levels stops in under a millisecond. An `exit "$EXIT_<NAME>"`, `exit_fail`, `exit_passthrough` or
+the nesting opens on. An `exit "$EXIT_<NAME>"`, `exit_fail`, `exit_passthrough` or
 `return "$EXIT_<NAME>"` on a line before the one that sources the helper is
 a finding, because the helper's names are unset there; a function defined
 above that line and called below it is one too, so source the helper first.

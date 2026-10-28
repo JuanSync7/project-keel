@@ -836,7 +836,12 @@ end the script, because it cannot judge them. `exit_passthrough "$?"`, or
 of a name assigned as `name=$?` and otherwise only read as `$name` or
 `${name}`, is the shell `passthrough`; any other occurrence of that name
 (`let`, `(( ))`, `${name:=...}`, `printf -v`, `read`, a word that only names
-it) is a finding at its own line. No shell script is a failure unless
+it) is a finding at its own line. It judges an ending inside a subshell,
+`$(...)`, backquotes or a process substitution `<(...)` or `>(...)` as it
+judges one at the top, and reads a comment, a quoted word, a here-document
+body and a `case` subject or pattern as no command, while a command in a
+`case` clause body is judged. A line that ends with a carriage return is the
+file's one finding, and it says to save the file with LF line endings. No shell script is a failure unless
 config/project.json `shell.no_scripts` gives the reason or
 `shell.enabled` is false; every other finding holds whatever
 `shell.enabled` says.
@@ -851,8 +856,9 @@ sees a blank literal, not a vague one, and `report` refuses a blank value at
 run time. It does not see an exit reached through `getattr`, `os.abort`,
 `os.kill` or an uncaught exception, argparse's own `--help` (exit 0) and
 usage (exit 2) exits, a `python -c` line in a makefile, or a shell
-`set -e`, `trap`, `exec` or `sh -c` string, or a pathname expansion in a
-command name. The hand-written
+`set -e`, `trap`, `exec`, `kill` or `sh -c` string, a pathname or brace
+expansion in a command name, or a shell script that falls off its end after
+some other ending. The hand-written
 table below the generated region is compared with nothing.
 
 **Run.** `make check-exit-codes` · `make exit-codes` · `pytest tests/integration/test_exit_gate.py`
