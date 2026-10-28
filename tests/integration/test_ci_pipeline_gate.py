@@ -2,7 +2,7 @@
 title: Integration — every CI adapter runs exactly config/project.json ci_pipeline.steps, in order
 kind: tests
 layer: n/a
-summary: config/project.json `ci_pipeline.steps` is the one statement of what CI runs, and each adapter file present (`ci_pipeline.adapters`: .github/workflows/ci.yml, .gitlab-ci.yml) is held to it through tests/ci_adapters.py parity_faults. The adapters in this tree have no fault; an empty step list, a tree with no adapter, a missing marker line or one that is not the whole line, a dropped, added, reordered or changed step, a changed env value, and a GitLab image or GIT_DEPTH other than the configured one each turn the judge red on a copy, and so does each GitLab key the shipped file lacks, however it is quoted or written (`when: manual`, `"when"`, `? when`, `'rules'`, `needs`, `allow_failure`, a `<<` merge, `MAKEFLAGS: "-n"` at either level, `default:`, `workflow`, `include`, another job), with one fault naming its key path, a key it has that the file lacks, a key set twice (named by both lines), a file YAML cannot read, a script item that is not a line, and a missing pyyaml. A file that differs only in what YAML does not read (comments, key order, quoting, a flow, nested or one-string script) has no fault. In a project, the `ci_pipeline` answer in .copier-answers.yml picks what is judged: a chosen adapter that is missing, or one that lost its marker, is a fault, and so is an answers file with no valid answer, one that answers twice (named by both lines), and one the scanner cannot read (shown as written); an unchosen file the project wrote, with no marker, is not judged, and an unchosen one carrying the marker still is. The GitLab cases render the template's .gitlab-ci.yml.jinja with the toolchain answer, so the shipped twin is judged too, and yaml reads the rendered file to the same script lines the stdlib scanner does and to exactly ci_adapters.gitlab_document.
+summary: config/project.json `ci_pipeline.steps` is the one statement of what CI runs, and each adapter file present (`ci_pipeline.adapters`: .github/workflows/ci.yml, .gitlab-ci.yml) is held to it through tests/ci_adapters.py parity_faults. The adapters in this tree have no fault; an empty step list, a tree with no adapter, a missing marker line or one that is not the whole line, a dropped, added, reordered or changed step, a changed env value, and a GitLab image or GIT_DEPTH other than the configured one each turn the judge red on a copy, and so does each GitLab key the shipped file lacks, however it is quoted or written (`when: manual`, `"when"`, `? when`, `'rules'`, `needs`, `allow_failure`, a `<<` merge, `MAKEFLAGS: "-n"` at either level, `default:`, `workflow`, `include`, another job), with one fault naming its key path, a key it has that the file lacks, a key set twice (named by both lines), a file YAML cannot read, a script item that is not a line, and a missing pyyaml. A file that differs only in what YAML does not read (comments, key order, quoting, a flow, nested or one-string script) has no fault. In a project, the `ci_pipeline` answer in .copier-answers.yml picks what is judged: a chosen adapter that is missing, or one that lost its marker, is a fault, and so is an answers file with no valid answer (shown by its line as written), one that answers twice however the second key is written (`"ci_pipeline"`, `ci_pipeline :`, `? ci_pipeline`; named by both lines), and one YAML cannot read; a quoted answer with a trailing comment reads as copier reads it; an unchosen file the project wrote, with no marker, is not judged, and an unchosen one carrying the marker still is. The GitLab cases render the template's .gitlab-ci.yml.jinja with the toolchain answer, so the shipped twin is judged too, and yaml reads the rendered file to the same script lines the stdlib scanner does and to exactly ci_adapters.gitlab_document.
 """
 
 import json
@@ -374,15 +374,49 @@ def test_a_ci_pipeline_answered_twice_is_a_fault_naming_both_lines(tmp_path):
         assert said in faults[0], faults
 
 
-def test_an_answer_the_scanner_cannot_read_is_shown_as_written(tmp_path):
-    """A quoted value with a trailing comment is not read as an adapter name,
-    and the fault shows the line as the file has it, not the scanner's
-    reading of it."""
-    root = _copy(tmp_path)
-    _answer(root, "ci_pipeline: 'gitlab' # c")
+@pytest.mark.parametrize(
+    "second",
+    ['"ci_pipeline": github', "ci_pipeline : github", "? ci_pipeline\n: github"],
+)
+def test_a_second_ci_pipeline_written_another_way_is_a_fault_naming_both_lines(
+    tmp_path, second
+):
+    """copier's YAML reads a quoted, spaced or explicit key as `ci_pipeline`
+    and keeps the last, so the judge reads the answers the same way and fails
+    the file that answers twice however the second is written."""
+    root = _copy(tmp_path, gitlab=True)
+    _answer(root, "ci_pipeline: gitlab\n" + second)
     faults = ci_adapters.parity_faults(root)
     assert len(faults) == 1, faults
-    assert "`ci_pipeline: 'gitlab' # c`" in faults[0], faults
+    for said in (
+        "line 2",
+        "`ci_pipeline: gitlab`",
+        "line 3",
+        "`%s`" % second.split("\n")[0],
+    ):
+        assert said in faults[0], faults
+
+
+def test_an_answer_reads_as_copier_reads_it(tmp_path):
+    """A quoted value with a trailing comment is the value copier reads, so a
+    project that chose gitlab that way has its GitLab file judged and no
+    fault; an unknown value written that way is shown as the file has it."""
+    root = _copy(tmp_path, gitlab=True)
+    (root / ".github/workflows/ci.yml").unlink()
+    _answer(root, "ci_pipeline: 'gitlab' # c")
+    assert ci_adapters.chosen(root) == (["gitlab"], None)
+    assert ci_adapters.parity_faults(root) == []
+    _answer(root, "ci_pipeline: 'jenkins' # c")
+    faults = ci_adapters.parity_faults(root)
+    assert len(faults) == 1, faults
+    assert "line 2 `ci_pipeline: 'jenkins' # c`" in faults[0], faults
+
+
+def test_an_answers_file_yaml_cannot_read_is_a_fault(tmp_path):
+    root = _copy(tmp_path)
+    _answer(root, "ci_pipeline: [github")
+    faults = ci_adapters.parity_faults(root)
+    assert len(faults) == 1 and faults[0].startswith(".copier-answers.yml: "), faults
 
 
 def test_an_unchosen_file_the_project_wrote_is_not_judged(tmp_path):

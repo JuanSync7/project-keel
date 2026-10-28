@@ -2,7 +2,7 @@
 title: Test helper — read each CI adapter's steps and judge it against config/project.json ci_pipeline
 kind: tests
 layer: n/a
-summary: config/project.json `ci_pipeline` states the CI pipeline once, as an ordered list of shell steps; each adapter file (`ci_pipeline.adapters`, github's .github/workflows/ci.yml and gitlab's .gitlab-ci.yml) runs them. adapter_steps reads the neutral steps an adapter file runs, stdlib line-scanning so a test that imports nothing optional can use it: in a GitHub workflow they are the `run` steps after the last `uses:` setup step, with their `env` map and whether `continue-on-error` lets the job carry on; in a GitLab file they are the `test` job's `script` lines, a leading upper-case NAME=value being the step's env and `allow_failure` making every step soft. judged names the adapter files that are keel's, and shipped adds, in the template, an adapter present only as its `.jinja` twin, so a test about what CI runs reads every adapter keel ships. gitlab_line is the one way a step is written as a GitLab script line. parity_faults names every way the adapters under a root differ from the config: no step configured, no adapter present, a chosen adapter missing, a missing marker line, and steps that differ in content or order. The GitLab rule is that a project's .gitlab-ci.yml may differ from the one keel ships only in what YAML does not read: the file is read with pyyaml's safe loader, the reader copier uses, so a quoted (`"when"`) or explicit (`? when`) key reads as the key itself, and a key one mapping sets twice is a fault naming both lines, since YAML would keep the last in silence; then any top-level key, any key of the `test` job and any variable, top-level or the job's `variables`, that gitlab_document (the shipped file, built from config: `ci_pipeline.gitlab_image` filled from `toolchain`, the steps, and `GIT_DEPTH` "0") lacks, sets otherwise, or sets and the file lacks is a fault naming its key path, and the `script`, one string or a list GitLab flattens, must run exactly the steps. A comment, a blank line, key order, quoting, and flow or block style are the edits it allows. Without pyyaml a GitLab file is a fault, never a pass. adapter_steps keeps its stdlib scanner for the gitlab twin keel ships, because tests/integration/test_gate_scope.py and tests/integration/test_copier_generator_contract.py read it and must never skip; tests/integration/test_ci_pipeline_gate.py holds that twin, read by yaml, equal to gitlab_document. The GitHub reader has no key check: a job-level `if:` or a changed `on:` passes (KEEL-CIGATE-1). Which adapters are judged follows the `ci_pipeline` answer in .copier-answers.yml: every chosen one, and an unchosen one only when it carries keel's marker line, so a file the project wrote itself, which `copier update` also keeps, is not held to keel's steps; the template has no answers file and judges every adapter present, and an answers file that records no valid answer, or answers twice (YAML would read the last line, a scan the first), is a fault that shows each line as written. A GitHub layout the scanner cannot read gives steps that differ from the config, and a GitLab file YAML cannot read is a fault, so the judge fails closed. It reads files and writes nothing.
+summary: config/project.json `ci_pipeline` states the CI pipeline once, as an ordered list of shell steps; each adapter file (`ci_pipeline.adapters`, github's .github/workflows/ci.yml and gitlab's .gitlab-ci.yml) runs them. adapter_steps reads the neutral steps an adapter file runs, stdlib line-scanning so a test that imports nothing optional can use it: in a GitHub workflow they are the `run` steps after the last `uses:` setup step, with their `env` map and whether `continue-on-error` lets the job carry on; in a GitLab file they are the `test` job's `script` lines, a leading upper-case NAME=value being the step's env and `allow_failure` making every step soft. judged names the adapter files that are keel's, and shipped adds, in the template, an adapter present only as its `.jinja` twin, so a test about what CI runs reads every adapter keel ships. gitlab_line is the one way a step is written as a GitLab script line. parity_faults names every way the adapters under a root differ from the config: no step configured, no adapter present, a chosen adapter missing, a missing marker line, and steps that differ in content or order. The GitLab rule is that a project's .gitlab-ci.yml may differ from the one keel ships only in what YAML does not read: the file is read with pyyaml's safe loader, the reader copier uses, so a quoted (`"when"`) or explicit (`? when`) key reads as the key itself, and a key one mapping sets twice is a fault naming both lines, since YAML would keep the last in silence; then any top-level key, any key of the `test` job and any variable, top-level or the job's `variables`, that gitlab_document (the shipped file, built from config: `ci_pipeline.gitlab_image` filled from `toolchain`, the steps, and `GIT_DEPTH` "0") lacks, sets otherwise, or sets and the file lacks is a fault naming its key path, and the `script`, one string or a list GitLab flattens, must run exactly the steps. A comment, a blank line, key order, quoting, and flow or block style are the edits it allows. Without pyyaml a GitLab file is a fault, never a pass. adapter_steps keeps its stdlib scanner for the gitlab twin keel ships, because tests/integration/test_gate_scope.py and tests/integration/test_copier_generator_contract.py read it and must never skip; tests/integration/test_ci_pipeline_gate.py holds that twin, read by yaml, equal to gitlab_document. The GitHub reader has no key check: a job-level `if:` or a changed `on:` passes (KEEL-CIGATE-1). Which adapters are judged follows the `ci_pipeline` answer in .copier-answers.yml: every chosen one, and an unchosen one only when it carries keel's marker line, so a file the project wrote itself, which `copier update` also keeps, is not held to keel's steps; the answers are read by the same YAML loader, the one copier reads them with, so a quoted, spaced or explicit `ci_pipeline` key reads as itself; the template has no answers file and judges every adapter present, and an answers file YAML cannot read, one that records no valid answer (shown by its line as written), and one that sets a key twice (named by both lines) is a fault. A GitHub layout the scanner cannot read gives steps that differ from the config, and a GitLab file YAML cannot read is a fault, so the judge fails closed. It reads files and writes nothing.
 """
 
 import json
@@ -34,37 +34,28 @@ def present(root):
 
 def chosen(root):
     """(adapter names the project chose, fault or None). The choice is the
-    `ci_pipeline` line of .copier-answers.yml, `both` naming every adapter; with
-    no answers file (the template itself) it is None and every adapter present
-    is keel's."""
+    `ci_pipeline` answer in .copier-answers.yml, read by _load as copier reads
+    it, `both` naming every adapter; with no answers file (the template itself)
+    it is None and every adapter present is keel's."""
     path = Path(root) / ANSWERS
     if not path.is_file():
         return None, None
     names = sorted(pipeline(root)["adapters"])
-    answers = [
-        (number, line)
-        for number, line in enumerate(path.read_text("utf-8").splitlines(), 1)
-        if re.fullmatch(r"ci_pipeline:(.*)", line)
-    ]
-    if not answers:
+    answers, lines, fault = _load(path)
+    if fault:
+        return [], fault
+    if not isinstance(answers, dict) or "ci_pipeline" not in answers:
         return [], "%s records no ci_pipeline answer" % ANSWERS
-    if len(answers) > 1:
-        # YAML reads the last and this scan would read the first, so neither
-        # may decide what is judged.
-        return [], "%s answers ci_pipeline more than once (%s): keep one" % (
-            ANSWERS,
-            ", ".join("line %d `%s`" % answer for answer in answers),
-        )
-    number, line = answers[0]
-    value = _scalar(line[len("ci_pipeline:") :])
+    value = answers["ci_pipeline"]
     if value == "both":
         return names, None
     if value in names:
         return [value], None
+    number = lines["ci_pipeline"]
     return [], "%s line %d `%s` is not ci_pipeline 'both' or one of %s" % (
         ANSWERS,
         number,
-        line,
+        path.read_text("utf-8").splitlines()[number - 1],
         names,
     )
 
@@ -212,30 +203,49 @@ def _unique_key_loader(yaml):
 
 
 def _load(path):
-    """(the YAML document at *path*, fault or None). The fault names a key set
-    twice with both lines as written, any other YAML error, and a missing
-    pyyaml: the dev extra installs it (pre-commit needs it) and the template
-    extra too (copier needs it), and without it nothing may be judged a pass."""
+    """(the YAML document at *path*, {top-level key: its line}, fault or None).
+    The fault names a key set twice with both lines as written, any other YAML
+    error, and a missing pyyaml: the dev extra installs it (pre-commit needs
+    it) and the template extra too (copier needs it), and without it nothing
+    may be judged a pass."""
     try:
         import yaml
     except ImportError:
-        return None, (
-            "%s cannot be judged: pyyaml is not importable; install the dev extra"
-            % path.name
+        return (
+            None,
+            {},
+            (
+                "%s cannot be judged: pyyaml is not importable; install the dev extra"
+                % path.name
+            ),
         )
     text = path.read_text("utf-8")
+    loader = _unique_key_loader(yaml)(text)
     try:
-        return yaml.load(text, Loader=_unique_key_loader(yaml)), None
+        node = loader.get_single_node()
+        doc = None if node is None else loader.construct_document(node)
     except _DoubledKey as e:
         key, first, second = e.args
         lines = text.splitlines()
-        return None, (
-            "%s sets `%s` twice, line %d `%s` and line %d `%s`; YAML keeps the "
-            "last, so keep one"
-            % (path.name, key, first, lines[first - 1], second, lines[second - 1])
+        return (
+            None,
+            {},
+            (
+                "%s sets `%s` twice, line %d `%s` and line %d `%s`; YAML keeps the "
+                "last, so keep one"
+                % (path.name, key, first, lines[first - 1], second, lines[second - 1])
+            ),
         )
     except yaml.YAMLError as e:
-        return None, "%s: %s" % (path.name, " ".join(str(e).split()))
+        return None, {}, "%s: %s" % (path.name, " ".join(str(e).split()))
+    finally:
+        loader.dispose()
+    top = {}
+    if isinstance(node, yaml.MappingNode):
+        for key_node, _ in node.value:
+            if isinstance(key_node, yaml.ScalarNode):
+                top.setdefault(key_node.value, key_node.start_mark.line + 1)
+    return doc, top, None
 
 
 def gitlab_document(root):
@@ -303,7 +313,7 @@ def _gitlab_faults(root, path, want):
     """A message per way the GitLab file at *path* differs from
     gitlab_document: every key path it sets that keel's does not, or sets to
     another value, or lacks, and a script that does not run *want*."""
-    doc, fault = _load(path)
+    doc, _, fault = _load(path)
     if fault:
         return [fault]
     if not isinstance(doc, dict):
