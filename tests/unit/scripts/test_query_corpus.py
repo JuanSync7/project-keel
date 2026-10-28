@@ -2,7 +2,7 @@
 title: Unit — query_corpus retrieval (stems and excerpts)
 kind: tests
 layer: n/a
-summary: query_corpus scores a node by query-token overlap, and before this two things made it miss: tokens were compared verbatim, so `idempotency` found nothing while `idempotent` found eight nodes; and only tags, title and summary were read, so a term that lives in the body was invisible. Tokens are now lightly stemmed on both sides and the body excerpt counts, below the title and summary, so a body-only match never outranks a summary match. A node at a level outside config/project.json corpus.served_visibilities, or that states none, is cut before scoring, so it is neither a hit nor a neighbour, and the CLI reads the configured list. A served node the CLI prints names no hidden node in its links, children or parent: a public doc linking to a confidential one, built by the real build_corpus and link_corpus, prints neither the confidential doc's id nor its title. A node whose file under `--root` now states a stricter level is not printed either: in the reviewer's repro, `docs/pubguide.md` reclassified after the build in each of tests/reclassify.py's ways, neither its node nor its id in a served doc's links is printed, the script's own checkout set apart from `--root` so a CLI that ignores `--root` is red, and stderr counts the withheld nodes, never a node the corpus itself hides; the other tests write each node's file stating its corpus level. The root is derived from the corpus, never chosen beside it, in the reviewer's repros: checkout `a` made its guide confidential without rebuilding its corpus, `b` is a copy taken before, `c` holds only the guide and another folder only a README.md. a's corpus, named from inside b, is read with a's files and withholds the guide; b's corpus, named by a relative path from inside b, serves it; `c` and the README folder keep no corpus, so `--root` there prints `[]` and names where the corpus would be; `--root b` beside a's corpus, and a copy of a's corpus outside some checkout's wiki/corpus.json, are refused with USAGE and nothing printed; a root that does not exist is refused with USAGE naming it.
+summary: query_corpus scores a node by query-token overlap, and before this two things made it miss: tokens were compared verbatim, so `idempotency` found nothing while `idempotent` found eight nodes; and only tags, title and summary were read, so a term that lives in the body was invisible. Tokens are now lightly stemmed on both sides and the body excerpt counts, below the title and summary, so a body-only match never outranks a summary match. A node at a level outside config/project.json corpus.served_visibilities, or that states none, is cut before scoring, so it is neither a hit nor a neighbour, and the CLI reads the configured list. A served node the CLI prints names no hidden node in its links, children or parent: a public doc linking to a confidential one, built by the real build_corpus and link_corpus, prints neither the confidential doc's id nor its title. A node whose file under `--root` now states a stricter level is not printed either: in the reviewer's repro, `docs/pubguide.md` reclassified after the build in each of tests/reclassify.py's ways, neither its node nor its id in a served doc's links is printed, the script's own checkout set apart from `--root` so a CLI that ignores `--root` is red, and stderr counts the withheld nodes, never a node the corpus itself hides; the other tests write each node's file stating its corpus level. The root is derived from the corpus, never chosen beside it, in the reviewer's repros: checkout `a` made its guide confidential without rebuilding its corpus, `b` is a copy taken before, `c` holds only the guide and another folder only a README.md. a's corpus, named from inside b, is read with a's files and withholds the guide; b's corpus, named by a relative path from inside b, serves it; `c` and the README folder keep no corpus, so `--root` there prints `[]` and names where the corpus would be; `--root b` beside a's corpus, a copy of a's corpus outside some checkout's wiki/corpus.json, and the README folder's wiki/corpus.json named with `--corpus`, which does not exist, are refused with USAGE and nothing printed; a root that does not exist is refused with USAGE naming it.
 """
 
 import json
@@ -354,6 +354,18 @@ def test_a_folder_with_no_corpus_of_its_own_prints_nothing_of_anothers(
     code, ids, err = _main(["zebra", "--root", str(root)], capsys)
     assert code is qc.ExitCode.SUCCESS and ids == set()
     assert str(root / "wiki" / "corpus.json") in err and "make site-data" in err
+
+
+def test_a_named_corpus_that_does_not_exist_is_refused(tmp_path, monkeypatch, capsys):
+    """The README folder keeps no corpus, so its wiki/corpus.json named with
+    `--corpus` is a mistyped path, not an empty answer: refused with USAGE,
+    nothing printed, naming the path and how to build it."""
+    a, _, _, readme = _stale_project(tmp_path)
+    monkeypatch.setattr(qc, "ROOT", str(a))
+    corpus = readme / "wiki" / "corpus.json"
+    code, ids, err = _main(["zebra", "--corpus", str(corpus)], capsys)
+    assert code is qc.ExitCode.USAGE and ids is None
+    assert str(corpus) in err and "make site-data" in err
 
 
 def test_a_root_and_a_corpus_given_together_are_refused(tmp_path, monkeypatch, capsys):

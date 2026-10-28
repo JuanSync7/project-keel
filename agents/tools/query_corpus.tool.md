@@ -65,12 +65,13 @@ derives the corpus from `--root` (`<root>/wiki/corpus.json`) or the checkout
 from `--corpus` (the directory that keeps its `wiki/corpus.json`). No rule can
 tell a stale copy or another project from the real checkout by the files it
 holds, so a corpus is never paired with a root chosen beside it: `--root` and
-`--corpus` together, or a `--corpus` that is not some directory's
-`wiki/corpus.json`, print nothing to stdout and exit 2. A copy of a corpus
+`--corpus` together, a `--corpus` that is not some directory's
+`wiki/corpus.json`, or one that does not exist, print nothing to stdout and
+exit 2. A copy of a corpus
 inside another checkout's `wiki/` is that checkout's corpus, read with that
 checkout's files.
-A checkout with no corpus prints `[]`, exits 0 and names on stderr where the
-corpus would be. A root that does not exist prints nothing to stdout and exits
+A checkout with no corpus, named by `--root` or the default, prints `[]`,
+exits 0 and names on stderr where the corpus would be. A root that does not exist prints nothing to stdout and exits
 2 with stderr naming it. A served level outside the vocabulary prints nothing
 to stdout and exits 14.
 

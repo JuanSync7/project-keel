@@ -2,7 +2,7 @@
 title: Integration — MCP servers (Q&A + action)
 kind: tests
 layer: backend
-summary: The thin MCP servers expose schema'd tools that delegate to wiki_navigator and a jobs doer; the action tool defaults to dry-run. Another project's corpus is answered against that project's own files, never this checkout's: once its README.md states confidential, the node its corpus serves is neither cited nor sent. Each wiki_answer is held to the server's approved model-call count, config/project.json `agents.max_model_calls` read by configured_cap: a count of 0, the default and the shipped value, answers with a tool error naming the key and makes no model call, a FakeModel subclass in models.registry._REGISTRY counting the calls. The Q&A server's `main` reads that count from the root it is given: under a root that approves one call a question reaches the model once, which the 0 this checkout ships would refuse. Each server's entry `main` turns a refused setting (a serve limit out of its bound, a blank KEEL_MCP_MODEL) into exit CONFIG through the exit helper with the key on stderr, before it caps memory or serves. Each server's `main` refuses a tool limit (config/project.json `agents.tool_timeout_seconds`) as CONFIG the same way, and hands its root's tool limits to the child it starts: under a 64-byte `agents.tool_max_output_bytes` the action server's dry-run index build, and the Q&A server's corpus query for a question, are each a tool error naming that key, the question with no model call made.
+summary: The thin MCP servers expose schema'd tools that delegate to wiki_navigator and a jobs doer; the action tool defaults to dry-run. A corpus named in a folder that keeps none is a tool error naming its path, with no model call. Another project's corpus is answered against that project's own files, never this checkout's: once its README.md states confidential, the node its corpus serves is neither cited nor sent. Each wiki_answer is held to the server's approved model-call count, config/project.json `agents.max_model_calls` read by configured_cap: a count of 0, the default and the shipped value, answers with a tool error naming the key and makes no model call, a FakeModel subclass in models.registry._REGISTRY counting the calls. The Q&A server's `main` reads that count from the root it is given: under a root that approves one call a question reaches the model once, which the 0 this checkout ships would refuse. Each server's entry `main` turns a refused setting (a serve limit out of its bound, a blank KEEL_MCP_MODEL) into exit CONFIG through the exit helper with the key on stderr, before it caps memory or serves. Each server's `main` refuses a tool limit (config/project.json `agents.tool_timeout_seconds`) as CONFIG the same way, and hands its root's tool limits to the child it starts: under a 64-byte `agents.tool_max_output_bytes` the action server's dry-run index build, and the Q&A server's corpus query for a question, are each a tool error naming that key, the question with no model call made.
 """
 
 import json
@@ -162,6 +162,28 @@ def test_qa_tool_with_no_approved_call_refuses_and_calls_no_model(
         result = server.call_tool("wiki_answer", {"question": "what is keel"})
         assert result["isError"] is True
         assert "agents.max_model_calls" in result["content"][0]["text"]
+    assert _Counted.prompts == []
+
+
+def test_qa_tool_with_a_named_corpus_that_does_not_exist_calls_no_model(
+    tmp_path, monkeypatch
+):
+    """The reviewer's repro: `d/wiki/corpus.json`, `d` existing with no
+    corpus, was answered from an empty context with one model call. It is a
+    tool error naming the path, and no model is called."""
+    monkeypatch.setitem(registry._REGISTRY, "fake", _Counted)
+    monkeypatch.setattr(_Counted, "prompts", [])
+    (tmp_path / "d").mkdir()
+    corpus = tmp_path / "d" / "wiki" / "corpus.json"
+    server = build_qa_server(
+        model="fake",
+        corpus=str(corpus),
+        max_model_calls=1,
+        max_session_model_calls=1,
+    )
+    result = server.call_tool("wiki_answer", {"question": "what is keel"})
+    assert result["isError"] is True
+    assert str(corpus) in result["content"][0]["text"]
     assert _Counted.prompts == []
 
 

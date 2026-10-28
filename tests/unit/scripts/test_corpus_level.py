@@ -149,6 +149,8 @@ def test_a_root_gives_its_own_corpus_and_a_corpus_its_own_checkout(
     the caller's directory; neither given is the default checkout's corpus."""
     monkeypatch.chdir(tmp_path)
     own = str(tmp_path / "b" / "wiki" / "corpus.json")
+    (tmp_path / "b" / "wiki").mkdir(parents=True)
+    Path(own).write_text("{}")
     assert corpus_level.checkout("b", None, "/x") == (str(tmp_path / "b"), own)
     assert corpus_level.checkout(None, "b/wiki/corpus.json", "/x") == (
         str(tmp_path / "b"),
@@ -176,6 +178,23 @@ def test_a_corpus_outside_a_checkouts_wiki_is_refused(tmp_path, monkeypatch, cor
     assert on == str(tmp_path / corpus)
     assert "wiki/corpus.json" in next_step
     assert isinstance(raised.value, ValueError)
+
+
+def test_a_named_corpus_that_does_not_exist_is_refused(tmp_path, monkeypatch):
+    """A corpus named in a folder that keeps none would answer from nothing
+    with no sign, so it is refused, naming the path and how to build it; a
+    root with no corpus yet still names its own."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "d").mkdir()
+    with pytest.raises(corpus_level.NotACheckout) as raised:
+        corpus_level.checkout(None, "d/wiki/corpus.json", "/x")
+    what, on, next_step = raised.value.parts
+    assert on == str(tmp_path / "d" / "wiki" / "corpus.json")
+    assert "make site-data" in next_step
+    assert corpus_level.checkout("d", None, "/x") == (
+        str(tmp_path / "d"),
+        str(tmp_path / "d" / "wiki" / "corpus.json"),
+    )
 
 
 def test_a_root_and_a_corpus_given_together_are_refused(tmp_path):

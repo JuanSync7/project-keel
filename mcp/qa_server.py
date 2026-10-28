@@ -100,8 +100,8 @@ def build_qa_server(
     ``wiki/corpus.json``), read only at some checkout's ``wiki/corpus.json``:
     that checkout's files are read for the level each node states now, so
     another project's corpus is answered against that project's files, and
-    a corpus anywhere else makes every question a tool error
-    (scripts/corpus_level.py checkout).
+    a corpus anywhere else, or one that does not exist, makes every question
+    a tool error with no model call (scripts/corpus_level.py checkout).
     ``max_model_calls`` is the count each question is held to (0, the
     default, approves none, so every question is a tool error).
     ``max_session_model_calls`` is the total the server's questions may make

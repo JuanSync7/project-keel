@@ -2,7 +2,7 @@
 title: Integration — the doc reviewer agent (dry-run, execute, decline, rollback)
 kind: tests
 layer: backend
-summary: agents.doc_reviewer.review over patched tool and model seams (no subprocess, no model, but for one style-rule retrieval over the real query_corpus, which retrieves the guide while its file under the reviewed root is public and not once it states confidential, so a retrieval that drops `--root` is red): a dry-run gathers findings, retrieves rules, gates the baseline and writes nothing; execute proposes one edit per chunk and applies through the gated doer; a declined chunk or a red gate lands in skipped; a red baseline attempts nothing; a reply that names a gate is declined, the prompt never states the gate, and every apply is bound to its chunk's own file with `--allow`. A style-rule retrieval query_corpus refuses, or whose output is not JSON, raises RuntimeError naming the exit status, dry run and execute alike, with no model call. A relative root reaches the corpus query as one absolute `--root`, with no `--corpus` beside it; a corpus given alone names its checkout, whose corpus both the withholding check and the query read; a root beside a corpus, or a corpus outside some checkout's wiki/corpus.json, is corpus_level.NotACheckout before any tool runs. Every tool call hands the reviewed root to the runner, so run_tool reads the tool limits, and checks them against the gate keys, of the tree the gate runner reads. The report the CLI and hook print is this report. A finding on a file the corpus places outside corpus.served_visibilities, or has no node for, or on any file when the corpus or config cannot be read, is withheld: reported with why (one CLI line each, a count in the hook's line), its text never read, and no prompt or apply made, dry run and execute alike, while a served finding beside it still goes; a chunk queued before its file left the served levels is declined at propose with no model call; a document reclassified on disk after the corpus was built, or made unreadable, is withheld the same way, its text in no prompt.
+summary: agents.doc_reviewer.review over patched tool and model seams (no subprocess, no model, but for one style-rule retrieval over the real query_corpus, which retrieves the guide while its file under the reviewed root is public and not once it states confidential, so a retrieval that drops `--root` is red): a dry-run gathers findings, retrieves rules, gates the baseline and writes nothing; execute proposes one edit per chunk and applies through the gated doer; a declined chunk or a red gate lands in skipped; a red baseline attempts nothing; a reply that names a gate is declined, the prompt never states the gate, and every apply is bound to its chunk's own file with `--allow`. A style-rule retrieval query_corpus refuses, or whose output is not JSON, raises RuntimeError naming the exit status, dry run and execute alike, with no model call. A relative root reaches the corpus query as one absolute `--root`, with no `--corpus` beside it; a corpus given alone names its checkout, whose corpus both the withholding check and the query read; a root beside a corpus, a corpus outside some checkout's wiki/corpus.json, or one named that does not exist, is corpus_level.NotACheckout before any tool runs. Every tool call hands the reviewed root to the runner, so run_tool reads the tool limits, and checks them against the gate keys, of the tree the gate runner reads. The report the CLI and hook print is this report. A finding on a file the corpus places outside corpus.served_visibilities, or has no node for, or on any file when the corpus or config cannot be read, is withheld: reported with why (one CLI line each, a count in the hook's line), its text never read, and no prompt or apply made, dry run and execute alike, while a served finding beside it still goes; a chunk queued before its file left the served levels is declined at propose with no model call; a document reclassified on disk after the corpus was built, or made unreadable, is withheld the same way, its text in no prompt.
 """
 
 import json
@@ -212,15 +212,19 @@ def test_a_corpus_names_the_checkout_both_readers_read(seams, monkeypatch):
     assert os.path.realpath(_flag(argv, "--root")) == os.path.realpath(str(root))
 
 
-@pytest.mark.parametrize("given", ["both", "outside-wiki"])
+@pytest.mark.parametrize("given", ["both", "outside-wiki", "missing"])
 def test_a_corpus_that_is_not_its_roots_own_is_refused_before_any_step(seams, given):
     """A root beside a corpus, or a corpus outside some checkout's
     wiki/corpus.json, could pair one checkout's corpus with another's files,
-    so review() raises corpus_level.NotACheckout and runs no tool."""
+    and a corpus named in a folder that keeps none would review with no
+    rules, so review() raises corpus_level.NotACheckout and runs no tool."""
     runner, model, root = seams
     corpus = root / "wiki" / "corpus.json"
     if given == "both":
         kwargs = {"root": str(root), "corpus": str(corpus)}
+    elif given == "missing":
+        (root / "d").mkdir()
+        kwargs = {"corpus": str(root / "d" / "wiki" / "corpus.json")}
     else:
         corpus.rename(root / "corpus.json")
         kwargs = {"corpus": str(root / "corpus.json")}

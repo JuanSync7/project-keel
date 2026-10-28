@@ -2,7 +2,7 @@
 title: Integration — practice_refactor gated KG-walking loop
 kind: tests
 layer: backend
-summary: A relative root reaches the corpus query as one absolute `--root`, with no `--corpus` beside it; a corpus given alone names its checkout; a root beside a corpus, or a corpus outside some checkout's wiki/corpus.json, is corpus_level.NotACheckout before any tool runs, and exit USAGE from the CLI. Dry-run walks the graph + gates the read-only baseline but proposes/writes nothing; execute proposes one bounded edit per chunk and a chunk is `refactored` only when the gated apply_refactor keeps make verify green (else rolled back -> `skipped`); a crash mid-refactor resumes at the cursor without re-applying accepted chunks. The gate is the run's: a reply that names a gate is declined before any apply, every apply is bound to its chunk's own file with `--allow`, a chunk with no path is declined before the model is called, and a chunk outside config/project.json corpus.served_visibilities is no candidate, nor is one whose file states a level outside it on disk now, or none that can be read, as a document reclassified after the corpus was built does; a saved run's chunk from such a file is declined at propose with no model call. Every tool call hands the refactored root to the runner, so run_tool reads the tool limits, and checks them against the gate keys, of the tree the gate runner reads.
+summary: A relative root reaches the corpus query as one absolute `--root`, with no `--corpus` beside it; a corpus given alone names its checkout; a root beside a corpus, a corpus outside some checkout's wiki/corpus.json, or one named that does not exist, is corpus_level.NotACheckout before any tool runs, and exit USAGE from the CLI. Dry-run walks the graph + gates the read-only baseline but proposes/writes nothing; execute proposes one bounded edit per chunk and a chunk is `refactored` only when the gated apply_refactor keeps make verify green (else rolled back -> `skipped`); a crash mid-refactor resumes at the cursor without re-applying accepted chunks. The gate is the run's: a reply that names a gate is declined before any apply, every apply is bound to its chunk's own file with `--allow`, a chunk with no path is declined before the model is called, and a chunk outside config/project.json corpus.served_visibilities is no candidate, nor is one whose file states a level outside it on disk now, or none that can be read, as a document reclassified after the corpus was built does; a saved run's chunk from such a file is declined at propose with no model call. Every tool call hands the refactored root to the runner, so run_tool reads the tool limits, and checks them against the gate keys, of the tree the gate runner reads.
 """
 
 import json
@@ -232,6 +232,8 @@ def test_a_corpus_names_the_checkout_the_walk_reads(tmp_path, monkeypatch):
     runner, model = _Runner(), _Model()
     _patch(monkeypatch, runner, model)
     _files(tmp_path)
+    (tmp_path / "wiki").mkdir()
+    (tmp_path / "wiki" / "corpus.json").write_text(json.dumps({"nodes": _NODES}))
     monkeypatch.chdir(tmp_path.parent)
     refactor(
         "precise-container-types",
@@ -242,12 +244,13 @@ def test_a_corpus_names_the_checkout_the_walk_reads(tmp_path, monkeypatch):
     assert "--corpus" not in argv
 
 
-@pytest.mark.parametrize("given", ["both", "outside-wiki"])
+@pytest.mark.parametrize("given", ["both", "outside-wiki", "missing"])
 def test_a_corpus_that_is_not_its_roots_own_is_refused_before_any_step(
     tmp_path, monkeypatch, capsys, given
 ):
     """A root beside a corpus, or a corpus outside some checkout's
-    wiki/corpus.json, could pair one checkout's corpus with another's files:
+    wiki/corpus.json, could pair one checkout's corpus with another's files,
+    and a corpus named in a folder that keeps none would walk nothing:
     refactor() raises corpus_level.NotACheckout and runs no tool, and the
     CLI refuses it with USAGE before the agent runs."""
     sys.path.insert(0, str(_ROOT / "scripts"))
@@ -258,6 +261,8 @@ def test_a_corpus_that_is_not_its_roots_own_is_refused_before_any_step(
     root = _files(tmp_path)
     if given == "both":
         kwargs = {"root": root, "corpus": os.path.join(root, "wiki", "corpus.json")}
+    elif given == "missing":
+        kwargs = {"corpus": os.path.join(root, "wiki", "corpus.json")}
     else:
         kwargs = {"corpus": os.path.join(root, "corpus.json")}
     with pytest.raises(corpus_level.NotACheckout):

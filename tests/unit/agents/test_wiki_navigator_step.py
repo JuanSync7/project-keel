@@ -2,7 +2,7 @@
 title: Unit — the wiki navigator's model step runs on an injected backend
 kind: tests
 layer: n/a
-summary: wiki_navigator.synthesize(question, nodes, backend=b) sends b the agent's real answer prompt (its prompt.md preamble, the question and each visible node cited by node_id), never a node outside config/project.json corpus.served_visibilities (a confidential or restricted node, one that states no level or one outside the vocabulary), and returns b's reply stripped; the plan's synthesize step calls the same function, so the eval harness judges the code answer() runs. answer(execute=True) with no approved count of model calls is a ValueError before any step runs; answer(backend_factory=f) builds its one counted backend with f from the model name, so a caller that counts calls across answers (mcp/qa_server.py's session total) sees each one, and with no factory it is models.get_model. A citation whose node names no owner_source carries None, unknown, never `none`. answer(root=r) reads each node's file under r again: in the reviewer's repro, `docs/pubguide.md` reclassified after the corpus build in each of tests/reclassify.py's ways, a dry run's prompt carries neither its summary nor its id, and nothing cites it. A root that does not exist is a RuntimeError naming it before the model backend is built, and a root given beside a corpus, or a corpus outside some checkout's wiki/corpus.json, is corpus_level.NotACheckout before any step. answer reads the corpus of the checkout it is named, by root or by corpus: in the reviewer's stale-copy repro it cites the guide from the copy and nothing from the reclassified checkout, a relative path taken from the caller's directory.
+summary: wiki_navigator.synthesize(question, nodes, backend=b) sends b the agent's real answer prompt (its prompt.md preamble, the question and each visible node cited by node_id), never a node outside config/project.json corpus.served_visibilities (a confidential or restricted node, one that states no level or one outside the vocabulary), and returns b's reply stripped; the plan's synthesize step calls the same function, so the eval harness judges the code answer() runs. answer(execute=True) with no approved count of model calls is a ValueError before any step runs; answer(backend_factory=f) builds its one counted backend with f from the model name, so a caller that counts calls across answers (mcp/qa_server.py's session total) sees each one, and with no factory it is models.get_model. A citation whose node names no owner_source carries None, unknown, never `none`. answer(root=r) reads each node's file under r again: in the reviewer's repro, `docs/pubguide.md` reclassified after the corpus build in each of tests/reclassify.py's ways, a dry run's prompt carries neither its summary nor its id, and nothing cites it. A root that does not exist is a RuntimeError naming it before the model backend is built, and a root given beside a corpus, a corpus outside some checkout's wiki/corpus.json, or one named in a folder that keeps none, is corpus_level.NotACheckout before any step. answer reads the corpus of the checkout it is named, by root or by corpus: in the reviewer's stale-copy repro it cites the guide from the copy and nothing from the reclassified checkout, a relative path taken from the caller's directory.
 """
 
 import json
@@ -215,17 +215,21 @@ def test_a_root_that_does_not_exist_raises_with_no_model_call(tmp_path):
     assert built == [] and seen.prompts == []
 
 
-@pytest.mark.parametrize("given", ["both", "outside-wiki"])
+@pytest.mark.parametrize("given", ["both", "outside-wiki", "missing"])
 def test_a_corpus_that_is_not_its_roots_own_is_refused_with_no_model_call(
     tmp_path, given
 ):
     """A root given beside a corpus, or a corpus that is not some checkout's
     wiki/corpus.json, could pair one checkout's corpus with another's files,
+    and a corpus named in a folder that keeps none would answer from nothing,
     so answer() raises NotACheckout, a ValueError, before any step."""
     factory, built, seen = _never_called()
     corpus = _one_node_corpus(tmp_path)
     if given == "both":
         kwargs = {"corpus": corpus, "root": str(tmp_path)}
+    elif given == "missing":
+        (tmp_path / "d").mkdir()
+        kwargs = {"corpus": str(tmp_path / "d" / "wiki" / "corpus.json")}
     else:
         moved = tmp_path / "corpus.json"
         Path(corpus).rename(moved)

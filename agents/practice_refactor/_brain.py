@@ -2,7 +2,7 @@
 title: Practice refactor brain
 layer: backend
 public_api: no
-summary: Plan: walk the corpus KG -> gate a green baseline -> (propose -> apply+gate+rollback) one chunk per step; on a durable Runtime. An execute run needs its approved count of model calls: every call goes through one run's models.ModelMeter, and a resumed run is first checked against the approved model and count (models.approve_resume). Every tool child runs through scripts/resource_limits.py run_tool, held to the refactored root's config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes`, the root whose make_targets gate keys the gate runner it starts reads, so the time limit is checked against that runner's own limit: past either its session is ended and the step raises ChildTimedOut or ChildOutputTooLarge naming the key. The walk keeps a chunk only when config_loader.is_served keeps its corpus node and config_loader.is_served_now keeps the level its file states on disk now (scripts/corpus_level.py stated_now), and the propose step asks that level again, so a file reclassified after the corpus was built, or one whose level cannot be read, never reaches a prompt. refactor is given a root or a corpus, never both, and scripts/corpus_level.py checkout derives the other before any step (this checkout when neither; a relative path is the caller's directory's), raising NotACheckout for both or for a corpus that is not some checkout's wiki/corpus.json; the walk hands query_corpus that root alone as `--root`, so it reads the root's own corpus.
+summary: Plan: walk the corpus KG -> gate a green baseline -> (propose -> apply+gate+rollback) one chunk per step; on a durable Runtime. An execute run needs its approved count of model calls: every call goes through one run's models.ModelMeter, and a resumed run is first checked against the approved model and count (models.approve_resume). Every tool child runs through scripts/resource_limits.py run_tool, held to the refactored root's config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes`, the root whose make_targets gate keys the gate runner it starts reads, so the time limit is checked against that runner's own limit: past either its session is ended and the step raises ChildTimedOut or ChildOutputTooLarge naming the key. The walk keeps a chunk only when config_loader.is_served keeps its corpus node and config_loader.is_served_now keeps the level its file states on disk now (scripts/corpus_level.py stated_now), and the propose step asks that level again, so a file reclassified after the corpus was built, or one whose level cannot be read, never reaches a prompt. refactor is given a root or a corpus, never both, and scripts/corpus_level.py checkout derives the other before any step (this checkout when neither; a relative path is the caller's directory's), raising NotACheckout for both, for a corpus that is not some checkout's wiki/corpus.json, or for a corpus that does not exist; the walk hands query_corpus that root alone as `--root`, so it reads the root's own corpus.
 """
 
 from __future__ import annotations
@@ -446,8 +446,8 @@ def refactor(
     (scripts/corpus_level.py checkout): ``root`` is the checkout (``None`` =
     this one), ``corpus`` its ``wiki/corpus.json``, a relative one taken
     from the caller's directory. The walk reads that checkout's corpus and
-    files; both given, or a corpus that is not some checkout's
-    ``wiki/corpus.json``, raises corpus_level.NotACheckout, a ValueError,
+    files; both given, a corpus that does not exist, or one that is not
+    some checkout's ``wiki/corpus.json``, raises corpus_level.NotACheckout, a ValueError,
     before any step.
     """
     if execute and max_model_calls is None:

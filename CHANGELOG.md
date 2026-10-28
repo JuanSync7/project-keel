@@ -770,8 +770,9 @@ version rather than a bare commit:
   the wiki navigator, the MCP Q&A server, the doc reviewer and the practice
   refactor each take a root or a corpus and derive the other
   (`scripts/corpus_level.py` `checkout`). They refuse a root and a corpus
-  given together, and a corpus path that is not some directory's
-  `wiki/corpus.json`. So the MCP Q&A server answers another project's corpus
+  given together, a corpus path that is not some directory's
+  `wiki/corpus.json`, and a corpus path that does not exist, so a mistyped
+  corpus is not answered from an empty context. So the MCP Q&A server answers another project's corpus
   against that project's files. `query_corpus.py` refuses a `--root` that
   does not exist, and the wiki navigator then raises before a model call.
   `query_corpus.py` writes to stderr how many nodes it withheld, and where a
