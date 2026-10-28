@@ -10,6 +10,8 @@ comments below, and tests/hermetic_git.py for what is neutralised and why.
 """
 
 import atexit
+import fcntl
+import hashlib
 import json
 import os
 import shutil
@@ -235,21 +237,32 @@ def real_corpus():
     `make check-corpus` exists to report (ADR-K-0008) — a test that fixes its own
     subject proves nothing. Building it by the same two jobs `make site-data`
     runs, in subprocesses, keeps one definition of how the view is produced.
+
+    Built by one xdist worker at a time, under an exclusive lock on a file in
+    the scratch root named for the corpus path: both jobs write the file in
+    place, so a worker that found it present while another was still writing
+    read a half-built corpus (`make test`, `-n auto`, in a project with no
+    corpus, measured red on main). The kernel drops the lock if its holder
+    dies, so a crashed worker leaves no stale lock.
     """
     path = os.path.join(_ROOT, "wiki", "corpus.json")
-    if os.path.isfile(path):
-        return path
-    for job in ("build_corpus.py", "link_corpus.py"):
-        result = subprocess.run(
-            [sys.executable, os.path.join("scripts", "jobs", job)],
-            cwd=_ROOT,
-            capture_output=True,
-            text=True,
-        )
-        assert result.returncode == 0, (
-            "could not build the corpus this suite reads (%s):\n%s%s"
-            % (job, result.stdout, result.stderr)
-        )
+    digest = hashlib.sha256(path.encode("utf-8")).hexdigest()[:16]
+    lock = os.path.join(tempfile.gettempdir(), "keel-corpus-%s.lock" % digest)
+    with open(lock, "a", encoding="utf-8") as held:
+        fcntl.flock(held, fcntl.LOCK_EX)
+        if os.path.isfile(path):
+            return path
+        for job in ("build_corpus.py", "link_corpus.py"):
+            result = subprocess.run(
+                [sys.executable, os.path.join("scripts", "jobs", job)],
+                cwd=_ROOT,
+                capture_output=True,
+                text=True,
+            )
+            assert result.returncode == 0, (
+                "could not build the corpus this suite reads (%s):\n%s%s"
+                % (job, result.stdout, result.stderr)
+            )
     return path
 
 
