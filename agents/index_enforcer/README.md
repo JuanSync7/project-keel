@@ -9,7 +9,7 @@ tags: [agent, enforcer, index, corpus]
 summary: Enforces conventions and builds/maintains the accountable wiki corpus.
 id: agents-index-enforcer-readme
 created: 2026-06-17
-updated: 2026-10-24
+updated: 2026-10-28
 visibility: internal
 canonical: true
 ---

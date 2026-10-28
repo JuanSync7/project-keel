@@ -9,7 +9,7 @@ tags: [agent, documentation, review, rosters, freshness]
 summary: Reviews the documentation against docs/guides/doc-style.md — the deterministic findings first, then one judged edit per chunk, each gated on make check-docs and rolled back if red.
 id: agents-doc-reviewer
 created: 2026-09-02
-updated: 2026-10-24
+updated: 2026-10-28
 visibility: internal
 canonical: true
 ---
