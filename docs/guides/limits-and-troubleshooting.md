@@ -523,10 +523,15 @@ path ending in `/exit_codes.sh`, as
 `exit "$EXIT_USAGE"`, `exit ${EXIT_FAILURE}`, `exit_fail` with a member
 other than `SUCCESS` and three non-blank parts, and
 `exit_passthrough "$?"` over a wrapped tool's status, or
-`exit_passthrough "$status"` when `status` is assigned at least once and
-every occurrence of it outside a comment and a quoted here-document body is
-the assignment `status=$?` (`"$?"` or `${?}` too, as a word of its own or
-after `local` and its kin) or the plain read `$status` or `${status}`. A
+`exit_passthrough "$status"` when a bare assignment statement binds
+`status` before it and every other occurrence of `status` outside a comment
+and a quoted here-document body is the plain read `$status` or `${status}`.
+Only a bare assignment statement binds: `status=$?` (`"$?"` or `${?}` too),
+alone or after `local`, `export`, `declare`, `readonly` or `typeset`, as a
+whole simple command in the main shell, earlier in the text than the ending
+that reads it. `echo status=$?`, `(status=$?)`, `x=$(status=$?)`,
+`status=$? | cat`, `status=$? true` and a binding after the ending bind
+nothing, so an ending with no binding before it renames a status. A
 `return` in a function is held the same way: `return "$EXIT_USAGE"`,
 `return "$?"` or a name so held. These are
 findings at their file and line: `exit 3`, `exit "3"`, `exit $?`, a bare

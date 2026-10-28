@@ -833,10 +833,13 @@ that sources it, each at its file and line; it reads `"exit"`, `\exit`,
 `$'exit'`, `command exit` and `builtin exit` as `exit`, and fails a command
 named by an expansion (`$x 3`, `"$cmd" 3`) or an `eval` wherever it could
 end the script, because it cannot judge them. `exit_passthrough "$?"`, or
-of a name assigned as `name=$?` and otherwise only read as `$name` or
-`${name}`, is the shell `passthrough`; any other occurrence of that name
-(`let`, `(( ))`, `${name:=...}`, `printf -v`, `read`, a word that only names
-it) is a finding at its own line. It judges an ending inside a subshell,
+of a name a bare assignment statement binds before it and that is otherwise
+only read as `$name` or `${name}`, is the shell `passthrough`. Only
+`name=$?`, alone or after `local` and its kin, as a whole simple command in
+the main shell and earlier in the text than the ending, binds;
+`echo name=$?`, `(name=$?)`, `name=$? | cat` and `name=$? true` do not. Any other
+occurrence of that name (`let`, `(( ))`, `${name:=...}`, `printf -v`,
+`read`, a word that only names it) is a finding at its own line. It judges an ending inside a subshell,
 `$(...)`, backquotes or a process substitution `<(...)` or `>(...)` as it
 judges one at the top, and reads a comment, a quoted word, a here-document
 body, a `case` subject or pattern and the elements of an array assignment

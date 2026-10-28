@@ -472,18 +472,20 @@ _SH_ENDS_WELL = 'exit "$EXIT_<NAME>" from %s' % et.HELPER_SH
 # 1000 with pytest's own frames on the stack.
 _SH_MAX_DEPTH = 100
 _SH_HANDS_ON = (
-    'hand it "$?" or a name assigned only as name=$? and read only as "$name"'
+    'hand it "$?", or a name a bare name=$? statement binds before it and that '
+    'is read only as "$name"'
 )
 # Which uses of a name an `exit_passthrough` or `return` hands on keep it the
-# wrapped tool's status. Every occurrence of the name as a whole word, outside
-# a comment and a quoted here-document body, must be the assignment `name=$?`
-# (`$?`, `"$?"` or `${?}`, as a word of its own or after `local` and its kin)
-# or the plain read `$name` or `${name}`. Any other occurrence is a finding at
-# its line, because the gate cannot show it leaves the status alone: `let`,
-# `(( ))`, `${name:=...}`, `printf -v`, `read`, `mapfile`, `unset`, a nameref,
-# `${#name}` and a word that only names it alike.
-_SH_STATUS_BINDING = re.compile(r'=(")?\$(?:\?|\{\?\})(?(1)")(?=[\s;&|)`]|\Z)')
-_SH_BINDING_AFTER = " \t\n;&|(`"
+# wrapped tool's status. Only a bare assignment statement binds it: the word
+# `name=$?` (`"$?"` or `${?}` too), alone or after `local` and its kin, as a
+# whole simple command in the main shell, earlier in the text than the ending.
+# Every other occurrence of the name as a whole word, outside a comment and a
+# quoted here-document body, must be the plain read `$name` or `${name}`; any
+# other is a finding at its line, because the gate cannot show it leaves the
+# status alone: `let`, `(( ))`, `${name:=...}`, `printf -v`, `read`,
+# `mapfile`, `unset`, a nameref, `${#name}`, a word that only names it and a
+# `name=$?` that binds nothing alike.
+_SH_BINDING = re.compile(r'([A-Za-z_][A-Za-z0-9_]*)=(")?\$(?:\?|\{\?\})(?(2)")\Z')
 
 
 class ShellScanError(Exception):
@@ -531,11 +533,15 @@ class _ShellReader:
         # clause ended, so an `esac` there is a pattern word, not the end.
         self.cases, self.pattern_open = [], False
         self.words, self.word, self.word_line = [], None, line
+        # The offset in the whole file's text where each of words starts, and
+        # where the word being read does.
+        self.starts, self.word_at = [], offset
         self.start, self.skip = line, False
 
     def _add(self, chars):
         if self.word is None:
             self.word, self.word_line = [], self.line
+            self.word_at = self.offset + self.i
         self.word.append(chars)
 
     def _end_word(self):
@@ -548,6 +554,7 @@ class _ShellReader:
             if not self.words:
                 self.start = self.word_line
             self.words.append(word)
+            self.starts.append(self.word_at)
             # `function f` is a whole definition head: the `{` after it on
             # the same line opens the body, whose commands are read as such.
             if self.words[-2:-1] == ["function"] and all(
@@ -616,8 +623,8 @@ class _ShellReader:
             raise ShellScanError(self.line, "a redirection names no target")
         if self.words:
             main = alone and not self.sub and not self.paren
-            self.commands.append((self.start, self.words, main))
-        self.words = []
+            self.commands.append((self.start, self.words, main, self.starts))
+        self.words, self.starts = [], []
 
     def _span(self, end, what):
         """Add text[i:end+1] to the word, counting its lines."""
@@ -750,7 +757,8 @@ class _ShellReader:
             begin, line = self.i, self.line
             saved = (self.words, self.word, self.word_line, self.start, self.skip)
             nested = (self.cases, self.pattern_open, self.paren)
-            self.words, self.word, self.skip = [], None, False
+            starts = (self.starts, self.word_at)
+            self.words, self.word, self.skip, self.starts = [], None, False, []
             self.cases, self.paren = [], 0
             self.sub += 1
             self.i += 2
@@ -761,8 +769,10 @@ class _ShellReader:
             self.places.append(span)
             self.words, self.word, self.word_line, self.start, self.skip = saved
             self.cases, self.pattern_open, self.paren = nested
+            self.starts, self.word_at = starts
             if self.word is None:
                 self.word, self.word_line = [], line
+                self.word_at = self.offset + begin
             self.word.append(raw)
 
     def _backquote(self):
@@ -1028,33 +1038,42 @@ def _sh_run_words(words):
 
 
 def shell_commands(text):
-    """([(line, [command name, argument words...], dynamic, main)],
-    [(start, end)]) for *text*: each simple command, the assignments and
-    reserved words before it stepped over and its name read by
-    _sh_run_words, whether that name holds an expansion, whether the command
-    could end the script (_ShellReader's main), and the span of each comment
-    and quoted here-document body. Raises ShellScanError when the text cannot
-    be read to its end."""
+    """([(line, [command name, argument words...], dynamic, main, at)],
+    [(start, end)], {at: name}) for *text*: each simple command, the
+    assignments and reserved words before it stepped over and its name read
+    by _sh_run_words, whether that name holds an expansion, whether the
+    command could end the script (_ShellReader's main) and the offset its
+    name starts at; the span of each comment and quoted here-document body;
+    and the offset of each `name=$?` word a bare assignment statement binds,
+    by _SH_BINDING's rule. Raises ShellScanError when the text cannot be read
+    to its end."""
     reader = _ShellReader(text)
     reader.run()
-    commands = []
-    for line, words, main in sorted(reader.commands, key=lambda c: c[0]):
+    commands, bindings = [], {}
+    for line, words, main, starts in sorted(reader.commands, key=lambda c: c[0]):
         k = 0
-        while k < len(words) and (
-            words[k] in _SH_RESERVED or _SH_ASSIGNMENT.match(words[k])
-        ):
+        while k < len(words) and words[k] in _SH_RESERVED:
+            k += 1
+        statement = words[k:]
+        binding = _SH_BINDING.match(statement[-1]) if statement else None
+        bare = len(statement) == 1 or (
+            len(statement) == 2 and statement[0] in _SH_DECLARE
+        )
+        if main and binding and bare:
+            bindings[starts[-1]] = binding.group(1)
+        while k < len(words) and _SH_ASSIGNMENT.match(words[k]):
             k += 1
         read = _sh_run_words(words[k:]) if k < len(words) else None
         if read is not None:
             dynamic, run = read
-            commands.append((line, run, dynamic, main))
-    return commands, reader.unread
+            commands.append((line, run, dynamic, main, starts[k]))
+    return commands, reader.unread, bindings
 
 
-def _sh_name_uses(text, unread, name):
-    """([line of each `name=$?`], [line of each other use of *name* that is no
-    plain read]) in *text*, outside the *unread* spans, by the rule
-    _SH_STATUS_BINDING states."""
+def _sh_name_uses(text, unread, name, bindings):
+    """([offset of each `name=$?` in *bindings*], [line of each other use of
+    *name* that is no plain read]) in *text*, outside the *unread* spans, by
+    the rule _SH_BINDING states."""
     bound, other = [], []
     pattern = re.compile(r"(?<![A-Za-z0-9_])%s(?![A-Za-z0-9_])" % re.escape(name))
     # The matches come in text order, so one pass over the sorted spans and
@@ -1068,12 +1087,12 @@ def _sh_name_uses(text, unread, name):
         if k < len(spans) and spans[k][0] <= start:
             continue
         line, counted = line + text.count("\n", counted, start), start
-        before = text[start - 1] if start else "\n"
+        before = text[start - 1 : start]
         braced = text[start - 2 : start] == "${" and text[end : end + 1] == "}"
         if before == "$" or braced:
             continue
-        if before in _SH_BINDING_AFTER and _SH_STATUS_BINDING.match(text, end):
-            bound.append(line)
+        if bindings.get(start) == name:
+            bound.append(start)
         else:
             other.append(line)
     return bound, other
@@ -1086,10 +1105,13 @@ def _sh_handed_name(word):
     return None if match is None else (match.group(2) or match.group(3))
 
 
-def _sh_hands_on(word, judged):
-    """Whether *word* is the last command's status: `$?`, or a name in
-    *judged*, whose every use but a plain read is judged at its own line."""
-    return bool(_SH_LAST_STATUS.match(word)) or _sh_handed_name(word) in judged
+def _sh_hands_on(word, held):
+    """Whether *word* is the last command's status: `$?`, or, when *held*
+    says the ending's name is bound before it or its every other use is
+    judged at its own line, `$name` or `${name}`."""
+    if _SH_LAST_STATUS.match(word):
+        return True
+    return held and _sh_handed_name(word) is not None
 
 
 def _sh_member(word):
@@ -1098,9 +1120,9 @@ def _sh_member(word):
     return None if match is None else (match.group(2) or match.group(3))
 
 
-def _sh_ending_findings(head, args, known, quiet, judged):
+def _sh_ending_findings(head, args, known, quiet, held):
     """What is wrong with one `exit`, `exit_fail`, `exit_passthrough` or
-    `return`."""
+    `return`; *held* is _sh_hands_on's."""
     said = " ".join([head] + args)
     member = _sh_member(args[0]) if args else None
     if member is not None and member not in known:
@@ -1108,7 +1130,7 @@ def _sh_ending_findings(head, args, known, quiet, judged):
             "`%s` names EXIT_%s, which %s does not set" % (said, member, et.HELPER_SH)
         ]
     if head == _SH_RETURN:
-        return _sh_return_findings(said, args, member, judged)
+        return _sh_return_findings(said, args, member, held)
     if head == _SH_EXIT:
         if not args:
             return [
@@ -1144,12 +1166,12 @@ def _sh_ending_findings(head, args, known, quiet, judged):
             "`%s` hands the script's own status, not a wrapped tool's; end with %s"
             % (said, _SH_ENDS_WELL)
         ]
-    if not _sh_hands_on(args[0], judged):
+    if not _sh_hands_on(args[0], held):
         return ["`%s` renames a wrapped tool's status; %s" % (said, _SH_HANDS_ON)]
     return []
 
 
-def _sh_return_findings(said, args, member, judged):
+def _sh_return_findings(said, args, member, held):
     """What is wrong with one `return`: it carries a member, as `exit` does,
     or hands on the last command's status, as `exit_passthrough` does."""
     if not args:
@@ -1157,7 +1179,7 @@ def _sh_return_findings(said, args, member, judged):
             '`return` with no status returns the last command\'s; write return "$?" '
             'to hand it on, or return "$EXIT_<NAME>"'
         ]
-    if len(args) == 1 and (member is not None or _sh_hands_on(args[0], judged)):
+    if len(args) == 1 and (member is not None or _sh_hands_on(args[0], held)):
         return []
     if len(args) == 1 and _SH_NAME_REF.match(args[0]):
         return ["`%s` renames a status; %s" % (said, _SH_HANDS_ON)]
@@ -1184,21 +1206,26 @@ def _sh_unjudged(head, args, dynamic):
     )
 
 
-def _sh_held_status_findings(text, unread, commands, relpath):
-    """([finding], judged) for the names an `exit_passthrough` or `return`
-    of *commands* hands on: a finding at each line that uses one other than
-    as _SH_STATUS_BINDING allows, and the names used anywhere but in a plain
-    read, whose endings those findings judge instead."""
+def _sh_held_status_findings(text, unread, bindings, commands, relpath):
+    """([finding], held) for the names an `exit_passthrough` or `return` of
+    *commands* hands on: a finding at each line that uses one other than as
+    _SH_BINDING allows, and the offsets of the endings whose name is held:
+    bound before the ending, or used other than so, which those findings
+    judge instead."""
     handed = {}
-    for line, (head, *args), _dynamic, _main in commands:
+    for line, (head, *args), _dynamic, _main, offset in commands:
         name = _sh_handed_name(args[0]) if len(args) == 1 else None
         if head in (_SH_PASS, _SH_RETURN) and name is not None:
-            handed.setdefault(name, (line, " ".join([head] + args)))
-    findings, judged = [], set()
-    for name, (at, said) in sorted(handed.items()):
-        bound, other = _sh_name_uses(text, unread, name)
-        if bound or other:
-            judged.add(name)
+            handed.setdefault(name, []).append((offset, line, " ".join([head] + args)))
+    findings, held = [], set()
+    for name, endings in sorted(handed.items()):
+        bound, other = _sh_name_uses(text, unread, name, bindings)
+        held.update(
+            offset
+            for offset, _line, _said in endings
+            if other or any(b < offset for b in bound)
+        )
+        _offset, at, said = endings[0]
         findings.extend(
             "%s:%d: line %d hands `%s` on as a wrapped tool's status (`%s`), and "
             "this line uses `%s` other than as %s=$?, $%s or ${%s}, so the gate "
@@ -1206,7 +1233,7 @@ def _sh_held_status_findings(text, unread, commands, relpath):
             'read it only as "$%s"' % ((relpath, line, at, name, said) + (name,) * 6)
             for line in sorted(set(other))
         )
-    return findings, judged
+    return findings, held
 
 
 def _sh_carriage_return_finding(text, relpath):
@@ -1244,15 +1271,15 @@ def shell_file_findings(text, relpath, known, quiet):
     if crlf is not None:
         return [crlf]
     try:
-        commands, unread = shell_commands(text)
+        commands, unread, bindings = shell_commands(text)
     except ShellScanError as exc:
         return [
             "%s:%d: cannot be read to its end: %s; close it so the exit gate can "
             "judge the script" % (relpath, exc.line, exc.reason)
         ]
-    findings, judged = _sh_held_status_findings(text, unread, commands, relpath)
+    findings, held = _sh_held_status_findings(text, unread, bindings, commands, relpath)
     sourced, ends, needs = None, 0, []
-    for line, (head, *args), dynamic, main in commands:
+    for line, (head, *args), dynamic, main, offset in commands:
         if main and (dynamic or head == _SH_EVAL):
             findings.append(
                 "%s:%d: %s" % (relpath, line, _sh_unjudged(head, args, dynamic))
@@ -1267,7 +1294,9 @@ def shell_file_findings(text, relpath, known, quiet):
                 needs.append((line, " ".join([head] + args)))
             findings.extend(
                 "%s:%d: %s" % (relpath, line, finding)
-                for finding in _sh_ending_findings(head, args, known, quiet, judged)
+                for finding in _sh_ending_findings(
+                    head, args, known, quiet, offset in held
+                )
             )
     # The helper's names are set only from the line that sources it on, and
     # the text order is the one this reader can see.
@@ -2088,6 +2117,12 @@ _SH_PASSES = {
     "an array after declare": "declare -a a=(exit)\n",
     "an array with a quoted parenthesis": "a=(\")\" exit '(')\n",
     "an array over two lines with a comment": "a=(exit # one\n  return)\n",
+    "a status bound by export": 'false\nexport rc=$?\nexit_passthrough "$rc"\n',
+    "a status bound by declare": 'false\ndeclare rc="$?"\nexit_passthrough "$rc"\n',
+    "a status bound in an else branch": (
+        'if true; then :; else rc=$?; fi\nexit_passthrough "$rc"\n'
+    ),
+    "a status bound and handed on in one line": 'false; rc=$?; exit_passthrough "$rc"\n',
     "a held status named in a quoted here-document": (
         "false\nrc=$?\ncat <<'EOF'\nrc=3\nEOF\nexit_passthrough \"$rc\"\n"
     ),
@@ -2499,6 +2534,60 @@ def test_a_carriage_return_in_a_file_the_gate_cannot_read_claims_no_place(
     assert _SH_CR_IN_A_WORD not in finding and "inside" not in finding, finding
 
 
+# The fragment of the finding at an ending whose handed name nothing binds.
+_SH_RENAMES = "renames a wrapped tool's status"
+# (body after `false` on line 3, the finding's line, a fragment of it) for
+# each shape that writes `rc=$?` but binds nothing, with the ending on line 5.
+_SH_NOT_BINDINGS = {
+    "an echo of the assignment": ("echo rc=$?\n", 4, _SH_CANNOT_SHOW),
+    "a subshell": ("(rc=$?)\n", 4, _SH_CANNOT_SHOW),
+    "a substitution": ("x=$(rc=$?)\n", 4, _SH_CANNOT_SHOW),
+    "a pipeline": ("rc=$? | cat\n", 4, _SH_CANNOT_SHOW),
+    "the background": ("rc=$? &\n", 4, _SH_CANNOT_SHOW),
+    "an assignment before a command": ("rc=$? true\n", 4, _SH_CANNOT_SHOW),
+}
+
+
+@pytest.mark.parametrize(
+    "case", list(_SH_NOT_BINDINGS.values()), ids=list(_SH_NOT_BINDINGS)
+)
+def test_only_a_bare_assignment_statement_binds_a_held_status(
+    tmp_path, monkeypatch, case
+):
+    """`name=$?` binds the held name only as a whole simple command in the
+    main shell; any other shape that writes it binds nothing and is one
+    finding."""
+    shape, line, fragment = case
+    body = 'false\n%sexit_passthrough "$rc"\n' % shape
+    root = _sh_tree(
+        tmp_path, monkeypatch, {"scripts/tool.sh": _SH_HEAD + body + _SH_TAIL}
+    )
+    (finding,) = shell_findings(root)["findings"]
+    assert finding.startswith("scripts/tool.sh:%d: " % line), finding
+    assert fragment in finding, finding
+
+
+def test_a_binding_after_the_ending_binds_nothing(tmp_path, monkeypatch):
+    body = 'false\nexit_passthrough "$rc"\nrc=$?\n'
+    root = _sh_tree(
+        tmp_path, monkeypatch, {"scripts/tool.sh": _SH_HEAD + body + _SH_TAIL}
+    )
+    (finding,) = shell_findings(root)["findings"]
+    assert finding.startswith("scripts/tool.sh:4: "), finding
+    assert _SH_RENAMES in finding, finding
+
+
+def test_each_ending_needs_its_own_binding_before_it(tmp_path, monkeypatch):
+    """A binding before the second ending does not bind the first."""
+    body = 'f() { exit_passthrough "$rc"; }\nfalse\nrc=$?\nexit_passthrough "$rc"\n'
+    root = _sh_tree(
+        tmp_path, monkeypatch, {"scripts/tool.sh": _SH_HEAD + body + _SH_TAIL}
+    )
+    (finding,) = shell_findings(root)["findings"]
+    assert finding.startswith("scripts/tool.sh:3: "), finding
+    assert _SH_RENAMES in finding, finding
+
+
 class _Visits(list):
     """A list that counts each item it hands out, by iteration or by index."""
 
@@ -2530,9 +2619,9 @@ def test_the_held_status_scan_visits_each_span_a_bounded_number_of_times():
             + 'exit_passthrough "$rc"\n'
             + _SH_TAIL
         )
-        _commands, spans = shell_commands(text)
+        _commands, spans, bindings = shell_commands(text)
         counted = _Visits(spans)
-        _sh_name_uses(text, counted, "rc")
+        _sh_name_uses(text, counted, "rc", bindings)
         return counted.visits
 
     small, large = visits(500), visits(1000)
