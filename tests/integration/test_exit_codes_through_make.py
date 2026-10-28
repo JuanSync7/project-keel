@@ -26,6 +26,7 @@ import child_env  # noqa: E402
 from exit_codes import ExitCode  # noqa: E402
 
 import hermetic_git  # noqa: E402
+import script_copy  # noqa: E402
 
 pytestmark = pytest.mark.integration
 
@@ -147,7 +148,8 @@ def test_under_k_the_error_line_is_not_make_s_last_line(tmp_path):
     assert _ERROR_LINE.match(proc.stdout.splitlines()[-1]) is None, proc.stdout
 
 
-# The driver keel's `verify` recipe runs, and the stdlib siblings it imports.
+# The driver keel's `verify` recipe runs and the siblings it imports;
+# tests/script_copy.py adds any import this list misses.
 _GATE_SCRIPTS = (
     "gate_evidence.py",
     "git_tree.py",
@@ -184,8 +186,7 @@ def gate(tmp_path_factory):
     env.update(hermetic_git.git_env_vars(base / "work"))
     repo = base / "repo"
     (repo / "scripts").mkdir(parents=True)
-    for name in _GATE_SCRIPTS:
-        shutil.copy(str(_ROOT / "scripts" / name), str(repo / "scripts" / name))
+    script_copy.copy_with_imports(repo, _ROOT, ["scripts/" + n for n in _GATE_SCRIPTS])
     (repo / "config").mkdir()
     shutil.copy(
         str(_ROOT / "config" / "project.json"), str(repo / "config" / "project.json")

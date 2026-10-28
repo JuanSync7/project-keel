@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 
 import makefile_copy
+import script_copy
 
 _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT / "scripts"))
@@ -67,9 +68,7 @@ def _scratch(tmp_path, selections=None):
     root = tmp_path / "proj"
     root.mkdir(parents=True)
     makefile_copy.copy_makefiles(root, _ROOT)
-    for rel in _SHIPPED:
-        (root / rel).parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy(str(_ROOT / rel), str(root / rel))
+    script_copy.copy_with_imports(root, _ROOT, _SHIPPED)
     if selections is not None:
         path = root / "config" / "project.json"
         manifest = json.loads(path.read_text(encoding="utf-8"))

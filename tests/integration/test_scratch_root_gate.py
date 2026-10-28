@@ -8,7 +8,6 @@ summary: The session's basetemp is under config/project.json `tests.scratch_root
 import glob
 import json
 import os
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -17,6 +16,8 @@ from pathlib import Path
 
 import pytest
 from test_empty_selection import _SHIPPED
+
+import script_copy
 
 _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT / "scripts"))
@@ -115,9 +116,7 @@ def _project(tmp_path, cases):
     """A scratch project holding the shipped test harness and *cases*, a map
     of unit test file name to its text."""
     root = tmp_path / "proj"
-    for rel in _SHIPPED:
-        (root / rel).parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy(str(_ROOT / rel), str(root / rel))
+    script_copy.copy_with_imports(root, _ROOT, _SHIPPED)
     (root / "tests" / "unit").mkdir(parents=True)
     for name, text in sorted(cases.items()):
         (root / "tests" / "unit" / name).write_text(text, encoding="utf-8")

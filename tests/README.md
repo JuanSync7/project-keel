@@ -9,7 +9,7 @@ tags: []
 summary: Unit tests mirror src/; integration/e2e/smoke go by scenario.
 id: tests-readme
 created: 2026-06-17
-updated: 2026-10-24
+updated: 2026-10-28
 visibility: internal
 canonical: true
 ---
@@ -129,8 +129,23 @@ leaving the root. An include the gate only WARNs about otherwise stays as make
 sees it: an absent `-include`, an optional include named through a variable,
 and a required include naming no file (behind a false conditional or not) are
 left out, so make gives the copy the verdict it gives the source. It copies makefiles only: the scripts and config a recipe needs are
-the calling test's to copy. `tests/integration/test_makefile_copy.py` proves
-each case and that a second copy changes nothing.
+the calling test's to copy, with `script_copy.copy_with_imports` below.
+`tests/integration/test_makefile_copy.py` proves each case and that a second
+copy changes nothing.
+
+## A copied script carries its imports
+
+A test that copies scripts or test helpers into a scratch project lists the
+files it runs and copies them with `script_copy.copy_with_imports`, never with
+its own copy loop. The helper adds every project module a listed Python file
+imports, followed to its end, resolved against the importer's own directory
+and then `scripts/`. When a script starts importing a new sibling, every copy
+then still starts; a hand-kept list stops with `ModuleNotFoundError` in each
+fixture that copies the script. A listed file that does not exist raises,
+naming it. An import made through `importlib` or `__import__` is not seen, so
+that file stays on the list. `tests/integration/test_script_copy.py` proves
+each case, that keel's `scripts/check_structure.py` carries
+`scripts/corpus_level.py`, and that a second copy changes nothing.
 
 ## A test reads the project's own facts
 

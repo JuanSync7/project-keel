@@ -30,11 +30,12 @@ import traceability as tr  # noqa: E402
 
 import hermetic_git  # noqa: E402
 import optional_deps  # noqa: E402
+import script_copy  # noqa: E402
 
 pytestmark = pytest.mark.integration
 
 _CLI = "trace_requirements.py"
-# What the command imports when it runs in a project.
+# The command and the siblings it imports; tests/script_copy.py adds any it misses.
 _SCRIPTS = (
     _CLI,
     "traceability.py",
@@ -126,8 +127,7 @@ def build_scratch(base, git=True):
             marked += 1
     assert marked, "no test file holds the %s marker" % policy.marker
     (repo / "scripts").mkdir()
-    for name in _SCRIPTS:
-        shutil.copy(str(_ROOT / "scripts" / name), str(repo / "scripts" / name))
+    script_copy.copy_with_imports(repo, _ROOT, ["scripts/" + n for n in _SCRIPTS])
     for name in ("pyproject.toml", ".gitignore"):
         shutil.copy(str(_ROOT / name), str(repo / name))
     if git:

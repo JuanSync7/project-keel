@@ -29,12 +29,14 @@ import git_tree  # noqa: E402
 
 import hermetic_git  # noqa: E402
 import optional_deps  # noqa: E402
+import script_copy  # noqa: E402
 
 pytestmark = pytest.mark.integration
 
 _MANIFEST = json.loads((_ROOT / "config" / "project.json").read_text("utf-8"))
 _EVIDENCE = _MANIFEST["evidence"]
-# The writer and the stdlib siblings it imports: what a generated project runs.
+# The writer and the siblings it imports, what a generated project runs;
+# tests/script_copy.py adds any import this list misses.
 _SCRIPTS = (
     "gate_evidence.py",
     "git_tree.py",
@@ -128,8 +130,7 @@ def _build(base):
     env = _env(work)
     repo = base / "repo"
     (repo / "scripts").mkdir(parents=True)
-    for name in _SCRIPTS:
-        shutil.copy(str(_ROOT / "scripts" / name), str(repo / "scripts" / name))
+    script_copy.copy_with_imports(repo, _ROOT, ["scripts/" + n for n in _SCRIPTS])
     (repo / "config").mkdir()
     shutil.copy(
         str(_ROOT / "config" / "project.json"), str(repo / "config" / "project.json")

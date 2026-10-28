@@ -24,6 +24,7 @@ import git_tree  # noqa: E402
 from evals import DOERS, SCORERS, load_config, load_suites  # noqa: E402
 
 import hermetic_git  # noqa: E402
+import script_copy  # noqa: E402
 
 pytestmark = pytest.mark.integration
 
@@ -68,8 +69,7 @@ def build_scratch(base):
     for tree in _TREES:
         shutil.copytree(str(_ROOT / tree), str(repo / tree), ignore=_IGNORE)
     (repo / "scripts").mkdir()
-    for name in _SCRIPTS:
-        shutil.copy(str(_ROOT / "scripts" / name), str(repo / "scripts" / name))
+    script_copy.copy_with_imports(repo, _ROOT, ["scripts/" + n for n in _SCRIPTS])
     shutil.copy(str(_ROOT / ".gitignore"), str(repo / ".gitignore"))
     _git(repo, env, "init", "-q")
     _git(repo, env, "add", "-A")

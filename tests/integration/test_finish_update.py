@@ -8,7 +8,6 @@ summary: scripts/jobs/finish_update.py run in a synthetic git project whose HEAD
 import importlib.util
 import json
 import os
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -17,6 +16,7 @@ import pytest
 
 import hermetic_git
 import optional_deps
+import script_copy
 
 pytestmark = pytest.mark.integration
 
@@ -123,9 +123,7 @@ def _make(tmp_path, v2_config=_V2, src=None):
     _git(template, env, "tag", "v2")
 
     project = tmp_path / "project"
-    for rel in _SHIPPED:
-        (project / rel).parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(str(_ROOT / rel), str(project / rel))
+    script_copy.copy_with_imports(project, _ROOT, _SHIPPED)
     (project / "steps").mkdir()
     (project / "steps" / "put.py").write_text(_PUT)
     (project / "steps" / "fail.py").write_text(_FAIL)

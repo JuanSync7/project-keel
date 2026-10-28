@@ -19,6 +19,8 @@ import pytest
 from test_empty_selection import _SHIPPED
 from test_scratch_root_gate import child_timeout
 
+import script_copy
+
 _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT / "scripts"))
 
@@ -60,9 +62,7 @@ def _project(tmp_path, cases, exempt=None, stores=None, workers=None):
     test files; `exempt` and `stores` replace tests.isolation's own, and
     `workers` replaces tests.workers."""
     root = tmp_path / "proj"
-    for rel in _SHIPPED:
-        (root / rel).parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy(str(_ROOT / rel), str(root / rel))
+    script_copy.copy_with_imports(root, _ROOT, _SHIPPED)
     (root / "tests" / "unit").mkdir(parents=True)
     for case in cases:
         shutil.copy(

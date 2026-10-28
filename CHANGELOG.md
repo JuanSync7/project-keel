@@ -525,6 +525,13 @@ version rather than a bare commit:
   guard that fails a reach past it.
 
 ### Fixed
+- **A fixture's copy of a script carries every module the script imports.**
+  Ten integration fixtures copied a hand-kept list of scripts into a scratch
+  project, so `scripts/check_structure.py` importing the new
+  `scripts/corpus_level.py` stopped 96 of their tests with
+  `ModuleNotFoundError`. They now copy through
+  `tests/script_copy.py` `copy_with_imports`, which adds each project module a
+  listed file imports, followed to its end.
 - **A document's list of `make verify` goals is read in every form.** The
   drift test in `tests/integration/test_gate_evidence_record.py` read only a
   `+`-joined list after `make verify (` or `make verify #`, so a comma list in

@@ -17,6 +17,7 @@ import ci_adapters
 import doc_stamps
 import hermetic_git
 import optional_deps
+import script_copy
 
 # The optional 'template' extra. CI installs it and declares it required, so a missing
 # copier is a HARD collection error there — these tests silently skipping in CI is the
@@ -1101,10 +1102,7 @@ def stamp_conflicted(tmp_path, monkeypatch):
     (template / "{{ _copier_conf.answers_file }}.jinja").write_text(
         "{{ _copier_answers|to_nice_yaml -}}\n"
     )
-    for rel in _TOY_SHIPPED:
-        dest = template / rel
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(str(_ROOT / rel), str(dest))
+    script_copy.copy_with_imports(template, _ROOT, _TOY_SHIPPED)
     (template / "docs").mkdir()
     (template / "docs/a.md").write_text(_toy_doc("2026-01-01"))
     (template / "docs/b.md").write_text(_toy_doc("2026-01-01"))

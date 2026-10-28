@@ -30,6 +30,7 @@ import launch  # noqa: E402
 from exit_codes import ExitCode  # noqa: E402
 
 import hermetic_git  # noqa: E402
+import script_copy  # noqa: E402
 
 pytestmark = [
     pytest.mark.integration,
@@ -70,8 +71,7 @@ def _build(base):
         env.pop(name, None)
     repo = base / "repo"
     (repo / "scripts").mkdir(parents=True)
-    for name in _SCRIPTS:
-        shutil.copy(str(_ROOT / "scripts" / name), str(repo / "scripts" / name))
+    script_copy.copy_with_imports(repo, _ROOT, ["scripts/" + n for n in _SCRIPTS])
     (repo / "config").mkdir()
     _write_manifest(repo, _MANIFEST)
     shutil.copy(str(_ROOT / ".gitignore"), str(repo / ".gitignore"))
