@@ -2,7 +2,7 @@
 title: Unit — the wiki navigator's model step runs on an injected backend
 kind: tests
 layer: n/a
-summary: wiki_navigator.synthesize(question, nodes, backend=b) sends b the agent's real answer prompt (its prompt.md preamble, the question and each visible node cited by node_id), never a node outside config/project.json corpus.served_visibilities (a confidential or restricted node, one that states no level or one outside the vocabulary), and returns b's reply stripped; the plan's synthesize step calls the same function, so the eval harness judges the code answer() runs. answer(execute=True) with no approved count of model calls is a ValueError before any step runs; answer(backend_factory=f) builds its one counted backend with f from the model name, so a caller that counts calls across answers (mcp/qa_server.py's session total) sees each one, and with no factory it is models.get_model. A citation whose node names no owner_source carries None, unknown, never `none`. answer(root=r) reads each node's file under r again: in the reviewer's repro, `docs/pubguide.md` reclassified after the corpus build in each of tests/reclassify.py's ways, a dry run's prompt carries neither its summary nor its id, and nothing cites it. A root that does not exist, or holds none of the corpus's files, is a RuntimeError naming it before the model backend is built.
+summary: wiki_navigator.synthesize(question, nodes, backend=b) sends b the agent's real answer prompt (its prompt.md preamble, the question and each visible node cited by node_id), never a node outside config/project.json corpus.served_visibilities (a confidential or restricted node, one that states no level or one outside the vocabulary), and returns b's reply stripped; the plan's synthesize step calls the same function, so the eval harness judges the code answer() runs. answer(execute=True) with no approved count of model calls is a ValueError before any step runs; answer(backend_factory=f) builds its one counted backend with f from the model name, so a caller that counts calls across answers (mcp/qa_server.py's session total) sees each one, and with no factory it is models.get_model. A citation whose node names no owner_source carries None, unknown, never `none`. answer(root=r) reads each node's file under r again: in the reviewer's repro, `docs/pubguide.md` reclassified after the corpus build in each of tests/reclassify.py's ways, a dry run's prompt carries neither its summary nor its id, and nothing cites it. A root that does not exist, or holds none of the corpus's files, is a RuntimeError naming it before the model backend is built. With no corpus given, answer reads its root's corpus, in the reviewer's stale-copy repro citing the guide under the copy and nothing under the reclassified checkout, a relative root taken from the caller's directory.
 """
 
 import json
@@ -211,6 +211,23 @@ def test_a_root_that_cannot_be_the_corpus_checkout_raises_with_no_model_call(
         )
     assert str(root) in str(raised.value)
     assert built == [] and seen.prompts == []
+
+
+def test_the_corpus_is_the_roots_own_and_a_relative_root_is_the_callers(
+    tmp_path, monkeypatch
+):
+    """The reviewer's stale-copy repro: checkout `a` made its guide
+    confidential and rebuilt its corpus; `b` is a copy taken before. With no
+    corpus given, answer(root=b) reads b's corpus, which cites the guide b's
+    files still state public, and answer(root=a) reads a's, which cites
+    nothing. A relative root is the caller's directory's, not the child's."""
+    a, b = reclassify.stale_copy(tmp_path, "The pubguide body.")
+    monkeypatch.chdir(tmp_path)
+    guide = {"pubguide", "pubguide#part"}
+    for root in (str(b), "b"):
+        assert {c.node_id for c in answer("pubguide", root=root).citations} == guide
+    for root in (str(a), "a"):
+        assert answer("pubguide", root=root).citations == ()
 
 
 @pytest.mark.parametrize("how", reclassify.HOWS)

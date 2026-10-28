@@ -769,7 +769,11 @@ version rather than a bare commit:
   that does not exist or holds none of the files the corpus names, rather
   than printing `[]`, so the wiki navigator raises before a model call and
   the MCP Q&A server answers a corpus built elsewhere with a tool error; it
-  writes to stderr how many nodes it withheld.
+  writes to stderr how many nodes it withheld. A relative `--corpus` is read
+  under `--root`, and the wiki navigator takes its corpus from its root as
+  the doc reviewer and practice refactor do, so the corpus and the files its
+  nodes name come from one checkout; each of the three agents makes a
+  relative root absolute from the caller's directory first.
   (KEEL-VIS-2)
 - **The astro app's audited dependencies move past their advisories.**
   `npm audit` in `src/frontend/astro` reported 28 findings (2 critical, 17

@@ -2,7 +2,7 @@
 title: Practice refactor brain
 layer: backend
 public_api: no
-summary: Plan: walk the corpus KG -> gate a green baseline -> (propose -> apply+gate+rollback) one chunk per step; on a durable Runtime. An execute run needs its approved count of model calls: every call goes through one run's models.ModelMeter, and a resumed run is first checked against the approved model and count (models.approve_resume). Every tool child runs through scripts/resource_limits.py run_tool, held to the refactored root's config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes`, the root whose make_targets gate keys the gate runner it starts reads, so the time limit is checked against that runner's own limit: past either its session is ended and the step raises ChildTimedOut or ChildOutputTooLarge naming the key. The walk keeps a chunk only when config_loader.is_served keeps its corpus node and config_loader.is_served_now keeps the level its file states on disk now (scripts/corpus_level.py stated_now), and the propose step asks that level again, so a file reclassified after the corpus was built, or one whose level cannot be read, never reaches a prompt.
+summary: Plan: walk the corpus KG -> gate a green baseline -> (propose -> apply+gate+rollback) one chunk per step; on a durable Runtime. An execute run needs its approved count of model calls: every call goes through one run's models.ModelMeter, and a resumed run is first checked against the approved model and count (models.approve_resume). Every tool child runs through scripts/resource_limits.py run_tool, held to the refactored root's config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes`, the root whose make_targets gate keys the gate runner it starts reads, so the time limit is checked against that runner's own limit: past either its session is ended and the step raises ChildTimedOut or ChildOutputTooLarge naming the key. The walk keeps a chunk only when config_loader.is_served keeps its corpus node and config_loader.is_served_now keeps the level its file states on disk now (scripts/corpus_level.py stated_now), and the propose step asks that level again, so a file reclassified after the corpus was built, or one whose level cannot be read, never reaches a prompt. A relative root is made absolute from the caller's directory before any step, and the corpus is that root's wiki/corpus.json when none is given.
 """
 
 from __future__ import annotations
@@ -449,7 +449,9 @@ def refactor(
         raise ValueError(
             "refactor(execute=True) needs max_model_calls, the approved model-call count"
         )
-    root = root or _REPO
+    # Absolute, from the caller's directory: a tool child runs in this
+    # checkout, and query_corpus reads a relative corpus under its root.
+    root = os.path.abspath(root or _REPO)
     corpus = corpus or os.path.join(root, _CORPUS)
     if checkpointer is None and execute:
         checkpointer = FileCheckpointer(os.path.join(root, _CKPT_DIR))

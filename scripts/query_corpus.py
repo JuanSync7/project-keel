@@ -3,7 +3,7 @@
 title: Query corpus
 kind: script
 layer: n/a
-summary: Read-only retrieval over wiki/corpus.json — the wiki_navigator's, practice_refactor's and doc_reviewer's tool — that prints only nodes whose file under `--root` (this checkout by default) may be served at a level in config/project.json corpus.served_visibilities as it stands on disk now (config_loader.is_served_now over corpus_level.stated_now, read once per file), so a file reclassified after the corpus was built, or one whose level cannot be read, is not printed, each printed node with every other node's id cut from its links, children and parent (config_loader.cut_hidden). A root that does not exist, or that holds none of the files the corpus names (holds_corpus), is refused with exit USAGE and nothing printed, never answered `[]`, and the count of nodes withheld because their file now states a stricter level, or none that can be read, goes to stderr.
+summary: Read-only retrieval over `--root`'s wiki/corpus.json (a relative `--corpus` is read under `--root` too, so the corpus and the files its nodes name come from one checkout) — the wiki_navigator's, practice_refactor's and doc_reviewer's tool — that prints only nodes whose file under `--root` (this checkout by default) may be served at a level in config/project.json corpus.served_visibilities as it stands on disk now (config_loader.is_served_now over corpus_level.stated_now, read once per file), so a file reclassified after the corpus was built, or one whose level cannot be read, is not printed, each printed node with every other node's id cut from its links, children and parent (config_loader.cut_hidden). A root that does not exist, or that holds none of the files the corpus names (holds_corpus), is refused with exit USAGE and nothing printed, never answered `[]`, and the count of nodes withheld because their file now states a stricter level, or none that can be read, goes to stderr.
 """
 
 from __future__ import annotations
@@ -177,7 +177,7 @@ def main(argv=None) -> int:
     ap.add_argument(
         "--corpus",
         default=DEFAULT_CORPUS,
-        help="corpus path (default: wiki/corpus.json)",
+        help="corpus path, a relative one read under --root (default: wiki/corpus.json)",
     )
     ap.add_argument("--max-nodes", type=int, default=8, help="max candidate nodes")
     ap.add_argument(
@@ -210,9 +210,9 @@ def main(argv=None) -> int:
             root,
             "pass --root the checkout the corpus was built from, then rerun",
         )
-    path = (
-        args.corpus if os.path.isabs(args.corpus) else os.path.join(ROOT, args.corpus)
-    )
+    # A relative corpus is the root's own, so the corpus and the files its
+    # nodes name come from one checkout; join keeps an absolute one as given.
+    path = os.path.join(root, args.corpus)
     if not os.path.exists(path):
         print("[]")  # graceful: empty retrieval when no corpus yet
         return ExitCode.SUCCESS

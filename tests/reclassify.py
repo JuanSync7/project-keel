@@ -1,9 +1,10 @@
 """
 title: Reclassify a document after the corpus build
-summary: The reviewer's repro for a reader that checks a node's file now, shared by the showcase, doc reviewer, practice refactor, query_corpus and wiki navigator tests. `public_project(root, body)` writes a scratch project, an empty config/project.json and `docs/pubguide.md` (id `pubguide`) stating `visibility: public` with *body*, builds its corpus with scripts/jobs/build_corpus.py, writes it to wiki/corpus.json and returns its nodes. `reclassify(path, how)` then changes what the file states on disk, one way per member of HOWS: `own` changes its frontmatter's level to confidential, `readme` puts a confidential README.md beside it, `unreadable` writes bytes that are not UTF-8, `gone` deletes it. The corpus is left as built, so it still says public.
+summary: The reviewer's repro for a reader that checks a node's file now, shared by the showcase, doc reviewer, practice refactor, query_corpus and wiki navigator tests. `public_project(root, body)` writes a scratch project, an empty config/project.json and `docs/pubguide.md` (id `pubguide`) stating `visibility: public` with *body*, builds its corpus with scripts/jobs/build_corpus.py, writes it to wiki/corpus.json and returns its nodes. `reclassify(path, how)` then changes what the file states on disk, one way per member of HOWS: `own` changes its frontmatter's level to confidential, `readme` puts a confidential README.md beside it, `unreadable` writes bytes that are not UTF-8, `gone` deletes it. The corpus is left as built, so it still says public. `stale_copy(base, body)` is the reviewer's stale-copy repro: checkout `a` under *base* is a public_project, `b` a copy of it taken then, and `a`'s guide is then made confidential and its corpus rebuilt, so the two checkouts' corpora disagree about the guide.
 """
 
 import json
+import shutil
 import sys
 from pathlib import Path
 
@@ -26,6 +27,11 @@ def public_project(root, body):
         "# Pubguide\n\n## Part\n\n%s\n" % body,
         encoding="utf-8",
     )
+    return _build(root)
+
+
+def _build(root):
+    """Build *root*'s corpus into wiki/corpus.json and return its nodes."""
     sys.path.insert(0, str(_ROOT / "scripts" / "jobs"))
     import build_corpus
 
@@ -33,6 +39,19 @@ def public_project(root, body):
     (root / "wiki").mkdir(exist_ok=True)
     (root / "wiki" / "corpus.json").write_text(json.dumps(corpus), encoding="utf-8")
     return corpus["nodes"]
+
+
+def stale_copy(base, body):
+    """(a, b): checkout *base*/a, whose guide is made confidential after the
+    build and its corpus rebuilt, and *base*/b, a copy of a taken before, its
+    corpus and guide both still public."""
+    a, b = base / "a", base / "b"
+    a.mkdir()
+    public_project(a, body)
+    shutil.copytree(str(a), str(b))
+    reclassify(a / GUIDE, "own")
+    _build(a)
+    return a, b
 
 
 def reclassify(path, how):

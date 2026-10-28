@@ -2,10 +2,11 @@
 title: Integration — the doc reviewer agent (dry-run, execute, decline, rollback)
 kind: tests
 layer: backend
-summary: agents.doc_reviewer.review over patched tool and model seams (no subprocess, no model): a dry-run gathers findings, retrieves rules, gates the baseline and writes nothing; execute proposes one edit per chunk and applies through the gated doer; a declined chunk or a red gate lands in skipped; a red baseline attempts nothing; a reply that names a gate is declined, the prompt never states the gate, and every apply is bound to its chunk's own file with `--allow`. Every tool call hands the reviewed root to the runner, so run_tool reads the tool limits, and checks them against the gate keys, of the tree the gate runner reads. The report the CLI and hook print is this report. A finding on a file the corpus places outside corpus.served_visibilities, or has no node for, or on any file when the corpus or config cannot be read, is withheld: reported with why (one CLI line each, a count in the hook's line), its text never read, and no prompt or apply made, dry run and execute alike, while a served finding beside it still goes; a chunk queued before its file left the served levels is declined at propose with no model call; a document reclassified on disk after the corpus was built, or made unreadable, is withheld the same way, its text in no prompt.
+summary: agents.doc_reviewer.review over patched tool and model seams (no subprocess, no model): a dry-run gathers findings, retrieves rules, gates the baseline and writes nothing; execute proposes one edit per chunk and applies through the gated doer; a declined chunk or a red gate lands in skipped; a red baseline attempts nothing; a reply that names a gate is declined, the prompt never states the gate, and every apply is bound to its chunk's own file with `--allow`. A relative root reaches the corpus query as one absolute checkout, root and corpus. Every tool call hands the reviewed root to the runner, so run_tool reads the tool limits, and checks them against the gate keys, of the tree the gate runner reads. The report the CLI and hook print is this report. A finding on a file the corpus places outside corpus.served_visibilities, or has no node for, or on any file when the corpus or config cannot be read, is withheld: reported with why (one CLI line each, a count in the hook's line), its text never read, and no prompt or apply made, dry run and execute alike, while a served finding beside it still goes; a chunk queued before its file left the served levels is declined at propose with no model call; a document reclassified on disk after the corpus was built, or made unreadable, is withheld the same way, its text in no prompt.
 """
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -178,6 +179,24 @@ def test_every_tool_child_is_bounded_by_the_reviewed_roots_limits(seams):
     review(execute=True, max_model_calls=8, root=str(root), checkpointer=None)
     assert runner.calls.count("apply_refactor") == 2, runner.calls
     assert runner.roots == [str(root)] * len(runner.calls)
+
+
+def test_a_relative_root_reaches_the_corpus_query_as_one_absolute_checkout(
+    seams, monkeypatch
+):
+    """query_corpus reads a relative `--corpus` under `--root`, so a relative
+    root is made absolute first, from the caller's directory, and the corpus
+    passed is that root's."""
+    runner, _, root = seams
+    monkeypatch.chdir(root.parent)
+    review(root=root.name)
+    (argv,) = runner.argvs["query_corpus.py"]
+    real = os.path.realpath(str(root))
+    assert os.path.isabs(_flag(argv, "--root"))
+    assert os.path.realpath(_flag(argv, "--root")) == real
+    corpus = _flag(argv, "--corpus")
+    assert os.path.isabs(corpus)
+    assert os.path.realpath(corpus) == os.path.join(real, "wiki", "corpus.json")
 
 
 def test_a_declined_chunk_is_skipped_without_touching_apply(seams, monkeypatch):

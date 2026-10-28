@@ -2,10 +2,11 @@
 title: Integration — practice_refactor gated KG-walking loop
 kind: tests
 layer: backend
-summary: Dry-run walks the graph + gates the read-only baseline but proposes/writes nothing; execute proposes one bounded edit per chunk and a chunk is `refactored` only when the gated apply_refactor keeps make verify green (else rolled back -> `skipped`); a crash mid-refactor resumes at the cursor without re-applying accepted chunks. The gate is the run's: a reply that names a gate is declined before any apply, every apply is bound to its chunk's own file with `--allow`, a chunk with no path is declined before the model is called, and a chunk outside config/project.json corpus.served_visibilities is no candidate, nor is one whose file states a level outside it on disk now, or none that can be read, as a document reclassified after the corpus was built does; a saved run's chunk from such a file is declined at propose with no model call. Every tool call hands the refactored root to the runner, so run_tool reads the tool limits, and checks them against the gate keys, of the tree the gate runner reads.
+summary: A relative root reaches the corpus query as one absolute checkout, root and corpus. Dry-run walks the graph + gates the read-only baseline but proposes/writes nothing; execute proposes one bounded edit per chunk and a chunk is `refactored` only when the gated apply_refactor keeps make verify green (else rolled back -> `skipped`); a crash mid-refactor resumes at the cursor without re-applying accepted chunks. The gate is the run's: a reply that names a gate is declined before any apply, every apply is bound to its chunk's own file with `--allow`, a chunk with no path is declined before the model is called, and a chunk outside config/project.json corpus.served_visibilities is no candidate, nor is one whose file states a level outside it on disk now, or none that can be read, as a document reclassified after the corpus was built does; a saved run's chunk from such a file is declined at propose with no model call. Every tool call hands the refactored root to the runner, so run_tool reads the tool limits, and checks them against the gate keys, of the tree the gate runner reads.
 """
 
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -205,6 +206,26 @@ def test_the_walk_drops_a_node_outside_the_served_levels(tmp_path, monkeypatch):
     assert "CODEWORD-ZEBRA" not in rep.preview
     assert model.n == 2
     assert "src/backend/vault.py" not in rep.refactored + rep.skipped
+
+
+def test_a_relative_root_reaches_the_corpus_query_as_one_absolute_checkout(
+    tmp_path, monkeypatch
+):
+    """query_corpus reads a relative `--corpus` under `--root`, so a relative
+    root is made absolute first, from the caller's directory, and the corpus
+    passed is that root's."""
+    runner, model = _Runner(), _Model()
+    _patch(monkeypatch, runner, model)
+    _files(tmp_path)
+    monkeypatch.chdir(tmp_path.parent)
+    refactor("precise-container-types", root=tmp_path.name)
+    (argv,) = runner.argvs["query_corpus.py"]
+    real = os.path.realpath(str(tmp_path))
+    assert os.path.isabs(_flag(argv, "--root"))
+    assert os.path.realpath(_flag(argv, "--root")) == real
+    corpus = _flag(argv, "--corpus")
+    assert os.path.isabs(corpus)
+    assert os.path.realpath(corpus) == os.path.join(real, "wiki", "corpus.json")
 
 
 def test_red_baseline_attempts_no_refactor(tmp_path, monkeypatch):

@@ -39,7 +39,7 @@ provenance and accountability.
 | Flag | Required | Default | Meaning |
 |------|----------|---------|---------|
 | `QUESTION` | yes | — | the question / keywords |
-| `--corpus` | no | `wiki/corpus.json` | corpus to read |
+| `--corpus` | no | `wiki/corpus.json` | corpus to read; a relative path is read under `--root`, so the corpus and the files its nodes name come from one checkout |
 | `--max-nodes` | no | 8 | retrieval budget |
 | `--root` | no | the project the script ships in | the checkout the corpus's node paths name, whose files are read for their level now; refused when it does not exist or holds none of the corpus's files |
 
