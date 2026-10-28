@@ -41,7 +41,7 @@ provenance and accountability.
 | `QUESTION` | yes | — | the question / keywords |
 | `--corpus` | no | `wiki/corpus.json` | corpus to read |
 | `--max-nodes` | no | 8 | retrieval budget |
-| `--root` | no | the project the script ships in | the checkout the corpus's node paths name, whose files are read for their level now |
+| `--root` | no | the project the script ships in | the checkout the corpus's node paths name, whose files are read for their level now; refused when it does not exist or holds none of the corpus's files |
 
 ## Output
 A JSON array of node objects on stdout, best match first, drawn only from the
@@ -57,9 +57,15 @@ reclassified after the corpus was built, deleted, or whose level cannot be read
 is neither a hit nor a neighbour. A printed node's
 `links`, `children` and `parent` name only other served nodes, because
 `cut_hidden` drops every hidden id from them.
+When nodes are withheld because their file now states a stricter level, or
+none that can be read, stderr says how many.
 `tests/unit/scripts/test_query_corpus.py` holds these rules.
 No corpus present → prints `[]` and exits 0. A served level outside the
-vocabulary prints nothing to stdout and exits 14.
+vocabulary prints nothing to stdout and exits 14. A `--root` that does not
+exist, or that holds none of the files the corpus names (`holds_corpus`: a
+corpus that names no file is held by any directory), prints nothing to stdout
+and exits 2 with stderr naming the root, so a wrong root is never an empty
+answer.
 
 ## Side effects
 READ-ONLY. Reads the corpus and the files its nodes name; writes nothing; no model call (retrieval is

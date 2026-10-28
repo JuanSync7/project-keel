@@ -2,7 +2,7 @@
 title: Unit — the wiki navigator's model step runs on an injected backend
 kind: tests
 layer: n/a
-summary: wiki_navigator.synthesize(question, nodes, backend=b) sends b the agent's real answer prompt (its prompt.md preamble, the question and each visible node cited by node_id), never a node outside config/project.json corpus.served_visibilities (a confidential or restricted node, one that states no level or one outside the vocabulary), and returns b's reply stripped; the plan's synthesize step calls the same function, so the eval harness judges the code answer() runs. answer(execute=True) with no approved count of model calls is a ValueError before any step runs; answer(backend_factory=f) builds its one counted backend with f from the model name, so a caller that counts calls across answers (mcp/qa_server.py's session total) sees each one, and with no factory it is models.get_model. A citation whose node names no owner_source carries None, unknown, never `none`. answer(root=r) reads each node's file under r again: in the reviewer's repro, `docs/pubguide.md` reclassified after the corpus build in each of tests/reclassify.py's ways, a dry run's prompt carries neither its summary nor its id, and nothing cites it.
+summary: wiki_navigator.synthesize(question, nodes, backend=b) sends b the agent's real answer prompt (its prompt.md preamble, the question and each visible node cited by node_id), never a node outside config/project.json corpus.served_visibilities (a confidential or restricted node, one that states no level or one outside the vocabulary), and returns b's reply stripped; the plan's synthesize step calls the same function, so the eval harness judges the code answer() runs. answer(execute=True) with no approved count of model calls is a ValueError before any step runs; answer(backend_factory=f) builds its one counted backend with f from the model name, so a caller that counts calls across answers (mcp/qa_server.py's session total) sees each one, and with no factory it is models.get_model. A citation whose node names no owner_source carries None, unknown, never `none`. answer(root=r) reads each node's file under r again: in the reviewer's repro, `docs/pubguide.md` reclassified after the corpus build in each of tests/reclassify.py's ways, a dry run's prompt carries neither its summary nor its id, and nothing cites it. A root that does not exist, or holds none of the corpus's files, is a RuntimeError naming it before the model backend is built.
 """
 
 import json
@@ -173,11 +173,54 @@ def test_a_citation_says_unknown_when_its_node_names_no_owner_source(tmp_path, s
     assert got.citations[0].owner_source == want
 
 
+def _second_doc(root):
+    """A public doc at `guides/open.md` that the reclassify does not reach."""
+    (root / "guides").mkdir(exist_ok=True)
+    (root / "guides" / "open.md").write_text(
+        "---\ntitle: Open\nsummary: About open.\nid: open\nvisibility: public\n"
+        "---\n# Open\n",
+        encoding="utf-8",
+    )
+
+
+@pytest.mark.parametrize("where", ["nowhere", "empty"])
+def test_a_root_that_cannot_be_the_corpus_checkout_raises_with_no_model_call(
+    tmp_path, where
+):
+    """A root that does not exist, or one that holds none of the files the
+    corpus names, fails retrieval, so answer() raises before the model is
+    called rather than handing it an empty context."""
+    built, seen = [], _Seen("never sent")
+
+    def factory(name):
+        built.append(name)
+        return seen
+
+    root = tmp_path / where
+    if where == "empty":
+        root.mkdir()
+    with pytest.raises(RuntimeError, match="query_corpus failed") as raised:
+        answer(
+            "what is alpha",
+            execute=True,
+            model="fake",
+            corpus=_one_node_corpus(tmp_path),
+            max_model_calls=1,
+            backend_factory=factory,
+            root=str(root),
+        )
+    assert str(root) in str(raised.value)
+    assert built == [] and seen.prompts == []
+
+
 @pytest.mark.parametrize("how", reclassify.HOWS)
 def test_a_node_whose_file_now_states_a_stricter_level_is_not_sent(tmp_path, how):
     """The reviewer's repro: the scratch corpus says `docs/pubguide.md` is
     public; once the file is reclassified on disk (*how*), a dry run's
-    retrieved context carries neither its summary nor its id."""
+    retrieved context carries neither its summary nor its id. A second
+    public doc stays, so the root still holds a file the corpus names when
+    the guide is gone."""
+    _second_doc(tmp_path)
     reclassify.public_project(tmp_path, "The pubguide body.")
     corpus = str(tmp_path / "wiki" / "corpus.json")
 

@@ -2,7 +2,7 @@
 title: Integration — MCP servers (Q&A + action)
 kind: tests
 layer: backend
-summary: The thin MCP servers expose schema'd tools that delegate to wiki_navigator and a jobs doer; the action tool defaults to dry-run. Each wiki_answer is held to the server's approved model-call count, config/project.json `agents.max_model_calls` read by configured_cap: a count of 0, the default and the shipped value, answers with a tool error naming the key and makes no model call, a FakeModel subclass in models.registry._REGISTRY counting the calls. The Q&A server's `main` reads that count from the root it is given: under a root that approves one call a question reaches the model once, which the 0 this checkout ships would refuse. Each server's entry `main` turns a refused setting (a serve limit out of its bound, a blank KEEL_MCP_MODEL) into exit CONFIG through the exit helper with the key on stderr, before it caps memory or serves. Each server's `main` refuses a tool limit (config/project.json `agents.tool_timeout_seconds`) as CONFIG the same way, and hands its root's tool limits to the child it starts: under a 64-byte `agents.tool_max_output_bytes` the action server's dry-run index build, and the Q&A server's corpus query for a question, are each a tool error naming that key, the question with no model call made.
+summary: The thin MCP servers expose schema'd tools that delegate to wiki_navigator and a jobs doer; the action tool defaults to dry-run. A corpus naming files this checkout does not hold is a tool error naming `--root`, with no model call. Each wiki_answer is held to the server's approved model-call count, config/project.json `agents.max_model_calls` read by configured_cap: a count of 0, the default and the shipped value, answers with a tool error naming the key and makes no model call, a FakeModel subclass in models.registry._REGISTRY counting the calls. The Q&A server's `main` reads that count from the root it is given: under a root that approves one call a question reaches the model once, which the 0 this checkout ships would refuse. Each server's entry `main` turns a refused setting (a serve limit out of its bound, a blank KEEL_MCP_MODEL) into exit CONFIG through the exit helper with the key on stderr, before it caps memory or serves. Each server's `main` refuses a tool limit (config/project.json `agents.tool_timeout_seconds`) as CONFIG the same way, and hands its root's tool limits to the child it starts: under a 64-byte `agents.tool_max_output_bytes` the action server's dry-run index build, and the Q&A server's corpus query for a question, are each a tool error naming that key, the question with no model call made.
 """
 
 import json
@@ -112,6 +112,28 @@ class _Counted(FakeModel):
     def run(self, prompt, **opts):
         _Counted.prompts.append(prompt)
         return super().run(prompt, **opts)
+
+
+def test_qa_tool_refuses_a_corpus_whose_files_this_checkout_does_not_hold(
+    tmp_path, monkeypatch
+):
+    """The server reads a corpus's node paths in this checkout, so a corpus
+    built elsewhere, naming files this checkout does not hold, is a tool
+    error naming the root, and no model call is made."""
+    monkeypatch.setitem(registry._REGISTRY, "fake", _Counted)
+    monkeypatch.setattr(_Counted, "prompts", [])
+    corpus = json.loads(Path(_tiny_corpus(tmp_path)).read_text())
+    corpus["nodes"][0]["path"] = "elsewhere/only-there.md"
+    assert not (_ROOT / "elsewhere").exists()
+    p = tmp_path / "corpus.json"
+    p.write_text(json.dumps(corpus), encoding="utf-8")
+    server = build_qa_server(
+        model="fake", corpus=str(p), max_model_calls=1, max_session_model_calls=1
+    )
+    result = server.call_tool("wiki_answer", {"question": "what is keel"})
+    assert result["isError"] is True
+    assert "--root" in result["content"][0]["text"]
+    assert _Counted.prompts == []
 
 
 @pytest.mark.parametrize("approved", [None, 0])

@@ -765,7 +765,11 @@ version rather than a bare commit:
   node's title and summary until the corpus is rebuilt; CONVENTIONS §1 lists
   each reader on each side. CONVENTIONS §1 also names the residual risk: a
   served document's own link text can name a hidden document's path, which a
-  default id is derived from.
+  default id is derived from. `scripts/query_corpus.py` refuses a `--root`
+  that does not exist or holds none of the files the corpus names, rather
+  than printing `[]`, so the wiki navigator raises before a model call and
+  the MCP Q&A server answers a corpus built elsewhere with a tool error; it
+  writes to stderr how many nodes it withheld.
   (KEEL-VIS-2)
 - **The astro app's audited dependencies move past their advisories.**
   `npm audit` in `src/frontend/astro` reported 28 findings (2 critical, 17

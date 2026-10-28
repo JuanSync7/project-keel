@@ -135,9 +135,12 @@ readers check the file now:
 
 - `scripts/query_corpus.py`, for each node it prints and each id it leaves in
   a printed node's links, children and parent, reading the files under its
-  `--root` (this checkout by default);
+  `--root` (this checkout by default). It refuses a root that does not exist
+  or holds none of the files the corpus names (`holds_corpus`), and writes
+  to stderr how many nodes it withheld;
 - the wiki navigator agent and the MCP Q&A server through it, whose prompt
-  context and citations come from `query_corpus.py` under `answer`'s `root`;
+  context and citations come from `query_corpus.py` under `answer`'s `root`,
+  and which raise before any model call on a root `query_corpus.py` refuses;
 - the practice refactor agent, which sends a model a chunk's corpus excerpt
   or summary, not its file, and checks the chunk's file at the walk and again
   before each model call;

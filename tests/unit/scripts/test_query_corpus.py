@@ -2,7 +2,7 @@
 title: Unit — query_corpus retrieval (stems and excerpts)
 kind: tests
 layer: n/a
-summary: query_corpus scores a node by query-token overlap, and before this two things made it miss: tokens were compared verbatim, so `idempotency` found nothing while `idempotent` found eight nodes; and only tags, title and summary were read, so a term that lives in the body was invisible. Tokens are now lightly stemmed on both sides and the body excerpt counts, below the title and summary, so a body-only match never outranks a summary match. A node at a level outside config/project.json corpus.served_visibilities, or that states none, is cut before scoring, so it is neither a hit nor a neighbour, and the CLI reads the configured list. A served node the CLI prints names no hidden node in its links, children or parent: a public doc linking to a confidential one, built by the real build_corpus and link_corpus, prints neither the confidential doc's id nor its title. A node whose file under `--root` now states a stricter level is not printed either: in the reviewer's repro, `docs/pubguide.md` reclassified after the build in each of tests/reclassify.py's ways, neither its node nor its id in a served doc's links is printed, and the other tests write each node's file stating its corpus level.
+summary: query_corpus scores a node by query-token overlap, and before this two things made it miss: tokens were compared verbatim, so `idempotency` found nothing while `idempotent` found eight nodes; and only tags, title and summary were read, so a term that lives in the body was invisible. Tokens are now lightly stemmed on both sides and the body excerpt counts, below the title and summary, so a body-only match never outranks a summary match. A node at a level outside config/project.json corpus.served_visibilities, or that states none, is cut before scoring, so it is neither a hit nor a neighbour, and the CLI reads the configured list. A served node the CLI prints names no hidden node in its links, children or parent: a public doc linking to a confidential one, built by the real build_corpus and link_corpus, prints neither the confidential doc's id nor its title. A node whose file under `--root` now states a stricter level is not printed either: in the reviewer's repro, `docs/pubguide.md` reclassified after the build in each of tests/reclassify.py's ways, neither its node nor its id in a served doc's links is printed, and stderr counts the withheld nodes, never a node the corpus itself hides; the other tests write each node's file stating its corpus level. A root that does not exist, or that holds none of the files the corpus names (holds_corpus: one such file is enough, and an empty corpus is held by any directory), is refused with USAGE, nothing printed and the root named on stderr.
 """
 
 import json
@@ -137,7 +137,11 @@ def test_main_prints_only_the_configured_levels(tmp_path, monkeypatch, capsys):
     path.write_text(json.dumps(_on_disk(tmp_path, corpus)), encoding="utf-8")
     monkeypatch.setattr(qc, "ROOT", str(tmp_path))
     assert qc.main(["zebra", "--corpus", str(path)]) is qc.ExitCode.SUCCESS
-    assert [n["node_id"] for n in json.loads(capsys.readouterr().out)] == ["open"]
+    captured = capsys.readouterr()
+    assert [n["node_id"] for n in json.loads(captured.out)] == ["open"]
+    # Each file states its node's level, so nothing the corpus serves is
+    # withheld, and a node the corpus itself hides is not counted as withheld.
+    assert "withheld" not in captured.err
 
 
 def test_main_refuses_a_level_outside_the_vocabulary(tmp_path, monkeypatch, capsys):
@@ -252,18 +256,62 @@ def test_a_node_whose_file_now_states_a_stricter_level_is_not_printed(
     def printed():
         argv = ["zebra", "--corpus", str(path), "--root", str(tmp_path)]
         assert qc.main(argv) is qc.ExitCode.SUCCESS
-        nodes = json.loads(capsys.readouterr().out)
+        captured = capsys.readouterr()
+        nodes = json.loads(captured.out)
         guide = {n["node_id"] for n in nodes if n["path"] == reclassify.GUIDE}
         linked = {e["to"] for n in nodes for e in n.get("links", [])}
-        return nodes, guide, linked
+        return nodes, guide, linked, captured.err
 
-    nodes, guide, linked = printed()
+    nodes, guide, linked, err = printed()
     # The repro is the leak's shape only if the guide is printed and linked.
     assert "pubguide" in guide and "pubguide" in linked
+    assert "withheld" not in err
     reclassify.reclassify(tmp_path / reclassify.GUIDE, how)
-    nodes, guide, linked = printed()
+    nodes, guide, linked, err = printed()
     assert nodes and not guide
+    # The guide's two nodes, `pubguide` and `pubguide#part`, are counted.
+    assert "withheld 2 node(s)" in err and str(tmp_path) in err
     assert not linked & {
         n["node_id"] for n in corpus["nodes"] if n["path"] == reclassify.GUIDE
     }
     assert "About pubguide." not in json.dumps(nodes)
+
+
+# ---- a root that cannot be the corpus's checkout is refused ----------------
+
+
+def test_a_root_holds_a_corpus_when_it_holds_one_file_the_corpus_names(tmp_path):
+    corpus = _on_disk(tmp_path, {"nodes": [_node("here"), _node("gone")]})
+    (tmp_path / "docs" / "gone.md").unlink()
+    assert qc.holds_corpus(corpus, str(tmp_path))
+    assert not qc.holds_corpus(corpus, str(tmp_path / "docs"))
+    assert not qc.holds_corpus(corpus, str(tmp_path / "nowhere"))
+
+
+def test_an_empty_corpus_is_held_by_any_directory_that_exists(tmp_path):
+    assert qc.holds_corpus({"nodes": []}, str(tmp_path))
+    assert not qc.holds_corpus({"nodes": []}, str(tmp_path / "nowhere"))
+
+
+@pytest.mark.parametrize("where", ["nowhere", "empty"])
+def test_main_refuses_a_root_that_cannot_be_the_corpus_checkout(
+    tmp_path, monkeypatch, capsys, where
+):
+    """A root that does not exist, or one that holds none of the files the
+    corpus names, is refused with nothing printed, rather than printing `[]`
+    as if the question had no answer."""
+    project = tmp_path / "project"
+    (project / "config").mkdir(parents=True)
+    (project / "config" / "project.json").write_text("{}", encoding="utf-8")
+    corpus = _on_disk(project, {"nodes": [_node("zebra", summary="Zebra.")]})
+    path = project / "corpus.json"
+    path.write_text(json.dumps(corpus), encoding="utf-8")
+    root = tmp_path / where
+    if where == "empty":
+        root.mkdir()
+    monkeypatch.setattr(qc, "ROOT", str(project))
+    argv = ["zebra", "--corpus", str(path), "--root", str(root)]
+    assert qc.main(argv) is qc.ExitCode.USAGE
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert str(root) in captured.err and "--root" in captured.err

@@ -2,7 +2,7 @@
 title: Wiki navigator brain
 layer: backend
 public_api: no
-summary: Plan: deterministic retrieval (query_corpus) -> synthesize a cited answer; on a Runtime. Retrieval hands query_corpus answer's root (this checkout when None) as `--root`, so a node is retrieved, sent and cited only when its file there may be served as it stands on disk now (config_loader.is_served_now), and a file reclassified after the corpus was built is neither sent nor named in a served node's links. An execute run needs its approved count of model calls and makes its one call through a models.ModelMeter of that count, whose backend the caller's backend_factory builds when it gives one (models.get_model otherwise), so a caller can count calls across answers. Every tool child runs through scripts/resource_limits.py run_tool, held to config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes` of the checkout answer's limits_root names (this one when None): past either its session is ended and the step raises ChildTimedOut or ChildOutputTooLarge naming the key.
+summary: Plan: deterministic retrieval (query_corpus) -> synthesize a cited answer; on a Runtime. Retrieval hands query_corpus answer's root (this checkout when None) as `--root`, so a node is retrieved, sent and cited only when its file there may be served as it stands on disk now (config_loader.is_served_now), and a file reclassified after the corpus was built is neither sent nor named in a served node's links. A root query_corpus refuses (one that does not exist or holds none of the corpus's files) fails retrieval, so answer raises before any model call. An execute run needs its approved count of model calls and makes its one call through a models.ModelMeter of that count, whose backend the caller's backend_factory builds when it gives one (models.get_model otherwise), so a caller can count calls across answers. Every tool child runs through scripts/resource_limits.py run_tool, held to config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes` of the checkout answer's limits_root names (this one when None): past either its session is ended and the step raises ChildTimedOut or ChildOutputTooLarge naming the key.
 """
 
 from __future__ import annotations
@@ -211,6 +211,9 @@ def answer(
     the retrieval child (``None`` = this one). ``root`` is the checkout the
     corpus's node paths name (``None`` = this one): query_corpus reads each
     node's file there again and retrieves it only at the level it states now.
+    A root it refuses, one that does not exist or holds none of the files the
+    corpus names, fails retrieval, so this raises RuntimeError before any
+    model call, dry run included.
     """
     if execute and max_model_calls is None:
         raise ValueError(

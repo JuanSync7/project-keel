@@ -3,7 +3,7 @@
 title: Query corpus
 kind: script
 layer: n/a
-summary: Read-only retrieval over wiki/corpus.json — the wiki_navigator's, practice_refactor's and doc_reviewer's tool — that prints only nodes whose file under `--root` (this checkout by default) may be served at a level in config/project.json corpus.served_visibilities as it stands on disk now (config_loader.is_served_now over corpus_level.stated_now, read once per file), so a file reclassified after the corpus was built, or one whose level cannot be read, is not printed, each printed node with every other node's id cut from its links, children and parent (config_loader.cut_hidden).
+summary: Read-only retrieval over wiki/corpus.json — the wiki_navigator's, practice_refactor's and doc_reviewer's tool — that prints only nodes whose file under `--root` (this checkout by default) may be served at a level in config/project.json corpus.served_visibilities as it stands on disk now (config_loader.is_served_now over corpus_level.stated_now, read once per file), so a file reclassified after the corpus was built, or one whose level cannot be read, is not printed, each printed node with every other node's id cut from its links, children and parent (config_loader.cut_hidden). A root that does not exist, or that holds none of the files the corpus names (holds_corpus), is refused with exit USAGE and nothing printed, never answered `[]`, and the count of nodes withheld because their file now states a stricter level, or none that can be read, goes to stderr.
 """
 
 from __future__ import annotations
@@ -64,6 +64,43 @@ def _tokens(text: str) -> set:
     return out
 
 
+def holds_corpus(corpus: dict, root: str) -> bool:
+    """True when *root* can be the checkout *corpus* was built from: a
+    directory holding at least one file a corpus node names by its `path`,
+    or, for a corpus that names no path, any directory. The rule query_corpus
+    refuses a root by, so a root that does not exist, or one that is not the
+    corpus's checkout, is an error and never an empty answer. One file is
+    enough: a file deleted after the build leaves the rest of the corpus
+    readable, and each node whose file is gone is withheld by served_now."""
+    if not os.path.isdir(root):
+        return False
+    paths = sorted(
+        {n["path"] for n in corpus.get("nodes", []) if isinstance(n.get("path"), str)}
+    )
+    return not paths or any(os.path.isfile(os.path.join(root, p)) for p in paths)
+
+
+def served_now(corpus: dict, served: Collection[str], root: str) -> tuple[dict, int]:
+    """(the nodes of *corpus* whose file under *root* may be served at a level
+    in *served* as it stands on disk now, keyed by node id; the count of nodes
+    the corpus itself serves that are withheld because their file now states
+    a stricter level, or none that can be read). config_loader.is_served_now
+    decides; a node the corpus does not serve is not counted."""
+    # A file's sections share its path, so its level is read once.
+    stated: dict = {}
+    nodes = {}
+    withheld = 0
+    for n in corpus.get("nodes", []):
+        path = n.get("path")
+        if path not in stated:
+            stated[path] = corpus_level.stated_now(root, path)
+        if config_loader.is_served_now(n, served, stated[path]):
+            nodes[n["node_id"]] = n
+        elif config_loader.is_served(n, served):
+            withheld += 1
+    return nodes, withheld
+
+
 def query(
     corpus: dict,
     question: str,
@@ -84,17 +121,15 @@ def query(
     with no `visibility` field included, is cut before scoring, so it is neither a hit nor a
     neighbour, and config_loader.cut_hidden drops its id from every returned
     node's links, children and parent. So is a node whose file now states a
-    level outside *served*, or one whose level cannot be read.
+    level outside *served*, or one whose level cannot be read (served_now).
     """
-    # A file's sections share its path, so its level is read once.
-    stated: dict = {}
-    nodes = {}
-    for n in corpus.get("nodes", []):
-        path = n.get("path")
-        if path not in stated:
-            stated[path] = corpus_level.stated_now(root, path)
-        if config_loader.is_served_now(n, served, stated[path]):
-            nodes[n["node_id"]] = n
+    return rank(served_now(corpus, served, root)[0], question, max_nodes)
+
+
+def rank(nodes: dict, question: str, max_nodes: int = 8) -> list:
+    """Up to max_nodes of *nodes* (served nodes keyed by id) for the question,
+    best first, by query's scoring and neighbour expansion, each with every
+    id outside *nodes* cut from its links, children and parent."""
     q = _tokens(question)
     if not q:
         return []
@@ -149,7 +184,8 @@ def main(argv=None) -> int:
         "--root",
         default=None,
         help="the checkout the corpus's node paths name, whose files are read "
-        "for the level each states now (default: the project this script ships in)",
+        "for the level each states now (default: the project this script ships in); "
+        "one that does not exist or holds none of the corpus's files is refused",
     )
     args = ap.parse_args(argv)
     try:
@@ -166,6 +202,14 @@ def main(argv=None) -> int:
             "set corpus.served_visibilities to members of %s, then rerun"
             % ", ".join(config_loader.VISIBILITY_ORDER),
         )
+    root = os.path.abspath(args.root or ROOT)
+    if not os.path.isdir(root):
+        return report(
+            ExitCode.USAGE,
+            "query_corpus: the root the corpus's node paths are read under does not exist",
+            root,
+            "pass --root the checkout the corpus was built from, then rerun",
+        )
     path = (
         args.corpus if os.path.isabs(args.corpus) else os.path.join(ROOT, args.corpus)
     )
@@ -174,13 +218,24 @@ def main(argv=None) -> int:
         return ExitCode.SUCCESS
     with open(path, encoding="utf-8") as fh:
         corpus = json.load(fh)
-    hits = query(
-        corpus,
-        args.question,
-        max_nodes=args.max_nodes,
-        served=served,
-        root=args.root or ROOT,
-    )
+    if not holds_corpus(corpus, root):
+        return report(
+            ExitCode.USAGE,
+            "query_corpus: the root holds none of the files the corpus names",
+            "%s (corpus %s)" % (root, path),
+            "pass --root the checkout the corpus was built from, or rebuild "
+            "that checkout's corpus with `make site-data`, then rerun",
+        )
+    nodes, withheld = served_now(corpus, served, root)
+    if withheld:
+        print(
+            "query_corpus: withheld %d node(s) the corpus serves, whose file "
+            "under %s now states a stricter level or none that can be read; "
+            "`make site-data` rebuilds the corpus on the levels the files state"
+            % (withheld, root),
+            file=sys.stderr,
+        )
+    hits = rank(nodes, args.question, max_nodes=args.max_nodes)
     json.dump(hits, sys.stdout, indent=2, sort_keys=True)
     sys.stdout.write("\n")
     return ExitCode.SUCCESS
