@@ -93,6 +93,10 @@ _exclude:
   - "docs/design/documentation-quality.md"
   - "docs/design/downstream-feedback.md"
   - "docs/design/make-next-steps.md"
+  # Keel's own run records: one file per unattended run of THIS repo, naming its
+  # campaigns and slices. A generated project declares none of them, so a shipped
+  # record reds its own `make check`. The whole directory: it holds no README.md.
+  - "docs/design/runs"
   - "wiki/corpus.json"
   - "wiki/llms.txt"
   - "wiki/llms-full.txt"

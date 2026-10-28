@@ -8,7 +8,7 @@ tags: [copier, generate, update, migrations, adoption, guide]
 summary: How a project is generated from keel, what arrives and what never does, what `make new` refuses, how to adopt keel into an existing repository, and how `copier update` pulls template changes — with one checklist row per task and migration an update runs, how to finish an update a migration stopped, and how keel's release canary proves a fresh project and an updated one pass their own `make verify`.
 id: docs-guides-generate-and-upgrade
 created: 2026-10-09
-updated: 2026-10-24
+updated: 2026-10-28
 visibility: internal
 canonical: true
 ---
@@ -108,6 +108,7 @@ exactly the files this judgment says arrive.
 | `docs/design/documentation-quality.md` | never | the template's own design note |
 | `docs/design/downstream-feedback.md` | never | the template's own design note |
 | `docs/design/make-next-steps.md` | never | the template's own design note |
+| `docs/design/runs` | never | the template's own run records, which name campaigns a new project does not declare |
 | `wiki/corpus.json` | absent; `make site-data` builds it | a generated view of the tree |
 | `wiki/llms.txt` | absent; `make site-data` builds it with the showcase | a generated view of the corpus |
 | `wiki/llms-full.txt` | absent; `make site-data` builds it with the showcase | a generated view of the corpus |
