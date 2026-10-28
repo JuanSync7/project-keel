@@ -565,7 +565,10 @@ the nesting opens on, and reading 3000 levels stops in under a millisecond. An `
 a finding, because the helper's names are unset there; a function defined
 above that line and called below it is one too, so source the helper first.
 A script that sources the helper and never ends through it is a finding,
-and so is a file the gate cannot read to its end. With no shell script at all the gate fails unless
+and so is a file the gate cannot read to its end. A line that ends with a
+carriage return, as every line of a CRLF file does, is the file's one
+finding, at the first such line: it names the carriage return and says to
+save the file with LF line endings. With no shell script at all the gate fails unless
 config/project.json `shell.no_scripts` gives the reason or
 `shell.enabled` is false. Every other finding holds whatever
 `shell.enabled` says. It cannot see
@@ -810,6 +813,7 @@ kept on purpose, such as a test fixture, with its reason.
 | `test_exit_gate` says `passthrough wraps a wrapped tool's status, never this script's own` | `passthrough` is handed the entry function's result, an int literal, a member, or a function of the same module whose every return is one of those, also under a sign, combined with `or` or arithmetic, or through a builtin such as `int`, so a script's own status would pass as a wrapped tool's | return `ExitCode` members from `main` through `report`, and call `passthrough` only on the status of the tool the script ran, where it reads it (`subprocess.run(...).returncode`) |
 | `test_exit_gate` says `the entry line is finish(main()); call passthrough inside main where the wrapped tool's status is read` | the entry block hands `finish` a `passthrough(...)` call, or a name bound to one | write the entry line as `finish(main())`, and return `passthrough(<the tool's status>)` from `main` |
 | `test_exit_gate` says `<file>:<line>: `exit 3` writes a number` or `` `exit $?` is not a member`` | a shell script ends with a number or the last command's status, not through scripts/exit_codes.sh | end with `exit "$EXIT_<NAME>"`, `exit_fail "$EXIT_<NAME>" WHAT ON NEXT`, or `exit_passthrough "$status"` where the script read a wrapped tool's status |
+| `test_exit_gate` says `<file>:<line>: the line ends with a carriage return (CRLF)` | the script was saved with CRLF line endings, and the shell reads each CR as part of its line's last word, so every other finding in the file would follow from it | save the file with LF line endings, in the editor's line-ending setting or with `sed -i 's/\r$//' <file>` |
 | `test_exit_gate` says `<file>:1: does not source scripts/exit_codes.sh` | a shell script never sources the helper, so it cannot end through it | add `. "$(dirname "$0")/exit_codes.sh"` before its first command, with the path to `scripts/` from the script |
 | `test_exit_gate` says `no shell script to judge and shell.no_scripts gives no reason` | the project holds no shell script but the generated helper, and config/project.json `shell.no_scripts` is null | state in `shell.no_scripts` why the project has none; a project that wants no shell tool sets `shell.enabled` to `false` instead, which excuses having no script and still judges every script it adds |
 | `test_swallowed_error_gate` says `<handler> swallows the error, so the caller reads a failure as a success` | a bare `except:`, or a broad handler whose body only passes, continues, breaks, or returns or assigns a fixed value such as `None`, `-1` or `[]` | catch the exception you can name, raise or return the failure, or give the reason on the clause: `# noqa: BLE001 -- <why>` |
