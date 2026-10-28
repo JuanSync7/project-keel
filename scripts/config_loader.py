@@ -2052,7 +2052,7 @@ def strictest_visibility(stated: Iterable[Optional[str]]) -> Optional[str]:
 
 def chain_level(stated: Iterable[Optional[str]]) -> str:
     """The level a corpus node takes from *stated*, its own level and its
-    README chain's (scripts/corpus_level.py stated_levels): the most
+    README chain's (scripts/corpus_level.py stated_now): the most
     restrictive stated, else `internal`, the level CONVENTIONS §1's template
     frontmatter writes, so an unlabelled node is not published. A child
     stating a looser level than an ancestor still comes out at the
