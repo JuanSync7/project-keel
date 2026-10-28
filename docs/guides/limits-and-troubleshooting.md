@@ -610,7 +610,13 @@ config/project.json `shell.no_scripts` gives the reason or
 `shell.enabled` says. It cannot see
 `set -e`, `trap`, `exec`, `kill`, an `sh -c` string, a pathname
 or brace expansion in a command name (`ex?t 3`), or a script that falls off
-its end after some other ending.
+its end after some other ending. It reads a held name only where it is
+spelled whole, so a name spelled in pieces (`r""c`, `r\c`, `$'r\x63'`) is no
+mention, and `printf -v r""c 0` or `read -r r\c` sets `rc` unseen. It orders a
+binding and an ending by their place in the text, not by when they run, so
+a binding in a function body holds an ending below it whether or not the
+function runs first. It reads a compound command piped on, as in
+`{ rc=$?; } | cat`, as the main shell.
 
 The table below is written by hand and no test compares it with the code. It
 says when each script returns each code.

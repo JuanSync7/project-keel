@@ -866,7 +866,10 @@ run time. It does not see an exit reached through `getattr`, `os.abort`,
 usage (exit 2) exits, a `python -c` line in a makefile, or a shell
 `set -e`, `trap`, `exec`, `kill` or `sh -c` string, a pathname or brace
 expansion in a command name, or a shell script that falls off its end after
-some other ending. The hand-written
+some other ending. It does not see a held name spelled in pieces (`r""c`,
+`r\c`, `$'r\x63'`), a binding that runs after the ending though the text puts
+it first, as one in a function body can, or that a compound command piped
+on (`{ rc=$?; } | cat`) runs outside the main shell. The hand-written
 table below the generated region is compared with nothing.
 
 **Run.** `make check-exit-codes` · `make exit-codes` · `pytest tests/integration/test_exit_gate.py`
