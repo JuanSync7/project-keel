@@ -830,7 +830,9 @@ blank part, an `exit_passthrough` of a number or a member, an
 `exit_passthrough` or `return` that renames a status, a `return` of a number
 or of nothing, and an ending that needs the helper on a line before the one
 that sources it, each at its file and line; it reads `"exit"`, `\exit`,
-`command exit` and `builtin exit` as `exit`. `exit_passthrough "$?"`, or
+`$'exit'`, `command exit` and `builtin exit` as `exit`, and fails a command
+named by an expansion (`$x 3`, `"$cmd" 3`) or an `eval` wherever it could
+end the script, because it cannot judge them. `exit_passthrough "$?"`, or
 of a name assigned as `name=$?` and otherwise only read as `$name` or
 `${name}`, is the shell `passthrough`; any other occurrence of that name
 (`let`, `(( ))`, `${name:=...}`, `printf -v`, `read`, a word that only names
@@ -849,7 +851,8 @@ sees a blank literal, not a vague one, and `report` refuses a blank value at
 run time. It does not see an exit reached through `getattr`, `os.abort`,
 `os.kill` or an uncaught exception, argparse's own `--help` (exit 0) and
 usage (exit 2) exits, a `python -c` line in a makefile, or a shell
-`set -e`, `trap`, `exec` or `eval` string. The hand-written
+`set -e`, `trap`, `exec` or `sh -c` string, or a pathname expansion in a
+command name. The hand-written
 table below the generated region is compared with nothing.
 
 **Run.** `make check-exit-codes` · `make exit-codes` · `pytest tests/integration/test_exit_gate.py`

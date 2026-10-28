@@ -535,9 +535,15 @@ at its own line, because the gate cannot show it leaves the status alone:
 `status=1`, `let`, `(( ))`, `${status:=1}`, `printf -v`, `read`, `mapfile`,
 `for`, `getopts`, `unset`, a nameref, `${#status}`, and a word that only
 names it, such as `echo status`; an unquoted here-document body counts.
-The command name is read as the shell runs it, so `"exit"`, `\exit`,
-`command exit` and `builtin exit` are `exit`; `command -v exit` only
-describes it. An ending in a subshell, `$(...)` or backquotes is judged
+A command name with no expansion has its quotes and backslashes removed
+and a `$'...'` decoded as bash decodes it, so `"exit"`, `\exit`,
+`$'exit'`, `$'\x65xit'`, `command exit` and `builtin exit` are `exit`;
+`command -v exit` only describes it. A command named by an expansion
+(`x=exit; $x 3`, `"$cmd" 3`, `"$@"`, a backquote) and an `eval` are each a
+finding that says the gate cannot judge them, where the command could end
+the script: anywhere but inside `$(...)`, backquotes, a process
+substitution or `( ... )`, or before a single `|` or `&`. A `$'...'` is
+read to its closing quote, so `echo $'it\'s'` reads. An ending in a subshell, `$(...)` or backquotes is judged
 the same, inside double quotes too (`x="$(exit 3)"`), and so is one in a
 process substitution `<(...)` or `>(...)`, which is a word, so
 `diff <(sort a) <(sort b)` and `done < <(ls)` read; a redirection with no
@@ -563,8 +569,9 @@ and so is a file the gate cannot read to its end. With no shell script at all th
 config/project.json `shell.no_scripts` gives the reason or
 `shell.enabled` is false. Every other finding holds whatever
 `shell.enabled` says. It cannot see
-`set -e`, `trap`, `exec`, `kill`, an `eval` or `sh -c` string, or a script
-that falls off its end after some other ending.
+`set -e`, `trap`, `exec`, `kill`, an `sh -c` string, a pathname
+or brace expansion in a command name (`ex?t 3`), or a script that falls off
+its end after some other ending.
 
 The table below is written by hand and no test compares it with the code. It
 says when each script returns each code.

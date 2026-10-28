@@ -2,7 +2,7 @@
 title: Integration — a process ends only through the exit helper, and the exit-code table is the enum
 kind: tests
 layer: n/a
-summary: Three tree-wide gates over every Python file tests/source_tree.py `python_files` lists, and the first over every shell script too (the walk `check_structure.walk` uses), read from the syntax tree. The first fails an exit written anywhere but scripts/exit_codes.py (`sys.exit`, `os._exit`, any `.exit(...)` attribute such as argparse's, `raise SystemExit`, a SystemExit subclass, the builtins `exit` and `quit`, each of those as an attribute of `builtins` or `__builtins__`, and an import that renames any of them), an entry block that hands `finish` nothing while its module imports the helper, or that calls a function of its module and drops the value it returns, a return scripts/exit_code_table.py `read_script` cannot follow to an ExitCode member (a returned name bound by anything but a plain assignment included), a `report` or `fail` call missing one of its three message parts or holding a blank literal one, or handed a code that is not a failure member, a `passthrough` handed the script's own status (the entry function's result, directly or through a name, an int literal, a member, or a function of the module whose every return is one of those, also under a sign, in an arithmetic or `and`/`or` of them, or through a builtin such as `int`), an entry line `finish(passthrough(...))`, and an import of the helper under a second name. The second fails an ExitCode member the generated table in the limits guide does not name and a table row no member backs (scripts/exit_code_table.py `table_findings`). The third fails a `fail` or `finish` call outside the entry block of a module another project module imports (an import from tests/ does not count, and scripts/exit_codes.py is the helper), because a shared module raises or returns and only an entry point ends the process; `passthrough` is no ending, it marks a status and returns it. config/project.json `import_layers.may_end_the_process` names a module that may, with a non-blank reason, and an entry naming no such module is a finding. A walk that finds no Python file, or no entry block, is a failure, never a pass. It does not judge whether a message part is useful, and it cannot see an exit reached through `getattr`, `os.abort`, `os.kill`, an uncaught exception, argparse's own `--help` and usage exits, a `python -c` line in a makefile, or a status dropped by another callable (`asyncio.run(main())`); and it does not check a `passthrough` over a helper that returns another process's status (scripts/run_app.py `_app_status`), which passes by design, nor one over a function some of whose returns are the script's own literals and others a tool's status. The first also reads every file scripts/shell_gate.py `classify` calls a shell script (with no repository yet, every one the structure walk reaches), less scripts/exit_codes.sh itself: a script must source that helper by a path ending in `/exit_codes.sh` and end through it, as `exit "$EXIT_<NAME>"`, `exit_fail "$EXIT_<NAME>" WHAT ON NEXT` with a member other than SUCCESS and no blank part, or `exit_passthrough "$?"` for a wrapped tool's status, or of a name assigned as `name=$?` and otherwise only read as `$name` or `${name}` outside comments and quoted here-document bodies (any other occurrence, `let`, `(( ))`, `${name:=...}`, `printf -v`, `read`, `mapfile`, `for`, a word that only names it, is a finding at its own line), never a number or a member; a bare `exit 3`, `exit $?` or `exit` is a finding at its file and line, in a subshell, `$(...)`, backquotes or a process substitution `<(...)` or `>(...)` too, inside double quotes or a `${...}` as well (a quoted `}` closes no `${...}`), and so is a status the script renames: an `exit_passthrough` or `return` of anything else (`$((...))`, a positional, a name never assigned), and a `return` of a number or of nothing. The command name is read as the shell runs it, so `"exit"`, `\\exit`, `command exit` and `builtin exit` are `exit`, and an ending that needs the helper on a line before the one that sources it is a finding. Comments, quoted words, here-document bodies and a `case` subject or pattern are not commands, inside `$(...)` too, while a command in a clause body is judged; a file it cannot read to its end, such as one with an open quote or nested past `_SH_MAX_DEPTH` levels, is a finding. No shell script is a finding unless config/project.json `shell.no_scripts` gives the reason or `shell.enabled` (the copier answer `shell`) is false; every other finding holds whatever `shell.enabled` says, because it switches the shell tools only. It cannot see `set -e`, `trap`, `exec`, `kill`, an `eval` or `sh -c` string, or a script that falls off its end after some other ending. The first and third hand their findings to scripts/expiring_tier.py as the checks `exit-helper` and `exit-shared-module`: in the template repository, which holds copier.yml, every finding is red; in a generated project a finding its `expiring_tier.baseline` records warns until `expiring_tier.expires`, and any other is red. Catching SystemExit is not an exit and is not a finding: the exception itself, or a tuple holding it, as the type of an `except` clause or an argument of pytest's `raises`; anywhere deeper in those expressions, and in a `raises` that is not pytest's, it is one. Not a check_* letter: the letters A to Z are taken.
+summary: Three tree-wide gates over every Python file tests/source_tree.py `python_files` lists, and the first over every shell script too (the walk `check_structure.walk` uses), read from the syntax tree. The first fails an exit written anywhere but scripts/exit_codes.py (`sys.exit`, `os._exit`, any `.exit(...)` attribute such as argparse's, `raise SystemExit`, a SystemExit subclass, the builtins `exit` and `quit`, each of those as an attribute of `builtins` or `__builtins__`, and an import that renames any of them), an entry block that hands `finish` nothing while its module imports the helper, or that calls a function of its module and drops the value it returns, a return scripts/exit_code_table.py `read_script` cannot follow to an ExitCode member (a returned name bound by anything but a plain assignment included), a `report` or `fail` call missing one of its three message parts or holding a blank literal one, or handed a code that is not a failure member, a `passthrough` handed the script's own status (the entry function's result, directly or through a name, an int literal, a member, or a function of the module whose every return is one of those, also under a sign, in an arithmetic or `and`/`or` of them, or through a builtin such as `int`), an entry line `finish(passthrough(...))`, and an import of the helper under a second name. The second fails an ExitCode member the generated table in the limits guide does not name and a table row no member backs (scripts/exit_code_table.py `table_findings`). The third fails a `fail` or `finish` call outside the entry block of a module another project module imports (an import from tests/ does not count, and scripts/exit_codes.py is the helper), because a shared module raises or returns and only an entry point ends the process; `passthrough` is no ending, it marks a status and returns it. config/project.json `import_layers.may_end_the_process` names a module that may, with a non-blank reason, and an entry naming no such module is a finding. A walk that finds no Python file, or no entry block, is a failure, never a pass. It does not judge whether a message part is useful, and it cannot see an exit reached through `getattr`, `os.abort`, `os.kill`, an uncaught exception, argparse's own `--help` and usage exits, a `python -c` line in a makefile, or a status dropped by another callable (`asyncio.run(main())`); and it does not check a `passthrough` over a helper that returns another process's status (scripts/run_app.py `_app_status`), which passes by design, nor one over a function some of whose returns are the script's own literals and others a tool's status. The first also reads every file scripts/shell_gate.py `classify` calls a shell script (with no repository yet, every one the structure walk reaches), less scripts/exit_codes.sh itself: a script must source that helper by a path ending in `/exit_codes.sh` and end through it, as `exit "$EXIT_<NAME>"`, `exit_fail "$EXIT_<NAME>" WHAT ON NEXT` with a member other than SUCCESS and no blank part, or `exit_passthrough "$?"` for a wrapped tool's status, or of a name assigned as `name=$?` and otherwise only read as `$name` or `${name}` outside comments and quoted here-document bodies (any other occurrence, `let`, `(( ))`, `${name:=...}`, `printf -v`, `read`, `mapfile`, `for`, a word that only names it, is a finding at its own line), never a number or a member; a bare `exit 3`, `exit $?` or `exit` is a finding at its file and line, in a subshell, `$(...)`, backquotes or a process substitution `<(...)` or `>(...)` too, inside double quotes or a `${...}` as well (a quoted `}` closes no `${...}`), and so is a status the script renames: an `exit_passthrough` or `return` of anything else (`$((...))`, a positional, a name never assigned), and a `return` of a number or of nothing. A command name with no expansion has its quotes and backslashes removed and a `$'...'` decoded as bash decodes it, so `"exit"`, `\\exit`, `$'exit'`, `command exit` and `builtin exit` are `exit`; a command named by an expansion (`$x 3`, `"$cmd" 3`) and an `eval` are findings where the command could end the script (not inside `$(...)`, backquotes, a process substitution or `( ... )`, nor before a single `|` or `&`), because the gate cannot judge them; and an ending that needs the helper on a line before the one that sources it is a finding. Comments, quoted words, here-document bodies and a `case` subject or pattern are not commands, inside `$(...)` too, while a command in a clause body is judged; a file it cannot read to its end, such as one with an open quote or nested past `_SH_MAX_DEPTH` levels, is a finding. No shell script is a finding unless config/project.json `shell.no_scripts` gives the reason or `shell.enabled` (the copier answer `shell`) is false; every other finding holds whatever `shell.enabled` says, because it switches the shell tools only. It cannot see `set -e`, `trap`, `exec`, `kill`, an `sh -c` string, a pathname or brace expansion in a command name, or a script that falls off its end after some other ending. The first and third hand their findings to scripts/expiring_tier.py as the checks `exit-helper` and `exit-shared-module`: in the template repository, which holds copier.yml, every finding is red; in a generated project a finding its `expiring_tier.baseline` records warns until `expiring_tier.expires`, and any other is red. Catching SystemExit is not an exit and is not a finding: the exception itself, or a tuple holding it, as the type of an `except` clause or an argument of pytest's `raises`; anywhere deeper in those expressions, and in a `raises` that is not pytest's, it is one. Not a check_* letter: the letters A to Z are taken.
 """
 
 import ast
@@ -396,6 +396,29 @@ _SH_CASE_PATTERN, _SH_CASE_BODY = "pattern", "body"
 _SH_EXIT, _SH_FAIL, _SH_PASS = "exit", "exit_fail", "exit_passthrough"
 _SH_ENDINGS = (_SH_EXIT, _SH_FAIL, _SH_PASS)
 _SH_RETURN = "return"
+_SH_EVAL = "eval"
+# The escapes bash decodes inside `$'...'`: a letter or quote, an octal,
+# `\xHH`, `\uHHHH`, `\UHHHHHHHH` and `\cX`.
+_SH_ANSI_C_ESCAPE = re.compile(
+    r"\\(?:([abeEfnrtv\\'\"?])|([0-7]{1,3})|x([0-9A-Fa-f]{1,2})"
+    r"|u([0-9A-Fa-f]{1,4})|U([0-9A-Fa-f]{1,8})|c(.))",
+    re.DOTALL,
+)
+_SH_ANSI_C_SIMPLE = {
+    "a": "\a",
+    "b": "\b",
+    "e": "\x1b",
+    "E": "\x1b",
+    "f": "\f",
+    "n": "\n",
+    "r": "\r",
+    "t": "\t",
+    "v": "\v",
+    "\\": "\\",
+    "'": "'",
+    '"': '"',
+    "?": "?",
+}
 _SH_SOURCE = (".", "source")
 # Words that run the command after them as it is, so `command exit 3` is an
 # exit; `command -v` and `-V` only describe it.
@@ -447,7 +470,10 @@ class ShellScanError(Exception):
 
 
 class _ShellReader:
-    """Splits POSIX shell text into its simple commands, each (line, words).
+    """Splits POSIX shell text into its simple commands, each (line, words,
+    main), main false where the command cannot end the script: inside
+    `$(...)`, backquotes, a process substitution or `( ... )`, or ended by a
+    single `|` or `&`.
 
     A word keeps its quotes, so `"$EXIT_USAGE"` and `exit` stay tellable
     apart. A comment, a quoted span and a here-document body are no command;
@@ -455,11 +481,15 @@ class _ShellReader:
     double quotes as well, because the shell runs it there, and so is the
     inside of a process substitution `<(...)` or `>(...)`. A
     redirection and its target are no word, and neither is a `case` header
-    or pattern, which never names a command. It does not read a command a
-    string later runs (`trap`, `eval`, `sh -c`)."""
+    or pattern, which never names a command. A `$'...'` is read to its
+    closing quote, a backslash escaping the next character, as bash reads
+    it. It does not read a command a string later runs (`trap`, `eval`,
+    `sh -c`)."""
 
-    def __init__(self, text, line=1, depth=0, offset=0):
+    def __init__(self, text, line=1, depth=0, offset=0, sub=0):
         self.text, self.i, self.line, self.depth = text, 0, line, depth
+        # How many substitutions and `( ... )` subshells enclose i.
+        self.sub, self.paren = sub, 0
         self.commands, self._heredocs = [], []
         # (start, end) in the whole file's text of each comment and quoted
         # here-document body: text no command reads.
@@ -541,12 +571,15 @@ class _ShellReader:
                 self.cases[-1][1], "a `case` is never closed by `esac`"
             )
 
-    def _end_command(self):
+    def _end_command(self, alone=True):
+        """End the command being read; *alone* is false when a single `|`
+        or `&` ends it, which runs it in a subshell."""
         self._end_word()
         if self.skip:
             raise ShellScanError(self.line, "a redirection names no target")
         if self.words:
-            self.commands.append((self.start, self.words))
+            main = alone and not self.sub and not self.paren
+            self.commands.append((self.start, self.words, main))
         self.words = []
 
     def _span(self, end, what):
@@ -640,6 +673,8 @@ class _ShellReader:
                     self._span(self.i + 1, "a `${`")
                 elif c == "'" and not quoted:
                     self._span(t.find("'", self.i + 1), "a single quote")
+                elif t.startswith("$'", self.i) and not quoted:
+                    self._span(self._closing(self.i + 2, "'"), "an ANSI-C quote")
                 elif c == '"':
                     self._double_quote()
                 elif c == "`":
@@ -660,14 +695,16 @@ class _ShellReader:
         with self._level():
             begin, line = self.i, self.line
             saved = (self.words, self.word, self.word_line, self.start, self.skip)
-            cases = (self.cases, self.pattern_open)
+            nested = (self.cases, self.pattern_open, self.paren)
             self.words, self.word, self.skip = [], None, False
-            self.cases = []
+            self.cases, self.paren = [], 0
+            self.sub += 1
             self.i += 2
             self.run(closer=")")
+            self.sub -= 1
             raw = self.text[begin : self.i]
             self.words, self.word, self.word_line, self.start, self.skip = saved
-            self.cases, self.pattern_open = cases
+            self.cases, self.pattern_open, self.paren = nested
             if self.word is None:
                 self.word, self.word_line = [], line
             self.word.append(raw)
@@ -682,6 +719,7 @@ class _ShellReader:
                 self.line,
                 self.depth,
                 self.offset + self.i + 1,
+                self.sub + 1,
             )
             inner.run()
             self.commands.extend(inner.commands)
@@ -754,7 +792,7 @@ class _ShellReader:
 
     def run(self, closer=None):
         """Read from i to the end, or to the unbalanced *closer*."""
-        t, depth = self.text, 0
+        t = self.text
         while self.i < len(t):
             c = t[self.i]
             if c == "#" and self.word is None:
@@ -769,6 +807,8 @@ class _ShellReader:
                 self.i += 2
             elif c == "'":
                 self._span(t.find("'", self.i + 1), "a single quote")
+            elif t.startswith("$'", self.i):
+                self._span(self._closing(self.i + 2, "'"), "an ANSI-C quote")
             elif c == '"':
                 self._double_quote()
             elif c == "`":
@@ -786,12 +826,14 @@ class _ShellReader:
             elif c in ";&|()":
                 if self._case_mark(c):
                     continue
-                self._end_command()
+                # A doubled `||` or `&&` runs its left side in this shell.
+                pair = (t[self.i - 1 : self.i], t[self.i + 1 : self.i + 2])
+                self._end_command(c not in "|&" or c in pair)
                 self.i += 1
                 if c == "(":
-                    depth += 1
-                elif c == ")" and depth:
-                    depth -= 1
+                    self.paren += 1
+                elif c == ")" and self.paren:
+                    self.paren -= 1
                 elif c == ")" and closer:
                     self._open_case()
                     return
@@ -814,16 +856,38 @@ class _ShellReader:
             raise ShellScanError(opened, "a here-document has no body")
 
 
+def _sh_ansi_c(body):
+    """The text bash makes of *body*, the inside of `$'...'`: each escape
+    _SH_ANSI_C_ESCAPE matches decoded, any other backslash kept as written."""
+
+    def decode(match):
+        simple, octal, byte, short, long, control = match.groups()
+        if simple is not None:
+            return _SH_ANSI_C_SIMPLE[simple]
+        if control is not None:
+            return chr(ord(control) & 0x1F)
+        number = int(octal, 8) if octal else int(byte or short or long, 16)
+        return chr(number) if number <= sys.maxunicode else match.group(0)
+
+    return _SH_ANSI_C_ESCAPE.sub(decode, body)
+
+
 def _sh_unquoted(word):
     """*word* as the shell reads a command name: its quotes and backslashes
-    removed. A word holding an expansion is returned as it is, because its
-    name is known only when the script runs."""
-    if "$" in word or "`" in word:
-        return word
+    removed and `$'...'` decoded as bash decodes it, or None when it holds an
+    expansion, whose name is known only when the script runs."""
     out, i = [], 0
     while i < len(word):
         c = word[i]
-        if c == "\\":
+        if word.startswith("$'", i):
+            end = i + 2
+            while word[end] != "'":
+                end += 2 if word[end] == "\\" else 1
+            out.append(_sh_ansi_c(word[i + 2 : end]))
+            i = end + 1
+        elif c in "$`":
+            return None
+        elif c == "\\":
             out.append(word[i + 1 : i + 2])
             i += 2
         elif c == "'":
@@ -833,7 +897,9 @@ def _sh_unquoted(word):
         elif c == '"':
             i += 1
             while word[i] != '"':
-                if word[i] == "\\" and word[i + 1 : i + 2] in ('"', "\\"):
+                if word[i] in "$`":
+                    return None
+                if word[i] == "\\" and word[i + 1 : i + 2] in ('"', "\\", "$", "`"):
                     i += 1
                 out.append(word[i])
                 i += 1
@@ -845,38 +911,43 @@ def _sh_unquoted(word):
 
 
 def _sh_run_words(words):
-    """[command name, argument words...] as the shell runs *words*: the name
-    unquoted and `command` / `builtin` stepped over, or None for a
+    """(dynamic, [command name, argument words...]) as the shell runs *words*:
+    `command` / `builtin` stepped over and the name unquoted, or kept as
+    written and dynamic true when it holds an expansion; None for a
     `command -v` / `-V` that only describes the command."""
-    words = [_sh_unquoted(words[0])] + words[1:]
-    while words[0] in _SH_PREFIXES and len(words) > 1:
-        prefix, words = words[0], words[1:]
-        while prefix == "command" and len(words) > 1 and words[0].startswith("-"):
-            if words[0] in _SH_DESCRIBE:
+    raw, rest = words[0], words[1:]
+    name = _sh_unquoted(raw)
+    while name in _SH_PREFIXES and rest:
+        while name == "command" and len(rest) > 1 and rest[0].startswith("-"):
+            if rest[0] in _SH_DESCRIBE:
                 return None
-            words = words[1:]
-        words = [_sh_unquoted(words[0])] + words[1:]
-    return words
+            rest = rest[1:]
+        raw, rest = rest[0], rest[1:]
+        name = _sh_unquoted(raw)
+    return name is None, [raw if name is None else name] + rest
 
 
 def shell_commands(text):
-    """([(line, [command name, argument words...])], [(start, end)]) for
-    *text*: each simple command, the assignments and reserved words before it
-    stepped over and its name read as the shell runs it, and the span of each
-    comment and quoted here-document body. Raises ShellScanError when the text
-    cannot be read to its end."""
+    """([(line, [command name, argument words...], dynamic, main)],
+    [(start, end)]) for *text*: each simple command, the assignments and
+    reserved words before it stepped over and its name read by
+    _sh_run_words, whether that name holds an expansion, whether the command
+    could end the script (_ShellReader's main), and the span of each comment
+    and quoted here-document body. Raises ShellScanError when the text cannot
+    be read to its end."""
     reader = _ShellReader(text)
     reader.run()
     commands = []
-    for line, words in sorted(reader.commands, key=lambda c: c[0]):
+    for line, words, main in sorted(reader.commands, key=lambda c: c[0]):
         k = 0
         while k < len(words) and (
             words[k] in _SH_RESERVED or _SH_ASSIGNMENT.match(words[k])
         ):
             k += 1
-        run = _sh_run_words(words[k:]) if k < len(words) else None
-        if run is not None:
-            commands.append((line, run))
+        read = _sh_run_words(words[k:]) if k < len(words) else None
+        if read is not None:
+            dynamic, run = read
+            commands.append((line, run, dynamic, main))
     return commands, reader.unread
 
 
@@ -990,13 +1061,30 @@ def _sh_return_findings(said, args, member, judged):
     ]
 
 
+def _sh_unjudged(head, args, dynamic):
+    """The finding at a command that could end the script but whose ending
+    the gate cannot see: one named by an expansion, or an `eval`."""
+    said = " ".join([head] + args)
+    if dynamic:
+        return (
+            "`%s` runs a command named by %s, which is known only when the script "
+            "runs, so the gate cannot judge whether it ends the script; name the "
+            "command, or run it in a subshell `( ... )` and hand on its status "
+            'with exit_passthrough "$?"' % (said, head)
+        )
+    return (
+        "`%s` runs a string the gate cannot read, so it cannot judge whether it "
+        "ends the script; run the command itself" % said
+    )
+
+
 def _sh_held_status_findings(text, unread, commands, relpath):
     """([finding], judged) for the names an `exit_passthrough` or `return`
     of *commands* hands on: a finding at each line that uses one other than
     as _SH_STATUS_BINDING allows, and the names used anywhere but in a plain
     read, whose endings those findings judge instead."""
     handed = {}
-    for line, (head, *args) in commands:
+    for line, (head, *args), _dynamic, _main in commands:
         name = _sh_handed_name(args[0]) if len(args) == 1 else None
         if head in (_SH_PASS, _SH_RETURN) and name is not None:
             handed.setdefault(name, (line, " ".join([head] + args)))
@@ -1028,7 +1116,11 @@ def shell_file_findings(text, relpath, known, quiet):
         ]
     findings, judged = _sh_held_status_findings(text, unread, commands, relpath)
     sourced, ends, needs = None, 0, []
-    for line, (head, *args) in commands:
+    for line, (head, *args), dynamic, main in commands:
+        if main and (dynamic or head == _SH_EVAL):
+            findings.append(
+                "%s:%d: %s" % (relpath, line, _sh_unjudged(head, args, dynamic))
+            )
         if head in _SH_SOURCE and args and sourced is None:
             target = args[0].replace('"', "").replace("'", "")
             if target.endswith("/" + _SH_HELPER_NAME):
@@ -1841,6 +1933,15 @@ _SH_PASSES = {
     ),
     "a redirection to a process substitution": "echo x > >(cat) 2> >(cat >&2)\n",
     "a process substitution inside a word": "echo a<(ls)b\n",
+    "an expansion named command in a substitution": 'v=$("$cmd" --version)\n',
+    "an expansion named command in a subshell": '( "$cmd" 3 )\nexit_passthrough "$?"\n',
+    "an expansion named command piped on": '"$cmd" 3 | cat\n"$@" |& cat\n',
+    "an expansion named command in the background": '"$cmd" 3 &\nwait\n',
+    "an eval in a process substitution": 'cat <(eval "$x")\n',
+    "an eval in a backquote": 'v=`eval "$x"`\n',
+    "an ANSI-C quoted word": "echo $'it\\'s'\n",
+    "an ANSI-C quoted brace in an expansion": "echo ${y:-$'}'}\n",
+    "an ANSI-C quoted name that is not exit": "$'exit 3'\n",
     "a held status named in a quoted here-document": (
         "false\nrc=$?\ncat <<'EOF'\nrc=3\nEOF\nexit_passthrough \"$rc\"\n"
     ),
@@ -1856,6 +1957,10 @@ def test_a_shell_script_that_ends_through_the_helper_has_no_finding(
     assert shell_findings(root) == {"files": 1, "findings": []}
 
 
+# The fragments of the findings at a command whose name holds an expansion and
+# at an `eval`, where either could end the script.
+_SH_UNJUDGED_NAME = "the gate cannot judge whether it ends the script"
+_SH_UNREAD_STRING = "runs a string the gate cannot read"
 # The fragment of the finding at a use of a handed-on name that is no plain read.
 _SH_CANNOT_SHOW = "so the gate cannot show it still holds that status"
 # (body placed on line 3, its finding's line, a fragment of the finding)
@@ -2010,6 +2115,36 @@ _SH_FINDINGS = {
         "echo x >>(cat)\n",
         3,
         "a redirection names no target",
+    ),
+    "a command named by an expansion": ("x=exit; $x 3\n", 3, _SH_UNJUDGED_NAME),
+    "a command named by a braced expansion": ("${x} 3\n", 3, _SH_UNJUDGED_NAME),
+    "a command named by a quoted expansion": ('"$cmd" 3\n', 3, _SH_UNJUDGED_NAME),
+    "a command named by a backquote": ("`echo exit` 3\n", 3, _SH_UNJUDGED_NAME),
+    "a command named by an expansion after command": (
+        'command "$x" 3\n',
+        3,
+        _SH_UNJUDGED_NAME,
+    ),
+    "a command named by an expansion after an or": (
+        'true || "$x" 3\n',
+        3,
+        _SH_UNJUDGED_NAME,
+    ),
+    "a command named by an expansion last in a pipeline": (
+        'cat | "$x" 3\n',
+        3,
+        _SH_UNJUDGED_NAME,
+    ),
+    "all arguments run in a function": ('f() { "$@"; }\n', 3, _SH_UNJUDGED_NAME),
+    "an eval": ('eval "exit 3"\n', 3, _SH_UNREAD_STRING),
+    "an eval after command": ('command eval "exit 3"\n', 3, _SH_UNREAD_STRING),
+    "an ANSI-C quoted exit": ("$'exit' 3\n", 3, "writes a number"),
+    "an ANSI-C escaped exit": ("$'\\x65xit' 3\n", 3, "writes a number"),
+    "an octal escaped exit": ("$'\\145xit' 3\n", 3, "writes a number"),
+    "an exit after an ANSI-C quoted quote": (
+        "echo $'it\\'s'; exit 3\n",
+        3,
+        "`exit 3`",
     ),
     "a return of a renamed status": (
         'f() { s=2; return "$s"; }\n',
