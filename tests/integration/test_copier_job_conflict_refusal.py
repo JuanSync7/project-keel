@@ -85,13 +85,21 @@ def _answers(project):
 
 def _render(command, project):
     """The argv copier runs for *command* in *project*: every word rendered
-    with copier's variables (the interpreter, this template, `after`, HEAD as
-    both versions) and the project's answers; an unknown variable fails."""
+    with copier's variables (the interpreter; this template, the project and
+    the answers file as `_copier_conf`; `after`; HEAD as both versions) and the
+    project's answers; an unknown variable fails."""
     env = jinja2_sandbox.SandboxedEnvironment(undefined=jinja2.StrictUndefined)
+    # copier's _render_context supplies these three `_copier_conf` keys, the
+    # answers file as the template's `_answers_file` (copier 9.19, measured).
+    conf = {
+        "src_path": str(_ROOT),
+        "dst_path": str(project),
+        "answers_file": _copier_yml()["_answers_file"],
+    }
     context = dict(
         _answers(project),
         _copier_python=sys.executable,
-        _copier_conf={"src_path": str(_ROOT)},
+        _copier_conf=conf,
         _stage="after",
         _version_from="HEAD",
         _version_to="HEAD",
