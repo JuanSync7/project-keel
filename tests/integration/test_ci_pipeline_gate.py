@@ -2,7 +2,7 @@
 title: Integration — every CI adapter runs exactly config/project.json ci_pipeline.steps, in order
 kind: tests
 layer: n/a
-summary: config/project.json `ci_pipeline.steps` is the one statement of what CI runs, and each adapter file present (`ci_pipeline.adapters`: .github/workflows/ci.yml, .gitlab-ci.yml) is held to it through tests/ci_adapters.py parity_faults. The adapters in this tree have no fault; an empty step list, a tree with no adapter, a missing marker line or one that is not the whole line, a dropped, added, reordered or changed step, a changed env value, and a GitLab image or GIT_DEPTH other than the configured one each turn the judge red on a copy, and so does each GitLab key the shipped file lacks, however it is quoted or written (`when: manual`, `"when"`, `? when`, `'rules'`, `needs`, `allow_failure`, a `<<` merge, `MAKEFLAGS: "-n"` at either level, `default:`, `workflow`, `include`, another job), with one fault naming its key path, a key it has that the file lacks, a key set twice (named by both lines), a file YAML cannot read, a script item that is not a line, and a missing pyyaml. A file that differs only in what YAML does not read (comments, key order, quoting, a flow, nested or one-string script) has no fault. In a project, the `ci_pipeline` answer in .copier-answers.yml picks what is judged: a chosen adapter that is missing, or one that lost its marker, is a fault, and so is an answers file with no valid answer (shown by its line as written), one that answers twice however the second key is written (`"ci_pipeline"`, `ci_pipeline :`, `? ci_pipeline`; named by both lines), and one YAML cannot read; a quoted answer with a trailing comment reads as copier reads it; an unchosen file the project wrote, with no marker, is not judged, and an unchosen one carrying the marker still is. The GitLab cases render the template's .gitlab-ci.yml.jinja with the toolchain answer, so the shipped twin is judged too, and yaml reads the rendered file to the same script lines the stdlib scanner does and to exactly ci_adapters.gitlab_document.
+summary: config/project.json `ci_pipeline.steps` is the one statement of what CI runs, and each adapter file present (`ci_pipeline.adapters`: .github/workflows/ci.yml, .gitlab-ci.yml) is held to it through tests/ci_adapters.py parity_faults. The adapters in this tree have no fault; an empty step list, a tree with no adapter, a missing marker line or one that is not the whole line, a dropped, added, reordered or changed step, a changed env value, and a GitLab image or GIT_DEPTH other than the configured one each turn the judge red on a copy, and so does each GitLab key the shipped file lacks, however it is quoted or written (`when: manual`, `"when"`, `? when`, `'rules'`, `needs`, `allow_failure`, a `<<` merge, `MAKEFLAGS: "-n"` at either level, `default:`, `workflow`, `include`, another job), with one fault naming its key path, a key it has that the file lacks, a key set twice (named by both lines), a file YAML cannot read, a script item that is not a line, a NAME=value word alone on its line, in a multi-line step or a step of its own (named by its step), and a missing pyyaml; an env prefix never reaches across a line break. A file that differs only in what YAML does not read (comments, key order, quoting, a flow, nested or one-string script) has no fault. In a project, the `ci_pipeline` answer in .copier-answers.yml picks what is judged: a chosen adapter that is missing, or one that lost its marker, is a fault, and so is an answers file with no valid answer (shown by its line as written), one that answers twice however the second key is written (`"ci_pipeline"`, `ci_pipeline :`, `? ci_pipeline`; named by both lines), and one YAML cannot read; a quoted answer with a trailing comment reads as copier reads it; an unchosen file the project wrote, with no marker, is not judged, and an unchosen one carrying the marker still is. The GitLab cases render the template's .gitlab-ci.yml.jinja with the toolchain answer, so the shipped twin is judged too, and yaml reads the rendered file to the same script lines the stdlib scanner does and to exactly ci_adapters.gitlab_document.
 """
 
 import json
@@ -442,3 +442,50 @@ def test_a_chosen_adapter_that_lost_its_marker_is_still_judged(tmp_path):
     _edit(root / ".github/workflows/ci.yml", "# keel-adapter: github\n", "")
     faults = ci_adapters.parity_faults(root)
     assert faults == ["ci.yml: no line `# keel-adapter: github`"], faults
+
+
+_ENV_STEP = "KEEL_REQUIRED_EXTRAS=template,dev,transport,secrets make test"
+_ENV_ALONE = [
+    (
+        "block step",
+        "    - |-\n"
+        "      KEEL_REQUIRED_EXTRAS=template,dev,transport,secrets\n"
+        "      make test\n",
+        9,
+    ),
+    (
+        "two steps",
+        "    - KEEL_REQUIRED_EXTRAS=template,dev,transport,secrets\n    - make test\n",
+        9,
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "planted, step", [c[1:] for c in _ENV_ALONE], ids=[c[0] for c in _ENV_ALONE]
+)
+def test_an_env_word_alone_on_its_line_is_a_fault_naming_the_step(
+    tmp_path, planted, step
+):
+    """bash passes `NAME=value` to a command only on the command's own line:
+    alone on a line it sets an unexported shell variable, so `make test`
+    runs without KEEL_REQUIRED_EXTRAS and a missing surface skips."""
+    root = _copy(tmp_path, gitlab=True)
+    _edit(root / ".gitlab-ci.yml", "    - %s\n" % _ENV_STEP, planted)
+    faults = ci_adapters.parity_faults(root)
+    said = "step %d sets `KEEL_REQUIRED_EXTRAS=template,dev,transport,secrets`" % step
+    assert said in faults[0], faults
+
+
+@pytest.mark.parametrize("space, faults", [("\\t", 0), ("\\v", 1)], ids=["tab", "vt"])
+def test_an_env_prefix_ends_only_at_a_space_or_a_tab(tmp_path, space, faults):
+    """bash splits words at a space or a tab, so `NAME=value<TAB>make test`
+    passes NAME to make; a vertical tab, which a regex `\\s` also matches, is
+    part of the word, and the line runs no `make test` with that env."""
+    root = _copy(tmp_path, gitlab=True)
+    _edit(
+        root / ".gitlab-ci.yml",
+        "    - %s\n" % _ENV_STEP,
+        '    - "%s"\n' % _ENV_STEP.replace(" make", space + "make"),
+    )
+    assert len(ci_adapters.parity_faults(root)) == faults
