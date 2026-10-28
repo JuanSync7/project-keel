@@ -9,7 +9,7 @@ tags: [jobs, scheduled, automation, triggers]
 summary: Time-triggered doers — the scripts a scheduler fires. The schedule lives in ops/.
 id: scripts-jobs-readme
 created: 2026-06-17
-updated: 2026-10-24
+updated: 2026-10-28
 visibility: internal
 canonical: true
 ---

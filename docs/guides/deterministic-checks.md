@@ -8,7 +8,7 @@ tags: [checks, ci, linter, determinism, pre-commit, hooks, guide]
 summary: Catalogue of every deterministic check that keeps a project-template repo honest — purpose, when to run, and how to wire as a hook.
 id: docs-guides-deterministic-checks
 created: 2026-06-19
-updated: 2026-10-26
+updated: 2026-10-28
 visibility: internal
 canonical: true
 ---
