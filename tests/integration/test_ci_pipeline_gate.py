@@ -2,11 +2,12 @@
 title: Integration — every CI adapter runs exactly config/project.json ci_pipeline.steps, in order
 kind: tests
 layer: n/a
-summary: config/project.json `ci_pipeline.steps` is the one statement of what CI runs, and each adapter file present (`ci_pipeline.adapters`: .github/workflows/ci.yml, .gitlab-ci.yml) is held to it through tests/ci_adapters.py parity_faults. The adapters in this tree have no fault; an empty step list, a tree with no adapter, a missing marker line or one that is not the whole line, a dropped, added, reordered or changed step, a changed env value, and a GitLab image or GIT_DEPTH other than the configured one each turn the judge red on a copy, and so does each GitLab key that decides whether or how the `test` job runs (`when: manual`, `rules` with `when: never`, `only`, `except`, a job or `default:` `before_script` that exits 0, `extends`, top-level `before_script`, `workflow` and `include`), with one fault naming the key. In a project, the `ci_pipeline` answer in .copier-answers.yml picks what is judged: a chosen adapter that is missing, or one that lost its marker, is a fault, and so is an answers file with no valid answer, one that answers twice (named by both lines), and one the scanner cannot read (shown as written); an unchosen file the project wrote, with no marker, is not judged, and an unchosen one carrying the marker still is. The GitLab cases render the template's .gitlab-ci.yml.jinja with the toolchain answer, so the shipped twin is judged too, and yaml reads the rendered file to the same script lines the stdlib scanner does.
+summary: config/project.json `ci_pipeline.steps` is the one statement of what CI runs, and each adapter file present (`ci_pipeline.adapters`: .github/workflows/ci.yml, .gitlab-ci.yml) is held to it through tests/ci_adapters.py parity_faults. The adapters in this tree have no fault; an empty step list, a tree with no adapter, a missing marker line or one that is not the whole line, a dropped, added, reordered or changed step, a changed env value, and a GitLab image or GIT_DEPTH other than the configured one each turn the judge red on a copy, and so does each GitLab key the shipped file lacks, however it is quoted or written (`when: manual`, `"when"`, `? when`, `'rules'`, `needs`, `allow_failure`, a `<<` merge, `MAKEFLAGS: "-n"` at either level, `default:`, `workflow`, `include`, another job), with one fault naming its key path, a key it has that the file lacks, a key set twice (named by both lines), a file YAML cannot read, a script item that is not a line, and a missing pyyaml. A file that differs only in what YAML does not read (comments, key order, quoting, a flow, nested or one-string script) has no fault. In a project, the `ci_pipeline` answer in .copier-answers.yml picks what is judged: a chosen adapter that is missing, or one that lost its marker, is a fault, and so is an answers file with no valid answer, one that answers twice (named by both lines), and one the scanner cannot read (shown as written); an unchosen file the project wrote, with no marker, is not judged, and an unchosen one carrying the marker still is. The GitLab cases render the template's .gitlab-ci.yml.jinja with the toolchain answer, so the shipped twin is judged too, and yaml reads the rendered file to the same script lines the stdlib scanner does and to exactly ci_adapters.gitlab_document.
 """
 
 import json
 import shutil
+import sys
 from pathlib import Path
 
 import pytest
@@ -69,6 +70,9 @@ def test_the_rendered_gitlab_twin_has_no_fault_and_yaml_reads_the_same_lines(tmp
     steps = ci_adapters.pipeline(root)["steps"]
     assert doc["test"]["script"] == [ci_adapters.gitlab_line(s) for s in steps]
     assert doc["variables"]["GIT_DEPTH"] == "0"
+    # The judge holds a project's file to gitlab_document, so the twin keel
+    # ships must read as exactly that document, no key more or less.
+    assert doc == ci_adapters.gitlab_document(root)
 
 
 def test_an_empty_step_list_is_a_fault_not_a_pass(tmp_path):
@@ -150,41 +154,173 @@ def test_a_gitlab_adapter_that_drifts_is_a_fault(tmp_path, old, new):
     assert ci_adapters.parity_faults(root) != []
 
 
-# Each key that decides whether, or how, the GitLab `test` job runs its
-# script, as a shape the review measured passing the judge: (key named in the
-# fault, the line it is planted after, the planted text). keel's twin sets
-# none of them.
-_GITLAB_RUN_KEYS = [
-    ("test.when", "test:\n", "  when: manual\n"),
-    ("test.rules", "test:\n", "  rules:\n    - when: never\n"),
-    ("test.only", "test:\n", "  only:\n    - tags\n"),
-    ("test.except", "test:\n", "  except:\n    - branches\n"),
-    ("test.before_script", "test:\n", "  before_script:\n    - exit 0\n"),
-    ("test.extends", "test:\n", "  extends: .quiet\n"),
-    ("test.<<", "test:\n", "  <<: *quiet\n"),
-    ("default", 'GIT_DEPTH: "0"\n', "default:\n  before_script:\n    - exit 0\n"),
-    ("before_script", 'GIT_DEPTH: "0"\n', "before_script:\n  - exit 0\n"),
-    ("workflow", 'GIT_DEPTH: "0"\n', "workflow:\n  rules:\n    - when: never\n"),
-    ("include", 'GIT_DEPTH: "0"\n', "include:\n  - local: more-ci.yml\n"),
+# Shapes that pass a step check while the job runs no step, or a step other
+# than keel's, each measured passing a judge that rejected key names: (id, the
+# line it is planted after, the planted text, the key paths the faults name,
+# one fault each). The judge names them because keel's file has none of them.
+_GITLAB_FOREIGN = [
+    ("when", "test:\n", "  when: manual\n", ["test.when"]),
+    ("quoted when", "test:\n", '  "when": manual\n', ["test.when"]),
+    ("explicit when", "test:\n", "  ? when\n  : manual\n", ["test.when"]),
+    ("quoted rules", "test:\n", "  'rules': [when: never]\n", ["test.rules"]),
+    ("only", "test:\n", "  only:\n    - tags\n", ["test.only"]),
+    ("except", "test:\n", "  except:\n    - branches\n", ["test.except"]),
+    ("needs", "test:\n", "  needs: [build]\n", ["test.needs"]),
+    ("allow_failure", "test:\n", "  allow_failure: true\n", ["test.allow_failure"]),
+    (
+        "job before_script",
+        "test:\n",
+        "  before_script:\n    - exit 0\n",
+        ["test.before_script"],
+    ),
+    ("extends", "test:\n", "  extends: .quiet\n", ["test.extends"]),
+    ("merge key", "test:\n", "  <<: {when: manual}\n", ["test.when"]),
+    (
+        "job MAKEFLAGS",
+        "test:\n",
+        '  variables:\n    MAKEFLAGS: "-n"\n',
+        ["test.variables"],
+    ),
+    ("MAKEFLAGS", 'GIT_DEPTH: "0"\n', '  MAKEFLAGS: "-n"\n', ["variables.MAKEFLAGS"]),
+    (
+        "default",
+        'GIT_DEPTH: "0"\n',
+        "default:\n  before_script:\n    - exit 0\n",
+        ["default"],
+    ),
+    (
+        "before_script",
+        'GIT_DEPTH: "0"\n',
+        "before_script:\n  - exit 0\n",
+        ["before_script"],
+    ),
+    (
+        "workflow",
+        'GIT_DEPTH: "0"\n',
+        "workflow:\n  rules:\n    - when: never\n",
+        ["workflow"],
+    ),
+    (
+        "quoted workflow",
+        'GIT_DEPTH: "0"\n',
+        '"workflow":\n  rules:\n    - when: never\n',
+        ["workflow"],
+    ),
+    ("include", 'GIT_DEPTH: "0"\n', "include:\n  - local: more-ci.yml\n", ["include"]),
+    ("another job", 'GIT_DEPTH: "0"\n', "lint:\n  script: [make lint]\n", ["lint"]),
 ]
 
 
 @pytest.mark.parametrize(
-    "key, after, planted",
-    _GITLAB_RUN_KEYS,
-    ids=[c[0] for c in _GITLAB_RUN_KEYS],
+    "after, planted, paths",
+    [c[1:] for c in _GITLAB_FOREIGN],
+    ids=[c[0] for c in _GITLAB_FOREIGN],
 )
-def test_a_gitlab_key_that_decides_whether_the_job_runs_is_a_fault(
-    tmp_path, key, after, planted
+def test_a_gitlab_key_keel_does_not_ship_is_a_fault_naming_its_path(
+    tmp_path, after, planted, paths
 ):
-    """A `test` job whose steps match but that runs them only by hand, never,
-    on tags only, or after a `before_script` that exits 0 passes no step: the
-    judge names the key, and nothing else."""
+    """A key read as GitLab reads it, however it is quoted or written, that
+    keel's file lacks is one fault naming its key path, and nothing else."""
     root = _copy(tmp_path, gitlab=True)
     _edit(root / ".gitlab-ci.yml", after, after + planted)
     faults = ci_adapters.parity_faults(root)
+    assert len(faults) == len(paths), faults
+    for path, fault in zip(paths, faults, strict=True):
+        assert "`%s`" % path in fault, faults
+
+
+def test_a_gitlab_key_keel_ships_that_is_missing_is_a_fault(tmp_path):
+    root = _copy(tmp_path, gitlab=True)
+    _edit(root / ".gitlab-ci.yml", "variables:\n", "x-variables:\n")
+    faults = ci_adapters.parity_faults(root)
+    assert len(faults) == 2, faults
+    assert "`x-variables`" in faults[0] and "`variables`" in faults[1], faults
+
+
+def test_a_gitlab_key_set_twice_is_a_fault_naming_both_lines(tmp_path):
+    """YAML keeps the last of two `script` keys, so a second one would run
+    alone: the judge reads no file that sets a key twice."""
+    root = _copy(tmp_path, gitlab=True)
+    path = root / ".gitlab-ci.yml"
+    path.write_text(path.read_text() + '  script: ["true"]\n')
+    lines = path.read_text().splitlines()
+    first = lines.index("  script:") + 1
+    faults = ci_adapters.parity_faults(root)
     assert len(faults) == 1, faults
-    assert "`%s`" % key in faults[0], faults
+    for said in (
+        "`script`",
+        "line %d `  script:`" % first,
+        'line %d `  script: ["true"]`' % len(lines),
+    ):
+        assert said in faults[0], faults
+
+
+def test_a_gitlab_file_yaml_cannot_read_is_one_fault(tmp_path):
+    root = _copy(tmp_path, gitlab=True)
+    _edit(root / ".gitlab-ci.yml", "test:\n", "test:\n  <<: *nowhere\n")
+    faults = ci_adapters.parity_faults(root)
+    assert len(faults) == 1 and faults[0].startswith(".gitlab-ci.yml: "), faults
+
+
+def test_without_pyyaml_a_gitlab_file_is_a_fault_not_a_pass(tmp_path, monkeypatch):
+    root = _copy(tmp_path, gitlab=True)
+    monkeypatch.setitem(sys.modules, "yaml", None)
+    faults = ci_adapters.parity_faults(root)
+    assert len(faults) == 1 and "pyyaml" in faults[0], faults
+
+
+def _flow(lines):
+    return "[%s]" % ", ".join(json.dumps(line) for line in lines)
+
+
+def test_a_gitlab_file_written_another_way_yaml_reads_the_same_has_no_fault(
+    tmp_path,
+):
+    """The edits keel allows are the ones YAML does not read: comments, blank
+    lines, key order, quoting and flow or block style, and a script list
+    nested the way GitLab flattens it."""
+    root = _copy(tmp_path, gitlab=True)
+    doc = ci_adapters.gitlab_document(root)
+    lines = doc["test"]["script"]
+    (root / ".gitlab-ci.yml").write_text(
+        "# keel-adapter: gitlab\n"
+        "# Our runner's notes.\n"
+        "test:\n"
+        "  script: [%s, %s]\n"
+        "\n"
+        "  image: '%s'\n"
+        "variables: {GIT_DEPTH: '0'}  # full history\n"
+        % (
+            _flow(lines[:2]),
+            ", ".join(json.dumps(x) for x in lines[2:]),
+            doc["test"]["image"],
+        )
+    )
+    assert ci_adapters.parity_faults(root) == []
+
+
+@pytest.mark.parametrize("script", ["make check", '"make check"', "[make check]"])
+def test_a_one_step_gitlab_script_may_be_one_string(tmp_path, script):
+    root = _copy(tmp_path, gitlab=True)
+    (root / ".github/workflows/ci.yml").unlink()
+    _set_config(root, lambda block: block.update(steps=[{"run": "make check"}]))
+    path = root / ".gitlab-ci.yml"
+    text = path.read_text()
+    path.write_text(text[: text.index("  script:\n")] + "  script: %s\n" % script)
+    assert ci_adapters.parity_faults(root) == []
+    _set_config(
+        root,
+        lambda block: block.update(steps=[{"run": "make check"}, {"run": "make lint"}]),
+    )
+    faults = ci_adapters.parity_faults(root)
+    assert len(faults) == 1 and ".gitlab-ci.yml runs" in faults[0], faults
+
+
+def test_a_gitlab_script_item_that_is_not_a_line_is_a_fault(tmp_path):
+    root = _copy(tmp_path, gitlab=True)
+    _edit(root / ".gitlab-ci.yml", "    - make trace\n", "    - {make: trace}\n")
+    faults = ci_adapters.parity_faults(root)
+    assert len(faults) == 1 and "`test.script`" in faults[0], faults
 
 
 def test_a_config_step_no_adapter_runs_is_a_fault(tmp_path):

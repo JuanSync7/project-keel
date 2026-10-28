@@ -60,11 +60,10 @@ version rather than a bare commit:
   `.gitlab-ci.yml`, or both. config/project.json `ci_pipeline.steps` is the
   ordered list of commands CI runs. Each adapter is hand-written, and
   `tests/integration/test_ci_pipeline_gate.py` fails one whose steps, order or
-  env differ from that list, and a GitLab file that sets any key deciding
-  whether or how its `test` job runs (`when`, `rules`, `only`, `except`,
-  `extends`, a job, `default:` or top-level `before_script`, `workflow`,
-  `include`), which keel's file never sets; the GitHub side has no such
-  check yet. An answers file that answers `ci_pipeline` twice is a fault
+  env differ from that list, and a GitLab file, read with a YAML parser,
+  whose top-level keys, `test` job keys or variables differ from the file
+  keel ships in any key or value; a key set twice is a fault naming both
+  lines. The GitHub side has no such check yet. An answers file that answers `ci_pipeline` twice is a fault
   naming both lines, since YAML reads the last. Each adapter keel writes carries the line
   `# keel-adapter: <name>` (`ci_pipeline.marker`). When an update changes the
   answer, `scripts/jobs/keep_edited_retired.py` removes an adapter that is no

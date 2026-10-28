@@ -2,7 +2,7 @@
 title: Test helper — read each CI adapter's steps and judge it against config/project.json ci_pipeline
 kind: tests
 layer: n/a
-summary: config/project.json `ci_pipeline` states the CI pipeline once, as an ordered list of shell steps; each adapter file (`ci_pipeline.adapters`, github's .github/workflows/ci.yml and gitlab's .gitlab-ci.yml) runs them. adapter_steps reads the neutral steps an adapter file runs, stdlib line-scanning so a test that imports nothing optional can use it: in a GitHub workflow they are the `run` steps after the last `uses:` setup step, with their `env` map and whether `continue-on-error` lets the job carry on; in a GitLab file they are the `test` job's `script` lines, a leading upper-case NAME=value being the step's env and `allow_failure` making every step soft. judged names the adapter files that are keel's, and shipped adds, in the template, an adapter present only as its `.jinja` twin, so a test about what CI runs reads every adapter keel ships. gitlab_line is the one way a step is written as a GitLab script line. parity_faults names every way the adapters under a root differ from the config: no step configured, no adapter present, a chosen adapter missing, a missing marker line, steps that differ in content or order, and for gitlab an image other than `gitlab_image` filled from `toolchain`, a `GIT_DEPTH` other than "0", or any key that decides whether or how the `test` job runs (top-level `before_script`, `default`, `include`, `workflow`; the job's `before_script`, `except`, `extends`, `only`, `rules`, `when` or a `<<` merge key), none of which keel's twin sets. The GitHub reader has no such check: a job-level `if:` or a changed `on:` passes (KEEL-CIGATE-1). Which adapters are judged follows the `ci_pipeline` answer in .copier-answers.yml: every chosen one, and an unchosen one only when it carries keel's marker line, so a file the project wrote itself, which `copier update` also keeps, is not held to keel's steps; the template has no answers file and judges every adapter present, and an answers file that records no valid answer, or answers twice (YAML would read the last line, a scan the first), is a fault that shows each line as written. A layout the scanner cannot read gives steps that differ from the config, so the judge fails closed. It reads files and writes nothing.
+summary: config/project.json `ci_pipeline` states the CI pipeline once, as an ordered list of shell steps; each adapter file (`ci_pipeline.adapters`, github's .github/workflows/ci.yml and gitlab's .gitlab-ci.yml) runs them. adapter_steps reads the neutral steps an adapter file runs, stdlib line-scanning so a test that imports nothing optional can use it: in a GitHub workflow they are the `run` steps after the last `uses:` setup step, with their `env` map and whether `continue-on-error` lets the job carry on; in a GitLab file they are the `test` job's `script` lines, a leading upper-case NAME=value being the step's env and `allow_failure` making every step soft. judged names the adapter files that are keel's, and shipped adds, in the template, an adapter present only as its `.jinja` twin, so a test about what CI runs reads every adapter keel ships. gitlab_line is the one way a step is written as a GitLab script line. parity_faults names every way the adapters under a root differ from the config: no step configured, no adapter present, a chosen adapter missing, a missing marker line, and steps that differ in content or order. The GitLab rule is that a project's .gitlab-ci.yml may differ from the one keel ships only in what YAML does not read: the file is read with pyyaml's safe loader, the reader copier uses, so a quoted (`"when"`) or explicit (`? when`) key reads as the key itself, and a key one mapping sets twice is a fault naming both lines, since YAML would keep the last in silence; then any top-level key, any key of the `test` job and any variable, top-level or the job's `variables`, that gitlab_document (the shipped file, built from config: `ci_pipeline.gitlab_image` filled from `toolchain`, the steps, and `GIT_DEPTH` "0") lacks, sets otherwise, or sets and the file lacks is a fault naming its key path, and the `script`, one string or a list GitLab flattens, must run exactly the steps. A comment, a blank line, key order, quoting, and flow or block style are the edits it allows. Without pyyaml a GitLab file is a fault, never a pass. adapter_steps keeps its stdlib scanner for the gitlab twin keel ships, because tests/integration/test_gate_scope.py and tests/integration/test_copier_generator_contract.py read it and must never skip; tests/integration/test_ci_pipeline_gate.py holds that twin, read by yaml, equal to gitlab_document. The GitHub reader has no key check: a job-level `if:` or a changed `on:` passes (KEEL-CIGATE-1). Which adapters are judged follows the `ci_pipeline` answer in .copier-answers.yml: every chosen one, and an unchosen one only when it carries keel's marker line, so a file the project wrote itself, which `copier update` also keeps, is not held to keel's steps; the template has no answers file and judges every adapter present, and an answers file that records no valid answer, or answers twice (YAML would read the last line, a scan the first), is a fault that shows each line as written. A GitHub layout the scanner cannot read gives steps that differ from the config, and a GitLab file YAML cannot read is a fault, so the judge fails closed. It reads files and writes nothing.
 """
 
 import json
@@ -160,49 +160,9 @@ def _gitlab_steps(text):
     soft = keys.get("test.allow_failure") not in (None, "false")
     steps = []
     for line in script:
-        env = {}
-        match = _ENV_PREFIX.match(line)
-        while match:
-            env[match.group(1)] = shlex.split(match.group(2))[0]
-            line = line[match.end() :]
-            match = _ENV_PREFIX.match(line)
-        steps.append({"run": line, "env": env, "soft": soft})
+        run, env = _split_env(line)
+        steps.append({"run": run, "env": env, "soft": soft})
     return steps
-
-
-# The GitLab keys that decide whether, and how, the `test` job runs its
-# script: a top-level one applies to every job, a `test.` one to that job.
-# keel's twin sets none of them, so any is a fault; each is a shape that
-# passed the step check while running no step (`when: manual`, `rules` with
-# `when: never`, a `before_script` that exits 0, an `extends` or `include`
-# that replaces the job).
-_GITLAB_TOP_RUN_KEYS = ("before_script", "default", "include", "workflow")
-_GITLAB_JOB_RUN_KEYS = ("before_script", "except", "extends", "only", "rules", "when")
-
-
-def _gitlab_run_keys(text):
-    """The run-deciding keys a GitLab file sets, in file order: each top-level
-    one by name, each of the `test` job's own as `test.<key>`; a YAML merge
-    key (`<<`) under `test` counts too, since it can carry any of them."""
-    found, section, child = [], None, None
-    for line in text.splitlines():
-        body = line.strip()
-        if not body or body.startswith("#"):
-            continue
-        indent = _indent(line)
-        key = body.partition(":")[0].strip()
-        if indent == 0:
-            section, child = key, None
-            if key in _GITLAB_TOP_RUN_KEYS:
-                found.append(key)
-            continue
-        if section != "test":
-            continue
-        if child is None:
-            child = indent
-        if indent == child and (key in _GITLAB_JOB_RUN_KEYS or key == "<<"):
-            found.append("test." + key)
-    return found
 
 
 _READERS = {"github": _github_steps, "gitlab": _gitlab_steps}
@@ -220,6 +180,181 @@ def gitlab_line(step):
         "%s=%s " % (key, shlex.quote(value)) for key, value in sorted(env.items())
     )
     return prefix + step["run"]
+
+
+class _DoubledKey(ValueError):
+    """A mapping in a YAML file sets one key twice."""
+
+
+def _unique_key_loader(yaml):
+    """pyyaml's safe loader, which is what copier reads answers with and reads
+    a key as GitLab does, quoted (`"when"`) or explicit (`? when`) alike, with
+    one change: a mapping that sets a key twice raises _DoubledKey with both
+    lines, where the safe loader would keep the last in silence."""
+
+    class UniqueKeyLoader(yaml.SafeLoader):
+        def construct_mapping(self, node, deep=False):
+            seen = {}
+            for key_node, _ in node.value:
+                if key_node.tag == "tag:yaml.org,2002:merge":
+                    key = "<<"
+                elif isinstance(key_node, yaml.ScalarNode):
+                    key = self.construct_object(key_node)
+                else:
+                    continue
+                line = key_node.start_mark.line + 1
+                if key in seen:
+                    raise _DoubledKey(key, seen[key], line)
+                seen[key] = line
+            return super().construct_mapping(node, deep=deep)
+
+    return UniqueKeyLoader
+
+
+def _load(path):
+    """(the YAML document at *path*, fault or None). The fault names a key set
+    twice with both lines as written, any other YAML error, and a missing
+    pyyaml: the dev extra installs it (pre-commit needs it) and the template
+    extra too (copier needs it), and without it nothing may be judged a pass."""
+    try:
+        import yaml
+    except ImportError:
+        return None, (
+            "%s cannot be judged: pyyaml is not importable; install the dev extra"
+            % path.name
+        )
+    text = path.read_text("utf-8")
+    try:
+        return yaml.load(text, Loader=_unique_key_loader(yaml)), None
+    except _DoubledKey as e:
+        key, first, second = e.args
+        lines = text.splitlines()
+        return None, (
+            "%s sets `%s` twice, line %d `%s` and line %d `%s`; YAML keeps the "
+            "last, so keep one"
+            % (path.name, key, first, lines[first - 1], second, lines[second - 1])
+        )
+    except yaml.YAMLError as e:
+        return None, "%s: %s" % (path.name, " ".join(str(e).split()))
+
+
+def gitlab_document(root):
+    """The .gitlab-ci.yml keel ships under *root*, as YAML reads it: the
+    `test` job's image is `ci_pipeline.gitlab_image` filled from `toolchain`,
+    its script the configured steps, and `GIT_DEPTH` is "0" for the same
+    reason ci.yml checks out with fetch-depth: 0."""
+    config = json.loads((Path(root) / CONFIG).read_text("utf-8"))
+    block = config["ci_pipeline"]
+    return {
+        "variables": {"GIT_DEPTH": "0"},
+        "test": {
+            "image": block["gitlab_image"].format(**config["toolchain"]),
+            "script": [gitlab_line(step) for step in block["steps"]],
+        },
+    }
+
+
+_ABSENT = object()
+
+
+def _differences(got, want, path=()):
+    """(key path, got, want) for each key *got* sets that *want* lacks or sets
+    otherwise, then each key *want* sets that *got* lacks, descending only
+    where both are mappings, so a key keel does not ship is named whole."""
+    if not (isinstance(got, dict) and isinstance(want, dict)):
+        if got != want:
+            yield ".".join(path), got, want
+        return
+    for key in list(got) + [key for key in want if key not in got]:
+        yield from _differences(
+            got.get(key, _ABSENT), want.get(key, _ABSENT), path + (str(key),)
+        )
+
+
+def _script(value):
+    """The shell lines a GitLab `script` value runs, or None when it is no
+    script: one string is one line, and a list is flattened, as GitLab
+    flattens a nested one."""
+    if isinstance(value, str):
+        return [value]
+    if not isinstance(value, list):
+        return None
+    lines = []
+    for item in value:
+        found = _script(item)
+        if found is None:
+            return None
+        lines.extend(found)
+    return lines
+
+
+def _split_env(line):
+    """(command, {NAME: value}) for a script line led by NAME=value words."""
+    env = {}
+    match = _ENV_PREFIX.match(line)
+    while match:
+        env[match.group(1)] = shlex.split(match.group(2))[0]
+        line = line[match.end() :]
+        match = _ENV_PREFIX.match(line)
+    return line, env
+
+
+def _gitlab_faults(root, path, want):
+    """A message per way the GitLab file at *path* differs from
+    gitlab_document: every key path it sets that keel's does not, or sets to
+    another value, or lacks, and a script that does not run *want*."""
+    doc, fault = _load(path)
+    if fault:
+        return [fault]
+    if not isinstance(doc, dict):
+        return ["%s holds %r, not a mapping of jobs" % (path.name, doc)]
+    shipped_doc = gitlab_document(root)
+    shipped_job = shipped_doc["test"]
+    job = doc.get("test")
+    # The script is judged as steps, so a value YAML writes another way
+    # (a flow list, one string, a nested list) is not a difference.
+    script = _ABSENT
+    if isinstance(job, dict) and "script" in job:
+        job = dict(job)
+        script = job.pop("script")
+        doc = dict(doc, test=job)
+    shipped_doc["test"] = {k: v for k, v in shipped_job.items() if k != "script"}
+    faults = []
+    for key, got, keel in _differences(doc, shipped_doc):
+        if got is _ABSENT:
+            said = "is missing, and keel's adapter sets it to %r" % (keel,)
+        elif keel is _ABSENT:
+            said = (
+                "is %r, and keel's adapter sets no `%s`: remove it, or the job "
+                "may skip or change keel's gate steps" % (got, key)
+            )
+        else:
+            said = "is %r, and keel's adapter sets %r%s" % (
+                got,
+                keel,
+                _FROM.get(key, ""),
+            )
+        faults.append("%s: `%s` %s" % (path.name, key, said))
+    lines = [] if script is _ABSENT else _script(script)
+    if lines is None:
+        faults.append(
+            "%s: `test.script` is %r, not a shell line or a list of them"
+            % (path.name, script)
+        )
+        return faults
+    got = [_split_env(line) for line in lines]
+    if got != want:
+        faults.append(
+            "%s runs %s, not config/project.json ci_pipeline.steps %s"
+            % (path.name, got, want)
+        )
+    return faults
+
+
+# Where a value of gitlab_document comes from, for a fault to say.
+_FROM = {
+    "test.image": " (config/project.json ci_pipeline.gitlab_image filled from toolchain)"
+}
 
 
 def _lines(path):
@@ -274,35 +409,15 @@ def parity_faults(root):
             "present: the pipeline runs nowhere" % sorted(config["adapters"].values())
         ]
     for name, path in found.items():
-        text = path.read_text("utf-8")
-        if marker(root, name) not in text.splitlines():
+        if marker(root, name) not in _lines(path):
             faults.append("%s: no line `%s`" % (path.name, marker(root, name)))
+        if name == "gitlab":
+            faults.extend(_gitlab_faults(root, path, want))
+            continue
         got = [(s["run"], s["env"]) for s in adapter_steps(path, name)]
         if got != want:
             faults.append(
                 "%s runs %s, not config/project.json ci_pipeline.steps %s"
                 % (path.name, got, want)
             )
-        if name == "gitlab":
-            keys, _ = _gitlab_lines(text)
-            toolchain = json.loads((Path(root) / CONFIG).read_text("utf-8"))[
-                "toolchain"
-            ]
-            image = config["gitlab_image"].format(**toolchain)
-            if keys.get("test.image") != image:
-                faults.append(
-                    "%s: image %r, not ci_pipeline.gitlab_image filled from toolchain %r"
-                    % (path.name, keys.get("test.image"), image)
-                )
-            faults.extend(
-                "%s: `%s` decides whether or how the test job runs, and keel's "
-                "adapter sets no `%s`: remove it, or the job may pass without "
-                "running a step" % (path.name, key, key)
-                for key in _gitlab_run_keys(text)
-            )
-            if keys.get("variables.GIT_DEPTH") != "0":
-                faults.append(
-                    '%s: GIT_DEPTH %r, not "0"'
-                    % (path.name, keys.get("variables.GIT_DEPTH"))
-                )
     return faults
