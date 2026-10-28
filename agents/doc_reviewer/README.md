@@ -62,8 +62,12 @@ each case.
 A style-rule retrieval that `scripts/query_corpus.py` refuses, or whose output
 is not JSON, raises the third public symbol, `RulesRefused`, a `RuntimeError`
 carrying the exit helper's three parts (what failed, on which input, what to do),
-before the baseline gate and any model call. `scripts/doc_review.py` ends that
-run with exit 2 through `report`.
+before the baseline gate and any model call. An execute run raises it as well
+when the retrieval finds no node at all, which `[]` from a checkout with no
+corpus, or from a corpus with no node for the rule query, means; so no model is
+asked for edits with an empty rules section. A dry run calls no model, so it
+goes on and its preview shows the empty section. `scripts/doc_review.py` ends a
+run that raises it with exit 2 through `report`.
 
 Its thin CLI is `scripts/doc_review.py` (`make doc-review`); its event trigger is
 `scripts/hooks/on_stop_doc_review.py`, fired by `.claude/settings.json`; its

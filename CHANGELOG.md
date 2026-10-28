@@ -781,6 +781,9 @@ version rather than a bare commit:
   reviewer fails its run when `query_corpus.py` refuses its style-rule
   retrieval, rather than asking a model for edits with no rules, and
   `scripts/doc_review.py` then exits 2 naming the root, not with a traceback.
+  An execute run fails the same way when the retrieval finds no rule node at
+  all; a dry run, which calls no model, shows the empty rules section in its
+  preview.
   `query_corpus.py` refuses a corpus it cannot read with exit 2.
   (KEEL-VIS-2)
 - **The astro app's audited dependencies move past their advisories.**

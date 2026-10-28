@@ -2,7 +2,7 @@
 title: Integration — the doc reviewer agent (dry-run, execute, decline, rollback)
 kind: tests
 layer: backend
-summary: agents.doc_reviewer.review over patched tool and model seams (no subprocess, no model, but for one style-rule retrieval over the real query_corpus, which retrieves the guide while its file under the reviewed root is public and not once it states confidential, so a retrieval that drops `--root` is red): a dry-run gathers findings, retrieves rules, gates the baseline and writes nothing; execute proposes one edit per chunk and applies through the gated doer; a declined chunk or a red gate lands in skipped; a red baseline attempts nothing; a reply that names a gate is declined, the prompt never states the gate, and every apply is bound to its chunk's own file with `--allow`. A style-rule retrieval query_corpus refuses, or whose output is not JSON, raises RuntimeError naming the exit status, dry run and execute alike, with no model call. A relative root reaches the corpus query as one absolute `--root`, with no `--corpus` beside it; a corpus given alone names its checkout, whose corpus both the withholding check and the query read; a root beside a corpus, a corpus outside some checkout's wiki/corpus.json, or one named that does not exist, is corpus_level.NotACheckout before any tool runs. Every tool call hands the reviewed root to the runner, so run_tool reads the tool limits, and checks them against the gate keys, of the tree the gate runner reads. The report the CLI and hook print is this report. A finding on a file the corpus places outside corpus.served_visibilities, or has no node for, or on any file when the corpus or config cannot be read, is withheld: reported with why (one CLI line each, a count in the hook's line), its text never read, and no prompt or apply made, dry run and execute alike, while a served finding beside it still goes; a chunk queued before its file left the served levels is declined at propose with no model call; a document reclassified on disk after the corpus was built, or made unreadable, is withheld the same way, its text in no prompt.
+summary: agents.doc_reviewer.review over patched tool and model seams (no subprocess, no model, but for one style-rule retrieval over the real query_corpus, which retrieves the guide while its file under the reviewed root is public and not once it states confidential, so a retrieval that drops `--root` is red): a dry-run gathers findings, retrieves rules, gates the baseline and writes nothing; execute proposes one edit per chunk and applies through the gated doer; a declined chunk or a red gate lands in skipped; a red baseline attempts nothing; a reply that names a gate is declined, the prompt never states the gate, and every apply is bound to its chunk's own file with `--allow`. A style-rule retrieval query_corpus refuses, or whose output is not JSON or empty, raises RulesRefused naming the exit status, dry run and execute alike, with no model call, and scripts/doc_review.py reports it as exit USAGE through the exit helper, the real query_corpus refusing a corpus that is not JSON; one that finds no node refuses an execute run the same way, and a dry run shows the empty rules section in its preview. A relative root reaches the corpus query as one absolute `--root`, with no `--corpus` beside it; a corpus given alone names its checkout, whose corpus both the withholding check and the query read; a root beside a corpus, a corpus outside some checkout's wiki/corpus.json, or one named that does not exist, is corpus_level.NotACheckout before any tool runs. Every tool call hands the reviewed root to the runner, so run_tool reads the tool limits, and checks them against the gate keys, of the tree the gate runner reads. The report the CLI and hook print is this report. A finding on a file the corpus places outside corpus.served_visibilities, or has no node for, or on any file when the corpus or config cannot be read, is withheld: reported with why (one CLI line each, a count in the hook's line), its text never read, and no prompt or apply made, dry run and execute alike, while a served finding beside it still goes; a chunk queued before its file left the served levels is declined at propose with no model call; a document reclassified on disk after the corpus was built, or made unreadable, is withheld the same way, its text in no prompt.
 """
 
 import json
@@ -249,17 +249,21 @@ class _RefusedQuery(_Runner):
 
 @pytest.mark.parametrize(
     "answer",
-    [(2, "", "query_corpus: the checkout does not exist"), (0, "not json", "")],
-    ids=["refused", "unreadable"],
+    [
+        (2, "", "query_corpus: the checkout does not exist"),
+        (0, "not json", ""),
+        (0, "", ""),
+    ],
+    ids=["refused", "unreadable", "empty"],
 )
 def test_a_failed_rule_retrieval_fails_the_run_before_any_model_call(
     monkeypatch, tmp_path, answer
 ):
     """The reviewer's repro: query_corpus exited 2 and _retrieve went on with
     no rules, so the model could be asked for edits with an empty rules
-    section. A refusal, or output that is not JSON, now raises RulesRefused,
-    a RuntimeError naming the exit status, before the baseline gate and any
-    model call."""
+    section. A refusal, or output that is not JSON (empty output included,
+    which is not `[]`), now raises RulesRefused, a RuntimeError naming the
+    exit status, before the baseline gate and any model call."""
     runner, model = _RefusedQuery(answer), _Model(_SPEC)
     monkeypatch.setattr(_BRAIN + "._run", runner)
     monkeypatch.setattr(_BRAIN + ".get_model", lambda name=None: model)
@@ -293,6 +297,29 @@ def test_the_cli_reports_a_failed_rule_retrieval_through_the_exit_helper(
     assert cli.main(["--root", str(tmp_path)]) == cli.exit_codes.ExitCode.USAGE
     err = capsys.readouterr().err.strip().splitlines()[-1]
     assert err.startswith("doc_review: ") and str(tmp_path) in err
+    assert model.prompts == []
+
+
+def test_no_rules_refuse_an_execute_run_and_show_in_a_dry_runs_preview(
+    monkeypatch, tmp_path
+):
+    """The reviewer's finding 3: query_corpus answered `[]` at exit 0, from a
+    checkout with no corpus or a corpus with no node for the rule query, and
+    the prompt read `# Rules (...)` over nothing. An execute run raises
+    RulesRefused before the baseline gate, so no model is asked for edits
+    with an empty rules section; a dry run calls no model and shows that
+    section in its preview."""
+    no_rules = (0, "[]\n", "query_corpus: no corpus at x; `make site-data`")
+    runner, model = _RefusedQuery(no_rules), _Model(_SPEC)
+    monkeypatch.setattr(_BRAIN + "._run", runner)
+    monkeypatch.setattr(_BRAIN + ".get_model", lambda name=None: model)
+    _project(tmp_path)
+    with pytest.raises(RulesRefused, match="no style rules") as raised:
+        review(execute=True, max_model_calls=8, root=str(tmp_path))
+    assert str(tmp_path) in str(raised.value)
+    assert runner.calls == ["review_docs", "query_corpus"]
+    report = review(root=str(tmp_path))
+    assert report.dry_run and "# Rules" in report.preview
     assert model.prompts == []
 
 
