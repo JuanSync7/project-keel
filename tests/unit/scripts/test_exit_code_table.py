@@ -5,10 +5,13 @@ layer: n/a
 summary: read_members reads the enum from the helper's syntax tree in value order and refuses a missing class, a member that is not three literals, a shared value and a text that cannot be a table cell. read_script follows an entry function to the members it returns, counts a `fail` call anywhere in the module, marks a passed-through status read from a tool, refuses a `passthrough` of the entry function's result, a literal, a member or a module function returning only those, also signed, combined by arithmetic or `or`, or through a builtin such as `int`, while a child's status through the same forms reads, refuses `finish(passthrough(...))` on the entry line, and reports a bare integer, an unknown member and a function that can reach its end without returning as findings, never as codes. split_region refuses a marker that is missing, repeated or out of order. render and exit_cell are pure and sorted. load_policy names the config key it cannot read. main writes the region, leaves every byte outside it alone, keeps a CRLF guide CRLF, reaches a fixed point on the second run, exits 1 from --check on a stale table, CONFIG when config/project.json `doc_drift` cannot be used, with the loader's line for each key before the one refusal, and 2 when it refuses anything else, and refuses a guide reached through a symlink without writing through it.
 """
 
+import contextlib
 import json
 import os
+import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -729,11 +732,43 @@ _SHELLS = (("/bin/sh",), ("bash",), ("bash", "--posix"))
 _SH_TIMEOUT_SECONDS = 30
 
 
-def test_a_hung_shell_is_stopped_at_the_bound(tmp_path, monkeypatch):
-    """_run_sh never waits on a shell longer than _SH_TIMEOUT_SECONDS."""
+# How long a killed process may take to be gone; SIGKILL lands in
+# milliseconds here, and the bound only fires when it was never sent.
+_GONE_SECONDS = 5
+
+
+def _alive(pid):
+    """Whether *pid* names a running process: one that exists and, where
+    /proc says, is no zombie waiting for its parent to reap it."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    try:
+        stat = Path("/proc/%d/stat" % pid).read_text(encoding="utf-8")
+    except OSError:
+        return True
+    return stat.rsplit(")", 1)[1].split()[0] not in ("Z", "X")
+
+
+def test_a_hung_shell_is_stopped_at_the_bound_with_every_child(tmp_path, monkeypatch):
+    """_run_sh never waits on a shell longer than _SH_TIMEOUT_SECONDS, and
+    stops the shell's whole process group, so a child it started is gone
+    too rather than left running under PID 1."""
     monkeypatch.setattr(sys.modules[__name__], "_SH_TIMEOUT_SECONDS", 1)
+    pidfile = tmp_path / "child.pid"
+    body = "sleep 30 &\necho $! > '%s'\nwait" % pidfile
     with pytest.raises(subprocess.TimeoutExpired):
-        _run_sh(tmp_path, "sleep 30", _SHELLS[0])
+        _run_sh(tmp_path, body, _SHELLS[0])
+    pid = int(pidfile.read_text(encoding="utf-8"))
+    try:
+        deadline = time.monotonic() + _GONE_SECONDS
+        while _alive(pid) and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert not _alive(pid), "the shell's child %d outlived it" % pid
+    finally:
+        with contextlib.suppress(ProcessLookupError):
+            os.kill(pid, signal.SIGKILL)
 
 
 def _run_sh(tmp_path, body, shell):
@@ -746,15 +781,23 @@ def _run_sh(tmp_path, body, shell):
     helper.write_text(et.render_shell(et.read_members(str(_ROOT))), encoding="utf-8")
     script = tmp_path / "use.sh"
     script.write_text(". '%s'\n%s\nexit 99\n" % (helper, body), encoding="utf-8")
-    done = subprocess.run(
+    # A session of its own makes the shell a process group leader, so the
+    # bound stops the group and no child the shell started outlives it.
+    with subprocess.Popen(
         [*shell, str(script)],
         env=build_child_env(),
-        capture_output=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         text=True,
-        check=False,
-        timeout=_SH_TIMEOUT_SECONDS,
-    )
-    return done.returncode, done.stderr
+        start_new_session=True,
+    ) as proc:
+        try:
+            _out, err = proc.communicate(timeout=_SH_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired:
+            os.killpg(proc.pid, signal.SIGKILL)
+            proc.communicate()
+            raise
+    return proc.returncode, err
 
 
 @pytest.mark.parametrize(

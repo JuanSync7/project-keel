@@ -503,7 +503,8 @@ The helper ships whatever the copier answer `shell`, and
 `make exit-codes-sh` and the check act whatever config/project.json
 `shell.enabled` says, because that switches the shell tools only.
 `tests/unit/scripts/test_exit_code_table.py` runs the helper under
-`/bin/sh`, `bash` and `bash --posix`, each run bounded at 30 seconds; where
+`/bin/sh`, `bash` and `bash --posix`, each run bounded at 30 seconds, past
+which the test stops the shell's whole process group, so no child outlives it; where
 `/bin/sh` is bash, as on the host keel is built on, no test proves it under
 dash or busybox sh. `scripts/shell_gate.py` `HELPER_SH`, never a
 `shell.excluded_paths` entry, keeps it from the shell linter, formatter and test runner, so a project with no
