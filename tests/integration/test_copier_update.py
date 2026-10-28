@@ -733,9 +733,9 @@ _CI_EDIT = "# a line the project added\n"
 def ci_declined(tmp_path_factory):
     """Projects whose update declines an adapter, generated with both, each
     with the declined adapter edited or left as keel rendered it, committed,
-    then updated. Yields {(answer, "edited" | "unedited"):
-    (declined path, its bytes before, whether it is on disk after, stderr,
-    parity faults)}."""
+    then updated, and two generated before the ci_pipeline question. Yields
+    {(answer, kind): (declined path, its bytes before, its bytes after or None
+    when it is gone, stderr, parity faults)}."""
     mp = pytest.MonkeyPatch()
     work = tmp_path_factory.mktemp("copier_ci_declined")
     for var, value in hermetic_git.git_env_vars(work).items():
@@ -793,7 +793,9 @@ def ci_declined(tmp_path_factory):
             found[(answer, kind)] = (
                 declined,
                 before,
-                (project / declined).exists(),
+                (project / declined).read_bytes()
+                if (project / declined).exists()
+                else None,
                 err,
                 ci_adapters.parity_faults(project),
             )
@@ -810,15 +812,15 @@ def test_an_update_never_deletes_the_declined_adapter_the_project_edited(
     it still carries keel's marker line, and one stderr line names it and what
     to do; the one left as keel rendered it (a `.jinja` twin for gitlab) is
     removed and nothing is said."""
-    path, before, kept, err, faults = ci_declined[(answer, "edited")]
-    assert kept, "the edited %s was deleted:\n%s" % (path, err)
+    path, before, after, err, faults = ci_declined[(answer, "edited")]
+    assert after == before, "the edited %s was not kept as it was:\n%s" % (path, err)
     lines = [line for line in err.splitlines() if line.startswith("kept " + path)]
     assert len(lines) == 1, err
     assert "the project edited it" in lines[0], lines
     assert "git rm %s" % path in lines[0], lines
     assert faults == [], faults
-    path, before, kept, err, faults = ci_declined[(answer, "unedited")]
-    assert not kept, "the unedited %s survived:\n%s" % (path, err)
+    path, before, after, err, faults = ci_declined[(answer, "unedited")]
+    assert after is None, "the unedited %s survived:\n%s" % (path, err)
     assert path not in err, err
     assert faults == [], faults
 
@@ -831,9 +833,9 @@ def test_a_ci_yml_from_before_the_marker_is_judged_by_its_edit_not_its_line(
     line saying it predates the marker, that the edit is why it stays, and
     that its GitHub steps run beside the GitLab job until `git rm`; the
     unedited one copier removes before any migration runs, silently."""
-    path, before, kept, err, faults = ci_declined[("gitlab", "pre-question edited")]
+    path, before, after, err, faults = ci_declined[("gitlab", "pre-question edited")]
     assert ci_adapters.marker(_ROOT, "github").encode() not in before, before
-    assert kept, "the edited %s was deleted:\n%s" % (path, err)
+    assert after == before, "the edited %s was not kept as it was:\n%s" % (path, err)
     lines = [line for line in err.splitlines() if line.startswith("kept " + path)]
     assert len(lines) == 1, err
     assert "keel did not write it" not in lines[0], lines
@@ -844,8 +846,8 @@ def test_a_ci_yml_from_before_the_marker_is_judged_by_its_edit_not_its_line(
     )
     assert "git rm %s" % path in lines[0], lines
     assert faults == [], faults
-    path, before, kept, err, faults = ci_declined[("gitlab", "pre-question unedited")]
-    assert not kept, "the unedited %s survived:\n%s" % (path, err)
+    path, before, after, err, faults = ci_declined[("gitlab", "pre-question unedited")]
+    assert after is None, "the unedited %s survived:\n%s" % (path, err)
     assert path not in err, err
     assert faults == [], faults
 

@@ -3,7 +3,7 @@
 title: keep_edited_retired — puts back a file the template retired but the project edited
 kind: script
 layer: n/a
-summary: Copier's first `after` migration on update. copier's `_remove_old_files` deletes every file the old render had and the new one lacks before any migration runs, whether the project edited it or not (measured on copier 9.17), so an edit to a file the template retired or moved -- an ADR that became docs/adr/keel/K-NNNN-<slug>.md -- would be lost without a word. This job lists the files the update deleted (`git diff-index --name-only --diff-filter=D HEAD` in the project, read-only: plumbing that writes no index, `--no-optional-locks`, filters off through review_docs' `git_argv`) and compares each one's HEAD bytes with the template's blob at `--from` (the commit the project was generated from). `is_edited` calls a copy unedited only when the two differ in nothing but the frontmatter `updated:` value, read through review_docs' `updated_span`; an edited copy is put back from HEAD with HEAD's mode (an executable, a symlink) and named on stderr with its successor in the template where a rename says so. A file the template renders from `<path>.jinja` is judged against that twin rendered (jinja2's sandbox, strict undefined) with the answers file HEAD holds (`--answers`); one that will not render is put back and named, and so is a path the template does not hold at `--from`. Each `--retire NAME:PATH` is a CI adapter the `ci_pipeline` answer declines, judged in the same run by the same verdict, so one file never gets two: removed when it is byte-equal to keel's render, else kept with one stderr line that says whether it carries the `--marker` line filled with NAME, why it is kept, and that CI runs it beside the chosen adapter until `git rm PATH`. The index is never written. An unresolvable `--from` or a git failure puts back every deleted file and exits 2, because without a base nothing may stay deleted. scripts/audit_project.py's `retired` group imports `is_edited`, so the guard and the audit cannot disagree. It runs before the other answer-driven `rm` migrations, which still win, and before the restamp, which stays last. Run as a script, it first asks scripts/jobs/conflict_guard.py whether a module it imports from the project, or a fixed project file those modules declare reading in `PROJECT_READS`, holds a conflict hunk, and if one does it names each file and the rerun command (run as a migration with `--finish-with`, the command that finishes the update) and exits 2 instead of dying on the import or the read.
+summary: Copier's first `after` migration on update. copier's `_remove_old_files` deletes every file the old render had and the new one lacks before any migration runs, whether the project edited it or not (measured on copier 9.17), so an edit to a file the template retired or moved -- an ADR that became docs/adr/keel/K-NNNN-<slug>.md -- would be lost without a word. This job lists the files the update deleted (`git diff-index --name-only --diff-filter=D HEAD` in the project, read-only: plumbing that writes no index, `--no-optional-locks`, filters off through review_docs' `git_argv`) and compares each one's HEAD bytes with the template's blob at `--from` (the commit the project was generated from). `is_edited` calls a copy unedited only when the two differ in nothing but the frontmatter `updated:` value, read through review_docs' `updated_span`; an edited copy is put back from HEAD with HEAD's mode (an executable, a symlink) and named on stderr with its successor in the template where a rename says so. A file the template renders from `<path>.jinja` is judged against that twin rendered (jinja2's sandbox, strict undefined) with the answers file HEAD holds (`--answers`); one that will not render is put back and named, and so is a path the template does not hold at `--from`. Each `--retire NAME:PATH` is a CI adapter the `ci_pipeline` answer declines, judged in the same run by the same verdict, so one file never gets two: removed when it is byte-equal to keel's render, else kept with one stderr line that says whether it carries the `--marker` line filled with NAME (or that it is not a regular file), why it is kept, and that CI runs it beside the chosen adapter until `git rm PATH`. The index is never written. An unresolvable `--from` or a git failure puts back every deleted file and exits 2, because without a base nothing may stay deleted. scripts/audit_project.py's `retired` group imports `is_edited`, so the guard and the audit cannot disagree. It runs before the other answer-driven `rm` migrations, which still win, and before the restamp, which stays last. Run as a script, it first asks scripts/jobs/conflict_guard.py whether a module it imports from the project, or a fixed project file those modules declare reading in `PROJECT_READS`, holds a conflict hunk, and if one does it names each file and the rerun command (run as a migration with `--finish-with`, the command that finishes the update) and exits 2 instead of dying on the import or the read.
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/integration/test_edited_retired_files.py
@@ -329,10 +329,13 @@ def _has_line(data, line):
 
 def _retired_reason(rel, ref, data, keel, why, name, marker):
     """Why an answer-retired file is kept, and what the user must do, in one
-    clause pair: whether it still carries keel's marker line, and that the
-    adapter it is keeps running until the user removes it."""
+    clause pair: whether it still carries keel's marker line (or, for *why*
+    "irregular", that it is not a regular file), and that the adapter it is
+    keeps running until the user removes it."""
     line = marker.format(adapter=name)
-    if why == "absent":
+    if why == "irregular":
+        reason = "it is not a regular file, so it is not keel's"
+    elif why == "absent":
         reason = "the template held no %s at %s, so keel did not write it" % (rel, ref)
     elif why == "twin":
         reason = (
@@ -380,7 +383,14 @@ def _judge(project, src, ref, paths, on_disk, retire, marker, answers_rel):
             # Still on disk (copier did not delete it), so its own bytes are
             # what a removal would lose.
             if os.path.islink(full) or not os.path.isfile(full):
-                kept.append((rel, "it is not a regular file, so it is not keel's"))
+                kept.append(
+                    (
+                        rel,
+                        _retired_reason(
+                            rel, ref, None, None, "irregular", retire[rel], marker
+                        ),
+                    )
+                )
                 continue
             with open(full, "rb") as fh:
                 data = fh.read()
