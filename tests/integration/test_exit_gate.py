@@ -2,7 +2,7 @@
 title: Integration — a process ends only through the exit helper, and the exit-code table is the enum
 kind: tests
 layer: n/a
-summary: Three tree-wide gates over every Python file tests/source_tree.py `python_files` lists, and the first over every shell script too (the walk `check_structure.walk` uses), read from the syntax tree. The first fails an exit written anywhere but scripts/exit_codes.py (`sys.exit`, `os._exit`, any `.exit(...)` attribute such as argparse's, `raise SystemExit`, a SystemExit subclass, the builtins `exit` and `quit`, each of those as an attribute of `builtins` or `__builtins__`, and an import that renames any of them), an entry block that hands `finish` nothing while its module imports the helper, or that calls a function of its module and drops the value it returns, a return scripts/exit_code_table.py `read_script` cannot follow to an ExitCode member (a returned name bound by anything but a plain assignment included), a `report` or `fail` call missing one of its three message parts or holding a blank literal one, or handed a code that is not a failure member, a `passthrough` handed the script's own status (the entry function's result, directly or through a name, an int literal, a member, or a function of the module whose every return is one of those, also under a sign, in an arithmetic or `and`/`or` of them, or through a builtin such as `int`), an entry line `finish(passthrough(...))`, and an import of the helper under a second name. The second fails an ExitCode member the generated table in the limits guide does not name and a table row no member backs (scripts/exit_code_table.py `table_findings`). The third fails a `fail` or `finish` call outside the entry block of a module another project module imports (an import from tests/ does not count, and scripts/exit_codes.py is the helper), because a shared module raises or returns and only an entry point ends the process; `passthrough` is no ending, it marks a status and returns it. config/project.json `import_layers.may_end_the_process` names a module that may, with a non-blank reason, and an entry naming no such module is a finding. A walk that finds no Python file, or no entry block, is a failure, never a pass. It does not judge whether a message part is useful, and it cannot see an exit reached through `getattr`, `os.abort`, `os.kill`, an uncaught exception, argparse's own `--help` and usage exits, a `python -c` line in a makefile, or a status dropped by another callable (`asyncio.run(main())`); and it does not check a `passthrough` over a helper that returns another process's status (scripts/run_app.py `_app_status`), which passes by design, nor one over a function some of whose returns are the script's own literals and others a tool's status. The first also reads every file scripts/shell_gate.py `classify` calls a shell script (with no repository yet, every one the structure walk reaches), less scripts/exit_codes.sh itself: a script must source that helper by a path ending in `/exit_codes.sh` and end through it, as `exit "$EXIT_<NAME>"`, `exit_fail "$EXIT_<NAME>" WHAT ON NEXT` with a member other than SUCCESS and no blank part, or `exit_passthrough "$?"` for a wrapped tool's status, or of a name assigned as `name=$?` and otherwise only read as `$name` or `${name}` outside comments and quoted here-document bodies (any other occurrence, `let`, `(( ))`, `${name:=...}`, `printf -v`, `read`, `mapfile`, `for`, a word that only names it, is a finding at its own line), never a number or a member; a bare `exit 3`, `exit $?` or `exit` is a finding at its file and line, in a subshell, `$(...)` or backquotes too, inside double quotes or a `${...}` as well (a quoted `}` closes no `${...}`), and so is a status the script renames: an `exit_passthrough` or `return` of anything else (`$((...))`, a positional, a name never assigned), and a `return` of a number or of nothing. The command name is read as the shell runs it, so `"exit"`, `\\exit`, `command exit` and `builtin exit` are `exit`, and an ending that needs the helper on a line before the one that sources it is a finding. Comments, quoted words and here-document bodies are not commands; a file it cannot read to its end, such as one with an open quote or nested past `_SH_MAX_DEPTH` levels, is a finding. No shell script is a finding unless config/project.json `shell.no_scripts` gives the reason or `shell.enabled` (the copier answer `shell`) is false; every other finding holds whatever `shell.enabled` says, because it switches the shell tools only. It cannot see `set -e`, `trap`, `exec`, `kill`, an `eval` or `sh -c` string, a `case` pattern inside `$(...)`, or a script that falls off its end after some other ending. The first and third hand their findings to scripts/expiring_tier.py as the checks `exit-helper` and `exit-shared-module`: in the template repository, which holds copier.yml, every finding is red; in a generated project a finding its `expiring_tier.baseline` records warns until `expiring_tier.expires`, and any other is red. Catching SystemExit is not an exit and is not a finding: the exception itself, or a tuple holding it, as the type of an `except` clause or an argument of pytest's `raises`; anywhere deeper in those expressions, and in a `raises` that is not pytest's, it is one. Not a check_* letter: the letters A to Z are taken.
+summary: Three tree-wide gates over every Python file tests/source_tree.py `python_files` lists, and the first over every shell script too (the walk `check_structure.walk` uses), read from the syntax tree. The first fails an exit written anywhere but scripts/exit_codes.py (`sys.exit`, `os._exit`, any `.exit(...)` attribute such as argparse's, `raise SystemExit`, a SystemExit subclass, the builtins `exit` and `quit`, each of those as an attribute of `builtins` or `__builtins__`, and an import that renames any of them), an entry block that hands `finish` nothing while its module imports the helper, or that calls a function of its module and drops the value it returns, a return scripts/exit_code_table.py `read_script` cannot follow to an ExitCode member (a returned name bound by anything but a plain assignment included), a `report` or `fail` call missing one of its three message parts or holding a blank literal one, or handed a code that is not a failure member, a `passthrough` handed the script's own status (the entry function's result, directly or through a name, an int literal, a member, or a function of the module whose every return is one of those, also under a sign, in an arithmetic or `and`/`or` of them, or through a builtin such as `int`), an entry line `finish(passthrough(...))`, and an import of the helper under a second name. The second fails an ExitCode member the generated table in the limits guide does not name and a table row no member backs (scripts/exit_code_table.py `table_findings`). The third fails a `fail` or `finish` call outside the entry block of a module another project module imports (an import from tests/ does not count, and scripts/exit_codes.py is the helper), because a shared module raises or returns and only an entry point ends the process; `passthrough` is no ending, it marks a status and returns it. config/project.json `import_layers.may_end_the_process` names a module that may, with a non-blank reason, and an entry naming no such module is a finding. A walk that finds no Python file, or no entry block, is a failure, never a pass. It does not judge whether a message part is useful, and it cannot see an exit reached through `getattr`, `os.abort`, `os.kill`, an uncaught exception, argparse's own `--help` and usage exits, a `python -c` line in a makefile, or a status dropped by another callable (`asyncio.run(main())`); and it does not check a `passthrough` over a helper that returns another process's status (scripts/run_app.py `_app_status`), which passes by design, nor one over a function some of whose returns are the script's own literals and others a tool's status. The first also reads every file scripts/shell_gate.py `classify` calls a shell script (with no repository yet, every one the structure walk reaches), less scripts/exit_codes.sh itself: a script must source that helper by a path ending in `/exit_codes.sh` and end through it, as `exit "$EXIT_<NAME>"`, `exit_fail "$EXIT_<NAME>" WHAT ON NEXT` with a member other than SUCCESS and no blank part, or `exit_passthrough "$?"` for a wrapped tool's status, or of a name assigned as `name=$?` and otherwise only read as `$name` or `${name}` outside comments and quoted here-document bodies (any other occurrence, `let`, `(( ))`, `${name:=...}`, `printf -v`, `read`, `mapfile`, `for`, a word that only names it, is a finding at its own line), never a number or a member; a bare `exit 3`, `exit $?` or `exit` is a finding at its file and line, in a subshell, `$(...)` or backquotes too, inside double quotes or a `${...}` as well (a quoted `}` closes no `${...}`), and so is a status the script renames: an `exit_passthrough` or `return` of anything else (`$((...))`, a positional, a name never assigned), and a `return` of a number or of nothing. The command name is read as the shell runs it, so `"exit"`, `\\exit`, `command exit` and `builtin exit` are `exit`, and an ending that needs the helper on a line before the one that sources it is a finding. Comments, quoted words, here-document bodies and a `case` subject or pattern are not commands, inside `$(...)` too, while a command in a clause body is judged; a file it cannot read to its end, such as one with an open quote or nested past `_SH_MAX_DEPTH` levels, is a finding. No shell script is a finding unless config/project.json `shell.no_scripts` gives the reason or `shell.enabled` (the copier answer `shell`) is false; every other finding holds whatever `shell.enabled` says, because it switches the shell tools only. It cannot see `set -e`, `trap`, `exec`, `kill`, an `eval` or `sh -c` string, or a script that falls off its end after some other ending. The first and third hand their findings to scripts/expiring_tier.py as the checks `exit-helper` and `exit-shared-module`: in the template repository, which holds copier.yml, every finding is red; in a generated project a finding its `expiring_tier.baseline` records warns until `expiring_tier.expires`, and any other is red. Catching SystemExit is not an exit and is not a finding: the exception itself, or a tuple holding it, as the type of an `except` clause or an argument of pytest's `raises`; anywhere deeper in those expressions, and in a `raises` that is not pytest's, it is one. Not a check_* letter: the letters A to Z are taken.
 """
 
 import ast
@@ -389,6 +389,10 @@ _SH_RESERVED = frozenset(
     ("!", "{", "}", "if", "then", "else", "elif", "fi", "do", "done", "while")
     + ("until", "case", "esac", "time")
 )
+# Where the reader is in a `case`: after `case`, after its subject, among
+# the patterns of a clause, and in a clause's body.
+_SH_CASE_SUBJECT, _SH_CASE_IN = "subject", "in"
+_SH_CASE_PATTERN, _SH_CASE_BODY = "pattern", "body"
 _SH_EXIT, _SH_FAIL, _SH_PASS = "exit", "exit_fail", "exit_passthrough"
 _SH_ENDINGS = (_SH_EXIT, _SH_FAIL, _SH_PASS)
 _SH_RETURN = "return"
@@ -449,9 +453,9 @@ class _ShellReader:
     apart. A comment, a quoted span and a here-document body are no command;
     the inside of `$(...)` and of backquotes is read as commands too, inside
     double quotes as well, because the shell runs it there. A
-    redirection and its target are no word. It does not read a `case`
-    pattern inside `$(...)` or a command a string later runs (`trap`, `eval`,
-    `sh -c`)."""
+    redirection and its target are no word, and neither is a `case` header
+    or pattern, which never names a command. It does not read a command a
+    string later runs (`trap`, `eval`, `sh -c`)."""
 
     def __init__(self, text, line=1, depth=0, offset=0):
         self.text, self.i, self.line, self.depth = text, 0, line, depth
@@ -459,6 +463,11 @@ class _ShellReader:
         # (start, end) in the whole file's text of each comment and quoted
         # here-document body: text no command reads.
         self.offset, self.unread = offset, []
+        # [state, line it opened on] of each open `case`, innermost last; the
+        # state is _SH_CASE_SUBJECT, _SH_CASE_IN, _SH_CASE_PATTERN or
+        # _SH_CASE_BODY. pattern_open says a pattern has begun since the last
+        # clause ended, so an `esac` there is a pattern word, not the end.
+        self.cases, self.pattern_open = [], False
         self.words, self.word, self.word_line = [], None, line
         self.start, self.skip = line, False
 
@@ -470,13 +479,66 @@ class _ShellReader:
     def _end_word(self):
         if self.word is None:
             return
+        word, self.word = "".join(self.word), None
         if self.skip:
             self.skip = False
-        else:
+        elif not self._case_word(word):
             if not self.words:
                 self.start = self.word_line
-            self.words.append("".join(self.word))
-        self.word = None
+            self.words.append(word)
+
+    def _case_state(self):
+        return self.cases[-1][0] if self.cases else None
+
+    def _case_word(self, word):
+        """Whether *word* belongs to a `case` header or pattern, which names
+        no command; reading it moves the case state on."""
+        state = self._case_state()
+        at_command = all(w in _SH_RESERVED for w in self.words)
+        if state == _SH_CASE_SUBJECT:
+            self.cases[-1][0] = _SH_CASE_IN
+        elif state == _SH_CASE_IN:
+            if word != "in":
+                raise ShellScanError(self.line, "a `case` names no `in`")
+            self.cases[-1][0], self.pattern_open = _SH_CASE_PATTERN, False
+        elif state == _SH_CASE_PATTERN:
+            if word == "esac" and not self.pattern_open:
+                self.cases.pop()
+            self.pattern_open = True
+        elif word == "case" and at_command:
+            self.cases.append([_SH_CASE_SUBJECT, self.word_line])
+        elif word == "esac" and at_command and state == _SH_CASE_BODY:
+            self.cases.pop()
+        else:
+            return False
+        return True
+
+    def _case_mark(self, c):
+        """Read the mark *c* at i if it belongs to a `case` clause: a `(` or
+        `|` inside a pattern, the `)` that ends one, or the `;;`, `;&` or
+        `;;&` that ends a clause body. Returns whether it did."""
+        self._end_word()
+        state, t = self._case_state(), self.text
+        if state == _SH_CASE_PATTERN and c in "(|":
+            self.pattern_open = True
+            self.i += 1
+        elif state == _SH_CASE_PATTERN and c == ")":
+            self.cases[-1][0] = _SH_CASE_BODY
+            self.i += 1
+        elif state == _SH_CASE_BODY and t.startswith((";;", ";&"), self.i):
+            self._end_command()
+            self.i += 3 if t.startswith(";;&", self.i) else 2
+            self.cases[-1][0], self.pattern_open = _SH_CASE_PATTERN, False
+        else:
+            return False
+        return True
+
+    def _open_case(self):
+        """Fail on a `case` still open where the text being read ends."""
+        if self.cases:
+            raise ShellScanError(
+                self.cases[-1][1], "a `case` is never closed by `esac`"
+            )
 
     def _end_command(self):
         self._end_word()
@@ -596,11 +658,14 @@ class _ShellReader:
         with self._level():
             begin, line = self.i, self.line
             saved = (self.words, self.word, self.word_line, self.start, self.skip)
+            cases = (self.cases, self.pattern_open)
             self.words, self.word, self.skip = [], None, False
+            self.cases = []
             self.i += 2
             self.run(closer=")")
             raw = self.text[begin : self.i]
             self.words, self.word, self.word_line, self.start, self.skip = saved
+            self.cases, self.pattern_open = cases
             if self.word is None:
                 self.word, self.word_line = [], line
             self.word.append(raw)
@@ -716,16 +781,17 @@ class _ShellReader:
                 self._end_command()
                 self.i, self.line = self.i + 1, self.line + 1
                 self._heredoc_bodies()
-            elif c in ";&|(":
-                self._end_command()
-                depth += c == "("
-                self.i += 1
-            elif c == ")":
+            elif c in ";&|()":
+                if self._case_mark(c):
+                    continue
                 self._end_command()
                 self.i += 1
-                if depth:
+                if c == "(":
+                    depth += 1
+                elif c == ")" and depth:
                     depth -= 1
-                elif closer:
+                elif c == ")" and closer:
+                    self._open_case()
                     return
             elif c in "<>":
                 self._redirect()
@@ -738,6 +804,7 @@ class _ShellReader:
         if closer:
             raise ShellScanError(self.line, "a `$(` is never closed")
         self._end_command()
+        self._open_case()
         if self._heredocs:
             _delimiter, _strip, opened, _quoted = self._heredocs[0]
             raise ShellScanError(opened, "a here-document has no body")
@@ -1748,6 +1815,22 @@ _SH_PASSES = {
     "a held status named in a comment": (
         'false\nrc=$? # rc=3 here would rename it\nexit_passthrough "$rc"\n'
     ),
+    "case patterns named exit and quit": 'case "$1" in exit|quit) echo stop ;; esac\n',
+    "a case pattern named return": (
+        'case "$1" in\n  return) : ;;\n  "exit") : ;;\n  (\'quit\') : ;;\n'
+        "  *) : ;;\nesac\n"
+    ),
+    "a case pattern inside a substitution": (
+        'x=$(case "$1" in exit) echo a ;; return) echo b ;; esac)\n'
+    ),
+    "a last case clause with no terminator": 'case "$1" in exit) :\nesac\n',
+    "case clauses that fall through": (
+        'case "$1" in exit) : ;& return) : ;;& *) : ;; esac\n'
+    ),
+    "a case nested in a case body": (
+        'case "$1" in a) case "$2" in exit) : ;; esac ;; return) : ;; esac\n'
+    ),
+    "a case subject on the next line": 'case "$1"\nin exit) : ;; esac\n',
     "a held status named in a quoted here-document": (
         "false\nrc=$?\ncat <<'EOF'\nrc=3\nEOF\nexit_passthrough \"$rc\"\n"
     ),
@@ -1872,6 +1955,30 @@ _SH_FINDINGS = {
         6,
         _SH_CANNOT_SHOW,
     ),
+    "an exit in a case body": ('case "$1" in exit) exit 3 ;; esac\n', 3, "`exit 3`"),
+    "an exit in a case body on its own line": (
+        'case "$1" in\n  exit)\n    exit 3\n    ;;\nesac\n',
+        5,
+        "`exit 3`",
+    ),
+    "an exit in a case body inside a substitution": (
+        'x=$(case "$1" in exit) exit 3 ;; esac)\n',
+        3,
+        "`exit 3`",
+    ),
+    "an exit in a case subject": (
+        'case "$(exit 3)" in *) : ;; esac\n',
+        3,
+        "`exit 3`",
+    ),
+    "an exit after a case": ("case x in exit) : ;; esac\nexit 3\n", 4, "`exit 3`"),
+    "an exit in a last clause with no terminator": (
+        "case x in a) exit 3\nesac\n",
+        3,
+        "`exit 3`",
+    ),
+    "a case never closed": ("case x in a) : ;;\n", 3, "a `case` is never closed"),
+    "a case with no in": ("case x a) : ;; esac\n", 3, "a `case` names no `in`"),
     "a return of a renamed status": (
         'f() { s=2; return "$s"; }\n',
         3,

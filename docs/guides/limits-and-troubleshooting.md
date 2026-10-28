@@ -540,7 +540,10 @@ The command name is read as the shell runs it, so `"exit"`, `\exit`,
 describes it. An ending in a subshell, `$(...)` or backquotes is judged
 the same, inside double quotes too (`x="$(exit 3)"`); one in a comment, a
 single-quoted word, the rest of a double-quoted word or a here-document body
-is not a command. A `${...}` closes at its first unquoted `}`, so
+is not a command. Neither is a `case` subject or pattern, quoted or not, so
+`case "$1" in exit|quit)` and `return)` end nothing, inside `$(...)` too;
+a command in a clause body is judged, and a `case` with no `in` or no
+`esac` is a file the gate cannot read to its end. A `${...}` closes at its first unquoted `}`, so
 `${y:-"}"}`, `${y:-'{'}` and `echo "$(printf '"')"` read as the shell reads
 them, and a `$(...)` inside a `${...}` is judged too. Inside a
 double-quoted `${...}` a `'` is literal, as POSIX and `bash --posix` read
@@ -557,9 +560,8 @@ and so is a file the gate cannot read to its end. With no shell script at all th
 config/project.json `shell.no_scripts` gives the reason or
 `shell.enabled` is false. Every other finding holds whatever
 `shell.enabled` says. It cannot see
-`set -e`, `trap`, `exec`, `kill`, an `eval` or `sh -c` string, a `case`
-pattern inside `$(...)`, or a script that falls off its end after some
-other ending.
+`set -e`, `trap`, `exec`, `kill`, an `eval` or `sh -c` string, or a script
+that falls off its end after some other ending.
 
 The table below is written by hand and no test compares it with the code. It
 says when each script returns each code.
