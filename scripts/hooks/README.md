@@ -9,7 +9,7 @@ tags: [hooks, automation, triggers]
 summary: Event-triggered doers — the scripts a hook fires. The trigger lives elsewhere.
 id: scripts-hooks-readme
 created: 2026-06-17
-updated: 2026-09-02
+updated: 2026-10-28
 visibility: internal
 canonical: true
 ---
@@ -28,3 +28,6 @@ model from `models/`). `on_stop_triage.py` is the LLM example;
 `on_stop_doc_review.py` is the one a trigger actually fires: `.claude/settings.json`
 runs it when a turn ends, dry-run (deterministic, no model), and it prints the
 doc reviewer's one-line report. Both treat an unavailable model as a stated skip.
+A style-rule retrieval the doc reviewer refuses (`RulesRefused`) is one stderr
+line from `on_stop_doc_review.py` at exit 0 in a dry run, and exit 2 through
+`report` with `--execute`.

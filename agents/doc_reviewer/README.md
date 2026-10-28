@@ -67,7 +67,9 @@ when the retrieval finds no node at all, which `[]` from a checkout with no
 corpus, or from a corpus with no node for the rule query, means; so no model is
 asked for edits with an empty rules section. A dry run calls no model, so it
 goes on and its preview shows the empty section. `scripts/doc_review.py` ends a
-run that raises it with exit 2 through `report`.
+run that raises it with exit 2 through `report`, and so does
+`scripts/hooks/on_stop_doc_review.py` with `--execute`; the hook's dry run
+writes the same line to stderr and exits 0, since it never blocks the event.
 
 Its thin CLI is `scripts/doc_review.py` (`make doc-review`); its event trigger is
 `scripts/hooks/on_stop_doc_review.py`, fired by `.claude/settings.json`; its

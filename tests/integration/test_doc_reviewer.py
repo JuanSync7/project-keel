@@ -2,7 +2,7 @@
 title: Integration — the doc reviewer agent (dry-run, execute, decline, rollback)
 kind: tests
 layer: backend
-summary: agents.doc_reviewer.review over patched tool and model seams (no subprocess, no model, but for one style-rule retrieval over the real query_corpus, which retrieves the guide while its file under the reviewed root is public and not once it states confidential, so a retrieval that drops `--root` is red): a dry-run gathers findings, retrieves rules, gates the baseline and writes nothing; execute proposes one edit per chunk and applies through the gated doer; a declined chunk or a red gate lands in skipped; a red baseline attempts nothing; a reply that names a gate is declined, the prompt never states the gate, and every apply is bound to its chunk's own file with `--allow`. A style-rule retrieval query_corpus refuses, or whose output is not JSON or empty, raises RulesRefused naming the exit status, dry run and execute alike, with no model call, and scripts/doc_review.py reports it as exit USAGE through the exit helper, the real query_corpus refusing a corpus that is not JSON; one that finds no node refuses an execute run the same way, and a dry run shows the empty rules section in its preview. A relative root reaches the corpus query as one absolute `--root`, with no `--corpus` beside it; a corpus given alone names its checkout, whose corpus both the withholding check and the query read; a root beside a corpus, a corpus outside some checkout's wiki/corpus.json, or one named that does not exist, is corpus_level.NotACheckout before any tool runs. Every tool call hands the reviewed root to the runner, so run_tool reads the tool limits, and checks them against the gate keys, of the tree the gate runner reads. The report the CLI and hook print is this report. A finding on a file the corpus places outside corpus.served_visibilities, or has no node for, or on any file when the corpus or config cannot be read, is withheld: reported with why (one CLI line each, a count in the hook's line), its text never read, and no prompt or apply made, dry run and execute alike, while a served finding beside it still goes; a chunk queued before its file left the served levels is declined at propose with no model call; a document reclassified on disk after the corpus was built, or made unreadable, is withheld the same way, its text in no prompt.
+summary: agents.doc_reviewer.review over patched tool and model seams (no subprocess, no model, but for one style-rule retrieval over the real query_corpus, which retrieves the guide while its file under the reviewed root is public and not once it states confidential, so a retrieval that drops `--root` is red): a dry-run gathers findings, retrieves rules, gates the baseline and writes nothing; execute proposes one edit per chunk and applies through the gated doer; a declined chunk or a red gate lands in skipped; a red baseline attempts nothing; a reply that names a gate is declined, the prompt never states the gate, and every apply is bound to its chunk's own file with `--allow`. A style-rule retrieval query_corpus refuses, or whose output is not JSON or empty, raises RulesRefused naming the exit status, dry run and execute alike, with no model call, and scripts/doc_review.py reports it as exit USAGE through the exit helper, as scripts/hooks/on_stop_doc_review.py does with --execute while its dry run writes that one line and exits 0, the real query_corpus refusing a corpus that is not JSON; one that finds no node refuses an execute run the same way, and a dry run shows the empty rules section in its preview. A relative root reaches the corpus query as one absolute `--root`, with no `--corpus` beside it; a corpus given alone names its checkout, whose corpus both the withholding check and the query read; a root beside a corpus, a corpus outside some checkout's wiki/corpus.json, or one named that does not exist, is corpus_level.NotACheckout before any tool runs. Every tool call hands the reviewed root to the runner, so run_tool reads the tool limits, and checks them against the gate keys, of the tree the gate runner reads. The report the CLI and hook print is this report. A finding on a file the corpus places outside corpus.served_visibilities, or has no node for, or on any file when the corpus or config cannot be read, is withheld: reported with why (one CLI line each, a count in the hook's line), its text never read, and no prompt or apply made, dry run and execute alike, while a served finding beside it still goes; a chunk queued before its file left the served levels is declined at propose with no model call; a document reclassified on disk after the corpus was built, or made unreadable, is withheld the same way, its text in no prompt.
 """
 
 import json
@@ -298,6 +298,43 @@ def test_the_cli_reports_a_failed_rule_retrieval_through_the_exit_helper(
     err = capsys.readouterr().err.strip().splitlines()[-1]
     assert err.startswith("doc_review: ") and str(tmp_path) in err
     assert model.prompts == []
+
+
+@pytest.mark.parametrize("execute", [False, True], ids=["dry-run", "execute"])
+def test_the_hook_reports_a_refused_rule_retrieval_and_a_dry_run_never_blocks(
+    monkeypatch, capsys, tmp_path, execute
+):
+    """The reviewer's finding: on_stop_doc_review did not catch RulesRefused,
+    so every session stop over a refused corpus ended with a traceback. A dry
+    run, which never blocks the event, writes one `on_stop_doc_review:` line
+    naming the root and exits 0; an execute run exits USAGE through report(),
+    as scripts/doc_review.py does. The hook reviews its own checkout, so its
+    review is pointed at the scratch root here."""
+    sys.path.insert(0, str(_ROOT / "scripts"))
+    sys.path.insert(0, str(_ROOT / "scripts" / "hooks"))
+    import model_budget  # noqa: E402
+    import on_stop_doc_review as hook  # noqa: E402
+
+    refused = (2, "", "query_corpus: the corpus cannot be read")
+    runner, model = _RefusedQuery(refused), _Model(_SPEC)
+    monkeypatch.setattr(_BRAIN + "._run", runner)
+    monkeypatch.setattr(_BRAIN + ".get_model", lambda name=None: model)
+    monkeypatch.setattr(model_budget, "cap", lambda root: 8)
+    monkeypatch.setattr(
+        hook, "review", lambda **kwargs: review(root=str(tmp_path), **kwargs)
+    )
+    _project(tmp_path)
+    capsys.readouterr()
+    rc = hook.main(["payload"] + (["--execute"] if execute else []))
+    out, err = capsys.readouterr()
+    # An execute run also names the registry default above the refusal.
+    lines = [x for x in err.splitlines() if "query_corpus exited 2" in x]
+    assert rc == (hook.exit_codes.ExitCode.USAGE if execute else 0)
+    assert len(lines) == 1 and lines[0] == err.strip().splitlines()[-1]
+    assert lines[0].startswith("on_stop_doc_review: ")
+    assert str(tmp_path) in lines[0] and "then rerun" in lines[0]
+    assert out == "" and model.prompts == []
+    assert runner.calls == ["review_docs", "query_corpus"]
 
 
 def test_no_rules_refuse_an_execute_run_and_show_in_a_dry_runs_preview(
