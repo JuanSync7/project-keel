@@ -155,8 +155,15 @@ title and summary until `make site-data` rebuilds it: the showcase's doc tree,
 search, counts and the neighbour refs in a served node's detail; the
 `/llms.txt` index; the heading and path `/llms-full.txt` prints above a
 withheld body; and the static export's `tree.json`. The index enforcer
-rebuilds the corpus before it fills a gap, so it acts on the levels the files
-state at that build.
+(`agents/index_enforcer/_brain.py`) fills only a gap `config_loader.is_served`
+serves on the levels of the corpus its report step loaded, and never asks
+`stated_now`. A fresh run on a clean tree runs `scripts/jobs/build_corpus.py`
+on the checkout the agent ships in before that report step, and does not read
+the build's exit status. A run resumed after a crash restarts at the step its
+last checkpoint names, with the corpus that checkpoint saved; past the report
+step it neither rebuilds nor reads a file's level again. So a file made
+stricter between the crash and the resume can still have its gap sent to a
+model, and the commit step writes the saved corpus back.
 `stated_now` reads the README.md chain of the path the corpus keeps and of the
 file it really is (`readme_chain`). The corpus build also ranks a file by the
 chain of every other path that links to it (`scripts/check_structure.py`
