@@ -2,7 +2,7 @@
 title: Integration — practice_refactor gated KG-walking loop
 kind: tests
 layer: backend
-summary: A relative root reaches the corpus query as one absolute `--root`, with no `--corpus` beside it; a corpus given alone names its checkout; a root beside a corpus, a corpus outside some checkout's wiki/corpus.json, or one named that does not exist, is corpus_level.NotACheckout before any tool runs, and exit USAGE from the CLI. Dry-run walks the graph + gates the read-only baseline but proposes/writes nothing; execute proposes one bounded edit per chunk and a chunk is `refactored` only when the gated apply_refactor keeps make verify green (else rolled back -> `skipped`); a crash mid-refactor resumes at the cursor without re-applying accepted chunks. The gate is the run's: a reply that names a gate is declined before any apply, every apply is bound to its chunk's own file with `--allow`, a chunk with no path is declined before the model is called, and a chunk outside config/project.json corpus.served_visibilities is no candidate, nor is one whose file states a level outside it on disk now, or none that can be read, as a document reclassified after the corpus was built does; a saved run's chunk from such a file is declined at propose with no model call. Every tool call hands the refactored root to the runner, so run_tool reads the tool limits, and checks them against the gate keys, of the tree the gate runner reads.
+summary: A relative root reaches the corpus query as one absolute `--root`, with no `--corpus` beside it; a corpus given alone names its checkout, and the CLI hands refactor() that derived root, never its own `--root`; a root beside a corpus, a corpus outside some checkout's wiki/corpus.json, or one named that does not exist, is corpus_level.NotACheckout before any tool runs, and exit USAGE from the CLI. Dry-run walks the graph + gates the read-only baseline but proposes/writes nothing; execute proposes one bounded edit per chunk and a chunk is `refactored` only when the gated apply_refactor keeps make verify green (else rolled back -> `skipped`); a crash mid-refactor resumes at the cursor without re-applying accepted chunks. The gate is the run's: a reply that names a gate is declined before any apply, every apply is bound to its chunk's own file with `--allow`, a chunk with no path is declined before the model is called, and a chunk outside config/project.json corpus.served_visibilities is no candidate, nor is one whose file states a level outside it on disk now, or none that can be read, as a document reclassified after the corpus was built does; a saved run's chunk from such a file is declined at propose with no model call. Every tool call hands the refactored root to the runner, so run_tool reads the tool limits, and checks them against the gate keys, of the tree the gate runner reads.
 """
 
 import json
@@ -242,6 +242,27 @@ def test_a_corpus_names_the_checkout_the_walk_reads(tmp_path, monkeypatch):
     (argv,) = runner.argvs["query_corpus.py"]
     assert os.path.realpath(_flag(argv, "--root")) == os.path.realpath(str(tmp_path))
     assert "--corpus" not in argv
+
+
+def test_the_cli_refactors_the_checkout_its_corpus_names(tmp_path, monkeypatch):
+    """`--corpus other/wiki/corpus.json` names checkout `other`, so the CLI
+    hands refactor() that derived root, and the walk queries `other`; a CLI
+    passing its own `--root`, unset here, would walk this checkout."""
+    sys.path.insert(0, str(_ROOT / "scripts"))
+    import refactor_practice as rp  # noqa: E402
+
+    runner, model = _Runner(), _Model()
+    _patch(monkeypatch, runner, model)
+    other = tmp_path / "other"
+    other.mkdir()
+    _files(other)
+    (other / "wiki").mkdir()
+    (other / "wiki" / "corpus.json").write_text(json.dumps({"nodes": _NODES}))
+    corpus = str(other / "wiki" / "corpus.json")
+    code = rp.main(["precise-container-types", "--corpus", corpus])
+    assert code == rp.exit_codes.ExitCode.SUCCESS
+    (argv,) = runner.argvs["query_corpus.py"]
+    assert os.path.realpath(_flag(argv, "--root")) == os.path.realpath(str(other))
 
 
 @pytest.mark.parametrize("given", ["both", "outside-wiki", "missing"])
