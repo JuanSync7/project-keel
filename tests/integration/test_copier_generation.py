@@ -4020,20 +4020,21 @@ def _exit_gate_tree(project):
 def test_the_shell_answer_ships_the_helper_the_exit_gate_holds_a_script_to(
     tmp_path, generate, shell, answer
 ):
-    """KEEL-SHELL-1: kept, the project ships scripts/exit_codes.sh, current
-    for its enum with no `shell.excluded_paths` entry; declined, it ships no
-    helper and names none. Either way `make check` and
+    """KEEL-SHELL-1: the answer switches the shell tools only. Kept or
+    declined, the project ships scripts/exit_codes.sh, current for its enum
+    with no `shell.excluded_paths` entry; `make check` and
     `make check-exit-codes` pass and the tree exit gate passes with no shell
-    script of the project's own. Kept, a script beside it that sources the
-    helper ends with the three-part line and its member's code under
-    /bin/sh, and a bare `exit 3` turns the exit gate red at its file and
-    line; declined, the gate judges no shell script, so the same file is no
-    finding."""
+    script of the project's own. Either way a bare `exit 3` in
+    scripts/ops/deploy.sh turns the exit gate red at its file and line, and a
+    script that sources the helper ends with the three-part line and its
+    member's code under /bin/sh. Declined, turning shell on later is the one
+    key `shell.enabled`: `make lint-sh` and `make test-sh` then give the
+    `shell.no_scripts` answer, having run no tool."""
     dest = tmp_path / "proj"
     generate(dest, project_name="demo_proj", frontend_stack="none", **answer)
     manifest = json.loads((dest / "config" / "project.json").read_text("utf-8"))
     helper = dest / "scripts" / "exit_codes.sh"
-    assert helper.is_file() is shell
+    assert helper.is_file()
     assert manifest["shell"]["excluded_paths"] == {}
     env = _hermetic_git_env(tmp_path)
 
@@ -4052,16 +4053,15 @@ def test_the_shell_answer_ships_the_helper_the_exit_gate_holds_a_script_to(
     assert ran.returncode == 0, ran.stdout[-4000:] + ran.stderr[-2000:]
     assert "1 passed" in ran.stdout, ran.stdout[-2000:]
 
-    (dest / "scripts" / "bad.sh").write_text("#!/bin/sh\nexit 3\n", encoding="utf-8")
+    deploy = dest / "scripts" / "ops" / "deploy.sh"
+    deploy.parent.mkdir()
+    deploy.write_text("#!/bin/sh\nexit 3\n", encoding="utf-8")
     add_all()
     ran = _exit_gate_tree(dest)
-    if not shell:
-        assert ran.returncode == 0, ran.stdout[-4000:] + ran.stderr[-2000:]
-        return
     assert ran.returncode != 0, ran.stdout[-4000:]
-    assert "scripts/bad.sh:2: `exit 3` writes a number" in ran.stdout, ran.stdout[
-        -4000:
-    ]
+    assert "scripts/ops/deploy.sh:2: `exit 3` writes a number" in ran.stdout, (
+        ran.stdout[-4000:]
+    )
 
     good = dest / "scripts" / "good.sh"
     good.write_text(
@@ -4081,7 +4081,18 @@ def test_the_shell_answer_ships_the_helper_the_exit_gate_holds_a_script_to(
     assert ran.stderr.strip().endswith("good: no input: none given; pass one"), (
         ran.stderr
     )
-    (dest / "scripts" / "bad.sh").unlink()
+    deploy.unlink()
+    good.unlink()
     add_all()
     ran = _exit_gate_tree(dest)
     assert ran.returncode == 0, ran.stdout[-4000:] + ran.stderr[-2000:]
+    if shell:
+        return
+    manifest["shell"]["enabled"] = True
+    (dest / "config" / "project.json").write_text(
+        json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
+    )
+    for target in ("lint-sh", "test-sh"):
+        ran = _make_in(dest, target)
+        assert ran.returncode == 0, (target, ran.stdout[-3000:], ran.stderr[-3000:])
+        assert "shell.no_scripts says why" in ran.stdout, (target, ran.stdout)

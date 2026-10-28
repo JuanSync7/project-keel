@@ -280,6 +280,17 @@ def test_check_o_skips_a_shell_file_in_excluded_paths(gate):
     assert [e.split(":", 1)[0] for e in cs.errors] == ["src/bad.sh"], cs.errors
 
 
+def test_check_o_judges_a_shell_file_whatever_shell_enabled_says(gate):
+    """`shell.enabled` switches the shell tools only, never the header rule."""
+    (gate / "config").mkdir()
+    (gate / "config" / "project.json").write_text(
+        '{"shell": {"enabled": false}}', encoding="utf-8"
+    )
+    (gate / "src" / "bad.sh").write_text("#!/bin/sh\n", encoding="utf-8")
+    cs.check_O()
+    assert [e.split(":", 1)[0] for e in cs.errors] == ["src/bad.sh"], cs.errors
+
+
 def test_check_o_reports_a_refused_shell_block(gate):
     """Fail closed: a shell block the loader refuses is an error, never a
     quiet fall back to the default suffixes."""

@@ -149,13 +149,14 @@ version rather than a bare commit:
   `scripts/exit_codes.sh`, which `make exit-codes-sh` generates from
   `scripts/exit_codes.py` and `make check-exit-codes` fails when stale: an
   `EXIT_<NAME>` variable per member, `exit_fail` for the three-part failure
-  line and `exit_passthrough` for a wrapped tool's status. It ships only with
-  `shell` yes, and no shell tool judges it, with no `shell.excluded_paths`
+  line and `exit_passthrough` for a wrapped tool's status. It ships whatever
+  the answer `shell`, and no shell tool judges it, with no `shell.excluded_paths`
   entry.
   `tests/integration/test_exit_gate.py` fails a shell script that does not
   source it or ends with a bare `exit 3`, `exit $?` or `exit`, at its file
   and line, and a project with no shell script unless `shell.no_scripts`
-  states why; with `shell` no it judges no shell script.
+  states why or `shell.enabled` is false, which switches the shell tools
+  only: every other finding holds whatever it says.
 - **An agent `--execute` run is held to an approved model-call cap.**
   `scripts/doc_review.py`, `scripts/refactor_practice.py` and the two Stop
   hooks refuse an execute run with exit 2 before any model is built when its

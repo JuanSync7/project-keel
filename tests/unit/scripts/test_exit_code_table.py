@@ -670,21 +670,16 @@ def test_main_shell_check_fails_a_helper_the_enum_has_moved_past(tmp_path, capsy
     assert _helper_sh(root).read_bytes() == before
 
 
-def test_main_shell_with_shell_off_writes_nothing_and_says_so(tmp_path, capsys):
+def test_main_shell_writes_and_judges_the_helper_with_shell_off(tmp_path, capsys):
+    """`shell.enabled` switches the shell tools only: the helper ships and is
+    judged whatever it says, so turning shell on later is that one key."""
     root = _shell_project(tmp_path, enabled=False)
-    for argv in (["--shell"], ["--shell", "--check"]):
-        assert et.main(argv, root=str(root)) is ExitCode.SUCCESS
-        assert "shell.enabled is false" in capsys.readouterr().out
-    assert not _helper_sh(root).exists()
-
-
-def test_main_shell_refuses_a_shell_block_it_cannot_use(tmp_path, capsys):
-    root = _shell_project(tmp_path, enabled="yes")
-    for argv in (["--shell"], ["--shell", "--check"]):
-        assert et.main(argv, root=str(root)) == ExitCode.CONFIG
-        err = capsys.readouterr().err
-        assert "shell.enabled" in err, err
-    assert not _helper_sh(root).exists()
+    assert et.main(["--shell", "--check"], root=str(root)) == ExitCode.FAILURE
+    assert "absent" in capsys.readouterr().err
+    assert et.main(["--shell"], root=str(root)) is ExitCode.SUCCESS
+    assert _helper_sh(root).is_file()
+    assert et.main(["--shell", "--check"], root=str(root)) is ExitCode.SUCCESS
+    assert "up to date" in capsys.readouterr().out
 
 
 def test_main_shell_refuses_a_helper_reached_through_a_symlink(tmp_path, capsys):
@@ -697,14 +692,9 @@ def test_main_shell_refuses_a_helper_reached_through_a_symlink(tmp_path, capsys)
     assert "symlink" in capsys.readouterr().err
 
 
-def test_the_shipped_shell_helper_is_current_or_absent_with_shell_off(capsys):
+def test_the_shipped_shell_helper_is_current(capsys):
     assert et.main(["--shell", "--check"], root=str(_ROOT)) is ExitCode.SUCCESS
-    out = capsys.readouterr().out
-    if et.shell_enabled(str(_ROOT)):
-        assert "up to date" in out
-    else:
-        assert "shell.enabled is false" in out
-        assert not (_ROOT / et.HELPER_SH).exists(), "a shell-off project ships one"
+    assert "up to date" in capsys.readouterr().out
 
 
 def test_check_exit_codes_judges_the_shell_helper_and_exit_codes_sh_writes_it():

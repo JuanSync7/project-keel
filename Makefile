@@ -391,7 +391,7 @@ agent-surface-schema: check-python ## [tree] Regenerate the committed AAD JSON S
 	$(PY) scripts/agent_surface/generate_aad_schema.py
 exit-codes: check-python ## [tree] Regenerate the exit-code table in the limits guide from scripts/exit_codes.py and the gate's scripts
 	$(PY) scripts/exit_code_table.py
-exit-codes-sh: check-python ## [tree] Regenerate the shell helper scripts/exit_codes.sh from scripts/exit_codes.py (nothing when config/project.json shell.enabled is false)
+exit-codes-sh: check-python ## [tree] Regenerate the shell helper scripts/exit_codes.sh from scripts/exit_codes.py
 	$(PY) scripts/exit_code_table.py --shell
 # [tree,write], not [tree] alone: the file it rewrites is the record of what a
 # generated project's gate lets warn, so WRITE_GUARD keeps a CI job or a Ralph

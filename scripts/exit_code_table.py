@@ -2,7 +2,7 @@
 title: exit_code_table — generate the exit-code table from the enum and the gate's scripts
 kind: script
 layer: n/a
-summary: Writes the region between the `<!-- exit-codes:begin -->` and `<!-- exit-codes:end -->` lines of the guide config/project.json `doc_drift.limits_guide` names. The region holds two tables. The first has one row per member of ExitCode, read from the syntax tree of scripts/exit_codes.py and never by importing it: value, name, meaning, what to do. The second has one row per script a recipe reachable from make `doc_drift.gate_target` runs, naming the values that script's entry function can return and `passes through` when it returns a wrapped tool's status. `read_script` is the one reader of what a script can exit with, and it reads a closed grammar from the syntax tree: SUCCESS itself, `report(<member>, ...)`, `passthrough(...)`, a conditional between those, a name every binding of which is a plain assignment of those, or a call to a function of the same module whose every return is one of those, plus the member of every `fail(<member>, ...)` call in the module; any other return, a name also bound another way (a parameter, an unpacking, a loop, `+=`, `:=`, `as`, `global`), a `report` of a member with nothing to report, and a function that can reach its end without returning, is a finding, never a guess. `passthrough` marks a wrapped tool's status, so one handed the script's own status is a finding too: the entry function's result (the function `finish` is handed, or `main`), directly or through a plain-assigned name, an int literal, a member, a `report`, or a call to a function of the module whose every return is one of those, including such a status under a sign (`-1`), in an arithmetic or `and`/`or` whose every operand is one, or handed to a builtin the module does not rebind (`int(main())`); and so is an entry line that hands `finish` a `passthrough(...)`. A helper that converts another process's status (one of its returns reads it) passes. An enum member written with an annotation is refused, not skipped. `--check` writes nothing and exits 1 naming each difference when the region is stale. It reads config/project.json `doc_drift` through scripts/config_loader.py and refuses, exit CONFIG, a manifest or block it cannot use, after the loader's line for each key at fault. It refuses, exit 2, a guide or marker that is missing, repeated or out of order, a guide reached through a symlink (scripts/git_tree.py `through_symlink`) and a script whose exits it cannot read. Every message names the configured guide path and gate target, and an error's text that may quote one, through scripts/config_loader.py `shown` and `joined`, hidden when it holds an `@`. It replaces the file whole through a temporary file beside it and never touches `updated:`. It does not hold exits to the helper (tests/integration/test_exit_gate.py does) and it does not write the per-script prose below the region, which is hand-written. `--shell` writes the shell helper scripts/exit_codes.sh instead, whole and from the same enum (`render_shell`): one `EXIT_<NAME>=<value>` per member and the functions `exit_fail` and `exit_passthrough`, the shell `report` and `passthrough`; with `--check` it writes nothing and exits 1 when the helper is stale or absent, it refuses, exit 2, a helper reached through a symlink and an enum without the SUCCESS and USAGE members the helper names, and with config/project.json `shell.enabled` false it acts on nothing and says so. Needs the project interpreter.
+summary: Writes the region between the `<!-- exit-codes:begin -->` and `<!-- exit-codes:end -->` lines of the guide config/project.json `doc_drift.limits_guide` names. The region holds two tables. The first has one row per member of ExitCode, read from the syntax tree of scripts/exit_codes.py and never by importing it: value, name, meaning, what to do. The second has one row per script a recipe reachable from make `doc_drift.gate_target` runs, naming the values that script's entry function can return and `passes through` when it returns a wrapped tool's status. `read_script` is the one reader of what a script can exit with, and it reads a closed grammar from the syntax tree: SUCCESS itself, `report(<member>, ...)`, `passthrough(...)`, a conditional between those, a name every binding of which is a plain assignment of those, or a call to a function of the same module whose every return is one of those, plus the member of every `fail(<member>, ...)` call in the module; any other return, a name also bound another way (a parameter, an unpacking, a loop, `+=`, `:=`, `as`, `global`), a `report` of a member with nothing to report, and a function that can reach its end without returning, is a finding, never a guess. `passthrough` marks a wrapped tool's status, so one handed the script's own status is a finding too: the entry function's result (the function `finish` is handed, or `main`), directly or through a plain-assigned name, an int literal, a member, a `report`, or a call to a function of the module whose every return is one of those, including such a status under a sign (`-1`), in an arithmetic or `and`/`or` whose every operand is one, or handed to a builtin the module does not rebind (`int(main())`); and so is an entry line that hands `finish` a `passthrough(...)`. A helper that converts another process's status (one of its returns reads it) passes. An enum member written with an annotation is refused, not skipped. `--check` writes nothing and exits 1 naming each difference when the region is stale. It reads config/project.json `doc_drift` through scripts/config_loader.py and refuses, exit CONFIG, a manifest or block it cannot use, after the loader's line for each key at fault. It refuses, exit 2, a guide or marker that is missing, repeated or out of order, a guide reached through a symlink (scripts/git_tree.py `through_symlink`) and a script whose exits it cannot read. Every message names the configured guide path and gate target, and an error's text that may quote one, through scripts/config_loader.py `shown` and `joined`, hidden when it holds an `@`. It replaces the file whole through a temporary file beside it and never touches `updated:`. It does not hold exits to the helper (tests/integration/test_exit_gate.py does) and it does not write the per-script prose below the region, which is hand-written. `--shell` writes the shell helper scripts/exit_codes.sh instead, whole and from the same enum (`render_shell`): one `EXIT_<NAME>=<value>` per member and the functions `exit_fail` and `exit_passthrough`, the shell `report` and `passthrough`; with `--check` it writes nothing and exits 1 when the helper is stale or absent, it refuses, exit 2, a helper reached through a symlink and an enum without the SUCCESS and USAGE members the helper names, whatever config/project.json `shell.enabled` says, because that switches the shell tools only. Needs the project interpreter.
 effect: writes
 rerun: fixed-point
 rerun_proof: make:check-exit-codes
@@ -51,7 +51,6 @@ __all__ = [
     "read_script",
     "render",
     "render_shell",
-    "shell_enabled",
     "shell_text",
     "split_region",
     "table_findings",
@@ -986,7 +985,6 @@ def table_findings(root):
 # The members the helper's own code names: a misuse ends with USAGE, and
 # SUCCESS is the one member `exit_fail` refuses.
 _SHELL_USES = ("SUCCESS", "USAGE")
-_SHELL_ENABLED = ("shell", "enabled")
 _SHELL_HEAD = (
     "#!/bin/sh",
     "# title: exit_codes.sh — the exit codes, and the two ways a shell script "
@@ -1073,23 +1071,6 @@ def render_shell(members):
     return "\n".join(lines) + "\n" + _SHELL_FUNCTIONS % failures
 
 
-def shell_enabled(root):
-    """config/project.json `shell.enabled` of *root*, read through
-    scripts/config_loader.py. Raises TableConfigError carrying the loader's
-    lines."""
-    try:
-        values = config_loader.resolve(
-            config_loader.read(root), config_loader.rows(_SHELL_ENABLED), MANIFEST
-        )
-    except config_loader.ConfigError as exc:
-        raise TableConfigError(
-            "the manifest block cannot be used",
-            "%s `shell`: %s" % (MANIFEST, "; ".join(exc.lines)),
-            "correct it as the lines above say",
-        ) from exc
-    return values[_SHELL_ENABLED]
-
-
 def shell_text(root):
     """(the helper's text now, or None when it is absent, its text from the
     enum). Raises TableError when the helper is reached through a symlink or
@@ -1118,19 +1099,10 @@ def shell_text(root):
 def _shell_main(root, check):
     """The `--shell` mode of main: regenerate the shell helper, or with
     *check* only say whether it is current."""
+    # shell.enabled switches the shell tools only: the helper ships and is
+    # judged either way, so turning shell on later is that one key.
     try:
-        enabled = shell_enabled(root)
-        if not enabled:
-            print("shell.enabled is false: no shell helper is generated or judged")
-            return _helper.ExitCode.SUCCESS
         text, wanted = shell_text(root)
-    except TableConfigError as exc:
-        return _helper.report(
-            _helper.ExitCode.CONFIG,
-            "exit_code_table: " + exc.what,
-            exc.on,
-            exc.next_step,
-        )
     except TableError as exc:
         return _helper.report(
             _helper.ExitCode.USAGE,
