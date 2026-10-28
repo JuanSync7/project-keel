@@ -750,14 +750,20 @@ version rather than a bare commit:
   level outside the vocabulary, the corpus's `unreadable-readme` marker
   included, is refused as a config fault (exit 14) naming the member, so
   nothing is served. A generated project gets the key with its config.
-  A reader that reads a document's body from disk, the doc reviewer, the
-  showcase's node route and markdown body, and the practice refactor agent,
-  also asks the level the file states there now, through
-  `scripts/corpus_level.py`, the reader `scripts/jobs/build_corpus.py` uses.
-  `config_loader.is_served_now` serves the body only when the stricter of
-  that level and the corpus's is served, so a document reclassified after
-  the corpus was built is not sent or served. A file whose level cannot be
-  read now is not served either. CONVENTIONS §1 names the residual risk: a
+  `scripts/query_corpus.py` and the agents that retrieve through it (the
+  wiki navigator, the MCP Q&A server, the practice refactor and the doc
+  reviewer's style rules), the doc reviewer's findings, and the showcase's
+  node detail and markdown body also ask the level a node's file states on
+  disk now, through `scripts/corpus_level.py`, the reader
+  `scripts/jobs/build_corpus.py` uses. `config_loader.is_served_now` serves
+  the node only when the stricter of that level and the corpus's is served,
+  so those readers neither send nor serve a document reclassified after the
+  corpus was built, nor name it in a served node's links. A file whose level
+  cannot be read now is not served either. The showcase's doc tree, search,
+  counts and neighbour refs, the `/llms.txt` index, the headings in
+  `/llms-full.txt` and the static `tree.json` still list a reclassified
+  node's title and summary until the corpus is rebuilt; CONVENTIONS §1 lists
+  each reader on each side. CONVENTIONS §1 also names the residual risk: a
   served document's own link text can name a hidden document's path, which a
   default id is derived from.
   (KEEL-VIS-2)

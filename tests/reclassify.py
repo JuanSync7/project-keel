@@ -1,6 +1,6 @@
 """
 title: Reclassify a document after the corpus build
-summary: The reviewer's repro for a reader that reads a body from disk, shared by the showcase, doc reviewer and practice refactor tests. `public_project(root, body)` writes a scratch project, an empty config/project.json and `docs/pubguide.md` (id `pubguide`) stating `visibility: public` with *body*, builds its corpus with scripts/jobs/build_corpus.py, writes it to wiki/corpus.json and returns its nodes. `reclassify(path, how)` then changes what the file states on disk, one way per member of HOWS: `own` changes its frontmatter's level to confidential, `readme` puts a confidential README.md beside it, `unreadable` writes bytes that are not UTF-8, `gone` deletes it. The corpus is left as built, so it still says public.
+summary: The reviewer's repro for a reader that checks a node's file now, shared by the showcase, doc reviewer, practice refactor, query_corpus and wiki navigator tests. `public_project(root, body)` writes a scratch project, an empty config/project.json and `docs/pubguide.md` (id `pubguide`) stating `visibility: public` with *body*, builds its corpus with scripts/jobs/build_corpus.py, writes it to wiki/corpus.json and returns its nodes. `reclassify(path, how)` then changes what the file states on disk, one way per member of HOWS: `own` changes its frontmatter's level to confidential, `readme` puts a confidential README.md beside it, `unreadable` writes bytes that are not UTF-8, `gone` deletes it. The corpus is left as built, so it still says public.
 """
 
 import json

@@ -124,17 +124,36 @@ level is built as `internal` (above), so the default serves it. Only a corpus
 row with no `visibility` field at all is treated as hidden: the readers fail
 closed rather than assume a level.
 
-A reader that reads a document's body from disk, rather than the corpus's
-excerpt, also asks the level the file states there now: the doc reviewer, the
-showcase's node route and markdown body, and the practice refactor agent.
+Some readers also ask the level a node's file states on disk now, not only
+the level the corpus recorded when it was built.
 `scripts/corpus_level.py` `stated_now` reads that level with the grammars
 `scripts/jobs/build_corpus.py` builds the corpus with, and
-`config_loader.is_served_now` serves the body only when the stricter of that
-level and the corpus's is served. So a document reclassified after the corpus
-was built is not sent or served. A file whose level cannot be read now, such
-as one deleted, not UTF-8 or with no frontmatter, is not served either. The
-showcase's tree and search still list a reclassified node's title and
-summary from the corpus as it was built, until `make site-data` rebuilds it.
+`config_loader.is_served_now` serves the node only when the stricter of that
+level and the corpus's is served. A file whose level cannot be read now, such
+as one deleted, not UTF-8 or with no frontmatter, is not served either. These
+readers check the file now:
+
+- `scripts/query_corpus.py`, for each node it prints and each id it leaves in
+  a printed node's links, children and parent, reading the files under its
+  `--root` (this checkout by default);
+- the wiki navigator agent and the MCP Q&A server through it, whose prompt
+  context and citations come from `query_corpus.py` under `answer`'s `root`;
+- the practice refactor agent, which sends a model a chunk's corpus excerpt
+  or summary, not its file, and checks the chunk's file at the walk and again
+  before each model call;
+- the doc reviewer, for each finding's file and for the style rules it
+  retrieves through `query_corpus.py`;
+- the showcase's node detail and markdown body, which reads the file, and
+  through them the static export's node pages and each body in
+  `/llms-full.txt`.
+
+The rest act on the corpus as built, and still list a reclassified node's
+title and summary until `make site-data` rebuilds it: the showcase's doc tree,
+search, counts and the neighbour refs in a served node's detail; the
+`/llms.txt` index; the heading and path `/llms-full.txt` prints above a
+withheld body; and the static export's `tree.json`. The index enforcer
+rebuilds the corpus before it fills a gap, so it acts on the levels the files
+state at that build.
 `stated_now` reads the README.md chain of the path the corpus keeps and of the
 file it really is (`readme_chain`). The corpus build also ranks a file by the
 chain of every other path that links to it (`scripts/check_structure.py`

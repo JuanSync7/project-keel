@@ -3,7 +3,7 @@
 title: Query corpus
 kind: script
 layer: n/a
-summary: Read-only retrieval over wiki/corpus.json — the wiki_navigator's, practice_refactor's and doc_reviewer's tool — that prints only nodes at a level in config/project.json corpus.served_visibilities (config_loader.is_served), each with every other node's id cut from its links, children and parent (config_loader.cut_hidden).
+summary: Read-only retrieval over wiki/corpus.json — the wiki_navigator's, practice_refactor's and doc_reviewer's tool — that prints only nodes whose file under `--root` (this checkout by default) may be served at a level in config/project.json corpus.served_visibilities as it stands on disk now (config_loader.is_served_now over corpus_level.stated_now, read once per file), so a file reclassified after the corpus was built, or one whose level cannot be read, is not printed, each printed node with every other node's id cut from its links, children and parent (config_loader.cut_hidden).
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ from collections.abc import Collection
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 import config_loader  # noqa: E402
+import corpus_level  # noqa: E402
 from exit_codes import ExitCode, finish, report  # noqa: E402
 
 DEFAULT_CORPUS = os.path.join("wiki", "corpus.json")
@@ -64,10 +65,16 @@ def _tokens(text: str) -> set:
 
 
 def query(
-    corpus: dict, question: str, max_nodes: int = 8, *, served: Collection[str]
+    corpus: dict,
+    question: str,
+    max_nodes: int = 8,
+    *,
+    served: Collection[str],
+    root: str,
 ) -> list:
     """Return up to max_nodes candidate nodes for the question, best first,
-    from the nodes at a level in *served*.
+    from the nodes whose file under *root* may be served at a level in
+    *served* as it stands on disk now (config_loader.is_served_now).
 
     Deterministic retrieval: score each node by stemmed query-token overlap
     with its tags/title/summary (weight 2) and with its body excerpt (weight 1,
@@ -76,13 +83,18 @@ def query(
     (tree + links) to reason over. A node at any other level, a corpus row
     with no `visibility` field included, is cut before scoring, so it is neither a hit nor a
     neighbour, and config_loader.cut_hidden drops its id from every returned
-    node's links, children and parent.
+    node's links, children and parent. So is a node whose file now states a
+    level outside *served*, or one whose level cannot be read.
     """
-    nodes = {
-        n["node_id"]: n
-        for n in corpus.get("nodes", [])
-        if config_loader.is_served(n, served)
-    }
+    # A file's sections share its path, so its level is read once.
+    stated: dict = {}
+    nodes = {}
+    for n in corpus.get("nodes", []):
+        path = n.get("path")
+        if path not in stated:
+            stated[path] = corpus_level.stated_now(root, path)
+        if config_loader.is_served_now(n, served, stated[path]):
+            nodes[n["node_id"]] = n
     q = _tokens(question)
     if not q:
         return []
@@ -133,6 +145,12 @@ def main(argv=None) -> int:
         help="corpus path (default: wiki/corpus.json)",
     )
     ap.add_argument("--max-nodes", type=int, default=8, help="max candidate nodes")
+    ap.add_argument(
+        "--root",
+        default=None,
+        help="the checkout the corpus's node paths name, whose files are read "
+        "for the level each states now (default: the project this script ships in)",
+    )
     args = ap.parse_args(argv)
     try:
         served = config_loader.served_visibilities(ROOT)
@@ -156,7 +174,13 @@ def main(argv=None) -> int:
         return ExitCode.SUCCESS
     with open(path, encoding="utf-8") as fh:
         corpus = json.load(fh)
-    hits = query(corpus, args.question, max_nodes=args.max_nodes, served=served)
+    hits = query(
+        corpus,
+        args.question,
+        max_nodes=args.max_nodes,
+        served=served,
+        root=args.root or ROOT,
+    )
     json.dump(hits, sys.stdout, indent=2, sort_keys=True)
     sys.stdout.write("\n")
     return ExitCode.SUCCESS

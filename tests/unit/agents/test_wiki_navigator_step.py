@@ -2,7 +2,7 @@
 title: Unit — the wiki navigator's model step runs on an injected backend
 kind: tests
 layer: n/a
-summary: wiki_navigator.synthesize(question, nodes, backend=b) sends b the agent's real answer prompt (its prompt.md preamble, the question and each visible node cited by node_id), never a node outside config/project.json corpus.served_visibilities (a confidential or restricted node, one that states no level or one outside the vocabulary), and returns b's reply stripped; the plan's synthesize step calls the same function, so the eval harness judges the code answer() runs. answer(execute=True) with no approved count of model calls is a ValueError before any step runs; answer(backend_factory=f) builds its one counted backend with f from the model name, so a caller that counts calls across answers (mcp/qa_server.py's session total) sees each one, and with no factory it is models.get_model. A citation whose node names no owner_source carries None, unknown, never `none`.
+summary: wiki_navigator.synthesize(question, nodes, backend=b) sends b the agent's real answer prompt (its prompt.md preamble, the question and each visible node cited by node_id), never a node outside config/project.json corpus.served_visibilities (a confidential or restricted node, one that states no level or one outside the vocabulary), and returns b's reply stripped; the plan's synthesize step calls the same function, so the eval harness judges the code answer() runs. answer(execute=True) with no approved count of model calls is a ValueError before any step runs; answer(backend_factory=f) builds its one counted backend with f from the model name, so a caller that counts calls across answers (mcp/qa_server.py's session total) sees each one, and with no factory it is models.get_model. A citation whose node names no owner_source carries None, unknown, never `none`. answer(root=r) reads each node's file under r again: in the reviewer's repro, `docs/pubguide.md` reclassified after the corpus build in each of tests/reclassify.py's ways, a dry run's prompt carries neither its summary nor its id, and nothing cites it.
 """
 
 import json
@@ -16,6 +16,8 @@ sys.path.insert(0, str(_ROOT))
 
 from agents.wiki_navigator import answer, synthesize  # noqa: E402
 from models import ModelBackend  # noqa: E402
+
+import reclassify  # noqa: E402
 
 pytestmark = pytest.mark.unit
 
@@ -127,6 +129,8 @@ def _one_node_corpus(tmp_path):
     node = dict(_NODES[0], kind="doc", title="Alpha", text_excerpt="", tags=["alpha"])
     node.update(owner="alice", owner_source="frontmatter", visibility="public")
     node.update(anchor=None, lineno=None, parent=None, children=[], links=[])
+    (tmp_path / "docs").mkdir(exist_ok=True)
+    (tmp_path / node["path"]).write_text("---\nvisibility: public\n---\n", "utf-8")
     path = tmp_path / "corpus.json"
     path.write_text(json.dumps({"schema_version": 1, "nodes": [node]}), "utf-8")
     return str(path)
@@ -146,6 +150,7 @@ def test_an_execute_answer_builds_its_backend_with_the_factory_it_is_given(tmp_p
         corpus=_one_node_corpus(tmp_path),
         max_model_calls=1,
         backend_factory=factory,
+        root=str(tmp_path),
     )
     assert built == ["fake"] and len(seen.prompts) == 1
     assert got.text == "Alpha ingests events [docs/a.md]." and not got.dry_run
@@ -162,7 +167,29 @@ def test_a_citation_says_unknown_when_its_node_names_no_owner_source(tmp_path, s
     else:
         corpus["nodes"][0]["owner_source"] = stored
     Path(path).write_text(json.dumps(corpus), "utf-8")
-    got = answer("what is alpha", corpus=path)
+    got = answer("what is alpha", corpus=path, root=str(tmp_path))
     assert [c.node_id for c in got.citations] == ["docs/a.md"], got.citations
     want = "frontmatter" if stored == "frontmatter" else None
     assert got.citations[0].owner_source == want
+
+
+@pytest.mark.parametrize("how", reclassify.HOWS)
+def test_a_node_whose_file_now_states_a_stricter_level_is_not_sent(tmp_path, how):
+    """The reviewer's repro: the scratch corpus says `docs/pubguide.md` is
+    public; once the file is reclassified on disk (*how*), a dry run's
+    retrieved context carries neither its summary nor its id."""
+    reclassify.public_project(tmp_path, "The pubguide body.")
+    corpus = str(tmp_path / "wiki" / "corpus.json")
+
+    def context():
+        got = answer("pubguide", corpus=corpus, root=str(tmp_path))
+        # The question names the id too, so only the context is searched.
+        return got.text.split("# Retrieved context")[1], got.citations
+
+    sent, cited = context()
+    # The repro is the leak's shape only if the guide is sent before.
+    assert "About pubguide." in sent and "pubguide" in sent and cited
+    reclassify.reclassify(tmp_path / reclassify.GUIDE, how)
+    sent, cited = context()
+    assert "About pubguide." not in sent and "pubguide" not in sent
+    assert cited == ()

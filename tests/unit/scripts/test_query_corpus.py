@@ -2,7 +2,7 @@
 title: Unit — query_corpus retrieval (stems and excerpts)
 kind: tests
 layer: n/a
-summary: query_corpus scores a node by query-token overlap, and before this two things made it miss: tokens were compared verbatim, so `idempotency` found nothing while `idempotent` found eight nodes; and only tags, title and summary were read, so a term that lives in the body was invisible. Tokens are now lightly stemmed on both sides and the body excerpt counts, below the title and summary, so a body-only match never outranks a summary match. A node at a level outside config/project.json corpus.served_visibilities, or that states none, is cut before scoring, so it is neither a hit nor a neighbour, and the CLI reads the configured list. A served node the CLI prints names no hidden node in its links, children or parent: a public doc linking to a confidential one, built by the real build_corpus and link_corpus, prints neither the confidential doc's id nor its title.
+summary: query_corpus scores a node by query-token overlap, and before this two things made it miss: tokens were compared verbatim, so `idempotency` found nothing while `idempotent` found eight nodes; and only tags, title and summary were read, so a term that lives in the body was invisible. Tokens are now lightly stemmed on both sides and the body excerpt counts, below the title and summary, so a body-only match never outranks a summary match. A node at a level outside config/project.json corpus.served_visibilities, or that states none, is cut before scoring, so it is neither a hit nor a neighbour, and the CLI reads the configured list. A served node the CLI prints names no hidden node in its links, children or parent: a public doc linking to a confidential one, built by the real build_corpus and link_corpus, prints neither the confidential doc's id nor its title. A node whose file under `--root` now states a stricter level is not printed either: in the reviewer's repro, `docs/pubguide.md` reclassified after the build in each of tests/reclassify.py's ways, neither its node nor its id in a served doc's links is printed, and the other tests write each node's file stating its corpus level.
 """
 
 import json
@@ -15,6 +15,8 @@ _ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(_ROOT / "scripts"))
 
 import query_corpus as qc  # noqa: E402
+
+import reclassify  # noqa: E402
 
 pytestmark = pytest.mark.unit
 
@@ -35,6 +37,25 @@ def _node(nid, title="", summary="", excerpt="", tags=(), visibility="internal")
     }
 
 
+def _on_disk(root, corpus):
+    """*corpus* with each node's file written under *root* at `docs/<id>.md`,
+    stating the level its node states (none when the node states none), so
+    the level each file states now is the corpus's."""
+    (root / "docs").mkdir(exist_ok=True)
+    for n in corpus["nodes"]:
+        n["path"] = "docs/%s.md" % n["node_id"]
+        level = n.get("visibility")
+        fm = "visibility: %s\n" % level if isinstance(level, str) else ""
+        (root / n["path"]).write_text("---\n%s---\n" % fm, encoding="utf-8")
+    return corpus
+
+
+def _ids(root, corpus, question, served=_SERVED):
+    """The node ids query returns for *question* over *corpus*, its files on disk."""
+    hits = qc.query(_on_disk(root, corpus), question, served=served, root=str(root))
+    return [n["node_id"] for n in hits]
+
+
 @pytest.mark.parametrize(
     "a, b",
     [
@@ -53,36 +74,29 @@ def test_short_words_are_left_alone():
     assert qc._stem("is") == "is" and qc._stem("axi") == "axi"
 
 
-def test_a_query_finds_a_node_that_uses_another_inflection():
+def test_a_query_finds_a_node_that_uses_another_inflection(tmp_path):
     corpus = {
         "nodes": [
             _node("a", summary="Deterministic and idempotent."),
             _node("b", summary="Other."),
         ]
     }
-    assert [n["node_id"] for n in qc.query(corpus, "idempotency", served=_SERVED)] == [
-        "a"
-    ]
+    assert _ids(tmp_path, corpus, "idempotency") == ["a"]
 
 
-def test_a_body_only_match_counts_but_ranks_below_a_summary_match():
+def test_a_body_only_match_counts_but_ranks_below_a_summary_match(tmp_path):
     corpus = {
         "nodes": [
             _node("body", summary="Unrelated.", excerpt="the corpus links nodes"),
             _node("head", summary="How the corpus is linked."),
         ]
     }
-    assert [
-        n["node_id"] for n in qc.query(corpus, "corpus linking", served=_SERVED)
-    ] == [
-        "head",
-        "body",
-    ]
+    assert _ids(tmp_path, corpus, "corpus linking") == ["head", "body"]
 
 
-def test_acronyms_still_match_verbatim():
+def test_acronyms_still_match_verbatim(tmp_path):
     corpus = {"nodes": [_node("bus", summary="The AXI bus.")]}
-    assert [n["node_id"] for n in qc.query(corpus, "AXI", served=_SERVED)] == ["bus"]
+    assert _ids(tmp_path, corpus, "AXI") == ["bus"]
 
 
 # ---- visibility: a node outside corpus.served_visibilities is absent ---------
@@ -101,14 +115,13 @@ def _hidden_corpus():
     return {"nodes": [hub, secret, unstated, marker]}
 
 
-def test_a_node_outside_the_served_levels_is_neither_a_hit_nor_a_neighbour():
-    hits = qc.query(_hidden_corpus(), "zebra plan", served=_SERVED)
-    assert [n["node_id"] for n in hits] == ["hub"]
+def test_a_node_outside_the_served_levels_is_neither_a_hit_nor_a_neighbour(tmp_path):
+    assert _ids(tmp_path, _hidden_corpus(), "zebra plan") == ["hub"]
 
 
-def test_the_served_levels_decide_which_nodes_are_retrieved():
-    hits = qc.query(_hidden_corpus(), "zebra plan", served=frozenset({"confidential"}))
-    assert [n["node_id"] for n in hits] == ["secret"]
+def test_the_served_levels_decide_which_nodes_are_retrieved(tmp_path):
+    served = frozenset({"confidential"})
+    assert _ids(tmp_path, _hidden_corpus(), "zebra plan", served) == ["secret"]
 
 
 def test_main_prints_only_the_configured_levels(tmp_path, monkeypatch, capsys):
@@ -121,7 +134,7 @@ def test_main_prints_only_the_configured_levels(tmp_path, monkeypatch, capsys):
     corpus = _hidden_corpus()
     corpus["nodes"].append(_node("open", summary="Zebra open.", visibility="public"))
     path = tmp_path / "corpus.json"
-    path.write_text(json.dumps(corpus), encoding="utf-8")
+    path.write_text(json.dumps(_on_disk(tmp_path, corpus)), encoding="utf-8")
     monkeypatch.setattr(qc, "ROOT", str(tmp_path))
     assert qc.main(["zebra", "--corpus", str(path)]) is qc.ExitCode.SUCCESS
     assert [n["node_id"] for n in json.loads(capsys.readouterr().out)] == ["open"]
@@ -203,3 +216,54 @@ def test_a_served_node_names_no_hidden_node_it_links_to(tmp_path, monkeypatch, c
         assert not set(n.get("children", [])) & hidden
         assert n.get("parent") not in hidden
     assert "hush" not in out.lower()
+
+
+# ---- a file reclassified after the build is printed on its level now -------
+
+
+@pytest.mark.parametrize("how", reclassify.HOWS)
+def test_a_node_whose_file_now_states_a_stricter_level_is_not_printed(
+    tmp_path, monkeypatch, capsys, how
+):
+    """The reviewer's repro: the scratch corpus says `docs/pubguide.md` is
+    public, then the file is reclassified on disk (*how*). The CLI prints
+    neither its node nor its id in the links of `guides/open.md`, a public
+    doc that links to it and lives where the reclassify does not reach."""
+    sys.path.insert(0, str(_ROOT / "scripts" / "jobs"))
+    import build_corpus as bc  # noqa: E402
+    import link_corpus as lc  # noqa: E402
+
+    (tmp_path / "guides").mkdir()
+    (tmp_path / "guides" / "open.md").write_text(
+        _doc(
+            "open-guide",
+            "Open guide",
+            "public",
+            "# Open guide\n\nThe zebra notes, and [more](../docs/pubguide.md).\n",
+        ),
+        encoding="utf-8",
+    )
+    reclassify.public_project(tmp_path, "The zebra body.")
+    corpus = lc.link_corpus(bc.build_corpus(str(tmp_path)))
+    path = tmp_path / "wiki" / "corpus.json"
+    path.write_text(json.dumps(corpus), encoding="utf-8")
+    monkeypatch.setattr(qc, "ROOT", str(tmp_path))
+
+    def printed():
+        argv = ["zebra", "--corpus", str(path), "--root", str(tmp_path)]
+        assert qc.main(argv) is qc.ExitCode.SUCCESS
+        nodes = json.loads(capsys.readouterr().out)
+        guide = {n["node_id"] for n in nodes if n["path"] == reclassify.GUIDE}
+        linked = {e["to"] for n in nodes for e in n.get("links", [])}
+        return nodes, guide, linked
+
+    nodes, guide, linked = printed()
+    # The repro is the leak's shape only if the guide is printed and linked.
+    assert "pubguide" in guide and "pubguide" in linked
+    reclassify.reclassify(tmp_path / reclassify.GUIDE, how)
+    nodes, guide, linked = printed()
+    assert nodes and not guide
+    assert not linked & {
+        n["node_id"] for n in corpus["nodes"] if n["path"] == reclassify.GUIDE
+    }
+    assert "About pubguide." not in json.dumps(nodes)

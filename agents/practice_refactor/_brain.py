@@ -244,6 +244,8 @@ def _walk(state):
             state["corpus"],
             "--max-nodes",
             str(state["max_nodes"]),
+            "--root",
+            state["root"],
         ],
         root=state["root"],
     )

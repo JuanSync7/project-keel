@@ -285,6 +285,8 @@ def _retrieve(state):
             state["corpus"],
             "--max-nodes",
             "6",
+            "--root",
+            state["root"],
         ],
         root=state["root"],
     )

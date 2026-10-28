@@ -19,7 +19,7 @@ tool_effect: read-only
 # Query corpus
 
 ## Command
-`python3 scripts/query_corpus.py "QUESTION" [--corpus PATH] [--max-nodes N]`
+`python3 scripts/query_corpus.py "QUESTION" [--corpus PATH] [--max-nodes N] [--root DIR]`
 > Requires Python ≥3.10 (per `pyproject.toml`); an agent invokes it via its own interpreter (`sys.executable`), not a bare `python3`.
 
 ## Purpose
@@ -41,6 +41,7 @@ provenance and accountability.
 | `QUESTION` | yes | — | the question / keywords |
 | `--corpus` | no | `wiki/corpus.json` | corpus to read |
 | `--max-nodes` | no | 8 | retrieval budget |
+| `--root` | no | the project the script ships in | the checkout the corpus's node paths name, whose files are read for their level now |
 
 ## Output
 A JSON array of node objects on stdout, best match first, drawn only from the
@@ -48,15 +49,20 @@ nodes at a level in `config/project.json` `corpus.served_visibilities`: a node
 at any other level, or a corpus row with no `visibility` field, is neither a hit
 nor a neighbour. A document that states no level is built as `internal`, so the
 default serves it.
-`scripts/config_loader.py` `is_served` makes that decision. A printed node's
+`scripts/config_loader.py` `is_served` makes that decision. Each node's file
+under `--root` is also read again (`scripts/corpus_level.py` `stated_now`, once
+per file): `config_loader.is_served_now` keeps a node only when the stricter of
+its corpus level and the level its file states now is served, so a file
+reclassified after the corpus was built, deleted, or whose level cannot be read
+is neither a hit nor a neighbour. A printed node's
 `links`, `children` and `parent` name only other served nodes, because
 `cut_hidden` drops every hidden id from them.
-`tests/unit/scripts/test_query_corpus.py` holds both rules.
+`tests/unit/scripts/test_query_corpus.py` holds these rules.
 No corpus present → prints `[]` and exits 0. A served level outside the
 vocabulary prints nothing to stdout and exits 14.
 
 ## Side effects
-READ-ONLY. Reads the corpus; writes nothing; no model call (retrieval is
+READ-ONLY. Reads the corpus and the files its nodes name; writes nothing; no model call (retrieval is
 deterministic — the model step is the agent's, not this tool's).
 
 ## Used by

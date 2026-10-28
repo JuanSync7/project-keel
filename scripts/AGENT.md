@@ -106,8 +106,8 @@ These rules are **local and authoritative** for this directory. They inherit fro
     3.6-safe, because the hook interpreter reaches it through `child_env.py`.
   - `corpus_level.py` is never run: the one reader of the level a file states
     on disk. `jobs/build_corpus.py` builds each node's level through it, and a
-    reader that reads a document's body from disk asks its `stated_now` and
-    decides with `config_loader.is_served_now`, so the build and the reader
+    reader that checks a node's level on disk now (CONVENTIONS §1 lists them)
+    asks its `stated_now` and decides with `config_loader.is_served_now`, so the build and the reader
     cannot parse a level two ways. A second parser of frontmatter or module
     docstring levels anywhere else is a defect. It imports nothing of the
     project and stays stdlib-only and 3.6-safe, because it sits in the bottom

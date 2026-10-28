@@ -55,7 +55,7 @@ def _project(root, nodes=None):
     served levels are the shipped default, and a corpus whose doc nodes are
     *nodes* (path -> visibility), by default each file _REVIEW names at
     `internal`. Each file is written stating its level too, since a reader
-    that reads a body from disk serves a file only on the level it states
+    that checks a node's file now serves a file only on the level it states
     there now."""
     if nodes is None:
         nodes = {"docs/b.md": "internal", "scripts/README.md": "internal"}
