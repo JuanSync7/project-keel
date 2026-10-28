@@ -538,9 +538,12 @@ names it, such as `echo status`; an unquoted here-document body counts.
 The command name is read as the shell runs it, so `"exit"`, `\exit`,
 `command exit` and `builtin exit` are `exit`; `command -v exit` only
 describes it. An ending in a subshell, `$(...)` or backquotes is judged
-the same, inside double quotes too (`x="$(exit 3)"`); one in a comment, a
-single-quoted word, the rest of a double-quoted word or a here-document body
-is not a command. Neither is a `case` subject or pattern, quoted or not, so
+the same, inside double quotes too (`x="$(exit 3)"`), and so is one in a
+process substitution `<(...)` or `>(...)`, which is a word, so
+`diff <(sort a) <(sort b)` and `done < <(ls)` read; a redirection with no
+target, as `echo x >` at a line's end, is a file the gate cannot read to
+its end. An ending in a comment, a single-quoted word, the rest of a
+double-quoted word or a here-document body is not a command. Neither is a `case` subject or pattern, quoted or not, so
 `case "$1" in exit|quit)` and `return)` end nothing, inside `$(...)` too;
 a command in a clause body is judged, and a `case` with no `in` or no
 `esac` is a file the gate cannot read to its end. A `${...}` closes at its first unquoted `}`, so
