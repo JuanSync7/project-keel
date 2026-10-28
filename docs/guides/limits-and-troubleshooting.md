@@ -518,17 +518,23 @@ path ending in `/exit_codes.sh`, as
 `exit "$EXIT_USAGE"`, `exit ${EXIT_FAILURE}`, `exit_fail` with a member
 other than `SUCCESS` and three non-blank parts, and
 `exit_passthrough "$?"` over a wrapped tool's status, or
-`exit_passthrough "$status"` when every assignment of `status` in the file
-is `status=$?` (a plain assignment or a `local`, `export`, `readonly`,
-`declare` or `typeset` argument). A `return` in a function is held the same
-way: `return "$EXIT_USAGE"`, `return "$?"` or a name so assigned. These are
+`exit_passthrough "$status"` when `status` is assigned at least once and
+every occurrence of it outside a comment and a quoted here-document body is
+the assignment `status=$?` (`"$?"` or `${?}` too, as a word of its own or
+after `local` and its kin) or the plain read `$status` or `${status}`. A
+`return` in a function is held the same way: `return "$EXIT_USAGE"`,
+`return "$?"` or a name so held. These are
 findings at their file and line: `exit 3`, `exit "3"`, `exit $?`, a bare
 `exit`, `exit $((...))`, a member the helper does not set,
 `exit_passthrough` handed a number or a member, which is the script's own
 status, and `exit_passthrough` or `return` handed anything else, which
-renames a status: a name never assigned, assigned another value, or bound by
-`for`, `read` or `getopts`, a positional such as `"$1"`, or `$((...))`. A
-`return` of a number, `0` included, and a bare `return` are findings too.
+renames a status: a name never assigned, a positional such as `"$1"`, or
+`$((...))`. A `return` of a number, `0` included, and a bare `return` are
+findings too. Any other occurrence of a name an ending hands on is a finding
+at its own line, because the gate cannot show it leaves the status alone:
+`status=1`, `let`, `(( ))`, `${status:=1}`, `printf -v`, `read`, `mapfile`,
+`for`, `getopts`, `unset`, a nameref, `${#status}`, and a word that only
+names it, such as `echo status`; an unquoted here-document body counts.
 The command name is read as the shell runs it, so `"exit"`, `\exit`,
 `command exit` and `builtin exit` are `exit`; `command -v exit` only
 describes it. An ending in a subshell, `$(...)` or backquotes is judged

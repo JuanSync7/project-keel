@@ -831,8 +831,10 @@ blank part, an `exit_passthrough` of a number or a member, an
 or of nothing, and an ending that needs the helper on a line before the one
 that sources it, each at its file and line; it reads `"exit"`, `\exit`,
 `command exit` and `builtin exit` as `exit`. `exit_passthrough "$?"`, or
-of a name every assignment of which in the file is `name=$?`, is the shell
-`passthrough`. No shell script is a failure unless
+of a name assigned as `name=$?` and otherwise only read as `$name` or
+`${name}`, is the shell `passthrough`; any other occurrence of that name
+(`let`, `(( ))`, `${name:=...}`, `printf -v`, `read`, a word that only names
+it) is a finding at its own line. No shell script is a failure unless
 config/project.json `shell.no_scripts` gives the reason or
 `shell.enabled` is false; every other finding holds whatever
 `shell.enabled` says.

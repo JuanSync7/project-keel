@@ -2,7 +2,7 @@
 title: Integration — a process ends only through the exit helper, and the exit-code table is the enum
 kind: tests
 layer: n/a
-summary: Three tree-wide gates over every Python file tests/source_tree.py `python_files` lists, and the first over every shell script too (the walk `check_structure.walk` uses), read from the syntax tree. The first fails an exit written anywhere but scripts/exit_codes.py (`sys.exit`, `os._exit`, any `.exit(...)` attribute such as argparse's, `raise SystemExit`, a SystemExit subclass, the builtins `exit` and `quit`, each of those as an attribute of `builtins` or `__builtins__`, and an import that renames any of them), an entry block that hands `finish` nothing while its module imports the helper, or that calls a function of its module and drops the value it returns, a return scripts/exit_code_table.py `read_script` cannot follow to an ExitCode member (a returned name bound by anything but a plain assignment included), a `report` or `fail` call missing one of its three message parts or holding a blank literal one, or handed a code that is not a failure member, a `passthrough` handed the script's own status (the entry function's result, directly or through a name, an int literal, a member, or a function of the module whose every return is one of those, also under a sign, in an arithmetic or `and`/`or` of them, or through a builtin such as `int`), an entry line `finish(passthrough(...))`, and an import of the helper under a second name. The second fails an ExitCode member the generated table in the limits guide does not name and a table row no member backs (scripts/exit_code_table.py `table_findings`). The third fails a `fail` or `finish` call outside the entry block of a module another project module imports (an import from tests/ does not count, and scripts/exit_codes.py is the helper), because a shared module raises or returns and only an entry point ends the process; `passthrough` is no ending, it marks a status and returns it. config/project.json `import_layers.may_end_the_process` names a module that may, with a non-blank reason, and an entry naming no such module is a finding. A walk that finds no Python file, or no entry block, is a failure, never a pass. It does not judge whether a message part is useful, and it cannot see an exit reached through `getattr`, `os.abort`, `os.kill`, an uncaught exception, argparse's own `--help` and usage exits, a `python -c` line in a makefile, or a status dropped by another callable (`asyncio.run(main())`); and it does not check a `passthrough` over a helper that returns another process's status (scripts/run_app.py `_app_status`), which passes by design, nor one over a function some of whose returns are the script's own literals and others a tool's status. The first also reads every file scripts/shell_gate.py `classify` calls a shell script (with no repository yet, every one the structure walk reaches), less scripts/exit_codes.sh itself: a script must source that helper by a path ending in `/exit_codes.sh` and end through it, as `exit "$EXIT_<NAME>"`, `exit_fail "$EXIT_<NAME>" WHAT ON NEXT` with a member other than SUCCESS and no blank part, or `exit_passthrough "$?"` for a wrapped tool's status, or of a name every assignment of which in the file is `name=$?`, never a number or a member; a bare `exit 3`, `exit $?` or `exit` is a finding at its file and line, in a subshell, `$(...)` or backquotes too, inside double quotes or a `${...}` as well (a quoted `}` closes no `${...}`), and so is a status the script renames: an `exit_passthrough` or `return` of anything else (`$((...))`, a positional, a name bound otherwise or by `for`, `read` or `getopts`), and a `return` of a number or of nothing. The command name is read as the shell runs it, so `"exit"`, `\\exit`, `command exit` and `builtin exit` are `exit`, and an ending that needs the helper on a line before the one that sources it is a finding. Comments, quoted words and here-document bodies are not commands; a file it cannot read to its end, such as one with an open quote or nested past `_SH_MAX_DEPTH` levels, is a finding. No shell script is a finding unless config/project.json `shell.no_scripts` gives the reason or `shell.enabled` (the copier answer `shell`) is false; every other finding holds whatever `shell.enabled` says, because it switches the shell tools only. It cannot see `set -e`, `trap`, `exec`, `kill`, an `eval` or `sh -c` string, a `case` pattern inside `$(...)`, or a script that falls off its end after some other ending. The first and third hand their findings to scripts/expiring_tier.py as the checks `exit-helper` and `exit-shared-module`: in the template repository, which holds copier.yml, every finding is red; in a generated project a finding its `expiring_tier.baseline` records warns until `expiring_tier.expires`, and any other is red. Catching SystemExit is not an exit and is not a finding: the exception itself, or a tuple holding it, as the type of an `except` clause or an argument of pytest's `raises`; anywhere deeper in those expressions, and in a `raises` that is not pytest's, it is one. Not a check_* letter: the letters A to Z are taken.
+summary: Three tree-wide gates over every Python file tests/source_tree.py `python_files` lists, and the first over every shell script too (the walk `check_structure.walk` uses), read from the syntax tree. The first fails an exit written anywhere but scripts/exit_codes.py (`sys.exit`, `os._exit`, any `.exit(...)` attribute such as argparse's, `raise SystemExit`, a SystemExit subclass, the builtins `exit` and `quit`, each of those as an attribute of `builtins` or `__builtins__`, and an import that renames any of them), an entry block that hands `finish` nothing while its module imports the helper, or that calls a function of its module and drops the value it returns, a return scripts/exit_code_table.py `read_script` cannot follow to an ExitCode member (a returned name bound by anything but a plain assignment included), a `report` or `fail` call missing one of its three message parts or holding a blank literal one, or handed a code that is not a failure member, a `passthrough` handed the script's own status (the entry function's result, directly or through a name, an int literal, a member, or a function of the module whose every return is one of those, also under a sign, in an arithmetic or `and`/`or` of them, or through a builtin such as `int`), an entry line `finish(passthrough(...))`, and an import of the helper under a second name. The second fails an ExitCode member the generated table in the limits guide does not name and a table row no member backs (scripts/exit_code_table.py `table_findings`). The third fails a `fail` or `finish` call outside the entry block of a module another project module imports (an import from tests/ does not count, and scripts/exit_codes.py is the helper), because a shared module raises or returns and only an entry point ends the process; `passthrough` is no ending, it marks a status and returns it. config/project.json `import_layers.may_end_the_process` names a module that may, with a non-blank reason, and an entry naming no such module is a finding. A walk that finds no Python file, or no entry block, is a failure, never a pass. It does not judge whether a message part is useful, and it cannot see an exit reached through `getattr`, `os.abort`, `os.kill`, an uncaught exception, argparse's own `--help` and usage exits, a `python -c` line in a makefile, or a status dropped by another callable (`asyncio.run(main())`); and it does not check a `passthrough` over a helper that returns another process's status (scripts/run_app.py `_app_status`), which passes by design, nor one over a function some of whose returns are the script's own literals and others a tool's status. The first also reads every file scripts/shell_gate.py `classify` calls a shell script (with no repository yet, every one the structure walk reaches), less scripts/exit_codes.sh itself: a script must source that helper by a path ending in `/exit_codes.sh` and end through it, as `exit "$EXIT_<NAME>"`, `exit_fail "$EXIT_<NAME>" WHAT ON NEXT` with a member other than SUCCESS and no blank part, or `exit_passthrough "$?"` for a wrapped tool's status, or of a name assigned as `name=$?` and otherwise only read as `$name` or `${name}` outside comments and quoted here-document bodies (any other occurrence, `let`, `(( ))`, `${name:=...}`, `printf -v`, `read`, `mapfile`, `for`, a word that only names it, is a finding at its own line), never a number or a member; a bare `exit 3`, `exit $?` or `exit` is a finding at its file and line, in a subshell, `$(...)` or backquotes too, inside double quotes or a `${...}` as well (a quoted `}` closes no `${...}`), and so is a status the script renames: an `exit_passthrough` or `return` of anything else (`$((...))`, a positional, a name never assigned), and a `return` of a number or of nothing. The command name is read as the shell runs it, so `"exit"`, `\\exit`, `command exit` and `builtin exit` are `exit`, and an ending that needs the helper on a line before the one that sources it is a finding. Comments, quoted words and here-document bodies are not commands; a file it cannot read to its end, such as one with an open quote or nested past `_SH_MAX_DEPTH` levels, is a finding. No shell script is a finding unless config/project.json `shell.no_scripts` gives the reason or `shell.enabled` (the copier answer `shell`) is false; every other finding holds whatever `shell.enabled` says, because it switches the shell tools only. It cannot see `set -e`, `trap`, `exec`, `kill`, an `eval` or `sh -c` string, a `case` pattern inside `$(...)`, or a script that falls off its end after some other ending. The first and third hand their findings to scripts/expiring_tier.py as the checks `exit-helper` and `exit-shared-module`: in the template repository, which holds copier.yml, every finding is red; in a generated project a finding its `expiring_tier.baseline` records warns until `expiring_tier.expires`, and any other is red. Catching SystemExit is not an exit and is not a finding: the exception itself, or a tuple holding it, as the type of an `except` clause or an argument of pytest's `raises`; anywhere deeper in those expressions, and in a `raises` that is not pytest's, it is one. Not a check_* letter: the letters A to Z are taken.
 """
 
 import ast
@@ -420,8 +420,18 @@ _SH_ENDS_WELL = 'exit "$EXIT_<NAME>" from %s' % et.HELPER_SH
 # 1000 with pytest's own frames on the stack.
 _SH_MAX_DEPTH = 100
 _SH_HANDS_ON = (
-    'hand it "$?" or a name every assignment of which in this file is name=$?'
+    'hand it "$?" or a name assigned only as name=$? and read only as "$name"'
 )
+# Which uses of a name an `exit_passthrough` or `return` hands on keep it the
+# wrapped tool's status. Every occurrence of the name as a whole word, outside
+# a comment and a quoted here-document body, must be the assignment `name=$?`
+# (`$?`, `"$?"` or `${?}`, as a word of its own or after `local` and its kin)
+# or the plain read `$name` or `${name}`. Any other occurrence is a finding at
+# its line, because the gate cannot show it leaves the status alone: `let`,
+# `(( ))`, `${name:=...}`, `printf -v`, `read`, `mapfile`, `unset`, a nameref,
+# `${#name}` and a word that only names it alike.
+_SH_STATUS_BINDING = re.compile(r'=(")?\$(?:\?|\{\?\})(?(1)")(?=[\s;&|)`]|\Z)')
+_SH_BINDING_AFTER = " \t\n;&|(`"
 
 
 class ShellScanError(Exception):
@@ -443,9 +453,12 @@ class _ShellReader:
     pattern inside `$(...)` or a command a string later runs (`trap`, `eval`,
     `sh -c`)."""
 
-    def __init__(self, text, line=1, depth=0):
+    def __init__(self, text, line=1, depth=0, offset=0):
         self.text, self.i, self.line, self.depth = text, 0, line, depth
         self.commands, self._heredocs = [], []
+        # (start, end) in the whole file's text of each comment and quoted
+        # here-document body: text no command reads.
+        self.offset, self.unread = offset, []
         self.words, self.word, self.word_line = [], None, line
         self.start, self.skip = line, False
 
@@ -597,9 +610,15 @@ class _ShellReader:
             end = self._closing(self.i + 1, "`")
             if end < 0:
                 raise ShellScanError(self.line, "a backquote is never closed")
-            inner = _ShellReader(self.text[self.i + 1 : end], self.line, self.depth)
+            inner = _ShellReader(
+                self.text[self.i + 1 : end],
+                self.line,
+                self.depth,
+                self.offset + self.i + 1,
+            )
             inner.run()
             self.commands.extend(inner.commands)
+            self.unread.extend(inner.unread)
             self._span(end, "a backquote")
 
     def _redirect(self):
@@ -627,9 +646,10 @@ class _ShellReader:
         t = self.text
         while self.i < len(t) and t[self.i] in " \t":
             self.i += 1
-        parts = []
+        parts, quoted = [], False
         while self.i < len(t) and t[self.i] not in _SH_DELIMITER_ENDS:
             c = t[self.i]
+            quoted = quoted or c in "'\"\\"
             if c in "'\"":
                 end = t.find(c, self.i + 1)
                 if end < 0:
@@ -644,12 +664,13 @@ class _ShellReader:
                 self.i += 1
         if not parts:
             raise ShellScanError(self.line, "a here-document names no delimiter")
-        self._heredocs.append(("".join(parts), strip, self.line))
+        self._heredocs.append(("".join(parts), strip, self.line, quoted))
 
     def _heredoc_bodies(self):
         t = self.text
         while self._heredocs:
-            delimiter, strip, opened = self._heredocs.pop(0)
+            delimiter, strip, opened, quoted = self._heredocs.pop(0)
+            begin = self.offset + self.i
             while True:
                 if self.i >= len(t):
                     raise ShellScanError(
@@ -661,6 +682,8 @@ class _ShellReader:
                 self.i, self.line = end + 1, self.line + 1
                 if (body.lstrip("\t") if strip else body) == delimiter:
                     break
+            if quoted:
+                self.unread.append((begin, self.offset + self.i))
 
     def run(self, closer=None):
         """Read from i to the end, or to the unbalanced *closer*."""
@@ -669,7 +692,9 @@ class _ShellReader:
             c = t[self.i]
             if c == "#" and self.word is None:
                 newline = t.find("\n", self.i)
-                self.i = len(t) if newline < 0 else newline
+                end = len(t) if newline < 0 else newline
+                self.unread.append((self.offset + self.i, self.offset + end))
+                self.i = end
             elif c == "\\" and t.startswith("\\\n", self.i):
                 self.i, self.line = self.i + 2, self.line + 1
             elif c == "\\":
@@ -714,7 +739,7 @@ class _ShellReader:
             raise ShellScanError(self.line, "a `$(` is never closed")
         self._end_command()
         if self._heredocs:
-            _delimiter, _strip, opened = self._heredocs[0]
+            _delimiter, _strip, opened, _quoted = self._heredocs[0]
             raise ShellScanError(opened, "a here-document has no body")
 
 
@@ -763,61 +788,60 @@ def _sh_run_words(words):
     return words
 
 
-def _sh_bind(bindings, word):
-    """Record the assignment *word* (`name=value`) in *bindings*."""
-    name, value = word.split("=", 1)
-    bindings.setdefault(name, []).append(value)
-
-
 def shell_commands(text):
-    """([(line, [command name, argument words...])], {name: [value...]}) for
+    """([(line, [command name, argument words...])], [(start, end)]) for
     *text*: each simple command, the assignments and reserved words before it
-    stepped over and its name read as the shell runs it, and each name's
-    bindings, None for one that `for`, `read` or `getopts` makes. Raises
-    ShellScanError when the text cannot be read to its end."""
+    stepped over and its name read as the shell runs it, and the span of each
+    comment and quoted here-document body. Raises ShellScanError when the text
+    cannot be read to its end."""
     reader = _ShellReader(text)
     reader.run()
-    commands, bindings = [], {}
+    commands = []
     for line, words in sorted(reader.commands, key=lambda c: c[0]):
         k = 0
         while k < len(words) and (
             words[k] in _SH_RESERVED or _SH_ASSIGNMENT.match(words[k])
         ):
-            if words[k] not in _SH_RESERVED:
-                _sh_bind(bindings, words[k])
             k += 1
         run = _sh_run_words(words[k:]) if k < len(words) else None
-        if run is None:
+        if run is not None:
+            commands.append((line, run))
+    return commands, reader.unread
+
+
+def _sh_name_uses(text, unread, name):
+    """([line of each `name=$?`], [line of each other use of *name* that is no
+    plain read]) in *text*, outside the *unread* spans, by the rule
+    _SH_STATUS_BINDING states."""
+    bound, other = [], []
+    pattern = re.compile(r"(?<![A-Za-z0-9_])%s(?![A-Za-z0-9_])" % re.escape(name))
+    for match in pattern.finditer(text):
+        start, end = match.span()
+        if any(begin <= start < stop for begin, stop in unread):
             continue
-        head, args = run[0], run[1:]
-        if head in _SH_DECLARE:
-            for arg in args:
-                if _SH_ASSIGNMENT.match(arg):
-                    _sh_bind(bindings, arg)
-        elif head == "for" and args:
-            bindings.setdefault(args[0], []).append(None)
-        elif head == "read":
-            for arg in args:
-                if not arg.startswith("-"):
-                    bindings.setdefault(arg, []).append(None)
-        elif head == "getopts" and len(args) > 1:
-            bindings.setdefault(args[1], []).append(None)
-        commands.append((line, run))
-    return commands, bindings
+        line = text.count("\n", 0, start) + 1
+        before = text[start - 1] if start else "\n"
+        braced = text[start - 2 : start] == "${" and text[end : end + 1] == "}"
+        if before == "$" or braced:
+            continue
+        if before in _SH_BINDING_AFTER and _SH_STATUS_BINDING.match(text, end):
+            bound.append(line)
+        else:
+            other.append(line)
+    return bound, other
 
 
-def _sh_hands_on(word, bindings):
-    """Whether *word* is the last command's status: `$?`, or a name every
-    binding of which in the file is `name=$?` (and there is at least one)."""
-    if _SH_LAST_STATUS.match(word):
-        return True
+def _sh_handed_name(word):
+    """The name *word* reads as `$name` or `${name}`, bare or inside one pair
+    of double quotes, or None."""
     match = _SH_NAME_REF.match(word)
-    if match is None:
-        return False
-    values = bindings.get(match.group(2) or match.group(3), [])
-    return bool(values) and all(
-        value is not None and _SH_LAST_STATUS.match(value) for value in values
-    )
+    return None if match is None else (match.group(2) or match.group(3))
+
+
+def _sh_hands_on(word, judged):
+    """Whether *word* is the last command's status: `$?`, or a name in
+    *judged*, whose every use but a plain read is judged at its own line."""
+    return bool(_SH_LAST_STATUS.match(word)) or _sh_handed_name(word) in judged
 
 
 def _sh_member(word):
@@ -826,7 +850,7 @@ def _sh_member(word):
     return None if match is None else (match.group(2) or match.group(3))
 
 
-def _sh_ending_findings(head, args, known, quiet, bindings):
+def _sh_ending_findings(head, args, known, quiet, judged):
     """What is wrong with one `exit`, `exit_fail`, `exit_passthrough` or
     `return`."""
     said = " ".join([head] + args)
@@ -836,7 +860,7 @@ def _sh_ending_findings(head, args, known, quiet, bindings):
             "`%s` names EXIT_%s, which %s does not set" % (said, member, et.HELPER_SH)
         ]
     if head == _SH_RETURN:
-        return _sh_return_findings(said, args, member, bindings)
+        return _sh_return_findings(said, args, member, judged)
     if head == _SH_EXIT:
         if not args:
             return [
@@ -872,12 +896,12 @@ def _sh_ending_findings(head, args, known, quiet, bindings):
             "`%s` hands the script's own status, not a wrapped tool's; end with %s"
             % (said, _SH_ENDS_WELL)
         ]
-    if not _sh_hands_on(args[0], bindings):
+    if not _sh_hands_on(args[0], judged):
         return ["`%s` renames a wrapped tool's status; %s" % (said, _SH_HANDS_ON)]
     return []
 
 
-def _sh_return_findings(said, args, member, bindings):
+def _sh_return_findings(said, args, member, judged):
     """What is wrong with one `return`: it carries a member, as `exit` does,
     or hands on the last command's status, as `exit_passthrough` does."""
     if not args:
@@ -885,7 +909,7 @@ def _sh_return_findings(said, args, member, bindings):
             '`return` with no status returns the last command\'s; write return "$?" '
             'to hand it on, or return "$EXIT_<NAME>"'
         ]
-    if len(args) == 1 and (member is not None or _sh_hands_on(args[0], bindings)):
+    if len(args) == 1 and (member is not None or _sh_hands_on(args[0], judged)):
         return []
     if len(args) == 1 and _SH_NAME_REF.match(args[0]):
         return ["`%s` renames a status; %s" % (said, _SH_HANDS_ON)]
@@ -895,18 +919,44 @@ def _sh_return_findings(said, args, member, bindings):
     ]
 
 
+def _sh_held_status_findings(text, unread, commands, relpath):
+    """([finding], judged) for the names an `exit_passthrough` or `return`
+    of *commands* hands on: a finding at each line that uses one other than
+    as _SH_STATUS_BINDING allows, and the names used anywhere but in a plain
+    read, whose endings those findings judge instead."""
+    handed = {}
+    for line, (head, *args) in commands:
+        name = _sh_handed_name(args[0]) if len(args) == 1 else None
+        if head in (_SH_PASS, _SH_RETURN) and name is not None:
+            handed.setdefault(name, (line, " ".join([head] + args)))
+    findings, judged = [], set()
+    for name, (at, said) in sorted(handed.items()):
+        bound, other = _sh_name_uses(text, unread, name)
+        if bound or other:
+            judged.add(name)
+        findings.extend(
+            "%s:%d: line %d hands `%s` on as a wrapped tool's status (`%s`), and "
+            "this line uses `%s` other than as %s=$?, $%s or ${%s}, so the gate "
+            "cannot show it still holds that status; assign it only as %s=$? and "
+            'read it only as "$%s"' % ((relpath, line, at, name, said) + (name,) * 6)
+            for line in sorted(set(other))
+        )
+    return findings, judged
+
+
 def shell_file_findings(text, relpath, known, quiet):
     """Every finding of the exit gate over one shell script: an ending not
     through the helper, a script that does not source the helper, and one
     that sources it but never ends through it."""
     try:
-        commands, bindings = shell_commands(text)
+        commands, unread = shell_commands(text)
     except ShellScanError as exc:
         return [
             "%s:%d: cannot be read to its end: %s; close it so the exit gate can "
             "judge the script" % (relpath, exc.line, exc.reason)
         ]
-    findings, sourced, ends, needs = [], None, 0, []
+    findings, judged = _sh_held_status_findings(text, unread, commands, relpath)
+    sourced, ends, needs = None, 0, []
     for line, (head, *args) in commands:
         if head in _SH_SOURCE and args and sourced is None:
             target = args[0].replace('"', "").replace("'", "")
@@ -918,7 +968,7 @@ def shell_file_findings(text, relpath, known, quiet):
                 needs.append((line, " ".join([head] + args)))
             findings.extend(
                 "%s:%d: %s" % (relpath, line, finding)
-                for finding in _sh_ending_findings(head, args, known, quiet, bindings)
+                for finding in _sh_ending_findings(head, args, known, quiet, judged)
             )
     # The helper's names are set only from the line that sources it on, and
     # the text order is the one this reader can see.
@@ -1687,6 +1737,20 @@ _SH_PASSES = {
     "a literal single quote in a quoted expansion": 'echo "${y:-\'}"\n',
     "a nested expansion": "echo ${y:-${z:-a}}\n",
     "a continued failure": 'exit_fail "$EXIT_USAGE" \\\n  "tool: no input" none "pass one"\n',
+    "plain reads of a held status": (
+        'false\nrc=$?\necho "$rc" ${rc} $rc "${rc}"\n'
+        '[ "$rc" -eq 0 ] || exit_passthrough "$rc"\n'
+    ),
+    "a status held by local in two functions": (
+        'f() { false; local rc=$?; return "$rc"; }\n'
+        'g() { false; local rc="${?}"; exit_passthrough "$rc"; }\n'
+    ),
+    "a held status named in a comment": (
+        'false\nrc=$? # rc=3 here would rename it\nexit_passthrough "$rc"\n'
+    ),
+    "a held status named in a quoted here-document": (
+        "false\nrc=$?\ncat <<'EOF'\nrc=3\nEOF\nexit_passthrough \"$rc\"\n"
+    ),
 }
 
 
@@ -1699,6 +1763,8 @@ def test_a_shell_script_that_ends_through_the_helper_has_no_finding(
     assert shell_findings(root) == {"files": 1, "findings": []}
 
 
+# The fragment of the finding at a use of a handed-on name that is no plain read.
+_SH_CANNOT_SHOW = "so the gate cannot show it still holds that status"
 # (body placed on line 3, its finding's line, a fragment of the finding)
 _SH_FINDINGS = {
     "a number": ("exit 3\n", 3, "`exit 3` writes a number"),
@@ -1773,23 +1839,23 @@ _SH_FINDINGS = {
     ),
     "a passthrough of a renamed status": (
         'status=3\nexit_passthrough "$status"\n',
-        4,
-        "renames",
+        3,
+        _SH_CANNOT_SHOW,
     ),
     "a passthrough of a status assigned twice": (
         'false\nstatus=$?\nstatus=1\nexit_passthrough "$status"\n',
-        6,
-        "renames",
+        5,
+        _SH_CANNOT_SHOW,
     ),
     "a passthrough of a loop variable": (
         'for s in 1; do exit_passthrough "$s"; done\n',
         3,
-        "renames",
+        _SH_CANNOT_SHOW,
     ),
     "a passthrough of a read variable": (
         'read -r s\nexit_passthrough "$s"\n',
-        4,
-        "renames",
+        3,
+        _SH_CANNOT_SHOW,
     ),
     "a passthrough of a positional": ('exit_passthrough "$1"\n', 3, "renames"),
     "a passthrough of arithmetic": (
@@ -1801,10 +1867,15 @@ _SH_FINDINGS = {
     "a return of zero": ("f() { return 0; }\n", 3, "`return 0`"),
     "a bare return": ("f() { true; return; }\n", 3, "`return` with no status"),
     "a return of arithmetic": ("f() { return $((2)); }\n", 3, "`return $((2))`"),
+    "a held status written in an unquoted here-document": (
+        'false\nrc=$?\ncat <<EOF\n${rc:=3}\nEOF\nexit_passthrough "$rc"\n',
+        6,
+        _SH_CANNOT_SHOW,
+    ),
     "a return of a renamed status": (
         'f() { s=2; return "$s"; }\n',
         3,
-        "renames",
+        _SH_CANNOT_SHOW,
     ),
     "a continued failure of three parts": (
         'exit_fail "$EXIT_USAGE" \\\n  "tool: no input" none\n',
@@ -1832,6 +1903,54 @@ def test_each_shell_ending_outside_the_helper_is_a_finding_at_its_line(
     (finding,) = result["findings"]
     assert finding.startswith("scripts/tool.sh:%d: " % line), finding
     assert fragment in finding, finding
+
+
+# Each line writes `rc`, or uses it in a way the gate cannot show is a plain
+# read, after `rc=$?` and before `exit_passthrough "$rc"` hands it on.
+_SH_STATUS_WRITES = {
+    "let": "let rc=3",
+    "a quoted let": 'let "rc = 3"',
+    "an arithmetic assignment": "(( rc = 3 ))",
+    "an arithmetic increment": "(( rc++ ))",
+    "an arithmetic expansion": "echo $((rc = 3))",
+    "a default assignment": ': "${rc:=3}"',
+    "an unset-only assignment": ": ${rc=3}",
+    "printf -v": "printf -v rc 3",
+    "read": "read rc",
+    "mapfile": "mapfile rc",
+    "readarray": "readarray -t rc",
+    "an append": "rc+=1",
+    "an element": "rc[0]=3",
+    "a plain assignment": "rc=1",
+    "an assignment of more than the status": "rc=$?1",
+    "unset": "unset rc",
+    "a nameref": "declare -n ref=rc",
+    "a loop": "for rc in 1; do :; done",
+    "getopts": "getopts ab rc",
+    "a local with no value": "f() { local rc; }",
+    "a length": 'echo "${#rc}"',
+    "a word that only names it": "echo rc",
+}
+
+
+@pytest.mark.parametrize(
+    "write", list(_SH_STATUS_WRITES.values()), ids=list(_SH_STATUS_WRITES)
+)
+def test_any_use_of_a_held_status_but_a_plain_read_is_a_finding_at_its_line(
+    tmp_path, monkeypatch, write
+):
+    """A name `exit_passthrough` or `return` hands on is held only if every
+    occurrence of it outside a comment is `name=$?` or the plain read `$name`
+    or `${name}`; any other is one finding at its own line, and the ending
+    that hands it on is none."""
+    body = 'false\nrc=$?\n%s\nexit_passthrough "$rc"\n' % write
+    root = _sh_tree(
+        tmp_path, monkeypatch, {"scripts/tool.sh": _SH_HEAD + body + _SH_TAIL}
+    )
+    (finding,) = shell_findings(root)["findings"]
+    assert finding.startswith("scripts/tool.sh:5: "), finding
+    assert "`rc`" in finding and "line 6" in finding, finding
+    assert _SH_CANNOT_SHOW in finding, finding
 
 
 def test_a_shell_script_that_does_not_source_the_helper_is_a_finding(
