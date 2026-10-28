@@ -2,7 +2,7 @@
 title: Integration — refactor doers (apply_refactor + run_make_target)
 kind: tests
 layer: n/a
-summary: apply_and_gate writes the edit and keeps it when the (injected) gate passes, but reverts EVERY file when it fails — the safety net that keeps the tree green; run_make_target drives a real `make` subprocess in a git work tree and reports its pass/fail, failing a run that changed what git sees (content, index state, or a worktree rename's two paths) and refusing a tree without git, a target annotated [local] then [write], and a variable that would smuggle a [write] target into the run. Together they are the refactor loop's hands + gate. Every tree a test edits carries the template's config/project.json `agents` block, because apply_refactor refuses to plan without its edit policy; in the template, every seeded protected path names a file or directory that exists (the copier answers file, which only a generated project holds, excepted by copier.yml's own `_answers_file`), and every protected name or glob matches a tracked file's name or shares its reason with one that does. Each tree the doer edits is a git work tree tracking its files, under the hermetic git config, because the doer edits only a file git tracks.
+summary: apply_and_gate writes the edit and keeps it when the (injected) gate passes, but reverts EVERY file when it fails — the safety net that keeps the tree green; run_make_target drives a real `make` subprocess in a git work tree and reports its pass/fail, failing a run that changed what git sees (content, index state, or a worktree rename's two paths) and refusing a tree without git, a target annotated [local] then [write], and a variable that would smuggle a [write] target into the run. Together they are the refactor loop's hands + gate. Every tree a test edits carries the template's config/project.json `agents` block, because apply_refactor refuses to plan without its edit policy; in the template, every seeded protected path names a file or directory that exists (the copier answers file, which only a generated project holds, excepted by copier.yml's own `_answers_file`, and a path copier renders, excepted by its twin carrying copier.yml's `_templates_suffix`), and every protected name or glob matches a tracked file's name or shares its reason with one that does. Each tree the doer edits is a git work tree tracking its files, under the hermetic git config, because the doer edits only a file git tracks.
 """
 
 import fnmatch
@@ -210,17 +210,27 @@ def _tracked_names(root):
 
 def test_every_seeded_protected_path_exists_in_the_template():
     """A typo'd seed protects nothing and fails nothing, so the template proves
-    each entry names something real. Only in the template: a generated project
-    lacks copier.yml and holds paths the template does not."""
+    each entry names something real: a path it holds, the answers file copier
+    writes, or a path copier renders from a twin with the template suffix
+    (`.gitlab-ci.yml` from `.gitlab-ci.yml.jinja`). Only in the template: a
+    generated project lacks copier.yml and holds paths the template does not."""
     copier_yml = _ROOT / "copier.yml"
     if not copier_yml.is_file():
         pytest.skip("not a copier template — this is a generated project")
     yaml = optional_deps.importorskip("yaml", extra="template")
-    answers_file = yaml.safe_load(copier_yml.read_text("utf-8"))["_answers_file"]
+    settings = yaml.safe_load(copier_yml.read_text("utf-8"))
+    answers_file = settings["_answers_file"]
+    suffix = settings["_templates_suffix"]
     agents = _template_agents()
     paths = sorted(agents["protected_paths"])
     assert paths and agents["protected_names"], "an empty seed -- zero items"
-    missing = [p for p in paths if p != answers_file and not (_ROOT / p).exists()]
+    missing = [
+        p
+        for p in paths
+        if p != answers_file
+        and not (_ROOT / p).exists()
+        and not (_ROOT / (p + suffix)).is_file()
+    ]
     assert missing == [], missing
     tracked = _tracked_names(_ROOT)
     assert tracked, "git lists no file -- zero items"
