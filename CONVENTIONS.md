@@ -124,6 +124,23 @@ level is built as `internal` (above), so the default serves it. Only a corpus
 row with no `visibility` field at all is treated as hidden: the readers fail
 closed rather than assume a level.
 
+A reader that reads a document's body from disk, rather than the corpus's
+excerpt, also asks the level the file states there now: the doc reviewer, the
+showcase's node route and markdown body, and the practice refactor agent.
+`scripts/corpus_level.py` `stated_now` reads that level with the grammars
+`scripts/jobs/build_corpus.py` builds the corpus with, and
+`config_loader.is_served_now` serves the body only when the stricter of that
+level and the corpus's is served. So a document reclassified after the corpus
+was built is not sent or served. A file whose level cannot be read now, such
+as one deleted, not UTF-8 or with no frontmatter, is not served either. The
+showcase's tree and search still list a reclassified node's title and
+summary from the corpus as it was built, until `make site-data` rebuilds it.
+`stated_now` reads the README.md chain of the path the corpus keeps and of the
+file it really is (`readme_chain`). The corpus build also ranks a file by the
+chain of every other path that links to it (`scripts/check_structure.py`
+`served_chain`). A README.md that only another link's path passes through, made
+stricter after the build, takes effect at the next build.
+
 Readers that never show a node to an audience need no check:
 
 - `scripts/jobs/build_corpus.py`, `scripts/jobs/link_corpus.py` and

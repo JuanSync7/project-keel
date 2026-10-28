@@ -104,6 +104,14 @@ These rules are **local and authoritative** for this directory. They inherit fro
     `report(ExitCode.CONFIG, ...)`. `child_env.py` loads it by path, because
     `child_env.py` itself is imported under two names. It stays stdlib-only and
     3.6-safe, because the hook interpreter reaches it through `child_env.py`.
+  - `corpus_level.py` is never run: the one reader of the level a file states
+    on disk. `jobs/build_corpus.py` builds each node's level through it, and a
+    reader that reads a document's body from disk asks its `stated_now` and
+    decides with `config_loader.is_served_now`, so the build and the reader
+    cannot parse a level two ways. A second parser of frontmatter or module
+    docstring levels anywhere else is a defect. It imports nothing of the
+    project and stays stdlib-only and 3.6-safe, because it sits in the bottom
+    import layer.
   - `launch.py` is the one place that decides where a long script runs and
     the one writer of `launcher.durations_file`; `long_scripts.py` imports its
     config loader and record reader, so the proposal and the decision cannot

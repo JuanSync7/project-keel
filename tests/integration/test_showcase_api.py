@@ -2,7 +2,7 @@
 title: Integration — showcase REST API
 kind: tests
 layer: backend
-summary: The FastAPI showcase router serves overview/features/checks/wiki/search over the live repo. Over a scratch project it serves no node outside corpus.served_visibilities, and a config the loader refuses answers 500 on every request, including one that replaces a config whose model was already loaded, so that model is never reused.
+summary: The FastAPI showcase router serves overview/features/checks/wiki/search over the live repo. Over a scratch project it serves no node outside corpus.served_visibilities, and a config the loader refuses answers 500 on every request, including one that replaces a config whose model was already loaded, so that model is never reused; a document reclassified on disk after the corpus was built, or made unreadable, is answered as unknown by the node route and its body is on no route, though the router's cached model answers.
 """
 
 import json
@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 import optional_deps
+import reclassify
 
 optional_deps.importorskip("fastapi", extra="transport")  # optional transport dep
 optional_deps.importorskip("httpx", extra="dev")  # backs FastAPI's TestClient
@@ -360,3 +361,24 @@ def test_a_refused_config_after_a_served_one_leaves_no_model_to_reuse(tmp_path):
     for _ in range(2):
         r = client.get("/llms-full.txt")
         assert r.status_code == 500 and _CODEWORD not in r.text
+
+
+@pytest.mark.parametrize("how", reclassify.HOWS)
+def test_a_doc_reclassified_after_the_build_is_not_served(tmp_path, how):
+    """The corpus says `docs/pubguide.md` is public; the file then states a
+    stricter level, or none that can be read. The node route answers it as
+    unknown and no route carries its body, though the model the router
+    cached before the change is the one answering: the level is asked of the
+    file on every read."""
+    nodes = reclassify.public_project(tmp_path, _CODEWORD)
+    ids = sorted(n["node_id"] for n in nodes if n["path"] == reclassify.GUIDE)
+    assert "pubguide" in ids
+    scratch = _scratch_client(tmp_path, nodes)
+    before = scratch.get("/api/wiki/node", params={"id": "pubguide"})
+    assert before.status_code == 200 and _CODEWORD in before.json()["markdown"]
+    reclassify.reclassify(tmp_path / reclassify.GUIDE, how)
+    for node_id in ids:
+        r = scratch.get("/api/wiki/node", params={"id": node_id})
+        assert r.status_code == 404, node_id
+    for page in ("/llms-full.txt", "/llms.txt"):
+        assert _CODEWORD not in scratch.get(page).text, page

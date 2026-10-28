@@ -38,19 +38,21 @@ from check_structure import (  # noqa: E402
     _SECTION_CITE,
     _URL_SCHEME,
     CODE_ROOTS,
-    UNREADABLE_README,
     _heading_slug,
     _prose_lines,
     _resolve_link,
     _unfenced_lines,
     kept_markdown,
-    read_readme,
-    readmes_upward,
     served_chain,
     sorted_walk,
-    split_frontmatter,
-    strictest_visibility,
     walked_paths,
+)
+from corpus_level import (  # noqa: E402
+    UNREADABLE_README,
+    docstring_meta,
+    read_readme,
+    readmes_upward,
+    split_frontmatter,
 )
 from exit_codes import ExitCode, finish, report  # noqa: E402
 
@@ -249,29 +251,6 @@ def _first_sentence(text: str) -> str:
         return ""
     m = re.search(r"(.+?[.!?])(\s|$)", text)
     return (m.group(1) if m else text)[:240]
-
-
-def _docstring_meta(doc: str):
-    """Module docstrings in this repo carry title:/summary:/owner: lines."""
-    meta = {}
-    first = ""
-    for line in doc.splitlines():
-        s = line.strip()
-        if not s:
-            continue
-        if ":" in s and s.split(":", 1)[0] in (
-            "title",
-            "summary",
-            "layer",
-            "public_api",
-            "owner",
-            "visibility",
-        ):
-            k, _, v = s.partition(":")
-            meta[k.strip()] = v.strip()
-        elif not first:
-            first = s
-    return meta, first
 
 
 # --------------------------------------------------------------------------- #
@@ -498,7 +477,7 @@ def _sections(body, doc_id, rel, doc_res, doc_visibility, nodes, refs, default):
 
 def _readme_pairs(readmes, root):
     """(path relative to *root*, frontmatter dict) for each README.md in
-    *readmes*, in order, read by scripts/check_structure.py read_readme, the
+    *readmes*, in order, read by scripts/corpus_level.py read_readme, the
     reader check_A judges a README.md by, skipping one that is not there."""
     for readme in readmes:
         fm, _ = read_readme(readme)
@@ -531,10 +510,12 @@ def _chain_visibility(own, readmes):
     stated above it, and a child stating a looser level than an ancestor
     still comes out at the ancestor's, so confidentiality cannot leak through
     a child; to publish a child, lower the README above it."""
-    stated = [own] + [fm.get("visibility") for _, fm in readmes]
-    # `internal` when the whole chain is silent: the level CONVENTIONS §1's
-    # template frontmatter writes, so an unlabelled node is not published.
-    return strictest_visibility(stated) or "internal"
+    # The rule is scripts/config_loader.py chain_level, which a reader that
+    # re-reads a file's level on disk (scripts/corpus_level.py stated_now)
+    # ranks by too, so the build and that reader cannot disagree.
+    return config_loader.chain_level(
+        [own] + [fm.get("visibility") for _, fm in readmes]
+    )
 
 
 def _nearest_readme(readmes, default):
@@ -572,7 +553,7 @@ def _module_and_symbols(path: str, root: str, walked: dict, nodes: list, default
     doc = ast.get_docstring(tree)
     if not doc:
         return  # only documented modules are corpus nodes
-    meta, first = _docstring_meta(doc)
+    meta, first = docstring_meta(doc)
     mod_id = _path_id(rel)
     title = meta.get("title") or rel
     summary = meta.get("summary") or first

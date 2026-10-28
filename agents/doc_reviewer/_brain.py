@@ -2,7 +2,7 @@
 title: Doc reviewer brain
 layer: backend
 public_api: no
-summary: Plan: gather the deterministic doc findings (review_docs) -> retrieve the style rules (query_corpus) -> gate a green baseline -> (propose -> apply+gate+rollback) one finding per step; on a durable Runtime. Judgment only where a rule cannot decide. An execute run needs its approved count of model calls: every call goes through one run's models.ModelMeter, and a resumed run is first checked against the approved model and count (models.approve_resume). Every tool child runs through scripts/resource_limits.py run_tool, held to the reviewed root's config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes`, the root whose make_targets gate keys the gate runner it starts reads, so the time limit is checked against that runner's own limit: past either its session is ended and the step raises ChildTimedOut or ChildOutputTooLarge naming the key. A finding on a file the corpus does not place at a corpus.served_visibilities level (config_loader.is_served), or on any file when the corpus cannot be read, is withheld: reported with why, never sent.
+summary: Plan: gather the deterministic doc findings (review_docs) -> retrieve the style rules (query_corpus) -> gate a green baseline -> (propose -> apply+gate+rollback) one finding per step; on a durable Runtime. Judgment only where a rule cannot decide. An execute run needs its approved count of model calls: every call goes through one run's models.ModelMeter, and a resumed run is first checked against the approved model and count (models.approve_resume). Every tool child runs through scripts/resource_limits.py run_tool, held to the reviewed root's config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes`, the root whose make_targets gate keys the gate runner it starts reads, so the time limit is checked against that runner's own limit: past either its session is ended and the step raises ChildTimedOut or ChildOutputTooLarge naming the key. A finding on a file the corpus does not place at a corpus.served_visibilities level (config_loader.is_served), on a file that states a level outside it on disk now or none that can be read (config_loader.is_served_now over scripts/corpus_level.py stated_now), or on any file when the corpus cannot be read, is withheld: reported with why, never sent.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from runtimes import (
     Step,
     get_runtime,
 )
-from scripts import config_loader
+from scripts import config_loader, corpus_level
 from scripts.resource_limits import run_tool
 
 __all__ = ["review", "DocReviewReport"]
@@ -100,10 +100,14 @@ def _withhold(root, corpus_path):
     not be sent to a model, or None when it may be.
 
     A file may be sent only when the corpus at *corpus_path* has a node for
-    it and config_loader.is_served keeps every such node at *root*'s
-    `corpus.served_visibilities`. Fail closed: a corpus or config that cannot
-    be read withholds every finding, and a file the corpus has no node for
-    is withheld, its level unknown."""
+    it, config_loader.is_served keeps every such node at *root*'s
+    `corpus.served_visibilities`, and config_loader.is_served_now keeps it at
+    the level the file states on disk now (scripts/corpus_level.py
+    stated_now), so a file reclassified after the corpus was built is
+    withheld at its new level. Fail closed: a corpus or config that cannot
+    be read withholds every finding, a file the corpus has no node for is
+    withheld, its level unknown, and so is a file whose level on disk cannot
+    be read."""
     try:
         served = config_loader.served_visibilities(root)
     except config_loader.ConfigError as exc:
@@ -134,6 +138,12 @@ def _withhold(root, corpus_path):
             return "%s has no corpus node, so its level is unknown" % path
         if not all(config_loader.is_served(n, served) for n in found):
             return "%s is at a level outside corpus.served_visibilities" % path
+        now = corpus_level.stated_now(root, path)
+        if not all(config_loader.is_served_now(n, served, now) for n in found):
+            return (
+                "%s states a level outside corpus.served_visibilities on disk "
+                "now, or none that can be read" % path
+            )
         return None
 
     return why

@@ -2,7 +2,7 @@
 title: Unit — check_structure check_O (module header contract) + promoted check_E
 kind: tests
 layer: n/a
-summary: check_O errors on any CODE_ROOTS module whose docstring lacks the explicit, non-empty title:/summary: lines the corpus reads — a docstring that merely EXISTS is the defect (filename-as-title fallback, first-prose-line summary, both then labeled authored). The grammar is a 3.6-safe mirror of build_corpus._docstring_meta, pinned here by a parity test over tricky docstrings rather than by a shared import, because check_structure runs under the 3.6 pre-commit interpreter and must not import a $(PY)-only module. check_E is an ERROR now (ADR-K-0008): an __all__-exported symbol with no docstring is a gap in the corpus, not a note.
+summary: check_O errors on any CODE_ROOTS module whose docstring lacks the explicit, non-empty title:/summary: lines the corpus reads — a docstring that merely EXISTS is the defect (filename-as-title fallback, first-prose-line summary, both then labeled authored). The grammar is a copy of scripts/corpus_level.py docstring_meta, pinned here by a parity test over tricky docstrings. check_E is an ERROR now (ADR-K-0008): an __all__-exported symbol with no docstring is a gap in the corpus, not a note.
 """
 
 import sys
@@ -15,7 +15,7 @@ sys.path.insert(0, str(_ROOT / "scripts"))
 sys.path.insert(0, str(_ROOT / "scripts" / "jobs"))
 
 import check_structure as cs  # noqa: E402
-from build_corpus import _docstring_meta  # noqa: E402
+from corpus_level import docstring_meta  # noqa: E402
 
 pytestmark = pytest.mark.unit
 
@@ -64,7 +64,7 @@ def test_unparseable_module_is_skipped_here():
 
 
 def test_keys_after_prose_still_count():
-    """_docstring_meta scans every line, not just a leading block — the mirror
+    """docstring_meta scans every line, not just a leading block — the mirror
     must accept the same placement or the two would disagree on real files."""
     doc = '"""\nOne prose line first.\n\ntitle: A\nsummary: B\n"""\nX = 1\n'
     assert _findings({"src/a.py": doc}) == []
@@ -88,10 +88,10 @@ _TRICKY_DOCSTRINGS = [
 
 def test_grammar_matches_the_corpus_reader_exactly():
     """The one assertion that keeps the duplicate honest: for every docstring,
-    check_structure._module_meta and build_corpus._docstring_meta extract the
+    check_structure._module_meta and corpus_level.docstring_meta extract the
     SAME title and summary. If either grammar changes alone, this fails."""
     for doc in _TRICKY_DOCSTRINGS:
-        theirs, _first = _docstring_meta(doc)
+        theirs, _first = docstring_meta(doc)
         ours = cs._module_meta(doc)
         for key in ("title", "summary"):
             assert ours.get(key, "") == theirs.get(key, ""), (doc, key)

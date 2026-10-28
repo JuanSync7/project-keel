@@ -2,7 +2,7 @@
 title: Integration — an agent run resumed from a saved snapshot is held to the approved model and count
 kind: tests
 layer: n/a
-summary: scripts/doc_review.py and scripts/refactor_practice.py `--execute` with a snapshot under <root>/wiki/.runtime left by an earlier run refuse (USAGE, no model call, snapshot kept) when the snapshot has more chunks left than the bound the run approves, or was saved on another model than the run names, the registry default included, naming the snapshot to remove; a snapshot the approval covers resumes and calls the model once per chunk left. The brains hold every call to one counted backend: a run whose work outgrows its approved count stops at it with models.CallCapReached, and an execute run with no count is a ValueError before any call. The model is a FakeModel subclass patched into models.registry._REGISTRY under its own name and under the registry default's, so no billed model is reachable, and every tool the brains run as a child process is a stub; each case runs in a project whose corpus places every finding's file at `internal`, so the doc reviewer sends it.
+summary: scripts/doc_review.py and scripts/refactor_practice.py `--execute` with a snapshot under <root>/wiki/.runtime left by an earlier run refuse (USAGE, no model call, snapshot kept) when the snapshot has more chunks left than the bound the run approves, or was saved on another model than the run names, the registry default included, naming the snapshot to remove; a snapshot the approval covers resumes and calls the model once per chunk left. The brains hold every call to one counted backend: a run whose work outgrows its approved count stops at it with models.CallCapReached, and an execute run with no count is a ValueError before any call. The model is a FakeModel subclass patched into models.registry._REGISTRY under its own name and under the registry default's, so no billed model is reachable, and every tool the brains run as a child process is a stub; each case runs in a project whose corpus places every finding's file at `internal` and whose files on disk state no stricter level, so the doc reviewer and the refactor send them.
 """
 
 import json
@@ -75,9 +75,18 @@ def _served_docs(tmp_path):
     """The project every case runs in: a config with the default served
     levels and a corpus placing each finding's file at `internal`, so the
     doc reviewer sends them (agents/doc_reviewer withholds a file it cannot
-    place)."""
+    place). Each finding's and chunk's file is on disk stating no level, so
+    the level it states now is `internal` too: both agents serve a body read
+    from disk only on that level."""
     (tmp_path / "config").mkdir()
     (tmp_path / "config" / "project.json").write_text("{}")
+    for i in range(5):
+        doc = tmp_path / "docs" / ("d%d.md" % i)
+        doc.parent.mkdir(exist_ok=True)
+        doc.write_text("---\ntitle: D\n---\n# D\n")
+        mod = tmp_path / "src" / "backend" / ("m%d.py" % i)
+        mod.parent.mkdir(parents=True, exist_ok=True)
+        mod.write_text('"""\ntitle: M\n"""\n')
     (tmp_path / "wiki").mkdir()
     nodes = [
         {

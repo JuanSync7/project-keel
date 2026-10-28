@@ -67,7 +67,12 @@ node detail, search, the doc tree, links, children, parent, counts and both
 llms files read the same cut. A node at any other level is absent rather than
 redacted, and so is a corpus row with no `visibility` field (a document that
 states no level is built as `internal`, so it is served): `/api/wiki/node` answers 404
-`unknown node`, as for an id the corpus never had. The router reads the key on
+`unknown node`, as for an id the corpus never had. The node route and the
+markdown body also ask the level the file states on disk now
+(`config_loader.is_served_now`), because the body is read from the file: a
+document reclassified after the corpus was built, or one whose level cannot be
+read now, answers 404 too, while the tree and search list it from the corpus
+as built until `make site-data` rebuilds it. The router reads the key on
 each reload, and the export and llms jobs on each run, so a project that serves
 only `public` changes the key, not code. A level outside the vocabulary is a
 config fault: the router answers 500 and each job exits 14 with nothing

@@ -46,7 +46,10 @@ stated skip in its callers (`ModelUnavailable`, `models/`).
 
 A finding is sent to a model only when `wiki/corpus.json` has a node for its
 file and `config_loader.is_served` keeps every such node at the project's
-`corpus.served_visibilities`. Any other finding is **withheld**: the report keeps
+`corpus.served_visibilities`, and `config_loader.is_served_now` keeps it at the
+level the file states on disk now (`scripts/corpus_level.py` `stated_now`), so a
+file reclassified after the corpus was built, or one whose level cannot be read
+now, is not sent. Any other finding is **withheld**: the report keeps
 it in `withheld` as (chunk id, why), its file's text is never read, and no prompt,
 preview or apply carries it. The check fails closed: a corpus or config that
 cannot be read withholds every finding, and a file with no corpus node is

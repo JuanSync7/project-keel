@@ -2,7 +2,7 @@
 title: Integration — practice_refactor gated KG-walking loop
 kind: tests
 layer: backend
-summary: Dry-run walks the graph + gates the read-only baseline but proposes/writes nothing; execute proposes one bounded edit per chunk and a chunk is `refactored` only when the gated apply_refactor keeps make verify green (else rolled back -> `skipped`); a crash mid-refactor resumes at the cursor without re-applying accepted chunks. The gate is the run's: a reply that names a gate is declined before any apply, every apply is bound to its chunk's own file with `--allow`, a chunk with no path is declined before the model is called, and a chunk outside config/project.json corpus.served_visibilities is no candidate. Every tool call hands the refactored root to the runner, so run_tool reads the tool limits, and checks them against the gate keys, of the tree the gate runner reads.
+summary: Dry-run walks the graph + gates the read-only baseline but proposes/writes nothing; execute proposes one bounded edit per chunk and a chunk is `refactored` only when the gated apply_refactor keeps make verify green (else rolled back -> `skipped`); a crash mid-refactor resumes at the cursor without re-applying accepted chunks. The gate is the run's: a reply that names a gate is declined before any apply, every apply is bound to its chunk's own file with `--allow`, a chunk with no path is declined before the model is called, and a chunk outside config/project.json corpus.served_visibilities is no candidate, nor is one whose file states a level outside it on disk now, or none that can be read, as a document reclassified after the corpus was built does; a saved run's chunk from such a file is declined at propose with no model call. Every tool call hands the refactored root to the runner, so run_tool reads the tool limits, and checks them against the gate keys, of the tree the gate runner reads.
 """
 
 import json
@@ -16,13 +16,17 @@ _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT))
 
 from agents.practice_refactor import refactor  # noqa: E402
+from models import ModelMeter  # noqa: E402
 from runtimes import FileCheckpointer  # noqa: E402
+
+import reclassify  # noqa: E402
 
 pytestmark = pytest.mark.integration
 
 # Patch the model + CLI-subprocess seams by dotted path (no import of the private
 # module symbols, so the package boundary holds — tests are callers too).
 _BRAIN = "agents.practice_refactor._brain"
+_CODEWORD = "CODEWORD-ZEBRA"
 
 _NODES = [
     {
@@ -133,6 +137,19 @@ class _Model:
         return _chunk_edit(prompt)
 
 
+def _files(root):
+    """Write the files _NODES name under *root*, each stating no level, so the
+    level they state on disk now is `internal`, as the corpus says: the walk
+    and propose serve a chunk only on the level its file states now."""
+    (root / "config").mkdir(exist_ok=True)
+    (root / "config" / "project.json").write_text("{}")
+    for node in _NODES:
+        f = root / node["path"]
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text('"""\ntitle: %s\nsummary: s.\n"""\n' % node["node_id"])
+    return str(root)
+
+
 def _patch(monkeypatch, runner, model):
     monkeypatch.setattr(_BRAIN + "._run", runner)
     monkeypatch.setattr(_BRAIN + ".get_model", lambda name=None: model)
@@ -144,11 +161,12 @@ def _checkpointer(tmp_path):
     return FileCheckpointer(str(tmp_path / "checkpoints"))
 
 
-def test_dry_run_walks_and_previews_but_never_proposes_or_writes(monkeypatch):
+def test_dry_run_walks_and_previews_but_never_proposes_or_writes(tmp_path, monkeypatch):
     runner, model = _Runner(), _Model()
     _patch(monkeypatch, runner, model)
 
-    rep = refactor("precise-container-types")  # execute defaults to False
+    # execute defaults to False
+    rep = refactor("precise-container-types", root=_files(tmp_path))
 
     assert rep.dry_run is True
     assert rep.candidates == ("n1", "n2")  # the graph was walked
@@ -179,7 +197,7 @@ def test_the_walk_drops_a_node_outside_the_served_levels(tmp_path, monkeypatch):
         "precise-container-types",
         execute=True,
         max_model_calls=8,
-        root=str(_ROOT),
+        root=_files(tmp_path),
         checkpointer=_checkpointer(tmp_path),
     )
 
@@ -197,7 +215,7 @@ def test_red_baseline_attempts_no_refactor(tmp_path, monkeypatch):
         "precise-container-types",
         execute=True,
         max_model_calls=8,
-        root=str(_ROOT),
+        root=_files(tmp_path),
         checkpointer=_checkpointer(tmp_path),
     )
 
@@ -217,7 +235,7 @@ def test_execute_applies_each_accepted_chunk_and_the_gate_keeps_it(
         "precise-container-types",
         execute=True,
         max_model_calls=8,
-        root=str(_ROOT),
+        root=_files(tmp_path),
         checkpointer=_checkpointer(tmp_path),
     )
 
@@ -236,6 +254,8 @@ def test_every_tool_child_is_bounded_by_the_refactored_roots_limits(
     runner, model = _Runner(gate_ok=True), _Model()
     _patch(monkeypatch, runner, model)
     root = tmp_path / "tree"
+    root.mkdir()
+    _files(root)
     rep = refactor(
         "precise-container-types",
         execute=True,
@@ -258,7 +278,7 @@ def test_gate_red_rolls_back_so_the_chunk_is_skipped_not_refactored(
         "precise-container-types",
         execute=True,
         max_model_calls=8,
-        root=str(_ROOT),
+        root=_files(tmp_path),
         checkpointer=_checkpointer(tmp_path),
     )
 
@@ -277,7 +297,7 @@ def test_model_declining_a_chunk_skips_it_without_touching_apply(tmp_path, monke
         "precise-container-types",
         execute=True,
         max_model_calls=8,
-        root=str(_ROOT),
+        root=_files(tmp_path),
         checkpointer=_checkpointer(tmp_path),
     )
 
@@ -300,7 +320,7 @@ def test_a_reply_that_names_a_gate_is_declined_and_never_applied(tmp_path, monke
         "precise-container-types",
         execute=True,
         max_model_calls=8,
-        root=str(_ROOT),
+        root=_files(tmp_path),
         checkpointer=_checkpointer(tmp_path),
     )
 
@@ -333,7 +353,7 @@ def test_each_apply_is_bound_to_the_chunks_own_file(tmp_path, monkeypatch):
         "precise-container-types",
         execute=True,
         max_model_calls=8,
-        root=str(_ROOT),
+        root=_files(tmp_path),
         checkpointer=_checkpointer(tmp_path),
         gate="verify",
     )
@@ -344,9 +364,11 @@ def test_each_apply_is_bound_to_the_chunks_own_file(tmp_path, monkeypatch):
         "src/backend/b.py",
     ]
     assert [_flag(a, "--gate") for a in applies] == ["verify", "verify"]
-    # A chunk with no path cannot be bound, so it is declined before the
-    # model is paid for it, and never applied.
-    assert rep.skipped == ("n3",) and len(applies) == 2 and model.n == 2
+    # A chunk with no path cannot be bound, and has no file whose level can
+    # be read now, so the walk drops it: no candidate, no model call, never
+    # applied.
+    assert rep.candidates == ("n1", "n2") and rep.skipped == ()
+    assert len(applies) == 2 and model.n == 2
 
 
 def test_no_matching_nodes_reports_empty_candidates(monkeypatch):
@@ -364,6 +386,7 @@ def test_crash_mid_refactor_resumes_without_reapplying(engine, tmp_path, monkeyp
     if engine == "langgraph":
         pytest.importorskip("langgraph")
     (tmp_path / "wiki").mkdir()
+    _files(tmp_path)
 
     runner = _Runner()
     calls = {"n": 0}
@@ -408,14 +431,17 @@ def test_crash_mid_refactor_resumes_without_reapplying(engine, tmp_path, monkeyp
     assert runner.calls.count("apply_refactor") == 2
 
 
-def test_cli_entrypoint_dry_run_reports_candidates_as_json(monkeypatch, capsys):
+def test_cli_entrypoint_dry_run_reports_candidates_as_json(
+    tmp_path, monkeypatch, capsys
+):
     # The thin scripts/ doer behind the practice-refactor skill: it must drive the
     # agent and stay a pass-through (no logic of its own).
     sys.path.insert(0, str(_ROOT / "scripts"))
     import refactor_practice as rp  # noqa: E402
 
     _patch(monkeypatch, _Runner(), _Model())
-    rc = rp.main(["precise-container-types", "--json"])  # dry-run by default
+    # dry-run by default
+    rc = rp.main(["precise-container-types", "--json", "--root", _files(tmp_path)])
 
     assert rc == 0
     out = json.loads(capsys.readouterr().out)
@@ -442,3 +468,53 @@ def test_cli_entrypoint_reports_an_unavailable_model_as_a_skip(monkeypatch, caps
     monkeypatch.setattr(rp, "refactor", no_model)
     assert rp.main(["precise-container-types", "--execute"]) == 0
     assert "skipping" in capsys.readouterr().out
+
+
+class _Recording(_Model):
+    """_Model that keeps each prompt it is sent."""
+
+    def __init__(self):
+        super().__init__()
+        self.prompts = []
+
+    def run(self, prompt):
+        self.prompts.append(prompt)
+        return super().run(prompt)
+
+
+@pytest.mark.parametrize("how", reclassify.HOWS)
+def test_a_doc_reclassified_after_the_build_never_reaches_a_prompt(
+    tmp_path, monkeypatch, how
+):
+    """The corpus says docs/pubguide.md is public; the file then states a
+    stricter level, or none that can be read. The walk asks the level the
+    file states now, so no candidate, preview or prompt carries its text, and
+    a chunk a saved run queued before the change is declined at propose with
+    no model call."""
+    nodes = reclassify.public_project(tmp_path, _CODEWORD)
+    runner, model = _Runner(nodes=nodes), _Recording()
+    _patch(monkeypatch, runner, model)
+
+    def run(store):
+        # A fresh store each run, so the second never resumes the first.
+        return refactor(
+            "precise-container-types",
+            execute=True,
+            max_model_calls=8,
+            root=str(tmp_path),
+            checkpointer=FileCheckpointer(str(tmp_path / store)),
+        )
+
+    before = run("before")
+    # The text reaches a prompt while the file is public, so a leak is seen.
+    assert before.candidates and any(_CODEWORD in p for p in model.prompts)
+    reclassify.reclassify(tmp_path / reclassify.GUIDE, how)
+    model.prompts.clear()
+    after = run("after")
+    assert after.candidates == () and _CODEWORD not in after.preview
+    assert model.prompts == []
+    brain = sys.modules[_BRAIN]
+    state = {"root": str(tmp_path), "practice": "p", "chunks": nodes, "cursor": 0}
+    meter = ModelMeter(None, 8, lambda name: model)
+    assert brain._propose(state, meter) == {"spec": None}
+    assert model.prompts == []

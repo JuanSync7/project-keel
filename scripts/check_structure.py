@@ -179,6 +179,14 @@ import child_env  # noqa: E402
 import config_loader  # noqa: E402
 import exit_codes  # noqa: E402
 import run_date  # noqa: E402
+from corpus_level import (  # noqa: E402,F401 - re-exported for check_A's readers
+    UNREADABLE_README,
+    UNREADABLE_VISIBILITY,
+    read_readme,
+    readme_chain,
+    readmes_upward,
+    split_frontmatter,
+)
 
 # Run as a script this module is `__main__`; a project check's `import
 # check_structure` must get THIS module (its live ROOT and helpers), not load a
@@ -273,25 +281,9 @@ STATUSES = {
 VISIBILITY_ORDER = ("public", "internal", "confidential", "restricted")
 VISIBILITIES = set(VISIBILITY_ORDER)
 
-
-def strictest_visibility(stated):
-    """The most restrictive of the *stated* visibilities, None and empty
-    skipped, or None when nothing is stated. A value outside VISIBILITY_ORDER
-    outranks every member: it cannot be ranked, so it is kept rather than read
-    as a looser level, and check_A and check_corpus refuse it wherever it lands."""
-    strictest = None
-    rank = -1
-    for value in stated:
-        if not value:
-            continue
-        here = (
-            VISIBILITY_ORDER.index(value)
-            if value in VISIBILITY_ORDER
-            else len(VISIBILITY_ORDER)
-        )
-        if here > rank:
-            strictest, rank = value, here
-    return strictest
+# The ranking is the loader's, so the corpus build and every reader that
+# re-reads a file's level on disk rank by the one rule.
+strictest_visibility = config_loader.strictest_visibility
 
 
 REQUIRED_KEYS = (
@@ -554,58 +546,6 @@ def parse_frontmatter(path):
     return None  # block never closed
 
 
-def split_frontmatter(text):
-    """(frontmatter dict or None, body after the closing `---`) of a document's
-    *text*: None when it does not open with `---`, and every top-level
-    `key: value` up to the end of the text when the block never closes. The
-    corpus's parse, which build_corpus reads every document by. Pure."""
-    if not text.startswith("---"):
-        return None, text
-    lines = text.splitlines()
-    data = {}
-    body_start = len(lines)
-    for i in range(1, len(lines)):
-        if lines[i].strip() == "---":
-            body_start = i + 1
-            break
-        line = lines[i]
-        if line[:1] in (" ", "\t"):
-            continue
-        if ":" in line:
-            k, _, v = line.partition(":")
-            data[k.strip()] = v.strip()
-    return data, "\n".join(lines[body_start:])
-
-
-# The visibility a README.md that cannot be read passes on. It is outside
-# VISIBILITY_ORDER on purpose, so it outranks every level and check_corpus
-# refuses each node it reaches.
-UNREADABLE_VISIBILITY = "unreadable-readme"
-# The frontmatter a README.md that cannot be read stands for. Matched by
-# identity, so a README that writes `visibility: unreadable-readme` is still
-# a readable README with an invalid level, for check_A to refuse.
-UNREADABLE_README = {"visibility": UNREADABLE_VISIBILITY}
-
-
-def read_readme(path):
-    """(frontmatter, fault) of the README.md at *path*, the one read of the
-    level a README states: build_corpus ranks a node by it and check_A judges
-    a README.md the walk skips by it, so the two cannot disagree. (None, None)
-    when no name is at *path*; ({}, None) for a file with no frontmatter
-    block. A name that is there but cannot be read (a dangling or looping
-    link, a directory, a permission or decode fault) is (UNREADABLE_README,
-    the fault): it may state any level, so it is never absent. utf-8-sig, so
-    a BOM-saved README states the level it shows."""
-    if not os.path.lexists(path):
-        return None, None
-    try:
-        with open(path, encoding="utf-8-sig") as fh:
-            fm, _ = split_frontmatter(fh.read())
-    except UNREADABLE as e:
-        return UNREADABLE_README, e
-    return fm or {}, None
-
-
 def check_frontmatter(path, seen_ids):
     fm = parse_frontmatter(path)
     if fm is None:
@@ -645,22 +585,6 @@ def check_frontmatter(path, seen_ids):
         err("%s: status is '%s' but no 'superseded_by' is set" % (rel(path), status))
     if not fm.get("owner"):
         warn("%s: frontmatter missing 'owner'" % rel(path))
-
-
-def readmes_upward(dirpath, root):
-    """The README.md path of each directory from *dirpath* up to *root*,
-    nearest first, each joined the way *dirpath* is and whether or not it
-    exists; a caller keeps the ones it can find. Pure."""
-    chain = []
-    d = dirpath
-    while True:
-        chain.append(os.path.join(d, "README.md"))
-        if os.path.abspath(d) == os.path.abspath(root):
-            return chain
-        parent = os.path.dirname(d)
-        if parent == d:
-            return chain
-        d = parent
 
 
 def sorted_walk(root):
@@ -709,27 +633,6 @@ def served_chain(path, root, walked):
         for readme in readme_chain(reached, root):
             if readme not in chain:
                 chain.append(readme)
-    return chain
-
-
-def readme_chain(path, root):
-    """The README.md paths a node at *path* takes its visibility from,
-    nearest first: readmes_upward of the path the walk reached it by, then,
-    when *path* is a symlink to a file elsewhere inside *root*, readmes_upward
-    of the file it really is, each spelled under *root* as given.
-    build_corpus ranks a node by this chain and check_A judges a file by it,
-    so the two cannot disagree. A link into an open directory therefore
-    cannot publish a confidential file; a target outside *root* adds nothing,
-    so the walk never climbs out of the tree."""
-    chain = readmes_upward(os.path.dirname(path), root)
-    real_root = os.path.realpath(root)
-    real_dir = os.path.dirname(os.path.realpath(path))
-    walked_dir = os.path.realpath(os.path.dirname(path))
-    # A target in the root directory itself adds nothing: the root README.md
-    # ends every walked chain already.
-    if real_dir != walked_dir and real_dir.startswith(real_root + os.sep):
-        under_root = os.path.join(root, os.path.relpath(real_dir, real_root))
-        chain += readmes_upward(under_root, root)
     return chain
 
 
@@ -3075,11 +2978,9 @@ def check_M():
 
 def _module_meta(doc):
     """title:/summary: (etc.) lines of a module docstring, extracted with EXACTLY
-    build_corpus._docstring_meta's grammar: strip the line, match a known key
-    before the first colon, strip the value, last occurrence wins. Duplicated,
-    not imported — scripts/jobs/build_corpus.py is $(PY)-only and this file runs
-    under the 3.6 pre-commit interpreter, so a shared import would couple the
-    interpreter floors. The two grammars are pinned to each other by
+    scripts/corpus_level.py docstring_meta's grammar: strip the line, match a
+    known key before the first colon, strip the value, last occurrence wins. A
+    copy, not an import; the two grammars are pinned to each other by
     tests/unit/scripts/test_check_o.py::test_grammar_matches_the_corpus_reader_exactly."""
     meta = {}
     for line in doc.splitlines():

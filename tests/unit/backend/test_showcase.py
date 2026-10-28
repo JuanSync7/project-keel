@@ -551,7 +551,16 @@ def _hidden_sc(tmp_path, served=_SERVED):
         "---\nvisibility: confidential\n---\n# Secret\n\n## Plan\n%s\n" % _CODEWORD,
         "utf-8",
     )
-    (tmp_path / "README.md").write_text("# Readme\nbody\n", "utf-8")
+    # Each served file states its level on disk too, as a body read from disk
+    # is served only on the strictest of the corpus's level and the file's now.
+    (tmp_path / "README.md").write_text(
+        "---\ntitle: Readme\n---\n# Readme\nbody\n", "utf-8"
+    )
+    (tmp_path / "docs" / "guide.md").write_text(
+        "---\ntitle: Guide\nvisibility: public\n---\n# Guide\n", "utf-8"
+    )
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "mod.py").write_text('"""\ntitle: Mod\n"""\n', "utf-8")
     return Showcase(
         name="demoproj",
         project=_project(),

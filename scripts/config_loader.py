@@ -2,7 +2,7 @@
 title: config_loader — the one way a configured value enters a process
 kind: script
 layer: n/a
-summary: Every configured value comes through here: a key of config/project.json or config/practices.json, or an environment variable the config declares. KEYS is the one table of declared keys, each row a Key giving its path (a tuple of segments, since a segment may hold a dot), its type from the closed set TYPES, its default or NONE (required exactly when the default is NONE, so a default of null stays distinct from no default), whether it is a secret, a one-line meaning, the variable that may set it, the file it lives in (None for a variable-only row) and an optional bound. `read(root, relpath)` is the one open and parse of a config file: a missing file is ConfigAbsent, and an OSError, bytes that are not UTF-8, text that is not JSON (a NaN constant, a byte-order mark and a key written twice in one object included), or a top level that is not an object is ConfigUnreadable, naming a merge-conflict hunk an update left by its line through scripts/jobs/conflict_guard.py's grammar, loaded by path (when it cannot load, the parse error says the markers were not checked). `resolve(loaded, rows, where)` walks the rows in sorted path order. Precedence: a row that names a variable takes that variable when it is set and not empty, else the file's value; a row with no variable reads the file only; a variable-only row reads its variable only; an empty variable is not set. A set value of the wrong type or out of its bound is one line `<where>: <key> is <JSON type>[ <value>]; accepted: <what>` (a null shown by its type alone), a refused list of strings ending `; refused members: <each member refused on its own>` or, when only a repeat is refused, `; repeated members: <them>`, naming the environment and the variable instead when the value came from a variable, the value never shown for a secret, and a string holding an `@` anywhere, which may begin a URL user part (a credential under any key name) however the URL is spelled, shown as `<hidden: it holds an @>`. A URL bound refuses whitespace, a control character, `@`, `?`, `#`, a backslash, and a value urllib cannot split or whose port it cannot read, so a malformed URL is a refusal and never a traceback. An unset key with a default takes it and writes `[using default] <key> = <canonical JSON value>  (not set; to change it, set <key> in <where>)` to stderr once per (where, key) per process, a secret's value written `<hidden>`. Each unset required key is `[not set] <key>  (required, no default; set <key> in <where>)`; every wrong and every not-set line is written before one raise, WrongValue when any value is wrong, else NotSet carrying the sorted keys. It never ends the process: the entry point that called it returns report(ExitCode.CONFIG, ...). `env(name)` is the one literal-name read of a declared variable and refuses a name neither a row nor the config declares (declared_variables). `is_owner_token` and `is_unowned` are CONVENTIONS §12's owner grammar and its `TBD` placeholder in any letter case, shared by the default-owner row's bound, check_F and the corpus build. `VISIBILITY_ORDER` is CONVENTIONS §1's visibility vocabulary, least restrictive first, and `served_visibilities(root)` resolves `corpus.served_visibilities`, the levels every corpus reader the project serves may show, refusing a level outside that vocabulary or one written twice; `is_served(node, served)` is the one served-or-not decision every such reader makes (a node that states no level is not served), and `cut_hidden(node, shown)` drops the ids of nodes outside *shown* from a served node's links, children and parent. It registers itself under both `config_loader` and `scripts.config_loader`, and as the `config_loader` attribute of the `scripts` package that holds it, so either import name, in either order, gives one module, one announced set and one set of exception classes. Never run, stdlib-only and 3.6-safe: child_env and check_structure read through it under the hook interpreter. It reads and writes nothing else, and it caches nothing, so the same file and environment give the same values and lines.
+summary: Every configured value comes through here: a key of config/project.json or config/practices.json, or an environment variable the config declares. KEYS is the one table of declared keys, each row a Key giving its path (a tuple of segments, since a segment may hold a dot), its type from the closed set TYPES, its default or NONE (required exactly when the default is NONE, so a default of null stays distinct from no default), whether it is a secret, a one-line meaning, the variable that may set it, the file it lives in (None for a variable-only row) and an optional bound. `read(root, relpath)` is the one open and parse of a config file: a missing file is ConfigAbsent, and an OSError, bytes that are not UTF-8, text that is not JSON (a NaN constant, a byte-order mark and a key written twice in one object included), or a top level that is not an object is ConfigUnreadable, naming a merge-conflict hunk an update left by its line through scripts/jobs/conflict_guard.py's grammar, loaded by path (when it cannot load, the parse error says the markers were not checked). `resolve(loaded, rows, where)` walks the rows in sorted path order. Precedence: a row that names a variable takes that variable when it is set and not empty, else the file's value; a row with no variable reads the file only; a variable-only row reads its variable only; an empty variable is not set. A set value of the wrong type or out of its bound is one line `<where>: <key> is <JSON type>[ <value>]; accepted: <what>` (a null shown by its type alone), a refused list of strings ending `; refused members: <each member refused on its own>` or, when only a repeat is refused, `; repeated members: <them>`, naming the environment and the variable instead when the value came from a variable, the value never shown for a secret, and a string holding an `@` anywhere, which may begin a URL user part (a credential under any key name) however the URL is spelled, shown as `<hidden: it holds an @>`. A URL bound refuses whitespace, a control character, `@`, `?`, `#`, a backslash, and a value urllib cannot split or whose port it cannot read, so a malformed URL is a refusal and never a traceback. An unset key with a default takes it and writes `[using default] <key> = <canonical JSON value>  (not set; to change it, set <key> in <where>)` to stderr once per (where, key) per process, a secret's value written `<hidden>`. Each unset required key is `[not set] <key>  (required, no default; set <key> in <where>)`; every wrong and every not-set line is written before one raise, WrongValue when any value is wrong, else NotSet carrying the sorted keys. It never ends the process: the entry point that called it returns report(ExitCode.CONFIG, ...). `env(name)` is the one literal-name read of a declared variable and refuses a name neither a row nor the config declares (declared_variables). `is_owner_token` and `is_unowned` are CONVENTIONS §12's owner grammar and its `TBD` placeholder in any letter case, shared by the default-owner row's bound, check_F and the corpus build. `VISIBILITY_ORDER` is CONVENTIONS §1's visibility vocabulary, least restrictive first, and `served_visibilities(root)` resolves `corpus.served_visibilities`, the levels every corpus reader the project serves may show, refusing a level outside that vocabulary or one written twice; `is_served(node, served)` is the one served-or-not decision every such reader makes (a node that states no level is not served); `strictest_visibility` ranks stated levels (a value outside the vocabulary outranks every member), `chain_level` is the level the corpus gives a node from its own and its README chain's stated levels (the strictest, else `internal`), and `is_served_now(node, served, stated_now)` is the decision of a reader that reads a body from disk: the stricter of the node's corpus level and the level its file states now (scripts/corpus_level.py stated_now) must be served, and a file whose level cannot be read is not; and `cut_hidden(node, shown)` drops the ids of nodes outside *shown* from a served node's links, children and parent. It registers itself under both `config_loader` and `scripts.config_loader`, and as the `config_loader` attribute of the `scripts` package that holds it, so either import name, in either order, gives one module, one announced set and one set of exception classes. Never run, stdlib-only and 3.6-safe: child_env and check_structure read through it under the hook interpreter. It reads and writes nothing else, and it caches nothing, so the same file and environment give the same values and lines.
 effect: read-only
 """
 
@@ -57,18 +57,21 @@ __all__ = [
     "Key",
     "NotSet",
     "WrongValue",
+    "chain_level",
     "cut_hidden",
     "declared_variables",
     "env",
     "is_advisory_id",
     "is_null_spelling",
     "is_served",
+    "is_served_now",
     "is_owner_token",
     "is_unowned",
     "read",
     "resolve",
     "rows",
     "served_visibilities",
+    "strictest_visibility",
 ]
 
 CONFIG_FILE = os.path.join("config", "project.json")
@@ -2025,6 +2028,56 @@ def is_served(node: Mapping[str, Any], served: Collection[str]) -> bool:
     never assumed open."""
     level = node.get("visibility")
     return isinstance(level, str) and level in served
+
+
+def strictest_visibility(stated: Iterable[Optional[str]]) -> Optional[str]:
+    """The most restrictive of the *stated* visibilities, None and empty
+    skipped, or None when nothing is stated. A value outside VISIBILITY_ORDER
+    outranks every member: it cannot be ranked, so it is kept rather than read
+    as a looser level, and check_A and check_corpus refuse it wherever it lands."""
+    strictest = None
+    rank = -1
+    for value in stated:
+        if not value:
+            continue
+        here = (
+            VISIBILITY_ORDER.index(value)
+            if value in VISIBILITY_ORDER
+            else len(VISIBILITY_ORDER)
+        )
+        if here > rank:
+            strictest, rank = value, here
+    return strictest
+
+
+def chain_level(stated: Iterable[Optional[str]]) -> str:
+    """The level a corpus node takes from *stated*, its own level and its
+    README chain's (scripts/corpus_level.py stated_levels): the most
+    restrictive stated, else `internal`, the level CONVENTIONS §1's template
+    frontmatter writes, so an unlabelled node is not published. A child
+    stating a looser level than an ancestor still comes out at the
+    ancestor's, so confidentiality cannot leak through a child."""
+    return strictest_visibility(stated) or "internal"
+
+
+def is_served_now(
+    node: Mapping[str, Any],
+    served: Collection[str],
+    stated_now: Optional[Iterable[Optional[str]]],
+) -> bool:
+    """True when corpus *node* may be served by a reader that reads its body
+    from disk: the stricter of the node's corpus level and the level its file
+    states now (*stated_now*, scripts/corpus_level.py stated_now, ranked by
+    chain_level) is one of *served*. A file reclassified after the corpus was
+    built is therefore served at its new level, never its old one. Fail
+    closed: is_served must hold, and *stated_now* None (a file whose level
+    cannot be read) or a level outside VISIBILITY_ORDER is not served."""
+    if not is_served(node, served) or stated_now is None:
+        return False
+    now = chain_level(stated_now)
+    if now not in VISIBILITY_ORDER:
+        return False
+    return strictest_visibility([node["visibility"], now]) in served
 
 
 def cut_hidden(node: Mapping[str, Any], shown: Collection[str]) -> Dict[str, Any]:

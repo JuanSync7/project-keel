@@ -12,6 +12,8 @@ import os
 from collections.abc import Collection
 from typing import Any
 
+from scripts import config_loader, corpus_level
+
 from backend.shared import display_title
 
 from . import _content, _data, _llms, _query
@@ -44,6 +46,10 @@ class Showcase:
     ``served_visibilities`` is config/project.json
     ``corpus.served_visibilities`` as the caller resolved it: the corpus is
     cut to those levels once, here, so no accessor can name a node at another.
+    With a ``root``, ``node`` and ``markdown`` also ask the level the node's
+    file states on disk now (``config_loader.is_served_now``), so a file
+    reclassified after the corpus was built is neither shown nor read. With
+    no ``root`` the model reads no file, so the corpus level is the only one.
     """
 
     def __init__(
@@ -63,7 +69,17 @@ class Showcase:
         self._practices = practices or {}
         self._present = present_scripts
         self._root = root
+        self._served = frozenset(served_visibilities)
         self._by_id = {n["node_id"]: n for n in self._corpus.get("nodes", [])}
+
+    def _served_now(self, n: dict[str, Any]) -> bool:
+        # Asked on every read, not once at load: the router reloads only when
+        # the config or the corpus changes, and a reclassified file changes
+        # neither.
+        if not self._root:
+            return True
+        now = corpus_level.stated_now(self._root, n.get("path"))
+        return config_loader.is_served_now(n, self._served, now)
 
     # -- curated narrative ---------------------------------------------------
     def features(self) -> tuple[Feature, ...]:
@@ -209,7 +225,12 @@ class Showcase:
         return _query.doc_tree(self._corpus)
 
     def node(self, node_id: str) -> NodeDetail | None:
-        """One corpus node with its resolved neighbours, or None if unknown."""
+        """One corpus node with its resolved neighbours, or None if unknown or
+        if its file now states a level outside the served ones, or none that
+        can be read."""
+        n = self._by_id.get(node_id)
+        if n is None or not self._served_now(n):
+            return None
         return _query.node_detail(self._corpus, node_id)
 
     def search(self, query: str, limit: int = 10) -> tuple[SearchHit, ...]:
@@ -223,13 +244,17 @@ class Showcase:
         modules/symbols return their docstring as a fenced code block. Reading
         on demand (rather than storing bodies in the corpus) keeps the corpus
         small and the content perfectly in sync with the file on disk. Returns
-        "" for an unknown node and the corpus excerpt if the file can't be read.
+        "" for an unknown node and for a node whose file now states a level
+        outside the served ones or none that can be read, a file that cannot
+        be read included; a Showcase with no root reads no file and returns
+        the corpus excerpt.
         """
         n = self._by_id.get(node_id)
-        if n is None:
+        if n is None or not self._served_now(n):
             return ""
-        rel = n.get("path", "")
-        path = os.path.join(self._root, rel) if self._root else rel
+        if not self._root:
+            return str(n.get("text_excerpt", ""))
+        path = os.path.join(self._root, n.get("path", ""))
         try:
             with open(path, encoding="utf-8") as fh:
                 text = fh.read()

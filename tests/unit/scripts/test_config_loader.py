@@ -2,7 +2,7 @@
 title: Unit — the one config loader (declared keys, the default line, the not-set line, a refused value)
 kind: tests
 layer: n/a
-summary: scripts/config_loader.py resolves a parsed config against declared rows. An unset key with a default takes it and writes one `[using default]` line naming the key, its canonical-JSON value and the file, once per (file, key) per process under either import name, and a secret shows `<hidden>` and never its value; a set key of the wrong type or out of its bound is refused in one line naming the key, the file, the value's JSON type and what is accepted (null first for a bounded row that takes null, so the bound never reads as one on null), a secret's value never in the exception or the stream, nor a refused string that holds an `@` anywhere, which may begin a URL user part however the URL is spelled and shows as `<hidden: it holds an @>`, while a `%40` still shows; a release URL urllib cannot split, or whose port is not one, is refused and never raised; every unset required key is written as one `[not set]` line in sorted key order before one NotSet; a wrong value and a missing one together write every line and raise WrongValue. An environment value wins only for a row that names a variable and only when it is not empty, and `env` refuses a variable nothing declares. resolve neither mutates its input nor hands out the table's own default, and gives the same values and lines twice. A refused map names each entry that is refused on its own. Each seconds key refuses a value past threading.TIMEOUT_MAX, keeps one at it, and models.timeout_seconds refuses an empty map. The key table is well formed against keel's own config, every models.credential_env name has a secret variable-only row, the variables the config declares are derived from it, and the module parses on the oldest hook interpreter.
+summary: scripts/config_loader.py resolves a parsed config against declared rows. An unset key with a default takes it and writes one `[using default]` line naming the key, its canonical-JSON value and the file, once per (file, key) per process under either import name, and a secret shows `<hidden>` and never its value; a set key of the wrong type or out of its bound is refused in one line naming the key, the file, the value's JSON type and what is accepted (null first for a bounded row that takes null, so the bound never reads as one on null), a secret's value never in the exception or the stream, nor a refused string that holds an `@` anywhere, which may begin a URL user part however the URL is spelled and shows as `<hidden: it holds an @>`, while a `%40` still shows; a release URL urllib cannot split, or whose port is not one, is refused and never raised; every unset required key is written as one `[not set]` line in sorted key order before one NotSet; a wrong value and a missing one together write every line and raise WrongValue. An environment value wins only for a row that names a variable and only when it is not empty, and `env` refuses a variable nothing declares. resolve neither mutates its input nor hands out the table's own default, and gives the same values and lines twice. A refused map names each entry that is refused on its own. Each seconds key refuses a value past threading.TIMEOUT_MAX, keeps one at it, and models.timeout_seconds refuses an empty map. The key table is well formed against keel's own config, every models.credential_env name has a secret variable-only row, the variables the config declares are derived from it, and the module parses on the oldest hook interpreter. A body read from disk is served only when both the corpus level and the strictest level its file states now are served, never when that level cannot be read or is outside the vocabulary; a chain with no level stated is `internal`.
 @covers scripts/config_loader.py
 """
 
@@ -974,6 +974,52 @@ def test_a_node_is_served_only_at_a_stated_level_in_the_allowlist(node, served):
     """A node with no `visibility` field, or one that is not a level string,
     is not served: fail closed, never assumed internal."""
     assert config_loader.is_served(node, _LEVELS) is served
+
+
+@pytest.mark.parametrize(
+    "corpus, now, served",
+    [
+        ("public", ["public"], True),
+        ("public", [None], True),
+        ("public", ["public", "internal"], True),
+        ("internal", ["public"], True),
+        ("public", ["confidential"], False),
+        ("public", ["public", "restricted"], False),
+        ("confidential", ["public"], False),
+        ("public", ["unreadable-readme"], False),
+        ("public", ["publik"], False),
+        ("public", None, False),
+    ],
+    ids=[
+        "both-public",
+        "none-stated-is-internal",
+        "chain-internal",
+        "corpus-stricter-served",
+        "file-now-confidential",
+        "readme-now-restricted",
+        "corpus-confidential",
+        "readme-now-unreadable",
+        "unknown-level",
+        "unreadable-file",
+    ],
+)
+def test_a_body_read_from_disk_is_served_only_on_the_strictest_of_both(
+    corpus, now, served
+):
+    """is_served_now ranks the corpus's level with the level the file states
+    on disk now; a file whose level cannot be read (None) or that states one
+    outside the vocabulary is not served."""
+    node = {"visibility": corpus}
+    assert config_loader.is_served_now(node, _LEVELS, now) is served
+
+
+def test_a_chain_takes_its_strictest_level_and_internal_when_none_is_stated():
+    assert config_loader.chain_level([None, None]) == "internal"
+    assert config_loader.chain_level(["public", None, "confidential"]) == (
+        "confidential"
+    )
+    assert config_loader.strictest_visibility([None]) is None
+    assert config_loader.chain_level(["public", "bogus"]) == "bogus"
 
 
 def test_the_cut_drops_every_hidden_id_from_links_children_and_parent():

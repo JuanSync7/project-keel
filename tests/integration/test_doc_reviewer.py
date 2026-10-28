@@ -2,7 +2,7 @@
 title: Integration — the doc reviewer agent (dry-run, execute, decline, rollback)
 kind: tests
 layer: backend
-summary: agents.doc_reviewer.review over patched tool and model seams (no subprocess, no model): a dry-run gathers findings, retrieves rules, gates the baseline and writes nothing; execute proposes one edit per chunk and applies through the gated doer; a declined chunk or a red gate lands in skipped; a red baseline attempts nothing; a reply that names a gate is declined, the prompt never states the gate, and every apply is bound to its chunk's own file with `--allow`. Every tool call hands the reviewed root to the runner, so run_tool reads the tool limits, and checks them against the gate keys, of the tree the gate runner reads. The report the CLI and hook print is this report. A finding on a file the corpus places outside corpus.served_visibilities, or has no node for, or on any file when the corpus or config cannot be read, is withheld: reported with why (one CLI line each, a count in the hook's line), its text never read, and no prompt or apply made, dry run and execute alike, while a served finding beside it still goes; a chunk queued before its file left the served levels is declined at propose with no model call.
+summary: agents.doc_reviewer.review over patched tool and model seams (no subprocess, no model): a dry-run gathers findings, retrieves rules, gates the baseline and writes nothing; execute proposes one edit per chunk and applies through the gated doer; a declined chunk or a red gate lands in skipped; a red baseline attempts nothing; a reply that names a gate is declined, the prompt never states the gate, and every apply is bound to its chunk's own file with `--allow`. Every tool call hands the reviewed root to the runner, so run_tool reads the tool limits, and checks them against the gate keys, of the tree the gate runner reads. The report the CLI and hook print is this report. A finding on a file the corpus places outside corpus.served_visibilities, or has no node for, or on any file when the corpus or config cannot be read, is withheld: reported with why (one CLI line each, a count in the hook's line), its text never read, and no prompt or apply made, dry run and execute alike, while a served finding beside it still goes; a chunk queued before its file left the served levels is declined at propose with no model call; a document reclassified on disk after the corpus was built, or made unreadable, is withheld the same way, its text in no prompt.
 """
 
 import json
@@ -16,6 +16,8 @@ sys.path.insert(0, str(_ROOT))
 
 from agents.doc_reviewer import DocReviewReport, review  # noqa: E402
 from models import ModelMeter  # noqa: E402
+
+import reclassify  # noqa: E402
 
 pytestmark = pytest.mark.integration
 
@@ -52,11 +54,18 @@ def _project(root, nodes=None):
     """A scratch project at *root*: an empty config/project.json, so the
     served levels are the shipped default, and a corpus whose doc nodes are
     *nodes* (path -> visibility), by default each file _REVIEW names at
-    `internal`."""
+    `internal`. Each file is written stating its level too, since a reader
+    that reads a body from disk serves a file only on the level it states
+    there now."""
     if nodes is None:
         nodes = {"docs/b.md": "internal", "scripts/README.md": "internal"}
     (root / "config").mkdir(exist_ok=True)
     (root / "config" / "project.json").write_text("{}")
+    for path, level in nodes.items():
+        f = root / path
+        f.parent.mkdir(parents=True, exist_ok=True)
+        if not f.exists():
+            f.write_text("---\ntitle: T\nvisibility: %s\n---\n# T\n" % level)
     (root / "wiki").mkdir(exist_ok=True)
     corpus = {
         "nodes": [
@@ -416,3 +425,60 @@ def test_the_cli_prints_one_line_per_withheld_finding_and_the_hook_counts_them(
     monkeypatch.setattr(hook, "review", lambda **kwargs: report)
     assert hook.main(["payload"]) == 0
     assert "0 chunk(s) queued, 1 withheld from the model" in capsys.readouterr().out
+
+
+_GUIDE_MENTION = dict(
+    _REVIEW,
+    findings=[],
+    unresolved_mentions=[
+        {"path": reclassify.GUIDE, "line": 13, "mention": "scripts/gone.py"}
+    ],
+    rosters=[],
+)
+
+
+@pytest.mark.parametrize("how", reclassify.HOWS)
+def test_a_doc_reclassified_after_the_build_is_never_sent(monkeypatch, tmp_path, how):
+    """The corpus says `docs/pubguide.md` is public; the file then states a
+    stricter level, or none that can be read. Its text is read from disk, so
+    the level it states there now decides: the finding is withheld with why,
+    no prompt carries the text, and a chunk queued before the change is
+    declined at propose with no model call."""
+    runner = _Runner(review=_GUIDE_MENTION)
+    model = _Model(_SPEC)
+    monkeypatch.setattr(_BRAIN + "._run", runner)
+    monkeypatch.setattr(_BRAIN + ".get_model", lambda name=None: model)
+    reclassify.public_project(tmp_path, _CODEWORD)
+    before = review(execute=True, max_model_calls=8, root=str(tmp_path))
+    # The text reaches a prompt while the file is public, so a leak is seen.
+    assert before.withheld == () and any(_CODEWORD in p for p in model.prompts)
+    queued = review(execute=False, max_model_calls=8, root=str(tmp_path))
+    assert _CODEWORD in queued.preview
+    reclassify.reclassify(tmp_path / reclassify.GUIDE, how)
+    model.prompts.clear()
+    for execute in (False, True):
+        r = review(execute=execute, max_model_calls=8, root=str(tmp_path))
+        assert r.candidates == () and r.preview == "" and model.prompts == []
+        ((chunk, why),) = r.withheld
+        assert chunk == "mention:%s:13" % reclassify.GUIDE
+        assert "on disk now" in why and _CODEWORD not in why
+    brain = sys.modules[_BRAIN]
+    state = {
+        "root": str(tmp_path),
+        "corpus": str(tmp_path / "wiki" / "corpus.json"),
+        "chunks": [
+            {
+                "id": "mention:%s:13" % reclassify.GUIDE,
+                "kind": "mention",
+                "path": reclassify.GUIDE,
+                "line": 13,
+                "finding": "`x` resolves to nothing",
+                "text": _CODEWORD,
+            }
+        ],
+        "cursor": 0,
+    }
+    assert brain._propose(state, ModelMeter(None, 8, lambda name: model)) == {
+        "spec": None
+    }
+    assert model.prompts == []

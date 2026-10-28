@@ -2,7 +2,7 @@
 title: Practice refactor brain
 layer: backend
 public_api: no
-summary: Plan: walk the corpus KG -> gate a green baseline -> (propose -> apply+gate+rollback) one chunk per step; on a durable Runtime. An execute run needs its approved count of model calls: every call goes through one run's models.ModelMeter, and a resumed run is first checked against the approved model and count (models.approve_resume). Every tool child runs through scripts/resource_limits.py run_tool, held to the refactored root's config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes`, the root whose make_targets gate keys the gate runner it starts reads, so the time limit is checked against that runner's own limit: past either its session is ended and the step raises ChildTimedOut or ChildOutputTooLarge naming the key.
+summary: Plan: walk the corpus KG -> gate a green baseline -> (propose -> apply+gate+rollback) one chunk per step; on a durable Runtime. An execute run needs its approved count of model calls: every call goes through one run's models.ModelMeter, and a resumed run is first checked against the approved model and count (models.approve_resume). Every tool child runs through scripts/resource_limits.py run_tool, held to the refactored root's config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes`, the root whose make_targets gate keys the gate runner it starts reads, so the time limit is checked against that runner's own limit: past either its session is ended and the step raises ChildTimedOut or ChildOutputTooLarge naming the key. The walk keeps a chunk only when config_loader.is_served keeps its corpus node and config_loader.is_served_now keeps the level its file states on disk now (scripts/corpus_level.py stated_now), and the propose step asks that level again, so a file reclassified after the corpus was built, or one whose level cannot be read, never reaches a prompt.
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ from runtimes import (
     Step,
     get_runtime,
 )
-from scripts import config_loader
+from scripts import config_loader, corpus_level
 from scripts.resource_limits import run_tool
 
 __all__ = ["refactor", "propose", "RefactorReport"]
@@ -182,6 +182,22 @@ def _served(nodes, served=None):
     return [n for n in nodes if config_loader.is_served(n, served)]
 
 
+def _served_now(nodes, root):
+    """The members of *nodes* whose files under *root* may be sent as they are
+    on disk now: config_loader.is_served_now over scripts/corpus_level.py
+    stated_now, at *root*'s ``corpus.served_visibilities``. A file
+    reclassified after the corpus was built, or one whose level cannot be
+    read now, is dropped, so its text never reaches a prompt."""
+    served = config_loader.served_visibilities(root)
+    return [
+        n
+        for n in nodes
+        if config_loader.is_served_now(
+            n, served, corpus_level.stated_now(root, n.get("path"))
+        )
+    ]
+
+
 def propose(
     practice: str,
     practice_def: dict | None,
@@ -196,7 +212,8 @@ def propose(
     declines, the reply does not parse, or it names its own gate. A node at a
     level outside *served* (None reads ``corpus.served_visibilities``) is None
     with no model call, so its text never reaches a prompt. The plan's propose
-    step and the eval harness (evals/_doers.py) both call it."""
+    step and the eval harness (evals/_doers.py) both call it; the step first
+    asks the level the chunk's file states on disk now."""
     if not _served([node], served):
         return None
     if not node.get("path"):
@@ -237,7 +254,7 @@ def _walk(state):
     except ValueError:
         hits = []
     # The preview prompt carries a chunk's text too, so the cut comes first.
-    hits = _served(hits)
+    hits = _served_now(_served(hits), state["root"])
     preview = _propose_prompt(state["practice"], pdef, hits[0]) if hits else ""
     return {
         "practice_def": pdef,
@@ -279,6 +296,10 @@ def _propose(state, meter):
     if not node.get("path"):
         # Checked here as well as in propose, so a pathless chunk never builds
         # a backend.
+        return {"spec": None}
+    if not _served_now([node], state["root"]):
+        # Asked again here, not only at the walk: a run resumed from a
+        # snapshot may hold a chunk whose file was reclassified since.
         return {"spec": None}
     return {
         "spec": propose(
