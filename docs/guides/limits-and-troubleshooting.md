@@ -529,8 +529,9 @@ renames a status: a name never assigned, assigned another value, or bound by
 The command name is read as the shell runs it, so `"exit"`, `\exit`,
 `command exit` and `builtin exit` are `exit`; `command -v exit` only
 describes it. An ending in a subshell, `$(...)` or backquotes is judged
-the same; one in a comment, a quoted word or a here-document body is not a
-command. An `exit "$EXIT_<NAME>"`, `exit_fail`, `exit_passthrough` or
+the same, inside double quotes too (`x="$(exit 3)"`); one in a comment, a
+single-quoted word, the rest of a double-quoted word or a here-document body
+is not a command. An `exit "$EXIT_<NAME>"`, `exit_fail`, `exit_passthrough` or
 `return "$EXIT_<NAME>"` on a line before the one that sources the helper is
 a finding, because the helper's names are unset there; a function defined
 above that line and called below it is one too, so source the helper first.
