@@ -8,7 +8,7 @@ tags: [plan, template, downstream, freshness, taxonomy, effects, credentials, au
 summary: The bounded-convergence record for the defects bedrock-platform, the first real project generated from keel, reported back — a red gate on arrival, unknown directories the gate never sees, make targets whose effect nobody declares, and child processes that inherit every credential — plus the command that checks any keel-generated project for all of them. One slice per defect, five passes, each landed as one commit on a green `make verify`.
 id: docs-design-downstream-feedback
 created: 2026-10-06
-updated: 2026-10-26
+updated: 2026-10-28
 visibility: internal
 canonical: true
 ---
@@ -2901,6 +2901,7 @@ The CMP-7 opening pass proposes the rows below. Their positions are proposals th
 | 50 | KEEL-COVSCHEMA-1 | The coverage report has no schema keel and pyverdex share; the study's slice 13; found by the CMP-7 opening pass | planned |
 | 51 | KEEL-EVALREC-1 | An eval run leaves no record with its spend basis; the study's slice 15; found by the CMP-7 opening pass | planned |
 | 52 | KEEL-CABINET-1 | There is no `docs/internal/` cabinet and no document index, and moving files there needs its own export check; the study's slice 16 and its decision 2; found by the CMP-7 opening pass | planned |
+| 54 | KEEL-AGENTKIT-1 | An agent run in keel has no guard on its own context cost: nothing refuses a foreground command that waits past the prompt-cache window, and nothing marks an agent before it compacts; project-jarvis's CARD-0339 builds that kit (a settings template, hook scripts, agent types and an install and check tool). Planned once it lands: keel takes it as a thin Claude Code adapter behind a neutral agent context limit, so no doer names the vendor (CONVENTIONS §7); keel builds no second kit, and the row waits on CARD-0339; approved by the maintainer on 2026-10-28 | planned |
 
 ### Build lanes ahead of the merge line
 
