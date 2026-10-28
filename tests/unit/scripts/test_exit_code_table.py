@@ -719,9 +719,26 @@ def test_the_helper_meets_the_shell_header_and_effect_rules(tmp_path):
     ) == ([], [])
 
 
-def _run_sh(tmp_path, body):
-    """(status, stderr) of /bin/sh sourcing the helper the shipped enum renders,
-    then *body*. Rendered, not the shipped file, so a project with shell off,
+# The shells the helper is run under: /bin/sh as a script's `#!` line names
+# it, and bash in both of its modes, so a bash-only construct cannot pass
+# where /bin/sh is bash. Where /bin/sh is bash, nothing here runs dash or
+# busybox sh.
+_SHELLS = (("/bin/sh",), ("bash",), ("bash", "--posix"))
+# A run takes about 0.1 s here, rendering included; the bound only fires on a
+# hung shell.
+_SH_TIMEOUT_SECONDS = 30
+
+
+def test_a_hung_shell_is_stopped_at_the_bound(tmp_path, monkeypatch):
+    """_run_sh never waits on a shell longer than _SH_TIMEOUT_SECONDS."""
+    monkeypatch.setattr(sys.modules[__name__], "_SH_TIMEOUT_SECONDS", 1)
+    with pytest.raises(subprocess.TimeoutExpired):
+        _run_sh(tmp_path, "sleep 30", _SHELLS[0])
+
+
+def _run_sh(tmp_path, body, shell):
+    """(status, stderr) of *shell* (argv words) sourcing the helper the
+    shipped enum renders, then *body*. Rendered, not the shipped file, so a project with shell off,
     which has none, still proves the helper it would get."""
     from child_env import build_child_env
 
@@ -730,11 +747,12 @@ def _run_sh(tmp_path, body):
     script = tmp_path / "use.sh"
     script.write_text(". '%s'\n%s\nexit 99\n" % (helper, body), encoding="utf-8")
     done = subprocess.run(
-        ["/bin/sh", str(script)],
+        [*shell, str(script)],
         env=build_child_env(),
         capture_output=True,
         text=True,
         check=False,
+        timeout=_SH_TIMEOUT_SECONDS,
     )
     return done.returncode, done.stderr
 
@@ -764,10 +782,11 @@ def _run_sh(tmp_path, body):
         ('exit "$EXIT_NOTHING_JUDGED"', 13, ""),
     ],
 )
+@pytest.mark.parametrize("shell", _SHELLS, ids=[" ".join(s) for s in _SHELLS])
 def test_the_helper_ends_a_shell_script_as_the_python_helper_does(
-    tmp_path, body, status, said
+    tmp_path, body, status, said, shell
 ):
-    got, err = _run_sh(tmp_path, body)
+    got, err = _run_sh(tmp_path, body, shell)
     assert got == status, err
     assert said in err
     if not said:
