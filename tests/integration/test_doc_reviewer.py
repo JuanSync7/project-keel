@@ -357,26 +357,26 @@ def test_a_finding_whose_level_the_corpus_cannot_give_is_never_sent(
     assert "apply_refactor" not in runner.calls
 
 
+@pytest.mark.parametrize("hidden_first", [True, False])
 def test_a_file_with_one_hidden_node_is_withheld_beside_a_served_one(
-    monkeypatch, tmp_path
+    monkeypatch, tmp_path, hidden_first
 ):
     """Every node a file carries must be served, not one: a file whose corpus
     holds a public node and a confidential one for it is withheld, though the
-    file states a served level on disk and one of its nodes is served."""
+    file states a served level on disk and one of its nodes is served. The
+    hidden node comes first and last, so a check that keeps only one node per
+    path is caught in either order."""
     runner, model, read = _withholding(monkeypatch, tmp_path, _SECRET_MENTION)
     _project(tmp_path, {"docs/secret/README.md": "public"})
     path = "docs/secret/README.md"
-    corpus = {
-        "nodes": [
-            {"node_id": "doc", "path": path, "kind": "doc", "visibility": "public"},
-            {
-                "node_id": "doc#part",
-                "path": path,
-                "kind": "section",
-                "visibility": "confidential",
-            },
-        ]
+    served = {"node_id": "doc", "path": path, "kind": "doc", "visibility": "public"}
+    hidden = {
+        "node_id": "doc#part",
+        "path": path,
+        "kind": "section",
+        "visibility": "confidential",
     }
+    corpus = {"nodes": [hidden, served] if hidden_first else [served, hidden]}
     (tmp_path / "wiki" / "corpus.json").write_text(json.dumps(corpus))
     r = review(execute=True, max_model_calls=8, root=str(tmp_path))
     assert r.candidates == () and model.prompts == [] and read == []
