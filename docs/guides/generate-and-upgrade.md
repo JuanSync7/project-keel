@@ -576,7 +576,7 @@ the top of `ci.yml`. You may meet the change three ways.
    default names no real registry, so the job cannot pull until you point the
    key, and the file's `image:` line, at an image that carries both
    toolchains. Answering `gitlab` removes `ci.yml` only when it is byte-equal
-   to what keel rendered at the ref you generated from, and there are four
+   to what keel rendered at the ref you generated from, and there are five
    paths:
    - **Unedited, marker line or not.** copier itself deletes it before any
      migration runs, because the new render lacks it, and
@@ -593,6 +593,10 @@ the top of `ci.yml`. You may meet the change three ways.
    - **Edited, with the marker line removed.** Keel's render had the line and
      yours does not, so the job puts it back and its stderr line says you
      wrote the file or removed that line.
+   - **Not keel's file.** The job keeps a `ci.yml` the template you generated
+     from did not hold, and its stderr line says keel did not write it. It
+     keeps a `ci.yml` that is a symlink or not a regular file, and its line
+     says so.
 
    Every kept line ends the same way: CI runs the file's github steps beside
    the GitLab job until you remove it with the `git rm` command the line
