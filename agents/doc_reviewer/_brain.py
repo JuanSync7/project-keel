@@ -2,7 +2,7 @@
 title: Doc reviewer brain
 layer: backend
 public_api: no
-summary: Plan: gather the deterministic doc findings (review_docs) -> retrieve the style rules (query_corpus) -> gate a green baseline -> (propose -> apply+gate+rollback) one finding per step; on a durable Runtime. Judgment only where a rule cannot decide. An execute run needs its approved count of model calls: every call goes through one run's models.ModelMeter, and a resumed run is first checked against the approved model and count (models.approve_resume). Every tool child runs through scripts/resource_limits.py run_tool, held to the reviewed root's config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes`, the root whose make_targets gate keys the gate runner it starts reads, so the time limit is checked against that runner's own limit: past either its session is ended and the step raises ChildTimedOut or ChildOutputTooLarge naming the key. A finding on a file the corpus does not place at a corpus.served_visibilities level (config_loader.is_served), on a file that states a level outside it on disk now or none that can be read (config_loader.is_served_now over scripts/corpus_level.py stated_now), or on any file when the corpus cannot be read, is withheld: reported with why, never sent. review is given a root or a corpus, never both, and scripts/corpus_level.py checkout derives the other before any step (this checkout when neither; a relative path is the caller's directory's), raising NotACheckout for both or for a corpus that is not some checkout's wiki/corpus.json; every step keeps only the root and reads its wiki/corpus.json, so the withholding check and the style-rule retrieval, which hands query_corpus `--root` alone, read one corpus.
+summary: Plan: gather the deterministic doc findings (review_docs) -> retrieve the style rules (query_corpus) -> gate a green baseline -> (propose -> apply+gate+rollback) one finding per step; on a durable Runtime. Judgment only where a rule cannot decide. An execute run needs its approved count of model calls: every call goes through one run's models.ModelMeter, and a resumed run is first checked against the approved model and count (models.approve_resume). Every tool child runs through scripts/resource_limits.py run_tool, held to the reviewed root's config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes`, the root whose make_targets gate keys the gate runner it starts reads, so the time limit is checked against that runner's own limit: past either its session is ended and the step raises ChildTimedOut or ChildOutputTooLarge naming the key. A finding on a file the corpus does not place at a corpus.served_visibilities level (config_loader.is_served), on a file that states a level outside it on disk now or none that can be read (config_loader.is_served_now over scripts/corpus_level.py stated_now), or on any file when the corpus cannot be read, is withheld: reported with why, never sent. A style-rule retrieval query_corpus refuses, or whose output is not JSON, raises RuntimeError before the baseline gate, so no model is asked for edits with an empty rules section. review is given a root or a corpus, never both, and scripts/corpus_level.py checkout derives the other before any step (this checkout when neither; a relative path is the caller's directory's), raising NotACheckout for both or for a corpus that is not some checkout's wiki/corpus.json; every step keeps only the root and reads its wiki/corpus.json, so the withholding check and the style-rule retrieval, which hands query_corpus `--root` alone, read one corpus.
 """
 
 from __future__ import annotations
@@ -277,8 +277,10 @@ def _review(state):
 
 
 def _retrieve(state):
-    """Read-only: the style guide's rule nodes, from the corpus (query_corpus)."""
-    _, out, _ = _run(
+    """Read-only: the style guide's rule nodes, from the corpus (query_corpus).
+    A refusal, or output that is not JSON, raises RuntimeError, so no model
+    is asked for edits with an empty rules section."""
+    rc, out, err = _run(
         [
             "scripts/query_corpus.py",
             _RULE_QUERY,
@@ -289,10 +291,14 @@ def _retrieve(state):
         ],
         root=state["root"],
     )
+    if rc != 0:
+        raise RuntimeError("query_corpus failed (rc=%d): %s" % (rc, err.strip()))
     try:
-        nodes = json.loads(out) if out.strip() else []
-    except ValueError:
-        nodes = []
+        nodes = json.loads(out)
+    except ValueError as exc:
+        raise RuntimeError(
+            "query_corpus failed (rc=0): its output is not JSON (%s)" % exc
+        ) from exc
     rules = [
         n for n in nodes if str(n.get("path", "")).endswith(os.path.basename(_GUIDE))
     ] or nodes
