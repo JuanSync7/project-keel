@@ -2,7 +2,7 @@
 title: Unit — the level a file states on disk, read the corpus build's way
 kind: tests
 layer: n/a
-summary: scripts/corpus_level.py `stated_now` reads a Markdown file's frontmatter or a Python module's docstring again and returns its own level followed by each README.md's on its chain, the list build_corpus ranks; it returns None, never a level, for no path, a missing file, bytes that are not UTF-8, a Markdown file with no frontmatter, a module that does not parse or has no docstring, and any other kind of file. A README that cannot be read passes on UNREADABLE_VISIBILITY. build_corpus gives a node config_loader.chain_level of the same list, so the build and a reader that reads from disk cannot disagree on a file's level.
+summary: scripts/corpus_level.py `stated_now` reads a Markdown file's frontmatter or a Python module's docstring again and returns its own level followed by each README.md's on its chain, the list build_corpus ranks; it returns None, never a level, for no path, a missing file, bytes that are not UTF-8, a Markdown file with no frontmatter, a module that does not parse or has no docstring, and any other kind of file. A README that cannot be read passes on UNREADABLE_VISIBILITY. A symlinked doc also takes the README.md chain of the directory it really is in, so it is not served once that README turns confidential, and a doc and a README.md saved with a UTF-8 byte-order mark state their levels. build_corpus gives a node config_loader.chain_level of the same list, so the build and a reader that checks a file now cannot disagree on a file's level.
 """
 
 import json
@@ -98,3 +98,42 @@ def test_the_build_and_the_disk_reader_agree_on_each_level(tmp_path):
         built = {n["visibility"] for n in nodes if n.get("path") == path}
         now = config_loader.chain_level(corpus_level.stated_now(str(tmp_path), path))
         assert built == {now}, path
+
+
+_SERVED = frozenset({"public", "internal"})
+
+
+def test_a_symlinked_doc_takes_its_real_directorys_readme_too(tmp_path):
+    """A doc reached by a symlink in an open directory is ranked by the
+    README.md chain of the directory it really is in as well, so it stops
+    being served once that README turns confidential."""
+    _write(tmp_path, "open/README.md", "---\ntitle: O\nvisibility: public\n---\n")
+    _write(tmp_path, "secret/README.md", "---\ntitle: S\nvisibility: public\n---\n")
+    _write(tmp_path, "secret/real.md", "---\ntitle: R\nvisibility: public\n---\n")
+    (tmp_path / "open" / "link.md").symlink_to(tmp_path / "secret" / "real.md")
+    node = {"visibility": "public"}
+
+    def now():
+        return corpus_level.stated_now(str(tmp_path), "open/link.md")
+
+    assert now() == ["public", "public", "public"]
+    assert config_loader.is_served_now(node, _SERVED, now())
+    _write(
+        tmp_path, "secret/README.md", "---\ntitle: S\nvisibility: confidential\n---\n"
+    )
+    assert now() == ["public", "public", "confidential"]
+    assert not config_loader.is_served_now(node, _SERVED, now())
+
+
+def test_a_file_saved_with_a_byte_order_mark_states_its_level(tmp_path):
+    """A doc and a README.md saved with a UTF-8 BOM state their levels, as the
+    corpus build reads them, rather than being read as having none."""
+    bom = "﻿"
+    _write(
+        tmp_path, "docs/README.md", bom + "---\ntitle: D\nvisibility: restricted\n---\n"
+    )
+    _write(tmp_path, "docs/a.md", bom + "---\ntitle: A\nvisibility: public\n---\n# A\n")
+    assert corpus_level.stated_now(str(tmp_path), "docs/a.md") == [
+        "public",
+        "restricted",
+    ]
