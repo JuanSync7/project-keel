@@ -2,7 +2,7 @@
 title: Unit — query_corpus retrieval (stems and excerpts)
 kind: tests
 layer: n/a
-summary: query_corpus scores a node by query-token overlap, and before this two things made it miss: tokens were compared verbatim, so `idempotency` found nothing while `idempotent` found eight nodes; and only tags, title and summary were read, so a term that lives in the body was invisible. Tokens are now lightly stemmed on both sides and the body excerpt counts, below the title and summary, so a body-only match never outranks a summary match. A node at a level outside config/project.json corpus.served_visibilities, or that states none, is cut before scoring, so it is neither a hit nor a neighbour, and the CLI reads the configured list. A served node the CLI prints names no hidden node in its links, children or parent: a public doc linking to a confidential one, built by the real build_corpus and link_corpus, prints neither the confidential doc's id nor its title. A node whose file under `--root` now states a stricter level is not printed either: in the reviewer's repro, `docs/pubguide.md` reclassified after the build in each of tests/reclassify.py's ways, neither its node nor its id in a served doc's links is printed, and stderr counts the withheld nodes, never a node the corpus itself hides; the other tests write each node's file stating its corpus level. A root that does not exist, or that holds none of the files the corpus names (holds_corpus: one such file is enough, and an empty corpus is held by any directory), is refused with USAGE, nothing printed and the root named on stderr. The default or a relative `--corpus` is the root's own: in the reviewer's stale-copy repro (tests/reclassify.py stale_copy) `--root b` prints the guide b's corpus and files serve and `--root a` does not, and a missing root is refused before its corpus is looked for.
+summary: query_corpus scores a node by query-token overlap, and before this two things made it miss: tokens were compared verbatim, so `idempotency` found nothing while `idempotent` found eight nodes; and only tags, title and summary were read, so a term that lives in the body was invisible. Tokens are now lightly stemmed on both sides and the body excerpt counts, below the title and summary, so a body-only match never outranks a summary match. A node at a level outside config/project.json corpus.served_visibilities, or that states none, is cut before scoring, so it is neither a hit nor a neighbour, and the CLI reads the configured list. A served node the CLI prints names no hidden node in its links, children or parent: a public doc linking to a confidential one, built by the real build_corpus and link_corpus, prints neither the confidential doc's id nor its title. A node whose file under `--root` now states a stricter level is not printed either: in the reviewer's repro, `docs/pubguide.md` reclassified after the build in each of tests/reclassify.py's ways, neither its node nor its id in a served doc's links is printed, the script's own checkout set apart from `--root` so a CLI that ignores `--root` is red, and stderr counts the withheld nodes, never a node the corpus itself hides; the other tests write each node's file stating its corpus level. A root that does not exist, or that holds none of the files the corpus names (holds_corpus: one such file is enough, and an empty corpus is held by any directory), is refused with USAGE, nothing printed and the root named on stderr. The default or a relative `--corpus` is the root's own: in the reviewer's stale-copy repro (tests/reclassify.py stale_copy) `--root b` prints the guide b's corpus and files serve and `--root a` does not, and a missing root is refused before its corpus is looked for.
 """
 
 import json
@@ -251,7 +251,12 @@ def test_a_node_whose_file_now_states_a_stricter_level_is_not_printed(
     corpus = lc.link_corpus(bc.build_corpus(str(tmp_path)))
     path = tmp_path / "wiki" / "corpus.json"
     path.write_text(json.dumps(corpus), encoding="utf-8")
-    monkeypatch.setattr(qc, "ROOT", str(tmp_path))
+    # The script's own checkout is elsewhere and holds none of these files,
+    # so only a CLI that reads `--root` sees the guide at all.
+    home = tmp_path / "home"
+    (home / "config").mkdir(parents=True)
+    (home / "config" / "project.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(qc, "ROOT", str(home))
 
     def printed():
         argv = ["zebra", "--corpus", str(path), "--root", str(tmp_path)]

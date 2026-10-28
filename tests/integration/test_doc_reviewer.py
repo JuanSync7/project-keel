@@ -2,7 +2,7 @@
 title: Integration — the doc reviewer agent (dry-run, execute, decline, rollback)
 kind: tests
 layer: backend
-summary: agents.doc_reviewer.review over patched tool and model seams (no subprocess, no model): a dry-run gathers findings, retrieves rules, gates the baseline and writes nothing; execute proposes one edit per chunk and applies through the gated doer; a declined chunk or a red gate lands in skipped; a red baseline attempts nothing; a reply that names a gate is declined, the prompt never states the gate, and every apply is bound to its chunk's own file with `--allow`. A relative root reaches the corpus query as one absolute checkout, root and corpus. Every tool call hands the reviewed root to the runner, so run_tool reads the tool limits, and checks them against the gate keys, of the tree the gate runner reads. The report the CLI and hook print is this report. A finding on a file the corpus places outside corpus.served_visibilities, or has no node for, or on any file when the corpus or config cannot be read, is withheld: reported with why (one CLI line each, a count in the hook's line), its text never read, and no prompt or apply made, dry run and execute alike, while a served finding beside it still goes; a chunk queued before its file left the served levels is declined at propose with no model call; a document reclassified on disk after the corpus was built, or made unreadable, is withheld the same way, its text in no prompt.
+summary: agents.doc_reviewer.review over patched tool and model seams (no subprocess, no model, but for one style-rule retrieval over the real query_corpus, which retrieves the guide while its file under the reviewed root is public and not once it states confidential, so a retrieval that drops `--root` is red): a dry-run gathers findings, retrieves rules, gates the baseline and writes nothing; execute proposes one edit per chunk and applies through the gated doer; a declined chunk or a red gate lands in skipped; a red baseline attempts nothing; a reply that names a gate is declined, the prompt never states the gate, and every apply is bound to its chunk's own file with `--allow`. A relative root reaches the corpus query as one absolute checkout, root and corpus. Every tool call hands the reviewed root to the runner, so run_tool reads the tool limits, and checks them against the gate keys, of the tree the gate runner reads. The report the CLI and hook print is this report. A finding on a file the corpus places outside corpus.served_visibilities, or has no node for, or on any file when the corpus or config cannot be read, is withheld: reported with why (one CLI line each, a count in the hook's line), its text never read, and no prompt or apply made, dry run and execute alike, while a served finding beside it still goes; a chunk queued before its file left the served levels is declined at propose with no model call; a document reclassified on disk after the corpus was built, or made unreadable, is withheld the same way, its text in no prompt.
 """
 
 import json
@@ -531,3 +531,30 @@ def test_a_doc_reclassified_after_the_build_is_never_sent(monkeypatch, tmp_path,
         "spec": None
     }
     assert model.prompts == []
+
+
+def test_the_style_rules_are_retrieved_on_the_level_each_file_states_under_the_root(
+    tmp_path,
+):
+    """The style-rule retrieval hands query_corpus the reviewed root as
+    `--root`, over the real tool: the guide, whose body carries the rule
+    query's words, is a retrieved rule while it is public, and is not once
+    the file under that root states confidential. This checkout holds no
+    such file, so a retrieval that drops `--root` retrieves no guide at all."""
+    reclassify.public_project(
+        tmp_path, "Documentation style: a roster row names its discriminator."
+    )
+    brain = sys.modules[_BRAIN]
+    state = {
+        "root": str(tmp_path),
+        "corpus": str(tmp_path / "wiki" / "corpus.json"),
+        "chunks": [],
+    }
+    guide = {"pubguide", "pubguide#part"}
+
+    def retrieved():
+        return {n["node_id"] for n in brain._retrieve(state)["rules"]} & guide
+
+    assert retrieved() == guide
+    reclassify.reclassify(tmp_path / reclassify.GUIDE, "own")
+    assert retrieved() == set()
