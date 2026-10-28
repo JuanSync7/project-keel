@@ -578,8 +578,14 @@ above that line and called below it is one too, so source the helper first.
 A script that sources the helper and never ends through it is a finding,
 and so is a file the gate cannot read to its end. A line that ends with a
 carriage return, as every line of a CRLF file does, is the file's one
-finding, at the first such line: it names the carriage return and says to
-save the file with LF line endings. With no shell script at all the gate fails unless
+finding, at the first such line: it names the carriage return, says where
+it sits and says to save the file with LF line endings. Only a carriage
+return that ends a word is claimed as part of it; in the `#!` line it is
+part of the interpreter's name, and inside a comment, a quoted string or a
+here-document body the finding says so, while in a file the gate cannot
+read to its end it claims no place. A here-document that must carry CRLF
+stays LF in the file and gets its carriage returns as it is written, as
+`awk '{ printf "%s\r\n", $0 }' <<'EOF'` does; the finding names that way. With no shell script at all the gate fails unless
 config/project.json `shell.no_scripts` gives the reason or
 `shell.enabled` is false. Every other finding holds whatever
 `shell.enabled` says. It cannot see

@@ -442,6 +442,26 @@ _SH_NAME_REF = re.compile(
 )
 # A carriage return that ends a line, as a CRLF file writes every one.
 _SH_CRLF = re.compile(r"\r(?=\n|\Z)")
+# The places _ShellReader records, where a carriage return is no part of a
+# word; a span of commands, inside `$(...)` or backquotes, is place None.
+_SH_IN_COMMENT, _SH_IN_QUOTE = "comment", "quote"
+_SH_IN_BODY, _SH_IN_COMMANDS = "body", None
+# What a carriage return that ends a line does where it sits, and what to do.
+_SH_LF = "save the file with LF line endings"
+_SH_CR_WHERE = {
+    _SH_IN_COMMANDS: ", which the shell reads as part of its last word; " + _SH_LF,
+    _SH_IN_COMMENT: " inside a comment; " + _SH_LF,
+    _SH_IN_QUOTE: (
+        " inside a quoted string, which keeps it as a character of the string; "
+        + _SH_LF
+    ),
+    _SH_IN_BODY: (
+        " inside a here-document body, which writes it out with the text; "
+        + _SH_LF
+        + ", and if the document must carry CRLF, add the carriage returns as "
+        + """it is written: awk '{ printf "%s\\r\\n", $0 }' <<'EOF'"""
+    ),
+}
 _SH_BLANK = re.compile(r"""(["'])\s*\1\Z""")
 # The characters that end a here-document's delimiter word.
 _SH_DELIMITER_ENDS = " \t\n;&|<>()"
@@ -502,6 +522,9 @@ class _ShellReader:
         # (start, end) in the whole file's text of each comment and quoted
         # here-document body: text no command reads.
         self.offset, self.unread = offset, []
+        # (start, end, place) in the whole file's text of each comment, quoted
+        # string, here-document body and span of commands.
+        self.places = []
         # [state, line it opened on] of each open `case`, innermost last; the
         # state is _SH_CASE_SUBJECT, _SH_CASE_IN, _SH_CASE_PATTERN or
         # _SH_CASE_BODY. pattern_open says a pattern has begun since the last
@@ -605,6 +628,22 @@ class _ShellReader:
         self.line += chunk.count("\n")
         self.i = end + 1
 
+    def _quote_span(self, end, what):
+        """A single-quoted or `$'...'` span to *end*, recorded as a place."""
+        begin = self.offset + self.i
+        self._span(end, what)
+        self.places.append((begin, self.offset + self.i, _SH_IN_QUOTE))
+
+    def _comment(self):
+        """A comment, from the `#` at i to the end of its line: text no
+        command reads."""
+        newline = self.text.find("\n", self.i)
+        end = len(self.text) if newline < 0 else newline
+        span = (self.offset + self.i, self.offset + end)
+        self.unread.append(span)
+        self.places.append(span + (_SH_IN_COMMENT,))
+        self.i = end
+
     def _closing(self, j, quote):
         """The index of the *quote* that closes the span from j, a backslash
         escaping the next character, or -1."""
@@ -644,7 +683,7 @@ class _ShellReader:
         it. A `$(...)` or backquote inside it is read as commands, because
         the shell runs it there too."""
         with self._level():
-            t, opened = self.text, self.line
+            t, opened, begin = self.text, self.line, self.offset + self.i
             self._add('"')
             self.i += 1
             while self.i < len(t):
@@ -652,6 +691,7 @@ class _ShellReader:
                 if c == '"':
                     self._add(c)
                     self.i += 1
+                    self.places.append((begin, self.offset + self.i, _SH_IN_QUOTE))
                     return
                 if c == "\\":
                     self._span(self.i + 1, "a double quote")
@@ -686,9 +726,9 @@ class _ShellReader:
                 if c == "\\":
                     self._span(self.i + 1, "a `${`")
                 elif c == "'" and not quoted:
-                    self._span(t.find("'", self.i + 1), "a single quote")
+                    self._quote_span(t.find("'", self.i + 1), "a single quote")
                 elif t.startswith("$'", self.i) and not quoted:
-                    self._span(self._closing(self.i + 2, "'"), "an ANSI-C quote")
+                    self._quote_span(self._closing(self.i + 2, "'"), "an ANSI-C quote")
                 elif c == '"':
                     self._double_quote()
                 elif c == "`":
@@ -717,6 +757,8 @@ class _ShellReader:
             self.run(closer=")")
             self.sub -= 1
             raw = self.text[begin : self.i]
+            span = (self.offset + begin, self.offset + self.i, _SH_IN_COMMANDS)
+            self.places.append(span)
             self.words, self.word, self.word_line, self.start, self.skip = saved
             self.cases, self.pattern_open, self.paren = nested
             if self.word is None:
@@ -738,6 +780,9 @@ class _ShellReader:
             inner.run()
             self.commands.extend(inner.commands)
             self.unread.extend(inner.unread)
+            self.places.extend(inner.places)
+            span = (self.offset + self.i, self.offset + end + 1, _SH_IN_COMMANDS)
+            self.places.append(span)
             self._span(end, "a backquote")
 
     def _array(self):
@@ -756,16 +801,13 @@ class _ShellReader:
                     self.i += 1
                     return
                 if c == "#" and t[self.i - 1] in " \t\n(":
-                    newline = t.find("\n", self.i)
-                    end = len(t) if newline < 0 else newline
-                    self.unread.append((self.offset + self.i, self.offset + end))
-                    self.i = end
+                    self._comment()
                 elif c == "\\":
                     self._span(self.i + 1, "an array")
                 elif c == "'":
-                    self._span(t.find("'", self.i + 1), "a single quote")
+                    self._quote_span(t.find("'", self.i + 1), "a single quote")
                 elif t.startswith("$'", self.i):
-                    self._span(self._closing(self.i + 2, "'"), "an ANSI-C quote")
+                    self._quote_span(self._closing(self.i + 2, "'"), "an ANSI-C quote")
                 elif c == '"':
                     self._double_quote()
                 elif c == "`":
@@ -844,6 +886,7 @@ class _ShellReader:
                     break
             if quoted:
                 self.unread.append((begin, self.offset + self.i))
+            self.places.append((begin, self.offset + self.i, _SH_IN_BODY))
 
     def run(self, closer=None):
         """Read from i to the end, or to the unbalanced *closer*."""
@@ -851,19 +894,16 @@ class _ShellReader:
         while self.i < len(t):
             c = t[self.i]
             if c == "#" and self.word is None:
-                newline = t.find("\n", self.i)
-                end = len(t) if newline < 0 else newline
-                self.unread.append((self.offset + self.i, self.offset + end))
-                self.i = end
+                self._comment()
             elif c == "\\" and t.startswith("\\\n", self.i):
                 self.i, self.line = self.i + 2, self.line + 1
             elif c == "\\":
                 self._add(t[self.i : self.i + 2])
                 self.i += 2
             elif c == "'":
-                self._span(t.find("'", self.i + 1), "a single quote")
+                self._quote_span(t.find("'", self.i + 1), "a single quote")
             elif t.startswith("$'", self.i):
-                self._span(self._closing(self.i + 2, "'"), "an ANSI-C quote")
+                self._quote_span(self._closing(self.i + 2, "'"), "an ANSI-C quote")
             elif c == '"':
                 self._double_quote()
             elif c == "`":
@@ -1169,18 +1209,40 @@ def _sh_held_status_findings(text, unread, commands, relpath):
     return findings, judged
 
 
+def _sh_carriage_return_finding(text, relpath):
+    """The finding at the first line of *text* that ends with a carriage
+    return, saying where the CR sits, or None when no line does."""
+    crlf = _SH_CRLF.search(text)
+    if crlf is None:
+        return None
+    at = crlf.start()
+    line = text.count("\n", 0, at) + 1
+    said = "%s:%d: the line ends with a carriage return (CRLF)" % (relpath, line)
+    if line == 1 and text.startswith("#!"):
+        return (
+            "%s in the `#!` line, which the system reads as part of the "
+            "interpreter's name; %s" % (said, _SH_LF)
+        )
+    reader = _ShellReader(text)
+    try:
+        reader.run()
+    except ShellScanError:
+        # The CR is the file's one finding either way; where the text cannot
+        # be read, the finding claims no place for it.
+        return "%s; %s" % (said, _SH_LF)
+    around = [span for span in reader.places if span[0] <= at < span[1]]
+    place = min(around, key=lambda span: span[1] - span[0])[2] if around else None
+    return said + _SH_CR_WHERE[place]
+
+
 def shell_file_findings(text, relpath, known, quiet):
     """Every finding of the exit gate over one shell script: an ending not
     through the helper, a script that does not source the helper, and one
     that sources it but never ends through it. A CRLF line end is the one
     finding, because every other would follow from it."""
-    crlf = _SH_CRLF.search(text)
+    crlf = _sh_carriage_return_finding(text, relpath)
     if crlf is not None:
-        return [
-            "%s:%d: the line ends with a carriage return (CRLF), which the shell "
-            "reads as part of its last word; save the file with LF line endings"
-            % (relpath, text.count("\n", 0, crlf.start()) + 1)
-        ]
+        return [crlf]
     try:
         commands, unread = shell_commands(text)
     except ShellScanError as exc:
@@ -2345,24 +2407,96 @@ def test_any_use_of_a_held_status_but_a_plain_read_is_a_finding_at_its_line(
     assert _SH_CANNOT_SHOW in finding, finding
 
 
-@pytest.mark.parametrize(
-    ("script", "line"),
-    [
-        (_SH_GOOD.replace("\n", "\r\n"), 1),
-        (_SH_GOOD.replace("shellcheck tool.sh\n", "shellcheck tool.sh\r\n"), 4),
-        (_SH_GOOD[:-1] + "\r", 7),
-    ],
-    ids=["every line", "one line", "the last line with no newline"],
-)
-def test_a_carriage_return_line_end_is_one_finding_that_names_it(
-    tmp_path, monkeypatch, script, line
+# The fragment of the carriage-return finding that says the shell reads the
+# CR as part of a word, true only where the CR ends a word.
+_SH_CR_IN_A_WORD = "which the shell reads as part of its last word"
+_SH_CR_CASES = {
+    "every line, the first in the #! line": (
+        _SH_GOOD.replace("\n", "\r\n"),
+        1,
+        "the system reads as part of the interpreter's name",
+    ),
+    "one line": (
+        _SH_GOOD.replace("shellcheck tool.sh\n", "shellcheck tool.sh\r\n"),
+        4,
+        _SH_CR_IN_A_WORD,
+    ),
+    "the last line with no newline": (_SH_GOOD[:-1] + "\r", 7, _SH_CR_IN_A_WORD),
+    "a substitution in a quoted word": (
+        _SH_GOOD.replace(_SH_TAIL, 'x="$(true\r\n)"\n' + _SH_TAIL),
+        7,
+        _SH_CR_IN_A_WORD,
+    ),
+    "a comment": (
+        _SH_GOOD.replace(_SH_TAIL, "# a note\r\n" + _SH_TAIL),
+        7,
+        "inside a comment",
+    ),
+    "a single-quoted string": (
+        _SH_GOOD.replace(_SH_TAIL, "echo 'a\r\nb'\n" + _SH_TAIL),
+        7,
+        "inside a quoted string",
+    ),
+    "a double-quoted string": (
+        _SH_GOOD.replace(_SH_TAIL, 'echo "a\r\nb"\n' + _SH_TAIL),
+        7,
+        "inside a quoted string",
+    ),
+    "a quoted here-document body": (
+        _SH_GOOD.replace(_SH_TAIL, "cat <<'EOF'\na\r\nEOF\n" + _SH_TAIL),
+        8,
+        "inside a here-document body",
+    ),
+    "an unquoted here-document body": (
+        _SH_GOOD.replace(_SH_TAIL, "cat <<EOF\na\r\nEOF\n" + _SH_TAIL),
+        8,
+        "inside a here-document body",
+    ),
+}
+
+
+@pytest.mark.parametrize("case", list(_SH_CR_CASES.values()), ids=list(_SH_CR_CASES))
+def test_a_carriage_return_line_end_is_one_finding_that_names_where_it_is(
+    tmp_path, monkeypatch, case
 ):
-    """bash reads a CR before a newline as part of the line's last word, so
-    a CRLF file is red, and the one finding says why and what to do."""
+    """A CR before a newline is red wherever it is, as the file's one
+    finding; the finding says where the CR sits and claims the shell reads
+    it as part of a word only where it ends one."""
+    script, line, fragment = case
     root = _sh_tree(tmp_path, monkeypatch, {"scripts/tool.sh": script})
     (finding,) = shell_findings(root)["findings"]
     assert finding.startswith("scripts/tool.sh:%d: " % line), finding
     assert "carriage return" in finding and "LF line endings" in finding, finding
+    assert fragment in finding, finding
+    if fragment != _SH_CR_IN_A_WORD:
+        assert _SH_CR_IN_A_WORD not in finding, finding
+
+
+def test_a_carriage_return_in_a_here_document_names_the_way_to_write_crlf(
+    tmp_path, monkeypatch
+):
+    """A here-document that must emit CRLF stays LF in the file; the finding
+    names the way to add the carriage returns as the text is written."""
+    body = "cat <<'EOF'\na\r\nEOF\n"
+    script = _SH_GOOD.replace(_SH_TAIL, body + _SH_TAIL)
+    root = _sh_tree(tmp_path, monkeypatch, {"scripts/tool.sh": script})
+    (finding,) = shell_findings(root)["findings"]
+    assert """awk '{ printf "%s\\r\\n", $0 }'""" in finding, finding
+
+
+def test_a_carriage_return_in_a_file_the_gate_cannot_read_claims_no_place(
+    tmp_path, monkeypatch
+):
+    """bash reads `esac` and a CR as one word, so a CRLF `case` cannot be
+    read to its end: the finding names the carriage return and claims no
+    place for it."""
+    body = "case x in a) : ;;\r\nesac\r\n"
+    script = _SH_GOOD.replace(_SH_TAIL, body + _SH_TAIL)
+    root = _sh_tree(tmp_path, monkeypatch, {"scripts/tool.sh": script})
+    (finding,) = shell_findings(root)["findings"]
+    assert finding.startswith("scripts/tool.sh:7: "), finding
+    assert "carriage return" in finding and "LF line endings" in finding, finding
+    assert _SH_CR_IN_A_WORD not in finding and "inside" not in finding, finding
 
 
 class _Visits(list):

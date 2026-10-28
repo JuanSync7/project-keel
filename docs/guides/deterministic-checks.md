@@ -841,7 +841,9 @@ it) is a finding at its own line. It judges an ending inside a subshell,
 judges one at the top, and reads a comment, a quoted word, a here-document
 body, a `case` subject or pattern and the elements of an array assignment
 `a=(...)` as no command, while a command in a `case` clause body is judged. A line that ends with a carriage return is the
-file's one finding, and it says to save the file with LF line endings. No shell script is a failure unless
+file's one finding: it says where the carriage return sits (the `#!` line, a
+word, a comment, a quoted string or a here-document body) and to save the
+file with LF line endings. No shell script is a failure unless
 config/project.json `shell.no_scripts` gives the reason or
 `shell.enabled` is false; every other finding holds whatever
 `shell.enabled` says.
