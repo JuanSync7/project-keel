@@ -368,6 +368,22 @@ def test_a_named_corpus_that_does_not_exist_is_refused(tmp_path, monkeypatch, ca
     assert str(corpus) in err and "make site-data" in err
 
 
+@pytest.mark.parametrize(
+    "text", [b"{not json", b"\xff\xfe", b"[]"], ids=["not-json", "not-utf8", "list"]
+)
+def test_a_corpus_that_cannot_be_read_is_refused(tmp_path, monkeypatch, capsys, text):
+    """A corpus that is not JSON, not UTF-8, or not a JSON object has no
+    nodes to serve: refused with USAGE through report(), nothing printed,
+    naming the path and how to rebuild it, never a traceback at exit 1."""
+    a, _, _, _ = _stale_project(tmp_path)
+    monkeypatch.setattr(qc, "ROOT", str(a))
+    corpus = a / "wiki" / "corpus.json"
+    corpus.write_bytes(text)
+    code, ids, err = _main(["zebra", "--root", str(a)], capsys)
+    assert code is qc.ExitCode.USAGE and ids is None
+    assert str(corpus) in err and "make site-data" in err
+
+
 def test_a_root_and_a_corpus_given_together_are_refused(tmp_path, monkeypatch, capsys):
     """`--root b` beside a's corpus would read a's corpus with b's files, the
     pairing that printed a's confidential guide, so it is refused, nothing

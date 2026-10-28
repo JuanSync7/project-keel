@@ -15,7 +15,7 @@ import pytest
 _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT))
 
-from agents.doc_reviewer import DocReviewReport, review  # noqa: E402
+from agents.doc_reviewer import DocReviewReport, RulesRefused, review  # noqa: E402
 from models import ModelMeter  # noqa: E402
 from scripts import corpus_level  # noqa: E402
 
@@ -257,19 +257,56 @@ def test_a_failed_rule_retrieval_fails_the_run_before_any_model_call(
 ):
     """The reviewer's repro: query_corpus exited 2 and _retrieve went on with
     no rules, so the model could be asked for edits with an empty rules
-    section. A refusal, or output that is not JSON, now raises RuntimeError
-    naming the exit status, before the baseline gate and any model call."""
+    section. A refusal, or output that is not JSON, now raises RulesRefused,
+    a RuntimeError naming the exit status, before the baseline gate and any
+    model call."""
     runner, model = _RefusedQuery(answer), _Model(_SPEC)
     monkeypatch.setattr(_BRAIN + "._run", runner)
     monkeypatch.setattr(_BRAIN + ".get_model", lambda name=None: model)
     _project(tmp_path)
     for execute in (False, True):
-        with pytest.raises(
-            RuntimeError, match="query_corpus failed .rc=%d" % answer[0]
-        ):
+        with pytest.raises(RulesRefused, match="query_corpus exited %d" % answer[0]):
             review(execute=execute, max_model_calls=8, root=str(tmp_path))
     assert model.prompts == []
     assert runner.calls == ["review_docs", "query_corpus"] * 2
+    assert issubclass(RulesRefused, RuntimeError)
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [(2, "", "query_corpus: the corpus cannot be read"), (0, "not json", "")],
+    ids=["refused", "unreadable"],
+)
+def test_the_cli_reports_a_failed_rule_retrieval_through_the_exit_helper(
+    monkeypatch, capsys, tmp_path, answer
+):
+    """The reviewer's repro: `doc_review.py --root a2`, a2's corpus not JSON,
+    ended with a traceback at exit 1. The refusal is exit USAGE through
+    report(): one `doc_review:` line naming the root, and no model call."""
+    sys.path.insert(0, str(_ROOT / "scripts"))
+    import doc_review as cli  # noqa: E402
+
+    runner, model = _RefusedQuery(answer), _Model(_SPEC)
+    monkeypatch.setattr(_BRAIN + "._run", runner)
+    monkeypatch.setattr(_BRAIN + ".get_model", lambda name=None: model)
+    _project(tmp_path)
+    assert cli.main(["--root", str(tmp_path)]) == cli.exit_codes.ExitCode.USAGE
+    err = capsys.readouterr().err.strip().splitlines()[-1]
+    assert err.startswith("doc_review: ") and str(tmp_path) in err
+    assert model.prompts == []
+
+
+def test_an_unreadable_corpus_refuses_the_real_rule_retrieval(tmp_path):
+    """End to end with the real query_corpus: a corpus that is not JSON is
+    refused there with USAGE, and _retrieve raises RulesRefused naming that
+    exit status and the corpus, never a traceback's exit 1."""
+    _project(tmp_path)
+    corpus = tmp_path / "wiki" / "corpus.json"
+    corpus.write_text("{not json")
+    brain = sys.modules[_BRAIN]
+    with pytest.raises(RulesRefused, match="query_corpus exited 2") as raised:
+        brain._retrieve({"root": str(tmp_path), "chunks": [], "execute": False})
+    assert str(corpus) in str(raised.value)
 
 
 def test_a_declined_chunk_is_skipped_without_touching_apply(seams, monkeypatch):

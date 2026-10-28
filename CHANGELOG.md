@@ -779,7 +779,9 @@ version rather than a bare commit:
   checkout with no corpus would keep one. Each of the three agents makes a
   relative path absolute from the caller's directory first. The doc
   reviewer fails its run when `query_corpus.py` refuses its style-rule
-  retrieval, rather than asking a model for edits with no rules.
+  retrieval, rather than asking a model for edits with no rules, and
+  `scripts/doc_review.py` then exits 2 naming the root, not with a traceback.
+  `query_corpus.py` refuses a corpus it cannot read with exit 2.
   (KEEL-VIS-2)
 - **The astro app's audited dependencies move past their advisories.**
   `npm audit` in `src/frontend/astro` reported 28 findings (2 critical, 17

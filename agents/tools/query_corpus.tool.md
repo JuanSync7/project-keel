@@ -72,7 +72,8 @@ inside another checkout's `wiki/` is that checkout's corpus, read with that
 checkout's files.
 A checkout with no corpus, named by `--root` or the default, prints `[]`,
 exits 0 and names on stderr where the corpus would be. A root that does not exist prints nothing to stdout and exits
-2 with stderr naming it. A served level outside the vocabulary prints nothing
+2 with stderr naming it, and so does a corpus that cannot be read: not UTF-8,
+not JSON, or not a JSON object. A served level outside the vocabulary prints nothing
 to stdout and exits 14.
 
 ## Side effects

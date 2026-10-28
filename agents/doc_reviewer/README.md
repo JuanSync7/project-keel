@@ -59,6 +59,12 @@ call. `scripts/doc_review.py` prints one `withheld <id>: <why>` line per finding
 and the hook's line counts them. `tests/integration/test_doc_reviewer.py` holds
 each case.
 
+A style-rule retrieval that `scripts/query_corpus.py` refuses, or whose output
+is not JSON, raises the third public symbol, `RulesRefused`, a `RuntimeError`
+carrying the exit helper's three parts (what failed, on which input, what to do),
+before the baseline gate and any model call. `scripts/doc_review.py` ends that
+run with exit 2 through `report`.
+
 Its thin CLI is `scripts/doc_review.py` (`make doc-review`); its event trigger is
 `scripts/hooks/on_stop_doc_review.py`, fired by `.claude/settings.json`; its
 vendor-specific skill is `.claude/skills/doc-review/`. The nightly schedule
