@@ -509,8 +509,10 @@ and reads what is left of the shell's output with a bound too.
 Where `/bin/sh` is bash, as on the host keel is built on, those runs prove
 the helper under bash only. The same test fails a helper that uses `[[`,
 `local`, `function`, an array, `==` in a test, `$'`, `<(` or `>(`,
-`source`, `declare`, `let` or a `((` with no `$` before it: the helper is
-checked against that list, not proven under dash or busybox sh. `scripts/shell_gate.py` `HELPER_SH`, never a
+`source`, `declare`, `let`, a `((` with no `$` before it, `<<<`, `&>`, a
+replacement `${x//a/b}` or a substring `${x:0:1}`: the helper is checked
+against that list, not proven under dash or busybox sh, so a bash-only
+construct the list does not name passes it. `scripts/shell_gate.py` `HELPER_SH`, never a
 `shell.excluded_paths` entry, keeps it from the shell linter, formatter and test runner, so a project with no
 shell script of its own needs none of those tools.
 

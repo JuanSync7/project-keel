@@ -739,6 +739,10 @@ _SH_BASH_ONLY = (
     ("declare", r"\bdeclare\b", "declare part=1"),
     ("let", r"\blet\b", "let part=1"),
     ("((", r"(?<!\$)\(\(", "(( part++ ))"),
+    ("<<<", r"<<<", "cat <<< x"),
+    ("&>", r"&>", "true &>/dev/null"),
+    ("a replacement", r"\$\{#?\w+/", 'echo "${part//a/b}"'),
+    ("a substring", r"\$\{\w+:(?![-=?+])", 'echo "${part:0:1}"'),
 )
 
 
@@ -765,6 +769,20 @@ def test_each_bash_only_construct_in_the_helper_is_found(name, line):
     text = et.render_shell(et.read_members(str(_ROOT)))
     assert _bash_only(text + line + "\n") == [name]
     assert _bash_only(text + "# " + line + "\n") == []
+
+
+# POSIX lines that look like a bash-only construct of the list and are not.
+_SH_POSIX_LOOKALIKES = (
+    'echo "${part:-/tmp}" "${part:=1}" "${part:?no}" "${part:+y}"',
+    'echo "${part#a}" "${part%/*}" "${#part}"',
+    "echo x >&2 2>&1 <&0",
+    "cat <<EOF",
+)
+
+
+@pytest.mark.parametrize("line", _SH_POSIX_LOOKALIKES)
+def test_a_posix_line_like_a_bash_only_construct_is_not_found(line):
+    assert _bash_only(line + "\n") == []
 
 
 # The shells the helper is run under: /bin/sh as a script's `#!` line names
