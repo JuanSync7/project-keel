@@ -2244,6 +2244,7 @@ _SH_STATUS_WRITES = {
     "getopts": "getopts ab rc",
     "a local with no value": "f() { local rc; }",
     "a length": 'echo "${#rc}"',
+    "an indirect expansion": 'echo "${!rc}"',
     "a word that only names it": "echo rc",
 }
 
