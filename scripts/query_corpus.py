@@ -3,7 +3,7 @@
 title: Query corpus
 kind: script
 layer: n/a
-summary: Read-only retrieval over `--root`'s wiki/corpus.json (a relative `--corpus` is read under `--root` too, so the corpus and the files its nodes name come from one checkout) — the wiki_navigator's, practice_refactor's and doc_reviewer's tool — that prints only nodes whose file under `--root` (this checkout by default) may be served at a level in config/project.json corpus.served_visibilities as it stands on disk now (config_loader.is_served_now over corpus_level.stated_now, read once per file), so a file reclassified after the corpus was built, or one whose level cannot be read, is not printed, each printed node with every other node's id cut from its links, children and parent (config_loader.cut_hidden). A root that does not exist, or that holds none of the files the corpus names (holds_corpus), is refused with exit USAGE and nothing printed, never answered `[]`, and the count of nodes withheld because their file now states a stricter level, or none that can be read, goes to stderr.
+summary: Read-only retrieval over one checkout's wiki/corpus.json — the wiki_navigator's, practice_refactor's and doc_reviewer's tool. `--root` or `--corpus` names the checkout, never both: scripts/corpus_level.py checkout derives the corpus from the root, or the root from a corpus at some directory's wiki/corpus.json, so a corpus is read only with the files of the checkout that keeps it, and both given, or a corpus anywhere else, is refused with exit USAGE and nothing printed. It prints only nodes whose file in that checkout may be served at a level in config/project.json corpus.served_visibilities as it stands on disk now (config_loader.is_served_now over corpus_level.stated_now, read once per file), so a file reclassified after the corpus was built, or one whose level cannot be read, is not printed, each printed node with every other node's id cut from its links, children and parent (config_loader.cut_hidden). A root that does not exist is refused with exit USAGE; a checkout with no corpus prints `[]`, naming on stderr where its corpus would be; and the count of nodes withheld because their file now states a stricter level, or none that can be read, goes to stderr.
 """
 
 from __future__ import annotations
@@ -21,7 +21,6 @@ import config_loader  # noqa: E402
 import corpus_level  # noqa: E402
 from exit_codes import ExitCode, finish, report  # noqa: E402
 
-DEFAULT_CORPUS = os.path.join("wiki", "corpus.json")
 _WORD_RE = re.compile(r"[A-Za-z][A-Za-z0-9_]{1,}")
 
 
@@ -62,22 +61,6 @@ def _tokens(text: str) -> set:
         if w.isupper():
             out.add(w)  # keep acronyms (AXI) matchable verbatim
     return out
-
-
-def holds_corpus(corpus: dict, root: str) -> bool:
-    """True when *root* can be the checkout *corpus* was built from: a
-    directory holding at least one file a corpus node names by its `path`,
-    or, for a corpus that names no path, any directory. The rule query_corpus
-    refuses a root by, so a root that does not exist, or one that is not the
-    corpus's checkout, is an error and never an empty answer. One file is
-    enough: a file deleted after the build leaves the rest of the corpus
-    readable, and each node whose file is gone is withheld by served_now."""
-    if not os.path.isdir(root):
-        return False
-    paths = sorted(
-        {n["path"] for n in corpus.get("nodes", []) if isinstance(n.get("path"), str)}
-    )
-    return not paths or any(os.path.isfile(os.path.join(root, p)) for p in paths)
 
 
 def served_now(corpus: dict, served: Collection[str], root: str) -> tuple[dict, int]:
@@ -176,16 +159,18 @@ def main(argv=None) -> int:
     ap.add_argument("question", help="the question / keywords to retrieve for")
     ap.add_argument(
         "--corpus",
-        default=DEFAULT_CORPUS,
-        help="corpus path, a relative one read under --root (default: wiki/corpus.json)",
+        default=None,
+        help="the corpus, read only at its checkout's %s, whose files are "
+        "read with it (a relative one from this directory); not with --root"
+        % corpus_level.CORPUS_PATH,
     )
     ap.add_argument("--max-nodes", type=int, default=8, help="max candidate nodes")
     ap.add_argument(
         "--root",
         default=None,
-        help="the checkout the corpus's node paths name, whose files are read "
-        "for the level each states now (default: the project this script ships in); "
-        "one that does not exist or holds none of the corpus's files is refused",
+        help="the checkout whose %s is read, and whose files are read for "
+        "the level each states now (default: the project this script ships "
+        "in); not with --corpus" % corpus_level.CORPUS_PATH,
     )
     args = ap.parse_args(argv)
     try:
@@ -202,30 +187,30 @@ def main(argv=None) -> int:
             "set corpus.served_visibilities to members of %s, then rerun"
             % ", ".join(config_loader.VISIBILITY_ORDER),
         )
-    root = os.path.abspath(args.root or ROOT)
+    try:
+        root, path = corpus_level.checkout(args.root, args.corpus, ROOT)
+    except corpus_level.NotACheckout as exc:
+        what, on, next_step = exc.parts
+        return report(ExitCode.USAGE, "query_corpus: " + what, on, next_step)
     if not os.path.isdir(root):
         return report(
             ExitCode.USAGE,
-            "query_corpus: the root the corpus's node paths are read under does not exist",
+            "query_corpus: the checkout whose corpus is read does not exist",
             root,
-            "pass --root the checkout the corpus was built from, then rerun",
+            "pass --root a checkout that exists, or --corpus its %s, then rerun"
+            % corpus_level.CORPUS_PATH,
         )
-    # A relative corpus is the root's own, so the corpus and the files its
-    # nodes name come from one checkout; join keeps an absolute one as given.
-    path = os.path.join(root, args.corpus)
     if not os.path.exists(path):
-        print("[]")  # graceful: empty retrieval when no corpus yet
+        # A checkout with no corpus yet has nothing to retrieve: an empty
+        # answer, said on stderr so a mistyped root is not taken for one.
+        print(
+            "query_corpus: no corpus at %s; `make site-data` builds it" % path,
+            file=sys.stderr,
+        )
+        print("[]")
         return ExitCode.SUCCESS
     with open(path, encoding="utf-8") as fh:
         corpus = json.load(fh)
-    if not holds_corpus(corpus, root):
-        return report(
-            ExitCode.USAGE,
-            "query_corpus: the root holds none of the files the corpus names",
-            "%s (corpus %s)" % (root, path),
-            "pass --root the checkout the corpus was built from, or rebuild "
-            "that checkout's corpus with `make site-data`, then rerun",
-        )
     nodes, withheld = served_now(corpus, served, root)
     if withheld:
         print(

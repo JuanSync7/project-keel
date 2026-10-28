@@ -19,7 +19,7 @@ tool_effect: read-only
 # Query corpus
 
 ## Command
-`python3 scripts/query_corpus.py "QUESTION" [--corpus PATH] [--max-nodes N] [--root DIR]`
+`python3 scripts/query_corpus.py "QUESTION" [--root DIR | --corpus PATH] [--max-nodes N]`
 > Requires Python ≥3.10 (per `pyproject.toml`); an agent invokes it via its own interpreter (`sys.executable`), not a bare `python3`.
 
 ## Purpose
@@ -39,9 +39,9 @@ provenance and accountability.
 | Flag | Required | Default | Meaning |
 |------|----------|---------|---------|
 | `QUESTION` | yes | — | the question / keywords |
-| `--corpus` | no | `wiki/corpus.json` | corpus to read; a relative path is read under `--root`, so the corpus and the files its nodes name come from one checkout |
+| `--corpus` | no | the `--root` checkout's `wiki/corpus.json` | the corpus to read, only at its checkout's `wiki/corpus.json`: the directory that keeps it is the checkout whose files are read with it; a relative path is taken from the caller's directory; never with `--root` |
 | `--max-nodes` | no | 8 | retrieval budget |
-| `--root` | no | the project the script ships in | the checkout the corpus's node paths name, whose files are read for their level now; refused when it does not exist or holds none of the corpus's files |
+| `--root` | no | the project the script ships in | the checkout whose `wiki/corpus.json` is read and whose files are read for their level now; never with `--corpus` |
 
 ## Output
 A JSON array of node objects on stdout, best match first, drawn only from the
@@ -60,12 +60,19 @@ is neither a hit nor a neighbour. A printed node's
 When nodes are withheld because their file now states a stricter level, or
 none that can be read, stderr says how many.
 `tests/unit/scripts/test_query_corpus.py` holds these rules.
-No corpus present → prints `[]` and exits 0. A served level outside the
-vocabulary prints nothing to stdout and exits 14. A `--root` that does not
-exist, or that holds none of the files the corpus names (`holds_corpus`: a
-corpus that names no file is held by any directory), prints nothing to stdout
-and exits 2 with stderr naming the root, so a wrong root is never an empty
-answer.
+The checkout and its corpus are one: `scripts/corpus_level.py` `checkout`
+derives the corpus from `--root` (`<root>/wiki/corpus.json`) or the checkout
+from `--corpus` (the directory that keeps its `wiki/corpus.json`). No rule can
+tell a stale copy or another project from the real checkout by the files it
+holds, so a corpus is never paired with a root chosen beside it: `--root` and
+`--corpus` together, or a `--corpus` that is not some directory's
+`wiki/corpus.json`, print nothing to stdout and exit 2. A copy of a corpus
+inside another checkout's `wiki/` is that checkout's corpus, read with that
+checkout's files.
+A checkout with no corpus prints `[]`, exits 0 and names on stderr where the
+corpus would be. A root that does not exist prints nothing to stdout and exits
+2 with stderr naming it. A served level outside the vocabulary prints nothing
+to stdout and exits 14.
 
 ## Side effects
 READ-ONLY. Reads the corpus and the files its nodes name; writes nothing; no model call (retrieval is

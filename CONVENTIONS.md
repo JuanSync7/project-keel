@@ -134,13 +134,11 @@ as one deleted, not UTF-8 or with no frontmatter, is not served either. These
 readers check the file now:
 
 - `scripts/query_corpus.py`, for each node it prints and each id it leaves in
-  a printed node's links, children and parent, reading the files under its
-  `--root` (this checkout by default). It refuses a root that does not exist
-  or holds none of the files the corpus names (`holds_corpus`), and writes
-  to stderr how many nodes it withheld;
+  a printed node's links, children and parent. It refuses a root that does
+  not exist, and writes to stderr how many nodes it withheld;
 - the wiki navigator agent and the MCP Q&A server through it, whose prompt
-  context and citations come from `query_corpus.py` under `answer`'s `root`,
-  and which raise before any model call on a root `query_corpus.py` refuses;
+  context and citations come from `query_corpus.py`, and which raise before
+  any model call on a root `query_corpus.py` refuses;
 - the practice refactor agent, which sends a model a chunk's corpus excerpt
   or summary, not its file, and checks the chunk's file at the walk and again
   before each model call;
@@ -149,6 +147,17 @@ readers check the file now:
 - the showcase's node detail and markdown body, which reads the file, and
   through them the static export's node pages and each body in
   `/llms-full.txt`.
+
+These five readers, `query_corpus.py` and the three agents with the MCP
+server, read a corpus only with the files of the checkout that keeps it. A
+corpus lives at `<checkout>/wiki/corpus.json`, and its checkout is that
+directory. Each reader takes a root or a corpus path and derives the other
+through `scripts/corpus_level.py` `checkout`. A root and a corpus given
+together are refused, and so is a corpus path that is not some directory's
+`wiki/corpus.json`. No rule can tell a stale copy or another project from the
+real checkout by the files it holds, so a reader never pairs a corpus with a
+root chosen beside it. A copy of a corpus kept in another checkout's `wiki/`
+is that checkout's corpus, read with that checkout's files.
 
 The rest act on the corpus as built, and still list a reclassified node's
 title and summary until `make site-data` rebuilds it: the showcase's doc tree,

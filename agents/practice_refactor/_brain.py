@@ -2,7 +2,7 @@
 title: Practice refactor brain
 layer: backend
 public_api: no
-summary: Plan: walk the corpus KG -> gate a green baseline -> (propose -> apply+gate+rollback) one chunk per step; on a durable Runtime. An execute run needs its approved count of model calls: every call goes through one run's models.ModelMeter, and a resumed run is first checked against the approved model and count (models.approve_resume). Every tool child runs through scripts/resource_limits.py run_tool, held to the refactored root's config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes`, the root whose make_targets gate keys the gate runner it starts reads, so the time limit is checked against that runner's own limit: past either its session is ended and the step raises ChildTimedOut or ChildOutputTooLarge naming the key. The walk keeps a chunk only when config_loader.is_served keeps its corpus node and config_loader.is_served_now keeps the level its file states on disk now (scripts/corpus_level.py stated_now), and the propose step asks that level again, so a file reclassified after the corpus was built, or one whose level cannot be read, never reaches a prompt. A relative root is made absolute from the caller's directory before any step, and the corpus is that root's wiki/corpus.json when none is given.
+summary: Plan: walk the corpus KG -> gate a green baseline -> (propose -> apply+gate+rollback) one chunk per step; on a durable Runtime. An execute run needs its approved count of model calls: every call goes through one run's models.ModelMeter, and a resumed run is first checked against the approved model and count (models.approve_resume). Every tool child runs through scripts/resource_limits.py run_tool, held to the refactored root's config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes`, the root whose make_targets gate keys the gate runner it starts reads, so the time limit is checked against that runner's own limit: past either its session is ended and the step raises ChildTimedOut or ChildOutputTooLarge naming the key. The walk keeps a chunk only when config_loader.is_served keeps its corpus node and config_loader.is_served_now keeps the level its file states on disk now (scripts/corpus_level.py stated_now), and the propose step asks that level again, so a file reclassified after the corpus was built, or one whose level cannot be read, never reaches a prompt. refactor is given a root or a corpus, never both, and scripts/corpus_level.py checkout derives the other before any step (this checkout when neither; a relative path is the caller's directory's), raising NotACheckout for both or for a corpus that is not some checkout's wiki/corpus.json; the walk hands query_corpus that root alone as `--root`, so it reads the root's own corpus.
 """
 
 from __future__ import annotations
@@ -31,7 +31,6 @@ from scripts.resource_limits import run_tool
 __all__ = ["refactor", "propose", "RefactorReport"]
 
 _REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-_CORPUS = os.path.join("wiki", "corpus.json")
 _PRACTICES = os.path.join("config", "practices.json")
 _CKPT_DIR = os.path.join("wiki", ".runtime")  # gitignored; durable refactor snapshots
 
@@ -240,8 +239,6 @@ def _walk(state):
         [
             "scripts/query_corpus.py",
             query,
-            "--corpus",
-            state["corpus"],
             "--max-nodes",
             str(state["max_nodes"]),
             "--root",
@@ -444,21 +441,27 @@ def refactor(
     that count, so the call past it raises ``models.CallCapReached``. A saved
     run is resumed only on the same model and with no more chunks left than
     that count; otherwise ``models.RunNotApproved`` is raised before any step.
+
+    ``root`` or ``corpus`` names the checkout refactored, never both
+    (scripts/corpus_level.py checkout): ``root`` is the checkout (``None`` =
+    this one), ``corpus`` its ``wiki/corpus.json``, a relative one taken
+    from the caller's directory. The walk reads that checkout's corpus and
+    files; both given, or a corpus that is not some checkout's
+    ``wiki/corpus.json``, raises corpus_level.NotACheckout, a ValueError,
+    before any step.
     """
     if execute and max_model_calls is None:
         raise ValueError(
             "refactor(execute=True) needs max_model_calls, the approved model-call count"
         )
     # Absolute, from the caller's directory: a tool child runs in this
-    # checkout, and query_corpus reads a relative corpus under its root.
-    root = os.path.abspath(root or _REPO)
-    corpus = corpus or os.path.join(root, _CORPUS)
+    # checkout, and is handed the root alone, so it reads that root's corpus.
+    root, _ = corpus_level.checkout(root, corpus, _REPO)
     if checkpointer is None and execute:
         checkpointer = FileCheckpointer(os.path.join(root, _CKPT_DIR))
     init = {
         "practice": practice,
         "model": model,
-        "corpus": corpus,
         "root": root,
         "max_nodes": max_nodes,
         "gate": gate,

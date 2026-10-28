@@ -2,10 +2,11 @@
 title: Unit — query_corpus retrieval (stems and excerpts)
 kind: tests
 layer: n/a
-summary: query_corpus scores a node by query-token overlap, and before this two things made it miss: tokens were compared verbatim, so `idempotency` found nothing while `idempotent` found eight nodes; and only tags, title and summary were read, so a term that lives in the body was invisible. Tokens are now lightly stemmed on both sides and the body excerpt counts, below the title and summary, so a body-only match never outranks a summary match. A node at a level outside config/project.json corpus.served_visibilities, or that states none, is cut before scoring, so it is neither a hit nor a neighbour, and the CLI reads the configured list. A served node the CLI prints names no hidden node in its links, children or parent: a public doc linking to a confidential one, built by the real build_corpus and link_corpus, prints neither the confidential doc's id nor its title. A node whose file under `--root` now states a stricter level is not printed either: in the reviewer's repro, `docs/pubguide.md` reclassified after the build in each of tests/reclassify.py's ways, neither its node nor its id in a served doc's links is printed, the script's own checkout set apart from `--root` so a CLI that ignores `--root` is red, and stderr counts the withheld nodes, never a node the corpus itself hides; the other tests write each node's file stating its corpus level. A root that does not exist, or that holds none of the files the corpus names (holds_corpus: one such file is enough, and an empty corpus is held by any directory), is refused with USAGE, nothing printed and the root named on stderr. The default or a relative `--corpus` is the root's own: in the reviewer's stale-copy repro (tests/reclassify.py stale_copy) `--root b` prints the guide b's corpus and files serve and `--root a` does not, and a missing root is refused before its corpus is looked for.
+summary: query_corpus scores a node by query-token overlap, and before this two things made it miss: tokens were compared verbatim, so `idempotency` found nothing while `idempotent` found eight nodes; and only tags, title and summary were read, so a term that lives in the body was invisible. Tokens are now lightly stemmed on both sides and the body excerpt counts, below the title and summary, so a body-only match never outranks a summary match. A node at a level outside config/project.json corpus.served_visibilities, or that states none, is cut before scoring, so it is neither a hit nor a neighbour, and the CLI reads the configured list. A served node the CLI prints names no hidden node in its links, children or parent: a public doc linking to a confidential one, built by the real build_corpus and link_corpus, prints neither the confidential doc's id nor its title. A node whose file under `--root` now states a stricter level is not printed either: in the reviewer's repro, `docs/pubguide.md` reclassified after the build in each of tests/reclassify.py's ways, neither its node nor its id in a served doc's links is printed, the script's own checkout set apart from `--root` so a CLI that ignores `--root` is red, and stderr counts the withheld nodes, never a node the corpus itself hides; the other tests write each node's file stating its corpus level. The root is derived from the corpus, never chosen beside it, in the reviewer's repros: checkout `a` made its guide confidential without rebuilding its corpus, `b` is a copy taken before, `c` holds only the guide and another folder only a README.md. a's corpus, named from inside b, is read with a's files and withholds the guide; b's corpus, named by a relative path from inside b, serves it; `c` and the README folder keep no corpus, so `--root` there prints `[]` and names where the corpus would be; `--root b` beside a's corpus, and a copy of a's corpus outside some checkout's wiki/corpus.json, are refused with USAGE and nothing printed; a root that does not exist is refused with USAGE naming it.
 """
 
 import json
+import shutil
 import sys
 from pathlib import Path
 
@@ -48,6 +49,13 @@ def _on_disk(root, corpus):
         fm = "visibility: %s\n" % level if isinstance(level, str) else ""
         (root / n["path"]).write_text("---\n%s---\n" % fm, encoding="utf-8")
     return corpus
+
+
+def _corpus_file(root):
+    """Where *root* keeps its corpus, its directory made."""
+    path = root / "wiki" / "corpus.json"
+    path.parent.mkdir(exist_ok=True)
+    return path
 
 
 def _ids(root, corpus, question, served=_SERVED):
@@ -133,7 +141,7 @@ def test_main_prints_only_the_configured_levels(tmp_path, monkeypatch, capsys):
     )
     corpus = _hidden_corpus()
     corpus["nodes"].append(_node("open", summary="Zebra open.", visibility="public"))
-    path = tmp_path / "corpus.json"
+    path = _corpus_file(tmp_path)
     path.write_text(json.dumps(_on_disk(tmp_path, corpus)), encoding="utf-8")
     monkeypatch.setattr(qc, "ROOT", str(tmp_path))
     assert qc.main(["zebra", "--corpus", str(path)]) is qc.ExitCode.SUCCESS
@@ -150,7 +158,7 @@ def test_main_refuses_a_level_outside_the_vocabulary(tmp_path, monkeypatch, caps
         json.dumps({"corpus": {"served_visibilities": ["unreadable-readme"]}}),
         encoding="utf-8",
     )
-    path = tmp_path / "corpus.json"
+    path = _corpus_file(tmp_path)
     path.write_text(json.dumps(_hidden_corpus()), encoding="utf-8")
     monkeypatch.setattr(qc, "ROOT", str(tmp_path))
     assert qc.main(["zebra", "--corpus", str(path)]) is qc.ExitCode.CONFIG
@@ -208,7 +216,7 @@ def test_a_served_node_names_no_hidden_node_it_links_to(tmp_path, monkeypatch, c
     assert "hush-plan" in hidden and any(
         e["to"] in hidden for n in nodes.values() for e in n.get("links", [])
     )
-    path = tmp_path / "corpus.json"
+    path = _corpus_file(tmp_path)
     path.write_text(json.dumps(corpus), encoding="utf-8")
     monkeypatch.setattr(qc, "ROOT", str(tmp_path))
     assert qc.main(["zebra", "--corpus", str(path)]) is qc.ExitCode.SUCCESS
@@ -249,8 +257,7 @@ def test_a_node_whose_file_now_states_a_stricter_level_is_not_printed(
     )
     reclassify.public_project(tmp_path, "The zebra body.")
     corpus = lc.link_corpus(bc.build_corpus(str(tmp_path)))
-    path = tmp_path / "wiki" / "corpus.json"
-    path.write_text(json.dumps(corpus), encoding="utf-8")
+    (tmp_path / "wiki" / "corpus.json").write_text(json.dumps(corpus), encoding="utf-8")
     # The script's own checkout is elsewhere and holds none of these files,
     # so only a CLI that reads `--root` sees the guide at all.
     home = tmp_path / "home"
@@ -259,7 +266,7 @@ def test_a_node_whose_file_now_states_a_stricter_level_is_not_printed(
     monkeypatch.setattr(qc, "ROOT", str(home))
 
     def printed():
-        argv = ["zebra", "--corpus", str(path), "--root", str(tmp_path)]
+        argv = ["zebra", "--root", str(tmp_path)]
         assert qc.main(argv) is qc.ExitCode.SUCCESS
         captured = capsys.readouterr()
         nodes = json.loads(captured.out)
@@ -282,78 +289,109 @@ def test_a_node_whose_file_now_states_a_stricter_level_is_not_printed(
     assert "About pubguide." not in json.dumps(nodes)
 
 
-# ---- a root that cannot be the corpus's checkout is refused ----------------
+# ---- the root is derived from the corpus, never chosen beside it ----------
 
 
-def test_a_root_holds_a_corpus_when_it_holds_one_file_the_corpus_names(tmp_path):
-    corpus = _on_disk(tmp_path, {"nodes": [_node("here"), _node("gone")]})
-    (tmp_path / "docs" / "gone.md").unlink()
-    assert qc.holds_corpus(corpus, str(tmp_path))
-    assert not qc.holds_corpus(corpus, str(tmp_path / "docs"))
-    assert not qc.holds_corpus(corpus, str(tmp_path / "nowhere"))
+def _stale_project(base):
+    """The reviewer's repros under *base*: checkout `a` made its guide
+    confidential and did not rebuild its corpus, which still serves it; `b`
+    is a copy of `a` taken before; `c` holds only the guide, copied from b;
+    `readme` holds only a README.md. Returns (a, b, c, readme)."""
+    a, b, c, readme = (base / name for name in ("a", "b", "c", "readme"))
+    a.mkdir()
+    reclassify.public_project(a, "The zebra body.")
+    shutil.copytree(str(a), str(b))
+    reclassify.reclassify(a / reclassify.GUIDE, "own")
+    (c / "docs").mkdir(parents=True)
+    shutil.copy(str(b / reclassify.GUIDE), str(c / reclassify.GUIDE))
+    readme.mkdir()
+    (readme / "README.md").write_text("# Readme\n\nZebra.\n", encoding="utf-8")
+    return a, b, c, readme
 
 
-def test_an_empty_corpus_is_held_by_any_directory_that_exists(tmp_path):
-    assert qc.holds_corpus({"nodes": []}, str(tmp_path))
-    assert not qc.holds_corpus({"nodes": []}, str(tmp_path / "nowhere"))
+_GUIDE_IDS = {"pubguide", "pubguide#part"}
 
 
-@pytest.mark.parametrize("where", ["nowhere", "empty"])
-def test_main_refuses_a_root_that_cannot_be_the_corpus_checkout(
+def _main(argv, capsys):
+    """(exit code, printed node ids or None when nothing was printed, stderr)."""
+    code = qc.main(argv)
+    captured = capsys.readouterr()
+    ids = {n["node_id"] for n in json.loads(captured.out)} if captured.out else None
+    return code, ids, captured.err
+
+
+def test_a_corpus_is_answered_against_its_own_checkouts_files(
+    tmp_path, monkeypatch, capsys
+):
+    """The stale-copy repro: a's corpus, named from any directory, is read
+    with a's files, so a's confidential guide is withheld even from inside
+    b, whose files still state it public; b's own corpus, named by a
+    relative path from inside b, is b's to serve."""
+    a, b, _, _ = _stale_project(tmp_path)
+    monkeypatch.setattr(qc, "ROOT", str(a))
+    monkeypatch.chdir(b)
+    code, ids, err = _main(
+        ["zebra", "--corpus", str(a / "wiki" / "corpus.json")], capsys
+    )
+    assert code is qc.ExitCode.SUCCESS and not ids & _GUIDE_IDS
+    assert "withheld 2 node(s)" in err and str(a) in err
+    code, ids, _ = _main(["zebra", "--corpus", "wiki/corpus.json"], capsys)
+    assert code is qc.ExitCode.SUCCESS and ids == _GUIDE_IDS
+    code, ids, _ = _main(["zebra", "--root", str(a)], capsys)
+    assert code is qc.ExitCode.SUCCESS and not ids & _GUIDE_IDS
+
+
+@pytest.mark.parametrize("folder", ["c", "readme"])
+def test_a_folder_with_no_corpus_of_its_own_prints_nothing_of_anothers(
+    tmp_path, monkeypatch, capsys, folder
+):
+    """The folder `c` holding only the guide, and one holding only a
+    README.md, keep no corpus, so `--root` there answers from none: `[]`,
+    with stderr naming where the corpus would be and how to build it."""
+    a, _, _, _ = _stale_project(tmp_path)
+    monkeypatch.setattr(qc, "ROOT", str(a))
+    root = tmp_path / folder
+    code, ids, err = _main(["zebra", "--root", str(root)], capsys)
+    assert code is qc.ExitCode.SUCCESS and ids == set()
+    assert str(root / "wiki" / "corpus.json") in err and "make site-data" in err
+
+
+def test_a_root_and_a_corpus_given_together_are_refused(tmp_path, monkeypatch, capsys):
+    """`--root b` beside a's corpus would read a's corpus with b's files, the
+    pairing that printed a's confidential guide, so it is refused, nothing
+    printed."""
+    a, b, _, _ = _stale_project(tmp_path)
+    monkeypatch.setattr(qc, "ROOT", str(a))
+    argv = ["zebra", "--root", str(b), "--corpus", str(a / "wiki" / "corpus.json")]
+    code, ids, err = _main(argv, capsys)
+    assert code is qc.ExitCode.USAGE and ids is None
+    assert "not both" in err
+
+
+@pytest.mark.parametrize(
+    "where", ["corpus.json", "b/corpus.json", "b/docs/corpus.json"]
+)
+def test_a_corpus_outside_a_checkouts_wiki_is_refused(
     tmp_path, monkeypatch, capsys, where
 ):
-    """A root that does not exist, or one that holds none of the files the
-    corpus names, is refused with nothing printed, rather than printing `[]`
-    as if the question had no answer."""
-    project = tmp_path / "project"
-    (project / "config").mkdir(parents=True)
-    (project / "config" / "project.json").write_text("{}", encoding="utf-8")
-    corpus = _on_disk(project, {"nodes": [_node("zebra", summary="Zebra.")]})
-    path = project / "corpus.json"
-    path.write_text(json.dumps(corpus), encoding="utf-8")
-    root = tmp_path / where
-    if where == "empty":
-        root.mkdir()
-    monkeypatch.setattr(qc, "ROOT", str(project))
-    argv = ["zebra", "--corpus", str(path), "--root", str(root)]
-    assert qc.main(argv) is qc.ExitCode.USAGE
-    captured = capsys.readouterr()
-    assert captured.out == ""
-    assert str(root) in captured.err and "--root" in captured.err
-
-
-# ---- the root and the corpus come from one checkout ------------------------
-
-
-def test_the_default_or_a_relative_corpus_is_the_roots_own(
-    tmp_path, monkeypatch, capsys
-):
-    """The reviewer's stale-copy repro: checkout `a`, the script's own, made
-    its guide confidential and rebuilt its corpus; `b` is a copy taken before.
-    Under `--root b` the corpus read is b's, which serves the guide b's files
-    still state public; under `--root a` it is a's, which does not."""
-    a, b = reclassify.stale_copy(tmp_path, "The zebra body.")
+    """A copy of a's corpus anywhere but some checkout's wiki/corpus.json has
+    no checkout to read its files in, so it is refused, naming the path."""
+    a, _, _, _ = _stale_project(tmp_path)
     monkeypatch.setattr(qc, "ROOT", str(a))
-    guide = {"pubguide", "pubguide#part"}
-
-    def printed(root, corpus):
-        assert qc.main(["zebra", "--root", str(root)] + corpus) is qc.ExitCode.SUCCESS
-        return {n["node_id"] for n in json.loads(capsys.readouterr().out)} & guide
-
-    for corpus in ([], ["--corpus", "wiki/corpus.json"]):
-        assert printed(b, corpus) == guide
-        assert printed(a, corpus) == set()
+    corpus = tmp_path / where
+    shutil.copy(str(a / "wiki" / "corpus.json"), str(corpus))
+    code, ids, err = _main(["zebra", "--corpus", str(corpus)], capsys)
+    assert code is qc.ExitCode.USAGE and ids is None
+    assert str(corpus) in err and "wiki/corpus.json" in err
 
 
-def test_a_missing_root_is_refused_before_its_own_corpus_is_looked_for(
+def test_a_missing_root_is_refused_before_its_corpus_is_looked_for(
     tmp_path, monkeypatch, capsys
 ):
-    """The default corpus is the root's, so a missing root has no corpus;
-    that is a refusal naming the root, not the `[]` of a project with no
-    corpus yet."""
-    a, _ = reclassify.stale_copy(tmp_path, "The zebra body.")
+    """A root that does not exist has no corpus; that is a refusal naming the
+    root, not the `[]` of a checkout with no corpus yet."""
+    a, _, _, _ = _stale_project(tmp_path)
     monkeypatch.setattr(qc, "ROOT", str(a))
     root = tmp_path / "nowhere"
-    assert qc.main(["zebra", "--root", str(root)]) is qc.ExitCode.USAGE
-    captured = capsys.readouterr()
-    assert captured.out == "" and str(root) in captured.err
+    code, ids, err = _main(["zebra", "--root", str(root)], capsys)
+    assert code is qc.ExitCode.USAGE and ids is None and str(root) in err

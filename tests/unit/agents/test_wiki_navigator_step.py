@@ -2,7 +2,7 @@
 title: Unit — the wiki navigator's model step runs on an injected backend
 kind: tests
 layer: n/a
-summary: wiki_navigator.synthesize(question, nodes, backend=b) sends b the agent's real answer prompt (its prompt.md preamble, the question and each visible node cited by node_id), never a node outside config/project.json corpus.served_visibilities (a confidential or restricted node, one that states no level or one outside the vocabulary), and returns b's reply stripped; the plan's synthesize step calls the same function, so the eval harness judges the code answer() runs. answer(execute=True) with no approved count of model calls is a ValueError before any step runs; answer(backend_factory=f) builds its one counted backend with f from the model name, so a caller that counts calls across answers (mcp/qa_server.py's session total) sees each one, and with no factory it is models.get_model. A citation whose node names no owner_source carries None, unknown, never `none`. answer(root=r) reads each node's file under r again: in the reviewer's repro, `docs/pubguide.md` reclassified after the corpus build in each of tests/reclassify.py's ways, a dry run's prompt carries neither its summary nor its id, and nothing cites it. A root that does not exist, or holds none of the corpus's files, is a RuntimeError naming it before the model backend is built. With no corpus given, answer reads its root's corpus, in the reviewer's stale-copy repro citing the guide under the copy and nothing under the reclassified checkout, a relative root taken from the caller's directory.
+summary: wiki_navigator.synthesize(question, nodes, backend=b) sends b the agent's real answer prompt (its prompt.md preamble, the question and each visible node cited by node_id), never a node outside config/project.json corpus.served_visibilities (a confidential or restricted node, one that states no level or one outside the vocabulary), and returns b's reply stripped; the plan's synthesize step calls the same function, so the eval harness judges the code answer() runs. answer(execute=True) with no approved count of model calls is a ValueError before any step runs; answer(backend_factory=f) builds its one counted backend with f from the model name, so a caller that counts calls across answers (mcp/qa_server.py's session total) sees each one, and with no factory it is models.get_model. A citation whose node names no owner_source carries None, unknown, never `none`. answer(root=r) reads each node's file under r again: in the reviewer's repro, `docs/pubguide.md` reclassified after the corpus build in each of tests/reclassify.py's ways, a dry run's prompt carries neither its summary nor its id, and nothing cites it. A root that does not exist is a RuntimeError naming it before the model backend is built, and a root given beside a corpus, or a corpus outside some checkout's wiki/corpus.json, is corpus_level.NotACheckout before any step. answer reads the corpus of the checkout it is named, by root or by corpus: in the reviewer's stale-copy repro it cites the guide from the copy and nothing from the reclassified checkout, a relative path taken from the caller's directory.
 """
 
 import json
@@ -16,6 +16,7 @@ sys.path.insert(0, str(_ROOT))
 
 from agents.wiki_navigator import answer, synthesize  # noqa: E402
 from models import ModelBackend  # noqa: E402
+from scripts import corpus_level  # noqa: E402
 
 import reclassify  # noqa: E402
 
@@ -131,7 +132,8 @@ def _one_node_corpus(tmp_path):
     node.update(anchor=None, lineno=None, parent=None, children=[], links=[])
     (tmp_path / "docs").mkdir(exist_ok=True)
     (tmp_path / node["path"]).write_text("---\nvisibility: public\n---\n", "utf-8")
-    path = tmp_path / "corpus.json"
+    path = tmp_path / "wiki" / "corpus.json"
+    path.parent.mkdir(exist_ok=True)
     path.write_text(json.dumps({"schema_version": 1, "nodes": [node]}), "utf-8")
     return str(path)
 
@@ -150,7 +152,6 @@ def test_an_execute_answer_builds_its_backend_with_the_factory_it_is_given(tmp_p
         corpus=_one_node_corpus(tmp_path),
         max_model_calls=1,
         backend_factory=factory,
-        root=str(tmp_path),
     )
     assert built == ["fake"] and len(seen.prompts) == 1
     assert got.text == "Alpha ingests events [docs/a.md]." and not got.dry_run
@@ -167,7 +168,7 @@ def test_a_citation_says_unknown_when_its_node_names_no_owner_source(tmp_path, s
     else:
         corpus["nodes"][0]["owner_source"] = stored
     Path(path).write_text(json.dumps(corpus), "utf-8")
-    got = answer("what is alpha", corpus=path, root=str(tmp_path))
+    got = answer("what is alpha", corpus=path)
     assert [c.node_id for c in got.citations] == ["docs/a.md"], got.citations
     want = "frontmatter" if stored == "frontmatter" else None
     assert got.citations[0].owner_source == want
@@ -183,33 +184,61 @@ def _second_doc(root):
     )
 
 
-@pytest.mark.parametrize("where", ["nowhere", "empty"])
-def test_a_root_that_cannot_be_the_corpus_checkout_raises_with_no_model_call(
-    tmp_path, where
-):
-    """A root that does not exist, or one that holds none of the files the
-    corpus names, fails retrieval, so answer() raises before the model is
-    called rather than handing it an empty context."""
+def _never_called():
+    """(factory, prompts): a backend factory that records each model it
+    builds, and the prompts its backend is sent."""
     built, seen = [], _Seen("never sent")
 
     def factory(name):
         built.append(name)
         return seen
 
-    root = tmp_path / where
-    if where == "empty":
-        root.mkdir()
+    return factory, built, seen
+
+
+def test_a_root_that_does_not_exist_raises_with_no_model_call(tmp_path):
+    """query_corpus refuses a root that does not exist, so retrieval fails
+    and answer() raises before the model is called rather than handing it an
+    empty context."""
+    factory, built, seen = _never_called()
+    root = tmp_path / "nowhere"
     with pytest.raises(RuntimeError, match="query_corpus failed") as raised:
         answer(
             "what is alpha",
             execute=True,
             model="fake",
-            corpus=_one_node_corpus(tmp_path),
             max_model_calls=1,
             backend_factory=factory,
             root=str(root),
         )
     assert str(root) in str(raised.value)
+    assert built == [] and seen.prompts == []
+
+
+@pytest.mark.parametrize("given", ["both", "outside-wiki"])
+def test_a_corpus_that_is_not_its_roots_own_is_refused_with_no_model_call(
+    tmp_path, given
+):
+    """A root given beside a corpus, or a corpus that is not some checkout's
+    wiki/corpus.json, could pair one checkout's corpus with another's files,
+    so answer() raises NotACheckout, a ValueError, before any step."""
+    factory, built, seen = _never_called()
+    corpus = _one_node_corpus(tmp_path)
+    if given == "both":
+        kwargs = {"corpus": corpus, "root": str(tmp_path)}
+    else:
+        moved = tmp_path / "corpus.json"
+        Path(corpus).rename(moved)
+        kwargs = {"corpus": str(moved)}
+    with pytest.raises(corpus_level.NotACheckout):
+        answer(
+            "what is alpha",
+            execute=True,
+            model="fake",
+            max_model_calls=1,
+            backend_factory=factory,
+            **kwargs,
+        )
     assert built == [] and seen.prompts == []
 
 
@@ -228,6 +257,11 @@ def test_the_corpus_is_the_roots_own_and_a_relative_root_is_the_callers(
         assert {c.node_id for c in answer("pubguide", root=root).citations} == guide
     for root in (str(a), "a"):
         assert answer("pubguide", root=root).citations == ()
+    # Named by its corpus, a checkout is the directory that keeps it.
+    for corpus in (str(b / "wiki" / "corpus.json"), "b/wiki/corpus.json"):
+        assert {c.node_id for c in answer("pubguide", corpus=corpus).citations} == guide
+    for corpus in (str(a / "wiki" / "corpus.json"), "a/wiki/corpus.json"):
+        assert answer("pubguide", corpus=corpus).citations == ()
 
 
 @pytest.mark.parametrize("how", reclassify.HOWS)
@@ -242,7 +276,7 @@ def test_a_node_whose_file_now_states_a_stricter_level_is_not_sent(tmp_path, how
     corpus = str(tmp_path / "wiki" / "corpus.json")
 
     def context():
-        got = answer("pubguide", corpus=corpus, root=str(tmp_path))
+        got = answer("pubguide", corpus=corpus)
         # The question names the id too, so only the context is searched.
         return got.text.split("# Retrieved context")[1], got.citations
 

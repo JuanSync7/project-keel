@@ -2,7 +2,7 @@
 title: Wiki navigator brain
 layer: backend
 public_api: no
-summary: Plan: deterministic retrieval (query_corpus) -> synthesize a cited answer; on a Runtime. Retrieval hands query_corpus answer's root (this checkout when None, a relative one made absolute from the caller's directory) as `--root`, and that root's wiki/corpus.json as `--corpus` when answer is given none, so a node is retrieved, sent and cited only when its file there may be served as it stands on disk now (config_loader.is_served_now), and a file reclassified after the corpus was built is neither sent nor named in a served node's links. A root query_corpus refuses (one that does not exist or holds none of the corpus's files) fails retrieval, so answer raises before any model call. An execute run needs its approved count of model calls and makes its one call through a models.ModelMeter of that count, whose backend the caller's backend_factory builds when it gives one (models.get_model otherwise), so a caller can count calls across answers. Every tool child runs through scripts/resource_limits.py run_tool, held to config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes` of the checkout answer's limits_root names (this one when None): past either its session is ended and the step raises ChildTimedOut or ChildOutputTooLarge naming the key.
+summary: Plan: deterministic retrieval (query_corpus) -> synthesize a cited answer; on a Runtime. answer is given a root or a corpus, never both, and scripts/corpus_level.py checkout derives the other (this checkout when neither; a relative path is the caller's directory's), raising NotACheckout for both or for a corpus that is not some checkout's wiki/corpus.json. Retrieval hands query_corpus that root alone as `--root`, so it reads the root's own corpus and files, and a node is retrieved, sent and cited only when its file there may be served as it stands on disk now (config_loader.is_served_now): a file reclassified after the corpus was built is neither sent nor named in a served node's links. A root query_corpus refuses (one that does not exist) fails retrieval, so answer raises before any model call. An execute run needs its approved count of model calls and makes its one call through a models.ModelMeter of that count, whose backend the caller's backend_factory builds when it gives one (models.get_model otherwise), so a caller can count calls across answers. Every tool child runs through scripts/resource_limits.py run_tool, held to config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes` of the checkout answer's limits_root names (this one when None): past either its session is ended and the step raises ChildTimedOut or ChildOutputTooLarge naming the key.
 """
 
 from __future__ import annotations
@@ -15,13 +15,12 @@ from dataclasses import dataclass
 
 from models import ModelBackend, ModelMeter, get_model
 from runtimes import END, MODEL_CALL, READ_ONLY, Edge, Plan, Step, get_runtime
-from scripts import config_loader
+from scripts import config_loader, corpus_level
 from scripts.resource_limits import run_tool
 
 __all__ = ["answer", "synthesize", "Answer", "Citation"]
 
 _REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-_CORPUS = os.path.join("wiki", "corpus.json")
 
 
 @dataclass(frozen=True)
@@ -105,8 +104,6 @@ def _retrieve(state):
         [
             "scripts/query_corpus.py",
             state["question"],
-            "--corpus",
-            state["corpus"],
             "--max-nodes",
             str(state["max_nodes"]),
             "--root",
@@ -208,27 +205,27 @@ def answer(
     answers, such as ``models.SessionBudget.counted``, passes its own.
     ``limits_root`` is the checkout whose config/project.json
     ``agents.tool_timeout_seconds`` and ``agents.tool_max_output_bytes`` bound
-    the retrieval child (``None`` = this one). ``root`` is the checkout the
-    corpus's node paths name (``None`` = this one; a relative one is the
-    caller's directory's): query_corpus reads each node's file there again
-    and retrieves it only at the level it states now. ``corpus`` is that
-    checkout's ``wiki/corpus.json`` when ``None``, and a relative one is read
-    under ``root``, so the corpus and the files come from one checkout.
-    A root it refuses, one that does not exist or holds none of the files the
-    corpus names, fails retrieval, so this raises RuntimeError before any
-    model call, dry run included.
+    the retrieval child (``None`` = this one). ``root`` or ``corpus`` names
+    the checkout to answer from, never both (scripts/corpus_level.py
+    checkout): ``root`` is the checkout (``None`` = this one), ``corpus`` its
+    ``wiki/corpus.json``, a relative one taken from the caller's directory.
+    query_corpus reads that checkout's corpus and each node's file there
+    again, and retrieves a node only at the level its file states now. Both
+    given, or a corpus that is not some checkout's ``wiki/corpus.json``,
+    raises corpus_level.NotACheckout, a ValueError, before any step; a root
+    that does not exist fails retrieval, so this raises RuntimeError before
+    any model call, dry run included.
     """
     if execute and max_model_calls is None:
         raise ValueError(
             "answer(execute=True) needs max_model_calls, the approved model-call count"
         )
     # Absolute, from the caller's directory: the retrieval child runs in this
-    # checkout, and query_corpus reads a relative corpus under its root.
-    root = os.path.abspath(root or _REPO)
+    # checkout, and is handed the root alone, so it reads that root's corpus.
+    root, _ = corpus_level.checkout(root, corpus, _REPO)
     init = {
         "question": question,
         "model": model,
-        "corpus": corpus or os.path.join(root, _CORPUS),
         "max_nodes": max_nodes,
         "limits_root": limits_root,
         "root": root,

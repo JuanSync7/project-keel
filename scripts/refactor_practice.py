@@ -3,7 +3,7 @@
 title: Refactor toward a named practice (LLM-doer entrypoint)
 kind: script
 layer: n/a
-summary: Thin CLI over the agents/practice_refactor brain — walk the corpus KG and refactor each chunk toward a named coding practice, gating every edit on make verify. The vendor-agnostic doer behind the practice-refactor skill (trigger). `--execute` is first held to config/project.json `agents.max_model_calls` (scripts/model_budget.py): a --max-nodes over the cap, or a negative one that bounds nothing, is refused (exit 2) and a cap the config cannot give is exit 14, both before the agent runs; with no --model it names on stderr the registry default it will use. The run is then held to that bound as it goes: every model call is counted (models.CountedModel), and the call past it is never made, a failure (exit 1) naming the count; a saved run under wiki/.runtime/ that would resume on another model or with more calls left than the bound is refused (exit 2) naming the snapshot to remove. A setting the model or the runtime reads once the agent starts (models.timeout_seconds, models.max_reply_bytes, runtimes.max_steps, agents.tool_timeout_seconds, agents.tool_max_output_bytes) that scripts/config_loader.py refuses is exit 14 naming the key, in either mode, never a traceback; a tool child the agent runs that is ended at agents.tool_timeout_seconds or agents.tool_max_output_bytes (scripts/resource_limits.py run_tool) is a failure (exit 1) naming the key.
+summary: Thin CLI over the agents/practice_refactor brain — walk the corpus KG and refactor each chunk toward a named coding practice, gating every edit on make verify. The vendor-agnostic doer behind the practice-refactor skill (trigger). `--root` or `--corpus` names the checkout refactored, never both (scripts/corpus_level.py checkout): both, or a corpus that is not some checkout's wiki/corpus.json, is refused (exit 2) before the agent runs, and the cap is read from that checkout. `--execute` is first held to config/project.json `agents.max_model_calls` (scripts/model_budget.py): a --max-nodes over the cap, or a negative one that bounds nothing, is refused (exit 2) and a cap the config cannot give is exit 14, both before the agent runs; with no --model it names on stderr the registry default it will use. The run is then held to that bound as it goes: every model call is counted (models.CountedModel), and the call past it is never made, a failure (exit 1) naming the count; a saved run under wiki/.runtime/ that would resume on another model or with more calls left than the bound is refused (exit 2) naming the snapshot to remove. A setting the model or the runtime reads once the agent starts (models.timeout_seconds, models.max_reply_bytes, runtimes.max_steps, agents.tool_timeout_seconds, agents.tool_max_output_bytes) that scripts/config_loader.py refuses is exit 14 naming the key, in either mode, never a traceback; a tool child the agent runs that is ended at agents.tool_timeout_seconds or agents.tool_max_output_bytes (scripts/resource_limits.py run_tool) is a failure (exit 1) naming the key.
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ sys.path.insert(0, ROOT)  # make top-level `agents`/`models`/`runtimes` importab
 sys.path.insert(0, os.path.join(ROOT, "scripts"))
 
 import config_loader  # noqa: E402
+import corpus_level  # noqa: E402
 import exit_codes  # noqa: E402
 import model_budget  # noqa: E402
 from agents.practice_refactor import refactor  # noqa: E402  (after sys.path setup)
@@ -65,23 +66,34 @@ def main(argv=None):
         help="KG neighbourhood budget (chunks to walk)",
     )
     ap.add_argument(
-        "--corpus", default=None, help="corpus path (default: <root>/wiki/corpus.json)"
+        "--corpus",
+        default=None,
+        help="the corpus, read only at its checkout's %s, which is the "
+        "checkout refactored; not with --root" % corpus_level.CORPUS_PATH,
     )
     ap.add_argument(
-        "--root", default=None, help="repo root to refactor (default: this repo)"
+        "--root",
+        default=None,
+        help="the checkout to refactor, whose %s is walked (default: this "
+        "repo); not with --corpus" % corpus_level.CORPUS_PATH,
     )
     ap.add_argument(
         "--runtime", default=None, help="runtime engine name (default: inprocess)"
     )
     ap.add_argument("--json", action="store_true", help="emit the report as JSON")
     args = ap.parse_args(argv)
+    try:
+        root, _ = corpus_level.checkout(args.root, args.corpus, ROOT)
+    except corpus_level.NotACheckout as exc:
+        what, on, next_step = exc.parts
+        return exit_codes.report(
+            exit_codes.ExitCode.USAGE, "refactor_practice: " + what, on, next_step
+        )
     if args.execute:
         # Held to the cap before the agent runs, so a refused run calls no
         # model and writes nothing; a dry run calls none, so it is never held.
         try:
-            model_budget.approve(
-                args.max_nodes, model_budget.cap(args.root or ROOT), "--max-nodes"
-            )
+            model_budget.approve(args.max_nodes, model_budget.cap(root), "--max-nodes")
         except config_loader.ConfigError:
             return exit_codes.report(
                 exit_codes.ExitCode.CONFIG,
@@ -107,8 +119,7 @@ def main(argv=None):
             model=args.model,
             gate=args.gate,
             max_nodes=args.max_nodes,
-            corpus=args.corpus,
-            root=args.root,
+            root=root,
             runtime=args.runtime,
             max_model_calls=args.max_nodes if args.execute else None,
         )

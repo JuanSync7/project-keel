@@ -1,8 +1,8 @@
 """
-title: corpus_level — the levels a file states, read the way the corpus build reads them
+title: corpus_level — the levels a file states, read the way the corpus build reads them, and the checkout a corpus is read in
 kind: script
 layer: n/a
-summary: The one reader of the visibility a file states on disk. `split_frontmatter` and `docstring_meta` are the corpus build's frontmatter and module-docstring grammars. `read_readme` is the one read of the level a README.md states, a README that cannot be read standing for UNREADABLE_README, whose UNREADABLE_VISIBILITY is a value outside CONVENTIONS §1's vocabulary. `readmes_upward` names each README.md from a directory up to the root, and `readme_chain` is the chain a file takes its level from: its walked directory's, then, for a symlink to a file elsewhere in the root, its real directory's. scripts/check_structure.py re-exports these, so check_A and scripts/jobs/build_corpus.py, which ranks a node over check_structure served_chain, judge a README.md by the same reader. `stated_now(root, relpath)` reads the file at *relpath* again and returns its own level followed by each README.md's on its readme_chain, or None when the file cannot be read, is a Markdown file with no frontmatter, a Python file that does not parse or has no docstring, or any other kind of file, so a reader that checks a node's file now (CONVENTIONS §1 lists them) decides with `config_loader.is_served_now` on the level the file states now as well as the corpus's. It imports nothing of the project, so the module reached as `corpus_level` and as `scripts.corpus_level` holds the same pure functions; ranking the levels is scripts/config_loader.py's. Stdlib-only and 3.6-safe; it reads files and writes none.
+summary: The one reader of the visibility a file states on disk. `split_frontmatter` and `docstring_meta` are the corpus build's frontmatter and module-docstring grammars. `read_readme` is the one read of the level a README.md states, a README that cannot be read standing for UNREADABLE_README, whose UNREADABLE_VISIBILITY is a value outside CONVENTIONS §1's vocabulary. `readmes_upward` names each README.md from a directory up to the root, and `readme_chain` is the chain a file takes its level from: its walked directory's, then, for a symlink to a file elsewhere in the root, its real directory's. scripts/check_structure.py re-exports these, so check_A and scripts/jobs/build_corpus.py, which ranks a node over check_structure served_chain, judge a README.md by the same reader. `stated_now(root, relpath)` reads the file at *relpath* again and returns its own level followed by each README.md's on its readme_chain, or None when the file cannot be read, is a Markdown file with no frontmatter, a Python file that does not parse or has no docstring, or any other kind of file, so a reader that checks a node's file now (CONVENTIONS §1 lists them) decides with `config_loader.is_served_now` on the level the file states now as well as the corpus's. `CORPUS_PATH` is where a checkout keeps its corpus, and `checkout(root, corpus, default)` is every corpus reader's one way to name what it reads: it derives the corpus from a root, or the root from a corpus at some directory's CORPUS_PATH (*default* when neither is given), and raises NotACheckout, a ValueError carrying report()'s three parts, for both given or a corpus anywhere else, since no rule can tell a stale copy or another project from the real checkout by the files it holds. It imports nothing of the project, so the module reached as `corpus_level` and as `scripts.corpus_level` holds the same pure functions; ranking the levels is scripts/config_loader.py's. Stdlib-only and 3.6-safe; it reads files and writes none.
 effect: read-only
 """
 
@@ -16,8 +16,11 @@ import os
 from typing import Dict, List, Optional, Tuple
 
 __all__ = [
+    "CORPUS_PATH",
+    "NotACheckout",
     "UNREADABLE_README",
     "UNREADABLE_VISIBILITY",
+    "checkout",
     "docstring_meta",
     "read_readme",
     "readme_chain",
@@ -38,6 +41,54 @@ UNREADABLE_VISIBILITY = "unreadable-readme"
 # identity, so a README that writes `visibility: unreadable-readme` is still
 # a readable README with an invalid level, for check_A to refuse.
 UNREADABLE_README = {"visibility": UNREADABLE_VISIBILITY}
+
+# Where a checkout keeps its corpus. No rule can tell a stale copy or a
+# sibling project from the real checkout by the files it holds, so a reader
+# never pairs a corpus with a root chosen beside it: checkout derives one
+# from the other.
+CORPUS_PATH = os.path.join("wiki", "corpus.json")
+
+
+class NotACheckout(ValueError):
+    """A corpus path and root that are not one checkout, as report()'s three
+    parts."""
+
+    def __init__(self, what: str, on: str, next_step: str) -> None:
+        super().__init__("%s: %s; %s" % (what, on, next_step))
+        self.parts = (what, on, next_step)
+
+
+def checkout(
+    root: Optional[str], corpus: Optional[str], default: str
+) -> Tuple[str, str]:
+    """(the checkout, its corpus), both absolute, a relative path taken from
+    the caller's directory. A corpus lives at `<checkout>/CORPUS_PATH`, so
+    *corpus* gives the checkout and *root* gives the corpus; with neither,
+    *default* is the checkout. Raises NotACheckout for both given, since two
+    choices could pair one checkout's corpus with another's files, and for a
+    corpus that is not at some directory's CORPUS_PATH."""
+    if root is not None and corpus is not None:
+        raise NotACheckout(
+            "give a root or a corpus, not both",
+            "root %s, corpus %s" % (root, corpus),
+            "pass the checkout as the root, or its %s as the corpus" % CORPUS_PATH,
+        )
+    if corpus is None:
+        root = os.path.abspath(root or default)
+        return root, os.path.join(root, CORPUS_PATH)
+    corpus = os.path.abspath(corpus)
+    root = corpus
+    for _ in CORPUS_PATH.split(os.sep):
+        root = os.path.dirname(root)
+    if os.path.join(root, CORPUS_PATH) != corpus:
+        raise NotACheckout(
+            "a corpus is read only in the checkout that keeps it",
+            corpus,
+            "move it to its checkout's %s, or pass that checkout as the root"
+            % CORPUS_PATH,
+        )
+    return root, corpus
+
 
 # The module-docstring keys the corpus reads; any other `key:` line is prose.
 _DOCSTRING_KEYS = ("title", "summary", "layer", "public_api", "owner", "visibility")

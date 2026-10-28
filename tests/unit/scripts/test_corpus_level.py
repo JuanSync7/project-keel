@@ -137,3 +137,52 @@ def test_a_file_saved_with_a_byte_order_mark_states_its_level(tmp_path):
         "public",
         "restricted",
     ]
+
+
+# ---- a corpus and the checkout its files are read in -----------------------
+
+
+def test_a_root_gives_its_own_corpus_and_a_corpus_its_own_checkout(
+    tmp_path, monkeypatch
+):
+    """The one is derived from the other, absolute, a relative one taken from
+    the caller's directory; neither given is the default checkout's corpus."""
+    monkeypatch.chdir(tmp_path)
+    own = str(tmp_path / "b" / "wiki" / "corpus.json")
+    assert corpus_level.checkout("b", None, "/x") == (str(tmp_path / "b"), own)
+    assert corpus_level.checkout(None, "b/wiki/corpus.json", "/x") == (
+        str(tmp_path / "b"),
+        own,
+    )
+    assert corpus_level.checkout(None, None, str(tmp_path / "b")) == (
+        str(tmp_path / "b"),
+        own,
+    )
+    assert corpus_level.CORPUS_PATH == "wiki/corpus.json"
+
+
+@pytest.mark.parametrize(
+    "corpus",
+    ["corpus.json", "b/corpus.json", "b/wiki/other.json", "b/docs/corpus.json"],
+)
+def test_a_corpus_outside_a_checkouts_wiki_is_refused(tmp_path, monkeypatch, corpus):
+    """A corpus is read only where a checkout keeps it, so one anywhere else
+    has no checkout to read its files in and is refused, naming the path and
+    where a corpus lives."""
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(corpus_level.NotACheckout) as raised:
+        corpus_level.checkout(None, corpus, "/x")
+    what, on, next_step = raised.value.parts
+    assert on == str(tmp_path / corpus)
+    assert "wiki/corpus.json" in next_step
+    assert isinstance(raised.value, ValueError)
+
+
+def test_a_root_and_a_corpus_given_together_are_refused(tmp_path):
+    """Two independent choices could pair one checkout's corpus with another's
+    files, so a caller names one and the other is derived."""
+    with pytest.raises(corpus_level.NotACheckout) as raised:
+        corpus_level.checkout(
+            str(tmp_path / "a"), str(tmp_path / "a" / "wiki" / "corpus.json"), "/x"
+        )
+    assert "not both" in str(raised.value)

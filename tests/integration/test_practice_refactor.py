@@ -2,7 +2,7 @@
 title: Integration — practice_refactor gated KG-walking loop
 kind: tests
 layer: backend
-summary: A relative root reaches the corpus query as one absolute checkout, root and corpus. Dry-run walks the graph + gates the read-only baseline but proposes/writes nothing; execute proposes one bounded edit per chunk and a chunk is `refactored` only when the gated apply_refactor keeps make verify green (else rolled back -> `skipped`); a crash mid-refactor resumes at the cursor without re-applying accepted chunks. The gate is the run's: a reply that names a gate is declined before any apply, every apply is bound to its chunk's own file with `--allow`, a chunk with no path is declined before the model is called, and a chunk outside config/project.json corpus.served_visibilities is no candidate, nor is one whose file states a level outside it on disk now, or none that can be read, as a document reclassified after the corpus was built does; a saved run's chunk from such a file is declined at propose with no model call. Every tool call hands the refactored root to the runner, so run_tool reads the tool limits, and checks them against the gate keys, of the tree the gate runner reads.
+summary: A relative root reaches the corpus query as one absolute `--root`, with no `--corpus` beside it; a corpus given alone names its checkout; a root beside a corpus, or a corpus outside some checkout's wiki/corpus.json, is corpus_level.NotACheckout before any tool runs, and exit USAGE from the CLI. Dry-run walks the graph + gates the read-only baseline but proposes/writes nothing; execute proposes one bounded edit per chunk and a chunk is `refactored` only when the gated apply_refactor keeps make verify green (else rolled back -> `skipped`); a crash mid-refactor resumes at the cursor without re-applying accepted chunks. The gate is the run's: a reply that names a gate is declined before any apply, every apply is bound to its chunk's own file with `--allow`, a chunk with no path is declined before the model is called, and a chunk outside config/project.json corpus.served_visibilities is no candidate, nor is one whose file states a level outside it on disk now, or none that can be read, as a document reclassified after the corpus was built does; a saved run's chunk from such a file is declined at propose with no model call. Every tool call hands the refactored root to the runner, so run_tool reads the tool limits, and checks them against the gate keys, of the tree the gate runner reads.
 """
 
 import json
@@ -19,6 +19,7 @@ sys.path.insert(0, str(_ROOT))
 from agents.practice_refactor import refactor  # noqa: E402
 from models import ModelMeter  # noqa: E402
 from runtimes import FileCheckpointer  # noqa: E402
+from scripts import corpus_level  # noqa: E402
 
 import reclassify  # noqa: E402
 
@@ -211,21 +212,60 @@ def test_the_walk_drops_a_node_outside_the_served_levels(tmp_path, monkeypatch):
 def test_a_relative_root_reaches_the_corpus_query_as_one_absolute_checkout(
     tmp_path, monkeypatch
 ):
-    """query_corpus reads a relative `--corpus` under `--root`, so a relative
-    root is made absolute first, from the caller's directory, and the corpus
-    passed is that root's."""
+    """query_corpus reads the corpus of the root it is handed, so a relative
+    root is made absolute first, from the caller's directory, and handed
+    alone: a `--corpus` beside it could name another checkout's corpus."""
     runner, model = _Runner(), _Model()
     _patch(monkeypatch, runner, model)
     _files(tmp_path)
     monkeypatch.chdir(tmp_path.parent)
     refactor("precise-container-types", root=tmp_path.name)
     (argv,) = runner.argvs["query_corpus.py"]
-    real = os.path.realpath(str(tmp_path))
     assert os.path.isabs(_flag(argv, "--root"))
-    assert os.path.realpath(_flag(argv, "--root")) == real
-    corpus = _flag(argv, "--corpus")
-    assert os.path.isabs(corpus)
-    assert os.path.realpath(corpus) == os.path.join(real, "wiki", "corpus.json")
+    assert os.path.realpath(_flag(argv, "--root")) == os.path.realpath(str(tmp_path))
+    assert "--corpus" not in argv
+
+
+def test_a_corpus_names_the_checkout_the_walk_reads(tmp_path, monkeypatch):
+    """A corpus given alone is its checkout's wiki/corpus.json, a relative
+    one from the caller's directory, so the query is handed that checkout."""
+    runner, model = _Runner(), _Model()
+    _patch(monkeypatch, runner, model)
+    _files(tmp_path)
+    monkeypatch.chdir(tmp_path.parent)
+    refactor(
+        "precise-container-types",
+        corpus=os.path.join(tmp_path.name, "wiki", "corpus.json"),
+    )
+    (argv,) = runner.argvs["query_corpus.py"]
+    assert os.path.realpath(_flag(argv, "--root")) == os.path.realpath(str(tmp_path))
+    assert "--corpus" not in argv
+
+
+@pytest.mark.parametrize("given", ["both", "outside-wiki"])
+def test_a_corpus_that_is_not_its_roots_own_is_refused_before_any_step(
+    tmp_path, monkeypatch, capsys, given
+):
+    """A root beside a corpus, or a corpus outside some checkout's
+    wiki/corpus.json, could pair one checkout's corpus with another's files:
+    refactor() raises corpus_level.NotACheckout and runs no tool, and the
+    CLI refuses it with USAGE before the agent runs."""
+    sys.path.insert(0, str(_ROOT / "scripts"))
+    import refactor_practice as rp  # noqa: E402
+
+    runner, model = _Runner(), _Model()
+    _patch(monkeypatch, runner, model)
+    root = _files(tmp_path)
+    if given == "both":
+        kwargs = {"root": root, "corpus": os.path.join(root, "wiki", "corpus.json")}
+    else:
+        kwargs = {"corpus": os.path.join(root, "corpus.json")}
+    with pytest.raises(corpus_level.NotACheckout):
+        refactor("precise-container-types", **kwargs)
+    flags = [a for k, v in sorted(kwargs.items()) for a in ("--" + k, v)]
+    assert rp.main(["precise-container-types"] + flags) == rp.exit_codes.ExitCode.USAGE
+    assert "wiki/corpus.json" in capsys.readouterr().err
+    assert runner.calls == []
 
 
 def test_red_baseline_attempts_no_refactor(tmp_path, monkeypatch):

@@ -765,15 +765,18 @@ version rather than a bare commit:
   node's title and summary until the corpus is rebuilt; CONVENTIONS §1 lists
   each reader on each side. CONVENTIONS §1 also names the residual risk: a
   served document's own link text can name a hidden document's path, which a
-  default id is derived from. `scripts/query_corpus.py` refuses a `--root`
-  that does not exist or holds none of the files the corpus names, rather
-  than printing `[]`, so the wiki navigator raises before a model call and
-  the MCP Q&A server answers a corpus built elsewhere with a tool error; it
-  writes to stderr how many nodes it withheld. A relative `--corpus` is read
-  under `--root`, and the wiki navigator takes its corpus from its root as
-  the doc reviewer and practice refactor do, so the corpus and the files its
-  nodes name come from one checkout; each of the three agents makes a
-  relative root absolute from the caller's directory first.
+  default id is derived from. A corpus is read only with the files of the
+  checkout that keeps it at `wiki/corpus.json`: `scripts/query_corpus.py`,
+  the wiki navigator, the MCP Q&A server, the doc reviewer and the practice
+  refactor each take a root or a corpus and derive the other
+  (`scripts/corpus_level.py` `checkout`). They refuse a root and a corpus
+  given together, and a corpus path that is not some directory's
+  `wiki/corpus.json`. So the MCP Q&A server answers another project's corpus
+  against that project's files. `query_corpus.py` refuses a `--root` that
+  does not exist, and the wiki navigator then raises before a model call.
+  `query_corpus.py` writes to stderr how many nodes it withheld, and where a
+  checkout with no corpus would keep one. Each of the three agents makes a
+  relative path absolute from the caller's directory first.
   (KEEL-VIS-2)
 - **The astro app's audited dependencies move past their advisories.**
   `npm audit` in `src/frontend/astro` reported 28 findings (2 critical, 17

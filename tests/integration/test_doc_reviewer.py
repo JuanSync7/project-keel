@@ -2,7 +2,7 @@
 title: Integration — the doc reviewer agent (dry-run, execute, decline, rollback)
 kind: tests
 layer: backend
-summary: agents.doc_reviewer.review over patched tool and model seams (no subprocess, no model, but for one style-rule retrieval over the real query_corpus, which retrieves the guide while its file under the reviewed root is public and not once it states confidential, so a retrieval that drops `--root` is red): a dry-run gathers findings, retrieves rules, gates the baseline and writes nothing; execute proposes one edit per chunk and applies through the gated doer; a declined chunk or a red gate lands in skipped; a red baseline attempts nothing; a reply that names a gate is declined, the prompt never states the gate, and every apply is bound to its chunk's own file with `--allow`. A relative root reaches the corpus query as one absolute checkout, root and corpus. Every tool call hands the reviewed root to the runner, so run_tool reads the tool limits, and checks them against the gate keys, of the tree the gate runner reads. The report the CLI and hook print is this report. A finding on a file the corpus places outside corpus.served_visibilities, or has no node for, or on any file when the corpus or config cannot be read, is withheld: reported with why (one CLI line each, a count in the hook's line), its text never read, and no prompt or apply made, dry run and execute alike, while a served finding beside it still goes; a chunk queued before its file left the served levels is declined at propose with no model call; a document reclassified on disk after the corpus was built, or made unreadable, is withheld the same way, its text in no prompt.
+summary: agents.doc_reviewer.review over patched tool and model seams (no subprocess, no model, but for one style-rule retrieval over the real query_corpus, which retrieves the guide while its file under the reviewed root is public and not once it states confidential, so a retrieval that drops `--root` is red): a dry-run gathers findings, retrieves rules, gates the baseline and writes nothing; execute proposes one edit per chunk and applies through the gated doer; a declined chunk or a red gate lands in skipped; a red baseline attempts nothing; a reply that names a gate is declined, the prompt never states the gate, and every apply is bound to its chunk's own file with `--allow`. A relative root reaches the corpus query as one absolute `--root`, with no `--corpus` beside it; a corpus given alone names its checkout, whose corpus both the withholding check and the query read; a root beside a corpus, or a corpus outside some checkout's wiki/corpus.json, is corpus_level.NotACheckout before any tool runs. Every tool call hands the reviewed root to the runner, so run_tool reads the tool limits, and checks them against the gate keys, of the tree the gate runner reads. The report the CLI and hook print is this report. A finding on a file the corpus places outside corpus.served_visibilities, or has no node for, or on any file when the corpus or config cannot be read, is withheld: reported with why (one CLI line each, a count in the hook's line), its text never read, and no prompt or apply made, dry run and execute alike, while a served finding beside it still goes; a chunk queued before its file left the served levels is declined at propose with no model call; a document reclassified on disk after the corpus was built, or made unreadable, is withheld the same way, its text in no prompt.
 """
 
 import json
@@ -17,6 +17,7 @@ sys.path.insert(0, str(_ROOT))
 
 from agents.doc_reviewer import DocReviewReport, review  # noqa: E402
 from models import ModelMeter  # noqa: E402
+from scripts import corpus_level  # noqa: E402
 
 import reclassify  # noqa: E402
 
@@ -184,19 +185,48 @@ def test_every_tool_child_is_bounded_by_the_reviewed_roots_limits(seams):
 def test_a_relative_root_reaches_the_corpus_query_as_one_absolute_checkout(
     seams, monkeypatch
 ):
-    """query_corpus reads a relative `--corpus` under `--root`, so a relative
-    root is made absolute first, from the caller's directory, and the corpus
-    passed is that root's."""
+    """query_corpus reads the corpus of the root it is handed, so a relative
+    root is made absolute first, from the caller's directory, and handed
+    alone: a `--corpus` beside it could name another checkout's corpus."""
     runner, _, root = seams
     monkeypatch.chdir(root.parent)
     review(root=root.name)
     (argv,) = runner.argvs["query_corpus.py"]
-    real = os.path.realpath(str(root))
     assert os.path.isabs(_flag(argv, "--root"))
-    assert os.path.realpath(_flag(argv, "--root")) == real
-    corpus = _flag(argv, "--corpus")
-    assert os.path.isabs(corpus)
-    assert os.path.realpath(corpus) == os.path.join(real, "wiki", "corpus.json")
+    assert os.path.realpath(_flag(argv, "--root")) == os.path.realpath(str(root))
+    assert "--corpus" not in argv
+
+
+def test_a_corpus_names_the_checkout_both_readers_read(seams, monkeypatch):
+    """The reviewer's repro: a relative corpus was opened from the caller's
+    directory by the withholding check and under the root by query_corpus.
+    Now the corpus names its checkout, the directory that keeps its
+    wiki/corpus.json, and both read there: the findings the root's corpus
+    serves are candidates, and the query is handed that root."""
+    runner, _, root = seams
+    monkeypatch.chdir(root.parent)
+    r = review(corpus=os.path.join(root.name, "wiki", "corpus.json"))
+    assert r.withheld == ()
+    assert r.candidates == ("mention:docs/b.md:4", "roster:scripts/README.md:x.py")
+    (argv,) = runner.argvs["query_corpus.py"]
+    assert os.path.realpath(_flag(argv, "--root")) == os.path.realpath(str(root))
+
+
+@pytest.mark.parametrize("given", ["both", "outside-wiki"])
+def test_a_corpus_that_is_not_its_roots_own_is_refused_before_any_step(seams, given):
+    """A root beside a corpus, or a corpus outside some checkout's
+    wiki/corpus.json, could pair one checkout's corpus with another's files,
+    so review() raises corpus_level.NotACheckout and runs no tool."""
+    runner, model, root = seams
+    corpus = root / "wiki" / "corpus.json"
+    if given == "both":
+        kwargs = {"root": str(root), "corpus": str(corpus)}
+    else:
+        corpus.rename(root / "corpus.json")
+        kwargs = {"corpus": str(root / "corpus.json")}
+    with pytest.raises(corpus_level.NotACheckout):
+        review(execute=True, max_model_calls=8, **kwargs)
+    assert runner.calls == [] and model.prompts == []
 
 
 def test_a_declined_chunk_is_skipped_without_touching_apply(seams, monkeypatch):

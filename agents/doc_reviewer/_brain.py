@@ -2,7 +2,7 @@
 title: Doc reviewer brain
 layer: backend
 public_api: no
-summary: Plan: gather the deterministic doc findings (review_docs) -> retrieve the style rules (query_corpus) -> gate a green baseline -> (propose -> apply+gate+rollback) one finding per step; on a durable Runtime. Judgment only where a rule cannot decide. An execute run needs its approved count of model calls: every call goes through one run's models.ModelMeter, and a resumed run is first checked against the approved model and count (models.approve_resume). Every tool child runs through scripts/resource_limits.py run_tool, held to the reviewed root's config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes`, the root whose make_targets gate keys the gate runner it starts reads, so the time limit is checked against that runner's own limit: past either its session is ended and the step raises ChildTimedOut or ChildOutputTooLarge naming the key. A finding on a file the corpus does not place at a corpus.served_visibilities level (config_loader.is_served), on a file that states a level outside it on disk now or none that can be read (config_loader.is_served_now over scripts/corpus_level.py stated_now), or on any file when the corpus cannot be read, is withheld: reported with why, never sent. A relative root is made absolute from the caller's directory before any step, and the corpus is that root's wiki/corpus.json when none is given.
+summary: Plan: gather the deterministic doc findings (review_docs) -> retrieve the style rules (query_corpus) -> gate a green baseline -> (propose -> apply+gate+rollback) one finding per step; on a durable Runtime. Judgment only where a rule cannot decide. An execute run needs its approved count of model calls: every call goes through one run's models.ModelMeter, and a resumed run is first checked against the approved model and count (models.approve_resume). Every tool child runs through scripts/resource_limits.py run_tool, held to the reviewed root's config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes`, the root whose make_targets gate keys the gate runner it starts reads, so the time limit is checked against that runner's own limit: past either its session is ended and the step raises ChildTimedOut or ChildOutputTooLarge naming the key. A finding on a file the corpus does not place at a corpus.served_visibilities level (config_loader.is_served), on a file that states a level outside it on disk now or none that can be read (config_loader.is_served_now over scripts/corpus_level.py stated_now), or on any file when the corpus cannot be read, is withheld: reported with why, never sent. review is given a root or a corpus, never both, and scripts/corpus_level.py checkout derives the other before any step (this checkout when neither; a relative path is the caller's directory's), raising NotACheckout for both or for a corpus that is not some checkout's wiki/corpus.json; every step keeps only the root and reads its wiki/corpus.json, so the withholding check and the style-rule retrieval, which hands query_corpus `--root` alone, read one corpus.
 """
 
 from __future__ import annotations
@@ -30,7 +30,6 @@ from scripts.resource_limits import run_tool
 __all__ = ["review", "DocReviewReport"]
 
 _REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-_CORPUS = os.path.join("wiki", "corpus.json")
 _CKPT_DIR = os.path.join("wiki", ".runtime")  # gitignored; durable review snapshots
 _GUIDE = os.path.join("docs", "guides", "doc-style.md")
 # The rules the model applies, retrieved from the corpus by these words so the
@@ -95,11 +94,12 @@ def _read_lines(root, relpath, lineno, around=3):
     return "\n".join("%d: %s" % (i + 1, lines[i]) for i in range(lo, hi))
 
 
-def _withhold(root, corpus_path):
+def _withhold(root):
     """A function giving, for a document's path, why a finding on it must
     not be sent to a model, or None when it may be.
 
-    A file may be sent only when the corpus at *corpus_path* has a node for
+    A file may be sent only when *root*'s corpus (its
+    scripts/corpus_level.py CORPUS_PATH) has a node for
     it, config_loader.is_served keeps every such node at *root*'s
     `corpus.served_visibilities`, and config_loader.is_served_now keeps it at
     the level the file states on disk now (scripts/corpus_level.py
@@ -115,6 +115,7 @@ def _withhold(root, corpus_path):
             "; ".join(exc.lines) or exc.path or config_loader.CONFIG_FILE
         )
         return lambda path: refused
+    corpus_path = os.path.join(root, corpus_level.CORPUS_PATH)
     try:
         with open(corpus_path, encoding="utf-8") as fh:
             corpus = json.load(fh)
@@ -260,7 +261,7 @@ def _review(state):
         report,
         state["root"],
         state["max_chunks"],
-        _withhold(state["root"], state["corpus"]),
+        _withhold(state["root"]),
     )
     return {
         "stale": len(report.get("findings", [])),
@@ -281,8 +282,6 @@ def _retrieve(state):
         [
             "scripts/query_corpus.py",
             _RULE_QUERY,
-            "--corpus",
-            state["corpus"],
             "--max-nodes",
             "6",
             "--root",
@@ -321,7 +320,7 @@ def _propose(state, meter):
     the corpus again, so a run resumed from a snapshot taken before its file
     left the served levels declines it with no model call."""
     chunk = state["chunks"][state["cursor"]]
-    if _withhold(state["root"], state["corpus"])(chunk["path"]) is not None:
+    if _withhold(state["root"])(chunk["path"]) is not None:
         return {"spec": None}
     reply = meter.backend().run(_propose_prompt(state.get("rules", []), chunk))
     return {"spec": _parse_spec(reply)}
@@ -443,20 +442,26 @@ def review(
     that count, so the call past it raises ``models.CallCapReached``. A saved
     run is resumed only on the same model and with no more chunks left than
     that count; otherwise ``models.RunNotApproved`` is raised before any step.
+
+    ``root`` or ``corpus`` names the checkout reviewed, never both
+    (scripts/corpus_level.py checkout): ``root`` is the checkout (``None`` =
+    this one), ``corpus`` its ``wiki/corpus.json``, a relative one taken
+    from the caller's directory. Every step reads that checkout's corpus and
+    files; both given, or a corpus that is not some checkout's
+    ``wiki/corpus.json``, raises corpus_level.NotACheckout, a ValueError,
+    before any step.
     """
     if execute and max_model_calls is None:
         raise ValueError(
             "review(execute=True) needs max_model_calls, the approved model-call count"
         )
     # Absolute, from the caller's directory: a tool child runs in this
-    # checkout, and query_corpus reads a relative corpus under its root.
-    root = os.path.abspath(root or _REPO)
-    corpus = corpus or os.path.join(root, _CORPUS)
+    # checkout. Each step reads the root's corpus, so only the root is kept.
+    root, _ = corpus_level.checkout(root, corpus, _REPO)
     if checkpointer is None and execute:
         checkpointer = FileCheckpointer(os.path.join(root, _CKPT_DIR))
     init = {
         "model": model,
-        "corpus": corpus,
         "root": root,
         "max_chunks": max_chunks,
         "gate": gate,
