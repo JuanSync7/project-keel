@@ -8,6 +8,7 @@ summary: read_members reads the enum from the helper's syntax tree in value orde
 import contextlib
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -722,10 +723,54 @@ def test_the_helper_meets_the_shell_header_and_effect_rules(tmp_path):
     ) == ([], [])
 
 
+# The shell constructs dash and busybox sh do not read, each with a line that
+# uses it. No POSIX shell or shellcheck runs here, so the helper is checked
+# against this list, never proven under dash. `$((` is POSIX arithmetic, so
+# only a `((` with no `$` before it is bash's.
+_SH_BASH_ONLY = (
+    ("[[", r"\[\[", '[[ "$#" -ne 4 ]] && exit 2'),
+    ("local", r"\blocal\b", "local part"),
+    ("function", r"\bfunction\b", "function f { :; }"),
+    ("an array", r"\b\w+=\(|\$\{#?\w+\[|\b\w+\[[^]\s]*\]=", 'set -- "${parts[0]}"'),
+    ("== in a test", r"==", '[ "$1" == x ]'),
+    ("$'", r"\$'", "printf $'%s\\n' x"),
+    ("process substitution", r"[<>]\(", "cat <(true)"),
+    ("source", r"\bsource\b", "source ./x.sh"),
+    ("declare", r"\bdeclare\b", "declare part=1"),
+    ("let", r"\blet\b", "let part=1"),
+    ("((", r"(?<!\$)\(\(", "(( part++ ))"),
+)
+
+
+def _bash_only(text):
+    """The names of the `_SH_BASH_ONLY` constructs *text* uses outside its
+    comment lines, each once, in list order."""
+    code = "\n".join(
+        line for line in text.splitlines() if not line.lstrip().startswith("#")
+    )
+    return [name for name, pattern, _ in _SH_BASH_ONLY if re.search(pattern, code)]
+
+
+def test_the_helper_uses_no_construct_a_posix_shell_does_not_read():
+    text = et.render_shell(et.read_members(str(_ROOT)))
+    assert _bash_only(text) == []
+
+
+@pytest.mark.parametrize(
+    "name, line",
+    [(n, u) for n, _, u in _SH_BASH_ONLY],
+    ids=[n for n, _, _ in _SH_BASH_ONLY],
+)
+def test_each_bash_only_construct_in_the_helper_is_found(name, line):
+    text = et.render_shell(et.read_members(str(_ROOT)))
+    assert _bash_only(text + line + "\n") == [name]
+    assert _bash_only(text + "# " + line + "\n") == []
+
+
 # The shells the helper is run under: /bin/sh as a script's `#!` line names
-# it, and bash in both of its modes, so a bash-only construct cannot pass
-# where /bin/sh is bash. Where /bin/sh is bash, nothing here runs dash or
-# busybox sh.
+# it, and bash in both of its modes. Here /bin/sh is bash, so these runs
+# prove the helper under bash only, and a bash-only construct passes all
+# three: `_SH_BASH_ONLY` above is what keeps one out.
 _SHELLS = (("/bin/sh",), ("bash",), ("bash", "--posix"))
 # A run takes about 0.1 s here, rendering included; the bound only fires on a
 # hung shell.
