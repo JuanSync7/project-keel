@@ -158,7 +158,10 @@ together are refused, and so is a corpus path that is not some directory's
 no corpus yet. No rule can tell a stale copy or another project from the
 real checkout by the files it holds, so a reader never pairs a corpus with a
 root chosen beside it. A copy of a corpus kept in another checkout's `wiki/`
-is that checkout's corpus, read with that checkout's files.
+is that checkout's corpus, read with that checkout's files. `checkout` works
+the checkout out from the path as written and never resolves a symlink, so a
+`wiki/` or a `corpus.json` linked into another checkout is still the corpus of
+the checkout that holds the link (`tests/unit/scripts/test_corpus_level.py`).
 
 The rest act on the corpus as built, and still list a reclassified node's
 title and summary until `make site-data` rebuilds it: the showcase's doc tree,

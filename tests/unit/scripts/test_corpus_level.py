@@ -180,6 +180,31 @@ def test_a_corpus_outside_a_checkouts_wiki_is_refused(tmp_path, monkeypatch, cor
     assert isinstance(raised.value, ValueError)
 
 
+@pytest.mark.parametrize("link", ["wiki", "corpus"])
+def test_a_symlinked_corpus_is_the_checkout_that_holds_the_link(
+    tmp_path, monkeypatch, link
+):
+    """The checkout is worked out from the path as written, never with links
+    resolved: `e/wiki` linked to a's wiki/, or `e/wiki/corpus.json` linked to
+    a's corpus, is e's corpus, read with e's files, so a wiki/ linked to
+    scratch stays its checkout's."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "a" / "wiki").mkdir(parents=True)
+    (tmp_path / "a" / "wiki" / "corpus.json").write_text("{}")
+    (tmp_path / "e").mkdir()
+    if link == "wiki":
+        (tmp_path / "e" / "wiki").symlink_to(tmp_path / "a" / "wiki")
+    else:
+        (tmp_path / "e" / "wiki").mkdir()
+        (tmp_path / "e" / "wiki" / "corpus.json").symlink_to(
+            tmp_path / "a" / "wiki" / "corpus.json"
+        )
+    assert corpus_level.checkout(None, "e/wiki/corpus.json", "/x") == (
+        str(tmp_path / "e"),
+        str(tmp_path / "e" / "wiki" / "corpus.json"),
+    )
+
+
 def test_a_named_corpus_that_does_not_exist_is_refused(tmp_path, monkeypatch):
     """A corpus named in a folder that keeps none would answer from nothing
     with no sign, so it is refused, naming the path and how to build it; a

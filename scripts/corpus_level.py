@@ -62,7 +62,9 @@ def checkout(
     root: Optional[str], corpus: Optional[str], default: str
 ) -> Tuple[str, str]:
     """(the checkout, its corpus), both absolute, a relative path taken from
-    the caller's directory. A corpus lives at `<checkout>/CORPUS_PATH`, so
+    the caller's directory and no symlink resolved, so a wiki/ linked into
+    another checkout is the linking checkout's. A corpus lives at
+    `<checkout>/CORPUS_PATH`, so
     *corpus* gives the checkout and *root* gives the corpus; with neither,
     *default* is the checkout. Raises NotACheckout for both given, since two
     choices could pair one checkout's corpus with another's files, for a
