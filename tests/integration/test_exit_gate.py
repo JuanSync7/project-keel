@@ -479,13 +479,34 @@ _SH_HANDS_ON = (
 # wrapped tool's status. Only a bare assignment statement binds it: the word
 # `name=$?` (`"$?"` or `${?}` too), alone or after `local` and its kin, as a
 # whole simple command in the main shell, earlier in the text than the ending.
-# Every other occurrence of the name as a whole word, outside a comment and a
-# quoted here-document body, must be the plain read `$name` or `${name}`; any
-# other is a finding at its line, because the gate cannot show it leaves the
-# status alone: `let`, `(( ))`, `${name:=...}`, `printf -v`, `read`,
-# `mapfile`, `unset`, a nameref, `${#name}`, a word that only names it and a
-# `name=$?` that binds nothing alike.
+# Every other mention of the name, by _SH_NAMING's rule, outside a comment
+# and a quoted here-document body, must be the plain read `$name` or
+# `${name}`; any other is a finding at its line, because the gate cannot show
+# it leaves the status alone, and so is a `name=$?` that binds nothing.
 _SH_BINDING = re.compile(r'([A-Za-z_][A-Za-z0-9_]*)=(")?\$(?:\?|\{\?\})(?(2)")\Z')
+# A mention is a word that names the variable, so where a held name sits
+# decides it. Each word of a command whose arguments can name a variable it
+# writes or tests is a mention: the commands below, `printf -v`, a command
+# named by an expansion and a function the script defines. So is a command
+# name, unless it is a path, and the name part of an assignment word. An
+# argument of any other command, a redirection target, a `case` word, an
+# assigned value and the text of an unquoted here-document body are none.
+# A `${...}`, `$((...))`, `((...))`, `$[...]` and `{name}>` holds a mention
+# wherever it sits, and so does an unquoted here-document body with a
+# substitution or an expansion other than `${name}` in it. Text no word
+# holds is a mention: what the reader cannot place fails closed.
+_SH_NAMING = frozenset(
+    ("read", "mapfile", "readarray", "unset", "let", "getopts", "wait", "eval")
+    + ("for", "select", "coproc", "[[", "trap", "function")
+    + _SH_DECLARE
+)
+_SH_PRINTF, _SH_PRINTF_VAR = "printf", "-v"
+_SH_FD_NAME = re.compile(r"\{[A-Za-z_][A-Za-z0-9_]*\}\Z")
+_SH_FUNCTION = re.compile(
+    r"(?:^|[\s;&|(){}])(?:function[ \t]+([^\s(){};&|<>]+)"
+    r"|([A-Za-z_][A-Za-z0-9_.:-]*)[ \t]*\([ \t]*\))"
+)
+_SH_BODY_EXPANDS = re.compile(r"\$\(|`|\$\[|\$\{(?![A-Za-z_][A-Za-z0-9_]*\})")
 
 
 class ShellScanError(Exception):
@@ -533,9 +554,13 @@ class _ShellReader:
         # clause ended, so an `esac` there is a pattern word, not the end.
         self.cases, self.pattern_open = [], False
         self.words, self.word, self.word_line = [], None, line
-        # The offset in the whole file's text where each of words starts, and
-        # where the word being read does.
-        self.starts, self.word_at = [], offset
+        # The offsets in the whole file's text where each of words starts and
+        # ends, and where the word being read starts.
+        self.starts, self.ends, self.word_at = [], [], offset
+        # (start, end, red_before, zone) in the whole file's text of each
+        # word whose role the reader alone settles and each span that holds
+        # a mention wherever it sits; _sh_name_uses reads them.
+        self.marks = []
         self.start, self.skip = line, False
 
     def _add(self, chars):
@@ -548,13 +573,20 @@ class _ShellReader:
         if self.word is None:
             return
         word, self.word = "".join(self.word), None
+        at, end = self.word_at, self.offset + self.i
+        if "$[" in word:
+            self.marks.append((at, end, end, True))
         if self.skip:
             self.skip = False
-        elif not self._case_word(word):
+            self.marks.append((at, end, at, False))
+        elif self._case_word(word):
+            self.marks.append((at, end, at, False))
+        else:
             if not self.words:
                 self.start = self.word_line
             self.words.append(word)
-            self.starts.append(self.word_at)
+            self.starts.append(at)
+            self.ends.append(end)
             # `function f` is a whole definition head: the `{` after it on
             # the same line opens the body, whose commands are read as such.
             if self.words[-2:-1] == ["function"] and all(
@@ -623,8 +655,8 @@ class _ShellReader:
             raise ShellScanError(self.line, "a redirection names no target")
         if self.words:
             main = alone and not self.sub and not self.paren
-            self.commands.append((self.start, self.words, main, self.starts))
-        self.words, self.starts = [], []
+            self.commands.append((self.start, self.words, main, self.starts, self.ends))
+        self.words, self.starts, self.ends = [], [], []
 
     def _span(self, end, what):
         """Add text[i:end+1] to the word, counting its lines."""
@@ -634,6 +666,13 @@ class _ShellReader:
         self._add(chunk)
         self.line += chunk.count("\n")
         self.i = end + 1
+
+    def _arithmetic(self):
+        """`$((...))`: one part of a word, a span that holds a mention."""
+        begin = self.offset + self.i
+        self._span(self._matching(self.i + 1, "(", ")"), "a `$((`")
+        end = self.offset + self.i
+        self.marks.append((begin, end, end, True))
 
     def _quote_span(self, end, what):
         """A single-quoted or `$'...'` span to *end*, recorded as a place."""
@@ -705,7 +744,7 @@ class _ShellReader:
                 elif c == "`":
                     self._backquote()
                 elif t.startswith("$((", self.i):
-                    self._span(self._matching(self.i + 1, "(", ")"), "a `$((`")
+                    self._arithmetic()
                 elif t.startswith("$(", self.i):
                     self._substitution()
                 elif t.startswith("${", self.i):
@@ -721,7 +760,7 @@ class _ShellReader:
         a `'` is literal, as POSIX reads it (`bash --posix` agrees; plain
         bash does not)."""
         with self._level():
-            t, opened = self.text, self.line
+            t, opened, begin = self.text, self.line, self.offset + self.i
             self._add("${")
             self.i += 2
             while self.i < len(t):
@@ -729,6 +768,8 @@ class _ShellReader:
                 if c == "}":
                     self._add(c)
                     self.i += 1
+                    end = self.offset + self.i
+                    self.marks.append((begin, end, end, True))
                     return
                 if c == "\\":
                     self._span(self.i + 1, "a `${`")
@@ -741,7 +782,7 @@ class _ShellReader:
                 elif c == "`":
                     self._backquote()
                 elif t.startswith("$((", self.i):
-                    self._span(self._matching(self.i + 1, "(", ")"), "a `$((`")
+                    self._arithmetic()
                 elif t.startswith("$(", self.i):
                     self._substitution()
                 elif t.startswith("${", self.i):
@@ -757,8 +798,9 @@ class _ShellReader:
             begin, line = self.i, self.line
             saved = (self.words, self.word, self.word_line, self.start, self.skip)
             nested = (self.cases, self.pattern_open, self.paren)
-            starts = (self.starts, self.word_at)
-            self.words, self.word, self.skip, self.starts = [], None, False, []
+            starts = (self.starts, self.ends, self.word_at)
+            self.words, self.word, self.skip = [], None, False
+            self.starts, self.ends = [], []
             self.cases, self.paren = [], 0
             self.sub += 1
             self.i += 2
@@ -769,7 +811,7 @@ class _ShellReader:
             self.places.append(span)
             self.words, self.word, self.word_line, self.start, self.skip = saved
             self.cases, self.pattern_open, self.paren = nested
-            self.starts, self.word_at = starts
+            self.starts, self.ends, self.word_at = starts
             if self.word is None:
                 self.word, self.word_line = [], line
                 self.word_at = self.offset + begin
@@ -791,6 +833,7 @@ class _ShellReader:
             self.commands.extend(inner.commands)
             self.unread.extend(inner.unread)
             self.places.extend(inner.places)
+            self.marks.extend(inner.marks)
             span = (self.offset + self.i, self.offset + end + 1, _SH_IN_COMMANDS)
             self.places.append(span)
             self._span(end, "a backquote")
@@ -823,7 +866,7 @@ class _ShellReader:
                 elif c == "`":
                     self._backquote()
                 elif t.startswith("$((", self.i):
-                    self._span(self._matching(self.i + 1, "(", ")"), "a `$((`")
+                    self._arithmetic()
                 elif t.startswith("$(", self.i):
                     self._substitution()
                 elif t.startswith("${", self.i):
@@ -836,9 +879,14 @@ class _ShellReader:
         t = self.text
         # A descriptor number written against the operator belongs to it;
         # `&>` and `&>>` take none, so `echo 1&>f` echoes 1.
-        if t[self.i] != "&" and self.word is not None and "".join(self.word).isdigit():
+        word = None if self.word is None else "".join(self.word)
+        if t[self.i] != "&" and word is not None and word.isdigit():
             self.word = None
         else:
+            if word is not None and _SH_FD_NAME.match(word):
+                # `{name}>` stores the descriptor it opens in name.
+                end = self.offset + self.i
+                self.marks.append((self.word_at, end, end, True))
             self._end_word()
         if t.startswith("<<", self.i) and not t.startswith("<<<", self.i):
             self.i += 2
@@ -894,9 +942,15 @@ class _ShellReader:
                 self.i, self.line = end + 1, self.line + 1
                 if (body.lstrip("\t") if strip else body) == delimiter:
                     break
+            end = self.offset + self.i
             if quoted:
-                self.unread.append((begin, self.offset + self.i))
-            self.places.append((begin, self.offset + self.i, _SH_IN_BODY))
+                self.unread.append((begin, end))
+            else:
+                expands = _SH_BODY_EXPANDS.search(
+                    self.text, begin - self.offset, self.i
+                )
+                self.marks.append((begin, end, end if expands else begin, False))
+            self.places.append((begin, end, _SH_IN_BODY))
 
     def run(self, closer=None):
         """Read from i to the end, or to the unbalanced *closer*."""
@@ -919,7 +973,7 @@ class _ShellReader:
             elif c == "`":
                 self._backquote()
             elif t.startswith("$((", self.i):
-                self._span(self._matching(self.i + 1, "(", ")"), "a `$((`")
+                self._arithmetic()
             elif t.startswith("$(", self.i):
                 self._substitution()
             elif t.startswith("${", self.i):
@@ -938,6 +992,12 @@ class _ShellReader:
                     continue
                 # A doubled `||` or `&&` runs its left side in this shell.
                 pair = (t[self.i - 1 : self.i], t[self.i + 1 : self.i + 2])
+                if c == "(" and pair[1] == "(" and pair[0] != "(":
+                    # `((...))` is arithmetic: a span that holds a mention.
+                    close = self._matching(self.i, "(", ")")
+                    if close >= 0:
+                        end = self.offset + close + 1
+                        self.marks.append((self.offset + self.i, end, end, True))
                 self._end_command(c not in "|&" or c in pair)
                 self.i += 1
                 if c == "(":
@@ -1037,20 +1097,58 @@ def _sh_run_words(words):
     return name is None, [raw if name is None else name] + rest
 
 
+def _sh_word_marks(words, starts, ends, functions):
+    """The (start, end, red_before, zone) mark of each of one command's
+    *words*, by the roles _SH_NAMING states: a held name that starts before
+    red_before in a word is a mention."""
+    k = 0
+    while k < len(words) and words[k] in _SH_RESERVED:
+        k += 1
+    j = k
+    while j < len(words) and _SH_ASSIGNMENT.match(words[j]):
+        j += 1
+    read = _sh_run_words(words[j:]) if j < len(words) else None
+    naming = read is not None and (
+        read[0]
+        or read[1][0] in _SH_NAMING
+        or read[1][0] in functions
+        or (
+            read[1][0] == _SH_PRINTF
+            and any(w.startswith(_SH_PRINTF_VAR) for w in read[1][1:])
+        )
+    )
+    marks = []
+    for n, (word, at, end) in enumerate(zip(words, starts, ends, strict=True)):
+        if naming:
+            red_before = end
+        elif k <= n < j:
+            red_before = at + word.index("=")
+        elif n == j and "/" not in word:
+            red_before = end
+        else:
+            red_before = at
+        marks.append((at, end, red_before, False))
+    return marks
+
+
 def shell_commands(text):
     """([(line, [command name, argument words...], dynamic, main, at)],
-    [(start, end)], {at: name}) for *text*: each simple command, the
-    assignments and reserved words before it stepped over and its name read
-    by _sh_run_words, whether that name holds an expansion, whether the
-    command could end the script (_ShellReader's main) and the offset its
-    name starts at; the span of each comment and quoted here-document body;
-    and the offset of each `name=$?` word a bare assignment statement binds,
-    by _SH_BINDING's rule. Raises ShellScanError when the text cannot be read
-    to its end."""
+    [(start, end)], {at: name}, [(start, end, red_before, zone)]) for
+    *text*: each simple command, the assignments and reserved words before
+    it stepped over and its name read by _sh_run_words, whether that name
+    holds an expansion, whether the command could end the script
+    (_ShellReader's main) and the offset its name starts at; the span of
+    each comment and quoted here-document body, in text order; the offset of
+    each `name=$?` word a bare assignment statement binds, by _SH_BINDING's
+    rule; and each word's and span's mark by _SH_NAMING's rule, ordered so
+    an enclosing mark comes before the marks it holds. Raises ShellScanError
+    when the text cannot be read to its end."""
     reader = _ShellReader(text)
     reader.run()
-    commands, bindings = [], {}
-    for line, words, main, starts in sorted(reader.commands, key=lambda c: c[0]):
+    functions = {a or b for a, b in _SH_FUNCTION.findall(text)}
+    commands, bindings, marks = [], {}, list(reader.marks)
+    for line, words, main, starts, ends in sorted(reader.commands, key=lambda c: c[0]):
+        marks.extend(_sh_word_marks(words, starts, ends, functions))
         k = 0
         while k < len(words) and words[k] in _SH_RESERVED:
             k += 1
@@ -1067,24 +1165,28 @@ def shell_commands(text):
         if read is not None:
             dynamic, run = read
             commands.append((line, run, dynamic, main, starts[k]))
-    return commands, reader.unread, bindings
+    marks.sort(key=lambda m: (m[0], -m[1]))
+    return commands, sorted(reader.unread), bindings, marks
 
 
-def _sh_name_uses(text, unread, name, bindings):
-    """([offset of each `name=$?` in *bindings*], [line of each other use of
+def _sh_name_uses(text, unread, name, bindings, marks):
+    """([offset of each `name=$?` in *bindings*], [line of each mention of
     *name* that is no plain read]) in *text*, outside the *unread* spans, by
-    the rule _SH_BINDING states."""
+    the rules _SH_BINDING and _SH_NAMING state; *unread* and *marks* are in
+    shell_commands' order."""
     bound, other = [], []
     pattern = re.compile(r"(?<![A-Za-z0-9_])%s(?![A-Za-z0-9_])" % re.escape(name))
-    # The matches come in text order, so one pass over the sorted spans and
-    # the newlines between matches keeps the scan linear: a script with 25k
-    # comments and 25k reads took 31 s when each match walked every span.
-    spans, k, line, counted = sorted(unread), 0, 1, 0
+    # The matches come in text order, so one pass over the spans, the marks
+    # and the newlines between matches keeps the scan linear: a script with
+    # 25k comments and 25k reads took 31 s when each match walked every span.
+    # The marks nest, so the open ones form a stack whose top is the
+    # innermost, and zones counts the open marks that are zones.
+    k, m, line, counted, stack, zones = 0, 0, 1, 0, [], 0
     for match in pattern.finditer(text):
         start, end = match.span()
-        while k < len(spans) and spans[k][1] <= start:
+        while k < len(unread) and unread[k][1] <= start:
             k += 1
-        if k < len(spans) and spans[k][0] <= start:
+        if k < len(unread) and unread[k][0] <= start:
             continue
         line, counted = line + text.count("\n", counted, start), start
         before = text[start - 1 : start]
@@ -1093,7 +1195,17 @@ def _sh_name_uses(text, unread, name, bindings):
             continue
         if bindings.get(start) == name:
             bound.append(start)
-        else:
+            continue
+        while m < len(marks) and marks[m][0] <= start:
+            mark = marks[m]
+            m += 1
+            while stack and stack[-1][1] <= mark[0]:
+                zones -= stack.pop()[3]
+            stack.append(mark)
+            zones += mark[3]
+        while stack and stack[-1][1] <= start:
+            zones -= stack.pop()[3]
+        if zones or not stack or stack[-1][0] > start or start < stack[-1][2]:
             other.append(line)
     return bound, other
 
@@ -1206,7 +1318,7 @@ def _sh_unjudged(head, args, dynamic):
     )
 
 
-def _sh_held_status_findings(text, unread, bindings, commands, relpath):
+def _sh_held_status_findings(text, unread, bindings, marks, commands, relpath):
     """([finding], held) for the names an `exit_passthrough` or `return` of
     *commands* hands on: a finding at each line that uses one other than as
     _SH_BINDING allows, and the offsets of the endings whose name is held:
@@ -1219,7 +1331,7 @@ def _sh_held_status_findings(text, unread, bindings, commands, relpath):
             handed.setdefault(name, []).append((offset, line, " ".join([head] + args)))
     findings, held = [], set()
     for name, endings in sorted(handed.items()):
-        bound, other = _sh_name_uses(text, unread, name, bindings)
+        bound, other = _sh_name_uses(text, unread, name, bindings, marks)
         held.update(
             offset
             for offset, _line, _said in endings
@@ -1271,13 +1383,15 @@ def shell_file_findings(text, relpath, known, quiet):
     if crlf is not None:
         return [crlf]
     try:
-        commands, unread, bindings = shell_commands(text)
+        commands, unread, bindings, marks = shell_commands(text)
     except ShellScanError as exc:
         return [
             "%s:%d: cannot be read to its end: %s; close it so the exit gate can "
             "judge the script" % (relpath, exc.line, exc.reason)
         ]
-    findings, held = _sh_held_status_findings(text, unread, bindings, commands, relpath)
+    findings, held = _sh_held_status_findings(
+        text, unread, bindings, marks, commands, relpath
+    )
     sourced, ends, needs = None, 0, []
     for line, (head, *args), dynamic, main, offset in commands:
         if main and (dynamic or head == _SH_EVAL):
@@ -2418,7 +2532,22 @@ _SH_STATUS_WRITES = {
     "a local with no value": "f() { local rc; }",
     "a length": 'echo "${#rc}"',
     "an indirect expansion": 'echo "${!rc}"',
-    "a word that only names it": "echo rc",
+    "a test that it is set": "[[ -v rc ]]",
+    "wait -p": "wait -n -p rc",
+    "a descriptor it names": "exec {rc}>&-",
+    "an old arithmetic expansion": "echo $[rc = 3]",
+    "an argument of a function the script defines": "f() { :; }; f rc",
+    "a function it names": "function rc { :; }",
+    "a read inside a word": 'echo "$(read rc)"',
+    "a word only an expansion reads": "echo ${x:-rc}",
+}
+# The line of an unquoted here-document body that holds the name, for each
+# expansion of it that could write a held status.
+_SH_BODY_WRITES = {
+    "an arithmetic expansion": "$((rc = 3))",
+    "a substitution": "$(read rc)",
+    "a default assignment": "${rc:=3}",
+    "a backquote": "`read rc`",
 }
 
 
@@ -2429,7 +2558,7 @@ def test_any_use_of_a_held_status_but_a_plain_read_is_a_finding_at_its_line(
     tmp_path, monkeypatch, write
 ):
     """A name `exit_passthrough` or `return` hands on is held only if every
-    occurrence of it outside a comment is `name=$?` or the plain read `$name`
+    mention of it outside a comment is its binding or the plain read `$name`
     or `${name}`; any other is one finding at its own line, and the ending
     that hands it on is none."""
     body = 'false\nrc=$?\n%s\nexit_passthrough "$rc"\n' % write
@@ -2539,7 +2668,7 @@ _SH_RENAMES = "renames a wrapped tool's status"
 # (body after `false` on line 3, the finding's line, a fragment of it) for
 # each shape that writes `rc=$?` but binds nothing, with the ending on line 5.
 _SH_NOT_BINDINGS = {
-    "an echo of the assignment": ("echo rc=$?\n", 4, _SH_CANNOT_SHOW),
+    "an echo of the assignment": ("echo rc=$?\n", 5, _SH_RENAMES),
     "a subshell": ("(rc=$?)\n", 4, _SH_CANNOT_SHOW),
     "a substitution": ("x=$(rc=$?)\n", 4, _SH_CANNOT_SHOW),
     "a pipeline": ("rc=$? | cat\n", 4, _SH_CANNOT_SHOW),
@@ -2565,6 +2694,54 @@ def test_only_a_bare_assignment_statement_binds_a_held_status(
     (finding,) = shell_findings(root)["findings"]
     assert finding.startswith("scripts/tool.sh:%d: " % line), finding
     assert fragment in finding, finding
+
+
+@pytest.mark.parametrize(
+    "line", list(_SH_BODY_WRITES.values()), ids=list(_SH_BODY_WRITES)
+)
+def test_a_held_status_an_unquoted_here_document_expands_is_a_finding(
+    tmp_path, monkeypatch, line
+):
+    """An unquoted here-document body is expanded, so a name an expansion in
+    it could write is a finding at its line."""
+    body = 'false\nrc=$?\ncat <<EOF\n%s\nEOF\nexit_passthrough "$rc"\n' % line
+    root = _sh_tree(
+        tmp_path, monkeypatch, {"scripts/tool.sh": _SH_HEAD + body + _SH_TAIL}
+    )
+    (finding,) = shell_findings(root)["findings"]
+    assert finding.startswith("scripts/tool.sh:6: "), finding
+    assert _SH_CANNOT_SHOW in finding, finding
+
+
+# (held name, the line that mentions it) for each word that holds the name
+# but names no variable.
+_SH_NOT_MENTIONS = {
+    "a file name": ("rc", "ls a.rc"),
+    "an option": ("rc", "cmd --rc"),
+    "an argument": ("rc", "echo rc"),
+    "a subcommand named status": ("status", "git status"),
+    "a redirection target": ("rc", "echo x >rc.log"),
+    "a case pattern": ("rc", 'case "$1" in rc) : ;; esac'),
+    "a path run as a command": ("rc", "./rc.sh"),
+    "an assigned value": ("rc", "x=rc"),
+    "a quoted argument": ("rc", 'echo "rc is $rc"'),
+    "an unquoted here-document": ("rc", "cat <<EOF\nrc is $rc\nEOF"),
+}
+
+
+@pytest.mark.parametrize(
+    "case", list(_SH_NOT_MENTIONS.values()), ids=list(_SH_NOT_MENTIONS)
+)
+def test_a_word_that_names_no_variable_is_no_mention(tmp_path, monkeypatch, case):
+    """A mention of a held name is a word that names the variable: a file
+    name, an option or an argument of a command that names no variable is
+    none."""
+    name, line = case
+    body = 'false\n{0}=$?\n{1}\nexit_passthrough "${0}"\n'.format(name, line)
+    root = _sh_tree(
+        tmp_path, monkeypatch, {"scripts/tool.sh": _SH_HEAD + body + _SH_TAIL}
+    )
+    assert shell_findings(root)["findings"] == []
 
 
 def test_a_binding_after_the_ending_binds_nothing(tmp_path, monkeypatch):
@@ -2619,10 +2796,10 @@ def test_the_held_status_scan_visits_each_span_a_bounded_number_of_times():
             + 'exit_passthrough "$rc"\n'
             + _SH_TAIL
         )
-        _commands, spans, bindings = shell_commands(text)
-        counted = _Visits(spans)
-        _sh_name_uses(text, counted, "rc", bindings)
-        return counted.visits
+        _commands, spans, bindings, marks = shell_commands(text)
+        spans, marks = _Visits(spans), _Visits(marks)
+        _sh_name_uses(text, spans, "rc", bindings, marks)
+        return spans.visits + marks.visits
 
     small, large = visits(500), visits(1000)
     assert small >= 500, small

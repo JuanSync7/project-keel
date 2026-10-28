@@ -540,11 +540,23 @@ findings at their file and line: `exit 3`, `exit "3"`, `exit $?`, a bare
 status, and `exit_passthrough` or `return` handed anything else, which
 renames a status: a name never assigned, a positional such as `"$1"`, or
 `$((...))`. A `return` of a number, `0` included, and a bare `return` are
-findings too. Any other occurrence of a name an ending hands on is a finding
-at its own line, because the gate cannot show it leaves the status alone:
-`status=1`, `let`, `(( ))`, `${status:=1}`, `printf -v`, `read`, `mapfile`,
-`for`, `getopts`, `unset`, a nameref, `${#status}`, and a word that only
-names it, such as `echo status`; an unquoted here-document body counts.
+findings too. Any other mention of a name an ending hands on is a finding
+at its own line, because the gate cannot show it leaves the status alone. A
+mention is a word that names the variable, not any text that holds the
+name. Every word of a command that can name a variable it writes or tests
+is one: `read`, `mapfile`, `readarray`, `unset`, `let`, `getopts`, `wait`,
+`eval`, `for`, `select`, `coproc`, `[[`, `trap`, `function`, `local` and its
+kin (a nameref included), `printf -v`, a command named by an expansion and a
+function the script defines. So is a command name that is no path, the name
+part of an assignment (`status=1`, `status+=1`, `status[0]=1`), anything
+inside `${...}` (`${status:=1}`, `${#status}`, `${!status}`), `$((...))`,
+`(( ))` or `$[...]`, a `{status}>` redirection, and the whole of an unquoted
+here-document body that holds a substitution or an expansion other than
+`${name}`. An argument of any other command, a redirection target, a `case`
+word, an assigned value and the rest of an unquoted here-document body are
+no mention, so `ls a.status`, `cmd --status`, `git status`, `echo status`
+and `x=status` pass. Text the reader places in no word is a mention, so
+what it cannot classify fails.
 A command name with no expansion has its quotes and backslashes removed
 and a `$'...'` decoded as bash decodes it, so `"exit"`, `\exit`,
 `$'exit'`, `$'\x65xit'`, `command exit` and `builtin exit` are `exit`;

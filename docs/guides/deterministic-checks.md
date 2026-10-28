@@ -838,8 +838,11 @@ only read as `$name` or `${name}`, is the shell `passthrough`. Only
 `name=$?`, alone or after `local` and its kin, as a whole simple command in
 the main shell and earlier in the text than the ending, binds;
 `echo name=$?`, `(name=$?)`, `name=$? | cat` and `name=$? true` do not. Any other
-occurrence of that name (`let`, `(( ))`, `${name:=...}`, `printf -v`,
-`read`, a word that only names it) is a finding at its own line. It judges an ending inside a subshell,
+mention of that name, a word that names the variable (`let`, `(( ))`,
+`${name:=...}`, `printf -v`, `read`, an argument of a function the script
+defines), is a finding at its own line; an argument of a command that names
+no variable, as in `git status` or `ls a.rc`, is none, and text the reader
+places in no word fails closed. It judges an ending inside a subshell,
 `$(...)`, backquotes or a process substitution `<(...)` or `>(...)` as it
 judges one at the top, and reads a comment, a quoted word, a here-document
 body, a `case` subject or pattern and the elements of an array assignment
