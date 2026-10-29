@@ -566,7 +566,11 @@ part before the `@` may be a credential and a malformed URL such as
 hidden too; that is the cost of not parsing the value to decide. A refused
 list ends `; refused members:` or `; repeated members:` and a refused object
 `; refused entries:`, naming what the key refuses, and a member or entry name
-that holds an `@` is hidden the same way. A value read from an environment variable is blamed on
+that holds an `@` is hidden the same way. A member that is a list or an object
+is hidden when any string inside it holds an `@`, at any depth and in a key
+name too, while the harmless members beside it still show. A key written twice
+in one object, and an adapter name under `launcher.farm.adapters` that a
+refusal names, are hidden the same way. A value read from an environment variable is blamed on
 it instead: `the environment: <variable> is <JSON type> <value>; accepted: <what it accepts>`. The loader writes every `[not set]` and wrong-value line before it stops,
 so one run names every key at fault. A script that config/project.json
 `config_reads.allowed` still lists reads its config directly: it writes its own

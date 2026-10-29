@@ -732,7 +732,10 @@ version rather than a bare commit:
   value, whatever the key, because the part before the `@` may be a
   credential. A URL urllib cannot split, such as `https://[::1`, is a refusal
   with exit 14, not a traceback. A list member or object entry name the line
-  names is hidden the same way when it holds an `@`.
+  names is hidden the same way when it holds an `@`, and a member that is a
+  list or an object is hidden when any string inside it, a key name included,
+  holds one at any depth. A key written twice and an adapter name a refusal
+  names are hidden the same way.
   Before, a `secrets.scanner.release_url` given a token was refused with the
   token in the message.
 - **A confidential document reaches no reader the project serves.** The

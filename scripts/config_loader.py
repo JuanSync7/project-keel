@@ -2,7 +2,7 @@
 title: config_loader — the one way a configured value enters a process
 kind: script
 layer: n/a
-summary: Every configured value comes through here: a key of config/project.json or config/practices.json, or an environment variable the config declares. KEYS is the one table of declared keys, each row a Key giving its path (a tuple of segments, since a segment may hold a dot), its type from the closed set TYPES, its default or NONE (required exactly when the default is NONE, so a default of null stays distinct from no default), whether it is a secret, a one-line meaning, the variable that may set it, the file it lives in (None for a variable-only row) and an optional bound. `read(root, relpath)` is the one open and parse of a config file: a missing file is ConfigAbsent, and an OSError, bytes that are not UTF-8, text that is not JSON (a NaN constant, a byte-order mark and a key written twice in one object included), or a top level that is not an object is ConfigUnreadable, naming a merge-conflict hunk an update left by its line through scripts/jobs/conflict_guard.py's grammar, loaded by path (when it cannot load, the parse error says the markers were not checked). `resolve(loaded, rows, where)` walks the rows in sorted path order. Precedence: a row that names a variable takes that variable when it is set and not empty, else the file's value; a row with no variable reads the file only; a variable-only row reads its variable only; an empty variable is not set. A set value of the wrong type or out of its bound is one line `<where>: <key> is <JSON type>[ <value>]; accepted: <what>` (a null shown by its type alone), a refused list of strings ending `; refused members: <each member refused on its own>` or, when only a repeat is refused, `; repeated members: <them>`, naming the environment and the variable instead when the value came from a variable, the value never shown for a secret, and a string holding an `@` anywhere, which may begin a URL user part (a credential under any key name) however the URL is spelled, shown as `<hidden: it holds an @>`, as is a refused member or entry name the line names that holds one. A URL bound refuses whitespace, a control character, `@`, `?`, `#`, a backslash, and a value urllib cannot split or whose port it cannot read, so a malformed URL is a refusal and never a traceback. An unset key with a default takes it and writes `[using default] <key> = <canonical JSON value>  (not set; to change it, set <key> in <where>)` to stderr once per (where, key) per process, a secret's value written `<hidden>`. Each unset required key is `[not set] <key>  (required, no default; set <key> in <where>)`; every wrong and every not-set line is written before one raise, WrongValue when any value is wrong, else NotSet carrying the sorted keys. It never ends the process: the entry point that called it returns report(ExitCode.CONFIG, ...). `env(name)` is the one literal-name read of a declared variable and refuses a name neither a row nor the config declares (declared_variables). `is_owner_token` and `is_unowned` are CONVENTIONS §12's owner grammar and its `TBD` placeholder in any letter case, shared by the default-owner row's bound, check_F and the corpus build. `VISIBILITY_ORDER` is CONVENTIONS §1's visibility vocabulary, least restrictive first, and `served_visibilities(root)` resolves `corpus.served_visibilities`, the levels every corpus reader the project serves may show, refusing a level outside that vocabulary or one written twice; `is_served(node, served)` is the one served-or-not decision every such reader makes (a node that states no level is not served); `strictest_visibility` ranks stated levels (a value outside the vocabulary outranks every member), `chain_level` is the level the corpus gives a node from its own and its README chain's stated levels (the strictest, else `internal`), and `is_served_now(node, served, stated_now)` is the decision of a reader that checks a node's file now (CONVENTIONS §1 lists them): the stricter of the node's corpus level and the level its file states now (scripts/corpus_level.py stated_now) must be served, and a file whose level cannot be read is not; and `cut_hidden(node, shown)` drops the ids of nodes outside *shown* from a served node's links, children and parent. It registers itself under both `config_loader` and `scripts.config_loader`, and as the `config_loader` attribute of the `scripts` package that holds it, so either import name, in either order, gives one module, one announced set and one set of exception classes. Never run, stdlib-only and 3.6-safe: child_env and check_structure read through it under the hook interpreter. It reads and writes nothing else, and it caches nothing, so the same file and environment give the same values and lines.
+summary: Every configured value comes through here: a key of config/project.json or config/practices.json, or an environment variable the config declares. KEYS is the one table of declared keys, each row a Key giving its path (a tuple of segments, since a segment may hold a dot), its type from the closed set TYPES, its default or NONE (required exactly when the default is NONE, so a default of null stays distinct from no default), whether it is a secret, a one-line meaning, the variable that may set it, the file it lives in (None for a variable-only row) and an optional bound. `read(root, relpath)` is the one open and parse of a config file: a missing file is ConfigAbsent, and an OSError, bytes that are not UTF-8, text that is not JSON (a NaN constant, a byte-order mark and a key written twice in one object included), or a top level that is not an object is ConfigUnreadable, naming a merge-conflict hunk an update left by its line through scripts/jobs/conflict_guard.py's grammar, loaded by path (when it cannot load, the parse error says the markers were not checked). `resolve(loaded, rows, where)` walks the rows in sorted path order. Precedence: a row that names a variable takes that variable when it is set and not empty, else the file's value; a row with no variable reads the file only; a variable-only row reads its variable only; an empty variable is not set. A set value of the wrong type or out of its bound is one line `<where>: <key> is <JSON type>[ <value>]; accepted: <what>` (a null shown by its type alone), a refused list of strings ending `; refused members: <each member refused on its own>` or, when only a repeat is refused, `; repeated members: <them>`, naming the environment and the variable instead when the value came from a variable, the value never shown for a secret, and a string holding an `@` anywhere, which may begin a URL user part (a credential under any key name) however the URL is spelled, shown as `<hidden: it holds an @>`, as is any other text the project wrote that a message names and that holds one: a refused member, an entry name, a key written twice, and a key name on a declared variable's path (an adapter name). A list or object is judged whole, every string inside it at any depth and every key name included, so one `@` anywhere hides the whole member while its harmless neighbours still show. A URL bound refuses whitespace, a control character, `@`, `?`, `#`, a backslash, and a value urllib cannot split or whose port it cannot read, so a malformed URL is a refusal and never a traceback. An unset key with a default takes it and writes `[using default] <key> = <canonical JSON value>  (not set; to change it, set <key> in <where>)` to stderr once per (where, key) per process, a secret's value written `<hidden>`. Each unset required key is `[not set] <key>  (required, no default; set <key> in <where>)`; every wrong and every not-set line is written before one raise, WrongValue when any value is wrong, else NotSet carrying the sorted keys. It never ends the process: the entry point that called it returns report(ExitCode.CONFIG, ...). `env(name)` is the one literal-name read of a declared variable and refuses a name neither a row nor the config declares (declared_variables). `is_owner_token` and `is_unowned` are CONVENTIONS §12's owner grammar and its `TBD` placeholder in any letter case, shared by the default-owner row's bound, check_F and the corpus build. `VISIBILITY_ORDER` is CONVENTIONS §1's visibility vocabulary, least restrictive first, and `served_visibilities(root)` resolves `corpus.served_visibilities`, the levels every corpus reader the project serves may show, refusing a level outside that vocabulary or one written twice; `is_served(node, served)` is the one served-or-not decision every such reader makes (a node that states no level is not served); `strictest_visibility` ranks stated levels (a value outside the vocabulary outranks every member), `chain_level` is the level the corpus gives a node from its own and its README chain's stated levels (the strictest, else `internal`), and `is_served_now(node, served, stated_now)` is the decision of a reader that checks a node's file now (CONVENTIONS §1 lists them): the stricter of the node's corpus level and the level its file states now (scripts/corpus_level.py stated_now) must be served, and a file whose level cannot be read is not; and `cut_hidden(node, shown)` drops the ids of nodes outside *shown* from a served node's links, children and parent. It registers itself under both `config_loader` and `scripts.config_loader`, and as the `config_loader` attribute of the `scripts` package that holds it, so either import name, in either order, gives one module, one announced set and one set of exception classes. Never run, stdlib-only and 3.6-safe: child_env and check_structure read through it under the hook interpreter. It reads and writes nothing else, and it caches nothing, so the same file and environment give the same values and lines.
 effect: read-only
 """
 
@@ -1628,6 +1628,11 @@ def _dotted(path: Tuple[str, ...]) -> str:
     return ".".join(path)
 
 
+def _shown_path(path: Tuple[str, ...]) -> Tuple[str, ...]:
+    # A segment can be a key the project wrote (an adapter name under `*`).
+    return tuple(_HIDDEN_AT if _holds_at(part) else part for part in path)
+
+
 def _json_type(value: object) -> str:
     """The JSON name of *value*'s type, for a message that must not show it."""
     if value is None:
@@ -1656,9 +1661,10 @@ def _refuse_duplicates(pairs: List[Tuple[str, Any]]) -> Dict[str, Any]:
     seen: Dict[str, Any] = {}
     for key, value in pairs:
         if key in seen:
+            shown = _HIDDEN_AT if _holds_at(key) else "`%s`" % key
             raise ValueError(
-                "the key `%s` appears twice in one object, so which value counts "
-                "is ambiguous; keep one" % key
+                "the key %s appears twice in one object, so which value counts "
+                "is ambiguous; keep one" % shown
             )
         seen[key] = value
     return seen
@@ -1795,13 +1801,28 @@ def _lookup(loaded: Mapping[str, Any], path: Tuple[str, ...]) -> Tuple[object, i
 
 
 def _holds_at(value: object) -> bool:
+    """True when *value*, or any string inside it at any depth, an object's
+    key names included, holds an `@`."""
     # A user part may be a credential under any key name, and parsers disagree
     # on where one starts (urllib sees none in `https:/u:tok@h`, Node and
     # browsers see user u and password tok), so any `@` in a refused string
     # hides it. That also hides a harmless `a@b.com`: a refusal that names the
     # key without its value costs a look at the file, a printed token costs a
-    # rotation.
-    return isinstance(value, str) and "@" in value
+    # rotation. A list or object is walked, its keys too, because a member
+    # the line names is printed whole; iteratively, so no nesting json.loads
+    # accepts can make the check itself fail.
+    stack = [value]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, str):
+            if "@" in item:
+                return True
+        elif isinstance(item, list):
+            stack.extend(item)
+        elif isinstance(item, dict):
+            stack.extend(item)
+            stack.extend(item.values())
+    return False
 
 
 _HIDDEN_AT = "<hidden: it holds an @>"
@@ -1809,7 +1830,7 @@ _HIDDEN_AT = "<hidden: it holds an @>"
 
 def _named(part: object) -> str:
     """A list member or map entry name a refusal names, hidden as a refused
-    value is when it holds an `@`."""
+    value is when it holds an `@` anywhere inside."""
     return _HIDDEN_AT if _holds_at(part) else _canonical(part)
 
 
@@ -1853,10 +1874,13 @@ def _wrong_line(where: str, name: str, key: Key, value: object, bound: bool) -> 
     """The one line refusing *value*, read from *where* under *name*."""
     check_text = TYPES[key.type][1]
     shown = ""
-    if _holds_at(value):
-        shown = " " + _HIDDEN_AT
     # A null is named by its JSON type alone; showing it too reads "null null".
-    elif not key.secret and value is not None and not isinstance(value, (dict, list)):
+    # A list or object is named by its type, and what it holds by the suffix.
+    if value is None or isinstance(value, (dict, list)):
+        pass
+    elif _holds_at(value):
+        shown = " " + _HIDDEN_AT
+    elif not key.secret:
         shown = " " + _canonical(value)
     accepted = check_text
     refused = ""
@@ -2000,7 +2024,7 @@ def _names_at(
                 where,
                 [
                     "%s: %s is %s; accepted: the variable names it declares"
-                    % (where, _dotted(trail), _json_type(node))
+                    % (where, _dotted(_shown_path(trail)), _json_type(node))
                 ],
             )
         return [str(n) for n in names]

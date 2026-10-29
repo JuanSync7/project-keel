@@ -2,7 +2,7 @@
 title: Unit — the one config loader (declared keys, the default line, the not-set line, a refused value)
 kind: tests
 layer: n/a
-summary: scripts/config_loader.py resolves a parsed config against declared rows. An unset key with a default takes it and writes one `[using default]` line naming the key, its canonical-JSON value and the file, once per (file, key) per process under either import name, and a secret shows `<hidden>` and never its value; a set key of the wrong type or out of its bound is refused in one line naming the key, the file, the value's JSON type and what is accepted (null first for a bounded row that takes null, so the bound never reads as one on null), a secret's value never in the exception or the stream, nor a refused string that holds an `@` anywhere, which may begin a URL user part however the URL is spelled and shows as `<hidden: it holds an @>`, while a `%40` still shows; a release URL urllib cannot split, or whose port is not one, is refused and never raised; every unset required key is written as one `[not set]` line in sorted key order before one NotSet; a wrong value and a missing one together write every line and raise WrongValue. An environment value wins only for a row that names a variable and only when it is not empty, and `env` refuses a variable nothing declares. resolve neither mutates its input nor hands out the table's own default, and gives the same values and lines twice. A refused map names each entry that is refused on its own, and a named member or entry that holds an `@` is hidden as a refused value is. Each seconds key refuses a value past threading.TIMEOUT_MAX, keeps one at it, and models.timeout_seconds refuses an empty map. The key table is well formed against keel's own config, every models.credential_env name has a secret variable-only row, the variables the config declares are derived from it, and the module parses on the oldest hook interpreter. A body read from disk is served only when both the corpus level and the strictest level its file states now are served, never when that level cannot be read or is outside the vocabulary; a chain with no level stated is `internal`.
+summary: scripts/config_loader.py resolves a parsed config against declared rows. An unset key with a default takes it and writes one `[using default]` line naming the key, its canonical-JSON value and the file, once per (file, key) per process under either import name, and a secret shows `<hidden>` and never its value; a set key of the wrong type or out of its bound is refused in one line naming the key, the file, the value's JSON type and what is accepted (null first for a bounded row that takes null, so the bound never reads as one on null), a secret's value never in the exception or the stream, nor a refused string that holds an `@` anywhere, which may begin a URL user part however the URL is spelled and shows as `<hidden: it holds an @>`, while a `%40` still shows; a release URL urllib cannot split, or whose port is not one, is refused and never raised; every unset required key is written as one `[not set]` line in sorted key order before one NotSet; a wrong value and a missing one together write every line and raise WrongValue. An environment value wins only for a row that names a variable and only when it is not empty, and `env` refuses a variable nothing declares. resolve neither mutates its input nor hands out the table's own default, and gives the same values and lines twice. A refused map names each entry that is refused on its own, and a named member or entry that holds an `@` is hidden as a refused value is. One table holds every place a loader message names project text (a wrong value from the file or a variable, refused and repeated members, refused entries, a key written twice at any depth, a declared variable's adapter name) against every shape (a string, a list holding one, a list inside a list, fifty deep, an object value, an object key): one `@` anywhere hides the whole of it, and its harmless neighbours, empty containers included, still show. Each seconds key refuses a value past threading.TIMEOUT_MAX, keeps one at it, and models.timeout_seconds refuses an empty map. The key table is well formed against keel's own config, every models.credential_env name has a secret variable-only row, the variables the config declares are derived from it, and the module parses on the oldest hook interpreter. A body read from disk is served only when both the corpus level and the strictest level its file states now are served, never when that level cannot be read or is outside the vocabulary; a chain with no level stated is `internal`.
 @covers scripts/config_loader.py
 """
 
@@ -969,6 +969,159 @@ def test_a_named_map_entry_holding_an_at_is_never_shown():
     (line,) = exc.value.lines
     assert _SENTINEL not in line and "mirror.invalid" not in line, line
     assert line.endswith("; refused entries: <hidden: it holds an @>"), line
+
+
+_VIS = ("corpus", "served_visibilities")
+_HID = "<hidden: it holds an @>"
+
+
+def _deep(value, depth):
+    for _ in range(depth):
+        value = [value]
+    return value
+
+
+def _said(call):
+    """Every channel a loader message reaches when *call* raises ConfigError:
+    the exception, its lines and the stream it was handed."""
+    buf = io.StringIO()
+    with pytest.raises(ConfigError) as exc:
+        call(buf)
+    return "\n".join([str(exc.value), "\n".join(exc.value.lines), buf.getvalue()])
+
+
+def _refused(path, value, rows=None, environ=None):
+    rows = config_loader.rows(path) if rows is None else rows
+    return lambda tmp_path: _said(
+        lambda buf: resolve(
+            _nested(path, value), rows, _WHERE, environ=environ or {}, stream=buf
+        )
+    )
+
+
+def _parsed(text):
+    def run(tmp_path):
+        (tmp_path / "config").mkdir()
+        (tmp_path / CONFIG_FILE).write_text(text, "utf-8")
+        return _said(lambda buf: config_loader.read(str(tmp_path)))
+
+    return run
+
+
+def _declared(adapter):
+    block = {"launcher": {"farm": {"adapters": {adapter: {"inside_env": 5}}}}}
+    return lambda tmp_path: _said(lambda buf: config_loader.declared_variables(block))
+
+
+_UNIQUE = (lambda v: len(v) == len(set(v)), "each member once")
+_DUPLICATE = '{"%s": 1, "%s": 2}' % (_AT_MEMBER, _AT_MEMBER)
+_SHOWN_AT_CASES = (
+    (
+        "wrong value, a string, from the file",
+        _refused(("k", "x"), _AT_MEMBER, (_key(("k", "x"), "int"),)),
+        "config/project.json: k.x is string %s;" % _HID,
+    ),
+    (
+        "wrong value, a string, from a variable",
+        _refused(
+            ("k", "x"),
+            1,
+            (_key(("k", "x"), "int", env_name="KEEL_T"),),
+            {"KEEL_T": _AT_MEMBER},
+        ),
+        "the environment: KEEL_T is string %s;" % _HID,
+    ),
+    (
+        "refused member, a string",
+        _refused(_VIS, ["public", _AT_MEMBER]),
+        "; refused members: %s\n" % _HID,
+    ),
+    (
+        "refused member, a list holding one",
+        _refused(_VIS, ["public", [_AT_MEMBER]]),
+        "; refused members: %s\n" % _HID,
+    ),
+    (
+        "refused member, a list inside a list",
+        _refused(_VIS, ["public", [["x", [_AT_MEMBER]]]]),
+        "; refused members: %s\n" % _HID,
+    ),
+    (
+        "refused member, nested fifty deep",
+        _refused(_VIS, ["public", _deep(_AT_MEMBER, 50)]),
+        "; refused members: %s\n" % _HID,
+    ),
+    (
+        "refused member, an object value holding one",
+        _refused(_VIS, ["public", {"u": [1, {"v": _AT_MEMBER}]}]),
+        "; refused members: %s\n" % _HID,
+    ),
+    (
+        "refused member, an object key holding one",
+        _refused(_VIS, ["public", {"a": {_AT_MEMBER: 1}}]),
+        "; refused members: %s\n" % _HID,
+    ),
+    (
+        "refused members, harmless ones beside it still show",
+        _refused(_VIS, ["public", 7, {"u": _AT_MEMBER}, [], {}, [["x"]]]),
+        "corpus.served_visibilities is array; accepted: a list of strings; "
+        'refused members: 7, %s, [], {}, [["x"]]\n' % _HID,
+    ),
+    (
+        "repeated members, a harmless one beside it still shows",
+        _refused(
+            ("k", "x"),
+            ["a", _AT_MEMBER, "a", _AT_MEMBER],
+            (_key(("k", "x"), "list_of_str", accepts=_UNIQUE),),
+        ),
+        '; repeated members: "a", %s\n' % _HID,
+    ),
+    (
+        "refused entries, a harmless one beside it still shows",
+        _refused(("models", "timeout_seconds"), {"good": 5, _AT_MEMBER: 0, "bad": 0}),
+        '; refused entries: "bad", %s\n' % _HID,
+    ),
+    (
+        "a key written twice",
+        _parsed(_DUPLICATE),
+        "the key %s appears twice" % _HID,
+    ),
+    (
+        "a key written twice, nested",
+        _parsed('{"a": {"b": [%s]}}' % _DUPLICATE),
+        "the key %s appears twice" % _HID,
+    ),
+    (
+        "a harmless key written twice still shows",
+        _parsed('{"a": {"plain": 1, "plain": 2}}'),
+        "the key `plain` appears twice",
+    ),
+    (
+        "a declared variable's adapter name",
+        _declared(_AT_MEMBER),
+        "launcher.farm.adapters.%s.inside_env is integer" % _HID,
+    ),
+    (
+        "a harmless adapter name still shows",
+        _declared("slurm"),
+        "launcher.farm.adapters.slurm.inside_env is integer",
+    ),
+)
+
+
+@pytest.mark.parametrize(
+    "run, shown",
+    [c[1:] for c in _SHOWN_AT_CASES],
+    ids=[c[0] for c in _SHOWN_AT_CASES],
+)
+def test_no_loader_message_shows_project_text_holding_an_at(tmp_path, run, shown):
+    """Text the project wrote may be a credential wherever an `@` sits in it:
+    a member, a nested value, an object key, a key written twice, an adapter
+    name. Each place a loader message shows such text hides the whole of it,
+    at any depth, and still shows its harmless neighbours."""
+    text = run(tmp_path)
+    assert _SENTINEL not in text and "mirror.invalid" not in text, text
+    assert shown in text, text
 
 
 def test_the_visibility_vocabulary_matches_the_gates_copy():
