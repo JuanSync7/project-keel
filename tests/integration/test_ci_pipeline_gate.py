@@ -2,7 +2,7 @@
 title: Integration — every CI adapter runs exactly config/project.json ci_pipeline.steps, in order
 kind: tests
 layer: n/a
-summary: config/project.json `ci_pipeline.steps` is the one statement of what CI runs, and each adapter file present (`ci_pipeline.adapters`: .github/workflows/ci.yml, .gitlab-ci.yml) is held to it through tests/ci_adapters.py parity_faults. The adapters in this tree have no fault; an empty step list, a tree with no adapter, a missing marker line or one that is not the whole line, a dropped, added, reordered or changed step, a changed env value, and a GitLab image or GIT_DEPTH other than the configured one each turn the judge red on a copy, and so does each GitLab key the shipped file lacks, however it is quoted or written (`when: manual`, `"when"`, `? when`, `'rules'`, `needs`, `allow_failure`, a `<<` merge, `MAKEFLAGS: "-n"` at either level, `default:`, `workflow`, `include`, a global `image`, `services`, `cache` or `after_script`, an unquoted `GIT_DEPTH: 1` or `false`, a long-form image naming another image or adding a key), with one fault naming its key path, and a hidden key the `test` job reads through a merge, an anchor, `extends` or `!reference` is a fault too, a key it has that the file lacks, a key set twice (named by both lines), a `<<` merge key set twice even when each merge brings only allowed keys, a file YAML cannot read, a script item that is not a line, a NAME=value word alone on its line, in a multi-line step or a step of its own (named by its step), and a missing pyyaml; an env prefix never reaches across a line break. A file that differs only in what YAML does not read (comments, key order, quoting, a flow, nested or one-string script) has no fault, and so does one that says where keel's job runs or what else the project runs (`tags`, `stage`, `stages`, `interruptible`, `timeout`, `retry`, another job, a hidden job only another job merges, extends or references, a long-form image, an unquoted `GIT_DEPTH: 0`); the rule reads the same in tests/ci_adapters.py, features.md and deterministic-checks.md. In a project, the `ci_pipeline` answer in .copier-answers.yml picks what is judged: a chosen adapter that is missing, or one that lost its marker, is a fault, and so is an answers file with no valid answer (shown by its line as written), one that answers twice however the second key is written (`"ci_pipeline"`, `ci_pipeline :`, `? ci_pipeline`; named by both lines), and one YAML cannot read; a quoted answer with a trailing comment reads as copier reads it; an unchosen file the project wrote, with no marker, is not judged, and an unchosen one carrying the marker still is. The GitLab cases render the template's .gitlab-ci.yml.jinja with the toolchain answer, so the shipped twin is judged too, and yaml reads the rendered file to the same script lines the stdlib scanner does and to exactly ci_adapters.gitlab_document.
+summary: config/project.json `ci_pipeline.steps` is the one statement of what CI runs, and each adapter file present (`ci_pipeline.adapters`: .github/workflows/ci.yml, .gitlab-ci.yml) is held to it through tests/ci_adapters.py parity_faults. The adapters in this tree have no fault; an empty step list, a tree with no adapter, a missing marker line or one that is not the whole line, a dropped, added, reordered or changed step, a changed env value, and a GitLab image or GIT_DEPTH other than the configured one each turn the judge red on a copy, and so does each GitLab key the shipped file lacks, however it is quoted or written (`when: manual`, `"when"`, `? when`, `'rules'`, `needs`, `allow_failure`, a `<<` merge, `MAKEFLAGS: "-n"` at either level, `default:`, `workflow`, `include`, a global `image`, `services`, `cache` or `after_script`, an unquoted `GIT_DEPTH: 1` or `false`, a long-form image naming another image or adding a key), with one fault naming its key path, and a hidden key the `test` job reads through a merge, an anchor, `extends` or `!reference` is a fault too, a key it has that the file lacks, a key set twice (named by both lines), a `<<` merge key set twice even when each merge brings only allowed keys, a file YAML cannot read, a control character in it or in the answers file (named by the file, never raised), a step shell words cannot split (`FOO=\"a b\"`, named by its step), a script item that is not a line, a NAME=value word alone on its line, in a multi-line step or a step of its own (named by its step), and a missing pyyaml; an env prefix never reaches across a line break. A file that differs only in what YAML does not read (comments, key order, quoting, a flow, nested or one-string script) has no fault, and so does one that says where keel's job runs or what else the project runs (`tags`, `stage`, `stages`, `interruptible`, `timeout`, `retry`, another job, a hidden job only another job merges, extends or references, a long-form image, an unquoted `GIT_DEPTH: 0`); the rule reads the same in tests/ci_adapters.py, features.md and deterministic-checks.md. In a project, the `ci_pipeline` answer in .copier-answers.yml picks what is judged: a chosen adapter that is missing, or one that lost its marker, is a fault, and so is an answers file with no valid answer (shown by its line as written), one that answers twice however the second key is written (`"ci_pipeline"`, `ci_pipeline :`, `? ci_pipeline`; named by both lines), and one YAML cannot read; a quoted answer with a trailing comment reads as copier reads it; an unchosen file the project wrote, with no marker, is not judged, and an unchosen one carrying the marker still is. The GitLab cases render the template's .gitlab-ci.yml.jinja with the toolchain answer, so the shipped twin is judged too, and yaml reads the rendered file to the same script lines the stdlib scanner does and to exactly ci_adapters.gitlab_document.
 """
 
 import json
@@ -434,6 +434,33 @@ def test_a_gitlab_file_yaml_cannot_read_is_one_fault(tmp_path):
     _edit(root / ".gitlab-ci.yml", "test:\n", "test:\n  <<: *nowhere\n")
     faults = ci_adapters.parity_faults(root)
     assert len(faults) == 1 and faults[0].startswith(".gitlab-ci.yml: "), faults
+
+
+@pytest.mark.parametrize("answers", [False, True], ids=["gitlab file", "answers file"])
+def test_a_control_character_is_a_fault_naming_the_file(tmp_path, answers):
+    """YAML refuses a control character before it reads a key, so the judge
+    names the file rather than raising."""
+    root = _copy(tmp_path, gitlab=True)
+    if answers:
+        _answer(root, "ci_pipeline: gitlab # \x01")
+        name = ci_adapters.ANSWERS.name
+    else:
+        _edit(root / ".gitlab-ci.yml", _TOP, _TOP + "# \x01\n")
+        name = ".gitlab-ci.yml"
+    faults = ci_adapters.parity_faults(root)
+    assert len(faults) == 1 and faults[0].startswith(name + ": "), faults
+
+
+def test_a_step_shell_cannot_split_is_a_fault_naming_the_step(tmp_path):
+    """`FOO="a b"` is one shell word the env prefix reads only up to its
+    space, so the judge cannot split the step and says so, not raising."""
+    root = _copy(tmp_path, gitlab=True)
+    _edit(
+        root / ".gitlab-ci.yml", "    - %s\n" % _ENV_STEP, '    - FOO="a b" make test\n'
+    )
+    faults = ci_adapters.parity_faults(root)
+    assert faults[0].startswith(".gitlab-ci.yml: `test.script` step 9 "), faults
+    assert "FOO" in faults[0], faults
 
 
 def test_without_pyyaml_a_gitlab_file_is_a_fault_not_a_pass(tmp_path, monkeypatch):
