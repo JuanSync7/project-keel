@@ -9,7 +9,7 @@ tags: [hooks, automation, triggers]
 summary: Event-triggered doers — the scripts a hook fires. The trigger lives elsewhere.
 id: scripts-hooks-readme
 created: 2026-06-17
-updated: 2026-10-28
+updated: 2026-10-29
 visibility: internal
 canonical: true
 ---

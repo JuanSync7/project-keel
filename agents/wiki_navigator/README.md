@@ -9,7 +9,7 @@ tags: [agent, wiki, retrieval, qa]
 summary: Answers questions from the wiki corpus with citations and provenance.
 id: agents-wiki-navigator-readme
 created: 2026-06-17
-updated: 2026-10-28
+updated: 2026-10-29
 visibility: internal
 canonical: true
 ---
