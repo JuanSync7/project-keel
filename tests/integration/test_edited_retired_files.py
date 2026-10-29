@@ -2,7 +2,7 @@
 title: Integration — keep_edited_retired restores a retired file the project edited
 kind: tests
 layer: n/a
-summary: scripts/jobs/keep_edited_retired.py run as copier's first `after` migration runs it, in a real git project against a synthetic template whose tag v2 moves an ADR into docs/adr/keel/ as a K- file and drops a script, a symlink and a rendered document. A file the update deleted that the project had edited (any byte but the frontmatter `updated:` value) is put back from HEAD with HEAD's mode, an executable and a symlink included, and named on stderr with its successor; an unedited one stays deleted; one the template renders from a `.jinja` source, or one the template does not hold at --from, cannot be judged, so it is kept and named; a path something else now occupies is a failure, never overwritten. The index is never touched. A second run changes no byte of the tree (the fixed point check_V's rerun_proof names). An unresolvable --from ref puts back every deleted file and exits 2. A `--retire NAME:PATH` CI adapter, plain or rendered from a `.jinja` twin with `--answers`, is removed when it is what keel rendered and otherwise kept with one stderr line naming its marker state and `git rm PATH`, twice over, and so is one that is a symlink; one whose adapter the `--answer-key` answer at HEAD did not choose is left alone and unnamed, even byte-equal to keel's, and under answers that record no such key the kept line says the answer does not choose it, never that it no longer does; a `--retire` without `--answer-key` exits 2; an empty `--retire` retires nothing and a malformed one exits 2.
+summary: scripts/jobs/keep_edited_retired.py run as copier's first `after` migration runs it, in a real git project against a synthetic template whose tag v2 moves an ADR into docs/adr/keel/ as a K- file and drops a script, a symlink and a rendered document. A file the update deleted that the project had edited (any byte but the frontmatter `updated:` value) is put back from HEAD with HEAD's mode, an executable and a symlink included, and named on stderr with its successor; an unedited one stays deleted; one the template renders from a `.jinja` source, or one the template does not hold at --from, cannot be judged, so it is kept and named; a path something else now occupies is a failure, never overwritten. The index is never touched. A second run changes no byte of the tree (the fixed point check_V's rerun_proof names). An unresolvable --from ref puts back every deleted file and exits 2. A `--retire NAME:PATH` CI adapter, plain or rendered from a `.jinja` twin with `--answers`, is removed when it is what keel rendered and otherwise kept with one stderr line naming its marker state and `git rm PATH`, twice over, one copier deleted is put back when edited and its line says the answer no longer chooses it, and so is one that is a symlink; one whose adapter the `--answer-key` answer at HEAD did not choose is left alone and unnamed, even byte-equal to keel's, and under answers that record no such key the kept line says the answer does not choose it, never that it no longer does; a `--retire` without `--answer-key` exits 2; an empty `--retire` retires nothing and a malformed one exits 2.
 """
 
 import os
@@ -317,6 +317,25 @@ def test_an_edited_retired_adapter_is_kept_and_named_with_what_to_do(
             "runs this file's %s steps beside the job of the adapter it chooses "
             "now until you remove it (`git rm %s`)\n" % (rel, name, name, name, rel)
         ), r.stderr
+
+
+def test_an_edited_adapter_copier_deleted_is_put_back_and_no_longer_chosen(
+    tmp_path,
+):
+    """copier deletes an adapter the old render held and the new one lacks, so
+    the deletion itself proves the old answer chose it: the edited file is put
+    back from HEAD and its line says the answer no longer chooses it."""
+    template, project, env = _retire_setup(tmp_path, _CI + _EDIT, _LAB)
+    (project / "ci.yml").unlink()
+    r = _retire(project, env, template, "hub:ci.yml")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert (project / "ci.yml").read_text() == _CI + _EDIT
+    assert r.stderr == (
+        "kept ci.yml: it carries the line `# keel-adapter: hub`, so keel wrote it, "
+        "and the project edited it; ci_pipeline no longer chooses hub, so CI runs "
+        "this file's hub steps beside the job of the adapter it chooses now until "
+        "you remove it (`git rm ci.yml`)\n"
+    ), r.stderr
 
 
 def test_a_retired_adapter_keel_cannot_judge_is_kept(tmp_path):
