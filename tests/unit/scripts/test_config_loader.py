@@ -2,7 +2,7 @@
 title: Unit — the one config loader (declared keys, the default line, the not-set line, a refused value)
 kind: tests
 layer: n/a
-summary: scripts/config_loader.py resolves a parsed config against declared rows. An unset key with a default takes it and writes one `[using default]` line naming the key, its canonical-JSON value and the file, once per (file, key) per process under either import name, and a secret shows `<hidden>` and never its value; a set key of the wrong type or out of its bound is refused in one line naming the key, the file, the value's JSON type and what is accepted (null first for a bounded row that takes null, so the bound never reads as one on null), a secret's value never in the exception or the stream, nor a refused string that holds an `@` anywhere, which may begin a URL user part however the URL is spelled and shows as `<hidden: it holds an @>`, while a `%40` still shows; a release URL urllib cannot split, or whose port is not one, is refused and never raised; every unset required key is written as one `[not set]` line in sorted key order before one NotSet; a wrong value and a missing one together write every line and raise WrongValue. An environment value wins only for a row that names a variable and only when it is not empty, and `env` refuses a variable nothing declares. resolve neither mutates its input nor hands out the table's own default, and gives the same values and lines twice. A refused map names each entry that is refused on its own. Each seconds key refuses a value past threading.TIMEOUT_MAX, keeps one at it, and models.timeout_seconds refuses an empty map. The key table is well formed against keel's own config, every models.credential_env name has a secret variable-only row, the variables the config declares are derived from it, and the module parses on the oldest hook interpreter. A body read from disk is served only when both the corpus level and the strictest level its file states now are served, never when that level cannot be read or is outside the vocabulary; a chain with no level stated is `internal`.
+summary: scripts/config_loader.py resolves a parsed config against declared rows. An unset key with a default takes it and writes one `[using default]` line naming the key, its canonical-JSON value and the file, once per (file, key) per process under either import name, and a secret shows `<hidden>` and never its value; a set key of the wrong type or out of its bound is refused in one line naming the key, the file, the value's JSON type and what is accepted (null first for a bounded row that takes null, so the bound never reads as one on null), a secret's value never in the exception or the stream, nor a refused string that holds an `@` anywhere, which may begin a URL user part however the URL is spelled and shows as `<hidden: it holds an @>`, while a `%40` still shows; a release URL urllib cannot split, or whose port is not one, is refused and never raised; every unset required key is written as one `[not set]` line in sorted key order before one NotSet; a wrong value and a missing one together write every line and raise WrongValue. An environment value wins only for a row that names a variable and only when it is not empty, and `env` refuses a variable nothing declares. resolve neither mutates its input nor hands out the table's own default, and gives the same values and lines twice. A refused map names each entry that is refused on its own, and a named member or entry that holds an `@` is hidden as a refused value is. Each seconds key refuses a value past threading.TIMEOUT_MAX, keeps one at it, and models.timeout_seconds refuses an empty map. The key table is well formed against keel's own config, every models.credential_env name has a secret variable-only row, the variables the config declares are derived from it, and the module parses on the oldest hook interpreter. A body read from disk is served only when both the corpus level and the strictest level its file states now are served, never when that level cannot be read or is outside the vocabulary; a chain with no level stated is `internal`.
 @covers scripts/config_loader.py
 """
 
@@ -920,6 +920,55 @@ def test_a_list_refused_as_a_whole_names_no_member():
         )
     (line,) = exc.value.lines
     assert line.endswith("; accepted: a list of strings with at least one member"), line
+
+
+_AT_MEMBER = "https://u:" + _SENTINEL + "@mirror.invalid"
+
+
+@pytest.mark.parametrize(
+    "value, bound, ending",
+    [
+        (
+            ["public", _AT_MEMBER],
+            lambda v: all(m == "public" for m in v),
+            "; refused members: <hidden: it holds an @>",
+        ),
+        (
+            [_AT_MEMBER, _AT_MEMBER],
+            lambda v: len(v) == len(set(v)),
+            "; repeated members: <hidden: it holds an @>",
+        ),
+    ],
+    ids=["refused", "repeated"],
+)
+def test_a_named_member_holding_an_at_is_never_shown(value, bound, ending):
+    """A member the line names is a refused string like any other, so one
+    holding an `@` is hidden as a refused value is."""
+    rows = (_key(("k", "x"), "list_of_str", NONE, accepts=(bound, "a bound")),)
+    buf = io.StringIO()
+    with pytest.raises(WrongValue) as exc:
+        resolve({"k": {"x": value}}, rows, _WHERE, environ={}, stream=buf)
+    for text in (str(exc.value), buf.getvalue(), "\n".join(exc.value.lines)):
+        assert _SENTINEL not in text and "mirror.invalid" not in text, text
+    (line,) = exc.value.lines
+    assert line.endswith(ending), line
+
+
+def test_a_named_map_entry_holding_an_at_is_never_shown():
+    """An entry name the line names is written by the project too, so one
+    holding an `@` is hidden as a refused value is."""
+    path = ("models", "timeout_seconds")
+    with pytest.raises(WrongValue) as exc:
+        resolve(
+            _nested(path, {"good": 5, _AT_MEMBER: 0}),
+            config_loader.rows(path),
+            _WHERE,
+            environ={},
+            stream=io.StringIO(),
+        )
+    (line,) = exc.value.lines
+    assert _SENTINEL not in line and "mirror.invalid" not in line, line
+    assert line.endswith("; refused entries: <hidden: it holds an @>"), line
 
 
 def test_the_visibility_vocabulary_matches_the_gates_copy():

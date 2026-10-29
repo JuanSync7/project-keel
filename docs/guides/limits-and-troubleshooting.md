@@ -563,7 +563,10 @@ script with exit 14. A refused string that holds an `@` anywhere, such as
 `<hidden: it holds an @>` in place of `<value>` under any key, because the
 part before the `@` may be a credential and a malformed URL such as
 `https:/user:token@host` hides where it ends. A value such as `a@b.com` is
-hidden too; that is the cost of not parsing the value to decide. A value read from an environment variable is blamed on
+hidden too; that is the cost of not parsing the value to decide. A refused
+list ends `; refused members:` or `; repeated members:` and a refused object
+`; refused entries:`, naming what the key refuses, and a member or entry name
+that holds an `@` is hidden the same way. A value read from an environment variable is blamed on
 it instead: `the environment: <variable> is <JSON type> <value>; accepted: <what it accepts>`. The loader writes every `[not set]` and wrong-value line before it stops,
 so one run names every key at fault. A script that config/project.json
 `config_reads.allowed` still lists reads its config directly: it writes its own
