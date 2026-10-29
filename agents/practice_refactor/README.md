@@ -45,6 +45,13 @@ read-only baseline, and reports the candidate chunks + the prompt it *would*
 send, writing nothing; `refactor("<practice>", execute=True)` proposes and applies
 the gated edits, with a durable per-chunk loop that resumes after a crash.
 
+A corpus walk that `scripts/query_corpus.py` refuses, as it refuses a corpus it
+cannot read, raises the third public symbol, `WalkRefused`, a `RuntimeError`
+carrying the exit helper's three parts (what failed, on which input, what to do),
+before the baseline gate and any model call. `scripts/refactor_practice.py` ends
+a run that raises it with exit 2 through `report`.
+`tests/integration/test_practice_refactor.py` holds both cases.
+
 Its vendor-specific trigger is the `.claude/skills/practice-refactor/` skill; its
 thin CLI entrypoint is `scripts/refactor_practice.py`. See
 [coding-practices](../../docs/guides/coding-practices.md) for the catalogue.

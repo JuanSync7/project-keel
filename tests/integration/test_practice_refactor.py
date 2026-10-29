@@ -2,7 +2,7 @@
 title: Integration — practice_refactor gated KG-walking loop
 kind: tests
 layer: backend
-summary: A relative root reaches the corpus query as one absolute `--root`, with no `--corpus` beside it; a corpus given alone names its checkout, and the CLI hands refactor() that derived root, never its own `--root`; a root beside a corpus, a corpus outside some checkout's wiki/corpus.json, or one named that does not exist, is corpus_level.NotACheckout before any tool runs, and exit USAGE from the CLI. Dry-run walks the graph + gates the read-only baseline but proposes/writes nothing; execute proposes one bounded edit per chunk and a chunk is `refactored` only when the gated apply_refactor keeps make verify green (else rolled back -> `skipped`); a crash mid-refactor resumes at the cursor without re-applying accepted chunks. The gate is the run's: a reply that names a gate is declined before any apply, every apply is bound to its chunk's own file with `--allow`, a chunk with no path is declined before the model is called, and a chunk outside config/project.json corpus.served_visibilities is no candidate, nor is one whose file states a level outside it on disk now, or none that can be read, as a document reclassified after the corpus was built does; a saved run's chunk from such a file is declined at propose with no model call. Every tool call hands the refactored root to the runner, so run_tool reads the tool limits, and checks them against the gate keys, of the tree the gate runner reads.
+summary: A relative root reaches the corpus query as one absolute `--root`, with no `--corpus` beside it; a corpus given alone names its checkout, and the CLI hands refactor() that derived root, never its own `--root`; a root beside a corpus, a corpus outside some checkout's wiki/corpus.json, or one named that does not exist, is corpus_level.NotACheckout before any tool runs, and exit USAGE from the CLI. A corpus walk query_corpus refuses raises WalkRefused naming the exit status and the root, dry run and execute alike, before the baseline gate or any model call, and scripts/refactor_practice.py reports it as exit USAGE through the exit helper, the real query_corpus refusing a corpus that is not JSON. Dry-run walks the graph + gates the read-only baseline but proposes/writes nothing; execute proposes one bounded edit per chunk and a chunk is `refactored` only when the gated apply_refactor keeps make verify green (else rolled back -> `skipped`); a crash mid-refactor resumes at the cursor without re-applying accepted chunks. The gate is the run's: a reply that names a gate is declined before any apply, every apply is bound to its chunk's own file with `--allow`, a chunk with no path is declined before the model is called, and a chunk outside config/project.json corpus.served_visibilities is no candidate, nor is one whose file states a level outside it on disk now, or none that can be read, as a document reclassified after the corpus was built does; a saved run's chunk from such a file is declined at propose with no model call. Every tool call hands the refactored root to the runner, so run_tool reads the tool limits, and checks them against the gate keys, of the tree the gate runner reads.
 """
 
 import json
@@ -16,7 +16,7 @@ import pytest
 _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT))
 
-from agents.practice_refactor import refactor  # noqa: E402
+from agents.practice_refactor import WalkRefused, refactor  # noqa: E402
 from models import ModelMeter  # noqa: E402
 from runtimes import FileCheckpointer  # noqa: E402
 from scripts import corpus_level  # noqa: E402
@@ -295,6 +295,64 @@ def test_a_corpus_that_is_not_its_roots_own_is_refused_before_any_step(
     assert rp.main(["precise-container-types"] + flags) == rp.exit_codes.ExitCode.USAGE
     assert "wiki/corpus.json" in capsys.readouterr().err or given == "empty-root"
     assert runner.calls == []
+
+
+class _RefusedWalk(_Runner):
+    """A `_run` whose query_corpus refuses the corpus, as it does one it
+    cannot read."""
+
+    def __call__(self, args, stdin=None, *, root):
+        if any(a.endswith("query_corpus.py") for a in args):
+            self.calls.append("query_corpus")
+            return 2, "", "query_corpus: the corpus cannot be read"
+        return super().__call__(args, stdin, root=root)
+
+
+@pytest.mark.parametrize("execute", [False, True], ids=["dry-run", "execute"])
+def test_a_refused_walk_raises_walk_refused_before_any_gate(
+    tmp_path, monkeypatch, execute
+):
+    """A corpus walk query_corpus refuses raised a bare RuntimeError; it is
+    WalkRefused, a RuntimeError carrying report()'s three parts, naming the
+    exit status and the root, before the baseline gate or any model call."""
+    runner, model = _RefusedWalk(), _Model()
+    _patch(monkeypatch, runner, model)
+    root = _files(tmp_path)
+    kwargs = {"max_model_calls": 8} if execute else {}
+    with pytest.raises(WalkRefused, match="query_corpus exited 2") as raised:
+        refactor(
+            "precise-container-types",
+            execute=execute,
+            root=root,
+            checkpointer=_checkpointer(tmp_path),
+            **kwargs,
+        )
+    assert issubclass(WalkRefused, RuntimeError)
+    what, on, next_step = raised.value.parts
+    assert root in on and what and next_step
+    assert runner.calls == ["query_corpus"] and model.n == 0
+
+
+def test_the_cli_reports_a_refused_walk_through_the_exit_helper(
+    tmp_path, monkeypatch, capsys
+):
+    """The reviewer's repro: `refactor_practice.py --root <wt>`, its corpus
+    `{bad`, ended with a traceback at exit 1. The real query_corpus refuses
+    that corpus, and the CLI exits USAGE through report(), as doc_review.py
+    does: one `refactor_practice:` line naming the root, and no model call."""
+    sys.path.insert(0, str(_ROOT / "scripts"))
+    import refactor_practice as rp  # noqa: E402
+
+    model = _Model()
+    monkeypatch.setattr(_BRAIN + ".get_model", lambda name=None: model)
+    root = _files(tmp_path)
+    (tmp_path / "wiki").mkdir()
+    (tmp_path / "wiki" / "corpus.json").write_text("{bad")
+    code = rp.main(["precise-container-types", "--root", root])
+    assert code == rp.exit_codes.ExitCode.USAGE
+    err = capsys.readouterr().err.strip().splitlines()[-1]
+    assert err.startswith("refactor_practice: ") and root in err, err
+    assert model.n == 0
 
 
 def test_red_baseline_attempts_no_refactor(tmp_path, monkeypatch):
