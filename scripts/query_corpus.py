@@ -3,7 +3,7 @@
 title: Query corpus
 kind: script
 layer: n/a
-summary: Read-only retrieval over one checkout's wiki/corpus.json — the wiki_navigator's, practice_refactor's and doc_reviewer's tool. `--root` or `--corpus` names the checkout, never both: scripts/corpus_level.py checkout derives the corpus from the root, or the root from a corpus at some directory's wiki/corpus.json, so a corpus is read only with the files of the checkout that keeps it, and both given, an empty `--root`, a corpus anywhere else, or a `--corpus` that does not exist, is refused with exit USAGE and nothing printed. It prints only nodes whose file in that checkout may be served at a level in config/project.json corpus.served_visibilities as it stands on disk now (config_loader.is_served_now over corpus_level.stated_now, read once per file), so a file reclassified after the corpus was built, or one whose level cannot be read, is not printed, each printed node with every other node's id cut from its links, children and parent (config_loader.cut_hidden). A root that does not exist, or a corpus that cannot be read (not UTF-8, not JSON, or not a JSON object), is refused with exit USAGE and nothing printed; a checkout with no corpus, named by `--root` or the default, prints `[]`, naming on stderr where its corpus would be; and the count of nodes withheld because their file now states a stricter level, or none that can be read, goes to stderr.
+summary: Read-only retrieval over one checkout's wiki/corpus.json — the wiki_navigator's, practice_refactor's and doc_reviewer's tool. `--root` or `--corpus` names the checkout, never both: scripts/corpus_level.py checkout derives the corpus from the root, or the root from a corpus at some directory's wiki/corpus.json, so a corpus is read only with the files of the checkout that keeps it, and both given, an empty `--root`, a corpus anywhere else, or a `--corpus` that does not exist, is refused with exit USAGE and nothing printed. It prints only nodes whose file in that checkout may be served at a level in config/project.json corpus.served_visibilities as it stands on disk now (config_loader.is_served_now over corpus_level.stated_now, read once per file), so a file reclassified after the corpus was built, or one whose level cannot be read, is not printed, each printed node with every other node's id cut from its links, children and parent (config_loader.cut_hidden). A root that does not exist, or a corpus that cannot be read (not UTF-8, not JSON, nested too deeply to parse, not a JSON object, or not the shape it reads: `nodes` not a list of objects each with a string `node_id`, or a field it reads of another type, checked once where the corpus is loaded, shape_fault), is refused with exit USAGE and nothing printed; a checkout with no corpus, named by `--root` or the default, prints `[]`, naming on stderr where its corpus would be; and the count of nodes withheld because their file now states a stricter level, or none that can be read, goes to stderr.
 """
 
 from __future__ import annotations
@@ -61,6 +61,52 @@ def _tokens(text: str) -> set:
         if w.isupper():
             out.add(w)  # keep acronyms (AXI) matchable verbatim
     return out
+
+
+# The node fields query_corpus reads, by the shape it reads them in.
+_TEXT_FIELDS = ("title", "summary", "text_excerpt")
+_TEXT_OR_NULL_FIELDS = ("path", "parent")
+_STRING_LIST_FIELDS = ("tags", "children")
+
+
+def shape_fault(corpus: dict) -> str:
+    """The first way *corpus* is not the shape query_corpus reads, or "" when
+    it is: `nodes`, when present, a list of objects, each with a string
+    `node_id`, and every other field it reads, when present, of the type it
+    reads (served_now, rank, config_loader.cut_hidden)."""
+    nodes = corpus.get("nodes", [])
+    if not isinstance(nodes, list):
+        return "`nodes` is not a list"
+    for index, node in enumerate(nodes):
+        fault = _node_fault(node)
+        if fault:
+            return "node %d %s" % (index, fault)
+    return ""
+
+
+def _node_fault(node: object) -> str:
+    """The first way one corpus *node* is not the shape query_corpus reads,
+    or ""."""
+    if not isinstance(node, dict):
+        return "is not an object"
+    if not isinstance(node.get("node_id"), str):
+        return "`node_id` is not a string"
+    for field in _TEXT_FIELDS:
+        if field in node and not isinstance(node[field], str):
+            return "`%s` is not a string" % field
+    for field in _TEXT_OR_NULL_FIELDS:
+        if node.get(field) is not None and not isinstance(node[field], str):
+            return "`%s` is not a string or null" % field
+    for field in _STRING_LIST_FIELDS:
+        value = node.get(field, [])
+        if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+            return "`%s` is not a list of strings" % field
+    links = node.get("links", [])
+    if not isinstance(links, list) or not all(
+        isinstance(link, dict) and isinstance(link.get("to"), str) for link in links
+    ):
+        return "`links` is not a list of objects each with a string `to`"
+    return ""
 
 
 def served_now(corpus: dict, served: Collection[str], root: str) -> tuple[dict, int]:
@@ -215,8 +261,14 @@ def main(argv=None) -> int:
     except (OSError, ValueError) as exc:
         # ValueError covers UnicodeDecodeError and json's own error.
         corpus, fault = None, str(exc)
+    except RecursionError:
+        corpus, fault = None, "it is nested too deeply to parse"
     else:
-        fault = "" if isinstance(corpus, dict) else "it is not a JSON object"
+        fault = (
+            shape_fault(corpus)
+            if isinstance(corpus, dict)
+            else "it is not a JSON object"
+        )
     if fault:
         return report(
             ExitCode.USAGE,

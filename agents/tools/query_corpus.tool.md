@@ -74,7 +74,13 @@ A checkout with no corpus, named by `--root` or the default, prints `[]`,
 exits 0 and names on stderr where the corpus would be. An empty `--root` prints nothing to stdout and exits 2, never
 read as this checkout. A root that does not exist prints nothing to stdout and
 exits 2 with stderr naming it, and so does a corpus that cannot be read: not UTF-8,
-not JSON, or not a JSON object. A served level outside the vocabulary prints nothing
+not JSON, nested too deeply to parse, or not a JSON object. A corpus that parses
+but is not the shape the tool reads is refused the same way, its stderr naming
+the fault: `nodes` not a list, a node not an object or without a string
+`node_id`, or a field the tool reads of another type (`title`, `summary` and
+`text_excerpt` strings; `path` and `parent` a string or null; `tags` and
+`children` lists of strings; `links` a list of objects each with a string `to`).
+The shape is checked once, where the corpus is loaded. A served level outside the vocabulary prints nothing
 to stdout and exits 14.
 
 ## Side effects

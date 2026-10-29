@@ -2,7 +2,7 @@
 title: Unit — query_corpus retrieval (stems and excerpts)
 kind: tests
 layer: n/a
-summary: query_corpus scores a node by query-token overlap, and before this two things made it miss: tokens were compared verbatim, so `idempotency` found nothing while `idempotent` found eight nodes; and only tags, title and summary were read, so a term that lives in the body was invisible. Tokens are now lightly stemmed on both sides and the body excerpt counts, below the title and summary, so a body-only match never outranks a summary match. A node at a level outside config/project.json corpus.served_visibilities, or that states none, is cut before scoring, so it is neither a hit nor a neighbour, and the CLI reads the configured list. A served node the CLI prints names no hidden node in its links, children or parent: a public doc linking to a confidential one, built by the real build_corpus and link_corpus, prints neither the confidential doc's id nor its title. A node whose file under `--root` now states a stricter level is not printed either: in the reviewer's repro, `docs/pubguide.md` reclassified after the build in each of tests/reclassify.py's ways, neither its node nor its id in a served doc's links is printed, the script's own checkout set apart from `--root` so a CLI that ignores `--root` is red, and stderr counts the withheld nodes, never a node the corpus itself hides; the other tests write each node's file stating its corpus level. The root is derived from the corpus, never chosen beside it, in the reviewer's repros: checkout `a` made its guide confidential without rebuilding its corpus, `b` is a copy taken before, `c` holds only the guide and another folder only a README.md. a's corpus, named from inside b, is read with a's files and withholds the guide; b's corpus, named by a relative path from inside b, serves it; `c` and the README folder keep no corpus, so `--root` there prints `[]` and names where the corpus would be; `--root b` beside a's corpus, a copy of a's corpus outside some checkout's wiki/corpus.json, and the README folder's wiki/corpus.json named with `--corpus`, which does not exist, are refused with USAGE and nothing printed; a root that does not exist is refused with USAGE naming it. b's wiki/ made a symlink to a's is b's corpus, read with b's files, since the checkout is worked out from the path as written.
+summary: query_corpus scores a node by query-token overlap, and before this two things made it miss: tokens were compared verbatim, so `idempotency` found nothing while `idempotent` found eight nodes; and only tags, title and summary were read, so a term that lives in the body was invisible. Tokens are now lightly stemmed on both sides and the body excerpt counts, below the title and summary, so a body-only match never outranks a summary match. A node at a level outside config/project.json corpus.served_visibilities, or that states none, is cut before scoring, so it is neither a hit nor a neighbour, and the CLI reads the configured list. A served node the CLI prints names no hidden node in its links, children or parent: a public doc linking to a confidential one, built by the real build_corpus and link_corpus, prints neither the confidential doc's id nor its title. A node whose file under `--root` now states a stricter level is not printed either: in the reviewer's repro, `docs/pubguide.md` reclassified after the build in each of tests/reclassify.py's ways, neither its node nor its id in a served doc's links is printed, the script's own checkout set apart from `--root` so a CLI that ignores `--root` is red, and stderr counts the withheld nodes, never a node the corpus itself hides; the other tests write each node's file stating its corpus level. The root is derived from the corpus, never chosen beside it, in the reviewer's repros: checkout `a` made its guide confidential without rebuilding its corpus, `b` is a copy taken before, `c` holds only the guide and another folder only a README.md. a's corpus, named from inside b, is read with a's files and withholds the guide; b's corpus, named by a relative path from inside b, serves it; `c` and the README folder keep no corpus, so `--root` there prints `[]` and names where the corpus would be; `--root b` beside a's corpus, a copy of a's corpus outside some checkout's wiki/corpus.json, and the README folder's wiki/corpus.json named with `--corpus`, which does not exist, are refused with USAGE and nothing printed; a root that does not exist is refused with USAGE naming it. b's wiki/ made a symlink to a's is b's corpus, read with b's files, since the checkout is worked out from the path as written. A corpus that parses but is not the shape query_corpus reads (`nodes` not a list, a node not an object, a field it reads of the wrong type), or one nested too deeply to parse, is refused with USAGE as an unparseable one is, naming the fault, where each once ended in a traceback.
 """
 
 import json
@@ -397,6 +397,61 @@ def test_a_corpus_that_cannot_be_read_is_refused(tmp_path, monkeypatch, capsys, 
     code, ids, err = _main(["zebra", "--root", str(a)], capsys)
     assert code is qc.ExitCode.USAGE and ids is None
     assert str(corpus) in err and "make site-data" in err
+
+
+def _zebra(**fields):
+    """One node the question `zebra` hits, with *fields* over its own."""
+    node = _node("z", title="zebra", summary="zebra")
+    node["path"] = "docs/z.md"
+    node.update(fields)
+    return json.dumps({"nodes": [node]}).encode()
+
+
+@pytest.mark.parametrize(
+    "text, fault",
+    [
+        (b'{"nodes": 5}', "`nodes` is not a list"),
+        (b'{"nodes": [1, 2]}', "node 0 is not an object"),
+        (_zebra(node_id=3), "node 0 `node_id` is not a string"),
+        (_zebra(path=5), "node 0 `path` is not a string or null"),
+        (_zebra(title=5), "node 0 `title` is not a string"),
+        (_zebra(tags=[1]), "node 0 `tags` is not a list of strings"),
+        (_zebra(parent=[]), "node 0 `parent` is not a string or null"),
+        (_zebra(links=[5]), "node 0 `links` is not a list of objects"),
+        (_zebra(children=[{}]), "node 0 `children` is not a list of strings"),
+        (b"[" * 100000, "nested too deeply to parse"),
+    ],
+    ids=[
+        "nodes-not-list",
+        "node-not-object",
+        "node-id",
+        "path",
+        "title",
+        "tags",
+        "parent",
+        "links",
+        "children",
+        "too-deep",
+    ],
+)
+def test_a_corpus_not_of_the_shape_it_reads_is_refused(
+    tmp_path, monkeypatch, capsys, text, fault
+):
+    """The reviewer's repros: a corpus that parses but whose `nodes` is not
+    a list, whose node is not an object or holds a field query_corpus reads
+    in the wrong type, or one nested too deeply to parse, ended in a
+    traceback at exit 1. Each is refused as an unparseable corpus is: USAGE
+    through report(), nothing printed, naming the path, the fault and how to
+    rebuild it."""
+    a, _, _, _ = _stale_project(tmp_path)
+    monkeypatch.setattr(qc, "ROOT", str(a))
+    (a / "docs").mkdir(exist_ok=True)
+    (a / "docs" / "z.md").write_text("---\nvisibility: internal\n---\n")
+    corpus = a / "wiki" / "corpus.json"
+    corpus.write_bytes(text)
+    code, ids, err = _main(["zebra", "--root", str(a)], capsys)
+    assert code is qc.ExitCode.USAGE and ids is None, err
+    assert str(corpus) in err and fault in err and "make site-data" in err, err
 
 
 def test_an_empty_root_is_refused(tmp_path, monkeypatch, capsys):
