@@ -578,7 +578,8 @@ the `make_targets` policy refusal check W gives and
 holds an `@` by the same rule (`scripts/config_loader.py` `shown`), and show
 every other one as JSON, so a name reads `"GIT_DIR"` and a key written twice
 reads `the key "<name>" appears twice`. The other refusals check_structure
-builds from configured text do not pass through that rule yet. A value read from an environment variable is blamed on
+builds from configured text, and those the other scripts build from the
+settings they read, do not pass through that rule yet. A value read from an environment variable is blamed on
 it instead: `the environment: <variable> is <JSON type> <value>; accepted: <what it accepts>`. The loader writes every `[not set]` and wrong-value line before it stops,
 so one run names every key at fault. A script that config/project.json
 `config_reads.allowed` still lists reads its config directly: it writes its own

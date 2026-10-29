@@ -725,7 +725,7 @@ version rather than a bare commit:
 
 ### Security
 
-- **A refused setting never echoes a URL's user part.** When
+- **The config loader's refusals never echo a URL's user part.** When
   `scripts/config_loader.py` refuses a string that holds an `@` anywhere
   (`https://user:token@host`, `https:/user:token@host`, a scheme-less
   `user:token@host`), its line shows `<hidden: it holds an @>` in place of the
@@ -738,7 +738,9 @@ version rather than a bare commit:
   names are hidden the same way, and so is such text in the refusals
   `scripts/child_env.py` raises at a child's start and in the `make_targets`
   policy refusal `scripts/run_make_target.py` passes on, through the loader's
-  one rule, `shown`.
+  one rule, `shown`. The other refusals `scripts/check_structure.py` and the
+  scripts that read their own settings build from configured text do not pass
+  through that rule yet.
   Before, a `secrets.scanner.release_url` given a token was refused with the
   token in the message.
 - **A confidential document reaches no reader the project serves.** The
