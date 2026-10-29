@@ -195,7 +195,7 @@ def test_the_profiles_are_read_and_an_absent_key_takes_its_declared_default(
             '{"practices": {"profiles": []}}',
             "practices.profiles",
         ),
-        ("config/project.json", '{"a": 1, "a": 2}', "`a` appears twice"),
+        ("config/project.json", '{"a": 1, "a": 2}', '"a" appears twice'),
     ],
     ids=["registry-not-json", "registry-absent", "profiles-not-object", "key-twice"],
 )

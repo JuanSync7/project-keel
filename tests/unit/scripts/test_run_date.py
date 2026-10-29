@@ -279,7 +279,7 @@ def test_load_refuses_a_key_written_twice(tmp_path):
     )
     with pytest.raises(run_date.RunDateConfigError) as caught:
         run_date.load(str(tmp_path))
-    assert "`evidence` appears twice" in str(caught.value), str(caught.value)
+    assert '"evidence" appears twice' in str(caught.value), str(caught.value)
     assert "config/project.json" in caught.value.remedy, caught.value.remedy
 
 

@@ -192,7 +192,7 @@ def test_load_config_reads_through_the_config_loader(tmp_path):
     )
     with pytest.raises(ConfigError) as info:
         load_config(root)
-    assert "`evals` appears twice" in str(info.value), str(info.value)
+    assert '"evals" appears twice' in str(info.value), str(info.value)
     assert info.value.in_config is True
     (root / "config" / "project.json").unlink()
     with pytest.raises(ConfigError) as info:

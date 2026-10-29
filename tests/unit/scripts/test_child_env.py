@@ -2,7 +2,7 @@
 title: Unit — child_env (the environment a child process inherits)
 kind: tests
 layer: n/a
-summary: build_child_env starts from an empty dict and copies only what config/project.json allows — `child_env.names`, a name under a `child_env.prefixes` entry, the `make_targets` unattended and gate variables, and, for a named model adapter, that adapter's `models.credential_env` — then adds the caller's `extra` last. A planted secret such as AWS_SECRET_ACCESS_KEY or GITHUB_TOKEN never reaches the result unless declared, a declared name the parent lacks stays absent rather than empty, and a missing, unreadable or malformed manifest is a ChildEnvError, never a fall-back to the parent's environment; a manifest an update left holding a merge-conflict hunk is named as that conflict, with its line and the step that finishes the update, not as a JSON parse error. A `child_env.repo_context_names` variable reaches the result only when the call passes `repo_context=True`, and child_env_policy refuses an allowlist source that admits one, naming the source and the fix. A copied value carrying user information (a user part in a URL authority, a scheme-relative `//user@host` and a space in the password included; a whole value `user[:password]@host:port`; or, in a `*_proxy` variable, any user part urllib's proxy parser reads, `#`, `?` or `/` in the password and a scheme-less `token@proxy` included) is a ChildEnvError naming every such variable and never the value, whatever allowlist source copied it, unless `child_env.credentialed_values` names it, the called adapter declares it, or `extra` replaces it; child_env_policy refuses a credentialed_values entry that is malformed or that no allowlist source copies. A glibc locale list such as `LANGUAGE=sr_RS:sr@latin`, `name@domain`, and a non-proxy URL with an `@` after its host are copied verbatim. child_env_policy states the same rule without touching disk.
+summary: build_child_env starts from an empty dict and copies only what config/project.json allows — `child_env.names`, a name under a `child_env.prefixes` entry, the `make_targets` unattended and gate variables, and, for a named model adapter, that adapter's `models.credential_env` — then adds the caller's `extra` last. A planted secret such as AWS_SECRET_ACCESS_KEY or GITHUB_TOKEN never reaches the result unless declared, a declared name the parent lacks stays absent rather than empty, and a missing, unreadable or malformed manifest is a ChildEnvError, never a fall-back to the parent's environment; a manifest an update left holding a merge-conflict hunk is named as that conflict, with its line and the step that finishes the update, not as a JSON parse error. A `child_env.repo_context_names` variable reaches the result only when the call passes `repo_context=True`, and child_env_policy refuses an allowlist source that admits one, naming the source and the fix. A copied value carrying user information (a user part in a URL authority, a scheme-relative `//user@host` and a space in the password included; a whole value `user[:password]@host:port`; or, in a `*_proxy` variable, any user part urllib's proxy parser reads, `#`, `?` or `/` in the password and a scheme-less `token@proxy` included) is a ChildEnvError naming every such variable and never the value, whatever allowlist source copied it, unless `child_env.credentialed_values` names it, the called adapter declares it, or `extra` replaces it; child_env_policy refuses a credentialed_values entry that is malformed or that no allowlist source copies. A glibc locale list such as `LANGUAGE=sr_RS:sr@latin`, `name@domain`, and a non-proxy URL with an `@` after its host are copied verbatim. child_env_policy states the same rule without touching disk. A refusal of configured text holding an `@`, in any block child_env judges or at a child's start, hides it and shows its harmless neighbours as JSON.
 """
 
 import base64
@@ -212,12 +212,12 @@ _BROKEN = [
     (
         "repo-context-duplicate",
         _manifest(child_env__repo_context_names=["GIT_DIR", "GIT_DIR"]),
-        "child_env.repo_context_names names GIT_DIR twice",
+        'child_env.repo_context_names names "GIT_DIR" twice',
     ),
     (
         "repo-context-make-control",
         _manifest(child_env__repo_context_names=["MAKEFLAGS"]),
-        "child_env.repo_context_names names MAKEFLAGS",
+        'child_env.repo_context_names names "MAKEFLAGS"',
     ),
     (
         "credentialed-not-object",
@@ -237,7 +237,7 @@ _BROKEN = [
     (
         "credentialed-stale",
         _manifest(child_env__credentialed_values={"NOT_COPIED": "r"}),
-        "child_env.credentialed_values names `NOT_COPIED`, which no allowlist "
+        'child_env.credentialed_values names "NOT_COPIED", which no allowlist '
         "source copies",
     ),
     (
@@ -267,27 +267,27 @@ _OVERLAP = [
     (
         "overlap-names",
         _manifest(child_env__names=["PATH", "HOME", "GIT_DIR"]),
-        "child_env.names lists GIT_DIR,",
+        'child_env.names lists "GIT_DIR",',
     ),
     (
         "overlap-prefix",
         _manifest(child_env__prefixes=["GIT_"]),
-        "child_env.prefixes `GIT_` admits GIT_DIR, GIT_INDEX_FILE, GIT_WORK_TREE,",
+        'child_env.prefixes "GIT_" admits "GIT_DIR", "GIT_INDEX_FILE", "GIT_WORK_TREE",',
     ),
     (
         "overlap-gate-vars",
         _manifest(make_targets__gate_vars=["PY", "GIT_DIR"]),
-        "make_targets.gate_vars lists GIT_DIR,",
+        'make_targets.gate_vars lists "GIT_DIR",',
     ),
     (
         "overlap-unattended-vars",
         _manifest(make_targets__unattended_vars=["CI", "GIT_WORK_TREE"]),
-        "make_targets.unattended_vars lists GIT_WORK_TREE,",
+        'make_targets.unattended_vars lists "GIT_WORK_TREE",',
     ),
     (
         "overlap-credentials",
         _manifest(models__credential_env={"a": ["A_KEY", "GIT_INDEX_FILE"]}),
-        "models.credential_env.a lists GIT_INDEX_FILE,",
+        'models.credential_env.a lists "GIT_INDEX_FILE",',
     ),
 ]
 
@@ -333,7 +333,7 @@ def test_a_manifest_without_repo_context_names_says_to_move_the_git_names_out(
     assert "child_env.repo_context_names is missing" in msg, msg
     assert "remove" in msg and "from child_env.names" in msg, msg
     assert "git rev-parse --local-env-vars" in msg, msg
-    assert "GIT_CONFIG_GLOBAL, GIT_DIR, GIT_WORK_TREE" in msg, msg
+    assert '"GIT_CONFIG_GLOBAL", "GIT_DIR", "GIT_WORK_TREE"' in msg, msg
     with pytest.raises(child_env.ChildEnvError) as caught:
         child_env.build_child_env(root=_root(tmp_path, manifest))
     assert "GIT_DIR" in str(caught.value)
@@ -476,7 +476,7 @@ def test_the_manifest_is_read_through_the_config_loader(tmp_path, parent):
     with pytest.raises(child_env.ChildEnvError) as caught:
         child_env.load_policy(str(tmp_path))
     message = str(caught.value)
-    assert "`child_env` appears twice" in message, message
+    assert '"child_env" appears twice' in message, message
     assert "no child may start" in message, message
     assert sys.modules["config_loader"] is config_loader
 
@@ -716,7 +716,7 @@ def test_a_config_injection_prefix_may_hold_inner_underscores_and_must_end_in_on
         _, errs = child_env.child_env_policy(
             _manifest(child_env__config_injection_prefixes=["TOOL_CONFIG_VALUE_", bad])
         )
-        assert len(errs) == 1 and "`%s`" % bad in errs[0], (bad, errs)
+        assert len(errs) == 1 and '"%s"' % bad in errs[0], (bad, errs)
     _, errs = child_env.child_env_policy(
         _manifest(child_env__config_injection_prefixes=["Z_", "Z_"])
     )
@@ -1456,10 +1456,139 @@ def test_an_allowed_host_entry_that_is_not_canonical_is_an_error_naming_its_inde
         ({"a": "llm.example"}, "models.allowed_hosts.a must be a list"),
         ({"a": [1]}, "models.allowed_hosts.a[0]"),
         ({"a": ["llm.example", "llm.example"]}, "models.allowed_hosts.a[1]"),
-        ({"nope": []}, "`nope`, which is not in models.available"),
+        ({"nope": []}, '"nope", which is not in models.available'),
     ],
     ids=["not-a-map", "not-a-list", "not-a-string", "duplicate", "unknown-adapter"],
 )
 def test_a_malformed_allowed_hosts_block_is_an_error(value, expected):
     _, errs = child_env.child_env_policy(_manifest(models__allowed_hosts=value))
     assert len(errs) == 1 and expected in errs[0], errs
+
+
+# Configured text holding an `@` (a URL with userinfo, say) is hidden in every
+# refusal this module builds, at any depth and in any position: a member, a key
+# name, a dotted path segment, a name in a joined list. Not credential-shaped.
+_AT = "https://u:tok-SENTINEL@h.invalid"
+_HIDDEN = "<hidden: it holds an @>"
+_AT_AVAILABLE = {"a": "models", "b": "models", "fake": "models", _AT: "models"}
+_AT_CASES = [
+    ("names member", {"child_env__names": ["PATH", "HOME", _AT]}),
+    ("names member twice", {"child_env__names": ["PATH", _AT, _AT]}),
+    ("prefixes member", {"child_env__prefixes": [_AT]}),
+    ("repo_context_names member", {"child_env__repo_context_names": ["GIT_DIR", _AT]}),
+    (
+        "repo_context_names missing, a GIT_ candidate",
+        {"child_env__repo_context_names": _DROP, "child_env__names": ["GIT_" + _AT]},
+    ),
+    ("credentialed_values key", {"child_env__credentialed_values": {_AT: "x"}}),
+    ("an unknown key named with it", {"child_env__" + _AT: 1}),
+    (
+        "config_injection_names member",
+        {"child_env__config_injection_names": ["TOOL_CONFIG_COUNT", _AT]},
+    ),
+    (
+        "config_injection_prefixes member",
+        {"child_env__config_injection_prefixes": [_AT]},
+    ),
+    (
+        "credential_value_patterns label",
+        {"child_env__credential_value_patterns": {_AT: "^x$"}},
+    ),
+    ("login_name_schemes member", {"child_env__login_name_schemes": [_AT]}),
+    (
+        "make_targets.unattended_vars member",
+        {"make_targets__unattended_vars": ["CI", _AT]},
+    ),
+    ("make_targets.gate_vars member", {"make_targets__gate_vars": ["PY", _AT]}),
+    ("models.credential_env adapter", {"models__credential_env": {_AT: ["A_KEY"]}}),
+    ("models.credential_env member", {"models__credential_env": {"a": [_AT]}}),
+    ("models.allowed_hosts adapter", {"models__allowed_hosts": {_AT: []}}),
+    ("models.allowed_hosts entry", {"models__allowed_hosts": {"a": [_AT]}}),
+    # An adapter models.available declares under a name holding an `@`: it is
+    # a key path segment in every line about its own lists.
+    (
+        "a declared adapter's credential_env member",
+        {
+            "models__available": _AT_AVAILABLE,
+            "models__credential_env": {_AT: ["bad name"]},
+        },
+    ),
+    (
+        "a declared adapter's credential_env repo-context name",
+        {
+            "models__available": _AT_AVAILABLE,
+            "models__credential_env": {_AT: ["GIT_DIR"]},
+        },
+    ),
+    (
+        "a declared adapter's credential_env injection name",
+        {
+            "models__available": _AT_AVAILABLE,
+            "models__credential_env": {_AT: ["TOOL_CONFIG_COUNT"]},
+        },
+    ),
+    (
+        "a declared adapter's allowed_hosts entry",
+        {
+            "models__available": _AT_AVAILABLE,
+            "models__allowed_hosts": {_AT: ["bad host!"]},
+        },
+    ),
+    (
+        "models.available joined after an unknown allowed_hosts adapter",
+        {"models__available": _AT_AVAILABLE, "models__allowed_hosts": {"zz": []}},
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "over", [c[1] for c in _AT_CASES], ids=[c[0] for c in _AT_CASES]
+)
+def test_a_refusal_hides_configured_text_holding_an_at(over):
+    """Each refusal says the text is hidden and never shows it."""
+    _, errs = child_env.child_env_policy(_manifest(**over))
+    assert errs, over
+    assert not [e for e in errs if "SENTINEL" in e], errs
+    assert any(_HIDDEN in e for e in errs), errs
+
+
+def test_a_joined_list_hides_only_the_member_holding_an_at():
+    """models.available joined into one line shows its harmless names and hides
+    only the one holding an `@`."""
+    _, errs = child_env.child_env_policy(
+        _manifest(
+            models__available={"a": "models", _AT: "models"},
+            models__credential_env={"zz": ["Z_KEY"]},
+        )
+    )
+    assert errs == [
+        'models.credential_env names "zz", which is not in models.available '
+        '("a", %s)' % _HIDDEN
+    ]
+
+
+def test_the_same_text_in_two_blocks_is_hidden_in_both_refusals():
+    """One value refused in two places is hidden in each line, not only the
+    first one built."""
+    _, errs = child_env.child_env_policy(
+        _manifest(child_env__names=["PATH", _AT], child_env__prefixes=[_AT])
+    )
+    assert len([e for e in errs if _HIDDEN in e]) == 2, errs
+    assert not [e for e in errs if "SENTINEL" in e], errs
+
+
+def test_a_child_start_refusal_hides_configured_text_holding_an_at(tmp_path):
+    """The policy refusal raised at a child's start, and an unknown adapter
+    named for credentials, hide the text too: these reach every caller's log."""
+    root = _root(tmp_path, _manifest(child_env__names=["PATH", _AT]))
+    with pytest.raises(child_env.ChildEnvError) as raised:
+        child_env.build_child_env(root=root)
+    assert _HIDDEN in str(raised.value) and "SENTINEL" not in str(raised.value)
+    with pytest.raises(child_env.ChildEnvError) as raised:
+        child_env.build_child_env(credentials_for=_AT, root=_root(tmp_path, _MANIFEST))
+    assert _HIDDEN in str(raised.value) and "SENTINEL" not in str(raised.value)
+    # The adapters it lists as available are configured text too.
+    root = _root(tmp_path, _manifest(models__available=_AT_AVAILABLE))
+    with pytest.raises(child_env.ChildEnvError) as raised:
+        child_env.build_child_env(credentials_for="zz", root=root)
+    assert _HIDDEN in str(raised.value) and "SENTINEL" not in str(raised.value)

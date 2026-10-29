@@ -627,7 +627,7 @@ def test_a_manifest_allowlisting_a_repository_variable_fails_check_x_with_the_fi
     cs.check_X()
     assert len(cs.errors) == 1, cs.errors
     msg = cs.errors[0]
-    assert msg.startswith("config/project.json: child_env.names lists GIT_DIR"), msg
+    assert msg.startswith('config/project.json: child_env.names lists "GIT_DIR"'), msg
     assert "child_env.repo_context_names" in msg, msg
     assert "build_child_env(repo_context=True)" in msg, msg
     # The same tree with GIT_DIR gone is clean: the guard is not vacuous.
@@ -654,7 +654,7 @@ def test_a_stale_credentialed_values_entry_fails_check_x_with_the_fix(repo):
     assert len(cs.errors) == 1, cs.errors
     msg = cs.errors[0]
     assert msg.startswith(
-        "config/project.json: child_env.credentialed_values names `NOT_COPIED`"
+        'config/project.json: child_env.credentialed_values names "NOT_COPIED"'
     ), msg
     assert "drop the stale entry" in msg, msg
     cs.errors[:] = []

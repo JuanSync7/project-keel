@@ -2,7 +2,7 @@
 title: child_env — the environment a child process inherits
 kind: script
 layer: n/a
-summary: Builds the environment keel's code hands a process it starts. It starts from an empty dict and copies from os.environ only what config/project.json allows — a `child_env.names` entry, a name under a `child_env.prefixes` entry, a `make_targets` unattended or gate variable, and, for a named model adapter, that adapter's `models.credential_env` names — then adds the caller's `extra`. git's repository context (`child_env.repo_context_names`: the variables git binds to the repository it started a process in, such as a hook's GIT_DIR and GIT_INDEX_FILE) is never copied unless the call passes `repo_context=True`, and no allowlist source may list one; the opt-in is a keyword because it is one call's decision, visible where the child starts, not a project-wide setting. A copied value that carries user information is a credential whatever its variable is called: a user part in a URL's authority (after `scheme://` or a leading `//`, read as RFC 3986 reads it), a whole value that is a scheme-less `user[:password]@host:port`, or, in a variable a proxy reader takes (a name ending `_proxy` in any case), any user part urllib's proxy parser finds. carries_credential states that rule, and build_child_env refuses such a value with a ChildEnvError that names the variable and never the value, unless `child_env.credentialed_values` names it with a reason, the chosen adapter's `models.credential_env` declares it, or the call's `extra` replaces it; the same holds for a value matching a `child_env.credential_value_patterns` regular expression (the error names the variable and the pattern's label), and in a `child_env.login_name_schemes` URL (ssh, say) a user part with no password is a login name, not a credential. The configuration-injection family (`child_env.config_injection_names` and `config_injection_prefixes`: the variables through which a parent hands git its `-c` settings) is never copied from the parent, and child_env_policy refuses any allowlist source that admits a member. It reads config/project.json through scripts/config_loader.py `read`, loaded by path because this module is imported under two names, so a missing, unreadable or malformed manifest, a key written twice in one object, and a manifest an update left conflicted (named as that conflict, with the hunk's line and the step that finishes the update) are each a ChildEnvError carrying the loader's line, never a fall-back to the parent's environment; an absent `child_env.login_name_schemes` takes the loader's declared default, an empty list, and the loader writes that default to stderr once per process. The policy also carries `models.allowed_hosts`, per adapter the `host` or `host:port` entries it may send its credential to, each written in the one form canonical_host_entry returns (a lower-case ASCII name, a dotted-quad IPv4 address or a bracketed compressed IPv6 address; a trailing dot, a wildcard, a zone id, an IPv4-mapped address and any other numeric spelling refused), with no duplicate and no adapter outside `models.available`; an absent key allows no host, and models/openai_compatible.py compares its base_url's host through the same function. It reads config/project.json on every call, declares that read in `PROJECT_READS` so a copier job whose imports reach it refuses over a conflicted manifest, and writes no file. scripts/check_structure.py check_X holds every spawn under the code roots to this helper. Defence-in-depth, not a sandbox (docs/adr/keel/K-0012-child-process-environment-allowlist.md).
+summary: Builds the environment keel's code hands a process it starts. It starts from an empty dict and copies from os.environ only what config/project.json allows — a `child_env.names` entry, a name under a `child_env.prefixes` entry, a `make_targets` unattended or gate variable, and, for a named model adapter, that adapter's `models.credential_env` names — then adds the caller's `extra`. git's repository context (`child_env.repo_context_names`: the variables git binds to the repository it started a process in, such as a hook's GIT_DIR and GIT_INDEX_FILE) is never copied unless the call passes `repo_context=True`, and no allowlist source may list one; the opt-in is a keyword because it is one call's decision, visible where the child starts, not a project-wide setting. A copied value that carries user information is a credential whatever its variable is called: a user part in a URL's authority (after `scheme://` or a leading `//`, read as RFC 3986 reads it), a whole value that is a scheme-less `user[:password]@host:port`, or, in a variable a proxy reader takes (a name ending `_proxy` in any case), any user part urllib's proxy parser finds. carries_credential states that rule, and build_child_env refuses such a value with a ChildEnvError that names the variable and never the value, unless `child_env.credentialed_values` names it with a reason, the chosen adapter's `models.credential_env` declares it, or the call's `extra` replaces it; the same holds for a value matching a `child_env.credential_value_patterns` regular expression (the error names the variable and the pattern's label), and in a `child_env.login_name_schemes` URL (ssh, say) a user part with no password is a login name, not a credential. The configuration-injection family (`child_env.config_injection_names` and `config_injection_prefixes`: the variables through which a parent hands git its `-c` settings) is never copied from the parent, and child_env_policy refuses any allowlist source that admits a member. It reads config/project.json through scripts/config_loader.py `read`, loaded by path because this module is imported under two names, so a missing, unreadable or malformed manifest, a key written twice in one object, and a manifest an update left conflicted (named as that conflict, with the hunk's line and the step that finishes the update) are each a ChildEnvError carrying the loader's line, never a fall-back to the parent's environment; an absent `child_env.login_name_schemes` takes the loader's declared default, an empty list, and the loader writes that default to stderr once per process. The policy also carries `models.allowed_hosts`, per adapter the `host` or `host:port` entries it may send its credential to, each written in the one form canonical_host_entry returns (a lower-case ASCII name, a dotted-quad IPv4 address or a bracketed compressed IPv6 address; a trailing dot, a wildcard, a zone id, an IPv4-mapped address and any other numeric spelling refused), with no duplicate and no adapter outside `models.available`; an absent key allows no host, and models/openai_compatible.py compares its base_url's host through the same function. It reads config/project.json on every call, declares that read in `PROJECT_READS` so a copier job whose imports reach it refuses over a conflicted manifest, and writes no file; a refusal it builds from configured text, a member, an entry or key name, or an adapter name in a joined list, shows each through scripts/config_loader.py `shown`, so one holding an `@` reads `<hidden: it holds an @>` and every other one reads as JSON. scripts/check_structure.py check_X holds every spawn under the code roots to this helper. Defence-in-depth, not a sandbox (docs/adr/keel/K-0012-child-process-environment-allowlist.md).
 """
 
 # NB: stdlib only, no `from __future__ import annotations`, no f-strings, no walrus,
@@ -143,6 +143,20 @@ class ChildEnvError(Exception):
     models.ModelUnavailable (a RuntimeError) must not skip a broken config."""
 
 
+def _shown(value: object, bare: bool = False) -> str:
+    """Configured *value* as a refusal may show it. scripts/config_loader.py
+    `shown` is the one rule (hidden when an `@` sits anywhere in it, else
+    canonical JSON, or a key path's segment as written); this module keeps no
+    copy of it."""
+    text: str = _config_loader().shown(value, bare=bare)
+    return text
+
+
+def _shown_all(values: Iterable[object]) -> str:
+    """Each of *values* through _shown, joined for one refusal line."""
+    return ", ".join(_shown(v) for v in values)
+
+
 def _name_list(value: object, where: str, errs: List[str]) -> Optional[List[str]]:
     """value as a list of unique, valid, non-control names, else None (errs grows)."""
     if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
@@ -151,20 +165,19 @@ def _name_list(value: object, where: str, errs: List[str]) -> Optional[List[str]
     bad = [v for v in value if not _NAME.match(v)]
     if bad:
         errs.append(
-            "%s: %s is not an environment variable name"
-            % (where, ", ".join("`%s`" % v for v in bad))
+            "%s: %s is not an environment variable name" % (where, _shown_all(bad))
         )
         return None
     dup = sorted({v for v in value if value.count(v) > 1})
     if dup:
-        errs.append("%s names %s twice" % (where, ", ".join(dup)))
+        errs.append("%s names %s twice" % (where, _shown_all(dup)))
         return None
     control = [v for v in value if v in _MAKE_CONTROL]
     if control:
         errs.append(
             "%s names %s, which make uses to hand its command line to a child -- "
             "a nested make would inherit goals and overrides no label declared"
-            % (where, ", ".join(control))
+            % (where, _shown_all(control))
         )
         return None
     return list(value)
@@ -282,17 +295,17 @@ def _host_list(value: object, where: str, errs: List[str]) -> Optional[Tuple[str
         try:
             canonical = canonical_host_entry(entry)
         except ValueError as why:
-            errs.append("%s `%s` is refused: %s" % (at, entry, why))
+            errs.append("%s %s is refused: %s" % (at, _shown(entry), why))
             ok = False
             continue
         if canonical != entry:
             errs.append(
-                "%s `%s` is not in canonical form; write it `%s`, the form the "
-                "adapter compares" % (at, entry, canonical)
+                "%s %s is not in canonical form; write it %s, the form the "
+                "adapter compares" % (at, _shown(entry), _shown(canonical))
             )
             ok = False
         elif entry in seen:
-            errs.append("%s repeats `%s`" % (at, entry))
+            errs.append("%s repeats %s" % (at, _shown(entry)))
             ok = False
         seen.add(canonical)
     return tuple(value) if ok else None
@@ -305,7 +318,7 @@ def _bound(source: str, names: List[str], fix: str) -> str:
         "repository the parent was started in -- a child that runs git in another "
         "directory would act on that repository; %s (a child that must act on the "
         "parent's repository passes build_child_env(repo_context=True))"
-        % (source, ", ".join(sorted(names)), fix)
+        % (source, _shown_all(sorted(names)), fix)
     )
 
 
@@ -325,7 +338,10 @@ def _overlaps(
     sources: List[Tuple[str, Optional[List[str]]]] = [("child_env.names", names)]
     sources.extend(("make_targets." + key, make_vars[key]) for key in sorted(make_vars))
     sources.extend(
-        ("models.credential_env." + adapter, list(credentials[adapter]))
+        (
+            "models.credential_env." + _shown(adapter, bare=True),
+            list(credentials[adapter]),
+        )
         for adapter in sorted(credentials)
     )
     for source, listed in sources:
@@ -337,10 +353,10 @@ def _overlaps(
         if hit:
             errs.append(
                 _bound(
-                    "child_env.prefixes `%s` admits" % prefix,
+                    "child_env.prefixes %s admits" % _shown(prefix),
                     hit,
-                    "remove `%s` from child_env.prefixes and list the names it "
-                    "was for in child_env.names" % prefix,
+                    "remove %s from child_env.prefixes and list the names it "
+                    "was for in child_env.names" % _shown(prefix),
                 )
             )
     return errs
@@ -366,7 +382,7 @@ def _missing_repo_context(names: object) -> str:
     if candidates:
         msg += (
             " (child_env.names lists %s: move each one `git rev-parse "
-            "--local-env-vars` prints, keep the rest)" % ", ".join(candidates)
+            "--local-env-vars` prints, keep the rest)" % _shown_all(candidates)
         )
     return msg
 
@@ -428,10 +444,10 @@ def _injection(
         if bad:
             errs.append(
                 "child_env.%s: %s is not a letter-led prefix ending in `_`"
-                % (key, ", ".join("`%s`" % p for p in bad))
+                % (key, _shown_all(bad))
             )
         elif dup:
-            errs.append("child_env.%s names %s twice" % (key, ", ".join(dup)))
+            errs.append("child_env.%s names %s twice" % (key, _shown_all(dup)))
         else:
             prefixes = list(value)
     return names, prefixes
@@ -444,7 +460,7 @@ def _injects(source: str, names: List[str], fix: str) -> str:
         "child_env.config_injection_prefixes marks as configuration a parent "
         "hands git through the environment -- a child would run git with the "
         "parent's `-c` settings (a hook path or a credential helper among them); "
-        "%s" % (source, ", ".join(sorted(names)), fix)
+        "%s" % (source, _shown_all(sorted(names)), fix)
     )
 
 
@@ -472,7 +488,10 @@ def _admits_injection(
     sources: List[Tuple[str, Optional[List[str]]]] = [("child_env.names", names)]
     sources.extend(("make_targets." + key, make_vars[key]) for key in sorted(make_vars))
     sources.extend(
-        ("models.credential_env." + adapter, list(credentials[adapter]))
+        (
+            "models.credential_env." + _shown(adapter, bare=True),
+            list(credentials[adapter]),
+        )
         for adapter in sorted(credentials)
     )
     for source, listed in sources:
@@ -490,10 +509,10 @@ def _admits_injection(
         if hit:
             errs.append(
                 _injects(
-                    "child_env.prefixes `%s` admits" % prefix,
+                    "child_env.prefixes %s admits" % _shown(prefix),
                     hit,
-                    "remove `%s` from child_env.prefixes and list the names it "
-                    "was for in child_env.names" % prefix,
+                    "remove %s from child_env.prefixes and list the names it "
+                    "was for in child_env.names" % _shown(prefix),
                 )
             )
     return errs
@@ -516,7 +535,7 @@ def _injection_overlap(
         "child_env.repo_context_names lists %s, which child_env.config_injection_names "
         "or child_env.config_injection_prefixes also covers -- a variable is "
         "repository context or configuration injection, never both; remove it "
-        "from one" % ", ".join(hit)
+        "from one" % _shown_all(hit)
     ]
 
 
@@ -553,7 +572,7 @@ def _value_patterns(
     ok = True
     for label in sorted(value):
         pattern = value[label]
-        where = "child_env.%s `%s`" % (key, label)
+        where = "child_env.%s %s" % (key, _shown(label))
         if not _LABEL.match(label):
             errs.append("%s: the label is not lower-case words joined by `-`" % where)
             ok = False
@@ -600,12 +619,12 @@ def _login_schemes(
     if bad:
         errs.append(
             "%s: %s is not a lower-case URL scheme (RFC 3986 section 3.1)"
-            % (where, ", ".join("`%s`" % v for v in bad))
+            % (where, _shown_all(bad))
         )
         return None
     dup = sorted({v for v in value if value.count(v) > 1})
     if dup:
-        errs.append("%s names %s twice" % (where, ", ".join(dup)))
+        errs.append("%s names %s twice" % (where, _shown_all(dup)))
         return None
     return frozenset(value)
 
@@ -727,7 +746,7 @@ def _credentialed_values(value: object, errs: List[str]) -> Optional[Dict[str, s
     if bad:
         errs.append(
             "child_env.credentialed_values: %s is not an environment variable name"
-            % ", ".join("`%s`" % k for k in bad)
+            % _shown_all(bad)
         )
     bare = sorted(
         k
@@ -738,7 +757,7 @@ def _credentialed_values(value: object, errs: List[str]) -> Optional[Dict[str, s
         errs.append(
             "child_env.credentialed_values: %s carries no reason -- an entry says "
             "why this project's children may receive that variable's credential"
-            % ", ".join("`%s`" % k for k in bare)
+            % _shown_all(bare)
         )
     if bad or bare:
         return None
@@ -756,10 +775,10 @@ def _stale_credentialed(
     Such an entry grants nothing and reads as a reviewed exemption, so it is
     refused the way check_W refuses a stale effect_proof_skip entry."""
     return [
-        "child_env.credentialed_values names `%s`, which no allowlist source "
+        "child_env.credentialed_values names %s, which no allowlist source "
         "copies (child_env.names, child_env.prefixes, child_env.repo_context_names "
         "or the make_targets variables) -- drop the stale entry; a model adapter's "
-        "credential is declared in models.credential_env" % key
+        "credential is declared in models.credential_env" % _shown(key)
         for key in sorted(credentialed)
         if key not in copied
         and key not in repo_context
@@ -793,7 +812,7 @@ def child_env_policy(manifest: object) -> Tuple[Optional[Policy], List[str]]:
     errs: List[str] = []
     known = ", ".join("`%s`" % k for k in sorted(_BLOCK_KEYS))
     errs.extend(
-        "child_env has an unknown key `%s` (the keys are %s)" % (key, known)
+        "child_env has an unknown key %s (the keys are %s)" % (_shown(key), known)
         for key in sorted(block)
         if key not in _BLOCK_KEYS
     )
@@ -821,7 +840,7 @@ def child_env_policy(manifest: object) -> Tuple[Optional[Policy], List[str]]:
             errs.append(
                 "child_env.prefixes: %s is not a letter-led prefix ending in `_` "
                 "(a shorter one would admit a whole family of unrelated names)"
-                % ", ".join("`%s`" % p for p in bad)
+                % _shown_all(bad)
             )
             prefixes = None
 
@@ -874,13 +893,15 @@ def child_env_policy(manifest: object) -> Tuple[Optional[Policy], List[str]]:
                 for adapter in sorted(cred):
                     if adapters is None or adapter not in adapters:
                         errs.append(
-                            "models.credential_env names `%s`, which is not in "
+                            "models.credential_env names %s, which is not in "
                             "models.available (%s)"
-                            % (adapter, ", ".join(adapters or ()))
+                            % (_shown(adapter), _shown_all(adapters or ()))
                         )
                         continue
                     got = _name_list(
-                        cred[adapter], "models.credential_env.%s" % adapter, errs
+                        cred[adapter],
+                        "models.credential_env.%s" % _shown(adapter, bare=True),
+                        errs,
                     )
                     if got is not None:
                         credentials[adapter] = tuple(sorted(got))
@@ -895,13 +916,15 @@ def child_env_policy(manifest: object) -> Tuple[Optional[Policy], List[str]]:
                 for adapter in sorted(hosts):
                     if adapters is None or adapter not in adapters:
                         errs.append(
-                            "models.allowed_hosts names `%s`, which is not in "
+                            "models.allowed_hosts names %s, which is not in "
                             "models.available (%s)"
-                            % (adapter, ", ".join(adapters or ()))
+                            % (_shown(adapter), _shown_all(adapters or ()))
                         )
                         continue
                     listed = _host_list(
-                        hosts[adapter], "models.allowed_hosts.%s" % adapter, errs
+                        hosts[adapter],
+                        "models.allowed_hosts.%s" % _shown(adapter, bare=True),
+                        errs,
                     )
                     if listed is not None:
                         allowed_hosts[adapter] = listed
@@ -1065,12 +1088,12 @@ def build_child_env(
     if credentials_for is not None:
         if policy.adapters is not None and credentials_for not in policy.adapters:
             raise ChildEnvError(
-                "%s: model adapter `%s` is not in models.available (%s), so it has "
+                "%s: model adapter %s is not in models.available (%s), so it has "
                 "no declared credentials"
                 % (
                     _MANIFEST,
-                    credentials_for,
-                    ", ".join(policy.adapters),
+                    _shown(credentials_for),
+                    _shown_all(policy.adapters),
                 )
             )
         for key in policy.credentials.get(credentials_for, ()):

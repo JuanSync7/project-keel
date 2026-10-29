@@ -2,7 +2,7 @@
 title: Unit — check_structure check_W (every make target declares its effect)
 kind: tests
 layer: n/a
-summary: check_W's rule, pinned: an annotated make target opens its help with an effect label from the closed EFFECT_LABELS vocabulary, written as comma-separated words in canonical order, the same label on every rule that annotates one target; a composite target's label covers what its prerequisites and `$(MAKE)` recursions reach; a [write] target, and any target named with a configured write shape, opens its recipe with `$(WRITE_GUARD)` behind no `-` prefix unless config names it in `write_shape_exempt` with a reason (an exemption that matches nothing, an unshaped, unlabelled or [write] target is stale), a labelled recipe that calls the guard anywhere in any line (a `$$`-escaped reference is text) must be [write], and the guard, read as make stores it (a `#` comment cut off), opens with the `$(if $(findstring i,$(firstword -$(MAKEFLAGS))),$(error ...))` clause, closed, that stops make under `-i`, tests exactly the configured unattended variables, carries no `-` prefix before or after that clause and exits 1; a `.IGNORE` rule, bare, with prerequisites or in an included makefile, is an error at its line. The policy is read from config/project.json `make_targets` and validated before it is used. Area makefiles are held to their header, prefix and include only when the policy names an area directory. Keel's own Makefile passes, and so does the bedrock-platform shape that the rule was ported from.
+summary: check_W's rule, pinned: an annotated make target opens its help with an effect label from the closed EFFECT_LABELS vocabulary, written as comma-separated words in canonical order, the same label on every rule that annotates one target; a composite target's label covers what its prerequisites and `$(MAKE)` recursions reach; a [write] target, and any target named with a configured write shape, opens its recipe with `$(WRITE_GUARD)` behind no `-` prefix unless config names it in `write_shape_exempt` with a reason (an exemption that matches nothing, an unshaped, unlabelled or [write] target is stale), a labelled recipe that calls the guard anywhere in any line (a `$$`-escaped reference is text) must be [write], and the guard, read as make stores it (a `#` comment cut off), opens with the `$(if $(findstring i,$(firstword -$(MAKEFLAGS))),$(error ...))` clause, closed, that stops make under `-i`, tests exactly the configured unattended variables, carries no `-` prefix before or after that clause and exits 1; a `.IGNORE` rule, bare, with prerequisites or in an included makefile, is an error at its line. The policy is read from config/project.json `make_targets` and validated before it is used. Area makefiles are held to their header, prefix and include only when the policy names an area directory. Keel's own Makefile passes, and so does the bedrock-platform shape that the rule was ported from. A make_targets policy refusal of a value, member or key name holding an `@` hides it and shows its harmless neighbours as JSON.
 """
 
 import copy
@@ -657,7 +657,7 @@ def test_the_gate_runners_limits_are_optional_and_kept_when_set():
             'gate_stop_grace_seconds is "10"; accepted: an integer with a value from 1 to 3600',
         ),
         ({"gate_stop_grace_seconds": -1}, "gate_stop_grace_seconds is -1"),
-        ({"gate_timeout_second": 60}, "unknown key `gate_timeout_second`"),
+        ({"gate_timeout_second": 60}, 'unknown key "gate_timeout_second"'),
         (
             {"gate_timeout_seconds": 604801},
             "gate_timeout_seconds is 604801; accepted: an integer with a value "
@@ -1047,3 +1047,64 @@ def test_check_p_still_passes_on_keels_makefile(monkeypatch):
     monkeypatch.setattr(cs, "_READ_REPORTED", set())
     cs.check_P()
     assert cs.errors == [] and cs.warnings == []
+
+
+# Configured text holding an `@` (a URL with userinfo, say) is hidden in every
+# refusal make_targets_policy builds, at any depth and in any position: the
+# value, a member, a key name, a dotted path segment. Not credential-shaped.
+_AT = "https://u:tok-SENTINEL@h.invalid"
+_HIDDEN = "<hidden: it holds an @>"
+_AT_POLICY_CASES = [
+    ("gate_timeout_seconds string", {"gate_timeout_seconds": _AT}),
+    ("gate_timeout_seconds nested", {"gate_timeout_seconds": [{"k": [_AT]}]}),
+    ("an unknown key named with it", {_AT: 1}),
+    ("unattended_vars member", {"unattended_vars": ["CI", "RALPH", _AT]}),
+    ("unattended_vars member twice", {"unattended_vars": ["CI", "RALPH", _AT, _AT]}),
+    ("gate_effects member", {"gate_effects": ["read", _AT]}),
+    ("write_shapes member", {"write_shapes": [_AT]}),
+    ("area_dir", {"area_dir": _AT}),
+    ("effect_proof_skip key", {"effect_proof_skip": {_AT: ""}}),
+    ("write_shape_exempt key", {"write_shape_exempt": {_AT: ""}}),
+    ("effect_proof_kept_dirs key", {"effect_proof_kept_dirs": {_AT: ".cache"}}),
+    ("effect_proof_kept_dirs value", {"effect_proof_kept_dirs": {"XDG_X": "/" + _AT}}),
+    ("empty_test_selections key", {"empty_test_selections": {_AT: "why"}}),
+    ("gate_vars member", {"gate_vars": ["PY", _AT]}),
+]
+
+
+@pytest.mark.parametrize(
+    "over", [c[1] for c in _AT_POLICY_CASES], ids=[c[0] for c in _AT_POLICY_CASES]
+)
+def test_a_policy_refusal_hides_configured_text_holding_an_at(over):
+    """Each refusal names the place and says the text is hidden; the text never
+    shows. One message per fault, so a refusal that hid one value and showed
+    another in the same line still fails."""
+    errs = _policy_errors(_policy(**over))
+    assert errs, over
+    assert not [e for e in errs if "SENTINEL" in e], errs
+    assert any(_HIDDEN in e for e in errs), errs
+
+
+def test_a_joined_refusal_hides_only_the_member_holding_an_at():
+    """A line joining several members shows the harmless ones and hides only the
+    one holding an `@`, so the hiding is per member, not per line."""
+    errs = _policy_errors(_policy(gate_vars=["PY", "bad name", _AT]))
+    assert errs == [
+        'make_targets.gate_vars: "bad name", %s is not a make variable name' % _HIDDEN
+    ]
+
+
+@pytest.mark.parametrize("empty", [[], {}])
+def test_an_empty_container_is_refused_without_a_hidden_marker(empty):
+    """An empty list or object holds no `@`, so a refusal of it shows it as is."""
+    errs = _policy_errors(_policy(gate_timeout_seconds=empty))
+    assert errs and all(_HIDDEN not in e for e in errs), errs
+
+
+def test_the_same_text_in_two_members_is_hidden_in_both_refusals():
+    """One value refused in two places is hidden in each line."""
+    errs = _policy_errors(
+        _policy(unattended_vars=["CI", "RALPH", _AT], gate_vars=[_AT])
+    )
+    assert len([e for e in errs if _HIDDEN in e]) == 2, errs
+    assert not [e for e in errs if "SENTINEL" in e], errs

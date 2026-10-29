@@ -735,7 +735,10 @@ version rather than a bare commit:
   names is hidden the same way when it holds an `@`, and a member that is a
   list or an object is hidden when any string inside it, a key name included,
   holds one at any depth. A key written twice and an adapter name a refusal
-  names are hidden the same way.
+  names are hidden the same way, and so is such text in the refusals
+  `scripts/child_env.py` raises at a child's start and in the `make_targets`
+  policy refusal `scripts/run_make_target.py` passes on, through the loader's
+  one rule, `shown`.
   Before, a `secrets.scanner.release_url` given a token was refused with the
   token in the message.
 - **A confidential document reaches no reader the project serves.** The

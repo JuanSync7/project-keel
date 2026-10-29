@@ -5026,6 +5026,12 @@ def _is_name_list(value):
     return isinstance(value, list) and all(isinstance(v, str) for v in value)
 
 
+def _shown_all(values):
+    """Each configured member of *values* as config_loader.shown gives it (hidden
+    when it holds an `@`), joined for one refusal line."""
+    return ", ".join(config_loader.shown(v) for v in values)
+
+
 def _kept_dirs_errors(kept, where):
     """make_targets.effect_proof_kept_dirs -> errs. Each key is an upper-case
     variable name other than HOME; each value the directory's path under HOME,
@@ -5042,7 +5048,7 @@ def _kept_dirs_errors(kept, where):
     errs = []
     for key in sorted(kept):
         value = kept[key]
-        name = "%s.%s" % (key_path, key)
+        name = "%s.%s" % (key_path, config_loader.shown(key, bare=True))
         if not _KEPT_DIR_NAME.match(key):
             errs.append(name + " is not an upper-case environment variable name")
         elif key == _SANDBOXED_HOME:
@@ -5061,7 +5067,7 @@ def _kept_dirs_errors(kept, where):
             errs.append(
                 name + " must be a literal relative path strictly inside HOME (no "
                 "leading `/`, no `~` or `$`, no `..` leaving it, not HOME itself), "
-                "got %s" % json.dumps(value)
+                "got %s" % config_loader.shown(value)
             )
     return errs
 
@@ -5092,8 +5098,8 @@ def make_targets_policy(manifest):
     ]
     known = _POLICY_KEYS + _POLICY_OPTIONAL_KEYS
     errs.extend(
-        "%s has an unknown key `%s` (the keys are %s)"
-        % (_POLICY_BLOCK, key, ", ".join(known))
+        "%s has an unknown key %s (the keys are %s)"
+        % (_POLICY_BLOCK, config_loader.shown(key), ", ".join(known))
         for key in sorted(block)
         if key not in known and key != "_comment"
     )
@@ -5106,14 +5112,17 @@ def make_targets_policy(manifest):
             continue
         check, text = config_loader.TYPES[row.type]
         if row.accepts is not None:
-            # Type and bound together, as config_loader words a bad value.
+            # Type and bound together, as config_loader words a bad value, and
+            # the value shown by its rule.
             bound, bound_text = row.accepts
             text = "%s with %s" % (text, bound_text)
         else:
             bound = check
         if not (check(block[key]) and bound(block[key])):
             errs.append(
-                where + "%s is %s; accepted: %s" % (key, json.dumps(block[key]), text)
+                where
+                + "%s is %s; accepted: %s"
+                % (key, config_loader.shown(block[key]), text)
             )
     unattended = block.get("unattended_vars")
     unattended_ok = False
@@ -5130,10 +5139,10 @@ def make_targets_policy(manifest):
                 errs.append(
                     where
                     + "unattended_vars: %s is not a make variable name"
-                    % ", ".join("`%s`" % v for v in bad)
+                    % _shown_all(bad)
                 )
             elif dup:
-                errs.append(where + "unattended_vars names %s twice" % ", ".join(dup))
+                errs.append(where + "unattended_vars names %s twice" % _shown_all(dup))
             else:
                 unattended_ok = True
     if "gate_runner_var" in block:
@@ -5142,8 +5151,9 @@ def make_targets_policy(manifest):
             errs.append(where + "gate_runner_var must be a make variable name")
         elif unattended_ok and runner not in unattended:
             errs.append(
-                where + "gate_runner_var `%s` is not in unattended_vars (%s), so a "
-                "gate run would not trip WRITE_GUARD" % (runner, ", ".join(unattended))
+                where + "gate_runner_var %s is not in unattended_vars (%s), so a "
+                "gate run would not trip WRITE_GUARD"
+                % (config_loader.shown(runner), _shown_all(unattended))
             )
     if "gate_effects" in block:
         gate = block["gate_effects"]
@@ -5156,7 +5166,7 @@ def make_targets_policy(manifest):
                 errs.append(
                     where
                     + "gate_effects: %s is not an effect label (%s)"
-                    % (", ".join("`%s`" % g for g in unknown), ", ".join(EFFECT_LABELS))
+                    % (_shown_all(unknown), ", ".join(EFFECT_LABELS))
                 )
             elif _GATE_MUST_HOLD not in gate:
                 errs.append(
@@ -5179,7 +5189,7 @@ def make_targets_policy(manifest):
                 errs.append(
                     where
                     + "write_shapes: %s is not a `-word` target-name suffix"
-                    % ", ".join("`%s`" % s for s in bad)
+                    % _shown_all(bad)
                 )
     if "area_dir" in block:
         area_dir = block["area_dir"]
@@ -5190,7 +5200,7 @@ def make_targets_policy(manifest):
         ):
             errs.append(
                 where + "area_dir must be null or one directory name at the root, "
-                "got %s" % json.dumps(area_dir)
+                "got %s" % config_loader.shown(area_dir)
             )
     if "effect_proof_skip" in block:
         skip = block["effect_proof_skip"]
@@ -5205,8 +5215,7 @@ def make_targets_policy(manifest):
             if bad:
                 errs.append(
                     where + "effect_proof_skip: %s carries no reason -- a skip says "
-                    "why the target cannot run unattended"
-                    % ", ".join("`%s`" % k for k in bad)
+                    "why the target cannot run unattended" % _shown_all(bad)
                 )
     if "effect_proof_kept_dirs" in block:
         errs.extend(_kept_dirs_errors(block["effect_proof_kept_dirs"], where))
@@ -5225,7 +5234,7 @@ def make_targets_policy(manifest):
                 errs.append(
                     where + "write_shape_exempt: %s carries no reason -- an "
                     "exemption says why a write-shaped name is not a write"
-                    % ", ".join("`%s`" % k for k in bad)
+                    % _shown_all(bad)
                 )
     if "empty_test_selections" in block:
         empty = block["empty_test_selections"]
@@ -5240,12 +5249,13 @@ def make_targets_policy(manifest):
                     errs.append(
                         where + "empty_test_selections.%s is not a bare pytest "
                         "marker name -- only a `-m <marker>` selection can be "
-                        "declared empty" % key
+                        "declared empty" % config_loader.shown(key, bare=True)
                     )
                 elif not isinstance(empty[key], str) or not empty[key].strip():
                     errs.append(
                         where + "empty_test_selections.%s carries no reason -- a "
-                        "declaration says why the selection may run zero tests" % key
+                        "declaration says why the selection may run zero tests"
+                        % config_loader.shown(key, bare=True)
                     )
     if "gate_vars" in block:
         gate_vars = block["gate_vars"]
@@ -5266,14 +5276,13 @@ def make_targets_policy(manifest):
             if bad:
                 errs.append(
                     where
-                    + "gate_vars: %s is not a make variable name"
-                    % ", ".join("`%s`" % v for v in bad)
+                    + "gate_vars: %s is not a make variable name" % _shown_all(bad)
                 )
             elif owned:
                 errs.append(
                     where + "gate_vars may not name %s -- a caller who sets make's "
                     "control variables, the guard or an unattended variable can run "
-                    "what no label declares" % ", ".join("`%s`" % v for v in owned)
+                    "what no label declares" % _shown_all(owned)
                 )
     if errs:
         return None, errs
