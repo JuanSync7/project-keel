@@ -9,7 +9,7 @@ tags: []
 summary: Unit tests mirror src/; integration/e2e/smoke go by scenario.
 id: tests-readme
 created: 2026-06-17
-updated: 2026-10-28
+updated: 2026-10-29
 visibility: internal
 canonical: true
 ---
