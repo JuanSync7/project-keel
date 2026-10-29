@@ -436,7 +436,7 @@ print but never fail the build.
   check refuses any allowlist source that would copy one anyway: `names`, a
   `prefixes` entry (`GIT_`), `make_targets.unattended_vars` or `gate_vars`,
   and any `models.credential_env` list. The message names the source and the
-  fix, for example `child_env.names lists GIT_DIR, which
+  fix, for example `child_env.names lists "GIT_DIR", which
   child_env.repo_context_names marks as bound to the repository the parent was
   started in -- ...; remove them from child_env.names (a child that must act
   on the parent's repository passes build_child_env(repo_context=True))`. The

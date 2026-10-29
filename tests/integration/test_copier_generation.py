@@ -3093,7 +3093,7 @@ def test_a_generated_projects_children_never_follow_the_hooks_repository(
     manifest.write_text(json.dumps(edited, indent=2) + "\n", encoding="utf-8")
     r = _structure_gate(dest)
     assert r.returncode != 0, "GIT_DIR in child_env.names left the gate green"
-    assert "child_env.names lists GIT_DIR" in r.stdout, r.stdout
+    assert 'child_env.names lists "GIT_DIR"' in r.stdout, r.stdout
     assert "build_child_env(repo_context=True)" in r.stdout, r.stdout
     manifest.write_text(shipped, encoding="utf-8")
     r = _structure_gate(dest)

@@ -346,7 +346,7 @@ def test_a_project_whose_child_env_allowlists_a_repository_variable_owes_an_x_er
     x = _errors(report, "X")
     assert len(x) == 1, x
     message = x[0]["message"]
-    assert message.startswith("config/project.json: child_env.names lists GIT_DIR")
+    assert message.startswith('config/project.json: child_env.names lists "GIT_DIR"')
     assert "child_env.repo_context_names" in message, message
     assert "build_child_env(repo_context=True)" in message, message
     # The manifest is rendered from its `.jinja` twin, so its origin says so
