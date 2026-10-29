@@ -2,7 +2,7 @@
 title: Integration — every CI adapter runs exactly config/project.json ci_pipeline.steps, in order
 kind: tests
 layer: n/a
-summary: config/project.json `ci_pipeline.steps` is the one statement of what CI runs, and each adapter file present (`ci_pipeline.adapters`: .github/workflows/ci.yml, .gitlab-ci.yml) is held to it through tests/ci_adapters.py parity_faults. The adapters in this tree have no fault; an empty step list, a tree with no adapter, a missing marker line or one that is not the whole line, a dropped, added, reordered or changed step, a changed env value, and a GitLab image or GIT_DEPTH other than the configured one each turn the judge red on a copy, and so does each GitLab key the shipped file lacks, however it is quoted or written (`when: manual`, `"when"`, `? when`, `'rules'`, `needs`, `allow_failure`, a `<<` merge, `MAKEFLAGS: "-n"` at either level, `default:`, `workflow`, `include`, another job), with one fault naming its key path, a key it has that the file lacks, a key set twice (named by both lines), a file YAML cannot read, a script item that is not a line, a NAME=value word alone on its line, in a multi-line step or a step of its own (named by its step), and a missing pyyaml; an env prefix never reaches across a line break. A file that differs only in what YAML does not read (comments, key order, quoting, a flow, nested or one-string script) has no fault. In a project, the `ci_pipeline` answer in .copier-answers.yml picks what is judged: a chosen adapter that is missing, or one that lost its marker, is a fault, and so is an answers file with no valid answer (shown by its line as written), one that answers twice however the second key is written (`"ci_pipeline"`, `ci_pipeline :`, `? ci_pipeline`; named by both lines), and one YAML cannot read; a quoted answer with a trailing comment reads as copier reads it; an unchosen file the project wrote, with no marker, is not judged, and an unchosen one carrying the marker still is. The GitLab cases render the template's .gitlab-ci.yml.jinja with the toolchain answer, so the shipped twin is judged too, and yaml reads the rendered file to the same script lines the stdlib scanner does and to exactly ci_adapters.gitlab_document.
+summary: config/project.json `ci_pipeline.steps` is the one statement of what CI runs, and each adapter file present (`ci_pipeline.adapters`: .github/workflows/ci.yml, .gitlab-ci.yml) is held to it through tests/ci_adapters.py parity_faults. The adapters in this tree have no fault; an empty step list, a tree with no adapter, a missing marker line or one that is not the whole line, a dropped, added, reordered or changed step, a changed env value, and a GitLab image or GIT_DEPTH other than the configured one each turn the judge red on a copy, and so does each GitLab key the shipped file lacks, however it is quoted or written (`when: manual`, `"when"`, `? when`, `'rules'`, `needs`, `allow_failure`, a `<<` merge, `MAKEFLAGS: "-n"` at either level, `default:`, `workflow`, `include`, a global `image`, `services`, `cache` or `after_script`, an unquoted `GIT_DEPTH: 1` or `false`, a long-form image naming another image or adding a key), with one fault naming its key path, and a hidden key the `test` job reads through a merge, an anchor, `extends` or `!reference` is a fault too, a key it has that the file lacks, a key set twice (named by both lines), a file YAML cannot read, a script item that is not a line, a NAME=value word alone on its line, in a multi-line step or a step of its own (named by its step), and a missing pyyaml; an env prefix never reaches across a line break. A file that differs only in what YAML does not read (comments, key order, quoting, a flow, nested or one-string script) has no fault, and so does one that says where keel's job runs or what else the project runs (`tags`, `stage`, `stages`, `interruptible`, `timeout`, `retry`, another job, a hidden job only another job merges, extends or references, a long-form image, an unquoted `GIT_DEPTH: 0`); the rule reads the same in tests/ci_adapters.py, features.md and deterministic-checks.md. In a project, the `ci_pipeline` answer in .copier-answers.yml picks what is judged: a chosen adapter that is missing, or one that lost its marker, is a fault, and so is an answers file with no valid answer (shown by its line as written), one that answers twice however the second key is written (`"ci_pipeline"`, `ci_pipeline :`, `? ci_pipeline`; named by both lines), and one YAML cannot read; a quoted answer with a trailing comment reads as copier reads it; an unchosen file the project wrote, with no marker, is not judged, and an unchosen one carrying the marker still is. The GitLab cases render the template's .gitlab-ci.yml.jinja with the toolchain answer, so the shipped twin is judged too, and yaml reads the rendered file to the same script lines the stdlib scanner does and to exactly ci_adapters.gitlab_document.
 """
 
 import json
@@ -207,7 +207,10 @@ _GITLAB_FOREIGN = [
         ["workflow"],
     ),
     ("include", 'GIT_DEPTH: "0"\n', "include:\n  - local: more-ci.yml\n", ["include"]),
-    ("another job", 'GIT_DEPTH: "0"\n', "lint:\n  script: [make lint]\n", ["lint"]),
+    ("global image", 'GIT_DEPTH: "0"\n', "image: busybox\n", ["image"]),
+    ("services", 'GIT_DEPTH: "0"\n', "services: [docker:dind]\n", ["services"]),
+    ("cache", 'GIT_DEPTH: "0"\n', "cache:\n  paths: [.venv]\n", ["cache"]),
+    ("after_script", 'GIT_DEPTH: "0"\n', "after_script: [exit 0]\n", ["after_script"]),
 ]
 
 
@@ -229,12 +232,161 @@ def test_a_gitlab_key_keel_does_not_ship_is_a_fault_naming_its_path(
         assert "`%s`" % path in fault, faults
 
 
+_TOP = "# keel-adapter: gitlab\n"
+_JOB = "test:\n"
+
+# Shapes where the `test` job reads another top-level key, through a YAML
+# anchor or merge, `extends` or `!reference`: (id, the text planted after the
+# marker line, the text planted in the job, the key paths the faults name).
+_GITLAB_REACH = [
+    (
+        "merged hidden job",
+        ".quiet: &quiet\n  when: manual\n",
+        "  <<: *quiet\n",
+        [".quiet", "test.when"],
+    ),
+    (
+        "merged hidden job of placement keys",
+        ".runner: &runner\n  tags: [ours]\n",
+        "  <<: *runner\n",
+        [".runner"],
+    ),
+    (
+        "extended hidden job",
+        ".quiet:\n  when: manual\n",
+        "  extends: .quiet\n",
+        [".quiet", "test.extends"],
+    ),
+    (
+        "referenced hidden job",
+        ".setup:\n  script: [exit 0]\n",
+        "  before_script: !reference [.setup, script]\n",
+        [".setup", "test.before_script"],
+    ),
+    (
+        "aliased variables",
+        ".vars: &vars\n  MAKEFLAGS: -n\n",
+        "  variables: *vars\n",
+        [".vars", "test.variables"],
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "top, job, paths",
+    [c[1:] for c in _GITLAB_REACH],
+    ids=[c[0] for c in _GITLAB_REACH],
+)
+def test_a_key_the_test_job_reads_is_judged_wherever_it_sits(tmp_path, top, job, paths):
+    """A hidden job the `test` job merges, extends or references changes what
+    it runs, so it is judged as keel's own keys are, and fails: keel's file
+    has none."""
+    root = _copy(tmp_path, gitlab=True)
+    _edit(root / ".gitlab-ci.yml", _TOP, _TOP + top)
+    _edit(root / ".gitlab-ci.yml", _JOB, _JOB + job)
+    faults = ci_adapters.parity_faults(root)
+    assert len(faults) == len(paths), faults
+    for path, fault in zip(paths, faults, strict=True):
+        assert "`%s`" % path in fault, faults
+
+
+_IMAGE = "  image: ci-image.example.invalid/python"
+# Shapes GitLab reads as keel's job in another place or beside the project's
+# own jobs, each running exactly keel's steps: (id, old text, new text).
+_GITLAB_PLACED = [
+    ("tags", _JOB, _JOB + "  tags: [ours]\n"),
+    ("stage", _JOB, _JOB + "  stage: test\n"),
+    ("stages", _TOP, _TOP + "stages: [build, test, deploy]\n"),
+    (
+        "interruptible, timeout and retry",
+        _JOB,
+        _JOB + "  interruptible: true\n  timeout: 2h\n  retry: 2\n",
+    ),
+    (
+        "another job",
+        _TOP,
+        _TOP + "deploy:\n  stage: deploy\n  when: manual\n  script: [make dist]\n",
+    ),
+    (
+        "hidden job merged by another job",
+        _TOP,
+        _TOP + ".base: &base\n  when: manual\n"
+        "deploy:\n  <<: *base\n  script: [make dist]\n",
+    ),
+    (
+        "hidden job extended by another job",
+        _TOP,
+        _TOP + ".base:\n  when: manual\ndeploy:\n  extends: .base\n"
+        "  script: [make dist]\n",
+    ),
+    (
+        "hidden job referenced by another job",
+        _TOP,
+        _TOP + ".setup:\n  script: [make dist]\n"
+        "deploy:\n  script: !reference [.setup, script]\n",
+    ),
+    ("image long form", _IMAGE, "  image:\n    name: ci-image.example.invalid/python"),
+    ("unquoted GIT_DEPTH", 'GIT_DEPTH: "0"', "GIT_DEPTH: 0"),
+]
+
+
+@pytest.mark.parametrize(
+    "old, new", [c[1:] for c in _GITLAB_PLACED], ids=[c[0] for c in _GITLAB_PLACED]
+)
+def test_where_keel_s_job_runs_and_what_else_the_project_runs_is_not_judged(
+    tmp_path, old, new
+):
+    """The judge guards whether keel's `test` job runs and exactly what it
+    runs, never where it runs or what else the project runs."""
+    root = _copy(tmp_path, gitlab=True)
+    _edit(root / ".gitlab-ci.yml", old, new)
+    assert ci_adapters.parity_faults(root) == []
+
+
+@pytest.mark.parametrize(
+    "old, new, path",
+    [
+        (
+            _IMAGE,
+            "  image:\n    name: busybox\n    x: ci-image.example.invalid/python",
+            "test.image",
+        ),
+        (
+            _IMAGE,
+            "  image:\n    entrypoint: ['/bin/true']\n    name: ci-image.example.invalid/python",
+            "test.image",
+        ),
+        ('GIT_DEPTH: "0"', "GIT_DEPTH: 1", "variables.GIT_DEPTH"),
+        ('GIT_DEPTH: "0"', "GIT_DEPTH: false", "variables.GIT_DEPTH"),
+    ],
+    ids=["long form, other image", "long form, entrypoint", "depth 1", "depth false"],
+)
+def test_an_image_or_variable_gitlab_reads_otherwise_is_a_fault(
+    tmp_path, old, new, path
+):
+    root = _copy(tmp_path, gitlab=True)
+    _edit(root / ".gitlab-ci.yml", old, new)
+    faults = ci_adapters.parity_faults(root)
+    assert len(faults) == 1 and "`%s`" % path in faults[0], faults
+
+
+def test_the_gitlab_rule_reads_the_same_in_the_module_and_both_docs():
+    """The rule is stated once in each of three places, in the same words,
+    and names every key of the module's closed vocabularies."""
+    words = " ".join(ci_adapters.__doc__.split())
+    start = words.index("The GitLab judge guards whether")
+    rule = words[start : words.index('equals `"0"`.', start) + len('equals `"0"`.')]
+    for doc in ("docs/reference/features.md", "docs/guides/deterministic-checks.md"):
+        assert rule in " ".join((_ROOT / doc).read_text("utf-8").split()), doc
+    for key in ci_adapters.GITLAB_GLOBAL_KEYS | ci_adapters.GITLAB_PLACEMENT_KEYS:
+        assert "`%s`" % key in rule, key
+
+
 def test_a_gitlab_key_keel_ships_that_is_missing_is_a_fault(tmp_path):
     root = _copy(tmp_path, gitlab=True)
     _edit(root / ".gitlab-ci.yml", "variables:\n", "x-variables:\n")
     faults = ci_adapters.parity_faults(root)
-    assert len(faults) == 2, faults
-    assert "`x-variables`" in faults[0] and "`variables`" in faults[1], faults
+    assert len(faults) == 1 and "`variables` is missing" in faults[0], faults
 
 
 def test_a_gitlab_key_set_twice_is_a_fault_naming_both_lines(tmp_path):

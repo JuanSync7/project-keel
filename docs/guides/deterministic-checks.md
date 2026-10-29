@@ -1406,6 +1406,20 @@ adapters are written by hand, not generated.
 through `tests/ci_adapters.py`, and fails an adapter that drops, adds,
 reorders or changes a step or its env, and an empty list.
 
+The GitLab judge guards whether keel's `test` job runs and exactly what it
+runs, never where it runs or what else the project runs. It compares with
+keel's file the `test` job, the top-level keys GitLab applies to every job
+(`after_script`, `before_script`, `cache`, `default`, `image`, `include`,
+`services`, `variables`, `workflow`), and any other top-level key the `test`
+job reads through a YAML anchor or merge, `extends` or `!reference`; every
+other top-level key, `stages` or a job or hidden job only the project's own
+jobs read, is the project's own and is not compared. In the `test` job,
+`interruptible`, `retry`, `stage`, `tags` and `timeout` may be set, `image`
+may take the long form `{name: ...}` naming the same image, and every other
+key, `rules`, `when`, `needs`, `allow_failure`, `variables` and `script` among
+them, is compared. A variable compares as GitLab reads it: a number is its
+string, so `GIT_DEPTH: 0` equals `"0"`.
+
 The first line of each adapter keel writes is its marker,
 `ci_pipeline.marker` filled with the adapter's name (`# keel-adapter: github`,
 `# keel-adapter: gitlab`). The gate fails an adapter keel ships without it.
