@@ -2,7 +2,7 @@
 title: Test helper — the one reader of the Python tree the gate tests judge
 kind: tests
 layer: n/a
-summary: The walk, the parse and the token readers every tree-wide gate test shares, so no two gates own a different idea of which files are the project's or of what an import points at. `python_files` lists every `*.py` that scripts/check_structure.py `walk` reaches (its IGNORE_DIRS keep vendored and installed code out); `parse` reads one into a syntax tree and raises SourceTreeError naming the file it cannot; `import_edges` resolves every `import` and `from ... import` to the project file it loads, through an ordered list of search roots, skipping a name the standard library owns; `comment_starts` lists the comments that open a thought, read through tokenize so a `#` inside a string is never one; `noqa_reasons` reads each `# noqa: CODE <sep> reason` suppression, taking the codes separated by commas or spaces as ruff does. It cannot see an import made through importlib, `__import__` or a `sys.path` entry no search root names: such a name does not resolve and is treated as external.
+summary: The walk, the parse and the token readers every tree-wide gate test shares, so no two gates own a different idea of which files are the project's or of what an import points at. `python_files` lists every `*.py` that scripts/check_structure.py `walk` reaches (its IGNORE_DIRS keep vendored and installed code out); `parse` reads one into a syntax tree and raises SourceTreeError naming the file it cannot; `import_edges` resolves every `import` and `from ... import` to the project file it loads, through an ordered list of search roots, skipping a name the standard library owns; `unresolved_imports` lists each import of the project (an absolute name whose first segment a search root holds as a module or a directory, or any relative name) that loads no file, so a caller can fail loudly instead of reading it as external; `comment_starts` lists the comments that open a thought, read through tokenize so a `#` inside a string is never one; `noqa_reasons` reads each `# noqa: CODE <sep> reason` suppression, taking the codes separated by commas or spaces as ruff does. It cannot see an import made through importlib, `__import__` or a `sys.path` entry no search root names: such a name does not resolve and is treated as external.
 """
 
 import ast
@@ -138,10 +138,23 @@ def _package_parts(importer):
     return importer.split("/")[:-1]
 
 
+def _is_project_head(root, search_roots, head):
+    """True when some search root holds *head* as a module or a directory: an
+    import starting with it is the project's, so failing to resolve it is a
+    missing file, never an installed name."""
+    for search_root in search_roots:
+        base = os.path.join(str(root), search_root + head)
+        if os.path.isfile(base + _PY) or os.path.isdir(base):
+            return True
+    return False
+
+
 def _targets(node, importer, root, search_roots):
-    """The project files one import statement loads, each resolved through
-    the search roots or, for a relative import, from the importer's package."""
-    out = []
+    """`(found, missing)` for one import statement: the project files it loads,
+    each resolved through the search roots or, for a relative import, from the
+    importer's package; and the dotted names it imports from the project that
+    resolve to no file."""
+    out, missing = [], []
     if isinstance(node, ast.Import):
         for alias in node.names:
             parts = alias.name.split(".")
@@ -154,18 +167,21 @@ def _targets(node, importer, root, search_roots):
                 if found:
                     out.append(found)
                     break
-        return out
+            else:
+                if _is_project_head(root, search_roots, parts[0]):
+                    missing.append(alias.name)
+        return out, missing
     if not isinstance(node, ast.ImportFrom):
-        return out
+        return out, missing
     module_parts = node.module.split(".") if node.module else []
     if node.level == 0:
         if not module_parts or module_parts[0] in sys.stdlib_module_names:
-            return out
+            return out, missing
         roots = search_roots
     else:
         package = _package_parts(importer)
         if node.level - 1 > len(package):
-            return out
+            return out, missing
         package = package[: len(package) - (node.level - 1)]
         # A relative import is anchored at the repository root, never searched.
         roots = [("/".join(package) + "/") if package else ""]
@@ -182,7 +198,9 @@ def _targets(node, importer, root, search_roots):
                 found = _resolve_package(root, roots[0])
         if found:
             out.append(found)
-    return out
+        elif node.level or _is_project_head(root, roots, module_parts[0]):
+            missing.append("." * node.level + ".".join(module_parts + [alias.name]))
+    return out, missing
 
 
 def _resolve_package(root, anchor):
@@ -204,10 +222,24 @@ def import_edges(root, files, search_roots):
     for importer in files:
         tree = parse(root, importer)
         for node in ast.walk(tree):
-            for imported in _targets(node, importer, root, search_roots):
+            for imported in _targets(node, importer, root, search_roots)[0]:
                 if imported != importer:
                     edges.add((importer, node.lineno, imported))
     return sorted(edges)
+
+
+def unresolved_imports(root, files, search_roots):
+    """Every import in *files* that names the project yet loads no file, as a
+    sorted list of `(importer, lineno, dotted name)`. An absolute import names
+    the project when a search root holds its first segment as a module or a
+    directory; a relative import always does."""
+    misses = set()
+    for importer in files:
+        tree = parse(root, importer)
+        for node in ast.walk(tree):
+            for name in _targets(node, importer, root, search_roots)[1]:
+                misses.add((importer, node.lineno, name))
+    return sorted(misses)
 
 
 # --- comments ----------------------------------------------------------------------

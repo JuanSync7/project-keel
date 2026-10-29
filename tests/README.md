@@ -138,14 +138,20 @@ copy changes nothing.
 A test that copies scripts or test helpers into a scratch project lists the
 files it runs and copies them with `script_copy.copy_with_imports`, never with
 its own copy loop. The helper adds every project module a listed Python file
-imports, followed to its end, resolved against the importer's own directory
-and then `scripts/`. When a script starts importing a new sibling, every copy
-then still starts; a hand-kept list stops with `ModuleNotFoundError` in each
-fixture that copies the script. A listed file that does not exist raises,
-naming it. An import made through `importlib` or `__import__` is not seen, so
-that file stays on the list. `tests/integration/test_script_copy.py` proves
-each case, that keel's `scripts/check_structure.py` carries
-`scripts/corpus_level.py`, and that a second copy changes nothing.
+imports, followed to its end, resolved against the importer's own directory,
+then `scripts/`, then the repo root, so `from scripts import x` and
+`from scripts.x import y` are followed too. When a script starts importing a
+new sibling, every copy then still starts; a hand-kept list stops with
+`ModuleNotFoundError` in each fixture that copies the script. A listed file
+that does not exist raises, naming it. An import of the project that no file
+holds raises, naming the importer and the module, instead of being skipped. An
+import made through `importlib` or `__import__`, or found through a `sys.path`
+entry other than those three, is not seen, so that file stays on the list.
+`tests/integration/test_script_copy.py` proves each case, that keel's
+`scripts/check_structure.py` carries `scripts/corpus_level.py`, that
+`scripts/run_make_target.py` carries `scripts/resource_limits.py` and its copy
+starts, that an import cycle reads each file once, and that a second copy
+changes nothing.
 
 ## A test reads the project's own facts
 

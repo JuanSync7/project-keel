@@ -24,6 +24,7 @@ import audit_project as ap  # noqa: E402
 
 import hermetic_git  # noqa: E402
 import optional_deps  # noqa: E402
+import script_copy  # noqa: E402
 
 # The audit predicts the update by running copier itself (`python -m copier` in
 # this interpreter), and `_generated` renders a DEST with it: without copier every
@@ -1091,10 +1092,10 @@ conflict_guard.exit_if_conflicted(
 
 def _migrating_template(template, jobs, theirs, readers=()):
     """The fake template with one `after` migration per (stem, rerun, imports
-    dep) in *jobs*, in order, the real conflict_guard beside them, and
-    scripts/dep.py; the base tagged v0.1.0 and *theirs* committed over it as
-    v0.2.0 (copier runs migrations only between two versions). A stem in
-    *readers* is a `_READING_JOB` run with `--finish-with`, as copier.yml runs
+    dep) in *jobs*, in order, the real conflict_guard and what it imports
+    beside them, and scripts/dep.py; the base tagged v0.1.0 and *theirs*
+    committed over it as v0.2.0 (copier runs migrations only between two
+    versions). A stem in *readers* is a `_READING_JOB` run with `--finish-with`, as copier.yml runs
     keel's own jobs. Returns the base's tag, which a generated DEST records as
     its `_commit`."""
     migrations = "".join(
@@ -1110,13 +1111,9 @@ def _migrating_template(template, jobs, theirs, readers=()):
         "copier.yml": _COPIER_YML + "_migrations:\n" + migrations,
         "config/project.json.jinja": _TWIN,
         "scripts/dep.py": "VALUE = 1\n",
-        "scripts/jobs/conflict_guard.py": (
-            _ROOT / "scripts" / "jobs" / "conflict_guard.py"
-        ).read_text(encoding="utf-8"),
-        "scripts/exit_codes.py": (_ROOT / "scripts" / "exit_codes.py").read_text(
-            encoding="utf-8"
-        ),
     }
+    for rel in script_copy.imports_closure(_ROOT, ["scripts/jobs/conflict_guard.py"]):
+        base[rel] = (_ROOT / rel).read_text(encoding="utf-8")
     for stem, rerun, dep in jobs:
         if stem in readers:
             base["scripts/jobs/%s.py" % stem] = _READING_JOB % stem
