@@ -576,8 +576,10 @@ raises when a child starts, about the `child_env` block,
 the `make_targets` policy refusal check W gives and
 `scripts/run_make_target.py` passes on, hide a value, member or key name that
 holds an `@` by the same rule (`scripts/config_loader.py` `shown`), and show
-every other one as JSON, so a name reads `"GIT_DIR"` and a key written twice
-reads `the key "<name>" appears twice`. The other refusals check_structure
+every other value and member as JSON and every other segment of a dotted key
+path as written, so a name reads `"GIT_DIR"`, a key written twice reads
+`the key "<name>" appears twice`, and an adapter's credential list reads
+`models.credential_env.<adapter>`. The other refusals check_structure
 builds from configured text, and those the other scripts build from the
 settings they read, do not pass through that rule yet. A value read from an environment variable is blamed on
 it instead: `the environment: <variable> is <JSON type> <value>; accepted: <what it accepts>`. The loader writes every `[not set]` and wrong-value line before it stops,
