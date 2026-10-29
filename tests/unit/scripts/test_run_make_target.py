@@ -672,11 +672,30 @@ def _alive(pid):
     try:
         with open("/proc/%d/stat" % pid, encoding="utf-8") as fh:
             return fh.read().rsplit(")", 1)[1].split()[0] != "Z"
-    except FileNotFoundError:
-        # Reaped after signal 0 found it: a verify at load average 9 hit this.
+    except (FileNotFoundError, ProcessLookupError):
+        # Reaped after signal 0 found it, before the open (a verify at load
+        # average 9 hit this) or between the open and the read.
         return False
     except OSError:
         return True
+
+
+def test_a_process_reaped_while_its_stat_is_read_is_not_alive(monkeypatch):
+    """The open can find a pid the read then finds reaped, which the read
+    raises as ProcessLookupError; that pid runs nothing."""
+
+    class Reaped:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read(self):
+            raise ProcessLookupError(3, "No such process")
+
+    monkeypatch.setattr("builtins.open", lambda *a, **k: Reaped())
+    assert _alive(os.getpid()) is False
 
 
 def _gone_within(pids, seconds=_SETTLE):

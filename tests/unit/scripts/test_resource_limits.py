@@ -315,8 +315,28 @@ def _running(pid):
     try:
         with open("/proc/%d/stat" % pid) as stat:
             return stat.read().rsplit(")", 1)[1].split()[0] != "Z"
-    except FileNotFoundError:
+    except (FileNotFoundError, ProcessLookupError):
+        # Reaped between the open and the read: a full verify running beside
+        # another hit the second.
         return False
+
+
+def test_a_process_reaped_while_its_stat_is_read_is_not_running(monkeypatch):
+    """The open can find a pid the read then finds reaped, which the read
+    raises as ProcessLookupError; that pid runs nothing."""
+
+    class Reaped:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read(self):
+            raise ProcessLookupError(3, "No such process")
+
+    monkeypatch.setattr("builtins.open", lambda *a, **k: Reaped())
+    assert _running(os.getpid()) is False
 
 
 def _wait_for(predicate, seconds, what):
