@@ -1873,9 +1873,7 @@ def _wrong_line(where: str, name: str, key: Key, value: object, bound: bool) -> 
             # refuses no single entry and names none.
             names = sorted(k for k in value if not key.accepts[0]({k: value[k]}))
             if names:
-                refused = "; refused entries: %s" % ", ".join(
-                    _named(k) for k in names
-                )
+                refused = "; refused entries: %s" % ", ".join(_named(k) for k in names)
     if isinstance(value, list) and not key.secret and key.type in _LIST_TYPES:
         refused = _refused_members(key, value, bound)
     return "%s: %s is %s%s; accepted: %s%s" % (
