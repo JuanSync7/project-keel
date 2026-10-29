@@ -1,5 +1,12 @@
 name: ci
 on: [push, pull_request]
+# A newer push to the same branch makes a running gate's answer stale, so the
+# older run is cancelled: on 2026-10-23 forty-one pushes each ran a ~50 min
+# gate to the end. One group per workflow and ref, so main and a PR branch
+# never cancel each other.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   test:
     # A named image, not ubuntu-latest: the machine the gate runs on changes

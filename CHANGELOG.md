@@ -257,6 +257,10 @@ version rather than a bare commit:
   quoting a refusal `plan_edits` raises.
 
 ### Changed
+- **A newer push cancels the CI run it makes stale.** `.github/workflows/ci.yml`
+  has a `concurrency` group per ref with `cancel-in-progress`, so a burst of
+  pushes runs one gate to the end instead of one per push; main and a PR branch
+  never cancel each other. Generated projects get it through `copier update`.
 - **A `TBD` owner inherits a configured default owner, and is an error
   without one.** check_F warned on every run about each `kind: tool` or
   `kind: agent` document whose frontmatter `owner` was `TBD`, six times in
