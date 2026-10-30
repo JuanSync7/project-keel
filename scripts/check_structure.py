@@ -4133,30 +4133,34 @@ def _mechanism_reason(ref, check_letters, tree, make_targets, sections_of):
     m = _MECHANISM_RE.match(str(ref))
     if not m:
         return "names '%s', which is not in the mechanism grammar (%s)" % (
-            ref,
+            _shown(ref),
             _MECHANISM_FORMS,
         )
     form, value = m.group(1), m.group(2).strip()
     if form == "check":
         if value not in check_letters:
-            return "claims check_%s, which check_structure.py does not define" % value
+            return "claims check_%s, which check_structure.py does not define" % _shown(
+                value
+            )
     elif form in ("script", "test"):
         if value not in tree:
-            return "claims %s '%s', which does not exist" % (form, value)
+            return "claims %s '%s', which does not exist" % (form, _shown(value))
     elif form == "make":
         if value not in make_targets:
-            return "claims `make %s`, and the Makefile has no such target" % value
+            return "claims `make %s`, and the Makefile has no such target" % _shown(
+                value
+            )
     elif form == "doc":
         path, _, section = value.partition(" §")
         if path not in tree:
-            return "claims doc '%s', which does not exist" % path
+            return "claims doc '%s', which does not exist" % _shown(path)
         if section:
             present = sections_of(path)
             if present is None or int(section) not in present:
                 return "claims %s §%s, and that document has no numbered section %s" % (
-                    path,
-                    section,
-                    section,
+                    _shown(path),
+                    _shown(section),
+                    _shown(section),
                 )
     return None
 
@@ -4177,7 +4181,8 @@ def _mechanism_findings(practices, check_letters, tree, make_targets, sections_o
         if not isinstance(refs, list) or not refs:
             errs.append(
                 "config/practices.json: practice '%s' has no `enforced_by` list -- name "
-                "the mechanism(s) that enforce it (%s)" % (pid, _MECHANISM_FORMS)
+                "the mechanism(s) that enforce it (%s)"
+                % (_shown(pid), _MECHANISM_FORMS)
             )
             continue
         for ref in refs:
@@ -4185,7 +4190,9 @@ def _mechanism_findings(practices, check_letters, tree, make_targets, sections_o
                 ref, check_letters, tree, make_targets, sections_of
             )
             if reason:
-                errs.append("config/practices.json: practice '%s' %s" % (pid, reason))
+                errs.append(
+                    "config/practices.json: practice '%s' %s" % (_shown(pid), reason)
+                )
     return errs
 
 

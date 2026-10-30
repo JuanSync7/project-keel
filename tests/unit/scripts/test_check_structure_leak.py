@@ -152,6 +152,50 @@ _CASES = [
         "roster README path",
         [(_PROJECT, ("rosters", "readmes"), "M", "x@y/README.md")],
     ),
+    # check T
+    ("T", "mechanism", [(_PRACTICES, ("practices", 0, "enforced_by"), "M")]),
+    ("T", "mechanism nested", [(_PRACTICES, ("practices", 0, "enforced_by"), "D")]),
+    (
+        "T",
+        "script path",
+        [(_PRACTICES, ("practices", 0, "enforced_by"), "M", "script:" + _AT)],
+    ),
+    (
+        "T",
+        "test path",
+        [(_PRACTICES, ("practices", 0, "enforced_by"), "M", "test:" + _AT)],
+    ),
+    (
+        "T",
+        "make target",
+        [(_PRACTICES, ("practices", 0, "enforced_by"), "M", "make:" + _AT)],
+    ),
+    (
+        "T",
+        "check letter",
+        [(_PRACTICES, ("practices", 0, "enforced_by"), "M", "check:" + _AT)],
+    ),
+    (
+        "T",
+        "doc path",
+        [(_PRACTICES, ("practices", 0, "enforced_by"), "M", "doc:" + _AT)],
+    ),
+    (
+        "T",
+        "practice id",
+        [
+            (_PRACTICES, ("practices", 0, "id"), "V"),
+            (_PRACTICES, ("practices", 0, "enforced_by"), "M", "check:?"),
+        ],
+    ),
+    (
+        "T",
+        "practice id, no list",
+        [
+            (_PRACTICES, ("practices", 0, "id"), "V"),
+            (_PRACTICES, ("practices", 0, "enforced_by"), "V", []),
+        ],
+    ),
 ]
 
 
