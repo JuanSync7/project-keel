@@ -743,7 +743,10 @@ version rather than a bare commit:
   for a value, a member, a key name or a path segment, while a harmless member
   beside it still shows, and so does the tree's own text: an ADR's file name
   and directory show beside a hidden number space or prefix, and a campaign
-  or slice number beside a hidden id template. The refusals the scripts that read their own settings
+  or slice number beside a hidden id template. An `adr.project_dir` or
+  `adr.template_dir` spelled with a `.` segment, such as `./docs/adr`, is
+  refused as one with `..` is: check_Y matched a space by its spelling, so it
+  judged every ADR there out of place and printed the directory raw. The refusals the scripts that read their own settings
   build from configured text do not pass through that rule yet.
   Before, a `secrets.scanner.release_url` given a token was refused with the
   token in the message.

@@ -6628,9 +6628,13 @@ def adr_policy(manifest):
         if value is None:
             continue
         parts = value.split("/")
-        if value.startswith("/") or ".." in parts or "" in parts:
+        # A `.` segment spells the same directory a second way, and check_Y
+        # matches a space by its spelling: `./docs/adr` would put every ADR
+        # outside its own space and print the directory past `_adr_shown`.
+        if value.startswith("/") or {"..", ".", ""} & set(parts):
             errs.append(
-                "%s.%s must be a relative path inside the project, got %s"
+                "%s.%s must be a relative path inside the project, with no "
+                "`.`, `..` or empty segment, got %s"
                 % (_ADR_BLOCK, key, _quoted(block[key]))
             )
     project_dir = policy.get("project_dir")

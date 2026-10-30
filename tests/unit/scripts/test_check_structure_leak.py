@@ -590,6 +590,13 @@ _ADR_ROWS = [
         ],
         "%s/0001-a.md: ADR number 0001 is also taken by %s/0001-b.md" % (_H, _H),
     ),
+    (
+        "a hidden space spelled with a `.` segment",
+        {"project_dir": "./a@d", "template_dir": "a@d/t"},
+        [("a@d/0001-a.md", "adr", "ADR-0001: a")],
+        "config/project.json: adr.project_dir must be a relative path inside "
+        "the project, with no `.`, `..` or empty segment, got '%s'" % _H,
+    ),
 ]
 
 
