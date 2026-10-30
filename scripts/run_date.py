@@ -110,7 +110,12 @@ def policy(manifest):
         if key not in _KEYS:
             raise RunDateConfigError(
                 "%s: %s.%s is not a key (the keys are %s)"
-                % (_MANIFEST, _KEY, key, " and ".join(_KEYS)),
+                % (
+                    _MANIFEST,
+                    _KEY,
+                    config_loader.shown(key, bare=True),
+                    " and ".join(_KEYS),
+                ),
                 _BLOCK_REMEDY,
             )
     name = block.get("env")

@@ -207,6 +207,13 @@ _CASES = [
         "write_shape_exempt key",
         [(_PROJECT, ("make_targets", "write_shape_exempt"), "A")],
     ),
+    # check X
+    ("X", "run_date key added", [(_PROJECT, ("evidence", "run_date"), "A")]),
+    (
+        "X",
+        "run_date key renamed",
+        [(_PROJECT, ("evidence", "run_date", "max_age_days"), "K")],
+    ),
 ]
 
 
