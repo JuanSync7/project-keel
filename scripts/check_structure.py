@@ -6610,7 +6610,7 @@ def adr_policy(manifest):
         if key not in block
     ]
     errs.extend(
-        "%s has an unknown key `%s`" % (_ADR_BLOCK, key)
+        "%s has an unknown key `%s`" % (_ADR_BLOCK, _shown(key))
         for key in sorted(block)
         if key not in _ADR_KEYS and key != "_comment"
     )
@@ -6630,8 +6630,8 @@ def adr_policy(manifest):
         parts = value.split("/")
         if value.startswith("/") or ".." in parts or "" in parts:
             errs.append(
-                "%s.%s must be a relative path inside the project, got %r"
-                % (_ADR_BLOCK, key, block[key])
+                "%s.%s must be a relative path inside the project, got %s"
+                % (_ADR_BLOCK, key, _quoted(block[key]))
             )
     project_dir = policy.get("project_dir")
     if project_dir is not None and project_dir == policy.get("template_dir"):
@@ -6658,15 +6658,15 @@ def adr_policy(manifest):
         )
     elif not errs:
         template_re = _adr_grammars(policy)[1]
-        shape = policy["template_prefix"] + "N" * policy["number_digits"]
+        shape = _shown(policy["template_prefix"]) + "N" * policy["number_digits"]
         errs.extend(
-            "%s.template_adrs names %r, not a %s-<slug>.md file name"
-            % (_ADR_BLOCK, name, shape)
+            "%s.template_adrs names %s, not a %s-<slug>.md file name"
+            % (_ADR_BLOCK, _quoted(name), shape)
             for name in owned
             if not template_re.match(name)
         )
         errs.extend(
-            "%s.template_adrs names %r twice" % (_ADR_BLOCK, name)
+            "%s.template_adrs names %s twice" % (_ADR_BLOCK, _quoted(name))
             for name in sorted({n for n in owned if owned.count(n) > 1})
         )
         policy["template_adrs"] = list(owned)
@@ -6710,6 +6710,14 @@ def adr_inventory(policy):
             found.append((m.group(1) if m else None, policy[key] + "/" + name))
         out[space] = found
     return out
+
+
+def _adr_shown(path):
+    """An ADR's path as a message shows it: its directory, which may be a
+    configured number space, and its name, which may carry the configured
+    prefix, each through _shown."""
+    head, _, name = path.rpartition("/")
+    return "%s/%s" % (_shown(head), _shown(name)) if head else _shown(name)
 
 
 def adr_documents():
@@ -6773,6 +6781,10 @@ def check_Y():
     spaces = adr_inventory(policy)
     prefix = policy["template_prefix"]
     shape = "N" * policy["number_digits"]
+    # What a message shows of the configured text: the spaces' directories,
+    # the prefix, and a path built from them (_adr_shown).
+    project_dir = _shown(policy["project_dir"])
+    template_dir = _shown(policy["template_dir"])
     project_re, template_re = _adr_grammars(policy)
     for number, path in spaces["project"]:
         name = path.rsplit("/", 1)[1]
@@ -6780,12 +6792,12 @@ def check_Y():
             err(
                 "%s: an ADR named with the template prefix '%s' is a template "
                 "ADR; it belongs in %s, not in the project space %s"
-                % (path, prefix, policy["template_dir"], policy["project_dir"])
+                % (_adr_shown(path), _shown(prefix), template_dir, project_dir)
             )
         elif number is None:
             err(
                 "%s: an ADR in %s is named %s-<slug>.md (a lower-case "
-                "hyphenated slug)" % (path, policy["project_dir"], shape)
+                "hyphenated slug)" % (_adr_shown(path), project_dir, shape)
             )
     owned = policy["template_adrs"]
     for number, path in spaces["template"]:
@@ -6793,7 +6805,7 @@ def check_Y():
             err(
                 "%s: the template space %s holds only %s%s-<slug>.md; a project "
                 "ADR belongs in %s"
-                % (path, policy["template_dir"], prefix, shape, policy["project_dir"])
+                % (_adr_shown(path), template_dir, _shown(prefix), shape, project_dir)
             )
         elif path.rsplit("/", 1)[1] not in owned:
             err(
@@ -6801,7 +6813,7 @@ def check_Y():
                 "adr.template_adrs), so the template's own next ADR of that "
                 "number would meet it on update; a project's decision belongs in "
                 "%s as %s-<slug>.md, and a template lists each ADR it ships"
-                % (path, policy["project_dir"], shape)
+                % (_adr_shown(path), project_dir, shape)
             )
     present = {path.rsplit("/", 1)[1] for _n, path in spaces["template"]}
     for name in owned:
@@ -6809,7 +6821,7 @@ def check_Y():
             err(
                 "config/project.json: adr.template_adrs names %s, which %s "
                 "lacks; the list names exactly the ADRs the template ships"
-                % (name, policy["template_dir"])
+                % (_shown(name), template_dir)
             )
     homes = (policy["project_dir"], policy["template_dir"])
     for path in documents:
@@ -6818,7 +6830,7 @@ def check_Y():
             err(
                 "%s: an ADR (kind: adr) lives directly in %s or %s, where it is "
                 "numbered against the others in its space"
-                % (path, policy["project_dir"], policy["template_dir"])
+                % (_adr_shown(path), project_dir, template_dir)
             )
     for space, label in (("project", ""), ("template", prefix)):
         by_number = {}
@@ -6831,7 +6843,12 @@ def check_Y():
                 err(
                     "%s: ADR number %s%s is also taken by %s (a number is unique "
                     "within its space)"
-                    % (paths[0], label, number, ", ".join(paths[1:]))
+                    % (
+                        _adr_shown(paths[0]),
+                        _shown(label),
+                        number,
+                        ", ".join(_adr_shown(p) for p in paths[1:]),
+                    )
                 )
         for number in sorted(by_number):
             for path in by_number[number]:
@@ -6844,18 +6861,26 @@ def check_Y():
                 fm = parse_frontmatter(full) or {}
                 kind = _unquote(fm.get("kind", ""))
                 if kind != "adr":
-                    err("%s: an ADR has frontmatter kind: adr, not '%s'" % (path, kind))
+                    err(
+                        "%s: an ADR has frontmatter kind: adr, not '%s'"
+                        % (_adr_shown(path), kind)
+                    )
                 want = "ADR-%s%s:" % (label, number)
                 title = _unquote(fm.get("title", ""))
                 if not title.startswith(want):
                     err(
                         "%s: an ADR's title begins '%s', naming its own file (got "
-                        "'%s')" % (path, want, title)
+                        "'%s')"
+                        % (
+                            _adr_shown(path),
+                            "ADR-%s%s:" % (_shown(label), number),
+                            title,
+                        )
                     )
     if not spaces["project"] and not spaces["template"]:
         warn(
             "ADR number spaces: %s and %s hold no ADR (config/project.json adr)"
-            % (policy["project_dir"], policy["template_dir"])
+            % (project_dir, template_dir)
         )
 
 

@@ -214,6 +214,22 @@ _CASES = [
         "run_date key renamed",
         [(_PROJECT, ("evidence", "run_date", "max_age_days"), "K")],
     ),
+    # check Y
+    ("Y", "adr key added", [(_PROJECT, ("adr",), "A")]),
+    ("Y", "adr key renamed", [(_PROJECT, ("adr", "template_prefix"), "K")]),
+    ("Y", "adr template_dir", [(_PROJECT, ("adr", "template_dir"), "V")]),
+    ("Y", "adr project_dir", [(_PROJECT, ("adr", "project_dir"), "V", "/" + _AT)]),
+    ("Y", "adr template_prefix", [(_PROJECT, ("adr", "template_prefix"), "V")]),
+    ("Y", "adr template_adrs member", [(_PROJECT, ("adr", "template_adrs"), "M")]),
+    ("Y", "adr dir outside", [(_PROJECT, ("adr", "template_dir"), "V", "/" + _AT)]),
+    (
+        "Y",
+        "adr template_adrs twice",
+        [
+            (_PROJECT, ("adr", "template_prefix"), "V", "K@-"),
+            (_PROJECT, ("adr", "template_adrs"), "V", ["K@-0001-a.md", "K@-0001-a.md"]),
+        ],
+    ),
 ]
 
 
