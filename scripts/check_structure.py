@@ -372,6 +372,12 @@ def _quoted(value):
     return config_loader.shown(value)
 
 
+def _listed(values):
+    """Configured *values* shown as a list, each member through _quoted, so
+    only a member holding an `@` is hidden and its neighbours show."""
+    return "[%s]" % ", ".join(_quoted(v) for v in values)
+
+
 def rel(p):
     return os.path.relpath(p, ROOT)
 
@@ -537,7 +543,7 @@ def _parse_deferral_note():
             len(names),
             sys.version_info[0],
             sys.version_info[1],
-            spec,
+            _shown(spec),
             ", ".join(names),
         )
     )
@@ -1540,7 +1546,7 @@ def composition_root(app, root):
             return (
                 [
                     "layers.app.path '%s' is a package without __main__.py -- "
-                    "nothing runs it as a program" % path
+                    "nothing runs it as a program" % _shown(path)
                 ],
                 None,
             )
@@ -1552,7 +1558,7 @@ def composition_root(app, root):
                 "layers.app.path '%s' does not exist as a package or a .py file "
                 "-- a project with no composition root sets layers.app to null, "
                 "with the two make_targets declarations CONVENTIONS.md section 15 "
-                "names under layers.app" % path
+                "names under layers.app" % _shown(path)
             ],
             None,
         )
@@ -1561,7 +1567,7 @@ def composition_root(app, root):
         return (
             [
                 "layers.app.module '%s' is not the dotted form of the end of "
-                "layers.app.path '%s'" % (module, path)
+                "layers.app.path '%s'" % (_shown(module), _shown(path))
             ],
             None,
         )
@@ -1601,14 +1607,17 @@ def check_H():
         and bpath
         and not os.path.isdir(os.path.join(ROOT, bpath))
     ):
-        err("config/project.json: layers.backend.path '%s' does not exist" % bpath)
+        err(
+            "config/project.json: layers.backend.path '%s' does not exist"
+            % _shown(bpath)
+        )
     bpy = backend.get("python")
     if isinstance(bpy, str) and bpy:
         have = _requires_python()
         if have is not None and have != bpy:
             err(
                 "config/project.json: layers.backend.python '%s' != pyproject "
-                "requires-python '%s'" % (bpy, have)
+                "requires-python '%s'" % (_shown(bpy), have)
             )
 
     # Absent stays silent: a project generated before the key gets it through
@@ -1631,19 +1640,19 @@ def check_H():
         ):
             err(
                 "config/project.json: layers.frontend.stack '%s' has no dir "
-                "under %s/" % (stack, froot)
+                "under %s/" % (_shown(stack), _shown(froot))
             )
         for a in available:
             if isinstance(a, str) and not os.path.isdir(os.path.join(ROOT, froot, a)):
                 warn(
                     "config/project.json: declared frontend stack '%s' is "
-                    "missing (%s/%s)" % (a, froot, a)
+                    "missing (%s/%s)" % (_shown(a), _shown(froot), _shown(a))
                 )
         for d in _subdirs(froot):
             if d not in available:
                 warn(
                     "%s/%s: present but not in config/project.json "
-                    "layers.frontend.available (undeclared stack)" % (froot, d)
+                    "layers.frontend.available (undeclared stack)" % (_shown(froot), d)
                 )
 
     transports = _expect(manifest.get("transports"), dict, "transports", {})
@@ -1653,14 +1662,14 @@ def check_H():
         if t not in avail:
             err(
                 "config/project.json: transports.enabled '%s' not in "
-                "transports.available" % t
+                "transports.available" % _shown(t)
             )
         elif isinstance(avail[t], str) and not os.path.isdir(
             os.path.join(ROOT, avail[t])
         ):
             err(
                 "config/project.json: enabled transport '%s' -> '%s' does not "
-                "exist" % (t, avail[t])
+                "exist" % (_shown(t), _shown(avail[t]))
             )
     declared = {v for v in avail.values() if isinstance(v, str)}
     for d in _subdirs("api"):
@@ -1680,13 +1689,14 @@ def check_H():
         if r_default is not None and r_default not in r_avail:
             err(
                 "config/project.json: runtimes.default '%s' not in "
-                "runtimes.available" % r_default
+                "runtimes.available" % _shown(r_default)
             )
         for nm in sorted(r_avail):
             d = r_avail[nm]
             if isinstance(d, str) and not os.path.isdir(os.path.join(ROOT, d)):
                 err(
-                    "config/project.json: runtime '%s' -> '%s' does not exist" % (nm, d)
+                    "config/project.json: runtime '%s' -> '%s' does not exist"
+                    % (_shown(nm), _shown(d))
                 )
 
     # Model adapters (optional block): the default must be an available adapter
@@ -1700,12 +1710,15 @@ def check_H():
         if m_default is not None and m_default not in m_avail:
             err(
                 "config/project.json: models.default '%s' not in "
-                "models.available" % m_default
+                "models.available" % _shown(m_default)
             )
         for nm in sorted(m_avail):
             d = m_avail[nm]
             if isinstance(d, str) and not os.path.isdir(os.path.join(ROOT, d)):
-                err("config/project.json: model '%s' -> '%s' does not exist" % (nm, d))
+                err(
+                    "config/project.json: model '%s' -> '%s' does not exist"
+                    % (_shown(nm), _shown(d))
+                )
 
     # Practice profiles (optional block): domain profiles are DEFINED in
     # config/practices.json and ENABLED here (CONVENTIONS section 15). A
@@ -1754,14 +1767,15 @@ def _profile_flag_findings(profiles, defined):
         if not isinstance(val, bool):
             errs.append(
                 "config/project.json: practices.profiles.%s must be true "
-                "or false (a boolean), not %s" % (name, type(val).__name__)
+                "or false (a boolean), not %s" % (_shown(name), type(val).__name__)
             )
             continue
         if val is True and defined is not None and name not in defined:
             warns_.append(
                 "config/project.json: practices.profiles.%s is enabled "
                 "but names no profile defined in config/practices.json "
-                "profiles %s; it will activate nothing" % (name, sorted(defined))
+                "profiles %s; it will activate nothing"
+                % (_shown(name), _listed(sorted(defined)))
             )
     return errs, warns_
 

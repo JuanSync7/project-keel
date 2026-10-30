@@ -113,6 +113,25 @@ _CASES = [
     ("B", "extra_toplevel member", [(_PROJECT, ("structure", "extra_toplevel"), "M")]),
     ("B", "extra_toplevel nested", [(_PROJECT, ("structure", "extra_toplevel"), "D")]),
     ("B", "project_checks", [(_PROJECT, ("structure", "project_checks"), "V")]),
+    # check H
+    ("H", "backend path", [(_PROJECT, ("layers", "backend", "path"), "V")]),
+    ("H", "backend python", [(_PROJECT, ("layers", "backend", "python"), "V")]),
+    ("H", "app module", [(_PROJECT, ("layers", "app", "module"), "V")]),
+    ("H", "app path", [(_PROJECT, ("layers", "app", "path"), "V")]),
+    ("H", "frontend stack", [(_PROJECT, ("layers", "frontend", "stack"), "V")]),
+    ("H", "frontend root", [(_PROJECT, ("layers", "frontend", "root"), "V")]),
+    (
+        "H",
+        "frontend stack member",
+        [(_PROJECT, ("layers", "frontend", "available"), "M")],
+    ),
+    ("H", "transports enabled", [(_PROJECT, ("transports", "enabled"), "M")]),
+    ("H", "transport dir", [(_PROJECT, ("transports", "available", "*"), "V")]),
+    ("H", "runtime name", [(_PROJECT, ("runtimes", "available"), "A")]),
+    ("H", "runtime default", [(_PROJECT, ("runtimes", "default"), "V")]),
+    ("H", "model dir", [(_PROJECT, ("models", "available", "*"), "V")]),
+    ("H", "model default", [(_PROJECT, ("models", "default"), "V")]),
+    ("H", "profile flag name", [(_PROJECT, ("practices", "profiles"), "A")]),
 ]
 
 
@@ -129,3 +148,42 @@ def test_a_planted_at_never_shows(monkeypatch, letter, faults):
     assert not [m for m in lines if "SENTINEL" in m], lines
     assert not [m for m in lines if "@" in m.replace(_HIDDEN, "")], lines
     assert any(_HIDDEN in m for m in lines), lines
+
+
+def test_a_warning_hides_the_name_and_shows_the_neighbours(monkeypatch):
+    """An enabled profile flag naming no defined profile is a warning, not an
+    error: its name is hidden there too, and the defined names still show."""
+    flag = (_PROJECT, ("practices", "profiles", _AT), "V", True)
+    errs, warns = _run(monkeypatch, "H", [flag])
+    hits = [m for m in warns if "practices.profiles." in m]
+    assert len(hits) == 1, warns
+    assert "practices.profiles.%s is enabled" % _HIDDEN in hits[0]
+    assert "'ai'" in hits[0] and "SENTINEL" not in hits[0]
+    assert not [m for m in errs if "SENTINEL" in m]
+
+
+def test_the_same_text_is_hidden_in_each_message_naming_it(monkeypatch):
+    """One text in two keys yields two findings, and each hides it on its own."""
+    errs, _warns = _run(
+        monkeypatch,
+        "H",
+        [
+            (_PROJECT, ("runtimes", "default"), "V"),
+            (_PROJECT, ("models", "default"), "V"),
+        ],
+    )
+    hits = [m for m in errs if _HIDDEN in m]
+    assert any("runtimes.default" in m for m in hits), errs
+    assert any("models.default" in m for m in hits), errs
+    assert not [m for m in errs if "SENTINEL" in m]
+
+
+def test_the_deferral_note_hides_the_interpreter_spec(monkeypatch):
+    """The one warning a run prints for files it could not parse names
+    layers.backend.python; a spec holding an `@` is hidden there."""
+    project = _load(_PROJECT)
+    project["layers"]["backend"]["python"] = ">=3.11," + _AT
+    monkeypatch.setattr(cs, "_read_json_config", lambda rel: project)
+    monkeypatch.setattr(cs, "_PARSE_DEFERRED", {"x.py"})
+    note = cs._parse_deferral_note()
+    assert "asks for %s --" % _HIDDEN in note and "SENTINEL" not in note, note
