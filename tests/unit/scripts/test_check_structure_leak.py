@@ -190,6 +190,12 @@ _CASES = [
     # check M
     ("M", "ruff family", [(_PRACTICES, ("rulesets", "ruff", "extend_select"), "M")]),
     ("M", "mypy flag", [(_PRACTICES, ("rulesets", "mypy", "flags"), "M")]),
+    # keel's pyproject selects B, so a family deferred under it is selected.
+    (
+        "M",
+        "deferred family selected",
+        [(_PRACTICES, ("rulesets", "ruff", "deferred"), "A", "B1zz@x")],
+    ),
     (
         "M",
         "per-file-ignore declared",
