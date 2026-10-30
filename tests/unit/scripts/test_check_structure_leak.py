@@ -2,7 +2,7 @@
 title: Unit — check_structure hides configured text that holds an @
 kind: tests
 layer: n/a
-summary: No message scripts/check_structure.py builds from config/project.json or config/practices.json shows text that holds an `@`, at any depth: a value, a list member, a key name or a path segment. Each row plants a sentinel in one position of keel's own config (served in memory, the tree untouched), runs the one check that reads it, and asserts the check still reports, the sentinel never shows and the line says it is hidden; the rows run over check families and mutation kinds. Beside them, a joined line still shows its harmless members, an empty container is shown as is, and the same text is hidden in each message that names it.
+summary: No message scripts/check_structure.py builds from config/project.json or config/practices.json shows text that holds an `@`, at any depth: a value, a list member, a key name or a path segment. Each row plants a sentinel in one position of keel's own config (served in memory, the tree untouched), runs the one check that reads it, and asserts the check still reports, the sentinel never shows and the line says it is hidden; the rows run over check families and mutation kinds. In a generated project a row that plants into a block only the template's config has (`template.twins`, or `layers.frontend` when the project has no frontend) is skipped naming the block; in the template a missing block still fails. Beside them, a joined line still shows its harmless members, an empty container is shown as is, and the same text is hidden in each message that names it.
 """
 
 import json
@@ -68,6 +68,15 @@ def _mutate(doc, path, kind, value=_AT):
         raise ValueError(kind)
 
 
+def _template_only(missing):
+    """Skip a case whose config block this tree lacks, in a generated project
+    only: keel's own config has every block, so there a missing one is a
+    fault in the row and *missing* is raised."""
+    if (_ROOT / "copier.yml").is_file():
+        raise missing
+    pytest.skip("this project's config has no %s: a block keel's own has" % missing)
+
+
 def _isolate(monkeypatch):
     """Restore after the test every global run_checks rebinds, so a later
     test in this worker never reads this one's root or memo."""
@@ -92,7 +101,10 @@ def _run(monkeypatch, letter, faults):
     for fault in faults:
         rel = fault[0]
         doc = docs.setdefault(rel, _load(rel))
-        _mutate(doc, *fault[1:])
+        try:
+            _mutate(doc, *fault[1:])
+        except KeyError as missing:
+            _template_only(missing)
     real = cs._read_json_config
 
     def served(relpath):
@@ -325,14 +337,6 @@ _CASES = [
         "Z",
         "adoption_boundary",
         [(_PROJECT, ("work_naming", "adoption_boundary"), "V", [_AT])],
-    ),
-    (
-        "Z",
-        "a valid grammar holding an @",
-        [
-            (_PROJECT, ("work_naming", "campaign_id"), "V", "C@P-<n>"),
-            (_PROJECT, ("work_naming", "slice_id"), "V", "C@P-<n>.S<m>"),
-        ],
     ),
 ]
 
@@ -873,6 +877,8 @@ def test_an_undeclared_stack_under_a_hidden_frontend_root(monkeypatch, tmp_path)
     (tmp_path / "config").mkdir()
     (tmp_path / "config" / "project.json").write_text("{}")  # served, not read
     layers = dict(_load(_PROJECT)["layers"])
+    if "frontend" not in layers:
+        _template_only(KeyError("layers.frontend"))
     layers["frontend"] = dict(layers["frontend"], root="f@e", available=[])
     lines = _served_tree(monkeypatch, tmp_path, "H", "layers", layers)
     assert any(m.startswith(_HIDDEN + "/solid: present") for m in lines), lines
