@@ -140,6 +140,10 @@ _CASES = [
         "per-file-ignore declared",
         [(_PRACTICES, ("rulesets", "ruff", "per_file_ignores", "scripts/**"), "V")],
     ),
+    # check N
+    ("N", "twin key added", [(_PROJECT, ("template", "twins"), "A")]),
+    ("N", "twin key renamed", [(_PROJECT, ("template", "twins", "*"), "K")]),
+    ("N", "twin kind", [(_PROJECT, ("template", "twins", "*"), "V")]),
 ]
 
 

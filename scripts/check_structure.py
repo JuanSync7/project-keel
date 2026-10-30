@@ -2900,8 +2900,9 @@ def _twin_parity_findings(files, declared):
             continue
         if kind not in _TWIN_KINDS:
             out.append(
-                "%s: unknown twin kind %r in config/project.json "
-                "template.twins (expected one of %s)" % (plain, kind, list(_TWIN_KINDS))
+                "%s: unknown twin kind %s in config/project.json "
+                "template.twins (expected one of %s)"
+                % (_shown(plain), _quoted(kind), list(_TWIN_KINDS))
             )
             continue
         has_plain = plain in files
@@ -2910,13 +2911,13 @@ def _twin_parity_findings(files, declared):
                 out.append(
                     "%s: declared `generated` (copier writes it into a NEW "
                     "project) but keel commits one of its own — keel is the "
-                    "template, not a generated project" % plain
+                    "template, not a generated project" % _shown(plain)
                 )
             continue
         if not has_plain:
             out.append(
                 "%s: declared `%s` but the plain file is missing, so the twin "
-                "has nothing to be a twin OF" % (plain, kind)
+                "has nothing to be a twin OF" % (_shown(plain), kind)
             )
             continue
         plain_lines = set(files[plain].split("\n"))
@@ -2925,7 +2926,8 @@ def _twin_parity_findings(files, declared):
                 out.append(
                     "%s: declared a DIVERGENCE twin but %s reproduces it "
                     "exactly. The divergence is deliberate; restoring parity "
-                    "silently removes what the twin exists to change." % (plain, twin)
+                    "silently removes what the twin exists to change."
+                    % (_shown(plain), _shown(twin))
                 )
             continue
         stale = [
@@ -2935,7 +2937,8 @@ def _twin_parity_findings(files, declared):
         ]
         out.extend(
             "%s: line is in the twin but not in %s, so a generated "
-            "project would get a stale copy: %s" % (twin, plain, ln.strip())
+            "project would get a stale copy: %s"
+            % (_shown(twin), _shown(plain), ln.strip())
             for ln in stale[:5]
         )
     for plain in sorted(declared):
@@ -2944,7 +2947,7 @@ def _twin_parity_findings(files, declared):
         out.append(
             "config/project.json template.twins declares '%s' but no '%s%s' "
             "exists — delete the declaration or restore the twin"
-            % (plain, plain, _TWIN_SUFFIX)
+            % (_shown(plain), _shown(plain), _TWIN_SUFFIX)
         )
     return out
 
