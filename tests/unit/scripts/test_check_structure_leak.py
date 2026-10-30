@@ -289,6 +289,21 @@ def test_the_frozen_config_marker_is_hidden(monkeypatch, tmp_path):
     assert not [m for m in lines if "SENTINEL" in m]
 
 
+@pytest.mark.parametrize(
+    "pid,path",
+    [(_AT, "docs/x.md"), ("P-1", "docs/" + _AT + ".md")],
+    ids=["practice id", "doc path segment"],
+)
+def test_an_unreachable_policy_doc_hides_the_id_and_the_path(pid, path):
+    """check_U names the practices citing an unreachable document and the
+    document itself; either holding an `@` is hidden."""
+    practices = {"practices": [{"id": pid, "enforced_by": ["doc:" + path]}]}
+    (line,) = cs._policy_reachability_findings(
+        practices, {cs._AGENT_RULES: "", path: ""}
+    )
+    assert _HIDDEN in line and "SENTINEL" not in line, line
+
+
 def test_the_deferral_note_hides_the_interpreter_spec(monkeypatch):
     """The one warning a run prints for files it could not parse names
     layers.backend.python; a spec holding an `@` is hidden there."""

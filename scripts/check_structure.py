@@ -4311,9 +4311,9 @@ def _policy_reachability_findings(practices, docs):
             "it in %s, or in one it already names, or the practice cannot reach the "
             "agent it governs"
             % (
-                ", ".join(sorted(cited[path])),
+                ", ".join(_shown(pid) for pid in sorted(cited[path])),
                 "" if len(cited[path]) > 1 else "s",
-                path,
+                _shown(path),
                 _AGENT_RULES,
                 _AGENT_RULES,
                 _AGENT_RULES,
