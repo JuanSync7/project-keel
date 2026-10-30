@@ -587,7 +587,10 @@ beside it still shows. Only the configured text is hidden, so the tree's own
 text beside it shows as written: a check Y finding reads
 `<hidden: it holds an @>/0001-<slug>.md` for an ADR under a number space whose
 directory holds an `@`, and `docs/adr/0001-move-to-git@host.md` for one whose
-own name does (`tests/unit/scripts/test_check_structure_leak.py`).
+own name does. A check Z finding shows a campaign or slice id whose
+`work_naming` template holds an `@` as `<hidden: it holds an @> <n>=3 <m>=2`,
+the template hidden and the plan doc's numbers shown
+(`tests/unit/scripts/test_check_structure_leak.py`).
 The refusals the other scripts build from the settings they read do not pass
 through that rule yet. A value read from an environment variable is blamed on
 it instead: `the environment: <variable> is <JSON type> <value>; accepted: <what it accepts>`. The loader writes every `[not set]` and wrong-value line before it stops,

@@ -7125,9 +7125,16 @@ def _work_id(policy, n, m=None):
 
 
 def _work_shown(policy, n, m=None):
-    """_work_id as a message shows it: an id carries the configured template's
-    literal text, so it passes through _shown."""
-    return _shown(_work_id(policy, n, m))
+    """_work_id as a message shows it. The template is configured text and the
+    numbers are the document's: when _shown hides the template, the numbers
+    follow it as `<n>=N <m>=M`, so the reader can tell which id is meant."""
+    key = "campaign_id" if m is None else "slice_id"
+    template = _shown(policy[key])
+    if template == policy[key]:
+        return _work_id(policy, n, m)
+    if m is None:
+        return "%s <n>=%d" % (template, n)
+    return "%s <n>=%d <m>=%d" % (template, n, m)
 
 
 def _cells(line):

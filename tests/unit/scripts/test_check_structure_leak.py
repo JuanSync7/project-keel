@@ -7,6 +7,7 @@ summary: No message scripts/check_structure.py builds from config/project.json o
 
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -602,11 +603,7 @@ def test_an_adr_finding_hides_only_the_configured_part_of_a_path(
     assert [m for m in lines if m.startswith(opening)], lines
 
 
-def test_each_plan_finding_hides_the_configured_grammar(monkeypatch, tmp_path):
-    """The slice column and both id templates hold an `@`, and a plan doc
-    breaks every rule check_Z holds a slice table to: each finding hides the
-    configured column, template and every id built from it."""
-    plan = """---
+_PLAN = """---
 title: p
 kind: design
 ---
@@ -650,8 +647,14 @@ C@P-9.S1 is named here and declared nowhere.
 
 C@P-1.S0 is not an id.
 """
+
+
+def test_each_plan_finding_hides_the_configured_grammar(monkeypatch, tmp_path):
+    """The slice column and both id templates hold an `@`, and a plan doc
+    breaks every rule check_Z holds a slice table to: each finding hides the
+    configured column, template and every id built from it."""
     (tmp_path / "docs").mkdir()
-    (tmp_path / "docs" / "p.md").write_text(plan)
+    (tmp_path / "docs" / "p.md").write_text(_PLAN)
     work = dict(_load(_PROJECT)["work_naming"])
     work.update(slice_column="Sl@ce", campaign_id="C@P-<n>", slice_id="C@P-<n>.S<m>")
     lines = _served_tree(monkeypatch, tmp_path, "Z", "work_naming", work)
@@ -667,6 +670,85 @@ C@P-1.S0 is not an id.
         "C@P-2",
         "C@P-9.S1",
     }, shown
+
+
+_HIDDEN_IDS = {"campaign_id": "C@P-<n>", "slice_id": "C@P-<n>.S<m>"}
+_HIDDEN_SLICE = {"campaign_id": "CMP-<n>", "slice_id": "CMP-<n>.S@<m>"}
+_SHOWN_IDS = {"campaign_id": "CMP-<n>", "slice_id": "CMP-<n>.S<m>"}
+_ID_ROWS = [
+    # (row id, id templates, the finding's text after `docs/p.md:<line>: `)
+    (
+        "campaigns a heading names",
+        _HIDDEN_IDS,
+        "the heading at line 12 scoping this Slice table names 2 campaigns "
+        "(%s <n>=1, %s <n>=2)" % (_H, _H),
+    ),
+    (
+        "the campaign a row sits under",
+        _HIDDEN_IDS,
+        "C@P-4.S1 sits under the heading of %s <n>=3 (line 18)" % _H,
+    ),
+    (
+        "a slice out of order",
+        _HIDDEN_IDS,
+        "%s <n>=3 <m>=1 comes after %s <n>=3 <m>=2" % (_H, _H),
+    ),
+    (
+        "a slice declared twice",
+        _HIDDEN_IDS,
+        "%s <n>=3 <m>=2 is also declared at line 24" % _H,
+    ),
+    (
+        "the slices a campaign skips",
+        _HIDDEN_IDS,
+        "%s <n>=3 skips %s <n>=3 <m>=3, %s <n>=3 <m>=4" % (_H, _H, _H),
+    ),
+    (
+        "a campaign declared twice",
+        _HIDDEN_IDS,
+        "campaign %s <n>=6 is also declared at docs/p.md:29" % _H,
+    ),
+    (
+        "the campaigns a campaign skips",
+        _HIDDEN_IDS,
+        "%s <n>=3 is declared but %s <n>=1, %s <n>=2 is not; campaigns run "
+        "from %s <n>=1" % (_H, _H, _H, _H),
+    ),
+    (
+        "the slice template alone holds an @",
+        _HIDDEN_SLICE,
+        "CMP-3 skips %s <n>=3 <m>=3, %s <n>=3 <m>=4" % (_H, _H),
+    ),
+    (
+        "no template holds an @",
+        _SHOWN_IDS,
+        "CMP-3 skips CMP-3.S3, CMP-3.S4; rows run",
+    ),
+    (
+        "no template holds an @, a slice out of order",
+        _SHOWN_IDS,
+        "CMP-3.S1 comes after CMP-3.S2; rows run",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "ids,finding", [r[1:] for r in _ID_ROWS], ids=[r[0] for r in _ID_ROWS]
+)
+def test_a_plan_finding_shows_the_numbers_beside_a_hidden_id_template(
+    monkeypatch, tmp_path, ids, finding
+):
+    """An id is the configured template around the document's own numbers:
+    when the template holds an `@` it is hidden and the numbers still show,
+    so the reader can tell which campaign or slice is meant."""
+    plan = _PLAN.replace("Sl@ce", "Slice").replace("C@P", ids["campaign_id"][:3])
+    if "S@" in ids["slice_id"]:
+        plan = re.sub(r"(CMP-[0-9]+)\.S", r"\1.S@", plan)
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "p.md").write_text(plan)
+    work = dict(_load(_PROJECT)["work_naming"], **ids)
+    lines = _served_tree(monkeypatch, tmp_path, "Z", "work_naming", work)
+    assert [m for m in lines if m.split(": ", 1)[1].startswith(finding)], lines
 
 
 _P = "d@r/f.txt"
