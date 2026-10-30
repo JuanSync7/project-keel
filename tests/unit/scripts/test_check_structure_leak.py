@@ -113,6 +113,26 @@ _CASES = [
     ("B", "extra_toplevel member", [(_PROJECT, ("structure", "extra_toplevel"), "M")]),
     ("B", "extra_toplevel nested", [(_PROJECT, ("structure", "extra_toplevel"), "D")]),
     ("B", "project_checks", [(_PROJECT, ("structure", "project_checks"), "V")]),
+    (
+        "B",
+        "extra_toplevel hidden",
+        [(_PROJECT, ("structure", "extra_toplevel"), "M", ".k@y")],
+    ),
+    (
+        "B",
+        "extra_toplevel twice",
+        [(_PROJECT, ("structure", "extra_toplevel"), "V", [_AT, _AT])],
+    ),
+    (
+        "B",
+        "project_checks nested",
+        [(_PROJECT, ("structure", "project_checks"), "V", "x/" + _AT)],
+    ),
+    (
+        "B",
+        "project_checks not a name",
+        [(_PROJECT, ("structure", "project_checks"), "V", [_AT])],
+    ),
     # check H
     ("H", "backend path", [(_PROJECT, ("layers", "backend", "path"), "V")]),
     ("H", "backend python", [(_PROJECT, ("layers", "backend", "python"), "V")]),
@@ -122,11 +142,45 @@ _CASES = [
     ("H", "frontend root", [(_PROJECT, ("layers", "frontend", "root"), "V")]),
     (
         "H",
+        "frontend root under a stack",
+        [
+            (_PROJECT, ("layers", "frontend", "root"), "V"),
+            (_PROJECT, ("layers", "frontend", "stack"), "V", "react-vite"),
+        ],
+    ),
+    (
+        "H",
         "frontend stack member",
         [(_PROJECT, ("layers", "frontend", "available"), "M")],
     ),
     ("H", "transports enabled", [(_PROJECT, ("transports", "enabled"), "M")]),
     ("H", "transport dir", [(_PROJECT, ("transports", "available", "*"), "V")]),
+    (
+        "H",
+        "transport name",
+        [
+            (_PROJECT, ("transports", "enabled"), "M"),
+            (_PROJECT, ("transports", "available", _AT), "V", "no-such-dir"),
+        ],
+    ),
+    (
+        "H",
+        "runtime with no dir",
+        [(_PROJECT, ("runtimes", "available", _AT), "V", _AT)],
+    ),
+    (
+        "H",
+        "model with no dir",
+        [(_PROJECT, ("models", "available", _AT), "V", "no-such-dir")],
+    ),
+    (
+        "H",
+        "defined profile name",
+        [
+            (_PRACTICES, ("profiles",), "A"),
+            (_PROJECT, ("practices", "profiles", "zz"), "V", True),
+        ],
+    ),
     ("H", "runtime name", [(_PROJECT, ("runtimes", "available"), "A")]),
     ("H", "runtime default", [(_PROJECT, ("runtimes", "default"), "V")]),
     ("H", "model dir", [(_PROJECT, ("models", "available", "*"), "V")]),
@@ -146,6 +200,11 @@ _CASES = [
     ("N", "twin kind", [(_PROJECT, ("template", "twins", "*"), "V")]),
     # check S
     ("S", "roster member", [(_PROJECT, ("rosters", "readmes"), "M")]),
+    (
+        "S",
+        "roster entry twice",
+        [(_PROJECT, ("rosters", "readmes"), "V", ["x@y/README.md", "x@y/README.md"])],
+    ),
     ("S", "roster nested", [(_PROJECT, ("rosters", "readmes"), "D")]),
     (
         "S",
@@ -240,6 +299,14 @@ _CASES = [
         [(_PROJECT, ("work_naming", "campaign_id"), "V", "<n>@")],
     ),
     ("Z", "slice_id", [(_PROJECT, ("work_naming", "slice_id"), "V")]),
+    (
+        "Z",
+        "slice_id off its campaign_id",
+        [
+            (_PROJECT, ("work_naming", "campaign_id"), "V", "C@P-<n>"),
+            (_PROJECT, ("work_naming", "slice_id"), "V", "X-<n>.S<m>"),
+        ],
+    ),
     (
         "Z",
         "slice_id suffix",
@@ -377,3 +444,237 @@ def test_the_deferral_note_hides_the_interpreter_spec(monkeypatch):
     monkeypatch.setattr(cs, "_PARSE_DEFERRED", {"x.py"})
     note = cs._parse_deferral_note()
     assert "asks for %s --" % _HIDDEN in note and "SENTINEL" not in note, note
+
+
+def _served_tree(monkeypatch, root, letter, block, value):
+    """check *letter*'s findings over the tree at *root*, with keel's
+    project.json served and its *block* replaced by *value*."""
+    project = _load(_PROJECT)
+    project[block] = value
+    practices = _load(_PRACTICES)
+    _isolate(monkeypatch)
+    monkeypatch.setattr(
+        cs,
+        "_read_json_config",
+        lambda rel: practices if "practices" in rel else project,
+    )
+    monkeypatch.setattr(cs, "CHECKS", ((letter, dict(cs.CHECKS)[letter]),))
+    return [m for _l, _t, m in cs.run_checks(str(root), project_checks=False)]
+
+
+def _write(root, relpath, kind, title="t"):
+    path = root / relpath
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("---\ntitle: %s\nkind: %s\n---\n\n# %s\n" % (title, kind, title))
+
+
+def test_each_adr_finding_hides_the_configured_spaces_and_prefix(monkeypatch, tmp_path):
+    """Both ADR number spaces and the prefix hold an `@`, and the tree breaks
+    every rule check_Y holds a file to: each finding still names its file,
+    with the configured directory, prefix and name hidden."""
+    for rel, kind, title in [
+        ("a@d/0001-a.md", "adr", "ADR-0001: a"),
+        ("a@d/0001-b.md", "adr", "ADR-0009: b"),
+        ("a@d/K@-0002-c.md", "adr", "ADR-0002: c"),
+        ("a@d/Bad.md", "adr", "Bad"),
+        ("a@d/0003-n.md", "note", "ADR-0003: n"),
+        ("a@d/t/K@-0001-x.md", "adr", "ADR-K@-0001: x"),
+        ("a@d/t/K@-0001-y.md", "adr", "ADR-0007: y"),
+        ("a@d/t/0003-z.md", "adr", "ADR-0003: z"),
+        ("a@d/t/K@-0004-w.md", "adr", "ADR-K@-0004: w"),
+        ("docs/0001-q.md", "adr", "ADR-0001: q"),
+        ("r@0001.md", "adr", "ADR-0001: r"),
+    ]:
+        _write(tmp_path, rel, kind, title)
+    adr = {
+        "project_dir": "a@d",
+        "template_dir": "a@d/t",
+        "template_prefix": "K@-",
+        "number_digits": 4,
+        "template_adrs": ["K@-0001-x.md", "K@-0001-y.md", "K@-0005-q.md"],
+    }
+    lines = _served_tree(monkeypatch, tmp_path, "Y", "adr", adr)
+    assert len(lines) >= 10, lines
+    assert not [m for m in lines if "@" in m.replace(_HIDDEN, "")], lines
+
+
+def test_each_plan_finding_hides_the_configured_grammar(monkeypatch, tmp_path):
+    """The slice column and both id templates hold an `@`, and a plan doc
+    breaks every rule check_Z holds a slice table to: each finding hides the
+    configured column, template and every id built from it."""
+    plan = """---
+title: p
+kind: design
+---
+
+# P
+
+| Sl@ce | x |
+|---|---|
+| C@P-1.S1 | a |
+
+## C@P-1 and C@P-2 — two
+
+| Sl@ce | x |
+|---|---|
+| C@P-1.S1 | a |
+
+## C@P-3 — three
+
+| Sl@ce | x |
+|---|---|
+| bogus | a |
+| C@P-4.S1 | a |
+| C@P-3.S2 | a |
+| C@P-3.S1 | a |
+| C@P-3.S2 | a |
+| C@P-3.S5 | a |
+
+## C@P-6 — six
+
+| Sl@ce | x |
+|---|---|
+| C@P-6.S1 | a |
+
+## C@P-6 — again
+
+| Sl@ce | x |
+|---|---|
+| C@P-6.S1 | a |
+
+C@P-9.S1 is named here and declared nowhere.
+
+C@P-1.S0 is not an id.
+"""
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "p.md").write_text(plan)
+    work = dict(_load(_PROJECT)["work_naming"])
+    work.update(slice_column="Sl@ce", campaign_id="C@P-<n>", slice_id="C@P-<n>.S<m>")
+    lines = _served_tree(monkeypatch, tmp_path, "Z", "work_naming", work)
+    assert len(lines) >= 8, lines
+    # Five findings quote the document's own text, a row's cell and four
+    # mentions, which is not configured text; every other `@` is hidden.
+    shown = [m for m in lines if "@" in m.replace(_HIDDEN, "")]
+    assert sum(m.replace(_HIDDEN, "").count("@") for m in shown) == 5, shown
+    assert {m.split(": ", 1)[1].split()[0] for m in shown} == {
+        "C@P-1.S0",
+        "C@P-4.S1",
+        "C@P-1",
+        "C@P-2",
+        "C@P-9.S1",
+    }, shown
+
+
+_P = "d@r/f.txt"
+_T = _P + ".jinja"
+
+
+@pytest.mark.parametrize(
+    "files,declared",
+    [
+        ({_T: "", _P: ""}, {_P: "z@"}),
+        ({_T: "", _P: ""}, {_P: "generated"}),
+        ({_T: ""}, {_P: "parity"}),
+        ({_T: "x", _P: "x"}, {_P: "divergence"}),
+        ({_T: "stale", _P: "other"}, {_P: "parity"}),
+    ],
+    ids=[
+        "unknown kind",
+        "generated with a plain",
+        "no plain",
+        "no divergence",
+        "stale line",
+    ],
+)
+def test_a_twin_finding_hides_the_declared_path(files, declared):
+    """Each twin-parity refusal names the declared plain path and its twin;
+    a path holding an `@` is hidden in both."""
+    lines = cs._twin_parity_findings(files, declared)
+    assert lines and all(_HIDDEN in m for m in lines), lines
+    assert not [m for m in lines if "@" in m.replace(_HIDDEN, "")], lines
+
+
+def test_a_roster_readme_without_its_heading_is_hidden():
+    """A listed README that exists but lacks the roster heading is named
+    with its configured path hidden."""
+    lines = cs._roster_registry_findings(["x@y/README.md"], set(), lambda p: True)
+    assert lines and all(_HIDDEN in m for m in lines), lines
+    assert not [m for m in lines if "@" in m.replace(_HIDDEN, "")], lines
+
+
+def test_a_doc_mechanism_with_no_such_section_hides_the_path():
+    """A `doc:` mechanism whose document exists but lacks the cited section
+    names the configured path hidden; the section is digits by then."""
+    # Built with %, so check_structure's citation scan of this file does not
+    # read a document name followed by a section sign as a citation.
+    reason = cs._mechanism_reason(
+        "doc:%s §3" % "x@y.md", set(), {"x@y.md"}, set(), lambda p: set()
+    )
+    assert reason and _HIDDEN in reason, reason
+    assert "@" not in reason.replace(_HIDDEN, ""), reason
+
+
+@pytest.mark.parametrize(
+    "files,app",
+    [
+        (["a@p/__init__.py"], {"path": "a@p", "module": "a@p"}),
+        (["a@p/main.py"], {"path": "a@p/main.py", "module": "zz"}),
+    ],
+    ids=["package without __main__", "module off its path"],
+)
+def test_a_composition_root_refusal_hides_the_path(tmp_path, files, app):
+    """layers.app's refusals, shared with scripts/run_app.py, hide a path
+    holding an `@`."""
+    for rel in files:
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / rel).write_text("")
+    problems = cs.composition_root(app, str(tmp_path))[0]
+    assert problems and all(_HIDDEN in m for m in problems), problems
+    assert not [m for m in problems if "@" in m.replace(_HIDDEN, "")], problems
+
+
+def _project_dir_lines(monkeypatch, root):
+    """Every finding check_B and the project checks give over *root*, whose
+    structure.project_checks names the declared directory `k@y`."""
+    project = _load(_PROJECT)
+    project["structure"] = dict(
+        project["structure"], extra_toplevel=["k@y"], project_checks="k@y"
+    )
+    _isolate(monkeypatch)
+    monkeypatch.setattr(
+        cs, "_read_json_config", lambda rel: project if "project" in rel else {}
+    )
+    monkeypatch.setattr(cs, "CHECKS", (("B", dict(cs.CHECKS)["B"]),))
+    return [m for _l, _t, m in cs.run_checks(str(root), project_checks=True)]
+
+
+def test_a_project_check_directory_holding_an_at_is_hidden(monkeypatch, tmp_path):
+    """The directory's label refusal and each project finding's path hide
+    the configured name."""
+    (tmp_path / "k@y").mkdir()
+    (tmp_path / "k@y" / "c.py").write_text("def check(root):\n    return ['f']\n")
+    lines = _project_dir_lines(monkeypatch, tmp_path)
+    assert any(m.startswith(_HIDDEN + "/c.py") for m in lines), lines
+    assert any("README" in m and _HIDDEN in m for m in lines), lines
+    assert not [m for m in lines if "@" in m.replace(_HIDDEN, "")], lines
+
+
+def test_a_project_check_directory_with_no_module_is_hidden(monkeypatch, tmp_path):
+    """A declared project-check directory with no module is named hidden."""
+    (tmp_path / "k@y").mkdir()
+    lines = _project_dir_lines(monkeypatch, tmp_path)
+    assert any("module" in m and _HIDDEN in m for m in lines), lines
+    assert not [m for m in lines if "@" in m.replace(_HIDDEN, "")], lines
+
+
+def test_an_undeclared_stack_under_a_hidden_frontend_root(monkeypatch, tmp_path):
+    """A directory under the configured frontend root that no stack declares
+    is warned about with the root hidden; the directory's own name shows."""
+    (tmp_path / "f@e" / "solid").mkdir(parents=True)
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "project.json").write_text("{}")  # served, not read
+    layers = dict(_load(_PROJECT)["layers"])
+    layers["frontend"] = dict(layers["frontend"], root="f@e", available=[])
+    lines = _served_tree(monkeypatch, tmp_path, "H", "layers", layers)
+    assert any(m.startswith(_HIDDEN + "/solid: present") for m in lines), lines
+    assert not [m for m in lines if "@" in m.replace(_HIDDEN, "")], lines
