@@ -144,6 +144,14 @@ _CASES = [
     ("N", "twin key added", [(_PROJECT, ("template", "twins"), "A")]),
     ("N", "twin key renamed", [(_PROJECT, ("template", "twins", "*"), "K")]),
     ("N", "twin kind", [(_PROJECT, ("template", "twins", "*"), "V")]),
+    # check S
+    ("S", "roster member", [(_PROJECT, ("rosters", "readmes"), "M")]),
+    ("S", "roster nested", [(_PROJECT, ("rosters", "readmes"), "D")]),
+    (
+        "S",
+        "roster README path",
+        [(_PROJECT, ("rosters", "readmes"), "M", "x@y/README.md")],
+    ),
 ]
 
 

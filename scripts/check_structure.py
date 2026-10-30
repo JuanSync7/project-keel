@@ -4038,28 +4038,28 @@ def _roster_registry_findings(declared, headed, exists):
             or entry.split("/")[-1] != "README.md"
         ):
             errs.append(
-                "config/project.json: rosters.readmes entry %r is not a "
-                "repo-relative path to a README.md" % (entry,)
+                "config/project.json: rosters.readmes entry %s is not a "
+                "repo-relative path to a README.md" % _quoted(entry)
             )
             continue
         if entry in listed:
             errs.append(
                 "config/project.json: rosters.readmes lists '%s' twice -- "
-                "drop one" % entry
+                "drop one" % _shown(entry)
             )
             continue
         listed.add(entry)
         if not exists(entry):
             errs.append(
                 "config/project.json: rosters.readmes lists '%s', but there is "
-                "no such file -- drop the entry, or restore the README" % entry
+                "no such file -- drop the entry, or restore the README" % _shown(entry)
             )
         elif entry not in headed:
             errs.append(
                 "%s: rosters.readmes (config/project.json) lists it as a roster, "
                 "but it has no '## %s' table -- restore the heading and its table; "
                 "a roster stops being one only by a config edit"
-                % (entry, _ROSTER_HEADING)
+                % (_shown(entry), _ROSTER_HEADING)
             )
     errs.extend(
         "%s: declares '## %s' but is not listed in config/project.json "
