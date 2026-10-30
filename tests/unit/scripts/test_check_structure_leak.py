@@ -178,6 +178,25 @@ def test_the_same_text_is_hidden_in_each_message_naming_it(monkeypatch):
     assert not [m for m in errs if "SENTINEL" in m]
 
 
+def test_the_frozen_config_marker_is_hidden(monkeypatch, tmp_path):
+    """check_K names the declared marker in its refusal; a marker holding an
+    `@` is hidden there, over a tree whose one class carries it unfrozen."""
+    marker = "practice: " + _AT
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "a.py").write_text("# %s\nclass A:\n    x = 1\n" % marker)
+    practices = _load(_PRACTICES)
+    practices.setdefault("tokens", {})["config_marker"] = marker
+    monkeypatch.setattr(
+        cs, "_read_json_config", lambda rel: practices if "practices" in rel else {}
+    )
+    _isolate(monkeypatch)
+    monkeypatch.setattr(cs, "CHECKS", (("K", dict(cs.CHECKS)["K"]),))
+    found = cs.run_checks(str(tmp_path), project_checks=False)
+    lines = [m for _l, _t, m in found]
+    assert any("class 'A' declares `# %s`" % _HIDDEN in m for m in lines), lines
+    assert not [m for m in lines if "SENTINEL" in m]
+
+
 def test_the_deferral_note_hides_the_interpreter_spec(monkeypatch):
     """The one warning a run prints for files it could not parse names
     layers.backend.python; a spec holding an `@` is hidden there."""

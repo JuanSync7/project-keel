@@ -2222,7 +2222,7 @@ def check_K():
                         "%s:%d: class '%s' declares `# %s` but is not provably "
                         "immutable - use a frozen dataclass / NamedTuple / attrs "
                         "frozen, or add `# practice-ok: <reason>`"
-                        % (rel(full), line, name, marker)
+                        % (rel(full), line, name, _shown(marker))
                     )
 
 
