@@ -230,6 +230,36 @@ _CASES = [
             (_PROJECT, ("adr", "template_adrs"), "V", ["K@-0001-a.md", "K@-0001-a.md"]),
         ],
     ),
+    # check Z
+    ("Z", "work key added", [(_PROJECT, ("work_naming",), "A")]),
+    ("Z", "work key renamed", [(_PROJECT, ("work_naming", "campaign_id"), "K")]),
+    ("Z", "campaign_id", [(_PROJECT, ("work_naming", "campaign_id"), "V")]),
+    (
+        "Z",
+        "campaign_id opens with <n>",
+        [(_PROJECT, ("work_naming", "campaign_id"), "V", "<n>@")],
+    ),
+    ("Z", "slice_id", [(_PROJECT, ("work_naming", "slice_id"), "V")]),
+    (
+        "Z",
+        "slice_id suffix",
+        [(_PROJECT, ("work_naming", "slice_id"), "V", "CMP-<n>@")],
+    ),
+    ("Z", "slice_trailer", [(_PROJECT, ("work_naming", "slice_trailer"), "V")]),
+    ("Z", "backlog_trailer", [(_PROJECT, ("work_naming", "backlog_trailer"), "V")]),
+    (
+        "Z",
+        "adoption_boundary",
+        [(_PROJECT, ("work_naming", "adoption_boundary"), "V", [_AT])],
+    ),
+    (
+        "Z",
+        "a valid grammar holding an @",
+        [
+            (_PROJECT, ("work_naming", "campaign_id"), "V", "C@P-<n>"),
+            (_PROJECT, ("work_naming", "slice_id"), "V", "C@P-<n>.S<m>"),
+        ],
+    ),
 ]
 
 

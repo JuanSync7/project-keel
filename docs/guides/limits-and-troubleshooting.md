@@ -579,9 +579,13 @@ holds an `@` by the same rule (`scripts/config_loader.py` `shown`), and show
 every other value and member as JSON and every other segment of a dotted key
 path as written, so a name reads `"GIT_DIR"`, a key written twice reads
 `the key "<name>" appears twice`, and an adapter's credential list reads
-`models.credential_env.<adapter>`. The other refusals check_structure
-builds from configured text, and those the other scripts build from the
-settings they read, do not pass through that rule yet. A value read from an environment variable is blamed on
+`models.credential_env.<adapter>`. A finding checks A to Z of
+`scripts/check_structure.py` build from config/project.json or
+config/practices.json, an error or a warning, hides a value, member, key name
+or path segment that holds an `@` by the same rule, and a harmless member
+beside it still shows (`tests/unit/scripts/test_check_structure_leak.py`).
+The refusals the other scripts build from the settings they read do not pass
+through that rule yet. A value read from an environment variable is blamed on
 it instead: `the environment: <variable> is <JSON type> <value>; accepted: <what it accepts>`. The loader writes every `[not set]` and wrong-value line before it stops,
 so one run names every key at fault. A script that config/project.json
 `config_reads.allowed` still lists reads its config directly: it writes its own

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 title: check_structure — the deterministic conventions gate
-summary: Stdlib-only, 3.6-safe enforcement of CONVENTIONS.md — labeling, taxonomy, package boundaries, tool/agent governance, manifest and ruleset parity, twin parity, the machine-readable module contract, Makefile help parity, cross-reference resolution, check-catalogue parity, rosters, practice mechanisms, policy reachability, writer rerun declarations, make-target effect labels, child-process environments, ADR number spaces, and work naming (checks A-Z), then the project's own checks: each top-level module in the directory config/project.json structure.project_checks names (a key the template never ships), whose check(root) findings, returned or reported through err()/warn(), are reported as project:<stem> and whose every failure, a module name that is not a readable file included, is an error naming it (docs/adr/keel/K-0014-project-owned-structure-checks.md). Exit 1 on any error; warnings never fail the build.
+summary: Stdlib-only, 3.6-safe enforcement of CONVENTIONS.md — labeling, taxonomy, package boundaries, tool/agent governance, manifest and ruleset parity, twin parity, the machine-readable module contract, Makefile help parity, cross-reference resolution, check-catalogue parity, rosters, practice mechanisms, policy reachability, writer rerun declarations, make-target effect labels, child-process environments, ADR number spaces, and work naming (checks A-Z), then the project's own checks: each top-level module in the directory config/project.json structure.project_checks names (a key the template never ships), whose check(root) findings, returned or reported through err()/warn(), are reported as project:<stem> and whose every failure, a module name that is not a readable file included, is an error naming it (docs/adr/keel/K-0014-project-owned-structure-checks.md). A finding checks A-Z build from configured text never shows a value, member, key name or path segment that holds an `@`: each passes through config_loader.shown. Exit 1 on any error; warnings never fail the build.
 
 check_structure.py - enforce the project conventions (see CONVENTIONS.md).
 
@@ -6943,17 +6943,18 @@ def _id_template_error(key, template, placeholder):
         return "%s.%s has an unclosed placeholder" % (_WORK_BLOCK, key)
     other = "m" if placeholder == "n" else "n"
     if names.count(placeholder) != 1 or other in names:
-        return "%s.%s must hold exactly one <%s>%s, got %r" % (
+        return "%s.%s must hold exactly one <%s>%s, got %s" % (
             _WORK_BLOCK,
             key,
             placeholder,
             "" if placeholder == "n" else " after the campaign id",
-            template,
+            _quoted(template),
         )
     if template.startswith("<"):
         return (
             "%s.%s must open with a literal before <%s>, or any number in prose "
-            "would read as an id, got %r" % (_WORK_BLOCK, key, placeholder, template)
+            "would read as an id, got %s"
+            % (_WORK_BLOCK, key, placeholder, _quoted(template))
         )
     return None
 
@@ -6981,7 +6982,7 @@ def work_naming_policy(manifest):
         if key not in block
     ]
     errs.extend(
-        "%s has an unknown key `%s`" % (_WORK_BLOCK, key)
+        "%s has an unknown key `%s`" % (_WORK_BLOCK, _shown(key))
         for key in sorted(block)
         if key not in _WORK_KEYS and key != "_comment"
     )
@@ -7003,7 +7004,7 @@ def work_naming_policy(manifest):
         elif key != "slice_column" and not _TRAILER_KEY.match(value):
             errs.append(
                 "%s.%s must be a git trailer key (letters, digits and hyphens), "
-                "got %r" % (_WORK_BLOCK, key, value)
+                "got %s" % (_WORK_BLOCK, key, _quoted(value))
             )
     slice_key, backlog_key = block["slice_trailer"], block["backlog_trailer"]
     if (
@@ -7026,14 +7027,14 @@ def work_naming_policy(manifest):
         errs.append(problem)
     elif not isinstance(slice_, str) or not slice_.startswith(campaign):
         errs.append(
-            "%s.slice_id must start with campaign_id %r, so a slice id names its "
-            "campaign, got %r" % (_WORK_BLOCK, campaign, slice_)
+            "%s.slice_id must start with campaign_id %s, so a slice id names its "
+            "campaign, got %s" % (_WORK_BLOCK, _quoted(campaign), _quoted(slice_))
         )
     else:
         suffix = slice_[len(campaign) :]
         problem = _id_template_error("slice_id", suffix, "m")
         if problem:
-            errs.append(problem.replace(repr(suffix), repr(slice_)))
+            errs.append(problem.replace(_quoted(suffix), _quoted(slice_)))
     pattern = block["backlog_id"]
     if not isinstance(pattern, str) or not pattern:
         errs.append(
@@ -7050,7 +7051,7 @@ def work_naming_policy(manifest):
     if boundary is not None and (not isinstance(boundary, str) or not boundary.strip()):
         errs.append(
             "%s.adoption_boundary must be null or a commit (a non-empty string), "
-            "got %r" % (_WORK_BLOCK, boundary)
+            "got %s" % (_WORK_BLOCK, _quoted(boundary))
         )
     if errs:
         return None, errs
@@ -7104,6 +7105,12 @@ def _work_id(policy, n, m=None):
     if m is None:
         return policy["campaign_id"].replace("<n>", str(n))
     return policy["slice_id"].replace("<n>", str(n)).replace("<m>", str(m))
+
+
+def _work_shown(policy, n, m=None):
+    """_work_id as a message shows it: an id carries the configured template's
+    literal text, so it passes through _shown."""
+    return _shown(_work_id(policy, n, m))
 
 
 def _cells(line):
@@ -7302,7 +7309,7 @@ def plan_inventory(root, policy, own_name=None):
 
 def _judge_plan(path, parsed, policy):
     """Emit the findings one plan doc carries on its own."""
-    column, shape = policy["slice_column"], policy["slice_id"]
+    column, shape = _shown(policy["slice_column"]), _shown(policy["slice_id"])
     sequences = {}
     for table in parsed["tables"]:
         scope = table["scope"]
@@ -7310,7 +7317,7 @@ def _judge_plan(path, parsed, policy):
             err(
                 "%s:%d: a %s table sits under no campaign heading; put it under a "
                 "heading that names one %s (CONVENTIONS §20)"
-                % (path, table["line"], column, policy["campaign_id"])
+                % (path, table["line"], column, _shown(policy["campaign_id"]))
             )
         elif len(scope["campaigns"]) > 1:
             err(
@@ -7322,7 +7329,7 @@ def _judge_plan(path, parsed, policy):
                     scope["line"],
                     column,
                     len(scope["campaigns"]),
-                    ", ".join(_work_id(policy, n) for n in scope["campaigns"]),
+                    ", ".join(_work_shown(policy, n) for n in scope["campaigns"]),
                 )
             )
         for row in table["rows"]:
@@ -7342,7 +7349,7 @@ def _judge_plan(path, parsed, policy):
                             path,
                             row["line"],
                             row["cell"],
-                            _work_id(policy, n),
+                            _work_shown(policy, n),
                             scope["line"],
                         )
                     )
@@ -7353,7 +7360,7 @@ def _judge_plan(path, parsed, policy):
     for (heading, n), rows in sorted(sequences.items()):
         seen, top = {}, 0
         for line, m in rows:
-            here = _work_id(policy, n, m)
+            here = _work_shown(policy, n, m)
             if m in seen:
                 err(
                     "%s:%d: %s is also declared at line %d"
@@ -7363,7 +7370,7 @@ def _judge_plan(path, parsed, policy):
             if m < top:
                 err(
                     "%s:%d: %s comes after %s; rows run S1..Sk in document order"
-                    % (path, line, here, _work_id(policy, n, top))
+                    % (path, line, here, _work_shown(policy, n, top))
                 )
             seen[m] = line
             top = max(top, m)
@@ -7374,8 +7381,8 @@ def _judge_plan(path, parsed, policy):
                 % (
                     path,
                     heading,
-                    _work_id(policy, n),
-                    ", ".join(_work_id(policy, n, k) for k in missing),
+                    _work_shown(policy, n),
+                    ", ".join(_work_shown(policy, n, k) for k in missing),
                 )
             )
     if not sequences:
@@ -7441,7 +7448,7 @@ def check_Z():
                 err(
                     "%s:%d: campaign %s is also declared at %s:%d; a campaign is "
                     "declared by one heading"
-                    % (path, line, _work_id(policy, n), first[n][0], first[n][1])
+                    % (path, line, _work_shown(policy, n), first[n][0], first[n][1])
                 )
             else:
                 first[n] = (path, line)
@@ -7454,9 +7461,9 @@ def check_Z():
                 % (
                     first[n][0],
                     first[n][1],
-                    _work_id(policy, n),
-                    ", ".join(_work_id(policy, k) for k in missing),
-                    _work_id(policy, 1),
+                    _work_shown(policy, n),
+                    ", ".join(_work_shown(policy, k) for k in missing),
+                    _work_shown(policy, 1),
                 )
             )
             break
@@ -7474,7 +7481,13 @@ def check_Z():
                 err(
                     "%s:%d: %s is not a %s or %s id (config/project.json "
                     "work_naming, CONVENTIONS §20)"
-                    % (path, line, token, policy["campaign_id"], policy["slice_id"])
+                    % (
+                        path,
+                        line,
+                        token,
+                        _shown(policy["campaign_id"]),
+                        _shown(policy["slice_id"]),
+                    )
                 )
             elif m is None:
                 if _work_id(policy, n) not in inventory["campaigns"]:

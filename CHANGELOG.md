@@ -738,9 +738,11 @@ version rather than a bare commit:
   names are hidden the same way, and so is such text in the refusals
   `scripts/child_env.py` raises at a child's start and in the `make_targets`
   policy refusal `scripts/run_make_target.py` passes on, through the loader's
-  one rule, `shown`. The other refusals `scripts/check_structure.py` and the
-  scripts that read their own settings build from configured text do not pass
-  through that rule yet.
+  one rule, `shown`. So does every finding checks A to Z of
+  `scripts/check_structure.py` build from configured text, error or warning,
+  for a value, a member, a key name or a path segment, while a harmless member
+  beside it still shows. The refusals the scripts that read their own settings
+  build from configured text do not pass through that rule yet.
   Before, a `secrets.scanner.release_url` given a token was refused with the
   token in the message.
 - **A confidential document reaches no reader the project serves.** The
