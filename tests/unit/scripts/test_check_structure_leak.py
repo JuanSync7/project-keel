@@ -471,7 +471,8 @@ def _write(root, relpath, kind, title="t"):
 def test_each_adr_finding_hides_the_configured_spaces_and_prefix(monkeypatch, tmp_path):
     """Both ADR number spaces and the prefix hold an `@`, and the tree breaks
     every rule check_Y holds a file to: each finding still names its file,
-    with the configured directory, prefix and name hidden."""
+    with the configured directory and prefix hidden and the tree's own name
+    shown."""
     for rel, kind, title in [
         ("a@d/0001-a.md", "adr", "ADR-0001: a"),
         ("a@d/0001-b.md", "adr", "ADR-0009: b"),
@@ -495,7 +496,110 @@ def test_each_adr_finding_hides_the_configured_spaces_and_prefix(monkeypatch, tm
     }
     lines = _served_tree(monkeypatch, tmp_path, "Y", "adr", adr)
     assert len(lines) >= 10, lines
-    assert not [m for m in lines if "@" in m.replace(_HIDDEN, "")], lines
+    # r@0001.md lies outside both spaces: its name is the tree's, not config.
+    shown = [m for m in lines if "@" in m.replace(_HIDDEN, "")]
+    assert [m.split(":", 1)[0] for m in shown] == ["r@0001.md"], shown
+
+
+_H = _HIDDEN
+_ADR_ROWS = [
+    # (row id, adr keys over keel's own block, (path, kind, title) written,
+    # the line a finding opens with)
+    (
+        "reported: an @ in a project ADR's slug",
+        {},
+        [
+            ("docs/adr/0001-move-to-git@host.md", "adr", "ADR-0001: a"),
+            ("docs/adr/0002-move-to-git@other.md", "adr", "ADR-0002: b"),
+        ],
+        "docs/adr/0002-move-to-git@other.md: an ADR in docs/adr is named NNNN-",
+    ),
+    (
+        "an @ in the slug under a hidden project space",
+        {"project_dir": "a@d", "template_dir": "a@d/t"},
+        [("a@d/0001-x@y.md", "adr", "ADR-0001: x")],
+        "%s/0001-x@y.md: an ADR in %s is named NNNN-" % (_H, _H),
+    ),
+    (
+        "an @ in the slug behind a hidden prefix in a hidden template space",
+        {"template_dir": "t@d", "template_prefix": "K@-"},
+        [("t@d/K@-0001-a@b.md", "adr", "ADR-K@-0001: a")],
+        "%s/%s0001-a@b.md: the template space %s holds only" % (_H, _H, _H),
+    ),
+    (
+        "a hidden prefix in a project ADR's name",
+        {"template_prefix": "K@-"},
+        [("docs/adr/K@-0001-a@b.md", "adr", "ADR-0001: a")],
+        "docs/adr/%s0001-a@b.md: an ADR named with the template prefix" % _H,
+    ),
+    (
+        "an unshipped template ADR behind a hidden prefix",
+        {"template_prefix": "K@-"},
+        [("docs/adr/keel/K@-0001-a.md", "adr", "ADR-K@-0001: a")],
+        "docs/adr/keel/%s0001-a.md: the template does not ship" % _H,
+    ),
+    (
+        "a kind that is not adr behind a hidden prefix",
+        {"template_prefix": "K@-"},
+        [("docs/adr/keel/K@-0001-a.md", "note", "ADR-K@-0001: a")],
+        "docs/adr/keel/%s0001-a.md: an ADR has frontmatter kind" % _H,
+    ),
+    (
+        "a title that names another file behind a hidden prefix",
+        {"template_prefix": "K@-"},
+        [("docs/adr/keel/K@-0001-a.md", "adr", "wrong")],
+        "docs/adr/keel/%s0001-a.md: an ADR's title begins" % _H,
+    ),
+    (
+        "a nested directory under a hidden project space",
+        {"project_dir": "a@d", "template_dir": "a@d/t"},
+        [("a@d/s@b/0001-q.md", "adr", "ADR-0001: q")],
+        "%s/s@b/0001-q.md: an ADR (kind: adr) lives directly in" % _H,
+    ),
+    (
+        "an @ in a directory outside both spaces",
+        {},
+        [("n@st/0001-q.md", "adr", "ADR-0001: q")],
+        "n@st/0001-q.md: an ADR (kind: adr) lives directly in",
+    ),
+    (
+        "a directory that only begins with a hidden space's name",
+        {"project_dir": "a@d", "template_dir": "a@d/t"},
+        [("a@dx/0001-q.md", "adr", "ADR-0001: q")],
+        "a@dx/0001-q.md: an ADR (kind: adr) lives directly in",
+    ),
+    (
+        "a hidden template space inside a hidden project space",
+        {"project_dir": "a@d", "template_dir": "a@d/t@"},
+        [("a@d/t@/K-0001-x@y.md", "adr", "ADR-K-0001: x")],
+        "%s/K-0001-x@y.md: the template space %s holds only" % (_H, _H),
+    ),
+    (
+        "a number taken twice under a hidden space",
+        {"project_dir": "a@d", "template_dir": "a@d/t"},
+        [
+            ("a@d/0001-a.md", "adr", "ADR-0001: a"),
+            ("a@d/0001-b.md", "adr", "ADR-0001: b"),
+        ],
+        "%s/0001-a.md: ADR number 0001 is also taken by %s/0001-b.md" % (_H, _H),
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "adr,files,opening", [r[1:] for r in _ADR_ROWS], ids=[r[0] for r in _ADR_ROWS]
+)
+def test_an_adr_finding_hides_only_the_configured_part_of_a_path(
+    monkeypatch, tmp_path, adr, files, opening
+):
+    """A path is the configured space directory and prefix, hidden when they
+    hold an `@`, around the tree's own directory and name, which show as
+    written, so the reader can tell which file to rename."""
+    for rel, kind, title in files:
+        _write(tmp_path, rel, kind, title)
+    block = dict(_load(_PROJECT)["adr"], template_adrs=[], **adr)
+    lines = _served_tree(monkeypatch, tmp_path, "Y", "adr", block)
+    assert [m for m in lines if m.startswith(opening)], lines
 
 
 def test_each_plan_finding_hides_the_configured_grammar(monkeypatch, tmp_path):

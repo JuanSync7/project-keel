@@ -6712,12 +6712,23 @@ def adr_inventory(policy):
     return out
 
 
-def _adr_shown(path):
-    """An ADR's path as a message shows it: its directory, which may be a
-    configured number space, and its name, which may carry the configured
-    prefix, each through _shown."""
-    head, _, name = path.rpartition("/")
-    return "%s/%s" % (_shown(head), _shown(name)) if head else _shown(name)
+def _adr_shown(policy, path):
+    """An ADR's path as a message shows it. Only its configured text passes
+    through _shown: the number space it lies under, the longer one first since
+    one space may hold the other, and the template prefix its name begins with.
+    The rest is the tree's own directory and name and shows as written, so the
+    reader can tell which file to rename."""
+    head, rest = "", path
+    spaces = sorted((policy["project_dir"], policy["template_dir"]), key=len)
+    for space in reversed(spaces):
+        if path.startswith(space + "/"):
+            head, rest = _shown(space) + "/", path[len(space) + 1 :]
+            break
+    folder, _, name = rest.rpartition("/")
+    prefix = policy["template_prefix"]
+    if name.startswith(prefix):
+        name = _shown(prefix) + name[len(prefix) :]
+    return head + (folder + "/" if folder else "") + name
 
 
 def adr_documents():
@@ -6782,7 +6793,7 @@ def check_Y():
     prefix = policy["template_prefix"]
     shape = "N" * policy["number_digits"]
     # What a message shows of the configured text: the spaces' directories,
-    # the prefix, and a path built from them (_adr_shown).
+    # the prefix, and the configured part of an ADR's path (_adr_shown).
     project_dir = _shown(policy["project_dir"])
     template_dir = _shown(policy["template_dir"])
     project_re, template_re = _adr_grammars(policy)
@@ -6792,12 +6803,12 @@ def check_Y():
             err(
                 "%s: an ADR named with the template prefix '%s' is a template "
                 "ADR; it belongs in %s, not in the project space %s"
-                % (_adr_shown(path), _shown(prefix), template_dir, project_dir)
+                % (_adr_shown(policy, path), _shown(prefix), template_dir, project_dir)
             )
         elif number is None:
             err(
                 "%s: an ADR in %s is named %s-<slug>.md (a lower-case "
-                "hyphenated slug)" % (_adr_shown(path), project_dir, shape)
+                "hyphenated slug)" % (_adr_shown(policy, path), project_dir, shape)
             )
     owned = policy["template_adrs"]
     for number, path in spaces["template"]:
@@ -6805,7 +6816,13 @@ def check_Y():
             err(
                 "%s: the template space %s holds only %s%s-<slug>.md; a project "
                 "ADR belongs in %s"
-                % (_adr_shown(path), template_dir, _shown(prefix), shape, project_dir)
+                % (
+                    _adr_shown(policy, path),
+                    template_dir,
+                    _shown(prefix),
+                    shape,
+                    project_dir,
+                )
             )
         elif path.rsplit("/", 1)[1] not in owned:
             err(
@@ -6813,7 +6830,7 @@ def check_Y():
                 "adr.template_adrs), so the template's own next ADR of that "
                 "number would meet it on update; a project's decision belongs in "
                 "%s as %s-<slug>.md, and a template lists each ADR it ships"
-                % (_adr_shown(path), project_dir, shape)
+                % (_adr_shown(policy, path), project_dir, shape)
             )
     present = {path.rsplit("/", 1)[1] for _n, path in spaces["template"]}
     for name in owned:
@@ -6830,7 +6847,7 @@ def check_Y():
             err(
                 "%s: an ADR (kind: adr) lives directly in %s or %s, where it is "
                 "numbered against the others in its space"
-                % (_adr_shown(path), project_dir, template_dir)
+                % (_adr_shown(policy, path), project_dir, template_dir)
             )
     for space, label in (("project", ""), ("template", prefix)):
         by_number = {}
@@ -6844,10 +6861,10 @@ def check_Y():
                     "%s: ADR number %s%s is also taken by %s (a number is unique "
                     "within its space)"
                     % (
-                        _adr_shown(paths[0]),
+                        _adr_shown(policy, paths[0]),
                         _shown(label),
                         number,
-                        ", ".join(_adr_shown(p) for p in paths[1:]),
+                        ", ".join(_adr_shown(policy, p) for p in paths[1:]),
                     )
                 )
         for number in sorted(by_number):
@@ -6863,7 +6880,7 @@ def check_Y():
                 if kind != "adr":
                     err(
                         "%s: an ADR has frontmatter kind: adr, not '%s'"
-                        % (_adr_shown(path), kind)
+                        % (_adr_shown(policy, path), kind)
                     )
                 want = "ADR-%s%s:" % (label, number)
                 title = _unquote(fm.get("title", ""))
@@ -6872,7 +6889,7 @@ def check_Y():
                         "%s: an ADR's title begins '%s', naming its own file (got "
                         "'%s')"
                         % (
-                            _adr_shown(path),
+                            _adr_shown(policy, path),
                             "ADR-%s%s:" % (_shown(label), number),
                             title,
                         )

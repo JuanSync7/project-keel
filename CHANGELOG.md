@@ -741,7 +741,8 @@ version rather than a bare commit:
   one rule, `shown`. So does every finding checks A to Z of
   `scripts/check_structure.py` build from configured text, error or warning,
   for a value, a member, a key name or a path segment, while a harmless member
-  beside it still shows. The refusals the scripts that read their own settings
+  beside it still shows, and so does the tree's own text: an ADR's file name
+  and directory show beside a hidden number space or prefix. The refusals the scripts that read their own settings
   build from configured text do not pass through that rule yet.
   Before, a `secrets.scanner.release_url` given a token was refused with the
   token in the message.

@@ -583,7 +583,11 @@ path as written, so a name reads `"GIT_DIR"`, a key written twice reads
 `scripts/check_structure.py` build from config/project.json or
 config/practices.json, an error or a warning, hides a value, member, key name
 or path segment that holds an `@` by the same rule, and a harmless member
-beside it still shows (`tests/unit/scripts/test_check_structure_leak.py`).
+beside it still shows. Only the configured text is hidden, so the tree's own
+text beside it shows as written: a check Y finding reads
+`<hidden: it holds an @>/0001-<slug>.md` for an ADR under a number space whose
+directory holds an `@`, and `docs/adr/0001-move-to-git@host.md` for one whose
+own name does (`tests/unit/scripts/test_check_structure_leak.py`).
 The refusals the other scripts build from the settings they read do not pass
 through that rule yet. A value read from an environment variable is blamed on
 it instead: `the environment: <variable> is <JSON type> <value>; accepted: <what it accepts>`. The loader writes every `[not set]` and wrong-value line before it stops,
