@@ -196,6 +196,17 @@ _CASES = [
             (_PRACTICES, ("practices", 0, "enforced_by"), "V", []),
         ],
     ),
+    # check W
+    (
+        "W",
+        "effect_proof_skip key",
+        [(_PROJECT, ("make_targets", "effect_proof_skip"), "A")],
+    ),
+    (
+        "W",
+        "write_shape_exempt key",
+        [(_PROJECT, ("make_targets", "write_shape_exempt"), "A")],
+    ),
 ]
 
 

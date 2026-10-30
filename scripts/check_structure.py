@@ -5861,12 +5861,12 @@ def _effect_findings(makefiles, policy):
         )
     errs.extend(
         "config/project.json: make_targets.write_shape_exempt names `%s`, %s -- "
-        "drop the stale entry" % (name, stale_exempt[name])
+        "drop the stale entry" % (_shown(name), stale_exempt[name])
         for name in sorted(stale_exempt)
     )
     errs.extend(
         "config/project.json: make_targets.effect_proof_skip names `%s`, "
-        "which no make target defines -- drop the stale entry" % key
+        "which no make target defines -- drop the stale entry" % _shown(key)
         for key in sorted(policy["effect_proof_skip"])
         if key not in index
     )
