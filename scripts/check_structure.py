@@ -2689,14 +2689,14 @@ def _ruleset_parity_findings(practices, text):
                     errs.append(  # noqa: PERF401 — check_M's body; see above
                         "pyproject.toml: ruff family '%s' declared in "
                         "practices.json is not in extend-select (silent "
-                        "loosening)" % fam
+                        "loosening)" % _shown(fam)
                     )
     for fam in dkeys:
         if es and _deferred_active(es_text, fam) and not _line_waived(es_lines, pragma):
             errs.append(  # noqa: PERF401 — check_M's body; see above
                 "pyproject.toml: ruff family '%s' is DEFERRED in "
                 "practices.json but selected in extend-select "
-                "(directly or via a parent prefix / ALL)" % fam
+                "(directly or via a parent prefix / ALL)" % _shown(fam)
             )
 
     if isinstance(flags, list):
@@ -2708,13 +2708,13 @@ def _ruleset_parity_findings(practices, text):
             if state == "off" and not _line_waived(_span_lines(entries), pragma):
                 errs.append(
                     "pyproject.toml: mypy flag '%s' is set false (declared "
-                    "enforced in practices.json) - a silent loosening" % flag
+                    "enforced in practices.json) - a silent loosening" % _shown(flag)
                 )
             elif state == "absent" and not file_waived:
                 errs.append(
                     "pyproject.toml: mypy flag '%s' declared in "
                     "practices.json is not enforced (absent). Add "
-                    "`%s = true` or `# practice-ok`." % (flag, flag)
+                    "`%s = true` or `# practice-ok`." % (_shown(flag), _shown(flag))
                 )
 
     errs.extend(_per_file_ignore_findings(ruff, assigns, pragma))
@@ -2768,7 +2768,7 @@ def _per_file_ignore_findings(ruff, assigns, pragma):
                 out.append(
                     "pyproject.toml: per-file-ignore '%s' ignores %s, which "
                     "config/practices.json does not declare for it (declared: "
-                    "%s)" % (pattern, extra, sorted(allowed))
+                    "%s)" % (_shown(pattern), extra, _listed(sorted(allowed)))
                 )
     return out
 
@@ -2838,7 +2838,7 @@ def _mypy_override_findings(mypy, flags, text, pragma):
                 "which config/practices.json rulesets.mypy.overrides does not "
                 "declare for it — a per-module loosening the gate cannot see. "
                 "Declare it (with its removal condition) or `# practice-ok`."
-                % (mod, key)
+                % (mod, _shown(key))
                 for mod in modules
                 if key not in set(declared.get(mod) or [])
             )

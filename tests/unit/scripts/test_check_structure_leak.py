@@ -132,6 +132,14 @@ _CASES = [
     ("H", "model dir", [(_PROJECT, ("models", "available", "*"), "V")]),
     ("H", "model default", [(_PROJECT, ("models", "default"), "V")]),
     ("H", "profile flag name", [(_PROJECT, ("practices", "profiles"), "A")]),
+    # check M
+    ("M", "ruff family", [(_PRACTICES, ("rulesets", "ruff", "extend_select"), "M")]),
+    ("M", "mypy flag", [(_PRACTICES, ("rulesets", "mypy", "flags"), "M")]),
+    (
+        "M",
+        "per-file-ignore declared",
+        [(_PRACTICES, ("rulesets", "ruff", "per_file_ignores", "scripts/**"), "V")],
+    ),
 ]
 
 
@@ -148,6 +156,34 @@ def test_a_planted_at_never_shows(monkeypatch, letter, faults):
     assert not [m for m in lines if "SENTINEL" in m], lines
     assert not [m for m in lines if "@" in m.replace(_HIDDEN, "")], lines
     assert any(_HIDDEN in m for m in lines), lines
+
+
+def _pfi(monkeypatch, declared):
+    """check_M's findings when rulesets.ruff.per_file_ignores declares
+    *declared* for scripts/**, which pyproject.toml gives T201."""
+    rule = (
+        _PRACTICES,
+        ("rulesets", "ruff", "per_file_ignores", "scripts/**"),
+        "V",
+        declared,
+    )
+    errs, _warns = _run(monkeypatch, "M", [rule])
+    return [m for m in errs if "per-file-ignore 'scripts/**'" in m]
+
+
+def test_a_joined_line_hides_only_the_member_holding_the_at(monkeypatch):
+    """The declared list is shown member by member: the harmless neighbour
+    still shows in its quotes, only the member holding the `@` is hidden."""
+    (line,) = _pfi(monkeypatch, ["T999", _AT])
+    assert "(declared: ['T999', '%s'])" % _HIDDEN in line, line
+    assert "SENTINEL" not in line
+
+
+def test_an_empty_container_is_shown_as_is(monkeypatch):
+    """An empty declared list holds no `@`: it shows as `[]`, nothing hidden."""
+    (line,) = _pfi(monkeypatch, [])
+    assert line.endswith("(declared: [])"), line
+    assert _HIDDEN not in line
 
 
 def test_a_warning_hides_the_name_and_shows_the_neighbours(monkeypatch):
