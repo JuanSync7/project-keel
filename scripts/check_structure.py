@@ -354,6 +354,24 @@ def warn(msg):
     warnings.append(msg)
 
 
+def _shown(value):
+    """Configured *value* as a message shows it inside the message's own
+    quotes: as written, or hidden when it holds an `@` (config_loader.shown is
+    the one rule). Every fragment of a message that comes from configured text,
+    a value, a member, a key name or a path segment, passes through here or
+    _listed."""
+    return config_loader.shown(value, bare=True)
+
+
+def _quoted(value):
+    """Configured *value* in the place a `%r` would put it: a string in single
+    quotes through _shown, anything else as config_loader.shown writes it, so a
+    member of the wrong type still reads as that type."""
+    if isinstance(value, str):
+        return "'%s'" % _shown(value)
+    return config_loader.shown(value)
+
+
 def rel(p):
     return os.path.relpath(p, ROOT)
 
@@ -774,22 +792,26 @@ def _declared_toplevel():
             or name in (".", "..")
         ):
             err(
-                "config/project.json: structure.extra_toplevel entry %r is not a "
-                "top-level directory name" % (name,)
+                "config/project.json: structure.extra_toplevel entry %s is not a "
+                "top-level directory name" % _quoted(name)
             )
         elif name.startswith(".") or name in IGNORE_DIRS:
             err(
                 "config/project.json: structure.extra_toplevel '%s' is outside the "
-                "taxonomy rule (hidden or ignored by the gate); remove it" % name
+                "taxonomy rule (hidden or ignored by the gate); remove it"
+                % _shown(name)
             )
         elif name in TAXONOMY:
             err(
                 "config/project.json: structure.extra_toplevel '%s' is already in "
                 "the taxonomy (CONVENTIONS section 2); remove the redundant "
-                "declaration" % name
+                "declaration" % _shown(name)
             )
         elif name in accepted:
-            err("config/project.json: structure.extra_toplevel names '%s' twice" % name)
+            err(
+                "config/project.json: structure.extra_toplevel names '%s' twice"
+                % _shown(name)
+            )
         else:
             accepted.append(name)
     return accepted
@@ -831,16 +853,16 @@ def _project_checks_dir(declared):
         return None
     if not isinstance(value, str) or not value:
         err(
-            "config/project.json: structure.project_checks %r is not a directory "
+            "config/project.json: structure.project_checks %s is not a directory "
             "name; set it to null or to a name in structure.extra_toplevel "
-            "(ADR-K-0014)" % (value,)
+            "(ADR-K-0014)" % _quoted(value)
         )
         return None
     if value not in declared:
         err(
             "config/project.json: structure.project_checks '%s' is not declared in "
             "structure.extra_toplevel; declare it there, with a README.md and "
-            "CLAUDE.md, or set it to null (ADR-K-0014)" % value
+            "CLAUDE.md, or set it to null (ADR-K-0014)" % _shown(value)
         )
         return None
     if not os.path.isdir(os.path.join(ROOT, value)):
@@ -848,17 +870,18 @@ def _project_checks_dir(declared):
     if not _project_check_files(value):
         err(
             "config/project.json: structure.project_checks '%s/' declares no check "
-            "module; add one or set it to null" % value
+            "module; add one or set it to null" % _shown(value)
         )
         return None
     return value
 
 
-def _require_labels(relpath, why=""):
-    """ERROR for each of README.md / CLAUDE.md missing from ROOT/relpath."""
+def _require_labels(relpath, why="", shown=None):
+    """ERROR for each of README.md / CLAUDE.md missing from ROOT/relpath, named
+    as *shown* when the path is configured text (_shown), else as written."""
     for need in ("README.md", "CLAUDE.md"):
         if not os.path.isfile(os.path.join(ROOT, relpath, need)):
-            err("%s/: missing %s%s" % (relpath, need, why))
+            err("%s/: missing %s%s" % (relpath if shown is None else shown, need, why))
 
 
 def check_B():
@@ -879,10 +902,10 @@ def check_B():
         if not os.path.isdir(os.path.join(ROOT, d)):
             err(
                 "config/project.json: structure.extra_toplevel declares '%s/' but "
-                "it does not exist; delete the declaration" % d
+                "it does not exist; delete the declaration" % _shown(d)
             )
         else:
-            _require_labels(d)
+            _require_labels(d, shown=_shown(d))
     for name in sorted(os.listdir(ROOT)):
         full = os.path.join(ROOT, name)
         if name.startswith(".") or name in IGNORE_DIRS or not os.path.isdir(full):
@@ -7620,7 +7643,7 @@ def _project_findings():
     found = []
     for n, name in enumerate(_project_check_files(dirname)):
         stem = name[: -len(".py")]
-        relpath = "%s/%s" % (dirname, name)
+        relpath = "%s/%s" % (_shown(dirname), name)
         modname = "keel_project_check_%d_%s" % (n, re.sub(r"\W", "_", stem))
         warns, errs = _run_reporting_project_check(
             os.path.join(ROOT, dirname, name), modname
