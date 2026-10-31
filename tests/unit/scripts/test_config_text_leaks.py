@@ -16,6 +16,7 @@ sys.path.insert(0, str(_ROOT / "scripts"))
 
 import config_loader  # noqa: E402
 import exit_code_table  # noqa: E402
+import gate_evidence  # noqa: E402
 import git_tree  # noqa: E402
 import launch  # noqa: E402
 import run_evals  # noqa: E402
@@ -333,3 +334,97 @@ def test_exit_code_table_hides_the_guide_in_every_line_that_names_it(
     _hides(capsys.readouterr().out, "up to date")
     exit_code_table.main([], root=_ROOT)
     _hides(capsys.readouterr().out, "unchanged")
+
+
+# --- scripts/gate_evidence.py -----------------------------------------------
+
+_EV = ("evidence",)
+_SCHEMA_ROWS = [
+    ("schema-value", _EV + ("schema",), "V", ("evidence.schema",)),
+    ("schema-segment", _EV + ("schema",), "P", ("not a readable JSON file",)),
+    ("schema-joined", _EV + ("schema",), "S", ("not a readable JSON file",)),
+]
+
+
+@pytest.mark.parametrize(
+    "path, kind, neighbours",
+    [r[1:] for r in _SCHEMA_ROWS],
+    ids=[r[0] for r in _SCHEMA_ROWS],
+)
+def test_gate_evidence_hides_a_schema_path_holding_an_at(
+    monkeypatch, path, kind, neighbours
+):
+    manifest = _planted(path, kind)
+    monkeypatch.setattr(config_loader, "read", lambda _root: manifest)
+    with pytest.raises(gate_evidence.EvidenceSchemaError) as refused:
+        gate_evidence.load_policy(str(_ROOT))
+    _hides(str(refused.value), *neighbours)
+
+
+def test_gate_evidence_hides_a_schema_path_without_a_version(monkeypatch):
+    manifest = _planted(_EV + ("schema",), "V", "config/" + _AT)
+    monkeypatch.setattr(config_loader, "read", lambda _root: manifest)
+    real_open = open
+
+    def opened(path, *args, **kwargs):
+        if _STEM in str(path):
+            return real_open(_ROOT / "config" / "project.json", *args, **kwargs)
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.open", opened)
+    with pytest.raises(gate_evidence.EvidenceSchemaError) as refused:
+        gate_evidence.load_policy(str(_ROOT))
+    _hides(str(refused.value), "schema_version.const")
+
+
+@pytest.fixture
+def evidence_dir(monkeypatch):
+    """gate_evidence run over keel's config with `evidence.dir` holding the
+    sentinel as a path segment, no make flags and no goal run."""
+    manifest = _planted(_EV + ("dir",), "P")
+    monkeypatch.setattr(config_loader, "read", lambda _root: manifest)
+    monkeypatch.delenv("MAKEFLAGS", raising=False)
+    monkeypatch.setattr(git_tree, "through_symlink", lambda _root, _paths: [])
+    monkeypatch.setattr(gate_evidence, "_unignored", lambda _root, _paths: [])
+    monkeypatch.setattr(gate_evidence, "_source", lambda _root: (None, {}))
+    return lambda: gate_evidence.main(
+        ["--gate", "probe", "--", "make", "check"], runner=None
+    )
+
+
+def test_gate_evidence_hides_an_evidence_dir_refused_before_any_goal(
+    monkeypatch, capsys, evidence_dir
+):
+    monkeypatch.setattr(git_tree, "through_symlink", lambda _root, paths: paths)
+    evidence_dir()
+    _hides(capsys.readouterr().err, "evidence.dir")
+    monkeypatch.setattr(git_tree, "through_symlink", lambda _root, _paths: [])
+    monkeypatch.setattr(gate_evidence, "_unignored", lambda _root, paths: paths)
+    evidence_dir()
+    _hides(capsys.readouterr().err, "git would list", "to .gitignore")
+
+    def failed(_root, paths):
+        raise git_tree.GitFailedError(128, "fatal: bad path %s" % paths[0])
+
+    monkeypatch.setattr(gate_evidence, "_unignored", failed)
+    evidence_dir()
+    _hides(capsys.readouterr().err, "git could not say")
+
+
+def test_gate_evidence_hides_an_evidence_dir_in_a_red_record_line(
+    monkeypatch, capsys, evidence_dir
+):
+    monkeypatch.setattr(gate_evidence, "write_record", lambda *_args: None)
+    monkeypatch.setattr(gate_evidence, "run_goals", lambda *_a, **_k: [])
+    monkeypatch.setattr(gate_evidence, "check_findings", lambda _root: [])
+    monkeypatch.setattr(gate_evidence, "_changed", lambda _root, _before: None)
+    evidence_dir()
+    _hides(capsys.readouterr().err, "/probe.json is red: ", "/probe.json (")
+    for raised in (KeyboardInterrupt, RuntimeError):
+
+        def broken(*_args, raised=raised):
+            raise raised()
+
+        monkeypatch.setattr(gate_evidence, "write_record", broken)
+        evidence_dir()
+        _hides(capsys.readouterr().err, "/probe.json")

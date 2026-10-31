@@ -752,7 +752,8 @@ version rather than a bare commit:
   config, the live run and `scripts/run_evals.py` build from the `evals` block,
   a line of paths item by item through `joined`, and every line
   `scripts/exit_code_table.py` writes naming the `doc_drift` guide or gate
-  target. The refusals the other scripts
+  target, and every refusal and red-record line `scripts/gate_evidence.py`
+  builds from `evidence.dir` or `evidence.schema`. The refusals the other scripts
   that read their own settings build from configured text do not pass through
   that rule yet.
   Before, a `secrets.scanner.release_url` given a token was refused with the
