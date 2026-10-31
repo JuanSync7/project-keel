@@ -389,8 +389,9 @@ demo: check-python ## [local] Run the demo
 	$(PY) demo/run_demo.py
 agent-surface-schema: check-python ## [tree] Regenerate the committed AAD JSON Schema from the model
 	$(PY) scripts/agent_surface/generate_aad_schema.py
-exit-codes: check-python ## [tree] Regenerate the exit-code table in the limits guide from scripts/exit_codes.py and the gate's scripts
+exit-codes: check-python ## [tree] Regenerate the exit-code table in the limits guide from scripts/exit_codes.py and the gate's scripts, and the shell helper scripts/exit_codes.sh, so make check-exit-codes is green after it
 	$(PY) scripts/exit_code_table.py
+	$(PY) scripts/exit_code_table.py --shell
 exit-codes-sh: check-python ## [tree] Regenerate the shell helper scripts/exit_codes.sh from scripts/exit_codes.py
 	$(PY) scripts/exit_code_table.py --shell
 # [tree,write], not [tree] alone: the file it rewrites is the record of what a

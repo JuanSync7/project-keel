@@ -491,8 +491,9 @@ part. `passes through` means the script exits with the status of the tool it
 wraps, which need not be a row of the first table.
 
 A shell script reads the same codes from `scripts/exit_codes.sh`, which
-`make exit-codes-sh` generates from the enum and `make check-exit-codes` fails
-when the enum has moved past it. It sets one `EXIT_<NAME>` variable per row of
+`make exit-codes` generates from the enum with the table (`make exit-codes-sh`
+writes the helper alone) and `make check-exit-codes` fails when the enum has
+moved past it. It sets one `EXIT_<NAME>` variable per row of
 the first table, so a script that sources it ends with `exit "$EXIT_USAGE"`.
 `exit_fail "$EXIT_<NAME>" WHAT ON NEXT` writes the same three-part line and
 exits that code; it exits 2 instead for `SUCCESS`, a value no member has, a

@@ -146,8 +146,9 @@ version rather than a bare commit:
   `check_V` reads `effect:`, `rerun:` and `rerun_proof:` there; a shell
   script outside `tests/` states its `effect:` every time, because no
   detector reads shell. A shell script reads the exit codes from
-  `scripts/exit_codes.sh`, which `make exit-codes-sh` generates from
-  `scripts/exit_codes.py` and `make check-exit-codes` fails when stale: an
+  `scripts/exit_codes.sh`, which `make exit-codes` (with the table) and
+  `make exit-codes-sh` (alone) generate from `scripts/exit_codes.py` and
+  `make check-exit-codes` fails when stale: an
   `EXIT_<NAME>` variable per member, `exit_fail` for the three-part failure
   line and `exit_passthrough` for a wrapped tool's status. It ships whatever
   the answer `shell`, and no shell tool judges it, with no `shell.excluded_paths`
