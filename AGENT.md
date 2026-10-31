@@ -7,7 +7,7 @@ owner: TBD
 summary: Global rules for any agent working in this repo.
 id: agent
 created: 2026-06-17
-updated: 2026-10-28
+updated: 2026-10-31
 visibility: internal
 canonical: true
 ---
