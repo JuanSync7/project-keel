@@ -625,7 +625,14 @@ mention, and `printf -v r""c 0` or `read -r r\c` sets `rc` unseen. It orders a
 binding and an ending by their place in the text, not by when they run, so
 a binding in a function body holds an ending below it whether or not the
 function runs first. It reads a compound command piped on, as in
-`{ rc=$?; } | cat`, as the main shell.
+`{ rc=$?; } | cat`, as the main shell. It does not follow a status through
+control flow, so two shapes that end wrongly pass and two right ones are
+flagged. `true || rc=$?; exit_passthrough "$rc"` passes and exits 2 when the
+tool succeeds, because `rc` is never set. `rc=0; cmd || rc=$?` and
+`if cmd; then rc=0; else rc=$?; fi` are flagged, because `rc=0` is a use of
+the held name other than `rc=$?`; as a warning, they never fail the gate.
+`if ! cmd; then exit_passthrough "$?"` passes and exits 0, because `$?`
+after `!` is the negated status.
 
 The table below is written by hand and no test compares it with the code. It
 says when each script returns each code.
