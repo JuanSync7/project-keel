@@ -2,7 +2,7 @@
 title: Eval configuration — the evals block of config/project.json, checked
 layer: n/a
 public_api: no
-summary: parse_config turns the config/project.json `evals` block into a frozen EvalConfig and reads each schema's version from its `properties.schema_version.const`, the only owner of that number; load_config reads the files for it. It is a typed view over scripts/config_loader.py, not a second loader: load_config reads the manifest through `read`, and parse_config resolves the block's eight keys through `resolve` against that module's KEYS rows, which hold each key's type and bound (a threshold with 0 < t <= 1, an integer call cap >= 0, a null or non-empty model name, object model options, and a path that is non-empty, not absolute and with no `..` part), so every key that is missing or ill-typed is named in one refusal, one loader line each, written to stderr. It adds what a row cannot say: a key the block or `evals.live` does not know is refused by its dotted name. Each refusal here is a ConfigError carrying the loader's `lines` and `in_config`, true when an edit to config/project.json clears it and false, the default, for a schema file that cannot be read or has no positive integer version. A ConfigError from parse_config carries `evals.report_dir` whenever that key alone is still a safe relative path, so the caller can remove an earlier report rather than leave it standing.
+summary: parse_config turns the config/project.json `evals` block into a frozen EvalConfig and reads each schema's version from its `properties.schema_version.const`, the only owner of that number; load_config reads the files for it. It is a typed view over scripts/config_loader.py, not a second loader: load_config reads the manifest through `read`, and parse_config resolves the block's eight keys through `resolve` against that module's KEYS rows, which hold each key's type and bound (a threshold with 0 < t <= 1, an integer call cap >= 0, a null or non-empty model name, object model options, and a path that is non-empty, not absolute and with no `..` part), so every key that is missing or ill-typed is named in one refusal, one loader line each, written to stderr. It adds what a row cannot say: a key the block or `evals.live` does not know is refused by its dotted name. A key name, a schema path or an error's text that quotes one is shown through scripts/config_loader.py `shown`, hidden when it holds an `@`. Each refusal here is a ConfigError carrying the loader's `lines` and `in_config`, true when an edit to config/project.json clears it and false, the default, for a schema file that cannot be read or has no positive integer version. A ConfigError from parse_config carries `evals.report_dir` whenever that key alone is still a safe relative path, so the caller can remove an earlier report rather than leave it standing.
 """
 
 from __future__ import annotations
@@ -78,8 +78,18 @@ def _from_loader(exc: config_loader.ConfigError) -> ConfigError:
 def _unknown(block: Mapping[str, object], where: str, allowed: frozenset[str]) -> None:
     unknown = sorted(set(block) - allowed - {_COMMENT})
     if unknown:
-        line = "%s: unknown key `%s.%s`" % (_MANIFEST, where, unknown[0])
+        line = "%s: unknown key `%s.%s`" % (
+            _MANIFEST,
+            where,
+            config_loader.shown(unknown[0], bare=True),
+        )
         raise ConfigError(line, lines=[line], in_config=True)
+
+
+def _shown(text: str) -> str:
+    """A configured path, or an error's text that may quote one, as a refusal
+    shows it: hidden when it holds an `@` (scripts/config_loader.py `shown`)."""
+    return config_loader.shown(text, bare=True)
 
 
 def _version(read_schema: Callable[[str], object], rel: str, key: str) -> int:
@@ -87,7 +97,8 @@ def _version(read_schema: Callable[[str], object], rel: str, key: str) -> int:
         schema = read_schema(rel)
     except (OSError, ValueError) as exc:
         raise ConfigError(
-            "%s (`%s.%s`): unreadable (%s)" % (rel, _BLOCK, key, exc)
+            "%s (`%s.%s`): unreadable (%s)"
+            % (_shown(rel), _BLOCK, key, _shown(str(exc)))
         ) from exc
     const: object = None
     if isinstance(schema, dict):
@@ -97,7 +108,7 @@ def _version(read_schema: Callable[[str], object], rel: str, key: str) -> int:
     if not isinstance(const, int) or isinstance(const, bool) or const < 1:
         raise ConfigError(
             "%s (`%s.%s`): properties.schema_version.const must be a positive integer"
-            % (rel, _BLOCK, key)
+            % (_shown(rel), _BLOCK, key)
         )
     return const
 

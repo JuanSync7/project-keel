@@ -3,7 +3,7 @@
 title: Run evals — replay the eval suites, or run them live under the spend cap, and write the report
 kind: script
 layer: n/a
-summary: The command line `make eval` (--mode replay) and `make eval-live` (--mode live) run; it calls the evals package and holds no judging logic. It reads config/project.json `evals`, refuses, before writing or deleting anything, a report_dir that reaches its report, its temporary file or the live candidates through a symlink (git's ignore rule and the config's path check both judge the text of the path, not where it leads) and a report_dir git does not ignore, and refuses a git that ran and failed when asked (scripts/git_tree.py GitFailedError, naming git's exit status and stderr: only a git that is not installed, or no repository, means there is no tracked tree to dirty), writes a red placeholder report first so a crash never leaves an earlier green one standing, and removes the earlier report (and, live, the earlier candidates) when the `evals` block is refused, since a refused block cannot say how to write one, then judges every suite and replaces `<evals.report_dir>/<mode>.json` whole with the canonical report. A live run first deletes `<evals.report_dir>/live-candidates/`, then writes one candidate file per suite there, one canonical case line per answered case; it never edits the tracked dataset. Exit 0 when every suite passed, 1 on any fail, CONFIG (scripts/exit_codes.py) when config/project.json or its `evals` block cannot be used (read through scripts/config_loader.py, every key at fault named in one run) or, live, when a setting the model reads (models.timeout_seconds, models.max_reply_bytes) is refused, with a refused report naming the key, 2 when the run was refused for anything else (a schema the block names, the dataset, the call cap, a null or unknown model, an unignored report_dir, a git that failed), and BACKEND_ABSENT (scripts/exit_codes.py) when the live backend is absent. It starts no process itself; a model adapter does, through scripts/child_env.py.
+summary: The command line `make eval` (--mode replay) and `make eval-live` (--mode live) run; it calls the evals package and holds no judging logic. It reads config/project.json `evals`, refuses, before writing or deleting anything, a report_dir that reaches its report, its temporary file or the live candidates through a symlink (git's ignore rule and the config's path check both judge the text of the path, not where it leads) and a report_dir git does not ignore, and refuses a git that ran and failed when asked (scripts/git_tree.py GitFailedError, naming git's exit status and stderr: only a git that is not installed, or no repository, means there is no tracked tree to dirty), writes a red placeholder report first so a crash never leaves an earlier green one standing, and removes the earlier report (and, live, the earlier candidates) when the `evals` block is refused, since a refused block cannot say how to write one, then judges every suite and replaces `<evals.report_dir>/<mode>.json` whole with the canonical report. A live run first deletes `<evals.report_dir>/live-candidates/`, then writes one candidate file per suite there, one canonical case line per answered case; it never edits the tracked dataset. Exit 0 when every suite passed, 1 on any fail, CONFIG (scripts/exit_codes.py) when config/project.json or its `evals` block cannot be used (read through scripts/config_loader.py, every key at fault named in one run) or, live, when a setting the model reads (models.timeout_seconds, models.max_reply_bytes) is refused, with a refused report naming the key, 2 when the run was refused for anything else (a schema the block names, the dataset, the call cap, a null or unknown model, an unignored report_dir, a git that failed), and BACKEND_ABSENT (scripts/exit_codes.py) when the live backend is absent. Every refusal and notice built from `evals.report_dir`, a path under it or git's text about one shows it through scripts/config_loader.py `quoted`, `joined` and `shown`, hidden when it holds an `@`. It starts no process itself; a model adapter does, through scripts/child_env.py.
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/integration/test_evals_gate.py
@@ -82,11 +82,18 @@ def _report(
     )
 
 
+def _shown(text: str) -> str:
+    """A path under `evals.report_dir`, or git's text that may quote one, as a
+    message shows it (scripts/config_loader.py `shown`)."""
+    return config_loader.shown(text, bare=True)
+
+
 def _refuse_symlinks(report_dir: str, linked: Sequence[str]) -> None:
     print(
-        "run_evals: config/project.json `evals.report_dir` %r reaches %s through "
+        "run_evals: config/project.json `evals.report_dir` %s reaches %s through "
         "a symlink; a report or a delete there could land outside the project, "
-        "so nothing was written or removed" % (report_dir, ", ".join(linked)),
+        "so nothing was written or removed"
+        % (config_loader.quoted(report_dir), config_loader.joined(linked)),
         file=sys.stderr,
     )
 
@@ -146,9 +153,10 @@ def _remove_stale(root: str, report_dir: str | None, mode: str) -> None:
         loose = _unignored(root, probes)
     except git_tree.GitFailedError as exc:
         print(
-            "run_evals: git could not say whether `evals.report_dir` %r is "
+            "run_evals: git could not say whether `evals.report_dir` %s is "
             "ignored (%s), so an earlier report was not removed and may still "
-            "stand; trust this exit code, not that file" % (report_dir, exc),
+            "stand; trust this exit code, not that file"
+            % (config_loader.quoted(report_dir), _shown(str(exc))),
             file=sys.stderr,
         )
         return
@@ -162,7 +170,7 @@ def _remove_stale(root: str, report_dir: str | None, mode: str) -> None:
             os.remove(path)
         else:
             continue
-        print("run_evals: removed the earlier %s" % rel, file=sys.stderr)
+        print("run_evals: removed the earlier %s" % _shown(rel), file=sys.stderr)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -205,7 +213,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             "run_evals: config/project.json `evals.report_dir` reaches its files "
             "through a symlink; a report or a delete there could land outside "
             "the project, so nothing was written or removed",
-            "%r reaches %s" % (cfg.report_dir, ", ".join(linked)),
+            "%s reaches %s"
+            % (config_loader.quoted(cfg.report_dir), config_loader.joined(linked)),
             "point config/project.json `evals.report_dir` at a real directory "
             "inside the project",
         )
@@ -219,7 +228,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "run_evals: git could not say whether config/project.json "
             "`evals.report_dir` is ignored, and a failure is not an answer, so "
             "nothing was written",
-            "%r (%s)" % (cfg.report_dir, exc),
+            "%s (%s)" % (config_loader.quoted(cfg.report_dir), _shown(str(exc))),
             "repair the repository git reads here and run it again",
         )
     if loose:
@@ -227,7 +236,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             exit_codes.ExitCode.USAGE,
             "run_evals: config/project.json `evals.report_dir` is not git-ignored, "
             "and a report there would dirty the tree, so nothing was written",
-            "%r (%s)" % (cfg.report_dir, ", ".join(loose)),
+            "%s (%s)"
+            % (config_loader.quoted(cfg.report_dir), config_loader.joined(loose)),
             "add the directory to .gitignore, or name an ignored one",
         )
 

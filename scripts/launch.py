@@ -505,8 +505,7 @@ def load_launcher_config(manifest):
             _path("farm", "adapter"),
             "is %s, which launcher.farm.adapters does not define"
             % _said(farm["adapter"]),
-            "name one of %s"
-            % ", ".join(config_loader.shown(a, bare=True) for a in sorted(adapters)),
+            "name one of %s" % config_loader.joined(sorted(adapters)),
         )
     models = manifest.get("models")
     available = (models or {}).get("available") if isinstance(models, dict) else None
@@ -1016,7 +1015,7 @@ def _unsafe_state(root, cfg):
         return (
             "config/project.json launcher reaches %s through a symlink, so a read "
             "or a write there could land outside the project"
-            % ", ".join(config_loader.shown(p, bare=True) for p in linked),
+            % config_loader.joined(linked),
             "replace the symlink with a real file or directory inside the project",
         )
     try:
@@ -1034,7 +1033,7 @@ def _unsafe_state(root, cfg):
     if listed:
         return (
             "git would list %s, so a host pattern or a run record could be "
-            "committed" % ", ".join(config_loader.shown(p, bare=True) for p in listed),
+            "committed" % config_loader.joined(listed),
             "keep config/project.json launcher.own_hosts_file and "
             "launcher.durations_file under paths .gitignore ignores",
         )
@@ -1149,7 +1148,7 @@ def _stopped(problem, key, submitting, adapter):
         return _refuse(
             "the command's environment would hold the credential %s, which "
             "config/project.json launcher.credentials does not name for %s"
-            % (", ".join(config_loader.shown(n, bare=True) for n in detail), on),
+            % (config_loader.joined(detail), on),
             "name it under launcher.credentials for that launch key, or stop "
             "child_env copying it",
         )

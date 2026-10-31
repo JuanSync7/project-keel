@@ -1216,6 +1216,11 @@ def test_listed_hides_only_the_member_holding_the_at():
     )
 
 
+def test_joined_hides_only_the_item_holding_the_at():
+    assert config_loader.joined([]) == ""
+    assert config_loader.joined(["a/b", _AT_MEMBER + "/c", 3]) == "a/b, %s, 3" % _HID
+
+
 def test_the_visibility_vocabulary_matches_the_gates_copy():
     sys.path.insert(0, str(_ROOT / "scripts" / "jobs"))
     import check_corpus

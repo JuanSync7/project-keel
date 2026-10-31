@@ -14,7 +14,10 @@ import pytest
 _ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(_ROOT / "scripts"))
 
+import git_tree  # noqa: E402
 import launch  # noqa: E402
+import run_evals  # noqa: E402
+from evals import ConfigError, parse_config, run_live  # noqa: E402
 
 pytestmark = pytest.mark.unit
 
@@ -165,3 +168,91 @@ def test_launch_hides_a_state_path_and_a_credential_name_holding_an_at(
     _hides(found[0], "config/own-hosts.local.json")
     launch._stopped(("credential", ["LC_" + _AT, "OTHER_NAME"]), ["make"], False, None)
     _hides(capsys.readouterr().err, "OTHER_NAME")
+
+
+# --- evals config, evals live run, scripts/run_evals.py ---------------------
+
+_E = ("evals",)
+
+
+def _schema(rel):
+    """A read_schema that reads the real schema, so only the planted fault
+    refuses: a path holding the sentinel fails as a missing file would, with
+    the path in its text."""
+    if _STEM in rel:
+        raise OSError(2, "No such file or directory", rel)
+    return {"properties": {"schema_version": {"const": 1}}}
+
+
+_EVALS_ROWS = [
+    ("unknown-key", _E, "A", ("unknown key `evals.",)),
+    ("renamed-key", _E + ("_comment",), "K", ("unknown key `evals.",)),
+    ("unknown-live-key", _E + ("live",), "A", ("unknown key `evals.live.",)),
+    ("case-schema-value", _E + ("case_schema",), "V", ("`evals.case_schema`",)),
+    ("case-schema-segment", _E + ("case_schema",), "P", ("unreadable",)),
+    ("report-schema-joined", _E + ("report_schema",), "S", ("unreadable",)),
+]
+
+
+@pytest.mark.parametrize(
+    "path, kind, neighbours",
+    [r[1:] for r in _EVALS_ROWS],
+    ids=[r[0] for r in _EVALS_ROWS],
+)
+def test_evals_config_hides_configured_text_holding_an_at(path, kind, neighbours):
+    with pytest.raises(ConfigError) as refused:
+        parse_config(_planted(path, kind), _schema)
+    _hides(str(refused.value), *neighbours)
+
+
+def test_evals_config_hides_a_schema_path_without_a_version():
+    manifest = _planted(_E + ("case_schema",), "V")
+    with pytest.raises(ConfigError) as refused:
+        parse_config(manifest, lambda _rel: {})
+    _hides(str(refused.value), "must be a positive integer")
+
+
+@pytest.mark.parametrize("error", [KeyError, TypeError], ids=["unknown", "misfit"])
+def test_evals_live_run_hides_a_model_name_holding_an_at(error):
+    manifest = _planted(_E + ("live", "model"), "V")
+    cfg = parse_config(manifest, _schema)
+
+    def factory(model, **_options):
+        raise error(model)
+
+    with pytest.raises(ConfigError) as refused:
+        run_live([], cfg, backend_factory=factory, secrets=())
+    _hides(str(refused.value), "`evals.live.model")
+
+
+def _report_dir_cfg():
+    return parse_config(_planted(_E + ("report_dir",), "P"), _schema)
+
+
+def test_run_evals_hides_a_report_dir_reached_through_a_symlink(monkeypatch, capsys):
+    cfg = _report_dir_cfg()
+    monkeypatch.setattr(run_evals, "load_config", lambda _root: cfg)
+    monkeypatch.setattr(git_tree, "through_symlink", lambda _root, paths: paths)
+    run_evals.main(["--root", str(_ROOT)])
+    _hides(capsys.readouterr().err, "evals.report_dir")
+    run_evals._remove_stale(str(_ROOT), cfg.report_dir, "live")
+    _hides(capsys.readouterr().err, "evals.report_dir")
+
+
+@pytest.mark.parametrize("answer", ["loose", "git-failed"])
+def test_run_evals_hides_a_report_dir_git_would_not_ignore(monkeypatch, capsys, answer):
+    cfg = _report_dir_cfg()
+    monkeypatch.setattr(run_evals, "load_config", lambda _root: cfg)
+    monkeypatch.setattr(git_tree, "through_symlink", lambda _root, _paths: [])
+
+    def unignored(_root, paths):
+        if answer == "loose":
+            return list(paths)
+        raise git_tree.GitFailedError(128, "fatal: bad path %s" % paths[0])
+
+    monkeypatch.setattr(run_evals, "_unignored", unignored)
+    run_evals.main(["--root", str(_ROOT)])
+    _hides(capsys.readouterr().err, "evals.report_dir")
+    run_evals._remove_stale(str(_ROOT), cfg.report_dir, "replay")
+    if answer == "git-failed":
+        _hides(capsys.readouterr().err, "evals.report_dir")
