@@ -589,7 +589,8 @@ double-quoted word or a here-document body is not a command. Neither is a `case`
 a command in a clause body is judged, and a `case` with no `in` or no
 `esac` is a file the gate cannot read to its end. The elements of an array
 assignment are no command either, so `a=(exit)` ends nothing, while a
-`$(...)` inside one is judged. A function defined as `function f { ... }`
+`$(...)` inside one is judged. An append is an assignment as `name=` is, so
+`args+=("$a")` and `PATH+=":$HOME/bin"` name no command. A function defined as `function f { ... }`
 is read as `f() { ... }` is, so an ending in its body is judged. A `${...}` closes at its first unquoted `}`, so
 `${y:-"}"}`, `${y:-'{'}` and `echo "$(printf '"')"` read as the shell reads
 them, and a `$(...)` inside a `${...}` is judged too. Inside a

@@ -429,7 +429,8 @@ _SH_DESCRIBE = ("-v", "-V")
 # The commands whose `name=value` arguments assign as a plain assignment does.
 _SH_DECLARE = ("local", "export", "readonly", "declare", "typeset")
 _SH_HELPER_NAME = os.path.basename(et.HELPER_SH)
-_SH_ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
+# An assignment word, `name=value` or the append `name+=value`.
+_SH_ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\+?=")
 # A word so far that a `(` turns into an array assignment, `a=(...)` or
 # `a+=(...)`.
 _SH_ARRAY_START = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\+?=\Z")
@@ -2249,6 +2250,11 @@ _SH_PASSES = {
     "an eval in a process substitution": 'cat <(eval "$x")\n',
     "an eval in a backquote": 'v=`eval "$x"`\n',
     "an ANSI-C quoted word": "echo $'it\\'s'\n",
+    "an array append of an expansion": 'args+=("$a")\n',
+    "an array append of an option and an expansion": 'args+=(-v "$f")\n',
+    "a string append to PATH": 'PATH+=":$HOME/bin"\n',
+    "a string append holding an expansion": 'opts+=" --x=$v"\n',
+    "an append before a command": 'opts+=" -q" true\n',
     "an ANSI-C quoted brace in an expansion": "echo ${y:-$'}'}\n",
     "an ANSI-C quoted name that is not exit": "$'exit 3'\n",
     "an array assignment": "a=(exit quit)\n",
@@ -2547,6 +2553,8 @@ _SH_STATUS_WRITES = {
     "mapfile": "mapfile rc",
     "readarray": "readarray -t rc",
     "an append": "rc+=1",
+    "an array append of an expansion": 'rc+=("$a")',
+    "a string append of an expansion": 'rc+=" $v"',
     "an element": "rc[0]=3",
     "a plain assignment": "rc=1",
     "an assignment of more than the status": "rc=$?1",
