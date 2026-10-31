@@ -3,7 +3,7 @@
 title: Apply a gated refactor (refactor doer)
 kind: script
 layer: n/a
-summary: Deterministic doer — apply a proposed set of file edits ATOMICALLY, run a gate (a make target, through scripts/run_make_target.py, so only a target labelled read-only runs and a gate run that changes the tree is red), and ROLL BACK every file if the gate fails or is refused. The refactor loop (agents/practice_refactor) proposes one bounded, named-practice edit at a time; this doer is the safety net that keeps the tree green — a chunk is accepted only if the gate stays green, else the change is reverted. An edit may never reach the code that judges it: before any write, so a dry run sees every refusal, plan_edits refuses an edit to a path the root's config/project.json `agents` block protects (read through scripts/config_loader.py: `protected_paths` covers a path and everything under it, `protected_names` a file name or a glob over one in any directory, `editable_names` carves a name or glob back out of a protected path; a protected name refuses, else an editable name allows, else a protected path refuses), judged on case-folded path parts both as written and after resolving symlinks, and refuses outright an absolute path, a `..` part, a path outside the root and a file with more than one hard link; beneath the list it refuses a file git does not track (scripts/git_tree.py `tracked`), so git's own state, an ignored file and the toolchain the gate runs stay out of reach where no entry names them, and a root where git cannot say is refused too; edits are planned by the resolved path, so two spellings of one file compose as one; each refusal names the edit, the path and the protecting key with its reason. A policy it cannot use (absent, malformed, empty, or not protecting config/project.json itself) is a config fault, ExitCode.CONFIG, and nothing is written. The model never chooses the gate: the gate is the caller's `--gate` (default `verify`; `none`, no gate, is a human caller's flag, which the agents' own baseline run_make_target refuses), and a spec is a closed vocabulary (`practice`, `edits`; an edit's `file`, `find`, `replace`, `content`), so a spec naming a `gate` or any other key is refused before any write. Repeated `--allow <file>` binds the run to those files, judged on realpath, so an agent that passes the chunk it asked about cannot have the model edit another. Vendor-neutral, stdlib.
+summary: Deterministic doer — apply a proposed set of file edits ATOMICALLY, run a gate (a make target, through scripts/run_make_target.py, so only a target labelled read-only runs and a gate run that changes the tree is red), and ROLL BACK every file if the gate fails or is refused. The refactor loop (agents/practice_refactor) proposes one bounded, named-practice edit at a time; this doer is the safety net that keeps the tree green — a chunk is accepted only if the gate stays green, else the change is reverted. An edit may never reach the code that judges it: before any write, so a dry run sees every refusal, plan_edits refuses an edit to a path the root's config/project.json `agents` block protects (read through scripts/config_loader.py: `protected_paths` covers a path and everything under it, `protected_names` a file name or a glob over one in any directory, `editable_names` carves a name or glob back out of a protected path; a protected name refuses, else an editable name allows, else a protected path refuses), judged on case-folded path parts both as written and after resolving symlinks, and refuses outright an absolute path, a `..` part, a path outside the root and a file with more than one hard link; beneath the list it refuses a file git does not track (scripts/git_tree.py `tracked`), so git's own state, an ignored file and the toolchain the gate runs stay out of reach where no entry names them, and a root where git cannot say is refused too; edits are planned by the resolved path, so two spellings of one file compose as one; each refusal names the edit, the path and the protecting key with its reason. A policy it cannot use (absent, malformed, empty, or not protecting config/project.json itself) is a config fault, ExitCode.CONFIG, and nothing is written. The model never chooses the gate: the gate is the caller's `--gate` (default `verify`; `none`, no gate, is a human caller's flag, which the agents' own baseline run_make_target refuses), and a spec is a closed vocabulary (`practice`, `edits`; an edit's `file`, `find`, `replace`, `content`), so a spec naming a `gate` or any other key is refused before any write. Repeated `--allow <file>` binds the run to those files, judged on realpath, so an agent that passes the chunk it asked about cannot have the model edit another. A refusal over a protected path hides an `agents` rule key or reason that holds an `@` (scripts/config_loader.py `shown`). Vendor-neutral, stdlib.
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/integration/test_idempotence.py
@@ -134,7 +134,7 @@ def _named(rules: tuple[Rule, ...], name: str) -> Rule | None:
 
 
 def protected_by(relparts: Sequence[str], policy: EditPolicy) -> tuple[str, str] | None:
-    """(the rule key, its reason) that protects the repo-relative path whose
+    """(the rule key, its reason), as a refusal shows them, that protects the repo-relative path whose
     parts are *relparts*, or None when an agent may edit it.
 
     A protected name refuses, else an editable name allows, else a protected
@@ -144,14 +144,23 @@ def protected_by(relparts: Sequence[str], policy: EditPolicy) -> tuple[str, str]
         return None
     name = _named(policy.protected_names, parts[-1])
     if name is not None:
-        return "agents.protected_names.%s" % name[1], name[2]
+        return _rule("agents.protected_names", name[1], name[2])
     if _named(policy.editable_names, parts[-1]) is not None:
         return None
     folded = _fold(parts)
     for rule_parts, key, reason in policy.protected_paths:
         if _covers(rule_parts, folded):
-            return "agents.protected_paths.%s" % key, reason
+            return _rule("agents.protected_paths", key, reason)
     return None
+
+
+def _rule(block: str, key: str, reason: str) -> tuple[str, str]:
+    """A matched rule as a refusal shows it: its configured key and reason go
+    through scripts/config_loader.py `shown`, hidden when either holds an `@`."""
+    return (
+        "%s.%s" % (block, config_loader.shown(key, bare=True)),
+        config_loader.shown(reason, bare=True),
+    )
 
 
 def apply_one(text: str, find: str, replace: str) -> str:

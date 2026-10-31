@@ -14,6 +14,7 @@ import pytest
 _ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(_ROOT / "scripts"))
 
+import apply_refactor  # noqa: E402
 import check_venv  # noqa: E402
 import config_loader  # noqa: E402
 import exit_code_table  # noqa: E402
@@ -658,3 +659,17 @@ def test_check_venv_hides_an_extra_holding_an_at(capsys):
     _node(manifest, ("venv", "extras")).append("nope")
     check_venv.main(root=str(_ROOT), loaded=manifest)
     _hides(capsys.readouterr().err, "asks for extra", "nope")
+
+
+# --- scripts/apply_refactor.py -----------------------------------------------
+
+
+def test_apply_refactor_hides_a_rule_key_or_reason_holding_an_at(monkeypatch):
+    manifest = _planted(("agents", "protected_paths"), "A")
+    _node(manifest, ("agents", "protected_names"))["zz.md"] = "ask " + _AT
+    monkeypatch.setattr(config_loader, "read", lambda *_args: manifest)
+    policy = apply_refactor.load_policy(str(_ROOT))
+    key, reason = apply_refactor.protected_by((_AT, "f.md"), policy)
+    _hides("%s (%s)" % (key, reason), "agents.protected_paths.", "(x)")
+    key, reason = apply_refactor.protected_by(("docs", "zz.md"), policy)
+    _hides("%s (%s)" % (key, reason), "agents.protected_names.zz.md")

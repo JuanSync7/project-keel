@@ -759,9 +759,15 @@ version rather than a bare commit:
   blocks, a run-date value `scripts/run_date.py` refuses, and the credential
   variable names `models/openai_compatible.py` refuses an `api_key_env` over,
   a scratch root `tests/isolation_guard.py` refuses or passes over, and an
-  extra `scripts/check_venv.py` finds undeclared. The refusals the other scripts
-  that read their own settings build from configured text do not pass through
-  that rule yet.
+  extra `scripts/check_venv.py` finds undeclared, and a protected-path rule key
+  or reason `scripts/apply_refactor.py` refuses an edit over, an answer-set
+  name, answer key or scratch root `scripts/canary.py` refuses, the baseline
+  path `scripts/expiring_tier.py` refuses, and a variable name a
+  `child_env.prefixes` entry admits from the environment in
+  `scripts/child_env.py`'s credential refusal. A configured name, prefix,
+  label, scheme, host or answer-set name that ends in a newline is refused:
+  its pattern's `$` matched before the newline, so it passed and printed as
+  written.
   Before, a `secrets.scanner.release_url` given a token was refused with the
   token in the message.
 - **A confidential document reaches no reader the project serves.** The

@@ -2,7 +2,7 @@
 title: Unit — a project's own finding warns until a hard date, from a record that only shrinks
 kind: tests
 layer: n/a
-summary: scripts/expiring_tier.py pinned on fixture projects under tmp_path, with the day handed in, so no case depends on the day it runs. In the template repository (copier.yml present) every finding is red and nothing warns, and a date past the ceiling or a missing manifest is refused there too. In a generated project a finding the baseline records warns the day before config/project.json `expiring_tier.expires` and is red on that day; a finding with no entry left for it is red and names `make gate-baseline`, a second copy over the recorded count included; an entry no finding matches is red; a line outside the `<file>:<line>: ` grammar is red; with no baseline file every finding is red and names the target. A date later than scripts/expiring_tier_data.py `CEILING`, or not a calendar date, is refused; the ceiling itself and an earlier date are accepted. The recorder keeps what each check was handed as a multiset: two identical lines are two entries, and a check judged twice over the same lines is not counted twice. A baseline naming a check `CHECKS` does not register is red.
+summary: scripts/expiring_tier.py pinned on fixture projects under tmp_path, with the day handed in, so no case depends on the day it runs. In the template repository (copier.yml present) every finding is red and nothing warns, and a date past the ceiling or a missing manifest is refused there too. In a generated project a finding the baseline records warns the day before config/project.json `expiring_tier.expires` and is red on that day; a finding with no entry left for it is red and names `make gate-baseline`, a second copy over the recorded count included; an entry no finding matches is red; a line outside the `<file>:<line>: ` grammar is red; with no baseline file every finding is red and names the target. A date later than scripts/expiring_tier_data.py `CEILING`, or not a calendar date, is refused; the ceiling itself and an earlier date are accepted. The recorder keeps what each check was handed as a multiset: two identical lines are two entries, and a check judged twice over the same lines is not counted twice. A baseline naming a check `CHECKS` does not register is red. A malformed baseline whose configured path holds an `@` is refused with the path hidden.
 @covers scripts/expiring_tier.py
 """
 
@@ -257,3 +257,18 @@ def test_the_run_date_is_today_when_none_is_handed_in(tmp_path, monkeypatch):
     assert len(tier.judge(_CHECK, [_A], str(root)).red) == 1
     monkeypatch.setattr(tier, "run_today", lambda _root: _CEILING - _DAY)
     assert tier.judge(_CHECK, [_A], str(root)).red == []
+
+
+@pytest.mark.parametrize("content", ["[]", "{"], ids=["not-an-object", "not-json"])
+def test_a_malformed_baseline_whose_path_holds_an_at_is_refused_hiding_it(
+    tmp_path, content
+):
+    """The baseline path is configured text: a refusal hides it when it holds
+    an `@` (scripts/config_loader.py `shown`) and still refuses."""
+    rel = "tok-SENTINEL@h.invalid/b.json"
+    (tmp_path / rel).parent.mkdir()
+    (tmp_path / rel).write_text(content, encoding="utf-8")
+    with pytest.raises(tier.TierError) as refused:
+        tier.read_baseline(str(tmp_path), rel)
+    assert "SENTINEL" not in str(refused.value), refused.value
+    assert "<hidden: it holds an @>" in str(refused.value), refused.value

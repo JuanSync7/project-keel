@@ -3,7 +3,7 @@
 title: canary — each configured answer set rendered fresh and as an update, then its own make verify
 kind: script
 layer: n/a
-summary: Answers "does a project keel generates today pass its own gate, and does one generated from the last release still pass after `copier update`?" for each config/project.json `canary.answer_sets` set, before a release is pushed. A set key that is not a question copier.yml asks is refused with CONFIG before anything renders, because copier would ignore it and render the default. The update path needs the previous release first: the newest dated `## [X.Y.Z] — YYYY-MM-DD` heading of CHANGELOG.md whose tag (`vX.Y.Z`, else `X.Y.Z`) exists and is a strict ancestor of HEAD, so a run on the release commit updates from the release before; with none it refuses with USAGE before anything renders, and `--path fresh` needs no tag. The checkout as it stands, uncommitted edits included, is snapshotted once with scripts/template_snapshot.py into `<canary.scratch_root>/<run-id>/template`; each set and path then renders into `<run-id>/<set>-<path>` in a pool of `canary.workers`, every future waited on and no set skipped after a red one. The fresh path is `copier copy --vcs-ref HEAD` and a commit; the update path is `copier copy --vcs-ref <tag>`, a commit, `copier update --data-file <the set> --vcs-ref HEAD --conflict inline`, the set given again so a question the tag did not ask takes the set's answer, which fails the step `update` when git lists an unmerged path or a file holds a conflict hunk (scripts/jobs/conflict_guard.py `has_conflict`), and a commit. Both then run `make fe-install` and `make fe-browsers`, which exit 0 when the project's Makefile `FE_APPS` names no frontend app, `make secrets-install`, which records the pinned secret scanner the history scan in verify needs, then `make verify`, each step killed past `canary.step_timeout_minutes`. Each set and path prints `<set> <path> <last step reached> <pass|fail> <log> <elapsed>s`; a passing project is deleted and a failing one kept and named on stderr, with its log beside it. The scratch root is refused (CONFIG) under the system temporary directory, and inside the checkout unless git ignores it and tracks nothing in it. `--set NAME` (repeatable) and `--path` choose the work, so the farm can run one job per set. Every child runs with `child_env.build_child_env(extra=...)` and the hermetic git `template_snapshot.scratch_env` writes. Keel-only: copier.yml excludes it, and a generated project's `make canary` is a stub naming the template checkout.
+summary: Answers "does a project keel generates today pass its own gate, and does one generated from the last release still pass after `copier update`?" for each config/project.json `canary.answer_sets` set, before a release is pushed. A set key that is not a question copier.yml asks is refused with CONFIG before anything renders, because copier would ignore it and render the default. The update path needs the previous release first: the newest dated `## [X.Y.Z] — YYYY-MM-DD` heading of CHANGELOG.md whose tag (`vX.Y.Z`, else `X.Y.Z`) exists and is a strict ancestor of HEAD, so a run on the release commit updates from the release before; with none it refuses with USAGE before anything renders, and `--path fresh` needs no tag. The checkout as it stands, uncommitted edits included, is snapshotted once with scripts/template_snapshot.py into `<canary.scratch_root>/<run-id>/template`; each set and path then renders into `<run-id>/<set>-<path>` in a pool of `canary.workers`, every future waited on and no set skipped after a red one. The fresh path is `copier copy --vcs-ref HEAD` and a commit; the update path is `copier copy --vcs-ref <tag>`, a commit, `copier update --data-file <the set> --vcs-ref HEAD --conflict inline`, the set given again so a question the tag did not ask takes the set's answer, which fails the step `update` when git lists an unmerged path or a file holds a conflict hunk (scripts/jobs/conflict_guard.py `has_conflict`), and a commit. Both then run `make fe-install` and `make fe-browsers`, which exit 0 when the project's Makefile `FE_APPS` names no frontend app, `make secrets-install`, which records the pinned secret scanner the history scan in verify needs, then `make verify`, each step killed past `canary.step_timeout_minutes`. Each set and path prints `<set> <path> <last step reached> <pass|fail> <log> <elapsed>s`; a passing project is deleted and a failing one kept and named on stderr, with its log beside it. The scratch root is refused (CONFIG) under the system temporary directory, and inside the checkout unless git ignores it and tracks nothing in it. `--set NAME` (repeatable) and `--path` choose the work, so the farm can run one job per set. Every child runs with `child_env.build_child_env(extra=...)` and the hermetic git `template_snapshot.scratch_env` writes. A refusal hides an answer-set name, an answer key, the scratch root, or git's error text that holds an `@` (scripts/config_loader.py `shown`), and an answer-set name ending in a newline is not a plain name. Keel-only: copier.yml excludes it, and a generated project's `make canary` is a stub naming the template checkout.
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/unit/scripts/test_canary.py
@@ -56,7 +56,7 @@ _KEYS = (
     ("canary", "workers"),
 )
 # A set name becomes a directory and a file name, so it is one plain segment.
-_SET_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
+_SET_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*\Z")
 # A released version's heading: `## [X.Y.Z] — YYYY-MM-DD` at column 0. The
 # date is parsed below, so `2026-13-40` names no release.
 _RELEASE = re.compile(r"^## \[(\d+\.\d+\.\d+)\] — (\d{4}-\d{2}-\d{2})\s*$")
@@ -212,16 +212,21 @@ def _scratch_fault(scratch, git):
     # /tmp is often memory-backed and shared: four rendered projects with their
     # node_modules and browsers do not belong there.
     if _under(scratch, systemp):
-        return "%s is under the system temporary directory %s" % (scratch, systemp)
+        return "%s is under the system temporary directory %s" % (
+            config_loader.shown(scratch, bare=True),
+            systemp,
+        )
     root = os.path.realpath(ROOT)
     if not _under(scratch, root):
         return None
     rel = os.path.relpath(scratch, root).replace(os.sep, "/")
     # A tracked file under it would be deleted by the run that replaces it.
     if rel == "." or _yes(git, ["ls-files", "--error-unmatch", "--", rel], root):
-        return "%s holds files git tracks" % rel
+        return "%s holds files git tracks" % config_loader.shown(rel, bare=True)
     if not _yes(git, ["check-ignore", "-q", "--no-index", rel + "/"], root):
-        return "%s is inside the checkout and git does not ignore it" % rel
+        return "%s is inside the checkout and git does not ignore it" % (
+            config_loader.shown(rel, bare=True)
+        )
     return None
 
 
@@ -450,7 +455,7 @@ def main(argv=None, runner=None):
         return report(
             ExitCode.CONFIG,
             "an answer set is not a plain name mapped to an object of answers",
-            "config/project.json canary.answer_sets: %s" % ", ".join(bad),
+            "config/project.json canary.answer_sets: %s" % config_loader.joined(bad),
             "name each set with letters, digits, `.`, `_` or `-` and give it an object",
         )
     try:
@@ -475,7 +480,8 @@ def main(argv=None, runner=None):
         return report(
             ExitCode.CONFIG,
             "an answer set names a question copier.yml does not ask",
-            "config/project.json canary.answer_sets: %s" % ", ".join(unasked),
+            "config/project.json canary.answer_sets: %s"
+            % config_loader.joined(unasked),
             "name only questions copier.yml asks, spelled as it spells them",
         )
     chosen = sorted(sets) if args.sets is None else sorted(set(args.sets))
@@ -485,7 +491,7 @@ def main(argv=None, runner=None):
             ExitCode.USAGE,
             "no such answer set: %s" % ", ".join(unknown),
             "--set; config/project.json canary.answer_sets has %s"
-            % (", ".join(sorted(sets)) or "none"),
+            % (config_loader.joined(sorted(sets)) or "none"),
             "name one of those sets, or add the set to config/project.json",
         )
     if not chosen:
@@ -519,7 +525,7 @@ def main(argv=None, runner=None):
         return report(
             ExitCode.FAILURE,
             "git could not answer about the template checkout",
-            "%s: %s" % (ROOT, exc),
+            "%s: %s" % (ROOT, config_loader.shown(str(exc), bare=True)),
             "run the canary from a keel git checkout",
         )
     if fault:

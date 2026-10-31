@@ -2,7 +2,7 @@
 title: child_env — the environment a child process inherits
 kind: script
 layer: n/a
-summary: Builds the environment keel's code hands a process it starts. It starts from an empty dict and copies from os.environ only what config/project.json allows — a `child_env.names` entry, a name under a `child_env.prefixes` entry, a `make_targets` unattended or gate variable, and, for a named model adapter, that adapter's `models.credential_env` names — then adds the caller's `extra`. git's repository context (`child_env.repo_context_names`: the variables git binds to the repository it started a process in, such as a hook's GIT_DIR and GIT_INDEX_FILE) is never copied unless the call passes `repo_context=True`, and no allowlist source may list one; the opt-in is a keyword because it is one call's decision, visible where the child starts, not a project-wide setting. A copied value that carries user information is a credential whatever its variable is called: a user part in a URL's authority (after `scheme://` or a leading `//`, read as RFC 3986 reads it), a whole value that is a scheme-less `user[:password]@host:port`, or, in a variable a proxy reader takes (a name ending `_proxy` in any case), any user part urllib's proxy parser finds. carries_credential states that rule, and build_child_env refuses such a value with a ChildEnvError that names the variable and never the value, unless `child_env.credentialed_values` names it with a reason, the chosen adapter's `models.credential_env` declares it, or the call's `extra` replaces it; the same holds for a value matching a `child_env.credential_value_patterns` regular expression (the error names the variable and the pattern's label), and in a `child_env.login_name_schemes` URL (ssh, say) a user part with no password is a login name, not a credential. The configuration-injection family (`child_env.config_injection_names` and `config_injection_prefixes`: the variables through which a parent hands git its `-c` settings) is never copied from the parent, and child_env_policy refuses any allowlist source that admits a member. It reads config/project.json through scripts/config_loader.py `read`, loaded by path because this module is imported under two names, so a missing, unreadable or malformed manifest, a key written twice in one object, and a manifest an update left conflicted (named as that conflict, with the hunk's line and the step that finishes the update) are each a ChildEnvError carrying the loader's line, never a fall-back to the parent's environment; an absent `child_env.login_name_schemes` takes the loader's declared default, an empty list, and the loader writes that default to stderr once per process. The policy also carries `models.allowed_hosts`, per adapter the `host` or `host:port` entries it may send its credential to, each written in the one form canonical_host_entry returns (a lower-case ASCII name, a dotted-quad IPv4 address or a bracketed compressed IPv6 address; a trailing dot, a wildcard, a zone id, an IPv4-mapped address and any other numeric spelling refused), with no duplicate and no adapter outside `models.available`; an absent key allows no host, and models/openai_compatible.py compares its base_url's host through the same function. It reads config/project.json on every call, declares that read in `PROJECT_READS` so a copier job whose imports reach it refuses over a conflicted manifest, and writes no file; a refusal it builds from configured text, a member, an entry or key name, or an adapter name in a joined list, shows each through scripts/config_loader.py `shown`, so one holding an `@` reads `<hidden: it holds an @>` and every other one reads as JSON, or as written when it is a segment of a dotted key path; the credential_value_patterns label a credential refusal names after its variable is not passed through, because the policy refuses a label holding an `@` (`_LABEL` admits none) before any child starts. scripts/check_structure.py check_X holds every spawn under the code roots to this helper. Defence-in-depth, not a sandbox (docs/adr/keel/K-0012-child-process-environment-allowlist.md).
+summary: Builds the environment keel's code hands a process it starts. It starts from an empty dict and copies from os.environ only what config/project.json allows — a `child_env.names` entry, a name under a `child_env.prefixes` entry, a `make_targets` unattended or gate variable, and, for a named model adapter, that adapter's `models.credential_env` names — then adds the caller's `extra`. git's repository context (`child_env.repo_context_names`: the variables git binds to the repository it started a process in, such as a hook's GIT_DIR and GIT_INDEX_FILE) is never copied unless the call passes `repo_context=True`, and no allowlist source may list one; the opt-in is a keyword because it is one call's decision, visible where the child starts, not a project-wide setting. A copied value that carries user information is a credential whatever its variable is called: a user part in a URL's authority (after `scheme://` or a leading `//`, read as RFC 3986 reads it), a whole value that is a scheme-less `user[:password]@host:port`, or, in a variable a proxy reader takes (a name ending `_proxy` in any case), any user part urllib's proxy parser finds. carries_credential states that rule, and build_child_env refuses such a value with a ChildEnvError that names the variable and never the value, unless `child_env.credentialed_values` names it with a reason, the chosen adapter's `models.credential_env` declares it, or the call's `extra` replaces it; the same holds for a value matching a `child_env.credential_value_patterns` regular expression (the error names the variable and the pattern's label), and in a `child_env.login_name_schemes` URL (ssh, say) a user part with no password is a login name, not a credential. The configuration-injection family (`child_env.config_injection_names` and `config_injection_prefixes`: the variables through which a parent hands git its `-c` settings) is never copied from the parent, and child_env_policy refuses any allowlist source that admits a member. It reads config/project.json through scripts/config_loader.py `read`, loaded by path because this module is imported under two names, so a missing, unreadable or malformed manifest, a key written twice in one object, and a manifest an update left conflicted (named as that conflict, with the hunk's line and the step that finishes the update) are each a ChildEnvError carrying the loader's line, never a fall-back to the parent's environment; an absent `child_env.login_name_schemes` takes the loader's declared default, an empty list, and the loader writes that default to stderr once per process. The policy also carries `models.allowed_hosts`, per adapter the `host` or `host:port` entries it may send its credential to, each written in the one form canonical_host_entry returns (a lower-case ASCII name, a dotted-quad IPv4 address or a bracketed compressed IPv6 address; a trailing dot, a wildcard, a zone id, an IPv4-mapped address and any other numeric spelling refused), with no duplicate and no adapter outside `models.available`; an absent key allows no host, and models/openai_compatible.py compares its base_url's host through the same function. It reads config/project.json on every call, declares that read in `PROJECT_READS` so a copier job whose imports reach it refuses over a conflicted manifest, and writes no file; a refusal it builds from configured text, a member, an entry or key name, or an adapter name in a joined list, shows each through scripts/config_loader.py `shown`, so one holding an `@` reads `<hidden: it holds an @>` and every other one reads as JSON, or as written when it is a segment of a dotted key path; the credential_value_patterns label a credential refusal names after its variable is not passed through, because the policy refuses a label holding an `@` (`_LABEL` admits none) before any child starts. scripts/check_structure.py check_X holds every spawn under the code roots to this helper. The credential refusal names each variable, one a `child_env.prefixes` entry admitted from the environment included, through scripts/config_loader.py `shown`, so a name holding an `@` is hidden; every pattern that validates a configured name, prefix, label, scheme or host anchors at the end of the text, so a value ending in a newline is refused. Defence-in-depth, not a sandbox (docs/adr/keel/K-0012-child-process-environment-allowlist.md).
 """
 
 # NB: stdlib only, no `from __future__ import annotations`, no f-strings, no walrus,
@@ -59,17 +59,17 @@ _BLOCK_KEYS = (
     "login_name_schemes",
     "credentialed_values",
 )
-_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-_PREFIX = re.compile(r"^[A-Za-z][A-Za-z0-9]*_$")
+_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*\Z")
+_PREFIX = re.compile(r"^[A-Za-z][A-Za-z0-9]*_\Z")
 # A configuration-injection prefix names a numbered family (git's
 # GIT_CONFIG_KEY_<n>), so unlike an allowlist prefix it may hold inner
 # underscores; it is a refusal list, and a longer prefix refuses less, never more.
-_INJECTION_PREFIX = re.compile(r"^[A-Za-z][A-Za-z0-9_]*_$")
+_INJECTION_PREFIX = re.compile(r"^[A-Za-z][A-Za-z0-9_]*_\Z")
 # A credential_value_patterns label: it is printed in a refusal instead of the
 # value, so it is a plain word list a log reader can search for.
-_LABEL = re.compile(r"^[a-z][a-z0-9-]*$")
+_LABEL = re.compile(r"^[a-z][a-z0-9-]*\Z")
 # RFC 3986 section 3.1, lower-cased: a scheme is case-insensitive.
-_SCHEME = re.compile(r"^[a-z][a-z0-9+.-]*$")
+_SCHEME = re.compile(r"^[a-z][a-z0-9+.-]*\Z")
 _SCHEME_CHAR = re.compile(r"[A-Za-z0-9+.-]")
 # A global inline flag (`(?i)`) anywhere but the start: Python 3.11 refuses to
 # compile it and 3.6 only warns, so the gate would disagree across the two
@@ -186,10 +186,10 @@ def _name_list(value: object, where: str, errs: List[str]) -> Optional[List[str]
 # A host label as an allowlist entry writes it: ASCII only, so an IDN is written
 # in its xn-- form and one host has one spelling. `_` is admitted because
 # internal DNS names carry it and urllib resolves them.
-_HOST_LABEL = re.compile(r"^[A-Za-z0-9_-]+$")
+_HOST_LABEL = re.compile(r"^[A-Za-z0-9_-]+\Z")
 # A port as written: no sign, no leading zero, so `:080` and `:80` are not two
 # spellings of one entry.
-_HOST_PORT = re.compile(r"^[1-9][0-9]{0,4}$")
+_HOST_PORT = re.compile(r"^[1-9][0-9]{0,4}\Z")
 _PORT_MAX = 65535
 
 
@@ -726,9 +726,12 @@ def _credentialed(leaked: List[Tuple[str, str]]) -> str:
         "with the reason (docs/adr/keel/K-0012-child-process-environment-allowlist.md) "
         "(matched: %s)"
         % (
-            ", ".join(names),
+            ", ".join(_shown(n, bare=True) for n in names),
             "holds" if len(names) == 1 else "hold",
-            ", ".join("%s=%s" % pair for pair in sorted(leaked)),
+            ", ".join(
+                "%s=%s" % (_shown(n, bare=True), _shown(label, bare=True))
+                for n, label in sorted(leaked)
+            ),
         )
     )
 

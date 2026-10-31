@@ -2,7 +2,7 @@
 title: expiring_tier — a generated project's own finding warns until a hard date, from a record that only shrinks
 kind: script
 layer: n/a
-summary: The tier a keel gate test hands its findings to (docs/adr/keel/K-0027-a-project-s-own-code-warns-until-a-hard-date.md). `judge` takes a check id scripts/expiring_tier_data.py `CHECKS` registers and the test's finding lines, each `<file>:<line>: <rule> — <fix>`, and returns a Verdict: the lines that are red, the lines that warn, and the note the warning carries. The policy is loaded first in either place, so a bad or too-late date fails closed in the template too. In the template repository, which holds copier.yml (`TEMPLATE_MARK`), every line is red and nothing warns. In a generated project a finding's identity is its line with the line number dropped, and the identities config/project.json `expiring_tier.baseline` records for the check are counted as a multiset: a finding with an entry left for it warns until `expiring_tier.expires` and is red from that day; a finding with none, a copy over the recorded count included, is red at once and names `make gate-baseline` (`RECORD_TARGET`); an entry no finding matches is red, so the record only shrinks; a line outside the grammar is red whatever the record holds; and with no baseline file every finding is red and names the target. `load_policy` refuses an `expires` that is not a YYYY-MM-DD calendar date or is later than `CEILING`, so a project may end the grace sooner and never later. `apply` is `judge` for a gate test: it issues one ExpiringTierWarning when anything warns and returns the red lines. `read_baseline` reads and checks the file. `baseline_findings` names a baseline check id `CHECKS` does not register. `start_recording` makes every `judge` keep the lines it was handed as a multiset, two identical lines two entries, which tests/conftest.py writes out for scripts/record_gate_baseline.py. The day is scripts/run_date.py `today`, so a run that crossed midnight judges by the day it began. It reads config/project.json and the baseline through scripts/config_loader.py `read` and `resolve`, and any fault in either is a TierError naming the file and the key; it does not stop a hand edit of the baseline or of the data file, which review holds. It starts no process and writes nothing.
+summary: The tier a keel gate test hands its findings to (docs/adr/keel/K-0027-a-project-s-own-code-warns-until-a-hard-date.md). `judge` takes a check id scripts/expiring_tier_data.py `CHECKS` registers and the test's finding lines, each `<file>:<line>: <rule> — <fix>`, and returns a Verdict: the lines that are red, the lines that warn, and the note the warning carries. The policy is loaded first in either place, so a bad or too-late date fails closed in the template too. In the template repository, which holds copier.yml (`TEMPLATE_MARK`), every line is red and nothing warns. In a generated project a finding's identity is its line with the line number dropped, and the identities config/project.json `expiring_tier.baseline` records for the check are counted as a multiset: a finding with an entry left for it warns until `expiring_tier.expires` and is red from that day; a finding with none, a copy over the recorded count included, is red at once and names `make gate-baseline` (`RECORD_TARGET`); an entry no finding matches is red, so the record only shrinks; a line outside the grammar is red whatever the record holds; and with no baseline file every finding is red and names the target. `load_policy` refuses an `expires` that is not a YYYY-MM-DD calendar date or is later than `CEILING`, so a project may end the grace sooner and never later. `apply` is `judge` for a gate test: it issues one ExpiringTierWarning when anything warns and returns the red lines. `read_baseline` reads and checks the file. `baseline_findings` names a baseline check id `CHECKS` does not register. `start_recording` makes every `judge` keep the lines it was handed as a multiset, two identical lines two entries, which tests/conftest.py writes out for scripts/record_gate_baseline.py. The day is scripts/run_date.py `today`, so a run that crossed midnight judges by the day it began. It reads config/project.json and the baseline through scripts/config_loader.py `read` and `resolve`, and any fault in either is a TierError naming the file and the key; it does not stop a hand edit of the baseline or of the data file, which review holds. A refusal of the baseline file hides its configured path when it holds an `@` (scripts/config_loader.py `shown`). It starts no process and writes nothing.
 effect: read-only
 """
 
@@ -145,7 +145,10 @@ def read_baseline(root: str, relpath: str) -> Optional[Dict[str, Any]]:
     try:
         doc = config_loader.read(root, relpath)
     except config_loader.ConfigError as exc:
-        raise TierError("; ".join(exc.lines)) from exc
+        # The loader names the file as written, and *relpath* is configured.
+        raise TierError(
+            "; ".join(config_loader.shown(line, bare=True) for line in exc.lines)
+        ) from exc
     checks = doc.get("checks")
     well_formed = (
         isinstance(checks, dict)
@@ -158,7 +161,8 @@ def read_baseline(root: str, relpath: str) -> Optional[Dict[str, Any]]:
     if not well_formed or not isinstance(checks, dict):
         raise TierError(
             '%s: is not {"checks": {<check id>: [<finding>, ...]}, "commit": '
-            "<commit>}; rerun `make %s` to rewrite it" % (relpath, RECORD_TARGET)
+            "<commit>}; rerun `make %s` to rewrite it"
+            % (config_loader.shown(relpath, bare=True), RECORD_TARGET)
         )
     return {
         "checks": {str(check): list(entries) for check, entries in checks.items()},

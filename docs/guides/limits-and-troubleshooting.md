@@ -609,8 +609,12 @@ record line `scripts/gate_evidence.py` builds from `evidence.dir` or
 written, a run-date value `scripts/run_date.py` refuses, and the credential
 variable names `models/openai_compatible.py` refuses an `api_key_env` over, a
 scratch root `tests/isolation_guard.py` refuses or passes over, and an extra
-`scripts/check_venv.py` finds undeclared. The refusals the other scripts build from the settings they
-read do not pass through that rule yet. A value read from an environment variable is blamed on
+`scripts/check_venv.py` finds undeclared. So do a protected-path rule key or reason
+`scripts/apply_refactor.py` refuses an edit over, an answer-set name, answer key or scratch root
+`scripts/canary.py` refuses, the baseline path `scripts/expiring_tier.py` refuses, and a variable name
+a `child_env.prefixes` entry admits from the environment in `scripts/child_env.py`'s credential
+refusal; a configured name, prefix, label, scheme, host or answer-set name that ends in a newline is
+refused, not read as the text before it. A value read from an environment variable is blamed on
 it instead: `the environment: <variable> is <JSON type> <value>; accepted: <what it accepts>`. The loader writes every `[not set]` and wrong-value line before it stops,
 so one run names every key at fault. A script that config/project.json
 `config_reads.allowed` still lists reads its config directly: it writes its own

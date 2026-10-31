@@ -2,7 +2,7 @@
 title: Unit — canary (each answer set rendered fresh and as an update, then its own make verify)
 kind: tests
 layer: n/a
-summary: scripts/canary.py driven through its injected runner, so no test spawns copier, git or make, and through a fake snapshot, so none clones a tree. A template root in pytest's tmp_path holds the config and CHANGELOG.md each case needs. The previous release is the newest dated CHANGELOG heading whose tag exists and is a strict ancestor of HEAD (the tag HEAD itself carries is skipped, so the release step updates from the release before), and with none the update path is refused with USAGE before anything renders, while `--path fresh` judges normally. Each answer set and path prints one line naming the last step reached, the verdict, the log and the elapsed seconds; a red step names that step, a conflict the update leaves fails the `update` step and nothing after it runs, every set runs after a red one, and the run exits FAILURE naming each kept project. A passing project is removed through the injected remove, a failing one, or one whose step raised, is kept. Zero answer sets, or a `--set` filter leaving none, judge nothing (NOTHING_JUDGED); an unknown `--set` name is USAGE. The pool never runs more pairs at once than canary.workers, 1 when the key is unset. A scratch root under the system temporary directory, or inside the template and tracked or not ignored by git, is a config fault (CONFIG) naming canary.scratch_root, and the same root once git ignores it is accepted. A set key copier.yml does not ask is a config fault naming `<set>.<key>` before any render, and the update step hands copier the set's answers file again. A second run with the same arguments prints the same verdicts and leaves the same scratch tree, its own run directory replaced, which is the module's fixed point. Excluded from generated projects with the doer.
+summary: scripts/canary.py driven through its injected runner, so no test spawns copier, git or make, and through a fake snapshot, so none clones a tree. A template root in pytest's tmp_path holds the config and CHANGELOG.md each case needs. The previous release is the newest dated CHANGELOG heading whose tag exists and is a strict ancestor of HEAD (the tag HEAD itself carries is skipped, so the release step updates from the release before), and with none the update path is refused with USAGE before anything renders, while `--path fresh` judges normally. Each answer set and path prints one line naming the last step reached, the verdict, the log and the elapsed seconds; a red step names that step, a conflict the update leaves fails the `update` step and nothing after it runs, every set runs after a red one, and the run exits FAILURE naming each kept project. A passing project is removed through the injected remove, a failing one, or one whose step raised, is kept. Zero answer sets, or a `--set` filter leaving none, judge nothing (NOTHING_JUDGED); an unknown `--set` name is USAGE. The pool never runs more pairs at once than canary.workers, 1 when the key is unset. A scratch root under the system temporary directory, or inside the template and tracked or not ignored by git, is a config fault (CONFIG) naming canary.scratch_root, and the same root once git ignores it is accepted. A set key copier.yml does not ask is a config fault naming `<set>.<key>` before any render, and the update step hands copier the set's answers file again. A second run with the same arguments prints the same verdicts and leaves the same scratch tree, its own run directory replaced, which is the module's fixed point. A refusal hides an answer-set name, an answer key or a scratch root holding an `@` and still shows its harmless neighbour, and an answer-set name ending in a newline is refused. Excluded from generated projects with the doer.
 """
 
 import json
@@ -482,3 +482,39 @@ def test_the_update_step_carries_the_sets_answers(root, capsys):
     given = updates[0][updates[0].index("--data-file") + 1]
     with open(given, encoding="utf-8") as fh:
         assert json.load(fh) == answers
+
+
+_AT = "tok-SENTINEL@h.invalid"
+_HIDDEN = "<hidden: it holds an @>"
+
+
+@pytest.mark.parametrize(
+    "block, neighbour",
+    [
+        ({"answer_sets": {_AT: {}, "bad name!": {}}}, "bad name!"),
+        ({"answer_sets": {"alpha": {_AT: 1, "nope": 1}}}, "alpha.nope"),
+        ({"scratch_root": "docs/" + _AT}, "git does not ignore it"),
+        ({"scratch_root": "docs/" + _AT, "tracked": True}, "holds files git tracks"),
+        ({"scratch_root": "systemp/" + _AT}, "system temporary directory"),
+    ],
+    ids=["set name", "unasked key", "unignored root", "tracked root", "temp root"],
+)
+def test_a_refusal_hides_configured_text_holding_an_at(root, capsys, block, neighbour):
+    """The sentinel never shows, the line says it is hidden, and its harmless
+    neighbour on the same line still shows (scripts/config_loader.py `shown`)."""
+    git = _released_git()
+    if block.pop("tracked", False):
+        git.tracked = {"docs/" + _AT}
+    if block.get("scratch_root", "").startswith("systemp/"):
+        block["scratch_root"] = os.path.join(tempfile.gettempdir(), _AT)
+    _config(root, **block)
+    assert canary.main([], runner=_runner(git=git)) == ExitCode.CONFIG
+    err = capsys.readouterr().err
+    assert "SENTINEL" not in err and _HIDDEN in err and neighbour in err, err
+
+
+def test_an_answer_set_name_ending_in_a_newline_is_refused(root, capsys):
+    """`_SET_NAME` anchors at the end of the text, not of its last line."""
+    _config(root, answer_sets={"alpha\n": {}})
+    assert canary.main([], runner=_runner()) == ExitCode.CONFIG
+    assert "not a plain name" in capsys.readouterr().err
