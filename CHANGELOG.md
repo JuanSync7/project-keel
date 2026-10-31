@@ -756,8 +756,9 @@ version rather than a bare commit:
   builds from `evidence.dir` or `evidence.schema`, and every message
   `scripts/shell_gate.py`, `scripts/scan_secrets.py` and
   `scripts/install_scanner.py` build from the `shell` and `secrets.scanner`
-  blocks, and a run-date value `scripts/run_date.py` refuses. The refusals the
-  other scripts
+  blocks, a run-date value `scripts/run_date.py` refuses, and the credential
+  variable names `models/openai_compatible.py` refuses an `api_key_env` over.
+  The refusals the other scripts
   that read their own settings build from configured text do not pass through
   that rule yet.
   Before, a `secrets.scanner.release_url` given a token was refused with the

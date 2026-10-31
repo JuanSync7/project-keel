@@ -25,6 +25,7 @@ import run_evals  # noqa: E402
 import scan_secrets  # noqa: E402
 import shell_gate  # noqa: E402
 from evals import ConfigError, parse_config, run_live  # noqa: E402
+from models import openai_compatible  # noqa: E402
 
 pytestmark = pytest.mark.unit
 
@@ -613,3 +614,22 @@ def test_run_date_hides_a_value_holding_an_at():
         # Short enough to be quoted rather than measured.
         run_date.today({policy.env: _STEM + "@h"}, policy)
     _hides(str(refused.value), policy.env)
+
+
+# --- models/openai_compatible.py --------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "key_env, declared, neighbours",
+    [
+        (_AT, ("KEY_A",), ("KEY_A",)),
+        ("KEY_Z", ("KEY_A", _AT), ("'KEY_Z'", "KEY_A, ")),
+    ],
+    ids=["undeclared-name", "declared-member"],
+)
+def test_openai_compatible_hides_a_credential_name_holding_an_at(
+    key_env, declared, neighbours
+):
+    with pytest.raises(ValueError) as refused:
+        openai_compatible._checked_key_env("openai-compatible", key_env, declared)
+    _hides(str(refused.value), *neighbours)
