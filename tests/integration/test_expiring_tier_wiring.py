@@ -2,7 +2,7 @@
 title: Integration — the expiring tier is wired to real gate tests, a real make target and a date no later than the ceiling
 kind: tests
 layer: n/a
-summary: The tree-level half of scripts/expiring_tier.py. config/project.json `expiring_tier` loads, so its `expires` is a calendar date no later than scripts/expiring_tier_data.py `CEILING`. Each `CHECKS` node id names a test function its file defines and whose body calls `expiring_tier.apply` with that check id, so a renamed test or a gate that stops judging through the tier is red here rather than recording nothing. The Makefile defines `gate-baseline` (`RECORD_TARGET`), whose recipe opens with $(WRITE_GUARD) and runs scripts/record_gate_baseline.py. In the template repository, which holds copier.yml, no baseline file exists and a finding handed to the tier is red; in a generated project the baseline names no check `CHECKS` does not register.
+summary: The tree-level half of scripts/expiring_tier.py. config/project.json `expiring_tier` loads, so its `expires` is a calendar date no later than scripts/expiring_tier_data.py `CEILING`. Each `CHECKS` node id names a test function its file defines that hands that check id to `expiring_tier.apply`, in its own body or through a module-level function it calls, which names the id in its own `apply` call or is handed it as a constant argument, so a renamed test or a gate that stops judging through the tier is red here rather than recording nothing. The Makefile defines `gate-baseline` (`RECORD_TARGET`), whose recipe opens with $(WRITE_GUARD) and runs scripts/record_gate_baseline.py. In the template repository, which holds copier.yml, no baseline file exists and a finding handed to the tier is red; in a generated project the baseline names no check `CHECKS` does not register.
 @covers scripts/expiring_tier.py
 """
 
@@ -48,8 +48,10 @@ def _applies(func, check):
 
 
 def _judges(tree, name, check):
-    """True when test *name* in *tree*, or a module-level function it calls
-    with *check* as a constant argument, hands *check* to the tier."""
+    """True when test *name* in *tree*, or a module-level function it calls,
+    hands *check* to the tier: the function names *check* in its own
+    `expiring_tier.apply` call, or the test hands it *check* as a constant
+    argument."""
     funcs = {n.name: n for n in tree.body if isinstance(n, ast.FunctionDef)}
     test = funcs.get(name)
     if test is None:
@@ -67,6 +69,8 @@ def _judges(tree, name, check):
         if not (isinstance(call, ast.Call) and isinstance(call.func, ast.Name)):
             continue
         helper = funcs.get(call.func.id)
+        if helper is not None and _applies(helper, check):
+            return True
         handed = [
             module_constants.get(a.id)
             if isinstance(a, ast.Name)
@@ -84,6 +88,48 @@ def _judges(tree, name, check):
                 ):
                     return True
     return False
+
+
+_HELPER_NAMES_IT = """
+def red(lines):
+    return expiring_tier.apply("c", lines, ".")
+def test_t():
+    assert not red([])
+"""
+_HELPER_HANDED_IT = """
+def red(check, lines):
+    return expiring_tier.apply(check, lines, ".")
+def test_t():
+    assert not red("c", [])
+"""
+_HELPER_NAMES_ANOTHER = """
+def red(lines):
+    return expiring_tier.apply("other", lines, ".")
+def test_t():
+    assert not red([])
+"""
+_NO_HELPER = """
+def red(lines):
+    return expiring_tier.apply("c", lines, ".")
+def test_t():
+    assert True
+"""
+
+
+@pytest.mark.parametrize(
+    "source, judged",
+    [
+        (_HELPER_NAMES_IT, True),
+        (_HELPER_HANDED_IT, True),
+        (_HELPER_NAMES_ANOTHER, False),
+        (_NO_HELPER, False),
+    ],
+    ids=["helper-names-it", "helper-handed-it", "helper-names-another", "no-call"],
+)
+def test_a_test_judges_through_a_helper_that_names_or_is_handed_the_check(
+    source, judged
+):
+    assert _judges(ast.parse(source), "test_t", "c") is judged
 
 
 @pytest.mark.parametrize("check", sorted(expiring_tier_data.CHECKS))
