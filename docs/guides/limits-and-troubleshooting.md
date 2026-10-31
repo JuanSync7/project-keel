@@ -606,7 +606,7 @@ record line `scripts/gate_evidence.py` builds from `evidence.dir` or
 `evidence.schema`, and the messages `scripts/shell_gate.py`,
 `scripts/scan_secrets.py` and `scripts/install_scanner.py` build from the
 `shell` and `secrets.scanner` blocks, while a file the tree holds is named as
-written. The refusals the other scripts build from the settings they
+written, and a run-date value `scripts/run_date.py` refuses. The refusals the other scripts build from the settings they
 read do not pass through that rule yet. A value read from an environment variable is blamed on
 it instead: `the environment: <variable> is <JSON type> <value>; accepted: <what it accepts>`. The loader writes every `[not set]` and wrong-value line before it stops,
 so one run names every key at fault. A script that config/project.json

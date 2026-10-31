@@ -20,6 +20,7 @@ import gate_evidence  # noqa: E402
 import git_tree  # noqa: E402
 import install_scanner  # noqa: E402
 import launch  # noqa: E402
+import run_date  # noqa: E402
 import run_evals  # noqa: E402
 import scan_secrets  # noqa: E402
 import shell_gate  # noqa: E402
@@ -599,3 +600,16 @@ def test_install_scanner_hides_a_url_and_a_path_holding_an_at(
     monkeypatch.setattr(install_scanner, "_fetch", fetched)
     run()
     _hides(capsys.readouterr().err)
+
+
+# --- scripts/run_date.py ----------------------------------------------------
+
+
+def test_run_date_hides_a_value_holding_an_at():
+    policy = run_date.policy(_load())
+    if policy is None:
+        pytest.skip("this project's config has no evidence.run_date")
+    with pytest.raises(run_date.RunDateError) as refused:
+        # Short enough to be quoted rather than measured.
+        run_date.today({policy.env: _STEM + "@h"}, policy)
+    _hides(str(refused.value), policy.env)
