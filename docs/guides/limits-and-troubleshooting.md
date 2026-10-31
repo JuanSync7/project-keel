@@ -596,8 +596,12 @@ state paths and credential names it refuses a launch over, hide a value, member,
 key name or path segment that holds an `@` the same way, a list member by
 member (`scripts/config_loader.py` `quoted` and `listed`), so
 `inside_env is ['SLURM_JOB_ID', '<hidden: it holds an @>']` still names the
-harmless member (`tests/unit/scripts/test_config_text_leaks.py`). So do the
-evals config's refusals (an unknown key's name, a schema path and the error text
+harmless member (`tests/unit/scripts/test_config_text_leaks.py`). Hiding is
+the only change to such a refusal, and to a check finding built the same way: a
+value that holds no `@` prints as Python's `repr` prints it, so a value holding
+a newline reads `'a\nb'` on one line and an escape character never reaches the
+terminal (`tests/unit/scripts/test_config_loader.py`). The same hiding holds
+for the evals config's refusals (an unknown key's name, a schema path and the error text
 that quotes it), the live run's refusal of `evals.live.model`, and every refusal
 `scripts/run_evals.py` builds from `evals.report_dir`, a line of paths item by
 item (`joined`), and every line `scripts/exit_code_table.py` writes that names

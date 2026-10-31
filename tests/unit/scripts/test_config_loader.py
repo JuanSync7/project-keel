@@ -2,7 +2,7 @@
 title: Unit — the one config loader (declared keys, the default line, the not-set line, a refused value)
 kind: tests
 layer: n/a
-summary: scripts/config_loader.py resolves a parsed config against declared rows. An unset key with a default takes it and writes one `[using default]` line naming the key, its canonical-JSON value and the file, once per (file, key) per process under either import name, and a secret shows `<hidden>` and never its value; a set key of the wrong type or out of its bound is refused in one line naming the key, the file, the value's JSON type and what is accepted (null first for a bounded row that takes null, so the bound never reads as one on null), a secret's value never in the exception or the stream, nor a refused string that holds an `@` anywhere, which may begin a URL user part however the URL is spelled and shows as `<hidden: it holds an @>`, while a `%40` still shows; a release URL urllib cannot split, or whose port is not one, is refused and never raised; every unset required key is written as one `[not set]` line in sorted key order before one NotSet; a wrong value and a missing one together write every line and raise WrongValue. An environment value wins only for a row that names a variable and only when it is not empty, and `env` refuses a variable nothing declares. resolve neither mutates its input nor hands out the table's own default, and gives the same values and lines twice. A refused map names each entry that is refused on its own, and a named member or entry that holds an `@` is hidden as a refused value is. One table holds every place a loader message names project text (a wrong value from the file or a variable, refused and repeated members, refused entries, a key written twice at any depth, a declared variable's adapter name) against every shape (a string, a list holding one, a list inside a list, fifty deep, an object value, an object key): one `@` anywhere hides the whole of it, and its harmless neighbours, empty containers included, still show. Each seconds key refuses a value past threading.TIMEOUT_MAX, keeps one at it, and models.timeout_seconds refuses an empty map. The key table is well formed against keel's own config, every models.credential_env name has a secret variable-only row, the variables the config declares are derived from it, and the module parses on the oldest hook interpreter. A body read from disk is served only when both the corpus level and the strictest level its file states now are served, never when that level cannot be read or is outside the vocabulary; a chain with no level stated is `internal`. `shown` gives `<hidden: it holds an @>` for text holding an `@` anywhere (a key name, a later key or value of an object, a member past any cut-off) and canonical JSON otherwise, or with bare a string as written.
+summary: scripts/config_loader.py resolves a parsed config against declared rows. An unset key with a default takes it and writes one `[using default]` line naming the key, its canonical-JSON value and the file, once per (file, key) per process under either import name, and a secret shows `<hidden>` and never its value; a set key of the wrong type or out of its bound is refused in one line naming the key, the file, the value's JSON type and what is accepted (null first for a bounded row that takes null, so the bound never reads as one on null), a secret's value never in the exception or the stream, nor a refused string that holds an `@` anywhere, which may begin a URL user part however the URL is spelled and shows as `<hidden: it holds an @>`, while a `%40` still shows; a release URL urllib cannot split, or whose port is not one, is refused and never raised; every unset required key is written as one `[not set]` line in sorted key order before one NotSet; a wrong value and a missing one together write every line and raise WrongValue. An environment value wins only for a row that names a variable and only when it is not empty, and `env` refuses a variable nothing declares. resolve neither mutates its input nor hands out the table's own default, and gives the same values and lines twice. A refused map names each entry that is refused on its own, and a named member or entry that holds an `@` is hidden as a refused value is. One table holds every place a loader message names project text (a wrong value from the file or a variable, refused and repeated members, refused entries, a key written twice at any depth, a declared variable's adapter name) against every shape (a string, a list holding one, a list inside a list, fifty deep, an object value, an object key): one `@` anywhere hides the whole of it, and its harmless neighbours, empty containers included, still show. Each seconds key refuses a value past threading.TIMEOUT_MAX, keeps one at it, and models.timeout_seconds refuses an empty map. The key table is well formed against keel's own config, every models.credential_env name has a secret variable-only row, the variables the config declares are derived from it, and the module parses on the oldest hook interpreter. A body read from disk is served only when both the corpus level and the strictest level its file states now are served, never when that level cannot be read or is outside the vocabulary; a chain with no level stated is `internal`. `shown` gives `<hidden: it holds an @>` for text holding an `@` anywhere (a key name, a later key or value of an object, a member past any cut-off) and canonical JSON otherwise, or with bare a string as written. `quoted` and `listed` print exactly what `%r` printed for a value holding no `@`, as a value, a list member and a key name: every control character kind escaped (newline, carriage return, tab, ESC, NUL, DEL, a C1 next line, a line separator), a backslash and either quote as repr writes them, and a value of any type as itself, never its JSON spelling; one holding an `@` is still hidden.
 @covers scripts/config_loader.py
 """
 
@@ -1197,13 +1197,62 @@ def test_shown_bare_gives_a_key_path_segment_as_written(value, want):
         ("a", "'a'"),
         (_AT_MEMBER, "'%s'" % _HID),
         (7, "7"),
-        (None, "null"),
+        (None, "None"),
+        (True, "True"),
         (["a", _AT_MEMBER], _HID),
         ({_AT_MEMBER: 1}, _HID),
     ],
 )
 def test_quoted_puts_configured_text_where_a_repr_would(value, want):
     assert config_loader.quoted(value) == want
+
+
+# Every character kind a refusal must not print raw, and the two repr picks
+# its quotes by: the reported newline and ESC are two rows of this table.
+_ESCAPED = {
+    "newline": ("a\nb", "'a\\nb'"),
+    "carriage return": ("a\rb", "'a\\rb'"),
+    "tab": ("a\tb", "'a\\tb'"),
+    "esc": ("x\x1b[31mRED", "'x\\x1b[31mRED'"),
+    "nul": ("a\x00b", "'a\\x00b'"),
+    "del": ("a\x7fb", "'a\\x7fb'"),
+    "c1 next line": ("a\x85b", "'a\\x85b'"),
+    "line separator": ("a\u2028b", "'a\\u2028b'"),
+    "backslash": ("a\\b", "'a\\\\b'"),
+    "single quote": ("it's", '"it\'s"'),
+    "both quotes": ("'\"", "'\\'\"'"),
+    "plain": ("plain", "'plain'"),
+}
+
+
+@pytest.mark.parametrize("text, want", list(_ESCAPED.values()), ids=list(_ESCAPED))
+def test_quoted_and_listed_print_what_a_repr_printed(text, want):
+    """A helper standing where `%r` stood prints exactly what `%r` printed:
+    a control character escaped, so a refusal stays one line and a value
+    cannot send a terminal escape; as a value, a list member and a key name."""
+    assert want == repr(text)
+    assert config_loader.quoted(text) == want
+    assert config_loader.listed([text, 1]) == "[%s, 1]" % want
+    assert config_loader.quoted({text: [text]}) == "{%s: [%s]}" % (want, want)
+
+
+@pytest.mark.parametrize(
+    "value",
+    [0, -1.5, False, None, [], {}, [None, True], {"k": [1, "a\nb"]}],
+    ids=["int", "float", "bool", "null", "empty list", "empty dict", "list", "dict"],
+)
+def test_quoted_and_listed_print_a_value_of_any_type_as_a_repr_did(value):
+    """A value of the wrong type reads as itself, as `%r` printed it, never
+    as its JSON spelling."""
+    assert config_loader.quoted(value) == repr(value)
+    assert config_loader.listed([value]) == repr([value])
+
+
+@pytest.mark.parametrize("text", [v[0] for v in _ESCAPED.values()], ids=list(_ESCAPED))
+def test_quoted_still_hides_a_control_character_value_holding_an_at(text):
+    assert config_loader.quoted(text + "@h") == "'%s'" % _HID
+    assert config_loader.quoted([text + "@h"]) == _HID
+    assert config_loader.listed([text, text + "@h"]) == "[%r, '%s']" % (text, _HID)
 
 
 def test_listed_hides_only_the_member_holding_the_at():

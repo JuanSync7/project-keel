@@ -2,7 +2,7 @@
 title: Unit — scripts hide configured text that holds an @
 kind: tests
 layer: n/a
-summary: No message a script under scripts/, models/ or tests/isolation_guard.py, or the evals config, builds from configured text shows that text when it holds an `@`, at any depth: a value, a list member, a nested member, a key name, a path segment or a piece of a joined value, and an exception's own text that embeds it. Each row plants a sentinel in one position (keel's own config served in memory, or a variable set for the test; the tree untouched), runs the one reader that turns it into a message, and asserts the reader still refuses, the sentinel never shows and the line says it is hidden; the rows run over script families and mutation kinds. Beside them, a joined line still shows its harmless members and a value of the wrong type still reads as that type. In a generated project a row that plants into a block keel's own config has and the project's lacks is skipped naming the block.
+summary: No message a script under scripts/, models/ or tests/isolation_guard.py, or the evals config, builds from configured text shows that text when it holds an `@`, at any depth: a value, a list member, a nested member, a key name, a path segment or a piece of a joined value, and an exception's own text that embeds it. Each row plants a sentinel in one position (keel's own config served in memory, or a variable set for the test; the tree untouched), runs the one reader that turns it into a message, and asserts the reader still refuses, the sentinel never shows and the line says it is hidden; the rows run over script families and mutation kinds. Beside them, a joined line still shows its harmless members and a value of the wrong type still reads as that type, and a launch refusal of a value holding no `@` prints it as `repr` did, a control character escaped. In a generated project a row that plants into a block keel's own config has and the project's lacks is skipped naming the block.
 """
 
 import json
@@ -165,7 +165,31 @@ def test_launch_shows_a_value_of_the_wrong_type_as_itself():
     manifest = _planted(_L + ("default_size", "cpus"), "V", [True, "a"])
     with pytest.raises(launch.LauncherConfigError) as refused:
         launch.load_launcher_config(manifest)
-    assert "is [true, 'a'], not a whole number" in str(refused.value)
+    assert "is [True, 'a'], not a whole number" in str(refused.value)
+
+
+# C0 only: launch's `_CONTROL` refuses no C1 character, so a NEL is a value
+# the one-line check accepts, not a refusal to read.
+@pytest.mark.parametrize("text", ["a\nb", "x\x1b[31mRED", "a\x7fb"])
+@pytest.mark.parametrize(
+    "path, needle",
+    [
+        (_L + ("own_hosts_file",), "is %r, not a non-blank one-line string"),
+        (_L + ("farm", "adapter"), "is %r, which launcher.farm.adapters"),
+        (_SLURM + ("inside_env",), "is %r, not a list of environment"),
+    ],
+    ids=["one-line-value", "adapter-name", "list-member"],
+)
+def test_launch_prints_a_value_holding_no_at_as_a_repr_did(path, needle, text):
+    """Hiding is the only change: a value holding no `@` keeps `%r`'s escapes,
+    so the refusal of a value for not being one line is itself one line."""
+    value = [text] if path[-1] == "inside_env" else text
+    manifest = _planted(path, "V", value)
+    with pytest.raises(launch.LauncherConfigError) as refused:
+        launch.load_launcher_config(manifest)
+    message = str(refused.value)
+    assert needle % (value,) in message, message
+    assert text not in message, message
 
 
 def test_launch_hides_a_state_path_and_a_credential_name_holding_an_at(

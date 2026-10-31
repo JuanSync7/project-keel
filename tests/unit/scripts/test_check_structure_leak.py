@@ -356,6 +356,26 @@ def test_a_planted_at_never_shows(monkeypatch, letter, faults):
     assert any(_HIDDEN in m for m in lines), lines
 
 
+@pytest.mark.parametrize("text", ["a/\nb", "a/\x1b[31mRED", "a/\x85b"])
+@pytest.mark.parametrize(
+    "letter, path, needle",
+    [
+        ("B", ("structure", "extra_toplevel"), "extra_toplevel entry %r is not"),
+        ("Y", ("adr", "template_adrs"), "template_adrs names %r, not a"),
+    ],
+    ids=["extra_toplevel", "template_adrs"],
+)
+def test_a_value_holding_no_at_is_printed_as_a_repr_printed_it(
+    monkeypatch, letter, path, needle, text
+):
+    """Hiding is the only change: a value holding no `@` keeps `%r`'s escapes,
+    so the finding stays one line and sends no terminal escape."""
+    errs, warns = _run(monkeypatch, letter, [(_PROJECT, path, "M", text)])
+    hits = [m for m in errs + warns if needle % text in m]
+    assert len(hits) == 1, errs + warns
+    assert not [m for m in errs + warns if text in m], errs + warns
+
+
 def _pfi(monkeypatch, declared):
     """check_M's findings when rulesets.ruff.per_file_ignores declares
     *declared* for scripts/**, which pyproject.toml gives T201."""
