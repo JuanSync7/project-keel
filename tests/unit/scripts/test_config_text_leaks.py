@@ -211,6 +211,9 @@ def test_launch_refuses_a_name_ending_in_a_newline(path):
     manifest = _planted(path, "M" if path[-1] == "inside_env" else "A", "slurm2\n")
     if path[-1] == "inside_env":
         _node(manifest, path)[-1] = "SLURM_JOB_ID\n"
+    if path[-1] == "adapters":
+        # A body the slurm adapter's own, so only the name can be refused.
+        _node(manifest, path)["slurm2\n"] = _node(manifest, _SLURM)
     with pytest.raises(launch.LauncherConfigError):
         launch.load_launcher_config(manifest)
 
@@ -527,6 +530,13 @@ def test_scan_secrets_hides_a_record_and_what_it_names_holding_an_at(tmp_path):
     record = '{"name": "gitleaks", "rev": "%s", "path": "/nowhere/%s"}' % (_AT, _AT)
     (tmp_path / "rec.json").write_text(record, encoding="utf-8")
     _hides(scan_secrets._recorded(str(tmp_path), cfg)[1], "is gone")
+    program = tmp_path / ("b-" + _AT) / "gitleaks"
+    program.parent.mkdir()
+    program.write_text("#!/bin/sh\n", encoding="utf-8")
+    program.chmod(0o700)
+    record = {"name": "gitleaks", "rev": _AT, "path": str(program), "sha256": "0"}
+    (tmp_path / "rec.json").write_text(json.dumps(record), encoding="utf-8")
+    _hides(scan_secrets._recorded(str(tmp_path), cfg)[1], "changed after")
     (tmp_path / "rec.json").write_text("{", encoding="utf-8")
     cfg["record_file"] = "rec.json/" + _AT
     _hides(scan_secrets._recorded(str(tmp_path), cfg)[1], "cannot be read")
@@ -616,7 +626,7 @@ def test_install_scanner_hides_configured_text_holding_an_at(
     _hides(capsys.readouterr().out, "already installed", "gitleaks")
 
 
-@pytest.mark.parametrize("fault", ["unfetched", "local", "mismatch"])
+@pytest.mark.parametrize("fault", ["unfetched", "local", "mismatch", "unreadable"])
 def test_install_scanner_hides_a_url_and_a_path_holding_an_at(
     monkeypatch, capsys, tmp_path, install, fault
 ):
@@ -635,6 +645,14 @@ def test_install_scanner_hides_a_url_and_a_path_holding_an_at(
 
         def fetched(_url, dest, _inst):
             raise install_scanner._Local(dest, OSError("cannot write %s" % dest))
+
+    elif fault == "unreadable":
+
+        def fetched(_url, dest, _inst):
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            with open(dest, "wb") as fh:
+                fh.write(b"not an archive")
+            return "0" * 64
 
     else:
 
@@ -745,3 +763,16 @@ def test_isolation_guard_hides_a_memory_root_holding_an_at_in_each_note(
         "unowned": "owns with mode 0700",
     }[case]
     _hides(note, said)
+
+
+def test_run_evals_hides_a_removed_report_path_holding_an_at(
+    monkeypatch, capsys, tmp_path
+):
+    report = tmp_path / ("r-" + _AT) / "replay.json"
+    report.parent.mkdir()
+    report.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(run_evals.git_tree, "through_symlink", lambda _r, _p: [])
+    monkeypatch.setattr(run_evals, "_unignored", lambda _r, _p: [])
+    run_evals._remove_stale(str(tmp_path), "r-" + _AT, "replay")
+    assert not report.exists()
+    _hides(capsys.readouterr().err, "removed the earlier")
