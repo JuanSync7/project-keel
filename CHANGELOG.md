@@ -159,7 +159,11 @@ version rather than a bare commit:
   `"exit"`, `\exit`, `command exit` or `builtin exit`, and an ending before
   the line that sources the helper, at its file and line, and a project with no shell script unless `shell.no_scripts`
   states why or `shell.enabled` is false, which switches the shell tools
-  only: every other finding holds whatever it says.
+  only: every other finding holds whatever it says. A use of a held status
+  other than `name=$?` and a plain read warns and never fails, in the
+  template and in every project, as the check `exit-held-status`
+  (`scripts/expiring_tier_data.py` `WARN_ONLY`), because the rule still
+  flags ordinary scripts such as `rc=0; cmd || rc=$?`.
 - **An agent `--execute` run is held to an approved model-call cap.**
   `scripts/doc_review.py`, `scripts/refactor_practice.py` and the two Stop
   hooks refuse an execute run with exit 2 before any model is built when its

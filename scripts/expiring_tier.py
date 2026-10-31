@@ -2,7 +2,7 @@
 title: expiring_tier — a generated project's own finding warns until a hard date, from a record that only shrinks
 kind: script
 layer: n/a
-summary: The tier a keel gate test hands its findings to (docs/adr/keel/K-0027-a-project-s-own-code-warns-until-a-hard-date.md). `judge` takes a check id scripts/expiring_tier_data.py `CHECKS` registers and the test's finding lines, each `<file>:<line>: <rule> — <fix>`, and returns a Verdict: the lines that are red, the lines that warn, and the note the warning carries. The policy is loaded first in either place, so a bad or too-late date fails closed in the template too. In the template repository, which holds copier.yml (`TEMPLATE_MARK`), every line is red and nothing warns. In a generated project a finding's identity is its line with the line number dropped, and the identities config/project.json `expiring_tier.baseline` records for the check are counted as a multiset: a finding with an entry left for it warns until `expiring_tier.expires` and is red from that day; a finding with none, a copy over the recorded count included, is red at once and names `make gate-baseline` (`RECORD_TARGET`); an entry no finding matches is red, so the record only shrinks; a line outside the grammar is red whatever the record holds; and with no baseline file every finding is red and names the target. `load_policy` refuses an `expires` that is not a YYYY-MM-DD calendar date or is later than `CEILING`, so a project may end the grace sooner and never later. `apply` is `judge` for a gate test: it issues one ExpiringTierWarning when anything warns and returns the red lines. `read_baseline` reads and checks the file. `baseline_findings` names a baseline check id `CHECKS` does not register. `start_recording` makes every `judge` keep the lines it was handed as a multiset, two identical lines two entries, which tests/conftest.py writes out for scripts/record_gate_baseline.py. The day is scripts/run_date.py `today`, so a run that crossed midnight judges by the day it began. It reads config/project.json and the baseline through scripts/config_loader.py `read` and `resolve`, and any fault in either is a TierError naming the file and the key; it does not stop a hand edit of the baseline or of the data file, which review holds. A refusal of the baseline file hides its configured path when it holds an `@` (scripts/config_loader.py `shown`). It starts no process and writes nothing.
+summary: The tier a keel gate test hands its findings to (docs/adr/keel/K-0027-a-project-s-own-code-warns-until-a-hard-date.md). `judge` takes a check id scripts/expiring_tier_data.py `CHECKS` or `WARN_ONLY` registers and the test's finding lines, each `<file>:<line>: <rule> — <fix>`, and returns a Verdict: the lines that are red, the lines that warn, and the note the warning carries. The policy is loaded first in either place, so a bad or too-late date fails closed in the template too. In the template repository, which holds copier.yml (`TEMPLATE_MARK`), every line is red and nothing warns. In a generated project a finding's identity is its line with the line number dropped, and the identities config/project.json `expiring_tier.baseline` records for the check are counted as a multiset: a finding with an entry left for it warns until `expiring_tier.expires` and is red from that day; a finding with none, a copy over the recorded count included, is red at once and names `make gate-baseline` (`RECORD_TARGET`); an entry no finding matches is red, so the record only shrinks; a line outside the grammar is red whatever the record holds; and with no baseline file every finding is red and names the target. A `WARN_ONLY` check is the one exception: in the template and in a project, with a baseline or none, before the date and after it, each of its findings warns with the reason that map gives and none is red, save a line outside the grammar; it records no baseline. `load_policy` refuses an `expires` that is not a YYYY-MM-DD calendar date or is later than `CEILING`, so a project may end the grace sooner and never later. `apply` is `judge` for a gate test: it issues one ExpiringTierWarning when anything warns and returns the red lines. `read_baseline` reads and checks the file. `baseline_findings` names a baseline check id `CHECKS` does not register. `start_recording` makes every `judge` keep the lines it was handed as a multiset, two identical lines two entries, which tests/conftest.py writes out for scripts/record_gate_baseline.py. The day is scripts/run_date.py `today`, so a run that crossed midnight judges by the day it began. It reads config/project.json and the baseline through scripts/config_loader.py `read` and `resolve`, and any fault in either is a TierError naming the file and the key; it does not stop a hand edit of the baseline or of the data file, which review holds. A refusal of the baseline file hides its configured path when it holds an `@` (scripts/config_loader.py `shown`). It starts no process and writes nothing.
 effect: read-only
 """
 
@@ -177,6 +177,30 @@ def run_today(root: str) -> datetime.date:
         raise TierError(str(exc)) from exc
 
 
+def _warn_only(check: str, lines: Sequence[str], reason: str) -> Verdict:
+    """The Verdict of a WARN_ONLY *check*: every line warns, whatever tree or
+    baseline it is judged in, except a line outside the grammar, which is red
+    as it is for every check."""
+    red: List[str] = []
+    warned: List[str] = []
+    for line in lines:
+        if identity(line) is None:
+            red.append(
+                "%s — outside the `<file>:<line>: ` grammar, so the tier cannot "
+                "place it; fix it" % line
+            )
+        else:
+            warned.append(line)
+    if not warned:
+        return Verdict(red=red, warned=[], note=None)
+    note = "%d finding(s) of `%s` warn and never fail: %s" % (
+        len(warned),
+        check,
+        reason,
+    )
+    return Verdict(red=red, warned=warned, note=note)
+
+
 def judge(
     check: str,
     lines: Sequence[str],
@@ -184,13 +208,19 @@ def judge(
     today: Optional[datetime.date] = None,
 ) -> Verdict:
     """The Verdict on the finding *lines* of *check* in the tree at *root*,
-    judged on *today* (`run_today` when None). Raises TierError for a check
-    `CHECKS` does not register or a policy or baseline that cannot be used."""
-    if check not in expiring_tier_data.CHECKS:
+    judged on *today* (`run_today` when None). A `WARN_ONLY` check's lines
+    warn everywhere and are never recorded. Raises TierError for a check
+    neither map registers or a policy or baseline that cannot be used."""
+    reason = expiring_tier_data.WARN_ONLY.get(check)
+    if check not in expiring_tier_data.CHECKS and reason is None:
+        known = sorted(expiring_tier_data.CHECKS) + sorted(expiring_tier_data.WARN_ONLY)
         raise TierError(
-            "%s is not a check %s CHECKS registers (the checks are %s)"
-            % (check, _DATA_FILE, ", ".join(sorted(expiring_tier_data.CHECKS)))
+            "%s is not a check %s CHECKS or WARN_ONLY registers (the checks are %s)"
+            % (check, _DATA_FILE, ", ".join(known))
         )
+    if reason is not None:
+        load_policy(root)
+        return _warn_only(check, lines, reason)
     if _RECORD is not None:
         _RECORD[check] = _RECORD.get(check, collections.Counter()) | (
             collections.Counter(lines)

@@ -225,6 +225,46 @@ def test_apply_warns_once_with_the_note_and_returns_the_red_lines(tmp_path):
     assert quiet == []
 
 
+_WARN_ONLY = sorted(expiring_tier_data.WARN_ONLY)[0]
+
+
+@pytest.mark.parametrize("template", [True, False], ids=["template", "project"])
+@pytest.mark.parametrize("recorded", [True, False], ids=["recorded", "no-baseline"])
+@pytest.mark.parametrize("day", [_CEILING - _DAY, _CEILING], ids=["before", "on"])
+def test_a_warn_only_check_warns_everywhere_and_never_fails(
+    tmp_path, template, recorded, day
+):
+    """A WARN_ONLY check's findings warn in the template and in a project,
+    with a baseline or none, before the date and on it; the note gives the
+    reason, and a line outside the grammar is still red."""
+    root = _project(
+        tmp_path, baseline=_recorded([_A_ID]) if recorded else None, template=template
+    )
+    verdict = tier.judge(_WARN_ONLY, [_A, _B], str(root), today=day)
+    assert verdict.red == []
+    assert verdict.warned == [_A, _B]
+    assert expiring_tier_data.WARN_ONLY[_WARN_ONLY] in str(verdict.note)
+    bad = tier.judge(_WARN_ONLY, ["no file here"], str(root), today=day)
+    assert len(bad.red) == 1 and bad.red[0].startswith("no file here")
+    assert bad.warned == []
+
+
+def test_a_warn_only_check_is_no_baseline_check_and_still_reads_the_policy(tmp_path):
+    """A WARN_ONLY check records nothing for `make gate-baseline`, and a date
+    past the ceiling still fails closed for it."""
+    assert not set(expiring_tier_data.WARN_ONLY) & set(expiring_tier_data.CHECKS)
+    root = _project(tmp_path)
+    tier.start_recording()
+    try:
+        tier.judge(_WARN_ONLY, [_A], str(root), today=_CEILING - _DAY)
+        assert tier.recorded() == {}
+    finally:
+        tier.stop_recording()
+    late = _project(tmp_path / "late", expires=(_CEILING + _DAY).isoformat())
+    with pytest.raises(tier.TierError, match=r"expiring_tier\.expires"):
+        tier.judge(_WARN_ONLY, [_A], str(late), today=_CEILING - _DAY)
+
+
 def test_the_recorder_keeps_what_each_check_was_handed(tmp_path):
     root = _project(tmp_path)
     assert tier.recorded() is None

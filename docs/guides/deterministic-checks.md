@@ -842,7 +842,11 @@ mention of that name, a word that names the variable (`let`, `(( ))`,
 `${name:=...}`, `printf -v`, `read`, an argument of a function the script
 defines), is a finding at its own line; an argument of a command that names
 no variable, as in `git status` or `ls a.rc`, is none, and text the reader
-places in no word fails closed. It judges an ending inside a subshell,
+places in no word fails closed. Those held-status findings warn and never
+fail, in the template and in a generated project alike: the test hands them
+to `scripts/expiring_tier.py` as the check `exit-held-status`, which
+`scripts/expiring_tier_data.py` `WARN_ONLY` lists, because the rule still
+flags ordinary scripts. It judges an ending inside a subshell,
 `$(...)`, backquotes or a process substitution `<(...)` or `>(...)` as it
 judges one at the top, and reads a comment, a quoted word, a here-document
 body, a `case` subject or pattern and the elements of an array assignment

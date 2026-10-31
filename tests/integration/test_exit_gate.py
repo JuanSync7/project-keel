@@ -2,10 +2,11 @@
 title: Integration — a process ends only through the exit helper, and the exit-code table is the enum
 kind: tests
 layer: n/a
-summary: Three tree-wide gates over every Python file tests/source_tree.py `python_files` lists, and the first over every shell script too (the walk `check_structure.walk` uses), read from the syntax tree. The first fails an exit written anywhere but scripts/exit_codes.py (`sys.exit`, `os._exit`, any `.exit(...)` attribute such as argparse's, `raise SystemExit`, a SystemExit subclass, the builtins `exit` and `quit`, each of those as an attribute of `builtins` or `__builtins__`, and an import that renames any of them), an entry block that hands `finish` nothing while its module imports the helper, or that calls a function of its module and drops the value it returns, a return scripts/exit_code_table.py `read_script` cannot follow to an ExitCode member (a returned name bound by anything but a plain assignment included), a `report` or `fail` call missing one of its three message parts or holding a blank literal one, or handed a code that is not a failure member, a `passthrough` handed the script's own status (the entry function's result, directly or through a name, an int literal, a member, or a function of the module whose every return is one of those, also under a sign, in an arithmetic or `and`/`or` of them, or through a builtin such as `int`), an entry line `finish(passthrough(...))`, and an import of the helper under a second name. The second fails an ExitCode member the generated table in the limits guide does not name and a table row no member backs (scripts/exit_code_table.py `table_findings`). The third fails a `fail` or `finish` call outside the entry block of a module another project module imports (an import from tests/ does not count, and scripts/exit_codes.py is the helper), because a shared module raises or returns and only an entry point ends the process; `passthrough` is no ending, it marks a status and returns it. config/project.json `import_layers.may_end_the_process` names a module that may, with a non-blank reason, and an entry naming no such module is a finding. A walk that finds no Python file, or no entry block, is a failure, never a pass. It does not judge whether a message part is useful, and it cannot see an exit reached through `getattr`, `os.abort`, `os.kill`, an uncaught exception, argparse's own `--help` and usage exits, a `python -c` line in a makefile, or a status dropped by another callable (`asyncio.run(main())`); and it does not check a `passthrough` over a helper that returns another process's status (scripts/run_app.py `_app_status`), which passes by design, nor one over a function some of whose returns are the script's own literals and others a tool's status. The first also reads every file scripts/shell_gate.py `classify` calls a shell script (with no repository yet, every one the structure walk reaches), less scripts/exit_codes.sh itself: a script must source that helper by a path ending in `/exit_codes.sh` and end through it, as `exit "$EXIT_<NAME>"`, `exit_fail "$EXIT_<NAME>" WHAT ON NEXT` with a member other than SUCCESS and no blank part, or `exit_passthrough "$?"` for a wrapped tool's status, or of a name assigned as `name=$?` and otherwise only read as `$name` or `${name}` outside comments and quoted here-document bodies (any other occurrence, `let`, `(( ))`, `${name:=...}`, `printf -v`, `read`, `mapfile`, `for`, a word that only names it, is a finding at its own line), never a number or a member; a bare `exit 3`, `exit $?` or `exit` is a finding at its file and line, in a subshell, `$(...)`, backquotes or a process substitution `<(...)` or `>(...)` too, inside double quotes or a `${...}` as well (a quoted `}` closes no `${...}`), and so is a status the script renames: an `exit_passthrough` or `return` of anything else (`$((...))`, a positional, a name never assigned), and a `return` of a number or of nothing. A command name with no expansion has its quotes and backslashes removed and a `$'...'` decoded as bash decodes it, so `"exit"`, `\\exit`, `$'exit'`, `command exit` and `builtin exit` are `exit`; a command named by an expansion (`$x 3`, `"$cmd" 3`) and an `eval` are findings where the command could end the script (not inside `$(...)`, backquotes, a process substitution or `( ... )`, nor before a single `|` or `&`), because the gate cannot judge them; and an ending that needs the helper on a line before the one that sources it is a finding. Comments, quoted words, here-document bodies and a `case` subject or pattern are not commands, inside `$(...)` too, while a command in a clause body is judged; a file it cannot read to its end, such as one with an open quote or nested past `_SH_MAX_DEPTH` levels, is a finding, and a CRLF line end is the file's one finding, naming the carriage return. No shell script is a finding unless config/project.json `shell.no_scripts` gives the reason or `shell.enabled` (the copier answer `shell`) is false; every other finding holds whatever `shell.enabled` says, because it switches the shell tools only. It cannot see `set -e`, `trap`, `exec`, `kill`, an `sh -c` string, a pathname or brace expansion in a command name, or a script that falls off its end after some other ending. The first and third hand their findings to scripts/expiring_tier.py as the checks `exit-helper` and `exit-shared-module`: in the template repository, which holds copier.yml, every finding is red; in a generated project a finding its `expiring_tier.baseline` records warns until `expiring_tier.expires`, and any other is red. Catching SystemExit is not an exit and is not a finding: the exception itself, or a tuple holding it, as the type of an `except` clause or an argument of pytest's `raises`; anywhere deeper in those expressions, and in a `raises` that is not pytest's, it is one. Not a check_* letter: the letters A to Z are taken.
+summary: Three tree-wide gates over every Python file tests/source_tree.py `python_files` lists, and the first over every shell script too (the walk `check_structure.walk` uses), read from the syntax tree. The first fails an exit written anywhere but scripts/exit_codes.py (`sys.exit`, `os._exit`, any `.exit(...)` attribute such as argparse's, `raise SystemExit`, a SystemExit subclass, the builtins `exit` and `quit`, each of those as an attribute of `builtins` or `__builtins__`, and an import that renames any of them), an entry block that hands `finish` nothing while its module imports the helper, or that calls a function of its module and drops the value it returns, a return scripts/exit_code_table.py `read_script` cannot follow to an ExitCode member (a returned name bound by anything but a plain assignment included), a `report` or `fail` call missing one of its three message parts or holding a blank literal one, or handed a code that is not a failure member, a `passthrough` handed the script's own status (the entry function's result, directly or through a name, an int literal, a member, or a function of the module whose every return is one of those, also under a sign, in an arithmetic or `and`/`or` of them, or through a builtin such as `int`), an entry line `finish(passthrough(...))`, and an import of the helper under a second name. The second fails an ExitCode member the generated table in the limits guide does not name and a table row no member backs (scripts/exit_code_table.py `table_findings`). The third fails a `fail` or `finish` call outside the entry block of a module another project module imports (an import from tests/ does not count, and scripts/exit_codes.py is the helper), because a shared module raises or returns and only an entry point ends the process; `passthrough` is no ending, it marks a status and returns it. config/project.json `import_layers.may_end_the_process` names a module that may, with a non-blank reason, and an entry naming no such module is a finding. A walk that finds no Python file, or no entry block, is a failure, never a pass. It does not judge whether a message part is useful, and it cannot see an exit reached through `getattr`, `os.abort`, `os.kill`, an uncaught exception, argparse's own `--help` and usage exits, a `python -c` line in a makefile, or a status dropped by another callable (`asyncio.run(main())`); and it does not check a `passthrough` over a helper that returns another process's status (scripts/run_app.py `_app_status`), which passes by design, nor one over a function some of whose returns are the script's own literals and others a tool's status. The first also reads every file scripts/shell_gate.py `classify` calls a shell script (with no repository yet, every one the structure walk reaches), less scripts/exit_codes.sh itself: a script must source that helper by a path ending in `/exit_codes.sh` and end through it, as `exit "$EXIT_<NAME>"`, `exit_fail "$EXIT_<NAME>" WHAT ON NEXT` with a member other than SUCCESS and no blank part, or `exit_passthrough "$?"` for a wrapped tool's status, or of a name assigned as `name=$?` and otherwise only read as `$name` or `${name}` outside comments and quoted here-document bodies (any other occurrence, `let`, `(( ))`, `${name:=...}`, `printf -v`, `read`, `mapfile`, `for`, a word that only names it, is a finding at its own line), never a number or a member; a bare `exit 3`, `exit $?` or `exit` is a finding at its file and line, in a subshell, `$(...)`, backquotes or a process substitution `<(...)` or `>(...)` too, inside double quotes or a `${...}` as well (a quoted `}` closes no `${...}`), and so is a status the script renames: an `exit_passthrough` or `return` of anything else (`$((...))`, a positional, a name never assigned), and a `return` of a number or of nothing. A command name with no expansion has its quotes and backslashes removed and a `$'...'` decoded as bash decodes it, so `"exit"`, `\\exit`, `$'exit'`, `command exit` and `builtin exit` are `exit`; a command named by an expansion (`$x 3`, `"$cmd" 3`) and an `eval` are findings where the command could end the script (not inside `$(...)`, backquotes, a process substitution or `( ... )`, nor before a single `|` or `&`), because the gate cannot judge them; and an ending that needs the helper on a line before the one that sources it is a finding. Comments, quoted words, here-document bodies and a `case` subject or pattern are not commands, inside `$(...)` too, while a command in a clause body is judged; a file it cannot read to its end, such as one with an open quote or nested past `_SH_MAX_DEPTH` levels, is a finding, and a CRLF line end is the file's one finding, naming the carriage return. No shell script is a finding unless config/project.json `shell.no_scripts` gives the reason or `shell.enabled` (the copier answer `shell`) is false; every other finding holds whatever `shell.enabled` says, because it switches the shell tools only. It cannot see `set -e`, `trap`, `exec`, `kill`, an `sh -c` string, a pathname or brace expansion in a command name, or a script that falls off its end after some other ending. The first and third hand their findings to scripts/expiring_tier.py as the checks `exit-helper` and `exit-shared-module`: in the template repository, which holds copier.yml, every finding is red; in a generated project a finding its `expiring_tier.baseline` records warns until `expiring_tier.expires`, and any other is red. The first's held-status findings are the exception: they go as `exit-held-status`, which scripts/expiring_tier_data.py `WARN_ONLY` lists, and warn and never fail, in the template too, because the rule still flags ordinary scripts. Catching SystemExit is not an exit and is not a finding: the exception itself, or a tuple holding it, as the type of an `except` clause or an argument of pytest's `raises`; anywhere deeper in those expressions, and in a `raises` that is not pytest's, it is one. Not a check_* letter: the letters A to Z are taken.
 """
 
 import ast
+import collections
 import contextlib
 import io
 import json
@@ -14,6 +15,7 @@ import re
 import shutil
 import subprocess
 import sys
+import warnings
 from pathlib import Path
 
 import pytest
@@ -1379,19 +1381,26 @@ def shell_file_findings(text, relpath, known, quiet):
     through the helper, a script that does not source the helper, and one
     that sources it but never ends through it. A CRLF line end is the one
     finding, because every other would follow from it."""
+    return shell_file_tiers(text, relpath, known, quiet)[0]
+
+
+def shell_file_tiers(text, relpath, known, quiet):
+    """(shell_file_findings, the held-status findings among them), so the
+    gate can hand the second to the warn-only check `exit-held-status`."""
     crlf = _sh_carriage_return_finding(text, relpath)
     if crlf is not None:
-        return [crlf]
+        return [crlf], []
     try:
         commands, unread, bindings, marks = shell_commands(text)
     except ShellScanError as exc:
         return [
             "%s:%d: cannot be read to its end: %s; close it so the exit gate can "
             "judge the script" % (relpath, exc.line, exc.reason)
-        ]
-    findings, held = _sh_held_status_findings(
+        ], []
+    held_status, held = _sh_held_status_findings(
         text, unread, bindings, marks, commands, relpath
     )
+    findings = list(held_status)
     sourced, ends, needs = None, 0, []
     for line, (head, *args), dynamic, main, offset in commands:
         if main and (dynamic or head == _SH_EVAL):
@@ -1432,7 +1441,7 @@ def shell_file_findings(text, relpath, known, quiet):
             "%s:1: never ends through %s, so it exits on its last command's "
             "status; end it with %s" % (relpath, et.HELPER_SH, _SH_ENDS_WELL)
         )
-    return findings
+    return findings, held_status
 
 
 def _walked_shell_scripts(root, cfg):
@@ -1477,13 +1486,15 @@ def shell_findings(root):
     members = et.read_members(str(root))
     known = {m.name for m in members}
     quiet = {m.name for m in members if m.value == 0}
-    findings = []
+    findings, held_status = [], []
     for relpath in scripts:
         # newline="" keeps a CR the shell would read, which universal newlines
         # would drop.
         with open(Path(root) / relpath, encoding="utf-8", newline="") as handle:
             text = handle.read()
-        findings.extend(shell_file_findings(text, relpath, known, quiet))
+        every, held = shell_file_tiers(text, relpath, known, quiet)
+        findings.extend(every)
+        held_status.extend(held)
     # Off, a project with no shell script is the expected case, so the
     # switch is the reason; it never excuses a script that exists.
     stated = (cfg["no_scripts"] or "") if cfg["enabled"] else "shell.enabled is false"
@@ -1492,7 +1503,23 @@ def shell_findings(root):
             "config/project.json:1: no shell script to judge and shell.no_scripts "
             "gives no reason -- zero items; add a script or state the reason"
         )
-    return {"files": len(scripts), "findings": sorted(findings)}
+    return {
+        "files": len(scripts),
+        "findings": sorted(findings),
+        "held_status": sorted(held_status),
+    }
+
+
+def exit_helper_red(python_findings, shell, root):
+    """The red lines of the exit gate's first check over *python_findings*
+    and *shell* (shell_findings' result) in the tree at *root*. The
+    held-status findings go to scripts/expiring_tier.py as `exit-held-status`,
+    which warns and never fails (scripts/expiring_tier_data.py `WARN_ONLY`);
+    every other finding goes as `exit-helper`, in its own tier."""
+    held = collections.Counter(shell["held_status"])
+    rest = sorted((collections.Counter(shell["findings"]) - held).elements())
+    red = expiring_tier.apply("exit-held-status", shell["held_status"], root)
+    return red + expiring_tier.apply("exit-helper", python_findings + rest, root)
 
 
 # --- the tree itself -------------------------------------------------------------
@@ -1503,9 +1530,7 @@ def test_no_process_in_the_tree_ends_outside_the_helper():
     assert result["entries"] > 0, "no entry block was judged -- zero items"
     # A shell script is held by the same check, so one baseline covers both.
     shell = shell_findings(_ROOT)
-    red = expiring_tier.apply(
-        "exit-helper", result["findings"] + shell["findings"], str(_ROOT)
-    )
+    red = exit_helper_red(result["findings"], shell, str(_ROOT))
     assert not red, "\n".join(red)
 
 
@@ -2249,7 +2274,7 @@ def test_a_shell_script_that_ends_through_the_helper_has_no_finding(
 ):
     script = _SH_GOOD.replace(_SH_TAIL, body + _SH_TAIL)
     root = _sh_tree(tmp_path, monkeypatch, {"scripts/tool.sh": script})
-    assert shell_findings(root) == {"files": 1, "findings": []}
+    assert shell_findings(root) == {"files": 1, "findings": [], "held_status": []}
 
 
 # The fragments of the findings at a command whose name holds an expansion and
@@ -2571,6 +2596,46 @@ def test_any_use_of_a_held_status_but_a_plain_read_is_a_finding_at_its_line(
     assert _SH_CANNOT_SHOW in finding, finding
 
 
+@pytest.mark.parametrize("template", [True, False], ids=["template", "project"])
+def test_a_held_status_finding_warns_and_every_other_exit_fault_still_fails(
+    tmp_path, monkeypatch, template
+):
+    """The held-status rule warns and never fails (scripts/expiring_tier_data.py
+    `WARN_ONLY`): its finding keeps its text and goes to `exit-held-status`,
+    which warns in the template and in a project with no baseline, while a
+    bare `exit 3` beside it is still red under `exit-helper`."""
+    held = 'false\nrc=$?\nrc=2\nexit_passthrough "$rc"\n'
+    root = _sh_tree(
+        tmp_path,
+        monkeypatch,
+        {
+            "scripts/held.sh": _SH_HEAD + held + _SH_TAIL,
+            "scripts/bare.sh": _SH_HEAD + "exit 3\n" + _SH_TAIL,
+        },
+    )
+    manifest = root / "config" / "project.json"
+    loaded = json.loads(manifest.read_text(encoding="utf-8"))
+    loaded["expiring_tier"] = config_loader.read(str(_ROOT))["expiring_tier"]
+    manifest.write_text(json.dumps(loaded, sort_keys=True), encoding="utf-8")
+    if template:
+        (root / expiring_tier.TEMPLATE_MARK).write_text("_subdirectory: .\n")
+    shell = shell_findings(root)
+    (finding,) = shell["held_status"]
+    assert finding.startswith("scripts/held.sh:5: "), finding
+    assert _SH_CANNOT_SHOW in finding and finding in shell["findings"], finding
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        red = exit_helper_red([], shell, str(root))
+    warned = "\n".join(
+        str(w.message)
+        for w in caught
+        if issubclass(w.category, expiring_tier.ExpiringTierWarning)
+    )
+    assert finding in warned and "exit-held-status" in warned, warned
+    assert red, "the bare exit 3 was not red"
+    assert all(line.startswith("scripts/bare.sh:") for line in red), red
+
+
 # The fragment of the carriage-return finding that says the shell reads the
 # CR as part of a word, true only where the CR ends a word.
 _SH_CR_IN_A_WORD = "which the shell reads as part of its last word"
@@ -2809,7 +2874,7 @@ def test_the_held_status_scan_visits_each_span_a_bounded_number_of_times():
 def test_a_carriage_return_inside_a_line_is_no_finding(tmp_path, monkeypatch):
     script = _SH_GOOD.replace(_SH_TAIL, "printf 'a\rb'\n" + _SH_TAIL)
     root = _sh_tree(tmp_path, monkeypatch, {"scripts/tool.sh": script})
-    assert shell_findings(root) == {"files": 1, "findings": []}
+    assert shell_findings(root) == {"files": 1, "findings": [], "held_status": []}
 
 
 def test_a_shell_script_that_does_not_source_the_helper_is_a_finding(
@@ -2927,7 +2992,7 @@ def test_the_helper_and_an_excluded_script_are_not_judged(tmp_path, monkeypatch)
         },
         excluded={"vendor": "a vendored tool"},
     )
-    assert shell_findings(root) == {"files": 1, "findings": []}
+    assert shell_findings(root) == {"files": 1, "findings": [], "held_status": []}
 
 
 def test_a_shell_script_found_by_its_shebang_is_judged(tmp_path, monkeypatch):
@@ -2948,7 +3013,7 @@ def test_no_shell_script_and_no_reason_is_a_finding_not_a_pass(tmp_path, monkeyp
 
 def test_no_shell_script_with_a_reason_passes(tmp_path, monkeypatch):
     root = _sh_tree(tmp_path, monkeypatch, {}, no_scripts="its gates are Python")
-    assert shell_findings(root) == {"files": 0, "findings": []}
+    assert shell_findings(root) == {"files": 0, "findings": [], "held_status": []}
 
 
 def test_a_blank_no_scripts_reason_is_refused_not_a_pass(tmp_path, monkeypatch):
@@ -2982,7 +3047,7 @@ def test_with_shell_off_no_shell_script_needs_no_reason(tmp_path, monkeypatch):
     (tmp_path / "off").mkdir()
     (tmp_path / "on").mkdir()
     off = _sh_tree(tmp_path / "off", monkeypatch, {}, enabled=False)
-    assert shell_findings(off) == {"files": 0, "findings": []}
+    assert shell_findings(off) == {"files": 0, "findings": [], "held_status": []}
     on = _sh_tree(tmp_path / "on", monkeypatch, {}, enabled=True)
     (finding,) = shell_findings(on)["findings"]
     assert "shell.no_scripts gives no reason" in finding, finding
