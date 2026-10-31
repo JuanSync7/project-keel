@@ -84,6 +84,15 @@ def _mutate(doc, path, kind, value=_AT):
         raise ValueError(kind)
 
 
+def _template_only(missing):
+    """Skip a case whose config block this tree lacks, in a generated project
+    only: keel's own config has every block, so there a missing one is a
+    fault in the row and *missing* is raised."""
+    if (_ROOT / "copier.yml").is_file():
+        raise missing
+    pytest.skip("this project's config has no %s: a block keel's own has" % missing)
+
+
 def _planted(path, kind, value=_AT):
     """keel's config/project.json with one fault planted; in a generated
     project a block it lacks skips the row, in the template it fails."""
@@ -91,9 +100,7 @@ def _planted(path, kind, value=_AT):
     try:
         _mutate(doc, path, kind, value)
     except KeyError as missing:
-        if (_ROOT / "copier.yml").is_file():
-            raise
-        pytest.skip("this project's config has no %s: a block keel's own has" % missing)
+        _template_only(missing)
     return doc
 
 
@@ -704,7 +711,7 @@ def test_install_scanner_hides_a_url_and_a_path_holding_an_at(
 def test_run_date_hides_a_value_holding_an_at():
     policy = run_date.policy(_load())
     if policy is None:
-        pytest.skip("this project's config has no evidence.run_date")
+        _template_only(KeyError("evidence.run_date"))
     with pytest.raises(run_date.RunDateError) as refused:
         # Short enough to be quoted rather than measured.
         run_date.today({policy.env: _STEM + "@h"}, policy)
