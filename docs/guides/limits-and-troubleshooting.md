@@ -564,9 +564,10 @@ every generated project, with a baseline or none: the test hands them to
 `scripts/expiring_tier.py` as the check `exit-held-status`, which
 `scripts/expiring_tier_data.py` `WARN_ONLY` lists, and pytest prints them in
 its warnings summary as one `ExpiringTierWarning`. The rule still flags
-ordinary scripts, such as `rc=0; cmd || rc=$?` and `return 1` in a helper
-function, so it may not fail a project's gate yet. Every other finding of
-the shell rule stays under `exit-helper` and is red as before.
+ordinary scripts, such as `rc=0; cmd || rc=$?`, so it may not fail a
+project's gate yet. Every other finding of the shell rule stays under
+`exit-helper` and is red as before, `return 1` in a helper function among
+them.
 A command name with no expansion has its quotes and backslashes removed
 and a `$'...'` decoded as bash decodes it, so `"exit"`, `\exit`,
 `$'exit'`, `$'\x65xit'`, `command exit` and `builtin exit` are `exit`;
