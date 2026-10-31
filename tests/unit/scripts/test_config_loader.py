@@ -1273,7 +1273,9 @@ def test_joined_hides_only_the_item_holding_the_at():
     assert config_loader.joined(["a/b", _AT_MEMBER + "/c", 3]) == "a/b, %s, 3" % _HID
 
 
-_CONFLICT = "{\n<<<<<<< ours\n}\n=======\n}\n>>>>>>> theirs\n"
+# Built, not spelled: this file ships to generated projects, and a literal
+# marker here reads as an unresolved merge to test_copier_update's scan.
+_CONFLICT = "{\n%s ours\n}\n%s\n}\n%s theirs\n" % ("<" * 7, "=" * 7, ">" * 7)
 
 
 @pytest.mark.parametrize(
