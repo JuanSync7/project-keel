@@ -6,6 +6,7 @@ summary: No message a script under scripts/, models/ or tests/isolation_guard.py
 """
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -180,6 +181,38 @@ def test_launch_hides_a_state_path_and_a_credential_name_holding_an_at(
     _hides(found[0], "config/own-hosts.local.json")
     launch._stopped(("credential", ["LC_" + _AT, "OTHER_NAME"]), ["make"], False, None)
     _hides(capsys.readouterr().err, "OTHER_NAME")
+
+
+@pytest.mark.parametrize("fault", ["listed", "git-failed"])
+def test_launch_hides_a_state_path_git_lists_or_names_in_its_error(monkeypatch, fault):
+    class Cfg:
+        durations_file = ".launch/" + _AT
+        own_hosts_file = "config/own-hosts.local.json"
+
+    def is_ignored(_root, path):
+        if fault == "git-failed":
+            raise git_tree.GitFailedError(128, "fatal: cannot judge " + path)
+        return False
+
+    monkeypatch.setattr(launch.git_tree, "through_symlink", lambda _root, _p: [])
+    monkeypatch.setattr(launch.git_tree, "is_ignored", is_ignored)
+    found = launch._unsafe_state(str(_ROOT), Cfg())
+    neighbour = "config/own-hosts.local.json" if fault == "listed" else "a failure"
+    _hides(found[0], neighbour)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [_SLURM + ("inside_env",), _L + ("farm", "adapters")],
+    ids=["env", "adapter"],
+)
+def test_launch_refuses_a_name_ending_in_a_newline(path):
+    """`_ENV_NAME` and `_ADAPTER_NAME` anchor at the end of the text."""
+    manifest = _planted(path, "M" if path[-1] == "inside_env" else "A", "slurm2\n")
+    if path[-1] == "inside_env":
+        _node(manifest, path)[-1] = "SLURM_JOB_ID\n"
+    with pytest.raises(launch.LauncherConfigError):
+        launch.load_launcher_config(manifest)
 
 
 # --- evals config, evals live run, scripts/run_evals.py ---------------------
@@ -533,6 +566,12 @@ def test_scan_secrets_hides_a_log_option_an_exclusion_and_a_rev_holding_an_at(
     )
     history_scan(cfg)
     _hides(capsys.readouterr().err, "did not use")
+    # With a finding left, the unused exclusion is a warning before it.
+    left = {"File": "a.py", "StartLine": 1, "RuleID": "r"}
+    monkeypatch.setattr(scan_secrets, "_verdict", lambda *_args: ([left], None))
+    history_scan(cfg)
+    _hides(capsys.readouterr().err, "exclusions this scan did not use")
+    monkeypatch.setattr(scan_secrets, "_verdict", lambda *_args: ([], None))
     cfg = _scanner(monkeypatch, ("rev",), "V", "8.0." + _AT)
     history_scan(cfg)
     _hides(capsys.readouterr().out, "scan clean (gitleaks ")
@@ -673,3 +712,36 @@ def test_apply_refactor_hides_a_rule_key_or_reason_holding_an_at(monkeypatch):
     _hides("%s (%s)" % (key, reason), "agents.protected_paths.", "(x)")
     key, reason = apply_refactor.protected_by(("docs", "zz.md"), policy)
     _hides("%s (%s)" % (key, reason), "agents.protected_names.zz.md")
+
+
+@pytest.mark.parametrize("case", ["open", "floor", "unmade", "unowned"])
+def test_isolation_guard_hides_a_memory_root_holding_an_at_in_each_note(
+    tmp_path, monkeypatch, case
+):
+    """Each note that passes over the memory root hides it when it holds an
+    `@`, and still says why."""
+    parent = tmp_path / ("p-" + _AT)
+    parent.mkdir()
+    manifest = _planted(isolation_guard.MEMORY_KEY, "V", str(parent / "scratch"))
+    floor_key = isolation_guard.FLOOR_KEY
+    _node(manifest, floor_key[:-1])[floor_key[-1]] = 10**12 if case == "floor" else 1
+    if case == "open":
+        parent.chmod(0o777)
+    elif case == "unmade":
+        parent.chmod(0o555)
+    elif case == "unowned":
+        mine = parent / ("scratch-%d" % os.getuid())
+        mine.mkdir()
+        mine.chmod(0o755)
+    monkeypatch.setattr(config_loader, "read", lambda *_args: manifest)
+    try:
+        note = isolation_guard.choose_scratch(str(_ROOT), {}, "/none").note
+    finally:
+        parent.chmod(0o700)
+    said = {
+        "open": "writable by other users",
+        "floor": "MB free",
+        "unmade": "could not be made",
+        "unowned": "owns with mode 0700",
+    }[case]
+    _hides(note, said)

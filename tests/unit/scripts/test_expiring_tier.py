@@ -259,7 +259,9 @@ def test_the_run_date_is_today_when_none_is_handed_in(tmp_path, monkeypatch):
     assert tier.judge(_CHECK, [_A], str(root)).red == []
 
 
-@pytest.mark.parametrize("content", ["[]", "{"], ids=["not-an-object", "not-json"])
+@pytest.mark.parametrize(
+    "content", ["[]", "{", "{}"], ids=["not-an-object", "not-json", "no-checks"]
+)
 def test_a_malformed_baseline_whose_path_holds_an_at_is_refused_hiding_it(
     tmp_path, content
 ):
