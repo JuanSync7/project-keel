@@ -1,6 +1,6 @@
 """
 title: isolation guard — a test reaches the network, the disk and the stores only as its tier allows
-summary: Judges each reach a test makes against config/project.json `tests.isolation`, read through scripts/config_loader.py. A tier has a rule on three axes — network (none, loopback, any), writes (temp, any) and stores (temp, any) — and the closest tier marker on a test picks the rule; a test with none that names a configured tier gets the strictest value on every axis. `install` adds one Python audit hook per process, active only while `begin` has named a test and phase; it raises IsolationError, which is not an OSError, at the reach itself, and `end` returns every violation of the phase, so tests/conftest.py fails a test whose code caught the error. `classify` is the judgement: a file created, changed or removed outside the temp roots (an open for writing, rename, remove, rmdir, mkdir, truncate, rmtree, a link's destination, a change of mode, owner, flags, times or an extended attribute, judged at the link and at what it points to unless the caller is shutil's own copy saying it stays on the link, and an AF_UNIX socket bound to a path; a bytecode file in a `__pycache__` and the null device aside), a socket connect, sendto or sendmsg that leaves the tier's network, a sqlite database opened outside the roots (a `file:` name judged both as a URI and as a file of that name in the working directory, because the event does not say which sqlite reads), and an open in any mode of a listed store. A root that holds the checkout leaves the checkout outside it: of the roots and the checkout, the deepest that holds a path decides. An exemption is config only, per axis and node id, with a reason; `unused_exemptions` names one whose test ran and reached nothing on its axis; under pytest-xdist each worker hands `usage` to the controller, which `merge_usage` adds up so the check judges every worker's tests at once. `copy_store` copies a listed store with its -wal, -shm and -journal siblings into a test's own directory. `scratch_root` reads the test scratch root, config/project.json `tests.scratch_root` or KEEL_TEST_SCRATCH over it, with `~` expanded, and refuses one that is relative, has a `..` part, or sits under the system temporary directory (`system_tempdir`, computed with TMPDIR, TEMP and TMP removed) or inside the checkout, naming the key; `choose_scratch` picks the session's root: KEEL_TEST_SCRATCH when set; else `tests.memory_scratch_root` with `-<uid>` appended, held to the same refusals with its parent resolved and its last part not (a link another user plants at the configured name is never followed) and a trailing separator dropped, when its parent exists and is not writable by others without the sticky bit, its file system has `tests.memory_scratch_min_free_mb` megabytes free, and the directory is this user's with mode 0700 (made so, whatever the umask, when absent); else `tests.scratch_root`, with a note saying why memory was passed over. `point_temp_at` makes the root and points tempfile, TMPDIR, KEEL_TEST_SCRATCH (so a nested session inherits the root) and GIT_CEILING_DIRECTORIES at it, and a second call changes nothing. Not caught, because no audit event carries it: a write by a child process, a C extension's own file or socket calls, a FIFO or device node (os.mkfifo and os.mknod raise no event), and the directory an os.open with a relative path and a dir_fd lands in (the open event has no dir_fd, so the path is judged against the working directory). A name lookup is not judged, by choice: library code looks names up without reaching anywhere, and the connect that follows is judged.
+summary: Judges each reach a test makes against config/project.json `tests.isolation`, read through scripts/config_loader.py. A tier has a rule on three axes — network (none, loopback, any), writes (temp, any) and stores (temp, any) — and the closest tier marker on a test picks the rule; a test with none that names a configured tier gets the strictest value on every axis. `install` adds one Python audit hook per process, active only while `begin` has named a test and phase; it raises IsolationError, which is not an OSError, at the reach itself, and `end` returns every violation of the phase, so tests/conftest.py fails a test whose code caught the error. `classify` is the judgement: a file created, changed or removed outside the temp roots (an open for writing, rename, remove, rmdir, mkdir, truncate, rmtree, a link's destination, a change of mode, owner, flags, times or an extended attribute, judged at the link and at what it points to unless the caller is shutil's own copy saying it stays on the link, and an AF_UNIX socket bound to a path; a bytecode file in a `__pycache__` and the null device aside), a socket connect, sendto or sendmsg that leaves the tier's network, a sqlite database opened outside the roots (a `file:` name judged both as a URI and as a file of that name in the working directory, because the event does not say which sqlite reads), and an open in any mode of a listed store. A root that holds the checkout leaves the checkout outside it: of the roots and the checkout, the deepest that holds a path decides. An exemption is config only, per axis and node id, with a reason; `unused_exemptions` names one whose test ran and reached nothing on its axis; under pytest-xdist each worker hands `usage` to the controller, which `merge_usage` adds up so the check judges every worker's tests at once. `copy_store` copies a listed store with its -wal, -shm and -journal siblings into a test's own directory. `scratch_root` reads the test scratch root, config/project.json `tests.scratch_root` or KEEL_TEST_SCRATCH over it, with `~` expanded, and refuses one that is relative, has a `..` part, or sits under the system temporary directory (`system_tempdir`, computed with TMPDIR, TEMP and TMP removed) or inside the checkout, naming the key; `choose_scratch` picks the session's root: KEEL_TEST_SCRATCH when set; else `tests.memory_scratch_root` with `-<uid>` appended, held to the same refusals with its parent resolved and its last part not (a link another user plants at the configured name is never followed) and a trailing separator dropped, when its parent exists and is not writable by others without the sticky bit, its file system has `tests.memory_scratch_min_free_mb` megabytes free, and the directory is this user's with mode 0700 (made so, whatever the umask, when absent); else `tests.scratch_root`, with a note saying why memory was passed over. `point_temp_at` makes the root and points tempfile, TMPDIR, KEEL_TEST_SCRATCH (so a nested session inherits the root) and GIT_CEILING_DIRECTORIES at it, and a second call changes nothing. Not caught, because no audit event carries it: a write by a child process, a C extension's own file or socket calls, a FIFO or device node (os.mkfifo and os.mknod raise no event), and the directory an os.open with a relative path and a dir_fd lands in (the open event has no dir_fd, so the path is judged against the working directory). A name lookup is not judged, by choice: library code looks names up without reaching anywhere, and the connect that follows is judged. A refused scratch root and the paths derived from the memory root in a note are shown through scripts/config_loader.py `quoted` and `shown`, hidden when they hold an `@`.
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/unit/test_isolation_guard.py
@@ -295,12 +295,20 @@ def system_tempdir() -> str:
         os.environ.update(saved)
 
 
+def _shown(text: str) -> str:
+    """A path derived from a configured scratch root, or an error's text that
+    may quote one, as a message shows it: hidden when it holds an `@`
+    (scripts/config_loader.py `shown`)."""
+    return config_loader.shown(text, bare=True)
+
+
 def _refused(name: str, value: str, why: str) -> config_loader.WrongValue:
     return config_loader.WrongValue(
         config_loader.CONFIG_FILE,
         [
-            "%s is %r: %s; accepted: an absolute path (`~` allowed) outside the "
-            "system temporary directory and the checkout" % (name, value, why)
+            "%s is %s: %s; accepted: an absolute path (`~` allowed) outside the "
+            "system temporary directory and the checkout"
+            % (name, config_loader.quoted(value), why)
         ],
     )
 
@@ -427,7 +435,7 @@ def choose_scratch(
         name, raw, os.path.join(parent, os.path.basename(expanded)), root, systemp
     )
     if not os.path.isdir(parent):
-        return Scratch(disk, "disk", "%s does not exist on this host" % parent)
+        return Scratch(disk, "disk", "%s does not exist on this host" % _shown(parent))
     mode = os.stat(parent).st_mode
     # Where others may write without the sticky bit, they may rename the
     # checked directory away and put their own in its place.
@@ -435,7 +443,7 @@ def choose_scratch(
         return Scratch(
             disk,
             "disk",
-            "%s is writable by other users without the sticky bit" % parent,
+            "%s is writable by other users without the sticky bit" % _shown(parent),
         )
     getuid = getattr(os, "getuid", None)
     if getuid is None:
@@ -447,7 +455,7 @@ def choose_scratch(
             disk,
             "disk",
             "%s has %d MB free, under config/project.json %s %d"
-            % (parent, free, ".".join(FLOOR_KEY), floor),
+            % (_shown(parent), free, ".".join(FLOOR_KEY), floor),
         )
     uid = getuid()
     mine = "%s-%d" % (base, uid)
@@ -459,7 +467,9 @@ def choose_scratch(
     except FileExistsError:
         pass
     except OSError as exc:
-        return Scratch(disk, "disk", "%s could not be made: %s" % (mine, exc))
+        return Scratch(
+            disk, "disk", "%s could not be made: %s" % (_shown(mine), _shown(str(exc)))
+        )
     held = os.lstat(mine)
     # Shared memory is writable by every user: a directory another user made,
     # or one they may enter, could be read or swapped under the session; one
@@ -472,7 +482,7 @@ def choose_scratch(
         return Scratch(
             disk,
             "disk",
-            "%s is not a directory this user owns with mode 0700" % mine,
+            "%s is not a directory this user owns with mode 0700" % _shown(mine),
         )
     return Scratch(mine, "memory", "")
 

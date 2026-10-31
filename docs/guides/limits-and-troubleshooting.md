@@ -607,7 +607,9 @@ record line `scripts/gate_evidence.py` builds from `evidence.dir` or
 `scripts/scan_secrets.py` and `scripts/install_scanner.py` build from the
 `shell` and `secrets.scanner` blocks, while a file the tree holds is named as
 written, a run-date value `scripts/run_date.py` refuses, and the credential
-variable names `models/openai_compatible.py` refuses an `api_key_env` over. The refusals the other scripts build from the settings they
+variable names `models/openai_compatible.py` refuses an `api_key_env` over, a
+scratch root `tests/isolation_guard.py` refuses or passes over, and an extra
+`scripts/check_venv.py` finds undeclared. The refusals the other scripts build from the settings they
 read do not pass through that rule yet. A value read from an environment variable is blamed on
 it instead: `the environment: <variable> is <JSON type> <value>; accepted: <what it accepts>`. The loader writes every `[not set]` and wrong-value line before it stops,
 so one run names every key at fault. A script that config/project.json

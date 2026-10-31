@@ -3,7 +3,7 @@
 title: check_venv — the venv holds what pyproject.toml declares, before a gate runs
 kind: script
 layer: n/a
-summary: Judges the interpreter's installed distributions against pyproject.toml: every requirement of the core dependencies, of config/project.json `venv.extras` and of the extra each enabled transport names in `transports.extras`, following an extra that names the project itself when its marker admits this interpreter, comparing extra names case- and separator-blind (PEP 685), and judging the requirements an extra asks of another distribution, is installed at a version its specifier allows; a requirement whose marker excludes this interpreter is not judged. An absent distribution, a version outside the specifier or an unparsable version is FAILURE naming each package, the interpreter and the exact `pip install -e ".[<extras>]"` command, which names one extra of any that reach each other and never `.[]`, and carries `--index-url <url>` when config/project.json `install_sources.python_index` sets a mirror; no `packaging` or TOML reader is FAILURE naming the `.[dev]` install; an extra pyproject.toml does not declare (asked by config or by a self-reference), an unparsable requirement, or a config value the loader refuses, is CONFIG; a pyproject.toml it cannot read is USAGE; nothing to judge is NOTHING_JUDGED. It reads installed metadata with importlib.metadata and never the network, and writes nothing.
+summary: Judges the interpreter's installed distributions against pyproject.toml: every requirement of the core dependencies, of config/project.json `venv.extras` and of the extra each enabled transport names in `transports.extras`, following an extra that names the project itself when its marker admits this interpreter, comparing extra names case- and separator-blind (PEP 685), and judging the requirements an extra asks of another distribution, is installed at a version its specifier allows; a requirement whose marker excludes this interpreter is not judged. An absent distribution, a version outside the specifier or an unparsable version is FAILURE naming each package, the interpreter and the exact `pip install -e ".[<extras>]"` command, which names one extra of any that reach each other and never `.[]`, and carries `--index-url <url>` when config/project.json `install_sources.python_index` sets a mirror; no `packaging` or TOML reader is FAILURE naming the `.[dev]` install; an extra pyproject.toml does not declare (asked by config or by a self-reference), an unparsable requirement, or a config value the loader refuses, is CONFIG; a pyproject.toml it cannot read is USAGE; nothing to judge is NOTHING_JUDGED. It reads installed metadata with importlib.metadata and never the network, and writes nothing. An undeclared extra the config asks for is named through scripts/config_loader.py `joined`, hidden when it holds an `@`.
 effect: read-only
 """
 
@@ -329,7 +329,7 @@ def main(
         return report(
             ExitCode.CONFIG,
             "check_venv: config/project.json asks for extra %s, which %s does "
-            "not declare" % (", ".join(undeclared), _PYPROJECT),
+            "not declare" % (config_loader.joined(undeclared), _PYPROJECT),
             "venv.extras and transports.extras",
             "declare the extra under [project.optional-dependencies] or remove "
             "it from config/project.json",

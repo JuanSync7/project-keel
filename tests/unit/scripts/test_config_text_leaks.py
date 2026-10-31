@@ -14,6 +14,7 @@ import pytest
 _ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(_ROOT / "scripts"))
 
+import check_venv  # noqa: E402
 import config_loader  # noqa: E402
 import exit_code_table  # noqa: E402
 import gate_evidence  # noqa: E402
@@ -26,6 +27,8 @@ import scan_secrets  # noqa: E402
 import shell_gate  # noqa: E402
 from evals import ConfigError, parse_config, run_live  # noqa: E402
 from models import openai_compatible  # noqa: E402
+
+import isolation_guard  # noqa: E402
 
 pytestmark = pytest.mark.unit
 
@@ -633,3 +636,25 @@ def test_openai_compatible_hides_a_credential_name_holding_an_at(
     with pytest.raises(ValueError) as refused:
         openai_compatible._checked_key_env("openai-compatible", key_env, declared)
     _hides(str(refused.value), *neighbours)
+
+
+# --- tests/isolation_guard.py, scripts/check_venv.py ------------------------
+
+
+def test_isolation_guard_hides_a_scratch_root_holding_an_at(monkeypatch):
+    (row,) = config_loader.rows(isolation_guard.SCRATCH_KEY)
+    with pytest.raises(config_loader.ConfigError) as refused:
+        isolation_guard.scratch_root(str(_ROOT), {row.env: "rel/" + _AT}, "/none")
+    _hides("\n".join(refused.value.lines), "it is relative")
+    memory = isolation_guard.MEMORY_KEY
+    manifest = _planted(memory, "V", "/nonexistent/" + _AT + "/scratch")
+    monkeypatch.setattr(config_loader, "read", lambda *_args: manifest)
+    note = isolation_guard.choose_scratch(str(_ROOT), {}, "/none").note
+    _hides(note, "does not exist on this host")
+
+
+def test_check_venv_hides_an_extra_holding_an_at(capsys):
+    manifest = _planted(("venv", "extras"), "M")
+    _node(manifest, ("venv", "extras")).append("nope")
+    check_venv.main(root=str(_ROOT), loaded=manifest)
+    _hides(capsys.readouterr().err, "asks for extra", "nope")
