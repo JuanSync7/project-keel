@@ -363,19 +363,10 @@ def _shown(value):
     return config_loader.shown(value, bare=True)
 
 
-def _quoted(value):
-    """Configured *value* in the place a `%r` would put it: a string in single
-    quotes through _shown, anything else as config_loader.shown writes it, so a
-    member of the wrong type still reads as that type."""
-    if isinstance(value, str):
-        return "'%s'" % _shown(value)
-    return config_loader.shown(value)
-
-
-def _listed(values):
-    """Configured *values* shown as a list, each member through _quoted, so
-    only a member holding an `@` is hidden and its neighbours show."""
-    return "[%s]" % ", ".join(_quoted(v) for v in values)
+# Configured text in the place a `%r` would put it, and a list of it: the
+# loader's own forms, shared with every script that builds a refusal.
+_quoted = config_loader.quoted
+_listed = config_loader.listed
 
 
 def rel(p):

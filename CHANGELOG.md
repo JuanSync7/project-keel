@@ -746,8 +746,11 @@ version rather than a bare commit:
   or slice number beside a hidden id template. An `adr.project_dir` or
   `adr.template_dir` spelled with a `.` segment, such as `./docs/adr`, is
   refused as one with `..` is: check_Y matched a space by its spelling, so it
-  judged every ADR there out of place and printed the directory raw. The refusals the scripts that read their own settings
-  build from configured text do not pass through that rule yet.
+  judged every ADR there out of place and printed the directory raw. So does every refusal
+  `scripts/launch.py` builds from the `launcher` block, a list member by member
+  through the loader's `quoted` and `listed`. The refusals the other scripts
+  that read their own settings build from configured text do not pass through
+  that rule yet.
   Before, a `secrets.scanner.release_url` given a token was refused with the
   token in the message.
 - **A confidential document reaches no reader the project serves.** The

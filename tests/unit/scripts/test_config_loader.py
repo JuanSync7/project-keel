@@ -1191,6 +1191,31 @@ def test_shown_bare_gives_a_key_path_segment_as_written(value, want):
     assert config_loader.shown(value, bare=True) == want
 
 
+@pytest.mark.parametrize(
+    "value, want",
+    [
+        ("a", "'a'"),
+        (_AT_MEMBER, "'%s'" % _HID),
+        (7, "7"),
+        (None, "null"),
+        (["a", _AT_MEMBER], _HID),
+        ({_AT_MEMBER: 1}, _HID),
+    ],
+)
+def test_quoted_puts_configured_text_where_a_repr_would(value, want):
+    assert config_loader.quoted(value) == want
+
+
+def test_listed_hides_only_the_member_holding_the_at():
+    assert config_loader.listed([]) == "[]"
+    assert config_loader.listed(
+        ["a", _AT_MEMBER, 3, [_AT_MEMBER]]
+    ) == "['a', '%s', 3, %s]" % (
+        _HID,
+        _HID,
+    )
+
+
 def test_the_visibility_vocabulary_matches_the_gates_copy():
     sys.path.insert(0, str(_ROOT / "scripts" / "jobs"))
     import check_corpus

@@ -26,7 +26,7 @@ pytestmark = pytest.mark.unit
 _LAUNCHER = _ROOT / "scripts" / "launch.py"
 # The bare-name siblings the launcher may import: each is stdlib-only and
 # 3.6-safe, which _old_python_safe walks into and checks for itself.
-_SIBLINGS = {"child_env", "exit_codes", "git_tree"}
+_SIBLINGS = {"child_env", "config_loader", "exit_codes", "git_tree"}
 # A planted host name: placeholder only, never a real host.
 _HOST = "h1.example.com"
 _OWN = json.dumps({"own_hosts": ["*.example.com"]})

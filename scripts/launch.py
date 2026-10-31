@@ -3,7 +3,7 @@
 title: launch — decide where a long script runs, and say why in one line
 kind: script
 layer: n/a
-summary: The one place that decides where a long script runs, and the one that runs it, called as `launch.py [--root DIR] [--dry-run] -- <command>...`. It works out three facts from what is true now and fails closed toward the least shared harm. The host kind is `own` only when this host's lower-cased name matches an fnmatch pattern in the git-ignored file config/project.json `launcher.own_hosts_file` names; an absent, unreadable, malformed, empty or unmatched file means `shared`, and a set `inside_env` variable of the active farm adapter means `in-farm-job`. The script length comes from the launch key, argv with variable assignments and absolute paths removed: `long-listed` when `launcher.long_scripts` lists it, `long-recorded` when its last recorded run in `launcher.durations_file` took more than `launcher.long_after_seconds`, `short` only when its last run succeeded within that, and `unknown` otherwise, which counts as long. The farm is the `launcher.farm.adapters` entry `launcher.farm.adapter` names, behind the Farm interface: kind `none` (NoFarm) is no farm and is never asked to submit, and kind `argv` (ArgvFarm) submits through a config argv with the config env it renders. A farm job, an own host or a short script runs here; a long or unknown script on a shared host runs here limited (os.nice of `launcher.limited.niceness`, nothing else) when it is `launcher.local_only` or there is no farm, and goes to the farm otherwise. The command starts with `build_child_env` (scripts/child_env.py), given the model adapter `launcher.credentials` names for the launch key and, for a farm submission only, the adapter's rendered env; a launch whose environment would hold a credential name that key's `launcher.credentials` entry does not list is refused before anything runs. After a farm submission the status passes through, the command re-runs here limited when the farm did not allocate and the host is spare (max(load1, load5) per cpu at most `launcher.spare.max_load_per_cpu`; an unknown load is not spare), stops with ExitCode.NO_CAPACITY and runs nothing when it is not, and ends with exit 2 when the farm refused. Every decision is one stderr line naming the decision and its three reasons, never a host name or an absolute path; a fallback adds a second. Before it reads anything it refuses with exit 2 a config block that load_launcher_config rejects, a state path reached through a symlink (scripts/git_tree.py `through_symlink`), a state path git would list, and a git that ran and failed. `--dry-run` prints the decision and runs and writes nothing. A run writes the durations file whole: an `incomplete` entry before the command starts, then the outcome, the whole seconds, the status and where it ran, one canonical-JSON entry per launch key, written to a temporary file in the same directory and moved over the old one; an interrupt is recorded as `interrupted` with status 130, a submission the farm refused or whose submit program is absent restores the entry it replaced, and a farm that did not start the command on a host with no spare compute records `no-capacity`. Neither `incomplete` nor `no-capacity` replaces an entry whose measured duration is over `launcher.long_after_seconds` (`unmeasured_record`): no run was measured, so that one stays the last, and a full farm or a killed launch never hides a long script from long_scripts.py. Stdlib-only and 3.6-safe, because its shebang runs it under the host python3. It is defence in depth for shared compute, not a scheduler: it neither queues, retries nor caps CPU or memory (docs/adr/keel/K-0020-shared-compute-launcher.md).
+summary: The one place that decides where a long script runs, and the one that runs it, called as `launch.py [--root DIR] [--dry-run] -- <command>...`. It works out three facts from what is true now and fails closed toward the least shared harm. The host kind is `own` only when this host's lower-cased name matches an fnmatch pattern in the git-ignored file config/project.json `launcher.own_hosts_file` names; an absent, unreadable, malformed, empty or unmatched file means `shared`, and a set `inside_env` variable of the active farm adapter means `in-farm-job`. The script length comes from the launch key, argv with variable assignments and absolute paths removed: `long-listed` when `launcher.long_scripts` lists it, `long-recorded` when its last recorded run in `launcher.durations_file` took more than `launcher.long_after_seconds`, `short` only when its last run succeeded within that, and `unknown` otherwise, which counts as long. The farm is the `launcher.farm.adapters` entry `launcher.farm.adapter` names, behind the Farm interface: kind `none` (NoFarm) is no farm and is never asked to submit, and kind `argv` (ArgvFarm) submits through a config argv with the config env it renders. A farm job, an own host or a short script runs here; a long or unknown script on a shared host runs here limited (os.nice of `launcher.limited.niceness`, nothing else) when it is `launcher.local_only` or there is no farm, and goes to the farm otherwise. The command starts with `build_child_env` (scripts/child_env.py), given the model adapter `launcher.credentials` names for the launch key and, for a farm submission only, the adapter's rendered env; a launch whose environment would hold a credential name that key's `launcher.credentials` entry does not list is refused before anything runs. After a farm submission the status passes through, the command re-runs here limited when the farm did not allocate and the host is spare (max(load1, load5) per cpu at most `launcher.spare.max_load_per_cpu`; an unknown load is not spare), stops with ExitCode.NO_CAPACITY and runs nothing when it is not, and ends with exit 2 when the farm refused. Every decision is one stderr line naming the decision and its three reasons, never a host name or an absolute path; a fallback adds a second. Before it reads anything it refuses with exit 2 a config block that load_launcher_config rejects, a state path reached through a symlink (scripts/git_tree.py `through_symlink`), a state path git would list, and a git that ran and failed. `--dry-run` prints the decision and runs and writes nothing. A refusal it builds from configured text, a value, a list member, a key name or a state path, and a credential variable's name, shows it through scripts/config_loader.py `shown`, `quoted` and `listed`, so text holding an `@` reads `<hidden: it holds an @>` and a harmless member beside it still shows. A run writes the durations file whole: an `incomplete` entry before the command starts, then the outcome, the whole seconds, the status and where it ran, one canonical-JSON entry per launch key, written to a temporary file in the same directory and moved over the old one; an interrupt is recorded as `interrupted` with status 130, a submission the farm refused or whose submit program is absent restores the entry it replaced, and a farm that did not start the command on a host with no spare compute records `no-capacity`. Neither `incomplete` nor `no-capacity` replaces an entry whose measured duration is over `launcher.long_after_seconds` (`unmeasured_record`): no run was measured, so that one stays the last, and a full farm or a killed launch never hides a long script from long_scripts.py. Stdlib-only and 3.6-safe, because its shebang runs it under the host python3. It is defence in depth for shared compute, not a scheduler: it neither queues, retries nor caps CPU or memory (docs/adr/keel/K-0020-shared-compute-launcher.md).
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/integration/test_idempotence.py
@@ -31,6 +31,7 @@ from typing import NamedTuple
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import child_env  # noqa: E402 — the one allowlist a child's environment comes from
+import config_loader  # noqa: E402 — the one rule for showing configured text
 import git_tree  # noqa: E402 — the one definition of what git lists
 from exit_codes import ExitCode, finish, passthrough, report  # noqa: E402
 
@@ -140,12 +141,12 @@ _STATUS_MIN, _STATUS_MAX = 1, 254
 _STATUS_TAKEN = (126, 127, 130)
 # An environment variable name as POSIX shells spell one, the same rule
 # scripts/child_env.py applies to the names it copies.
-_ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*\Z")
 # A make or shell variable assignment as one argv word: dropped from the launch
 # key, so a PY path or a secret passed as NAME=VALUE never reaches the state file.
 _ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 # An adapter name is printed in the one-line explanation, so it is one plain word.
-_ADAPTER_NAME = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
+_ADAPTER_NAME = re.compile(r"^[a-z0-9][a-z0-9_-]*\Z")
 # Control characters would break the one stderr line apart.
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 
@@ -207,6 +208,20 @@ def _path(*parts):
     return ".".join((_BLOCK,) + tuple(parts))
 
 
+def _key(path, name):
+    """*path* with the configured key *name* appended as its loader-shown
+    segment, so a key holding an `@` is hidden and the path around it shows."""
+    return "%s.%s" % (path, config_loader.shown(name, bare=True))
+
+
+def _said(value):
+    """Configured *value* where a refusal names it: a list member by member
+    (config_loader.listed), anything else as config_loader.quoted gives it."""
+    if isinstance(value, list):
+        return config_loader.listed(value)
+    return config_loader.quoted(value)
+
+
 def _refuse_key(path, problem, fix):
     raise LauncherConfigError("config/project.json %s %s; %s" % (path, problem, fix))
 
@@ -226,7 +241,7 @@ def _object(value, path, required, optional=()):
     )
     if unknown:
         _refuse_key(
-            "%s.%s" % (path, unknown[0]),
+            _key(path, unknown[0]),
             "is not a key the launcher reads",
             "remove it, or correct its spelling",
         )
@@ -237,7 +252,9 @@ def _int(value, path, low, high=None):
     # type(), not isinstance: JSON `true` loads as a bool, which is an int.
     if type(value) is not int or value < low or (high is not None and value > high):
         bound = "%d or more" % low if high is None else "%d to %d" % (low, high)
-        _refuse_key(path, "is %r, not a whole number %s" % (value, bound), "correct it")
+        _refuse_key(
+            path, "is %s, not a whole number %s" % (_said(value), bound), "correct it"
+        )
     return value
 
 
@@ -245,7 +262,7 @@ def _text(value, path):
     if not isinstance(value, str) or not value.strip() or _CONTROL.search(value):
         _refuse_key(
             path,
-            "is %r, not a non-blank one-line string" % (value,),
+            "is %s, not a non-blank one-line string" % _said(value),
             "write it as one line of text",
         )
     return value
@@ -259,7 +276,7 @@ def _state_path(value, path):
     if value.startswith("/") or "\\" in value or ".." in parts or "" in parts:
         _refuse_key(
             path,
-            "is %r, not a repo-relative path inside the project" % value,
+            "is %s, not a repo-relative path inside the project" % _said(value),
             "write a relative path with no `..`, such as the shipped default",
         )
     return value
@@ -271,7 +288,7 @@ def _names(value, path):
     ):
         _refuse_key(
             path,
-            "is %r, not a list of environment variable names" % (value,),
+            "is %s, not a list of environment variable names" % _said(value),
             "list names such as OPENAI_API_KEY",
         )
     if len(set(value)) != len(value):
@@ -303,7 +320,7 @@ def _keyed(value, path, entry):
         _refuse_key(path, "is not a JSON object", "write it as one")
     out = {}
     for key in sorted(value):
-        where = "%s.%s" % (path, key)
+        where = _key(path, key)
         _launch_key(key, where)
         out[key] = entry(value[key], where)
     return out
@@ -318,8 +335,8 @@ def _credential(available):
         ):
             _refuse_key(
                 path + ".model_adapter",
-                "is %r, which config/project.json models.available does not list"
-                % (adapter,),
+                "is %s, which config/project.json models.available does not list"
+                % _said(adapter),
                 "name a listed model adapter, or null",
             )
         return Credential(adapter, _names(value["names"], path + ".names"))
@@ -337,13 +354,17 @@ def render(template, values):
         name = match.group(1)
         if name not in PLACEHOLDERS:
             raise LauncherConfigError(
-                "%r holds the placeholder %s, which is not one of {%s}"
-                % (template, match.group(0), "}, {".join(PLACEHOLDERS))
+                "%s holds the placeholder %s, which is not one of {%s}"
+                % (
+                    _said(template),
+                    config_loader.shown(match.group(0), bare=True),
+                    "}, {".join(PLACEHOLDERS),
+                )
             )
         if name not in values:
             raise LauncherConfigError(
-                "%r holds the placeholder %s, which has no value here"
-                % (template, match.group(0))
+                "%s holds the placeholder %s, which has no value here"
+                % (_said(template), config_loader.shown(match.group(0), bare=True))
             )
         out.append(str(values[name]))
         at = match.end()
@@ -354,7 +375,8 @@ def render(template, values):
 def _literal(text, template):
     if "{" in text or "}" in text:
         raise LauncherConfigError(
-            "%r holds an unmatched brace; a placeholder is written {name}" % template
+            "%s holds an unmatched brace; a placeholder is written {name}"
+            % _said(template)
         )
     return text
 
@@ -387,8 +409,11 @@ def _adapter(name, value, path):
     if not isinstance(value, dict) or value.get("kind") not in ADAPTER_KINDS:
         _refuse_key(
             path + ".kind",
-            "is %r, not one of %s"
-            % (value.get("kind") if isinstance(value, dict) else value, ADAPTER_KINDS),
+            "is %s, not one of %s"
+            % (
+                _said(value.get("kind") if isinstance(value, dict) else value),
+                ADAPTER_KINDS,
+            ),
             "use none (no farm) or argv (submit through a command)",
         )
     if value["kind"] == "none":
@@ -401,7 +426,9 @@ def _adapter(name, value, path):
     for i, word in enumerate(submit):
         if not isinstance(word, str) or not word:
             _refuse_key(
-                "%s.submit[%d]" % (path, i), "is %r, not a word" % (word,), "correct it"
+                "%s.submit[%d]" % (path, i),
+                "is %s, not a word" % _said(word),
+                "correct it",
             )
         _templated(word, "%s.submit[%d]" % (path, i))
     env = value["env"]
@@ -410,11 +437,11 @@ def _adapter(name, value, path):
     for var in sorted(env):
         if not _ENV_NAME.match(var) or not isinstance(env[var], str):
             _refuse_key(
-                "%s.env.%s" % (path, var),
+                _key(path + ".env", var),
                 "is not a variable name with a string value",
                 "correct it",
             )
-        _templated(env[var], "%s.env.%s" % (path, var))
+        _templated(env[var], _key(path + ".env", var))
     absent = _status(value["not_allocated_status"], path + ".not_allocated_status")
     refused = _status(value["farm_error_status"], path + ".farm_error_status")
     if absent == refused:
@@ -455,8 +482,8 @@ def load_launcher_config(manifest):
     ):
         _refuse_key(
             _path("spare", "max_load_per_cpu"),
-            "is %r, not a number above 0 and at most %d"
-            % (threshold, _LOAD_PER_CPU_MAX),
+            "is %s, not a number above 0 and at most %d"
+            % (_said(threshold), _LOAD_PER_CPU_MAX),
             "set the load per cpu below which this host counts as spare, such as 0.25",
         )
     farm = _object(
@@ -470,14 +497,16 @@ def load_launcher_config(manifest):
             "keep at least the none adapter",
         )
     adapters = {
-        name: _adapter(name, raw_adapters[name], _path("farm", "adapters", name))
+        name: _adapter(name, raw_adapters[name], _key(_path("farm", "adapters"), name))
         for name in sorted(raw_adapters)
     }
     if farm["adapter"] not in adapters:
         _refuse_key(
             _path("farm", "adapter"),
-            "is %r, which launcher.farm.adapters does not define" % (farm["adapter"],),
-            "name one of %s" % ", ".join(sorted(adapters)),
+            "is %s, which launcher.farm.adapters does not define"
+            % _said(farm["adapter"]),
+            "name one of %s"
+            % ", ".join(config_loader.shown(a, bare=True) for a in sorted(adapters)),
         )
     models = manifest.get("models")
     available = (models or {}).get("available") if isinstance(models, dict) else None
@@ -986,7 +1015,8 @@ def _unsafe_state(root, cfg):
     if linked:
         return (
             "config/project.json launcher reaches %s through a symlink, so a read "
-            "or a write there could land outside the project" % ", ".join(linked),
+            "or a write there could land outside the project"
+            % ", ".join(config_loader.shown(p, bare=True) for p in linked),
             "replace the symlink with a real file or directory inside the project",
         )
     try:
@@ -997,13 +1027,14 @@ def _unsafe_state(root, cfg):
     except git_tree.GitFailedError as exc:
         return (
             "git could not say whether the launcher's state files are ignored, "
-            "and a failure is not an answer (%s)" % exc,
+            "and a failure is not an answer (%s)"
+            % config_loader.shown(str(exc), bare=True),
             "repair the repository git reads here and run it again",
         )
     if listed:
         return (
             "git would list %s, so a host pattern or a run record could be "
-            "committed" % ", ".join(listed),
+            "committed" % ", ".join(config_loader.shown(p, bare=True) for p in listed),
             "keep config/project.json launcher.own_hosts_file and "
             "launcher.durations_file under paths .gitignore ignores",
         )
@@ -1118,7 +1149,7 @@ def _stopped(problem, key, submitting, adapter):
         return _refuse(
             "the command's environment would hold the credential %s, which "
             "config/project.json launcher.credentials does not name for %s"
-            % (", ".join(detail), on),
+            % (", ".join(config_loader.shown(n, bare=True) for n in detail), on),
             "name it under launcher.credentials for that launch key, or stop "
             "child_env copying it",
         )

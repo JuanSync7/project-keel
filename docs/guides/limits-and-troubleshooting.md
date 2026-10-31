@@ -591,8 +591,14 @@ own name does. A check Z finding shows a campaign or slice id whose
 `work_naming` template holds an `@` as `<hidden: it holds an @> <n>=3 <m>=2`,
 the template hidden and the plan doc's numbers shown
 (`tests/unit/scripts/test_check_structure_leak.py`).
-The refusals the other scripts build from the settings they read do not pass
-through that rule yet. A value read from an environment variable is blamed on
+The refusals `scripts/launch.py` builds from the `launcher` block, and the
+state paths and credential names it refuses a launch over, hide a value, member,
+key name or path segment that holds an `@` the same way, a list member by
+member (`scripts/config_loader.py` `quoted` and `listed`), so
+`inside_env is ['SLURM_JOB_ID', '<hidden: it holds an @>']` still names the
+harmless member (`tests/unit/scripts/test_config_text_leaks.py`). The refusals
+the other scripts build from the settings they read do not pass through that
+rule yet. A value read from an environment variable is blamed on
 it instead: `the environment: <variable> is <JSON type> <value>; accepted: <what it accepts>`. The loader writes every `[not set]` and wrong-value line before it stops,
 so one run names every key at fault. A script that config/project.json
 `config_reads.allowed` still lists reads its config directly: it writes its own
