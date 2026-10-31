@@ -18,8 +18,11 @@ import config_loader  # noqa: E402
 import exit_code_table  # noqa: E402
 import gate_evidence  # noqa: E402
 import git_tree  # noqa: E402
+import install_scanner  # noqa: E402
 import launch  # noqa: E402
 import run_evals  # noqa: E402
+import scan_secrets  # noqa: E402
+import shell_gate  # noqa: E402
 from evals import ConfigError, parse_config, run_live  # noqa: E402
 
 pytestmark = pytest.mark.unit
@@ -428,3 +431,171 @@ def test_gate_evidence_hides_an_evidence_dir_in_a_red_record_line(
         monkeypatch.setattr(gate_evidence, "write_record", broken)
         evidence_dir()
         _hides(capsys.readouterr().err, "/probe.json")
+
+
+# --- scripts/shell_gate.py, scan_secrets.py, install_scanner.py -------------
+
+_SH = ("shell",)
+
+
+@pytest.mark.parametrize("role", ["linter", "formatter", "test_runner"])
+def test_shell_gate_hides_a_tool_name_holding_an_at(monkeypatch, capsys, role):
+    manifest = _planted(_SH + (role,), "V")
+    monkeypatch.setattr(config_loader, "read", lambda _root: manifest)
+    shell_gate.main(["lint"], root=_ROOT)
+    _hides(capsys.readouterr().err, "shell.%s is" % role)
+
+
+def test_shell_gate_hides_a_reason_and_an_excluded_path_holding_an_at(
+    monkeypatch, capsys
+):
+    manifest = _planted(_SH + ("no_scripts",), "V")
+    monkeypatch.setattr(config_loader, "read", lambda _root: manifest)
+    monkeypatch.setattr(shell_gate, "classify", lambda _root, _cfg: ([], [], []))
+    shell_gate.main(["lint"], root=_ROOT)
+    _hides(capsys.readouterr().out, "shell.no_scripts says why")
+    manifest = _planted(_SH + ("excluded_paths",), "A")
+    _node(manifest, _SH + ("excluded_paths",))["vendor/run.sh"] = "vendored"
+    monkeypatch.setattr(
+        shell_gate,
+        "classify",
+        lambda _root, cfg: ([], [], sorted(cfg["excluded_paths"])),
+    )
+    shell_gate.main(["lint"], root=_ROOT)
+    _hides(capsys.readouterr().err, "vendor/run.sh")
+
+
+_SCANNER = ("secrets", "scanner")
+
+
+def _scanner(monkeypatch, path, kind, value=_AT):
+    manifest = _planted(_SCANNER + path, kind, value)
+    monkeypatch.setattr(config_loader, "read", lambda _root: manifest)
+    return scan_secrets.settings(str(_ROOT))
+
+
+def test_scan_secrets_hides_a_scanner_name_holding_an_at():
+    why = scan_secrets.other_adapter({"name": "x/" + _AT})
+    _hides(why, "secrets.scanner.name is '", "adapts gitleaks only")
+
+
+def test_scan_secrets_hides_a_record_and_what_it_names_holding_an_at(tmp_path):
+    cfg = {"record_file": "rec/" + _AT, "name": "gitleaks", "rev": "8"}
+    _hides(scan_secrets._recorded(str(tmp_path), cfg)[1], "no scanner record at")
+    (tmp_path / "rec.json").write_text('{"name": "gitleaks"}', encoding="utf-8")
+    cfg = {"record_file": "rec.json", "name": "gitleaks", "rev": _AT}
+    _hides(scan_secrets._recorded(str(tmp_path), cfg)[1], "rec.json")
+    record = '{"name": "gitleaks", "rev": "%s", "path": "/nowhere/%s"}' % (_AT, _AT)
+    (tmp_path / "rec.json").write_text(record, encoding="utf-8")
+    _hides(scan_secrets._recorded(str(tmp_path), cfg)[1], "is gone")
+    (tmp_path / "rec.json").write_text("{", encoding="utf-8")
+    cfg["record_file"] = "rec.json/" + _AT
+    _hides(scan_secrets._recorded(str(tmp_path), cfg)[1], "cannot be read")
+
+
+@pytest.fixture
+def history_scan(monkeypatch):
+    """scan_secrets' history scan with git and the scanner stood in for."""
+    monkeypatch.setattr(scan_secrets, "_refused", lambda _root, _cfg: [])
+    monkeypatch.setattr(scan_secrets, "_recorded", lambda _r, _c: ("/bin/x", None))
+    monkeypatch.setattr(git_tree, "head_commit", lambda _root: "c0ffee")
+    monkeypatch.setattr(git_tree, "log_commits", lambda _root, _opts: ["c0ffee"])
+    monkeypatch.setattr(scan_secrets, "_run_scanner", lambda *_args: (0, "", ""))
+    monkeypatch.setattr(scan_secrets, "_verdict", lambda *_args: ([], None))
+    return lambda cfg: scan_secrets._scan(str(_ROOT), cfg, scan_secrets._HISTORY)
+
+
+def test_scan_secrets_hides_a_log_option_an_exclusion_and_a_rev_holding_an_at(
+    monkeypatch, capsys, history_scan
+):
+    cfg = _scanner(monkeypatch, ("history_log_opts",), "M")
+    monkeypatch.setattr(git_tree, "log_commits", lambda _root, _opts: [])
+    history_scan(cfg)
+    _hides(capsys.readouterr().err, "`git log --all ")
+    monkeypatch.setattr(git_tree, "log_commits", lambda _root, _opts: ["c0ffee"])
+
+    def unrunnable(_root, _cfg, program, _staged):
+        raise OSError(2, "No such file or directory", program)
+
+    monkeypatch.setattr(scan_secrets, "_run_scanner", unrunnable)
+    monkeypatch.setattr(scan_secrets, "_recorded", lambda _r, _c: ("/" + _AT, None))
+    history_scan(cfg)
+    _hides(capsys.readouterr().err, "cannot be run", "`git log --all ")
+    monkeypatch.setattr(scan_secrets, "_run_scanner", lambda *_args: (0, "", ""))
+    cfg = _scanner(
+        monkeypatch, ("exclusions",), "V", {"docs/" + _AT: {"rule-id": "a sample"}}
+    )
+    history_scan(cfg)
+    _hides(capsys.readouterr().err, "did not use")
+    cfg = _scanner(monkeypatch, ("rev",), "V", "8.0." + _AT)
+    history_scan(cfg)
+    _hides(capsys.readouterr().out, "scan clean (gitleaks ")
+    monkeypatch.setattr(scan_secrets, "_recorded", lambda _r, _c: (None, "absent"))
+    history_scan(cfg)
+    _hides(capsys.readouterr().err, "absent", "gitleaks ")
+
+
+@pytest.fixture
+def install(monkeypatch):
+    """install_scanner's run over keel's scanner settings, nothing fetched."""
+    cfg = scan_secrets.settings(str(_ROOT))
+    inst = install_scanner._settings(str(_ROOT))
+    monkeypatch.setattr(scan_secrets, "record_is_ignored", lambda _root, _cfg: True)
+    monkeypatch.setattr(install_scanner, "_installed", lambda *_args: True)
+    monkeypatch.setattr(scan_secrets, "write_record", lambda *_args: False)
+    return cfg, inst, lambda: install_scanner._run(str(_ROOT), cfg, inst)
+
+
+def test_install_scanner_hides_configured_text_holding_an_at(
+    monkeypatch, capsys, install
+):
+    cfg, inst, run = install
+    key = install_scanner._platform_key()
+    monkeypatch.setattr(install_scanner, "_platform_key", lambda: "none-" + key)
+    inst["release_assets"] = dict(inst["release_assets"], **{_AT: {}})
+    run()
+    _hides(capsys.readouterr().err, "which lists", "linux-x86_64")
+    monkeypatch.setattr(install_scanner, "_platform_key", lambda: key)
+    inst["release_assets"] = {key: {"file": _AT, "sha256": "0" * 64}}
+    inst["install_root"] = str(_ROOT / _AT)
+    run()
+    _hides(capsys.readouterr().err, "resolves inside the checkout")
+    inst["install_root"] = "/nonexistent/keel-probe"
+    monkeypatch.setattr(scan_secrets, "record_is_ignored", lambda _root, _cfg: False)
+    cfg["record_file"] = ".secret-scan/" + _AT
+    run()
+    _hides(capsys.readouterr().err, "git would commit the scanner record")
+    monkeypatch.setattr(scan_secrets, "record_is_ignored", lambda _root, _cfg: True)
+    cfg["rev"] = _AT
+    run()
+    _hides(capsys.readouterr().out, "already installed", "gitleaks")
+
+
+@pytest.mark.parametrize("fault", ["unfetched", "local", "mismatch"])
+def test_install_scanner_hides_a_url_and_a_path_holding_an_at(
+    monkeypatch, capsys, tmp_path, install, fault
+):
+    cfg, inst, run = install
+    key = install_scanner._platform_key()
+    inst["release_assets"] = {key: {"file": "v/" + _AT, "sha256": "0" * 64}}
+    inst["install_root"] = str(tmp_path / "tools")
+    monkeypatch.setattr(install_scanner, "_installed", lambda *_args: False)
+    monkeypatch.setattr(install_scanner.tempfile, "tempdir", str(tmp_path))
+    if fault == "unfetched":
+
+        def fetched(url, _dest, _inst):
+            raise install_scanner._Unfetched(OSError("cannot open %s" % url))
+
+    elif fault == "local":
+
+        def fetched(_url, dest, _inst):
+            raise install_scanner._Local(dest, OSError("cannot write %s" % dest))
+
+    else:
+
+        def fetched(_url, _dest, _inst):
+            return "f" * 64
+
+    monkeypatch.setattr(install_scanner, "_fetch", fetched)
+    run()
+    _hides(capsys.readouterr().err)
