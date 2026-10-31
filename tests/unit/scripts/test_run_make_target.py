@@ -20,6 +20,8 @@ sys.path.insert(0, str(_ROOT / "scripts"))
 
 import run_make_target as rmt  # noqa: E402
 
+import process_state  # noqa: E402
+
 pytestmark = pytest.mark.unit
 
 _POLICY = {
@@ -662,46 +664,10 @@ def _write_fake_make(where, grandchild, detach=False, exit_after=False, status=0
     return make
 
 
-def _alive(pid):
-    """True while *pid* runs. A zombie counts as gone: it runs nothing, and
-    who reaps it (init, or a subreaper) is not the runner's to decide."""
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    try:
-        with open("/proc/%d/stat" % pid, encoding="utf-8") as fh:
-            return fh.read().rsplit(")", 1)[1].split()[0] != "Z"
-    except (FileNotFoundError, ProcessLookupError):
-        # Reaped after signal 0 found it, before the open (a verify at load
-        # average 9 hit this) or between the open and the read.
-        return False
-    except OSError:
-        return True
-
-
-def test_a_process_reaped_while_its_stat_is_read_is_not_alive(monkeypatch):
-    """The open can find a pid the read then finds reaped, which the read
-    raises as ProcessLookupError; that pid runs nothing."""
-
-    class Reaped:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *exc):
-            return False
-
-        def read(self):
-            raise ProcessLookupError(3, "No such process")
-
-    monkeypatch.setattr("builtins.open", lambda *a, **k: Reaped())
-    assert _alive(os.getpid()) is False
-
-
 def _gone_within(pids, seconds=_SETTLE):
     deadline = time.monotonic() + seconds
     while time.monotonic() < deadline:
-        if not any(_alive(p) for p in pids):
+        if not any(process_state.alive(p) for p in pids):
             return True
         time.sleep(0.05)
     return False
@@ -725,36 +691,10 @@ def tree(proj, monkeypatch):
 def _cleanup(pids):
     """A case that failed leaves its tree running; end only the pids it started."""
     for pid in pids:
-        if _alive(pid):
+        if process_state.alive(pid):
             # It can still exit before the kill lands; that is the goal reached.
             with contextlib.suppress(ProcessLookupError):
                 os.kill(pid, signal.SIGKILL)
-
-
-def _reaped_after_the_probe(monkeypatch):
-    """Signal 0 finds the pid, then it is reaped before /proc is read and
-    before any kill lands: the window a loaded host widens."""
-    real_kill = os.kill
-    gone = {"after_probe": False}
-
-    def kill(pid, sig):
-        if gone["after_probe"]:
-            raise ProcessLookupError(pid)
-        if sig == 0:
-            gone["after_probe"] = True
-            return None
-        return real_kill(pid, sig)
-
-    def no_proc(*_args, **_kwargs):
-        raise FileNotFoundError("/proc/<pid>/stat")
-
-    monkeypatch.setattr(os, "kill", kill)
-    monkeypatch.setattr("builtins.open", no_proc)
-
-
-def test_a_pid_reaped_between_the_probe_and_proc_counts_as_gone(monkeypatch):
-    _reaped_after_the_probe(monkeypatch)
-    assert _alive(999_999_999) is False
 
 
 def test_cleanup_spares_a_pid_that_exits_before_its_kill(monkeypatch):
@@ -1347,7 +1287,9 @@ def test_a_process_outside_makes_session_holding_its_output_turns_the_run_red(tr
     )
     pids = _pids(tree)
     try:
-        assert _alive(pids[1]), "the runner signalled a process outside make's session"
+        assert process_state.alive(pids[1]), (
+            "the runner signalled a process outside make's session"
+        )
     finally:
         _cleanup(pids)
     assert res["returncode"] == 0 and res["leaked"] == [], res
@@ -1455,7 +1397,9 @@ def test_without_waitid_a_leftover_is_named_but_not_signalled(tree, monkeypatch)
     )
     pids = _pids(tree)
     try:
-        assert _alive(pids[1]), "the leftover was signalled after make was reaped"
+        assert process_state.alive(pids[1]), (
+            "the leftover was signalled after make was reaped"
+        )
     finally:
         _cleanup(pids)
     assert all(held for _g, _s, held in sent), sent
@@ -1785,7 +1729,9 @@ def test_a_make_another_waiter_reaped_is_red_and_its_leftovers_are_not_signalled
     )
     pids = _pids(tree)
     try:
-        assert _alive(pids[1]), "the runner signalled a leftover of a reaped make"
+        assert process_state.alive(pids[1]), (
+            "the runner signalled a leftover of a reaped make"
+        )
     finally:
         _cleanup(pids)
     got = json.loads(out)
@@ -1826,7 +1772,9 @@ def test_a_stop_after_another_waiter_reaps_make_signals_nothing(tree, stop):
     )
     pids = _pids(tree)
     try:
-        assert _alive(pids[1]), "a stop after the reap signalled the leftover"
+        assert process_state.alive(pids[1]), (
+            "a stop after the reap signalled the leftover"
+        )
     finally:
         _cleanup(pids)
     got = json.loads(out)
@@ -1879,7 +1827,9 @@ def test_without_proc_a_reaped_makes_session_is_said_to_be_unlisted(tree):
     )
     pids = _pids(tree)
     try:
-        assert _alive(pids[1]), "a leftover was signalled with no /proc to list it"
+        assert process_state.alive(pids[1]), (
+            "a leftover was signalled with no /proc to list it"
+        )
     finally:
         _cleanup(pids)
     got = json.loads(out)
@@ -1953,7 +1903,9 @@ def test_output_held_by_holders_the_runner_cannot_list_still_turns_the_run_red(
     monkeypatch.undo()
     pids = _pids(tree)
     try:
-        assert _alive(pids[1]), "the runner signalled a process outside make's session"
+        assert process_state.alive(pids[1]), (
+            "the runner signalled a process outside make's session"
+        )
     finally:
         _cleanup(pids)
     assert res["returncode"] == 0 and res["leaked"] == [], res

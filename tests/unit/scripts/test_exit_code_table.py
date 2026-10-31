@@ -23,6 +23,8 @@ sys.path.insert(0, str(_ROOT / "scripts"))
 import exit_code_table as et  # noqa: E402
 from exit_codes import ExitCode  # noqa: E402
 
+import process_state  # noqa: E402
+
 pytestmark = pytest.mark.unit
 
 _GUIDE = "docs/guides/limits.md"
@@ -800,20 +802,6 @@ _SH_TIMEOUT_SECONDS = 30
 _GONE_SECONDS = 5
 
 
-def _alive(pid):
-    """Whether *pid* names a running process: one that exists and, where
-    /proc says, is no zombie waiting for its parent to reap it."""
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    try:
-        stat = Path("/proc/%d/stat" % pid).read_text(encoding="utf-8")
-    except OSError:
-        return True
-    return stat.rsplit(")", 1)[1].split()[0] not in ("Z", "X")
-
-
 def test_a_hung_shell_is_stopped_at_the_bound_with_every_child(tmp_path, monkeypatch):
     """_run_sh never waits on a shell longer than _SH_TIMEOUT_SECONDS, and
     stops the shell's whole process group, so a child it started is gone
@@ -829,9 +817,9 @@ def test_a_hung_shell_is_stopped_at_the_bound_with_every_child(tmp_path, monkeyp
     pid = int(pidfile.read_text(encoding="utf-8"))
     try:
         deadline = time.monotonic() + _GONE_SECONDS
-        while _alive(pid) and time.monotonic() < deadline:
+        while process_state.alive(pid) and time.monotonic() < deadline:
             time.sleep(0.01)
-        assert not _alive(pid), "the shell's child %d outlived it" % pid
+        assert not process_state.alive(pid), "the shell's child %d outlived it" % pid
     finally:
         with contextlib.suppress(ProcessLookupError):
             os.kill(pid, signal.SIGKILL)

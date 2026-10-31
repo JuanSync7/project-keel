@@ -22,23 +22,17 @@ sys.path.insert(0, str(_ROOT))
 
 from scripts import config_loader, resource_limits  # noqa: E402
 
+import process_state  # noqa: E402
+
 pytestmark = pytest.mark.unit
 
 _PY = sys.executable
 
 
-def _alive(pid):
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    return True
-
-
 def _gone_within(pid, seconds):
     deadline = time.monotonic() + seconds
     while time.monotonic() < deadline:
-        if not _alive(pid):
+        if not process_state.alive(pid):
             return True
         time.sleep(0.02)
     return False
@@ -310,35 +304,6 @@ _SECOND_SIGNAL_PROBE = (
 )
 
 
-def _running(pid):
-    """Alive and not a zombie: a killed child waits as one until reaped."""
-    try:
-        with open("/proc/%d/stat" % pid) as stat:
-            return stat.read().rsplit(")", 1)[1].split()[0] != "Z"
-    except (FileNotFoundError, ProcessLookupError):
-        # Reaped between the open and the read: a full verify running beside
-        # another hit the second.
-        return False
-
-
-def test_a_process_reaped_while_its_stat_is_read_is_not_running(monkeypatch):
-    """The open can find a pid the read then finds reaped, which the read
-    raises as ProcessLookupError; that pid runs nothing."""
-
-    class Reaped:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *exc):
-            return False
-
-        def read(self):
-            raise ProcessLookupError(3, "No such process")
-
-    monkeypatch.setattr("builtins.open", lambda *a, **k: Reaped())
-    assert _running(os.getpid()) is False
-
-
 def _wait_for(predicate, seconds, what):
     deadline = time.monotonic() + seconds
     while not predicate():
@@ -385,15 +350,17 @@ def test_a_second_signal_ends_the_bounded_child_s_session_and_then_the_process(
         assert probe.poll() is None, "the first signal is a request, not the end"
         # The owner holds the first signal: a bounded child keeps running
         # until a second one, or until the server's stop has run its course.
-        assert _running(child), "the first signal ended the bounded child"
+        assert process_state.alive(child), "the first signal ended the bounded child"
         os.kill(probe.pid, signum)
         assert probe.wait(10) == -signum, err_file.read_text()
-        _wait_for(lambda: not _running(child), 5, "the bounded child outlived it")
+        _wait_for(
+            lambda: not process_state.alive(child), 5, "the bounded child outlived it"
+        )
     finally:
         if probe.poll() is None:
             probe.kill()
             probe.wait()
-        if child is not None and _running(child):
+        if child is not None and process_state.alive(child):
             with contextlib.suppress(ProcessLookupError, PermissionError):
                 os.killpg(child, signal.SIGKILL)
 
@@ -475,7 +442,7 @@ def _reap_probe(probe, child):
         probe.kill()
     probe.wait()
     probe.stdout.close()
-    if child is not None and _running(child):
+    if child is not None and process_state.alive(child):
         with contextlib.suppress(ProcessLookupError, PermissionError):
             os.killpg(child, signal.SIGKILL)
 
@@ -497,7 +464,9 @@ def test_a_sigterm_to_a_plain_cli_ends_its_bounded_child_then_the_cli(tmp_path):
         child = _started_child(pid_file)
         os.kill(probe.pid, signal.SIGTERM)
         assert probe.wait(10) == -signal.SIGTERM
-        _wait_for(lambda: not _running(child), 5, "the bounded child outlived it")
+        _wait_for(
+            lambda: not process_state.alive(child), 5, "the bounded child outlived it"
+        )
     finally:
         _reap_probe(probe, child)
 
@@ -517,7 +486,9 @@ def test_a_sigkilled_runner_leaves_no_bounded_child_running(tmp_path):
         child = _started_child(pid_file)
         os.kill(probe.pid, signal.SIGKILL)
         assert probe.wait(10) == -signal.SIGKILL
-        _wait_for(lambda: not _running(child), 10, "the bounded child outlived it")
+        _wait_for(
+            lambda: not process_state.alive(child), 10, "the bounded child outlived it"
+        )
     finally:
         _reap_probe(probe, child)
 
@@ -584,7 +555,9 @@ def test_a_holder_outside_the_session_is_named_and_not_signalled(tmp_path, caplo
             )
         holder = int(pidfile.read_text())
         assert (done.returncode, done.stdout) == (0, "done\n")
-        assert _alive(holder), "a process outside the session was signalled"
+        assert process_state.alive(holder), (
+            "a process outside the session was signalled"
+        )
         messages = [r.getMessage() for r in caplog.records]
         assert any(
             "stdout is still held open by %d (" % holder in m for m in messages
