@@ -2855,24 +2855,45 @@ class _Visits(list):
         return super().__getitem__(k)
 
 
+class _Scanned(str):  # noqa: SLOT000 - str allows no slot for the visit count
+    """A str that counts each character a `count` or a slice of it reads."""
+
+    visits = 0
+
+    def count(self, sub, start=0, end=None):
+        stop = len(self) if end is None else end
+        self.visits += max(0, stop - start)
+        return super().count(sub, start, end)
+
+    def __getitem__(self, k):
+        if isinstance(k, slice):
+            self.visits += len(range(*k.indices(len(self))))
+        return super().__getitem__(k)
+
+
 def test_the_held_status_scan_visits_each_span_a_bounded_number_of_times():
-    """The scan of a held name walks the spans no command reads once, not
-    once per use of the name: twice the comments and reads costs at most a
-    little over twice the visits. A count, not a clock, so a slow host
-    cannot fail it and a quadratic scan cannot pass it."""
+    """The scan of a held name walks the spans no command reads, the marks
+    of the words and the text it counts lines in once, not once per use of
+    the name: twice the comments, reads and mentions costs at most a little
+    over twice the visits. `echo rc` is a word the marks judge, so the walk
+    of the marks is counted, not skipped as a plain read is. A count, not a
+    clock, so a slow host cannot fail it; it counts list indexing,
+    iteration, `str.count` and slicing, and a scan made quadratic by some
+    other means would pass it."""
 
     def visits(n):
-        text = (
+        text = _Scanned(
             _SH_HEAD
             + "false\nrc=$?\n"
-            + '# a comment\necho "$rc"\n' * n
+            + '# a comment\necho "$rc"\necho rc\n' * n
             + 'exit_passthrough "$rc"\n'
             + _SH_TAIL
         )
-        _commands, spans, bindings, marks = shell_commands(text)
+        _commands, spans, bindings, marks = shell_commands(str(text))
         spans, marks = _Visits(spans), _Visits(marks)
-        _sh_name_uses(text, spans, "rc", bindings, marks)
-        return spans.visits + marks.visits
+        _bound, other = _sh_name_uses(text, spans, "rc", bindings, marks)
+        assert other == [], other
+        return spans.visits + marks.visits + text.visits
 
     small, large = visits(500), visits(1000)
     assert small >= 500, small
