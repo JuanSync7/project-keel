@@ -908,11 +908,13 @@ def wanted_text(root):
         with open(os.path.join(root, guide), encoding="utf-8", newline="") as fh:
             text = fh.read()
     except (OSError, ValueError) as exc:
+        # `from None`: an OSError's message holds the configured path this
+        # line hides.
         raise TableError(
             "cannot read the guide",
             "%s (%s)" % (_shown(guide), _shown(str(exc))),
             "restore it, or correct config/project.json `%s.%s`" % (BLOCK, GUIDE_KEY),
-        ) from exc
+        ) from None
     before, _region, after = split_region(text, guide)
     members = read_members(root)
     # The region ends its lines the way the marker line above it does.

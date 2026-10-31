@@ -2,12 +2,13 @@
 title: Unit — scripts hide configured text that holds an @
 kind: tests
 layer: n/a
-summary: No message a script under scripts/, models/ or tests/isolation_guard.py, or the evals config, builds from configured text shows that text when it holds an `@`, at any depth: a value, a list member, a nested member, a key name, a path segment or a piece of a joined value, and an exception's own text that embeds it. Each row plants a sentinel in one position (keel's own config served in memory, or a variable set for the test; the tree untouched), runs the one reader that turns it into a message, and asserts the reader still refuses, the sentinel never shows and the line says it is hidden; the rows run over script families and mutation kinds. Beside them, a joined line still shows its harmless members and a value of the wrong type still reads as that type, and a launch refusal of a value holding no `@` prints it as `repr` did, a control character escaped. In a generated project a row that plants into a block keel's own config has and the project's lacks is skipped naming the block.
+summary: No message a script under scripts/, models/ or tests/isolation_guard.py, or the evals config, builds from configured text shows that text when it holds an `@`, at any depth: a value, a list member, a nested member, a key name, a path segment or a piece of a joined value, and an exception's own text that embeds it. Each row plants a sentinel in one position (keel's own config served in memory, or a variable set for the test; the tree untouched), runs the one reader that turns it into a message, and asserts the reader still refuses, the sentinel never shows and the line says it is hidden, and a refusal raised keeps it out of its formatted traceback too, chained causes included; the rows run over script families and mutation kinds. Beside them, a joined line still shows its harmless members and a value of the wrong type still reads as that type, and a launch refusal of a value holding no `@` prints it as `repr` did, a control character escaped. In a generated project a row that plants into a block keel's own config has and the project's lacks is skipped naming the block.
 """
 
 import json
 import os
 import sys
+import traceback
 from pathlib import Path
 
 import pytest
@@ -106,6 +107,15 @@ def _hides(text, *neighbours):
         assert shown in text, (shown, text)
 
 
+def _hides_raised(err, *neighbours):
+    """_hides for refusal *err*, and the sentinel absent from the whole
+    traceback a caller that lets it escape prints: a chained cause holding
+    the hidden text would undo the hiding."""
+    _hides(str(err), *neighbours)
+    printed = "".join(traceback.format_exception(type(err), err, err.__traceback__))
+    assert _STEM not in printed, printed
+
+
 # --- scripts/launch.py -----------------------------------------------------
 
 _L = ("launcher",)
@@ -158,7 +168,7 @@ def test_launch_hides_configured_text_holding_an_at(path, kind, neighbours):
         _node(manifest, path[:-1])[path[-1]] = "/" + _AT
     with pytest.raises(launch.LauncherConfigError) as refused:
         launch.load_launcher_config(manifest)
-    _hides(str(refused.value), *neighbours)
+    _hides_raised(refused.value, *neighbours)
 
 
 def test_launch_shows_a_value_of_the_wrong_type_as_itself():
@@ -274,14 +284,14 @@ _EVALS_ROWS = [
 def test_evals_config_hides_configured_text_holding_an_at(path, kind, neighbours):
     with pytest.raises(ConfigError) as refused:
         parse_config(_planted(path, kind), _schema)
-    _hides(str(refused.value), *neighbours)
+    _hides_raised(refused.value, *neighbours)
 
 
 def test_evals_config_hides_a_schema_path_without_a_version():
     manifest = _planted(_E + ("case_schema",), "V")
     with pytest.raises(ConfigError) as refused:
         parse_config(manifest, lambda _rel: {})
-    _hides(str(refused.value), "must be a positive integer")
+    _hides_raised(refused.value, "must be a positive integer")
 
 
 @pytest.mark.parametrize("error", [KeyError, TypeError], ids=["unknown", "misfit"])
@@ -294,7 +304,7 @@ def test_evals_live_run_hides_a_model_name_holding_an_at(error):
 
     with pytest.raises(ConfigError) as refused:
         run_live([], cfg, backend_factory=factory, secrets=())
-    _hides(str(refused.value), "`evals.live.model")
+    _hides_raised(refused.value, "`evals.live.model")
 
 
 def _report_dir_cfg():
@@ -354,7 +364,7 @@ def test_exit_code_table_hides_configured_text_holding_an_at(
     monkeypatch.setattr(config_loader, "read", lambda _root: manifest)
     with pytest.raises(exit_code_table.TableError) as refused:
         exit_code_table.wanted_text(str(_ROOT))
-    _hides(str(refused.value), *neighbours)
+    _hides_raised(refused.value, *neighbours)
     exit_code_table.main(["--check"], root=_ROOT)
     _hides(capsys.readouterr().err, *neighbours)
 
@@ -368,7 +378,7 @@ def test_exit_code_table_hides_the_guide_in_every_line_that_names_it(
 ):
     with pytest.raises(exit_code_table.TableError) as refused:
         exit_code_table.split_region("no markers", _GUIDE)
-    _hides(str(refused.value), "exactly one")
+    _hides_raised(refused.value, "exactly one")
     monkeypatch.setattr(git_tree, "through_symlink", lambda _root, paths: paths)
     monkeypatch.setattr(
         config_loader,
@@ -377,7 +387,7 @@ def test_exit_code_table_hides_the_guide_in_every_line_that_names_it(
     )
     with pytest.raises(exit_code_table.TableError) as refused:
         exit_code_table.wanted_text(str(_ROOT))
-    _hides(str(refused.value), "symlink")
+    _hides_raised(refused.value, "symlink")
     now = {"text": _REGION % "old"}
     monkeypatch.setattr(
         exit_code_table,
@@ -427,7 +437,7 @@ def test_gate_evidence_hides_a_schema_path_holding_an_at(
     monkeypatch.setattr(config_loader, "read", lambda _root: manifest)
     with pytest.raises(gate_evidence.EvidenceSchemaError) as refused:
         gate_evidence.load_policy(str(_ROOT))
-    _hides(str(refused.value), *neighbours)
+    _hides_raised(refused.value, *neighbours)
 
 
 def test_gate_evidence_hides_a_schema_path_without_a_version(monkeypatch):
@@ -443,7 +453,7 @@ def test_gate_evidence_hides_a_schema_path_without_a_version(monkeypatch):
     monkeypatch.setattr("builtins.open", opened)
     with pytest.raises(gate_evidence.EvidenceSchemaError) as refused:
         gate_evidence.load_policy(str(_ROOT))
-    _hides(str(refused.value), "schema_version.const")
+    _hides_raised(refused.value, "schema_version.const")
 
 
 @pytest.fixture
@@ -698,7 +708,7 @@ def test_run_date_hides_a_value_holding_an_at():
     with pytest.raises(run_date.RunDateError) as refused:
         # Short enough to be quoted rather than measured.
         run_date.today({policy.env: _STEM + "@h"}, policy)
-    _hides(str(refused.value), policy.env)
+    _hides_raised(refused.value, policy.env)
 
 
 # --- models/openai_compatible.py --------------------------------------------
@@ -717,7 +727,7 @@ def test_openai_compatible_hides_a_credential_name_holding_an_at(
 ):
     with pytest.raises(ValueError) as refused:
         openai_compatible._checked_key_env("openai-compatible", key_env, declared)
-    _hides(str(refused.value), *neighbours)
+    _hides_raised(refused.value, *neighbours)
 
 
 # --- tests/isolation_guard.py, scripts/check_venv.py ------------------------
@@ -728,6 +738,7 @@ def test_isolation_guard_hides_a_scratch_root_holding_an_at(monkeypatch):
     with pytest.raises(config_loader.ConfigError) as refused:
         isolation_guard.scratch_root(str(_ROOT), {row.env: "rel/" + _AT}, "/none")
     _hides("\n".join(refused.value.lines), "it is relative")
+    _hides_raised(refused.value)
     memory = isolation_guard.MEMORY_KEY
     manifest = _planted(memory, "V", "/nonexistent/" + _AT + "/scratch")
     monkeypatch.setattr(config_loader, "read", lambda *_args: manifest)

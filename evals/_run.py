@@ -211,17 +211,20 @@ def _backend(cfg: EvalConfig, model: str, factory: BackendFactory) -> ModelBacke
     try:
         return factory(model, **cfg.live_model_options)
     except KeyError as exc:
+        # `from None`: the cause's message holds the configured text this
+        # line hides.
         raise ConfigError(
             "config/project.json: `evals.live.model` %s is not a registered model (%s)"
             % (config_loader.quoted(model), config_loader.shown(str(exc), bare=True))
-        ) from exc
+        ) from None
     except (TypeError, ValueError) as exc:
         # TypeError: an option the adapter does not take. ValueError: one it
         # takes and refuses, such as an undeclared credential variable.
+        # `from None` for the reason above.
         raise ConfigError(
             "config/project.json: `evals.live.model_options` do not fit %s (%s)"
             % (config_loader.quoted(model), config_loader.shown(str(exc), bare=True))
-        ) from exc
+        ) from None
 
 
 def run_live(

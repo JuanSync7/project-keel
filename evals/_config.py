@@ -96,10 +96,12 @@ def _version(read_schema: Callable[[str], object], rel: str, key: str) -> int:
     try:
         schema = read_schema(rel)
     except (OSError, ValueError) as exc:
+        # `from None`: the cause's message holds the configured text this
+        # line hides.
         raise ConfigError(
             "%s (`%s.%s`): unreadable (%s)"
             % (_shown(rel), _BLOCK, key, _shown(str(exc)))
-        ) from exc
+        ) from None
     const: object = None
     if isinstance(schema, dict):
         props = schema.get("properties")

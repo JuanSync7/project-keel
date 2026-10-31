@@ -145,10 +145,9 @@ def read_baseline(root: str, relpath: str) -> Optional[Dict[str, Any]]:
     try:
         doc = config_loader.read(root, relpath)
     except config_loader.ConfigError as exc:
-        # The loader names the file as written, and *relpath* is configured.
-        raise TierError(
-            "; ".join(config_loader.shown(line, bare=True) for line in exc.lines)
-        ) from exc
+        # The loader hides a configured path holding an `@`; `from None`, as
+        # the cause's message is these same lines.
+        raise TierError("; ".join(exc.lines)) from None
     checks = doc.get("checks")
     well_formed = (
         isinstance(checks, dict)

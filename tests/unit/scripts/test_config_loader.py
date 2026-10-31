@@ -2,7 +2,7 @@
 title: Unit — the one config loader (declared keys, the default line, the not-set line, a refused value)
 kind: tests
 layer: n/a
-summary: scripts/config_loader.py resolves a parsed config against declared rows. An unset key with a default takes it and writes one `[using default]` line naming the key, its canonical-JSON value and the file, once per (file, key) per process under either import name, and a secret shows `<hidden>` and never its value; a set key of the wrong type or out of its bound is refused in one line naming the key, the file, the value's JSON type and what is accepted (null first for a bounded row that takes null, so the bound never reads as one on null), a secret's value never in the exception or the stream, nor a refused string that holds an `@` anywhere, which may begin a URL user part however the URL is spelled and shows as `<hidden: it holds an @>`, while a `%40` still shows; a release URL urllib cannot split, or whose port is not one, is refused and never raised; every unset required key is written as one `[not set]` line in sorted key order before one NotSet; a wrong value and a missing one together write every line and raise WrongValue. An environment value wins only for a row that names a variable and only when it is not empty, and `env` refuses a variable nothing declares. resolve neither mutates its input nor hands out the table's own default, and gives the same values and lines twice. A refused map names each entry that is refused on its own, and a named member or entry that holds an `@` is hidden as a refused value is. One table holds every place a loader message names project text (a wrong value from the file or a variable, refused and repeated members, refused entries, a key written twice at any depth, a declared variable's adapter name) against every shape (a string, a list holding one, a list inside a list, fifty deep, an object value, an object key): one `@` anywhere hides the whole of it, and its harmless neighbours, empty containers included, still show. Each seconds key refuses a value past threading.TIMEOUT_MAX, keeps one at it, and models.timeout_seconds refuses an empty map. The key table is well formed against keel's own config, every models.credential_env name has a secret variable-only row, the variables the config declares are derived from it, and the module parses on the oldest hook interpreter. A body read from disk is served only when both the corpus level and the strictest level its file states now are served, never when that level cannot be read or is outside the vocabulary; a chain with no level stated is `internal`. `shown` gives `<hidden: it holds an @>` for text holding an `@` anywhere (a key name, a later key or value of an object, a member past any cut-off) and canonical JSON otherwise, or with bare a string as written. `quoted` and `listed` print exactly what `%r` printed for a value holding no `@`, as a value, a list member and a key name: every control character kind escaped (newline, carriage return, tab, ESC, NUL, DEL, a C1 next line, a line separator), a backslash and either quote as repr writes them, and a value of any type as itself, never its JSON spelling; one holding an `@` is still hidden.
+summary: scripts/config_loader.py resolves a parsed config against declared rows. An unset key with a default takes it and writes one `[using default]` line naming the key, its canonical-JSON value and the file, once per (file, key) per process under either import name, and a secret shows `<hidden>` and never its value; a set key of the wrong type or out of its bound is refused in one line naming the key, the file, the value's JSON type and what is accepted (null first for a bounded row that takes null, so the bound never reads as one on null), a secret's value never in the exception or the stream, nor a refused string that holds an `@` anywhere, which may begin a URL user part however the URL is spelled and shows as `<hidden: it holds an @>`, while a `%40` still shows; a release URL urllib cannot split, or whose port is not one, is refused and never raised; every unset required key is written as one `[not set]` line in sorted key order before one NotSet; a wrong value and a missing one together write every line and raise WrongValue. An environment value wins only for a row that names a variable and only when it is not empty, and `env` refuses a variable nothing declares. resolve neither mutates its input nor hands out the table's own default, and gives the same values and lines twice. A refused map names each entry that is refused on its own, and a named member or entry that holds an `@` is hidden as a refused value is. One table holds every place a loader message names project text (a wrong value from the file or a variable, refused and repeated members, refused entries, a key written twice at any depth, a declared variable's adapter name) against every shape (a string, a list holding one, a list inside a list, fifty deep, an object value, an object key): one `@` anywhere hides the whole of it, and its harmless neighbours, empty containers included, still show. Each seconds key refuses a value past threading.TIMEOUT_MAX, keeps one at it, and models.timeout_seconds refuses an empty map. The key table is well formed against keel's own config, every models.credential_env name has a secret variable-only row, the variables the config declares are derived from it, and the module parses on the oldest hook interpreter. A body read from disk is served only when both the corpus level and the strictest level its file states now are served, never when that level cannot be read or is outside the vocabulary; a chain with no level stated is `internal`. `shown` gives `<hidden: it holds an @>` for text holding an `@` anywhere (a key name, a later key or value of an object, a member past any cut-off) and canonical JSON otherwise, or with bare a string as written. `quoted` and `listed` print exactly what `%r` printed for a value holding no `@`, as a value, a list member and a key name: every control character kind escaped (newline, carriage return, tab, ESC, NUL, DEL, a C1 next line, a line separator), a backslash and either quote as repr writes them, and a value of any type as itself, never its JSON spelling; one holding an `@` is still hidden. Every way `read` refuses a file (absent, unreadable, not UTF-8, not JSON, a key twice, a top level that is not an object, a conflict hunk) hides a path holding an `@` in its lines and in the formatted traceback, the reason still shown, and names one holding none as written.
 @covers scripts/config_loader.py
 """
 
@@ -13,6 +13,7 @@ import io
 import json
 import sys
 import threading
+import traceback
 from pathlib import Path
 
 import pytest
@@ -27,7 +28,9 @@ from config_loader import (  # noqa: E402
     CONFIG_FILE,
     KEYS,
     NONE,
+    ConfigAbsent,
     ConfigError,
+    ConfigUnreadable,
     Key,
     NotSet,
     WrongValue,
@@ -1268,6 +1271,55 @@ def test_listed_hides_only_the_member_holding_the_at():
 def test_joined_hides_only_the_item_holding_the_at():
     assert config_loader.joined([]) == ""
     assert config_loader.joined(["a/b", _AT_MEMBER + "/c", 3]) == "a/b, %s, 3" % _HID
+
+
+_CONFLICT = "{\n<<<<<<< ours\n}\n=======\n}\n>>>>>>> theirs\n"
+
+
+@pytest.mark.parametrize(
+    "content, error",
+    [
+        (None, ConfigAbsent),
+        ("dir", ConfigUnreadable),
+        (b"\xff", ConfigUnreadable),
+        ("{", ConfigUnreadable),
+        ('{"a": 1, "a": 2}', ConfigUnreadable),
+        ("[]", ConfigUnreadable),
+        (_CONFLICT, ConfigUnreadable),
+    ],
+    ids=["absent", "unreadable", "not-utf8", "not-json", "twice", "array", "conflict"],
+)
+def test_read_hides_a_path_holding_an_at_in_every_line_and_cause(
+    tmp_path, content, error
+):
+    """A path a caller configured (expiring_tier's baseline) is project text:
+    every way read refuses it hides it when it holds an `@`, in its lines and
+    in the traceback a caller that lets the error escape prints, a chained
+    OSError's file name included, while the reason still shows."""
+    rel = _SENTINEL + "@h.invalid/c.json"
+    (tmp_path / rel).parent.mkdir()
+    if content == "dir":
+        (tmp_path / rel).mkdir()
+    elif isinstance(content, bytes):
+        (tmp_path / rel).write_bytes(content)
+    elif content is not None:
+        (tmp_path / rel).write_text(content, encoding="utf-8")
+    with pytest.raises(error) as refused:
+        config_loader.read(str(tmp_path), rel)
+    err = refused.value
+    assert err.lines and all(_HID in line for line in err.lines), err.lines
+    assert all(line.split(_HID, 1)[1].strip() for line in err.lines), err.lines
+    printed = "".join(traceback.format_exception(type(err), err, err.__traceback__))
+    assert _SENTINEL not in printed, printed
+
+
+def test_read_names_a_path_holding_no_at_as_written(tmp_path):
+    (tmp_path / "c.json").write_text("[]", encoding="utf-8")
+    with pytest.raises(ConfigUnreadable) as refused:
+        config_loader.read(str(tmp_path), "c.json")
+    assert refused.value.lines == [
+        "c.json holds a JSON array at the top level; it must be an object"
+    ]
 
 
 def test_the_visibility_vocabulary_matches_the_gates_copy():

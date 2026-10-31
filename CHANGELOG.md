@@ -764,7 +764,10 @@ version rather than a bare commit:
   name, answer key or scratch root `scripts/canary.py` refuses, the baseline
   path `scripts/expiring_tier.py` refuses, and a variable name a
   `child_env.prefixes` entry admits from the environment in
-  `scripts/child_env.py`'s credential refusal. A configured name, prefix,
+  `scripts/child_env.py`'s credential refusal. The loader names a file it
+  cannot read the same way, and none of these refusals chains an error whose
+  message holds the text it hides, so a traceback of one that escapes, as from
+  a gate test, hides it too. A configured name, prefix,
   label, scheme, host or answer-set name that ends in a newline is refused:
   its pattern's `$` matched before the newline, so it passed and printed as
   written.

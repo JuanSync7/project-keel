@@ -2,7 +2,7 @@
 title: config_loader — the one way a configured value enters a process
 kind: script
 layer: n/a
-summary: Every configured value comes through here: a key of config/project.json or config/practices.json, or an environment variable the config declares. KEYS is the one table of declared keys, each row a Key giving its path (a tuple of segments, since a segment may hold a dot), its type from the closed set TYPES, its default or NONE (required exactly when the default is NONE, so a default of null stays distinct from no default), whether it is a secret, a one-line meaning, the variable that may set it, the file it lives in (None for a variable-only row) and an optional bound. `read(root, relpath)` is the one open and parse of a config file: a missing file is ConfigAbsent, and an OSError, bytes that are not UTF-8, text that is not JSON (a NaN constant, a byte-order mark and a key written twice in one object included), or a top level that is not an object is ConfigUnreadable, naming a merge-conflict hunk an update left by its line through scripts/jobs/conflict_guard.py's grammar, loaded by path (when it cannot load, the parse error says the markers were not checked). `resolve(loaded, rows, where)` walks the rows in sorted path order. Precedence: a row that names a variable takes that variable when it is set and not empty, else the file's value; a row with no variable reads the file only; a variable-only row reads its variable only; an empty variable is not set. A set value of the wrong type or out of its bound is one line `<where>: <key> is <JSON type>[ <value>]; accepted: <what>` (a null shown by its type alone), a refused list of strings ending `; refused members: <each member refused on its own>` or, when only a repeat is refused, `; repeated members: <them>`, naming the environment and the variable instead when the value came from a variable, the value never shown for a secret, and a string holding an `@` anywhere, which may begin a URL user part (a credential under any key name) however the URL is spelled, shown as `<hidden: it holds an @>`, as is any other text the project wrote that a message names and that holds one: a refused member, an entry name, a key written twice, and a key name on a declared variable's path (an adapter name). `shown(value, bare=False)` is that rule for a caller that builds its own message from configured text: `<hidden: it holds an @>` when an `@` sits anywhere in it, else its canonical JSON, or with *bare* a string as written (a segment of a dotted key path); `quoted(value)` stands where a `%r` would sit and prints exactly what `%r` prints, its escapes and a non-string's own spelling included, unless an `@` sits anywhere in it, when it is the hidden form (a string's in single quotes); `listed(values)` a list shown member by member and `joined(values)` items such as paths each as shown with *bare*, joined with `, `, so a harmless neighbour of a hidden member still shows; child_env's refusals, check_structure's findings and scripts/launch.py's refusals pass every configured value, member and key name through these and keep no copy of the rule. A list or object is judged whole, every string inside it at any depth and every key name included, so one `@` anywhere hides the whole member while its harmless neighbours still show. A URL bound refuses whitespace, a control character, `@`, `?`, `#`, a backslash, and a value urllib cannot split or whose port it cannot read, so a malformed URL is a refusal and never a traceback. An unset key with a default takes it and writes `[using default] <key> = <canonical JSON value>  (not set; to change it, set <key> in <where>)` to stderr once per (where, key) per process, a secret's value written `<hidden>`. Each unset required key is `[not set] <key>  (required, no default; set <key> in <where>)`; every wrong and every not-set line is written before one raise, WrongValue when any value is wrong, else NotSet carrying the sorted keys. It never ends the process: the entry point that called it returns report(ExitCode.CONFIG, ...). `env(name)` is the one literal-name read of a declared variable and refuses a name neither a row nor the config declares (declared_variables). `is_owner_token` and `is_unowned` are CONVENTIONS §12's owner grammar and its `TBD` placeholder in any letter case, shared by the default-owner row's bound, check_F and the corpus build. `VISIBILITY_ORDER` is CONVENTIONS §1's visibility vocabulary, least restrictive first, and `served_visibilities(root)` resolves `corpus.served_visibilities`, the levels every corpus reader the project serves may show, refusing a level outside that vocabulary or one written twice; `is_served(node, served)` is the one served-or-not decision every such reader makes (a node that states no level is not served); `strictest_visibility` ranks stated levels (a value outside the vocabulary outranks every member), `chain_level` is the level the corpus gives a node from its own and its README chain's stated levels (the strictest, else `internal`), and `is_served_now(node, served, stated_now)` is the decision of a reader that checks a node's file now (CONVENTIONS §1 lists them): the stricter of the node's corpus level and the level its file states now (scripts/corpus_level.py stated_now) must be served, and a file whose level cannot be read is not; and `cut_hidden(node, shown)` drops the ids of nodes outside *shown* from a served node's links, children and parent. It registers itself under both `config_loader` and `scripts.config_loader`, and as the `config_loader` attribute of the `scripts` package that holds it, so either import name, in either order, gives one module, one announced set and one set of exception classes. Never run, stdlib-only and 3.6-safe: child_env and check_structure read through it under the hook interpreter. It reads and writes nothing else, and it caches nothing, so the same file and environment give the same values and lines.
+summary: Every configured value comes through here: a key of config/project.json or config/practices.json, or an environment variable the config declares. KEYS is the one table of declared keys, each row a Key giving its path (a tuple of segments, since a segment may hold a dot), its type from the closed set TYPES, its default or NONE (required exactly when the default is NONE, so a default of null stays distinct from no default), whether it is a secret, a one-line meaning, the variable that may set it, the file it lives in (None for a variable-only row) and an optional bound. `read(root, relpath)` is the one open and parse of a config file: a missing file is ConfigAbsent, and an OSError, bytes that are not UTF-8, text that is not JSON (a NaN constant, a byte-order mark and a key written twice in one object included), or a top level that is not an object is ConfigUnreadable, each line naming *relpath* as `shown` with *bare* gives it (a caller may configure it) and an OSError by its reason without the file name, chained to nothing, so a traceback hides it too, and naming a merge-conflict hunk an update left by its line through scripts/jobs/conflict_guard.py's grammar, loaded by path (when it cannot load, the parse error says the markers were not checked). `resolve(loaded, rows, where)` walks the rows in sorted path order. Precedence: a row that names a variable takes that variable when it is set and not empty, else the file's value; a row with no variable reads the file only; a variable-only row reads its variable only; an empty variable is not set. A set value of the wrong type or out of its bound is one line `<where>: <key> is <JSON type>[ <value>]; accepted: <what>` (a null shown by its type alone), a refused list of strings ending `; refused members: <each member refused on its own>` or, when only a repeat is refused, `; repeated members: <them>`, naming the environment and the variable instead when the value came from a variable, the value never shown for a secret, and a string holding an `@` anywhere, which may begin a URL user part (a credential under any key name) however the URL is spelled, shown as `<hidden: it holds an @>`, as is any other text the project wrote that a message names and that holds one: a refused member, an entry name, a key written twice, and a key name on a declared variable's path (an adapter name). `shown(value, bare=False)` is that rule for a caller that builds its own message from configured text: `<hidden: it holds an @>` when an `@` sits anywhere in it, else its canonical JSON, or with *bare* a string as written (a segment of a dotted key path); `quoted(value)` stands where a `%r` would sit and prints exactly what `%r` prints, its escapes and a non-string's own spelling included, unless an `@` sits anywhere in it, when it is the hidden form (a string's in single quotes); `listed(values)` a list shown member by member and `joined(values)` items such as paths each as shown with *bare*, joined with `, `, so a harmless neighbour of a hidden member still shows; child_env's refusals, check_structure's findings and scripts/launch.py's refusals pass every configured value, member and key name through these and keep no copy of the rule. A list or object is judged whole, every string inside it at any depth and every key name included, so one `@` anywhere hides the whole member while its harmless neighbours still show. A URL bound refuses whitespace, a control character, `@`, `?`, `#`, a backslash, and a value urllib cannot split or whose port it cannot read, so a malformed URL is a refusal and never a traceback. An unset key with a default takes it and writes `[using default] <key> = <canonical JSON value>  (not set; to change it, set <key> in <where>)` to stderr once per (where, key) per process, a secret's value written `<hidden>`. Each unset required key is `[not set] <key>  (required, no default; set <key> in <where>)`; every wrong and every not-set line is written before one raise, WrongValue when any value is wrong, else NotSet carrying the sorted keys. It never ends the process: the entry point that called it returns report(ExitCode.CONFIG, ...). `env(name)` is the one literal-name read of a declared variable and refuses a name neither a row nor the config declares (declared_variables). `is_owner_token` and `is_unowned` are CONVENTIONS §12's owner grammar and its `TBD` placeholder in any letter case, shared by the default-owner row's bound, check_F and the corpus build. `VISIBILITY_ORDER` is CONVENTIONS §1's visibility vocabulary, least restrictive first, and `served_visibilities(root)` resolves `corpus.served_visibilities`, the levels every corpus reader the project serves may show, refusing a level outside that vocabulary or one written twice; `is_served(node, served)` is the one served-or-not decision every such reader makes (a node that states no level is not served); `strictest_visibility` ranks stated levels (a value outside the vocabulary outranks every member), `chain_level` is the level the corpus gives a node from its own and its README chain's stated levels (the strictest, else `internal`), and `is_served_now(node, served, stated_now)` is the decision of a reader that checks a node's file now (CONVENTIONS §1 lists them): the stricter of the node's corpus level and the level its file states now (scripts/corpus_level.py stated_now) must be served, and a file whose level cannot be read is not; and `cut_hidden(node, shown)` drops the ids of nodes outside *shown* from a served node's links, children and parent. It registers itself under both `config_loader` and `scripts.config_loader`, and as the `config_loader` attribute of the `scripts` package that holds it, so either import name, in either order, gives one module, one announced set and one set of exception classes. Never run, stdlib-only and 3.6-safe: child_env and check_structure read through it under the hook interpreter. It reads and writes nothing else, and it caches nothing, so the same file and environment give the same values and lines.
 effect: read-only
 """
 
@@ -1690,6 +1690,7 @@ def _conflict_line(text: str) -> Optional[int]:
 
 
 def _unparsed(relpath: str, text: str, exc: ValueError) -> ConfigUnreadable:
+    said = shown(relpath, bare=True)
     unchecked: Optional[str] = None
     try:
         line = _conflict_line(text)
@@ -1701,7 +1702,7 @@ def _unparsed(relpath: str, text: str, exc: ValueError) -> ConfigUnreadable:
             relpath,
             [
                 "%s holds a merge-conflict hunk at line %d; resolve it, then "
-                "finish the update (%s)" % (relpath, line, _FINISH_DOC)
+                "finish the update (%s)" % (said, line, _FINISH_DOC)
             ],
             conflict_line=line,
         )
@@ -1710,31 +1711,42 @@ def _unparsed(relpath: str, text: str, exc: ValueError) -> ConfigUnreadable:
     )
     return ConfigUnreadable(
         relpath,
-        ["%s cannot be read as JSON (%s)%s" % (relpath, exc, suffix)],
+        ["%s cannot be read as JSON (%s)%s" % (said, exc, suffix)],
         unchecked=unchecked,
     )
+
+
+def _os_reason(exc: OSError) -> str:
+    """*exc*'s reason without the file name str() appends: the line already
+    names the file, and a caller may have configured its path."""
+    if exc.errno is None or exc.strerror is None:
+        return shown(str(exc), bare=True)
+    return "[Errno %d] %s" % (exc.errno, exc.strerror)
 
 
 def read(root: str, relpath: str = CONFIG_FILE) -> Dict[str, Any]:
     """The parsed object in *root*/*relpath*: a new dict on every call, read
     from disk each time. Raises ConfigAbsent when the file does not exist and
-    ConfigUnreadable for any other reason it cannot be used."""
+    ConfigUnreadable for any other reason it cannot be used. Every line names
+    *relpath* as shown with *bare*, since a caller may have configured it."""
     path = os.path.join(root, relpath)
+    said = shown(relpath, bare=True)
     try:
         with open(path, "rb") as fh:
             data = fh.read()
-    except FileNotFoundError as exc:
-        raise ConfigAbsent(relpath, ["%s does not exist" % relpath]) from exc
+    # `from None`: an OSError's message holds the file's path, and the line
+    # already carries its reason; chained, a traceback would print the path
+    # the line hides.
+    except FileNotFoundError:
+        raise ConfigAbsent(relpath, ["%s does not exist" % said]) from None
     except OSError as exc:
         raise ConfigUnreadable(
-            relpath, ["%s cannot be read (%s)" % (relpath, exc)]
-        ) from exc
+            relpath, ["%s cannot be read (%s)" % (said, _os_reason(exc))]
+        ) from None
     try:
         text = data.decode("utf-8")
     except UnicodeDecodeError as exc:
-        raise ConfigUnreadable(
-            relpath, ["%s is not UTF-8 (%s)" % (relpath, exc)]
-        ) from exc
+        raise ConfigUnreadable(relpath, ["%s is not UTF-8 (%s)" % (said, exc)]) from exc
     try:
         loaded = json.loads(
             text,
@@ -1748,7 +1760,7 @@ def read(root: str, relpath: str = CONFIG_FILE) -> Dict[str, Any]:
             relpath,
             [
                 "%s holds a JSON %s at the top level; it must be an object"
-                % (relpath, _json_type(loaded))
+                % (said, _json_type(loaded))
             ],
         )
     return loaded

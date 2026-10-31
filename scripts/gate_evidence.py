@@ -99,10 +99,12 @@ def load_policy(root):
         with open(schema_path, encoding="utf-8") as fh:
             schema = json.load(fh)
     except (OSError, ValueError) as exc:
+        # `from None`: an OSError's message holds the configured path this
+        # line hides.
         raise EvidenceSchemaError(
             "%s: evidence.schema %s is not a readable JSON file (%s)"
             % (_MANIFEST, _shown(schema_rel), _shown(str(exc)))
-        ) from exc
+        ) from None
     try:
         version = schema["properties"]["schema_version"]["const"]
     except (KeyError, TypeError):
