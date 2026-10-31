@@ -14,6 +14,8 @@ import pytest
 _ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(_ROOT / "scripts"))
 
+import config_loader  # noqa: E402
+import exit_code_table  # noqa: E402
 import git_tree  # noqa: E402
 import launch  # noqa: E402
 import run_evals  # noqa: E402
@@ -256,3 +258,78 @@ def test_run_evals_hides_a_report_dir_git_would_not_ignore(monkeypatch, capsys, 
     run_evals._remove_stale(str(_ROOT), cfg.report_dir, "replay")
     if answer == "git-failed":
         _hides(capsys.readouterr().err, "evals.report_dir")
+
+
+# --- scripts/exit_code_table.py ---------------------------------------------
+
+_D = ("doc_drift",)
+_TABLE_ROWS = [
+    ("guide-value", _D + ("limits_guide",), "V", ("cannot read the guide",)),
+    ("guide-segment", _D + ("limits_guide",), "P", ("cannot read the guide",)),
+    ("guide-joined", _D + ("limits_guide",), "S", ("cannot read the guide",)),
+    ("target-value", _D + ("gate_target",), "V", ("no such target",)),
+    ("target-joined", _D + ("gate_target",), "S", ("no such target",)),
+]
+
+
+@pytest.mark.parametrize(
+    "path, kind, neighbours",
+    [r[1:] for r in _TABLE_ROWS],
+    ids=[r[0] for r in _TABLE_ROWS],
+)
+def test_exit_code_table_hides_configured_text_holding_an_at(
+    monkeypatch, capsys, path, kind, neighbours
+):
+    manifest = _planted(path, kind)
+    monkeypatch.setattr(config_loader, "read", lambda _root: manifest)
+    with pytest.raises(exit_code_table.TableError) as refused:
+        exit_code_table.wanted_text(str(_ROOT))
+    _hides(str(refused.value), *neighbours)
+    exit_code_table.main(["--check"], root=_ROOT)
+    _hides(capsys.readouterr().err, *neighbours)
+
+
+_GUIDE = "docs/" + _AT + "/limits.md"
+_REGION = "%s\n%%s\n%s\n" % (exit_code_table.BEGIN, exit_code_table.END)
+
+
+def test_exit_code_table_hides_the_guide_in_every_line_that_names_it(
+    monkeypatch, capsys
+):
+    with pytest.raises(exit_code_table.TableError) as refused:
+        exit_code_table.split_region("no markers", _GUIDE)
+    _hides(str(refused.value), "exactly one")
+    monkeypatch.setattr(git_tree, "through_symlink", lambda _root, paths: paths)
+    monkeypatch.setattr(
+        config_loader,
+        "read",
+        lambda _root: _planted(_D + ("limits_guide",), "V", _GUIDE),
+    )
+    with pytest.raises(exit_code_table.TableError) as refused:
+        exit_code_table.wanted_text(str(_ROOT))
+    _hides(str(refused.value), "symlink")
+    now = {"text": _REGION % "old"}
+    monkeypatch.setattr(
+        exit_code_table,
+        "wanted_text",
+        lambda _root: (_GUIDE, now["text"], _REGION % "new"),
+    )
+    for finding in exit_code_table.table_findings(_ROOT):
+        _hides(finding, "no table with the columns")
+    exit_code_table.main(["--check"], root=_ROOT)
+    _hides(capsys.readouterr().err, "the exit-code table is stale")
+
+    def unwritable(_root, guide, _text):
+        raise OSError(13, "Permission denied", guide)
+
+    monkeypatch.setattr(exit_code_table, "_write", unwritable)
+    exit_code_table.main([], root=_ROOT)
+    _hides(capsys.readouterr().err, "cannot write the guide")
+    monkeypatch.setattr(exit_code_table, "_write", lambda *_args: None)
+    exit_code_table.main([], root=_ROOT)
+    _hides(capsys.readouterr().out, "wrote the exit-code table")
+    now["text"] = _REGION % "new"
+    exit_code_table.main(["--check"], root=_ROOT)
+    _hides(capsys.readouterr().out, "up to date")
+    exit_code_table.main([], root=_ROOT)
+    _hides(capsys.readouterr().out, "unchanged")

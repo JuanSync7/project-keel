@@ -600,7 +600,8 @@ harmless member (`tests/unit/scripts/test_config_text_leaks.py`). So do the
 evals config's refusals (an unknown key's name, a schema path and the error text
 that quotes it), the live run's refusal of `evals.live.model`, and every refusal
 `scripts/run_evals.py` builds from `evals.report_dir`, a line of paths item by
-item (`joined`). The refusals the other scripts build from the settings they
+item (`joined`), and every line `scripts/exit_code_table.py` writes that names
+`doc_drift.limits_guide` or `doc_drift.gate_target`. The refusals the other scripts build from the settings they
 read do not pass through that rule yet. A value read from an environment variable is blamed on
 it instead: `the environment: <variable> is <JSON type> <value>; accepted: <what it accepts>`. The loader writes every `[not set]` and wrong-value line before it stops,
 so one run names every key at fault. A script that config/project.json
