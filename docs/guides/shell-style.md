@@ -153,9 +153,10 @@ The gate fails a shell script under config/project.json `config_reads.roots`
 whose code names a declared config file; `config_reads.allowed` is the one
 excuse, with its reason.
 
-**What the gate cannot see.** It cuts a line at a `#` that opens a word, so a
-`#` inside quotes is cut too; that can hide a read but never invents one. A
-path the script builds from parts is not seen.
+**What the gate cannot see.** It cuts a line at a `#` that opens a word, at
+the line's start or after a blank, one of `;&|()<>` or a backquote, as the
+shell does. A `#` inside quotes is cut too, which can hide a read but never
+invents one. A path the script builds from parts is not seen.
 
 ## 6. Lint, format and test (gated — `scripts/shell_gate.py`)
 
