@@ -21,6 +21,8 @@ CHECKS = {
     + "test_no_code_root_reads_a_config_file_outside_the_loader",
     "config-reads-variable": _CONFIG_READS
     + "test_no_code_root_reads_a_declared_variable_outside_the_loader",
+    "config-reads-shell": _CONFIG_READS
+    + "test_no_shell_script_names_a_config_file_outside_the_loader",
     "exit-helper": _EXIT + "test_no_process_in_the_tree_ends_outside_the_helper",
     "exit-shared-module": _EXIT + "test_a_shared_module_never_ends_the_process",
 }

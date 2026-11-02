@@ -2,7 +2,7 @@
 title: Integration — a configured value is read only through the config loader
 kind: tests
 layer: n/a
-summary: A tree-wide gate over the Python files tests/source_tree.py `python_files` lists under config/project.json `config_reads.roots`, read from the syntax tree, scripts/config_loader.py itself left out. It fails two kinds of direct read. The first is a read of a config file scripts/config_loader.py `PROJECT_READS` declares, found by tests/source_tree.py `config_path_reads`: an `open`, `io.open` or other `.open` call, or a `.read_text`, `.read_bytes` or `.open` on a path, whose path is a string constant naming the file, a join or `Path` of constants whose last segments are its parts (a `*NAME` of a tuple of constants, or `*TEXT.split(...)` of such a string, included), a name bound to one at module level or earlier in the same function, or a path constant (a string or a join of constants) of a project module a module-level absolute import binds, read as `mod.NAME` or imported by name with `from mod import NAME` (resolved through config/project.json `import_layers.search_roots`); or a call to a function of the same module that opens the parameter it hands such a path to. The second is a read of a variable the config declares as carrying a value (scripts/config_loader.py `declared_variables`, with each KEYS row's variable), found by tests/source_tree.py `env_reads`: `environ[...]`, `environ.get/pop/setdefault(...)`, `... in environ` or `getenv(...)` with the name a literal or a module-level string constant. The third is a shell script under the same roots (scripts/shell_gate.py `kind` and `shell.excluded_paths`, the generated exit-code helper aside) whose code, its comment cut at a `#` that opens a word (at the line's start or after a blank, one of `;&|()<>` or a backquote), names a declared config file: it prints a value with scripts/config_get.py instead; a `#` inside quotes is cut too, which can hide a read but never invents one, and a path the script builds from parts is not seen. Keel's own tree holds no such script, so its tree test skips and says so, and the planted cases prove the rule can fail. Each finding is one line, `<file>:<line>: <rule> — <what to do>`. The exceptions are `config_reads.allowed`, a map from a file to the reason it still reads directly; an entry whose reason is blank, whose file is absent or outside the roots, or whose file no longer reads directly is red, and the map may hold no more entries than `_CEILING`, so it only shrinks. A walk over no root, no file, no declared file or no declared variable is a failure, never a pass. An open for writing counts too, since the loader is the one module that touches the file. It cannot see a path handed in as a parameter, an attribute of a module imported inside a function or relatively, a function of another module that opens what it is given, a method called through an object, a git cat-file blob, a variable whose name the code holds in a variable (`os.environ.get(name)` with `name` a parameter), a read through subprocess or importlib, os.environ handed on as a mapping, or a path built at run time from a value that is not a constant. It does not walk tests/, which reads config as its own policy and to build fixtures. The two finding tests hand what they see to scripts/expiring_tier.py as the checks `config-reads-file` and `config-reads-variable`: in the template repository, which holds copier.yml, every finding is red; in a generated project a finding its `expiring_tier.baseline` records warns until `expiring_tier.expires`, and any other is red. Not a check_* letter: the letters A to Z are taken.
+summary: A tree-wide gate over the Python files tests/source_tree.py `python_files` lists under config/project.json `config_reads.roots`, read from the syntax tree, scripts/config_loader.py itself left out. It fails two kinds of direct read. The first is a read of a config file scripts/config_loader.py `PROJECT_READS` declares, found by tests/source_tree.py `config_path_reads`: an `open`, `io.open` or other `.open` call, or a `.read_text`, `.read_bytes` or `.open` on a path, whose path is a string constant naming the file, a join or `Path` of constants whose last segments are its parts (a `*NAME` of a tuple of constants, or `*TEXT.split(...)` of such a string, included), a name bound to one at module level or earlier in the same function, or a path constant (a string or a join of constants) of a project module a module-level absolute import binds, read as `mod.NAME` or imported by name with `from mod import NAME` (resolved through config/project.json `import_layers.search_roots`); or a call to a function of the same module that opens the parameter it hands such a path to. The second is a read of a variable the config declares as carrying a value (scripts/config_loader.py `declared_variables`, with each KEYS row's variable), found by tests/source_tree.py `env_reads`: `environ[...]`, `environ.get/pop/setdefault(...)`, `... in environ` or `getenv(...)` with the name a literal or a module-level string constant. The third is a shell script under the same roots (scripts/shell_gate.py `kind` and `shell.excluded_paths`, the generated exit-code helper aside) whose code, its comment cut at a `#` that opens a word (at the line's start or after a blank, one of `;&|()<>` or a backquote), names a declared config file: it prints a value with scripts/config_get.py instead; a `#` inside quotes is cut too, which can hide a read but never invents one, and a path the script builds from parts is not seen. Keel's own tree holds no such script, so its tree test, rather than pass over zero files or skip, proves in a scratch copy of the first root that the rule fails a read of each declared file. Each finding is one line, `<file>:<line>: <rule> — <what to do>`. The exceptions are `config_reads.allowed`, a map from a file to the reason it still reads directly; an entry whose reason is blank, whose file is absent or outside the roots, or whose file no longer reads directly is red, and the map may hold no more entries than `_CEILING`, so it only shrinks. A walk over no root, no file, no declared file or no declared variable is a failure, never a pass. An open for writing counts too, since the loader is the one module that touches the file. It cannot see a path handed in as a parameter, an attribute of a module imported inside a function or relatively, a function of another module that opens what it is given, a method called through an object, a git cat-file blob, a variable whose name the code holds in a variable (`os.environ.get(name)` with `name` a parameter), a read through subprocess or importlib, os.environ handed on as a mapping, or a path built at run time from a value that is not a constant. It does not walk tests/, which reads config as its own policy and to build fixtures. The three finding tests hand what they see to scripts/expiring_tier.py as the checks `config-reads-file`, `config-reads-variable` and `config-reads-shell`: in the template repository, which holds copier.yml, every finding is red; in a generated project a finding its `expiring_tier.baseline` records warns until `expiring_tier.expires`, and any other is red. Not a check_* letter: the letters A to Z are taken.
 """
 
 import io
@@ -42,6 +42,10 @@ _CEILING = 12
 # generated project).
 _FILE_CHECK = "config-reads-file"
 _ENV_CHECK = "config-reads-variable"
+# Its own id, because the tier judges a check's baseline entries against the
+# findings one test hands it, and scripts/record_gate_baseline.py runs one test
+# per id.
+_SHELL_CHECK = "config-reads-shell"
 _ALLOW = "or allowlist it in config/project.json config_reads.allowed with a reason"
 _FILE_FIX = "read it through scripts/config_loader.py read and resolve, " + _ALLOW
 _ENV_FIX = "read it through scripts/config_loader.py env, " + _ALLOW
@@ -258,13 +262,22 @@ def test_no_code_root_reads_a_declared_variable_outside_the_loader():
     assert not unexcused, "\n".join(unexcused)
 
 
-def test_no_shell_script_names_a_config_file_outside_the_loader():
+def test_no_shell_script_names_a_config_file_outside_the_loader(tmp_path):
     if not _tree()["shell"]:
-        pytest.skip(
-            "no shell script under config_reads.roots, so no shell read to judge "
-            "(test_a_planted_shell_read_is_red proves the rule can fail)"
+        # A tree with no shell script would pass over zero files, and a skip
+        # fails a generated project's gate, so the rule proves here instead
+        # that it fails a read of each file this project declares.
+        root = tmp_path / "planted"
+        planted = "%s/run.sh" % _tree()["policy"]["roots"][0]
+        (root / planted).parent.mkdir(parents=True)
+        (root / planted).write_text(
+            "".join("cat %s\n" % path for path in _PATHS), encoding="utf-8"
         )
-    unexcused = _unexcused(_SHELL_RULE, _FILE_CHECK)
+        assert _PATHS, "config_loader.PROJECT_READS declares no file"
+        assert shell_reads(root, planted, _PATHS) == [
+            (number, path) for number, path in enumerate(_PATHS, 1)
+        ]
+    unexcused = _unexcused(_SHELL_RULE, _SHELL_CHECK)
     assert not unexcused, "\n".join(unexcused)
 
 
