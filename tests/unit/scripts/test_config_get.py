@@ -22,6 +22,13 @@ from exit_codes import ExitCode  # noqa: E402
 pytestmark = pytest.mark.unit
 
 
+@pytest.fixture(autouse=True)
+def _fresh_process(monkeypatch):
+    # Each run of config_get is its own process, and the loader announces a
+    # default once per process, so no case may see what another announced.
+    monkeypatch.setattr(config_get.config_loader, "_ANNOUNCED", set())
+
+
 def _project(tmp_path, manifest):
     root = tmp_path / "proj"
     (root / "config").mkdir(parents=True)
