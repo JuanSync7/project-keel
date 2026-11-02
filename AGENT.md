@@ -33,7 +33,8 @@ of truth for labeling and the directory taxonomy. Each directory's own
   carries the gated `title:`/`summary:` header the corpus reads (check_O);
   docstrings say what, comments say why — a comment carries a reason or a
   measurement, never a restatement. The mechanical floor is gated (ruff, mypy
-  strict, check_O/E); the rest is what review holds you to.
+  strict, check_O/E); the rest is what review holds you to. A shell
+  script follows `docs/guides/shell-style.md`, its twin.
 - **Write documentation to the house pattern.** `docs/guides/doc-style.md` is
   canonical, and it is `python-style.md`'s twin: unambiguous before complete
   before short; one checkable claim per sentence, naming the mechanism that
