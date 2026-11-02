@@ -86,7 +86,9 @@ hands the script to `scripts/child_exec.py` unless `KEEL_CHILD_ENV` already
 holds the script's own process id. The helper then starts the script again
 under the environment `scripts/child_env.py` builds, so the body runs once,
 under the allowlist, and every command it starts inherits that environment
-rather than every credential its caller holds.
+rather than every credential its caller holds. It starts the same file the
+shell ran, by its path and never by a PATH search, under the interpreter its
+`#!` line names, so a script without the execute bit re-runs too.
 `docs/adr/keel/K-0012-child-process-environment-allowlist.md` is the decision.
 
 A variable the script or its tools need goes in config/project.json
@@ -95,7 +97,9 @@ caller and expect it to arrive.
 
 **What the gate cannot see.** `check_X` walks every top-level directory but
 `tests/`, so a shell file at the repository root and anything under `tests/`
-are not held to the line. The re-exec costs one Python start per script. It is
+are not held to the line. The re-run uses the `#!` interpreter, not the shell
+that first ran the file, so `bash x.sh` of a `#!/bin/sh` script runs its body
+under sh. The re-exec costs one Python start per script. It is
 defence-in-depth, not a sandbox: a command the script runs can still read any
 file the user can.
 

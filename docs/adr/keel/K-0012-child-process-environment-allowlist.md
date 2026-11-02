@@ -100,10 +100,13 @@ unresolvable receiver would not be in it (see Consequences).
    `KEEL_CHILD_ENV` already holds the script's own pid, that line execs
    `child_exec.py` with the script and its arguments, and `child_exec.py`
    execs the script again under `build_child_env(...)` plus
-   `KEEL_CHILD_ENV` set to its own pid. exec keeps the pid, so the second
-   run passes the test and the body runs once, under the allowlist, and
-   every command the body starts inherits that environment. A
-   `KEEL_CHILD_ENV` a parent exported never equals the new script's pid.
+   `KEEL_CHILD_ENV` set to its own pid. It starts the file the shell ran,
+   by its path and never by a PATH search, under the interpreter its `#!`
+   line names (or `/bin/sh` when it has none), so the execute bit does not
+   matter. exec keeps the pid, so the second run passes the test and the
+   body runs once, under the allowlist, and every command the body starts
+   inherits that environment. A `KEEL_CHILD_ENV` a parent exported equals
+   the new script's pid only when that parent exec'd the script in place.
    check_X holds every script that `scripts/shell_gate.py` classes as a
    script, under a code home or a spawn root, to the line, whole and alone
    but for a trailing comment; the exit-code helper `exit_codes.sh`, which
@@ -145,9 +148,12 @@ forwards its own environment no longer carries every credential with it.
   the spawn roots. A root-level script therefore runs with its caller's
   environment.
 - The re-exec costs one Python start per script run. A script that
-  cannot be started (not executable, or absent) is a usage error, and an
-  allowlist that cannot be built is a config error; neither runs the
-  body under the parent's environment.
+  cannot be read (absent, or a directory) or whose `#!` interpreter cannot
+  be started is a usage error, and an allowlist that cannot be built is a
+  config error; neither runs the body under the parent's environment.
+- The re-run uses the interpreter the script's `#!` line names, not the
+  shell that first ran it: `bash x.sh` of a `#!/bin/sh` script runs its
+  body under sh.
 - `src/` cannot import `scripts.child_env`, so the first spawn site under
   `src/` must move the helper first.
 - Environment Modules' exported shell functions (`BASH_FUNC_*`) and
