@@ -8,7 +8,7 @@ tags: [conventions, frontmatter, taxonomy]
 summary: Single source of truth for labeling (frontmatter) and the directory taxonomy.
 id: conventions
 created: 2026-06-17
-updated: 2026-10-31
+updated: 2026-11-02
 visibility: internal
 canonical: true
 ---
@@ -1071,7 +1071,9 @@ key or a wrong value is refused by name, and the entry point exits 14
 (`CONFIG`). `tests/integration/test_config_reads_gate.py` fails a direct read
 under `config_reads.roots` that `config_reads.allowed` does not excuse with a
 reason; that map only shrinks, and a module it lists still exits 2 on a config
-fault until it moves onto the loader. `scripts/check_structure.py` is one of
+fault until it moves onto the loader. A shell script under those roots that
+names config/project.json or config/practices.json in its code is red too;
+it prints a value with `scripts/config_get.py KEY` instead. `scripts/check_structure.py` is one of
 them, so `check_H` and its siblings still parse the manifest themselves.
 `docs/adr/keel/K-0022-one-config-loader.md` is the accepted decision.
 

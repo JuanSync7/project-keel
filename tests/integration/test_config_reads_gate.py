@@ -2,9 +2,12 @@
 title: Integration — a configured value is read only through the config loader
 kind: tests
 layer: n/a
-summary: A tree-wide gate over the Python files tests/source_tree.py `python_files` lists under config/project.json `config_reads.roots`, read from the syntax tree, scripts/config_loader.py itself left out. It fails two kinds of direct read. The first is a read of a config file scripts/config_loader.py `PROJECT_READS` declares, found by tests/source_tree.py `config_path_reads`: an `open`, `io.open` or other `.open` call, or a `.read_text`, `.read_bytes` or `.open` on a path, whose path is a string constant naming the file, a join or `Path` of constants whose last segments are its parts (a `*NAME` of a tuple of constants, or `*TEXT.split(...)` of such a string, included), a name bound to one at module level or earlier in the same function, or a path constant (a string or a join of constants) of a project module a module-level absolute import binds, read as `mod.NAME` or imported by name with `from mod import NAME` (resolved through config/project.json `import_layers.search_roots`); or a call to a function of the same module that opens the parameter it hands such a path to. The second is a read of a variable the config declares as carrying a value (scripts/config_loader.py `declared_variables`, with each KEYS row's variable), found by tests/source_tree.py `env_reads`: `environ[...]`, `environ.get/pop/setdefault(...)`, `... in environ` or `getenv(...)` with the name a literal or a module-level string constant. Each finding is one line, `<file>:<line>: <rule> — <what to do>`. The exceptions are `config_reads.allowed`, a map from a file to the reason it still reads directly; an entry whose reason is blank, whose file is absent or outside the roots, or whose file no longer reads directly is red, and the map may hold no more entries than `_CEILING`, so it only shrinks. A walk over no root, no file, no declared file or no declared variable is a failure, never a pass. An open for writing counts too, since the loader is the one module that touches the file. It cannot see a path handed in as a parameter, an attribute of a module imported inside a function or relatively, a function of another module that opens what it is given, a method called through an object, a git cat-file blob, a variable whose name the code holds in a variable (`os.environ.get(name)` with `name` a parameter), a read through subprocess or importlib, os.environ handed on as a mapping, or a path built at run time from a value that is not a constant. It does not walk tests/, which reads config as its own policy and to build fixtures. The two finding tests hand what they see to scripts/expiring_tier.py as the checks `config-reads-file` and `config-reads-variable`: in the template repository, which holds copier.yml, every finding is red; in a generated project a finding its `expiring_tier.baseline` records warns until `expiring_tier.expires`, and any other is red. Not a check_* letter: the letters A to Z are taken.
+summary: A tree-wide gate over the Python files tests/source_tree.py `python_files` lists under config/project.json `config_reads.roots`, read from the syntax tree, scripts/config_loader.py itself left out. It fails two kinds of direct read. The first is a read of a config file scripts/config_loader.py `PROJECT_READS` declares, found by tests/source_tree.py `config_path_reads`: an `open`, `io.open` or other `.open` call, or a `.read_text`, `.read_bytes` or `.open` on a path, whose path is a string constant naming the file, a join or `Path` of constants whose last segments are its parts (a `*NAME` of a tuple of constants, or `*TEXT.split(...)` of such a string, included), a name bound to one at module level or earlier in the same function, or a path constant (a string or a join of constants) of a project module a module-level absolute import binds, read as `mod.NAME` or imported by name with `from mod import NAME` (resolved through config/project.json `import_layers.search_roots`); or a call to a function of the same module that opens the parameter it hands such a path to. The second is a read of a variable the config declares as carrying a value (scripts/config_loader.py `declared_variables`, with each KEYS row's variable), found by tests/source_tree.py `env_reads`: `environ[...]`, `environ.get/pop/setdefault(...)`, `... in environ` or `getenv(...)` with the name a literal or a module-level string constant. The third is a shell script under the same roots (scripts/shell_gate.py `kind` and `shell.excluded_paths`, the generated exit-code helper aside) whose code, its comment cut at a `#` that opens a word, names a declared config file: it prints a value with scripts/config_get.py instead; a `#` inside quotes is cut too, which can hide a read but never invents one, and a path the script builds from parts is not seen. Keel's own tree holds no such script, so its tree test skips and says so, and the planted cases prove the rule can fail. Each finding is one line, `<file>:<line>: <rule> — <what to do>`. The exceptions are `config_reads.allowed`, a map from a file to the reason it still reads directly; an entry whose reason is blank, whose file is absent or outside the roots, or whose file no longer reads directly is red, and the map may hold no more entries than `_CEILING`, so it only shrinks. A walk over no root, no file, no declared file or no declared variable is a failure, never a pass. An open for writing counts too, since the loader is the one module that touches the file. It cannot see a path handed in as a parameter, an attribute of a module imported inside a function or relatively, a function of another module that opens what it is given, a method called through an object, a git cat-file blob, a variable whose name the code holds in a variable (`os.environ.get(name)` with `name` a parameter), a read through subprocess or importlib, os.environ handed on as a mapping, or a path built at run time from a value that is not a constant. It does not walk tests/, which reads config as its own policy and to build fixtures. The two finding tests hand what they see to scripts/expiring_tier.py as the checks `config-reads-file` and `config-reads-variable`: in the template repository, which holds copier.yml, every finding is red; in a generated project a finding its `expiring_tier.baseline` records warns until `expiring_tier.expires`, and any other is red. Not a check_* letter: the letters A to Z are taken.
 """
 
+import io
+import os
+import re
 import sys
 from pathlib import Path
 
@@ -14,8 +17,10 @@ _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT / "tests"))
 sys.path.insert(0, str(_ROOT / "scripts"))
 
+import check_structure as cs  # noqa: E402
 import config_loader  # noqa: E402
 import expiring_tier  # noqa: E402
+import shell_gate  # noqa: E402
 
 import source_tree as st  # noqa: E402
 
@@ -40,6 +45,11 @@ _ENV_CHECK = "config-reads-variable"
 _ALLOW = "or allowlist it in config/project.json config_reads.allowed with a reason"
 _FILE_FIX = "read it through scripts/config_loader.py read and resolve, " + _ALLOW
 _ENV_FIX = "read it through scripts/config_loader.py env, " + _ALLOW
+_SHELL_FIX = "print the value with scripts/config_get.py KEY, " + _ALLOW
+_SHELL_RULE = " in shell code"
+# A `#` that opens a word starts a shell comment. One inside quotes is read
+# as a comment too, which can hide a read but never invents one.
+_SHELL_COMMENT = re.compile(r"(?:^|\s)#.*")
 
 
 def reads_policy(manifest, where=config_loader.CONFIG_FILE):
@@ -120,7 +130,61 @@ def direct_reads(root, roots, paths, variables, search_roots):
                 "%s:%d: %s — %s" % (relpath, line, rule, fix)
                 for line, rule, fix in sorted(found)
             ]
-    return {"files": files, "findings": findings}
+    shell = shell_scripts(root, roots)
+    for relpath in shell:
+        named = shell_reads(root, relpath, paths)
+        if named:
+            findings[relpath] = [
+                "%s:%d: names %s%s — %s"
+                % (relpath, line, path, _SHELL_RULE, _SHELL_FIX)
+                for line, path in named
+            ]
+    return {"files": files, "shell": shell, "findings": findings}
+
+
+def shell_scripts(root, roots):
+    """The shell scripts under *roots* of *root*, sorted, by
+    scripts/shell_gate.py `kind` and `shell.excluded_paths` (the loader's
+    defaults when *root* has no config/project.json), the generated
+    exit-code helper aside, as shell_gate itself sets it aside."""
+    try:
+        manifest = config_loader.read(str(root))
+    except config_loader.ConfigAbsent:
+        manifest = {}
+    cfg = shell_gate.settings(str(root), loaded=manifest, stream=io.StringIO())
+    excluded = sorted(cfg["excluded_paths"])
+    found = []
+    for croot in roots:
+        base = os.path.join(str(root), croot)
+        if not os.path.isdir(base):
+            continue
+        for dirpath, _dirnames, filenames in cs.walk(base):
+            for name in filenames:
+                full = os.path.join(dirpath, name)
+                relpath = os.path.relpath(full, str(root)).replace(os.sep, "/")
+                if (
+                    relpath == shell_gate.HELPER_SH
+                    or os.path.islink(full)
+                    or not os.path.isfile(full)
+                    or shell_gate.excluded_by(relpath, excluded) is not None
+                ):
+                    continue
+                if shell_gate.kind(relpath, full, cfg) == shell_gate.SCRIPT:
+                    found.append(relpath)
+    return sorted(found)
+
+
+def shell_reads(root, relpath, paths):
+    """[(line, path)] for each line of the shell script *relpath* whose code,
+    its comment cut, names a declared config file in *paths*: a shell script
+    that names one parses it itself, since config_get.py is how it reads a
+    value without naming it."""
+    text = (Path(root) / relpath).read_text(encoding="utf-8")
+    found = []
+    for number, line in enumerate(text.splitlines(), 1):
+        code = _SHELL_COMMENT.sub("", line)
+        found.extend((number, path) for path in paths if path in code)
+    return found
 
 
 def allowlist_findings(root, roots, allowed, findings):
@@ -190,6 +254,16 @@ def test_no_code_root_reads_a_config_file_outside_the_loader():
 
 def test_no_code_root_reads_a_declared_variable_outside_the_loader():
     unexcused = _unexcused(": reads the declared variable ", _ENV_CHECK)
+    assert not unexcused, "\n".join(unexcused)
+
+
+def test_no_shell_script_names_a_config_file_outside_the_loader():
+    if not _tree()["shell"]:
+        pytest.skip(
+            "no shell script under config_reads.roots, so no shell read to judge "
+            "(test_a_planted_shell_read_is_red proves the rule can fail)"
+        )
+    unexcused = _unexcused(_SHELL_RULE, _FILE_CHECK)
     assert not unexcused, "\n".join(unexcused)
 
 
@@ -526,3 +600,104 @@ def test_the_live_walk_covers_files_and_declared_variables():
     assert tree["files"], "no file walked -- zero items"
     manifest = config_loader.read(str(_ROOT))
     assert _run_date_variable() in declared_variables(manifest)
+
+
+# --- shell scripts ---------------------------------------------------------------
+
+
+def _shell_findings(tmp_path, name, body):
+    root = _project(tmp_path, "x = 1\n")
+    path = root / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(body, encoding="utf-8")
+    result = direct_reads(root, ["src", "scripts"], _PATHS, [_MCP_MODEL], _SEARCH)
+    return result, [line for lines in result["findings"].values() for line in lines]
+
+
+@pytest.mark.parametrize(
+    "name, body, line, path",
+    [
+        (
+            "src/run.sh",
+            '#!/bin/sh\ncfg="$root/config/project.json"\n',
+            2,
+            "config/project.json",
+        ),
+        (
+            "src/run.sh",
+            "#!/bin/sh\n# formatter\njq -r .shell.formatter config/practices.json\n",
+            3,
+            "config/practices.json",
+        ),
+        (
+            "src/run.bash",
+            "python3 -c 'import json; json.load(open(\"config/project.json\"))'\n",
+            1,
+            "config/project.json",
+        ),
+        (
+            "src/tool",
+            "#!/bin/bash\ntag=v1#rc; cat config/project.json\n",
+            2,
+            "config/project.json",
+        ),
+    ],
+    ids=[
+        "a path in a variable",
+        "jq on the practices file",
+        "a python one-liner",
+        "a shebang script with no suffix",
+    ],
+)
+def test_a_planted_shell_read_is_red(tmp_path, name, body, line, path):
+    result, found = _shell_findings(tmp_path, name, body)
+    assert result["shell"] == [name], result["shell"]
+    assert len(found) == 1, found
+    assert found[0].startswith("%s:%d: names %s in shell code" % (name, line, path))
+    assert "scripts/config_get.py" in found[0], found
+    assert "config_reads.allowed" in found[0], found
+
+
+@pytest.mark.parametrize(
+    "name, body, walked",
+    [
+        (
+            "src/run.sh",
+            "#!/bin/sh\n# reads config/project.json through config_get\n",
+            ["src/run.sh"],
+        ),
+        (
+            "src/run.sh",
+            "v=$(python3 scripts/config_get.py shell.formatter)  # not config/project.json\n",
+            ["src/run.sh"],
+        ),
+        ("scripts/exit_codes.sh", "# config/project.json\nx=config/project.json\n", []),
+        ("src/run.bats", "x=config/project.json\n", []),
+        ("src/run.sh.jinja", "x=config/project.json\n", []),
+        ("docs/run.sh", "x=config/project.json\n", []),
+    ],
+    ids=[
+        "a comment line",
+        "a trailing comment",
+        "the exit-code helper",
+        "a shell test",
+        "a template source",
+        "outside the roots",
+    ],
+)
+def test_a_shell_line_that_reads_no_config_file_is_not_a_finding(
+    tmp_path, name, body, walked
+):
+    result, found = _shell_findings(tmp_path, name, body)
+    assert result["shell"] == walked, result["shell"]
+    assert found == [], found
+
+
+def test_an_allowlisted_shell_script_is_a_live_exception(tmp_path):
+    result, _found = _shell_findings(tmp_path, "src/run.sh", "x=config/project.json\n")
+    reason = "it predates config_get"
+    root = tmp_path / "proj"
+    assert (
+        allowlist_findings(root, ["src"], {"src/run.sh": reason}, result["findings"])
+        == []
+    )

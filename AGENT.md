@@ -86,7 +86,8 @@ of truth for labeling and the directory taxonomy. Each directory's own
   `config/practices.json` or a variable they declare through
   `scripts/config_loader.py` (`read`, `resolve`, `env`), and give a key its
   type and default in a `KEYS` row, never in a `.get(key, default)`; a config
-  fault returns `report(ExitCode.CONFIG, ...)`.
+  fault returns `report(ExitCode.CONFIG, ...)`. A shell script prints a
+  value with `scripts/config_get.py KEY` and never names the file.
   `tests/integration/test_config_reads_gate.py` fails a direct read that
   `config/project.json` `config_reads.allowed` does not excuse.
   `docs/adr/keel/K-0022-one-config-loader.md` is the accepted decision.
