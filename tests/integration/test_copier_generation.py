@@ -42,6 +42,7 @@ import review_docs  # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 
 import check_structure  # noqa: E402
+import child_exec  # noqa: E402
 from child_env import build_child_env  # noqa: E402
 
 _ROOT = Path(__file__).resolve().parents[2]
@@ -4026,8 +4027,9 @@ def test_the_shell_answer_ships_the_helper_the_exit_gate_holds_a_script_to(
     `make check-exit-codes` pass and the tree exit gate passes with no shell
     script of the project's own. Either way a bare `exit 3` in
     scripts/ops/deploy.sh turns the exit gate red at its file and line, and a
-    script that sources the helper ends with the three-part line and its
-    member's code under /bin/sh. Declined, turning shell on later is the one
+    script that opens with the re-exec line and sources the helper runs its
+    body under the project's child environment allowlist (scripts/child_exec.py)
+    and ends with the three-part line and its member's code. Declined, turning shell on later is the one
     key `shell.enabled`: `make lint-sh` and `make test-sh` then give the
     `shell.no_scripts` answer, having run no tool."""
     dest = tmp_path / "proj"
@@ -4063,21 +4065,28 @@ def test_the_shell_answer_ships_the_helper_the_exit_gate_holds_a_script_to(
         ran.stdout[-4000:]
     )
 
+    # The project's own child_exec.py re-runs the script under its allowlist,
+    # so a variable outside it never reaches the body.
     good = dest / "scripts" / "good.sh"
     good.write_text(
-        '#!/bin/sh\n. "$(dirname "$0")/exit_codes.sh"\n'
+        "#!/bin/sh\n%s\n"
+        % child_exec.REEXEC_LINE
+        + '. "$(dirname "$0")/exit_codes.sh"\n'
+        'echo "outside=${KEEL_TEST_NOT_ALLOWLISTED-unset}"\n'
         'exit_fail "$EXIT_USAGE" "good: no input" "none given" "pass one"\n',
         encoding="utf-8",
     )
+    good.chmod(0o755)
     ran = subprocess.run(
-        ["/bin/sh", str(good)],
+        [str(good)],
         cwd=str(dest),
-        env=build_child_env(),
+        env=build_child_env(extra={"KEEL_TEST_NOT_ALLOWLISTED": "leaked"}),
         capture_output=True,
         text=True,
         timeout=60,
     )
     assert ran.returncode == 2, (ran.stdout, ran.stderr)
+    assert ran.stdout.splitlines() == ["outside=unset"], ran.stdout
     assert ran.stderr.strip().endswith("good: no input: none given; pass one"), (
         ran.stderr
     )

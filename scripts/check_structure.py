@@ -120,11 +120,19 @@ Checks:
      subprocess/asyncio spawn in a .py at the root or under any top-level
      directory but tests/ passes env= built by child_env.build_child_env
      (scripts/child_env.py), directly or through a name bound only to that
-     call and afterwards only read; a **kwargs spawn, an
-     os.system/popen/exec*/spawn*, pty.spawn or subprocess.getoutput, a spawn
-     API referenced without a call and a spawn name bound two ways in one
-     scope are errors, as is a helper call whose arguments carry os.environ,
-     directly or through a name within the module; and config/project.json
+     call and afterwards only read; the environment argument of
+     os.execve/execvpe/posix_spawn/posix_spawnp/spawnve/spawnvpe is judged
+     as env= is, and a *args at or before it is an error; a **kwargs spawn,
+     an os.system/popen/forkpty, an os.exec*/spawn* with no environment
+     argument (execle and execlpe included: theirs is last), pty.spawn or
+     subprocess.getoutput, a spawn API referenced without a call and a spawn
+     name bound two ways in one scope are errors, as is a helper call whose
+     arguments carry os.environ, directly or through a name within the
+     module; every shell script (shell_gate's script kind) under a code
+     home or a spawn root but the exit-code helper has
+     scripts/child_exec.py `REEXEC_LINE` as its first command, so it
+     re-runs itself under the allowlist (a shell file at the root is not
+     walked); and config/project.json
      `child_env` (with `credentialed_values` naming only a variable the
      allowlist copies), `models.credential_env` and `models.allowed_hosts`
      are well-formed, as is `evidence.run_date` (scripts/run_date.py
@@ -180,6 +188,7 @@ if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 
 import child_env  # noqa: E402
+import child_exec  # noqa: E402
 import config_loader  # noqa: E402
 import exit_codes  # noqa: E402
 import run_date  # noqa: E402
@@ -6083,10 +6092,25 @@ _SPAWN_NEEDS_ENV = {
     "asyncio": ("create_subprocess_exec", "create_subprocess_shell"),
     "subprocess": ("Popen", "call", "check_call", "check_output", "run"),
 }
+# module -> {call: index}: the calls that start a process and take the
+# environment as a positional argument at that index (or as env=), which this
+# check reads as it reads env=. A re-exec under the allowlist is one
+# (scripts/child_exec.py).
+_SPAWN_ENV_POSITION = {
+    "os": {
+        "execve": 2,
+        "execvpe": 2,
+        "posix_spawn": 2,
+        "posix_spawnp": 2,
+        "spawnve": 3,
+        "spawnvpe": 3,
+    },
+}
 # module -> the calls that start a process the helper cannot reach: they take no
-# environment at all, or one this check could not tell from os.environ.
+# environment at all, or one this check could not tell from os.environ (a
+# variadic os.execle/os.execlpe puts it last, after any number of arguments).
 _SPAWN_NO_ENV = {
-    "os": ("forkpty", "popen", "posix_spawn", "posix_spawnp", "system"),
+    "os": ("forkpty", "popen", "system"),
     "pty": ("spawn",),
     "subprocess": ("getoutput", "getstatusoutput"),
 }
@@ -6388,6 +6412,10 @@ class _Module(object):
             call = self.parents.get(id(up))
             api = self.spawn_api(call) if isinstance(call, ast.Call) else None
             return bool(api) and api[0] == "env"
+        if isinstance(up, ast.Call) and up.func is not node:
+            api = self.spawn_api(up)
+            pos = _env_position(api[1]) if api and api[0] == "env" else None
+            return pos is not None and pos < len(up.args) and up.args[pos] is node
         if isinstance(up, ast.Subscript) and up.value is node:
             return isinstance(up.ctx, ast.Load)
         if isinstance(up, ast.Attribute) and up.value is node:
@@ -6486,12 +6514,21 @@ def _written_names(target):
     return out
 
 
+def _env_position(origin):
+    """The index of the positional environment argument of the spawn *origin*,
+    or None when it takes the environment only as env=."""
+    module, _, name = origin.rpartition(".")
+    return _SPAWN_ENV_POSITION.get(module, {}).get(name)
+
+
 def _spawn_kind(origin):
     """'env' / 'no-env' for a dotted origin that starts a process, else None."""
     if not origin or "." not in origin:
         return None
     module, name = origin.rsplit(".", 1)
-    if name in _SPAWN_NEEDS_ENV.get(module, ()):
+    if name in _SPAWN_NEEDS_ENV.get(module, ()) or name in _SPAWN_ENV_POSITION.get(
+        module, {}
+    ):
         return "env"
     if name in _SPAWN_NO_ENV.get(module, ()) or any(
         name.startswith(p) for p in _SPAWN_NO_ENV_PREFIXES.get(module, ())
@@ -6597,7 +6634,22 @@ def spawn_findings(source, relpath):
                 )
             )
             continue
+        pos = _env_position(origin)
+        if pos is not None and any(
+            isinstance(a, ast.Starred) for a in node.args[: pos + 1]
+        ):
+            found.append(
+                (
+                    node.lineno,
+                    where + "`%s` is passed *args, so the environment it starts the "
+                    "child with cannot be read -- pass build_child_env() as its "
+                    "argument %d explicitly (%s)" % (origin, pos + 1, _ADR_0012),
+                )
+            )
+            continue
         env = [kw.value for kw in node.keywords if kw.arg == "env"]
+        if pos is not None and pos < len(node.args):
+            env.append(node.args[pos])
         if not env:
             found.append(
                 (
@@ -6608,16 +6660,20 @@ def spawn_findings(source, relpath):
                 )
             )
             continue
-        value = env[0]
-        ok = mod.is_helper_call(value) or (
-            isinstance(value, ast.Name)
-            and mod.name_is_helper_built(value.id, mod.scope_of(node))
+        # Both spellings at once is a TypeError at run time; each is judged.
+        ok = all(
+            mod.is_helper_call(value)
+            or (
+                isinstance(value, ast.Name)
+                and mod.name_is_helper_built(value.id, mod.scope_of(node))
+            )
+            for value in env
         )
         if not ok:
             found.append(
                 (
                     node.lineno,
-                    where + "`%s` passes an env= that is not built by "
+                    where + "`%s` passes an environment (env=) that is not built by "
                     "scripts/child_env.py build_child_env (directly, or through a "
                     "name every assignment in this function binds to it and that "
                     "is only ever read, never mutated, aliased or handed on) -- the "
@@ -6626,6 +6682,45 @@ def spawn_findings(source, relpath):
                 )
             )
     return [m for _, m in sorted(found)]
+
+
+# A shell script cannot pass env=, so it re-runs itself under the allowlist
+# instead: its first command hands it to scripts/child_exec.py, which execs it
+# under build_child_env's environment. The line is child_exec.REEXEC_LINE but for
+# the helper's path, which may be `$(dirname "$0")` or nothing, then a literal
+# path: no quote, expansion, backquote or backslash, so the path runs no other
+# command. A comment may follow; anything else on the line is a command.
+_REEXEC_SAME_DIR = re.escape('"$(dirname "$0")/child_exec.py"')
+_REEXEC_PATH = r'"(?:\$\(dirname "\$0"\))?[^"$`\\]*/child_exec\.py"'
+_REEXEC = re.compile(
+    r"[ \t]*"
+    + re.escape(child_exec.REEXEC_LINE).replace(_REEXEC_SAME_DIR, _REEXEC_PATH)
+    + r"(?:[ \t]+#.*)?"
+)
+
+
+def reexec_findings(text, relpath):
+    """The check_X findings for the shell script *text* at *relpath*: its first
+    line that is neither blank nor a comment (the shebang included) must be the
+    child environment re-exec line, or the script and every command it starts
+    inherit the caller's whole environment. Pure."""
+    for lineno, line in enumerate(text.split("\n"), 1):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if _REEXEC.fullmatch(line):
+            return []
+        return [
+            "%s:%d: the first command must be `%s`, so the script runs under the "
+            "child environment allowlist (scripts/child_exec.py) and never inherits "
+            "every credential its caller holds; any path ending in /child_exec.py "
+            "may stand for the helper's (%s)"
+            % (relpath, lineno, child_exec.REEXEC_LINE, _ADR_0012)
+        ]
+    return [
+        "%s: has no command, so it never opens with `%s` -- add that line first "
+        "(scripts/child_exec.py, %s)" % (relpath, child_exec.REEXEC_LINE, _ADR_0012)
+    ]
 
 
 def _spawn_roots():
@@ -6648,9 +6743,13 @@ def _spawn_roots():
 def check_X():
     """ERROR when a module at the top level or under a spawn root
     (`_spawn_roots`: every code home but tests/) starts a process
-    without env= built by scripts/child_env.py build_child_env, through an API
-    that cannot take one, passes **kwargs to a spawn, or hands the helper the
-    parent's environment; and when config/project.json `child_env` (or the
+    without env= (or the os.exec*e/spawn*e/posix_spawn* environment argument)
+    built by scripts/child_env.py build_child_env, through an API that cannot
+    take one, passes **kwargs to a spawn or *args over its environment
+    argument, or hands the helper the parent's environment; when a shell
+    script under a code home or a spawn root, the exit-code helper aside,
+    does not open with scripts/child_exec.py `REEXEC_LINE`; and when
+    config/project.json `child_env` (or the
     `make_targets` and `models.credential_env` names it reads) is malformed while
     a spawn exists or the block does, including a `credentialed_values` entry
     that no allowlist source copies. Silent when nothing spawns and no block
@@ -6677,6 +6776,19 @@ def check_X():
     for path in sorted(modules):
         spawns = spawns or bool(spawn_sites(modules[path]))
         findings.extend(spawn_findings(modules[path], path))
+    # check_O walks CODE_ROOTS for the shell header and reports that walk's
+    # faults; this walk also reaches every spawn root, so a fault only it meets
+    # is reported here, once.
+    shell, shell_errs = _shell_files(sorted(set(CODE_ROOTS) | set(_spawn_roots())))
+    for m in shell_errs:
+        if m not in errors:
+            err(m)
+    for path in sorted(shell):
+        if shell[path] != shell_gate.SCRIPT or path == shell_gate.HELPER_SH:
+            continue
+        text = _read_text(os.path.join(ROOT, path), err)
+        if text is not None:
+            findings.extend(reexec_findings(text, path))
     manifest = _read_json_config("config/project.json")
     if manifest is _NO_DATA:
         if os.path.isfile(os.path.join(ROOT, "config", "project.json")):

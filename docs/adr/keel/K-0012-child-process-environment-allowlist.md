@@ -8,7 +8,7 @@ tags: [adr, environment, credentials, subprocess, check-x]
 summary: "Every process keel's code starts gets `env=build_child_env(...)` from scripts/child_env.py, which starts from an empty dict and copies only the variable names config/project.json `child_env` declares, plus the `make_targets` unattended and gate variables and, for a model adapter, that adapter's `models.credential_env` names. A missing or malformed manifest is an error, never a fall-back to the parent's environment. check_X in scripts/check_structure.py holds every spawn under the code roots to the helper, with no waiver. It is defence-in-depth, not a sandbox."
 id: docs-adr-0012-child-process-environment-allowlist
 created: 2026-10-06
-updated: 2026-10-09
+updated: 2026-11-02
 visibility: internal
 canonical: true
 ---
@@ -76,8 +76,12 @@ unresolvable receiver would not be in it (see Consequences).
    `subprocess` or `asyncio` spawn in a `.py` at the root or under any
    top-level directory except `tests/` passes `env=` built by the helper,
    directly or through a name bound only to that call and afterwards only
-   read. A `**kwargs` spawn, `os.system`, `os.popen`, `os.exec*`,
-   `os.spawn*`, `os.posix_spawn*`, `os.forkpty`, `pty.spawn` and
+   read. The environment argument of `os.execve`, `os.execvpe`,
+   `os.posix_spawn`, `os.posix_spawnp`, `os.spawnve` and `os.spawnvpe` is
+   judged as `env=` is, and a `*args` at or before it is an error. A
+   `**kwargs` spawn, `os.system`, `os.popen`, `os.forkpty`, an `os.exec*` or
+   `os.spawn*` with no environment argument (`os.execle` and `os.execlpe`
+   included, whose environment is last), `pty.spawn` and
    `subprocess.getoutput` are errors. So is a spawn API referenced without a
    call, a spawn name bound both by an import and another way in one scope,
    and a helper call whose arguments carry `os.environ` or `os.getenv`,
@@ -91,6 +95,19 @@ unresolvable receiver would not be in it (see Consequences).
    make's command line under the same one-word path-like rule as
    `--make-arg`; an explicit `--make-arg` wins, and a value that is not one
    word is refused before make runs.
+5. **A shell script re-runs itself under the helper.** A shell script's
+   first command is `REEXEC_LINE` from `scripts/child_exec.py`. Unless
+   `KEEL_CHILD_ENV` already holds the script's own pid, that line execs
+   `child_exec.py` with the script and its arguments, and `child_exec.py`
+   execs the script again under `build_child_env(...)` plus
+   `KEEL_CHILD_ENV` set to its own pid. exec keeps the pid, so the second
+   run passes the test and the body runs once, under the allowlist, and
+   every command the body starts inherits that environment. A
+   `KEEL_CHILD_ENV` a parent exported never equals the new script's pid.
+   check_X holds every script that `scripts/shell_gate.py` classes as a
+   script, under a code home or a spawn root, to the line, whole and alone
+   but for a trailing comment; the exit-code helper `exit_codes.sh`, which
+   is sourced rather than run, is the one file it skips.
 
 ## What this is not
 
@@ -123,6 +140,14 @@ forwards its own environment no longer carries every credential with it.
   `sp = subprocess; sp.run`) is under-reported, never over-reported. It
   follows a parent-environment value through names within one module, not
   across a function parameter. Both are the trade check_V makes.
+- A shell file directly at the repo root is not walked for the re-exec
+  line, because check_X walks shell files only under the code homes and
+  the spawn roots. A root-level script therefore runs with its caller's
+  environment.
+- The re-exec costs one Python start per script run. A script that
+  cannot be started (not executable, or absent) is a usage error, and an
+  allowlist that cannot be built is a config error; neither runs the
+  body under the parent's environment.
 - `src/` cannot import `scripts.child_env`, so the first spawn site under
   `src/` must move the helper first.
 - Environment Modules' exported shell functions (`BASH_FUNC_*`) and

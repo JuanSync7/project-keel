@@ -2,7 +2,7 @@
 title: Unit — check_structure check_X (a child process gets an allowlisted environment)
 kind: tests
 layer: n/a
-summary: check_X's rule, pinned: every subprocess/asyncio spawn in a .py at the repo root or under any top-level directory but tests/ (hidden, ignored and symlinked directories skipped) passes `env=` built by scripts/child_env.py `build_child_env`, directly or through a name every binding of which is a sole-target helper call and which is afterwards only read, in any scope; names resolve with Python's scope rules, so a binding in another scope never hides a spawn and a spawn name bound two ways in one scope is an error; a spawn API referenced without a call is an error; `os.system`, `os.popen`, `os.exec*`, `os.spawn*`, `pty.spawn` and `subprocess.getoutput` are errors outright, with no waiver; a helper call carrying `os.environ` or `os.getenv`, directly or through a name it reached in the module, is an error; config/project.json `child_env` is validated whenever a spawn exists, including a `credentialed_values` entry that no allowlist source copies. A spawn through a receiver the AST cannot resolve, and a parent value crossing a function parameter, are not seen, by design, and correct code is never an error. Keel's own tree is clean and the detector sees every spawn site in it.
+summary: check_X's rule, pinned: every subprocess/asyncio spawn in a .py at the repo root or under any top-level directory but tests/ (hidden, ignored and symlinked directories skipped) passes `env=` built by scripts/child_env.py `build_child_env`, directly or through a name every binding of which is a sole-target helper call and which is afterwards only read, in any scope; names resolve with Python's scope rules, so a binding in another scope never hides a spawn and a spawn name bound two ways in one scope is an error; a spawn API referenced without a call is an error; the environment argument of `os.execve`, `os.execvpe`, `os.posix_spawn`, `os.posix_spawnp`, `os.spawnve` and `os.spawnvpe` is judged as `env=` is, and a `*args` at or before it is an error; `os.system`, `os.popen`, `os.forkpty`, an `os.exec*`/`os.spawn*` with no environment argument (`os.execle` included), `pty.spawn` and `subprocess.getoutput` are errors outright, with no waiver; every shell script but the exit-code helper has scripts/child_exec.py `REEXEC_LINE` as its first command, whole and alone but for a trailing comment, and a script with no command is an error; a helper call carrying `os.environ` or `os.getenv`, directly or through a name it reached in the module, is an error; config/project.json `child_env` is validated whenever a spawn exists, including a `credentialed_values` entry that no allowlist source copies. A spawn through a receiver the AST cannot resolve, and a parent value crossing a function parameter, are not seen, by design, and correct code is never an error. Keel's own tree is clean and the detector sees every spawn site in it.
 """
 
 import io
@@ -252,9 +252,8 @@ _NO_ENV = [
     ("os.system", "import os\nos.system('true')\n"),
     ("os.popen", "import os\nos.popen('true')\n"),
     ("os.execv", "import os\nos.execv('/bin/true', ['true'])\n"),
-    ("os.execvpe", "import os\nos.execvpe('true', ['true'], {})\n"),
+    ("os.execle", "import os\nos.execle('/bin/true', 'true', {})\n"),
     ("os.spawnl", "import os\nos.spawnl(os.P_WAIT, '/bin/true', 'true')\n"),
-    ("os.posix_spawn", "import os\nos.posix_spawn('/bin/true', ['true'], {})\n"),
     ("from-os", "from os import system\nsystem('true')\n"),
     ("pty.spawn", "import pty\npty.spawn(['true'])\n"),
     ("getoutput", "import subprocess\nsubprocess.getoutput('true')\n"),
@@ -272,6 +271,75 @@ def test_a_spawn_that_cannot_take_an_environment_is_an_error(body):
     # No waiver: a reason-carrying pragma does not silence it.
     waived = body.rstrip("\n") + "  # practice-ok: needs the whole environment\n"
     assert len(_findings(waived)) == 1
+
+
+# --- spawns that take the environment as a positional argument ----------------------
+
+_POSITIONAL = [
+    ("execve", "os.execve('/bin/true', ['true'], %s)\n"),
+    ("execvpe", "os.execvpe('true', ['true'], %s)\n"),
+    ("posix_spawn", "os.posix_spawn('/bin/true', ['true'], %s)\n"),
+    ("posix_spawnp", "os.posix_spawnp('true', ['true'], %s)\n"),
+    ("spawnve", "os.spawnve(os.P_WAIT, '/bin/true', ['true'], %s)\n"),
+    ("spawnvpe", "os.spawnvpe(os.P_WAIT, 'true', ['true'], %s)\n"),
+    ("keyword", "os.execvpe('true', ['true'], env=%s)\n"),
+]
+
+
+@pytest.mark.parametrize(
+    "call", [c for _, c in _POSITIONAL], ids=[i for i, _ in _POSITIONAL]
+)
+def test_a_positional_environment_built_by_the_helper_is_clean(call):
+    assert _findings(_IMPORTS + call % "build_child_env()") == []
+    bound = "def f():\n    env = build_child_env()\n    " + call % "env"
+    assert _findings(_IMPORTS + bound) == []
+
+
+@pytest.mark.parametrize(
+    "call", [c for _, c in _POSITIONAL], ids=[i for i, _ in _POSITIONAL]
+)
+@pytest.mark.parametrize("env", ["{}", "os.environ", "dict(os.environ)"])
+def test_a_positional_environment_not_from_the_helper_is_an_error(call, env):
+    body = _IMPORTS + call % env
+    msgs = _findings(body)
+    assert len(msgs) == 1, msgs
+    lineno = len((_HEADER + body).splitlines())
+    assert msgs[0].startswith("scripts/x.py:%d:" % lineno), msgs
+    assert "not built by" in msgs[0], msgs
+
+
+def test_a_positional_environment_beside_a_second_one_is_judged_whole():
+    body = _IMPORTS + "os.execvpe('true', ['true'], build_child_env(), env={})\n"
+    assert len(_findings(body)) == 1
+
+
+def test_a_helper_built_name_handed_to_a_spawn_elsewhere_is_an_error():
+    # The name reaches a positional argument that is not the environment.
+    body = _IMPORTS + (
+        "def f():\n    env = build_child_env()\n"
+        "    os.execvpe('true', env, build_child_env())\n"
+        "    subprocess.run(['true'], env=env)\n"
+    )
+    msgs = _findings(body)
+    assert len(msgs) == 1 and ":%d:" % _line_of(body, "subprocess.run(") in msgs[0]
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        "os.execvpe('true', *parts)\n",
+        "os.execvpe(*parts)\n",
+        "os.spawnve(os.P_WAIT, *parts)\n",
+    ],
+)
+def test_a_positional_environment_behind_star_args_is_an_error(call):
+    msgs = _findings(_IMPORTS + "parts = []\n" + call)
+    assert len(msgs) == 1 and "*args" in msgs[0], msgs
+
+
+def test_a_positional_environment_left_out_is_an_error():
+    msgs = _findings(_IMPORTS + "os.execvpe('true', ['true'])\n")
+    assert len(msgs) == 1 and "passes no env=" in msgs[0], msgs
 
 
 # --- the helper handed the parent's environment ------------------------------------
@@ -744,3 +812,94 @@ def test_keel_itself_is_clean_and_not_vacuous(monkeypatch):
     assert len(importers) >= 10, importers
     blind = sorted(p for p, (want, seen) in importers.items() if seen < want)
     assert blind == [], importers
+
+
+# --- a shell script opens with the child environment re-exec line ----------------
+
+import child_exec  # noqa: E402
+
+_SH_LINE = child_exec.REEXEC_LINE
+_SH_HEAD = "#!/bin/sh\n# title: s\n# summary: s\n\n"
+_SH_SAME_DIR = '"$(dirname "$0")/child_exec.py"'
+
+
+def _shell(root, relpath, text):
+    path = root / relpath
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+_SH_GOOD = [
+    ("first-command", _SH_LINE + "\necho hi\n"),
+    ("indented", "  " + _SH_LINE + "\n"),
+    ("trailing-comment", _SH_LINE + "  # the allowlist\n"),
+    (
+        "other-path",
+        _SH_LINE.replace(_SH_SAME_DIR, '"$(dirname "$0")/../scripts/child_exec.py"')
+        + "\n",
+    ),
+]
+
+
+@pytest.mark.parametrize("body", [b for _, b in _SH_GOOD], ids=[i for i, _ in _SH_GOOD])
+def test_a_shell_script_that_opens_with_the_reexec_line_is_clean(repo, body):
+    _manifest(repo, _GOOD_MANIFEST)
+    _shell(repo, "scripts/s.sh", _SH_HEAD + body)
+    cs.check_X()
+    assert cs.errors == [], cs.errors
+
+
+_SH_BAD = [
+    ("command-first", "echo hi\n" + _SH_LINE + "\n"),
+    ("set-first", "set -eu\n" + _SH_LINE + "\n"),
+    ("python", _SH_LINE.replace("exec python3 ", "exec python ") + "\n"),
+    ("args-dropped", _SH_LINE.replace(' "$@"', "") + "\n"),
+    ("marker-constant", _SH_LINE.replace('= "$$"', '= "1"') + "\n"),
+    ("other-file", _SH_LINE.replace('child_exec.py"', 'child_exec.py.bak"') + "\n"),
+    ("other-command-after", _SH_LINE + "; echo hi\n"),
+    (
+        "command-in-path",
+        _SH_LINE.replace(_SH_SAME_DIR, '"$(touch x)/child_exec.py"') + "\n",
+    ),
+    ("continued", _SH_LINE.replace(" || ", " || \\\n    ") + "\n"),
+]
+
+
+@pytest.mark.parametrize("body", [b for _, b in _SH_BAD], ids=[i for i, _ in _SH_BAD])
+def test_a_shell_script_whose_first_command_is_not_the_reexec_line_is_an_error(
+    repo, body
+):
+    _manifest(repo, _GOOD_MANIFEST)
+    _shell(repo, "scripts/s.sh", _SH_HEAD + body)
+    cs.check_X()
+    assert len(cs.errors) == 1, cs.errors
+    assert cs.errors[0].startswith("scripts/s.sh:5: "), cs.errors
+    assert "child_exec.py" in cs.errors[0] and _SH_LINE in cs.errors[0], cs.errors
+
+
+def test_a_shell_script_with_no_command_is_an_error_at_its_file(repo):
+    _manifest(repo, _GOOD_MANIFEST)
+    _shell(repo, "ops/s.sh", _SH_HEAD + "# nothing yet\n")
+    cs.check_X()
+    assert len(cs.errors) == 1, cs.errors
+    assert cs.errors[0].startswith("ops/s.sh: "), cs.errors
+
+
+def test_a_shebang_script_without_a_suffix_is_judged_too(repo):
+    _manifest(repo, _GOOD_MANIFEST)
+    _shell(repo, "tests/helpers/run", "#!/usr/bin/env bash\necho hi\n")
+    cs.check_X()
+    assert [e.split(": ", 1)[0] for e in cs.errors] == ["tests/helpers/run:2"]
+
+
+def test_the_helper_a_bats_test_a_template_and_an_excluded_path_are_not_judged(
+    repo,
+):
+    manifest = dict(_GOOD_MANIFEST, shell={"excluded_paths": {"vendor": "vendored"}})
+    _manifest(repo, manifest)
+    _shell(repo, "scripts/exit_codes.sh", "#!/bin/sh\nEXIT_SUCCESS=0\n")
+    _shell(repo, "tests/s.bats", "#!/usr/bin/env bats\n@test x { true; }\n")
+    _shell(repo, "vendor/v.sh", "#!/bin/sh\necho hi\n")
+    _shell(repo, "scripts/s.sh.jinja", "#!/bin/sh\necho hi\n")
+    cs.check_X()
+    assert cs.errors == [], cs.errors

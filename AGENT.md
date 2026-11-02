@@ -7,7 +7,7 @@ owner: TBD
 summary: Global rules for any agent working in this repo.
 id: agent
 created: 2026-06-17
-updated: 2026-10-31
+updated: 2026-11-02
 visibility: internal
 canonical: true
 ---
@@ -62,6 +62,9 @@ of truth for labeling and the directory taxonomy. Each directory's own
   `env=build_child_env(...)` from `scripts/child_env.py` to every subprocess;
   name a variable a child needs in `config/project.json` `child_env.names`, or
   an adapter's credential in `models.credential_env`, never in code (check_X).
+  A shell script's first command is `REEXEC_LINE` from
+  `scripts/child_exec.py`, which re-runs the script under the same
+  allowlist (check_X).
   `docs/adr/keel/K-0012-child-process-environment-allowlist.md` is the decision; it
   is defence-in-depth, not a sandbox.
 - **End every process through the exit helper.** A script's entry line is

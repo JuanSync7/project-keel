@@ -8,7 +8,7 @@ tags: [checks, ci, linter, determinism, pre-commit, hooks, guide]
 summary: Catalogue of every deterministic check that keeps a project-template repo honest — purpose, when to run, and how to wire as a hook.
 id: docs-guides-deterministic-checks
 created: 2026-06-19
-updated: 2026-10-31
+updated: 2026-11-02
 visibility: internal
 canonical: true
 ---
@@ -411,9 +411,19 @@ print but never fail the build.
   except `tests/`, hidden directories, `IGNORE_DIRS` and a symlinked directory,
   so an undeclared directory is scanned too. A spawn with no `env=`, one whose
   `env=` is anything else, and one with `**kwargs` (which cannot be proven) are
-  errors; so are `os.system`, `os.popen`, `os.exec*`, `os.spawn*`,
-  `os.posix_spawn*`, `os.forkpty`, `pty.spawn` and `subprocess.getoutput`,
-  which cannot take an allowlisted environment the gate can verify. A spawn API
+  errors. The environment argument of `os.execve`, `os.execvpe`,
+  `os.posix_spawn`, `os.posix_spawnp`, `os.spawnve` and `os.spawnvpe` is
+  judged as `env=` is, and a `*args` at or before it is an error because the
+  argument cannot be read. `os.system`, `os.popen`, `os.forkpty`, an
+  `os.exec*` or `os.spawn*` with no environment argument (`os.execle` and
+  `os.execlpe` included, whose environment is last), `pty.spawn` and
+  `subprocess.getoutput` are errors, because none of them takes an
+  allowlisted environment the gate can verify. Every shell script that
+  `scripts/shell_gate.py` classes as a script, under a code home or a spawn
+  root, has `REEXEC_LINE` from `scripts/child_exec.py` as its first command,
+  whole and alone but for a trailing comment, so it re-runs itself under
+  the allowlist; the exit-code helper `exit_codes.sh` is the one file
+  skipped, and a shell file at the repo root is not walked. A spawn API
   referenced without being called (assigned, passed to `functools.partial`,
   used as a default or put in a list) is an error, because the `env=` it is
   later called with cannot be read; a type annotation and an
