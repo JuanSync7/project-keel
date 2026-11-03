@@ -2,7 +2,7 @@
 title: Integration — the docs state the isolation guard as the code holds it
 kind: tests
 layer: n/a
-summary: The documents a reader meets the isolation guard in are held to the guard. The rules and the README of the guard's own directory, and the guide the feature catalogue's guard row links as its deep doc, each name as a code span the guard module, every config key it reads (each scripts/config_loader.py `KEYS` row under the scratch root's top-level key), each axis it judges, and each conftest fixture that calls into it. The symptom table of config/project.json `doc_drift.limits_guide` shows, as code spans, the guard's failure line and its unused-exemption line, each rendered from the guard with `<field>` placeholders, and quotes the words of each scratch-root refusal the guard raises. Every expected item is derived from the guard, the loader, the conftest or the catalogue, never typed here; a derived set of zero items fails, and each rule has a fault-injection twin that removes one item and asserts exactly one finding. While the Makefile's `test` recipe passes pytest-xdist `-n`, no markdown file at the root or under docs/ or tests/ says in the present tense that the suite does not use pytest-xdist; its twin plants one such sentence, wrapped over two lines, and asserts exactly one finding, and none once the recipe passes no `-n`. Not a writer: it reads the tree.
+summary: The documents a reader meets the isolation guard in are held to the guard. The rules and the README of the guard's own directory, and the guide the feature catalogue's guard row links as its deep doc, each name as a code span the guard module, every config key it reads (each scripts/config_loader.py `KEYS` row whose path the guard module writes as a tuple of strings, so a `tests.*` key another module reads is not required), each axis it judges, and each conftest fixture that calls into it. The symptom table of config/project.json `doc_drift.limits_guide` shows, as code spans, the guard's failure line and its unused-exemption line, each rendered from the guard with `<field>` placeholders, and quotes the words of each scratch-root refusal the guard raises. Every expected item is derived from the guard, the loader, the conftest or the catalogue, never typed here; a derived set of zero items fails, and each rule has a fault-injection twin that removes one item and asserts exactly one finding. While the Makefile's `test` recipe passes pytest-xdist `-n`, no markdown file at the root or under docs/ or tests/ says in the present tense that the suite does not use pytest-xdist; its twin plants one such sentence, wrapped over two lines, and asserts exactly one finding, and none once the recipe passes no `-n`. Not a writer: it reads the tree.
 """
 
 import ast
@@ -43,10 +43,18 @@ def _rel(path):
 
 def required_spans():
     """Every code span a document that states the guard must hold: the guard
-    module's path, each loader key under the scratch root's top-level key,
-    each axis, and each conftest fixture whose body calls into the guard."""
-    top = isolation_guard.SCRATCH_KEY[0]
-    keys = sorted(".".join(k.path) for k in config_loader.KEYS if k.path[0] == top)
+    module's path, each loader key the guard module names, each axis, and
+    each conftest fixture whose body calls into the guard."""
+    named = {
+        tuple(e.value for e in node.elts)
+        for node in ast.walk(ast.parse(_GUARD.read_text(encoding="utf-8")))
+        if isinstance(node, ast.Tuple)
+        and node.elts
+        and all(
+            isinstance(e, ast.Constant) and isinstance(e.value, str) for e in node.elts
+        )
+    }
+    keys = sorted(".".join(k.path) for k in config_loader.KEYS if k.path in named)
     tree = ast.parse(_CONFTEST.read_text(encoding="utf-8"))
     fixtures = sorted(
         node.name
@@ -60,7 +68,10 @@ def required_spans():
             for n in ast.walk(node)
         )
     )
-    assert keys, "no %s key in config_loader.KEYS -- zero items" % top
+    assert ".".join(isolation_guard.SCRATCH_KEY) in keys, (
+        "the guard names no config_loader.KEYS path, not even its scratch root"
+        " -- zero items"
+    )
     assert fixtures, "no conftest fixture calls into the guard -- zero items"
     return [_rel(_GUARD)] + keys + list(isolation_guard.AXES) + fixtures
 
