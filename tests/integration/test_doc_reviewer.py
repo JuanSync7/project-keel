@@ -2,7 +2,7 @@
 title: Integration — the doc reviewer agent (dry-run, execute, decline, rollback)
 kind: tests
 layer: backend
-summary: agents.doc_reviewer.review over patched tool and model seams (no subprocess, no model, but for one style-rule retrieval over the real query_corpus, which retrieves the guide while its file under the reviewed root is public and not once it states confidential, so a retrieval that drops `--root` is red): a dry-run gathers findings, retrieves rules, gates the baseline and writes nothing; execute proposes one edit per chunk and applies through the gated doer; a declined chunk or a red gate lands in skipped; a red baseline attempts nothing; a reply that names a gate is declined, the prompt never states the gate, and every apply is bound to its chunk's own file with `--allow`. A style-rule retrieval query_corpus refuses, or whose output is not JSON or empty, raises RulesRefused naming the exit status, dry run and execute alike, with no model call, and scripts/doc_review.py reports it as exit USAGE through the exit helper, as scripts/hooks/on_stop_doc_review.py does with --execute while its dry run writes that one line and exits 0, the real query_corpus refusing a corpus that is not JSON; one that finds no node refuses an execute run the same way, and a dry run shows the empty rules section in its preview. A relative root reaches the corpus query as one absolute `--root`, with no `--corpus` beside it; a corpus given alone names its checkout, whose corpus both the withholding check and the query read; a root beside a corpus, a corpus outside some checkout's wiki/corpus.json, or one named that does not exist, is corpus_level.NotACheckout before any tool runs. Every tool call hands the reviewed root to the runner, so run_tool reads the tool limits, and checks them against the gate keys, of the tree the gate runner reads. The report the CLI and hook print is this report. A finding on a file the corpus places outside corpus.served_visibilities, or has no node for, or on any file when the corpus or config cannot be read, is withheld: reported with why (one CLI line each, a count in the hook's line), its text never read, and no prompt or apply made, dry run and execute alike, while a served finding beside it still goes; a chunk queued before its file left the served levels is declined at propose with no model call; a document reclassified on disk after the corpus was built, or made unreadable, is withheld the same way, its text in no prompt.
+summary: agents.doc_reviewer.review over patched tool and model seams (no subprocess, no model, but for one style-rule retrieval over the real query_corpus, which retrieves the guide while its file under the reviewed root is public and not once it states confidential, so a retrieval that drops `--root` is red): a dry-run gathers findings, retrieves rules, gates the baseline and writes nothing; execute proposes one edit per chunk and applies through the gated doer; a declined chunk or a red gate lands in skipped; a red baseline attempts nothing; a reply that names a gate is declined, the prompt never states the gate, and every apply is bound to its chunk's own file with `--allow`. A style-rule retrieval query_corpus refuses, or whose output is not JSON or empty, raises RulesRefused naming the exit status, dry run and execute alike, with no model call, and scripts/doc_review.py reports it as exit USAGE through the exit helper, as scripts/hooks/on_stop_doc_review.py does with --execute while its dry run writes that one line and exits 0, the real query_corpus refusing a corpus that is not JSON; one that finds no node refuses an execute run the same way, and a dry run shows the empty rules section in its preview. A review_docs, run_make_target or apply_refactor answer that is not a JSON object, or a failed review_docs, raises ToolReportUnreadable naming the tool and the root (KEEL-ERR-1), and the CLI and an executing hook report it as exit FAILURE while the hook's dry run writes the one line and exits 0. A relative root reaches the corpus query as one absolute `--root`, with no `--corpus` beside it; a corpus given alone names its checkout, whose corpus both the withholding check and the query read; a root beside a corpus, a corpus outside some checkout's wiki/corpus.json, or one named that does not exist, is corpus_level.NotACheckout before any tool runs. Every tool call hands the reviewed root to the runner, so run_tool reads the tool limits, and checks them against the gate keys, of the tree the gate runner reads. The report the CLI and hook print is this report. A finding on a file the corpus places outside corpus.served_visibilities, or has no node for, or on any file when the corpus or config cannot be read, is withheld: reported with why (one CLI line each, a count in the hook's line), its text never read, and no prompt or apply made, dry run and execute alike, while a served finding beside it still goes; a chunk queued before its file left the served levels is declined at propose with no model call; a document reclassified on disk after the corpus was built, or made unreadable, is withheld the same way, its text in no prompt.
 """
 
 import json
@@ -15,7 +15,12 @@ import pytest
 _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT))
 
-from agents.doc_reviewer import DocReviewReport, RulesRefused, review  # noqa: E402
+from agents.doc_reviewer import (  # noqa: E402
+    DocReviewReport,
+    RulesRefused,
+    ToolReportUnreadable,
+    review,
+)
 from models import ModelMeter  # noqa: E402
 from scripts import corpus_level  # noqa: E402
 
@@ -451,6 +456,95 @@ def test_a_red_baseline_attempts_nothing(monkeypatch, tmp_path):
         and model.prompts == []
         and "apply_refactor" not in runner.calls
     )
+
+
+class _BrokenTool(_Runner):
+    """A runner whose *tool* answers (rc, stdout, stderr) *answer* in place of
+    its JSON report."""
+
+    def __init__(self, tool, answer):
+        super().__init__()
+        self.tool, self.answer = tool, answer
+
+    def __call__(self, args, stdin=None, *, root):
+        if any(a.endswith(self.tool) for a in args):
+            self.calls.append(self.tool)
+            return self.answer
+        return super().__call__(args, stdin, root=root)
+
+
+@pytest.mark.parametrize(
+    "tool, answer",
+    [
+        ("review_docs.py", (0, "Traceback (most recent call last):", "")),
+        ("review_docs.py", (0, "", "")),
+        ("review_docs.py", (0, "[]", "")),
+        ("review_docs.py", (2, "", "review_docs: no such root")),
+        ("run_make_target.py", (0, "", "")),
+        ("run_make_target.py", (1, "{truncated", "")),
+        ("apply_refactor.py", (1, "{truncated", "")),
+        ("apply_refactor.py", (0, "", "")),
+    ],
+    ids=[
+        "review_docs unparseable",
+        "review_docs silent",
+        "review_docs not an object",
+        "review_docs failed",
+        "run_make_target silent",
+        "run_make_target unparseable",
+        "apply_refactor unparseable",
+        "apply_refactor silent",
+    ],
+)
+def test_a_tool_report_that_does_not_parse_fails_the_review(
+    monkeypatch, tmp_path, tool, answer
+):
+    """KEEL-ERR-1: review_docs output that did not parse was read as zero
+    findings, and a baseline or apply report that did not parse as a red gate
+    or a declined chunk, so a broken tool looked like a clean review. Each
+    tool the review reads answers with a JSON object, or the review raises
+    ToolReportUnreadable naming the tool and the root."""
+    monkeypatch.setattr(_BRAIN + "._run", _BrokenTool(tool, answer))
+    monkeypatch.setattr(_BRAIN + ".get_model", lambda name=None: _Model(_SPEC))
+    monkeypatch.setattr(_BRAIN + "._read_lines", lambda *a, **k: "")
+    _project(tmp_path)
+    with pytest.raises(ToolReportUnreadable, match=tool.replace(".", r"\.")) as exc:
+        review(execute=True, max_model_calls=8, root=str(tmp_path), max_chunks=1)
+    assert str(tmp_path) in exc.value.parts[1]
+    assert all(part.strip() for part in exc.value.parts)
+    assert issubclass(ToolReportUnreadable, RuntimeError)
+
+
+@pytest.mark.parametrize("execute", [False, True], ids=["dry-run", "execute"])
+def test_the_cli_and_hook_report_an_unreadable_tool_report_as_a_failure(
+    monkeypatch, capsys, tmp_path, execute
+):
+    """A broken tool ends the CLI, and an executing hook, at exit FAILURE
+    through the exit helper with one line naming the tool, never a traceback;
+    the hook's dry run, which never blocks the event, says it on that one
+    line and exits 0."""
+    sys.path.insert(0, str(_ROOT / "scripts"))
+    sys.path.insert(0, str(_ROOT / "scripts" / "hooks"))
+    import doc_review as cli  # noqa: E402
+    import model_budget  # noqa: E402
+    import on_stop_doc_review as hook  # noqa: E402
+
+    monkeypatch.setattr(model_budget, "cap", lambda root: 8)
+    monkeypatch.setattr(_BRAIN + "._run", _BrokenTool("review_docs.py", (0, "", "")))
+    monkeypatch.setattr(_BRAIN + ".get_model", lambda name=None: _Model(_SPEC))
+    monkeypatch.setattr(
+        hook, "review", lambda **kwargs: review(root=str(tmp_path), **kwargs)
+    )
+    _project(tmp_path)
+    flag = ["--execute"] if execute else []
+    failure = cli.exit_codes.ExitCode.FAILURE
+    capsys.readouterr()
+    assert cli.main(["--root", str(tmp_path)] + flag) == failure
+    err = capsys.readouterr().err.strip().splitlines()[-1]
+    assert err.startswith("doc_review: ") and "review_docs.py" in err
+    assert hook.main(["payload"] + flag) == (failure if execute else 0)
+    err = capsys.readouterr().err.strip().splitlines()[-1]
+    assert err.startswith("on_stop_doc_review: ") and "review_docs.py" in err
 
 
 def test_the_cli_and_hook_report_the_review_and_skip_an_absent_model(

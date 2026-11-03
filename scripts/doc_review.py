@@ -3,7 +3,7 @@
 title: doc_review — thin CLI over the doc reviewer agent
 kind: script
 layer: n/a
-summary: Runs agents.doc_reviewer.review(): dry-run by default (gathers findings, retrieves the rules, gates the baseline, writes nothing), `--execute` proposes and applies gated edits, first held to config/project.json `agents.max_model_calls` (scripts/model_budget.py): a --max-chunks over the cap, or a negative one that bounds nothing, is refused (exit 2) and a cap the config cannot give is exit 14, both before the agent runs; with no --model it names on stderr the registry default it will use. The run is then held to that bound as it goes: every model call is counted (models.CountedModel), and the call past it is never made, a failure (exit 1) naming the count; a saved run under wiki/.runtime/ that would resume on another model or with more calls left than the bound is refused (exit 2) naming the snapshot to remove. A setting the model or the runtime reads once the agent starts (models.timeout_seconds, models.max_reply_bytes, runtimes.max_steps, agents.tool_timeout_seconds, agents.tool_max_output_bytes) that scripts/config_loader.py refuses is exit 14 naming the key, in either mode, never a traceback; a tool child the agent runs that is ended at agents.tool_timeout_seconds or agents.tool_max_output_bytes (scripts/resource_limits.py run_tool) is a failure (exit 1) naming the key. A style-rule retrieval scripts/query_corpus.py refuses, or whose output is not JSON (agents.doc_reviewer RulesRefused), is refused (exit 2) naming the root and query_corpus's own line, before any model call. An empty `--root` is refused (exit 2) before the agent runs, never read as this repo (scripts/corpus_level.py checkout). An unavailable model is a stated skip at exit 0. A finding the agent withholds from the model, its file at no corpus.served_visibilities level or the corpus unreadable, is printed as one `withheld <id>: <why>` line (a `withheld` list in --json).
+summary: Runs agents.doc_reviewer.review(): dry-run by default (gathers findings, retrieves the rules, gates the baseline, writes nothing), `--execute` proposes and applies gated edits, first held to config/project.json `agents.max_model_calls` (scripts/model_budget.py): a --max-chunks over the cap, or a negative one that bounds nothing, is refused (exit 2) and a cap the config cannot give is exit 14, both before the agent runs; with no --model it names on stderr the registry default it will use. The run is then held to that bound as it goes: every model call is counted (models.CountedModel), and the call past it is never made, a failure (exit 1) naming the count; a saved run under wiki/.runtime/ that would resume on another model or with more calls left than the bound is refused (exit 2) naming the snapshot to remove. A setting the model or the runtime reads once the agent starts (models.timeout_seconds, models.max_reply_bytes, runtimes.max_steps, agents.tool_timeout_seconds, agents.tool_max_output_bytes) that scripts/config_loader.py refuses is exit 14 naming the key, in either mode, never a traceback; a tool child the agent runs that is ended at agents.tool_timeout_seconds or agents.tool_max_output_bytes (scripts/resource_limits.py run_tool) is a failure (exit 1) naming the key. A style-rule retrieval scripts/query_corpus.py refuses, or whose output is not JSON (agents.doc_reviewer RulesRefused), is refused (exit 2) naming the root and query_corpus's own line, before any model call. A tool the agent reads that fails, or answers with no JSON object (agents.doc_reviewer ToolReportUnreadable), is a failure (exit 1) naming the tool and the root, never a review of zero findings. An empty `--root` is refused (exit 2) before the agent runs, never read as this repo (scripts/corpus_level.py checkout). An unavailable model is a stated skip at exit 0. A finding the agent withholds from the model, its file at no corpus.served_visibilities level or the corpus unreadable, is printed as one `withheld <id>: <why>` line (a `withheld` list in --json).
 """
 
 from __future__ import annotations
@@ -21,7 +21,11 @@ import config_loader  # noqa: E402
 import corpus_level  # noqa: E402
 import exit_codes  # noqa: E402
 import model_budget  # noqa: E402
-from agents.doc_reviewer import RulesRefused, review  # noqa: E402
+from agents.doc_reviewer import (  # noqa: E402
+    RulesRefused,
+    ToolReportUnreadable,
+    review,
+)
 from models import CallCapReached, ModelUnavailable, RunNotApproved  # noqa: E402
 from scripts.resource_limits import (  # noqa: E402
     ChildOutputTooLarge,
@@ -111,6 +115,11 @@ def main(argv=None):
         what, on, next_step = exc.parts
         return exit_codes.report(
             exit_codes.ExitCode.USAGE, "doc_review: " + what, on, next_step
+        )
+    except ToolReportUnreadable as exc:
+        what, on, next_step = exc.parts
+        return exit_codes.report(
+            exit_codes.ExitCode.FAILURE, "doc_review: " + what, on, next_step
         )
     except CallCapReached as exc:
         what, on, next_step = model_budget.stopped(exc, "--max-chunks")

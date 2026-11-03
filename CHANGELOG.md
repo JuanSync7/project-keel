@@ -549,6 +549,13 @@ version rather than a bare commit:
   guard that fails a reach past it.
 
 ### Fixed
+- **A broken tool no longer reads as a clean documentation review.** The doc
+  reviewer read review_docs output that did not parse as zero findings, and a
+  baseline or apply report that did not parse as a red gate or a declined
+  chunk. Each report now goes through one reader that raises
+  `agents.doc_reviewer.ToolReportUnreadable`, naming the tool and the root;
+  `scripts/doc_review.py` and an executing `scripts/hooks/on_stop_doc_review.py`
+  end at exit 1 through the exit helper.
 - **The MCP stdio loop answers a line that is not JSON.** It dropped the line
   and left the client waiting; it now answers JSON-RPC's parse error, -32700,
   with a null id.

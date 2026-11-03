@@ -2,7 +2,7 @@
 title: Doc reviewer brain
 layer: backend
 public_api: no
-summary: Plan: gather the deterministic doc findings (review_docs) -> retrieve the style rules (query_corpus) -> gate a green baseline -> (propose -> apply+gate+rollback) one finding per step; on a durable Runtime. Judgment only where a rule cannot decide. An execute run needs its approved count of model calls: every call goes through one run's models.ModelMeter, and a resumed run is first checked against the approved model and count (models.approve_resume). Every tool child runs through scripts/resource_limits.py run_tool, held to the reviewed root's config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes`, the root whose make_targets gate keys the gate runner it starts reads, so the time limit is checked against that runner's own limit: past either its session is ended and the step raises ChildTimedOut or ChildOutputTooLarge naming the key. A finding on a file the corpus does not place at a corpus.served_visibilities level (config_loader.is_served), on a file that states a level outside it on disk now or none that can be read (config_loader.is_served_now over scripts/corpus_level.py stated_now), or on any file when the corpus cannot be read, is withheld: reported with why, never sent. A style-rule retrieval query_corpus refuses, or whose output is not JSON (empty output included), raises RulesRefused, a RuntimeError carrying report()'s three parts, before the baseline gate; so does one that finds no node at all on an execute run (`[]` from a checkout with no corpus, or a corpus with no node for the rule query), so no model is asked for edits with an empty rules section, while a dry run, which asks none, shows that empty section in its preview. review is given a root or a corpus, never both, and scripts/corpus_level.py checkout derives the other before any step (this checkout when neither; a relative path is the caller's directory's), raising NotACheckout for both, for an empty root, for a corpus that is not some checkout's wiki/corpus.json, or for a corpus that does not exist; every step keeps only the root and reads its wiki/corpus.json, so the withholding check and the style-rule retrieval, which hands query_corpus `--root` alone, read one corpus.
+summary: Plan: gather the deterministic doc findings (review_docs) -> retrieve the style rules (query_corpus) -> gate a green baseline -> (propose -> apply+gate+rollback) one finding per step; on a durable Runtime. Judgment only where a rule cannot decide. An execute run needs its approved count of model calls: every call goes through one run's models.ModelMeter, and a resumed run is first checked against the approved model and count (models.approve_resume). Every tool child runs through scripts/resource_limits.py run_tool, held to the reviewed root's config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes`, the root whose make_targets gate keys the gate runner it starts reads, so the time limit is checked against that runner's own limit: past either its session is ended and the step raises ChildTimedOut or ChildOutputTooLarge naming the key. A finding on a file the corpus does not place at a corpus.served_visibilities level (config_loader.is_served), on a file that states a level outside it on disk now or none that can be read (config_loader.is_served_now over scripts/corpus_level.py stated_now), or on any file when the corpus cannot be read, is withheld: reported with why, never sent. A style-rule retrieval query_corpus refuses, or whose output is not JSON (empty output included), raises RulesRefused, a RuntimeError carrying report()'s three parts, before the baseline gate; so does one that finds no node at all on an execute run (`[]` from a checkout with no corpus, or a corpus with no node for the rule query), so no model is asked for edits with an empty rules section, while a dry run, which asks none, shows that empty section in its preview. A review_docs, run_make_target or apply_refactor run that answers with anything but a JSON object, or a review_docs run that exits non-zero, raises ToolReportUnreadable, a RuntimeError carrying report()'s three parts and naming the tool and the root, never an empty report read as zero findings, a red baseline or a declined chunk. review is given a root or a corpus, never both, and scripts/corpus_level.py checkout derives the other before any step (this checkout when neither; a relative path is the caller's directory's), raising NotACheckout for both, for an empty root, for a corpus that is not some checkout's wiki/corpus.json, or for a corpus that does not exist; every step keeps only the root and reads its wiki/corpus.json, so the withholding check and the style-rule retrieval, which hands query_corpus `--root` alone, read one corpus.
 """
 
 from __future__ import annotations
@@ -27,12 +27,21 @@ from runtimes import (
 from scripts import config_loader, corpus_level
 from scripts.resource_limits import run_tool
 
-__all__ = ["review", "DocReviewReport", "RulesRefused"]
+__all__ = ["review", "DocReviewReport", "RulesRefused", "ToolReportUnreadable"]
 
 
 class RulesRefused(RuntimeError):
     """A style-rule retrieval that cannot give the rules, as report()'s
     three parts."""
+
+    def __init__(self, what, on, next_step):
+        super().__init__("%s: %s; %s" % (what, on, next_step))
+        self.parts = (what, on, next_step)
+
+
+class ToolReportUnreadable(RuntimeError):
+    """A tool the review reads that failed, or answered with no JSON
+    object, as report()'s three parts."""
 
     def __init__(self, what, on, next_step):
         super().__init__("%s: %s; %s" % (what, on, next_step))
@@ -83,6 +92,27 @@ def _run(args, stdin=None, *, root):
     """
     proc = run_tool([sys.executable] + args, cwd=_REPO, stdin_text=stdin, root=root)
     return proc.returncode, proc.stdout, proc.stderr
+
+
+def _report(tool, rc, out, err, root):
+    """The JSON object *tool* printed under *root*. Every tool the review
+    reads answers with one, a red gate or a rolled-back edit included, so
+    output that is not an object is the tool broken: read as an empty report,
+    it turned a failed review into zero findings (KEEL-ERR-1)."""
+    try:
+        report = json.loads(out)
+    except ValueError as exc:
+        report, why = None, "output that is not JSON (%s)" % exc
+    else:
+        why = "a JSON %s, not an object" % type(report).__name__
+    if not isinstance(report, dict):
+        raise ToolReportUnreadable(
+            "%s gave the review no report" % tool,
+            "%s exited %d under %s with %s; its stderr: %s"
+            % (tool, rc, root, why, err.strip() or "(empty)"),
+            "run scripts/%s on that checkout to see its output, then rerun" % tool,
+        )
+    return report
 
 
 def _system_prompt():
@@ -262,11 +292,13 @@ def _review(state):
         root=state["root"],
     )
     if rc != 0:
-        raise RuntimeError("review_docs failed (rc=%d): %s" % (rc, err.strip()))
-    try:
-        report = json.loads(out) if out.strip() else {}
-    except ValueError:
-        report = {}
+        raise ToolReportUnreadable(
+            "review_docs.py failed",
+            "review_docs.py exited %d under %s; its stderr: %s"
+            % (rc, state["root"], err.strip() or "(empty)"),
+            "fix what review_docs.py names, then rerun",
+        )
+    report = _report("review_docs.py", rc, out, err, state["root"])
     chunks, withheld = _chunks(
         report,
         state["root"],
@@ -339,14 +371,13 @@ def _retrieve(state):
 
 def _baseline(state):
     """Read-only: the gate must be green BEFORE any edit (run_make_target)."""
-    _, out, _ = _run(
+    # A red gate exits non-zero with its report, so the report, not the exit
+    # status, says whether the baseline is green.
+    rc, out, err = _run(
         ["scripts/run_make_target.py", state["gate"], "--json", "--dir", state["root"]],
         root=state["root"],
     )
-    try:
-        res = json.loads(out) if out.strip() else {}
-    except ValueError:
-        res = {}
+    res = _report("run_make_target.py", rc, out, err, state["root"])
     return {"baseline_green": bool(res.get("ok"))}
 
 
@@ -372,7 +403,7 @@ def _apply(state):
     if spec:
         # --allow binds the apply to the chunk the model was shown, so the
         # reply's edits[].file cannot reach any other file.
-        _, out, _ = _run(
+        rc, out, err = _run(
             [
                 "scripts/apply_refactor.py",
                 "--spec",
@@ -388,10 +419,9 @@ def _apply(state):
             stdin=json.dumps(spec),
             root=state["root"],
         )
-        try:
-            res = json.loads(out) if out.strip() else {}
-        except ValueError:
-            res = {}
+        # A refused or rolled-back edit exits non-zero with its report, so the
+        # report says whether the edit landed.
+        res = _report("apply_refactor.py", rc, out, err, state["root"])
         if res.get("applied"):
             applied.extend(res.get("files", []))
         else:
