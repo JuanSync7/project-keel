@@ -171,7 +171,7 @@ class LangGraphRuntime(Runtime):
             execute = bag.get("_execute", False)
             trace = list(bag.get("_trace", []))
             if step.effect in _GATED and not execute:
-                _emit(on_event, step.name, step.effect, False, "dry-run")
+                _emit(on_event, step.name, step.effect, ran=False, reason="dry-run")
                 return {
                     "bag": {
                         "_trace": trace + [[step.name, step.effect, False, "dry-run"]]
@@ -192,7 +192,7 @@ class LangGraphRuntime(Runtime):
                 raise _PauseSignal from p
             new = dict(update)
             new["_trace"] = trace + [[step.name, step.effect, True, ""]]
-            _emit(on_event, step.name, step.effect, True, "")
+            _emit(on_event, step.name, step.effect, ran=True, reason="")
             _checkpoint_after(
                 checkpointer, run_key, plan, step.name, bag, update, new["_trace"]
             )
@@ -236,7 +236,7 @@ class LangGraphRuntime(Runtime):
             execute = bag.get("_execute", False)
             trace = list(bag.get("_trace", []))
             if step.effect in _GATED and not execute:
-                _emit(on_event, step.name, step.effect, False, "dry-run")
+                _emit(on_event, step.name, step.effect, ran=False, reason="dry-run")
                 return {
                     "bag": {
                         "_trace": trace + [[step.name, step.effect, False, "dry-run"]]
@@ -251,7 +251,7 @@ class LangGraphRuntime(Runtime):
             update = {step.name: [res for _, res in mine]}
             new = dict(update)
             new["_trace"] = trace + [[step.name, step.effect, True, ""]]
-            _emit(on_event, step.name, step.effect, True, "")
+            _emit(on_event, step.name, step.effect, ran=True, reason="")
             _checkpoint_after(
                 checkpointer, run_key, plan, step.name, bag, update, new["_trace"]
             )

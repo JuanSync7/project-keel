@@ -33,7 +33,7 @@ def repo(tmp_path, monkeypatch):
     return tmp_path
 
 
-def _package(root, relpath, main=True):
+def _package(root, relpath, *, main=True):
     pkg = root / relpath
     pkg.mkdir(parents=True)
     (pkg / "__init__.py").write_text("__all__ = []\n", encoding="utf-8")

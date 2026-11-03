@@ -24,7 +24,7 @@ pytestmark = pytest.mark.unit
 _OPEN, _BASE, _SPLIT, _CLOSE = "<" * 7, "|" * 7, "=" * 7, ">" * 7
 
 
-def _merge(label=True):
+def _merge(*, label=True):
     o = _OPEN + (" before updating" if label else "")
     c = _CLOSE + (" after updating" if label else "")
     return "a\n%s\nours\n%s\ntheirs\n%s\nz\n" % (o, _SPLIT, c)

@@ -110,7 +110,7 @@ class _Project:
         manifest["dependency_audit"] = block
         (self.root / "config" / "project.json").write_text(json.dumps(manifest))
 
-    def app(self, name, lockfile=True, manifest=None):
+    def app(self, name, *, lockfile=True, manifest=None):
         app = self.root / "src" / "frontend" / name
         app.mkdir(parents=True, exist_ok=True)
         (app / "package.json").write_text(json.dumps(manifest or {}))

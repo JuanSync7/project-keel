@@ -1524,7 +1524,7 @@ def _plant_exit_member(project):
         if isinstance(node, ast.Assign) and isinstance(node.value, ast.Tuple)
     ]
     assert values, "the generated project's enum has no member -- zero items"
-    lines = text.splitlines(True)
+    lines = text.splitlines(keepends=True)
     lines.insert(
         enum.end_lineno,
         "    PLANTED = (%d, 'it was planted', 'nothing')\n" % (max(values) + 1),
@@ -3314,8 +3314,10 @@ def test_the_doc_drift_tests_run_and_judge_a_generated_project(
     )
     settings = dest / "docs" / "reference" / "settings.md"
     text = settings.read_text(encoding="utf-8")
-    kept = [ln for ln in text.splitlines(True) if not ln.startswith("| `PY` |")]
-    assert len(kept) == len(text.splitlines(True)) - 1, "no `PY` row to drop"
+    kept = [
+        ln for ln in text.splitlines(keepends=True) if not ln.startswith("| `PY` |")
+    ]
+    assert len(kept) == len(text.splitlines(keepends=True)) - 1, "no `PY` row to drop"
     settings.write_text("".join(kept), encoding="utf-8")
     drifted = _doc_drift_in(dest)
     assert drifted.returncode == 1, drifted.stdout[-4000:] + drifted.stderr
@@ -3327,8 +3329,10 @@ def test_the_doc_drift_tests_run_and_judge_a_generated_project(
     features = dest / policy["doc_drift"]["features_reference"]
     rows = features.read_text(encoding="utf-8")
     gate_row = "| `make %s` " % policy["doc_drift"]["gate_target"]
-    kept = [ln for ln in rows.splitlines(True) if not ln.startswith(gate_row)]
-    assert len(kept) == len(rows.splitlines(True)) - 1, "no %r row to drop" % gate_row
+    kept = [ln for ln in rows.splitlines(keepends=True) if not ln.startswith(gate_row)]
+    assert len(kept) == len(rows.splitlines(keepends=True)) - 1, (
+        "no %r row to drop" % gate_row
+    )
     features.write_text("".join(kept), encoding="utf-8")
     unlisted = _doc_drift_in(dest)
     assert unlisted.returncode == 1, unlisted.stdout[-4000:] + unlisted.stderr

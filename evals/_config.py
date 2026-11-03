@@ -47,6 +47,7 @@ class ConfigError(Exception):
         message: str,
         report_dir: str | None = None,
         lines: list[str] | None = None,
+        *,
         in_config: bool = False,
     ) -> None:
         super().__init__(message)

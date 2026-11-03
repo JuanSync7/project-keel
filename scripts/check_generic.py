@@ -334,7 +334,7 @@ def collect_src(base):
     return occ, empty_pragmas
 
 
-def find(strict=False):
+def find(*, strict=False):
     """Return (findings, suppressed_count, empty_pragmas).
 
     A finding is a distinctive value present both as a test's expected value and

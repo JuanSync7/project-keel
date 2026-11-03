@@ -220,7 +220,12 @@ def test_launch_hides_a_state_path_and_a_credential_name_holding_an_at(
     monkeypatch.setattr(launch.git_tree, "through_symlink", lambda _root, paths: paths)
     found = launch._unsafe_state(str(_ROOT), Cfg())
     _hides(found[0], "config/own-hosts.local.json")
-    launch._stopped(("credential", ["LC_" + _AT, "OTHER_NAME"]), ["make"], False, None)
+    launch._stopped(
+        ("credential", ["LC_" + _AT, "OTHER_NAME"]),
+        ["make"],
+        submitting=False,
+        adapter=None,
+    )
     _hides(capsys.readouterr().err, "OTHER_NAME")
 
 

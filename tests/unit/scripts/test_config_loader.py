@@ -48,6 +48,7 @@ def _key(
     path,
     type_,
     default=NONE,
+    *,
     secret=False,
     env_name=None,
     file=CONFIG_FILE,

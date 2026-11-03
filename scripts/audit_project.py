@@ -907,7 +907,7 @@ def resolve_conflict(data, side):
         raise ValueError("unknown side %r" % side)
     out = []
     section = None  # None outside a hunk, else "project", "base" or "template"
-    for line in data.splitlines(True):
+    for line in data.splitlines(keepends=True):
         mark = line.rstrip()
         if section is None:
             if mark == _MARK_PROJECT:

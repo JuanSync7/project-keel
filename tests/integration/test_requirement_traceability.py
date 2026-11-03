@@ -103,7 +103,7 @@ def _git(repo, env, *argv):
     return out.stdout
 
 
-def build_scratch(base, git=True):
+def build_scratch(base, *, git=True):
     """A scratch copy of what the gate reads in this project: the config, the
     specs, every test file that holds the marker, the pytest ini and the
     command with what it imports. (repo, env); committed when *git*."""

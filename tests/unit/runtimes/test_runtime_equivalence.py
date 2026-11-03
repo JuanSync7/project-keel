@@ -104,7 +104,7 @@ def test_branching_equivalence(label, init, execute):
 
 def test_dry_run_guard_holds_on_both_engines():
     for engine in ENGINES:
-        _, _, _, calls = _run(engine, {"fix_gaps": True}, False)
+        _, _, _, calls = _run(engine, {"fix_gaps": True}, execute=False)
         assert "build" not in calls and "fill" not in calls, engine
 
 

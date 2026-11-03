@@ -136,8 +136,8 @@ _KEY = ("accountability", "default_owner")
 _DOTTED = "accountability.default_owner"
 
 
-def _rollup(governed, default, refused=False):
-    return cs._owner_rollup(governed, default, refused)
+def _rollup(governed, default, *, refused=False):
+    return cs._owner_rollup(governed, default, refused=refused)
 
 
 def test_the_default_owner_row_is_an_optional_owner_token_defaulting_to_null():
@@ -223,7 +223,7 @@ def test_an_absent_or_empty_owner_still_warns(owner, default):
 
 
 def test_a_tbd_owner_under_a_refused_default_says_the_value_was_refused():
-    errs, _warns = _rollup([("agents/x/README.md", "agent", "TBD")], None, True)
+    errs, _warns = _rollup([("agents/x/README.md", "agent", "TBD")], None, refused=True)
     assert len(errs) == 1 and "refused" in errs[0], errs
     assert "gives no" not in errs[0], errs
 

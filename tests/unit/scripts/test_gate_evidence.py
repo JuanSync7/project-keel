@@ -146,7 +146,7 @@ def test_a_missing_or_unparseable_report_is_null_not_zero(tmp_path):
     cut = tmp_path / "cut.xml"
     cut.write_text(_JUNIT[: len(_JUNIT) // 2], encoding="utf-8")
     assert ge.junit_counts(str(cut)) is None
-    assert ge.overall([_target("test")], None, False, True) == (
+    assert ge.overall([_target("test")], None, tree_changed=False, checks_ok=True) == (
         "fail",
         ["no-test-report"],
     )
@@ -154,21 +154,38 @@ def test_a_missing_or_unparseable_report_is_null_not_zero(tmp_path):
 
 def test_zero_tests_is_red_and_all_skipped_is_zero_tests():
     ok = [_target("test")]
-    assert ge.overall(ok, _counts(), False, True) == ("fail", ["zero-tests"])
-    assert ge.overall(ok, _counts(skipped=4), False, True) == ("fail", ["zero-tests"])
-    assert ge.overall(ok, _counts(passed=1, skipped=4), False, True) == ("pass", [])
+    assert ge.overall(ok, _counts(), tree_changed=False, checks_ok=True) == (
+        "fail",
+        ["zero-tests"],
+    )
+    assert ge.overall(ok, _counts(skipped=4), tree_changed=False, checks_ok=True) == (
+        "fail",
+        ["zero-tests"],
+    )
+    assert ge.overall(
+        ok, _counts(passed=1, skipped=4), tree_changed=False, checks_ok=True
+    ) == ("pass", [])
 
 
 def test_overall_names_every_red_condition_sorted():
     """Each condition alone is red with its own reason; together they are all
     named, sorted; an unknown tree (None, no git) is not a change."""
     ok, tests = [_target("test")], _counts(passed=1)
-    assert ge.overall(ok, tests, None, True) == ("pass", [])
-    assert ge.overall(ok, tests, True, True) == ("fail", ["tree-changed"])
-    assert ge.overall(ok, tests, False, False) == ("fail", ["checks-unavailable"])
-    assert ge.overall([], tests, False, True) == ("fail", ["zero-targets"])
+    assert ge.overall(ok, tests, None, checks_ok=True) == ("pass", [])
+    assert ge.overall(ok, tests, tree_changed=True, checks_ok=True) == (
+        "fail",
+        ["tree-changed"],
+    )
+    assert ge.overall(ok, tests, tree_changed=False, checks_ok=False) == (
+        "fail",
+        ["checks-unavailable"],
+    )
+    assert ge.overall([], tests, tree_changed=False, checks_ok=True) == (
+        "fail",
+        ["zero-targets"],
+    )
     bad = [_target("a", "fail", 2), _target("b", "not-run", None)]
-    assert ge.overall(bad, None, True, False) == (
+    assert ge.overall(bad, None, tree_changed=True, checks_ok=False) == (
         "fail",
         ["checks-unavailable", "no-test-report", "target-failed", "tree-changed"],
     )
@@ -179,17 +196,26 @@ def test_a_failed_or_errored_test_is_red_even_when_every_goal_passed():
     `-`-prefixed or `|| true` test recipe). The record judges the counts it
     holds, so it never says pass beside a failure or an error."""
     ok = [_target("test")]
-    assert ge.overall(ok, _counts(passed=1, failed=1), False, True) == (
+    assert ge.overall(
+        ok, _counts(passed=1, failed=1), tree_changed=False, checks_ok=True
+    ) == (
         "fail",
         ["tests-failed"],
     )
-    assert ge.overall(ok, _counts(passed=1, errors=1), False, True) == (
+    assert ge.overall(
+        ok, _counts(passed=1, errors=1), tree_changed=False, checks_ok=True
+    ) == (
         "fail",
         ["tests-failed"],
     )
-    assert ge.overall(ok, _counts(failed=2), False, True) == ("fail", ["tests-failed"])
+    assert ge.overall(ok, _counts(failed=2), tree_changed=False, checks_ok=True) == (
+        "fail",
+        ["tests-failed"],
+    )
     bad = [_target("test", "fail", 1)]
-    assert ge.overall(bad, _counts(passed=1, failed=1), False, True) == (
+    assert ge.overall(
+        bad, _counts(passed=1, failed=1), tree_changed=False, checks_ok=True
+    ) == (
         "fail",
         ["target-failed", "tests-failed"],
     )
@@ -256,7 +282,13 @@ def test_run_goals_stops_at_the_first_failure_and_marks_the_rest_not_run(
     monkeypatch.setattr(ge.child_env, "build_child_env", fake_env)
     runner = _Runner(codes={"b": 2}, reports=())
     targets = ge.run_goals(
-        "make", ["a", "b", "c"], str(tmp_path), ".evidence/junit", False, [], runner
+        "make",
+        ["a", "b", "c"],
+        str(tmp_path),
+        ".evidence/junit",
+        keep_going=False,
+        forward=[],
+        runner=runner,
     )
     assert targets == [
         _target("a", "pass", 0),
@@ -276,7 +308,13 @@ def test_run_goals_stops_at_the_first_failure_and_marks_the_rest_not_run(
 def test_run_goals_forwards_make_args_before_the_goal_and_junit_last(tmp_path):
     runner = _Runner(reports=())
     ge.run_goals(
-        "make", ["a"], str(tmp_path), "e/junit", False, ["-k", "JUNIT_XML=x"], runner
+        "make",
+        ["a"],
+        str(tmp_path),
+        "e/junit",
+        keep_going=False,
+        forward=["-k", "JUNIT_XML=x"],
+        runner=runner,
     )
     assert runner.calls[0]["argv"] == [
         "make",
@@ -291,7 +329,15 @@ def test_run_goals_deletes_a_stale_report_before_its_goal(tmp_path):
     stale = tmp_path / "e" / "junit" / "a.xml"
     stale.parent.mkdir(parents=True)
     stale.write_text(_PASSING, encoding="utf-8")
-    ge.run_goals("make", ["a"], str(tmp_path), "e/junit", False, [], _Runner({}, ()))
+    ge.run_goals(
+        "make",
+        ["a"],
+        str(tmp_path),
+        "e/junit",
+        keep_going=False,
+        forward=[],
+        runner=_Runner({}, ()),
+    )
     assert not stale.exists()
 
 

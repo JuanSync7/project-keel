@@ -197,7 +197,7 @@ def _commit_dest(dest):
     _git(dest, "commit", "-q", "-m", "generated")
 
 
-def _template_commits(template, base_files, theirs_files, commit_theirs=True):
+def _template_commits(template, base_files, theirs_files, *, commit_theirs=True):
     """The fake template's history: *base_files* written and committed (the
     commit a project is generated from), then *theirs_files* written over it,
     as a second commit or, with *commit_theirs* False, left as uncommitted
@@ -1234,7 +1234,7 @@ def test_a_refusal_naming_a_file_the_update_did_not_conflict_is_exit_2(
 _OWED = "config/project.json: child_env.names lists GIT_DIR, which is bound"
 
 
-def _task(stem, finish=True):
+def _task(stem, *, finish=True):
     """copier's line for a failed Task running scripts/jobs/<stem>.py; a
     migration passes `--finish-with`, a `_tasks` entry does not."""
     tail = ", '--finish-with', 'python'" if finish else ""
@@ -1340,7 +1340,7 @@ def test_a_tree_a_failed_update_leaves_unjudgeable_is_the_update_failure(
     calls = []
     real = ap.check_structure.run_checks
 
-    def crash_after_the_update(root, project_checks=True):
+    def crash_after_the_update(root, *, project_checks=True):
         calls.append(root)
         if len(calls) > 1:
             raise RuntimeError("planted: the tree cannot be judged")

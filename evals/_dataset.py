@@ -90,7 +90,7 @@ def _object(value: object, where: str, keys: frozenset[str]) -> dict[str, object
     return value
 
 
-def _string(value: object, where: str, non_empty: bool = True) -> str:
+def _string(value: object, where: str, *, non_empty: bool = True) -> str:
     if not isinstance(value, str) or (non_empty and not value):
         raise _LineError(
             "%s must be a %sstring" % (where, "non-empty " if non_empty else "")

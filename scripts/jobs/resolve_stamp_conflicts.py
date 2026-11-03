@@ -123,7 +123,7 @@ def _hunks(text):
     hunks = []
     state = None
     ours = theirs = None
-    for line in text.splitlines(True):
+    for line in text.splitlines(keepends=True):
         if state is None:
             if _marker(line, _OPEN):
                 state, ours, theirs = "ours", [], []

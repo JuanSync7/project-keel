@@ -32,8 +32,27 @@ from scripts import resource_limits  # noqa: E402
 
 pytestmark = pytest.mark.unit
 
-_DOC = DocReviewReport(True, 0, 0, 0, (), (), (), (), "", False)
-_REF = RefactorReport("p", True, (), (), (), "", False)
+_DOC = DocReviewReport(
+    baseline_green=True,
+    stale=0,
+    unresolved=0,
+    rosters=0,
+    candidates=(),
+    applied=(),
+    skipped=(),
+    withheld=(),
+    preview="",
+    dry_run=False,
+)
+_REF = RefactorReport(
+    practice="p",
+    baseline_green=True,
+    candidates=(),
+    refactored=(),
+    skipped=(),
+    preview="",
+    dry_run=False,
+)
 
 # name -> (module, agent attribute, argv before flags, bound flag, what it returns)
 _CLIS = {

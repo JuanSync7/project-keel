@@ -818,7 +818,7 @@ def split_region(text, guide):
     """(before, region, after) of *text* around the one BEGIN line and the
     one END line after it; *before* ends with the BEGIN line and *after*
     starts with the END line. Raises TableError otherwise."""
-    lines = text.splitlines(True)
+    lines = text.splitlines(keepends=True)
     begins = [i for i, ln in enumerate(lines) if ln.rstrip("\r\n") == BEGIN]
     ends = [i for i, ln in enumerate(lines) if ln.rstrip("\r\n") == END]
     if len(begins) != 1 or len(ends) != 1 or begins[0] > ends[0]:

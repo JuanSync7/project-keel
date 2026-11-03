@@ -56,7 +56,7 @@ isolation_guard.point_temp_at(_SCRATCH.path, os.environ)
 # mkdtemp lands under the scratch root: tempfile was pointed there above, and
 # os.environ already carries the moved TMPDIR when plumbum takes its snapshot.
 _GITCONFIG_DIR = tempfile.mkdtemp(prefix="keel-hermetic-git-")
-atexit.register(shutil.rmtree, _GITCONFIG_DIR, True)
+atexit.register(shutil.rmtree, _GITCONFIG_DIR, ignore_errors=True)  # noqa: DROP003 -- a scratch dir left at exit is harmless
 os.environ.update(hermetic_git.git_env_vars(_GITCONFIG_DIR))
 
 # Also at import, for the same plumbum snapshot: the parent's repository context.

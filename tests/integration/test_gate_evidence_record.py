@@ -597,12 +597,16 @@ def test_a_goal_without_a_report_adds_no_counts_and_no_red():
     targets = [_goal("test", counts), _goal("test-fe", None)]
     tests = gate_evidence._sum_counts(targets)
     assert tests == counts, tests
-    assert gate_evidence.overall(targets, tests, False, True) == ("pass", [])
+    assert gate_evidence.overall(
+        targets, tests, tree_changed=False, checks_ok=True
+    ) == ("pass", [])
 
     targets = [_goal("test", None), _goal("test-fe", None)]
     tests = gate_evidence._sum_counts(targets)
     assert tests is None, tests
-    assert gate_evidence.overall(targets, tests, False, True) == (
+    assert gate_evidence.overall(
+        targets, tests, tree_changed=False, checks_ok=True
+    ) == (
         "fail",
         ["no-test-report"],
     )

@@ -53,7 +53,7 @@ def _module(owner=None, symbol_marker=None):
     )
 
 
-def _tree(root, default=_DEFAULT, config=True):
+def _tree(root, default=_DEFAULT, *, config=True):
     if config:
         (root / "config").mkdir(exist_ok=True)
         manifest = (

@@ -432,7 +432,7 @@ class ChildSession:
             self.proc.wait()
 
 
-def _ready(fd: int, for_write: bool) -> bool:
+def _ready(fd: int, *, for_write: bool) -> bool:
     if not _SELECTABLE:
         return True
     if for_write:

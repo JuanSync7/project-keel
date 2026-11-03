@@ -143,7 +143,7 @@ class ChildEnvError(Exception):
     models.ModelUnavailable (a RuntimeError) must not skip a broken config."""
 
 
-def _shown(value: object, bare: bool = False) -> str:
+def _shown(value: object, *, bare: bool = False) -> str:
     """Configured *value* as a refusal may show it. scripts/config_loader.py
     `shown` is the one rule (hidden when an `@` sits anywhere in it, else
     canonical JSON, or a key path's segment as written); this module keeps no
@@ -1041,6 +1041,7 @@ def build_child_env(
     credentials_for: Optional[str] = None,
     extra: Optional[Mapping[str, str]] = None,
     root: Optional[str] = None,
+    *,
     repo_context: bool = False,
 ) -> Dict[str, str]:
     """The environment for a child process, built from the allowlist.

@@ -226,6 +226,7 @@ def run_goals(
     keep_going,
     forward=(),
     runner=None,
+    *,
     dry_run=False,
     extra=None,
 ):

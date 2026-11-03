@@ -72,9 +72,9 @@ _SHORT = "make lint"
 def _facts(host_case, length_case, cfg):
     """(host, length) as the pure functions derive them from planted facts."""
     host = {
-        "in-farm-job": launch.host_kind(_HOST, None, True),
-        "own": launch.host_kind(_HOST, _OWN, False),
-        "shared": launch.host_kind(_HOST, None, False),
+        "in-farm-job": launch.host_kind(_HOST, None, inside_job=True),
+        "own": launch.host_kind(_HOST, _OWN, inside_job=False),
+        "shared": launch.host_kind(_HOST, None, inside_job=False),
     }[host_case]
     seconds = cfg.long_after_seconds
     durations = {
@@ -196,7 +196,7 @@ def test_each_branch_of_the_decision_table_decides_and_explains_itself():
 def test_explain_keeps_one_line_for_a_key_with_a_newline_or_a_quote():
     cfg = _cfg()
     key = launch.script_key(["python3", "-c", 'print("a")\nprint(1)'], _ROOT_DIR)
-    host = launch.host_kind(_HOST, None, False)
+    host = launch.host_kind(_HOST, None, inside_job=False)
     length = launch.script_length(key, cfg, {})
     said = launch.explain(launch.decide(host, length, cfg, key), host, length)
     assert "\n" not in said and "\r" not in said, said
@@ -205,7 +205,7 @@ def test_explain_keeps_one_line_for_a_key_with_a_newline_or_a_quote():
 
 def test_an_explicit_farm_state_replaces_the_derived_one():
     cfg = _cfg()
-    host = launch.host_kind(_HOST, None, False)
+    host = launch.host_kind(_HOST, None, inside_job=False)
     length = launch.script_length(_UNKNOWN, cfg, {})
     decision = launch.decide(host, length, cfg, _UNKNOWN)
     said = launch.explain(decision, host, length, "did not allocate within 900 s")
@@ -265,28 +265,30 @@ _SHARED_CASES = [
 def test_host_kind_fails_closed_to_shared():
     reasons = []
     for text, kwargs in _SHARED_CASES:
-        kind, reason = launch.host_kind(_HOST, text, False, **kwargs)
+        kind, reason = launch.host_kind(_HOST, text, inside_job=False, **kwargs)
         assert kind == "shared", (text, kwargs, reason)
         assert _HOST not in reason and "example" not in reason, reason
         reasons.append(reason)
     assert len(set(reasons)) >= 6, reasons
-    assert launch.host_kind("", _OWN, False)[0] == "shared"
-    assert launch.host_kind("H1.Example.COM", _OWN, False)[0] == "own"
-    assert launch.host_kind("h1.example.com.", _OWN, False)[0] == "own"
+    assert launch.host_kind("", _OWN, inside_job=False)[0] == "shared"
+    assert launch.host_kind("H1.Example.COM", _OWN, inside_job=False)[0] == "own"
+    assert launch.host_kind("h1.example.com.", _OWN, inside_job=False)[0] == "own"
     upper = json.dumps({"own_hosts": ["*.EXAMPLE.com"]})
-    assert launch.host_kind(_HOST, upper, False)[0] == "own"
-    assert launch.host_kind(_HOST, _OWN, True)[0] == "in-farm-job"
-    assert launch.host_kind(_HOST, None, True)[0] == "in-farm-job"
+    assert launch.host_kind(_HOST, upper, inside_job=False)[0] == "own"
+    assert launch.host_kind(_HOST, _OWN, inside_job=True)[0] == "in-farm-job"
+    assert launch.host_kind(_HOST, None, inside_job=True)[0] == "in-farm-job"
     # A pattern language, chosen on purpose: `?` and `[...]` mean what fnmatch
     # says, and a pattern is never a substring search.
     assert (
         launch.host_kind(
-            "box7.example.com", '{"own_hosts": ["box?.example.com"]}', False
+            "box7.example.com", '{"own_hosts": ["box?.example.com"]}', inside_job=False
         )[0]
         == "own"
     )
     assert (
-        launch.host_kind("xbox7.example.com", '{"own_hosts": ["box7"]}', False)[0]
+        launch.host_kind(
+            "xbox7.example.com", '{"own_hosts": ["box7"]}', inside_job=False
+        )[0]
         == "shared"
     )
 
@@ -322,7 +324,7 @@ def test_script_length_keeps_unknown_distinct_from_short():
         "x",
         {"outcome": "succeeded"},
         _record("succeeded", -1),
-        _record("succeeded", True),
+        _record("succeeded", seconds=True),
         _record("won", 1),
     ):
         assert launch.script_length("k", cfg, {"k": bad})[0] == "unknown", bad
@@ -440,7 +442,11 @@ _REFUSALS = [
         "spare.max_load_per_cpu",
     ),
     ("wait 0", _set(("farm", "wait_seconds"), 0), "farm.wait_seconds"),
-    ("long_after bool", _set(("long_after_seconds",), True), "long_after_seconds"),
+    (
+        "long_after bool",
+        _set(("long_after_seconds",), value=True),
+        "long_after_seconds",
+    ),
     ("adapter not listed", _set(("farm", "adapter"), "nowhere"), "farm.adapter"),
     (
         "unknown kind",
@@ -569,7 +575,7 @@ def test_the_slurm_adapter_builds_its_argv_and_env_from_config_only():
 
     # What a runner is handed: one list, the submit words then the command, and
     # never a shell string.
-    host = launch.host_kind(_HOST, None, False)
+    host = launch.host_kind(_HOST, None, inside_job=False)
     length = launch.script_length(_LISTED, cfg, {})
     decision = launch.decide(host, length, cfg, _LISTED)
     assert decision.where == "farm"

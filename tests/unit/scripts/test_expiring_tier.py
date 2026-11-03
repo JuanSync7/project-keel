@@ -33,7 +33,7 @@ _A_ID = "src/a.py: opens config/project.json directly — read it through the lo
 _B = "src/b.py:7: reads the declared variable X directly — read it through env"
 
 
-def _project(tmp_path, expires=None, baseline=None, template=False):
+def _project(tmp_path, expires=None, baseline=None, *, template=False):
     root = tmp_path / "proj"
     (root / "config").mkdir(parents=True)
     block = {"baseline": _BASELINE, "expires": expires or _CEILING.isoformat()}

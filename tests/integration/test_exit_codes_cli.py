@@ -82,7 +82,7 @@ def _eval_manifest(repo):
     return path, json.loads(path.read_text("utf-8"))
 
 
-def _eval_scenario(mode, absent=False):
+def _eval_scenario(mode, *, absent=False):
     def prepare(base):
         repo, _env = evals_gate.build_scratch(base)
         extra = dict(hermetic_git.git_env_vars(base / "work"))

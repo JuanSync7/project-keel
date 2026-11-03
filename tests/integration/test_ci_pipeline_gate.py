@@ -26,7 +26,7 @@ def test_every_adapter_present_runs_the_configured_steps_in_order():
     assert faults == [], "\n".join(faults)
 
 
-def _copy(tmp_path, gitlab=False):
+def _copy(tmp_path, *, gitlab=False):
     """A tree with this config, ci.yml and, with *gitlab*, the GitLab twin
     rendered under the configured toolchain python."""
     root = tmp_path / "root"

@@ -279,6 +279,7 @@ def _row(
     type_: str,
     default: object,
     meaning: str,
+    *,
     secret: bool = False,
     env: Optional[str] = None,
     file: Optional[str] = CONFIG_FILE,
@@ -1379,8 +1380,8 @@ KEYS = tuple(
             _row(
                 ("shell", "enabled"),
                 "bool",
-                True,
-                "whether scripts/shell_gate.py judges the project's shell scripts; "
+                default=True,
+                meaning="whether scripts/shell_gate.py judges the project's shell scripts; "
                 "the copier question `shell` sets it, and false makes every shell "
                 "target say so and run no tool",
             ),
@@ -1843,7 +1844,7 @@ def _holds_at(value: object) -> bool:
 _HIDDEN_AT = "<hidden: it holds an @>"
 
 
-def shown(value: object, bare: bool = False) -> str:
+def shown(value: object, *, bare: bool = False) -> str:
     """The form a message shows configured *value* in: `<hidden: it holds an
     @>` when it holds an `@` anywhere inside (_holds_at), else its canonical
     JSON, or with *bare* a string as written (a segment of a dotted key
@@ -1886,7 +1887,7 @@ def listed(values: Iterable[object]) -> str:
 _LIST_TYPES = ("list_of_str", "list_of_str" + _NULLABLE)
 
 
-def _refused_members(key: Key, value: List[Any], bound: bool) -> str:
+def _refused_members(key: Key, value: List[Any], *, bound: bool) -> str:
     """The suffix naming what list *value* is refused for: each member the
     row's check refuses on its own, once each in the order written, else
     the members written more than once when the list without them passes,
@@ -1919,7 +1920,7 @@ def _refused_members(key: Key, value: List[Any], bound: bool) -> str:
     return ""
 
 
-def _wrong_line(where: str, name: str, key: Key, value: object, bound: bool) -> str:
+def _wrong_line(where: str, name: str, key: Key, value: object, *, bound: bool) -> str:
     """The one line refusing *value*, read from *where* under *name*."""
     check_text = TYPES[key.type][1]
     said = ""
@@ -1947,7 +1948,7 @@ def _wrong_line(where: str, name: str, key: Key, value: object, bound: bool) -> 
             if names:
                 refused = "; refused entries: %s" % ", ".join(shown(k) for k in names)
     if isinstance(value, list) and not key.secret and key.type in _LIST_TYPES:
-        refused = _refused_members(key, value, bound)
+        refused = _refused_members(key, value, bound=bound)
     return "%s: %s is %s%s; accepted: %s%s" % (
         where,
         name,

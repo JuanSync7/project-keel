@@ -633,7 +633,7 @@ _TRAPS_TERM = (
 _SETTLE = 30.0
 
 
-def _write_fake_make(where, grandchild, detach=False, exit_after=False, status=0):
+def _write_fake_make(where, grandchild, *, detach=False, exit_after=False, status=0):
     """A `make` that starts *grandchild* and then sleeps (or exits *status*
     when *exit_after*). *detach* points the grandchild's output away from make's,
     as a daemon does, so make's output closes while the grandchild lives."""
@@ -1844,7 +1844,7 @@ def test_a_make_reaped_elsewhere_fails_the_gate_naming_the_cause(
     proj, monkeypatch, capsys
 ):
     def reaped(cmd, cwd, timeout, grace):
-        raise rmt.MakeReaped("made it\n", [], True)
+        raise rmt.MakeReaped("made it\n", [], listed=True)
 
     monkeypatch.setattr(rmt, "_default_runner", reaped)
     monkeypatch.setattr(rmt, "tree_snapshot", lambda root: {})
@@ -1858,7 +1858,7 @@ def test_a_make_reaped_elsewhere_fails_the_gate_naming_the_cause(
 
 def test_a_leftover_of_a_reaped_make_is_named_as_not_ended(proj):
     def reaped(cmd, cwd, timeout):
-        raise rmt.MakeReaped("made it\n", [(4244, "python -c sleep")], True)
+        raise rmt.MakeReaped("made it\n", [(4244, "python -c sleep")], listed=True)
 
     res = rmt.run_target(
         "check",

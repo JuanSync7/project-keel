@@ -135,8 +135,14 @@ class InProcessRuntime(Runtime):
         while current and current != END:
             step = plan.step(current)
             if step.effect in _GATED and not execute:
-                trace.append(TraceEntry(step.name, step.effect, False, "dry-run"))
-                self._emit(on_event, step.name, step.effect, False, "dry-run")
+                trace.append(
+                    TraceEntry(
+                        step.name, step.effect, ran=False, skipped_reason="dry-run"
+                    )
+                )
+                self._emit(
+                    on_event, step.name, step.effect, ran=False, reason="dry-run"
+                )
             else:
                 try:
                     update = _run_step(step, st)
@@ -158,8 +164,10 @@ class InProcessRuntime(Runtime):
                     )
                 if update:
                     st.update(update)
-                trace.append(TraceEntry(step.name, step.effect, True, ""))
-                self._emit(on_event, step.name, step.effect, True, "")
+                trace.append(
+                    TraceEntry(step.name, step.effect, ran=True, skipped_reason="")
+                )
+                self._emit(on_event, step.name, step.effect, ran=True, reason="")
             current = plan.next_from(current, st)
             # Durability commit point: snapshot after every step. The effect
             # taxonomy means we only strictly need this after writes/model-call

@@ -206,7 +206,7 @@ def test_a_gate_that_raises_anything_is_red_and_rolls_back(tmp_path, exc):
 _KEEP = "keep = 1\n"
 
 
-def _plant(root, rel, text=_KEEP, track=True):
+def _plant(root, rel, text=_KEEP, *, track=True):
     """Write *rel* under *root* and, unless *track* is false, track it, so a
     refusal a test expects is the rule's and never the tracked-file rule's."""
     path = root / rel

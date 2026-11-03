@@ -342,7 +342,7 @@ def run_steps(root, commands):
             )
 
 
-def finish(root, template=None, dry_run=False):
+def finish(root, template=None, *, dry_run=False):
     """Finish the update copier stopped in *root*; return the commands kept."""
     answers, version_from = update_in_progress(root)
     if template is not None:
@@ -393,7 +393,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     root = os.path.dirname(_SCRIPTS)
     try:
-        commands = finish(root, args.template, args.dry_run)
+        commands = finish(root, args.template, dry_run=args.dry_run)
     except FinishError as e:
         return exit_codes.report(
             exit_codes.ExitCode.USAGE,

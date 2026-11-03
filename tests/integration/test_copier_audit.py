@@ -97,7 +97,7 @@ def _porcelain(root, env):
     ).stdout
 
 
-def _audit(dest, today, json_out=True, tmpdir=None, audit=_AUDIT):
+def _audit(dest, today, *, json_out=True, tmpdir=None, audit=_AUDIT):
     """Run the template's audit as a CLI, the way `make audit-project` does;
     *tmpdir* is the system temporary directory it sees, where its scratch
     copy lives."""
@@ -460,7 +460,7 @@ def _edit_summary(dest, env, rel):
     later template commit also changes, so copier leaves the file conflicted.
     Committed."""
     path = dest / rel
-    lines = path.read_text(encoding="utf-8").splitlines(True)
+    lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
     (at,) = [i for i, line in enumerate(lines[:12]) if line.startswith("summary: ")]
     lines[at] = "summary: The project's own copy, edited for its own needs.\n"
     path.write_text("".join(lines), encoding="utf-8")
@@ -1313,7 +1313,7 @@ def test_an_update_keeps_and_reports_a_template_adr_the_project_edited(adr_updat
     rel = "docs/adr/0002-agent-surface-and-discovery.md"
 
     def unstamped(path):
-        lines = path.read_text(encoding="utf-8").splitlines(True)
+        lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
         return [ln for ln in lines if not ln.startswith("updated: ")]
 
     assert unstamped(upd / rel) == unstamped(dest / rel)

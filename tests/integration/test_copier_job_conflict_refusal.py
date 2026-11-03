@@ -446,7 +446,7 @@ def _strip_declaration(path, name):
         if isinstance(stmt, ast.Assign) and any(
             isinstance(t, ast.Name) and t.id == name for t in stmt.targets
         ):
-            lines = text.splitlines(True)
+            lines = text.splitlines(keepends=True)
             del lines[stmt.lineno - 1 : stmt.end_lineno]
             path.write_text("".join(lines), encoding="utf-8")
             return

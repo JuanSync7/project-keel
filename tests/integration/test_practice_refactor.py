@@ -56,7 +56,7 @@ class _Runner:
     Records the tool of every call so a test can assert what did and didn't run.
     """
 
-    def __init__(self, nodes=_NODES, baseline_ok=True, gate_ok=True):
+    def __init__(self, nodes=_NODES, *, baseline_ok=True, gate_ok=True):
         self.nodes = nodes
         self.baseline_ok = baseline_ok
         self.gate_ok = gate_ok

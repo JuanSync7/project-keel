@@ -170,7 +170,7 @@ def test_every_frontend_app_tracks_a_lockfile_that_matches_its_manifest():
 _GLOB = "web/*/" + _MANIFEST
 
 
-def _scratch_repo(tmp_path, name, lock_root, track_lock=True, write_lock=True):
+def _scratch_repo(tmp_path, name, lock_root, *, track_lock=True, write_lock=True):
     repo = tmp_path / name
     app = repo / "web" / "app"
     app.mkdir(parents=True)

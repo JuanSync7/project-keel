@@ -46,7 +46,7 @@ def _record(lines=(), check=_CHECK):
     return record
 
 
-def _project(tmp_path, commit="v0.2.0", template=False, expires=None):
+def _project(tmp_path, commit="v0.2.0", *, template=False, expires=None):
     root = tmp_path / "proj"
     (root / "config").mkdir(parents=True)
     block = {"baseline": _BASELINE, "expires": expires or expiring_tier_data.CEILING}

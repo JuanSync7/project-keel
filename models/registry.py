@@ -46,8 +46,8 @@ def choose_model(name: str | None = None) -> ModelChoice:
     and defaulted, any other name is itself. It does not check the name is
     registered; get_model does."""
     if name:
-        return ModelChoice(name, False)
-    return ModelChoice(DEFAULT_MODEL, True)
+        return ModelChoice(name, defaulted=False)
+    return ModelChoice(DEFAULT_MODEL, defaulted=True)
 
 
 def get_model(name: str | None = None, **kwargs) -> ModelBackend:

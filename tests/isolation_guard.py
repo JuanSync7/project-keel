@@ -609,7 +609,7 @@ def _cache_write(event: str, target: str) -> bool:
     )
 
 
-def _writes(event: str, args: tuple, fd_dir: str, follows: bool = True) -> List[str]:
+def _writes(event: str, args: tuple, fd_dir: str, *, follows: bool = True) -> List[str]:
     """The resolved targets a tree-changing event writes; a metadata change
     whose caller stays on a link (*follows* False) writes the link alone."""
     if event == "open":
@@ -736,6 +736,7 @@ def classify(
     readable: Sequence[str] = (),
     fd_dir: str = "/proc/self/fd",
     fenced: Sequence[str] = (),
+    *,
     follows: bool = True,
 ) -> Optional[Violation]:
     """The first reach *event* with *args* makes outside *rule*, or None.
@@ -769,7 +770,7 @@ def classify(
                 return Violation(event, target, "stores", rule.stores)
     if rule.writes == "any":
         return None
-    for target in _writes(event, args, fd_dir, follows):
+    for target in _writes(event, args, fd_dir, follows=follows):
         if (
             target == os.devnull
             or _cache_write(event, target)

@@ -425,9 +425,9 @@ def test_split_region_returns_the_three_parts_and_loses_no_byte():
 
 
 def test_exit_cell_sorts_the_values_and_names_a_passed_through_status():
-    assert et.exit_cell({130, 2, 0}, False) == "0, 2, 130"
-    assert et.exit_cell({0}, True) == "0, " + et.PASSES_THROUGH
-    assert et.exit_cell(set(), True) == et.PASSES_THROUGH
+    assert et.exit_cell({130, 2, 0}, passes=False) == "0, 2, 130"
+    assert et.exit_cell({0}, passes=True) == "0, " + et.PASSES_THROUGH
+    assert et.exit_cell(set(), passes=True) == et.PASSES_THROUGH
 
 
 def test_render_is_sorted_and_does_not_depend_on_the_order_it_is_given():
@@ -607,7 +607,7 @@ def test_the_shipped_table_is_current():
 # --- the shell helper --------------------------------------------------------------
 
 
-def _shell_project(tmp_path, enabled=True):
+def _shell_project(tmp_path, *, enabled=True):
     root = _project(tmp_path)
     manifest = json.loads((root / et.MANIFEST).read_text(encoding="utf-8"))
     manifest["shell"] = {"enabled": enabled}

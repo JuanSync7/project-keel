@@ -103,7 +103,7 @@ def inside_a_repository(root, env=None):
         current = parent
 
 
-def _run(root, argv, repo_context=False):
+def _run(root, argv, *, repo_context=False):
     # The developer's global excludes file is ignored ON PURPOSE: a stray file a
     # personal ignore hides is still a change this machine's checkout would carry.
     # The keyword is passed only when set, so a caller that patches
@@ -220,7 +220,7 @@ def candidate_files(root):
 _STAGED_FILTER = "--diff-filter=ACMRTUXB"
 
 
-def staged_paths(root, repo_context=False):
+def staged_paths(root, *, repo_context=False):
     """The sorted root-relative paths the index stages for the next commit,
     deletions left out. With *repo_context* the index is the one a hook's
     GIT_INDEX_FILE names, which `git commit -a` and `git commit <path>` fill

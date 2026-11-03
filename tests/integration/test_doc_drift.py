@@ -225,7 +225,7 @@ def shipped_docs(root, history_paths):
     return sorted(out)
 
 
-def _git_listed(root, untracked=True):
+def _git_listed(root, *, untracked=True):
     """Files git would hand a commit: tracked plus, with *untracked*,
     untracked-and-unignored. None when *root* is not a git work tree. Ignored
     files are generated views (wiki/corpus.json, llms-full.txt) that copy

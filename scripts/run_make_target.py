@@ -101,6 +101,7 @@ class LeftRunning(Exception):
         output: str,
         leftovers: Sequence[tuple[int, str]],
         holders: Sequence[tuple[int, str]] | None = None,
+        *,
         ended: bool = True,
     ) -> None:
         super().__init__(returncode, output, leftovers, holders, ended)
@@ -139,6 +140,7 @@ class MakeReaped(Exception):
         self,
         output: str,
         leftovers: Sequence[tuple[int, str]],
+        *,
         listed: bool,
         holders: Sequence[tuple[int, str]] | None = None,
     ) -> None:
@@ -214,7 +216,9 @@ def _default_runner(
                 _alive, leftovers = session.settled()
                 listed = resource_limits.session_members(proc.pid) is not None
                 output = _make_text(reader, grace)
-                raise MakeReaped(output, leftovers, listed, reader.holders) from None
+                raise MakeReaped(
+                    output, leftovers, listed=listed, holders=reader.holders
+                ) from None
             if status is None:
                 session.end()
                 output = _make_text(reader, grace)
@@ -225,7 +229,9 @@ def _default_runner(
                 ended = session.held()
                 session.end()
                 output = _make_text(reader, grace)
-                raise LeftRunning(status, output, leftovers, reader.holders, ended)
+                raise LeftRunning(
+                    status, output, leftovers, reader.holders, ended=ended
+                )
             output = _make_text(reader, grace)
             if reader.holders is not None:
                 raise OutputHeld(status, output, reader.holders)

@@ -1289,7 +1289,7 @@ def check_F():
     )
     for m in cfg_errs:
         err(m)
-    errs, warns = _owner_rollup(GOVERNED, default, bool(cfg_errs))
+    errs, warns = _owner_rollup(GOVERNED, default, refused=bool(cfg_errs))
     for m in errs:
         err(m)
     for m in warns:
@@ -1340,7 +1340,7 @@ def _default_owner(manifest):
     return values[_DEFAULT_OWNER_KEY], []
 
 
-def _owner_rollup(governed, default, refused=False):
+def _owner_rollup(governed, default, *, refused=False):
     """(errors, warnings) for *governed*, each a (relpath, kind, owner). Pure.
 
     An owner outside the §12 grammar, such as a quoted or commented
@@ -8006,7 +8006,7 @@ def _project_findings():
     return found
 
 
-def run_checks(root, project_checks=True):
+def run_checks(root, *, project_checks=True):
     """Every check in CHECKS against the tree at *root*, as a list of
     (letter, "error" | "warning", message) in emission order, then, unless
     *project_checks* is False, the findings of the project's own checks

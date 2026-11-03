@@ -101,7 +101,7 @@ _FAULTS = [
     ("unknown-scorer-key", _mutated("scorer.weight", 2), ":1:"),
     ("unknown-recorded-key", _mutated("recorded.when", "today"), ":1:"),
     ("schema-version-2", _mutated("schema_version", 2), ":1:"),
-    ("schema-version-bool", _mutated("schema_version", True), ":1:"),
+    ("schema-version-bool", _mutated("schema_version", value=True), ":1:"),
     ("bad-id", _mutated("id", "Bad_Id"), ":1:"),
     # `$` alone also matches before a final newline; the formats are closed.
     ("id-trailing-newline", _mutated("id", "c-1\n"), ":1:"),

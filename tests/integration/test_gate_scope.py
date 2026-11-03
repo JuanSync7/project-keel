@@ -236,7 +236,7 @@ _FE_REFUSING = ["test-fe-unit", "test-fe-e2e", "fe-browsers"]
 _FE_INSTALL = "make fe-install"
 
 
-def _fe_app(tmp_path, name="webapp", node_modules=True):
+def _fe_app(tmp_path, name="webapp", *, node_modules=True):
     """A minimal FE app the Makefile's FE_APPS shape can point at."""
     app = tmp_path / "fe" / name
     app.mkdir(parents=True)
@@ -1340,9 +1340,13 @@ def test_an_enabled_transports_surface_is_required_without_ci_declaring_it(
     with pytest.raises(pytest.skip.Exception):
         optional_deps.importorskip(_NO_SUCH_PACKAGE, extra="transport", loaded=unserved)
     with pytest.raises(pytest.fail.Exception):
-        optional_deps.require_or_skip(False, "transport", "no server", loaded=served)
+        optional_deps.require_or_skip(
+            available=False, extra="transport", reason="no server", loaded=served
+        )
     with pytest.raises(pytest.skip.Exception):
-        optional_deps.require_or_skip(False, "transport", "no server", loaded=unserved)
+        optional_deps.require_or_skip(
+            available=False, extra="transport", reason="no server", loaded=unserved
+        )
 
 
 def test_a_transport_extra_outside_the_surface_vocabulary_is_an_error(monkeypatch):

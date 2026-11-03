@@ -260,10 +260,12 @@ def test_no_document_says_the_suite_runs_without_xdist_while_make_test_uses_it()
 def test_a_planted_unused_xdist_claim_reds_only_while_make_test_passes_n():
     docs = markdown_docs()
     assert _runs_workers(), "make test passes no -n; the planted case proves nothing"
-    assert unused_xdist_findings(docs, True) == [], "the unplanted docs must be clean"
+    assert unused_xdist_findings(docs, runs_workers=True) == [], (
+        "the unplanted docs must be clean"
+    )
     doc = sorted(docs)[0]
     planted = dict(docs)
     planted[doc] = docs[doc] + "\npytest-xdist is not\nused by the suite.\n"
-    findings = unused_xdist_findings(planted, True)
+    findings = unused_xdist_findings(planted, runs_workers=True)
     assert len(findings) == 1 and findings[0].startswith(doc + ":"), findings
-    assert unused_xdist_findings(planted, False) == []
+    assert unused_xdist_findings(planted, runs_workers=False) == []

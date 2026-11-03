@@ -27,7 +27,7 @@ pytestmark = pytest.mark.unit
 class _Seen(ModelBackend):
     name = "seen"
 
-    def __init__(self, reply="x", fail=False):
+    def __init__(self, reply="x", *, fail=False):
         self.reply = reply
         self.fail = fail
         self.prompts = []

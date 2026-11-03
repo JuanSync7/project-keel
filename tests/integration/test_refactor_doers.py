@@ -280,7 +280,7 @@ _GATE_POLICY = {
 }
 
 
-def _gate_repo(root, makefile, git=True):
+def _gate_repo(root, makefile, *, git=True):
     """A project the gate runner can read: a labelled Makefile, the policy, and
     (unless `git` is False) one commit, so a run can be proven read-only."""
     (root / "config").mkdir()

@@ -574,7 +574,7 @@ def script_key(argv, root):
     return " ".join(words)
 
 
-def host_kind(hostname, patterns_text, inside_job, unreadable=False):
+def host_kind(hostname, patterns_text, inside_job, *, unreadable=False):
     """(kind, reason), kind in HOST_KINDS. *patterns_text* is the own-hosts
     file's text, None when the file is absent; *unreadable* says it exists and
     could not be read. A farm job wins; otherwise the host is `own` only when

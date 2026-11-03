@@ -584,7 +584,7 @@ def _names_requirement(word: str, prefixes: Sequence[Prefix]) -> bool:
 
 
 def _refuse_a_heading_that_hides_an_id(
-    text: str, plain: bool, prefixes: Sequence[Prefix]
+    text: str, *, plain: bool, prefixes: Sequence[Prefix]
 ) -> None:
     """Raise TraceError for a heading that is not a definition yet reads like
     one to its author: an id-shaped first word on an indented or setext
@@ -651,7 +651,9 @@ def _spec_requirements(
             level, title, plain = heading
             words = title.split(None, 1)
             if not plain or not words or not id_shaped(words[0], policy.prefixes):
-                _refuse_a_heading_that_hides_an_id(title, plain, policy.prefixes)
+                _refuse_a_heading_that_hides_an_id(
+                    title, plain=plain, prefixes=policy.prefixes
+                )
                 if plain and open_req is not None and level <= open_level:
                     open_req = None
                 continue

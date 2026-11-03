@@ -223,7 +223,7 @@ def _restore_all(project, paths):
     messages. Used when nothing can be judged."""
     failed = []
     try:
-        heads = _tree(project, "HEAD", paths, False)
+        heads = _tree(project, "HEAD", paths, full_tree=False)
     except GuardError as e:
         return ["%s: %s" % (p, e) for p in paths]
     for rel in paths:
@@ -414,7 +414,7 @@ def _judge(project, src, ref, paths, on_disk, retire, marker, answers_rel, choic
         project,
         "HEAD",
         sorted(set(paths) | set(on_disk)) + ([answers_rel] if answers_rel else []),
-        False,
+        full_tree=False,
     )
     answers = _answers(project, heads.get(answers_rel)) if answers_rel else None
     chose = {p: _old_choice(answers, choice, retire[p]) for p in on_disk}
@@ -427,7 +427,7 @@ def _judge(project, src, ref, paths, on_disk, retire, marker, answers_rel, choic
     asked = []
     for p in worklist:
         asked.extend((p, p + _TEMPLATE_SUFFIX))
-    template = _tree(src, base, asked, True)
+    template = _tree(src, base, asked, full_tree=True)
     successors = _successors(src, base)
     kept, gone, failed = [], [], []
     for rel in worklist:

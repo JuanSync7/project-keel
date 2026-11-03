@@ -84,7 +84,7 @@ def _project(root, nodes=None):
 
 
 class _Runner:
-    def __init__(self, baseline_ok=True, gate_ok=True, review=None):
+    def __init__(self, *, baseline_ok=True, gate_ok=True, review=None):
         self.baseline_ok, self.gate_ok, self.calls = baseline_ok, gate_ok, []
         self.review = _REVIEW if review is None else review
         self.argvs = {}
@@ -747,7 +747,16 @@ def test_the_cli_prints_one_line_per_withheld_finding_and_the_hook_counts_them(
 
     why = "docs/secret/README.md is at a level outside corpus.served_visibilities"
     report = DocReviewReport(
-        True, 0, 1, 0, (), (), (), (("mention:docs/secret/README.md:4", why),), "", True
+        baseline_green=True,
+        stale=0,
+        unresolved=1,
+        rosters=0,
+        candidates=(),
+        applied=(),
+        skipped=(),
+        withheld=(("mention:docs/secret/README.md:4", why),),
+        preview="",
+        dry_run=True,
     )
     monkeypatch.setattr(cli, "review", lambda **kwargs: report)
     assert cli.main([]) == 0

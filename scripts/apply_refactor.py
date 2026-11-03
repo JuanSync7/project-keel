@@ -77,7 +77,7 @@ def _fold(parts: Sequence[str]) -> tuple[str, ...]:
     return tuple(part.casefold() for part in parts)
 
 
-def _rules(mapping: Mapping[str, str], split: bool) -> tuple[Rule, ...]:
+def _rules(mapping: Mapping[str, str], *, split: bool) -> tuple[Rule, ...]:
     return tuple(
         (_fold(PurePosixPath(key).parts) if split else (key.casefold(),), key, reason)
         for key, reason in sorted(mapping.items())

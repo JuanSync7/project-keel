@@ -98,7 +98,7 @@ def _kill(pidfile):
             os.kill(int(pidfile.read_text()), signal.SIGKILL)
 
 
-def _holder(pidfile, holds, new_session=False):
+def _holder(pidfile, holds, *, new_session=False):
     """A child that starts a grandchild holding the pipes *holds* names
     (stdin, stdout) open without reading or writing them, prints `done`, and
     exits 0 at once."""
@@ -148,7 +148,7 @@ def test_a_grandchild_holding_stdin_unread_does_not_hold_the_call(
     started = time.monotonic()
     try:
         done = resource_limits.run_bounded(
-            [_PY, "-c", _holder(pidfile, "stdin", new_session)],
+            [_PY, "-c", _holder(pidfile, "stdin", new_session=new_session)],
             timeout=20,
             max_output_bytes=64,
             stdin_text="x" * 1000000,

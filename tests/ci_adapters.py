@@ -222,7 +222,7 @@ def _unique_key_loader(yaml):
     whole file over a tag in a job that is the project's own."""
 
     class UniqueKeyLoader(yaml.SafeLoader):
-        def construct_mapping(self, node, deep=False):
+        def construct_mapping(self, node, deep=False):  # noqa: FBT002 -- an override keeps PyYAML's signature
             seen = {}
             for key_node, _ in node.value:
                 if key_node.tag == "tag:yaml.org,2002:merge":

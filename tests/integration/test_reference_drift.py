@@ -1487,7 +1487,7 @@ def test_an_unlisted_or_doubly_listed_key_is_one_finding(settings, sections):
     assert candidates, "no key path to plant against -- zero items"
     heading, paths, victim = candidates[0]
     rows, _ = section_rows(doc, sections, heading)
-    assert json_row_findings(doc, heading, rows, paths, True) == []
+    assert json_row_findings(doc, heading, rows, paths, exhaustive=True) == []
     key = ".".join(victim)
     line = _row_line(sections[heading], key)
     planted = {
@@ -1504,7 +1504,7 @@ def test_an_unlisted_or_doubly_listed_key_is_one_finding(settings, sections):
     }
     for label, section in planted.items():
         got, errs = section_rows(doc, {heading: section}, heading)
-        findings = errs + json_row_findings(doc, heading, got, paths, True)
+        findings = errs + json_row_findings(doc, heading, got, paths, exhaustive=True)
         assert len(findings) == 1, (label, findings)
 
 
@@ -1543,7 +1543,7 @@ def rendered_findings(doc, heading, rows, questions, source):
             "%s: `## %s`: no answer renders a key of its own -- zero items"
             % (doc, heading)
         ]
-    findings = json_row_findings(doc, heading, rows, full, False)
+    findings = json_row_findings(doc, heading, rows, full, exhaustive=False)
     claimed = []
     for row in rows:
         segs = row_segments(row["key"])
@@ -2013,10 +2013,13 @@ def test_a_feature_dropped_invented_or_mislabelled_is_one_finding(
     # measured as a delta: a generated project already holds rows its answers
     # pruned, which the strict judge counts and the project's own judge does not.
     pruned = dict(extra, Ships="when x")
-    assert feature_findings(doc, [*rows, pruned], readers, labels, False) == []
-    strict = len(feature_findings(doc, rows, readers, labels, True))
     assert (
-        len(feature_findings(doc, [*rows, pruned], readers, labels, True)) == strict + 1
+        feature_findings(doc, [*rows, pruned], readers, labels, exhaustive=False) == []
+    )
+    strict = len(feature_findings(doc, rows, readers, labels, exhaustive=True))
+    assert (
+        len(feature_findings(doc, [*rows, pruned], readers, labels, exhaustive=True))
+        == strict + 1
     )
     label = labels[victim]
     other = "[local]" if label != "[local]" else "[tree]"

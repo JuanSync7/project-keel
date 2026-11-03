@@ -56,7 +56,9 @@ def test_an_older_stamp_becomes_today_and_no_other_byte_changes():
     assert after == before.replace("2026-01-01", "2026-09-02", 1)
     changed = [
         ln
-        for ln in difflib.ndiff(before.splitlines(True), after.splitlines(True))
+        for ln in difflib.ndiff(
+            before.splitlines(keepends=True), after.splitlines(keepends=True)
+        )
         if ln.startswith(("- ", "+ "))
     ]
     assert changed == [

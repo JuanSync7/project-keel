@@ -72,7 +72,7 @@ def keel(tmp_path_factory):
     return template, env
 
 
-def _run(argv, cwd, env, check=True):
+def _run(argv, cwd, env, *, check=True):
     r = subprocess.run(
         [str(a) for a in argv], cwd=str(cwd), env=env, capture_output=True, text=True
     )
@@ -108,7 +108,7 @@ def _carry_pruned(keel, project):
     _run(["git", "commit", "-qm", "carried from an older render"], project, env)
 
 
-def _update(keel, project, check=True):
+def _update(keel, project, *, check=True):
     _template, env = keel
     return _run(
         [sys.executable, "-m", "copier", "update", "--trust", "--defaults"]

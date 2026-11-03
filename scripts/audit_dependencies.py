@@ -612,7 +612,7 @@ def _assigned_end(line, start):
     return following.start() if following else len(line)
 
 
-def _clause_shown(line, at, opened=False):
+def _clause_shown(line, at, *, opened=False):
     """(the prose clause from *at* with each word outside the vocabulary
     hidden, where the clause ended). A run of hidden words is one marker, so
     a reader learns no word count. A quoted word is a value whatever it says,

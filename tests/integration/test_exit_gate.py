@@ -243,7 +243,7 @@ def _is_none(node):
     return isinstance(node, ast.Constant) and node.value is None
 
 
-def entry_findings(tree, relpath, quiet_names, exercises_helper=False):
+def entry_findings(tree, relpath, quiet_names, *, exercises_helper=False):
     """Each way *tree*'s entry block fails to end through the helper: a
     `finish` call outside the block, every return `read_tree` cannot follow to
     a member, and an entry block that hands `finish` nothing while the module
@@ -312,7 +312,9 @@ def helper_findings(root):
         if not exercises:
             findings.extend(message_findings(tree, relpath))
             findings.extend(et.code_findings(tree, relpath, quiet))
-        findings.extend(entry_findings(tree, relpath, quiet, exercises))
+        findings.extend(
+            entry_findings(tree, relpath, quiet, exercises_helper=exercises)
+        )
         entries += len(et.entry_blocks(tree))
         bindings = et.helper_bindings(tree)
         findings.extend(
@@ -650,7 +652,7 @@ class _ShellReader:
                 self.cases[-1][1], "a `case` is never closed by `esac`"
             )
 
-    def _end_command(self, alone=True):
+    def _end_command(self, *, alone=True):
         """End the command being read; *alone* is false when a `|`, `|&`
         or background `&` ends it, which runs it in a subshell."""
         self._end_word()
@@ -1001,7 +1003,7 @@ class _ShellReader:
                     if close >= 0:
                         end = self.offset + close + 1
                         self.marks.append((self.offset + self.i, end, end, True))
-                self._end_command(c not in "|&" or c in pair)
+                self._end_command(alone=c not in "|&" or c in pair)
                 self.i += 1
                 if c == "(":
                     self.paren += 1
@@ -1911,7 +1913,7 @@ def _add_member(root, annotation=""):
     )
     name = "PLANTED_%d" % len(members)
     assert name not in {m.name for m in members}
-    lines = text.splitlines(True)
+    lines = text.splitlines(keepends=True)
     lines.insert(
         enum.end_lineno,
         "    %s%s = (%d, 'it was planted', 'nothing')\n"
@@ -2145,6 +2147,7 @@ def _sh_tree(
     scripts,
     no_scripts=None,
     excluded=None,
+    *,
     enabled=True,
     git=True,
 ):

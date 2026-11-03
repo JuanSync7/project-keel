@@ -106,7 +106,7 @@ def test_a_missing_block_or_schema_version_is_refused():
         _parse(copy.deepcopy(_BLOCK), lambda _rel: {"properties": {}})
     assert "config/evals/eval-case.schema.json" in str(info.value)
     with pytest.raises(ConfigError):
-        _parse(copy.deepcopy(_BLOCK), lambda _rel: _schema(True))
+        _parse(copy.deepcopy(_BLOCK), lambda _rel: _schema(version=True))
     read = []
     _parse(copy.deepcopy(_BLOCK), lambda rel: read.append(rel) or _schema(7))
     assert sorted(read) == sorted([_BLOCK["case_schema"], _BLOCK["report_schema"]])

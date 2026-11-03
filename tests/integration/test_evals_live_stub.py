@@ -62,7 +62,7 @@ def _host_port(base_url):
     return urllib.parse.urlsplit(base_url).netloc
 
 
-def _configure(repo, base_url, model=_ADAPTER, max_calls=None, listed=True):
+def _configure(repo, base_url, model=_ADAPTER, max_calls=None, *, listed=True):
     """Point the live run at *base_url*, listing its host:port in the scratch
     config's models.allowed_hosts unless *listed* is False."""
     manifest = _manifest(repo)
