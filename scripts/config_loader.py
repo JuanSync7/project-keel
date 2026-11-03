@@ -1461,6 +1461,16 @@ KEYS = tuple(
                 ),
             ),
             _row(
+                ("tests", "cache_max_entries"),
+                "int",
+                # The fullest cache measured holds 51 entries, one per copier.yml
+                # `_exclude` entry; 256 leaves room for the list to grow.
+                256,
+                "the most entries a cache built by tests/bounded_cache.py holds; "
+                "past it the least recently used entry is dropped",
+                accepts=(_at_least_one, "a value >= 1"),
+            ),
+            _row(
                 ("tests", "child_timeout_seconds"),
                 "int",
                 NONE,

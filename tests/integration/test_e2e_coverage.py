@@ -6,7 +6,6 @@ summary: The CONVENTIONS section 17 end-to-end gate. It derives each enabled tra
 """
 
 import ast
-import functools
 import json
 import os
 import re
@@ -21,6 +20,7 @@ from scripts.child_env import build_child_env
 from scripts.pytest_markers import attached_markers, collection_rule
 from scripts.pytest_markers import is_marker as _is_marker
 
+import bounded_cache
 import live_server
 import optional_deps
 
@@ -608,7 +608,7 @@ def _exempt(e2e):
     return _expect(e2e.get("exempt"), dict, EXEMPT_KEY)
 
 
-@functools.lru_cache(maxsize=None)
+@bounded_cache.bounded(str(_ROOT))
 def _derived(root, transport):
     """(endpoints, skip reason or None): derivation is a child process per
     server, so each transport is derived once per session."""

@@ -7,7 +7,6 @@ summary: The reference-drift gate. config/project.json `doc_drift.settings_refer
 
 import ast
 import fnmatch
-import functools
 import importlib
 import itertools
 import json
@@ -18,6 +17,7 @@ from pathlib import Path
 
 import pytest
 
+import bounded_cache
 import optional_deps
 
 _ROOT = Path(__file__).resolve().parents[2]
@@ -378,7 +378,7 @@ def ships_findings(doc, heading, rows, readers, exclude_conditions, questions):
 # --- copier answers: every combination the questions allow ----------------
 
 
-@functools.lru_cache(maxsize=1)
+@bounded_cache.bounded(str(_ROOT))
 def _jinja():
     """A jinja environment that fails on a name no answer defines, so a
     template gated on a question the answer sets leave out raises instead of

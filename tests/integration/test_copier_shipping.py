@@ -5,7 +5,6 @@ layer: n/a
 summary: The template-shipping gate. Every file copier can see in keel's checkout (tracked, or untracked and not ignored) either renders into a generated project — at its own path, or through its `.jinja` twin — or is left out by a copier.yml `_exclude` entry, judged with copier's own path matcher under each answer set test_reference_drift's answer_sets enumerates (free-text questions at their defaults; a multiselect with no choice, each choice alone and every choice); each `_exclude` entry has a row in the upgrade guide's exclusion table whose Why cell is not blank, each row of that table names an `_exclude` entry (a row that names none gives a reason for a path that in fact arrives, or for one another entry leaves out), and each entry other than copier's own re-listed defaults leaves out at least one file under some answer set or is spelled by a `.gitignore` line (a leading or trailing `/` aside; a glob that only covers it does not count), so a stale or misspelled entry fails. Each entry judged alone leaves out exactly what copier's matcher over all of them does, so no entry is credited with a file that ships. Only copier itself may be absent: once it imports, a private module it no longer has is a collection error, not a skip. tests/integration/test_copier_generation.py holds the model to a real copier render. Each rule has a fault-injection twin that plants one fault and asserts exactly one more finding than the tree had before. Not a writer: it reads the tree and writes nothing.
 """
 
-import functools
 import importlib
 import re
 import subprocess
@@ -14,6 +13,7 @@ from pathlib import Path
 
 import pytest
 
+import bounded_cache
 import optional_deps
 
 _ROOT = Path(__file__).resolve().parents[2]
@@ -116,7 +116,7 @@ def _matcher(lines):
     return pathspec.PathSpec.from_lines(_pathspec_pattern, lines).match_file
 
 
-@functools.lru_cache(maxsize=None)
+@bounded_cache.bounded(str(_ROOT))
 def _compiled(entry):
     # Compiled once per entry: parsing it again for each of about a hundred
     # answer sets costs about 1.5 s a judgement (measured).
