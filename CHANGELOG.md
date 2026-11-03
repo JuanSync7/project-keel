@@ -37,6 +37,11 @@ version rather than a bare commit:
   result. A function whose documented result for that input is the value
   gives it with `# noqa: DROP001 -- <reason>`; the 96 such handlers in keel
   carry one.
+- **A boolean is declared and passed by keyword.** pyproject.toml selects
+  ruff `FBT`, so a boolean parameter is keyword-only and a call passes every
+  boolean by name. ruff found 176 such sites in keel; all were converted
+  except one PyYAML override, which keeps its signature with a reasoned
+  `# noqa: FBT002`.
 - **A template file cannot go missing from a generated project without a reason.**
   `tests/integration/test_copier_shipping.py` judges every file copier can see
   with copier's own path matcher under each answer set

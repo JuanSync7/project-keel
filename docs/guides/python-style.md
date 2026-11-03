@@ -212,6 +212,11 @@ failure so the reader can rerun it by hand.
 - **Explicit over implicit.** No magic globals, no behavior toggled by
   invisible state; wire dependencies in at the call site so a reader can trace
   where anything comes from.
+- **A boolean goes by keyword.** `render(path, dry_run=True)`, not
+  `render(path, True)`: a reader of the call cannot tell what a bare `True`
+  switches. A boolean parameter is keyword-only, after a `*`, and a call passes
+  every boolean by name (ruff `FBT`). An override of a third-party signature
+  keeps that signature with `# noqa: FBT002 -- <reason>`.
 - **Names carry the domain.** `unassigned_pads`, not `res2`; the reader may
   know pad rings far better than Python — meet them in their vocabulary.
 - **Library code logs; entrypoints print.** `print()` is banned outside
@@ -274,6 +279,7 @@ that quietly becomes load-bearing is precisely the file nobody re-reads.
 | A configured value is read only through the config loader | gate | `tests/integration/test_config_reads_gate.py` |
 | A comment does not open by reporting a change | gate (heuristic) | `tests/integration/test_change_comment_gate.py` |
 | No `print()` in library code | gate | ruff `T20` |
+| A boolean is declared and passed by keyword | gate | ruff `FBT` |
 | Inline-constructed backends (DI), `isinstance` chains, hot-path `__slots__`, resources outside `with` | advisory | `make advise` |
 | Function size, complexity, naming | judgment | this guide + review |
 | Comment quality (a change reported mid-sentence included), absent-vs-broken splits | judgment | this guide + review |

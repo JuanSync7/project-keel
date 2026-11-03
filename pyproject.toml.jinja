@@ -104,6 +104,7 @@ extend-select = [
   "I",    # import sorting (isort) — keeps the __all__/import boundary tidy
   "B",    # bugbear: mutable defaults (B006), ABC-without-@abstractmethod (B024), raise-without-from (B904)
   "BLE",  # blind-except (BLE001) — don't swallow the exception type
+  "FBT",  # boolean trap: a bool is passed and declared by keyword, so a call site says what True means
   "C4",   # comprehension hygiene
   "G",    # logging: no f-string/%/+ interpolation inside log calls
   "LOG",  # logging correctness
