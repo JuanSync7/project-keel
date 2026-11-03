@@ -42,6 +42,12 @@ version rather than a bare commit:
   boolean by name. ruff found 176 such sites in keel; all were converted
   except one PyYAML override, which keeps its signature with a reasoned
   `# noqa: FBT002`.
+- **A cache holds at most the configured number of entries.** pyproject.toml
+  bans `functools.cache` and `functools.lru_cache` through ruff `TID251`; a test
+  module caches through `tests/bounded_cache.py` `bounded`, whose maximum is
+  config/project.json `tests.cache_max_entries` (256). The three caches in keel
+  moved onto it.
+- **Commented-out code fails the lint.** pyproject.toml selects ruff `ERA001`.
 - **A template file cannot go missing from a generated project without a reason.**
   `tests/integration/test_copier_shipping.py` judges every file copier can see
   with copier's own path matcher under each answer set

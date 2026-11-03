@@ -124,6 +124,8 @@ extend-select = [
   "RSE",  # no redundant parentheses on `raise`
   "SLOT", # __slots__ on str/tuple/NamedTuple subclasses (pairs with slots-hot-path)
   "NPY",  # numpy legacy API (relevant to the tensor/cuda domain)
+  "TID251",  # a banned API: below, a cache with no maximum from config
+  "ERA001",  # commented-out code: a comment says why, it does not keep old code
 ]
 # Codes ruff does not own but keeps the suppressions of: the swallowed-error
 # gate (tests/integration/test_swallowed_error_gate.py) owns them, and reads
@@ -133,6 +135,12 @@ external = [
   "DROP002",  # a `contextlib.suppress(...)` call
   "DROP003",  # an `ignore_errors=True` argument
 ]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+# A cache holds at most tests.cache_max_entries entries (R-CODE-24); the one
+# sanctioned lru_cache is inside tests/bounded_cache.py.
+"functools.cache".msg = "no maximum: decorate with tests/bounded_cache.py `bounded`"
+"functools.lru_cache".msg = "its maximum comes from config: decorate with tests/bounded_cache.py `bounded`"
 
 [tool.ruff.lint.per-file-ignores]
 "src/app/**" = ["T201"]        # entrypoints may print; library code may not

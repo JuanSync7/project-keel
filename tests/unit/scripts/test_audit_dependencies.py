@@ -1139,8 +1139,8 @@ def test_the_clause_goes_on_after_a_done_value(form, shown):
 
 
 # M2 of review round 3: npm-registry-fetch lib/errors.js:70 writes
-# 'Unable to authenticate, need: ' + res.headers.get('www-authenticate'),
-# so the registry's challenge is printed as it sent it. Its realm, right
+# `Unable to authenticate, need: ` followed by the response's
+# www-authenticate header, so the registry's challenge is printed as it sent it. Its realm, right
 # after the scheme name, reads as written; a value after it, or a realm
 # after a secret word with no scheme name, is still hidden.
 _NEED = "npm error Unable to authenticate, need: "

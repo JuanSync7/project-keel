@@ -115,6 +115,10 @@ style is deliberately comment-heavy — but every comment must earn its line:
   with a config/project.json `change_comments.phrases` phrase as a whole
   word; it cannot see the phrase mid-sentence, which is review's.)
 
+- A comment never keeps old code. Code that is gone lives in git; a
+  commented-out line reads as a live choice nobody made (ruff `ERA001`).
+  Quote another project's code in prose, as words, not as a line that parses.
+
 The test: could a reviewer who distrusts the code check it against the
 comments? If the comments only repeat the code, there is nothing to check
 against.
@@ -217,6 +221,12 @@ failure so the reader can rerun it by hand.
   switches. A boolean parameter is keyword-only, after a `*`, and a call passes
   every boolean by name (ruff `FBT`). An override of a third-party signature
   keeps that signature with `# noqa: FBT002 -- <reason>`.
+- **A cache has a maximum, and config holds it.** A test module caches a
+  function with `tests/bounded_cache.py` `bounded(root)`, which holds at most
+  config/project.json `tests.cache_max_entries` entries and drops the least
+  recently used past it. An unbounded cache grows with every new argument
+  for the life of the process, and a maximum typed into code is a value no
+  one can tune (ruff `TID251` bans `functools.cache` and `functools.lru_cache`).
 - **Names carry the domain.** `unassigned_pads`, not `res2`; the reader may
   know pad rings far better than Python — meet them in their vocabulary.
 - **Library code logs; entrypoints print.** `print()` is banned outside
@@ -280,6 +290,8 @@ that quietly becomes load-bearing is precisely the file nobody re-reads.
 | A comment does not open by reporting a change | gate (heuristic) | `tests/integration/test_change_comment_gate.py` |
 | No `print()` in library code | gate | ruff `T20` |
 | A boolean is declared and passed by keyword | gate | ruff `FBT` |
+| A cache's maximum comes from config | gate | ruff `TID251`, `tests/bounded_cache.py` |
+| No commented-out code | gate | ruff `ERA001` |
 | Inline-constructed backends (DI), `isinstance` chains, hot-path `__slots__`, resources outside `with` | advisory | `make advise` |
 | Function size, complexity, naming | judgment | this guide + review |
 | Comment quality (a change reported mid-sentence included), absent-vs-broken splits | judgment | this guide + review |

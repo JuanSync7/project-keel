@@ -25,7 +25,9 @@
         "PIE",
         "RSE",
         "SLOT",
-        "NPY"
+        "NPY",
+        "TID251",
+        "ERA001"
       ],
       "deferred": {
         "_comment": "DELIBERATE house-style policy, NOT temporary debt: each fights a chosen convention, so it stays off permanently. check_M errs if any is silently selected in pyproject.",
