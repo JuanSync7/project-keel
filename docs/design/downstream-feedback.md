@@ -2835,6 +2835,31 @@ recommendation. Items 1 to 5 block CMP-7.S1.
    as four built slices, so CMP-7.S4 is the last; a fifth needs the
    maintainer's word.
 
+## CMP-8 — a rule a tool can decide is held by a check
+
+The maintainer approved this campaign on 2026-11-03. It is KEEL-LINT-1 (queue
+position 11) with KEEL-ERR-1 (position 15), and its slices are rows 2a, 2b, 3
+and 4 of the table in "KEEL-LINT-1, the lint checks" below. Row 5, a stale
+excuse, stays queued: ruff 0.15.18 reports 725 `RUF100` findings on `main` at
+`4ccd795`, where the opening pass measured 45, so it needs scoping again. By
+the maintainer's choice on 2026-11-03, CMP-8 runs before CMP-7 resumes and
+before KEEL-TESTQ-1. The cap is five passes, the opening pass included, and the
+stop point is CMP-8.S4 green or the cap, whichever comes first.
+
+It is built in one lane from current `main`. The branch `keel-lint`, built on
+2026-10-23 and 539 commits behind `main`, is read as a reference only: each
+check is written test-first again against today's tree. One fresh reviewer
+tries to break the lane before the merge, and the merge waits for a green full
+`make verify` on the merged tree. The counts below are ruff 0.15.18 and a text
+search on `main` at `4ccd795`, not a gate's measurement.
+
+| Slice | Gap | Status |
+|-------|-----|--------|
+| CMP-8.S1 | R-CODE-7, a dropped error: ruff `S110` and `S112` with `check-typed-exception = true`; the swallowed-error gate reads `contextlib.suppress` and `rmtree(ignore_errors=True)` (16 such calls on `main`); each code the gate owns is excused only with its rule id and a reason; KEEL-ERR-1, `agents/doc_reviewer/_brain.py` reading unparseable JSON as zero findings, is fixed | planned |
+| CMP-8.S2 | R-CODE-7, a narrow handler that returns or assigns a fixed value, `None` included, in place of the error; a function whose documented result for "absent" is `None` carries the excuse | planned |
+| CMP-8.S3 | R-CODE-18, a boolean by position: ruff `FBT001`, `FBT002` and `FBT003` (176 findings on `main`); the keyword-only conversion lands as its own mechanical commit | planned |
+| CMP-8.S4 | R-CODE-24, a cache maximum: ruff `TID251` bans `functools.cache` and `lru_cache`, and a bounded-cache helper reads its maximum from a `KEYS` row (2 caches on `main`); R-CODE-17's `ERA001` (1 finding on `main`) | planned |
+
 ## Queued after Campaign 6
 
 A queue id becomes a `CMP-<n>.S<m>` name only when an approved slice table
@@ -3108,7 +3133,7 @@ every project generated from keel holds them, and the prompt keeps only the
 rules that need judgment. The vault's rule experiments are the evidence: with
 the rules loaded, 19 of 20 runs still kept a setting in code as a fallback,
 and what made the work production-ready was caught by deterministic checks in
-every arm. It is planned as the campaign after CMP-7.
+every arm. It is campaign CMP-8, which runs before CMP-7 resumes.
 
 Its opening pass is read-only and writes the slice table. It maps every rule
 in the 0.10.0 code package to one of three answers: held by a named keel
@@ -3140,8 +3165,8 @@ or the cap. When it is done, the vault installs keel's checks rather than
 keep its own AST gate; how a repository not generated from keel installs
 them is KEEL-PKG-1, not this campaign.
 
-Proposed slices, from the opening pass. A slice gets its `CMP-<n>.S<m>` name
-only when the maintainer approves this table (CONVENTIONS §20). The campaign
+Slices, from the opening pass. The maintainer approved rows 2a to 4 as
+CMP-8.S1 to CMP-8.S4 on 2026-11-03 (CONVENTIONS §20); row 5 stays queued. The campaign
 starts after CMP-6.S4, because each check reaches a generated project's own
 code through that slice's expiring tier.
 
