@@ -8,7 +8,7 @@ tags: [plan, template, downstream, freshness, taxonomy, effects, credentials, au
 summary: The bounded-convergence record for the defects bedrock-platform, the first real project generated from keel, reported back — a red gate on arrival, unknown directories the gate never sees, make targets whose effect nobody declares, and child processes that inherit every credential — plus the command that checks any keel-generated project for all of them. One slice per defect, five passes, each landed as one commit on a green `make verify`.
 id: docs-design-downstream-feedback
 created: 2026-10-06
-updated: 2026-11-02
+updated: 2026-11-03
 visibility: internal
 canonical: true
 ---
@@ -2906,6 +2906,7 @@ On 2026-10-22 the maintainer approved this order. Positions 1 to 9 come from the
 | 69 | KEEL-LEAK-3 | Leftovers KEEL-LEAK-1's slice-2 reviews queued: an `@` in config/project.json `evals.dataset_dir` is printed raw by `evals/_dataset.py` `load_suites`, a fault main had before; a `raise ... from None` drops the errno in `scripts/gate_evidence.py`, `scripts/exit_code_table.py` and `evals/_config.py`; `scripts/check_venv.py` prints a URL's user part; and the launcher and a joined or bare `shown` print control characters (C1, U+2028) raw. Ranked NOTE | planned |
 | 70 | KEEL-SHELL-2 | The exit gate's held-name scan (`tests/integration/test_exit_gate.py`), added by KEEL-SHELL-1's slice 2, is quadratic: a script with 25,000 comments and 25,000 reads of the held name took 31.7 s, where every other 50,000-line shape took 0.9 s or less. Planned: a linear scan, with a test that counts scans or compares a doubled input rather than a wall-clock bound. Ranked NOTE; found by KEEL-SHELL-1's round-4 review | planned |
 | 71 | KEEL-SHELL-3 | Leftovers of KEEL-SHELL-1's slice 3: scripts/config_get.py prints the loader's wrong-value line twice on stderr, found by its review; and scripts/shell_gate.py runs the linter without `-x`, so a script that sources `scripts/exit_codes.sh` by `$(dirname "$0")` fails `make lint-sh` (SC1091) unless it carries `# shellcheck source=/dev/null`, which docs/guides/shell-style.md tells it to. Ranked NOTE | planned |
+| 72 | KEEL-MARGIN-1 | config/project.json `agents.tool_gate_margin_seconds` is 60, but the gate runner's two tree snapshots read every path git status lists, and on one host they took up to 65 s at 50,000 listed paths on an NFS home (about 2 s in /dev/shm), so a tool child on a large untracked tree can be ended as timed out before the runner returns its result. Planned: a test that fails at the current margin on such a tree, then a margin derived from that measurement. A draft (margin 120 and a reworked `tests/integration/test_agent_tool_limits.py`) was left uncommitted by KEEL-TOOLT-1's lane and is kept outside the repository as a reference. Ranked NOTE | planned |
 
 The CMP-7 opening pass proposes the rows below. Their positions are proposals that the maintainer has not approved, and each row joins the table above only when the maintainer gives it a position. They start at 44 because position 43 is KEEL-VIS-2's.
 
