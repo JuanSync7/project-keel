@@ -8,7 +8,7 @@ tags: [limits, waivers, exit-codes, troubleshooting, guide]
 summary: What adopting keel costs, the risks its rails leave open, the checks that pass by skipping, what no gate can see, every waiver a project may use, every exit code the gate's scripts return, and the symptom-to-fix list for the failures a newcomer meets first.
 id: docs-guides-limits-and-troubleshooting
 created: 2026-10-09
-updated: 2026-10-31
+updated: 2026-11-03
 visibility: internal
 canonical: true
 ---
@@ -229,8 +229,9 @@ a decision on whether it should fail instead.
   `expiring_tier.expires`, and any other is red.
 - **What a swallowed error looks like to the gate.**
   `tests/integration/test_swallowed_error_gate.py` judges a broad handler by
-  its body's shape: one that logs nothing useful and returns a computed value,
-  or an error dropped through `contextlib.suppress`, passes.
+  its body's shape: one that logs nothing useful and returns a computed value
+  passes, and so does a narrow handler that returns or assigns a fixed value
+  in place of the error.
 - **Dead registry keys.** `practices.schema_version` and
   `tokens.owned_error_marker` in `config/practices.json` are read by no code.
 - **Display-only profile fields.** `profiles.*.activates` is read only by the
@@ -877,7 +878,9 @@ kept on purpose, such as a test fixture, with its reason.
 | `test_exit_gate` says `<file>:1: does not source scripts/exit_codes.sh` | a shell script never sources the helper, so it cannot end through it | add `. "$(dirname "$0")/exit_codes.sh"` before its first command, with the path to `scripts/` from the script |
 | `test_exit_gate` says `no shell script to judge and shell.no_scripts gives no reason` | the project holds no shell script but the generated helper, and config/project.json `shell.no_scripts` is null | state in `shell.no_scripts` why the project has none; a project that wants no shell tool sets `shell.enabled` to `false` instead, which excuses having no script and still judges every script it adds |
 | `test_swallowed_error_gate` says `<handler> swallows the error, so the caller reads a failure as a success` | a bare `except:`, or a broad handler whose body only passes, continues, breaks, or returns or assigns a fixed value such as `None`, `-1` or `[]` | catch the exception you can name, raise or return the failure, or give the reason on the clause: `# noqa: BLE001 -- <why>` |
-| `test_swallowed_error_gate` says ``# noqa: BLE001` gives no reason`` | a blind-except suppression has no text after its codes | write after the codes why the error may be dropped, or handle it |
+| `test_swallowed_error_gate` says ``except <type>` that only drops the error swallows the error`` | a narrow handler whose body only passes, continues, breaks or holds a bare constant (`dropped-error-narrow`; a warning in a generated project until `expiring_tier.expires`) | handle the error, or give the reason on a line of the clause: `# noqa: DROP001 -- <why>` |
+| `test_swallowed_error_gate` says `` `contextlib.suppress(...)` swallows the error`` or `` `ignore_errors=True` swallows the error`` | a call that drops every error it is handed (`dropped-error-call`; a warning in a generated project until `expiring_tier.expires`) | catch the error you can name, or give the reason on a line of the call: `# noqa: DROP002 -- <why>` or `# noqa: DROP003 -- <why>` |
+| `test_swallowed_error_gate` says ``# noqa: BLE001` gives no reason`` | a suppression of a code the gate owns (`BLE001`, `E722`, `DROP001`, `DROP002`, `DROP003`) has no text after its codes | write after the codes why the error may be dropped, or handle it |
 | `test_change_comment_gate` says `the comment opens with <phrase>, which reports a change` | the comment tells what changed, not why the code is as it is | rewrite it as the reason, and leave the change to the commit message |
 | `make long-scripts` ends with exit 13 (make says `Error 13`) and `no recorded runs, so nothing was judged` | the durations file is absent or holds no run with a duration, which is the state of a fresh clone | run a long script through `scripts/launch.py`, then run it again |
 | `make check-docs` names a stale `updated:` | a document changed without its stamp | `make restamp-docs` |

@@ -821,7 +821,7 @@ def test_a_hung_shell_is_stopped_at_the_bound_with_every_child(tmp_path, monkeyp
             time.sleep(0.01)
         assert not process_state.alive(pid), "the shell's child %d outlived it" % pid
     finally:
-        with contextlib.suppress(ProcessLookupError):
+        with contextlib.suppress(ProcessLookupError):  # noqa: DROP002 -- teardown: a process already gone is the end state it wants
             os.kill(pid, signal.SIGKILL)
 
 

@@ -94,7 +94,7 @@ def test_a_child_past_its_time_limit_has_its_session_ended_and_is_refused(tmp_pa
 def _kill(pidfile):
     # Cleanup for a test whose grandchild is outside run_bounded's reach.
     if pidfile.exists():
-        with contextlib.suppress(ProcessLookupError):
+        with contextlib.suppress(ProcessLookupError):  # noqa: DROP002 -- teardown: a process already gone is the end state it wants
             os.kill(int(pidfile.read_text()), signal.SIGKILL)
 
 
@@ -361,7 +361,7 @@ def test_a_second_signal_ends_the_bounded_child_s_session_and_then_the_process(
             probe.kill()
             probe.wait()
         if child is not None and process_state.alive(child):
-            with contextlib.suppress(ProcessLookupError, PermissionError):
+            with contextlib.suppress(ProcessLookupError, PermissionError):  # noqa: DROP002 -- teardown: a process already gone is the end state it wants
                 os.killpg(child, signal.SIGKILL)
 
 
@@ -443,7 +443,7 @@ def _reap_probe(probe, child):
     probe.wait()
     probe.stdout.close()
     if child is not None and process_state.alive(child):
-        with contextlib.suppress(ProcessLookupError, PermissionError):
+        with contextlib.suppress(ProcessLookupError, PermissionError):  # noqa: DROP002 -- teardown: a process already gone is the end state it wants
             os.killpg(child, signal.SIGKILL)
 
 

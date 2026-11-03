@@ -91,10 +91,10 @@ class RenderCache:
         except BaseException:
             # A refused answer set is the test's subject, not a cache entry:
             # the next request asks the renderer again.
-            shutil.rmtree(str(dest), ignore_errors=True)
+            shutil.rmtree(str(dest), ignore_errors=True)  # noqa: DROP003 -- the renderer's own error re-raises below; a failed removal must not replace it
             raise
         if not dest.is_dir() or not any(dest.iterdir()):
-            shutil.rmtree(str(dest), ignore_errors=True)
+            shutil.rmtree(str(dest), ignore_errors=True)  # noqa: DROP003 -- the RenderError below is the failure; a failed removal must not replace it
             raise RenderError(
                 "the renderer wrote nothing for answers %r on %s"
                 % (dict(answers), day.isoformat())

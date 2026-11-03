@@ -146,7 +146,7 @@ def _least_accepted(root):
         path.write_text(json.dumps(manifest), encoding="utf-8")
         try:
             resource_limits.tool_limits(root)
-        except config_loader.WrongValue:
+        except config_loader.WrongValue:  # noqa: DROP001 -- a refused limit is the probe's answer: try the next one
             continue
         return seconds
     raise AssertionError("tool_limits accepted no time limit under 600 s")
@@ -207,7 +207,7 @@ def test_a_gate_run_at_the_least_accepted_tool_limit_returns_the_runners_result(
         )
         for pid in pids:
             # The escapee is outside every session anything here ends.
-            with contextlib.suppress(ProcessLookupError):
+            with contextlib.suppress(ProcessLookupError):  # noqa: DROP002 -- teardown: a process already gone is the end state it wants
                 os.kill(pid, signal.SIGKILL)
     assert len(pids) == 2, "the stubborn make never started its escapee"
     result = json.loads(done.stdout)

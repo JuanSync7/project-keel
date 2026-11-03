@@ -8,7 +8,7 @@ tags: [copier, generate, update, migrations, adoption, guide]
 summary: How a project is generated from keel, what arrives and what never does, what `make new` refuses, how to adopt keel into an existing repository, and how `copier update` pulls template changes — with one checklist row per task and migration an update runs, how to finish an update a migration stopped, and how keel's release canary proves a fresh project and an updated one pass their own `make verify`.
 id: docs-guides-generate-and-upgrade
 created: 2026-10-09
-updated: 2026-10-31
+updated: 2026-11-03
 visibility: internal
 canonical: true
 ---
@@ -403,7 +403,11 @@ each message.
    continues, breaks, or returns or assigns a fixed value such as `None`,
    `-1` or `[]`, unless its `# noqa: BLE001` or `# noqa: E722` gives a reason
    after the codes; a second code is not a reason. A suppression you already
-   carry with no reason is red too.
+   carry with no reason is red too. A narrow `except` that only passes,
+   continues or breaks, a `contextlib.suppress(...)` call and an
+   `ignore_errors=True` argument warn until config/project.json
+   `expiring_tier.expires` and are red after it, unless a `# noqa: DROP001`,
+   `DROP002` or `DROP003` on the construct gives a reason.
 4. **Change-reporting comments.** `tests/integration/test_change_comment_gate.py`
    fails a comment that opens with a `change_comments.phrases` phrase such as
    `now` or `fixed`. Rewrite it as the reason the code is as it is; add a

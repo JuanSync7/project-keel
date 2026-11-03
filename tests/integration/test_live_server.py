@@ -163,7 +163,7 @@ def test_a_runner_ended_by_a_signal_leaves_no_server(tmp_path, name):
         # A RED run must not leave the orphan it reports.
         for group in (runner.pid, pid):
             if group is not None:
-                with contextlib.suppress(ProcessLookupError):
+                with contextlib.suppress(ProcessLookupError):  # noqa: DROP002 -- teardown: a process already gone is the end state it wants
                     os.killpg(group, signal.SIGKILL)
         runner.wait()
 

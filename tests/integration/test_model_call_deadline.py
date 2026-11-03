@@ -71,8 +71,8 @@ def _drip(conn, prefix, byte, stop):
         until = time.monotonic() + _DRIP_FOR_S
         while time.monotonic() < until and not stop.wait(_DRIP_EVERY_S):
             conn.sendall(byte)
-    except OSError:
-        pass  # the client closed its end: the call is over
+    except OSError:  # noqa: DROP001 -- the client closed its end: the call is over
+        pass
     finally:
         conn.close()
 

@@ -271,7 +271,7 @@ def _walk(entry_file, root, search_path):
         try:
             with open(path, "rb") as fh:
                 text = fh.read().decode("utf-8")
-        except (OSError, ValueError):
+        except (OSError, ValueError):  # noqa: DROP001 -- a module that does not decode is not followed; its job's own import reports it
             continue
         lines = conflict_lines(text)
         if lines:
@@ -279,7 +279,7 @@ def _walk(entry_file, root, search_path):
             continue
         try:
             tree = ast.parse(text, path)
-        except (SyntaxError, ValueError):
+        except (SyntaxError, ValueError):  # noqa: DROP001 -- a module that does not parse is not followed; its job's own import reports it
             continue
         rel = os.path.relpath(path, root).replace(os.sep, "/")
         reads.update(declared_reads(tree, rel))

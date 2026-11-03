@@ -173,7 +173,7 @@ def _log_tail(log):
 def _signal_group(pgid, sig):
     """Signal a process group that may already be gone: teardown is the one
     place a vanished process is expected rather than an error."""
-    with suppress(ProcessLookupError):
+    with suppress(ProcessLookupError):  # noqa: DROP002 -- teardown: a process already gone is the end state it wants
         os.killpg(pgid, sig)
 
 
@@ -284,8 +284,8 @@ def _wait_ready(proc, log, probe_url, config, ready_timeout_s):
                     return
         except urllib.error.HTTPError as exc:
             exc.close()  # answering, not ready: keep polling until the deadline
-        except (urllib.error.URLError, OSError):
-            pass  # not listening yet
+        except (urllib.error.URLError, OSError):  # noqa: DROP001 -- not listening yet: keep polling until the deadline
+            pass
         time.sleep(min(config["probe_interval_s"], max(remaining, 0)))
 
 

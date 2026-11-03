@@ -1068,7 +1068,7 @@ def _write_whole(path, text):
         os.replace(temporary, path)
     except BaseException:
         # A half-written temporary file is no record; it must not outlive the try.
-        with contextlib.suppress(OSError):
+        with contextlib.suppress(OSError):  # noqa: DROP002 -- the error being handled re-raises below; a failed unlink must not replace it
             os.unlink(temporary)
         raise
 

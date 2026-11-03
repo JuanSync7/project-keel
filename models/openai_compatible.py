@@ -243,7 +243,7 @@ def _resolved(host: str, port: int) -> List[str]:
     limit, and holds no socket."""
     try:
         return [str(ipaddress.ip_address(host.strip("[]")))]
-    except ValueError:
+    except ValueError:  # noqa: DROP001 -- not an address literal, so the name is resolved below
         pass
     found: dict = {}
 

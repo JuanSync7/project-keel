@@ -82,7 +82,7 @@ def _comment_lines(text, needle):
         for tok in tokenize.generate_tokens(io.StringIO(text).readline):
             if tok.type == tokenize.COMMENT and needle in tok.string:
                 out.add(tok.start[0])
-    except (tokenize.TokenError, IndentationError, SyntaxError, ValueError):
+    except (tokenize.TokenError, IndentationError, SyntaxError, ValueError):  # noqa: DROP001 -- every caller passes text ast.parse accepted, and such text tokenizes
         pass
     return out
 
@@ -96,7 +96,7 @@ def _pragma_lines(text):
                 m = _PRAGMA_RE.match(tok.string.strip())
                 if m:
                     out[tok.start[0]] = m.group(1).strip()
-    except (tokenize.TokenError, IndentationError, SyntaxError, ValueError):
+    except (tokenize.TokenError, IndentationError, SyntaxError, ValueError):  # noqa: DROP001 -- every caller passes text ast.parse accepted, and such text tokenizes
         pass
     return out
 

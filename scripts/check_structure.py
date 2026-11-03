@@ -1869,7 +1869,7 @@ def _practice_ok_lines(text):
                 tok.string.strip()
             ):
                 out.add(tok.start[0])
-    except (tokenize.TokenError, IndentationError, SyntaxError, ValueError):
+    except (tokenize.TokenError, IndentationError, SyntaxError, ValueError):  # noqa: DROP001 -- every caller passes text ast.parse accepted, and such text tokenizes
         pass
     return out
 
@@ -2052,7 +2052,7 @@ def _exact_marker_lines(text, marker):
                 and tok.string.lstrip("#").strip() == marker
             ):
                 out[tok.start[0]] = tok.start[1]
-    except (tokenize.TokenError, IndentationError, SyntaxError, ValueError):
+    except (tokenize.TokenError, IndentationError, SyntaxError, ValueError):  # noqa: DROP001 -- every caller passes text ast.parse accepted, and such text tokenizes
         pass
     return out
 
@@ -2251,7 +2251,7 @@ def _shape_comment_lines(text):
         for tok in tokenize.generate_tokens(io.StringIO(text).readline):
             if tok.type == tokenize.COMMENT and _SHAPE_COMMENT_RE.search(tok.string):
                 out.add(tok.start[0])
-    except (tokenize.TokenError, IndentationError, SyntaxError, ValueError):
+    except (tokenize.TokenError, IndentationError, SyntaxError, ValueError):  # noqa: DROP001 -- every caller passes text ast.parse accepted, and such text tokenizes
         pass
     return out
 
@@ -3058,7 +3058,7 @@ def _module_header_findings(files):
     for relpath in sorted(files):
         try:
             tree = ast.parse(files[relpath], filename=relpath)
-        except UNPARSEABLE:
+        except UNPARSEABLE:  # noqa: DROP001 -- check_D's _parse_python reports a parse failure over the same roots
             continue
         doc = ast.get_docstring(tree)
         if not doc:
@@ -3190,8 +3190,8 @@ def check_O():
                     # review). utf-8-sig on a BOM-less file is byte-identical.
                     with open(full, encoding="utf-8-sig") as fh:
                         files[rel(full)] = fh.read()
-                except UNREADABLE:
-                    continue  # unreadable is reported by the checks keyed on it
+                except UNREADABLE:  # noqa: DROP001 -- check_D's _parse_python reports an unreadable file over the same roots
+                    continue
     for e_ in _module_header_findings(files):
         err(e_)
     shell, shell_errs = _shell_files(CODE_ROOTS)
@@ -4713,7 +4713,7 @@ def _effect_declaration_findings(
     for relpath in sorted(modules):
         try:
             parsed = ast.parse(modules[relpath], filename=relpath)
-        except UNPARSEABLE:
+        except UNPARSEABLE:  # noqa: DROP001 -- check_D's _parse_python reports a parse failure over the same roots
             continue
         doc = ast.get_docstring(parsed)
         if not doc:
@@ -4766,8 +4766,8 @@ def check_V():
                 try:
                     with open(os.path.join(dirpath, f), encoding="utf-8-sig") as fh:
                         modules[rel(os.path.join(dirpath, f))] = fh.read()
-                except UNREADABLE:
-                    continue  # unreadable is reported by the checks keyed on it
+                except UNREADABLE:  # noqa: DROP001 -- check_D's _parse_python reports an unreadable file over the same roots
+                    continue
     letters = set(
         re.findall(
             r"^def check_([A-Z])\(",
@@ -7011,8 +7011,8 @@ def adr_documents():
             try:
                 with open(full, encoding="utf-8") as fh:
                     text = fh.read()
-            except UNREADABLE:
-                continue  # check_A reports an unreadable document
+            except UNREADABLE:  # noqa: DROP001 -- check_A reports an unreadable document
+                continue
             if not text.startswith("---"):
                 continue
             end = text.find("\n---", 3)
@@ -7139,8 +7139,8 @@ def check_Y():
                 try:
                     with open(full, encoding="utf-8"):
                         pass
-                except UNREADABLE:
-                    continue  # check_A reports an unreadable document
+                except UNREADABLE:  # noqa: DROP001 -- check_A reports an unreadable document
+                    continue
                 fm = parse_frontmatter(full) or {}
                 kind = _unquote(fm.get("kind", ""))
                 if kind != "adr":
@@ -7549,7 +7549,7 @@ def _markdown_texts(root):
             try:
                 with open(full, encoding="utf-8") as fh:
                     text = fh.read()
-            except UNREADABLE:
+            except UNREADABLE:  # noqa: DROP001 -- check_A reports an unreadable governed document
                 continue
             out.append((os.path.relpath(full, root).replace(os.sep, "/"), text))
     return sorted(out)

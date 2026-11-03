@@ -124,6 +124,14 @@ extend-select = [
   "SLOT", # __slots__ on str/tuple/NamedTuple subclasses (pairs with slots-hot-path)
   "NPY",  # numpy legacy API (relevant to the tensor/cuda domain)
 ]
+# Codes ruff does not own but keeps the suppressions of: the swallowed-error
+# gate (tests/integration/test_swallowed_error_gate.py) owns them, and reads
+# each `# noqa:` of one for its reason.
+external = [
+  "DROP001",  # a narrow `except` that only drops the error
+  "DROP002",  # a `contextlib.suppress(...)` call
+  "DROP003",  # an `ignore_errors=True` argument
+]
 
 [tool.ruff.lint.per-file-ignores]
 "src/app/**" = ["T201"]        # entrypoints may print; library code may not

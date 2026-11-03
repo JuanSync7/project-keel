@@ -128,7 +128,7 @@ def write_if_changed(path, data):
         with open(path, "rb") as fh:
             if fh.read() == data:
                 return False
-    except FileNotFoundError:
+    except FileNotFoundError:  # noqa: DROP001 -- no file yet, so nothing to compare: the write below creates it
         pass
     folder = os.path.dirname(path)
     os.makedirs(folder, exist_ok=True)

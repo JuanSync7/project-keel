@@ -522,7 +522,7 @@ def _literal_names(tree):
             continue
         try:
             ast.literal_eval(value)
-        except (ValueError, TypeError, SyntaxError):
+        except (ValueError, TypeError, SyntaxError):  # noqa: DROP001 -- a name bound to a non-literal is not data an importer can take
             continue
         out.update(t.id for t in targets if isinstance(t, ast.Name))
     return out

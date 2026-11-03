@@ -375,7 +375,7 @@ def unresolved_mentions(root):
             try:
                 with open(full, encoding="utf-8") as fh:
                     lines = fh.read().split("\n")
-            except (OSError, ValueError):
+            except (OSError, ValueError):  # noqa: DROP001 -- an advisory review: a document it cannot read gives it nothing to judge
                 continue
             relpath = os.path.relpath(full, root).replace(os.sep, "/")
             base = os.path.dirname(full)
@@ -411,7 +411,7 @@ def roster_rows(root):
         try:
             with open(full, encoding="utf-8") as fh:
                 lines = fh.read().split("\n")
-        except (OSError, ValueError):
+        except (OSError, ValueError):  # noqa: DROP001 -- an advisory review: a README it cannot read gives it nothing to judge
             continue
         relpath = os.path.relpath(full, root).replace(os.sep, "/")
         if _ROSTER_HEADING not in lines:

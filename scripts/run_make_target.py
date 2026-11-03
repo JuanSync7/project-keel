@@ -704,9 +704,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "config/project.json make_targets",
             "correct each key the lines above name, then run it again",
         )
-    except (config_loader.ConfigAbsent, config_loader.ConfigUnreadable):
-        # Left to run_target, whose refusal names the manifest and why the
-        # make_targets policy is unknown, before anything runs.
+    except (config_loader.ConfigAbsent, config_loader.ConfigUnreadable):  # noqa: DROP001 -- run_target's refusal names the manifest and why the policy is unknown, before anything runs
         pass
     try:
         result = run_target(

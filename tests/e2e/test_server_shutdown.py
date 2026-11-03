@@ -32,7 +32,7 @@ pytestmark = pytest.mark.e2e
 def _end_group(proc):
     """Teardown for a server the scenario failed to stop: a vanished group is
     the expected case."""
-    with suppress(ProcessLookupError):
+    with suppress(ProcessLookupError):  # noqa: DROP002 -- teardown: a process already gone is the end state it wants
         os.killpg(proc.pid, signal.SIGKILL)
     proc.wait()
 
@@ -46,8 +46,8 @@ def _wait_for_probe(proc, url, config, log):
             with opener.open(url, timeout=config["request_timeout_s"]) as resp:
                 if resp.status == 200:
                     return
-        except (urllib.error.URLError, OSError):
-            pass  # not listening yet
+        except (urllib.error.URLError, OSError):  # noqa: DROP001 -- not listening yet: keep polling until the deadline
+            pass
         time.sleep(config["probe_interval_s"])
     pytest.fail(
         "%s did not answer within %ss:\n%s"

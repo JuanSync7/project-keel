@@ -284,7 +284,7 @@ def declared_ports(root, wanted):
             continue
         try:
             text = full.read_text(encoding="utf-8", errors="ignore")
-        except OSError:
+        except OSError:  # noqa: DROP001 -- an unreadable file holds no pattern to find
             continue
         found.update(pattern.findall(text))
         if found >= set(wanted):

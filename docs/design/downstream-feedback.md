@@ -2855,7 +2855,7 @@ search on `main` at `4ccd795`, not a gate's measurement.
 
 | Slice | Gap | Status |
 |-------|-----|--------|
-| CMP-8.S1 | R-CODE-7, a dropped error: ruff `S110` and `S112` with `check-typed-exception = true`; the swallowed-error gate reads `contextlib.suppress` and `rmtree(ignore_errors=True)` (16 such calls on `main`); each code the gate owns is excused only with its rule id and a reason; KEEL-ERR-1, `agents/doc_reviewer/_brain.py` reading unparseable JSON as zero findings, is fixed | planned |
+| CMP-8.S1 | R-CODE-7, a dropped error: the swallowed-error gate judges a narrow handler that only drops the error, `contextlib.suppress` and `ignore_errors=True` (16 such calls on `main`) through the expiring tier, with no ruff `S110` or `S112` (ruling 11); each code the gate owns is excused only with its code and a reason; KEEL-ERR-1, `agents/doc_reviewer/_brain.py` reading unparseable JSON as zero findings, is fixed | planned |
 | CMP-8.S2 | R-CODE-7, a narrow handler that returns or assigns a fixed value, `None` included, in place of the error; a function whose documented result for "absent" is `None` carries the excuse | planned |
 | CMP-8.S3 | R-CODE-18, a boolean by position: ruff `FBT001`, `FBT002` and `FBT003` (176 findings on `main`); the keyword-only conversion lands as its own mechanical commit | planned |
 | CMP-8.S4 | R-CODE-24, a cache maximum: ruff `TID251` bans `functools.cache` and `lru_cache`, and a bounded-cache helper reads its maximum from a `KEYS` row (2 caches on `main`); R-CODE-17's `ERA001` (1 finding on `main`) | planned |
@@ -3490,6 +3490,20 @@ raised:
     keel's file shows as a diff or a conflict on the next update; nothing
     inside a repository stops a determined edit. The ceiling is 2027-01-31. In
     the template repository every finding stays red, with no tier.
+
+On 2026-11-03 the maintainer ruled on how CMP-8.S1 holds R-CODE-7:
+
+11. **The swallowed-error gate widens, and ruff `S110` and `S112` stay off.**
+    The gate judges a narrow handler that only passes, continues, breaks or
+    holds a bare constant, a `contextlib.suppress(...)` call and an
+    `ignore_errors=True` argument, as the expiring-tier checks
+    `dropped-error-narrow` and `dropped-error-call`: keel is red at once, and a
+    generated project warns until 2027-01-31. Each is excused with one
+    grammar, `# noqa: DROP001`, `DROP002` or `DROP003` and a reason after the
+    code, the gate's own codes, which pyproject.toml lists under ruff's
+    `external`. Ruff's `S110` and `S112` would judge a subset of the first
+    check with a second excuse grammar and no tier, so a generated project
+    would be red on update with no grace, against ruling 3.
 
 ## Open items
 

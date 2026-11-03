@@ -464,7 +464,7 @@ def choose_scratch(
         # The umask can narrow the mode mkdir gives; the directory is new
         # and this user's, so it is set whole.
         os.chmod(mine, 0o700)
-    except FileExistsError:
+    except FileExistsError:  # noqa: DROP001 -- an existing directory is judged by the ownership and mode check below
         pass
     except OSError as exc:
         return Scratch(

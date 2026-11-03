@@ -8,7 +8,7 @@ tags: [practices, style, readability, robustness, docstrings, comments, agents, 
 summary: The canonical statement of how Python is written in this project — readability and loud failure modes outrank speed; the machine-readable module header; comment and docstring discipline; and how a code agent works here. The provable floor is gated (check_O/E, ruff, mypy); this guide is the judgment above it.
 id: docs-guides-python-style
 created: 2026-08-18
-updated: 2026-11-02
+updated: 2026-11-03
 visibility: internal
 canonical: true
 ---
@@ -133,7 +133,11 @@ Every rule here exists because one of those was found and measured:
   `raise ... from` — `B904`; `tests/integration/test_swallowed_error_gate.py`
   fails a bare `except:` or a broad handler whose body only passes,
   continues, breaks, or returns or assigns a fixed value such as `None`,
-  `-1` or `[]`, unless its suppression gives a reason, and fails any `BLE001` or `E722` suppression with a blank one.)
+  `-1` or `[]`, unless its suppression gives a reason, and fails any `BLE001` or `E722` suppression with a blank one.
+  Through `scripts/expiring_tier.py` it also fails a narrow handler that only
+  passes, continues or breaks, a `contextlib.suppress(...)` call and an
+  `ignore_errors=True` argument, unless a `# noqa: DROP001`, `DROP002` or
+  `DROP003` gives a reason.)
 - **Distinguish *absent* from *broken*.** "The optional thing is not installed"
   and "the thing is installed but failing" must take different paths: absent →
   say so and continue (exit 0, with a message naming how to get it); broken →

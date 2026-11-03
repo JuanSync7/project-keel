@@ -207,7 +207,7 @@ def session_members(sid: int) -> Optional[List[Tuple[int, int, str]]]:
                 continue
             pgrp = int(fields[2])
             command = _command(int(name))
-        except (OSError, IndexError, ValueError):
+        except (OSError, IndexError, ValueError):  # noqa: DROP001 -- a process that exits while it is read is no member
             continue
         members.append((int(name), pgrp, command))
     return members
@@ -243,7 +243,7 @@ def pipe_holders(inode: int) -> Optional[List[Tuple[int, str]]]:
             ]
             if target in links:
                 holders.append((int(name), _command(int(name))))
-        except OSError:
+        except OSError:  # noqa: DROP001 -- a process that exits, or whose descriptors this user may not list, holds nothing it can end
             continue
     return holders
 
@@ -252,7 +252,7 @@ def _signal_group(pgid: int, sig: int) -> None:
     """Send *sig* to group *pgid*; a group that has emptied meanwhile is the
     outcome the caller wanted, so it is not an error. PermissionError is how
     some kernels answer for a group whose only member is a zombie leader."""
-    with contextlib.suppress(ProcessLookupError, PermissionError):
+    with contextlib.suppress(ProcessLookupError, PermissionError):  # noqa: DROP002 -- a group that has emptied meanwhile is the outcome the caller wanted
         os.killpg(pgid, sig)
 
 
@@ -755,12 +755,11 @@ class _Writer(threading.Thread):
                     continue
                 try:
                     view = view[os.write(fd, view) :]
-                except BlockingIOError:
+                except BlockingIOError:  # noqa: DROP001 -- the pipe is full: wait until it takes more
                     continue
             if not view:
                 self.stream.close()
-        except BrokenPipeError:
-            # The child exited without reading all of it; its status says why.
+        except BrokenPipeError:  # noqa: DROP001 -- the child exited without reading all of it; its status says why
             pass
         except OSError as exc:  # carried to the caller's thread, not lost
             self.error = exc

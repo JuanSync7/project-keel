@@ -21,6 +21,14 @@ version rather than a bare commit:
   until a hard date, from a record that only shrinks.
 
 ### Added
+- **A narrow `except` that only drops the error, `contextlib.suppress` and
+  `ignore_errors=True` need a reason.** `tests/integration/test_swallowed_error_gate.py`
+  judges them through `scripts/expiring_tier.py`, as the tier checks
+  `dropped-error-narrow` and `dropped-error-call`: keel is red at once, and a
+  generated project warns until config/project.json `expiring_tier.expires`.
+  A `# noqa: DROP001`, `DROP002` or `DROP003` on the construct gives the
+  reason; pyproject.toml lists those codes under ruff's `external`, so ruff
+  keeps their suppressions.
 - **A template file cannot go missing from a generated project without a reason.**
   `tests/integration/test_copier_shipping.py` judges every file copier can see
   with copier's own path matcher under each answer set

@@ -131,7 +131,7 @@ def _wait_ready(url, timeout_s, interval_s):
                     return
         except urllib.error.HTTPError as exc:
             exc.close()
-        except (urllib.error.URLError, OSError):
+        except (urllib.error.URLError, OSError):  # noqa: DROP001 -- not listening yet: keep polling until the deadline
             pass
         time.sleep(min(interval_s, max(remaining, 0)))
 

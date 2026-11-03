@@ -15,6 +15,7 @@ CEILING = "2027-01-31"
 
 _CONFIG_READS = "tests/integration/test_config_reads_gate.py::"
 _EXIT = "tests/integration/test_exit_gate.py::"
+_SWALLOW = "tests/integration/test_swallowed_error_gate.py::"
 
 CHECKS = {
     "config-reads-file": _CONFIG_READS
@@ -25,6 +26,9 @@ CHECKS = {
     + "test_no_shell_script_names_a_config_file_outside_the_loader",
     "exit-helper": _EXIT + "test_no_process_in_the_tree_ends_outside_the_helper",
     "exit-shared-module": _EXIT + "test_a_shared_module_never_ends_the_process",
+    "dropped-error-narrow": _SWALLOW
+    + "test_no_narrow_handler_in_the_tree_only_drops_an_error",
+    "dropped-error-call": _SWALLOW + "test_no_call_in_the_tree_drops_an_error",
 }
 
 # The maintainer ruled on 2026-10-30 that the held-status rule ships as a

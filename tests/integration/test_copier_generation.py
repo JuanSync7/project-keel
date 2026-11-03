@@ -2067,7 +2067,7 @@ def test_no_code_the_generated_project_runs_carries_the_templates_name(
                 continue  # docs/READMEs may name the template they describe
             try:
                 text = path.read_text(encoding="utf-8")
-            except (UnicodeDecodeError, OSError):
+            except (UnicodeDecodeError, OSError):  # noqa: DROP001 -- a binary or unreadable file holds no template name to find
                 continue
             for lineno, line in enumerate(text.split("\n"), 1):
                 if _KEEL_NAME.search(line):

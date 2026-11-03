@@ -46,7 +46,7 @@ def _modules_proved_here() -> set[str]:
                 continue
             try:
                 doc = ast.get_docstring(ast.parse(path.read_text(encoding="utf-8-sig")))
-            except (OSError, SyntaxError, ValueError):
+            except (OSError, SyntaxError, ValueError):  # noqa: DROP001 -- a file that does not read or parse has no header to judge
                 continue
             if not doc:
                 continue

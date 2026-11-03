@@ -8,7 +8,7 @@ tags: [checks, ci, linter, determinism, pre-commit, hooks, guide]
 summary: Catalogue of every deterministic check that keeps a project-template repo honest — purpose, when to run, and how to wire as a hook.
 id: docs-guides-deterministic-checks
 created: 2026-06-19
-updated: 2026-11-02
+updated: 2026-11-03
 visibility: internal
 canonical: true
 ---
@@ -908,8 +908,15 @@ the letters A to Z are taken; `make test` runs them.
   an `except Exception` or `except BaseException` with no `raise` whose body
   only passes, continues, breaks, or returns or assigns a fixed value such
   as `None`, `-1` or `[]`, unless a `# noqa: BLE001` or `# noqa: E722` on
-  its clause gives a reason after its codes. It fails
-  every such suppression whose reason is blank.
+  its clause gives a reason after its codes. Its tier check
+  `dropped-error-narrow` fails an `except` of a narrower type whose body only
+  passes, continues, breaks or holds a bare constant, and its tier check
+  `dropped-error-call` fails a `contextlib.suppress(...)` call and any call
+  given `ignore_errors=True`, unless a `# noqa: DROP001`, `DROP002` or
+  `DROP003` on a line the construct spans gives a reason. Both run through
+  `scripts/expiring_tier.py`, so keel is red at once and a generated project
+  warns until config/project.json `expiring_tier.expires`. It fails every
+  suppression of a code it owns whose reason is blank.
 - `tests/integration/test_change_comment_gate.py` fails a comment that opens a
   thought with a config/project.json `change_comments.phrases` phrase as a
   whole word, and skips one that opens with a `change_comments.directives`
@@ -935,7 +942,8 @@ file, and a walk with nothing to judge.
 **What it does not prove.** The layer gate cannot see an import made through
 `importlib`, `__import__` or a `sys.path` entry no search root names. The
 swallowed-error gate judges a handler by its body's shape, so a handler that
-does work but never looks at the error, and `contextlib.suppress`, pass. The
+does work but never looks at the error passes, and so does a narrow handler
+that returns or assigns a fixed value in place of the error. The
 comment gate is a heuristic: a phrase in mid-sentence, or a change reported in
 other words, passes. The config-reads gate is a heuristic too: a path handed in
 as a parameter, an attribute of a module imported inside a function or

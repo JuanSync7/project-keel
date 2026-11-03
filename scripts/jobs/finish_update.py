@@ -101,7 +101,7 @@ def cast_to_bool(value):
     true; anything else is `bool(value)`."""
     try:
         return bool(float(value))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError):  # noqa: DROP001 -- not a number, so the string rules below decide, as copier's cast_to_bool does
         pass
     try:
         lower = value.strip().lower()
@@ -366,7 +366,7 @@ def finish(root, template=None, dry_run=False):
         if not dry_run:
             run_steps(root, commands)
     finally:
-        shutil.rmtree(scratch, ignore_errors=True)
+        shutil.rmtree(scratch, ignore_errors=True)  # noqa: DROP003 -- a scratch checkout left behind is harmless; a failed removal in the finally must not replace the step's own error
     return commands
 
 

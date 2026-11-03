@@ -23,7 +23,7 @@ def test_outside_socket():
     try:
         # 192.0.2.0/24 is TEST-NET-1: never routed, so no packet leaves.
         sock.connect(("192.0.2.1", 9))
-    except OSError:
+    except OSError:  # noqa: DROP001 -- the connect may be refused or time out; the guard's record of the reach is what the case proves
         pass
     finally:
         sock.close()

@@ -116,7 +116,7 @@ def released_versions(text):
             continue
         try:
             datetime.datetime.strptime(match.group(2), "%Y-%m-%d")
-        except ValueError:
+        except ValueError:  # noqa: DROP001 -- a heading with an impossible date is not a dated release heading
             continue
         out.append(match.group(1))
     return out

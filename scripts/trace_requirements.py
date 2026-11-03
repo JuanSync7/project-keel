@@ -64,7 +64,7 @@ def _discard(path: str) -> None:
     """Remove the file at *path* if there is one. Whatever stops that (it is
     a directory, or its directory cannot be written) is the failure the caller
     is already reporting, so it is not a second one."""
-    with contextlib.suppress(OSError):
+    with contextlib.suppress(OSError):  # noqa: DROP002 -- whatever stops the removal is the failure the caller already reports
         os.remove(path)
 
 

@@ -693,7 +693,7 @@ def _cleanup(pids):
     for pid in pids:
         if process_state.alive(pid):
             # It can still exit before the kill lands; that is the goal reached.
-            with contextlib.suppress(ProcessLookupError):
+            with contextlib.suppress(ProcessLookupError):  # noqa: DROP002 -- teardown: a process already gone is the end state it wants
                 os.kill(pid, signal.SIGKILL)
 
 
