@@ -107,6 +107,18 @@ def test_serve_stdio_keeps_serving_after_a_malformed_line(server):
     assert "tools" in replies[-1]["result"]
 
 
+def test_an_unparseable_line_is_answered_with_a_parse_error(server):
+    """JSON-RPC 2.0 answers a line that is not JSON with -32700 and a null id;
+    dropping it leaves the client waiting on a reply that never comes."""
+    out = io.StringIO()
+    p.serve_stdio(server, stdin=io.StringIO("{not json at all\n"), stdout=out)
+
+    replies = [json.loads(line) for line in out.getvalue().splitlines() if line.strip()]
+    assert len(replies) == 1, replies
+    assert replies[0]["id"] is None, replies
+    assert replies[0]["error"]["code"] == -32700, replies
+
+
 def test_valid_traffic_is_unchanged(server):
     """Regression guard: the boundary check must not alter well-formed calls."""
     init = p.handle_message(

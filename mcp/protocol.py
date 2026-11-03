@@ -34,6 +34,7 @@ SERVER_VERSION = "0.1.0"
 # non-object line raised AttributeError and a `name` that was a JSON array raised
 # TypeError (unhashable) straight out through serve_stdio, ending the session for
 # every later request from that client.
+_PARSE_ERROR = -32700
 _INVALID_REQUEST = -32600
 _METHOD_NOT_FOUND = -32601
 _INVALID_PARAMS = -32602
@@ -198,9 +199,14 @@ def serve_stdio(
             continue
         try:
             msg = json.loads(line)
-        except ValueError:
-            continue
-        response = handle_message(server, msg)
+        except ValueError as exc:
+            # JSON-RPC 2.0 answers a line it cannot parse with a null id, since
+            # no id could be read; dropping it left the client waiting.
+            response: Optional[dict] = _error(
+                None, _PARSE_ERROR, "parse error: %s" % exc
+            )
+        else:
+            response = handle_message(server, msg)
         if response is not None:
             tx.write(json.dumps(response) + "\n")
             tx.flush()
