@@ -552,6 +552,9 @@ version rather than a bare commit:
 - **The MCP stdio loop answers a line that is not JSON.** It dropped the line
   and left the client waiting; it now answers JSON-RPC's parse error, -32700,
   with a null id.
+- **`scripts/jobs/review_docs.py` skips a roster file with no roster heading
+  by testing for it.** It caught the `ValueError` of a failed lookup and
+  dropped it.
 - **A fixture's copy of a script carries every module the script imports.**
   Ten integration fixtures copied a hand-kept list of scripts into a scratch
   project, so `scripts/check_structure.py` importing the new

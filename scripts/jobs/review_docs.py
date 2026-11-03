@@ -414,10 +414,9 @@ def roster_rows(root):
         except (OSError, ValueError):
             continue
         relpath = os.path.relpath(full, root).replace(os.sep, "/")
-        try:
-            start = lines.index(_ROSTER_HEADING)
-        except ValueError:
+        if _ROSTER_HEADING not in lines:
             continue
+        start = lines.index(_ROSTER_HEADING)
         header, not_for = None, None
         for i in range(start + 1, len(lines)):
             line = lines[i]
