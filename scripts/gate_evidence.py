@@ -107,7 +107,7 @@ def load_policy(root):
         ) from None
     try:
         version = schema["properties"]["schema_version"]["const"]
-    except (KeyError, TypeError):
+    except (KeyError, TypeError):  # noqa: DROP001 -- a schema with no integer version raises EvidenceSchemaError below
         version = None
     if type(version) is not int:
         raise EvidenceSchemaError(
@@ -198,7 +198,7 @@ def junit_counts(path):
     # the repository, trusted as much as the tests that produced it.
     try:
         tree = ET.parse(path)  # noqa: S314
-    except (OSError, ET.ParseError):
+    except (OSError, ET.ParseError):  # noqa: DROP001 -- None when there is no readable report, as documented
         return None
     counts = {"passed": 0, "failed": 0, "skipped": 0, "errors": 0}
     for case in tree.getroot().iter("testcase"):
@@ -384,7 +384,7 @@ def _source(root):
     """(snapshot or None, source block before the goals run)."""
     try:
         snap = git_tree.tree_snapshot(root)
-    except git_tree.NoGitError:
+    except git_tree.NoGitError:  # noqa: DROP001 -- no git records the unknowns as null, which the evidence schema allows
         return None, {
             "commit": None,
             "dirty": None,
@@ -406,7 +406,7 @@ def _changed(root, before):
         return None
     try:
         return git_tree.tree_snapshot(root) != before
-    except (git_tree.NoGitError, git_tree.GitFailedError):
+    except (git_tree.NoGitError, git_tree.GitFailedError):  # noqa: DROP001 -- fails closed: a tree it cannot read after the goals counts as changed
         # Readable before and not after, whether the repository is gone or git
         # now fails on it: what the goals did cannot be shown harmless, so it
         # counts as a change.
@@ -419,7 +419,7 @@ def _unignored(root, paths):
     failed raises git_tree.GitFailedError: it has not said the paths are safe."""
     try:
         return [p for p in paths if not git_tree.is_ignored(root, p)]
-    except git_tree.NoGitError:
+    except git_tree.NoGitError:  # noqa: DROP001 -- None when there is no git or repository, as documented
         return None
 
 

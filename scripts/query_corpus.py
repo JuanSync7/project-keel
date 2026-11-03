@@ -261,7 +261,7 @@ def main(argv=None) -> int:
     except (OSError, ValueError) as exc:
         # ValueError covers UnicodeDecodeError and json's own error.
         corpus, fault = None, str(exc)
-    except RecursionError:
+    except RecursionError:  # noqa: DROP001 -- the fault is reported below through the exit helper
         corpus, fault = None, "it is nested too deeply to parse"
     else:
         fault = (

@@ -69,7 +69,7 @@ def _stated_default(node):
         return None
     try:
         value = ast.literal_eval(node)
-    except ValueError:
+    except ValueError:  # noqa: DROP001 -- None when the default is not a literal, as documented
         return None
     if isinstance(value, bool) or not isinstance(value, (str, int, float)):
         return None

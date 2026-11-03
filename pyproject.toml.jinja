@@ -128,7 +128,7 @@ extend-select = [
 # gate (tests/integration/test_swallowed_error_gate.py) owns them, and reads
 # each `# noqa:` of one for its reason.
 external = [
-  "DROP001",  # a narrow `except` that only drops the error
+  "DROP001",  # a narrow `except` that only drops the error or puts a fixed value in its place
   "DROP002",  # a `contextlib.suppress(...)` call
   "DROP003",  # an `ignore_errors=True` argument
 ]

@@ -39,7 +39,7 @@ try:
     import resource
 
     _HAS_RLIMIT = True
-except ImportError:  # not POSIX: cap_memory says the cap is not set
+except ImportError:  # noqa: DROP001 -- not POSIX: cap_memory says the cap is not set
     _HAS_RLIMIT = False
 
 __all__ = [
@@ -191,7 +191,7 @@ def session_members(sid: int) -> Optional[List[Tuple[int, int, str]]]:
     waits for that. A process that ends while it is read is skipped."""
     try:
         names = os.listdir("/proc")
-    except OSError:
+    except OSError:  # noqa: DROP001 -- None when /proc cannot be listed, as documented
         return None
     members = []
     for name in sorted(names, key=lambda n: (len(n), n)):
@@ -228,7 +228,7 @@ def pipe_holders(inode: int) -> Optional[List[Tuple[int, str]]]:
     user's) is not listed."""
     try:
         names = os.listdir("/proc")
-    except OSError:
+    except OSError:  # noqa: DROP001 -- None when /proc cannot be listed, as documented
         return None
     target = "pipe:[%d]" % inode
     me = os.getpid()
@@ -338,7 +338,7 @@ class ChildSession:
         if hasattr(os, "waitid"):
             try:
                 os.waitid(os.P_PID, self.proc.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
-            except ChildProcessError:
+            except ChildProcessError:  # noqa: DROP001 -- a child something else reaped is lost, and lost is recorded
                 self.lost = True
                 return False
         return True
@@ -363,9 +363,9 @@ class ChildSession:
             return self.proc.returncode is None, []
         try:
             os.killpg(self.proc.pid, 0)
-        except ProcessLookupError:
+        except ProcessLookupError:  # noqa: DROP001 -- no process group is not alive, as documented
             return False, []
-        except PermissionError:
+        except PermissionError:  # noqa: DROP001 -- a group it may not signal is alive, as documented
             return True, []
         return True, []
 

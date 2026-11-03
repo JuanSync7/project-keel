@@ -198,7 +198,7 @@ def checked(raw, policy, clock_today):
     Raises RunDateError naming `policy.env` otherwise."""
     try:
         parsed = datetime.datetime.strptime(raw, _FORMAT).date()
-    except ValueError:
+    except ValueError:  # noqa: DROP001 -- None fails the round-trip check below, which raises RunDateError
         parsed = None
     # strptime takes "2031-3-1" and surrounding digits of other widths; the
     # round trip holds the value to the one spelling a reader compares as text.

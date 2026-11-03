@@ -90,7 +90,7 @@ def _drip_server(prefix, byte):
     def serve():
         try:
             conn, _addr = listener.accept()
-        except OSError:
+        except OSError:  # noqa: DROP001 -- no client came, or the listener was closed
             return  # no client came, or the listener was closed
         _drip(conn, prefix, byte, stop)
 
@@ -167,7 +167,7 @@ def _silent_server():
     def serve():
         try:
             conn, _addr = listener.accept()
-        except OSError:
+        except OSError:  # noqa: DROP001 -- no client came, or the listener was closed
             return  # no client came, or the listener was closed
         stop.wait(_DRIP_FOR_S)
         conn.close()
@@ -255,7 +255,7 @@ def _slow_tunnel_proxy(delay):
     def serve():
         try:
             conn, _addr = listener.accept()
-        except OSError:
+        except OSError:  # noqa: DROP001 -- no client came, or the listener was closed
             return  # no client came, or the listener was closed
         _read_request(conn)
         if not stop.wait(delay):

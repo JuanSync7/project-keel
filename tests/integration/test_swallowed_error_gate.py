@@ -2,7 +2,7 @@
 title: Integration — no error is swallowed without a stated reason
 kind: tests
 layer: n/a
-summary: A tree-wide gate over every Python file tests/source_tree.py `python_files` lists, read from the syntax tree. It fails a bare `except:`, and an `except` whose type is `Exception` or `BaseException` (alone, in a tuple, or as an attribute such as `builtins.Exception`) when the handler has no `raise` and its body only passes, continues, breaks, returns nothing or a fixed value (a constant, a signed constant such as `-1`, or a list, tuple, set or dict of them such as `[]`), assigns a fixed value, or holds a bare constant: such a handler throws the failure away, so the caller reads it as a success. Either is allowed when a `# noqa: BLE001` or `# noqa: E722` suppression on a line of the `except` clause gives a reason after its codes, read by `noqa_reasons`, which takes codes separated by commas or spaces as ruff does, so a second code is never the reason. A second check fails every BLE001 or E722 suppression in the tree whose reason holds no letter or digit, because ruff honours a bare suppression and the reason is the one record of why the error may be dropped. A walk with no Python file, or with no `except` handler to judge, is a failure, never a pass. Two more checks run through scripts/expiring_tier.py, so keel is red at once and a generated project warns until config/project.json `expiring_tier.expires`: `dropped-error-narrow` fails an `except` of a narrower type whose body only passes, continues, breaks or holds a bare constant (DROP001), and `dropped-error-call` fails a `contextlib.suppress(...)` call, by that name or an alias bound from contextlib (DROP002), and any call given `ignore_errors=True` (DROP003). Each is allowed with a `# noqa: DROPnnn -- <reason>` on a line the construct spans, and the blank-reason check covers those codes too; pyproject.toml lists the DROP codes under ruff's `external`, so ruff keeps their suppressions, and a test holds that list to the codes the gate owns. It cannot see a handler that does work but never looks at the error, or a narrow handler that returns or assigns a fixed value in place of the error; ruff's BLE001 and E722 run beside it. Not a check_* letter: the letters A to Z are taken.
+summary: A tree-wide gate over every Python file tests/source_tree.py `python_files` lists, read from the syntax tree. It fails a bare `except:`, and an `except` whose type is `Exception` or `BaseException` (alone, in a tuple, or as an attribute such as `builtins.Exception`) when the handler has no `raise` and its body only passes, continues, breaks, returns nothing or a fixed value (a constant, a signed constant such as `-1`, or a list, tuple, set or dict of them such as `[]`), assigns a fixed value, or holds a bare constant: such a handler throws the failure away, so the caller reads it as a success. Either is allowed when a `# noqa: BLE001` or `# noqa: E722` suppression on a line of the `except` clause gives a reason after its codes, read by `noqa_reasons`, which takes codes separated by commas or spaces as ruff does, so a second code is never the reason. A second check fails every BLE001 or E722 suppression in the tree whose reason holds no letter or digit, because ruff honours a bare suppression and the reason is the one record of why the error may be dropped. A walk with no Python file, or with no `except` handler to judge, is a failure, never a pass. Two more checks run through scripts/expiring_tier.py, so keel is red at once and a generated project warns until config/project.json `expiring_tier.expires`: `dropped-error-narrow` fails an `except` of a narrower type whose body only passes, continues, breaks or holds a bare constant, or only returns or assigns a fixed value, `None` included, in place of the error (DROP001), and `dropped-error-call` fails a `contextlib.suppress(...)` call, by that name or an alias bound from contextlib (DROP002), and any call given `ignore_errors=True` (DROP003). Each is allowed with a `# noqa: DROPnnn -- <reason>` on a line the construct spans, and the blank-reason check covers those codes too; pyproject.toml lists the DROP codes under ruff's `external`, so ruff keeps their suppressions, and a test holds that list to the codes the gate owns. It cannot see a handler that does work but never looks at the error; ruff's BLE001 and E722 run beside it. Not a check_* letter: the letters A to Z are taken.
 """
 
 import ast
@@ -115,12 +115,16 @@ def _drops(statement):
 
 
 def _narrow_drop(handler):
-    """What a narrow *handler* catches when its body only drops the error,
-    else None; a bare or broad handler is `_swallows`'s to judge."""
+    """What a narrow *handler* catches when its body only drops the error or
+    puts a fixed value in its place, else None; a bare or broad handler is
+    `_swallows`'s to judge."""
     if handler.type is None or set(_type_names(handler.type)) & set(_BROAD):
         return None
+    caught = "`except %s`" % ast.unparse(handler.type)
     if all(_drops(statement) for statement in handler.body):
-        return "`except %s` that only drops the error" % ast.unparse(handler.type)
+        return caught + " that only drops the error"
+    if all(_quiet(statement) for statement in handler.body):
+        return caught + " that puts a fixed value in place of the error"
     return None
 
 
@@ -417,6 +421,26 @@ def _loop(handler):
             "`except ValueError`",
         ),
         (
+            _wrap("    except ValueError:\n        return None\n"),
+            "`except ValueError` that puts a fixed value in place of the error",
+        ),
+        (
+            _wrap("    except KeyError:\n        return -1\n"),
+            "`except KeyError` that puts a fixed value in place of the error",
+        ),
+        (
+            _wrap("    except OSError:\n        return\n"),
+            "`except OSError` that puts a fixed value in place of the error",
+        ),
+        (
+            _wrap("    except ValueError:\n        found = []\n"),
+            "`except ValueError` that puts a fixed value in place of the error",
+        ),
+        (
+            _wrap("    except ValueError:\n        found: dict = {}\n"),
+            "`except ValueError` that puts a fixed value in place of the error",
+        ),
+        (
             _wrap("    except ValueError:  # noqa: DROP001\n        pass\n"),
             "`except ValueError`",
         ),
@@ -433,6 +457,11 @@ def _loop(handler):
         "attribute string",
         "continue",
         "break",
+        "return None",
+        "return a signed constant",
+        "bare return",
+        "assign an empty list",
+        "annotated assign of an empty dict",
         "suppression without reason",
         "another rule's code",
     ],
@@ -452,16 +481,21 @@ def test_a_narrow_handler_that_only_drops_the_error_is_a_finding(tmp_path, text,
         "    except ValueError:  # noqa: DROP001 -- the probe may find no value\n"
         "        pass\n",
         "    except ValueError:\n        raise\n",
-        "    except ValueError:\n        return None\n",
+        "    except ValueError:  # noqa: DROP001 -- absent is None, as documented\n"
+        "        return None\n",
         "    except ValueError:\n        cleanup()\n",
+        "    except ValueError:\n        return fallback()\n",
+        "    except ValueError as exc:\n        found = [str(exc)]\n",
         "    except Exception:  # noqa: BLE001 -- g reports its own failure\n"
         "        pass\n",
     ],
     ids=[
         "reasoned DROP001",
         "re-raise",
-        "fixed value, the next slice's rule",
+        "reasoned fixed value",
         "does work",
+        "returns computed work",
+        "keeps the error",
         "broad type is the broad rule's",
     ],
 )

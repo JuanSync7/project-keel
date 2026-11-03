@@ -177,7 +177,7 @@ def _git(root, *args):
         return None
     try:
         argv = git_argv(root, *args)
-    except GitConfigError:
+    except GitConfigError:  # noqa: DROP001 -- None when git is absent or fails, as documented
         return None
     proc = subprocess.run(
         argv,
@@ -215,7 +215,7 @@ def _frontmatter_updated(path):
     try:
         with open(path, encoding="utf-8") as fh:
             text = fh.read()
-    except (OSError, ValueError):
+    except (OSError, ValueError):  # noqa: DROP001 -- None when there is no readable stamp, as documented
         return None
     span = updated_span(text)
     return text[span[0] : span[1]] if span else None

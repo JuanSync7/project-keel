@@ -130,14 +130,14 @@ def _read(path):
         # utf-8-sig strips a leading BOM, so BOM-saved files still parse.
         with io.open(path, encoding="utf-8-sig") as fh:
             return fh.read()
-    except (OSError, UnicodeDecodeError):
+    except (OSError, UnicodeDecodeError):  # noqa: DROP001 -- a file it cannot read is skipped; check_structure and ruff report it
         return None
 
 
 def _parse(text):
     try:
         return ast.parse(text)
-    except (SyntaxError, ValueError):
+    except (SyntaxError, ValueError):  # noqa: DROP001 -- a file that does not parse is ruff's finding; this check judges what parses
         return None
 
 

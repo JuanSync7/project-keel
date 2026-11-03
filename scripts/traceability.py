@@ -578,7 +578,7 @@ def _names_requirement(word: str, prefixes: Sequence[Prefix]) -> bool:
     a whole requirement id under the registry."""
     try:
         row, parsed = parse_listed_id(word.strip(_WRAPPERS + _CLOSERS), prefixes)
-    except TraceError:
+    except TraceError:  # noqa: DROP001 -- a word that is no listed id names no requirement
         return False
     return row.family == "requirement" and parsed.ac is None
 

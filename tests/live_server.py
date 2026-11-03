@@ -96,7 +96,7 @@ def load_server_config(root):
             )
     try:
         loopback = ipaddress.ip_address(server["host"]).is_loopback
-    except ValueError:
+    except ValueError:  # noqa: DROP001 -- not loopback raises LiveServerError below
         loopback = False
     if not loopback:
         raise LiveServerError(

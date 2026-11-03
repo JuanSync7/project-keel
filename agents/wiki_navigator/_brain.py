@@ -115,7 +115,7 @@ def _retrieve(state):
         raise RuntimeError("query_corpus failed (rc=%d): %s" % (rc, err.strip()))
     try:
         hits = json.loads(out) if out.strip() else []
-    except ValueError:
+    except ValueError:  # noqa: DROP001 -- KEEL-ERR-2 tells a tool report that does not parse from an empty one
         hits = []
     visible = _visible(hits)
     citations = tuple(

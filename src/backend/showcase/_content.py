@@ -47,7 +47,7 @@ def module_docstring(text: str) -> str:
     """Return a Python module's docstring, or ''."""
     try:
         return ast.get_docstring(ast.parse(text)) or ""
-    except (SyntaxError, ValueError):
+    except (SyntaxError, ValueError):  # noqa: DROP001 -- the showcase renders an empty docstring for a module that does not parse
         return ""
 
 
@@ -55,7 +55,7 @@ def symbol_docstring(text: str, name: str) -> str:
     """Return the docstring of a top-level def/class named ``name``, or ''."""
     try:
         tree = ast.parse(text)
-    except (SyntaxError, ValueError):
+    except (SyntaxError, ValueError):  # noqa: DROP001 -- the showcase renders an empty docstring for a module that does not parse
         return ""
     for node in tree.body:
         if (

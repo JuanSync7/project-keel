@@ -575,7 +575,7 @@ def origin_of(dest, message, base_sha, tree, predicted=None):
         try:
             with open(full, "rb") as fh:
                 ours = fh.read()
-        except OSError:
+        except OSError:  # noqa: DROP001 -- the evidence kind is unknown when the bytes are; check_structure reported the file
             # check_structure has already reported the file as unreadable; with
             # its bytes unknown, so is whether the project edited it.
             return "unknown"
@@ -777,7 +777,7 @@ def migration_jobs(snap, yaml):
     try:
         with open(os.path.join(snap, "copier.yml"), encoding="utf-8") as fh:
             data = yaml.safe_load(fh)
-    except (OSError, ValueError, yaml.YAMLError):
+    except (OSError, ValueError, yaml.YAMLError):  # noqa: DROP001 -- None when copier.yml cannot be read, as documented; the refusal then names no job
         return None
     entries = data.get("_migrations") if isinstance(data, dict) else None
     if not isinstance(entries, list):

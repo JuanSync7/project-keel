@@ -195,7 +195,7 @@ def update_in_progress(root):
     update copier stopped. FinishError when there is none to finish."""
     try:
         inside = _read_git(root, "rev-parse", "--is-inside-work-tree")
-    except FinishError:
+    except FinishError:  # noqa: DROP001 -- an empty answer fails the work-tree check below, which raises FinishError
         inside = b""
     if inside.strip() != b"true":
         raise FinishError("%s is not a git work tree; copier update needs one" % root)

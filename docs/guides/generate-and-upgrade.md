@@ -404,7 +404,8 @@ each message.
    `-1` or `[]`, unless its `# noqa: BLE001` or `# noqa: E722` gives a reason
    after the codes; a second code is not a reason. A suppression you already
    carry with no reason is red too. A narrow `except` that only passes,
-   continues or breaks, a `contextlib.suppress(...)` call and an
+   continues or breaks, or only returns or assigns a fixed value such as
+   `None` in place of the error, a `contextlib.suppress(...)` call and an
    `ignore_errors=True` argument warn until config/project.json
    `expiring_tier.expires` and are red after it, unless a `# noqa: DROP001`,
    `DROP002` or `DROP003` on the construct gives a reason.

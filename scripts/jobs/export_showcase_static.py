@@ -45,7 +45,7 @@ def _declared_frontend_public(root: str) -> str | None:
     try:
         with open(manifest, encoding="utf-8") as fh:
             frontend = (json.load(fh).get("layers") or {}).get("frontend")
-    except (OSError, ValueError):
+    except (OSError, ValueError):  # noqa: DROP001 -- None when no frontend is declared or readable, as documented
         return None
     if not frontend or not frontend.get("stack"):
         return None

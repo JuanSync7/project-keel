@@ -29,6 +29,14 @@ version rather than a bare commit:
   A `# noqa: DROP001`, `DROP002` or `DROP003` on the construct gives the
   reason; pyproject.toml lists those codes under ruff's `external`, so ruff
   keeps their suppressions.
+- **A narrow `except` that only returns or assigns a fixed value needs a
+  reason.** `dropped-error-narrow` in
+  `tests/integration/test_swallowed_error_gate.py` fails a handler of a
+  narrower type whose body only returns or assigns a fixed value, `None`
+  included, in place of the error, because the caller reads that value as a
+  result. A function whose documented result for that input is the value
+  gives it with `# noqa: DROP001 -- <reason>`; the 96 such handlers in keel
+  carry one.
 - **A template file cannot go missing from a generated project without a reason.**
   `tests/integration/test_copier_shipping.py` judges every file copier can see
   with copier's own path matcher under each answer set

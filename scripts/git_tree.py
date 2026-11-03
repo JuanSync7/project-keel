@@ -305,7 +305,7 @@ def head_commit(root):
     another reason: a commit git could not read is unknown, not absent."""
     try:
         proc = _run(root, ("rev-parse", "--verify", "-q", "HEAD^{commit}"))
-    except NoGitError:
+    except NoGitError:  # noqa: DROP001 -- None when there is no commit or no git, as documented
         return None
     # `--verify -q` answers a HEAD that names no commit with status 1 and no
     # message; anything else that is not 0 is git failing.

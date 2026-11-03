@@ -122,7 +122,7 @@ def _report_dir_hint(manifest: Mapping[str, object]) -> str | None:
         values = config_loader.resolve(
             manifest, _REPORT_DIR_ROW, _MANIFEST, stream=io.StringIO()
         )
-    except config_loader.ConfigError:
+    except config_loader.ConfigError:  # noqa: DROP001 -- a hint on an error already reported; the refusal's own lines name the fault
         return None
     hint: str = values[(_BLOCK, "report_dir")]
     return hint

@@ -153,7 +153,7 @@ def _report(state):
         owner_gaps = (
             tuple(n["node_id"] for n in json.loads(ar_out)) if ar_out.strip() else ()
         )
-    except ValueError:
+    except ValueError:  # noqa: DROP001 -- no corpus yet prints a notice, not JSON; KEEL-ERR-2 tells a tool report that does not parse from an empty one
         owner_gaps = ()  # no corpus yet (tool prints a notice, not JSON)
     return {
         "corpus": corpus,

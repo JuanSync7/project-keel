@@ -98,7 +98,7 @@ def main(argv=None) -> int:
         try:
             with open(path, encoding="utf-8") as fh:
                 current = fh.read()
-        except FileNotFoundError:
+        except FileNotFoundError:  # noqa: DROP001 -- an absent schema differs from any text, so --check reports it stale
             current = ""
         if current != text:
             return report(

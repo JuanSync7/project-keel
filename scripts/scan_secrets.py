@@ -148,7 +148,7 @@ def record_is_ignored(root, cfg):
     secrets.scanner.record_file, which names one machine's path."""
     try:
         return git_tree.is_ignored(root, cfg["record_file"])
-    except git_tree.NoGitError:
+    except git_tree.NoGitError:  # noqa: DROP001 -- with no repository nothing can commit the record
         # With no repository nothing can commit the record, and the shipped
         # .gitignore ignores it once one exists.
         return True
@@ -222,7 +222,7 @@ def _findings(text):
     """The findings in a report, or None when it is not a JSON list of them."""
     try:
         loaded = json.loads(text)
-    except ValueError:
+    except ValueError:  # noqa: DROP001 -- None when the report is not a JSON list, as documented
         return None
     if not isinstance(loaded, list):
         return None

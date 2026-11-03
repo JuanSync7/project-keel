@@ -154,7 +154,7 @@ def shell_scripts(root, roots):
     exit-code helper aside, as shell_gate itself sets it aside."""
     try:
         manifest = config_loader.read(str(root))
-    except config_loader.ConfigAbsent:
+    except config_loader.ConfigAbsent:  # noqa: DROP001 -- a tree with no config is judged with the gate's defaults
         manifest = {}
     cfg = shell_gate.settings(str(root), loaded=manifest, stream=io.StringIO())
     excluded = sorted(cfg["excluded_paths"])

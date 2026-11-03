@@ -589,7 +589,7 @@ def host_kind(hostname, patterns_text, inside_job, unreadable=False):
         return "shared", "no own-hosts file"
     try:
         data = json.loads(patterns_text)
-    except ValueError:
+    except ValueError:  # noqa: DROP001 -- the reason value carries the failure to the caller, which prints it
         return "shared", "own-hosts file is not JSON"
     if not isinstance(data, dict):
         return "shared", "own-hosts file is not a JSON object"
@@ -662,7 +662,7 @@ def spare(loadavg, ncpu, threshold):
     unknown load, which is never spare."""
     try:
         load = max(float(loadavg[0]), float(loadavg[1]))
-    except (TypeError, IndexError, ValueError):
+    except (TypeError, IndexError, ValueError):  # noqa: DROP001 -- the reason value carries the failure to the caller, which prints it
         return False, "load unknown"
     if type(ncpu) is not int or ncpu < 1 or not math.isfinite(load) or load < 0:
         return False, "load unknown"
@@ -985,9 +985,9 @@ def _read(path):
     try:
         with open(path, encoding="utf-8") as fh:
             return fh.read(), False
-    except FileNotFoundError:
+    except FileNotFoundError:  # noqa: DROP001 -- an absent file is None and False, as documented
         return None, False
-    except (OSError, ValueError):
+    except (OSError, ValueError):  # noqa: DROP001 -- the unreadable flag carries the failure to the caller
         return None, True
 
 
@@ -1001,7 +1001,7 @@ def _durations(path):
         return {}
     try:
         data = json.loads(text)
-    except ValueError:
+    except ValueError:  # noqa: DROP001 -- None when the file is not a JSON object, as documented; the caller refuses it
         return None
     return data if isinstance(data, dict) else None
 
@@ -1020,7 +1020,7 @@ def _unsafe_state(root, cfg):
         )
     try:
         listed = [p for p in state if not git_tree.is_ignored(root, p)]
-    except git_tree.NoGitError:
+    except git_tree.NoGitError:  # noqa: DROP001 -- with no repository nothing can commit the file, so nothing to refuse
         # With no repository nothing can commit the file, so nothing to refuse.
         listed = []
     except git_tree.GitFailedError as exc:
@@ -1052,7 +1052,7 @@ def _loadavg():
     """(load1, load5, load15), or None when this host does not report a load."""
     try:
         return os.getloadavg()
-    except (AttributeError, OSError):
+    except (AttributeError, OSError):  # noqa: DROP001 -- None when this host reports no load, as documented
         return None
 
 

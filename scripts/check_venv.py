@@ -44,7 +44,7 @@ def _installed_version(name: str) -> Optional[str]:
     """The installed version of distribution *name*, or None when absent."""
     try:
         return metadata.version(name)
-    except metadata.PackageNotFoundError:
+    except metadata.PackageNotFoundError:  # noqa: DROP001 -- None when the distribution is absent, as documented
         return None
 
 
@@ -52,7 +52,7 @@ def _installed_requires(name: str) -> List[str]:
     """The requirement strings distribution *name* declares in its metadata."""
     try:
         return list(metadata.requires(name) or [])
-    except metadata.PackageNotFoundError:
+    except metadata.PackageNotFoundError:  # noqa: DROP001 -- no distribution declares no requirements, as documented
         return []
 
 

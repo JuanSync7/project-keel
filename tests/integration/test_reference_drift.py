@@ -874,7 +874,7 @@ def _expected_default(node):
         return None
     try:
         ast.literal_eval(node)
-    except ValueError:
+    except ValueError:  # noqa: DROP001 -- a default that is not a literal states no source
         return ""
     return ast.unparse(node)
 
@@ -1658,7 +1658,7 @@ def _json_span(span):
     """*span* parsed as a JSON list or object, else None."""
     try:
         value = json.loads(span)
-    except ValueError:
+    except ValueError:  # noqa: DROP001 -- None when the span is not a JSON list or object, as documented
         return None
     return value if isinstance(value, (dict, list)) else None
 

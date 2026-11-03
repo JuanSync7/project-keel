@@ -444,7 +444,7 @@ def layout_tree(text, heading):
     target = "## " + heading
     try:
         start = next(i for i, ln in enumerate(lines) if ln.strip() == target)
-    except StopIteration:
+    except StopIteration:  # noqa: DROP001 -- None when the heading is absent, as documented
         return None
     names, fenced = [], False
     for line in lines[start + 1 :]:

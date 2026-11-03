@@ -559,7 +559,7 @@ def _base(path: str, dir_fd: object, fd_dir: str) -> Optional[str]:
     if isinstance(dir_fd, int) and dir_fd >= 0 and not os.path.isabs(path):
         try:
             directory = os.readlink(os.path.join(fd_dir, str(dir_fd)))
-        except OSError:
+        except OSError:  # noqa: DROP001 -- None when the directory fd cannot be read, as documented
             return None
         return os.path.join(directory, path)
     try:
@@ -671,7 +671,7 @@ def _loopback_host(host: object) -> bool:
         return True
     try:
         address = ipaddress.ip_address(host.split("%", 1)[0])
-    except ValueError:
+    except ValueError:  # noqa: DROP001 -- a host that is not an address literal is not loopback
         return False
     mapped = getattr(address, "ipv4_mapped", None)
     return bool(address.is_loopback or (mapped is not None and mapped.is_loopback))

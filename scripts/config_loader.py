@@ -433,7 +433,7 @@ def _iso_date(value: Any) -> bool:
     # spelling a reader compares, and refuses a day the calendar lacks.
     try:
         parsed = datetime.datetime.strptime(str(value), _ISO_DATE).date()
-    except ValueError:
+    except ValueError:  # noqa: DROP001 -- a value that does not parse is not an ISO date; the caller reports it
         return False
     return bool(parsed.isoformat() == value)
 
@@ -544,7 +544,7 @@ def _bare_url(value: Any) -> Optional[urllib.parse.SplitResult]:
         # names no port a server listens on.
         if parts.port == 0:
             return None
-    except ValueError:
+    except ValueError:  # noqa: DROP001 -- None for a value that is not a bare URL, as documented
         return None
     return parts
 

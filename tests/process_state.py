@@ -14,16 +14,16 @@ def alive(pid):
     or dying."""
     try:
         os.kill(pid, 0)
-    except ProcessLookupError:
+    except ProcessLookupError:  # noqa: DROP001 -- a pid that does not exist is not alive
         return False
     try:
         with open("/proc/%d/stat" % pid, encoding="utf-8") as fh:
             stat = fh.read()
-    except (FileNotFoundError, ProcessLookupError):
+    except (FileNotFoundError, ProcessLookupError):  # noqa: DROP001 -- reaped after signal 0 found it, so it is not alive
         # Reaped after signal 0 found it: before the open (a verify at load
         # average 9 hit this) or between the open and the read.
         return False
-    except OSError:
+    except OSError:  # noqa: DROP001 -- a stat it may not read belongs to a live process
         return True
     # The command name in parentheses may hold spaces or `)`; the state is
     # the first field after the last `)`.

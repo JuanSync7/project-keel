@@ -190,7 +190,7 @@ def serve_stdio(
             else:
                 with owner.idle():
                     line = rx.readline()
-        except resource_limits.ShutdownRequested:
+        except resource_limits.ShutdownRequested:  # noqa: DROP001 -- a shutdown request ends the loop, as documented
             return
         if not line:
             return

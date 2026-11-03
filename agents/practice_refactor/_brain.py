@@ -98,7 +98,7 @@ def _load_practice(corpus_root, practice):
     try:
         with open(path, encoding="utf-8") as fh:
             data = json.load(fh)
-    except (OSError, ValueError):
+    except (OSError, ValueError):  # noqa: DROP001 -- an unreadable registry queries by the practice id, as _practice_query documents
         return None
     for row in data.get("practices", []):
         if row.get("id") == practice:
@@ -164,7 +164,7 @@ def _parse_spec(reply, practice):
         text = "\n".join(lines).strip()
     try:
         data = json.loads(text)
-    except ValueError:
+    except ValueError:  # noqa: DROP001 -- a reply that is not JSON declines the chunk, as documented
         return None
     if not isinstance(data, dict):
         return None
@@ -265,7 +265,7 @@ def _walk(state):
         )
     try:
         hits = json.loads(out) if out.strip() else []
-    except ValueError:
+    except ValueError:  # noqa: DROP001 -- KEEL-ERR-2 tells a tool report that does not parse from an empty one
         hits = []
     # The preview prompt carries a chunk's text too, so the cut comes first.
     hits = _served_now(_served(hits), state["root"])
@@ -293,7 +293,7 @@ def _baseline(state):
     )
     try:
         res = json.loads(out) if out.strip() else {}
-    except ValueError:
+    except ValueError:  # noqa: DROP001 -- fails closed: a report that does not parse is not green, so nothing is refactored; KEEL-ERR-2 tells a tool report that does not parse from an empty one
         res = {}
     return {"baseline_green": bool(res.get("ok"))}
 
@@ -356,7 +356,7 @@ def _apply(state):
         )
         try:
             res = json.loads(out) if out.strip() else {}
-        except ValueError:
+        except ValueError:  # noqa: DROP001 -- KEEL-ERR-2 tells a tool report that does not parse from an empty one
             res = {}
         if res.get("applied"):
             refactored.extend(res.get("files", []))

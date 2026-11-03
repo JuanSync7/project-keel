@@ -298,7 +298,7 @@ def _read_json(path: str) -> dict[str, Any]:
         with open(path, encoding="utf-8") as fh:
             data = json.load(fh)
         return data if isinstance(data, dict) else {}
-    except (OSError, ValueError):
+    except (OSError, ValueError):  # noqa: DROP001 -- a missing corpus or registry renders as empty, as load_showcase documents
         return {}
 
 

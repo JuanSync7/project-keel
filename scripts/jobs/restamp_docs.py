@@ -164,7 +164,7 @@ def _git(root, *args):
         # The judge's read-only argv: no index write-back, and no command the
         # repository's own config names (fsmonitor, filters, gpg).
         argv = review_docs.git_argv(root, *args)
-    except review_docs.GitConfigError:
+    except review_docs.GitConfigError:  # noqa: DROP001 -- None when git is absent or fails, as documented
         return None
     proc = subprocess.run(
         argv,
@@ -221,7 +221,7 @@ def _holds_conflict(full):
     try:
         with open(full, "rb") as fh:
             return conflict_guard.has_conflict(fh.read().decode("utf-8"))
-    except (OSError, ValueError):
+    except (OSError, ValueError):  # noqa: DROP001 -- a file that cannot be read is judged by the read that follows it
         return False
 
 
@@ -319,7 +319,7 @@ def _read_stamp(full):
         raise UnreadableError("cannot read (%s)" % (exc.strerror or exc)) from exc
     try:
         text = raw.decode("utf-8")
-    except UnicodeDecodeError:
+    except UnicodeDecodeError:  # noqa: DROP001 -- None when there is no text to stamp, as documented
         return None
     span = review_docs.updated_span(text)
     if span is None:
@@ -391,7 +391,7 @@ def _no_allowlist(exc, root, command):
     try:
         with open(os.path.join(root, manifest), "rb") as fh:
             line = conflict_guard.conflict_line(fh.read().decode("utf-8"))
-    except (OSError, ValueError):
+    except (OSError, ValueError):  # noqa: DROP001 -- the ChildEnvError itself says the manifest is unreadable
         line = None  # the ChildEnvError itself already says it is unreadable
     if line is not None:
         found = [(manifest.replace(os.sep, "/"), line)]

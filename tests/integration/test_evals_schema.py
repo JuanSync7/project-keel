@@ -146,7 +146,7 @@ def _parser_accepts(obj):
             source=_SOURCE,
             schema_version=_CONFIG.schema_version,
         )
-    except DatasetError:
+    except DatasetError:  # noqa: DROP001 -- the parser refusing is the answer this probe asks for
         return False
     return True
 

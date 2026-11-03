@@ -113,7 +113,7 @@ def _unsafe(root, path):
         )
     try:
         listed = not git_tree.is_ignored(root, path)
-    except git_tree.NoGitError:
+    except git_tree.NoGitError:  # noqa: DROP001 -- with no repository nothing can commit the file, so nothing to refuse
         # With no repository nothing can commit the file, so nothing to refuse.
         listed = False
     except git_tree.GitFailedError as exc:
@@ -160,7 +160,7 @@ def main(argv=None):
     try:
         with open(os.path.join(root, cfg.durations_file), encoding="utf-8") as fh:
             durations = json.load(fh)
-    except FileNotFoundError:
+    except FileNotFoundError:  # noqa: DROP001 -- an absent durations file is no runs recorded yet
         durations = {}
     except (OSError, ValueError) as exc:
         return _refuse(

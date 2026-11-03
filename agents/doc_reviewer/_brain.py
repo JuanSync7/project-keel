@@ -128,7 +128,7 @@ def _read_lines(root, relpath, lineno, around=3):
     try:
         with open(os.path.join(root, relpath), encoding="utf-8") as fh:
             lines = fh.read().split("\n")
-    except (OSError, ValueError):
+    except (OSError, ValueError):  # noqa: DROP001 -- context for the prompt only; apply_refactor reads the file again for the edit
         return ""
     lo, hi = max(0, lineno - 1 - around), min(len(lines), lineno + around)
     return "\n".join("%d: %s" % (i + 1, lines[i]) for i in range(lo, hi))
@@ -267,7 +267,7 @@ def _parse_spec(reply):
         text = "\n".join(lines).strip()
     try:
         data = json.loads(text)
-    except ValueError:
+    except ValueError:  # noqa: DROP001 -- a reply that is not JSON declines the chunk, as documented
         return None
     if not isinstance(data, dict):
         return None

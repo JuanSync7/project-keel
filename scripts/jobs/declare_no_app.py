@@ -255,7 +255,7 @@ def head_manifest(root):
     blob = _git(root, "cat-file", "blob", "HEAD:config/project.json")
     try:
         return json.loads(blob.decode("utf-8"))
-    except ValueError:
+    except ValueError:  # noqa: DROP001 -- None when HEAD holds no manifest it can read, as documented
         return None
 
 

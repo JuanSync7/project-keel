@@ -6540,7 +6540,7 @@ def _spawn_kind(origin):
 def _parse_module(source):
     try:
         return _Module(ast.parse(source))
-    except (SyntaxError, ValueError):
+    except (SyntaxError, ValueError):  # noqa: DROP001 -- a file that does not parse is ruff's finding; this check judges what parses
         return None
 
 

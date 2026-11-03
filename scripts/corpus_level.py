@@ -227,7 +227,7 @@ def stated_now(root: str, relpath: Optional[str]) -> Optional[List[Optional[str]
         # utf-8-sig, as the corpus build reads: a BOM'd file states its level.
         with open(path, encoding="utf-8-sig") as fh:
             text = fh.read()
-    except _UNREADABLE:
+    except _UNREADABLE:  # noqa: DROP001 -- None when the file states no level it can read, as documented
         return None
     if relpath.endswith(".md"):
         fm, _ = split_frontmatter(text)
@@ -237,7 +237,7 @@ def stated_now(root: str, relpath: Optional[str]) -> Optional[List[Optional[str]
     elif relpath.endswith(".py"):
         try:
             doc = ast.get_docstring(ast.parse(text, filename=path))
-        except (ValueError, SyntaxError):  # NUL byte / bad syntax
+        except (ValueError, SyntaxError):  # noqa: DROP001 -- None when the file states no level it can read, as documented (NUL byte / bad syntax)
             return None
         if not doc:
             return None

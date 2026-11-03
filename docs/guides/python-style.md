@@ -135,7 +135,8 @@ Every rule here exists because one of those was found and measured:
   continues, breaks, or returns or assigns a fixed value such as `None`,
   `-1` or `[]`, unless its suppression gives a reason, and fails any `BLE001` or `E722` suppression with a blank one.
   Through `scripts/expiring_tier.py` it also fails a narrow handler that only
-  passes, continues or breaks, a `contextlib.suppress(...)` call and an
+  passes, continues or breaks, or only returns or assigns a fixed value in
+  place of the error, a `contextlib.suppress(...)` call and an
   `ignore_errors=True` argument, unless a `# noqa: DROP001`, `DROP002` or
   `DROP003` gives a reason.)
 - **Distinguish *absent* from *broken*.** "The optional thing is not installed"

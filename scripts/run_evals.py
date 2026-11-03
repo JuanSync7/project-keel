@@ -101,7 +101,7 @@ def _refuse_symlinks(report_dir: str, linked: Sequence[str]) -> None:
 def _unignored(root: str, paths: Sequence[str]) -> list[str]:
     try:
         return [p for p in paths if not git_tree.is_ignored(root, p)]
-    except git_tree.NoGitError:
+    except git_tree.NoGitError:  # noqa: DROP001 -- no git is no tracked tree to dirty; a git that fails reaches the caller
         # git is not installed, or there is no repository: no tracked tree to
         # dirty. This guard is only about dirtying the tree; staying inside the
         # project is git_tree.through_symlink's, which needs no git and has

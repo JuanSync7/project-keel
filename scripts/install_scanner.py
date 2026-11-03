@@ -171,7 +171,7 @@ def _installed(program, kept, asset, name):
             return False
     try:
         member = _member_sha256(kept, name)
-    except _Refused:
+    except _Refused:  # noqa: DROP001 -- the fetch that follows gets the same bytes and reports this refusal
         # The archive's bytes are the pinned ones, so the fetch that follows
         # gets the same bytes and reports this refusal; nothing is swallowed.
         return False

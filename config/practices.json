@@ -252,7 +252,7 @@
       "tier": "gate",
       "status": "on",
       "title": "Preserve the cause; never blind-except",
-      "mechanism": "ruff B904 (raise ... from) + BLE001 (blind except); tests/integration/test_swallowed_error_gate.py -- a bare except, or a broad handler whose body only passes, continues, breaks or returns a constant, is red unless its BLE001/E722 suppression gives a reason, and a suppression with a blank reason is red; through scripts/expiring_tier.py a narrow handler that only passes, continues or breaks, a contextlib.suppress call and an ignore_errors=True argument are red unless a DROP001/DROP002/DROP003 suppression gives a reason",
+      "mechanism": "ruff B904 (raise ... from) + BLE001 (blind except); tests/integration/test_swallowed_error_gate.py -- a bare except, or a broad handler whose body only passes, continues, breaks or returns a constant, is red unless its BLE001/E722 suppression gives a reason, and a suppression with a blank reason is red; through scripts/expiring_tier.py a narrow handler that only passes, continues or breaks, or only returns or assigns a fixed value in place of the error, a contextlib.suppress call and an ignore_errors=True argument are red unless a DROP001/DROP002/DROP003 suppression gives a reason",
       "subject": "code",
       "enforced_by": [
         "ruff:B904",

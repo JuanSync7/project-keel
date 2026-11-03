@@ -44,7 +44,7 @@ def project_identity(root: str) -> tuple[str, str]:
     try:
         with open(os.path.join(root, *_MANIFEST), encoding="utf-8") as fh:
             name = (json.load(fh) or {}).get("name") or ""
-    except (OSError, ValueError):
+    except (OSError, ValueError):  # noqa: DROP001 -- an unnamed manifest falls back to the directory name, as documented
         name = ""
     if not name:
         name = os.path.basename(root)

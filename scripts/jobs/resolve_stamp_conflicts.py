@@ -169,7 +169,7 @@ def _date(value):
         return None
     try:
         return datetime.datetime.strptime(value, _DATE_FORMAT).date()
-    except ValueError:
+    except ValueError:  # noqa: DROP001 -- None when it is not an ISO calendar date, as documented
         return None
 
 

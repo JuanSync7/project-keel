@@ -198,7 +198,7 @@ def _drive(case, base):
 def _name_of(status):
     try:
         return exit_codes.ExitCode(status).name
-    except ValueError:
+    except ValueError:  # noqa: DROP001 -- a status with no member is the answer this lookup gives
         return "no member"
 
 

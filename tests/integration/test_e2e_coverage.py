@@ -632,7 +632,7 @@ def _all_derived(root):
 def _enabled():
     try:
         return list(load_config(_ROOT)[1].get("enabled") or [])
-    except GateError:
+    except GateError:  # noqa: DROP001 -- the placeholder names the missing block, so the parametrized test fails on it
         return ["<config/project.json has no e2e block>"]
 
 

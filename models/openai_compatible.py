@@ -121,7 +121,7 @@ def _is_loopback(host: str) -> bool:
     try:
         canonical = canonical_host_entry(_written(host))
         address = ipaddress.ip_address(canonical.strip("[]"))
-    except ValueError:
+    except ValueError:  # noqa: DROP001 -- a host that is not an address literal is not loopback, as documented
         return False
     return address.is_loopback
 

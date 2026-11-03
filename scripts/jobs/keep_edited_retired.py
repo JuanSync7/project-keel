@@ -79,7 +79,7 @@ def is_edited(head_bytes, template_bytes):
     try:
         head = head_bytes.decode("utf-8")
         tmpl = template_bytes.decode("utf-8")
-    except UnicodeDecodeError:
+    except UnicodeDecodeError:  # noqa: DROP001 -- bytes that do not decode are not template text, so the copy counts as edited
         return True
     head_span = review_docs.updated_span(head)
     tmpl_span = review_docs.updated_span(tmpl)
@@ -177,7 +177,7 @@ def _successors(src, base):
     costs the `(now ...)` clause, so it returns {} rather than failing."""
     try:
         out = _git(src, "diff", "-M", "--name-status", "-z", base, "HEAD")
-    except GuardError:
+    except GuardError:  # noqa: DROP001 -- no renames when git cannot diff; the guard keeps the file at its old path
         return {}
     fields = _z(out)
     found = {}
@@ -301,11 +301,11 @@ def _answers(project, entry):
         return None
     try:
         import yaml
-    except ImportError:
+    except ImportError:  # noqa: DROP001 -- no yaml means no answers to render with; the caller keeps the file
         return None
     try:
         found = yaml.safe_load(_blob(project, entry[1]).decode("utf-8"))
-    except (yaml.YAMLError, UnicodeDecodeError):
+    except (yaml.YAMLError, UnicodeDecodeError):  # noqa: DROP001 -- None when the answers do not load, as documented; the caller keeps the file
         return None
     return found if isinstance(found, dict) else None
 
@@ -333,12 +333,12 @@ def _render(data, answers):
     try:
         from jinja2 import StrictUndefined, TemplateError
         from jinja2.sandbox import SandboxedEnvironment
-    except ImportError:
+    except ImportError:  # noqa: DROP001 -- no jinja2 means no render; the caller keeps the file
         return None
     env = SandboxedEnvironment(keep_trailing_newline=True, undefined=StrictUndefined)
     try:
         return env.from_string(data.decode("utf-8")).render(answers).encode("utf-8")
-    except (TemplateError, UnicodeDecodeError, TypeError):
+    except (TemplateError, UnicodeDecodeError, TypeError):  # noqa: DROP001 -- a blob that does not render is not the template's; the caller keeps the file
         return None
 
 
@@ -358,7 +358,7 @@ def _keel_render(src, template, rel, answers):
 def _has_line(data, line):
     try:
         return line in data.decode("utf-8").splitlines()
-    except UnicodeDecodeError:
+    except UnicodeDecodeError:  # noqa: DROP001 -- bytes that do not decode hold no text line
         return False
 
 

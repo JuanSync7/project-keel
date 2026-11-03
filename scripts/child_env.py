@@ -228,7 +228,7 @@ def _canonical_name(name: str) -> str:
     if last.isdigit() or last.startswith("0x"):
         try:
             quad = str(ipaddress.IPv4Address(name))
-        except ValueError:
+        except ValueError:  # noqa: DROP001 -- not a dotted quad, so the comparison below raises ValueError
             quad = ""
         if quad != name:
             raise ValueError(

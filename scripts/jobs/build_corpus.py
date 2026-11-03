@@ -187,7 +187,7 @@ def _default_owner(root):
     refused value."""
     try:
         loaded = config_loader.read(root)
-    except config_loader.ConfigAbsent:
+    except config_loader.ConfigAbsent:  # noqa: DROP001 -- a tree with no config has no default owner, so every TBD stays none
         # A tree with no config (a fixture, a bare checkout) has no default
         # owner, so every TBD stays `none`: the outcome that claims nothing.
         loaded = {}
@@ -364,7 +364,7 @@ def _doc_and_sections(
         # for the node kind that dominates the graph. Byte-identical otherwise.
         with open(path, encoding="utf-8-sig") as fh:
             text = fh.read()
-    except (OSError, ValueError):  # ValueError covers UnicodeDecodeError
+    except (OSError, ValueError):  # noqa: DROP001 -- a file that does not decode is not a corpus doc (ValueError covers UnicodeDecodeError)
         return  # not decodable -> not a corpus doc
     fm, body = split_frontmatter(text)
     if fm is None:
@@ -548,7 +548,7 @@ def _module_and_symbols(path: str, root: str, walked: dict, nodes: list, default
         with open(path, encoding="utf-8-sig") as fh:
             src = fh.read()
         tree = ast.parse(src, filename=path)
-    except (OSError, ValueError, SyntaxError):  # unreadable / NUL byte / bad syntax
+    except (OSError, ValueError, SyntaxError):  # noqa: DROP001 -- a module that does not parse is not a corpus module; ruff reports it (unreadable / NUL byte / bad syntax)
         return  # not parseable -> not a corpus module
     doc = ast.get_docstring(tree)
     if not doc:
