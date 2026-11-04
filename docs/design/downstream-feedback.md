@@ -3046,10 +3046,22 @@ value, and it is not `.md`, so the doc gates and `scripts/jobs/review_docs.py`
 do not read it. Each fragment folder gets the roster row
 `docs/reference/README.md` requires, and the `copier.yml` `_exclude` entry and
 its row in `docs/guides/generate-and-upgrade.md` that keep it out of a generated
-project. S2 adds a `[tree]` make target that writes the assembled files and a
+project. Because check_S fails a roster row whose member is missing, and the
+folders do not ship, S2 adds `docs/reference/README.md.jinja` without those
+rows, declares it in `config/project.json` `template.twins` (check_N), and
+asserts the generated roster names only `settings.md` and `features.md`. S2 adds a `[tree]` make target that writes the assembled files and a
 `[local]` target that runs `--check`, the label ADR K-0011 gives a target that
 only reads this machine. The `[local]` target becomes a prerequisite of
-`check-all`, which `make verify` runs, so a stale reference fails the gate. The
+`check-all`, which `make verify` runs, so a stale reference fails the gate.
+A script `check-all` reaches needs its catalogue row, so S2 adds the
+assembler's error-tier row to `docs/guides/deterministic-checks.md`; and it
+needs its exit-code rows, so S2 regenerates
+`docs/guides/limits-and-troubleshooting.md` with `make exit-codes`, which
+`make check-exit-codes` holds. S3 regenerates that table again for the
+release mode's exits. A new script needs its roster row, so S2 adds the
+assembler's row to `scripts/README.md` and to `scripts/README.md.jinja`, which
+check_S compares with the directory in keel and in a generated project.
+The settings reference gets a row for each assembler flag and both targets. The
 assembler is a writer, so its header carries `effect: writes`,
 `rerun: fixed-point` and a `rerun_proof:` that resolves (check_V). A new config
 key gets a `KEYS` row in `scripts/config_loader.py` and its line in
@@ -3060,6 +3072,16 @@ new), and `--check` compares everything but that line. A lane that changes a
 fragment restamps the reference with `scripts/jobs/restamp_docs.py`, as it does
 for any document it changes. S3 runs after S2 and adds the changelog to the same
 assembler, so there is one assembler and one pair of targets.
+S2's first commit writes the entry file contract into this section before
+any code: how an entry names its section and row key, how the assembler
+writes each section's table head once, the filename rule that keeps two
+lanes' entries apart, the refusal of a malformed or duplicate entry, and the
+configured fragment root that finds an unregistered folder when no set is
+listed. Its tests use synthetic fixtures wherever they can, so they ship and
+pass in a generated project, and a case that needs keel's own fragments
+carries the `copier.yml` guard `test_copier_generation.py` already uses; a
+shipped case shows the empty-set check accepts a hand-edited reference and
+writes nothing.
 
 CMP-11.S3 owns `CHANGELOG.md`, `changelog.d/`, the assembler's changelog and
 release modes, and the release steps in `CONTRIBUTING.md`. `changelog.d/` is a
@@ -3070,7 +3092,11 @@ folder does not ship. S3 adds its `copier.yml` `_exclude` entry and that entry's
 row in `docs/guides/generate-and-upgrade.md`, and the assembler reads only the
 four section folders, so the folder's `README.md` and `AGENT.md` are never
 entries. A dated section keeps the heading ADR K-0009 requires, and rotation
-follows ADR K-0016, which supersedes K-0009's release order. S3 changes no
+follows ADR K-0016, which supersedes K-0009's release order. S3 converts every
+current `[Unreleased]` line to an entry file, including the bullets above the
+first category, which go to a fifth folder whose name is a config value, and
+its starting test compares the assembled section with the hand-written one
+line for line. S3 changes no
 accepted ADR text; if the fragment layout would need such a change, the slice
 is parked for the maintainer.
 
