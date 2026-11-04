@@ -835,6 +835,11 @@ def test_a_helper_called_inside_a_comprehension_still_asserts(tmp_path, comprehe
         "[x for check in (print,) for x in (1,) if check(x)]",
         "{check(1): None for check in (print,)}",
         "[[check(1) for _ in (1,)] for check in (print,)]",
+        "[[x for x in check(1)] for check in (print,)]",
+        "[check.attr(1) for check in (print,)]",
+        "{check(1) for check in (print,)}",
+        "list(check(1) for check in (print,))",
+        "[check(1) for (_, *check) in ((0, print),)]",
     ],
 )
 def test_a_call_through_a_name_the_comprehension_binds_never_reaches_the_helper(
@@ -852,6 +857,7 @@ def test_a_call_through_a_name_the_comprehension_binds_never_reaches_the_helper(
         "[None for check in check(2)]",
         "[None for sink[check(2)] in (0,)]",
         "[None for sink.attr in (check(2),)]",
+        "[m(check(2)) for m in (print,)]",
     ],
 )
 def test_the_first_iterable_and_a_target_subscript_still_reach_the_helper(
@@ -863,6 +869,17 @@ def test_the_first_iterable_and_a_target_subscript_still_reach_the_helper(
         + "def test_a():\n    sink = {}\n    "
         + comprehension
         + "\n"
+    )
+    assert _scan(tmp_path, {_TEST: source}) == (1, [])
+
+
+def test_an_assertion_called_through_a_name_the_comprehension_binds_still_counts(
+    tmp_path,
+):
+    source = (
+        "from unittest.mock import Mock\n"
+        "def test_a():\n"
+        "    [m.assert_called_once() for m in (Mock(),)]\n"
     )
     assert _scan(tmp_path, {_TEST: source}) == (1, [])
 

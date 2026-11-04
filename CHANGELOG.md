@@ -52,7 +52,9 @@ version rather than a bare commit:
   test or another helper also has a real assertion.
   Repeated paths report each tautology's source once per test.
   It resolves helpers and pytest expectations through lexical bindings;
-  comprehension targets stay local while walrus targets bind outside them.
+  comprehension targets stay local while walrus targets bind outside them,
+  so a call through a target is never followed as a helper, and an assertion
+  method called through one still counts.
   Raises and warns expectations count only as entered `with` items or calls
   with a positional callable after the expected type and any regex pattern.
   TestCase assertion methods and fail calls count through aliases and local

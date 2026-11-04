@@ -2,7 +2,7 @@
 title: Test helper — the one reader of the Python tree the gate tests judge
 kind: tests
 layer: n/a
-summary: The walk, the parse and the token readers every tree-wide gate test shares, so no two gates own a different idea of which files are the project's or of what an import points at. `python_files` lists every `*.py` that scripts/check_structure.py `walk` reaches (its IGNORE_DIRS keep vendored and installed code out); `parse` reads one into a syntax tree and raises SourceTreeError naming the file it cannot; `import_edges` resolves every `import` and `from ... import` to the project file it loads, through an ordered list of search roots, skipping a name the standard library owns; `unresolved_imports` lists each import of the project (an absolute name whose first segment a search root holds as a module or a directory, or any relative name) that loads no file, so a caller can fail loudly instead of reading it as external; `scope_nodes` walks one lexical scope without entering nested definitions, and `bindings` resolves that scope's imported names and dotted modules to project files; `comment_starts` lists the comments that open a thought, read through tokenize so a `#` inside a string is never one; `noqa_reasons` reads each `# noqa: CODE <sep> reason` suppression, taking the codes separated by commas or spaces as ruff does. It cannot see an import made through importlib, `__import__` or a `sys.path` entry no search root names: such a name does not resolve and is treated as external.
+summary: The walk, the parse and the token readers every tree-wide gate test shares, so no two gates own a different idea of which files are the project's or of what an import points at. `python_files` lists every `*.py` that scripts/check_structure.py `walk` reaches (its IGNORE_DIRS keep vendored and installed code out); `parse` reads one into a syntax tree and raises SourceTreeError naming the file it cannot; `import_edges` resolves every `import` and `from ... import` to the project file it loads, through an ordered list of search roots, skipping a name the standard library owns; `unresolved_imports` lists each import of the project (an absolute name whose first segment a search root holds as a module or a directory, or any relative name) that loads no file, so a caller can fail loudly instead of reading it as external; `scope_nodes` walks one lexical scope without entering nested definitions, `shadowed_calls` names the calls in it through a name a comprehension binds, and `bindings` resolves that scope's imported names and dotted modules to project files; `comment_starts` lists the comments that open a thought, read through tokenize so a `#` inside a string is never one; `noqa_reasons` reads each `# noqa: CODE <sep> reason` suppression, taking the codes separated by commas or spaces as ruff does. It cannot see an import made through importlib, `__import__` or a `sys.path` entry no search root names: such a name does not resolve and is treated as external.
 """
 
 import ast
@@ -218,14 +218,36 @@ def scope_nodes(
     bodies, decorators or defaults. Compound statements stay in that scope.
     A comprehension's expressions are walked with it, since their calls run
     when it does and a walrus in them binds here, but never the names its
-    targets bind, which belong to the comprehension alone. A call through such
-    a name is left out too, its arguments kept: it cannot reach a binding of
-    this scope. Only the first iterable is read before the targets bind, so a
-    call there through the same name stays."""
+    targets bind, which belong to the comprehension alone."""
+    for node, _ in _scoped(tree):
+        yield node
 
-    def walk(node: ast.AST, local: FrozenSet[str]) -> Iterator[ast.AST]:
-        if not (isinstance(node, ast.Call) and _root_name(node.func) in local):
-            yield node
+
+def shadowed_calls(
+    tree: ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef,
+) -> FrozenSet[ast.Call]:
+    """The calls `scope_nodes` yields whose callee is rooted in a name an
+    enclosing comprehension's targets bind, so it cannot be a binding of this
+    scope. Only the first iterable is read before the targets bind, so a call
+    there through the same name is not one, except inside a nested
+    comprehension, whose first iterable runs in the outer one."""
+    return frozenset(
+        node
+        for node, local in _scoped(tree)
+        if isinstance(node, ast.Call) and _root_name(node.func) in local
+    )
+
+
+def _scoped(
+    tree: ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef,
+) -> Iterator[Tuple[ast.AST, FrozenSet[str]]]:
+    """Each node of `scope_nodes` with the comprehension-bound names in force
+    where it runs."""
+
+    def walk(
+        node: ast.AST, local: FrozenSet[str]
+    ) -> Iterator[Tuple[ast.AST, FrozenSet[str]]]:
+        yield node, local
         if isinstance(
             node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)
         ):
@@ -248,7 +270,9 @@ def scope_nodes(
         for child in ast.iter_child_nodes(node):
             yield from walk(child, local)
 
-    def walk_target(target: ast.expr, local: FrozenSet[str]) -> Iterator[ast.AST]:
+    def walk_target(
+        target: ast.expr, local: FrozenSet[str]
+    ) -> Iterator[Tuple[ast.AST, FrozenSet[str]]]:
         # A name reached through tuples, lists and starred parts is bound by
         # the comprehension; a subscript or attribute target runs its parts.
         if isinstance(target, ast.Name):

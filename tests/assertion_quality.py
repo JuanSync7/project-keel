@@ -684,6 +684,9 @@ def _read(
     real, tautology, swallowed = 0, [], []
     calls: List[ast.Call] = []
     nodes = list(source_tree.scope_nodes(func))
+    # A call through a comprehension's own name cannot reach a helper of
+    # this scope, but an assertion method called through it still asserts.
+    shadowed = source_tree.shadowed_calls(func)
     entered = {node.context_expr for node in nodes if isinstance(node, ast.withitem)}
     for node in nodes:
         if isinstance(node, ast.Assert):
@@ -707,7 +710,7 @@ def _read(
                     real += 1
             elif _is_expectation(node, symbols, entered=node in entered):
                 real += 1
-            else:
+            elif node not in shadowed:
                 calls.append(node)
         elif isinstance(node, ast.ExceptHandler) and _swallows(node):
             swallowed.append(node.lineno)
