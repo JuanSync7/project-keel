@@ -967,9 +967,12 @@ the letters A to Z are taken; `make test` runs them.
   Helpers are functions in the test's module or imported modules under the
   roots, resolved by `tests/source_tree.py` in the caller's lexical scope chain
   (including import aliases and dotted modules).
-  A comprehension's targets bind only inside it; its iterables, conditions,
-  elements and walrus targets belong to the enclosing scope, so a helper called
-  in its body counts for the test.
+  A comprehension's targets bind only inside it, so a call through a name
+  they bind never counts as a helper call.
+  A call through any other name in its iterables, conditions or elements
+  counts for the test, and a walrus target there binds in the enclosing scope.
+  Its first iterable runs before the targets bind, so every call there
+  resolves in the enclosing scope.
   Helpers are followed at most `test_quality.assertions.helper_depth` calls
   deep and once round a cycle; repeated paths report a tautology's source once
   per test, retaining the calling test's exemption id.

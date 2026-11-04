@@ -11,7 +11,7 @@ import json
 import os
 import sys
 import tokenize
-from typing import Dict, Iterator, List, Optional, Tuple
+from typing import Dict, FrozenSet, Iterator, List, Optional, Tuple
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _SCRIPTS = os.path.join(_ROOT, "scripts")
@@ -216,12 +216,16 @@ def scope_nodes(
 ) -> Iterator[ast.AST]:
     """Nodes in one lexical scope, including its definitions but never their
     bodies, decorators or defaults. Compound statements stay in that scope.
-    A comprehension's targets bind in its own scope and are left out; its
-    iterables, conditions and elements run as part of this scope, so their
-    calls and walrus targets are in it."""
+    A comprehension's expressions are walked with it, since their calls run
+    when it does and a walrus in them binds here, but never the names its
+    targets bind, which belong to the comprehension alone. A call through such
+    a name is left out too, its arguments kept: it cannot reach a binding of
+    this scope. Only the first iterable is read before the targets bind, so a
+    call there through the same name stays."""
 
-    def walk(node: ast.AST) -> Iterator[ast.AST]:
-        yield node
+    def walk(node: ast.AST, local: FrozenSet[str]) -> Iterator[ast.AST]:
+        if not (isinstance(node, ast.Call) and _root_name(node.func) in local):
+            yield node
         if isinstance(
             node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)
         ):
@@ -230,20 +234,54 @@ def scope_nodes(
             node, (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)
         ):
             for generator in node.generators:
-                yield from walk(generator.iter)
+                yield from walk(generator.iter, local)
+                local = local | _target_names(generator.target)
+                yield from walk_target(generator.target, local)
                 for condition in generator.ifs:
-                    yield from walk(condition)
+                    yield from walk(condition, local)
             elements = (
                 [node.key, node.value] if isinstance(node, ast.DictComp) else [node.elt]
             )
             for element in elements:
-                yield from walk(element)
+                yield from walk(element, local)
             return
         for child in ast.iter_child_nodes(node):
-            yield from walk(child)
+            yield from walk(child, local)
+
+    def walk_target(target: ast.expr, local: FrozenSet[str]) -> Iterator[ast.AST]:
+        # A name reached through tuples, lists and starred parts is bound by
+        # the comprehension; a subscript or attribute target runs its parts.
+        if isinstance(target, ast.Name):
+            return
+        if isinstance(target, ast.Starred):
+            yield from walk_target(target.value, local)
+        elif isinstance(target, (ast.Tuple, ast.List)):
+            for element in target.elts:
+                yield from walk_target(element, local)
+        else:
+            yield from walk(target, local)
 
     for statement in tree.body:
-        yield from walk(statement)
+        yield from walk(statement, frozenset())
+
+
+def _target_names(target: ast.expr) -> FrozenSet[str]:
+    """The names a comprehension target binds: bare names, through tuples,
+    lists and starred parts, never inside a subscript or an attribute."""
+    if isinstance(target, ast.Name):
+        return frozenset({target.id})
+    if isinstance(target, ast.Starred):
+        return _target_names(target.value)
+    if isinstance(target, (ast.Tuple, ast.List)):
+        return frozenset().union(*(_target_names(e) for e in target.elts))
+    return frozenset()
+
+
+def _root_name(node: ast.expr) -> Optional[str]:
+    """`a` for a callee `a`, `a.b` or `a.b.c`, else None."""
+    while isinstance(node, ast.Attribute):
+        node = node.value
+    return node.id if isinstance(node, ast.Name) else None
 
 
 def bindings(

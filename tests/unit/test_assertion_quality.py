@@ -828,6 +828,46 @@ def test_a_helper_called_inside_a_comprehension_still_asserts(tmp_path, comprehe
 
 
 @pytest.mark.parametrize(
+    "comprehension",
+    [
+        "[check(1) for check in (print,)]",
+        "[y for check in (print,) for y in check(1)]",
+        "[x for check in (print,) for x in (1,) if check(x)]",
+        "{check(1): None for check in (print,)}",
+        "[[check(1) for _ in (1,)] for check in (print,)]",
+    ],
+)
+def test_a_call_through_a_name_the_comprehension_binds_never_reaches_the_helper(
+    tmp_path, comprehension
+):
+    source = _HELPER_REAL + "def test_a():\n    " + comprehension + "\n"
+    count, findings = _scan(tmp_path, {_TEST: source})
+    assert count == 1
+    assert [f.kind for f in findings] == [aq.NO_ASSERTION]
+
+
+@pytest.mark.parametrize(
+    "comprehension",
+    [
+        "[None for check in check(2)]",
+        "[None for sink[check(2)] in (0,)]",
+        "[None for sink.attr in (check(2),)]",
+    ],
+)
+def test_the_first_iterable_and_a_target_subscript_still_reach_the_helper(
+    tmp_path, comprehension
+):
+    source = (
+        _HELPER_REAL
+        + "    return ()\n"
+        + "def test_a():\n    sink = {}\n    "
+        + comprehension
+        + "\n"
+    )
+    assert _scan(tmp_path, {_TEST: source}) == (1, [])
+
+
+@pytest.mark.parametrize(
     "expression",
     [
         "[(outer := inner) for inner in source]",
