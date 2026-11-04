@@ -1502,8 +1502,8 @@ KEYS = tuple(
             _row(
                 ("test_quality", "assertions", "helper_depth"),
                 "int",
-                # The deepest helper chain keel's suite asserts through is
-                # two calls below the test (measured).
+                # Keel's own findings are the same at depths 1, 2, 3 and 6
+                # (measured); 3 leaves room for a helper behind a helper.
                 3,
                 "how many calls below a test the assertion-quality gate "
                 "follows to find an assertion in a helper",
