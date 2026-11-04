@@ -2,16 +2,19 @@
 title: Unit — tests/assertion_quality.py judges whether a test can fail
 kind: tests
 layer: n/a
-summary: tests/assertion_quality.py over test files written to a temporary tree, one table row per planted fault: no assertion, a truthy-constant assertion, a tautology over a name or an attribute chain, a handler that passes or continues, and a test whose only assertion sits in a helper that asserts a constant, each red; an `assert`, a comparison of two calls, `pytest.raises` and `pytest.warns`, a mock's `assert_*`, a bare `isinstance` and a helper that asserts for real (same module, an imported module by either import form, a method through `self`), each green. The helper walk stops at the configured depth and terminates on a cycle; a file outside the roots is never a helper. `verdict` fails a run over zero tests, an unexcused finding and a stale excuse; `policy` reads the three keys, takes their defaults and refuses a value the loader refuses, naming the key.
+summary: Plants assertion, lexical binding, collection, root and policy faults in temporary projects and checks the scanner findings and verdicts. Regressions cover statically true expressions, pytest aliases and shadowing, dotted imports, inherited and nested tests, TestCase assertions, named policy errors, malformed AAD schemas and bounded module-cache eviction.
 """
 
 import json
+import runpy
 import textwrap
+from pathlib import Path
 
 import config_loader
 import pytest
 
 import assertion_quality as aq
+import source_tree as st
 
 pytestmark = pytest.mark.unit
 
@@ -31,6 +34,19 @@ def check(value):
 
 
 def _tree(tmp_path, files):
+    (tmp_path / "config").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "config/project.json").write_text(
+        json.dumps(
+            {
+                "tests": {
+                    "cache_max_entries": config_loader.rows(
+                        ("tests", "cache_max_entries")
+                    )[0].default
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
     for rel, text in files.items():
         path = tmp_path / rel
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -46,9 +62,9 @@ def _scan(tmp_path, files, depth=3, roots=_ROOTS):
 # (row id, files, the kinds the judge reports for the one test in _TEST)
 _ROWS = [
     ("no-assertion", {_TEST: "def test_a():\n    value = 1\n"}, [aq.NO_ASSERTION]),
-    ("constant-true", {_TEST: "def test_a():\n    assert True\n"}, [aq.CONSTANT]),
-    ("constant-text", {_TEST: "def test_a():\n    assert 'text'\n"}, [aq.CONSTANT]),
-    ("constant-one", {_TEST: "def test_a():\n    assert 1\n"}, [aq.CONSTANT]),
+    ("constant-true", {_TEST: "def test_a():\n    assert True\n"}, [aq.TAUTOLOGY]),
+    ("constant-text", {_TEST: "def test_a():\n    assert 'text'\n"}, [aq.TAUTOLOGY]),
+    ("constant-one", {_TEST: "def test_a():\n    assert 1\n"}, [aq.TAUTOLOGY]),
     (
         "tautology-name",
         {_TEST: "def test_a():\n    value = 1\n    assert value == value\n"},
@@ -310,3 +326,379 @@ def test_policy_refuses_a_bad_value_naming_the_key(tmp_path, key, value):
         config_loader.ConfigError, match="test_quality.assertions." + key
     ):
         aq.policy(_config(tmp_path, {key: value}))
+
+
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "x is x is x",
+        "True",
+        "1",
+        "'message'",
+        "x == y == y",
+        "x <= x < y",
+        "a[0] == a[0]",
+        "a[1:] >= a[1:]",
+        "x in x",
+        "(True, 'msg')",
+        "(x, 'msg')",
+        "[x]",
+        "{x}",
+        "{'key': x}",
+        "True or y",
+        "y or True",
+        "(False and x) or True",
+    ],
+)
+def test_statically_true_expressions_are_tautologies(tmp_path, expression):
+    count, findings = _scan(
+        tmp_path, {_TEST: f"def test_a(x, y, a):\n    assert {expression}\n"}
+    )
+    assert count == 1
+    assert [finding.kind for finding in findings] == [aq.TAUTOLOGY]
+
+
+@pytest.mark.parametrize("expression", ["x or False", "True and x", "[]", "f() == f()"])
+def test_unknown_or_false_truth_does_not_make_a_tautology(tmp_path, expression):
+    assert (
+        _scan(tmp_path, {_TEST: f"def test_a(x, f):\n    assert {expression}\n"})[1]
+        == []
+    )
+
+
+def test_a_real_assertion_does_not_hide_a_constant_tautology(tmp_path):
+    count, findings = _scan(
+        tmp_path, {_TEST: "def test_a(value):\n    assert True\n    assert value\n"}
+    )
+    assert count == 1
+    assert [finding.kind for finding in findings] == [aq.TAUTOLOGY]
+
+
+@pytest.mark.parametrize(
+    "source, helpers, kinds",
+    [
+        (
+            "class Thing:\n    def raises(self, error):\n        pass\ndef test_a():\n    Thing().raises(Exception)\n",
+            {},
+            [aq.NO_ASSERTION],
+        ),
+        (
+            "def raises(error):\n    pass\ndef test_a():\n    raises(Exception)\n",
+            {},
+            [aq.NO_ASSERTION],
+        ),
+        (
+            "from pytest import raises as expect\ndef test_a():\n    with expect(ValueError):\n        int('x')\n",
+            {},
+            [],
+        ),
+        ("import pytest as pt\ndef test_a():\n    pt.fail('must fail')\n", {}, []),
+        (
+            "def test_a():\n    from pytest import warns as expect\n    expect(UserWarning, f)\n",
+            {},
+            [],
+        ),
+        (
+            "from pytest import raises\ndef test_a(raises):\n    raises(Exception)\n",
+            {},
+            [aq.NO_ASSERTION],
+        ),
+        (
+            "import pytest\ndef test_a():\n    pytest = thing\n    pytest.raises(Exception)\n",
+            {},
+            [aq.NO_ASSERTION],
+        ),
+        (
+            "from empty import h\ndef unrelated():\n    from real import h\ndef test_a():\n    h()\n",
+            {
+                "tests/empty.py": "def h():\n    pass\n",
+                "tests/real.py": "def h():\n    assert value\n",
+            },
+            [aq.NO_ASSERTION],
+        ),
+        (
+            "from empty import h\ndef test_a():\n    from real import h\n    h()\n",
+            {
+                "tests/empty.py": "def h():\n    pass\n",
+                "tests/real.py": "def h():\n    assert value\n",
+            },
+            [],
+        ),
+        (
+            "import pkg.m\ndef test_a():\n    pkg.m.h()\n",
+            {
+                "tests/pkg/__init__.py": "",
+                "tests/pkg/m.py": "def h():\n    assert value\n",
+            },
+            [],
+        ),
+        (
+            "import pkg.m as m\ndef test_a():\n    m.h()\n",
+            {
+                "tests/pkg/__init__.py": "",
+                "tests/pkg/m.py": "def h():\n    assert value\n",
+            },
+            [],
+        ),
+        (
+            "import pkg.m\ndef test_a(pkg):\n    pkg.m.h()\n",
+            {
+                "tests/pkg/__init__.py": "",
+                "tests/pkg/m.py": "def h():\n    assert value\n",
+            },
+            [aq.NO_ASSERTION],
+        ),
+        (
+            "from real import h\nfrom external import h\ndef test_a():\n    h()\n",
+            {"tests/real.py": "def h():\n    assert value\n"},
+            [aq.NO_ASSERTION],
+        ),
+        (
+            "def test_a(pytest):\n    import pytest\n    pytest.raises(ValueError, f)\n",
+            {},
+            [],
+        ),
+    ],
+)
+def test_calls_follow_the_callers_bindings(tmp_path, source, helpers, kinds):
+    count, findings = _scan(tmp_path, {_TEST: source, **helpers})
+    assert count == 1
+    assert [finding.kind for finding in findings] == kinds
+
+
+def test_module_import_bindings_exclude_other_function_scopes(tmp_path):
+    root = _tree(
+        tmp_path,
+        {
+            _TEST: "from empty import h\ndef unrelated():\n    from real import h\n",
+            "tests/empty.py": "",
+            "tests/real.py": "",
+        },
+    )
+    assert st.bindings(root, _TEST, st.parse(root, _TEST), _SEARCH)["h"] == (
+        "tests/empty.py",
+        "h",
+    )
+
+
+@pytest.mark.parametrize(
+    "source, node_id, kinds",
+    [
+        ("if enabled:\n    def test_a():\n        pass\n", "test_a", [aq.NO_ASSERTION]),
+        (
+            "try:\n    def test_a():\n        pass\nexcept Error:\n    pass\n",
+            "test_a",
+            [aq.NO_ASSERTION],
+        ),
+        (
+            "class Base:\n    def test_a(self):\n        pass\nclass TestChild(Base):\n    pass\n",
+            "TestChild::test_a",
+            [aq.NO_ASSERTION],
+        ),
+        (
+            "from unittest import TestCase as Case\nclass Checks(Case):\n    def test_a(self):\n        pass\n",
+            "Checks::test_a",
+            [aq.NO_ASSERTION],
+        ),
+        (
+            "import unittest as ut\nclass Base(ut.TestCase):\n    pass\nclass Checks(Base):\n    def test_a(self):\n        pass\n",
+            "Checks::test_a",
+            [aq.NO_ASSERTION],
+        ),
+        (
+            "class TestOuter:\n    class TestInner:\n        def h(self):\n            assert value\n        def test_a(self):\n            self.h()\n",
+            "TestOuter::TestInner::test_a",
+            [],
+        ),
+        (
+            "class Base:\n    def h(self):\n        assert value\n    def test_a(self):\n        self.h()\nclass TestChild(Base):\n    pass\n",
+            "TestChild::test_a",
+            [],
+        ),
+        (
+            "class Base:\n    def h(self):\n        assert value\n    def test_a(self):\n        self.h()\nclass Left(Base):\n    pass\nclass Right(Base):\n    def h(self):\n        pass\nclass TestChild(Left, Right):\n    pass\n",
+            "TestChild::test_a",
+            [aq.NO_ASSERTION],
+        ),
+    ],
+)
+def test_collection_and_helpers_follow_pytest_shapes(tmp_path, source, node_id, kinds):
+    count, findings = _scan(
+        tmp_path, {_TEST: source + "\ndef test_companion():\n    assert value\n"}
+    )
+    assert count == 2
+    assert [(f.test, f.kind) for f in findings] == [(node_id, kind) for kind in kinds]
+
+
+@pytest.mark.parametrize(
+    "classes",
+    [
+        "import unittest\nclass Checks(unittest.TestCase):",
+        "import unittest as ut\nclass Checks(ut.TestCase):",
+        "from unittest import TestCase as Case\nclass Checks(Case):",
+        "import unittest\nCase = unittest.TestCase\nAlias = Case\nclass Checks(Alias):",
+        "import unittest\nclass Base(unittest.TestCase):\n    pass\nclass Checks(Base):",
+    ],
+)
+@pytest.mark.parametrize(
+    "body",
+    [
+        "self.assertEqual(1, f())",
+        "self.assertTrue(f())",
+        "self.assertFalse(f())",
+        "self.assertIsInstance(f(), int)",
+        "self.fail('unexpected branch')",
+        "self.assertRaises(ValueError, f)",
+        "with self.assertRaises(ValueError):\n    f()",
+        "with self.assertRaisesRegex(ValueError, 'bad'):\n    f()",
+        "with self.assertWarns(UserWarning):\n    f()",
+        "with self.assertWarnsRegex(UserWarning, 'bad'):\n    f()",
+        "with self.assertLogs('app'):\n    f()",
+    ],
+)
+def test_unittest_assertions_count_through_aliases_and_bases(tmp_path, classes, body):
+    source = classes + "\n    def test_a(self):\n" + textwrap.indent(body, "        ")
+    count, findings = _scan(tmp_path, {_TEST: source})
+    assert count == 1
+    assert findings == []
+
+
+@pytest.mark.parametrize(
+    "classes, body",
+    [
+        ("import unittest\nclass Checks(unittest.TestCase):", "f()"),
+        ("class TestChecks:", "self.assertEqual(1, f())"),
+        ("class TestChecks:", "self.fail('bad')"),
+        ("import unittest\nclass Checks(unittest.TestCase):", "self.assertion(f())"),
+        (
+            "import unittest\nclass Checks(unittest.TestCase):",
+            "other.assertEqual(1, f())",
+        ),
+        (
+            "class TestCase:\n    pass\nclass TestChecks(TestCase):",
+            "self.assertTrue(f())",
+        ),
+    ],
+)
+def test_unittest_assertion_names_need_a_testcase_receiver(tmp_path, classes, body):
+    source = classes + "\n    def test_a(self):\n        " + body
+    count, findings = _scan(tmp_path, {_TEST: source})
+    assert count == 1
+    assert [f.kind for f in findings] == [aq.NO_ASSERTION]
+
+
+@pytest.mark.parametrize(
+    "call, kinds",
+    [
+        ("assertTrue(True)", [aq.TAUTOLOGY]),
+        ("assertTrue(x or True)", [aq.TAUTOLOGY]),
+        ("assertFalse(False)", [aq.TAUTOLOGY]),
+        ("assertEqual(x, x)", [aq.TAUTOLOGY]),
+        ("assertEqual(a[0], a[0])", [aq.TAUTOLOGY]),
+        ("assertEqual(x, x, msg='same')", [aq.TAUTOLOGY]),
+        ("assertTrue(False)", []),
+        ("assertFalse(True)", []),
+        ("assertEqual(f(), f())", []),
+        ("assertEqual(1, f())", []),
+    ],
+)
+def test_unittest_simple_assertions_use_the_expression_judge(tmp_path, call, kinds):
+    count, findings = _scan(
+        tmp_path,
+        {
+            _TEST: "import unittest\nclass Checks(unittest.TestCase):\n    def test_a(self):\n        self."
+            + call
+        },
+    )
+    assert count == 1
+    assert [f.kind for f in findings] == kinds
+    assert all(f.line == 4 for f in findings)
+
+
+@pytest.mark.parametrize(
+    "call, kinds", [("assertEqual(1, f())", []), ("assertTrue(True)", [aq.CONSTANT])]
+)
+def test_unittest_helper_assertions_keep_the_class_context(tmp_path, call, kinds):
+    count, findings = _scan(
+        tmp_path,
+        {
+            _TEST: "import unittest\nclass Base(unittest.TestCase):\n    def check(self):\n        self."
+            + call
+            + "\nclass Checks(Base):\n    def test_a(self):\n        self.check()\n"
+        },
+    )
+    assert count == 1
+    assert [f.kind for f in findings] == kinds
+
+
+@pytest.mark.parametrize("root_name, create", [("missing", False), ("empty", True)])
+def test_each_configured_root_must_supply_test_files(tmp_path, root_name, create):
+    root = _tree(tmp_path, {_TEST: "def test_a():\n    assert value\n"})
+    if create:
+        (tmp_path / root_name).mkdir()
+    with pytest.raises(st.SourceTreeError, match=root_name):
+        aq.test_files(root, ("tests", root_name))
+
+
+@pytest.mark.parametrize(
+    "block",
+    [{"helper_depth": value} for value in (0, -1, "3", True)]
+    + [{"exempt": {"tests/test_a.py::test_b": " "}}],
+)
+def test_config_fault_raises_the_gates_error_with_the_key(tmp_path, monkeypatch, block):
+    gate = runpy.run_path(
+        str(
+            Path(__file__).resolve().parents[1]
+            / "integration/test_assertion_quality_gate.py"
+        )
+    )
+    check = gate["test_every_test_function_shows_it_can_fail"]
+    monkeypatch.setitem(check.__globals__, "_ROOT", Path(_config(tmp_path, block)))
+    with pytest.raises(st.SourceTreeError) as caught:
+        check()
+    key = "test_quality.assertions." + next(iter(block))
+    assert key in str(caught.value)
+    assert isinstance(caught.value.__cause__, config_loader.ConfigError)
+    assert str(caught.value) == "; ".join(caught.value.__cause__.lines)
+
+
+@pytest.mark.parametrize(
+    "schema, instance", [({"minLength": -1}, "ok"), ({"required": "name"}, {"name": 1})]
+)
+def test_aad_conformance_checks_the_schema_itself(
+    tmp_path, monkeypatch, schema, instance
+):
+    gate = runpy.run_path(
+        str(Path(__file__).resolve().parents[1] / "integration/test_aad_conformance.py")
+    )
+    path = tmp_path / "schema.json"
+    path.write_text(json.dumps(schema), encoding="utf-8")
+    check = gate["test_descriptor_validates_against_committed_schema"]
+    monkeypatch.setitem(check.__globals__, "_SCHEMA_PATH", path)
+    jsonschema = gate["optional_deps"].importorskip("jsonschema", extra="dev")
+    with pytest.raises(jsonschema.SchemaError):
+        check(instance)
+
+
+def test_module_cache_evicts_at_the_configured_limit(tmp_path, monkeypatch):
+    root = _tree(
+        tmp_path,
+        {
+            "tests/test_first.py": "from helpers import check\ndef test_first():\n    check(2)\n",
+            "tests/test_second.py": "from helpers import check\ndef test_second():\n    check(2)\n",
+            "tests/helpers.py": _HELPER_REAL,
+        },
+    )
+    (tmp_path / "config/project.json").write_text(
+        json.dumps({"tests": {"cache_max_entries": 1}}), encoding="utf-8"
+    )
+    parsed = []
+    parse = st.parse
+
+    def record(root, path):
+        parsed.append(path)
+        return parse(root, path)
+
+    monkeypatch.setattr(st, "parse", record)
+    assert aq.scan(root, aq.test_files(root, _ROOTS), _ROOTS, 3, _SEARCH) == (2, [])
+    assert parsed.count("tests/helpers.py") == 2

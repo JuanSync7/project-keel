@@ -45,11 +45,17 @@ version rather than a bare commit:
 - **Every test function shows it can fail (KEEL-TESTQ-1).**
   `tests/integration/test_assertion_quality_gate.py` reads every test function
   under config/project.json `test_quality.assertions.roots` and fails one with
-  no assertion, only truthy-constant assertions, a tautology, or a handler in
+  no assertion, a statically true assertion (including a truthy constant), a
+  structural self-comparison, or a handler in
   its body that only passes or continues, because such a test passes
   `make verify` whatever the code does. An assertion in a helper the test
-  calls counts, followed `test_quality.assertions.helper_depth` calls deep; a
-  comparison of two calls is a determinism check, not a tautology. Three keel
+  calls counts, resolved through its lexical bindings and followed
+  `test_quality.assertions.helper_depth` calls deep; a
+  comparison of two calls is a determinism check, not a tautology. TestCase
+  assertion methods, fail calls and expectation blocks count, including
+  aliases and local inheritance. Simple positional assertTrue, assertFalse
+  and assertEqual arguments use the same expression judge. Invalid gate
+  policy raises SourceTreeError with the loader's lines and key names. Three keel
   tests now assert their result, one moved its binary-file read into a
   helper, and two that pass by not raising carry a reasoned
   `test_quality.assertions.exempt` entry.

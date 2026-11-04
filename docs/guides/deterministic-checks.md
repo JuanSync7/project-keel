@@ -940,18 +940,28 @@ the letters A to Z are taken; `make test` runs them.
   function under config/project.json `test_quality.assertions.roots`
   through `tests/assertion_quality.py` and fails, at its file, line and
   function, one with no assertion, one whose every assertion asserts a truthy
-  constant, one with a tautology (one name or attribute chain compared with
-  itself by `==`, `is`, `<=` or `>=`), and one with a handler in its body
-  that only passes, continues or holds `...`. An assertion is an `assert`, a
-  `pytest.raises` or `pytest.warns` block or call, or a call of a method
-  named `assert_*`, in the test or in a helper it calls: a function of its
+  constant, one with a tautology (a truthy constant, a non-empty collection literal, a boolean
+  expression decided true by a constant operand, or structurally identical
+  adjacent operands compared by `==`, `is`, `<=`, `>=` or `in`), and one with
+  a handler in its body that only passes, continues or holds `...`.
+  An assertion is an `assert`, a `pytest.raises` or `pytest.warns` block or
+  call, a `pytest.fail` call, or a call of a method
+  named `assert_*`, or `self.assert<Upper...>` / `self.fail` in a
+  `unittest.TestCase` subclass (including aliases and local inheritance).
+  TestCase expectation blocks such as `with self.assertRaises(...)` count.
+  Positional `assertTrue`, `assertFalse` and `assertEqual` arguments use the
+  same constant and tautology judge as `assert`; other TestCase assertions
+  count without expression analysis. Assertions may be in the test or in a helper it calls: a function of its
   own module, or of a module under the roots it imports, resolved by
-  `tests/source_tree.py` `bindings`, followed at most
+  `tests/source_tree.py` `bindings` in the calling function's scope chain
+  (including import aliases and dotted modules), followed at most
   `test_quality.assertions.helper_depth` calls deep and once round a cycle.
   A comparison of two calls is a determinism check, never a tautology. A test
   that passes by not raising and has no result to assert is let through by a
   `test_quality.assertions.exempt` entry with its reason; an entry whose test
-  the gate does not fail is red.
+  the gate does not fail is red. Each configured root must exist and yield a
+  test file. Invalid policy values raise `SourceTreeError`, preserving the loader's
+  diagnostic lines and key names.
 
 Each fails, never passes, on a malformed config block, a walk with no Python
 file, and a walk with nothing to judge.
@@ -967,9 +977,10 @@ relatively, a function of another module that opens what it is given, a
 method called through an object, a variable name held in a variable, and a
 read through `subprocess` or `importlib` pass; in a generated project it
 judges nothing, it names. The assertion-quality gate reads the syntax
-tree and runs nothing: an assertion on a branch that never executes, a
-helper reached through a fixture, a variable or a module outside the roots,
-and a handler that swallows inside a helper all pass, and a bare
+tree and runs nothing: an assertion on a branch that never executes and a
+handler that swallows inside a helper can pass. It does not follow helpers
+through fixtures or variables, or into modules outside the roots; a test whose
+only assertion is reached that way fails as having no assertion. A bare
 `isinstance` counts as an assertion.
 
 **Run.** `pytest tests/integration/test_import_layers_gate.py tests/integration/test_swallowed_error_gate.py tests/integration/test_change_comment_gate.py tests/integration/test_config_reads_gate.py tests/integration/test_assertion_quality_gate.py`

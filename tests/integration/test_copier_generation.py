@@ -48,6 +48,7 @@ from child_env import build_child_env  # noqa: E402
 _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import test_reference_drift as reference_drift  # noqa: E402
+from test_scratch_root_gate import child_timeout  # noqa: E402
 
 # Self-neutralising downstream. `_exclude` prunes these modules at GENERATION, but
 # copier's `_exclude` can never retire a file on `copier update` — it renders the old
@@ -1503,7 +1504,7 @@ def _quality_gate(project):
         env=build_child_env(root=str(project), extra={"PYTHONPATH": "src:."}),
         capture_output=True,
         text=True,
-        timeout=900,
+        timeout=child_timeout(),
     )
 
 

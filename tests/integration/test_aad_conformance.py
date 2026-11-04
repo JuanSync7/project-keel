@@ -1,6 +1,6 @@
 """
 title: Integration — AAD reference agent conformance
-summary: Runs the reference agent in-process and proves the served descriptor validates against the committed schema, its ask operationId resolves against the agent's own OpenAPI, and the resolved endpoint answers with the declared field names.
+summary: Runs the reference agent in-process and checks the committed schema itself, lists all descriptor validation errors, and proves the served descriptor validates against that schema, its ask operationId resolves against the agent's own OpenAPI, and the resolved endpoint answers with the declared field names.
 
 Integration: the AAD reference agent is conformant and self-consistent.
 
@@ -88,7 +88,9 @@ def test_descriptor_validates_against_committed_schema(served_descriptor: dict):
     """
     jsonschema = optional_deps.importorskip("jsonschema", extra="dev")
     schema = json.loads(_SCHEMA_PATH.read_text(encoding="utf-8"))
-    validator = jsonschema.validators.validator_for(schema)(schema)
+    validator_class = jsonschema.validators.validator_for(schema)
+    validator_class.check_schema(schema)
+    validator = validator_class(schema)
     errors = [error.message for error in validator.iter_errors(served_descriptor)]
     assert errors == [], errors
 

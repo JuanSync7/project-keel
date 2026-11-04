@@ -2,7 +2,7 @@
 title: Test helper — the one reader of the Python tree the gate tests judge
 kind: tests
 layer: n/a
-summary: The walk, the parse and the token readers every tree-wide gate test shares, so no two gates own a different idea of which files are the project's or of what an import points at. `python_files` lists every `*.py` that scripts/check_structure.py `walk` reaches (its IGNORE_DIRS keep vendored and installed code out); `parse` reads one into a syntax tree and raises SourceTreeError naming the file it cannot; `import_edges` resolves every `import` and `from ... import` to the project file it loads, through an ordered list of search roots, skipping a name the standard library owns; `unresolved_imports` lists each import of the project (an absolute name whose first segment a search root holds as a module or a directory, or any relative name) that loads no file, so a caller can fail loudly instead of reading it as external; `comment_starts` lists the comments that open a thought, read through tokenize so a `#` inside a string is never one; `noqa_reasons` reads each `# noqa: CODE <sep> reason` suppression, taking the codes separated by commas or spaces as ruff does. It cannot see an import made through importlib, `__import__` or a `sys.path` entry no search root names: such a name does not resolve and is treated as external.
+summary: The walk, the parse and the token readers every tree-wide gate test shares, so no two gates own a different idea of which files are the project's or of what an import points at. `python_files` lists every `*.py` that scripts/check_structure.py `walk` reaches (its IGNORE_DIRS keep vendored and installed code out); `parse` reads one into a syntax tree and raises SourceTreeError naming the file it cannot; `import_edges` resolves every `import` and `from ... import` to the project file it loads, through an ordered list of search roots, skipping a name the standard library owns; `unresolved_imports` lists each import of the project (an absolute name whose first segment a search root holds as a module or a directory, or any relative name) that loads no file, so a caller can fail loudly instead of reading it as external; `scope_nodes` walks one lexical scope without entering nested definitions, and `bindings` resolves that scope's imported names and dotted modules to project files; `comment_starts` lists the comments that open a thought, read through tokenize so a `#` inside a string is never one; `noqa_reasons` reads each `# noqa: CODE <sep> reason` suppression, taking the codes separated by commas or spaces as ruff does. It cannot see an import made through importlib, `__import__` or a `sys.path` entry no search root names: such a name does not resolve and is treated as external.
 """
 
 import ast
@@ -11,6 +11,7 @@ import json
 import os
 import sys
 import tokenize
+from typing import Dict, Iterator, List, Optional, Tuple
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _SCRIPTS = os.path.join(_ROOT, "scripts")
@@ -210,15 +211,41 @@ def _from_roots(node, importer, search_roots):
     return [("/".join(package) + "/") if package else ""], module_parts
 
 
-def bindings(root, importer, tree, search_roots):
+def scope_nodes(
+    tree: ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef,
+) -> Iterator[ast.AST]:
+    """Nodes in one lexical scope, including its definitions but never their
+    bodies, decorators or defaults. Compound statements stay in that scope."""
+
+    def walk(node: ast.AST) -> Iterator[ast.AST]:
+        yield node
+        if isinstance(
+            node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)
+        ):
+            return
+        for child in ast.iter_child_nodes(node):
+            yield from walk(child)
+
+    for statement in tree.body:
+        yield from walk(statement)
+
+
+def bindings(
+    root: str,
+    importer: str,
+    tree: ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef,
+    search_roots: List[str],
+) -> Dict[str, Tuple[str, Optional[str]]]:
     """{name: (file, attribute)} for each name an import in *tree*, the
     syntax tree of *importer*, binds to a project file. `import a.b as m` and
     `from pkg import mod` bind a module, whose attribute is None; `from mod
     import f as g` binds `g` to `(mod's file, "f")`. `import a.b` binds `a`,
-    to `a`'s own file when it has one. A standard library name, and a name no
+    to `a`'s own file when it has one, and also records `a.b` for dotted
+    resolution. Only imports in this scope are read; nested function and class
+    bodies own separate bindings. A standard library name, and a name no
     search root holds, bind nothing."""
-    out = {}
-    for node in ast.walk(tree):
+    out: Dict[str, Tuple[str, Optional[str]]] = {}
+    for node in scope_nodes(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
                 parts = alias.name.split(".")
@@ -228,6 +255,11 @@ def bindings(root, importer, tree, search_roots):
                 found = _resolve(root, search_roots, bound)
                 if found:
                     out[alias.asname or parts[0]] = (found, None)
+                if not alias.asname:
+                    for size in range(2, len(parts) + 1):
+                        found = _resolve(root, search_roots, parts[:size])
+                        if found:
+                            out[".".join(parts[:size])] = (found, None)
             continue
         if not isinstance(node, ast.ImportFrom):
             continue
