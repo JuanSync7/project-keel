@@ -936,31 +936,49 @@ the letters A to Z are taken; `make test` runs them.
   generated project, which cannot tell keel's files from its own, the two
   finding tests skip and name each direct read they saw.
   `docs/adr/keel/K-0022-one-config-loader.md` is the decision.
-- `tests/integration/test_assertion_quality_gate.py` reads every test
-  function under config/project.json `test_quality.assertions.roots`
-  through `tests/assertion_quality.py` and fails, at its file, line and
-  function, one with no assertion, one whose every assertion asserts a truthy
-  constant, one with a tautology (a truthy constant, a non-empty collection literal, a boolean
-  expression decided true by a constant operand, or structurally identical
-  adjacent operands compared by `==`, `is`, `<=`, `>=` or `in`), and one with
-  a handler in its body that only passes, continues or holds `...`.
-  An assertion is an `assert`, a `pytest.raises` or `pytest.warns` block or
-  call, a `pytest.fail` call, or a call of a method
-  named `assert_*`, or `self.assert<Upper...>` / `self.fail` in a
-  `unittest.TestCase` subclass (including aliases and local inheritance).
-  TestCase expectation blocks such as `with self.assertRaises(...)` count.
-  Positional `assertTrue`, `assertFalse` and `assertEqual` arguments use the
-  same constant and tautology judge as `assert`; other TestCase assertions
-  count without expression analysis. Assertions may be in the test or in a helper it calls: a function of its
-  own module, or of a module under the roots it imports, resolved by
-  `tests/source_tree.py` `bindings` in the calling function's scope chain
-  (including import aliases and dotted modules), followed at most
-  `test_quality.assertions.helper_depth` calls deep and once round a cycle.
-  A comparison of two calls is a determinism check, never a tautology. A test
-  that passes by not raising and has no result to assert is let through by a
-  `test_quality.assertions.exempt` entry with its reason; an entry whose test
-  the gate does not fail is red. Each configured root must exist and yield a
-  test file. Invalid policy values raise `SourceTreeError`, preserving the loader's
+- `tests/integration/test_assertion_quality_gate.py` reads every test function
+  under config/project.json `test_quality.assertions.roots` through
+  `tests/assertion_quality.py` and reports its file, line and function.
+  It fails a test with no assertion, any tautology in its body or a reachable
+  helper, or a handler in its body that only passes, continues or holds `...`.
+  A real assertion elsewhere never cancels a tautology.
+  The expression judge detects truthy literals, non-empty collection literals,
+  boolean expressions decided true by a constant operand, and truthy constant
+  arithmetic, comparisons and boolean operations.
+  Constant folding uses only literal values and operators from the syntax tree;
+  it never uses `eval` or executes names, attributes or calls.
+  It bounds intermediate integer sizes, collection lengths, powers, shifts and
+  repetitions; unsupported, invalid or over-bound operations stay unknown.
+  Known false expressions remain real failing checks.
+  When truth is unknown, structurally identical adjacent operands compared by
+  `==`, `is`, `<=` or `>=` are tautologies if neither operand contains a call.
+  Membership (`in`) is not reflexive.
+  An assertion is an `assert`, a `pytest.fail` call, a call of a method named
+  `assert_*`, or `self.assert<Upper...>` / `self.fail` in a `unittest.TestCase`
+  subclass (including aliases and local inheritance).
+  A `pytest.raises` or `pytest.warns` expectation counts when entered as a
+  `with` item or called with a positional callable after the expected type.
+  TestCase raises and warns expectations follow the same rule, with a regex
+  pattern before the callable for regex methods.
+  TestCase log expectations count only when entered as a `with` item.
+  Constructing an expectation alone checks nothing.
+  Positional `assertTrue`, `assertFalse` and `assertEqual` arguments share the
+  expression judge; other TestCase assertions count without expression analysis.
+  Helpers are functions in the test's module or imported modules under the
+  roots, resolved by `tests/source_tree.py` in the caller's lexical scope chain
+  (including import aliases and dotted modules).
+  A comprehension's targets bind only inside it; its iterables, conditions,
+  elements and walrus targets belong to the enclosing scope, so a helper called
+  in its body counts for the test.
+  Helpers are followed at most `test_quality.assertions.helper_depth` calls
+  deep and once round a cycle; repeated paths report a tautology's source once
+  per test, retaining the calling test's exemption id.
+  A comparison of two calls is a determinism check, never a tautology.
+  A test that passes by not raising and has no result to assert is let through
+  by a `test_quality.assertions.exempt` entry with its reason.
+  An entry whose test the gate does not fail is red.
+  Each configured root must exist and yield a test file.
+  Invalid policy values raise `SourceTreeError`, preserving the loader's
   diagnostic lines and key names.
 
 Each fails, never passes, on a malformed config block, a walk with no Python

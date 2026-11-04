@@ -1,12 +1,13 @@
 """
 title: Assertion quality — a test function shows it can fail
-summary: Judges test functions under the configured roots without executing them: reports missing assertions, only truthy constants, statically true assertions or structurally identical adjacent comparison operands, and swallowed handlers. Resolves helper and pytest raises/warns/fail calls through lexical bindings, follows helpers only under the roots to the configured depth with a bounded parsed-module cache, collects compound-statement definitions, nested classes and local inheritance (including unittest.TestCase assertions, fail calls and expectation blocks), and rejects empty roots, zero tests and stale exemptions; calls compared with calls remain determinism checks.
+summary: Judges test functions without executing them: reports missing assertions, any tautology in a test or reachable helper, and handlers in the test that drop errors. Folds bounded literal arithmetic, comparisons and boolean operations through the AST, respects lexical and comprehension scopes, counts raises/warns expectations only as entered with items or callable checks, and follows every helper within the configured roots and depth, deduplicating cycle findings. Collects inherited and nested tests and TestCase assertions, and rejects empty roots, zero tests and stale exemptions; comparisons of calls remain real checks.
 """
 
 import ast
+import operator
 import os
 import sys
-from typing import Dict, List, NamedTuple, Optional, Sequence, Set, Tuple
+from typing import Any, Callable, Dict, List, NamedTuple, Optional, Sequence, Set, Tuple
 
 _SCRIPTS = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts"
@@ -20,7 +21,6 @@ import source_tree  # noqa: E402
 from bounded_cache import bounded  # noqa: E402
 
 __all__ = [
-    "CONSTANT",
     "DEPTH",
     "EXEMPT",
     "Finding",
@@ -40,7 +40,6 @@ DEPTH = ("test_quality", "assertions", "helper_depth")
 EXEMPT = ("test_quality", "assertions", "exempt")
 
 NO_ASSERTION = "no assertion"
-CONSTANT = "only constant assertions"
 TAUTOLOGY = "tautology"
 SWALLOWED = "swallowed exception"
 
@@ -53,11 +52,51 @@ _FUNCTION_PREFIX = "test"
 # The names pytest exports for a block or call that fails unless the code
 # under it raises or warns.
 _EXPECTS = ("raises", "warns", "fail")
+# Regex expectations take a pattern before the callable; log checks only
+# support the context-manager form.
+_UNITTEST_EXPECTS: Dict[str, Optional[int]] = {
+    "assertRaises": 1,
+    "assertRaisesRegex": 2,
+    "assertWarns": 1,
+    "assertWarnsRegex": 2,
+    "assertLogs": None,
+    "assertNoLogs": None,
+}
 # A mock's own assertions: assert_called_with, assert_not_called and the rest.
 _MOCK_ASSERT_PREFIX = "assert_"
 # The comparisons that hold whenever both sides are the same object.
-_ALWAYS_TRUE = (ast.Eq, ast.Is, ast.LtE, ast.GtE, ast.In)
+_ALWAYS_TRUE = (ast.Eq, ast.Is, ast.LtE, ast.GtE)
 _SELF_NAMES = ("self", "cls")
+# Test syntax is input to the gate: bound intermediate allocations before a
+# literal power, shift or sequence repetition can exhaust the scanner.
+_LITERAL_LIMIT = 4096
+_UNKNOWN = object()
+_BINARY: Dict[type[ast.operator], Callable[[Any, Any], Any]] = {
+    ast.Add: operator.add,
+    ast.Sub: operator.sub,
+    ast.Mult: operator.mul,
+    ast.Div: operator.truediv,
+    ast.FloorDiv: operator.floordiv,
+    ast.Mod: operator.mod,
+    ast.Pow: operator.pow,
+    ast.LShift: operator.lshift,
+    ast.RShift: operator.rshift,
+    ast.BitOr: operator.or_,
+    ast.BitAnd: operator.and_,
+    ast.BitXor: operator.xor,
+}
+_COMPARE: Dict[type[ast.cmpop], Callable[[Any, Any], bool]] = {
+    ast.Eq: operator.eq,
+    ast.NotEq: operator.ne,
+    ast.Lt: operator.lt,
+    ast.LtE: operator.le,
+    ast.Gt: operator.gt,
+    ast.GtE: operator.ge,
+    ast.Is: operator.is_,
+    ast.IsNot: operator.is_not,
+    ast.In: lambda left, right: left in right,
+    ast.NotIn: lambda left, right: left not in right,
+}
 
 
 class Finding(NamedTuple):
@@ -156,6 +195,11 @@ class _Module:
         self._index(self.tree, "", None, [])
         self.root = root
         self.search_roots = search_roots
+        # A helper walk resolves many calls in the same finite AST; keep its
+        # tables only for the bounded parsed module's lifetime.
+        self._symbols: Dict[
+            Optional[_Function], Dict[str, Tuple[str, Optional[str]]]
+        ] = {}
 
     def _index(
         self,
@@ -190,6 +234,8 @@ class _Module:
     ) -> Dict[str, Tuple[str, Optional[str]]]:
         """Bindings visible to a function: its locals, enclosing functions,
         then the module. Unknown local values shadow imported names too."""
+        if func in self._symbols:
+            return self._symbols[func]
         scopes: List[ast.Module | _Function] = [self.tree]
         if func is not None:
             scopes += list(reversed(self.parents[func])) + [func]
@@ -243,6 +289,7 @@ class _Module:
                             if "." in name
                         }
                     )
+        self._symbols[func] = out
         return out
 
     def bases(self, cls: str) -> List[str]:
@@ -394,8 +441,9 @@ def _shadow(symbols: Dict[str, Tuple[str, Optional[str]]], name: str) -> None:
 
 
 def _is_tautology(test: ast.expr) -> bool:
-    if _truth(test) is True:
-        return True
+    truth = _truth(test)
+    if truth is not None:
+        return truth
     if isinstance(test, ast.Compare):
         operands = [test.left] + test.comparators
         return any(
@@ -413,8 +461,103 @@ def _is_tautology(test: ast.expr) -> bool:
     return False
 
 
+def _literal(expr: ast.expr) -> Any:
+    """Fold only literal values and operators; unsupported or costly input raises."""
+    value: Any
+    if isinstance(expr, ast.Constant):
+        value = expr.value
+    elif isinstance(expr, (ast.Tuple, ast.List, ast.Set)):
+        items = [_literal(item) for item in expr.elts]
+        value = (
+            tuple(items)
+            if isinstance(expr, ast.Tuple)
+            else (set(items) if isinstance(expr, ast.Set) else items)
+        )
+    elif isinstance(expr, ast.Dict):
+        if any(key is None for key in expr.keys):
+            raise ValueError("dictionary unpacking is not literal")
+        value = {
+            _literal(key): _literal(item)
+            for key, item in zip(expr.keys, expr.values, strict=True)
+            if key is not None
+        }
+    elif isinstance(expr, ast.UnaryOp):
+        operand = _literal(expr.operand)
+        if isinstance(expr.op, ast.Not):
+            value = not operand
+        elif isinstance(expr.op, ast.UAdd):
+            value = +operand
+        elif isinstance(expr.op, ast.USub):
+            value = -operand
+        elif isinstance(expr.op, ast.Invert):
+            value = ~operand
+        else:
+            raise ValueError("unsupported unary operator")
+    elif isinstance(expr, ast.BinOp) and type(expr.op) in _BINARY:
+        left, right = _literal(expr.left), _literal(expr.right)
+        if isinstance(expr.op, (ast.Pow, ast.LShift, ast.RShift)):
+            if abs(right) > _LITERAL_LIMIT:
+                raise ValueError("literal exponent or shift exceeds folding bound")
+            if (
+                isinstance(expr.op, ast.Pow)
+                and isinstance(left, int)
+                and isinstance(right, int)
+                and left.bit_length() * max(right, 0) > _LITERAL_LIMIT
+            ):
+                raise ValueError("literal power exceeds folding bound")
+        if isinstance(expr.op, ast.Mult):
+            for sequence, count in ((left, right), (right, left)):
+                if (
+                    isinstance(sequence, (str, bytes, tuple, list))
+                    and isinstance(count, int)
+                    and len(sequence) * count > _LITERAL_LIMIT
+                ):
+                    raise ValueError("literal repetition exceeds folding bound")
+        if isinstance(expr.op, ast.Mod) and isinstance(left, (str, bytes)):
+            raise ValueError("formatting is not literal arithmetic")
+        value = _BINARY[type(expr.op)](left, right)
+    elif isinstance(expr, ast.Compare):
+        left = _literal(expr.left)
+        for op, comparator in zip(expr.ops, expr.comparators, strict=True):
+            right = _literal(comparator)
+            if not _COMPARE[type(op)](left, right):
+                return False
+            left = right
+        return True
+    elif isinstance(expr, ast.BoolOp):
+        for item in expr.values:
+            value = _literal(item)
+            if isinstance(expr.op, ast.Or) == bool(value):
+                break
+    else:
+        raise ValueError("expression is not literal arithmetic or logic")
+    if isinstance(value, int) and value.bit_length() > _LITERAL_LIMIT:
+        raise ValueError("literal integer exceeds folding bound")
+    if (
+        isinstance(value, (str, bytes, tuple, list, set, dict))
+        and len(value) > _LITERAL_LIMIT
+    ):
+        raise ValueError("literal collection exceeds folding bound")
+    return value
+
+
+def _constant_value(expr: ast.expr) -> object:
+    if any(
+        isinstance(node, (ast.Name, ast.Attribute, ast.Call)) for node in ast.walk(expr)
+    ):
+        return _UNKNOWN
+    try:
+        return _literal(expr)
+    except (ValueError, TypeError, ArithmeticError):
+        # An expression that would raise is a failing check, not a tautology.
+        return _UNKNOWN
+
+
 def _truth(expr: ast.expr) -> Optional[bool]:
-    """The known truth value of literals and boolean combinations, else None."""
+    """Known truth from bounded literal folding or boolean structure, else None."""
+    constant = _constant_value(expr)
+    if constant is not _UNKNOWN:
+        return bool(constant)
     if isinstance(expr, ast.Constant):
         return bool(expr.value)
     if isinstance(expr, (ast.Tuple, ast.List, ast.Set)):
@@ -451,7 +594,7 @@ def _truth(expr: ast.expr) -> Optional[bool]:
 
 
 def _is_expectation(
-    call: ast.Call, symbols: Dict[str, Tuple[str, Optional[str]]]
+    call: ast.Call, symbols: Dict[str, Tuple[str, Optional[str]]], *, entered: bool
 ) -> bool:
     func = call.func
     if isinstance(func, ast.Attribute) and func.attr.startswith(_MOCK_ASSERT_PREFIX):
@@ -462,7 +605,10 @@ def _is_expectation(
     head, _, attr = chain.partition(".")
     bound = symbols.get(head)
     return (
-        bound is not None and bound[0] == "@pytest" and (attr or bound[1]) in _EXPECTS
+        bound is not None
+        and bound[0] == "@pytest"
+        and (attr or bound[1]) in _EXPECTS
+        and ((attr or bound[1]) == "fail" or entered or len(call.args) > 1)
     )
 
 
@@ -527,7 +673,9 @@ def _read(
     function contributes assertions only when called as a helper."""
     real, tautology, swallowed = 0, [], []
     calls: List[ast.Call] = []
-    for node in source_tree.scope_nodes(func):
+    nodes = list(source_tree.scope_nodes(func))
+    entered = {node.context_expr for node in nodes if isinstance(node, ast.withitem)}
+    for node in nodes:
         if isinstance(node, ast.Assert):
             if _is_tautology(node.test):
                 tautology.append(node.lineno)
@@ -535,12 +683,19 @@ def _read(
                 real += 1
         elif isinstance(node, ast.Call):
             if _unittest_assertion(node, testcase=testcase):
+                assert isinstance(node.func, ast.Attribute)
+                if node.func.attr in _UNITTEST_EXPECTS:
+                    before_callable = _UNITTEST_EXPECTS[node.func.attr]
+                    if node not in entered and (
+                        before_callable is None or len(node.args) <= before_callable
+                    ):
+                        continue
                 expression = _unittest_expression(node)
                 if expression is not None and _is_tautology(expression):
                     tautology.append(node.lineno)
                 else:
                     real += 1
-            elif _is_expectation(node, symbols):
+            elif _is_expectation(node, symbols, entered=node in entered):
                 real += 1
             else:
                 calls.append(node)
@@ -604,12 +759,16 @@ class _Judge:
         caller: _Function,
         level: int,
         seen: Set[Tuple[str, str]],
-    ) -> Tuple[bool, bool]:
-        """`(real, constant)`: whether a helper among *calls*, *level* calls
-        below the test, asserts for real, and whether one is statically true."""
-        constant = False
+    ) -> Tuple[bool, Set[Tuple[str, int]]]:
+        """Real assertions and every tautology's source within the depth cap.
+
+        Each path stops at a cycle; source sites are deduplicated across paths
+        so repeated calls do not multiply a test's findings.
+        """
+        real = False
+        tautologies: Set[Tuple[str, int]] = set()
         if level > self.depth:
-            return False, constant
+            return real, tautologies
         for call in calls:
             target = self.callee(call, module, cls, caller)
             if target is None or target in seen:
@@ -623,10 +782,8 @@ class _Judge:
                 helper_module.symbols(found[0]),
                 testcase=found[1] is not None and helper_module.is_testcase(found[1]),
             )
-            constant = constant or bool(body.tautology)
-            if body.real:
-                return True, constant
-            real, deeper = self.helpers_assert(
+            tautologies.update((target[0], line) for line in body.tautology)
+            deeper_real, deeper = self.helpers_assert(
                 body.calls,
                 helper_module,
                 found[1],
@@ -634,10 +791,9 @@ class _Judge:
                 level + 1,
                 seen | {target},
             )
-            constant = constant or deeper
-            if real:
-                return True, constant
-        return False, constant
+            real = real or bool(body.real) or deeper_real
+            tautologies.update(deeper)
+        return real, tautologies
 
     def judge(self, path: str) -> Tuple[int, List[Finding]]:
         module = self.module(path)
@@ -649,15 +805,20 @@ class _Judge:
                 module.symbols(func),
                 testcase=cls is not None and module.is_testcase(cls),
             )
+            real, tautologies = self.helpers_assert(
+                body.calls, module, cls, func, 1, {(path, name)}
+            )
+            tautologies.update((path, line) for line in body.tautology)
             findings.extend(
                 Finding(
                     path,
-                    line,
+                    line if source == path else func.lineno,
                     name,
                     TAUTOLOGY,
-                    "an assertion is statically true or compares a value with itself",
+                    "an assertion is statically true or compares a value with itself"
+                    + (" (helper %s:%d)" % (source, line) if source != path else ""),
                 )
-                for line in body.tautology
+                for source, line in sorted(tautologies)
             )
             findings.extend(
                 Finding(
@@ -669,24 +830,7 @@ class _Judge:
                 )
                 for line in body.swallowed
             )
-            if body.real or body.tautology:
-                continue
-            real, constant = self.helpers_assert(
-                body.calls, module, cls, func, 1, {(path, name)}
-            )
-            if real:
-                continue
-            if constant:
-                findings.append(
-                    Finding(
-                        path,
-                        func.lineno,
-                        name,
-                        CONSTANT,
-                        "every assertion it reaches is statically true",
-                    )
-                )
-            else:
+            if not (body.real or real or tautologies):
                 findings.append(
                     Finding(
                         path,

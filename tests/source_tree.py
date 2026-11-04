@@ -215,13 +215,29 @@ def scope_nodes(
     tree: ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef,
 ) -> Iterator[ast.AST]:
     """Nodes in one lexical scope, including its definitions but never their
-    bodies, decorators or defaults. Compound statements stay in that scope."""
+    bodies, decorators or defaults. Compound statements stay in that scope.
+    A comprehension's targets bind in its own scope and are left out; its
+    iterables, conditions and elements run as part of this scope, so their
+    calls and walrus targets are in it."""
 
     def walk(node: ast.AST) -> Iterator[ast.AST]:
         yield node
         if isinstance(
             node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)
         ):
+            return
+        if isinstance(
+            node, (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)
+        ):
+            for generator in node.generators:
+                yield from walk(generator.iter)
+                for condition in generator.ifs:
+                    yield from walk(condition)
+            elements = (
+                [node.key, node.value] if isinstance(node, ast.DictComp) else [node.elt]
+            )
+            for element in elements:
+                yield from walk(element)
             return
         for child in ast.iter_child_nodes(node):
             yield from walk(child)

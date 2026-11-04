@@ -45,18 +45,28 @@ version rather than a bare commit:
 - **Every test function shows it can fail (KEEL-TESTQ-1).**
   `tests/integration/test_assertion_quality_gate.py` reads every test function
   under config/project.json `test_quality.assertions.roots` and fails one with
-  no assertion, a statically true assertion (including a truthy constant), a
-  structural self-comparison, or a handler in
-  its body that only passes or continues, because such a test passes
-  `make verify` whatever the code does. An assertion in a helper the test
-  calls counts, resolved through its lexical bindings and followed
-  `test_quality.assertions.helper_depth` calls deep; a
-  comparison of two calls is a determinism check, not a tautology. TestCase
-  assertion methods, fail calls and expectation blocks count, including
-  aliases and local inheritance. Simple positional assertTrue, assertFalse
-  and assertEqual arguments use the same expression judge. Invalid gate
-  policy raises SourceTreeError with the loader's lines and key names. Three keel
-  tests now assert their result, one moved its binary-file read into a
+  no assertion, any statically true assertion or reflexive self-comparison,
+  or a handler in its body that only passes, continues or holds `...`.
+  It judges every assertion in a helper it reaches within
+  `test_quality.assertions.helper_depth`, once round a cycle, even when the
+  test or another helper also has a real assertion.
+  Repeated paths report each tautology's source once per test.
+  It resolves helpers and pytest expectations through lexical bindings;
+  comprehension targets stay local while walrus targets bind outside them.
+  Raises and warns expectations count only as entered `with` items or calls
+  with a positional callable after the expected type and any regex pattern.
+  TestCase assertion methods and fail calls count through aliases and local
+  inheritance; log expectations count only as entered `with` items.
+  Simple positional assertTrue, assertFalse and assertEqual arguments share
+  the assertion expression judge.
+  The judge folds bounded literal arithmetic, comparison and boolean
+  operations through the syntax tree without `eval` or executing user code.
+  Unsupported, invalid or over-bound operations stay unknown.
+  Known false expressions remain real failing checks.
+  When truth is unknown, identical operands are reflexive only for `==`, `is`,
+  `<=` and `>=`; membership is not reflexive and comparisons containing calls stay real.
+  Invalid gate policy raises SourceTreeError with the loader's lines and key names.
+  Three keel tests assert their result, one reads its binary fixture in a
   helper, and two that pass by not raising carry a reasoned
   `test_quality.assertions.exempt` entry.
 - **A cache holds at most the configured number of entries.** pyproject.toml
