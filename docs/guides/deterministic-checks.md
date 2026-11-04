@@ -8,7 +8,7 @@ tags: [checks, ci, linter, determinism, pre-commit, hooks, guide]
 summary: Catalogue of every deterministic check that keeps a project-template repo honest — purpose, when to run, and how to wire as a hook.
 id: docs-guides-deterministic-checks
 created: 2026-06-19
-updated: 2026-11-03
+updated: 2026-11-04
 visibility: internal
 canonical: true
 ---
@@ -892,7 +892,7 @@ table below the generated region is compared with nothing.
 
 ### 13. Tree-wide source gates — `tests/source_tree.py`
 
-**Purpose.** Four gate tests judge the Python files the structure gate
+**Purpose.** Five gate tests judge the Python files the structure gate
 walks, through one shared reader, `tests/source_tree.py`, so no two of them
 disagree about which files are the project's, what an import points at, or
 what a comment is. None is a `scripts/check_structure.py` letter, because
@@ -936,6 +936,22 @@ the letters A to Z are taken; `make test` runs them.
   generated project, which cannot tell keel's files from its own, the two
   finding tests skip and name each direct read they saw.
   `docs/adr/keel/K-0022-one-config-loader.md` is the decision.
+- `tests/integration/test_assertion_quality_gate.py` reads every test
+  function under config/project.json `test_quality.assertions.roots`
+  through `tests/assertion_quality.py` and fails, at its file, line and
+  function, one with no assertion, one whose every assertion asserts a truthy
+  constant, one with a tautology (one name or attribute chain compared with
+  itself by `==`, `is`, `<=` or `>=`), and one with a handler in its body
+  that only passes, continues or holds `...`. An assertion is an `assert`, a
+  `pytest.raises` or `pytest.warns` block or call, or a call of a method
+  named `assert_*`, in the test or in a helper it calls: a function of its
+  own module, or of a module under the roots it imports, resolved by
+  `tests/source_tree.py` `bindings`, followed at most
+  `test_quality.assertions.helper_depth` calls deep and once round a cycle.
+  A comparison of two calls is a determinism check, never a tautology. A test
+  that passes by not raising and has no result to assert is let through by a
+  `test_quality.assertions.exempt` entry with its reason; an entry whose test
+  the gate does not fail is red.
 
 Each fails, never passes, on a malformed config block, a walk with no Python
 file, and a walk with nothing to judge.
@@ -950,9 +966,13 @@ as a parameter, an attribute of a module imported inside a function or
 relatively, a function of another module that opens what it is given, a
 method called through an object, a variable name held in a variable, and a
 read through `subprocess` or `importlib` pass; in a generated project it
-judges nothing, it names.
+judges nothing, it names. The assertion-quality gate reads the syntax
+tree and runs nothing: an assertion on a branch that never executes, a
+helper reached through a fixture, a variable or a module outside the roots,
+and a handler that swallows inside a helper all pass, and a bare
+`isinstance` counts as an assertion.
 
-**Run.** `pytest tests/integration/test_import_layers_gate.py tests/integration/test_swallowed_error_gate.py tests/integration/test_change_comment_gate.py tests/integration/test_config_reads_gate.py`
+**Run.** `pytest tests/integration/test_import_layers_gate.py tests/integration/test_swallowed_error_gate.py tests/integration/test_change_comment_gate.py tests/integration/test_config_reads_gate.py tests/integration/test_assertion_quality_gate.py`
 
 ---
 

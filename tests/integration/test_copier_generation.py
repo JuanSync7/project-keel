@@ -1488,6 +1488,46 @@ def test_the_traceability_gate_test_runs_and_judges_a_generated_project(
     assert planted in red.stdout, red.stdout[-6000:]
 
 
+_QUALITY_GATE = "tests/integration/test_assertion_quality_gate.py"
+_QUALITY_GATE_TEST = "test_every_test_function_shows_it_can_fail"
+_PLANTED_TEST = "tests/unit/test_planted_quality.py"
+
+
+def _quality_gate(project):
+    """The generated project's assertion-quality gate file, run as its
+    `make test` recipe runs pytest (PYTHONPATH=src:.)."""
+    return subprocess.run(
+        [sys.executable, "-m", "pytest", "-v", "-rs", "-p", "no:cacheprovider"]
+        + [_QUALITY_GATE],
+        cwd=str(project),
+        env=build_child_env(root=str(project), extra={"PYTHONPATH": "src:."}),
+        capture_output=True,
+        text=True,
+        timeout=900,
+    )
+
+
+def test_a_generated_project_passes_the_assertion_quality_gate(tmp_path, generate):
+    """The gate, its module and its config defaults ship, and the generated
+    suite passes it with nothing skipped; a test with no assertion planted in
+    the project then fails the gate naming its file, line and function."""
+    dest = tmp_path / "proj"
+    generate(dest, project_name="demo_proj")
+    ran = _quality_gate(dest)
+    assert ran.returncode == 0, ran.stdout[-6000:] + ran.stderr[-2000:]
+    assert "SKIPPED" not in ran.stdout, ran.stdout[-6000:]
+    assert "%s PASSED" % _QUALITY_GATE_TEST in ran.stdout, ran.stdout[-6000:]
+
+    (dest / _PLANTED_TEST).write_text(
+        "def test_planted():\n    value = 1\n", encoding="utf-8"
+    )
+    red = _quality_gate(dest)
+    assert red.returncode == 1, red.stdout[-6000:] + red.stderr[-2000:]
+    assert "%s:1: test_planted: no assertion" % _PLANTED_TEST in red.stdout, red.stdout[
+        -6000:
+    ]
+
+
 _EXIT_GATE = "tests/integration/test_exit_gate.py"
 _EXIT_GATE_TEST = "test_no_process_in_the_tree_ends_outside_the_helper"
 _EXIT_HELPER = "scripts/exit_codes.py"
@@ -2041,6 +2081,14 @@ _CODE_ROOTS_FOR_BRANDING = (
 )
 
 
+def _utf8_text(path):
+    """*path*'s text, or None for a file that is not UTF-8 or cannot be read."""
+    try:
+        return path.read_text(encoding="utf-8")
+    except (UnicodeDecodeError, OSError):  # noqa: DROP001 -- a binary or unreadable file holds no template name to find
+        return None
+
+
 def test_no_code_the_generated_project_runs_carries_the_templates_name(
     tmp_path, generate
 ):
@@ -2065,9 +2113,8 @@ def test_no_code_the_generated_project_runs_carries_the_templates_name(
                 continue
             if path.suffix in (".md", ".png", ".svg", ".ico", ".lock"):
                 continue  # docs/READMEs may name the template they describe
-            try:
-                text = path.read_text(encoding="utf-8")
-            except (UnicodeDecodeError, OSError):  # noqa: DROP001 -- a binary or unreadable file holds no template name to find
+            text = _utf8_text(path)
+            if text is None:
                 continue
             for lineno, line in enumerate(text.split("\n"), 1):
                 if _KEEL_NAME.search(line):

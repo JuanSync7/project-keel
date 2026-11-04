@@ -700,13 +700,17 @@ def _cleanup(pids):
 def test_cleanup_spares_a_pid_that_exits_before_its_kill(monkeypatch):
     """/proc shows it running, then it exits before SIGKILL lands."""
 
+    sent = []
+
     def kill(pid, sig):
+        sent.append((pid, sig))
         if sig == signal.SIGKILL:
             raise ProcessLookupError(pid)
 
     monkeypatch.setattr(os, "kill", kill)
     monkeypatch.setattr("builtins.open", lambda *_a, **_k: io.StringIO("1 (py) S 0"))
     _cleanup([999_999_999])
+    assert (999_999_999, signal.SIGKILL) in sent, sent
 
 
 def test_a_timeout_ends_every_process_make_started_and_says_so(tree):

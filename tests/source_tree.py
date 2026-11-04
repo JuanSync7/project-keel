@@ -173,21 +173,10 @@ def _targets(node, importer, root, search_roots):
         return out, missing
     if not isinstance(node, ast.ImportFrom):
         return out, missing
-    module_parts = node.module.split(".") if node.module else []
-    if node.level == 0:
-        if not module_parts or module_parts[0] in sys.stdlib_module_names:
-            return out, missing
-        roots = search_roots
-    else:
-        package = _package_parts(importer)
-        if node.level - 1 > len(package):
-            return out, missing
-        package = package[: len(package) - (node.level - 1)]
-        # A relative import is anchored at the repository root, never searched.
-        roots = [("/".join(package) + "/") if package else ""]
-        module_parts = []  # the package path already sits in the anchor
-        if node.module:
-            module_parts = node.module.split(".")
+    anchored = _from_roots(node, importer, search_roots)
+    if anchored is None:
+        return out, missing
+    roots, module_parts = anchored
     for alias in node.names:
         found = None
         if alias.name != "*":
@@ -201,6 +190,63 @@ def _targets(node, importer, root, search_roots):
         elif node.level or _is_project_head(root, roots, module_parts[0]):
             missing.append("." * node.level + ".".join(module_parts + [alias.name]))
     return out, missing
+
+
+def _from_roots(node, importer, search_roots):
+    """`(roots, module parts)` a `from ... import` statement resolves its
+    names against, or None for one the project cannot hold: a standard
+    library module, or a relative import that climbs above the root."""
+    module_parts = node.module.split(".") if node.module else []
+    if node.level == 0:
+        if not module_parts or module_parts[0] in sys.stdlib_module_names:
+            return None
+        return search_roots, module_parts
+    package = _package_parts(importer)
+    if node.level - 1 > len(package):
+        return None
+    package = package[: len(package) - (node.level - 1)]
+    # A relative import is anchored at the repository root, never searched;
+    # the package path already sits in the anchor.
+    return [("/".join(package) + "/") if package else ""], module_parts
+
+
+def bindings(root, importer, tree, search_roots):
+    """{name: (file, attribute)} for each name an import in *tree*, the
+    syntax tree of *importer*, binds to a project file. `import a.b as m` and
+    `from pkg import mod` bind a module, whose attribute is None; `from mod
+    import f as g` binds `g` to `(mod's file, "f")`. `import a.b` binds `a`,
+    to `a`'s own file when it has one. A standard library name, and a name no
+    search root holds, bind nothing."""
+    out = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                parts = alias.name.split(".")
+                if parts[0] in sys.stdlib_module_names:
+                    continue
+                bound = parts if alias.asname else parts[:1]
+                found = _resolve(root, search_roots, bound)
+                if found:
+                    out[alias.asname or parts[0]] = (found, None)
+            continue
+        if not isinstance(node, ast.ImportFrom):
+            continue
+        anchored = _from_roots(node, importer, search_roots)
+        if anchored is None:
+            continue
+        roots, module_parts = anchored
+        for alias in node.names:
+            if alias.name == "*":
+                continue
+            local = alias.asname or alias.name
+            module = _resolve(root, roots, module_parts + [alias.name])
+            if module:
+                out[local] = (module, None)
+                continue
+            found = _resolve(root, roots, module_parts)
+            if found:
+                out[local] = (found, alias.name)
+    return out
 
 
 def _resolve_package(root, anchor):

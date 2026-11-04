@@ -8,7 +8,7 @@ tags: [limits, waivers, exit-codes, troubleshooting, guide]
 summary: What adopting keel costs, the risks its rails leave open, the checks that pass by skipping, what no gate can see, every waiver a project may use, every exit code the gate's scripts return, and the symptom-to-fix list for the failures a newcomer meets first.
 id: docs-guides-limits-and-troubleshooting
 created: 2026-10-09
-updated: 2026-11-03
+updated: 2026-11-04
 visibility: internal
 canonical: true
 ---
@@ -868,6 +868,10 @@ kept on purpose, such as a test fixture, with its reason.
 | `test_import_layers_gate` names `<file>:<line>: layer <n> (...) imports <other> in the higher layer <m>` | a lower layer of `import_layers.order` imports from a higher one | move the shared code down to the lower layer, or pass the higher layer's behaviour in as an argument; change the order only when the layering itself is wrong |
 | `test_import_layers_gate` says `no prefix in config/project.json import_layers.order holds it` | a new top-level directory or file sits in no layer | add its path prefix to the layer it belongs in, in both `config/project.json` and its `.jinja` twin |
 | `test_import_layers_gate` says `import_layers.order names <prefix>, which places no Python file` | the entry is stale: its directory holds no Python file any more | delete the entry, or point it at the files it means |
+| `test_assertion_quality_gate` says `<file>:<line>: <test>: no assertion` | nothing in the test, or in a helper it calls up to `test_quality.assertions.helper_depth` deep inside `test_quality.assertions.roots`, asserts | assert the observable result; if the test passes by not raising and returns nothing, add its node id to `test_quality.assertions.exempt` with the reason |
+| `test_assertion_quality_gate` says `<test>: only constant assertions` or `<test>: tautology` | every assertion the test reaches is `assert True` or another truthy constant, or an `assert` compares one name or attribute chain with itself | compare the result with an expected value written in the test |
+| `test_assertion_quality_gate` says `<test>: swallowed exception` | a handler in the test body only passes, continues or holds `...` | let the exception fail the test, assert it with `pytest.raises`, or move an incidental read into a named helper that returns a value for it |
+| `test_assertion_quality_gate` says `<node id>: stale: config/project.json test_quality.assertions.exempt excuses a test the gate does not fail` | the excused test now asserts, or was renamed or deleted | remove the entry |
 | `test_exit_gate` says `<name> is imported by <importer>, so it must raise or return, never end the process` | a shared module calls `fail` or `finish` outside its entry block | raise an exception or return a value, and let the entry point's `main` turn it into `report(...)` |
 | `test_exit_gate` says `import_layers.may_end_the_process names <path>, which is no shared module that ends the process` | the exemption is stale: the module no longer ends the process, or nothing imports it | delete the entry |
 | `test_exit_gate` says `passthrough wraps a wrapped tool's status, never this script's own` | `passthrough` is handed the entry function's result, an int literal, a member, or a function of the same module whose every return is one of those, also under a sign, combined with `or` or arithmetic, or through a builtin such as `int`, so a script's own status would pass as a wrapped tool's | return `ExitCode` members from `main` through `report`, and call `passthrough` only on the status of the tool the script ran, where it reads it (`subprocess.run(...).returncode`) |

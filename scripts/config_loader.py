@@ -691,6 +691,31 @@ def _any_reasoned_paths(value: Any) -> bool:
     return _is_any_reason_map(value) and _relative_posix_keys(value)
 
 
+def _relative_dirs(value: Any) -> bool:
+    # An empty list would read no test, which reads as a pass over nothing.
+    return bool(value) and _relative_posix_keys(value)
+
+
+def _is_test_id(key: Any) -> bool:
+    # `<relative path>.py::<name>`, optionally `::<Class>::<name>`: the
+    # function-level pytest node id, so an entry names one test and never a
+    # parametrized case of it.
+    if not _is_nonempty_str(key) or "::" not in key:
+        return False
+    path, _sep, names = str(key).partition("::")
+    return (
+        path.endswith(".py")
+        and _relative_posix_keys([path])
+        and all(part.isidentifier() for part in names.split("::"))
+    )
+
+
+def _reasoned_tests(value: Any) -> bool:
+    # Empty allowed: an excuse only lifts judgement, so empty is the
+    # strictest setting.
+    return _is_any_reason_map(value) and all(_is_test_id(k) for k in value)
+
+
 _REASONED_NAMES = (
     _reasoned_names,
     "at least one entry, each a bare file name or a glob over one (no `/`, "
@@ -705,6 +730,12 @@ _REASONED_PATHS = (
     _reasoned_paths,
     "at least one entry, each a relative POSIX path (no leading or trailing "
     "`/`, no empty, `.` or `..` part) mapped to a non-blank reason",
+)
+_REASONED_TESTS = (
+    _reasoned_tests,
+    "an object, empty for none, each key a test's function-level pytest node "
+    "id (`<path>.py::<name>` or `<path>.py::<Class>::<name>`) mapped to a "
+    "non-blank reason",
 )
 _ANY_REASONED_PATHS = (
     _any_reasoned_paths,
@@ -1458,6 +1489,35 @@ KEYS = tuple(
                     _suffixes,
                     "a non-empty list of suffixes, each a dot and at least one "
                     "more character, with no whitespace or `/`",
+                ),
+            ),
+            _row(
+                ("test_quality", "assertions", "exempt"),
+                "object",
+                {},
+                "the tests the assertion-quality gate lets through, each with "
+                "the reason it has no result to assert; empty: none",
+                accepts=_REASONED_TESTS,
+            ),
+            _row(
+                ("test_quality", "assertions", "helper_depth"),
+                "int",
+                # The deepest helper chain keel's suite asserts through is
+                # two calls below the test (measured).
+                3,
+                "how many calls below a test the assertion-quality gate "
+                "follows to find an assertion in a helper",
+                accepts=(_at_least_one, "a value >= 1"),
+            ),
+            _row(
+                ("test_quality", "assertions", "roots"),
+                "list_of_str",
+                ["tests"],
+                "the directories whose test functions the assertion-quality "
+                "gate reads, and whose modules may hold a helper that asserts",
+                accepts=(
+                    _relative_dirs,
+                    "a non-empty list of relative POSIX directories",
                 ),
             ),
             _row(

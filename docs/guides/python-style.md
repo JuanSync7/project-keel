@@ -8,7 +8,7 @@ tags: [practices, style, readability, robustness, docstrings, comments, agents, 
 summary: The canonical statement of how Python is written in this project — readability and loud failure modes outrank speed; the machine-readable module header; comment and docstring discipline; and how a code agent works here. The provable floor is gated (check_O/E, ruff, mypy); this guide is the judgment above it.
 id: docs-guides-python-style
 created: 2026-08-18
-updated: 2026-11-03
+updated: 2026-11-04
 visibility: internal
 canonical: true
 ---
@@ -287,6 +287,7 @@ that quietly becomes load-bearing is precisely the file nobody re-reads.
 | A process ends only at an entry point | gate | `tests/integration/test_exit_gate.py` |
 | Imports flow up the layer order; no private submodule from outside | gate | `tests/integration/test_import_layers_gate.py`, `check_D` |
 | A configured value is read only through the config loader | gate | `tests/integration/test_config_reads_gate.py` |
+| A test function shows it can fail | gate | `tests/integration/test_assertion_quality_gate.py` |
 | A comment does not open by reporting a change | gate (heuristic) | `tests/integration/test_change_comment_gate.py` |
 | No `print()` in library code | gate | ruff `T20` |
 | A boolean is declared and passed by keyword | gate | ruff `FBT` |

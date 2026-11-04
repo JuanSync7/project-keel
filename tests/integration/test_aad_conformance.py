@@ -88,7 +88,9 @@ def test_descriptor_validates_against_committed_schema(served_descriptor: dict):
     """
     jsonschema = optional_deps.importorskip("jsonschema", extra="dev")
     schema = json.loads(_SCHEMA_PATH.read_text(encoding="utf-8"))
-    jsonschema.validate(served_descriptor, schema)
+    validator = jsonschema.validators.validator_for(schema)(schema)
+    errors = [error.message for error in validator.iter_errors(served_descriptor)]
+    assert errors == [], errors
 
 
 def test_dotless_fallback_is_served(client: TestClient):

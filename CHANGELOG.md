@@ -42,6 +42,17 @@ version rather than a bare commit:
   boolean by name. ruff found 176 such sites in keel; all were converted
   except one PyYAML override, which keeps its signature with a reasoned
   `# noqa: FBT002`.
+- **Every test function shows it can fail (KEEL-TESTQ-1).**
+  `tests/integration/test_assertion_quality_gate.py` reads every test function
+  under config/project.json `test_quality.assertions.roots` and fails one with
+  no assertion, only truthy-constant assertions, a tautology, or a handler in
+  its body that only passes or continues, because such a test passes
+  `make verify` whatever the code does. An assertion in a helper the test
+  calls counts, followed `test_quality.assertions.helper_depth` calls deep; a
+  comparison of two calls is a determinism check, not a tautology. Three keel
+  tests now assert their result, one moved its binary-file read into a
+  helper, and two that pass by not raising carry a reasoned
+  `test_quality.assertions.exempt` entry.
 - **A cache holds at most the configured number of entries.** pyproject.toml
   bans `functools.cache` and `functools.lru_cache` through ruff `TID251`; a test
   module caches through `tests/bounded_cache.py` `bounded`, whose maximum is

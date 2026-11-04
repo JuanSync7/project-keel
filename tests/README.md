@@ -9,7 +9,7 @@ tags: []
 summary: Unit tests mirror src/; integration/e2e/smoke go by scenario.
 id: tests-readme
 created: 2026-06-17
-updated: 2026-10-29
+updated: 2026-11-04
 visibility: internal
 canonical: true
 ---
@@ -114,6 +114,20 @@ the whole suite. Once a test of a declared marker runs, the declaration is
 stale and the run exits 1 until it is removed. `--collect-only`,
 `--setup-plan` and `--setup-only` (which execute no test by design), a run
 that already failed, and an xdist worker are left alone.
+
+## A test that cannot fail fails the gate
+
+`integration/test_assertion_quality_gate.py` reads every test function under
+config/project.json `test_quality.assertions.roots` through
+`assertion_quality.py` and fails one that asserts nothing, asserts only a
+truthy constant, compares one name or attribute chain with itself, or has a
+handler in its body that only passes or continues. An assertion in a helper
+counts when the test calls it by name and it lives in the same module or in a
+module under the roots the test imports. Assert the result the code returns
+or leaves behind. A test whose contract is only that a call does not raise,
+and whose call returns nothing, gets its node id and the reason in
+`test_quality.assertions.exempt`. `unit/test_assertion_quality.py` plants each
+fault in a temporary tree.
 
 ## A copied Makefile carries its includes
 
