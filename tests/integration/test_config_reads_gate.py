@@ -36,7 +36,7 @@ _LOADER = "scripts/config_loader.py"
 # A generated project renders out the entries for files it does not ship, so
 # its count is lower; tests/integration/test_copier_generation.py, which
 # copier prunes, holds keel's count equal to this number.
-_CEILING = 12
+_CEILING = 10
 # The finding tests' check ids in scripts/expiring_tier_data.py CHECKS: the
 # tier judges what each one sees (red in the template, warn-then-fail in a
 # generated project).

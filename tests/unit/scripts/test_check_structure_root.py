@@ -91,6 +91,21 @@ def test_a_clean_tree_is_clean(tmp_path):
     assert cs.run_checks(str(_tree(tmp_path))) == []
 
 
+@pytest.mark.parametrize("filename", cs.JSON_CONFIGS)
+def test_a_directory_at_a_config_path_is_one_refusal_per_run(tmp_path, filename):
+    root = _tree(tmp_path)
+    path = root / filename
+    if path.is_file():
+        path.unlink()
+    path.mkdir()
+    first = cs.run_checks(str(root))
+    errors = [message for _letter, tier, message in first if tier == "error"]
+    assert len(errors) == 1, first
+    assert filename in errors[0], first
+    assert "cannot be read (" in errors[0], first
+    assert cs.run_checks(str(root)) == first
+
+
 def test_run_checks_judges_the_given_root_not_the_template(tmp_path):
     root = _tree(tmp_path / "proj")
     (root / "zzz").mkdir()

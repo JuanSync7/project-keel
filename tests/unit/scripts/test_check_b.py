@@ -291,20 +291,27 @@ def test_python_syntax_judgment_needs_a_readable_declared_floor(repo, refused):
     assert ("config/project.json" if refused else "cannot be parsed") in cs.errors[0]
 
 
-def test_a_refused_registry_with_a_twin_is_not_a_missing_plain_file(repo):
+@pytest.mark.parametrize("directory", [False, True])
+def test_a_refused_registry_with_a_twin_is_not_a_missing_plain_file(repo, directory):
     _manifest(repo, {"template": {"twins": {"config/practices.json": "parity"}}})
-    (repo / "config" / "practices.json").write_bytes(b"null")
+    path = repo / "config" / "practices.json"
+    if directory:
+        path.mkdir()
+    else:
+        path.write_bytes(b"null")
     (repo / "config" / "practices.json.jinja").write_text("{}\n", encoding="utf-8")
     cs.check_N()
     assert len(cs.errors) == 1, cs.errors
     assert cs.errors[0].startswith("config/practices.json"), cs.errors
+    assert ("cannot be read (" if directory else "top level") in cs.errors[0], cs.errors
 
 
 @pytest.mark.parametrize("check", [cs.check_T, cs.check_V])
-def test_a_section_reference_cannot_judge_a_refused_config(repo, check):
+@pytest.mark.parametrize("directory", [False, True])
+def test_a_section_reference_cannot_judge_a_refused_config(repo, check, directory):
     section = "\u00a71"
     if check is cs.check_T:
-        (repo / "config" / "project.json").write_bytes(b"null")
+        path = repo / "config" / "project.json"
         registry = {
             "practices": [
                 {"id": "p", "enforced_by": ["doc:config/project.json " + section]}
@@ -315,16 +322,20 @@ def test_a_section_reference_cannot_judge_a_refused_config(repo, check):
         )
     else:
         _manifest(repo, {})
-        (repo / "config" / "practices.json").write_bytes(b"null")
+        path = repo / "config" / "practices.json"
         (repo / "src" / "writer.py").write_text(
             '"""\neffect: writes\nrerun: fixed-point\n'
             "rerun_proof: doc:config/practices.json " + section + '\n"""\n'
             "import os\nos.remove('x')\n",
             encoding="utf-8",
         )
+    if directory:
+        path.mkdir()
+    else:
+        path.write_bytes(b"null")
     check()
     assert len(cs.errors) == 1, cs.errors
-    assert "top level" in cs.errors[0], cs.errors
+    assert ("cannot be read (" if directory else "top level") in cs.errors[0], cs.errors
 
 
 def test_hidden_ignored_and_non_directory_entries_are_out_of_scope(repo):

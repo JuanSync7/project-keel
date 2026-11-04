@@ -578,7 +578,7 @@ version rather than a bare commit:
   `scripts/exit_code_table.py`, `scripts/check_practices.py`,
   `scripts/run_make_target.py`, `evals/_config.py`, `evals/_run.py`,
   `models/openai_compatible.py` and `mcp/qa_server.py` leave
-  `config_reads.allowed`, which now lists twelve files in keel.
+  `config_reads.allowed`, which lists ten files in keel.
 - **A config fault in `gate_evidence.py`, `exit_code_table.py`,
   `check_practices.py` or `run_evals.py` exits 14, not 2.** A script or a
   wrapper that tested for 2 on a bad `evidence`, `doc_drift`, `practices` or
@@ -621,12 +621,17 @@ version rather than a bare commit:
   config/practices.json with `json.loads`, so a key written twice passed with
   the last value winning, and a merge-conflict hunk at line 1 broke every check
   into dozens of findings. It now reads both through `config_loader.read`: one
-  error names the file and the fault (the key, the hunk's line, the bad bytes,
-  the top level), and `make check` exits 1. `scripts/run_app.py` reads the
-  manifest the same way and ends a refused one with a line, never a traceback:
+  finding per loader line names the file and the fault (the key, the hunk's
+  line, the bad bytes, the top level or an I/O failure), and `make check` exits
+  1. Only the loader decides absence: a directory or a failed read is a
+  refusal, cached separately from an absent file. Dependent checks skip
+  conclusions they cannot judge; independent checks still run. `scripts/run_app.py` reads the
+  manifest the same way and ends a refused or missing one with exactly one
+  stderr line naming config/project.json, no traceback and empty stdout:
   exit 2 for a conflict hunk, which the user resolves, and exit 14 for any
   other refusal. `config_loader.is_conflict` is the one test of which. The two
-  rows in `config_reads.allowed` that excused those reads are gone. Backlog:
+  rows in `config_reads.allowed` that excused those reads are gone; its ten
+  remaining entries agree with the gate ceiling and settings reference. Backlog:
   KEEL-JSONDUP-1.
 - **A broken tool no longer reads as a clean documentation review.** The doc
   reviewer read review_docs output that did not parse as zero findings, and a

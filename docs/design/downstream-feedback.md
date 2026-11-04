@@ -1913,11 +1913,11 @@ Left by CMP-5.S4:
 
 Left by CMP-5.S5:
 
-- Twelve files still read config directly, each named with its reason in
+- Ten files still read config directly, each named with its reason in
   config/project.json `config_reads.allowed`, and
   `tests/integration/test_config_reads_gate.py` `_CEILING` keeps the map from
-  growing. Nine are queued for a later CMP-5 slice: `scripts/check_structure.py`,
-  `scripts/launch.py` with `scripts/long_scripts.py`, `scripts/run_app.py`,
+  growing. Seven remain queued for migration:
+  `scripts/launch.py` with `scripts/long_scripts.py`,
   `scripts/trace_requirements.py`, `scripts/jobs/export_showcase_static.py`,
   `src/backend/showcase/_repo.py`, `src/backend/shared/__init__.py` and
   `agents/practice_refactor/_brain.py`. Three are not config reads and stay:
@@ -2926,13 +2926,13 @@ probe, not a gate's measurement.
 
 | Slice | Gap | Status |
 |-------|-----|--------|
-| CMP-10.S1 | A key written twice in `config/project.json`, or a conflict hunk in it, passes `make check`: `scripts/check_structure.py` `_read_json_config` parses with `json.loads`, so the last value wins in silence. A user gets one error naming the file, the key or the hunk's line, and `make check` red; `scripts/run_app.py` reads the manifest through the loader and ends a refused one with a line, not a traceback. It starts from `tests/integration/test_check_structure_manifest_refusal.py::test_a_key_written_twice_in_the_manifest_fails_check` (exit 0 today) and `tests/unit/scripts/test_run_app.py::test_a_manifest_the_loader_refuses_ends_with_a_line_not_a_traceback`, and ships through copier, since `scripts/check_structure.py` and `scripts/run_app.py` are template files | planned |
+| CMP-10.S1 | `scripts/check_structure.py` reads both JSON configs through `config_loader.read`, which alone decides absence. A duplicate key, conflict hunk, bad bytes, wrong top level, directory at the path or I/O failure gives one finding per loader line naming the file, reported once per run; dependent checks apply no absent-file defaults. `scripts/run_app.py` ends a refused or missing manifest with exactly one stderr line naming config/project.json, no traceback and empty stdout: exit 2 for a hunk, 14 for any other refusal. The ten remaining `config_reads.allowed` entries agree with the gate ceiling and settings reference. The refusal integration matrix and loader, root, check_B and run_app unit cases cover these boundaries; the scripts and gate test ship through copier | implemented — second fix round |
 | CMP-10.S2 | The same refused manifest ends every other script the same way, one rule: a conflict hunk is exit 2 (the user resolves it, as in the copier jobs) and any other refusal, bad UTF-8, an empty file, `null` or a key written twice, is `CONFIG` (exit 14), never a traceback or a skip. One `is_conflict` helper in `scripts/config_loader.py` decides it, and `exit_code_table`, `run_evals` (`evals/_config.py`), `declare_no_app`, `export_showcase_static`, `long_scripts`, `trace_requirements` and `launch` use it; a launcher `render()` refusal names the edit that clears it, and `LauncherConfigError` has no default remedy; a `gate_evidence` schema file that is not UTF-8 is `CONFIG`. It starts from `tests/integration/test_conflict_entry_points.py::test_every_entry_point_that_reads_the_manifest_ends_a_conflict_hunk_at_2`, which discovers each script under `scripts/`, `scripts/jobs/`, `scripts/hooks/` and `evals/` that reads the manifest, runs it on a copy with a hunk and fails on a count of zero, and from `tests/unit/scripts/test_exit_code_table.py::test_a_conflict_hunk_exits_2`. It ships through copier, since every script it edits is a template file | planned |
 | CMP-10.S3 | A wrong claim in a shipped document passes every gate: a `check_<LETTER>` or a prose "check X" that `check_structure.CHECKS` lacks, and a `check_<name>` no Python file defines, are not read. A user gets `make verify` red naming the document and the cited check, and the guide's one sentence on which marks count as a citation is held by a test that goes red when a mark's effect is inverted. It starts from `tests/integration/test_doc_drift.py::test_a_document_citing_a_check_that_does_not_exist_fails` and `::test_the_check_name_sentence_fails_when_a_mark_effect_is_inverted`, and ships through copier where `tests/integration/test_doc_drift.py` is a template file; the opening step of S3 reads `copier.yml` to say whether it is | planned |
 | CMP-10.S4 | A change phrase at the opening of a thought (a paragraph, list item, heading, table cell or sentence that starts with a `change_comments.phrases` entry) reaches no reader. A user running `make doc-review` gets one advisory `OPENER` line per hit, in `.md.jinja` twins too, and no mode fails on it, because a past participle at an opener is as often a present claim as a report. It starts from `tests/unit/scripts/test_review_docs.py::test_a_change_phrase_at_a_sentence_opener_is_an_advisory_line` and `::test_an_opener_advisory_fails_no_mode`; the guides' own hits on `main` are fixed by hand in the same slice; it ships through copier, since `scripts/jobs/review_docs.py` is a template file | planned |
 
-CMP-10.S1 owns `scripts/check_structure.py` (`_read_json_config` and its twelve
-read sites), `scripts/run_app.py`, `scripts/config_loader.py` (the `is_conflict`
+CMP-10.S1 owns `scripts/check_structure.py` (`_read_json_config` and its
+consumers), `scripts/run_app.py`, `scripts/config_loader.py` (the `is_conflict`
 helper, which S2 reuses) and the two `config_reads.allowed` rows for
 `scripts/check_structure.py` and `scripts/run_app.py` in `config/project.json`.
 It borrows from `keel-doc2` the commits `9d0d0b9` and `2dfeb74` for the gate's
@@ -2940,6 +2940,11 @@ read and `5bbc6ab` for `run_app`, and rewrites each against `main`'s loader,
 which already refuses a duplicate key, NaN and bytes that are not UTF-8.
 `scripts/check_structure.py` runs under the oldest host interpreter, so the
 import must work there and a failed import must fail the gate, not skip it.
+
+Fix round 2 corrects the stale allowlist counts, the filesystem prechecks that
+read a refused config as absent, and the two runner tests whose single-line
+claim accepted extra output. Planted stale counts, presence checks, swallowed
+read errors and runner output each turn their regression cases red.
 
 CMP-10.S2 owns `scripts/exit_code_table.py`, `evals/_config.py`,
 `scripts/run_evals.py`, `scripts/jobs/declare_no_app.py`,

@@ -73,6 +73,19 @@ def test_the_populated_tree_starts_clean(populated_tree):
 
 
 @pytest.mark.parametrize("filename", cs.JSON_CONFIGS)
+def test_a_config_directory_in_a_populated_tree_is_one_refusal(
+    populated_tree, filename
+):
+    path = populated_tree / filename
+    path.unlink()
+    path.mkdir()
+    found = _errors(populated_tree)
+    assert len(found) == 1, found
+    assert filename in found[0], found
+    assert "cannot be read (" in found[0], found
+
+
+@pytest.mark.parametrize("filename", cs.JSON_CONFIGS)
 @pytest.mark.parametrize("fault", sorted(_FAULTS))
 def test_a_manifest_the_loader_refuses_is_one_finding_naming_the_file(
     populated_tree, fault, filename

@@ -68,6 +68,95 @@ def _read_failure(findings, name):
 # --- MUST-REPORT: the file is there but the gate cannot read it --------------
 
 
+@pytest.mark.parametrize("filename", cs.JSON_CONFIGS)
+@pytest.mark.parametrize("first", ["json", "text", "facts"])
+@pytest.mark.parametrize("fault", ["directory", "open", "stat-and-open"])
+def test_only_the_loader_decides_a_config_is_absent(
+    repo, monkeypatch, filename, first, fault
+):
+    path = repo / filename
+    if fault == "directory":
+        path.mkdir()
+    else:
+        _write(path, "{}")
+        real_open = open
+
+        def denied_open(candidate, *args, **kwargs):
+            if str(candidate) == str(path):
+                raise PermissionError("simulated open denial")
+            return real_open(candidate, *args, **kwargs)
+
+        monkeypatch.setattr("builtins.open", denied_open)
+        if fault == "stat-and-open":
+            real_stat = cs.os.stat
+
+            def denied_stat(candidate, *args, **kwargs):
+                if str(candidate) == str(path):
+                    raise PermissionError("simulated stat denial")
+                return real_stat(candidate, *args, **kwargs)
+
+            monkeypatch.setattr(cs.os, "stat", denied_stat)
+
+    if first == "text":
+        cs._read_text(str(path), cs.err)
+    elif first == "facts" and filename == "config/project.json":
+        cs.check_H()
+    result = cs._read_json_config(filename)
+    cs._read_text(str(path), cs.err)
+    if filename == "config/project.json":
+        cs._profiles_on()
+        cs.check_H()
+    else:
+        cs._load_practices()
+        cs._stdlib_exc_modules()
+    assert len(cs.errors) == 1, cs.errors
+    assert filename in cs.errors[0], cs.errors
+    assert "cannot be read (" in cs.errors[0], cs.errors
+    assert result is cs._REFUSED
+    assert cs._read_json_config(filename) is result
+    assert cs.warnings == []
+
+
+@pytest.mark.parametrize("filename", cs.JSON_CONFIGS)
+def test_a_truly_absent_config_keeps_the_same_findings(repo, filename):
+    assert cs._read_json_config(filename) is cs._NO_DATA
+    assert cs._read_text(str(repo / filename), cs.err) is None
+    if filename == "config/project.json":
+        assert cs._profiles_on() == set()
+        cs.check_H()
+        assert cs.errors == [
+            "config/project.json: not found, so no project fact is judged -- "
+            "restore it (`git checkout -- config/project.json`, or `copier "
+            "update` in a generated project)"
+        ]
+    else:
+        assert cs._load_practices() == {}
+        cs.check_M()
+        assert cs.errors == []
+    assert cs.warnings == []
+
+
+@pytest.mark.parametrize("filename", cs.JSON_CONFIGS)
+def test_a_failed_stat_cannot_hide_a_config_the_loader_can_read(
+    repo, monkeypatch, filename
+):
+    path = repo / filename
+    _write(path, "{}")
+    real_stat = cs.os.stat
+
+    def denied_stat(candidate, *args, **kwargs):
+        if str(candidate) == str(path):
+            raise PermissionError("simulated stat denial")
+        return real_stat(candidate, *args, **kwargs)
+
+    monkeypatch.setattr(cs.os, "stat", denied_stat)
+    assert cs._read_json_config(filename) == {}
+    assert cs._read_text(str(path), cs.err) == "{}"
+    if filename == "config/project.json":
+        cs.check_H()
+    assert cs.errors == [] and cs.warnings == []
+
+
 @pytest.mark.parametrize(
     "payload", [BAD_JSON, BAD_BYTES], ids=["bad-json", "bad-bytes"]
 )

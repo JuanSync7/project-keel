@@ -3613,6 +3613,19 @@ def test_keels_config_reads_allowlist_is_exactly_the_gate_tests_ceiling():
     )
 
 
+def test_settings_allowlist_count_agrees_with_the_ceiling_contract():
+    allowed = json.loads((_ROOT / "config" / "project.json").read_text("utf-8"))[
+        _READS_BLOCK
+    ]["allowed"]
+    rows = (_ROOT / "docs" / "reference" / "settings.md").read_text("utf-8")
+    row = next(
+        line
+        for line in rows.splitlines()
+        if line.startswith("| `config_reads.allowed.<name>` |")
+    )
+    assert "%d in keel" % len(allowed) in row, row
+
+
 def _reads_gate(project):
     """The generated project's config-reads gate file, run as its `make test`
     recipe runs pytest (PYTHONPATH=src:.)."""

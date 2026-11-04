@@ -426,9 +426,11 @@ def _read_text(path, report):
     """
     path = os.path.abspath(path)
     relpath = rel(path)
-    if relpath in JSON_CONFIGS and _read_json_config(relpath) is _REFUSED:
-        return None
-    if not os.path.isfile(path):
+    if relpath in JSON_CONFIGS:
+        data = _read_json_config(relpath)
+        if data is _NO_DATA or data is _REFUSED:
+            return None
+    elif not os.path.isfile(path):
         return None
     try:
         with open(path, encoding="utf-8") as fh:
@@ -451,20 +453,21 @@ def _read_json_config(relpath):
     each one finding that names the file. Memoised per path so one broken
     registry yields one error, not one per consumer. A refused file never
     supplies an empty declaration or the defaults used for an absent one.
+    Only the loader decides absence; a directory or an I/O failure is refused.
     """
     path = os.path.abspath(os.path.join(ROOT, relpath))
     relpath = rel(path)
     if relpath in _CONFIG_READ:
         return _CONFIG_READ[relpath]
-    data = _NO_DATA
-    if os.path.isfile(path):
-        try:
-            data = config_loader.read(ROOT, relpath)
-        except config_loader.ConfigError as e:
-            data = _REFUSED
-            _READ_REPORTED.add(path)
-            for line in e.lines:
-                err(line)
+    try:
+        data = config_loader.read(ROOT, relpath)
+    except config_loader.ConfigAbsent:
+        data = _NO_DATA
+    except config_loader.ConfigError as e:
+        data = _REFUSED
+        _READ_REPORTED.add(path)
+        for line in e.lines:
+            err(line)
     _CONFIG_READ[relpath] = data
     return data
 
@@ -1613,19 +1616,15 @@ def check_H():
     Stdlib JSON, so it runs under the old pre-commit interpreter (no tomllib).
     See CONVENTIONS section 15.
     """
-    path = os.path.join(ROOT, "config", "project.json")
-    if not os.path.isfile(path):
+    manifest = _read_json_config(os.path.join("config", "project.json"))
+    if manifest is _REFUSED:
+        return  # _read_json_config already reported it
+    if manifest is _NO_DATA:
         err(
             "config/project.json: not found, so no project fact is judged -- "
             "restore it (`git checkout -- config/project.json`, or `copier "
             "update` in a generated project)"
         )
-        return
-    manifest = _read_json_config(os.path.join("config", "project.json"))
-    if manifest is _REFUSED:
-        return  # _read_json_config already reported it
-    if not isinstance(manifest, dict):  # incl. a literal `null` — a shape error
-        err("config/project.json: top level must be a JSON object")
         return
     layers = _expect(manifest.get("layers"), dict, "layers", {})
 
@@ -3012,7 +3011,9 @@ def check_N():
     if declared is None:
         return
     files = {}
-    unreadable = set()
+    # A directory at a config path is absent from the walk's filenames, but
+    # its loader refusal still prevents judging the plain side of its twin.
+    unreadable = {path for path in JSON_CONFIGS if _read_json_config(path) is _REFUSED}
     for dirpath, dirnames, filenames in walk(ROOT):
         del dirnames
         for name in filenames:
@@ -3205,13 +3206,15 @@ def _shell_files(roots):
             for f in filenames:
                 full = os.path.join(dirpath, f)
                 relpath = rel(full).replace(os.sep, "/")
-                if os.path.islink(full) or not os.path.isfile(full):
-                    continue
-                if shell_gate.excluded_by(relpath, excluded) is not None:
-                    continue
                 # Classification reads a shebang even on JSON files. The
                 # loader owns any refusal, whichever check reaches it first.
-                if relpath in JSON_CONFIGS and _read_json_config(relpath) is _REFUSED:
+                if relpath in JSON_CONFIGS:
+                    data = _read_json_config(relpath)
+                    if data is _NO_DATA or data is _REFUSED:
+                        continue
+                elif os.path.islink(full) or not os.path.isfile(full):
+                    continue
+                if shell_gate.excluded_by(relpath, excluded) is not None:
                     continue
                 try:
                     judged_as = shell_gate.kind(relpath, full, cfg)
@@ -4037,7 +4040,7 @@ def _optional_text(relpath):
     """A root file's text, None when absent; present-but-unreadable is an error
     (the check keyed on it would otherwise go dark)."""
     full = os.path.join(ROOT, relpath)
-    return _read_text(full, err) if os.path.isfile(full) else None
+    return _read_text(full, err)
 
 
 def check_R():
@@ -4385,6 +4388,8 @@ def check_T():
         reldir = rel(dirpath).replace(os.sep, "/")
         for f in filenames:
             tree.add(f if reldir == "." else reldir + "/" + f)
+    # A refused config cannot prove a reference's target or section absent.
+    tree.update(path for path in JSON_CONFIGS if _read_json_config(path) is _REFUSED)
     makefile = _optional_text("Makefile")
     targets = set(_make_rules(makefile)) if makefile else set()
 
@@ -4851,6 +4856,8 @@ def check_V():
         reldir = rel(dirpath).replace(os.sep, "/")
         for f in filenames:
             tree.add(f if reldir == "." else reldir + "/" + f)
+    # A refused config cannot prove a reference's target or section absent.
+    tree.update(path for path in JSON_CONFIGS if _read_json_config(path) is _REFUSED)
     makefile = _optional_text("Makefile")
     targets = set(_make_rules(makefile)) if makefile else set()
 

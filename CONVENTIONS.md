@@ -1057,8 +1057,8 @@ adapter whose directory does not exist, are errors; a non-boolean
 `config/practices.json` defines is a warning. The two `default` keys are
 declarative: `runtimes/registry.py` `DEFAULT_RUNTIME` and `models/registry.py`
 `DEFAULT_MODEL` decide what code gets when it names no engine or adapter, and
-no check ties each pair together. A missing `config/project.json` is a warning,
-not an error.
+no check ties each pair together. A missing `config/project.json` is an error:
+`check_H` reports that no project fact can be judged until it is restored.
 
 **One reader.** Code reads `config/project.json`, `config/practices.json` and
 the variables they declare only through `scripts/config_loader.py`: `read` opens
@@ -1076,8 +1076,10 @@ fault until it moves onto the loader. A shell script under those roots that
 names config/project.json or config/practices.json in its code is red too;
 it prints a value with `scripts/config_get.py KEY` instead.
 `scripts/check_structure.py` reads both config files through the loader's `read`,
-memoizes a refusal as one finding per path, and skips conclusions in `check_H`
-and its siblings that need the refused data.
+lets the loader alone decide absence, memoizes a refusal as one finding per
+loader line per path, and skips conclusions in `check_H` and its siblings that
+need the refused data. A directory at either config path or an I/O failure is
+a refusal; only `ConfigAbsent` takes the absent-file defaults.
 `docs/adr/keel/K-0022-one-config-loader.md` is the accepted decision.
 
 Why JSON here, and why this and not prose: a manifest is read by **code** (a

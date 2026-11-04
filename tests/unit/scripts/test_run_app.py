@@ -176,9 +176,19 @@ def test_a_manifest_the_loader_refuses_ends_with_a_line_not_a_traceback(
 ):
     (project / "config" / "project.json").write_bytes(body)
     assert run_app.main([], root=str(project)) == code
-    assert says in capsys.readouterr().err
+    output = capsys.readouterr()
+    assert output.out == ""
+    assert len(output.err.splitlines()) == 1, output.err
+    assert "config/project.json" in output.err
+    assert "Traceback" not in output.err
+    assert says in output.err
 
 
 def test_a_missing_manifest_ends_with_a_line_not_a_traceback(project, capsys):
     assert run_app.main([], root=str(project)) == 14
-    assert "does not exist" in capsys.readouterr().err
+    output = capsys.readouterr()
+    assert output.out == ""
+    assert len(output.err.splitlines()) == 1, output.err
+    assert "config/project.json" in output.err
+    assert "Traceback" not in output.err
+    assert "does not exist" in output.err
