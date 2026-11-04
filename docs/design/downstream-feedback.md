@@ -2972,6 +2972,58 @@ shares `scripts/jobs/review_docs.py` with no other slice, and `CHANGELOG.md` wit
 S3. Row 47, KEEL-VOCAB-1 (a reject list over prose), overlaps S4's phrase list
 and stays queued: S4 reads the existing `change_comments.phrases` and adds no key.
 
+## CMP-11 — parallel slices stop colliding in the shared files
+
+The maintainer moved KEEL-FRAG-1 to queue position 4 on 2026-10-22 so that
+slices built in parallel worktrees stop conflicting. CMP-11 builds the part of
+that row a test can hold: two slices that each add an entry to this plan, the
+settings or features reference, or the changelog touch no line in common, and
+the file a reader sees is regenerated from those entries, the same on every
+run. It does not make every shared file conflict-free: `config/project.json`,
+its twin and `docs/adr/keel/README.md` stay one file each. The cap is three
+passes, one slice each in the order S1 to S3, and a slice's review gets at most
+three fix rounds; the stop point is CMP-11.S3 green or the cap, whichever comes
+first. CMP-11 builds only after CMP-9 and CMP-10 land, because S1 moves the
+plan sections both of them edit.
+
+The opening pass read `main` at `25de8e2` and counted each shared file's lines
+and how many of the last 60 commits touch it: `CHANGELOG.md` 2803 lines and 9
+commits, this plan 3686 and 13, `config/project.json` 623 and 2, its twin 633
+and 2, `docs/adr/keel/README.md` 60 and 0, `docs/reference/settings.md` 536 and
+3, `docs/reference/features.md` 359 and 5. check_Z already reads every
+`kind: design` document with a `Slice` table as a plan doc, so a campaign in its
+own file needs no new rule. `tests/integration/test_copier_generation.py` reads
+slice rows from this plan by its path, and `copier.yml` `_exclude` names this
+plan by its path. The config file and its twin were touched by 2 of 60 commits
+and the ADR index by none, so they are not in CMP-11. The counts are one
+measurement, not a gate's.
+
+| Slice | Gap | Status |
+|-------|-----|--------|
+| CMP-11.S1 | This plan holds every campaign in one file, so two lanes that each add a campaign edit the same lines, and the file grows without bound. A campaign gets its own `kind: design` document under `docs/design/campaigns/`, this plan keeps the queue table and an index of campaign documents, and no slice id, campaign heading or queue row is lost or changed in the move. It starts from `tests/integration/test_copier_generation.py::test_split_campaign_plans_preserve_ids_and_never_ship`, which fails today because the campaign documents do not exist, and which fails when a moved section loses a slice id or a campaign document ships to a generated project | planned |
+| CMP-11.S2 | Every slice that adds a setting or a feature edits one row table in `docs/reference/settings.md` or `docs/reference/features.md`, so two slices conflict on adjacent rows. An entry becomes one fragment file, a generator writes each reference from its fragments in sorted order, and a `--check` mode fails a stale reference, so a second run writes nothing. It starts from `tests/integration/test_reference_fragments.py::test_two_independent_entries_survive_assembly_and_update`; `tests/integration/test_reference_drift.py`, `tests/integration/test_config_default_lines_docs.py`, `tests/integration/test_ci_pipeline_gate.py`, `tests/integration/test_edit_policy_docs.py`, `tests/integration/test_isolation_docs.py` and `tests/unit/backend/test_showcase.py` read the assembled file unchanged | planned |
+| CMP-11.S3 | Every slice adds its row under `## [Unreleased]` in `CHANGELOG.md`, so two slices conflict on the same heading. An unreleased entry becomes one fragment file, a generator writes the `[Unreleased]` section from them in sorted order, tagged sections stay as they are, and a `--check` mode fails a stale changelog. It starts from `tests/integration/test_changelog_fragments.py::test_independent_entries_render_without_leaking_template_history`; `tests/integration/test_release_identity.py`, `scripts/canary.py` and `CHANGELOG.md.jinja` read the assembled file unchanged | planned |
+
+CMP-11.S1 owns this plan's campaign sections, the new `docs/design/campaigns/`
+directory, the `copier.yml` `_exclude` row for it, and the slice-row read in
+`tests/integration/test_copier_generation.py`. The queue table and its
+`Queued after Campaign 6` heading stay in this plan, because the queue is the
+one place the order of work is approved. S1 writes no generator: a campaign
+document is written by hand, once, and S2 and S3 do not depend on S1.
+
+CMP-11.S2 owns the two references, their fragment directories, the generator
+under `scripts/`, a `[tree]` make target that writes the references and a
+`[read]` one that checks them. It shares `Makefile`, `config/project.json` and
+its twin with S3, so S3 runs after S2 and reuses S2's assembler where one fits
+both. The generator is a writer, so its header carries `effect: writes`,
+`rerun: fixed-point` and a `rerun_proof:` that resolves (check_V).
+
+CMP-11.S3 owns `CHANGELOG.md`, its fragment directory, `CHANGELOG.md.jinja`
+where a generated project's changelog takes fragments too, and the changelog
+part of the generator. A tagged section keeps the heading ADR K-0009 requires,
+and S3 changes no accepted ADR text; if a fragment layout would need such a
+change, the slice is parked for the maintainer.
+
 ## Queued after Campaign 6
 
 A queue id becomes a `CMP-<n>.S<m>` name only when an approved slice table
@@ -2984,7 +3036,7 @@ On 2026-10-22 the maintainer approved this order. Positions 1 to 9 come from the
 | 1 | KEEL-RAM-1 | Test scratch goes to a disk root, and on a network-mounted home every small-file write is a round trip; a session should prefer a per-user memory root and fall back to disk, naming why (K-0024 Decision 5) | done: full `make verify` green on 1d41d04, merged in PR #14 |
 | 2 | KEEL-DOC-SETUP-1 | The README does not say what a new machine must rebuild (the venv, `node_modules`, the browser and the scanner record), and its venv line names a `python3` that can predate `pyproject.toml` `requires-python` | done: `make check`, `check-docs`, `check-corpus` and the doc drift, freshness and README generation tests green on 6621c52, merged in PR #15 |
 | 3 | KEEL-SPEED-1 | A full `make verify` takes 3 h 12 min on the personal host, and about 85% of it is copier rendering projects: `tests/integration/test_copier_generation.py` renders 52, many from the same answers. Planned: one render per distinct answer set from one clean clone, a private copy per test, a guard that no two tests share a folder, then parallel workers, then the verify tiers written into `docs/guides/dev-loops.md`. Rejected: a render cache across runs (a stale pass) and building one project from another by `copier update` (slower). Done: one render per answer set, a private copy per test and the isolation guard landed, and the merged tree's full verify passed 3756 tests in 1 h 37 min; parallel workers moved to KEEL-XDIST-1 | done |
-| 4 | KEEL-FRAG-1 | Every slice appends to the same shared files (`CHANGELOG.md`, this plan, `config/project.json` and its twin, the ADR index, the settings and features references), so two slices built in parallel worktrees conflict in about ten files each time, and this plan grows without bound; CMP-6.S3 and CMP-6.S6 conflicted in ten; moved up on 2026-10-22 so that parallel slices stop conflicting | planned |
+| 4 | KEEL-FRAG-1 | Every slice appends to the same shared files (`CHANGELOG.md`, this plan, `config/project.json` and its twin, the ADR index, the settings and features references), so two slices built in parallel worktrees conflict in about ten files each time, and this plan grows without bound; CMP-6.S3 and CMP-6.S6 conflicted in ten; moved up on 2026-10-22 so that parallel slices stop conflicting | planned: CMP-11.S1 to CMP-11.S3 cover the plan, the two references and the changelog; the config file, its twin and the ADR index stay one file each |
 | 5 | KEEL-RUN-1 | `scripts/run_make_target.py` gives up after a 1800-second default typed in code, and on that timeout it leaves the processes `make` started running: on a busy host a full `make verify` timed out and its pytest kept writing in the worktree. Done: the limit and the stop grace are `make_targets.gate_timeout_seconds` and `make_targets.gate_stop_grace_seconds`, read through the loader; on a timeout or a signal the runner ends make's whole session with SIGTERM and then SIGKILL, and the merged tree's full verify passed 3844 tests in 1 h 47 min | done |
 | 6 | KEEL-VENV-1 | The transport packages fastapi, uvicorn and httpx are installed by hand rather than declared in an extra, so a missing one reads as a skipped test; a venv older than `pyproject.toml`'s dependencies fails late rather than when `make verify` starts. Done: the transport packages are the `transport` extra that `dev` names, `make check-venv` fails a stale venv before any goal runs, and the merged tree's full verify passed 3767 tests in 1 h 33 min | done |
 | 7 | KEEL-SEC-2 | Installing the scanner needs Go and GitHub, which a firewalled host lacks; recommended: a pinned release binary checked by sha256, its URL in config. Optional: `.gitleaksignore` and `.gitleaks.toml` join `agents.protected_names` Done: `make secrets-install` fetches the pinned release binary from the configured URL and checks its sha256, so it needs neither Go nor GitHub; the merged tree's full verify passed 4213 tests in 1 h 30 min | done |
