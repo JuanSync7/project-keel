@@ -616,6 +616,18 @@ version rather than a bare commit:
   guard that fails a reach past it.
 
 ### Fixed
+- **`make check` refuses a manifest the config loader refuses.**
+  `scripts/check_structure.py` parsed config/project.json and
+  config/practices.json with `json.loads`, so a key written twice passed with
+  the last value winning, and a merge-conflict hunk at line 1 broke every check
+  into dozens of findings. It now reads both through `config_loader.read`: one
+  error names the file and the fault (the key, the hunk's line, the bad bytes,
+  the top level), and `make check` exits 1. `scripts/run_app.py` reads the
+  manifest the same way and ends a refused one with a line, never a traceback:
+  exit 2 for a conflict hunk, which the user resolves, and exit 14 for any
+  other refusal. `config_loader.is_conflict` is the one test of which. The two
+  rows in `config_reads.allowed` that excused those reads are gone. Backlog:
+  KEEL-JSONDUP-1.
 - **A broken tool no longer reads as a clean documentation review.** The doc
   reviewer read review_docs output that did not parse as zero findings, and a
   baseline or apply report that did not parse as a red gate or a declined

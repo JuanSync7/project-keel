@@ -1448,3 +1448,37 @@ def test_the_cut_drops_every_hidden_id_from_links_children_and_parent():
 def test_the_cut_keeps_a_served_parent_and_leaves_an_absent_field_absent():
     node = {"node_id": "a#1", "parent": "a"}
     assert config_loader.cut_hidden(node, {"a", "a#1"}) == node
+
+
+_HUNK = "%s ours\n{}\n%s\n{}\n%s theirs\n" % ("<" * 7, "=" * 7, ">" * 7)
+
+
+@pytest.mark.parametrize(
+    "body, conflicted",
+    [
+        (_HUNK.encode(), True),
+        (b'{"a": 1, "a": 2}', False),
+        (b"", False),
+        (b"null", False),
+        (b'{"a": "\xff"}', False),
+        (b"{}", None),
+    ],
+    ids=["hunk", "key-twice", "empty", "null", "not-utf8", "readable"],
+)
+def test_is_conflict_is_true_only_for_a_refusal_naming_a_hunk(
+    tmp_path, body, conflicted
+):
+    """One predicate decides which refusal is the user's merge to finish (exit 2)."""
+    (tmp_path / CONFIG_FILE).parent.mkdir(parents=True, exist_ok=True)
+    (tmp_path / CONFIG_FILE).write_bytes(body)
+    if conflicted is None:
+        config_loader.read(str(tmp_path))
+        return
+    with pytest.raises(ConfigUnreadable) as caught:
+        config_loader.read(str(tmp_path))
+    assert config_loader.is_conflict(caught.value) is conflicted
+
+
+def test_is_conflict_is_false_for_an_error_that_is_not_a_refused_config():
+    assert config_loader.is_conflict(ConfigAbsent("x", ["x does not exist"])) is False
+    assert config_loader.is_conflict(ValueError("x")) is False

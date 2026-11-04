@@ -10,7 +10,6 @@ dotted components) goes first on sys.path, in place of this script's own
 directory, which would otherwise shadow a module of the same name.
 """
 
-import json
 import os
 import runpy
 import sys
@@ -19,6 +18,7 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.dirname(_HERE)
 
 sys.path.insert(0, _HERE)
+import config_loader  # noqa: E402
 from check_structure import composition_root  # noqa: E402
 from exit_codes import ExitCode, finish, passthrough, report  # noqa: E402
 
@@ -73,9 +73,16 @@ def main(argv=None, root=None):
         return ExitCode.SUCCESS
     if argv and argv[0] == "--":
         argv = argv[1:]
-    with open(os.path.join(root, "config", "project.json"), encoding="utf-8") as fh:
-        manifest = json.load(fh)
-    layers = manifest.get("layers") if isinstance(manifest, dict) else None
+    try:
+        manifest = config_loader.read(root)
+    except config_loader.ConfigError as refused:
+        return report(
+            ExitCode.USAGE if config_loader.is_conflict(refused) else ExitCode.CONFIG,
+            "run_app: config/project.json cannot be used",
+            "; ".join(refused.lines),
+            "fix the file the message names, then run again",
+        )
+    layers = manifest.get("layers")
     if not isinstance(layers, dict) or "app" not in layers:
         return _refuse(_ABSENT)
     app = layers["app"]

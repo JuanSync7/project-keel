@@ -203,7 +203,7 @@ def test_a_declaration_the_rule_never_consults_errors(repo, value, expect):
             json.dumps({"structure": {"extra_toplevel": "parked"}}),
             "structure.extra_toplevel must be a list",
         ),
-        ("{not json", "unreadable (invalid JSON"),
+        ("{not json", "cannot be read as JSON"),
     ],
     ids=["structure-str", "structure-list", "names-str", "invalid-json"],
 )

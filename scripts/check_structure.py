@@ -172,7 +172,6 @@ import ast
 import collections
 import importlib.util
 import io
-import json
 import os
 import posixpath
 import re
@@ -439,22 +438,25 @@ def _read_text(path, report):
 def _read_json_config(relpath):
     """A JSON config under ROOT as parsed data, else _NO_DATA.
 
-    Same split as _read_text plus invalid JSON — a file the gate can see but
-    cannot use, which is the case that silently disabled check_K/L/M. Memoised
-    per path so one broken registry yields one error, not one per consumer.
-    Returns _NO_DATA (not None) when there is nothing to hand back, so a JSON
-    literal `null` stays a caller-visible shape error instead of masquerading
-    as a failed read.
+    An absent file is no data and no finding (the checks that need it say so).
+    A file the gate can see but cannot use, which is the case that silently
+    disabled check_K/L/M, is read through scripts/config_loader.py `read`, the
+    one reader every script shares, so a key written twice, a merge-conflict
+    hunk, bytes that are not UTF-8 and a top level that is not an object are
+    each one finding that names the file. Memoised per path so one broken
+    registry yields one error, not one per consumer. Returns _NO_DATA (not
+    None) when there is nothing to hand back, so a caller tells a refused file
+    from a JSON literal `null`, which the loader refuses too.
     """
     if relpath in _CONFIG_READ:
         return _CONFIG_READ[relpath]
     data = _NO_DATA
-    text = _read_text(os.path.join(ROOT, relpath), err)
-    if text is not None:
+    if os.path.isfile(os.path.join(ROOT, relpath)):
         try:
-            data = json.loads(text)
-        except ValueError as e:
-            err("%s: unreadable (invalid JSON: %s)" % (relpath, e))
+            data = config_loader.read(ROOT, relpath)
+        except config_loader.ConfigError as e:
+            for line in e.lines:
+                err(line)
     _CONFIG_READ[relpath] = data
     return data
 

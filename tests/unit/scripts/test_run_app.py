@@ -141,3 +141,30 @@ def test_arguments_after_a_double_dash_reach_the_module_verbatim(project, capsys
     argv = ["--", "--help", "x"]
     assert _exit_code(lambda: run_app.main(argv, root=str(project))) == 0
     assert capsys.readouterr().out == "--help|x"
+
+
+_HUNK = "%s ours\n{}\n%s\n{}\n%s theirs\n" % ("<" * 7, "=" * 7, ">" * 7)
+
+
+@pytest.mark.parametrize(
+    "body, code, says",
+    [
+        (_HUNK.encode(), 2, "merge-conflict hunk at line 1"),
+        (b'{"layers": {"app": null}, "layers": {}}', 14, "appears twice"),
+        (b'{"a": "\xff"}', 14, "not UTF-8"),
+        (b"", 14, "cannot be read as JSON"),
+        (b"null", 14, "top level"),
+    ],
+    ids=["hunk", "key-twice", "not-utf8", "empty", "null"],
+)
+def test_a_manifest_the_loader_refuses_ends_with_a_line_not_a_traceback(
+    project, capsys, body, code, says
+):
+    (project / "config" / "project.json").write_bytes(body)
+    assert run_app.main([], root=str(project)) == code
+    assert says in capsys.readouterr().err
+
+
+def test_a_missing_manifest_ends_with_a_line_not_a_traceback(project, capsys):
+    assert run_app.main([], root=str(project)) == 14
+    assert "does not exist" in capsys.readouterr().err

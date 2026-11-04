@@ -605,13 +605,11 @@
     "allowed": {
       "agents/practice_refactor/_brain.py": "opens the practices registry under the corpus root its caller hands it, not this project's; it stays until a loader test covers a root an agent is handed",
       "scripts/audit_project.py": "opens the manifest of the generated project it audits, which is data under audit and not this project's configuration",
-      "scripts/check_structure.py": "the gate validates the manifest's shape under the oldest host interpreter before any loader row can be trusted, at twelve sites, so moving it onto the loader is a change of its own",
       "scripts/jobs/declare_no_app.py": "rewrites the manifest's text in place, so it reads the file as text to edit, not as configuration",
       "scripts/jobs/export_showcase_static.py": "opens the manifest for layers.frontend inside a copier job; importing the loader would add config/practices.json to the files scripts/jobs/conflict_guard.py refuses the job over, and no test yet proves the job under that refusal",
       "scripts/jobs/restamp_docs.py": "reads the manifest's raw bytes to find a merge-conflict marker before anything parses it, not a configured value",
       "scripts/launch.py": "opens the manifest for the launcher block, whose one reader scripts/long_scripts.py imports; the launcher block has no KEYS rows yet, and the two modules move onto the loader together",
       "scripts/long_scripts.py": "opens the manifest for the launcher block through the reader scripts/launch.py owns, and moves onto the loader with scripts/launch.py",
-      "scripts/run_app.py": "opens the manifest for layers.app, where absent and null are two refusals; that split needs a KEYS row and an exit-code decision not yet made",
       "src/backend/showcase/_repo.py": "opens the manifest and the practices registry for the showcase read model, whose keys have no KEYS rows yet",
       "scripts/trace_requirements.py": "opens the manifest for the traceability block, which has no KEYS rows yet",
       "src/backend/shared/__init__.py": "opens the manifest for the project name at import time; through the loader, a read at import would write a default line in every process that imports the package, and whether it should is not decided"
