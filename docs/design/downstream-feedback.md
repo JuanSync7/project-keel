@@ -8,7 +8,7 @@ tags: [plan, template, downstream, freshness, taxonomy, effects, credentials, au
 summary: The bounded-convergence record for the defects bedrock-platform, the first real project generated from keel, reported back — a red gate on arrival, unknown directories the gate never sees, make targets whose effect nobody declares, and child processes that inherit every credential — plus the command that checks any keel-generated project for all of them. One slice per defect, five passes, each landed as one commit on a green `make verify`.
 id: docs-design-downstream-feedback
 created: 2026-10-06
-updated: 2026-11-03
+updated: 2026-11-04
 visibility: internal
 canonical: true
 ---
@@ -2864,6 +2864,39 @@ search on `main` at `4ccd795`, not a gate's measurement.
 | CMP-8.S3 | R-CODE-18, a boolean by position: ruff `FBT001`, `FBT002` and `FBT003` (176 findings on `main`); the keyword-only conversion lands as its own mechanical commit | done |
 | CMP-8.S4 | R-CODE-24, a cache maximum: ruff `TID251` bans `functools.cache` and `lru_cache`, and a bounded-cache helper reads its maximum from a `KEYS` row (3 caches on `main`); R-CODE-17's `ERA001` (1 finding on `main`) | done |
 
+## CMP-9 — a test shows it can fail
+
+The maintainer asked for KEEL-TESTQ-1 (queue position 12) to open once the
+CMP-8 lanes landed, on the split ruled on 2026-10-19. CMP-9 is slices 2 and 3 of
+the table in "KEEL-TESTQ-1, the test checks" below, the two that need nothing
+from pyverdex; slices 4 and 5 stay queued behind the pyverdex prerequisite.
+The cap is three passes, one per slice and a fix round, and the stop point is
+CMP-9.S2 green or the cap, whichever comes first.
+
+It is built in one lane from current `main`, the two slices in order, since
+both add `test_quality.*` rows to `scripts/config_loader.py` `KEYS`. Each
+check is a standard-library port of an existing scanner into `tests/`, written
+test-first against today's tree and rewritten to the house pattern (module
+header, the config loader, no literal threshold). The sources are the
+maintainer's assertion-quality scanner in their tooling repository and
+pyverdex's static realness classifier; neither is imported or vendored.
+
+The counts below are those two scanners run unchanged on `main` at `4f256fa`,
+not a gate's measurement. The assertion-quality scanner reads 2993 test
+functions and flags 38: 31 with no assertion, 3 tautologies, 4 swallowed
+exceptions and 1 bare `isinstance`. Of three of the 31 read by hand, two
+assert through a helper in the same module (16 of the 31 sit in
+`tests/unit/scripts/test_config_text_leaks.py`, which asserts through
+`_hides`) and one passes by not raising. All 3 tautologies compare two calls,
+a determinism check. So the port resolves a helper the test calls, and a
+comparison of two calls is not a tautology. The realness classifier tiers all 14 test functions under
+`tests/e2e/` as replacing no dependency.
+
+| Slice | Gap | Status |
+|-------|-----|--------|
+| CMP-9.S1 | A test that asserts nothing, or only a constant or a tautology, passes `make verify`: a gate test reads every test function under the configured roots and fails one with no assertion (counting `pytest.raises` and an assertion in a helper the test calls in the same module or in `tests/`), a constant or tautological assertion, or a handler that swallows the exception it tests; it is shown red on each, keel's own suite is fixed to pass it, an excuse names the test and a reason in `config/project.json`, and it ships through copier | planned |
+| CMP-9.S2 | An `e2e` test may replace the dependency it claims to drive: a gate test tiers every test function under the configured `e2e` roots (mock, fake, in-process, real or none, through its decorators, body and the fixtures it requests, autouse and `conftest.py` ones included) and fails one that mocks, naming the test and the signal; it is shown red on a `mocker` fixture, a `patch` decorator and an autouse `monkeypatch` in a `conftest.py`, and it ships through copier | planned |
+
 ## Queued after Campaign 6
 
 A queue id becomes a `CMP-<n>.S<m>` name only when an approved slice table
@@ -2884,7 +2917,7 @@ On 2026-10-22 the maintainer approved this order. Positions 1 to 9 come from the
 | 9 | KEEL-DIST-1 | No install source (PyPI, npm, the browser and scanner downloads) can be pointed at a company mirror by config, and only GitHub CI ships, with no GitLab pipeline beside it. Slice 1: config/project.json `install_sources` names the PyPI index, the npm registry and the browser download host, each null by default; a URL with a user part is refused and never shown. Slice 2: the copier question `ci_pipeline` (github, gitlab or both) picks the adapters; `ci_pipeline.steps` is the one step list, and `tests/integration/test_ci_pipeline_gate.py` holds each hand-written adapter to it, with no generator. An update that drops an adapter removes the file only when it is byte-equal to what keel last rendered, and otherwise keeps it and prints one stderr line that says why and to `git rm` it; at least one adapter, and exactly the chosen set, survives each answer. The GitLab file sets `GIT_DEPTH: "0"` for the same reason ci.yml sets `fetch-depth: 0`. Out of scope: the packaging hint without `--index-url`, and uv or pipx detection. Residual risk: keel verified no public image that carries both the Python and the Node version, so `ci_pipeline.gitlab_image` defaults to a placeholder host and the GitLab job cannot pull until an owner sets it; keel has never run the GitLab adapter on a GitLab runner; choosing gitlab over a `.gitlab-ci.yml` the project wrote leaves that file conflicted for the owner to resolve; and the parity judge holds a GitLab file, read with a YAML parser that refuses a key set twice, to exactly the top-level keys, `test` job keys and variables keel ships, but has no such check for GitHub, so a job-level `if:` or a changed `on:` in ci.yml passes it (queued as KEEL-CIGATE-1) | done |
 | 10 | KEEL-NEXT-1 | A `make` target's next step is prose: a failure's `report()` line says what to do in words, a success prints no next step, and nothing checks that a named next step exists or moves the work on. Proposed: one table maps a target and its outcome to the next target or command, the footer is printed from it, and a test walks each declared edge once from the entry targets; a costly edge is checked on paper, and a target no entry reaches is an orphan only with a reason | proposed, not scoped |
 | 11 | KEEL-LINT-1 | A rule a tool can decide is still held only by a prompt: a boolean passed by position (R-CODE-18), a cache with no maximum or one typed into code (R-CODE-24), and a narrow error caught and dropped (R-CODE-7) reach no check, and ruff's SIM105 steers a dropped error into `contextlib.suppress`, which the swallowed-error gate cannot see | done: rows 2a to 4 are CMP-8.S1 to CMP-8.S4, with the full `make verify` green on `b853dd1`; row 5 is KEEL-LINT-2 |
-| 12 | KEEL-TESTQ-1 | A green suite does not show its tests can fail: nothing measures whether a test uses the real part or a mock, whether its assertions would catch a change, or whether a failure path is tested; the measuring engine, pyverdex, lives outside keel | planned |
+| 12 | KEEL-TESTQ-1 | A green suite does not show its tests can fail: nothing measures whether a test uses the real part or a mock, whether its assertions would catch a change, or whether a failure path is tested; the measuring engine, pyverdex, lives outside keel | planned: slices 2 and 3 are CMP-9.S1 and CMP-9.S2; slices 4 and 5 wait on the pyverdex prerequisite |
 | 13 | KEEL-PKG-1 | Keel's checks reach a repository only by generating it from the template; the vault and pyverdex cannot install them on their own | planned |
 | 14 | KEEL-SHELL-1 | A generated project supports Python and TypeScript but not shell: a shell script gets no lint, format or test target, and none of the header, exit-code, environment or config rules reaches it. Slice 1 is done: one adapter runs the configured shell linter, formatter and test runner behind `make lint-sh`, `fmt-sh`, `fmt-check-sh` and `test-sh`, `make verify` runs `test-sh`, `shell.excluded_paths` keeps a vendored script out, and a project with no shell file needs `shell.no_scripts` to say why; the merged tree's full verify passed 3908 tests in 2 h 03 min. Slice 2 (the header and exit-code rules) is done: a shell script carries the header and ends through the generated helper `scripts/exit_codes.sh`, which `make exit-codes` regenerates with the table, and the held-status rule (a status a shell script hands on through `exit_passthrough` or `return` is only set by `name=$?` and read plainly) is a warning `make verify` reports, not a failure, as the maintainer chose on 2026-10-30, because it still found 5 of 12 ordinary scripts its round-4 reviewer wrote red; the merged tree's full `make verify` passed 6724 tests. Slice 3 (the child environment, config reads and the style guide) is done: a shell script's first command is scripts/child_exec.py `REEXEC_LINE`, which starts the same file again under its `#!` interpreter and scripts/child_env.py's allowlist, and check_X holds every shell script outside tests/ to it; a script prints a configured value with scripts/config_get.py, which refuses a secret row, and the config-reads gate fails a shell script that names a declared config file, judged by the tier as `config-reads-shell`; docs/guides/shell-style.md states each gate and what it cannot see, and its sample is held to every gate it names; the merged tree's full verify passed 6835 tests in 1 h 46 min. Rows 35, 38 and 71 came from it | done |
 | 15 | KEEL-ERR-1 | A narrow handler turns a broken result into an empty one: `agents/doc_reviewer/_brain.py` reads unparseable JSON as zero findings, and the swallowed-error gate sees only broad handlers (R-CODE-7); the R-CODE-7 check KEEL-LINT-1 plans fixes it | done in CMP-8.S1 |
