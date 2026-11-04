@@ -2897,6 +2897,76 @@ comparison of two calls is not a tautology. The realness classifier tiers all 14
 | CMP-9.S1 | A test that asserts nothing, or only a constant or a tautology, passes `make verify`: a gate test reads every test function under the configured roots and fails one with no assertion (counting `pytest.raises` and an assertion in a helper the test calls in the same module or in `tests/`), a constant or tautological assertion, or a handler that swallows the exception it tests; it is shown red on each, keel's own suite is fixed to pass it, an excuse names the test and a reason in `config/project.json`, and it ships through copier | planned |
 | CMP-9.S2 | An `e2e` test may replace the dependency it claims to drive: a gate test tiers every test function under the configured `e2e` roots (mock, fake, in-process, real or none, through its decorators, body and the fixtures it requests, autouse and `conftest.py` ones included) and fails one that mocks, naming the test and the signal; it is shown red on a `mocker` fixture, a `patch` decorator and an autouse `monkeypatch` in a `conftest.py`, and it ships through copier | planned |
 
+## CMP-10 — a refused config file stops every reader, and a wrong claim in a doc is caught
+
+The maintainer approved the queue order of KEEL-JSONDUP-1 (position 39) and
+KEEL-DOC-2 (position 21) on 2026-10-22. The branch `keel-doc2` built both on
+2026-10-24 from a `main` that has since moved 390 commits, including ADR K-0022
+(`scripts/config_loader.py` is the one config loader) and the swallowed-error
+gate, and a dry merge conflicts in 41 files. CMP-10 therefore rebuilds the two
+rows on `main`, test-first, with `keel-doc2` as a reference only. The cap is
+four passes, one slice each in the order S1 to S4, and a slice's review gets at
+most three fix rounds; the stop point is CMP-10.S4 green or the cap, whichever
+comes first. A slice that does not fit its pass is reported as
+done-versus-remaining and queued.
+
+The opening pass probed `main` at `25de8e2` on a copy, one run of each entry
+point per fault. A key written twice in `config/project.json` passes
+`scripts/check_structure.py` with exit 0 and `scripts/run_app.py` with exit 0.
+A conflict hunk ends `scripts/exit_code_table.py`, `scripts/run_evals.py` and
+five other readers with exit 14, where the copier jobs end it with exit 2.
+`scripts/run_app.py` ends a hunk, bad UTF-8 or an empty file with a traceback,
+and so does `scripts/jobs/declare_no_app.py` on bad UTF-8.
+`scripts/jobs/export_showcase_static.py` skips, with exit 0, a manifest it
+cannot read. No document check reads a cited check letter, and
+`scripts/jobs/review_docs.py` has no advisory for a change phrase at a thought
+opener. The session budget and the showcase-test pruning that `keel-doc2` also
+holds are already on `main`, so CMP-10 does not rebuild them. The counts are one
+probe, not a gate's measurement.
+
+| Slice | Gap | Status |
+|-------|-----|--------|
+| CMP-10.S1 | A key written twice in `config/project.json`, or a conflict hunk in it, passes `make check`: `scripts/check_structure.py` `_read_json_config` parses with `json.loads`, so the last value wins in silence. A user gets one error naming the file, the key or the hunk's line, and `make check` red; `scripts/run_app.py` reads the manifest through the loader and ends a refused one with a line, not a traceback. It starts from `tests/integration/test_check_structure_manifest_refusal.py::test_a_key_written_twice_in_the_manifest_fails_check` (exit 0 today) and `tests/unit/scripts/test_run_app.py::test_a_manifest_the_loader_refuses_ends_with_a_line_not_a_traceback`, and ships through copier, since `scripts/check_structure.py` and `scripts/run_app.py` are template files | planned |
+| CMP-10.S2 | The same refused manifest ends every other script the same way, one rule: a conflict hunk is exit 2 (the user resolves it, as in the copier jobs) and any other refusal, bad UTF-8, an empty file, `null` or a key written twice, is `CONFIG` (exit 14), never a traceback or a skip. One `is_conflict` helper in `scripts/config_loader.py` decides it, and `exit_code_table`, `run_evals` (`evals/_config.py`), `declare_no_app`, `export_showcase_static`, `long_scripts`, `trace_requirements` and `launch` use it; a launcher `render()` refusal names the edit that clears it, and `LauncherConfigError` has no default remedy; a `gate_evidence` schema file that is not UTF-8 is `CONFIG`. It starts from `tests/integration/test_conflict_entry_points.py::test_every_entry_point_that_reads_the_manifest_ends_a_conflict_hunk_at_2`, which discovers each script under `scripts/`, `scripts/jobs/`, `scripts/hooks/` and `evals/` that reads the manifest, runs it on a copy with a hunk and fails on a count of zero, and from `tests/unit/scripts/test_exit_code_table.py::test_a_conflict_hunk_exits_2`. It ships through copier, since every script it edits is a template file | planned |
+| CMP-10.S3 | A wrong claim in a shipped document passes every gate: a `check_<LETTER>` or a prose "check X" that `check_structure.CHECKS` lacks, and a `check_<name>` no Python file defines, are not read. A user gets `make verify` red naming the document and the cited check, and the guide's one sentence on which marks count as a citation is held by a test that goes red when a mark's effect is inverted. It starts from `tests/integration/test_doc_drift.py::test_a_document_citing_a_check_that_does_not_exist_fails` and `::test_the_check_name_sentence_fails_when_a_mark_effect_is_inverted`, and ships through copier where `tests/integration/test_doc_drift.py` is a template file; the opening step of S3 reads `copier.yml` to say whether it is | planned |
+| CMP-10.S4 | A change phrase at the opening of a thought (a paragraph, list item, heading, table cell or sentence that starts with a `change_comments.phrases` entry) reaches no reader. A user running `make doc-review` gets one advisory `OPENER` line per hit, in `.md.jinja` twins too, and no mode fails on it, because a past participle at an opener is as often a present claim as a report. It starts from `tests/unit/scripts/test_review_docs.py::test_a_change_phrase_at_a_sentence_opener_is_an_advisory_line` and `::test_an_opener_advisory_fails_no_mode`; the guides' own hits on `main` are fixed by hand in the same slice; it ships through copier, since `scripts/jobs/review_docs.py` is a template file | planned |
+
+CMP-10.S1 owns `scripts/check_structure.py` (`_read_json_config` and its twelve
+read sites), `scripts/run_app.py`, `scripts/config_loader.py` (the `is_conflict`
+helper, which S2 reuses) and the two `config_reads.allowed` rows for
+`scripts/check_structure.py` and `scripts/run_app.py` in `config/project.json`.
+It borrows from `keel-doc2` the commits `9d0d0b9` and `2dfeb74` for the gate's
+read and `5bbc6ab` for `run_app`, and rewrites each against `main`'s loader,
+which already refuses a duplicate key, NaN and bytes that are not UTF-8.
+`scripts/check_structure.py` runs under the oldest host interpreter, so the
+import must work there and a failed import must fail the gate, not skip it.
+
+CMP-10.S2 owns `scripts/exit_code_table.py`, `evals/_config.py`,
+`scripts/run_evals.py`, `scripts/jobs/declare_no_app.py`,
+`scripts/jobs/export_showcase_static.py`, `scripts/launch.py`,
+`scripts/long_scripts.py`, `scripts/trace_requirements.py`,
+`scripts/gate_evidence.py`, `scripts/cdmon_sync.py` and the new discovery test.
+It borrows `52b07d0`, `20d3a37`, `4a7c0f3`, `95783a3`, `ce795cb`, `d610da4`,
+`bd667f7` and `04277ea` from `keel-doc2`. It shares `scripts/config_loader.py`
+with S1, so it runs after S1. It shares `CHANGELOG.md`, `docs/reference/settings.md`
+and `docs/guides/limits-and-troubleshooting.md` (the exit-code table) with S1;
+KEEL-FRAG-1 (position 4) is still open, so the two do not run in parallel.
+
+CMP-10.S3 owns `tests/integration/test_doc_drift.py`, `docs/guides/doc-style.md`
+(the check-name sentence) and the `doc_drift` block of `config/project.json`
+and its row in `scripts/config_loader.py`. It borrows `5aaf7a5`, `cb31508`,
+`7b18150`, `a4442de` and `16f5dbf` from `keel-doc2`; the sentence is written
+again against `main`'s guide, because the guide is not the one the lane edited.
+It shares `docs/guides/doc-style.md` and `config/project.json` with S4, so S4
+runs after S3.
+
+CMP-10.S4 owns `scripts/jobs/review_docs.py`, `tests/unit/scripts/test_review_docs.py`
+and the guides' own hits. It borrows `0c31e63`, `aca6f06`, `4ab411e`, `a02ccf4`,
+`ed3a0f1`, `6e441aa`, `f27ee6f`, `e4916ef` and `118f2ef` from `keel-doc2`. It
+shares `scripts/jobs/review_docs.py` with no other slice, and `CHANGELOG.md` with
+S3. Row 47, KEEL-VOCAB-1 (a reject list over prose), overlaps S4's phrase list
+and stays queued: S4 reads the existing `change_comments.phrases` and adds no key.
+
 ## Queued after Campaign 6
 
 A queue id becomes a `CMP-<n>.S<m>` name only when an approved slice table
@@ -2926,7 +2996,7 @@ On 2026-10-22 the maintainer approved this order. Positions 1 to 9 come from the
 | 18 | KEEL-CFG-3 | Limits are typed in code: the gRPC port and worker count, the in-process runtime's step cap, agent and refactor timeouts (R-CODE-3, R-CFG-1). Done: the gRPC port and workers, the runtime's step cap and the model time limit are configured and set in every generated project, and every seconds key stops at TIMEOUT_MAX; the merged tree's full verify passed 4160 tests in 1 h 51 min | done |
 | 19 | KEEL-WARN-1 | Warnings nobody must fix fire on every run: the owner-TBD warning and the fail-open "not found" and "could not parse" warnings in `scripts/check_structure.py` (R-AGT-32). The fail-open warnings are errors on branch keel-warn, and so is the owner-TBD half, built there to the owner's choice of a configured default owner: a `kind: tool` or `agent` document whose owner is `TBD` inherits config/project.json `accountability.default_owner` (CONVENTIONS §12), read through `scripts/config_loader.py` with a null default, and with none set it is a check_F error at once, naming the document and the key, with no expiring tier; keel and every generated project set it to `platform-team`, the only role token the corpus already used (the eight tool specs), which still names no real team Done: a file the gate needs but cannot read or parse is an error, a deferred parse is judged by check-all and verify, and a TBD owner inherits `accountability.default_owner` (an error without one); the merged tree's full verify passed 4426 tests in 1 h 58 min | done |
 | 20 | KEEL-AGT-3 | Four of the five agents have no eval case and no known-good example (R-AGT-4, R-AGT-12, R-AGT-14). Done: every agent has a replayed eval case with a known-good response, every shipped case rejects a generic wrong reply and not just an empty one, and a live candidate records the model's reply, not the doer's answer; the merged tree's full verify passed 4029 tests in 2 h 04 min | done |
-| 21 | KEEL-DOC-2 | Wrong claims pass every gate (a check letter, counts with no method in `doc-style.md`), and release notes sit in shipped guides that the change-comment phrase list does not read (R-DOC-1, R-DOC-2, R-DOC-14) | planned |
+| 21 | KEEL-DOC-2 | Wrong claims pass every gate (a check letter, counts with no method in `doc-style.md`), and release notes sit in shipped guides that the change-comment phrase list does not read (R-DOC-1, R-DOC-2, R-DOC-14) | planned: CMP-10.S3 and CMP-10.S4 |
 | 22 | KEEL-SHIP-1 | Nothing fails a new file that is neither rendered to a generated project nor excluded from it with a reason: a slice can build a check keel holds itself to and leave every project without it, and only review notices Done: a template file that is neither rendered to a generated project nor excluded from it with a reason fails the shipping gate, which counts only a literal `.gitignore` line and honours a later negation; the merged tree's full verify passed 4426 tests in 1 h 58 min | done |
 | 23 | KEEL-HDR-1 | The three accepted file-header fields are not read by any check, and a call into `re` needs no stated reason; moved from CMP-6.S5 | planned |
 | 24 | KEEL-LINK-1 | The untracked `project-keel` link in keel's checkout points into another project's tree, which the personal host does not have; it gets a target or is removed | planned |
@@ -2944,7 +3014,7 @@ On 2026-10-22 the maintainer approved this order. Positions 1 to 9 come from the
 | 36 | KEEL-TYPO-1 | `@tailwindcss/typography` pins postcss-selector-parser 6.0.10, which has a moderate advisory that its range cannot leave; found by KEEL-FE-AUDIT-1; owner: the maintainer, as a fix or a KEEL-RISK-1 accepted row | planned |
 | 37 | KEEL-KATEX-1 | mermaid 11 pins katex 0.16, which has a low advisory, and the way out is mermaid 12.2.0 or later; neither dompurify nor mermaid has a runtime test, only the build and the bundle; found by KEEL-FE-AUDIT-1; owner: the maintainer | planned |
 | 38 | KEEL-GOALS-1 | The test that holds each document's list of `make verify` goals to the Makefile reads only a `+`-joined list after `make verify (` or `make verify #`, so a comma-separated list in a table row or prose escapes it; the dev-loops full-gate row went stale that way; found by the KEEL-SHELL-1 review Done: a list of verify's goals in a table row, a sentence or after a `+` is held to the Makefile at any length, and only a decided ADR is left out; the merged tree's full verify passed 4562 tests in 1 h 34 min | done |
-| 39 | KEEL-JSONDUP-1 | `scripts/check_structure.py` parses config/project.json with plain `json.loads` (`_read_json_config`), so a key written twice in one object resolves silently to its last value, where `scripts/config_loader.py` `read` refuses it; found by the KEEL-WARN-1 review | planned |
+| 39 | KEEL-JSONDUP-1 | `scripts/check_structure.py` parses config/project.json with plain `json.loads` (`_read_json_config`), so a key written twice in one object resolves silently to its last value, where `scripts/config_loader.py` `read` refuses it; found by the KEEL-WARN-1 review | planned: CMP-10.S1 and CMP-10.S2 |
 | 40 | KEEL-OWNER-2 | `scripts/jobs/build_corpus.py` records a `TBD` doc as unowned while check_F lets the same doc inherit config/project.json `accountability.default_owner`, so the corpus and the gate disagree on one tree; folds in the review's two Low findings, a written `null` owner read as an owner called "null", and a nullable key's refusal line that puts the bound on null; found by the KEEL-WARN-1 review Done: the corpus gives a TBD owner `accountability.default_owner` with owner source `default`, as check_F does, a written null is never an owner, and the wiki marks a default owner as a placeholder; the merged tree's full verify passed 4426 tests in 1 h 58 min | done |
 | 41 | KEEL-VIS-1 | Visibility resolution in `scripts/jobs/build_corpus.py` fails open: an owned child `README.md` with no `visibility` ends the walk, so it hides a confidential parent and its modules come out `internal`; the behaviour predates KEEL-OWNER-2, and only check_A's required `visibility` key keeps it off keel's tree; the decision to name is whether a node takes the most restrictive visibility on its chain; found by the KEEL-OWNER-2 review Done: a node takes the most restrictive visibility on its README chain and check A refuses a looser one through the same reader; a README that cannot be read makes the nodes below it unrankable, and a symlinked or multiply-linked file is served at its strictest chain; the reader filter is KEEL-VIS-2; the merged tree's full verify passed 5567 tests in 1 h 11 min | done |
 | 42 | KEEL-OWNER-3 | A doc or `README.md` owner outside `scripts/config_loader.py` `OWNER_GRAMMAR`, such as a quoted `"alice"`, silently becomes no owner in the corpus, and no gate names the grammar for it, because check_F judges only `kind: tool` and `kind: agent` documents; folds in two test gaps: `tests/integration/test_showcase_api.py::test_wiki_node_says_how_its_owner_was_resolved` reads the gitignored corpus, so it passes on a corpus with no `default` node, and a node with no `owner_source` field reads as `none` rather than unknown; found by the KEEL-OWNER-2 review | planned |
