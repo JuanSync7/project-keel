@@ -151,11 +151,25 @@ _HUNK = "%s ours\n{}\n%s\n{}\n%s theirs\n" % ("<" * 7, "=" * 7, ">" * 7)
     [
         (_HUNK.encode(), 2, "merge-conflict hunk at line 1"),
         (b'{"layers": {"app": null}, "layers": {}}', 14, "appears twice"),
+        (b'{"layers": {"app": null, "app": null}}', 14, "appears twice"),
         (b'{"a": "\xff"}', 14, "not UTF-8"),
+        (b"\xef\xbb\xbf{}", 14, "cannot be read as JSON"),
+        (b'{"a": NaN}', 14, "cannot be read as JSON"),
         (b"", 14, "cannot be read as JSON"),
         (b"null", 14, "top level"),
+        (b"[]", 14, "top level"),
     ],
-    ids=["hunk", "key-twice", "not-utf8", "empty", "null"],
+    ids=[
+        "hunk",
+        "key-twice",
+        "nested-key-twice",
+        "not-utf8",
+        "bom",
+        "nan",
+        "empty",
+        "null",
+        "array",
+    ],
 )
 def test_a_manifest_the_loader_refuses_ends_with_a_line_not_a_traceback(
     project, capsys, body, code, says

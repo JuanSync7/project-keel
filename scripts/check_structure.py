@@ -401,12 +401,13 @@ def walk(root):
 # keyed on it stops gating while the run still exits 0 (the silent-green gate).
 # These two helpers make that split once, so no caller has to catch blind.
 
-_CONFIG_READ = {}  # relpath -> parsed JSON or _NO_DATA (parsed once)
+_CONFIG_READ = {}  # relpath -> parsed JSON, _NO_DATA or _REFUSED (read once)
 _READ_REPORTED = set()  # absolute paths already reported unreadable (report once)
 
-# "The gate got no data" — distinct from the JSON literal `null`, which parses
-# fine and is a SHAPE error the caller must still get to report.
+# Absence keeps the checks' historical defaults; refusal cannot stand for an
+# empty declaration, because no conclusion about that declaration is provable.
 _NO_DATA = object()
+_REFUSED = object()
 
 # The ways a file on disk can fail to become the thing the gate needs. Named so
 # every reader states the SAME closed set: anything outside it is a bug in the
@@ -423,6 +424,10 @@ def _read_text(path, report):
     warn for one whose loss only costs an advisory). Reported at most once per
     path — several checks read the same registry.
     """
+    path = os.path.abspath(path)
+    relpath = rel(path)
+    if relpath in JSON_CONFIGS and _read_json_config(relpath) is _REFUSED:
+        return None
     if not os.path.isfile(path):
         return None
     try:
@@ -436,7 +441,7 @@ def _read_text(path, report):
 
 
 def _read_json_config(relpath):
-    """A JSON config under ROOT as parsed data, else _NO_DATA.
+    """A JSON config under ROOT as data, _NO_DATA if absent, _REFUSED if broken.
 
     An absent file is no data and no finding (the checks that need it say so).
     A file the gate can see but cannot use, which is the case that silently
@@ -444,17 +449,20 @@ def _read_json_config(relpath):
     one reader every script shares, so a key written twice, a merge-conflict
     hunk, bytes that are not UTF-8 and a top level that is not an object are
     each one finding that names the file. Memoised per path so one broken
-    registry yields one error, not one per consumer. Returns _NO_DATA (not
-    None) when there is nothing to hand back, so a caller tells a refused file
-    from a JSON literal `null`, which the loader refuses too.
+    registry yields one error, not one per consumer. A refused file never
+    supplies an empty declaration or the defaults used for an absent one.
     """
+    path = os.path.abspath(os.path.join(ROOT, relpath))
+    relpath = rel(path)
     if relpath in _CONFIG_READ:
         return _CONFIG_READ[relpath]
     data = _NO_DATA
-    if os.path.isfile(os.path.join(ROOT, relpath)):
+    if os.path.isfile(path):
         try:
             data = config_loader.read(ROOT, relpath)
         except config_loader.ConfigError as e:
+            data = _REFUSED
+            _READ_REPORTED.add(path)
             for line in e.lines:
                 err(line)
     _CONFIG_READ[relpath] = data
@@ -471,8 +479,11 @@ _FLOOR_OPERATORS = (">=", "~=", "==")
 
 def _declared_python_floor():
     """(major, minor) from config/project.json layers.backend.python's lower
-    bound (`>=`, `~=`, `==` or a bare version), or None when none can be read."""
+    bound (`>=`, `~=`, `==` or a bare version), None when none is declared,
+    or _REFUSED when a config fault prevents deciding the floor."""
     proj = _read_json_config(os.path.join("config", "project.json"))
+    if proj is _REFUSED:
+        return _REFUSED
     layers = proj.get("layers") if isinstance(proj, dict) else None
     backend = layers.get("backend") if isinstance(layers, dict) else None
     spec = backend.get("python") if isinstance(backend, dict) else None
@@ -511,6 +522,8 @@ def _parse_python(full):
         return text, ast.parse(text, filename=full)
     except SyntaxError as e:
         floor = _declared_python_floor()
+        if floor is _REFUSED:
+            return None
         if floor is not None and sys.version_info[:2] < floor:
             _PARSE_DEFERRED.add(rel(full).replace(os.sep, "/"))
             return None
@@ -540,6 +553,8 @@ def _parse_deferral_note():
         return None
     names = sorted(_PARSE_DEFERRED)
     proj = _read_json_config(os.path.join("config", "project.json"))
+    if proj is _REFUSED:
+        return None
     spec = proj["layers"]["backend"]["python"]
     return (
         "%d Python file(s) were not judged: Python %d.%d cannot parse them, and "
@@ -786,11 +801,13 @@ def _declared_toplevel():
     manifest, and a project that has not run `copier update` yet has no key.
     Every entry the rule would never consult is an ERROR rather than a skip, so
     a declaration cannot sit in the manifest looking like it does something.
-    A malformed manifest declares nothing, so it can never turn the gate green.
+    A refused manifest returns _REFUSED: the declarations cannot be judged.
     """
     manifest = _read_json_config(os.path.join("config", "project.json"))
+    if manifest is _REFUSED:
+        return _REFUSED
     if not isinstance(manifest, dict):
-        return []  # absent is silent; unreadable/non-object is reported elsewhere
+        return []  # absent is silent
     structure = _expect(manifest.get("structure"), dict, "structure", {})
     names = _expect(
         structure.get("extra_toplevel"), list, "structure.extra_toplevel", []
@@ -907,10 +924,21 @@ def check_B():
             err("required top-level dir '%s/' is missing" % d)
     global _PROJECT_CHECKS
     declared = _declared_toplevel()
-    _PROJECT_CHECKS = _project_checks_dir(declared)
+    _PROJECT_CHECKS = None
     for d in TAXONOMY:
         if os.path.isdir(os.path.join(ROOT, d)):
             _require_labels(d)
+    # Agent and shared-tool labels do not depend on manifest declarations.
+    for name in _subdirs("agents"):
+        if not name.startswith("."):
+            _require_labels(
+                os.path.join("agents", name),
+                " (every directory directly under agents/ is labelled, "
+                "CONVENTIONS sections 10 and 13)",
+            )
+    if declared is _REFUSED:
+        return
+    _PROJECT_CHECKS = _project_checks_dir(declared)
     for d in declared:
         if not os.path.isdir(os.path.join(ROOT, d)):
             err(
@@ -953,16 +981,6 @@ def check_B():
             "config/project.json structure.extra_toplevel and give it a README.md "
             "and CLAUDE.md" % name
         )
-    # Every immediate subdirectory of agents/ is held, not only agents/<name>/:
-    # the shared agents/tools/ (section 10) is a sibling of the agents (section
-    # 13), so the message names the position rather than calling it an agent.
-    for name in _subdirs("agents"):
-        if not name.startswith("."):
-            _require_labels(
-                os.path.join("agents", name),
-                " (every directory directly under agents/ is labelled, "
-                "CONVENTIONS sections 10 and 13)",
-            )
 
 
 def check_C():
@@ -1320,9 +1338,11 @@ def _default_owner(manifest):
 
     Resolved through scripts/config_loader.py, whose KEYS row gives the type,
     the owner-token bound and the null default, so an absent key is None, "no
-    default". A refused value is one error per loader line and None. An
-    unreadable manifest (_NO_DATA) or a top level that is not an object gives
-    None and no error here: the read, or check_H, already reports it."""
+    default". A refused value is one error per loader line and None. A
+    refused manifest gives _REFUSED and no error here: the read reports it,
+    and inheritance cannot be judged until it is readable."""
+    if manifest is _REFUSED:
+        return _REFUSED, []
     if not isinstance(manifest, dict):
         return None, []
     # The loader writes its lines to a stream; run_checks prints nothing, and
@@ -1386,6 +1406,8 @@ def _owner_rollup(governed, default, *, refused=False):
                 "null, so it names no owner -- write the real owner, or `TBD` "
                 "to inherit %s (CONVENTIONS §12)" % (path, kind, owner, _DEFAULT_OWNER)
             )
+        elif default is _REFUSED:
+            continue  # Inheritance needs the manifest; explicit owners do not.
         elif _effective_owner(owner, default) is None and refused:
             errs.append(
                 "accountability: %s (%s) has owner '%s' and config/project.json "
@@ -1600,7 +1622,7 @@ def check_H():
         )
         return
     manifest = _read_json_config(os.path.join("config", "project.json"))
-    if manifest is _NO_DATA:
+    if manifest is _REFUSED:
         return  # _read_json_config already reported it
     if not isinstance(manifest, dict):  # incl. a literal `null` — a shape error
         err("config/project.json: top level must be a JSON object")
@@ -1893,8 +1915,11 @@ def _local_top_names():
 
 def _stdlib_exc_modules():
     """Declared stdlib modules whose exceptions may be raised unwrapped
-    (config/practices.json tokens.stdlib_exception_modules), else the fallback."""
+    (config/practices.json tokens.stdlib_exception_modules), else the fallback;
+    None when the registry is refused, so no exception boundary is judged."""
     data = _read_json_config(os.path.join("config", "practices.json"))
+    if data is _REFUSED:
+        return None
     tokens = data.get("tokens") if isinstance(data, dict) else None
     if isinstance(tokens, dict):
         mods = tokens.get("stdlib_exception_modules")
@@ -1964,6 +1989,8 @@ def check_J():
     check_practices.py; this GATE fires only on the provable case."""
     local_tops = _local_top_names()
     stdlib_mods = _stdlib_exc_modules()
+    if stdlib_mods is None:
+        return
     for croot in J_ROOTS:
         base = os.path.join(ROOT, croot)
         if not os.path.isdir(base):
@@ -1992,10 +2019,12 @@ def check_J():
 
 
 def _load_practices():
-    """config/practices.json as a dict, else {} — absent degrades to silence, a
-    present-but-unreadable registry is reported (it disables check_K/L/M).
+    """config/practices.json as a dict, {} if absent, None if refused.
+    A refused registry is reported once; dependent checks cannot judge it.
     Read BY PATH, never imported (it is DATA — CONVENTIONS section 18)."""
     data = _read_json_config(os.path.join("config", "practices.json"))
+    if data is _REFUSED:
+        return None
     return data if isinstance(data, dict) else {}
 
 
@@ -2005,6 +2034,8 @@ def _profiles_on():
     An unreadable manifest is reported by _read_json_config, never swallowed:
     it would otherwise silently return check_L before it does any work."""
     proj = _read_json_config(os.path.join("config", "project.json"))
+    if proj is _REFUSED:
+        return None
     practices = proj.get("practices") if isinstance(proj, dict) else None
     prof = practices.get("profiles") if isinstance(practices, dict) else None
     if not isinstance(prof, dict):
@@ -2207,6 +2238,8 @@ def check_K():
     A construct the recognizer can't prove (a frozen base class, a functional
     namedtuple) is waived with `# practice-ok: <reason>`."""
     practices = _load_practices()
+    if practices is None:
+        return
     marker = (practices.get("tokens") or {}).get("config_marker")
     if not isinstance(marker, str) or not marker:
         return  # no declared marker -> nothing to gate
@@ -2330,9 +2363,12 @@ def check_L():
     parameter annotated with a bare tensor base type (tokens.tensor_base_types)
     and no shape comment WARNs. Never errs: a token like `Array` may name a local
     non-tensor class, so this is an advisory heuristic, off by default."""
-    if "cuda" not in _profiles_on():
+    profiles = _profiles_on()
+    if profiles is None or "cuda" not in profiles:
         return
     practices = _load_practices()
+    if practices is None:
+        return
     bt = (practices.get("tokens") or {}).get("tensor_base_types")
     base_types = set(bt) if isinstance(bt, list) and bt else set()
     if not base_types:  # no declared tokens -> silence (no fallback)
@@ -2861,11 +2897,12 @@ def _is_templated(line):
     return "{{" in line or "{%" in line
 
 
-def _twin_parity_findings(files, declared):
+def _twin_parity_findings(files, declared, *, unreadable=()):
     """Errors proving keel's `*.jinja` twins have not silently drifted.
 
     `files` maps relpath -> text for the whole tree; `declared` is
-    config/project.json `template.twins` (plain path -> kind). Pure, so it is
+    config/project.json `template.twins` (plain path -> kind). `unreadable`
+    names files already reported whose pair cannot be judged. Pure, so it is
     unit-testable without a tree on disk.
 
     RENDER-FREE ON PURPOSE, and this bounds what it can claim. check_structure.py
@@ -2897,6 +2934,8 @@ def _twin_parity_findings(files, declared):
     for twin in twins:
         plain = twin[: -len(_TWIN_SUFFIX)]
         seen.add(plain)
+        if plain in unreadable or twin in unreadable:
+            continue
         kind = declared.get(plain)
         if kind is None:
             out.append(
@@ -2949,7 +2988,12 @@ def _twin_parity_findings(files, declared):
             for ln in stale[:5]
         )
     for plain in sorted(declared):
-        if str(plain).startswith("_") or plain in seen:
+        if (
+            str(plain).startswith("_")
+            or plain in seen
+            or plain in unreadable
+            or plain + _TWIN_SUFFIX in unreadable
+        ):
             continue
         out.append(
             "config/project.json template.twins declares '%s' but no '%s%s' "
@@ -2965,7 +3009,10 @@ def check_N():
     twins). Waivable with `# practice-ok`? No: a twin has no line to hang a
     pragma on that copier would not then render."""
     declared = _declared_twins()
+    if declared is None:
+        return
     files = {}
+    unreadable = set()
     for dirpath, dirnames, filenames in walk(ROOT):
         del dirnames
         for name in filenames:
@@ -2978,13 +3025,18 @@ def check_N():
             text = _read_text(full, err)
             if text is not None:
                 files[relp] = text
-    for m in _twin_parity_findings(files, declared):
+            elif os.path.abspath(full) in _READ_REPORTED:
+                unreadable.add(relp)
+    for m in _twin_parity_findings(files, declared, unreadable=unreadable):
         err(m)
 
 
 def _declared_twins():
-    """config/project.json `template.twins` (plain path -> kind), `_`-keys dropped."""
+    """config/project.json `template.twins` (plain path -> kind), `_`-keys dropped;
+    None when the manifest is refused, so twin declarations cannot be judged."""
     manifest = _read_json_config(os.path.join("config", "project.json"))
+    if manifest is _REFUSED:
+        return None
     template = manifest.get("template") if isinstance(manifest, dict) else None
     twins = template.get("twins") if isinstance(template, dict) else None
     if not isinstance(twins, dict):
@@ -3002,6 +3054,8 @@ def check_M():
     ERRs too, because that is this gate going dark on a file that is right
     there. Waivable with `# practice-ok`."""
     practices = _load_practices()
+    if practices is None:
+        return
     if not isinstance(practices.get("rulesets"), dict):
         return
     path = os.path.join(ROOT, "pyproject.toml")
@@ -3133,9 +3187,9 @@ def _shell_files(roots):
     gives the loader's defaults; a refused shell block is errs and no files,
     never a fall back to the defaults."""
     manifest = _read_json_config(os.path.join("config", "project.json"))
+    if manifest is _REFUSED:
+        return {}, []
     if not isinstance(manifest, dict):
-        # Absent: the defaults hold. Unreadable or not an object: the read,
-        # or check_H, already reports it.
         manifest = {}
     try:
         cfg = shell_gate.settings(ROOT, loaded=manifest, stream=io.StringIO())
@@ -3155,10 +3209,17 @@ def _shell_files(roots):
                     continue
                 if shell_gate.excluded_by(relpath, excluded) is not None:
                     continue
+                # Classification reads a shebang even on JSON files. The
+                # loader owns any refusal, whichever check reaches it first.
+                if relpath in JSON_CONFIGS and _read_json_config(relpath) is _REFUSED:
+                    continue
                 try:
                     judged_as = shell_gate.kind(relpath, full, cfg)
                 except UNREADABLE as e:
-                    errs.append("%s: unreadable (%s)" % (relpath, e))
+                    full = os.path.abspath(full)
+                    if full not in _READ_REPORTED:
+                        _READ_REPORTED.add(full)
+                        errs.append("%s: unreadable (%s)" % (relpath, e))
                     continue
                 if judged_as is not None:
                     found[relpath] = judged_as
@@ -4177,10 +4238,13 @@ def _declared_rosters():
     absent manifest, block or key lists nothing, so every headed README errors
     as unlisted: the check fails closed rather than going quiet. The block sits
     apart from `structure`, so copier update brings it without meeting a
-    project's own `structure.extra_toplevel` edit."""
+    project's own `structure.extra_toplevel` edit. A refused manifest returns
+    None because the registry cannot be judged."""
     manifest = _read_json_config(os.path.join("config", "project.json"))
+    if manifest is _REFUSED:
+        return None
     if not isinstance(manifest, dict):
-        return []  # unreadable/non-object is reported by the reader
+        return []  # absent is silent here; headed READMEs still need listing
     block = _expect(manifest.get("rosters"), dict, "rosters", {})
     return _expect(block.get("readmes"), list, "rosters.readmes", [])
 
@@ -4204,8 +4268,11 @@ def check_S():
         )
         for m in _roster_findings(rel(full), text, members):
             err(m)
+    declared = _declared_rosters()
+    if declared is None:
+        return
     for m in _roster_registry_findings(
-        _declared_rosters(),
+        declared,
         headed,
         lambda p: os.path.isfile(os.path.join(ROOT, p)),
     ):
@@ -4258,7 +4325,9 @@ def _mechanism_reason(ref, check_letters, tree, make_targets, sections_of):
             return "claims doc '%s', which does not exist" % _shown(path)
         if section:
             present = sections_of(path)
-            if present is None or int(section) not in present:
+            if present is None:
+                return None  # A failed read cannot prove a section is absent.
+            if int(section) not in present:
                 return "claims %s §%s, and that document has no numbered section %s" % (
                     _shown(path),
                     _shown(section),
@@ -6058,9 +6127,9 @@ def check_W():
     if not os.path.isfile(os.path.join(ROOT, "Makefile")):
         return
     manifest = _read_json_config("config/project.json")
+    if manifest is _REFUSED:
+        return
     if manifest is _NO_DATA:
-        if os.path.isfile(os.path.join(ROOT, "config", "project.json")):
-            return  # unreadable: _read_json_config reported it, once
         manifest = None
     policy, perrs = make_targets_policy(manifest)
     for m in perrs:
@@ -6792,11 +6861,10 @@ def check_X():
         if text is not None:
             findings.extend(reexec_findings(text, path))
     manifest = _read_json_config("config/project.json")
-    if manifest is _NO_DATA:
-        if os.path.isfile(os.path.join(ROOT, "config", "project.json")):
-            manifest = None  # unreadable: _read_json_config reported it, once
-        else:
-            manifest = {}
+    if manifest is _REFUSED:
+        manifest = None
+    elif manifest is _NO_DATA:
+        manifest = {}
     has_block = isinstance(manifest, dict) and "child_env" in manifest
     if manifest is not None and (spawns or has_block):
         _, perrs = child_env.child_env_policy(manifest)
@@ -7045,9 +7113,9 @@ def check_Y():
     copy of a template ADR the project edited shares its id with the template's
     file, and check_A's duplicate-id error already names both."""
     manifest = _read_json_config(os.path.join("config", "project.json"))
+    if manifest is _REFUSED:
+        return
     if manifest is _NO_DATA:
-        if os.path.isfile(os.path.join(ROOT, "config", "project.json")):
-            return  # unreadable: _read_json_config reported it, once
         manifest = {}
     documents = adr_documents()
     if isinstance(manifest, dict) and _ADR_BLOCK not in manifest and not documents:
@@ -7699,9 +7767,9 @@ def check_Z():
     unreadable manifest is reported once, by the reader. Commit trailers are
     tests/integration/test_work_trailers.py's to judge (ADR-K-0009)."""
     manifest = _read_json_config(os.path.join("config", "project.json"))
+    if manifest is _REFUSED:
+        return
     if manifest is _NO_DATA:
-        if os.path.isfile(os.path.join(ROOT, "config", "project.json")):
-            return  # unreadable: _read_json_config reported it, once
         manifest = {}
     texts = _markdown_texts(ROOT)
     if isinstance(manifest, dict) and _WORK_BLOCK not in manifest:

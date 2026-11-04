@@ -203,9 +203,8 @@ def test_a_declaration_the_rule_never_consults_errors(repo, value, expect):
             json.dumps({"structure": {"extra_toplevel": "parked"}}),
             "structure.extra_toplevel must be a list",
         ),
-        ("{not json", "cannot be read as JSON"),
     ],
-    ids=["structure-str", "structure-list", "names-str", "invalid-json"],
+    ids=["structure-str", "structure-list", "names-str"],
 )
 def test_a_malformed_declaration_is_an_error_and_still_fails_closed(repo, text, expect):
     """A broken manifest declares nothing, so it can never turn the gate green."""
@@ -215,6 +214,117 @@ def test_a_malformed_declaration_is_an_error_and_still_fails_closed(repo, text, 
     assert len(cs.errors) == 2, cs.errors
     assert any(e.startswith("config/project.json") and expect in e for e in cs.errors)
     assert any(e.startswith("parked/: top-level directory") for e in cs.errors)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        b'{"zz": 1, "zz": 2}',
+        b'{"a": {"zz": 1, "zz": 2}}',
+        b"{not json",
+        b'{"a": "\xff"}',
+        b"\xef\xbb\xbf{}",
+        b'{"a": NaN}',
+        b"null",
+        b"[]",
+        b"",
+        ("<" * 7 + " ours\n{}\n" + "=" * 7 + "\n{}\n" + ">" * 7 + " theirs\n").encode(),
+    ],
+    ids=[
+        "top-duplicate",
+        "nested-duplicate",
+        "syntax",
+        "utf8",
+        "bom",
+        "nan",
+        "null",
+        "array",
+        "empty",
+        "hunk",
+    ],
+)
+def test_a_refused_manifest_does_not_declare_an_extra_directory_absent(repo, body):
+    _label(repo / "parked")
+    (repo / "config" / "project.json").write_bytes(body)
+    cs.check_B()
+    assert len(cs.errors) == 1, cs.errors
+    assert cs.errors[0].startswith("config/project.json"), cs.errors
+
+
+def test_a_refused_manifest_still_checks_unconditional_labels(repo):
+    (repo / "config" / "project.json").write_bytes(b"null")
+    (repo / "src" / "CLAUDE.md").unlink()
+    cs.check_B()
+    assert len(cs.errors) == 2, cs.errors
+    assert "src/: missing CLAUDE.md" in cs.errors
+
+
+@pytest.mark.parametrize("check", [cs.check_O, cs.check_X])
+def test_a_refused_manifest_does_not_apply_shell_defaults(repo, check):
+    _label(repo / "scripts")
+    (repo / "scripts" / "runner").write_text("#!/bin/sh\necho ok\n", encoding="utf-8")
+    (repo / "config" / "project.json").write_bytes(b"null")
+    check()
+    assert len(cs.errors) == 1, cs.errors
+    assert cs.errors[0].startswith("config/project.json"), cs.errors
+
+
+@pytest.mark.parametrize("refused", [False, True])
+def test_exception_allowlist_distinguishes_absent_from_refused(repo, refused):
+    (repo / "src" / "vendor.py").write_text(
+        "import fractions\nraise fractions.CustomFault()\n", encoding="utf-8"
+    )
+    if refused:
+        (repo / "config" / "practices.json").write_bytes(b"null")
+    cs.check_J()
+    assert len(cs.errors) == 1, cs.errors
+    assert ("config/practices.json" if refused else "third-party") in cs.errors[0]
+
+
+@pytest.mark.parametrize("refused", [False, True])
+def test_python_syntax_judgment_needs_a_readable_declared_floor(repo, refused):
+    (repo / "src" / "bad.py").write_text("def\n", encoding="utf-8")
+    if refused:
+        (repo / "config" / "project.json").write_bytes(b"null")
+    cs.check_J()
+    assert len(cs.errors) == 1, cs.errors
+    assert ("config/project.json" if refused else "cannot be parsed") in cs.errors[0]
+
+
+def test_a_refused_registry_with_a_twin_is_not_a_missing_plain_file(repo):
+    _manifest(repo, {"template": {"twins": {"config/practices.json": "parity"}}})
+    (repo / "config" / "practices.json").write_bytes(b"null")
+    (repo / "config" / "practices.json.jinja").write_text("{}\n", encoding="utf-8")
+    cs.check_N()
+    assert len(cs.errors) == 1, cs.errors
+    assert cs.errors[0].startswith("config/practices.json"), cs.errors
+
+
+@pytest.mark.parametrize("check", [cs.check_T, cs.check_V])
+def test_a_section_reference_cannot_judge_a_refused_config(repo, check):
+    section = "\u00a71"
+    if check is cs.check_T:
+        (repo / "config" / "project.json").write_bytes(b"null")
+        registry = {
+            "practices": [
+                {"id": "p", "enforced_by": ["doc:config/project.json " + section]}
+            ]
+        }
+        (repo / "config" / "practices.json").write_text(
+            json.dumps(registry), encoding="utf-8"
+        )
+    else:
+        _manifest(repo, {})
+        (repo / "config" / "practices.json").write_bytes(b"null")
+        (repo / "src" / "writer.py").write_text(
+            '"""\neffect: writes\nrerun: fixed-point\n'
+            "rerun_proof: doc:config/practices.json " + section + '\n"""\n'
+            "import os\nos.remove('x')\n",
+            encoding="utf-8",
+        )
+    check()
+    assert len(cs.errors) == 1, cs.errors
+    assert "top level" in cs.errors[0], cs.errors
 
 
 def test_hidden_ignored_and_non_directory_entries_are_out_of_scope(repo):

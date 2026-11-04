@@ -1074,8 +1074,10 @@ under `config_reads.roots` that `config_reads.allowed` does not excuse with a
 reason; that map only shrinks, and a module it lists still exits 2 on a config
 fault until it moves onto the loader. A shell script under those roots that
 names config/project.json or config/practices.json in its code is red too;
-it prints a value with `scripts/config_get.py KEY` instead. `scripts/check_structure.py` is one of
-them, so `check_H` and its siblings still parse the manifest themselves.
+it prints a value with `scripts/config_get.py KEY` instead.
+`scripts/check_structure.py` reads both config files through the loader's `read`,
+memoizes a refusal as one finding per path, and skips conclusions in `check_H`
+and its siblings that need the refused data.
 `docs/adr/keel/K-0022-one-config-loader.md` is the accepted decision.
 
 Why JSON here, and why this and not prose: a manifest is read by **code** (a

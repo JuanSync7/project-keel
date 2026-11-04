@@ -155,8 +155,9 @@ def test_an_unreadable_file_is_reported_by_every_run(tmp_path):
         second = cs.run_checks(str(root))
     finally:
         manifest.chmod(0o644)
-    unreadable = [m for _l, t, m in first if t == "error" and "unreadable" in m]
-    assert unreadable and "config/project.json" in unreadable[0], first
+    unreadable = [m for _l, t, m in first if t == "error"]
+    assert len(unreadable) == 1, first
+    assert unreadable[0].startswith("config/project.json cannot be read ("), first
     assert second == first
 
 

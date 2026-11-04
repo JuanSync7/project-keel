@@ -72,9 +72,10 @@ def _read_failure(findings, name):
     "payload", [BAD_JSON, BAD_BYTES], ids=["bad-json", "bad-bytes"]
 )
 def test_unreadable_practices_json_is_reported(repo, payload):
-    """A malformed practices.json turns check_K/L/M off; that must not be silent."""
+    """A malformed practices.json turns check_K/L/M off; that must not be silent,
+    and the refused registry is never read as an empty one."""
     _write(repo / "config" / "practices.json", payload)
-    assert cs._load_practices() == {}  # still degrades, so no traceback
+    assert cs._load_practices() is None
     assert _mentions(cs.errors, "config/practices.json"), cs.errors
 
 
@@ -85,7 +86,7 @@ def test_unreadable_project_json_is_reported_by_profiles_on(repo, payload):
     """_profiles_on() gates check_L; an unreadable manifest must not disable it
     silently, and check_H already errs on this same file (one file, one voice)."""
     _write(repo / "config" / "project.json", payload)
-    assert cs._profiles_on() == set()
+    assert cs._profiles_on() is None
     assert _mentions(cs.errors, "config/project.json"), cs.errors
 
 
@@ -175,7 +176,9 @@ def test_a_json_null_manifest_is_still_a_shape_error_not_a_read_error(repo):
     read — the two degrade paths must not collapse back into each other."""
     _write(repo / "config" / "project.json", "null")
     cs.check_H()
-    assert _mentions(cs.errors, "top level must be a JSON object"), cs.errors
+    assert cs.errors == [
+        "config/project.json holds a JSON null at the top level; it must be an object"
+    ]
 
 
 def test_valid_registries_produce_no_read_findings(repo):

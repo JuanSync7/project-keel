@@ -1458,12 +1458,27 @@ _HUNK = "%s ours\n{}\n%s\n{}\n%s theirs\n" % ("<" * 7, "=" * 7, ">" * 7)
     [
         (_HUNK.encode(), True),
         (b'{"a": 1, "a": 2}', False),
+        (b'{"a": {"b": 1, "b": 2}}', False),
         (b"", False),
         (b"null", False),
+        (b"[]", False),
+        (b"\xef\xbb\xbf{}", False),
+        (b'{"a": NaN}', False),
         (b'{"a": "\xff"}', False),
         (b"{}", None),
     ],
-    ids=["hunk", "key-twice", "empty", "null", "not-utf8", "readable"],
+    ids=[
+        "hunk",
+        "key-twice",
+        "nested-key-twice",
+        "empty",
+        "null",
+        "array",
+        "bom",
+        "nan",
+        "not-utf8",
+        "readable",
+    ],
 )
 def test_is_conflict_is_true_only_for_a_refusal_naming_a_hunk(
     tmp_path, body, conflicted
@@ -1476,6 +1491,8 @@ def test_is_conflict_is_true_only_for_a_refusal_naming_a_hunk(
         return
     with pytest.raises(ConfigUnreadable) as caught:
         config_loader.read(str(tmp_path))
+    assert len(caught.value.lines) == 1
+    assert CONFIG_FILE in caught.value.lines[0]
     assert config_loader.is_conflict(caught.value) is conflicted
 
 
