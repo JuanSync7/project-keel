@@ -980,6 +980,24 @@ the letters A to Z are taken; `make test` runs them.
   Each configured root must exist and yield a test file.
   Invalid policy values raise `SourceTreeError`, preserving the loader's
   diagnostic lines and key names.
+- `tests/integration/test_realness_gate.py` tiers every test function under
+  config/project.json `test_quality.realness.roots` through
+  `tests/realness.py` and fails one whose tier is `mock`, naming its file,
+  line, function and the signal that put it there.
+  A test's tier is the lowest among its signals: `mock`, `fake`,
+  `in_process`, `real`, or `unknown` when it has none.
+  A signal is a use of a name an import binds to a library
+  `tests/realness_data.py` `LIBRARIES` tiers, or of a class `NAMES` tiers.
+  Each fixture a test requests, by parameter or `@pytest.mark.usefixtures`,
+  resolves as pytest resolves it: the test's module first, then each
+  `conftest.py` from its directory up to the root, nearest wins.
+  The gate follows the fixtures a fixture requests, once round a cycle, and
+  adds every autouse fixture of that chain, because an autouse fixture
+  replaces the dependency for every test under it.
+  A plugin fixture is tiered by `PLUGIN_FIXTURES`; a control fixture such as
+  `tmp_path` or `caplog` never demotes.
+  A test that may mock is let through by a `test_quality.realness.exempt`
+  entry with its reason; an entry whose test is not `mock` is red.
 
 Each fails, never passes, on a malformed config block, a walk with no Python
 file, and a walk with nothing to judge.
@@ -999,9 +1017,13 @@ tree and runs nothing: an assertion on a branch that never executes and a
 handler that swallows inside a helper can pass. It does not follow helpers
 through fixtures or variables, or into modules outside the roots; a test whose
 only assertion is reached that way fails as having no assertion. A bare
-`isinstance` counts as an assertion.
+`isinstance` counts as an assertion. The realness gate also reads the syntax
+tree: a class-level `usefixtures`, a `pytest_plugins` module and a fixture
+defined in a class are not read, a library or fixture absent from
+`tests/realness_data.py` contributes nothing, and a test whose tier is
+`unknown` or `in_process` passes without reaching real infrastructure.
 
-**Run.** `pytest tests/integration/test_import_layers_gate.py tests/integration/test_swallowed_error_gate.py tests/integration/test_change_comment_gate.py tests/integration/test_config_reads_gate.py tests/integration/test_assertion_quality_gate.py`
+**Run.** `pytest tests/integration/test_import_layers_gate.py tests/integration/test_swallowed_error_gate.py tests/integration/test_change_comment_gate.py tests/integration/test_config_reads_gate.py tests/integration/test_assertion_quality_gate.py tests/integration/test_realness_gate.py`
 
 ---
 

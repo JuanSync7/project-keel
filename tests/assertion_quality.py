@@ -32,6 +32,7 @@ __all__ = [
     "policy",
     "scan",
     "test_files",
+    "test_functions",
     "verdict",
 ]
 
@@ -382,6 +383,15 @@ class _Module:
         owner, _sep, name = qual.rpartition("::")
         method = self.all_methods(owner).get(name) if owner in self.classes else None
         return (method, owner) if method else None
+
+
+def test_functions(
+    root: str, path: str, search_roots: List[str]
+) -> List[Tuple[str, _Function, Optional[str]]]:
+    """`(qualified name, function, class)` for each function pytest collects
+    from the file *path* under *root*, found exactly as this gate finds them;
+    *search_roots* resolve the imports that name a TestCase base."""
+    return _tests(_Module(root, path, search_roots))
 
 
 def _tests(module: _Module) -> List[Tuple[str, _Function, Optional[str]]]:

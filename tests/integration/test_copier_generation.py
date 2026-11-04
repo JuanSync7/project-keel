@@ -1494,12 +1494,12 @@ _QUALITY_GATE_TEST = "test_every_test_function_shows_it_can_fail"
 _PLANTED_TEST = "tests/unit/test_planted_quality.py"
 
 
-def _quality_gate(project):
-    """The generated project's assertion-quality gate file, run as its
+def _quality_gate(project, gate=_QUALITY_GATE):
+    """The generated project's test-quality gate file *gate*, run as its
     `make test` recipe runs pytest (PYTHONPATH=src:.)."""
     return subprocess.run(
         [sys.executable, "-m", "pytest", "-v", "-rs", "-p", "no:cacheprovider"]
-        + [_QUALITY_GATE],
+        + [gate],
         cwd=str(project),
         env=build_child_env(root=str(project), extra={"PYTHONPATH": "src:."}),
         capture_output=True,
@@ -1527,6 +1527,32 @@ def test_a_generated_project_passes_the_assertion_quality_gate(tmp_path, generat
     assert "%s:1: test_planted: no assertion" % _PLANTED_TEST in red.stdout, red.stdout[
         -6000:
     ]
+
+
+_REALNESS_GATE = "tests/integration/test_realness_gate.py"
+_REALNESS_GATE_TEST = "test_no_e2e_test_replaces_its_dependency_with_a_mock"
+_PLANTED_E2E = "tests/e2e/test_planted_mock.py"
+
+
+def test_a_generated_project_passes_the_realness_gate(tmp_path, generate):
+    """The gate, its module, its data and its config defaults ship, and the
+    generated e2e tests pass it with nothing skipped; an e2e test planted with
+    a `mocker` fixture then fails the gate naming it and the signal."""
+    dest = tmp_path / "proj"
+    generate(dest, project_name="demo_proj")
+    ran = _quality_gate(dest, _REALNESS_GATE)
+    assert ran.returncode == 0, ran.stdout[-6000:] + ran.stderr[-2000:]
+    assert "SKIPPED" not in ran.stdout, ran.stdout[-6000:]
+    assert "%s PASSED" % _REALNESS_GATE_TEST in ran.stdout, ran.stdout[-6000:]
+
+    (dest / _PLANTED_E2E).write_text(
+        "def test_planted(mocker):\n    assert mocker\n", encoding="utf-8"
+    )
+    red = _quality_gate(dest, _REALNESS_GATE)
+    assert red.returncode == 1, red.stdout[-6000:] + red.stderr[-2000:]
+    assert "%s:1: test_planted: mock: fixture:mocker" % _PLANTED_E2E in red.stdout, (
+        red.stdout[-6000:]
+    )
 
 
 _EXIT_GATE = "tests/integration/test_exit_gate.py"

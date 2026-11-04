@@ -69,6 +69,17 @@ version rather than a bare commit:
   Three keel tests assert their result, one reads its binary fixture in a
   helper, and two that pass by not raising carry a reasoned
   `test_quality.assertions.exempt` entry.
+- **An e2e test drives the dependency it claims, not a mock of it
+  (KEEL-TESTQ-1).** `tests/integration/test_realness_gate.py` tiers every
+  test function under config/project.json `test_quality.realness.roots`
+  (`tests/e2e`) through `tests/realness.py`: `mock`, `fake`, `in_process`,
+  `real`, or `unknown` when nothing is replaced. It reads the names a test
+  uses, the fixtures it requests and their own requests, and every autouse
+  fixture of its module and `conftest.py` chain, and fails a `mock` test
+  with the signal that put it there (`fixture:client->fixture:mocker`).
+  The libraries and fixtures it tiers live in `tests/realness_data.py`.
+  `test_quality.realness.exempt` excuses a test with a reason; a stale
+  excuse and a run over zero test functions are red.
 - **A cache holds at most the configured number of entries.** pyproject.toml
   bans `functools.cache` and `functools.lru_cache` through ruff `TID251`; a test
   module caches through `tests/bounded_cache.py` `bounded`, whose maximum is

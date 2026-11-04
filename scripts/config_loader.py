@@ -1521,6 +1521,25 @@ KEYS = tuple(
                 ),
             ),
             _row(
+                ("test_quality", "realness", "exempt"),
+                "object",
+                {},
+                "the tests the realness gate lets through though they replace "
+                "a dependency with a mock, each with the reason; empty: none",
+                accepts=_REASONED_TESTS,
+            ),
+            _row(
+                ("test_quality", "realness", "roots"),
+                "list_of_str",
+                ["tests/e2e"],
+                "the directories whose test functions the realness gate reads "
+                "and fails when one replaces a dependency with a mock",
+                accepts=(
+                    _relative_dirs,
+                    "a non-empty list of relative POSIX directories",
+                ),
+            ),
+            _row(
                 ("tests", "cache_max_entries"),
                 "int",
                 # The fullest cache measured holds 51 entries, one per copier.yml
