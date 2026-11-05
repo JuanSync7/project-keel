@@ -7,7 +7,6 @@ summary: The walk, the parse and the token readers every tree-wide gate test sha
 
 import ast
 import io
-import json
 import os
 import sys
 import tokenize
@@ -19,6 +18,7 @@ if _SCRIPTS not in sys.path:
     sys.path.insert(0, _SCRIPTS)
 
 import check_structure as cs  # noqa: E402
+import config_loader  # noqa: E402
 
 _PY = ".py"
 _INIT = "__init__.py"
@@ -75,12 +75,16 @@ def import_layers(root):
     {search_roots, order, may_end_the_process}. Raises SourceTreeError naming
     what is malformed, because a gate that cannot read its policy must not
     pass."""
-    path = os.path.join(str(root), CONFIG)
     try:
-        with open(path, encoding="utf-8") as fh:
-            block = json.load(fh).get(LAYERS_BLOCK)
-    except (OSError, ValueError) as exc:
-        raise SourceTreeError("%s: cannot be read (%s)" % (CONFIG, exc)) from exc
+        got = config_loader.resolve(
+            config_loader.read(str(root)),
+            config_loader.rows((LAYERS_BLOCK,), (LAYERS_BLOCK, "may_end_the_process")),
+            CONFIG,
+            environ={},
+        )
+    except config_loader.ConfigError as exc:
+        raise SourceTreeError("; ".join(exc.lines)) from exc
+    block = got[(LAYERS_BLOCK,)]
     if not isinstance(block, dict):
         raise SourceTreeError("%s: no `%s` block" % (CONFIG, LAYERS_BLOCK))
     roots = block.get("search_roots")
@@ -104,7 +108,7 @@ def import_layers(root):
             "%s: %s.order is not a non-empty list of non-empty lists of distinct "
             "path prefixes" % (CONFIG, LAYERS_BLOCK)
         )
-    enders = block.get("may_end_the_process", {})
+    enders = got[(LAYERS_BLOCK, "may_end_the_process")]
     if not isinstance(enders, dict) or not all(
         isinstance(k, str) and isinstance(v, str) and not blank(v)
         for k, v in enders.items()

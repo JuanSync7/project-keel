@@ -2,12 +2,14 @@
 title: Integration — a configured value is read only through the config loader
 kind: tests
 layer: n/a
-summary: A tree-wide gate over the Python files tests/source_tree.py `python_files` lists under config/project.json `config_reads.roots`, read from the syntax tree, scripts/config_loader.py itself left out. It fails two kinds of direct read. The first is a read of a config file scripts/config_loader.py `PROJECT_READS` declares, found by tests/source_tree.py `config_path_reads`: an `open`, `io.open` or other `.open` call, or a `.read_text`, `.read_bytes` or `.open` on a path, whose path is a string constant naming the file, a join or `Path` of constants whose last segments are its parts (a `*NAME` of a tuple of constants, or `*TEXT.split(...)` of such a string, included), a name bound to one at module level or earlier in the same function, or a path constant (a string or a join of constants) of a project module a module-level absolute import binds, read as `mod.NAME` or imported by name with `from mod import NAME` (resolved through config/project.json `import_layers.search_roots`); or a call to a function of the same module that opens the parameter it hands such a path to. The second is a read of a variable the config declares as carrying a value (scripts/config_loader.py `declared_variables`, with each KEYS row's variable), found by tests/source_tree.py `env_reads`: `environ[...]`, `environ.get/pop/setdefault(...)`, `... in environ` or `getenv(...)` with the name a literal or a module-level string constant. The third is a shell script under the same roots (scripts/shell_gate.py `kind` and `shell.excluded_paths`, the generated exit-code helper aside) whose code, its comment cut at a `#` that opens a word (at the line's start or after a blank, one of `;&|()<>` or a backquote), names a declared config file: it prints a value with scripts/config_get.py instead; a `#` inside quotes is cut too, which can hide a read but never invents one, and a path the script builds from parts is not seen. Keel's own tree holds no such script, so its tree test, rather than pass over zero files or skip, proves in a scratch copy of the first root that the rule fails a read of each declared file. Each finding is one line, `<file>:<line>: <rule> — <what to do>`. The exceptions are `config_reads.allowed`, a map from a file to the reason it still reads directly; an entry whose reason is blank, whose file is absent or outside the roots, or whose file no longer reads directly is red, and the map may hold no more entries than `_CEILING`, so it only shrinks. A walk over no root, no file, no declared file or no declared variable is a failure, never a pass. An open for writing counts too, since the loader is the one module that touches the file. It cannot see a path handed in as a parameter, an attribute of a module imported inside a function or relatively, a function of another module that opens what it is given, a method called through an object, a git cat-file blob, a variable whose name the code holds in a variable (`os.environ.get(name)` with `name` a parameter), a read through subprocess or importlib, os.environ handed on as a mapping, or a path built at run time from a value that is not a constant. It does not walk tests/, which reads config as its own policy and to build fixtures. The three finding tests hand what they see to scripts/expiring_tier.py as the checks `config-reads-file`, `config-reads-variable` and `config-reads-shell`: in the template repository, which holds copier.yml, every finding is red; in a generated project a finding its `expiring_tier.baseline` records warns until `expiring_tier.expires`, and any other is red. Not a check_* letter: the letters A to Z are taken.
+summary: A tree-wide gate over the Python files tests/source_tree.py `python_files` lists under config/project.json `config_reads.roots`, read from the syntax tree, scripts/config_loader.py itself left out. It fails three kinds of direct read. The first is a read of a config file scripts/config_loader.py `PROJECT_READS` declares, found by tests/source_tree.py `config_path_reads`: an `open`, `io.open` or other `.open` call, or a `.read_text`, `.read_bytes` or `.open` on a path, whose path is a string constant naming the file, a join or `Path` of constants whose last segments are its parts (a `*NAME` of a tuple of constants, or `*TEXT.split(...)` of such a string, included), a name bound to one at module level or earlier in the same function, or a path constant (a string or a join of constants) of a project module a module-level absolute import binds, read as `mod.NAME` or imported by name with `from mod import NAME` (resolved through config/project.json `import_layers.search_roots`); or a call to a function of the same module that opens the parameter it hands such a path to. The second is a read of a variable the config declares as carrying a value (scripts/config_loader.py `declared_variables`, with each KEYS row's variable), found by tests/source_tree.py `env_reads`: `environ[...]`, `environ.get/pop/setdefault(...)`, `... in environ` or `getenv(...)` with the name a literal or a module-level string constant. The third is a shell script under the same roots (scripts/shell_gate.py `kind` and `shell.excluded_paths`, the generated exit-code helper aside) whose code, its comment cut at a `#` that opens a word (at the line's start or after a blank, one of `;&|()<>` or a backquote), names a declared config file: it prints a value with scripts/config_get.py instead; a `#` inside quotes is cut too, which can hide a read but never invents one, and a path the script builds from parts is not seen. Keel's own tree holds no such script, so its tree test, rather than pass over zero files or skip, proves in a scratch copy of the first root that the rule fails a read of each declared file. Each finding is one line, `<file>:<line>: <rule> — <what to do>`. The exceptions are `config_reads.allowed`, a map from a file to the reason it still reads directly; an entry whose reason is blank, whose file is absent or outside the walk, or whose file no longer reads directly is red, and the map may hold no more entries than `_CEILING`, so it only shrinks. A walk over no root, no file, no declared file or no declared variable is a failure, never a pass. An open for writing counts too, since the loader is the one module that touches the file. It cannot see a path handed in as a parameter, an attribute of a module imported inside a function or relatively, a function of another module that opens what it is given, a method called through an object, a git cat-file blob, a variable whose name the code holds in a variable (`os.environ.get(name)` with `name` a parameter), a read through subprocess or importlib, os.environ handed on as a mapping, or a path built at run time from a value that is not a constant. It also walks the Python helper modules directly under config_reads.test_helpers_root (tests), except conftest.py and test_*.py; those files and nested test modules read and write config to build fixtures and are left out of the helper walk. The three finding tests hand what they see to scripts/expiring_tier.py as the checks `config-reads-file`, `config-reads-variable` and `config-reads-shell`: in the template repository, which holds copier.yml, every finding is red; in a generated project a finding its `expiring_tier.baseline` records warns until `expiring_tier.expires`, and any other is red. Not a check_* letter: the letters A to Z are taken.
 """
 
 import io
+import json
 import os
 import re
+import shutil
 import sys
 from pathlib import Path
 
@@ -27,7 +29,7 @@ import source_tree as st  # noqa: E402
 pytestmark = pytest.mark.integration
 
 _BLOCK = "config_reads"
-_POLICY_ROWS = ((_BLOCK, "allowed"), (_BLOCK, "roots"))
+_POLICY_ROWS = ((_BLOCK, "allowed"), (_BLOCK, "roots"), (_BLOCK, "test_helpers_root"))
 # The loader is the one module allowed to open a config file and read a
 # declared variable, so the walk leaves it out.
 _LOADER = "scripts/config_loader.py"
@@ -58,7 +60,7 @@ _SHELL_COMMENT = re.compile(r"(?:^|[\s;&|()<>`])#.*")
 
 
 def reads_policy(manifest, where=config_loader.CONFIG_FILE):
-    """{roots, allowed} of a parsed config/project.json, resolved through the
+    """{roots, test_helpers_root, allowed} of a parsed config/project.json, resolved through the
     loader's rows. Raises SourceTreeError naming what is missing or malformed,
     because a gate that cannot read its policy must not pass."""
     try:
@@ -68,6 +70,7 @@ def reads_policy(manifest, where=config_loader.CONFIG_FILE):
     except config_loader.ConfigError as exc:
         raise st.SourceTreeError("; ".join(exc.lines)) from exc
     roots = got[(_BLOCK, "roots")]
+    test_helpers_root = got[(_BLOCK, "test_helpers_root")]
     allowed = got[(_BLOCK, "allowed")]
     if not roots:
         raise st.SourceTreeError(
@@ -79,11 +82,19 @@ def reads_policy(manifest, where=config_loader.CONFIG_FILE):
             "%s: %s.roots holds %r; each root is a repo-relative directory with no "
             "trailing slash" % (where, _BLOCK, bad[0])
         )
+    if test_helpers_root.endswith("/"):
+        raise st.SourceTreeError(
+            "%s: %s.test_helpers_root must have no trailing slash" % (where, _BLOCK)
+        )
     if not all(isinstance(v, str) for v in allowed.values()):
         raise st.SourceTreeError(
             "%s: %s.allowed maps each file to a reason string" % (where, _BLOCK)
         )
-    return {"roots": list(roots), "allowed": dict(allowed)}
+    return {
+        "roots": list(roots),
+        "test_helpers_root": test_helpers_root,
+        "allowed": dict(allowed),
+    }
 
 
 def declared_variables(manifest, where=config_loader.CONFIG_FILE):
@@ -98,20 +109,38 @@ def _under(relpath, roots):
     return any(relpath == r or relpath.startswith(r + "/") for r in roots)
 
 
-def direct_reads(root, roots, paths, variables, search_roots):
+def _test_helper(relpath, test_helpers_root):
+    parent, _, name = relpath.rpartition("/")
+    return (
+        parent == test_helpers_root
+        and name.endswith(".py")
+        and name != "conftest.py"
+        and not name.startswith("test_")
+    )
+
+
+def direct_reads(
+    root, roots, paths, variables, search_roots, *, test_helpers_root=None
+):
     """{files, findings}: *files* the walked files, *findings* {file: [line]}
     for each direct read of a declared config file in *paths* or of a variable
     in *variables*, in line order; *search_roots* (config/project.json
     `import_layers.search_roots`) resolve the project modules whose string
     constants a path may name. Raises SourceTreeError for a walk over no root,
-    no file, no declared file or no declared variable."""
+    no file, no declared file or no declared variable. Also judges the Python
+    helpers directly under *test_helpers_root*, except conftest.py and test_*.py,
+    whose config reads and writes build fixtures."""
     if not roots:
         raise st.SourceTreeError("%s: no code root to walk -- zero items" % root)
     if not paths:
         raise st.SourceTreeError("%s: no declared config file -- zero items" % root)
     if not variables:
         raise st.SourceTreeError("%s: no declared variable -- zero items" % root)
-    files = [f for f in st.python_files(root) if _under(f, roots) and f != _LOADER]
+    files = [
+        f
+        for f in st.python_files(root)
+        if (_under(f, roots) or _test_helper(f, test_helpers_root)) and f != _LOADER
+    ]
     if not files:
         raise st.SourceTreeError(
             "%s: no Python file under %s -- zero items" % (root, ", ".join(roots))
@@ -192,7 +221,7 @@ def shell_reads(root, relpath, paths):
     return found
 
 
-def allowlist_findings(root, roots, allowed, findings):
+def allowlist_findings(root, roots, allowed, findings, *, test_helpers_root=None):
     """One line per `config_reads.allowed` entry that is not a live exception:
     a blank reason, a file that is absent or outside *roots*, or a file that
     makes no direct read in *findings*."""
@@ -203,9 +232,10 @@ def allowlist_findings(root, roots, allowed, findings):
             out.append("%s: gives no reason; say why it still reads directly" % where)
         if not (Path(root) / relpath).is_file():
             out.append("%s: no such file; delete the entry" % where)
-        elif not _under(relpath, roots):
+        elif not (_under(relpath, roots) or _test_helper(relpath, test_helpers_root)):
             out.append(
-                "%s: is outside config_reads.roots, so the gate never walks it; "
+                "%s: is outside config_reads.roots and the direct helpers in "
+                "config_reads.test_helpers_root, so the gate never walks it; "
                 "delete the entry" % where
             )
         elif relpath not in findings:
@@ -231,6 +261,7 @@ def _tree():
             config_loader.PROJECT_READS,
             declared_variables(manifest),
             st.import_layers(_ROOT)["search_roots"],
+            test_helpers_root=policy["test_helpers_root"],
         )
         _RESULT.update(policy=policy, **result)
     return _RESULT
@@ -284,7 +315,11 @@ def test_no_shell_script_names_a_config_file_outside_the_loader(tmp_path):
 def test_every_allowlist_entry_is_a_live_exception_with_a_reason():
     tree = _tree()
     found = allowlist_findings(
-        _ROOT, tree["policy"]["roots"], tree["policy"]["allowed"], tree["findings"]
+        _ROOT,
+        tree["policy"]["roots"],
+        tree["policy"]["allowed"],
+        tree["findings"],
+        test_helpers_root=tree["policy"]["test_helpers_root"],
     )
     assert not found, "\n".join(found)
 
@@ -337,6 +372,58 @@ def _findings(tmp_path, text):
     variables = [_MCP_MODEL, _run_date_variable()]
     result = direct_reads(_project(tmp_path, text), ["src"], _PATHS, variables, _SEARCH)
     return [line for lines in result["findings"].values() for line in lines]
+
+
+@pytest.mark.parametrize(
+    "name, red",
+    [
+        ("policy_helper.py", True),
+        ("test_policy.py", False),
+        ("conftest.py", False),
+        ("nested/policy_helper.py", False),
+    ],
+)
+def test_only_direct_test_helpers_are_walked(tmp_path, monkeypatch, name, red):
+    root = _project(tmp_path, "x = 1\n")
+    (root / "config").mkdir()
+    shutil.copyfile(_ROOT / "config" / "project.json", root / "config" / "project.json")
+    relpath = "tests/" + name
+    helper = root / relpath
+    helper.parent.mkdir(parents=True, exist_ok=True)
+    helper.write_text("open('config/project.json')\n", encoding="utf-8")
+    monkeypatch.setattr(sys.modules[__name__], "_ROOT", root)
+    monkeypatch.setattr(sys.modules[__name__], "_RESULT", {})
+    tree = _tree()
+    assert (relpath in tree["findings"]) is red, tree["findings"]
+    if red:
+        assert "opens config/project.json directly" in tree["findings"][relpath][0]
+
+
+def test_the_helper_directory_comes_from_policy(tmp_path, monkeypatch):
+    root = _project(tmp_path, "x = 1\n")
+    manifest = config_loader.read(str(_ROOT))
+    manifest[_BLOCK]["test_helpers_root"] = "test_support"
+    (root / "config").mkdir()
+    (root / "config" / "project.json").write_text(
+        json.dumps(manifest), encoding="utf-8"
+    )
+    for directory in ("tests", "test_support"):
+        helper = root / directory / "helper.py"
+        helper.parent.mkdir()
+        helper.write_text("open('config/project.json')\n", encoding="utf-8")
+    monkeypatch.setattr(sys.modules[__name__], "_ROOT", root)
+    monkeypatch.setattr(sys.modules[__name__], "_RESULT", {})
+    tree = _tree()
+    assert set(tree["findings"]) == {"test_support/helper.py"}, tree["findings"]
+
+
+@pytest.mark.parametrize("value", [None, [], "", "/tests", "../tests", "tests/"])
+def test_an_absent_or_malformed_helper_root_is_refused_by_name(value):
+    block = {"roots": ["src"], "allowed": {}}
+    if value is not None:
+        block["test_helpers_root"] = value
+    with pytest.raises(st.SourceTreeError, match=r"config_reads\.test_helpers_root"):
+        reads_policy({_BLOCK: block})
 
 
 _PLANTED = [
@@ -580,11 +667,24 @@ def test_a_policy_with_a_missing_or_wrong_key_is_refused_by_name():
     with pytest.raises(st.SourceTreeError, match=r"\[not set\] config_reads\.allowed"):
         reads_policy({_BLOCK: {"roots": ["src"]}})
     with pytest.raises(st.SourceTreeError, match=r"config_reads\.roots is string"):
-        reads_policy({_BLOCK: {"roots": "src", "allowed": {}}})
+        reads_policy(
+            {_BLOCK: {"roots": "src", "allowed": {}, "test_helpers_root": "tests"}}
+        )
     with pytest.raises(st.SourceTreeError, match="reason string"):
-        reads_policy({_BLOCK: {"roots": ["src"], "allowed": {"src/a.py": 1}}})
-    assert reads_policy({_BLOCK: {"roots": ["src"], "allowed": {}}}) == {
+        reads_policy(
+            {
+                _BLOCK: {
+                    "roots": ["src"],
+                    "allowed": {"src/a.py": 1},
+                    "test_helpers_root": "tests",
+                }
+            }
+        )
+    assert reads_policy(
+        {_BLOCK: {"roots": ["src"], "allowed": {}, "test_helpers_root": "tests"}}
+    ) == {
         "roots": ["src"],
+        "test_helpers_root": "tests",
         "allowed": {},
     }
 
@@ -592,7 +692,9 @@ def test_a_policy_with_a_missing_or_wrong_key_is_refused_by_name():
 def test_a_walk_over_zero_files_or_zero_declared_names_fails(tmp_path):
     root = _project(tmp_path, "x = 1\n")
     with pytest.raises(st.SourceTreeError, match="zero items"):
-        reads_policy({_BLOCK: {"roots": [], "allowed": {}}})
+        reads_policy(
+            {_BLOCK: {"roots": [], "allowed": {}, "test_helpers_root": "tests"}}
+        )
     with pytest.raises(st.SourceTreeError, match="no code root"):
         direct_reads(root, [], _PATHS, [_MCP_MODEL], _SEARCH)
     with pytest.raises(st.SourceTreeError, match="no Python file under absent"):

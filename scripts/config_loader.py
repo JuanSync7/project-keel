@@ -1049,6 +1049,12 @@ KEYS = tuple(
                 ),
             ),
             _row(
+                ("ci_pipeline",),
+                "object",
+                NONE,
+                "the pipeline and adapter policy tests/ci_adapters.py validates",
+            ),
+            _row(
                 ("config_reads", "allowed"),
                 "object",
                 NONE,
@@ -1060,6 +1066,37 @@ KEYS = tuple(
                 "list_of_str",
                 NONE,
                 "the code roots the config-reads gate test walks",
+            ),
+            _row(
+                ("config_reads", "test_helpers_root"),
+                "repo_path",
+                NONE,
+                "the directory whose direct Python helpers the config-reads "
+                "gate walks, except conftest.py and test_*.py",
+            ),
+            _row(
+                ("e2e",),
+                "object",
+                NONE,
+                "the end-to-end policy tests/live_server.py validates",
+            ),
+            _row(
+                ("import_layers",),
+                "object",
+                NONE,
+                "the import policy tests/source_tree.py validates",
+            ),
+            _row(
+                ("import_layers", "may_end_the_process"),
+                "object",
+                {},
+                "imported modules allowed to end the process, mapped to reasons",
+            ),
+            _row(
+                ("make_targets",),
+                "object",
+                NONE,
+                "the make-target policy scripts/check_structure.py validates",
             ),
             _row(
                 ("doc_drift", "check_name_guide"),
@@ -1697,6 +1734,12 @@ KEYS = tuple(
                     "a non-empty list of image names, none blank and none a "
                     "moving `-latest` label",
                 ),
+            ),
+            _row(
+                ("transports", "available"),
+                "object",
+                NONE,
+                "the transport names mapped to their directories",
             ),
             _row(
                 ("transports", "enabled"),

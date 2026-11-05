@@ -20,7 +20,11 @@ from contextlib import contextmanager, suppress
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
+_SCRIPTS = os.path.join(_ROOT, "scripts")
+if _SCRIPTS not in sys.path:
+    sys.path.insert(0, _SCRIPTS)
 
+import config_loader  # noqa: E402
 from scripts.child_env import build_child_env  # noqa: E402
 
 __all__ = [
@@ -65,13 +69,14 @@ def _is_number(value):
 
 def load_e2e_config(root):
     """config/project.json's `e2e` block, refused by name when absent."""
-    path = os.path.join(root, _MANIFEST)
     try:
-        with open(path, encoding="utf-8") as fh:
-            manifest = json.load(fh)
-    except (OSError, ValueError) as exc:
-        raise LiveServerError("%s cannot be read: %s" % (path, exc)) from exc
-    block = manifest.get(_BLOCK) if isinstance(manifest, dict) else None
+        manifest = config_loader.read(str(root))
+        got = config_loader.resolve(
+            manifest, config_loader.rows((_BLOCK,)), _MANIFEST, environ={}
+        )
+    except config_loader.ConfigError as exc:
+        raise LiveServerError("; ".join(exc.lines)) from exc
+    block = got[(_BLOCK,)]
     if not isinstance(block, dict):
         raise LiveServerError("%s has no `%s` object" % (_MANIFEST, _BLOCK))
     return block, manifest
@@ -131,7 +136,16 @@ def load_mcp_config(root):
 def rest_dir(root):
     """The REST transport's directory, from `transports.available.rest`."""
     _block, manifest = load_e2e_config(root)
-    available = (manifest.get("transports") or {}).get("available") or {}
+    try:
+        got = config_loader.resolve(
+            manifest,
+            config_loader.rows(("transports", "available")),
+            _MANIFEST,
+            environ={},
+        )
+    except config_loader.ConfigError as exc:
+        raise LiveServerError("; ".join(exc.lines)) from exc
+    available = got[("transports", "available")]
     path = available.get(_REST)
     if not isinstance(path, str) or not path:
         raise LiveServerError(

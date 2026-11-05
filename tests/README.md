@@ -169,6 +169,14 @@ changes nothing.
 
 ## A test reads the project's own facts
 
+A helper reads config through `scripts/config_loader.py` `read` and `resolve`,
+with its block's type and default in `KEYS`, and translates a loader refusal
+to its own named error. `tests/integration/test_config_reads_gate.py` walks
+the Python helpers directly under config/project.json
+`config_reads.test_helpers_root` (`tests`), alongside `config_reads.roots`.
+The helper walk leaves out `conftest.py`, `test_*.py` and nested modules,
+which read and write config to build fixtures.
+
 A test that runs in keel and in every generated project reads a list from the
 project's config, never keel's value of it: the ADR files from the
 config/project.json `adr` block, the credential opt-ins from

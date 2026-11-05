@@ -20,12 +20,17 @@ raises instead of reading as "nothing declared" -- a typo must not turn the
 guard back into a pass over zero tests.
 """
 
-import json
 import os
 import re
 import sys
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_SCRIPTS = os.path.join(_ROOT, "scripts")
+if _SCRIPTS not in sys.path:
+    sys.path.insert(0, _SCRIPTS)
+
+import config_loader  # noqa: E402
+
 _KEY = "empty_test_selections"
 _BARE_MARKER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _EXPRESSION_WORDS = ("and", "or", "not")
@@ -44,10 +49,17 @@ def declared_empty(manifest=None):
     """make_targets.empty_test_selections ({marker: reason}) from `manifest`,
     or from this project's config/project.json when None. Raises RuntimeError
     when the policy rejects the make_targets block."""
-    if manifest is None:
-        path = os.path.join(_ROOT, "config", "project.json")
-        with open(path, encoding="utf-8") as fh:
-            manifest = json.load(fh)
+    try:
+        if manifest is None:
+            manifest = config_loader.read(_ROOT)
+        config_loader.resolve(
+            manifest,
+            config_loader.rows(("make_targets",)),
+            config_loader.CONFIG_FILE,
+            environ={},
+        )
+    except config_loader.ConfigError as exc:
+        raise RuntimeError("; ".join(exc.lines)) from exc
     policy, errs = _policy_reader()(manifest)
     if policy is None:
         raise RuntimeError(

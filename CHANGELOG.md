@@ -30,6 +30,13 @@ version rather than a bare commit:
   until a hard date, from a record that only shrinks.
 
 ### Added
+- **Test helpers read policy through the config loader (KEEL-SRCTREE-CFG-1).**
+  The config-reads gate also walks the Python helpers directly under
+  `config_reads.test_helpers_root`, leaving `conftest.py`, `test_*.py` and
+  nested modules out. The five helpers' six reads use declared loader rows,
+  keep their validation and raise their own errors on a loader refusal;
+  `ci_adapters.py` refuses a non-object `ci_pipeline` by name. The allowlist
+  and its ceiling stay at six.
 - **Shipped documents fail on citations of checks that do not exist.** The
   document-drift gate names the document, line and cited check, retains
   definitions from Python template twins, reads a defined and a cited name by

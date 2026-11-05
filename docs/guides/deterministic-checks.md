@@ -947,17 +947,22 @@ the letters A to Z are taken; `make test` runs them.
   entry. It reads comments through tokenize, so a `#` inside a string is never
   one.
 - `tests/integration/test_config_reads_gate.py` walks the directories
-  config/project.json `config_reads.roots` names, `scripts/config_loader.py`
-  left out, and fails an open or read of a file the loader's `PROJECT_READS`
-  declares and a read of a variable the config declares, outside the loader.
+  config/project.json `config_reads.roots` names and the Python helpers directly
+  under `config_reads.test_helpers_root` (`tests`), except `conftest.py` and
+  `test_*.py`, which read and write config to build fixtures. It leaves
+  `scripts/config_loader.py` out and fails an open or read of a file the
+  loader's `PROJECT_READS` declares and a read of a variable the config declares,
+  outside the loader.
   It follows a path through constants, names bound to them, a starred split,
   a path constant of another project module (read as `mod.NAME` or imported
   with `from mod import NAME`) and a helper of the same module. A file that
   still reads directly is excused only by a `config_reads.allowed` entry with
   a reason; a stale entry is red, and the test's `_CEILING` caps the count.
   In the template repository, which holds `copier.yml`, a finding is red; in a
-  generated project, which cannot tell keel's files from its own, the two
-  finding tests skip and name each direct read they saw.
+  generated project, the three finding tests judge through
+  `scripts/expiring_tier.py` as `config-reads-file`, `config-reads-variable` and
+  `config-reads-shell`. A finding in `expiring_tier.baseline` warns until
+  `expiring_tier.expires`; any other finding is red.
   `docs/adr/keel/K-0022-one-config-loader.md` is the decision.
 - `tests/integration/test_assertion_quality_gate.py` reads every test function
   under config/project.json `test_quality.assertions.roots` through
@@ -1096,9 +1101,10 @@ other words, passes. The config-reads gate is a heuristic too: a path handed in
 as a parameter, an attribute of a module imported inside a function or
 relatively, a function of another module that opens what it is given, a
 method called through an object, a variable name held in a variable, and a
-read through `subprocess` or `importlib` pass; in a generated project it
-judges nothing, it names. The assertion-quality gate reads the syntax
-tree and runs nothing: an assertion on a branch that never executes and a
+read through `subprocess` or `importlib` pass. It leaves `conftest.py`,
+`test_*.py` and nested modules under `config_reads.test_helpers_root` out of
+the helper walk because they build fixtures. The assertion-quality gate reads
+the syntax tree and runs nothing: an assertion on a branch that never executes and a
 handler that swallows inside a helper can pass. It does not follow helpers
 through fixtures or variables, or into modules outside the roots; a test whose
 only assertion is reached that way fails as having no assertion. A bare

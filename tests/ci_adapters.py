@@ -8,7 +8,15 @@ summary: config/project.json `ci_pipeline` states the CI pipeline once, as an or
 import json
 import re
 import shlex
+import sys
 from pathlib import Path
+
+_ROOT = Path(__file__).resolve().parents[1]
+_SCRIPTS = str(_ROOT / "scripts")
+if _SCRIPTS not in sys.path:
+    sys.path.insert(0, _SCRIPTS)
+
+import config_loader  # noqa: E402
 
 CONFIG = Path("config") / "project.json"
 ANSWERS = Path(".copier-answers.yml")
@@ -23,7 +31,19 @@ _ENV_ALONE = re.compile(r"(?:[A-Z][A-Z0-9_]*=\S*[ \t]*)+")
 
 def pipeline(root):
     """config/project.json `ci_pipeline` under *root*."""
-    return json.loads((Path(root) / CONFIG).read_text("utf-8"))["ci_pipeline"]
+    return _config(root, (("ci_pipeline",),))[("ci_pipeline",)]
+
+
+def _config(root, keys):
+    try:
+        return config_loader.resolve(
+            config_loader.read(str(root)),
+            config_loader.rows(*keys),
+            str(CONFIG),
+            environ={},
+        )
+    except config_loader.ConfigError as exc:
+        raise AssertionError("; ".join(exc.lines)) from exc
 
 
 def present(root):
@@ -302,12 +322,16 @@ def gitlab_document(root):
     `test` job's image is `ci_pipeline.gitlab_image` filled from `toolchain`,
     its script the configured steps, and `GIT_DEPTH` is "0" for the same
     reason ci.yml checks out with fetch-depth: 0."""
-    config = json.loads((Path(root) / CONFIG).read_text("utf-8"))
-    block = config["ci_pipeline"]
+    toolchain_keys = tuple(
+        k.path for k in config_loader.KEYS if k.path[0] == "toolchain"
+    )
+    got = _config(root, (("ci_pipeline",),) + toolchain_keys)
+    block = got[("ci_pipeline",)]
+    toolchain = {key[1]: got[key] for key in toolchain_keys}
     return {
         "variables": {"GIT_DEPTH": "0"},
         "test": {
-            "image": block["gitlab_image"].format(**config["toolchain"]),
+            "image": block["gitlab_image"].format(**toolchain),
             "script": [gitlab_line(step) for step in block["steps"]],
         },
     }

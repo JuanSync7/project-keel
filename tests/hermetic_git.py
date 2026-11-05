@@ -5,7 +5,6 @@ layer: n/a
 summary: One canonical hermetic git config for every test that shells out to git or lets copier do it. Neutralises global + system config AND `core.excludesFile`, whose default value git reads from $XDG_CONFIG_HOME/git/ignore with no config entry at all — so GIT_CONFIG_GLOBAL/SYSTEM alone do not reach it and a single `*.yml` line on someone's laptop fails a correct tree. The hermetic environment is also free of the parent's repository context: `repo_context_names` reads config/project.json `child_env.repo_context_names` through scripts/child_env.py, and `git_env` drops every one, so a test started from a git hook never runs git against the repository being committed. Nor does it carry a parent's injected git configuration: `config_injection` reads `child_env.config_injection_names` and `config_injection_prefixes` the same way, and `drop_config_injection` (called by `git_env` and by tests/conftest.py at import) removes every member. Inside a gate run, whose date arrives in the variable config/project.json `evidence.run_date.env` names, `git_env_vars` also dates every commit by that run through scripts/run_date.py `git_dates`, so a tree the suite commits after midnight is not dated a day past the `updated:` stamps the run wrote, which the freshness judge would call committed stale.
 """
 
-import json
 import os
 import subprocess
 import sys
@@ -76,13 +75,21 @@ def _policy(root):
     Read through child_env's own validator, so the suite strips exactly what
     build_child_env holds back. A manifest the policy refuses is an
     AssertionError naming why: a broken key must not quietly strip nothing."""
-    _scripts_on_path(root)
+    _scripts_on_path(_REPO_ROOT)
     import child_env
+    import config_loader
 
-    with open(
-        os.path.join(str(root), "config", "project.json"), encoding="utf-8"
-    ) as fh:
-        policy, errs = child_env.child_env_policy(json.load(fh))
+    try:
+        manifest = config_loader.read(str(root))
+        config_loader.resolve(
+            manifest,
+            config_loader.rows(("child_env",)),
+            config_loader.CONFIG_FILE,
+            environ={},
+        )
+    except config_loader.ConfigError as exc:
+        raise AssertionError("; ".join(exc.lines)) from exc
+    policy, errs = child_env.child_env_policy(manifest)
     assert policy is not None, "config/project.json child_env: " + "; ".join(errs)
     return policy
 
