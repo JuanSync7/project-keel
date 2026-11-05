@@ -738,6 +738,18 @@ _REFUSALS = (
 )
 
 
+def _is_main_guard(stmt):
+    """True for a top-level `if` whose test names both `__name__` and the
+    string "__main__", in any order or combination: a guard is found by what
+    it compares, never by which side each operand is written on."""
+    if not isinstance(stmt, ast.If):
+        return False
+    parts = list(ast.walk(stmt.test))
+    return any(isinstance(x, ast.Name) and x.id == "__name__" for x in parts) and any(
+        isinstance(x, ast.Constant) and x.value == "__main__" for x in parts
+    )
+
+
 def _manifest_readers():
     """Follow local symbols from every main guard, independent of reporters.
 
@@ -857,11 +869,7 @@ def _manifest_readers():
                     [
                         n
                         for stmt in tree.body
-                        if isinstance(stmt, ast.If)
-                        and any(
-                            isinstance(x, ast.Constant) and x.value == "__main__"
-                            for x in ast.walk(stmt.test)
-                        )
+                        if _is_main_guard(stmt)
                         for n in ast.walk(stmt)
                         if isinstance(n, ast.Call)
                     ]
@@ -892,19 +900,25 @@ def _manifest_readers():
         p.relative_to(_ROOT).as_posix()
         for p, tree in trees.items()
         if p.relative_to(_ROOT).parts[0] in {"scripts", "evals", "api", "mcp", "agents"}
-        and any(
-            isinstance(n, ast.If)
-            and isinstance(n.test, ast.Compare)
-            and isinstance(n.test.left, ast.Name)
-            and n.test.left.id == "__name__"
-            and any(
-                isinstance(v, ast.Constant) and v.value == "__main__"
-                for v in n.test.comparators
-            )
-            for n in tree.body
-        )
+        and any(_is_main_guard(n) for n in tree.body)
         and walk(p)
     }
+
+
+@pytest.mark.parametrize(
+    ("source", "guard"),
+    [
+        ('if __name__ == "__main__":\n    pass\n', True),
+        ('if "__main__" == __name__:\n    pass\n', True),
+        ('if __name__ == "__main__" and ready:\n    pass\n', True),
+        ('if mode == "__main__":\n    pass\n', False),
+        ("if __name__:\n    pass\n", False),
+    ],
+)
+def test_a_main_guard_is_found_in_either_order(source, guard):
+    """Discovery and the walk share one predicate, so an entry point written
+    with its compare reversed is neither missed nor walked differently."""
+    assert _is_main_guard(ast.parse(source).body[0]) is guard
 
 
 def test_every_manifest_reader_has_cases():

@@ -367,6 +367,43 @@ def test_an_unreadable_declared_file_other_than_the_manifest_keeps_usage(
     assert "Traceback" not in err
 
 
+def test_an_unopenable_manifest_is_config_without_the_loader(
+    tmp_path, capsys, monkeypatch
+):
+    """A manifest that exists and cannot be opened holds no hunk, so it ends as
+    CONFIG with one line; the loader is never imported, since it may be the
+    conflicted module or off the path."""
+    monkeypatch.setitem(sys.modules, "config_loader", None)
+    entry = _write(tmp_path, "job.py", "PROJECT_READS = ('config/project.json',)\n")
+    (tmp_path / "config" / "project.json").mkdir(parents=True)
+    with pytest.raises(SystemExit) as stopped:
+        conflict_guard.exit_if_conflicted(str(entry), str(tmp_path), "job", "make job")
+    assert stopped.value.code == 14
+    err = capsys.readouterr().err
+    assert len(err.splitlines()) == 1 and "config/project.json" in err
+    assert "Traceback" not in err
+
+
+def test_a_hunk_in_the_closure_wins_over_an_unopenable_manifest(
+    tmp_path, capsys, monkeypatch
+):
+    """A conflicted module is named, exit 2, before the manifest is judged:
+    resolving the update comes first, and the loader may be that module."""
+    monkeypatch.setitem(sys.modules, "config_loader", None)
+    entry = _write(
+        tmp_path, "job.py", "import loader\nPROJECT_READS = ('config/project.json',)\n"
+    )
+    _write(tmp_path, "loader.py", _merge())
+    (tmp_path / "config" / "project.json").mkdir(parents=True)
+    with pytest.raises(SystemExit) as stopped:
+        conflict_guard.exit_if_conflicted(
+            str(entry), str(tmp_path), "job", "make job", search_path=[str(tmp_path)]
+        )
+    assert stopped.value.code == 2
+    ((job, files, _rerun),) = conflict_guard.read_refusals(capsys.readouterr().err)
+    assert job == "job" and [path for path, _line in files] == ["loader.py"]
+
+
 def test_under_an_update_the_rerun_is_the_finish_command(tmp_path):
     """Copier stops at the first failed migration, so under an update the
     command a refusal names finishes the update rather than rerunning one job."""
