@@ -2,7 +2,7 @@
 title: Integration — shipped documents say nothing true of one host or one moment
 kind: tests
 layer: n/a
-summary: The shipped-doc drift gate. A shipped document is any Markdown file (or its `.md.jinja` twin) outside config/project.json `doc_drift.history_paths`; in its prose it names no concrete campaign or slice id (the `work_naming` mention grammar, any prefix), matches no `doc_drift.forbidden_phrases` pattern, names no loopback port that no non-Markdown file declares, cites no document copier.yml `_exclude`s unconditionally, and cites only check letters in check_structure.CHECKS or check names a Python module stem or definition supplies. Check citations read inline code names and exempt fences; the check-name sentence in doc_drift.check_name_guide is held to each mark's side, effect and spacing. Code spans and fences are illustrations and are exempt from the prose rules, as check_Z treats them. Every expected set is derived from the thing it describes, never typed here; a missing or malformed `doc_drift` or `work_naming` block fails, a scan over zero documents fails, and only the copier.yml-derived test skips, with a stated reason, in a generated project. Each rule has a fault-injection twin that plants one item and asserts exactly one finding. Not a writer: it reads the tree and writes only under pytest's tmp_path.
+summary: The shipped-doc drift gate. A shipped document is any Markdown file (or its `.md.jinja` twin) outside config/project.json `doc_drift.history_paths`; in its prose it names no concrete campaign or slice id (the `work_naming` mention grammar, any prefix), matches no `doc_drift.forbidden_phrases` pattern, names no loopback port that no non-Markdown file declares, cites no document copier.yml `_exclude`s unconditionally, and cites only check letters in check_structure.CHECKS or check names a Python module stem or definition supplies. Python twins retain definitions after Jinja tags are removed with line numbers preserved, and unparseable source raises with its path. Check citations read inline code names and exempt fences within the shared scanner's container limits; the check-name sentence in doc_drift.check_name_guide is held to each mark's side, effect and spacing. Code spans and fences are illustrations and are exempt from the prose rules, as check_Z treats them. Every expected set is derived from the thing it describes, never typed here; a missing or malformed `doc_drift` or `work_naming` block fails, a scan over zero documents fails, and only the copier.yml-derived test skips, with a stated reason, in a generated project. Each rule has a fault-injection twin that plants one item and asserts exactly one finding. Not a writer: it reads the tree and writes only under pytest's tmp_path.
 """
 
 import ast
@@ -55,6 +55,7 @@ _CHECK_NAME_GUIDE = ("doc_drift", "check_name_guide")
 # copier.yml's `_exclude` entries carry jinja conditionals; an entry with one
 # is answer-driven, an entry without one never ships.
 _JINJA_TAG = re.compile(r"\{%.*?%\}")
+_PYTHON_JINJA_TAG = re.compile(r"\{%.*?%\}|\{\{.*?\}\}|\{#.*?#\}", re.DOTALL)
 # The condition of one such entry's `{% if <condition> %}` tag.
 _JINJA_IF = re.compile(r"\{%-?\s*if\s+(.*?)\s*-?%\}")
 # One entry of the README's layout tree: a box-drawing branch, then a name
@@ -311,8 +312,8 @@ def declared_ports(root, wanted):
 def python_names(root):
     """Python module stems and function/class definitions, including twins.
 
-    An unrendered twin may not parse; its plain sibling or generated render
-    supplies the definitions. Broken plain Python is an error, never a skip.
+    Jinja tags are removed from twins, preserving newlines so syntax errors
+    name their source line. Unparseable Python, twin or plain, is never skipped.
     """
     names = set()
     for dirpath, _dirs, files in cs.walk(str(root)):
@@ -322,12 +323,12 @@ def python_names(root):
             if not stem.endswith(".py") or full.is_symlink():
                 continue
             names.add(stem[:-3])
-            try:
-                tree = ast.parse(full.read_text(encoding="utf-8"))
-            except SyntaxError:
-                if name.endswith(_TWIN_SUFFIX):
-                    continue
-                raise
+            source = full.read_text(encoding="utf-8")
+            if name.endswith(_TWIN_SUFFIX):
+                source = _PYTHON_JINJA_TAG.sub(
+                    lambda match: "\n" * match[0].count("\n"), source
+                )
+            tree = ast.parse(source, filename=str(full))
             names.update(
                 node.name
                 for node in ast.walk(tree)
@@ -1123,6 +1124,31 @@ def test_a_document_citing_a_check_that_does_not_exist_fails(
         doc.unlink()
 
 
+@pytest.mark.parametrize(
+    "text, citations",
+    [
+        (
+            "``` check_missing ```\nUses check_other.",
+            [(1, "check_missing"), (2, "check_other")],
+        ),
+        ("```markdown\n```python\ncheck_missing\n```", []),
+        (
+            "~~~~text\n~~~\n~~~~ trailing\ncheck_missing\n~~~~\ncheck_other",
+            [(6, "check_other")],
+        ),
+        ("- item\n\n  ```\n  check_missing\n  ```\ncheck_other", [(6, "check_other")]),
+        # The shared line scanner does not parse Markdown containers.
+        ("> ```\n> check_missing\n> ```", [(2, "check_missing")]),
+        ("- item\n\n    ```\n    check_missing\n    ```", [(4, "check_missing")]),
+    ],
+)
+def test_check_citations_follow_shared_fence_boundaries(text, citations):
+    findings = check_citation_findings([("guide.md", text)], set(), set())
+    assert len(findings) == len(citations), findings
+    for finding, (line, name) in zip(findings, citations, strict=True):
+        assert finding.startswith("guide.md:%d: cites %s," % (line, name)), finding
+
+
 def _assert_check_name_sentence(text):
     sentences = re.findall(r"^For check-name citations, (.+)$", text, re.MULTILINE)
     assert len(sentences) == 1, "the guide must state one check-name sentence"
@@ -1143,9 +1169,9 @@ def _assert_check_name_sentence(text):
                 if side == "before"
                 else "check_missing_probe%s%s%s1" % (gap, mark, gap)
             )
-            expected = effect == "is read" or (
-                bool(gap) and spaces == "only without spaces"
-            )
+            expected = effect == "is read"
+            if gap and spaces == "only without spaces":
+                expected = not expected
             actual = bool(
                 check_citation_findings([("probe.md", token)], letters, names)
             )
@@ -1161,7 +1187,12 @@ def test_python_check_names_and_citation_exemptions(tmp_path):
         encoding="utf-8",
     )
     (tmp_path / "check_twin.py.jinja").write_text(
-        "{% if enabled %}def check_unrendered(): pass{% endif %}", encoding="utf-8"
+        "{% if\n enabled %}def check_unrendered(): pass{% endif %}\n"
+        "{# a\n comment #}\n"
+        "{{ preamble }}def check_twin_expression(): pass\n"
+        "class check_twin_class:\n"
+        "    async def check_twin_async(self): return '{{ value }}'\n",
+        encoding="utf-8",
     )
     names = python_names(tmp_path)
     assert {
@@ -1171,8 +1202,11 @@ def test_python_check_names_and_citation_exemptions(tmp_path):
         "check_Hx",
         "check_VERSION",
         "check_A_helper",
+        "check_unrendered",
+        "check_twin_class",
+        "check_twin_async",
+        "check_twin_expression",
     } <= names
-    assert "check_unrendered" not in names
     assert not check_citation_findings(
         [("guide.md", "`%s`" % "`, `".join(sorted(names)))], set(), names
     )
@@ -1194,6 +1228,17 @@ def test_python_check_names_and_citation_exemptions(tmp_path):
         python_names(broken)
 
 
+def test_an_unparseable_python_twin_fails_closed_with_path_and_line(tmp_path):
+    twin = tmp_path / "check_broken.py.jinja"
+    twin.write_text(
+        "{% if enabled %}\n{# note #}\ndef (\n{% endif %}\n", encoding="utf-8"
+    )
+    with pytest.raises(SyntaxError) as failure:
+        python_names(tmp_path)
+    assert failure.value.filename == str(twin)
+    assert failure.value.lineno == 3
+
+
 @pytest.mark.parametrize("mark", [".", "=", "=="])
 def test_the_check_name_sentence_fails_when_a_mark_effect_is_inverted(manifest, mark):
     values = config_loader.resolve(
@@ -1205,6 +1250,34 @@ def test_the_check_name_sentence_fails_when_a_mark_effect_is_inverted(manifest, 
     inverted, count = re.subn(
         pattern,
         lambda m: m[1] + ("is read" if m[2] == "is not read" else "is not read"),
+        text,
+    )
+    assert count == 1
+    with pytest.raises(AssertionError, match="guide mark"):
+        _assert_check_name_sentence(inverted)
+
+
+@pytest.mark.parametrize("mark", [".", "=", "=="])
+def test_the_check_name_sentence_fails_when_spacing_is_inverted(manifest, mark):
+    values = config_loader.resolve(
+        manifest, config_loader.rows(_CHECK_NAME_GUIDE), config_loader.CONFIG_FILE
+    )
+    text = (_ROOT / values[_CHECK_NAME_GUIDE]).read_text(encoding="utf-8")
+    _assert_check_name_sentence(text)
+    pattern = (
+        r"(`%s` (?:before|after) a name (?:is not read|is read) )"
+        r"(with or without spaces|only without spaces)"
+    ) % re.escape(mark)
+    inverted, count = re.subn(
+        pattern,
+        lambda m: (
+            m[1]
+            + (
+                "only without spaces"
+                if m[2] == "with or without spaces"
+                else "with or without spaces"
+            )
+        ),
         text,
     )
     assert count == 1

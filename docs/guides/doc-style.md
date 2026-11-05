@@ -113,6 +113,18 @@ form of the same habit, and `check_T` proves those names resolve.
 
 For check-name citations, `.` before a name is not read only without spaces; `=` after a name is not read with or without spaces; `==` after a name is read with or without spaces; an unqualified `check_` name with one capital names a member of `check_structure.CHECKS`, every other `check_` name names a Python module stem or function or class definition, and prose check letters (including lists and ranges) name members of that same registry, with inline code names read and fenced examples exempt (`tests/integration/test_doc_drift.py`).
 
+The shared Markdown scanner follows CommonMark fence boundaries with at most
+three leading spaces: a backtick opener's info string contains no backtick,
+and a closer uses the same character, at least as many times, followed only
+by whitespace. A triple-backtick inline span is read as a check-name citation.
+A simple list fence indented two spaces is recognized as a renderer recognizes
+it. Container parsing is a gap: blockquote-prefixed fences and list fences
+indented four or more spaces relative to the document are left visible, even
+when a renderer treats them as code. Check-name definitions in Python template
+twins are read after removing Jinja statement, expression and comment tags,
+keeping newlines; source that still cannot be parsed fails with its path and
+line rather than dropping its definitions.
+
 Numbers are measurements, and a measurement says when and how it was taken
 ("57 links and 132 citations as the check counts them, 2026-09-02"). A number
 without a method is an opinion with digits.

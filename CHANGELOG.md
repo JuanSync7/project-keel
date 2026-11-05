@@ -22,9 +22,12 @@ version rather than a bare commit:
 
 ### Added
 - **Shipped documents fail on citations of checks that do not exist.** The
-  document-drift gate names the document and cited check, and holds the style
-  guide's check-name sentence to each mark's effect, so a false enforcement
-  claim cannot pass `make verify` (KEEL-DOC-2).
+  document-drift gate names the document, line and cited check, retains
+  definitions from Python template twins, and holds the style guide's
+  check-name sentence to each mark's effect and spacing. Shared fence scanning
+  follows CommonMark opener and closer rules within the container limits
+  stated in the style guide, so a false enforcement claim fails `make verify`
+  (KEEL-DOC-2).
 - **A narrow `except` that only drops the error, `contextlib.suppress` and
   `ignore_errors=True` need a reason.** `tests/integration/test_swallowed_error_gate.py`
   judges them through `scripts/expiring_tier.py`, as the tier checks

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 title: check_structure — the deterministic conventions gate
-summary: Stdlib-only, 3.6-safe enforcement of CONVENTIONS.md — labeling, taxonomy, package boundaries, tool/agent governance, manifest and ruleset parity, twin parity, the machine-readable module contract, Makefile help parity, cross-reference resolution, check-catalogue parity, rosters, practice mechanisms, policy reachability, writer rerun declarations, make-target effect labels, child-process environments, ADR number spaces, and work naming (checks A-Z), then the project's own checks: each top-level module in the directory config/project.json structure.project_checks names (a key the template never ships), whose check(root) findings, returned or reported through err()/warn(), are reported as project:<stem> and whose every failure, a module name that is not a readable file included, is an error naming it (docs/adr/keel/K-0014-project-owned-structure-checks.md). A finding checks A-Z build from configured text never shows a value, member, key name or path segment that holds an `@`: each passes through config_loader.shown. Exit 1 on any error; warnings never fail the build.
+summary: Stdlib-only, 3.6-safe enforcement of CONVENTIONS.md — labeling, taxonomy, package boundaries, tool/agent governance, manifest and ruleset parity, twin parity, the machine-readable module contract, Makefile help parity, cross-reference resolution, check-catalogue parity, rosters, practice mechanisms, policy reachability, writer rerun declarations, make-target effect labels, child-process environments, ADR number spaces, and work naming (checks A-Z), then the project's own checks: each top-level module in the directory config/project.json structure.project_checks names (a key the template never ships), whose check(root) findings, returned or reported through err()/warn(), are reported as project:<stem> and whose every failure, a module name that is not a readable file included, is an error naming it (docs/adr/keel/K-0014-project-owned-structure-checks.md). A finding checks A-Z build from configured text never shows a value, member, key name or path segment that holds an `@`: each passes through config_loader.shown. Shared Markdown scanning follows CommonMark fence boundaries at up to three spaces of indentation; blockquote prefixes and deeper list-relative indentation are not parsed. Exit 1 on any error; warnings never fail the build.
 
 check_structure.py - enforce the project conventions (see CONVENTIONS.md).
 
@@ -3548,8 +3548,10 @@ def _fence_scan(text):
     """(lines, open_line): the document's lines with fenced code blocks and
     HTML comments blanked, numbering kept, and the 1-based line of a fence that
     is still open when the document ends, else 0. A fence closes only on the
-    same character, at least as long (CommonMark), so a ```` block may show a
-    ``` fence as content."""
+    same character, at least as long, followed only by whitespace; backtick
+    openers have no backtick in their info string (CommonMark). Both allow at
+    most three leading spaces. This line scanner does not parse blockquote
+    prefixes or list-relative indentation beyond those three spaces."""
     out, fence, opened = [], None, 0
     text = _HTML_COMMENT.sub(lambda m: "\n" * m.group(0).count("\n"), text)
     for number, line in enumerate(text.split("\n"), 1):
@@ -3559,8 +3561,12 @@ def _fence_scan(text):
             and fence is not None
             and m.group(1)[0] == fence[0]
             and len(m.group(1)) >= len(fence)
+            and not line[m.end() :].strip()
         )
-        if m and (fence is None or closes):
+        opens = (
+            m and fence is None and (m.group(1)[0] != "`" or "`" not in line[m.end() :])
+        )
+        if opens or closes:
             fence = m.group(1) if fence is None else None
             opened = number if fence is not None else 0
             out.append("")
