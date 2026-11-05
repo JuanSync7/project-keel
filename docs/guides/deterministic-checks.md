@@ -400,7 +400,7 @@ print but never fail the build.
   `HOME` and each kept value, and raises if it does not. `run` and `smoke` are in that sweep, and only the targets
   `make_targets.effect_proof_skip` names, each with its reason, are not. See [`docs/adr/keel/K-0011-make-target-effect-labels.md`](../adr/keel/K-0011-make-target-effect-labels.md) and, for the exemption and the converse, [`docs/adr/keel/K-0015-write-shape-exemptions-and-guarded-recipe-converse.md`](../adr/keel/K-0015-write-shape-exemptions-and-guarded-recipe-converse.md).
 - **X. Child processes get an allowlisted environment** — every `subprocess`
-  (`run`, `Popen`, `call`, `check_call`, `check_output`) or `asyncio`
+  (`run`, `Popen`, `call`, `subprocess.check_call`, `subprocess.check_output`) or `asyncio`
   (`create_subprocess_exec`, `create_subprocess_shell`) spawn passes `env=`
   built by `build_child_env` from `scripts/child_env.py`, either directly or
   through a name bound only to that call and afterwards only read (`env=`,

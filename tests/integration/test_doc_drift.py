@@ -2,7 +2,7 @@
 title: Integration — shipped documents say nothing true of one host or one moment
 kind: tests
 layer: n/a
-summary: The shipped-doc drift gate. A shipped document is any Markdown file (or its `.md.jinja` twin) outside config/project.json `doc_drift.history_paths`; in its prose it names no concrete campaign or slice id (the `work_naming` mention grammar, any prefix), matches no `doc_drift.forbidden_phrases` pattern, names no loopback port that no non-Markdown file declares, and cites no document copier.yml `_exclude`s unconditionally. Code spans and fences are illustrations and are exempt from the prose rules, as check_Z treats them. Every expected set is derived from the thing it describes, never typed here; a missing or malformed `doc_drift` or `work_naming` block fails, a scan over zero documents fails, and only the copier.yml-derived test skips, with a stated reason, in a generated project. Each rule has a fault-injection twin that plants one item and asserts exactly one finding. Not a writer: it reads the tree and writes only under pytest's tmp_path.
+summary: The shipped-doc drift gate. A shipped document is any Markdown file (or its `.md.jinja` twin) outside config/project.json `doc_drift.history_paths`; in its prose it names no concrete campaign or slice id (the `work_naming` mention grammar, any prefix), matches no `doc_drift.forbidden_phrases` pattern, names no loopback port that no non-Markdown file declares, cites no document copier.yml `_exclude`s unconditionally, and cites only check letters in check_structure.CHECKS or check names a Python module stem or definition supplies. Check citations read inline code names and exempt fences; the check-name sentence in doc_drift.check_name_guide is held to each mark's side, effect and spacing. Code spans and fences are illustrations and are exempt from the prose rules, as check_Z treats them. Every expected set is derived from the thing it describes, never typed here; a missing or malformed `doc_drift` or `work_naming` block fails, a scan over zero documents fails, and only the copier.yml-derived test skips, with a stated reason, in a generated project. Each rule has a fault-injection twin that plants one item and asserts exactly one finding. Not a writer: it reads the tree and writes only under pytest's tmp_path.
 """
 
 import ast
@@ -19,12 +19,14 @@ import pytest
 
 import isolation_guard
 import optional_deps
+from bounded_cache import bounded
 
 _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT / "scripts"))
 sys.path.insert(0, str(_ROOT / "scripts" / "jobs"))
 
 import check_structure as cs  # noqa: E402
+import config_loader  # noqa: E402
 import exit_code_table  # noqa: E402
 import review_docs  # noqa: E402
 import traceability  # noqa: E402
@@ -40,6 +42,16 @@ _DOC_SUFFIXES = (".md", ".md" + _TWIN_SUFFIX)
 # A loopback URL's port. Raw text is scanned, fences and code spans included:
 # a port a reader is told to open is a claim wherever it is written.
 _LOOPBACK_PORT = re.compile(r"\b(?:localhost|127\.0\.0\.1):([0-9]{2,5})\b")
+# A single capital names CHECKS; every longer identifier names Python code.
+# Qualified attributes and keyword arguments belong to the library being used.
+_CHECK_NAME = re.compile(r"(?<![\w.])(check_\w+)(?!\w)(?!\s*=(?!=))")
+_LETTER = r"[A-Z](?![\w'])"
+_CHECK_PROSE = re.compile(
+    r"\b[Cc]hecks?\s+(%s(?:(?:\s*[–-]\s*|\s+to\s+)%s)?"
+    r"(?:(?:,\s*(?:(?:and|or)\s+)?|\s+(?:and|or)\s+)%s"
+    r"(?:(?:\s*[–-]\s*|\s+to\s+)%s)?)*)" % ((_LETTER,) * 4)
+)
+_CHECK_NAME_GUIDE = ("doc_drift", "check_name_guide")
 # copier.yml's `_exclude` entries carry jinja conditionals; an entry with one
 # is answer-driven, an entry without one never ships.
 _JINJA_TAG = re.compile(r"\{%.*?%\}")
@@ -293,6 +305,92 @@ def declared_ports(root, wanted):
 
 
 # --- the rules ------------------------------------------------------------
+
+
+@bounded(str(_ROOT))
+def python_names(root):
+    """Python module stems and function/class definitions, including twins.
+
+    An unrendered twin may not parse; its plain sibling or generated render
+    supplies the definitions. Broken plain Python is an error, never a skip.
+    """
+    names = set()
+    for dirpath, _dirs, files in cs.walk(str(root)):
+        for name in files:
+            stem = name.removesuffix(_TWIN_SUFFIX)
+            full = Path(dirpath) / name
+            if not stem.endswith(".py") or full.is_symlink():
+                continue
+            names.add(stem[:-3])
+            try:
+                tree = ast.parse(full.read_text(encoding="utf-8"))
+            except SyntaxError:
+                if name.endswith(_TWIN_SUFFIX):
+                    continue
+                raise
+            names.update(
+                node.name
+                for node in ast.walk(tree)
+                if isinstance(
+                    node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+                )
+            )
+    return names
+
+
+def _prose_letters(citation):
+    letters = []
+    for part in re.split(r",|\band\b|\bor\b", citation):
+        ends = re.findall(r"[A-Z]", part)
+        if len(ends) == 2:
+            low, high = ends
+            if low > high:
+                letters.append(low + "–" + high)
+            else:
+                letters.extend(chr(c) for c in range(ord(low), ord(high) + 1))
+        else:
+            letters.extend(ends)
+    return letters
+
+
+def check_citation_findings(docs, letters, names):
+    """Unknown check names with their document and line; fences are examples.
+
+    Inline code names checks too, while prose letter lists and ranges are
+    read outside code spans. CHECKS decides whether a letter runs, even if a
+    retired function remains defined in Python.
+    """
+    findings = []
+    for relpath, text in docs:
+        unfenced = "\n".join(cs._unfenced_lines(text))
+        for match in _CHECK_NAME.finditer(unfenced):
+            name = match[1]
+            suffix = name[len("check_") :]
+            is_letter = re.fullmatch(r"[A-Z]", suffix) is not None
+            if is_letter and suffix not in letters:
+                reason = "check_structure.CHECKS has no check " + suffix
+            elif not is_letter and name not in names:
+                reason = "no Python file is or defines " + name
+            else:
+                continue
+            line_number = unfenced.count("\n", 0, match.start()) + 1
+            findings.append(
+                "%s:%d: cites %s, but %s -- name a check that exists"
+                % (relpath, line_number, name, reason)
+            )
+        # Keep line breaks while blanking spans so wrapped lists and ranges
+        # resolve as one citation without losing the document's line numbers.
+        prose = cs._INLINE_CODE.sub(lambda m: re.sub(r"[^\n]", " ", m[0]), unfenced)
+        for match in _CHECK_PROSE.finditer(prose):
+            unknown = [c for c in _prose_letters(match[1]) if c not in letters]
+            if unknown:
+                line_number = prose.count("\n", 0, match.start()) + 1
+                findings.append(
+                    "%s:%d: cites %s, but check_structure.CHECKS lacks %s -- "
+                    "name a check that runs"
+                    % (relpath, line_number, match[0], ", ".join(unknown))
+                )
+    return sorted(findings)
 
 
 def moment_and_host_findings(docs, policy, mention, port_root):
@@ -982,7 +1080,136 @@ def test_no_shipped_doc_cites_a_work_id_or_a_host_specific_string(
     manifest, policy, docs
 ):
     findings = moment_and_host_findings(docs, policy, work_mention(manifest), _ROOT)
+    names = python_names(_ROOT)
+    assert "check_structure" in names, "no Python check module found"
+    letters = {letter for letter, _fn in cs.CHECKS}
+    assert letters, "check_structure.CHECKS is empty"
+    findings.extend(check_citation_findings(docs, letters, names))
     assert not findings, "\n".join(findings)
+
+
+@pytest.mark.parametrize(
+    "citation, cited",
+    [
+        ("`check_Q`", "check_Q"),
+        ("check Q", "Q"),
+        ("checks A, F and Q", "Q"),
+        ("checks P–U", "Q"),
+        ("checks P-U", "Q"),
+        ("checks P to U", "Q"),
+        ("checks A,\nF and Q", "Q"),
+        ("checks P\nto U", "Q"),
+        ("`check_nonesuch`", "check_nonesuch"),
+        ("`check_AB`", "check_AB"),
+        ("`check_A1`", "check_A1"),
+        ("`check_A_helper`", "check_A_helper"),
+        ("`check_Hx`", "check_Hx"),
+        ("`check_VERSION`", "check_VERSION"),
+    ],
+)
+def test_a_document_citing_a_check_that_does_not_exist_fails(
+    tmp_path, manifest, policy, monkeypatch, citation, cited
+):
+    # A retired check may still have a definition; CHECKS decides whether it runs.
+    monkeypatch.setattr(cs, "CHECKS", [(k, f) for k, f in cs.CHECKS if k != "Q"])
+    for filename in ("guide.md", "guide.md.jinja"):
+        doc = tmp_path / filename
+        doc.write_text("The gate uses %s.\n" % citation, encoding="utf-8")
+        with pytest.raises(AssertionError) as failure:
+            test_no_shipped_doc_cites_a_work_id_or_a_host_specific_string(
+                manifest, policy, shipped_docs(tmp_path, policy["history_paths"])
+            )
+        assert filename in str(failure.value) and cited in str(failure.value)
+        doc.unlink()
+
+
+def _assert_check_name_sentence(text):
+    sentences = re.findall(r"^For check-name citations, (.+)$", text, re.MULTILINE)
+    assert len(sentences) == 1, "the guide must state one check-name sentence"
+    claims = re.findall(
+        r"`([^`]+)` (before|after) a name (is read|is not read) "
+        r"(with or without spaces|only without spaces)",
+        sentences[0],
+    )
+    assert len(claims) == 3 and {c[0] for c in claims} == {".", "=", "=="}
+    names = python_names(_ROOT)
+    assert "check_structure" in names, "no Python check module found"
+    letters = {letter for letter, _fn in cs.CHECKS}
+    assert letters, "check_structure.CHECKS is empty"
+    for mark, side, effect, spaces in claims:
+        for gap in ("", " "):
+            token = (
+                "module%s%s%scheck_missing_probe" % (gap, mark, gap)
+                if side == "before"
+                else "check_missing_probe%s%s%s1" % (gap, mark, gap)
+            )
+            expected = effect == "is read" or (
+                bool(gap) and spaces == "only without spaces"
+            )
+            actual = bool(
+                check_citation_findings([("probe.md", token)], letters, names)
+            )
+            assert actual == expected, "guide mark %r disagrees on %r" % (mark, token)
+
+
+def test_python_check_names_and_citation_exemptions(tmp_path):
+    (tmp_path / "check_module.py").write_text(
+        "def check_A1(): pass\n"
+        "async def check_Hx(): pass\n"
+        "class check_VERSION:\n"
+        "    def check_A_helper(self): pass\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "check_twin.py.jinja").write_text(
+        "{% if enabled %}def check_unrendered(): pass{% endif %}", encoding="utf-8"
+    )
+    names = python_names(tmp_path)
+    assert {
+        "check_module",
+        "check_twin",
+        "check_A1",
+        "check_Hx",
+        "check_VERSION",
+        "check_A_helper",
+    } <= names
+    assert "check_unrendered" not in names
+    assert not check_citation_findings(
+        [("guide.md", "`%s`" % "`, `".join(sorted(names)))], set(), names
+    )
+    examples = (
+        "module.check_missing; module.check_Q; check_missing=False; "
+        "f(check_missing = 1); check_Q=1; a check WARN; `check Q`\n"
+        "```python\ncheck_missing\ncheck Q\n```\n"
+        "~~~text\ncheck_missing\n~~~\n"
+    )
+    assert check_citation_findings([("guide.md", examples)], set(), names) == []
+    findings = check_citation_findings(
+        [("guide.md", "check_missing == 1\nchecks U–P")], set(), names
+    )
+    assert len(findings) == 2 and all("guide.md:" in f for f in findings)
+    broken = tmp_path / "broken"
+    broken.mkdir()
+    (broken / "check_broken.py").write_text("def (", encoding="utf-8")
+    with pytest.raises(SyntaxError):
+        python_names(broken)
+
+
+@pytest.mark.parametrize("mark", [".", "=", "=="])
+def test_the_check_name_sentence_fails_when_a_mark_effect_is_inverted(manifest, mark):
+    values = config_loader.resolve(
+        manifest, config_loader.rows(_CHECK_NAME_GUIDE), config_loader.CONFIG_FILE
+    )
+    text = (_ROOT / values[_CHECK_NAME_GUIDE]).read_text(encoding="utf-8")
+    _assert_check_name_sentence(text)
+    pattern = r"(`%s` (?:before|after) a name )(is not read|is read)" % re.escape(mark)
+    inverted, count = re.subn(
+        pattern,
+        lambda m: m[1] + ("is read" if m[2] == "is not read" else "is not read"),
+        text,
+    )
+    assert count == 1
+    with pytest.raises(AssertionError, match="guide mark"):
+        _assert_check_name_sentence(inverted)
 
 
 @pytest.mark.parametrize(

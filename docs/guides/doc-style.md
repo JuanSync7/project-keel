@@ -8,7 +8,7 @@ tags: [documentation, style, rosters, citations, freshness, guide]
 summary: The canonical statement of how documentation is written in this repo — the judgment half above the gated floor. What a document is for, one claim per sentence, the discriminator between siblings (rosters and NOT lines), the citation grammar, freshness as a fact, the plain imperative over BCP 14, idempotency stated and proven, and what the gate checks versus what a reviewer must judge. The twin of python-style.md.
 id: docs-guides-doc-style
 created: 2026-09-02
-updated: 2026-10-20
+updated: 2026-11-05
 visibility: internal
 canonical: true
 ---
@@ -110,6 +110,8 @@ answers" is. When a document says something is enforced, advised or judged,
 it names the check letter, the make target, the test, or the guide that does
 it — the `enforced_by` field of `config/practices.json` is the machine-read
 form of the same habit, and `check_T` proves those names resolve.
+
+For check-name citations, `.` before a name is not read only without spaces; `=` after a name is not read with or without spaces; `==` after a name is read with or without spaces; an unqualified `check_` name with one capital names a member of `check_structure.CHECKS`, every other `check_` name names a Python module stem or function or class definition, and prose check letters (including lists and ranges) name members of that same registry, with inline code names read and fenced examples exempt (`tests/integration/test_doc_drift.py`).
 
 Numbers are measurements, and a measurement says when and how it was taken
 ("57 links and 132 citations as the check counts them, 2026-09-02"). A number

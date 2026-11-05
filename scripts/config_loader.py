@@ -1050,6 +1050,12 @@ KEYS = tuple(
                 "the code roots the config-reads gate test walks",
             ),
             _row(
+                ("doc_drift", "check_name_guide"),
+                "repo_path",
+                NONE,
+                "the guide whose check-name sentence is held to the citation scan",
+            ),
+            _row(
                 ("doc_drift", "gate_target"),
                 "nonempty_str",
                 NONE,
