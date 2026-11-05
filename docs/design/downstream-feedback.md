@@ -3120,8 +3120,8 @@ the same answer each time:
   spaces inside a list item, are not seen at all, so their code is read as
   prose and a link or a citation written in it is checked.
 
-`tests/unit/scripts/test_check_structure_fences.py` pins the last two as stated
-gaps, and `docs/guides/doc-style.md` states the gap in one sentence. No shipped
+`tests/unit/scripts/test_check_structure_fences.py` pins the two container
+shapes of the last item as stated gaps, and holds no comment case, and `docs/guides/doc-style.md` states the gap in one sentence. No shipped
 document hits any of the three today, so the defect is latent: a user's next
 document with a fenced example inside a list or a quote gets a false finding or
 a missed one. The cap is one pass and one slice, with at most three review fix
@@ -3129,7 +3129,7 @@ rounds; the stop point is CMP-12.S1 green or the cap.
 
 | Slice | Gap | Status |
 |-------|-----|--------|
-| CMP-12.S1 | The fence grammar keeps a stack of the containers a line sits in, as CommonMark's block phase does. A blockquote marker is up to three spaces, `>` and one optional space. A list item's content column is the marker's width plus its padding. The padding is one to four spaces. Five or more spaces after the marker count as a padding of one. An item whose first line is empty has a padding of one. A line stays in each open container whose prefix it carries. An unprefixed line continues an open paragraph only when it is paragraph text. A line that would start a fence, a heading, a thematic break, a list item, a quote or an HTML block ends the containers whose prefix it lacks, and is read again outside them. A fenced block is never continued lazily. A fence opens with up to three spaces past its container's content column. A fence closes on a closer of the same character, at least as long, with up to three spaces of its own past that column, whatever the opener's indent. A fence also closes when its container ends. An HTML block of CommonMark types 1 to 5 starts at a line whose text past its containers begins with its start marker after up to three spaces. Those starts are a `<script>`, `<pre>`, `<style>` or `<textarea>` tag, `<!--`, `<?`, `<!` and a letter, and `<![CDATA[`. Each runs to the line that holds its end marker, or to its container's end. A fence line inside such a block is HTML, not a fence. An inline comment that closes inside its line is still blanked, so a heading's anchor is read without it. A `<!--` that opens mid-paragraph and does not close is text, and hides no line after it. Both copies change together. The pin holds them equal. `_fence_scan` still returns the opener's 1-based line for a fence left open. A user's prose after a list or a quote is checked, and code inside one is not | planned |
+| CMP-12.S1 | The fence grammar keeps a stack of the containers a line sits in, as CommonMark's block phase does. A blockquote marker is up to three spaces, `>` and one optional space. A list item's content column is the marker's own column inside its container, plus the marker's width, plus its padding. The padding is one to four spaces. Five or more spaces after the marker count as a padding of one. An item whose first line is empty has a padding of one. A line stays in each open container whose prefix it carries. An unprefixed line continues an open paragraph only when it is paragraph text. A line that would start a fence, a heading, a thematic break, a list item, a quote or an HTML block ends the containers whose prefix it lacks, and is read again outside them. These are CommonMark's paragraph-interruption rules, so an ordered marker that starts above 1, and a list marker with nothing after it, interrupt nothing and continue the paragraph. A fenced block is never continued lazily. A fence opens with up to three spaces past its container's content column. A fence closes on a closer of the same character, at least as long, with up to three spaces of its own past that column, whatever the opener's indent. A fence also closes when its container ends. An HTML block of CommonMark types 1 to 5 starts at a line whose text past its containers begins with its start marker after up to three spaces. Those starts are a `<script>`, `<pre>`, `<style>` or `<textarea>` tag, `<!--`, `<?`, `<!` and an ASCII capital letter (A to Z), and `<![CDATA[`. Each runs to the line that holds its end marker, or to its container's end. A fence line inside such a block is HTML, not a fence. An inline comment that closes inside its line is still blanked, so a heading's anchor is read without it. A `<!--` that opens mid-paragraph and does not close is text, and hides no line after it. Both copies change together. The pin holds them equal. `_fence_scan` still returns the opener's 1-based line for a fence left open. A user's prose after a list or a quote is checked, and code inside one is not | planned |
 
 CMP-12.S1 owns `_fence_scan`, its docstring and the module `summary:` sentence on
 fences in `scripts/check_structure.py`, `unfenced_lines` and its comment in
@@ -3144,6 +3144,9 @@ row. It works test-first. Each regression case below fails on the lane's base
 for the shape it names, as the plan's probes on `9a9703f` showed:
 
 - a list item's fence that the item's end closes, and the prose after it;
+- an item whose marker is indented three spaces, holding a fence indented six;
+- an item's paragraph continued by a `1000.` line, then a fence indented five
+  spaces, which stays in the item;
 - a quoted fence whose opener is indented three spaces and whose closer is not;
 - an item with five spaces after its marker, an item whose first line is
   empty, and an item with a lazy line, each holding a fence indented five
@@ -3154,10 +3157,11 @@ for the shape it names, as the plan's probes on `9a9703f` showed:
 - a `<pre>` block, a `<?` block, a `<!DOCTYPE` block and a `<![CDATA[` block,
   each holding a fence line.
 
-Three preservation cases already pass on the base and must still pass: a
+Four preservation cases already pass on the base and must still pass: a
 comment block holding a fence line, a `<!--` in mid-paragraph that never
-closes, and an inline comment in a heading, which stays blanked from its
-anchor.
+closes, an inline comment in a heading, which stays blanked from its
+anchor, and a `<!doctype` line (and a `<!` before a non-ASCII letter)
+followed by a fence, which is text and leaves the fence a fence.
 
 Its acceptance includes the tree's own output before and after, taken by
 read-only probes, not by `make trace`, which writes a matrix. The probes are
