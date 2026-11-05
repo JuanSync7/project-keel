@@ -409,6 +409,11 @@ _OPENER_KEYS = (("change_comments", "phrases"), ("doc_drift", "history_paths"))
 _BLOCK_MARK = re.compile(r"^\s*(?:[-*+]\s+(?:\[[ xX]\]\s+)?|\d+[.)]\s+|#{1,6}\s+|>\s*)")
 # A line that ends a sentence, closing emphasis, brackets or quotes allowed.
 _SENTENCE_END = re.compile(r"[.!?][*_)\"'\u201d]*$")
+# The same stop inside a line, with the blanks before the next sentence.
+_SENTENCE_BREAK = re.compile(r"[.!?][*_)\"'\u201d]*\s+")
+# A table row's cell border: a pipe that an odd run of backslashes does not
+# escape, as GitHub's table grammar reads it.
+_CELL_BORDER = re.compile(r"(?<!\\)(?:\\\\)*\|")
 # A step's number quoted or parenthesised in prose ("2. Now run X") is not a
 # sentence end: on this tree every reported opener was the "Now" after one,
 # measured. Only that shape: a sentence that ends in a number ("added in
@@ -465,7 +470,7 @@ def thought_openers(text):
             previous = None
             continue
         if line.lstrip().startswith("|"):
-            for cell in line.strip().strip("|").split("|"):
+            for cell in table_cells(line):
                 out.extend(
                     (i, s) for s in _sentences(_OWN_NUMBER.sub("", cell.strip()))
                 )
@@ -474,30 +479,51 @@ def thought_openers(text):
         mark = _BLOCK_MARK.match(line)
         body = _OWN_NUMBER.sub("", line[mark.end() :] if mark else line.strip())
         sentences = _sentences(body)
-        if mark or previous is None or _ends_sentence(previous):
+        if mark or previous is None or _breaks_before(previous, body):
             out.append((i, body))
         out.extend((i, s) for s in sentences[1:])
         previous = line.rstrip()
     return out
 
 
+def table_cells(row):
+    """The cells of the table *row*, split at each unescaped pipe, the outer
+    border's empty ends left out."""
+    text = row.strip()
+    cells, last = [], 0
+    for border in _CELL_BORDER.finditer(text):
+        cells.append(text[last : border.end() - 1])
+        last = border.end()
+    cells.append(text[last:])
+    if text.startswith("|"):
+        cells = cells[1:]
+    if cells and not cells[-1].strip() and len(cells) > 1:
+        cells = cells[:-1]
+    return cells
+
+
 def _sentences(text):
-    """*text* split after each `.`, `!` or `?`, keeping a quoted or
-    parenthesised step's number joined to the words after it."""
-    sentences = []
-    for piece in re.split(r"(?<=[.!?])\s+", text):
-        if sentences and _STEP_NUMBER_END.search(sentences[-1]):
-            sentences[-1] += " " + piece
-        else:
-            sentences.append(piece)
-    return sentences
+    """*text* split where one sentence ends and the next opens (see
+    _breaks_before)."""
+    sentences, last = [], 0
+    for stop in _SENTENCE_BREAK.finditer(text):
+        head = text[last : stop.end()].rstrip()
+        if _breaks_before(head, text[stop.end() :]):
+            sentences.append(head)
+            last = stop.end()
+    return [*sentences, text[last:]]
 
 
-def _ends_sentence(text):
-    """Whether *text* ends a sentence: a `.`, `!` or `?` (closing markup
-    allowed) that is not the period after a quoted or parenthesised step's
-    number."""
-    return bool(_SENTENCE_END.search(text)) and not _STEP_NUMBER_END.search(text)
+def _breaks_before(head, rest):
+    """Whether a sentence ends after *head* and *rest* opens the next: *head*
+    ends in `.`, `!` or `?` (closing markup allowed) that is not the period
+    after a quoted or parenthesised step's number, and *rest* does not open in
+    lower case, which a period after "e.g." or "i.e." is followed by."""
+    return (
+        bool(_SENTENCE_END.search(head))
+        and not _STEP_NUMBER_END.search(head)
+        and not rest.lstrip(_OPENING_MARKUP)[:1].islower()
+    )
 
 
 def _opening_phrase(segment, phrases):
@@ -603,7 +629,7 @@ def roster_rows(root):
                 if header is not None and line.strip() == "":
                     break
                 continue
-            cells = [c.strip() for c in line.strip().strip("|").split("|")]
+            cells = [c.strip() for c in table_cells(line)]
             if header is None:
                 header = [c.lower() for c in cells]
                 not_for = header.index("not for") if "not for" in header else None

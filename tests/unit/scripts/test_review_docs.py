@@ -252,12 +252,49 @@ def test_a_change_phrase_at_each_kind_of_opener_is_reported_once(
             [("a.md", 3, "removed")],
         ),
         ('| Rule | It is a step ("2. Now run X"). |', []),
+        ("| Rule | Reads a \\| Now b. |", []),
+        ("| Rule | Reads a \\\\| Now b. |", [("a.md", 1, "now")]),
+        ("| Rule | It reads it, e.g. now twice. |", []),
+        ("| Rule | It reads **once.** Now twice. |", [("a.md", 1, "now")]),
     ],
-    ids=["cell-sentence", "body-row-sentence", "cell-step-number"],
+    ids=[
+        "cell-sentence",
+        "body-row-sentence",
+        "cell-step-number",
+        "escaped-pipe",
+        "escaped-backslash-pipe",
+        "cell-abbreviation",
+        "cell-closing-emphasis",
+    ],
 )
 def test_a_sentence_inside_a_table_cell_opens_a_thought(tmp_path, text, expected):
     """A cell is prose like a paragraph: a sentence after `.`, `!` or `?` in
     it opens a thought, and a quoted step's number ends none."""
+    root = _opener_root(tmp_path)
+    assert _openers(root, "a.md", text + "\n") == expected
+
+
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        ("It reads it, e.g. now twice.", []),
+        ("It reads it, i.e.\nnow twice.", []),
+        ("It takes 2.5 s. Now it reads twice.", [("a.md", 1, "now")]),
+        ("It reads **once.** Now twice.", [("a.md", 1, "now")]),
+        ('It reads "once." Now twice.', [("a.md", 1, "now")]),
+    ],
+    ids=[
+        "abbreviation",
+        "abbreviation-at-line-end",
+        "decimal",
+        "closing-emphasis",
+        "closing-quote",
+    ],
+)
+def test_a_sentence_ends_where_the_next_one_opens(tmp_path, text, expected):
+    """A period ends a sentence only when the next word does not open in
+    lower case, so "e.g." ends none; closing emphasis or a closing quote
+    after the stop still ends one, in a line and at its end alike."""
     root = _opener_root(tmp_path)
     assert _openers(root, "a.md", text + "\n") == expected
 

@@ -104,7 +104,10 @@ version rather than a bare commit:
   reviewer. It is advisory because a past participle or "now" at an opener is
   as often a present claim ("2. Now run `make verify`", "Removed entries are
   reported") as a report. The period after a step's number quoted or
-  parenthesised in prose, the "2." of `("2. Now run X")`, ends no sentence; a
+  parenthesised in prose, the "2." of `("2. Now run X")`, ends no sentence,
+  nor does a stop followed by a lower-case word, the "e.g." of "e.g. now", while
+  closing emphasis or a quote after a stop still ends one; a table row splits
+  only at a pipe no backslash escapes; a
   heading's or a table cell's own number (`## 3. Removed checks`) is not its
   first word; and a phrase counts only as a whole word ("Nowhere" is not
   "now"). A phrase in mid-sentence and a count stated in prose are left to
