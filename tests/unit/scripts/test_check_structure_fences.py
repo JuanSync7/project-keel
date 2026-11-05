@@ -31,6 +31,8 @@ pytestmark = pytest.mark.unit
             0,
         ),
         ("```\n~~~\n``\n``` trailing\ncheck_missing", [""] * 5, 1),
+        # Only spaces and tabs may follow a closer; a no-break space may not.
+        ("```\n```\u00a0\ncheck_missing\n```", [""] * 4, 0),
         (
             "   ```python\ncheck_missing\n    ```\n   ````\nafter",
             [""] * 4 + ["after"],

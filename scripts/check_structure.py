@@ -3548,10 +3548,13 @@ def _fence_scan(text):
     """(lines, open_line): the document's lines with fenced code blocks and
     HTML comments blanked, numbering kept, and the 1-based line of a fence that
     is still open when the document ends, else 0. A fence closes only on the
-    same character, at least as long, followed only by whitespace; backtick
-    openers have no backtick in their info string (CommonMark). Both allow at
-    most three leading spaces. This line scanner does not parse blockquote
-    prefixes or list-relative indentation beyond those three spaces."""
+    same character, at least as long, followed only by spaces or tabs;
+    backtick openers have no backtick in their info string (CommonMark). Both
+    allow at most three leading spaces. This line scanner does not parse
+    blockquote prefixes or list-relative indentation beyond those three
+    spaces, a fence opened in a list item stays open past the item's end, and
+    HTML comments are blanked before fences are found, so a comment opener
+    inside a fence hides the text after it."""
     out, fence, opened = [], None, 0
     text = _HTML_COMMENT.sub(lambda m: "\n" * m.group(0).count("\n"), text)
     for number, line in enumerate(text.split("\n"), 1):
@@ -3561,7 +3564,7 @@ def _fence_scan(text):
             and fence is not None
             and m.group(1)[0] == fence[0]
             and len(m.group(1)) >= len(fence)
-            and not line[m.end() :].strip()
+            and not line[m.end() :].strip(" \t")
         )
         opens = (
             m and fence is None and (m.group(1)[0] != "`" or "`" not in line[m.end() :])

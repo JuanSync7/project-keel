@@ -2,7 +2,7 @@
 title: Integration — shipped documents say nothing true of one host or one moment
 kind: tests
 layer: n/a
-summary: The shipped-doc drift gate. A shipped document is any Markdown file (or its `.md.jinja` twin) outside config/project.json `doc_drift.history_paths`; in its prose it names no concrete campaign or slice id (the `work_naming` mention grammar, any prefix), matches no `doc_drift.forbidden_phrases` pattern, names no loopback port that no non-Markdown file declares, cites no document copier.yml `_exclude`s unconditionally, and cites only check letters in check_structure.CHECKS or check names a Python module stem or definition supplies. Python twins retain definitions after Jinja tags are removed with line numbers preserved, and unparseable source raises with its path. Check citations read inline code names and exempt fences within the shared scanner's container limits; the check-name sentence in doc_drift.check_name_guide is held to each mark's side, effect and spacing. Code spans and fences are illustrations and are exempt from the prose rules, as check_Z treats them. Every expected set is derived from the thing it describes, never typed here; a missing or malformed `doc_drift` or `work_naming` block fails, a scan over zero documents fails, and only the copier.yml-derived test skips, with a stated reason, in a generated project. Each rule has a fault-injection twin that plants one item and asserts exactly one finding. Not a writer: it reads the tree and writes only under pytest's tmp_path.
+summary: The shipped-doc drift gate. A shipped document is any Markdown file (or its `.md.jinja` twin) outside config/project.json `doc_drift.history_paths`; in its prose it names no concrete campaign or slice id (the `work_naming` mention grammar, any prefix), matches no `doc_drift.forbidden_phrases` pattern, names no loopback port that no non-Markdown file declares, cites no document copier.yml `_exclude`s unconditionally, and cites only check letters in check_structure.CHECKS or check names a Python module stem or definition supplies. Python twins retain definitions after Jinja tags are removed with line numbers preserved, and unparseable source raises with its path. Check citations read inline code names and letters inside code spans and exempt fences within the shared scanner's container limits; a twin definition whose name a Jinja tag touches is not read; the check-name sentence in doc_drift.check_name_guide is held to each mark's side, effect and spacing. Code spans and fences are illustrations and are exempt from the prose rules, as check_Z treats them. Every expected set is derived from the thing it describes, never typed here; a missing or malformed `doc_drift` or `work_naming` block fails, a scan over zero documents fails, and only the copier.yml-derived test skips, with a stated reason, in a generated project. Each rule has a fault-injection twin that plants one item and asserts exactly one finding. Not a writer: it reads the tree and writes only under pytest's tmp_path.
 """
 
 import ast
@@ -313,7 +313,9 @@ def python_names(root):
     """Python module stems and function/class definitions, including twins.
 
     Jinja tags are removed from twins, preserving newlines so syntax errors
-    name their source line. Unparseable Python, twin or plain, is never skipped.
+    name their source line. A definition whose name a removed tag touched is
+    not returned, since its rendered name is unknown. Unparseable Python, twin
+    or plain, is never skipped.
     """
     names = set()
     for dirpath, _dirs, files in cs.walk(str(root)):
@@ -323,20 +325,31 @@ def python_names(root):
             if not stem.endswith(".py") or full.is_symlink():
                 continue
             names.add(stem[:-3])
-            source = full.read_text(encoding="utf-8")
+            source, cuts = full.read_text(encoding="utf-8"), set()
             if name.endswith(_TWIN_SUFFIX):
-                source = _PYTHON_JINJA_TAG.sub(
-                    lambda match: "\n" * match[0].count("\n"), source
-                )
+                source, cuts = _strip_jinja(source)
             tree = ast.parse(source, filename=str(full))
-            names.update(
-                node.name
-                for node in ast.walk(tree)
-                if isinstance(
+            starts = [0] + [n + 1 for n, c in enumerate(source) if c == "\n"]
+            for node in ast.walk(tree):
+                if not isinstance(
                     node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
-                )
-            )
+                ):
+                    continue
+                at = source.index(node.name, starts[node.lineno - 1] + node.col_offset)
+                if not cuts & {at, at + len(node.name)}:
+                    names.add(node.name)
     return names
+
+
+def _strip_jinja(source):
+    """Source with Jinja tags removed, newlines kept, and the offsets of the
+    removals in the result."""
+    out, cuts, last = [], set(), 0
+    for match in _PYTHON_JINJA_TAG.finditer(source):
+        out += [source[last : match.start()], "\n" * match[0].count("\n")]
+        cuts.add(sum(map(len, out)))
+        last = match.end()
+    return "".join(out) + source[last:], cuts
 
 
 def _prose_letters(citation):
@@ -357,9 +370,9 @@ def _prose_letters(citation):
 def check_citation_findings(docs, letters, names):
     """Unknown check names with their document and line; fences are examples.
 
-    Inline code names checks too, while prose letter lists and ranges are
-    read outside code spans. CHECKS decides whether a letter runs, even if a
-    retired function remains defined in Python.
+    Inline code cites checks as prose does: names, letters, lists and ranges
+    are read inside code spans too. CHECKS decides whether a letter runs, even
+    if a retired function remains defined in Python.
     """
     findings = []
     for relpath, text in docs:
@@ -379,9 +392,11 @@ def check_citation_findings(docs, letters, names):
                 "%s:%d: cites %s, but %s -- name a check that exists"
                 % (relpath, line_number, name, reason)
             )
-        # Keep line breaks while blanking spans so wrapped lists and ranges
-        # resolve as one citation without losing the document's line numbers.
-        prose = cs._INLINE_CODE.sub(lambda m: re.sub(r"[^\n]", " ", m[0]), unfenced)
+        # Only the span delimiters are blanked, to spaces of the same width, so
+        # `check Q` is read like prose and line numbers are kept.
+        prose = cs._INLINE_CODE.sub(
+            lambda m: " " * len(m[1]) + m[2] + " " * len(m[1]), unfenced
+        )
         for match in _CHECK_PROSE.finditer(prose):
             unknown = [c for c in _prose_letters(match[1]) if c not in letters]
             if unknown:
@@ -1191,10 +1206,14 @@ def test_python_check_names_and_citation_exemptions(tmp_path):
         "{# a\n comment #}\n"
         "{{ preamble }}def check_twin_expression(): pass\n"
         "class check_twin_class:\n"
-        "    async def check_twin_async(self): return '{{ value }}'\n",
+        "    async def check_twin_async(self): return '{{ value }}'\n"
+        "def check_fused{{ suffix }}(): pass\n"
+        "def {{ prefix }}check_prefixed(): pass\n",
         encoding="utf-8",
     )
     names = python_names(tmp_path)
+    # A tag that touches a name leaves that name unknown, never a guess.
+    assert not names & {"check_fused", "check_prefixed"}
     assert {
         "check_module",
         "check_twin",
@@ -1212,7 +1231,7 @@ def test_python_check_names_and_citation_exemptions(tmp_path):
     )
     examples = (
         "module.check_missing; module.check_Q; check_missing=False; "
-        "f(check_missing = 1); check_Q=1; a check WARN; `check Q`\n"
+        "f(check_missing = 1); check_Q=1; a check WARN\n"
         "```python\ncheck_missing\ncheck Q\n```\n"
         "~~~text\ncheck_missing\n~~~\n"
     )
@@ -1221,6 +1240,10 @@ def test_python_check_names_and_citation_exemptions(tmp_path):
         [("guide.md", "check_missing == 1\nchecks U–P")], set(), names
     )
     assert len(findings) == 2 and all("guide.md:" in f for f in findings)
+    spans = check_citation_findings(
+        [("guide.md", "`check Q`\n`checks P-U`")], set(), names
+    )
+    assert [f.split(":")[:2] for f in spans] == [["guide.md", "1"], ["guide.md", "2"]]
     broken = tmp_path / "broken"
     broken.mkdir()
     (broken / "check_broken.py").write_text("def (", encoding="utf-8")
