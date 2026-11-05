@@ -45,8 +45,9 @@ _DOC_SUFFIXES = (".md", ".md" + _TWIN_SUFFIX)
 _LOOPBACK_PORT = re.compile(r"\b(?:localhost|127\.0\.0\.1):([0-9]{2,5})\b")
 # A single capital names CHECKS; every longer identifier names Python code.
 # Qualified attributes and keyword arguments belong to the library being used.
-# The name after the prefix is read by _word, Python's identifier grammar.
-_CHECK_START = re.compile(r"(?<![\w.])check_")
+# The name after the prefix is read by _word, Python's identifier grammar, and
+# _continues_name reads the character before it by the same grammar.
+_CHECK_START = re.compile(r"check_")
 _KEYWORD_ARGUMENT = re.compile(r"\s*=(?!=)")
 _LETTER = r"[A-Z](?![\w'])"
 _CHECK_PROSE = re.compile(
@@ -388,6 +389,14 @@ def _word(source, at):
     return at, end
 
 
+def _continues_name(source, at):
+    """Whether the character before *at* continues an identifier or is an
+    attribute's dot, so a name starting at *at* is part of a longer one."""
+    # A regex \w misses a combining mark and a middle dot, which Python's
+    # XID_Continue grammar counts.
+    return at > 0 and (source[at - 1] == "." or ("_" + source[at - 1]).isidentifier())
+
+
 def _strip_jinja(source):
     """Source with Jinja tags removed, newlines kept, and the offsets in the
     result where an expression or statement tag was removed."""
@@ -426,6 +435,8 @@ def check_citation_findings(docs, letters, names):
     for relpath, text in docs:
         unfenced = "\n".join(cs._unfenced_lines(text))
         for match in _CHECK_START.finditer(unfenced):
+            if _continues_name(unfenced, match.start()):
+                continue
             start, end = _word(unfenced, match.start())
             if end == match.end() or _KEYWORD_ARGUMENT.match(unfenced, end):
                 continue
@@ -1292,6 +1303,13 @@ def test_python_check_names_and_citation_exemptions(tmp_path):
     # A citation is read by the same grammar, and compared as Python binds it.
     assert not check_citation_findings(
         [("guide.md", "`check_e\u0301` and `check_l\u00b7l`")], set(), names
+    )
+    # A name that only ends in check_ is not a citation of one, however its
+    # earlier part is spelt: a combining mark and a middle dot continue it.
+    assert not check_citation_findings(
+        [("guide.md", "`e\u0301check_missing` and `l\u00b7check_missing`")],
+        set(),
+        names,
     )
     assert {
         "check_module",
