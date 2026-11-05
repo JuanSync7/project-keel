@@ -54,10 +54,16 @@ NOT_READ_NAME = "PROJECT_PATHS_NOT_READ"
 FINISH_SCRIPT = "scripts/jobs/finish_update.py"
 FINISH_FLAG = "--finish-with"
 
-# This module names the finish script only to print it. A literal, not
-# FINISH_SCRIPT: a declaration is read by AST, never by running the module.
+# This module names the finish script only to print it, and the manifest only
+# to judge a declared read by its name. Literals, not FINISH_SCRIPT: a
+# declaration is read by AST, never by running the module.
 PROJECT_PATHS_NOT_READ = (
     ("scripts/jobs/finish_update.py", "the command a refusal names, never opened"),
+    (
+        "config/project.json",
+        "compared with a declared read's name and named in the remedy; opened"
+        " only when a module of the job declares it",
+    ),
 )
 
 # `git merge-file` markers at its default size, any label (copier 9.x passes
@@ -339,7 +345,7 @@ def conflicted_inputs(entry_file, root, search_path=None):
         try:
             with open(path, "rb") as fh:
                 text = _decode(fh.read())
-        except FileNotFoundError:
+        except FileNotFoundError:  # noqa: DROP001 -- an absent read, including a dangling link, cannot hold a conflict hunk
             # A link to nothing is as absent to the loader as no file at all.
             continue
         except OSError as exc:
