@@ -39,6 +39,12 @@ def _as_dict(report):
         "stale": report.stale,
         "unresolved": report.unresolved,
         "rosters": report.rosters,
+        "change_openers": None
+        if report.change_openers is None
+        else [
+            {"path": path, "line": line, "phrase": phrase}
+            for path, line, phrase in report.change_openers
+        ],
         "candidates": list(report.candidates),
         "applied": list(report.applied),
         "skipped": list(report.skipped),
@@ -176,6 +182,12 @@ def main(argv=None):
                 len(report.skipped),
             )
         )
+        for path, line, phrase in report.change_openers or ():
+            sys.stdout.write(
+                "OPENER %s:%d: opens a thought with %r; a change report belongs "
+                "in CHANGELOG.md, a present claim stays (advisory)\n"
+                % (path, line, phrase)
+            )
         for cid, why in report.withheld:
             sys.stdout.write("  withheld %s: %s\n" % (cid, why))
         if report.dry_run and report.candidates:

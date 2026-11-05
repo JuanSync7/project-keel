@@ -8,7 +8,7 @@ tags: [practices, gate, advisory, ruff, mypy, types, llm, cuda, langgraph, guide
 summary: The catalogue of good-Python practices Keel promotes for general and LLM/CUDA/LangGraph code — each sorted onto the gate/advisory/doc line, sourced from config/practices.json.
 id: docs-guides-coding-practices
 created: 2026-07-06
-updated: 2026-10-31
+updated: 2026-11-05
 visibility: internal
 canonical: true
 ---
@@ -61,11 +61,11 @@ showcase shows it (`src/backend/showcase/_repo.py`) and nothing gates on it.
 
 ## The catalogue
 
-### Gates — enforced now, config-first (Slice 0)
+### Gates — enforced, config-first
 
-These ride the existing `make lint` / `make typecheck` into `make verify` with
-near-zero custom code — Keel shipped ruff/mypy essentially unconfigured, so
-populating `select` + a few strict flags was the highest-leverage first move:
+These ride `make lint`, `make typecheck` and `make check` into `make verify`
+with near-zero custom code: most are a ruff family or a mypy flag that
+`pyproject.toml` selects, and the rest are named structure checks:
 
 | Practice | Mechanism |
 |----------|-----------|
@@ -77,23 +77,22 @@ populating `select` + a few strict flags was the highest-leverage first move:
 | No `print()` in library code; no interpolation inside log calls | ruff `T20`, `G`, `LOG` |
 | Public API via `__init__`/`__all__`; no cross-package `_private` import | `check_structure.py` `check_C/D/E` + ruff `I` |
 | `assert_never` in the default branch of `Literal`/`Enum` routing | mypy Never-narrowing (convention) |
-| Every function is fully typed (no untyped defs / calls / decorators) | mypy `strict` (Slice 5) |
-| No blanket `# noqa` / `# type: ignore` — each names its code | ruff `PGH` (Slice 5) |
+| Every function is fully typed (no untyped defs / calls / decorators) | mypy `strict` |
+| No blanket `# noqa` / `# type: ignore` — each names its code | ruff `PGH` |
 | One machine-decided layout (no hand-formatting in review) | `ruff format --check` via `make fmt-check` |
 | Machine-readable module header (`title:`/`summary:`, in a shell file's opening comment block too) + exported-symbol docstrings | `check_O` + `check_E` (ADR-K-0008); the local corpus gated fresh via `check_corpus` |
 
-The **Slice-5 widen pass** measured every candidate rule first (Slice 0's
-discipline). It took mypy to full **`strict`** (the backlog was 3 `no-untyped-def`
-sites, now fixed) and added the ruff families that were measured at **zero**
-current violations — `A`, `FA`, `FURB`, `ICN`, `ISC`, `PERF`, `PGH`, `PIE`,
-`RSE`, `SLOT`, `NPY` — so enabling them is pure future-protection with no churn
-(several pair with a keel practice: `PGH` ↔ the suppression discipline, `SLOT` ↔
-slots-hot-path, `NPY` ↔ the tensor domain).
+A rule family is selected only once the tree has been measured against it.
+mypy runs at full **`strict`**, and the ruff families `A`, `FA`, `FURB`, `ICN`,
+`ISC`, `PERF`, `PGH`, `PIE`, `RSE`, `SLOT` and `NPY` are selected because the
+tree has **zero** violations of them, so they protect against new code without
+churning old code (several pair with a keel practice: `PGH` ↔ the suppression
+discipline, `SLOT` ↔ slots-hot-path, `NPY` ↔ the tensor domain).
 
-**Formatting is a gate, not a review topic.** `make fmt` had existed all along,
-but nothing required it to have been *run* — so the tree drifted to 109
-unformatted files while `make verify` stayed green. `make lint` now also runs
-`make fmt-check` (`ruff format --check`) over the same `CODE_ROOTS`, read-only:
+**Formatting is a gate, not a review topic.** A `make fmt` nothing requires to
+have been *run* lets the tree drift unformatted while `make verify` stays green,
+so `make lint` also runs `make fmt-check` (`ruff format --check`) over the same
+`CODE_ROOTS`, read-only:
 a check that repairs its own subject reports success instead of drift. The
 formatter is left at its **defaults** deliberately — the value of this tier is
 that no one re-litigates layout, and a tuned formatter reopens exactly that

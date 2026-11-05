@@ -1,8 +1,8 @@
 """
-title: Unit — review_docs (the freshness rule)
+title: Unit — review_docs (the freshness rule and its advisories)
 kind: tests
 layer: n/a
-summary: The pure half of scripts/review_docs.py, pinned: `updated:` must be an ISO date, never earlier than the file's last commit, and a file modified in the working tree must carry today's date or later. Measured before the rule landed: 135 of 153 governed documents were stamped earlier than their last commit — including AGENT.md and CONVENTIONS.md — and nothing said so.
+summary: The pure half of scripts/jobs/review_docs.py, pinned: `updated:` must be an ISO date, never earlier than the file's last commit, and a file modified in the working tree must carry today's date or later. Measured before the rule landed: 135 of 153 governed documents were stamped earlier than their last commit — including AGENT.md and CONVENTIONS.md — and nothing said so. The change-opener advisory, pinned too: each kind of thought opener is read, a phrase counts only as a whole word ("Nowhere" and "Nowadays" are not "now"), the period after a quoted or parenthesised step's number ends no sentence (the shapes of the three lines the real tree reported), while a heading's or a cell's own number and a sentence that ends in a number (`## 3. Removed checks`, "added in 2024.", "1,000.", a line ending "2.") hide no opener after them, a present claim at one ("2. Now run X", a `fixed-point` cell) is reported while `--strict` still exits 0, no manifest is a stated "unchecked", a refused opener list exits 14 with the loader's reason (which key, and why) on the refusal line, and the copied fence grammar equals check_structure's, down to a fence that closes only on its own character (a `~~~` line inside a backtick fence is content, and the reverse) and only when followed by spaces or tabs.
 """
 
 import datetime
@@ -18,6 +18,7 @@ _ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(_ROOT / "scripts" / "jobs"))
 
 import review_docs  # noqa: E402
+from exit_codes import ExitCode  # noqa: E402
 
 import hermetic_git  # noqa: E402
 
@@ -127,6 +128,328 @@ def test_mentions_never_make_strict_fail(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(review_docs, "collect", lambda root: [])
     assert review_docs.main(["--root", str(tmp_path), "--strict"]) == 0
     assert "unresolved mention" in capsys.readouterr().out
+
+
+# --- change openers: advisory, since a participle or "now" is as often a present claim
+
+_PHRASES = [
+    "now",
+    "no longer",
+    "previously",
+    "added",
+    "changed",
+    "removed",
+    "moved",
+    "fixed",
+]
+
+
+def _opener_root(tmp_path, phrases=_PHRASES, history=("CHANGELOG.md", "docs/adr/")):
+    (tmp_path / "config").mkdir(exist_ok=True)
+    (tmp_path / "config" / "project.json").write_text(
+        json.dumps(
+            {
+                "change_comments": {"phrases": list(phrases)},
+                "doc_drift": {"history_paths": list(history)},
+            }
+        ),
+        encoding="utf-8",
+    )
+    return tmp_path
+
+
+def _openers(root, name, text):
+    (root / name).write_text(text, encoding="utf-8")
+    phrases, history = review_docs.opener_policy(str(root))
+    return review_docs.change_openers(
+        review_docs.shipped_markdown(str(root), history), phrases
+    )
+
+
+def test_the_fence_grammar_is_check_structures():
+    """A copy, since importing check_structure here would put it in the import
+    closure restamp_docs promises is free of it; this pin keeps the copy true."""
+    sys.path.insert(0, str(_ROOT / "scripts"))
+    import check_structure as cs
+
+    assert review_docs.FENCE.pattern == cs._FENCE.pattern
+    assert review_docs.INLINE_CODE.pattern == cs._INLINE_CODE.pattern
+    assert review_docs.HTML_COMMENT.pattern == cs._HTML_COMMENT.pattern
+    assert review_docs.HTML_COMMENT.flags == cs._HTML_COMMENT.flags
+    texts = [p.read_text(encoding="utf-8") for p in sorted(_ROOT.glob("docs/**/*.md"))]
+    texts.append("````\n```\nx\n````\n<!-- a\nb -->\n~~~\nopen")
+    # A fence closes only on its own character: a `~~~` line inside a backtick
+    # fence, and the reverse, is content. No shipped document holds either,
+    # so without these two a copy that dropped the rule would still match.
+    other_char = ["```\n~~~\nx\n```\nafter", "~~~\n```\ny\n~~~\nafter"]
+    texts.extend(other_char)
+    # CommonMark leaves a fence open when text follows the closing run.
+    trailing = "```\nx\n``` trailing\nafter"
+    texts.append(trailing)
+    # The opener, closer and indent rules check_structure's own fence tests
+    # pin: an inline triple-backtick span opens nothing, a no-break space
+    # after a closing run is text, and four spaces of indent is no fence.
+    texts += [
+        "``` check_x ```\nprose",
+        "```\n```\u00a0\nx\n```\nafter",
+        "    ```\nprose\n",
+        "```markdown\n```python\nx\n```\nafter",
+    ]
+    assert len(texts) > 1, "a pin over zero documents"
+    for text in texts:
+        assert review_docs.unfenced_lines(text) == cs._unfenced_lines(text)
+    for text in other_char:
+        assert review_docs.unfenced_lines(text) == ["", "", "", "", "after"]
+    assert review_docs.unfenced_lines(trailing) == ["", "", "", ""]
+
+
+@pytest.mark.parametrize(
+    "planted, exempt",
+    [
+        (
+            "A line with no stop\n\nNow the gate runs twice.",
+            "A line with no stop\nnow the gate runs twice.",
+        ),
+        ("`x` reads it. Changed: `y`.", "`x` reads it. `y` changed."),
+        ("- **Added** a second pass.", "- A second pass, `added` by the gate."),
+        ("| Row | Changed to read the manifest. |", "| Row | Reads the manifest. |"),
+        (
+            "It reads one file. No longer slow.",
+            "It reads one file, no longer slow.",
+        ),
+        (
+            "It reads one file\nand two more.\nNow fast.",
+            "It reads one\nnow fast file.",
+        ),
+        ("## Removed checks", "```\nRemoved checks\n```"),
+    ],
+    ids=[
+        "paragraph",
+        "code-span",
+        "list-item",
+        "table-cell",
+        "sentence",
+        "next-line",
+        "heading",
+    ],
+)
+def test_a_change_phrase_at_each_kind_of_opener_is_reported_once(
+    tmp_path, planted, exempt
+):
+    root = _opener_root(tmp_path)
+    assert _openers(root, "a.md", "# Guide\n\nIt reads.\n") == []
+    found = _openers(root, "a.md", "# Guide\n\n" + planted + "\n")
+    assert len(found) == 1 and found[0][0] == "a.md", found
+    assert _openers(root, "a.md", "# Guide\n\n" + exempt + "\n") == []
+
+
+def test_a_change_phrase_at_a_sentence_opener_is_an_advisory_line(
+    tmp_path, monkeypatch, capsys
+):
+    root = _opener_root(tmp_path)
+    (root / "guide.md").write_text("It reads one file. Now it reads two.\n")
+    monkeypatch.setattr(review_docs, "collect", lambda root: [])
+    assert review_docs.main(["--root", str(root)]) == 0
+    lines = [
+        line
+        for line in capsys.readouterr().out.splitlines()
+        if line.startswith("OPENER ")
+    ]
+    assert len(lines) == 1 and lines[0].startswith("OPENER guide.md:1:")
+    assert "'now'" in lines[0] and "(advisory)" in lines[0]
+
+
+@pytest.mark.parametrize("mode", [[], ["--strict"], ["--json"], ["--strict", "--json"]])
+def test_an_opener_advisory_fails_no_mode(tmp_path, monkeypatch, capsys, mode):
+    root = _opener_root(tmp_path)
+    (root / "guide.md.jinja").write_text("Now it reads two.\n")
+    monkeypatch.setattr(review_docs, "collect", lambda root: [])
+    assert review_docs.main(["--root", str(root)] + mode) == 0
+    out = capsys.readouterr().out
+    if "--json" in mode:
+        assert json.loads(out)["change_openers"] == [
+            {"path": "guide.md.jinja", "line": 1, "phrase": "now"}
+        ]
+    else:
+        assert "OPENER guide.md.jinja:1:" in out
+
+
+@pytest.mark.parametrize(
+    "text, phrase",
+    [
+        ("2. Now run `make verify`, then commit.", "now"),
+        ("| Mode | Rerun |\n|---|---|\n| writer | fixed-point |", "fixed"),
+        ("Removed entries are reported by the audit.", "removed"),
+        ("Added keys need a `KEYS` row.", "added"),
+        ("Moved files keep their history.", "moved"),
+    ],
+    ids=["ordered-step", "table-cell", "removed", "added", "moved"],
+)
+def test_a_present_claim_at_an_opener_is_reported_and_strict_still_passes(
+    tmp_path, monkeypatch, capsys, text, phrase
+):
+    """The reason the rule is advisory: each of these is true prose a reader
+    keeps, so it is reported for judgement and fails nothing."""
+    root = _opener_root(tmp_path)
+    assert [f[2] for f in _openers(root, "guide.md", text + "\n")] == [phrase]
+    monkeypatch.setattr(review_docs, "collect", lambda root: [])
+    assert review_docs.main(["--root", str(root), "--strict"]) == 0
+    out = capsys.readouterr().out
+    assert "OPENER guide.md:" in out and "1 change opener(s) (advisory)" in out
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Nowhere does the gate read it.",
+        "Nowadays the gate reads it.",
+        "Fixedness is not a word the gate reads.",
+        "Movedown is a flag the gate reads.",
+    ],
+    ids=["nowhere", "nowadays", "fixedness", "movedown"],
+)
+def test_a_phrase_inside_a_longer_word_is_not_an_opener(tmp_path, text):
+    """A phrase counts only as a whole word: "Nowhere" and "Nowadays" are not
+    "now", and a word that merely starts with "fixed" or "moved" is not either."""
+    root = _opener_root(tmp_path)
+    assert _openers(root, "a.md", text + "\n") == []
+    assert _openers(root, "a.md", "Now, " + text[0].lower() + text[1:] + "\n") == [
+        ("a.md", 1, "now")
+    ]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # agents/doc_reviewer/prompt.md
+        "   If it reports a change, rewrite that\n"
+        '   sentence only to say what is true; if it is a present claim ("2. Now run\n'
+        '   X", a cell), return nothing.',
+        # agents/tools/review_docs.tool.md
+        'that opens with a phrase ("Now\n'
+        'runs X" reports a change; "2. Now run X" is a step, so a reader judges it).',
+        # docs/guides/deterministic-checks.md
+        'participle or "now" at an opener is as often a present claim ("2. Now run `make\n'
+        'verify`", a cell) as a report.',
+        # the same step number at a line's end
+        'It is as often a present claim ("2.\nNow run X") as a report.',
+    ],
+    ids=["prompt", "tool-spec", "guide", "line-end"],
+)
+def test_a_step_number_does_not_end_a_sentence(tmp_path, text):
+    """A digit run after an opening quote or bracket is a step's number, not
+    a sentence end, so the "Now" after a quoted "2." opens nothing. Shapes of the three lines
+    the real tree reported before the rule."""
+    root = _opener_root(tmp_path)
+    assert _openers(root, "a.md", text + "\n") == []
+
+
+@pytest.mark.parametrize(
+    "text, line, phrase",
+    [
+        ("## 3. Removed checks", 1, "removed"),
+        ("### 12. Now the gate runs twice", 1, "now"),
+        ("## 3) Removed checks", 1, "removed"),
+        ("| Step | What |\n|---|---|\n| 4 | 4) Added a row |", 3, "added"),
+        ("It was added in 2024. Now it runs twice.", 1, "now"),
+        ("The count is 2. Now it is three.", 1, "now"),
+        ("It cost 1,000. Previously it cost less.", 1, "previously"),
+        ("The count is 2.\nNow it is three.", 2, "now"),
+    ],
+    ids=[
+        "numbered-heading",
+        "numbered-heading-now",
+        "parenthesised-heading",
+        "numbered-cell",
+        "year",
+        "count",
+        "thousands",
+        "count-at-line-end",
+    ],
+)
+def test_a_number_that_is_no_quoted_step_still_ends_a_sentence(
+    tmp_path, text, line, phrase
+):
+    """The step-number rule is for a quoted or parenthesised step ("2. Now run
+    X"); a heading's or a cell's own number and a sentence that ends in a
+    number hide no opener after them."""
+    root = _opener_root(tmp_path)
+    assert _openers(root, "a.md", text + "\n") == [("a.md", line, phrase)]
+
+
+def test_a_word_before_the_period_still_ends_a_sentence(tmp_path):
+    root = _opener_root(tmp_path)
+    assert _openers(root, "a.md", 'It is a claim ("two. Now run X").\n') == [
+        ("a.md", 1, "now")
+    ]
+    assert _openers(root, "a.md", "It reads v2.\nNow it runs.\n") == [
+        ("a.md", 2, "now")
+    ]
+
+
+def test_a_twin_is_read_and_history_and_symlinks_are_not(tmp_path):
+    root = _opener_root(tmp_path)
+    (root / "docs" / "adr").mkdir(parents=True)
+    (root / "docs" / "adr" / "a.md").write_text("Now history.\n", encoding="utf-8")
+    (root / "CHANGELOG.md.jinja").write_text("Now history.\n", encoding="utf-8")
+    (root / "linked.md").symlink_to(root / "docs" / "adr" / "a.md")
+    assert _openers(root, "README.md.jinja", "{{ name }}\n\nNow it runs.\n") == [
+        ("README.md.jinja", 3, "now")
+    ]
+
+
+def test_openers_appear_in_the_json_report(tmp_path, monkeypatch, capsys):
+    root = _opener_root(tmp_path)
+    (root / "a.md").write_text("Now it runs.\n", encoding="utf-8")
+    monkeypatch.setattr(review_docs, "collect", lambda root: [])
+    assert review_docs.main(["--root", str(root), "--json"]) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["change_openers"] == [{"path": "a.md", "line": 1, "phrase": "now"}]
+
+
+def test_no_manifest_is_unchecked_never_clean(tmp_path, monkeypatch, capsys):
+    (tmp_path / "a.md").write_text("Now it runs.\n", encoding="utf-8")
+    monkeypatch.setattr(review_docs, "collect", lambda root: [])
+    assert review_docs.main(["--root", str(tmp_path), "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["change_openers"] is None
+    assert review_docs.main(["--root", str(tmp_path)]) == 0
+    assert "change openers unchecked: no config/project.json" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "manifest, reason",
+    [
+        (
+            '{"change_comments": {"phrases": ["now"]}, "change_comments": {}, '
+            '"doc_drift": {"history_paths": ["CHANGELOG.md"]}}',
+            'the key "change_comments" appears twice',
+        ),
+        (
+            '{"change_comments": {"phrases": []}, '
+            '"doc_drift": {"history_paths": ["CHANGELOG.md"]}}',
+            "change_comments.phrases is array; accepted: a list of strings with "
+            "a non-empty list",
+        ),
+        (
+            '{"change_comments": {"phrases": ["now"]}, "doc_drift": {}}',
+            "[not set] doc_drift.history_paths  (required, no default",
+        ),
+    ],
+    ids=["key-twice", "empty-phrases", "no-history-paths"],
+)
+def test_a_refused_opener_list_is_a_config_fault(
+    tmp_path, monkeypatch, capsys, manifest, reason
+):
+    """The refusal carries the loader's reason: which key, and why. The key
+    names alone are no evidence, since the remedy always holds them."""
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "project.json").write_text(manifest, encoding="utf-8")
+    monkeypatch.setattr(review_docs, "collect", lambda root: [])
+    assert review_docs.main(["--root", str(tmp_path)]) == ExitCode.CONFIG
+    err = capsys.readouterr().err
+    # The loader prints its own line too; the reason must reach the refusal.
+    refusal = [line for line in err.splitlines() if line.startswith("review_docs: ")]
+    assert len(refusal) == 1 and reason in refusal[0], err
 
 
 # --- roster rows: the facts the doc reviewer judges -----------------------------

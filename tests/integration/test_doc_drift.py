@@ -2,7 +2,7 @@
 title: Integration — shipped documents say nothing true of one host or one moment
 kind: tests
 layer: n/a
-summary: The shipped-doc drift gate. A shipped document is any Markdown file (or its `.md.jinja` twin) outside config/project.json `doc_drift.history_paths`; in its prose it names no concrete campaign or slice id (the `work_naming` mention grammar, any prefix), matches no `doc_drift.forbidden_phrases` pattern, names no loopback port that no non-Markdown file declares, cites no document copier.yml `_exclude`s unconditionally, and cites only check letters in check_structure.CHECKS or check names a Python module stem or definition supplies. Python twins retain definitions after Jinja tags are removed with line numbers preserved, and unparseable source raises with its path. Check citations read inline code names and letters inside code spans and exempt fences within the shared scanner's container limits; a twin definition whose name a Jinja tag touches is not read; the check-name sentence in doc_drift.check_name_guide is held to each mark's side, effect and spacing. Code spans and fences are illustrations and are exempt from the prose rules, as check_Z treats them. Every expected set is derived from the thing it describes, never typed here; a missing or malformed `doc_drift` or `work_naming` block fails, a scan over zero documents fails, and only the copier.yml-derived test skips, with a stated reason, in a generated project. Each rule has a fault-injection twin that plants one item and asserts exactly one finding. Not a writer: it reads the tree and writes only under pytest's tmp_path.
+summary: The shipped-doc drift gate. A shipped document is any Markdown file (or its `.md.jinja` twin) outside config/project.json `doc_drift.history_paths`; in its prose it names no concrete campaign or slice id (the `work_naming` mention grammar, any prefix), matches no `doc_drift.forbidden_phrases` pattern, names no loopback port that no non-Markdown file declares, cites no document copier.yml `_exclude`s unconditionally, and cites only check letters in check_structure.CHECKS or check names a Python module stem or definition supplies. Python twins retain definitions after Jinja tags are removed with line numbers preserved, and unparseable source raises with its path. Check citations read inline code names and letters inside code spans and exempt fences within the shared scanner's container limits; a twin definition whose name a Jinja tag touches is not read; the check-name sentence in doc_drift.check_name_guide is held to each mark's side, effect and spacing. Code spans and fences are illustrations and are exempt from the prose rules, as check_Z treats them. Every expected set is derived from the thing it describes, never typed here; a missing or malformed `doc_drift` or `work_naming` block fails, a scan over zero documents fails, and only the copier.yml-derived test skips, with a stated reason, in a generated project. Each rule has a fault-injection twin that plants one item and asserts exactly one finding. Not a writer: it reads the tree and writes only under pytest's tmp_path. A change opener is advisory in review_docs, and a test here proves present claims fail no gate scan.
 """
 
 import ast
@@ -1408,6 +1408,44 @@ def test_a_planted_citation_of_a_never_shipped_document_reds_the_scan(
         shipped_docs(tmp_path, policy["history_paths"]), excluded
     )
     assert len(findings) == 1 and excluded[0] in findings[0], findings
+
+
+# --- rule (d) is advisory: a change phrase at an opener is review's --------
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "2. Now run `make verify`, then commit.",
+        "| Mode | Rerun |\n|---|---|\n| writer | fixed-point |",
+        "Removed entries are reported by the audit.",
+        "Added keys need a `KEYS` row.",
+        "Moved files keep their history.",
+    ],
+    ids=["ordered-step", "table-cell", "removed", "added", "moved"],
+)
+def test_a_present_claim_at_an_opener_reds_no_gate_scan_and_review_reports_it(
+    tmp_path, manifest, policy, docs, text
+):
+    """A past participle or "now" at an opener is as often a present claim as
+    a report, so this gate leaves it to scripts/jobs/review_docs.py, whose
+    advisory (`make doc-review`) reports it for a reader to judge."""
+    (tmp_path / "CONTRIBUTING.md").write_text(
+        dict(docs)["CONTRIBUTING.md"] + "\n" + text + "\n", encoding="utf-8"
+    )
+    found = shipped_docs(tmp_path, policy["history_paths"])
+    mention = work_mention(manifest)
+    assert moment_and_host_findings(found, policy, mention, tmp_path) == []
+    letters = {letter for letter, _fn in cs.CHECKS}
+    names = python_names(_ROOT)
+    assert letters and names, "a citation scan must judge checks"
+    assert check_citation_findings(found, letters, names) == []
+    excluded = never_shipped_docs(_ROOT)
+    if excluded is not None:
+        assert excluded_citation_findings(found, excluded) == []
+    phrases, _history = review_docs.opener_policy(str(_ROOT))
+    reported = review_docs.change_openers(found, phrases)
+    assert [path for path, _line, _phrase in reported] == ["CONTRIBUTING.md"]
 
 
 def test_a_missing_or_malformed_doc_drift_block_fails_closed(manifest):

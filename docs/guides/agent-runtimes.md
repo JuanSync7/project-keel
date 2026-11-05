@@ -8,7 +8,7 @@ tags: [agents, runtime, control-flow, langgraph, determinism, guide]
 summary: How to declare an agent's control flow as a neutral Plan, run it on the default engine, and opt into LangGraph as one adapter.
 id: docs-guides-agent-runtimes
 created: 2026-06-22
-updated: 2026-10-07
+updated: 2026-11-05
 visibility: internal
 canonical: true
 ---
@@ -68,9 +68,9 @@ PLAN = Plan(
 report = get_runtime().run(PLAN, {}, execute=False)   # default engine, dry-run
 ```
 
-The branch predicates (`when=...`) are what used to be inline
-`if execute and not errors` conjunctions — now they are named, pure functions
-you can read as a transition table.
+The branch predicates (`when=...`) are named, pure functions in place of
+inline `if execute and not errors` conjunctions, so the plan reads as a
+transition table.
 
 ## Run it on a different engine
 

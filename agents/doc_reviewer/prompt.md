@@ -6,7 +6,8 @@ edit that makes one finding true, and you let the gate decide whether it stays.
 
 # Inputs
 - The deterministic findings of `review_docs` (stale `updated:` stamps, backticked
-  paths that resolve to nothing) and every roster row (`## What ships here`,
+  paths that resolve to nothing, thoughts that open with a change phrase) and
+  every roster row (`## What ships here`,
   its `Not for` cell).
 - The style guide's rules, retrieved from the corpus.
 - One chunk at a time: its kind, path, line, the finding, and the text around it.
@@ -25,7 +26,8 @@ The agent code orchestrates the loop — it gathers findings (1), retrieves the
 rules (2), gates the baseline (3), and applies + gates each edit (5), calling you
 once per chunk. **Your job on each call is step 4 only.**
 
-1. *(agent)* `review_docs --json`: stale stamps, unresolved mentions, roster rows.
+1. *(agent)* `review_docs --json`: stale stamps, unresolved mentions, change
+   openers, roster rows.
 2. *(agent)* `query_corpus` for the guide's rule nodes.
 3. *(agent)* `run_make_target check-docs`; a red tree stops the run.
 4. *(you)* For the given chunk, propose ONE bounded edit as an `apply_refactor`
@@ -40,6 +42,10 @@ once per chunk. **Your job on each call is step 4 only.**
    - `mention` — if the backticked path has an obvious correct spelling in the
      tree, fix the path; if it is a bare name used as a noun, leave it and return
      `{"edits": []}`; never invent a file.
+   - `opener` — a thought opens with a change phrase such as "now" or "added".
+     If it reports a change ("Now runs X", "Added a flag"), rewrite that
+     sentence only to say what is true; if it is a present claim ("2. Now run
+     X", "Added keys need a row", a `fixed-point` cell), return `{"edits": []}`.
    - `roster` — judge the `Not for` cell against the guide: it must say what a
      reader must NOT reach for this member to do and name the sibling that does.
      If it does, return `{"edits": []}`. If it says "everything else", "n/a", or

@@ -20,10 +20,12 @@ above the gated floor. `scripts/check_structure.py` proves what a rule can
 prove about the docs — every link and `§N` resolves (`check_Q`), every roster
 matches its directory (`check_S`), every tool spec has its seven sections and
 its `- NOT` line (`check_F`), every `##`-annotated target is in `make help`
-(`check_P`), the check catalogue tells the truth (`check_R`) — and
+(`check_P`), the checks table and the triggers that run the checks agree on
+one membership (`check_R`) — and
 `scripts/jobs/review_docs.py` proves that `updated:` is not a lie. This guide is
-itself held to that standard: `check_U` fails the build if the root `AGENT.md`
-stops naming it, because a style guide nobody is pointed at governs nothing. Everything else
+itself held to that standard: `check_U` fails the build if it stops being named
+within one hop of the root `AGENT.md` (named there, or in a document named
+there), because a style guide nobody is pointed at governs nothing. Everything else
 on this page is what those checks cannot decide and a reviewer, human or
 agent, holds you to. Where a rule below is gated, the gate is named; where
 it is not, that is deliberate, and the reason is given.
@@ -99,8 +101,7 @@ closed forms so a machine and a reader parse it the same way:
 A backticked repository path (`scripts/check_structure.py`) is a **mention**:
 the corpus turns it into an edge when it resolves, and `make advise` lists the
 ones that do not. Prefer the root-relative spelling; a bare basename used as a
-noun (`check_structure.py`, twenty-nine times in this tree) is prose, and the
-graph cannot follow it.
+noun (`check_structure.py`) is prose, and the graph cannot follow it.
 
 ## 4. Statements: one claim per sentence, and name the mechanism
 
@@ -148,14 +149,13 @@ it does, it declares so with the standard boilerplate sentence at its top and
 uses the keywords consistently thereafter; a lone `MUST` in a paragraph of
 plain prose is emphasis pretending to be a rule. This is not gated (a
 `normative:` frontmatter key over a closed vocabulary was designed and is
-deferred until a second specification wants it); the one such keyword in the
-tree, in `agents/practice_refactor/prompt.md`, is used correctly.
+deferred until a second specification wants it), so whether a keyword is used
+correctly is judged in review (`make doc-review`).
 
 ## 6. Idempotency: state it, then say how it is proven
 
-"Idempotent" is claimed in six places in this tree and proven in one class of
-them. There are three separable properties, and a document names which it
-means:
+"Idempotent" can mean three separable properties, each proven a different
+way, and a document names which it means:
 
 - **Generator fixed point** — running the doer twice yields byte-identical
   output. Gated where it matters: `check_corpus` builds twice and compares;
@@ -208,6 +208,8 @@ edit that leaves the decision untouched, and that edit restamps `updated:`.
 | Every practice's `enforced_by` names a mechanism that exists | `check_T` | gate |
 | A practice enforced by a document names it where an agent reads it | `check_U` | gate |
 | No concrete campaign or slice id, host-specific phrase, undeclared loopback port, or citation of a never-shipped document in a shipped document's prose | `tests/integration/test_doc_drift.py` (CONVENTIONS §15, `doc_drift`) | gate |
+| A cited check runs: a `check_<LETTER>` or prose "check X" is a letter of `check_structure.CHECKS`, and any other `check_<name>` is a Python file or definition in the tree | `tests/integration/test_doc_drift.py` (`check_citation_findings`) | gate |
+| No thought in a shipped document (paragraph, list item, heading, table cell, sentence) opens by reporting a change; a `change_comments.phrases` phrase at an opener is reported, since a past participle or "now" there is as often a present claim as a report | `scripts/jobs/review_docs.py` (`OPENER` lines), judged under `make doc-review` | advisory |
 | The README and `docs/README.md` link directly to each document `doc_drift.one_hop` names; the README layout tree lists every top-level directory that ships | `tests/integration/test_doc_drift.py` (`doc_drift.one_hop`, `layout_heading`) | gate |
 | Every guide roster row names its audiences from `doc_drift.audiences`, in that order | `tests/integration/test_doc_drift.py` (`doc_drift.roster`, `audiences`) | gate |
 | The limits guide names every waiver the checkers, the child-process allowlist and the drift test grant, and every exit code of a script `make verify` runs | `tests/integration/test_doc_drift.py` (`doc_drift.limits_guide`, `gate_target`) | gate |

@@ -1016,6 +1016,14 @@ KEYS = tuple(
                 "the child-process allowlist scripts/child_env.py validates",
             ),
             _row(
+                ("change_comments", "phrases"),
+                "list_of_str",
+                NONE,
+                "the change phrases a comment, and a shipped document's "
+                "thought opener, may not start with",
+                accepts=(_patterns, "a non-empty list with no blank pattern"),
+            ),
+            _row(
                 ("child_env", "login_name_schemes"),
                 "list_of_str",
                 [],
@@ -1060,6 +1068,13 @@ KEYS = tuple(
                 "nonempty_str",
                 NONE,
                 "the make target whose scripts the exit-code table lists",
+            ),
+            _row(
+                ("doc_drift", "history_paths"),
+                "list_of_str",
+                NONE,
+                "the path prefixes whose Markdown is history, not a shipped document",
+                accepts=(_patterns, "a non-empty list with no blank pattern"),
             ),
             _row(
                 ("doc_drift", "limits_guide"),

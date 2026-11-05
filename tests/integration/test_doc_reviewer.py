@@ -577,7 +577,9 @@ def test_a_stale_stamp_is_never_sent_to_the_model(monkeypatch, tmp_path):
     """A report with only stale stamps gives the model nothing to do: the count
     is reported, the remedy is the deterministic writer, and no prompt is spent
     on a date a rule already knows."""
-    only_stale = dict(_REVIEW, unresolved_mentions=[], rosters=[])
+    # change_openers is null when review_docs found no manifest: unchecked,
+    # so nothing to judge, never a crash.
+    only_stale = dict(_REVIEW, unresolved_mentions=[], change_openers=None, rosters=[])
     runner = _Runner()
     model = _Model(_SPEC)
 
@@ -854,3 +856,80 @@ def test_the_style_rules_are_retrieved_on_the_level_each_file_states_under_the_r
     assert retrieved() == guide
     reclassify.reclassify(tmp_path / reclassify.GUIDE, "own")
     assert retrieved() == set()
+
+
+def test_a_change_opener_is_a_chunk_between_mentions_and_rosters(monkeypatch, tmp_path):
+    """The opener rule is advisory, so a reader judges each one: "Now run X"
+    is a step to keep, "Now runs X" a change report for CHANGELOG.md."""
+    with_opener = dict(
+        _REVIEW, change_openers=[{"path": "docs/c.md", "line": 2, "phrase": "now"}]
+    )
+    _project(
+        tmp_path,
+        {
+            "docs/b.md": "internal",
+            "docs/c.md": "internal",
+            "scripts/README.md": "internal",
+        },
+    )
+    runner = _Runner(review=with_opener)
+    monkeypatch.setattr(_BRAIN + "._run", runner)
+    monkeypatch.setattr(_BRAIN + "._read_lines", lambda *a, **k: "")
+    r = review(root=str(tmp_path))
+    assert r.candidates == (
+        "mention:docs/b.md:4",
+        "opener:docs/c.md:2",
+        "roster:scripts/README.md:x.py",
+    )
+    assert "kind: mention" in r.preview
+
+
+def test_an_opener_on_a_hidden_document_is_withheld_before_reading(
+    monkeypatch, tmp_path
+):
+    report = dict(
+        _REVIEW,
+        unresolved_mentions=[],
+        rosters=[],
+        change_openers=[{"path": "docs/secret/README.md", "line": 4, "phrase": "now"}],
+    )
+    runner, model, read = _withholding(monkeypatch, tmp_path, report)
+    _project(tmp_path, {"docs/secret/README.md": "confidential"})
+    for execute in (False, True):
+        result = review(execute=execute, max_model_calls=8, root=str(tmp_path))
+        assert result.candidates == () and result.preview == ""
+        assert [chunk for chunk, _why in result.withheld] == [
+            "opener:docs/secret/README.md:4"
+        ]
+    assert read == [] and model.prompts == []
+    assert "apply_refactor" not in runner.calls
+
+
+@pytest.mark.parametrize(
+    "mode", [[], ["--json"], ["--execute"], ["--execute", "--json"]]
+)
+def test_the_doc_review_cli_reports_every_opener_beyond_the_chunk_limit(
+    monkeypatch, tmp_path, capsys, mode
+):
+    sys.path.insert(0, str(_ROOT / "scripts"))
+    import doc_review as cli
+
+    openers = [
+        {"path": "docs/b.md", "line": 4, "phrase": "now"},
+        {"path": "docs/c.md.jinja", "line": 2, "phrase": "removed"},
+    ]
+    report = dict(_REVIEW, unresolved_mentions=[], rosters=[], change_openers=openers)
+    runner = _Runner(review=report)
+    monkeypatch.setattr(_BRAIN + "._run", runner)
+    _project(tmp_path)
+    assert cli.main(["--root", str(tmp_path), "--max-chunks", "0"] + mode) == 0
+    out = capsys.readouterr().out
+    if "--json" in mode:
+        assert json.loads(out)["change_openers"] == openers
+    else:
+        lines = [line for line in out.splitlines() if line.startswith("OPENER ")]
+        assert len(lines) == 2
+        assert lines[0].startswith("OPENER docs/b.md:4:")
+        assert lines[1].startswith("OPENER docs/c.md.jinja:2:")
+        assert all("(advisory)" in line for line in lines)
+    assert "apply_refactor" not in runner.calls

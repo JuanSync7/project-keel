@@ -78,6 +78,9 @@ class DocReviewReport:
     withheld: tuple  # tuple[tuple[str, str], ...] — (chunk id, why), never sent
     preview: str  # the prompt the first chunk WOULD send (dry-run)
     dry_run: bool
+    change_openers: tuple | None = (
+        None  # all advisory hits, independent of the chunk limit
+    )
 
 
 def _run(args, stdin=None, *, root):
@@ -192,34 +195,50 @@ def _withhold(root):
 
 def _chunks(report, root, max_chunks, withhold):
     """The ordered work list from a review_docs JSON report, unresolved
-    mentions then roster rows to judge, as (chunks, withheld): the first
+    mentions, then change openers, then roster rows to judge, as (chunks, withheld): the first
     *max_chunks* findings *withhold* clears, each with its file's text, and a
     (chunk id, why) pair for every finding it does not, whose text is never
     read. Stale stamps are counted (`stale`) but never a chunk: a rule
     decides them, so the deterministic writer clears them
     (`make restamp-docs`), and while one is outstanding `make check-docs` is
     red, so a gated edit could never land and the baseline stops the run."""
-    findings = [
-        {
-            "id": "mention:%s:%d" % (m["path"], m["line"]),
-            "kind": "mention",
-            "path": m["path"],
-            "line": m["line"],
-            "finding": "`%s` resolves to nothing" % m["mention"],
-            "around": 3,
-        }
-        for m in report.get("unresolved_mentions", [])
-    ] + [
-        {
-            "id": "roster:%s:%s" % (r["path"], r["member"]),
-            "kind": "roster",
-            "path": r["path"],
-            "line": r["line"],
-            "finding": "Not for: %s" % r["not_for"],
-            "around": 0,
-        }
-        for r in report.get("rosters", [])
-    ]
+    findings = (
+        [
+            {
+                "id": "mention:%s:%d" % (m["path"], m["line"]),
+                "kind": "mention",
+                "path": m["path"],
+                "line": m["line"],
+                "finding": "`%s` resolves to nothing" % m["mention"],
+                "around": 3,
+            }
+            for m in report.get("unresolved_mentions", [])
+        ]
+        + [
+            {
+                "id": "opener:%s:%d" % (o["path"], o["line"]),
+                "kind": "opener",
+                "path": o["path"],
+                "line": o["line"],
+                "finding": "opens a thought with %r: keep a present claim, move a "
+                "change report to CHANGELOG.md" % o["phrase"],
+                "around": 0,
+            }
+            # null when review_docs read no manifest: unchecked, nothing to judge.
+            for o in report.get("change_openers") or []
+        ]
+        + [
+            {
+                "id": "roster:%s:%s" % (r["path"], r["member"]),
+                "kind": "roster",
+                "path": r["path"],
+                "line": r["line"],
+                "finding": "Not for: %s" % r["not_for"],
+                "around": 0,
+            }
+            for r in report.get("rosters", [])
+        ]
+    )
     chunks: list = []
     withheld: list = []
     for f in findings:
@@ -309,6 +328,11 @@ def _review(state):
         "stale": len(report.get("findings", [])),
         "unresolved": len(report.get("unresolved_mentions", [])),
         "rosters": len(report.get("rosters", [])),
+        "change_openers": None
+        if report.get("change_openers") is None
+        else tuple(
+            (o["path"], o["line"], o["phrase"]) for o in report["change_openers"]
+        ),
         "chunks": chunks,
         "candidates": tuple(c["id"] for c in chunks),
         "withheld": withheld,
@@ -491,7 +515,7 @@ def review(
     max_model_calls=None,
 ):
     """Review the documentation: gather what the deterministic doer found (stale
-    stamps, unresolved mentions, every roster row), retrieve the style guide's
+    stamps, unresolved mentions, change openers, every roster row), retrieve the style guide's
     rules from the corpus, and — only with ``execute=True`` — ask the model for
     one bounded edit per chunk and apply it through the gated ``apply_refactor``
     doer, which rolls back unless ``make <gate>`` (default ``check-docs``: the
@@ -562,4 +586,5 @@ def review(
         withheld=tuple(tuple(pair) for pair in st.get("withheld", ())),
         preview=st.get("preview", ""),
         dry_run=not execute,
+        change_openers=st.get("change_openers"),
     )

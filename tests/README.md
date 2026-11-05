@@ -9,7 +9,7 @@ tags: []
 summary: Unit tests mirror src/; integration/e2e/smoke go by scenario.
 id: tests-readme
 created: 2026-06-17
-updated: 2026-11-04
+updated: 2026-11-05
 visibility: internal
 canonical: true
 ---
@@ -103,7 +103,7 @@ test skipped exits 0 having executed no assertion. `conftest.py` counts the
 tests that ran (passed, failed, or xfail) and, when the session ends,
 `selection_guard.py` turns a run of zero into exit 5 with a message naming the
 selection. That covers every `make` tier and a direct `pytest` call alike, so a
-single file run alone whose tests all skip now exits 5 too.
+single file run alone whose tests all skip exits 5 too.
 
 The one exemption is a bare `-m <marker>` selection declared in
 config/project.json `make_targets.empty_test_selections` with a reason: that

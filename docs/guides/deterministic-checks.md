@@ -198,7 +198,7 @@ print but never fail the build.
   on 3.6); multi-line arrays, dotted-key/header forms, `# practice-ok` all handled.
   An absent `pyproject.toml` is an error while `rulesets` is declared, since
   copier never prunes it.
-  Also enforces the two declarations that used to have no consumer: every ruff
+  Also enforces two declarations that would otherwise have no consumer: every ruff
   `per-file-ignores` pattern must be declared in `rulesets.ruff.per_file_ignores`
   (one `"**/*.py"` line could otherwise silence a family corpus-wide), and every
   `[[tool.mypy.overrides]]` relaxation of a flag the ruleset declares — `strict`,
@@ -271,10 +271,10 @@ print but never fail the build.
   `<a id>`/`<a name>` anchors. Absent is not silent here: a citation to a
   missing `CONVENTIONS.md` is an error, because the file ships verbatim into
   every generated project. What this buys: renumbering `CONVENTIONS.md`, or
-  moving a doc, now fails with the full list of citations to update instead of
-  leaving the knowledge graph pointing at the wrong sections at exit 0. Lands
-  as an error, not the ADR-K-0008 release-long WARN: the tree had no dead
-  reference on arrival, so there was nothing to give anyone time for.
+  moving a doc, fails with the full list of citations to update instead of
+  leaving the knowledge graph pointing at the wrong sections at exit 0. It is
+  an error, not the ADR-K-0008 release-long WARN: keel's tree carries no dead
+  reference, so there is nothing to give anyone time for.
 - **R. Check catalogue parity** — this file's checks table and the triggers
   that run the checks agree on one membership: every catalogued script exists;
   a row at the `error`/`error*` tier is reachable from `make check-all` (a gate
@@ -676,7 +676,30 @@ the plan docs. The shipped-doc rule has a pytest half too:
 `tests/integration/test_doc_drift.py` refuses, in a shipped document's prose,
 a concrete campaign or slice id, a `doc_drift.forbidden_phrases` pattern, a
 loopback port no non-Markdown file declares, and a citation of a document
-copier.yml never ships (CONVENTIONS §15, `doc_drift`). The same test holds the
+copier.yml never ships (CONVENTIONS §15, `doc_drift`). It also refuses a cited
+check that does not run: a `check_<LETTER>` or a prose "check H", "checks A–Z"
+whose letter `scripts/check_structure.py` `CHECKS` does not hold, and any other
+`check_<name>` that is neither a Python file stem nor a function or class the
+tree defines. `check_` and one capital, then a character that is not a
+letter, digit or underscore, is a letter; `check_` and two capitals, or a
+capital and then a letter, is a name. The check-name sentence in `docs/guides/doc-style.md` states the citation
+marks and spacing held by the test; qualified attributes and keyword
+assignments are exempt as that sentence specifies.
+A thought that opens with a config/project.json `change_comments.phrases`
+phrase, the list the Python comment gate reads, is not this test's: a past
+participle or "now" at an opener is as often a present claim ("2. Now run `make
+verify`", "Removed entries are reported", a `fixed-point` cell) as a report
+("Now runs X"). `scripts/jobs/review_docs.py` reports each one, in a paragraph,
+list item, heading, table cell or sentence, as an `OPENER` line that fails no
+mode, and `make doc-review` sends it to the doc reviewer to judge; a phrase in
+mid-sentence is read by neither. The period after a step's number quoted or
+parenthesised in prose, the "2." of `("2. Now run X")`, ends no sentence. A
+heading's or a table cell's own number, as in `## 3. Removed checks`, is not
+its first word, and a sentence that ends in a number ("added in 2024.") ends
+there. A count stated in prose ("six
+places in this tree") has no rule: the narrowest pattern measured on keel's
+tree found three true counts and about eight false ones, so review judges it
+too. Fences are exempt from every prose rule, and `.md.jinja` twins are read. The same test holds the
 newcomer documents `doc_drift` names: each `one_hop` entry document links
 directly to its listed documents, the README tree under `layout_heading` lists
 every top-level directory that ships, each `roster` row names its audiences,

@@ -9,7 +9,7 @@ tags: []
 summary: OPTIONAL single-process composition root. Delete it for client-server web apps, and set config/project.json layers.app to null with it.
 id: src-app-readme
 created: 2026-06-17
-updated: 2026-10-09
+updated: 2026-11-05
 visibility: internal
 canonical: true
 ---
@@ -47,7 +47,7 @@ no composition root instead of failing to import one); add `smoke` to
 root to smoke"` (the smoke test skips, and a tier where zero tests ran fails
 unless declared); and add `run` to `make_targets.effect_proof_skip` with the
 honest reason `"no composition root (layers.app is null)"` (the effect sweep
-would otherwise run a target that now exits 2). Give `smoke` a real test when
+would otherwise run a target that exits 2). Give `smoke` a real test when
 the project has a surface to smoke, and drop the declaration: once a test of
 that marker runs, the entry is stale and fails the run.
 

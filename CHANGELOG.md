@@ -95,6 +95,19 @@ version rather than a bare commit:
   config/project.json `tests.cache_max_entries` (256). The three caches in keel
   moved onto it.
 - **Commented-out code fails the lint.** pyproject.toml selects ruff `ERA001`.
+- **Review sees a thought that opens by reporting a change.**
+  `scripts/jobs/review_docs.py` reports, as an advisory
+  `OPENER` line that fails no mode, a paragraph, list item, heading, table cell
+  or sentence that opens with a config/project.json `change_comments.phrases`
+  phrase, in `.md.jinja` twins too, and `make doc-review` sends each to the doc
+  reviewer. It is advisory because a past participle or "now" at an opener is
+  as often a present claim ("2. Now run `make verify`", "Removed entries are
+  reported") as a report. The period after a step's number quoted or
+  parenthesised in prose, the "2." of `("2. Now run X")`, ends no sentence; a
+  heading's or a table cell's own number (`## 3. Removed checks`) is not its
+  first word; and a phrase counts only as a whole word ("Nowhere" is not
+  "now"). A phrase in mid-sentence and a count stated in prose are left to
+  review (KEEL-DOC-2).
 - **A template file cannot go missing from a generated project without a reason.**
   `tests/integration/test_copier_shipping.py` judges every file copier can see
   with copier's own path matcher under each answer set

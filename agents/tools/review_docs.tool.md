@@ -6,10 +6,10 @@ status: stable
 owner: platform-team
 public_api: scripts/jobs/review_docs.py
 tags: [tool, documentation, freshness, rosters, review]
-summary: Read-only documentation review — stale `updated:` stamps, backticked paths that resolve to nothing, and every roster row, as JSON.
+summary: Read-only documentation review — stale `updated:` stamps, backticked paths that resolve to nothing, thoughts that open with a change phrase, and every roster row, as JSON.
 id: tool-review-docs
 created: 2026-09-02
-updated: 2026-09-02
+updated: 2026-11-05
 visibility: internal
 canonical: true
 tool_command: python3 scripts/jobs/review_docs.py --json
@@ -26,7 +26,10 @@ The deterministic half of the documentation review: the facts a rule can state
 about the docs. Freshness — every governed document's `updated:` is no earlier
 than its last commit, and a document modified in the working tree carries
 today's date (CONVENTIONS §1). The advisory that stays advisory — a backticked
-repository path that resolves to nothing. And every roster row (`## What ships
+repository path that resolves to nothing, and a thought in a shipped document
+that opens with a config/project.json `change_comments.phrases` phrase ("Now
+runs X" reports a change; "2. Now run X" is a step, so a reader judges it). And
+every roster row (`## What ships
 here`: path, member, line, the `Not for` cell), so the `doc_reviewer` can judge
 each cell against `docs/guides/doc-style.md §2`.
 
@@ -40,14 +43,16 @@ each cell against `docs/guides/doc-style.md §2`.
 ## Args
 | Flag | Required | Default | Meaning |
 |------|----------|---------|---------|
-| `--json` | no | off | emit `{checked, findings, unresolved_mentions, rosters}` |
-| `--strict` | no | off | exit 1 on a stale stamp (gate mode; mentions stay advisory) |
+| `--json` | no | off | emit `{checked, findings, unresolved_mentions, change_openers, rosters}`; `change_openers` is null when the root has no config/project.json |
+| `--strict` | no | off | exit 1 on a stale stamp (gate mode; mentions and change openers stay advisory) |
 | `--today` | no | today | the date a modified file must carry (tests pin it) |
 | `--root` | no | this checkout | repository root |
 
 ## Output
-Text: one `STALE`/`MENTION` line per finding and a summary line. `--json`: the
-object above. No git repository → a stated skip on stdout, exit 0.
+Text: one `STALE`/`MENTION`/`OPENER` line per finding and a summary line.
+`--json`: the object above. No git repository → a stated skip on stdout, exit 0.
+A config/project.json the loader refuses, or a `change_comments.phrases` or
+`doc_drift.history_paths` value it refuses, exits 14 (`ExitCode.CONFIG`).
 
 ## Side effects
 READ-ONLY. Reads the tree and asks git for dates; writes nothing; no model call.
