@@ -33,6 +33,7 @@ def test_every_test_function_shows_it_can_fail():
         policy.roots,
         policy.helper_depth,
         st.import_layers(root)["search_roots"],
+        settings=policy,
     )
     failures = aq.verdict(count, findings, policy.exempt, policy.roots)
     assert failures == [], (

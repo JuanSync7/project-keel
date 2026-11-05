@@ -496,8 +496,22 @@
     "test_suffixes": [".bats"]
   },
   "test_quality": {
-    "_comment": "What a test function must show to pass the quality gates, read by tests/assertion_quality.py through scripts/config_loader.py. assertions.roots are the directories whose test functions tests/integration/test_assertion_quality_gate.py reads, and whose modules may hold a helper a test asserts through; helper_depth is how many calls below a test it follows to find that assertion. A test fails with no assertion, with only truthy-constant assertions, with a tautology (one name or attribute chain compared with itself; two calls are never one), or with a handler in its body that only passes, continues or holds `...`. assertions.exempt maps a test's function-level node id to the reason it has no result to assert; an entry whose test the gate does not fail is red, and a run that reads no test function fails. realness.roots are the directories whose test functions tests/integration/test_realness_gate.py tiers through tests/realness.py: mock, fake, in_process, real, or unknown when nothing is replaced, from what a test uses and the fixtures it requests, autouse and conftest.py ones included; a test whose tier is mock fails, named with the signal that put it there. realness.exempt maps a test's function-level node id to the reason it may mock; an entry whose test is not mock is red, and a run that reads no test function fails.",
+    "_comment": "What a test function must show to pass the quality gates, read by tests/assertion_quality.py through scripts/config_loader.py. assertions.roots are the directories whose test functions tests/integration/test_assertion_quality_gate.py reads, and whose modules may hold a helper a test asserts through; helper_depth is how many calls below a test it follows to find that assertion. A test fails with no assertion, with only truthy-constant assertions, with a tautology (one name or attribute chain compared with itself; two calls are never one), or with a handler in its body that only passes, continues or holds `...`. assertions.consumers maps bare, unbound callees to only (sole argument) or first (first positional argument); calls with keywords or argument unpacking do not consume a generator for this gate. assertions.exempt maps a test's function-level node id to the reason it has no result to assert; an entry whose test the gate does not fail is red, and a run that reads no test function fails. realness.roots are the directories whose test functions tests/integration/test_realness_gate.py tiers through tests/realness.py: mock, fake, in_process, real, or unknown when nothing is replaced, from what a test uses and the fixtures it requests, autouse and conftest.py ones included; a test whose tier is mock fails, named with the signal that put it there. realness.exempt maps a test's function-level node id to the reason it may mock; an entry whose test is not mock is red, and a run that reads no test function fails.",
     "assertions": {
+      "consumers": {
+        "all": "only",
+        "any": "only",
+        "dict": "only",
+        "frozenset": "only",
+        "list": "only",
+        "max": "only",
+        "min": "only",
+        "next": "first",
+        "set": "only",
+        "sorted": "only",
+        "sum": "only",
+        "tuple": "only"
+      },
       "roots": ["tests"],
       "helper_depth": 3,
       "exempt": {

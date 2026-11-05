@@ -16,6 +16,7 @@ import datetime
 import importlib
 import importlib.util
 import json
+import keyword
 import ntpath
 import os
 import posixpath
@@ -1512,6 +1513,36 @@ KEYS = tuple(
                     _suffixes,
                     "a non-empty list of suffixes, each a dot and at least one "
                     "more character, with no whitespace or `/`",
+                ),
+            ),
+            _row(
+                ("test_quality", "assertions", "consumers"),
+                "object",
+                {
+                    "all": "only",
+                    "any": "only",
+                    "dict": "only",
+                    "frozenset": "only",
+                    "list": "only",
+                    "max": "only",
+                    "min": "only",
+                    "next": "first",
+                    "set": "only",
+                    "sorted": "only",
+                    "sum": "only",
+                    "tuple": "only",
+                },
+                "bare callees that consume a generator argument in the named "
+                "position, unless rebound; empty: no call consumes one",
+                accepts=(
+                    lambda value: all(
+                        isinstance(name, str)
+                        and name.isidentifier()
+                        and not keyword.iskeyword(name)
+                        and position in ("only", "first")
+                        for name, position in value.items()
+                    ),
+                    "bare identifiers mapped to only or first",
                 ),
             ),
             _row(

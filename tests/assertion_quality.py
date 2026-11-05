@@ -1,9 +1,10 @@
 """
 title: Assertion quality — a test function shows it can fail
-summary: Judges test functions without executing them: reports missing assertions, any tautology in a test or reachable helper, and handlers in the test that drop errors. Folds bounded literal arithmetic, comparisons and boolean operations through the AST, respects lexical and comprehension scopes, counts raises/warns expectations only as entered with items or callable checks, and follows every helper within the configured roots and depth, deduplicating cycle findings. Collects inherited and nested tests and TestCase assertions, and rejects empty roots, zero tests and stale exemptions; comparisons of calls remain real checks.
+summary: Judges test functions without executing them: reports missing assertions, any tautology in a test or reachable helper, and handlers in the test that drop errors. Folds bounded literal arithmetic, comparisons and boolean operations through the AST, respects lexical and comprehension scopes, counts raises/warns expectations only as entered with items or callable checks, and follows every helper within the configured roots and depth, deduplicating cycle findings. Credits deferred generator calls only when consumed by iteration, unpacking, delegation or configured bare callees in their declared argument position; resolves TestCase receivers by single lexical bindings, instance parameters and receiver displays. Collects inherited and nested tests and TestCase assertions, and rejects empty roots, zero tests and stale exemptions; comparisons of calls remain real checks.
 """
 
 import ast
+import builtins
 import operator
 import os
 import sys
@@ -21,6 +22,7 @@ import source_tree  # noqa: E402
 from bounded_cache import bounded  # noqa: E402
 
 __all__ = [
+    "CONSUMERS",
     "DEPTH",
     "EXEMPT",
     "Finding",
@@ -39,6 +41,7 @@ __all__ = [
 ROOTS = ("test_quality", "assertions", "roots")
 DEPTH = ("test_quality", "assertions", "helper_depth")
 EXEMPT = ("test_quality", "assertions", "exempt")
+CONSUMERS = ("test_quality", "assertions", "consumers")
 
 NO_ASSERTION = "no assertion"
 TAUTOLOGY = "tautology"
@@ -126,11 +129,12 @@ class Finding(NamedTuple):
 
 
 class Policy(NamedTuple):
-    """The gate's three settings, as config/project.json holds them."""
+    """The gate's settings, as config/project.json holds them."""
 
     roots: Tuple[str, ...]
     helper_depth: int
     exempt: Dict[str, str]
+    consumers: Dict[str, str]
 
 
 def policy(root: str) -> Policy:
@@ -139,10 +143,15 @@ def policy(root: str) -> Policy:
     refuses."""
     values = config_loader.resolve(
         config_loader.read(root),
-        config_loader.rows(ROOTS, DEPTH, EXEMPT),
+        config_loader.rows(ROOTS, DEPTH, EXEMPT, CONSUMERS),
         config_loader.CONFIG_FILE,
     )
-    return Policy(tuple(values[ROOTS]), int(values[DEPTH]), dict(values[EXEMPT]))
+    return Policy(
+        tuple(values[ROOTS]),
+        int(values[DEPTH]),
+        dict(values[EXEMPT]),
+        dict(values[CONSUMERS]),
+    )
 
 
 def _under(path: str, roots: Tuple[str, ...]) -> bool:
@@ -186,6 +195,7 @@ class _Module:
     def __init__(self, root: str, path: str, search_roots: List[str]) -> None:
         self.path = path
         self.tree = source_tree.parse(root, path)
+        self.binding_index = _BindingIndex(self.tree)
         self.functions: Dict[str, _Function] = {}
         self.methods: Dict[str, Dict[str, _Function]] = {}
         self.classes: Dict[str, ast.ClassDef] = {}
@@ -194,6 +204,10 @@ class _Module:
         self.local_functions: Dict[_Function, Dict[str, str]] = {}
         self.definitions: Dict[str, Tuple[_Function, Optional[str]]] = {}
         self._index(self.tree, "", None, [])
+        for cls, methods in self.methods.items():
+            if self.is_testcase(cls):
+                for func in methods.values():
+                    self.binding_index.mark_receiver(func)
         self.root = root
         self.search_roots = search_roots
         # A helper walk resolves many calls in the same finite AST; keep its
@@ -641,14 +655,374 @@ class _Body(NamedTuple):
     calls: List[ast.Call]
 
 
-def _unittest_assertion(call: ast.Call, *, testcase: bool) -> bool:
-    """Whether a call uses TestCase's assertion naming contract on self."""
+class _Binding(NamedTuple):
+    value: Optional[ast.expr]
+    scope: "_Scope"
+    kind: str
+
+
+class _Scope:
+    """All bindings of each name in a function or comprehension."""
+
+    def __init__(
+        self, parent: Optional["_Scope"] = None, *, kind: str = "function"
+    ) -> None:
+        self.parent = parent
+        self.kind = kind
+        self.globals: Set[str] = set()
+        self.nonlocals: Set[str] = set()
+        self.bindings: Dict[str, List[_Binding]] = {}
+
+    def bind(
+        self, name: str, value: Optional[ast.expr] = None, kind: str = "unknown"
+    ) -> None:
+        self.owner(name).bindings.setdefault(name, []).append(
+            _Binding(value, self, kind)
+        )
+
+    def owner(self, name: str) -> "_Scope":
+        if name in self.globals:
+            module = self
+            while module.parent is not None:
+                module = module.parent
+            return module
+        if name in self.nonlocals:
+            scope: Optional[_Scope] = self.parent
+            while scope is not None:
+                if scope.kind == "function" and name in scope.bindings:
+                    return scope
+                scope = scope.parent
+        return self
+
+    def lookup(self, name: str) -> Optional[_Binding]:
+        if name in self.bindings:
+            entries = self.bindings[name]
+            return entries[0] if len(entries) == 1 else None
+        return self.parent.lookup(name) if self.parent else None
+
+    def binds(self, name: str) -> bool:
+        # Module consumers have their own policy; only lexical locals shadow here.
+        if self.kind == "module":
+            return False
+        return name in self.bindings or (
+            self.parent is not None and self.parent.binds(name)
+        )
+
+    def receiver(self, value: ast.expr, seen: Optional[Set[_Binding]] = None) -> bool:
+        if not isinstance(value, ast.Name):
+            return False
+        binding = self.lookup(value.id)
+        if binding is None or binding in (seen or set()):
+            return False
+        if binding.kind == "receiver":
+            return True
+        if binding.value is None:
+            return False
+        seen = (seen or set()) | {binding}
+        if binding.kind == "alias":
+            return binding.scope.receiver(binding.value, seen)
+        if binding.kind == "display" and isinstance(
+            binding.value, (ast.Tuple, ast.List)
+        ):
+            return bool(binding.value.elts) and all(
+                binding.scope.receiver(element, seen) for element in binding.value.elts
+            )
+        return False
+
+
+_COMPREHENSIONS = (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)
+_Comprehension = ast.ListComp | ast.SetComp | ast.DictComp | ast.GeneratorExp
+
+
+class _BindingIndex:
+    """Index every binding, routing nested global/nonlocal writes to its owner."""
+
+    def __init__(self, node: ast.Module) -> None:
+        self.scope = _Scope(kind="module")
+        self.scopes: Dict[ast.AST, _Scope] = {}
+        self.pending: List[
+            Tuple[ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef, _Scope]
+        ] = []
+        self._body(node, self.scope)
+
+    def _body(self, node: ast.Module | _Function | ast.ClassDef, scope: _Scope) -> None:
+        self.scopes[node] = scope
+        # Declarations apply to the entire scope, including preceding text.
+        for child in source_tree.scope_nodes(node):
+            if isinstance(child, ast.Global):
+                scope.globals.update(child.names)
+            elif isinstance(child, ast.Nonlocal):
+                scope.nonlocals.update(child.names)
+        if isinstance(node, _Function):
+            for arg in (
+                node.args.posonlyargs
+                + node.args.args
+                + node.args.kwonlyargs
+                + [a for a in (node.args.vararg, node.args.kwarg) if a]
+            ):
+                scope.bind(arg.arg)
+        for statement in node.body:
+            self._index(statement, scope)
+        # Finish the enclosing scope before resolving any nested nonlocal.
+        pending, self.pending = self.pending, []
+        for child, parent in pending:
+            # Class namespaces never supply a method's or nested class's free names.
+            while parent.kind == "class" and parent.parent is not None:
+                parent = parent.parent
+            self._body(
+                child,
+                _Scope(
+                    parent,
+                    kind="class" if isinstance(child, ast.ClassDef) else "function",
+                ),
+            )
+
+    @staticmethod
+    def _elements(node: _Comprehension) -> List[ast.expr]:
+        return [node.key, node.value] if isinstance(node, ast.DictComp) else [node.elt]
+
+    def _target(
+        self,
+        target: ast.expr,
+        scope: _Scope,
+        value: Optional[ast.expr] = None,
+        kind: str = "unknown",
+        value_scope: Optional[_Scope] = None,
+    ) -> None:
+        if isinstance(target, ast.Name):
+            scope.owner(target.id).bindings.setdefault(target.id, []).append(
+                _Binding(value, value_scope or scope, kind)
+            )
+        elif isinstance(target, (ast.Tuple, ast.List)):
+            for element in target.elts:
+                self._target(element, scope)
+        elif isinstance(target, ast.Starred):
+            self._target(target.value, scope)
+
+    def _index(self, node: ast.AST, scope: _Scope) -> None:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            scope.bind(
+                node.name, kind="function" if isinstance(node, _Function) else "class"
+            )
+            self.pending.append((node, scope))
+            for decorator in node.decorator_list:
+                self._index(decorator, scope)
+            if isinstance(node, ast.ClassDef):
+                for expression in [*node.bases, *node.keywords]:
+                    self._index(expression, scope)
+            else:
+                self._index(node.args, scope)
+                if node.returns is not None:
+                    self._index(node.returns, scope)
+            return
+        if isinstance(node, ast.Lambda):
+            self._index(node.args, scope)
+            return
+        if isinstance(node, _COMPREHENSIONS):
+            inner = _Scope(scope, kind="comprehension")
+            self.scopes[node] = inner
+            for index, generator in enumerate(node.generators):
+                owner = scope if index == 0 else inner
+                self._target(generator.target, inner)
+                # The iterable is evaluated outside its first target's scope.
+                if isinstance(generator.target, ast.Name):
+                    inner.bindings[generator.target.id][-1] = _Binding(
+                        generator.iter, owner, "display"
+                    )
+                self._index(generator.iter, owner)
+                for condition in generator.ifs:
+                    self._index(condition, inner)
+            for element in self._elements(node):
+                self._index(element, inner)
+            return
+        if isinstance(node, ast.NamedExpr):
+            owner = scope
+            while owner.kind == "comprehension" and owner.parent is not None:
+                owner = owner.parent
+            self._target(node.target, owner, node.value, "alias", scope)
+        elif isinstance(node, (ast.Assign, ast.AnnAssign)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for target in targets:
+                self._target(target, scope, node.value, "alias")
+        elif isinstance(node, ast.AugAssign):
+            self._target(node.target, scope)
+        elif isinstance(node, ast.Delete):
+            for target in node.targets:
+                self._target(target, scope)
+        elif isinstance(node, (ast.For, ast.AsyncFor)):
+            self._target(node.target, scope, node.iter, "display")
+        elif isinstance(node, ast.withitem) and node.optional_vars is not None:
+            self._target(node.optional_vars, scope)
+        elif isinstance(node, ast.ExceptHandler) and node.name:
+            scope.bind(node.name)
+        elif isinstance(node, (ast.Import, ast.ImportFrom)):
+            for alias in node.names:
+                scope.bind(alias.asname or alias.name.split(".")[0], kind="import")
+        elif isinstance(node, (ast.MatchAs, ast.MatchStar)) and node.name:
+            scope.bind(node.name)
+        elif isinstance(node, ast.MatchMapping) and node.rest:
+            scope.bind(node.rest)
+        for child in ast.iter_child_nodes(node):
+            self._index(child, scope)
+
+    def mark_receiver(self, func: _Function) -> None:
+        """Seed a direct TestCase instance method's receiver in its lexical scope."""
+        positional = func.args.posonlyargs + func.args.args
+        decorators = {
+            (_chain(d.func if isinstance(d, ast.Call) else d) or "").split(".")[-1]
+            for d in func.decorator_list
+        }
+        receiver = (
+            positional[0]
+            if positional
+            and len(func.args.defaults) < len(positional)
+            and not decorators.intersection({"staticmethod", "classmethod"})
+            else None
+        )
+        if receiver is not None:
+            entries = self.scopes[func].bindings[receiver.arg]
+            entries[0] = _Binding(None, self.scopes[func], "receiver")
+
+
+class _Execution:
+    """Bindings and nodes that can run, with generator consumption propagated."""
+
+    def __init__(
+        self,
+        func: _Function,
+        consumers: Dict[str, str],
+        bindings: _BindingIndex,
+    ) -> None:
+        # Reuse the outer index so closure values keep their defining scopes.
+        self.scope = bindings.scopes[func]
+        self.scopes = bindings.scopes
+        self.module_bindings = bindings.scope
+        self.active: Dict[ast.AST, _Scope] = {}
+        self.consumed: Set[Tuple[ast.expr, _Scope, bool]] = set()
+        self.consumers = consumers
+        for statement in func.body:
+            self._walk(statement, self.scope)
+
+    @staticmethod
+    def _async_generator(value: ast.GeneratorExp) -> bool:
+        """Whether iteration of this generator requires the async protocol."""
+        if any(generator.is_async for generator in value.generators):
+            return True
+        # The first iterable runs in the enclosing scope at construction;
+        # only suspension in the generator's own body makes it async.
+        pending: List[ast.AST] = [value.elt]
+        for index, generator in enumerate(value.generators):
+            if index:
+                pending.append(generator.iter)
+            pending.extend(generator.ifs)
+        while pending:
+            node = pending.pop()
+            if isinstance(node, ast.Await):
+                return True
+            if isinstance(node, ast.Lambda):
+                # Defaults run here; the lambda's body has its own scope.
+                pending.append(node.args)
+                continue
+            if isinstance(node, ast.GeneratorExp):
+                pending.append(node.generators[0].iter)
+                continue
+            if isinstance(node, (ast.ListComp, ast.SetComp, ast.DictComp)) and any(
+                generator.is_async for generator in node.generators
+            ):
+                # Eager async comprehensions suspend their enclosing scope.
+                return True
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                continue
+            pending.extend(ast.iter_child_nodes(node))
+        return False
+
+    def _consume(
+        self, value: ast.expr, scope: _Scope, *, asynchronous: bool = False
+    ) -> None:
+        if (value, scope, asynchronous) in self.consumed:
+            return
+        self.consumed.add((value, scope, asynchronous))
+        if isinstance(value, ast.Name):
+            binding = scope.lookup(value.id)
+            if binding and binding.kind == "alias" and binding.value is not None:
+                self._consume(binding.value, binding.scope, asynchronous=asynchronous)
+        elif isinstance(value, ast.GeneratorExp):
+            if self._async_generator(value) != asynchronous:
+                return
+            self._comprehension(value, scope, consumed=True)
+
+    def _comprehension(
+        self, node: _Comprehension, scope: _Scope, *, consumed: bool
+    ) -> None:
+        inner = self.scopes[node]
+        for index, generator in enumerate(node.generators):
+            if index and not consumed:
+                break
+            owner = scope if index == 0 else inner
+            self._walk(generator.iter, owner)
+            if consumed:
+                self._consume(
+                    generator.iter, owner, asynchronous=bool(generator.is_async)
+                )
+                self._walk(generator.target, inner)
+                for condition in generator.ifs:
+                    self._walk(condition, inner)
+        if consumed:
+            for element in _BindingIndex._elements(node):
+                self._walk(element, inner)
+
+    def _walk(self, node: ast.AST, scope: _Scope) -> None:
+        self.active[node] = scope
+        if isinstance(
+            node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)
+        ):
+            return
+        if isinstance(node, _COMPREHENSIONS):
+            self._comprehension(
+                node, scope, consumed=not isinstance(node, ast.GeneratorExp)
+            )
+            return
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            name = node.func.id
+            entries = self.module_bindings.bindings.get(name, [])
+            # Builtin policies describe the builtin itself. Custom consumers
+            # may have one module definition/import, but no local binding.
+            module_ok = not entries or (
+                not hasattr(builtins, name)
+                and len(entries) == 1
+                and entries[0].kind in ("function", "import")
+            )
+            position = (
+                self.consumers.get(name)
+                if module_ok and not scope.binds(name)
+                else None
+            )
+            if (
+                position is not None
+                and node.args
+                and not node.keywords
+                and not any(isinstance(arg, ast.Starred) for arg in node.args)
+                and (position == "first" or len(node.args) == 1)
+            ):
+                self._consume(node.args[0], scope)
+        elif isinstance(node, ast.Assign) and any(
+            isinstance(target, (ast.Tuple, ast.List)) for target in node.targets
+        ):
+            self._consume(node.value, scope)
+        elif isinstance(node, (ast.For, ast.AsyncFor)):
+            self._consume(node.iter, scope, asynchronous=isinstance(node, ast.AsyncFor))
+        elif isinstance(node, (ast.Starred, ast.YieldFrom)):
+            self._consume(node.value, scope)
+        for child in ast.iter_child_nodes(node):
+            self._walk(child, scope)
+
+
+def _unittest_assertion(call: ast.Call, scope: _Scope) -> bool:
+    """Whether a call uses TestCase's assertion contract on a bound receiver."""
     func = call.func
     return (
-        testcase
-        and isinstance(func, ast.Attribute)
-        and isinstance(func.value, ast.Name)
-        and func.value.id == "self"
+        isinstance(func, ast.Attribute)
+        and scope.receiver(func.value)
         and (
             func.attr == "fail"
             or (func.attr.startswith("assert") and func.attr[6:7].isupper())
@@ -675,15 +1049,16 @@ def _unittest_expression(call: ast.Call) -> Optional[ast.expr]:
 def _read(
     func: _Function,
     symbols: Dict[str, Tuple[str, Optional[str]]],
-    *,
-    testcase: bool,
+    consumers: Dict[str, str],
+    bindings: _BindingIndex,
 ) -> _Body:
     """What *func*'s body asserts, the handlers in it that swallow, and the
     calls it makes in its own scope, including nested blocks; a nested
     function contributes assertions only when called as a helper."""
     real, tautology, swallowed = 0, [], []
     calls: List[ast.Call] = []
-    nodes = list(source_tree.scope_nodes(func))
+    execution = _Execution(func, consumers, bindings)
+    nodes = execution.active
     # A call through a comprehension's own name cannot reach a helper of
     # this scope, but an assertion method called through it still asserts.
     shadowed = source_tree.shadowed_calls(func)
@@ -695,7 +1070,7 @@ def _read(
             else:
                 real += 1
         elif isinstance(node, ast.Call):
-            if _unittest_assertion(node, testcase=testcase):
+            if _unittest_assertion(node, nodes[node]):
                 assert isinstance(node.func, ast.Attribute)
                 if node.func.attr in _UNITTEST_EXPECTS:
                     before_callable = _UNITTEST_EXPECTS[node.func.attr]
@@ -721,12 +1096,18 @@ class _Judge:
     """Resolves helpers across one scan with a configured bounded parse cache."""
 
     def __init__(
-        self, root: str, roots: Tuple[str, ...], depth: int, search_roots: List[str]
+        self,
+        root: str,
+        roots: Tuple[str, ...],
+        depth: int,
+        search_roots: List[str],
+        consumers: Dict[str, str],
     ) -> None:
         self.root = root
         self.roots = roots
         self.depth = depth
         self.search_roots = search_roots
+        self.consumers = consumers
         self.module = bounded(root)(self._module)
 
     def _module(self, path: str) -> _Module:
@@ -793,7 +1174,8 @@ class _Judge:
             body = _read(
                 found[0],
                 helper_module.symbols(found[0]),
-                testcase=found[1] is not None and helper_module.is_testcase(found[1]),
+                self.consumers,
+                helper_module.binding_index,
             )
             tautologies.update((target[0], line) for line in body.tautology)
             deeper_real, deeper = self.helpers_assert(
@@ -816,7 +1198,8 @@ class _Judge:
             body = _read(
                 func,
                 module.symbols(func),
-                testcase=cls is not None and module.is_testcase(cls),
+                self.consumers,
+                module.binding_index,
             )
             real, tautologies = self.helpers_assert(
                 body.calls, module, cls, func, 1, {(path, name)}
@@ -863,11 +1246,23 @@ def scan(
     roots: Tuple[str, ...],
     depth: int,
     search_roots: List[str],
+    *,
+    settings: Optional[Policy] = None,
 ) -> Tuple[int, List[Finding]]:
     """`(test functions read, findings)` over *files* under *root*, sorted by
     file and line. Raises source_tree.SourceTreeError naming a file it cannot
-    parse."""
-    judge = _Judge(root, roots, depth, search_roots)
+    parse. Uses *settings*' consumers when supplied; otherwise reads policy
+    once and can raise config_loader.ConfigError naming a refused key."""
+    consumers = (
+        settings.consumers
+        if settings is not None
+        else config_loader.resolve(
+            config_loader.read(root),
+            config_loader.rows(CONSUMERS),
+            config_loader.CONFIG_FILE,
+        )[CONSUMERS]
+    )
+    judge = _Judge(root, roots, depth, search_roots, consumers)
     count, findings = 0, []
     for path in files:
         read, found = judge.judge(path)

@@ -416,6 +416,34 @@ version rather than a bare commit:
   with a complete `<!-- ... -->` is an HTML block, so its trailing text is
   hidden too. Complete inline comments are blanked within one paragraph; an
   HTML comment opener inside fenced code hides no prose after the fence.
+- **Assertion credit requires generator consumption and a bound TestCase
+  receiver (KEEL-TESTQ-2).**
+  The assertion-quality gate counts a generator's deferred calls only when
+  consumed by iteration, unpacking, delegation or a configured bare callee in
+  its declared argument position.
+  `test_quality.assertions.consumers` maps names to `only` or `first`.
+  Keywords and argument unpacking reject the call.
+  Any binding in the test scope or a nearer enclosing function rejects a
+  consumer name, including uses in called nested helpers; class bodies are skipped.
+  A custom consumer may have one module binding, a definition or import.
+  A second module binding rejects it.
+  Any module binding of a Python builtin name rejects that consumer.
+  Synchronous consumers do not credit async generator expressions, and
+  asynchronous consumers do not credit sync generator expressions.
+  Async clauses and awaits in the generator's own body determine its protocol;
+  an await in its first iterable or the body of a nested lambda, function,
+  class or generator does not. Lambda defaults and nested generators' first
+  iterables belong to the enclosing scope; eager async comprehensions suspend it.
+  A TestCase receiver is its instance method's first positional parameter
+  without a default, or a singly bound alias or target over a receiver display.
+  Static and class methods and unrelated or multiply bound names get no credit.
+  Bindings include assignments, parameters, iteration targets, context and
+  exception targets, imports, definitions, pattern captures and `del` targets.
+  Nested `nonlocal` and `global` writes count in their owning scope.
+  Called nested helpers resolve receivers and generator aliases through their
+  enclosing functions. Tuple, list and starred assignment unpacking consumes
+  a generator's deferred body.
+
 - **A `TBD` owner inherits a configured default owner, and is an error
   without one.** check_F warned on every run about each `kind: tool` or
   `kind: agent` document whose frontmatter `owner` was `TBD`, six times in

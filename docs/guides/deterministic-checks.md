@@ -977,8 +977,23 @@ the letters A to Z are taken; `make test` runs them.
   `==`, `is`, `<=` or `>=` are tautologies if neither operand contains a call.
   Membership (`in`) is not reflexive.
   An assertion is an `assert`, a `pytest.fail` call, a call of a method named
-  `assert_*`, or `self.assert<Upper...>` / `self.fail` in a `unittest.TestCase`
-  subclass (including aliases and local inheritance).
+  `assert_*`, or `assert<Upper...>` / `fail` on a receiver of a
+  `unittest.TestCase` subclass (including aliases and local inheritance).
+  The receiver is the first positional parameter of a function defined directly
+  in the class body, whatever its name, with no default and no `staticmethod`
+  or `classmethod` decorator, and no other binding of that name in its scope.
+  A name bound exactly once by `=` or `:=` to such a receiver also counts.
+  A `for` or comprehension target bound exactly once over a tuple or list
+  display of receivers counts too; a display containing another value does not.
+  Any other binding, or two bindings even to the same receiver, rejects the name.
+  A called nested helper resolves receivers and generator aliases through its
+  nearest enclosing function bindings, skipping class bodies.
+  A local binding hides an enclosing receiver; an uncalled helper earns no credit.
+  Bindings include assignments (also augmented and annotated assignments and
+  walrus targets), parameters, `for` and comprehension targets, `with ... as`,
+  `except ... as`, imports, function and class definitions, pattern captures
+  and `del` targets. A nested function's writes declared `nonlocal` or `global`
+  count against the owning function or module; reading a name does not bind it.
   A `pytest.raises` or `pytest.warns` expectation counts when entered as a
   `with` item or called with a positional callable after the expected type.
   TestCase raises and warns expectations follow the same rule, with a regex
@@ -995,13 +1010,51 @@ the letters A to Z are taken; `make test` runs them.
   (`tests/source_tree.py` `shadowed_calls`); an assertion method called
   through such a name, as in `[m.assert_called_once() for m in mocks]`, still
   counts as an assertion.
-  A call through any other name in its iterables, conditions or elements
-  counts for the test, and a walrus target there binds in the enclosing scope.
+  A call through any other name in a running comprehension's iterables,
+  conditions or elements counts for the test, and a walrus target there binds
+  in the enclosing scope.
   Its first iterable runs before its own targets bind, so a call there
   resolves in the enclosing scope; every other part sees all its targets,
   even a condition written before the generator that binds the name; a
   nested comprehension's first iterable runs inside the outer one, so a name
   the outer targets bind is still theirs.
+  A generator expression runs only its first iterable when constructed.
+  Its element, conditions and later iterables count only when consumed: by a
+  running `for` statement or list, set or dict comprehension, a tuple or list
+  assignment target (including a starred target), a `*` or
+  `yield from` operand, or an iterable of another consumed generator expression.
+  A name bound exactly once to a generator and consumed in one of those places
+  counts the same; two bindings are never followed through control flow.
+  A call to an unrebound bare name in config/project.json
+  `test_quality.assertions.consumers` consumes its generator argument only in
+  the configured position: `only` requires a sole argument, while `first`
+  permits further positional arguments.
+  Any binding in the test's scope rejects the consumer name, including uses
+  in called nested helpers. Bindings in nearer enclosing functions reject it too;
+  class bodies are skipped. A custom consumer
+  may have exactly one module binding, a function definition or import; any
+  further module binding rejects it. A Python builtin name is rejected by any
+  module binding, because its policy describes the builtin.
+  A consumer credits a generator's deferred body only when both are synchronous
+  or both are asynchronous: synchronous consumers cannot iterate async
+  generators, and asynchronous consumers cannot iterate sync generators.
+  A generator expression is async when it has an `async for` clause or an
+  `await` in its element, conditions or iterables after the first.
+  An eager async comprehension there also suspends the generator and makes it async.
+  An `await` in the first iterable runs in the enclosing scope and does not
+  make the generator async; an `await` in the body of a nested lambda, function,
+  class or generator does not make it async either.
+  Lambda defaults and a nested generator's first iterable run in the enclosing
+  scope, so an `await` there counts toward that enclosing generator's protocol.
+  Any keyword argument or `*` or `**` argument unpacking rejects the call shape.
+  The defaults map `all`, `any`, `dict`, `frozenset`, `list`, `max`, `min`, `set`,
+  `sorted`, `sum` and `tuple` to `only`, and `next` to `first`.
+  `sum` can reject a string start before iterating, so it is not `first`;
+  both `sum(gen, 0)` and `sum(gen, "")` count as nothing.
+  Calls through attributes or callees absent from the map do not consume for
+  this gate; add a project's own consuming function to the map by bare name.
+  A deferred call in an unconsumed generator counts as no assertion,
+  expectation or helper call.
   Helpers are followed at most `test_quality.assertions.helper_depth` calls
   deep and once round a cycle; repeated paths report a tautology's source once
   per test, retaining the calling test's exemption id.

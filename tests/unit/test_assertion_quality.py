@@ -267,6 +267,617 @@ def _finding(test="test_a"):
     return aq.Finding(_TEST, 1, test, aq.NO_ASSERTION, "nothing asserts")
 
 
+_GEN = "(self.assertEqual(value, 2) for value in values)"
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        _GEN,
+        "gen = " + _GEN,
+        "bool(" + _GEN + ")",
+        "iter(" + _GEN + ")",
+        "next(it, " + _GEN + ")",
+        "next(" + _GEN + ", *rest)",
+        "dict(saved=" + _GEN + ")",
+        "max(a, " + _GEN + ")",
+        "try:\n    sum(" + _GEN + ', "")\nexcept TypeError:\n    recovered = True',
+        "sum(" + _GEN + ", 0)",
+        "max(" + _GEN + ", key=len)",
+        "(item for item in " + _GEN + ")",
+        "(_check(value) for value in values)",
+        "[self.assertEqual(value, 2) for self in (dummy,)]",
+        "self = other\nself.assertEqual(value, 2)",
+        "with manager as self:\n    self.assertEqual(value, 2)",
+        "try:\n    f()\nexcept ValueError as self:\n    self.assertEqual(value, 2)",
+    ],
+    ids=[
+        "bare-generator",
+        "bound-unused",
+        "bool",
+        "iter",
+        "next-default",
+        "next-starred-rest",
+        "dict-keyword",
+        "max-second",
+        "sum-string-start",
+        "sum-zero-start",
+        "max-keyword",
+        "unused-outer",
+        "deferred-helper",
+        "comprehension-self",
+        "reassigned-self",
+        "with-self",
+        "except-self",
+    ],
+)
+def test_cmp13_deferred_calls_and_rebound_receivers_count_as_nothing(tmp_path, body):
+    source = (
+        "import unittest\ndef _check(value):\n    assert value == 2\n"
+        "class Checks(unittest.TestCase):\n    def test_a(self):\n"
+        + textwrap.indent(body, "        ")
+    )
+    count, findings = _scan(tmp_path, {_TEST: source})
+    assert count == 1
+    assert [f.kind for f in findings] == [aq.NO_ASSERTION]
+
+
+@pytest.mark.parametrize(
+    "method, kinds",
+    [
+        (
+            "@staticmethod\ndef test_a(self=None):\n    self.assertTrue(value)",
+            [aq.NO_ASSERTION],
+        ),
+        ("def test_a(self):\n    case = self\n    case.assertEqual(value, 2)", []),
+        ("def test_a(self):\n    (case := self)\n    case.assertTrue(value)", []),
+        ("def test_a(self):\n    [c.assertEqual(value, 2) for c in (self,)]", []),
+        ("def test_a(self):\n    for c in (self,):\n        c.assertTrue(value)", []),
+        ("def test_a(case):\n    case.assertTrue(value)", []),
+    ],
+    ids=[
+        "static-self-default",
+        "assigned-case",
+        "walrus-case",
+        "comprehension-case",
+        "for-case",
+        "named-case",
+    ],
+)
+def test_cmp13_receiver_regressions(tmp_path, method, kinds):
+    source = "import unittest\nclass Checks(unittest.TestCase):\n" + textwrap.indent(
+        method, "    "
+    )
+    count, findings = _scan(tmp_path, {_TEST: source})
+    assert count == 1
+    assert [f.kind for f in findings] == kinds
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "all(" + _GEN + ")",
+        "for item in " + _GEN + ":\n    seen = item",
+        "[*" + _GEN + "]",
+        "gen = " + _GEN + "\nlist(gen)",
+        "next(" + _GEN + ", None)",
+        "sum(" + _GEN + ")",
+        "list(item for item in " + _GEN + ")",
+        "(item for item in self.assertEqual(value, 2))",
+    ],
+    ids=[
+        "all",
+        "for",
+        "star",
+        "bound-list",
+        "next-first",
+        "sum-only",
+        "consumed-outer",
+        "first-iterable",
+    ],
+)
+def test_cmp13_consumption_controls(tmp_path, body):
+    source = (
+        "import unittest\nclass Checks(unittest.TestCase):\n    def test_a(self):\n"
+        + textwrap.indent(body, "        ")
+    )
+    count, findings = _scan(tmp_path, {_TEST: source})
+    assert count == 1
+    assert findings == []
+
+
+@pytest.mark.parametrize(
+    "method",
+    [
+        "def test_a(self):\n    case = other\n    case.assertTrue(value)",
+        "def test_a(self):\n    for c in ():\n        c.assertEqual(1, 2)",
+        "def test_a(self):\n    [case.assertTrue(value) for case in (self, other)]",
+        "def test_a(self):\n    case = self\n    case = other\n    case.assertTrue(value)",
+        "def test_a(self):\n    case = self\n    case = self\n    case.assertTrue(value)",
+        "@staticmethod\ndef test_a(case=None):\n    case.assertTrue(value)",
+        "@classmethod\ndef test_a(cls):\n    cls.assertTrue(value)",
+    ],
+    ids=[
+        "other",
+        "empty-receiver-display",
+        "mixed-display",
+        "two-values",
+        "two-same",
+        "static-case-default",
+        "class-method",
+    ],
+)
+def test_cmp13_receiver_controls(tmp_path, method):
+    source = "import unittest\nclass Checks(unittest.TestCase):\n" + textwrap.indent(
+        method, "    "
+    )
+    count, findings = _scan(tmp_path, {_TEST: source})
+    assert count == 1
+    assert [f.kind for f in findings] == [aq.NO_ASSERTION]
+
+
+@pytest.mark.parametrize(
+    "body, kinds",
+    [
+        ("(pytest.fail('bad') for value in values)", [aq.NO_ASSERTION]),
+        ("(m.assert_called_once() for value in values)", [aq.NO_ASSERTION]),
+        ("(value for value in values if self.assertTrue(value))", [aq.NO_ASSERTION]),
+        (
+            "(value for value in values for item in self.assertTrue(value))",
+            [aq.NO_ASSERTION],
+        ),
+        ("[value for value in " + _GEN + "]", []),
+        ("{value for value in " + _GEN + "}", []),
+        ("{value: value for value in " + _GEN + "}", []),
+        ("gen = " + _GEN + "\ngen = other\nlist(gen)", [aq.NO_ASSERTION]),
+        ("gen = " + _GEN + "\ngen = " + _GEN + "\nlist(gen)", [aq.NO_ASSERTION]),
+        ("list(*(" + _GEN + ",))", [aq.NO_ASSERTION]),
+        ("list(" + _GEN + ", **options)", [aq.NO_ASSERTION]),
+        ("''.join(" + _GEN + ")", [aq.NO_ASSERTION]),
+    ],
+)
+def test_generator_execution_boundaries(tmp_path, body, kinds):
+    source = (
+        "import unittest\nimport pytest\nclass Checks(unittest.TestCase):\n    def test_a(self):\n"
+        + textwrap.indent(body, "        ")
+    )
+    count, findings = _scan(tmp_path, {_TEST: source})
+    assert count == 1
+    assert [f.kind for f in findings] == kinds
+
+
+def test_yield_from_in_a_consumed_helper(tmp_path):
+    source = (
+        "import unittest\nclass Checks(unittest.TestCase):\n"
+        "    def delegated(self):\n        yield from " + _GEN + "\n"
+        "    def test_a(self):\n        list(self.delegated())\n"
+    )
+    assert _scan(tmp_path, {_TEST: source}) == (1, [])
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="queued: a test that is itself a generator function is not run",
+)
+def test_known_limit_top_level_generator_test(tmp_path):
+    source = (
+        "import unittest\nclass Checks(unittest.TestCase):\n    def test_a(self):\n"
+        "        yield from " + _GEN + "\n"
+    )
+    count, findings = _scan(tmp_path, {_TEST: source})
+    assert count == 1
+    assert [f.kind for f in findings] == [aq.NO_ASSERTION]
+
+
+@pytest.mark.parametrize(
+    "body, signature, kinds",
+    [
+        ("drain(" + _GEN + ")", "self", []),
+        ("drain(" + _GEN + ", None)", "self", []),
+        ("drain(" + _GEN + ")", "self, drain", [aq.NO_ASSERTION]),
+        ("drain = other\ndrain(" + _GEN + ")", "self", [aq.NO_ASSERTION]),
+        ("from external import drain\ndrain(" + _GEN + ")", "self", [aq.NO_ASSERTION]),
+        ("[drain(" + _GEN + ") for drain in funcs]", "self", [aq.NO_ASSERTION]),
+        (
+            "[drain(" + _GEN + ") for drain in funcs for drain in funcs]",
+            "self",
+            [aq.NO_ASSERTION],
+        ),
+        ("drain(" + _GEN + ", key=f)", "self", [aq.NO_ASSERTION]),
+    ],
+)
+def test_consumers_come_from_policy_and_respect_bindings(
+    tmp_path, body, signature, kinds
+):
+    source = (
+        "import unittest\nclass Checks(unittest.TestCase):\n    def test_a("
+        + signature
+        + "):\n"
+        + textwrap.indent(body, "        ")
+    )
+    count, findings = _scan(
+        tmp_path,
+        {
+            _TEST: source,
+            "config/project.json": json.dumps(
+                {
+                    "tests": {
+                        "cache_max_entries": config_loader.rows(
+                            ("tests", "cache_max_entries")
+                        )[0].default
+                    },
+                    "test_quality": {"assertions": {"consumers": {"drain": "first"}}},
+                }
+            ),
+        },
+    )
+    assert count == 1
+    assert [f.kind for f in findings] == kinds
+
+
+@pytest.mark.parametrize(
+    "method, kinds",
+    [
+        ("def test_a(self=None):\n    self.assertTrue(value)", [aq.NO_ASSERTION]),
+        (
+            "@staticmethod\ndef test_a(self):\n    self.assertTrue(value)",
+            [aq.NO_ASSERTION],
+        ),
+        (
+            "@classmethod\ndef test_a(self):\n    self.assertTrue(value)",
+            [aq.NO_ASSERTION],
+        ),
+        ("def test_a(self, /):\n    self.assertTrue(value)", []),
+        ("def test_a(self, arg=None):\n    self.assertTrue(value)", []),
+        (
+            "def test_a(self):\n    case = self\n    with manager as case:\n        case.assertTrue(value)",
+            [aq.NO_ASSERTION],
+        ),
+        (
+            "def test_a(self):\n    case = self\n    try:\n        f()\n    except ValueError as case:\n        case.assertTrue(value)",
+            [aq.NO_ASSERTION],
+        ),
+        (
+            "def test_a(self):\n    case = self\n    import external as case\n    case.assertTrue(value)",
+            [aq.NO_ASSERTION],
+        ),
+        (
+            "def test_a(self, case):\n    case = self\n    case.assertTrue(value)",
+            [aq.NO_ASSERTION],
+        ),
+        (
+            "def test_a(self):\n    for case in values:\n        case.assertTrue(value)",
+            [aq.NO_ASSERTION],
+        ),
+        (
+            "def test_a(self):\n    for case in [self]:\n        case.assertTrue(value)",
+            [],
+        ),
+        ("def test_a(self):\n    [case.assertTrue(value) for case in [self]]", []),
+        (
+            "def test_a(self):\n    [None for c in (self,) if (case := c)]\n    case.assertTrue(value)",
+            [],
+        ),
+        (
+            "def test_a(self):\n    def inner(self):\n        self.assertTrue(value)\n    inner(other)",
+            [aq.NO_ASSERTION],
+        ),
+    ],
+)
+def test_receiver_binding_boundaries(tmp_path, method, kinds):
+    source = "import unittest\nclass Checks(unittest.TestCase):\n" + textwrap.indent(
+        method, "    "
+    )
+    count, findings = _scan(tmp_path, {_TEST: source})
+    assert count == 1
+    assert [f.kind for f in findings] == kinds
+
+
+@pytest.mark.parametrize(
+    "body, kinds",
+    [
+        pytest.param(
+            "case = self\ndef replace():\n    nonlocal case\n    case = stub\n"
+            "replace()\ncase.assertTrue(False)",
+            [aq.NO_ASSERTION],
+            id="nonlocal-receiver",
+        ),
+        pytest.param(
+            "gen = (self.assertTrue(v) for v in [False])\n"
+            "def replace():\n    nonlocal gen\n    gen = iter(())\nreplace()\nlist(gen)",
+            [aq.NO_ASSERTION],
+            id="nonlocal-generator",
+        ),
+        pytest.param(
+            "global case\ncase = self\ndef replace():\n    global case\n"
+            "    case = stub\nreplace()\ncase.assertTrue(False)",
+            [aq.NO_ASSERTION],
+            id="global-receiver",
+        ),
+        pytest.param(
+            "global gen\ngen = (self.assertTrue(v) for v in [False])\n"
+            "def replace():\n    global gen\n    gen = iter(())\nreplace()\nlist(gen)",
+            [aq.NO_ASSERTION],
+            id="global-generator",
+        ),
+        pytest.param(
+            "case = self\ndel case\ncase.assertTrue(value)",
+            [aq.NO_ASSERTION],
+            id="delete-receiver",
+        ),
+        pytest.param(
+            "gen = (self.assertTrue(v) for v in [False])\ndel gen\nlist(gen)",
+            [aq.NO_ASSERTION],
+            id="delete-generator",
+        ),
+        pytest.param(
+            "case = self\ndef nested(arg=(case := stub)):\n    return arg\n"
+            "case.assertTrue(value)",
+            [aq.NO_ASSERTION],
+            id="function-default-binding",
+        ),
+        pytest.param(
+            "case = self\nnested = lambda arg=(case := stub): arg\ncase.assertTrue(value)",
+            [aq.NO_ASSERTION],
+            id="lambda-default-binding",
+        ),
+        pytest.param(
+            "case = self\ndef read():\n    return case\nread()\ncase.assertTrue(value)",
+            [],
+            id="nested-read",
+        ),
+        pytest.param(
+            "case = self\nother = None\ndef replace():\n    nonlocal other\n"
+            "    other = stub\nreplace()\ncase.assertTrue(value)",
+            [],
+            id="different-nonlocal",
+        ),
+        pytest.param(
+            "gen = (self.assertTrue(v) for v in [False])\n"
+            "def read():\n    return gen\nread()\nlist(gen)",
+            [],
+            id="generator-nested-read",
+        ),
+        pytest.param(
+            "gen = (self.assertTrue(v) for v in [False])\nother = None\n"
+            "def replace():\n    nonlocal other\n    other = stub\nreplace()\nlist(gen)",
+            [],
+            id="generator-different-nonlocal",
+        ),
+    ],
+)
+def test_fix1_binding_forms(tmp_path, body, kinds):
+    source = (
+        "import unittest\nclass Checks(unittest.TestCase):\n    def test_a(self):\n"
+        + textwrap.indent(body, "        ")
+    )
+    count, findings = _scan(tmp_path, {_TEST: source})
+    assert count == 1
+    assert [f.kind for f in findings] == kinds
+
+
+@pytest.mark.parametrize(
+    "module, body, consumers, kinds",
+    [
+        pytest.param(
+            "def drain(it):\n    return tuple(it)\n",
+            "drain(" + _GEN + ")",
+            {"drain": "only"},
+            [],
+            id="module-def",
+        ),
+        pytest.param(
+            "from lib import drain\n",
+            "drain(" + _GEN + ")",
+            {"drain": "only"},
+            [],
+            id="module-import",
+        ),
+        pytest.param(
+            "drain = make()\n",
+            "drain(" + _GEN + ")",
+            {"drain": "only"},
+            [aq.NO_ASSERTION],
+            id="module-assignment",
+        ),
+        pytest.param(
+            "def drain(it):\n    return tuple(it)\ndrain = other\n",
+            "drain(" + _GEN + ")",
+            {"drain": "only"},
+            [aq.NO_ASSERTION],
+            id="module-second-binding",
+        ),
+        pytest.param(
+            "def all(gen):\n    return True\n",
+            "all(" + _GEN + ")",
+            {"all": "only"},
+            [aq.NO_ASSERTION],
+            id="builtin-def-shadow",
+        ),
+        pytest.param(
+            "from lib import list\n",
+            "list(" + _GEN + ")",
+            {"list": "only"},
+            [aq.NO_ASSERTION],
+            id="builtin-import-shadow",
+        ),
+        pytest.param(
+            "def drain(it):\n    return tuple(it)\n",
+            "drain(" + _GEN + ")",
+            {},
+            [aq.NO_ASSERTION],
+            id="unlisted-function",
+        ),
+        pytest.param("", "all(" + _GEN + ")", {"all": "only"}, [], id="builtin-all"),
+        pytest.param("", "list(" + _GEN + ")", {"list": "only"}, [], id="builtin-list"),
+        pytest.param(
+            "def drain(it):\n    return tuple(it)\n",
+            "def replace():\n    global drain\n    drain = other\n"
+            "replace()\ndrain(" + _GEN + ")",
+            {"drain": "only"},
+            [aq.NO_ASSERTION],
+            id="global-module-second-binding",
+        ),
+        pytest.param(
+            "",
+            "def replace():\n    global all\n    all = other\n"
+            "replace()\nall(" + _GEN + ")",
+            {"all": "only"},
+            [aq.NO_ASSERTION],
+            id="global-builtin-binding",
+        ),
+        pytest.param(
+            "def drain(it):\n    return tuple(it)\n",
+            "drain = other\ndrain(" + _GEN + ")",
+            {"drain": "only"},
+            [aq.NO_ASSERTION],
+            id="local-binding",
+        ),
+    ],
+)
+def test_fix1_module_consumers(tmp_path, module, body, consumers, kinds):
+    source = module + (
+        "import unittest\nclass Checks(unittest.TestCase):\n    def test_a(self):\n"
+        + textwrap.indent(body, "        ")
+    )
+    count, findings = _scan(
+        tmp_path,
+        {
+            _TEST: source,
+            "config/project.json": json.dumps(
+                {
+                    "tests": {"cache_max_entries": 256},
+                    "test_quality": {"assertions": {"consumers": consumers}},
+                }
+            ),
+        },
+    )
+    assert count == 1
+    assert [f.kind for f in findings] == kinds
+
+
+def test_fix1_scan_uses_passed_policy(tmp_path):
+    source = (
+        "import unittest\nclass Checks(unittest.TestCase):\n    def test_a(self):\n"
+        "        drain(self.assertTrue(v) for v in [False])\n"
+    )
+    root = _tree(tmp_path, {_TEST: source})
+    settings = aq.Policy(_ROOTS, 3, {}, {"drain": "only"})
+    # A scan that rereads consumers instead of using Policy must refuse this.
+    Path(root, "config/project.json").write_text(
+        json.dumps(
+            {
+                "tests": {"cache_max_entries": 256},
+                "test_quality": {"assertions": {"consumers": []}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert aq.scan(
+        root, [_TEST], settings.roots, settings.helper_depth, _SEARCH, settings=settings
+    ) == (1, [])
+
+
+@pytest.mark.parametrize(
+    "generator",
+    [
+        pytest.param("self.assertTrue(v) async for v in xs", id="async-for"),
+        pytest.param("self.assertTrue(await value(v)) for v in xs", id="await"),
+    ],
+)
+def test_fix1_sync_consumer_rejects_async_generator(tmp_path, generator):
+    source = (
+        "import unittest\nclass Checks(unittest.TestCase):\n    async def test_a(self):\n"
+        "        list(" + generator + ")\n"
+    )
+    count, findings = _scan(tmp_path, {_TEST: source})
+    assert count == 1
+    assert [f.kind for f in findings] == [aq.NO_ASSERTION]
+
+
+def test_fix1_async_iteration_consumes_async_generator(tmp_path):
+    source = (
+        "import unittest\nclass Checks(unittest.TestCase):\n    async def test_a(self):\n"
+        "        gen = (self.assertTrue(v) async for v in xs)\n"
+        "        async for item in gen:\n            seen = item\n"
+    )
+    assert _scan(tmp_path, {_TEST: source}) == (1, [])
+
+
+@pytest.mark.parametrize("case", ["pytest", "TestCase"])
+@pytest.mark.parametrize(
+    "consumer",
+    [
+        pytest.param("async for v in gen:\n    seen = v", id="async-for"),
+        pytest.param("[v async for v in gen]", id="async-comprehension"),
+    ],
+)
+def test_async_consumer_rejects_sync_generator(tmp_path, case, consumer):
+    assertion = "pytest.fail('x')" if case == "pytest" else "self.fail('x')"
+    body = (
+        "gen = ("
+        + assertion
+        + " for x in [1])\ntry:\n"
+        + textwrap.indent(consumer, "    ")
+        + "\nexcept TypeError:\n    note = 1\n"
+    )
+    source = "import pytest\n" + (
+        "async def test_a():\n" + textwrap.indent(body, "    ")
+        if case == "pytest"
+        else "import unittest\nclass Checks(unittest.TestCase):\n"
+        "    async def test_a(self):\n" + textwrap.indent(body, "        ")
+    )
+    count, findings = _scan(tmp_path, {_TEST: source})
+    assert count == 1
+    assert [f.kind for f in findings] == [aq.NO_ASSERTION]
+
+
+@pytest.mark.parametrize(
+    "generator, kinds",
+    [
+        pytest.param("_check(x) for x in await data()", [], id="await-first-iterable"),
+        pytest.param(
+            "_check(x) for x in [1] if (lambda: (await value(y) for y in [1]))",
+            [],
+            id="await-nested-lambda",
+        ),
+        pytest.param(
+            "_check(x) for x in [1] if (await value(y) for y in [1])",
+            [],
+            id="await-nested-generator-body",
+        ),
+        pytest.param(
+            "_check(x) for x in [1] if (lambda y=await value(x): y)",
+            [aq.NO_ASSERTION],
+            id="await-lambda-default",
+        ),
+        pytest.param(
+            "_check(x) for x in [1] if [y async for y in data()]",
+            [aq.NO_ASSERTION],
+            id="nested-async-comprehension",
+        ),
+        pytest.param(
+            "_check(x) for x in [1] for y in await data()",
+            [aq.NO_ASSERTION],
+            id="await-later-iterable",
+        ),
+        pytest.param(
+            "_check(x) for x in [1] if await value(x)",
+            [aq.NO_ASSERTION],
+            id="await-condition",
+        ),
+    ],
+)
+def test_generator_asyncness_uses_its_execution_scope(tmp_path, generator, kinds):
+    source = (
+        "def _check(x):\n    assert x == 1\n"
+        "async def test_a():\n    list(" + generator + ")\n"
+    )
+    count, findings = _scan(tmp_path, {_TEST: source})
+    assert count == 1
+    assert [f.kind for f in findings] == kinds
+
+
 def test_verdict_fails_a_run_over_zero_tests():
     (line,) = aq.verdict(0, [], {}, _ROOTS)
     assert "no test function was read under tests" in line
@@ -292,19 +903,22 @@ def _config(tmp_path, block):
     return str(tmp_path)
 
 
-def test_policy_reads_the_three_keys(tmp_path):
+def test_policy_reads_the_four_keys(tmp_path):
     block = {
         "roots": ["tests/unit"],
         "helper_depth": 2,
         "exempt": {"tests/unit/test_a.py::test_b": "r"},
+        "consumers": {"drain": "first"},
     }
     assert aq.policy(_config(tmp_path, block)) == aq.Policy(
-        ("tests/unit",), 2, {"tests/unit/test_a.py::test_b": "r"}
+        ("tests/unit",), 2, {"tests/unit/test_a.py::test_b": "r"}, {"drain": "first"}
     )
 
 
 def test_policy_takes_the_defaults_and_says_so(tmp_path, capsys):
-    assert aq.policy(_config(tmp_path, {})) == aq.Policy(("tests",), 3, {})
+    assert aq.policy(_config(tmp_path, {})) == aq.Policy(
+        ("tests",), 3, {}, config_loader.rows(aq.CONSUMERS)[0].default
+    )
     assert (
         "[using default] test_quality.assertions.helper_depth"
         in capsys.readouterr().err
@@ -320,6 +934,11 @@ def test_policy_takes_the_defaults_and_says_so(tmp_path, capsys):
         ("exempt", {"tests/test_a.py::test_b": " "}),
         ("exempt", {"tests/test_a.py": "r"}),
         ("exempt", {"tests/test_a.py::test_b[1]": "r"}),
+        ("consumers", []),
+        ("consumers", {"module.drain": "only"}),
+        ("consumers", {"class": "only"}),
+        ("consumers", {"drain": "second"}),
+        ("consumers", {"drain": []}),
     ],
 )
 def test_policy_refuses_a_bad_value_naming_the_key(tmp_path, key, value):
@@ -1075,3 +1694,97 @@ def test_ellipsis_only_handlers_are_swallowed_even_with_a_real_assertion(
     count, findings = _scan(tmp_path, {_TEST: source})
     assert count == 1
     assert [f.kind for f in findings] == [aq.SWALLOWED]
+
+
+@pytest.mark.parametrize(
+    "binding, consumer",
+    [
+        pytest.param("def list(g):\n    return None", "list", id="local-list-def"),
+        pytest.param("all = bool", "all", id="local-all-alias"),
+        pytest.param("sorted = lambda g: g", "sorted", id="local-sorted-lambda"),
+    ],
+)
+def test_fix2_enclosing_consumer_binding(tmp_path, binding, consumer):
+    body = binding + "\ndef run():\n    " + consumer + "(check(x) for x in [1])\nrun()"
+    source = _HELPER_REAL + "\ndef test_a():\n" + textwrap.indent(body, "    ")
+    count, findings = _scan(tmp_path, {_TEST: source})
+    assert count == 1
+    assert [f.kind for f in findings] == [aq.NO_ASSERTION]
+
+
+@pytest.mark.parametrize(
+    "body, kinds",
+    [
+        pytest.param(
+            "def check(v):\n    self.assertEqual(v, 2)\ncheck(2)",
+            [],
+            id="receiver-closure",
+        ),
+        pytest.param(
+            "gen = (self.assertEqual(v, 2) for v in [2])\n"
+            "def drain():\n    list(gen)\ndrain()",
+            [],
+            id="generator-closure",
+        ),
+        pytest.param(
+            "def check(v):\n    self = object()\n    self.assertEqual(v, 2)\ncheck(2)",
+            [aq.NO_ASSERTION],
+            id="rebound-receiver",
+        ),
+        pytest.param(
+            "def check(v):\n    self.assertEqual(v, 2)",
+            [aq.NO_ASSERTION],
+            id="uncalled-closure",
+        ),
+        pytest.param(
+            "case = self\ndef run():\n"
+            "    def check(v):\n        case.assertEqual(v, 2)\n"
+            "    check(2)\nrun()",
+            [],
+            id="two-enclosing-functions",
+        ),
+        pytest.param(
+            "class Helper:\n    self = object()\n"
+            "    @staticmethod\n    def check(v):\n        self.assertEqual(v, 2)\n"
+            "Helper.check(2)",
+            [],
+            id="skip-class-receiver-binding",
+        ),
+        pytest.param(
+            "case = self\ndef run():\n    case = object()\n"
+            "    def check(v):\n        case.assertEqual(v, 2)\n"
+            "    check(2)\nrun()",
+            [aq.NO_ASSERTION],
+            id="nearest-function-receiver-binding",
+        ),
+    ],
+)
+def test_fix2_closure_resolution(tmp_path, body, kinds):
+    source = (
+        "import unittest\nclass Checks(unittest.TestCase):\n    def test_a(self):\n"
+        + textwrap.indent(body, "        ")
+    )
+    count, findings = _scan(tmp_path, {_TEST: source})
+    assert count == 1
+    assert [f.kind for f in findings] == kinds
+
+
+@pytest.mark.parametrize(
+    "target, kinds",
+    [
+        pytest.param("a, b", [], id="tuple-target"),
+        pytest.param("[a, b]", [], id="list-target"),
+        pytest.param("a, *b", [], id="starred-target"),
+        pytest.param("gen", [aq.NO_ASSERTION], id="single-name"),
+    ],
+)
+def test_fix2_assignment_unpacking(tmp_path, target, kinds):
+    source = (
+        _HELPER_REAL
+        + "\ndef test_a():\n    "
+        + target
+        + " = (check(x) for x in [2, 2])\n"
+    )
+    count, findings = _scan(tmp_path, {_TEST: source})
+    assert count == 1
+    assert [f.kind for f in findings] == kinds
