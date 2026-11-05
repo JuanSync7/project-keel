@@ -2,11 +2,12 @@
 title: Unit — child_exec (a shell script re-runs itself under the child environment allowlist)
 kind: tests
 layer: n/a
-summary: scripts/child_exec.py, pinned: it replaces itself with the program it is handed, under the environment scripts/child_env.py `build_child_env` builds plus `MARKER` set to its own pid, so a variable outside the allowlist never reaches the program and the program can tell it was re-run; no program is USAGE, an allowlist that cannot be built is CONFIG naming the program, and a file that cannot be read or whose interpreter cannot be started is USAGE naming it. It starts the file by its path, never a PATH search, under the interpreter its `#!` line names (read as Linux reads it) or /bin/sh, so the execute bit does not matter. End to end, a script that opens with `REEXEC_LINE` runs its body once, under the allowlist; a marker its parent exported does not let it skip the re-run; and `sh probe.sh` re-runs the file here, not a namesake on PATH, with or without the execute bit.
+summary: scripts/child_exec.py, pinned: it replaces itself with the program it is handed, under the environment scripts/child_env.py `build_child_env` builds plus `MARKER` set to its own pid, so a variable outside the allowlist never reaches the program and the program can tell it was re-run; no program is USAGE, an allowlist that cannot be built is CONFIG naming the program, and a file that cannot be read or whose interpreter cannot be started is USAGE naming it. It starts the file by its path, never a PATH search, under the interpreter its `#!` line names (read as Linux reads it) or /bin/sh, so the execute bit does not matter. End to end, a script that opens with `REEXEC_LINE` runs its body once, under the allowlist; a marker its parent exported does not let it skip the re-run; and `sh probe.sh` re-runs the file here, not a namesake on PATH, with or without the execute bit. Pattern syntax, recursion and overflow faults return CONFIG from main without a traceback or pattern text, and never exec or run the script body.
 @covers scripts/child_exec.py
 """
 
 import errno
+import json
 import os
 import stat
 import subprocess
@@ -144,6 +145,45 @@ def test_a_program_that_cannot_be_started_is_usage_naming_it(
     assert child_exec.main([str(script)]) is ExitCode.USAGE
     err = capsys.readouterr().err
     assert str(script) in err and "#!" in err
+
+
+@pytest.mark.parametrize(
+    "pattern",
+    [
+        "(" * (2 * sys.getrecursionlimit())
+        + "S4_PRIVATE_FRAGMENT"
+        + ")" * (2 * sys.getrecursionlimit()),
+        "x{4294967296}",
+        "S4_PRIVATE_FRAGMENT[",
+    ],
+    ids=["recursive", "overflow", "syntax-control"],
+)
+def test_pattern_fault_is_config_and_no_script_body_runs(
+    pattern, execed, monkeypatch, capsys, tmp_path
+):
+    manifest = child_exec.config_loader.read(str(_ROOT))
+    manifest["child_env"]["credential_value_patterns"] = {"compile-fault": pattern}
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "project.json").write_text(
+        json.dumps(manifest), encoding="utf-8"
+    )
+    build = child_env.build_child_env
+
+    def configured(**kwargs):
+        return build(root=str(tmp_path), **kwargs)
+
+    monkeypatch.setattr(child_exec.child_env, "build_child_env", configured)
+    script = _file(tmp_path, "#!/bin/sh\n")
+    assert child_exec.main([script]) is ExitCode.CONFIG
+    assert execed == []
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert script in captured.err
+    assert "child_env.credential_value_patterns" in captured.err
+    assert '"compile-fault"' in captured.err
+    assert "Traceback" not in captured.err
+    assert "S4_PRIVATE_FRAGMENT" not in captured.err
+    assert pattern not in captured.err
 
 
 def _script(tmp_path, body):

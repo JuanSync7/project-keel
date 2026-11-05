@@ -2,7 +2,7 @@
 title: Unit — launch (where a long script runs, decided from what is true now)
 kind: tests
 layer: n/a
-summary: The launcher's decision core as pure functions, with every fact injected and no disk, process or network. Each row of the decision table decides and explains itself in one exact line that names no host and no absolute path. The host kind fails closed to shared for an absent, unreadable, malformed, empty or unmatched own-hosts file, and a farm job wins over a match. An unknown script length stays distinct from a short one, and only a run that succeeded can prove a script short. The launch key drops variable assignments and absolute paths. An unknown load or cpu count is not spare. After a farm submission a status passes through, falls back here when spare, or stops. Placeholder rendering takes only the closed set. The config loader refuses each malformed key by its path and loads keel's own block. The farm interface builds an argv adapter's submit words and environment from config alone and reads its reserved statuses; the none adapter is never asked to submit. A run record is made and read by one rule: a signal is spelled the shell's way, only a measured outcome carries seconds, an attempt that measured nothing keeps a measured record over the threshold, the durations text is whole canonical JSON with one entry per key, and a credential the environment holds reaches a launch only when config names it for that key. The launcher and long_scripts.py parse on the oldest supported interpreter and import only the standard library and their scripts/ siblings.
+summary: The launcher's decision core as pure functions, with every fact injected and no disk, process or network. Each row of the decision table decides and explains itself in one exact line that names no host and no absolute path. The host kind fails closed to shared for an absent, unreadable, malformed, empty or unmatched own-hosts file, and a farm job wins over a match. An unknown script length stays distinct from a short one, and only a run that succeeded can prove a script short. The launch key drops variable assignments and absolute paths. An unknown load or cpu count is not spare. After a farm submission a status passes through, falls back here when spare, or stops. Placeholder rendering takes only the closed set. The config loader refuses each malformed key by its path and loads keel's own block. The farm interface builds an argv adapter's submit words and environment from config alone and reads its reserved statuses; the none adapter is never asked to submit. A run record is made and read by one rule: a signal is spelled the shell's way, only a measured outcome carries seconds, an attempt that measured nothing keeps a measured record over the threshold, the durations text is whole canonical JSON with one entry per key, and a credential the environment holds reaches a launch only when config names it for that key. The launcher and long_scripts.py parse on the oldest supported interpreter and import only the standard library and their scripts/ siblings. Oversized integer load thresholds are named refusals; ordinary loads, boolean refusals, non-finite floats and range refusals retain their behavior.
 """
 
 import ast
@@ -511,6 +511,51 @@ def test_load_launcher_config_refuses_each_malformed_key(name, edit, where):
     with pytest.raises(launch.LauncherConfigError) as refused:
         launch.load_launcher_config(manifest)
     assert where in str(refused.value), (name, str(refused.value))
+
+
+@pytest.mark.parametrize(
+    "threshold",
+    [
+        10**400,
+        -(10**400),
+        True,
+        False,
+        float("nan"),
+        float("inf"),
+        -float("inf"),
+        0,
+        -1,
+        65,
+    ],
+    ids=[
+        "huge-positive",
+        "huge-negative",
+        "true",
+        "false",
+        "nan",
+        "inf",
+        "negative-inf",
+        "zero",
+        "negative",
+        "above-range",
+    ],
+)
+def test_load_threshold_faults_are_named_refusals(threshold):
+    manifest = _manifest()
+    manifest["launcher"]["spare"]["max_load_per_cpu"] = threshold
+    with pytest.raises(launch.LauncherConfigError) as refused:
+        launch.load_launcher_config(manifest)
+    assert "launcher.spare.max_load_per_cpu" in str(refused.value)
+    assert "above 0 and at most 64" in str(refused.value)
+
+
+@pytest.mark.parametrize("threshold", [0.25, 1, 64, 64.0])
+def test_ordinary_load_thresholds_keep_their_value(threshold):
+    manifest = _manifest()
+    manifest["launcher"]["spare"]["max_load_per_cpu"] = threshold
+    cfg = launch.load_launcher_config(manifest)
+    assert cfg.max_load_per_cpu == threshold
+    assert type(cfg.max_load_per_cpu) is float
 
 
 def test_the_shipped_block_loads_and_an_absent_block_is_refused():

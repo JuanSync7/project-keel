@@ -2,7 +2,7 @@
 title: Unit — child_env (the environment a child process inherits)
 kind: tests
 layer: n/a
-summary: build_child_env starts from an empty dict and copies only what config/project.json allows — `child_env.names`, a name under a `child_env.prefixes` entry, the `make_targets` unattended and gate variables, and, for a named model adapter, that adapter's `models.credential_env` — then adds the caller's `extra` last. A planted secret such as AWS_SECRET_ACCESS_KEY or GITHUB_TOKEN never reaches the result unless declared, a declared name the parent lacks stays absent rather than empty, and a missing, unreadable or malformed manifest is a ChildEnvError, never a fall-back to the parent's environment; a manifest an update left holding a merge-conflict hunk is named as that conflict, with its line and the step that finishes the update, not as a JSON parse error. A `child_env.repo_context_names` variable reaches the result only when the call passes `repo_context=True`, and child_env_policy refuses an allowlist source that admits one, naming the source and the fix. A copied value carrying user information (a user part in a URL authority, a scheme-relative `//user@host` and a space in the password included; a whole value `user[:password]@host:port`; or, in a `*_proxy` variable, any user part urllib's proxy parser reads, `#`, `?` or `/` in the password and a scheme-less `token@proxy` included) is a ChildEnvError naming every such variable and never the value, whatever allowlist source copied it, unless `child_env.credentialed_values` names it, the called adapter declares it, or `extra` replaces it; child_env_policy refuses a credentialed_values entry that is malformed or that no allowlist source copies. A glibc locale list such as `LANGUAGE=sr_RS:sr@latin`, `name@domain`, and a non-proxy URL with an `@` after its host are copied verbatim. child_env_policy states the same rule without touching disk. A refusal of configured text holding an `@`, in any block child_env judges or at a child's start, hides it and shows its harmless neighbours as JSON; so does the credential refusal for a variable name a `child_env.prefixes` entry admits from the environment. A configured name, prefix, label, scheme, host or port ending in a newline is refused.
+summary: build_child_env starts from an empty dict and copies only what config/project.json allows — `child_env.names`, a name under a `child_env.prefixes` entry, the `make_targets` unattended and gate variables, and, for a named model adapter, that adapter's `models.credential_env` — then adds the caller's `extra` last. A planted secret such as AWS_SECRET_ACCESS_KEY or GITHUB_TOKEN never reaches the result unless declared, a declared name the parent lacks stays absent rather than empty, and a missing, unreadable or malformed manifest is a ChildEnvError, never a fall-back to the parent's environment; a manifest an update left holding a merge-conflict hunk is named as that conflict, with its line and the step that finishes the update, not as a JSON parse error. A `child_env.repo_context_names` variable reaches the result only when the call passes `repo_context=True`, and child_env_policy refuses an allowlist source that admits one, naming the source and the fix. A copied value carrying user information (a user part in a URL authority, a scheme-relative `//user@host` and a space in the password included; a whole value `user[:password]@host:port`; or, in a `*_proxy` variable, any user part urllib's proxy parser reads, `#`, `?` or `/` in the password and a scheme-less `token@proxy` included) is a ChildEnvError naming every such variable and never the value, whatever allowlist source copied it, unless `child_env.credentialed_values` names it, the called adapter declares it, or `extra` replaces it; child_env_policy refuses a credentialed_values entry that is malformed or that no allowlist source copies. A glibc locale list such as `LANGUAGE=sr_RS:sr@latin`, `name@domain`, and a non-proxy URL with an `@` after its host are copied verbatim. child_env_policy states the same rule without touching disk. A refusal of configured text holding an `@`, in any block child_env judges or at a child's start, hides it and shows its harmless neighbours as JSON; so does the credential refusal for a variable name a `child_env.prefixes` entry admits from the environment. A configured name, prefix, label, scheme, host or port ending in a newline is refused. Pattern syntax, recursion and overflow faults yield one key-and-label refusal without pattern text; valid patterns retain matching behavior.
 """
 
 import base64
@@ -1201,6 +1201,40 @@ def test_credential_value_patterns_are_validated_without_echoing_a_pattern():
         )
     )
     assert "global flag" in errs[0], errs
+
+
+@pytest.mark.parametrize(
+    "pattern",
+    [
+        "(" * (2 * sys.getrecursionlimit())
+        + "S4_PRIVATE_FRAGMENT"
+        + ")" * (2 * sys.getrecursionlimit()),
+        "x{4294967296}",
+        "S4_PRIVATE_FRAGMENT[",
+    ],
+    ids=["recursive", "overflow", "syntax-control"],
+)
+def test_pattern_compile_faults_are_one_named_refusal_without_pattern_text(pattern):
+    policy, errs = child_env.child_env_policy(
+        _manifest(child_env__credential_value_patterns={"compile-fault": pattern})
+    )
+    assert policy is None and len(errs) == 1, errs
+    assert "child_env.credential_value_patterns" in errs[0]
+    assert '"compile-fault"' in errs[0]
+    assert "S4_PRIVATE_FRAGMENT" not in errs[0]
+    assert pattern not in errs[0]
+
+
+@pytest.mark.parametrize("pattern", [r"^S4-[0-9]+$", r"(?i:^s4-[0-9]+$)"])
+def test_valid_value_patterns_still_compile_and_match(pattern):
+    policy, errs = child_env.child_env_policy(
+        _manifest(child_env__credential_value_patterns={"valid-pattern": pattern})
+    )
+    assert errs == [] and policy is not None
+    [(label, compiled)] = policy.value_patterns
+    assert label == "valid-pattern"
+    assert compiled.search("S4-123") is not None
+    assert compiled.search("ordinary") is None
 
 
 def test_the_value_patterns_come_from_config_not_code(tmp_path, parent):

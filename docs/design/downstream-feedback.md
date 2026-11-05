@@ -3378,7 +3378,7 @@ Stop at four green `make verify` slices or a cap.
 | CMP-15.S1 | The loader refuses recursion. Rendering preserves redaction and deduplicates by identity. | implemented |
 | CMP-15.S2 | Section faults exit CONFIG for practices and FAILURE for source headers. A loader-refused config/practices.json exits CONFIG, or USAGE for a conflict hunk. | planned |
 | CMP-15.S3 | Floor faults exit CONFIG. ADR widths are bounded before allocation. Policy faults yield one key-naming FAILURE finding. | planned |
-| CMP-15.S4 | Child-env pattern faults and launcher load faults exit CONFIG. | planned |
+| CMP-15.S4 | Child-env pattern faults and launcher load faults exit CONFIG. | implemented |
 
 Unit tests below live in `tests/unit/scripts/`.
 CMP-15.S1 owns `scripts/config_loader.py` and its `summary:`, `test_config_loader.py`, `test_config_get.py`, `tests/integration/test_config_loader_read.py`, `tests/integration/test_conflict_entry_points.py`, loader limits in `docs/guides/limits-and-troubleshooting.md`, and this plan and its queue row in `docs/design/downstream-feedback.md`.

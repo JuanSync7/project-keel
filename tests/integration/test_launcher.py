@@ -2,7 +2,7 @@
 title: Integration — the launcher and the search script, as real processes in a scratch repository
 kind: tests
 layer: n/a
-summary: A scratch git repository holding scripts/launch.py, scripts/long_scripts.py, the siblings they import, keel's config/project.json and keel's .gitignore runs the launcher as a real process, with a fake farm program on PATH where a farm is configured. With the shipped config and no own-hosts file a dry run prints exactly one line, `run here limited` at the configured niceness, writes nothing and runs nothing, and a real run prints the same one line, runs the command and records it as a shared-host run. An own-hosts pattern makes the host own, a recorded success within the threshold makes the script short, an argv adapter chosen in a copy of the config submits unless a variable its inside_env names is set, and a local-only script stays here. A farm that never allocates falls back to a limited run, under nice, when the host is spare, and stops with exit 12, running nothing and recording no-capacity, when it is busy or its load is unknown; a farm that refuses ends with exit 2. Neither a busy farm nor the entry the file holds while a command runs, what a killed launch leaves, replaces a measured run over the threshold, so the search script still proposes it. A farm job receives exactly the allowlisted environment plus the adapter's rendered variables, never a planted secret, and a credential reaches it only when launcher.credentials names it for that launch key; otherwise the launch is refused before anything runs. The durations file is git-ignored, whole canonical JSON with one entry per key, and records a failure with its status and an interruption as 130. A state path reached through a symlink, a state path git would list and a git that runs and fails are refused with exit 2 before anything runs. The search script is read-only and ends on each verdict: no recorded runs is exit 13 (ExitCode.NOTHING_JUDGED), a short record exit 0, an unlisted long record exit 1 with a `propose:` line, and a linked durations file exit 2. Not a writer: it writes only under pytest's tmp_path.
+summary: A scratch git repository holding scripts/launch.py, scripts/long_scripts.py, the siblings they import, keel's config/project.json and keel's .gitignore runs the launcher as a real process, with a fake farm program on PATH where a farm is configured. With the shipped config and no own-hosts file a dry run prints exactly one line, `run here limited` at the configured niceness, writes nothing and runs nothing, and a real run prints the same one line, runs the command and records it as a shared-host run. An own-hosts pattern makes the host own, a recorded success within the threshold makes the script short, an argv adapter chosen in a copy of the config submits unless a variable its inside_env names is set, and a local-only script stays here. A farm that never allocates falls back to a limited run, under nice, when the host is spare, and stops with exit 12, running nothing and recording no-capacity, when it is busy or its load is unknown; a farm that refuses ends with exit 2. Neither a busy farm nor the entry the file holds while a command runs, what a killed launch leaves, replaces a measured run over the threshold, so the search script still proposes it. A farm job receives exactly the allowlisted environment plus the adapter's rendered variables, never a planted secret, and a credential reaches it only when launcher.credentials names it for that launch key; otherwise the launch is refused before anything runs. The durations file is git-ignored, whole canonical JSON with one entry per key, and records a failure with its status and an interruption as 130. A state path reached through a symlink, a state path git would list and a git that runs and fails are refused with exit 2 before anything runs. The search script is read-only and ends on each verdict: no recorded runs is exit 13 (ExitCode.NOTHING_JUDGED), a short record exit 0, an unlisted long record exit 1 with a `propose:` line, and a linked durations file exit 2. Not a writer: it writes only under pytest's tmp_path. In-process main refuses oversized load integers with CONFIG before running a command or writing a duration record, without a traceback.
 @covers scripts/launch.py
 @covers scripts/long_scripts.py
 """
@@ -727,6 +727,32 @@ def test_a_symlinked_or_tracked_state_path_is_refused_before_anything_runs(tmp_p
         _launch(repo, _on_path(env, git_bin), command=command), "git could not say"
     )
     assert not marker.exists()
+
+
+@pytest.mark.parametrize("threshold", [10**400, -(10**400)])
+def test_oversized_load_is_config_before_a_command_runs(
+    tmp_path, monkeypatch, capsys, threshold
+):
+    (tmp_path / "config").mkdir()
+    manifest = _edited(lambda block: block["spare"].update(max_load_per_cpu=threshold))
+    _write_manifest(tmp_path, manifest)
+    _in_process(monkeypatch, tmp_path)
+    ran = []
+
+    def runner(argv, cwd, env):
+        ran.append(argv)
+        pytest.fail("a refused launcher ran the command")
+
+    assert (
+        launch.main(["--root", str(tmp_path), "--", "probe"], runner=runner)
+        is ExitCode.CONFIG
+    )
+    captured = capsys.readouterr()
+    assert captured.out == "" and ran == []
+    assert "config/project.json" in captured.err
+    assert "launcher.spare.max_load_per_cpu" in captured.err
+    assert "Traceback" not in captured.err
+    assert not (tmp_path / _LAUNCHER["durations_file"]).exists()
 
 
 def test_a_bad_block_and_a_missing_command_are_refused(tmp_path):
