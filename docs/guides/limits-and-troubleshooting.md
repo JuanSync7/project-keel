@@ -8,7 +8,7 @@ tags: [limits, waivers, exit-codes, troubleshooting, guide]
 summary: What adopting keel costs, the risks its rails leave open, the checks that pass by skipping, what no gate can see, every waiver a project may use, every exit code the gate's scripts return, and the symptom-to-fix list for the failures a newcomer meets first.
 id: docs-guides-limits-and-troubleshooting
 created: 2026-10-09
-updated: 2026-11-04
+updated: 2026-11-05
 visibility: internal
 canonical: true
 ---
@@ -455,6 +455,22 @@ return. `make exit-codes` regenerates both, and `make check-exit-codes`, a
 prerequisite of `make check-all`, fails when either is stale. Do not edit
 between the markers.
 
+When `scripts/config_loader.py` refuses config/project.json, its CLI readers
+return `report(ExitCode.USAGE, ...)` for a merge-conflict hunk (exit 2),
+and `report(ExitCode.CONFIG, ...)` for any other refusal (exit 14).
+`config_loader.is_conflict` alone makes that decision. Each refusal is one
+stderr line naming config/project.json and the repair, without a traceback
+or a successful skip. The two Stop hooks, `scripts/hooks/on_stop_doc_review.py`
+and `scripts/hooks/on_stop_triage.py`, end a hunk at 14 unless run with
+`--execute`, because a trigger may read exit 2 as a request to block its
+event; `tests/unit/scripts/test_manifest_refusals.py` holds them to it.
+`scripts/check_structure.py` instead reports loader
+findings and exits 1. `scripts/gate_evidence.py` also returns CONFIG when its
+schema file is not UTF-8 or is otherwise unreadable JSON; a missing schema
+or one without an integer version remains USAGE.
+`tests/integration/test_conflict_entry_points.py` discovers the CLI readers
+and holds their conflict and duplicate-key paths to this contract.
+
 <!-- exit-codes:begin -->
 | Exit | Name | Meaning | What to do |
 |------|------|---------|------------|
@@ -472,17 +488,17 @@ between the markers.
 |--------|------|
 | `api/rest_fastapi/export_openapi.py` | 0, 1 |
 | `scripts/agent_surface/generate_aad_schema.py` | 0, 1 |
-| `scripts/cdmon_sync.py` | 0, passes through |
+| `scripts/cdmon_sync.py` | 0, 2, 14, passes through |
 | `scripts/check_python_version.py` | 0, 1 |
 | `scripts/check_structure.py` | 0, 1, 2 |
 | `scripts/check_venv.py` | 0, 1, 2, 13, 14 |
 | `scripts/exit_code_table.py` | 0, 1, 2, 14 |
 | `scripts/gate_evidence.py` | 0, 2, 10, 14, 130, passes through |
-| `scripts/jobs/check_corpus.py` | 0, 1, 14 |
+| `scripts/jobs/check_corpus.py` | 0, 1, 2, 14 |
 | `scripts/run_evals.py` | 0, 1, 2, 11, 14 |
 | `scripts/scan_secrets.py` | 0, 1, 2, 11, 13, 14 |
 | `scripts/shell_gate.py` | 0, 2, 11, 13, 14, passes through |
-| `scripts/trace_requirements.py` | 0, 1, 2 |
+| `scripts/trace_requirements.py` | 0, 1, 2, 14 |
 <!-- exit-codes:end -->
 
 A failing script's last stderr line has three parts: `<what failed>: <on which

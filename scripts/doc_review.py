@@ -85,11 +85,13 @@ def main(argv=None):
             model_budget.approve(
                 args.max_chunks, model_budget.cap(root), "--max-chunks"
             )
-        except config_loader.ConfigError:
+        except config_loader.ConfigError as exc:
             return exit_codes.report(
-                exit_codes.ExitCode.CONFIG,
+                exit_codes.ExitCode.USAGE
+                if config_loader.is_conflict(exc)
+                else exit_codes.ExitCode.CONFIG,
                 "doc_review: the model-call cap cannot be read",
-                "config/project.json agents.max_model_calls",
+                "; ".join(exc.lines),
                 "set it to a whole number of 0 or more, as the line above says",
             )
         except model_budget.SpendRefused as exc:
@@ -142,7 +144,9 @@ def main(argv=None):
         # runtimes.max_steps, agents.tool_timeout_seconds,
         # agents.tool_max_output_bytes): refused before that call starts.
         return exit_codes.report(
-            exit_codes.ExitCode.CONFIG,
+            exit_codes.ExitCode.USAGE
+            if config_loader.is_conflict(exc)
+            else exit_codes.ExitCode.CONFIG,
             "doc_review: a setting the model or the runtime reads is refused",
             "; ".join(exc.lines),
             "set each key the line names inside its bound",

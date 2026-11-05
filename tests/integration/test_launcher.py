@@ -203,8 +203,8 @@ def _farm(block):
     block["farm"]["adapter"] = _argv_adapter()
 
 
-def _refused(run, *phrases):
-    assert run.returncode == 2, run
+def _refused(run, *phrases, code=ExitCode.USAGE):
+    assert run.returncode == code, run
     for phrase in phrases:
         assert phrase in run.stderr, (phrase, run.stderr)
 
@@ -738,7 +738,7 @@ def test_a_bad_block_and_a_missing_command_are_refused(tmp_path):
         block["limited"]["niceness"] = 0
 
     _write_manifest(repo, _edited(nice))
-    _refused(_launch(repo, env), "launcher.limited.niceness")
+    _refused(_launch(repo, env), "launcher.limited.niceness", code=ExitCode.CONFIG)
     assert not (repo / _LAUNCHER["durations_file"]).exists()
 
     help_run = subprocess.run(

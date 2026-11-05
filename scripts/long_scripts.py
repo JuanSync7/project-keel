@@ -3,7 +3,7 @@
 title: long_scripts — propose launch keys whose last recorded run was long
 kind: script
 layer: n/a
-summary: Reads the durations file scripts/launch.py writes (config/project.json `launcher.durations_file`) and proposes each launch key whose last measured run took longer than `launcher.long_after_seconds` and that `launcher.long_scripts` does not list, whatever the run's outcome, because the duration is the fact. It never edits config: a proposal is a stdout line naming the key, the seconds, the outcome and the config key to add it under, and a person decides. An entry with no duration (incomplete, no-capacity) or one that is malformed is unjudged and counts neither way, and is printed as an `unjudged:` line. It ends on one of three verdicts: exit 0 when it judged at least one run and none is over and unlisted, exit 1 when it proposes a key, and exit 13 (ExitCode.NOTHING_JUDGED) when it judged nothing, because a pass over zero records is neither "none is long" nor a proposal. It refuses with exit 2 a config block launch.py's loader rejects, a durations file reached through a symlink, one git would list, a git that ran and failed, and a file that is not a JSON object. Stdlib-only and 3.6-safe, for the reason launch.py is.
+summary: Reads the durations file scripts/launch.py writes (config/project.json `launcher.durations_file`) and proposes each launch key whose last measured run took longer than `launcher.long_after_seconds` and that `launcher.long_scripts` does not list, whatever the run's outcome, because the duration is the fact. It never edits config: a proposal is a stdout line naming the key, the seconds, the outcome and the config key to add it under, and a person decides. An entry with no duration (incomplete, no-capacity) or one that is malformed is unjudged and counts neither way, and is printed as an `unjudged:` line. It ends on one of three verdicts: exit 0 when it judged at least one run and none is over and unlisted, exit 1 when it proposes a key, and exit 13 (ExitCode.NOTHING_JUDGED) when it judged nothing, because a pass over zero records is neither "none is long" nor a proposal. An absent manifest is exit 2. A present refused manifest is exit 2 for a conflict hunk and CONFIG (14) otherwise; a block launch.py's loader rejects is CONFIG. It refuses with exit 2 a durations file reached through a symlink, one git would list, a git that ran and failed, and a file that is not a JSON object. Stdlib-only and 3.6-safe, for the reason launch.py is.
 effect: read-only
 """
 
@@ -20,6 +20,7 @@ from typing import NamedTuple
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import config_loader  # noqa: E402
 import git_tree  # noqa: E402 — the one definition of what git lists
 from exit_codes import ExitCode, finish, report  # noqa: E402
 from launch import (  # noqa: E402 — the one reader of the config and a record
@@ -145,14 +146,23 @@ def main(argv=None):
         )
     root = os.path.abspath(args.root or _DEFAULT_ROOT)
     try:
-        with open(os.path.join(root, _MANIFEST), encoding="utf-8") as fh:
-            cfg = load_launcher_config(json.load(fh))
+        cfg = load_launcher_config(config_loader.read(root, _MANIFEST))
     except LauncherConfigError as exc:
-        return _refuse(str(exc), "correct config/project.json `launcher`")
-    except (OSError, ValueError) as exc:
-        return _refuse(
-            "%s is unreadable or not JSON (%s)" % (_MANIFEST, exc.__class__.__name__),
-            "restore config/project.json",
+        return report(
+            ExitCode.CONFIG,
+            "long_scripts: the launcher block cannot be used",
+            str(exc),
+            exc.fix,
+        )
+    except config_loader.ConfigError as exc:
+        return report(
+            ExitCode.USAGE
+            if isinstance(exc, config_loader.ConfigAbsent)
+            or config_loader.is_conflict(exc)
+            else ExitCode.CONFIG,
+            "long_scripts: the manifest cannot be used",
+            "; ".join(exc.lines),
+            "repair config/project.json, resolving any hunk, then rerun",
         )
     unsafe = _unsafe(root, cfg.durations_file)
     if unsafe is not None:

@@ -97,11 +97,13 @@ def main(argv=None):
         # model and writes nothing; a dry run calls none, so it is never held.
         try:
             model_budget.approve(args.max_nodes, model_budget.cap(root), "--max-nodes")
-        except config_loader.ConfigError:
+        except config_loader.ConfigError as exc:
             return exit_codes.report(
-                exit_codes.ExitCode.CONFIG,
+                exit_codes.ExitCode.USAGE
+                if config_loader.is_conflict(exc)
+                else exit_codes.ExitCode.CONFIG,
                 "refactor_practice: the model-call cap cannot be read",
-                "config/project.json agents.max_model_calls",
+                "; ".join(exc.lines),
                 "set it to a whole number of 0 or more, as the line above says",
             )
         except model_budget.SpendRefused as exc:
@@ -152,7 +154,9 @@ def main(argv=None):
         # runtimes.max_steps, agents.tool_timeout_seconds,
         # agents.tool_max_output_bytes): refused before that call starts.
         return exit_codes.report(
-            exit_codes.ExitCode.CONFIG,
+            exit_codes.ExitCode.USAGE
+            if config_loader.is_conflict(exc)
+            else exit_codes.ExitCode.CONFIG,
             "refactor_practice: a setting the model or the runtime reads is refused",
             "; ".join(exc.lines),
             "set each key the line names inside its bound",

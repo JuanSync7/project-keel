@@ -732,7 +732,12 @@ def main(argv=None) -> int:
         what, where, then = config_fault(
             exc, "build_corpus", "build again; nothing was written"
         )
-        return report(ExitCode.CONFIG, what, where, then)
+        return report(
+            ExitCode.USAGE if config_loader.is_conflict(exc) else ExitCode.CONFIG,
+            what,
+            where,
+            then,
+        )
     dups = _duplicate_ids(corpus["nodes"])
     if dups:  # node_id is the corpus primary key — fail loudly, never silently collapse
         return report(

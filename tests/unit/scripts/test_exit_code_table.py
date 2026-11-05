@@ -72,6 +72,24 @@ def _bytes(root):
     return (root / _GUIDE).read_bytes()
 
 
+def test_a_conflict_hunk_exits_2(tmp_path, capsys):
+    root = _project(tmp_path)
+    (root / et.MANIFEST).write_text(
+        "{\n"
+        + "<" * 7
+        + ' before\n"a": 1\n'
+        + "=" * 7
+        + '\n"a": 2\n'
+        + ">" * 7
+        + " after\n}\n",
+        encoding="utf-8",
+    )
+    assert et.main([], root=str(root)) == ExitCode.USAGE
+    lines = capsys.readouterr().err.splitlines()
+    assert len(lines) == 1 and "config/project.json" in lines[0]
+    assert "Traceback" not in lines[0]
+
+
 # --- the enum ------------------------------------------------------------------
 
 

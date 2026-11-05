@@ -3,7 +3,7 @@
 title: declare_no_app — a project whose composition root is gone stays green across copier update
 kind: script
 layer: n/a
-summary: A copier `after` migration on `copier update`. A project generated before config/project.json carried `layers.app`, and that deleted src/app as the template then advised, receives `"app": {"path": "src/app", ...}` from the update, and check_H errors on a path that does not exist. When the declared path is absent from the tree and the pre-update manifest (`git cat-file blob HEAD:config/project.json`, read-only, through review_docs' `git_argv` and the allowlisted environment) had no `layers.app`, this job makes the three edits src/app/README.md names for a project with no composition root: `layers.app` becomes null; each bare marker of the smoke test that needs the composition root (tests/smoke/test_app_runs.py `pytestmark`) is declared in `make_targets.empty_test_selections`; each Makefile target whose recipe runs scripts/run_app.py is added to `make_targets.effect_proof_skip`. It names what it did on stderr. config/project.json is edited as text, so no other byte moves, and an edit that does not parse back to exactly the intended manifest is refused: nothing is written, the edits are named on stderr, exit 1. A project that declared `layers.app` itself is left to check_H. A manifest that holds a conflict hunk is refused with conflict_guard's line, exit 2, and one that is not JSON for another reason is a stated skip, exit 0; a git failure exits 2. Run as a script, it first asks scripts/jobs/conflict_guard.py whether a module it imports from the project, or a fixed project file those modules declare reading in `PROJECT_READS`, holds a conflict hunk, and if one does it names each file and the rerun command (run as a migration with `--finish-with`, the command that finishes the update) and exits 2 instead of dying on the import or the read.
+summary: A copier `after` migration on `copier update`. A project generated before config/project.json carried `layers.app`, and that deleted src/app as the template then advised, receives `"app": {"path": "src/app", ...}` from the update, and check_H errors on a path that does not exist. When the declared path is absent from the tree and the pre-update manifest (`git cat-file blob HEAD:config/project.json`, read-only, through review_docs' `git_argv` and the allowlisted environment) had no `layers.app`, this job makes the three edits src/app/README.md names for a project with no composition root: `layers.app` becomes null; each bare marker of the smoke test that needs the composition root (tests/smoke/test_app_runs.py `pytestmark`) is declared in `make_targets.empty_test_selections`; each Makefile target whose recipe runs scripts/run_app.py is added to `make_targets.effect_proof_skip`. It names what it did on stderr. config/project.json is edited as text, so no other byte moves, and an edit that does not parse back to exactly the intended manifest is refused: nothing is written, the edits are named on stderr, exit 1. A project that declared `layers.app` itself is left to check_H. A manifest that holds a conflict hunk is refused with conflict_guard's line, exit 2, and any other unusable manifest is refused with exit CONFIG (14); an absent manifest is left untouched; a git failure exits 2. Run as a script, it first asks scripts/jobs/conflict_guard.py whether a module it imports from the project, or a fixed project file those modules declare reading in `PROJECT_READS`, holds a conflict hunk, and if one does it names each file and the rerun command (run as a migration with `--finish-with`, the command that finishes the update) and exits 2 instead of dying on the import or the read.
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/integration/test_update_without_app.py
@@ -51,6 +51,7 @@ if __name__ == "__main__":
     )
 
 import child_env  # noqa: E402
+import config_loader  # noqa: E402
 import review_docs  # noqa: E402
 from exit_codes import ExitCode, finish, report  # noqa: E402
 
@@ -291,29 +292,25 @@ def main(argv=None):
     )
     args = parser.parse_args(argv)
     root = os.path.abspath(args.root)
-    text = _read(root, MANIFEST)
-    if not text:
-        return ExitCode.SUCCESS
     try:
-        manifest = json.loads(text)
-    except ValueError:
-        line = conflict_guard.conflict_line(text)
-        if line is not None:
-            # The guard names this read before main runs when --root is the
-            # job's own project; another --root is refused the same way here.
-            what, on, next_step = conflict_guard.refusal_parts(
-                "declare_no_app",
-                [("config/project.json", line)],
-                conflict_guard.job_rerun(
-                    __file__,
-                    os.path.dirname(_SCRIPTS),
-                    sys.argv[1:] if argv is None else argv,
-                    args.finish_with,
-                ),
-            )
-            return report(ExitCode.USAGE, what, on, next_step)
-        _say("config/project.json is not JSON (an update conflict?); not judged")
+        manifest = config_loader.read(root, MANIFEST)
+    except config_loader.ConfigAbsent:
         return ExitCode.SUCCESS
+    except config_loader.ConfigError as exc:
+        return report(
+            ExitCode.USAGE if config_loader.is_conflict(exc) else ExitCode.CONFIG,
+            "declare_no_app: the manifest cannot be used",
+            "; ".join(exc.lines),
+            "resolve the hunk, then run `%s`"
+            % conflict_guard.job_rerun(
+                __file__,
+                os.path.dirname(_SCRIPTS),
+                sys.argv[1:] if argv is None else argv,
+                args.finish_with,
+            )
+            if config_loader.is_conflict(exc)
+            else "repair config/project.json, then run the job again",
+        )
     try:
         before = head_manifest(root)
     except GitError as e:
@@ -326,6 +323,7 @@ def main(argv=None):
     if not needs_settling(manifest, before, root):
         return ExitCode.SUCCESS
     path = manifest["layers"]["app"]["path"]
+    text = _read(root, MANIFEST)
     markers = module_markers(_read(root, SMOKE_TEST) or "")
     targets = runner_targets(_read(root, "Makefile"))
     try:

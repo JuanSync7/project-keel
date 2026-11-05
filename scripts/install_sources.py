@@ -68,7 +68,7 @@ def main(
     except config_loader.ConfigError as exc:
         # The loader hides any value that holds an @, so its lines are safe to join.
         return report(
-            ExitCode.CONFIG,
+            ExitCode.USAGE if config_loader.is_conflict(exc) else ExitCode.CONFIG,
             "the install source %s.%s is refused" % path,
             "; ".join(exc.lines),
             "set it to a bare https mirror URL with no `@`, `?`, `#` or "

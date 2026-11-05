@@ -3,7 +3,7 @@
 title: Trace requirements — judge every requirement as covered, a documented gap or uncovered, and write the matrix
 kind: script
 layer: n/a
-summary: The command line `make trace` runs; it calls scripts/traceability.py and holds no judging logic. It reads config/project.json `traceability`, refuses, before reading a spec or writing anything, a `matrix_path`, its temporary file, a `specs_root`, a `tests_root` or a `matrix_schema` reached through a symlink (the config's path check and git's ignore rule both judge the text of a path, not where it leads) and a `matrix_path` git does not ignore, writes a red `incomplete` matrix first so a run that stops never leaves an earlier green one standing, reads pytest's collection rule from the project's own ini without collecting a test, then judges every requirement and replaces `traceability.matrix_path` whole with the canonical matrix. Exit 0 when every unit is covered or a documented gap and there is no finding, 1 when there is a finding (each is one stderr line), and 2 when it could not judge or could not say so in a matrix: a refused `traceability` block, a symlinked or un-ignored path, a repository git cannot read, an unreadable schema, spec or test file, a collection rule pytest could not give, or a `matrix_path` the filesystem will not let it write (a directory already there, a file where its directory goes), which is one stderr line naming the configured path and leaves no temporary file. It imports no test and runs none. It is not the gate test (tests/integration/test_requirement_traceability.py judges the same tree in the suite) and not a coverage tool: it says a test names a requirement, never that the test proves it.
+summary: The command line `make trace` runs; it calls scripts/traceability.py and holds no judging logic. It reads config/project.json `traceability`, refuses, before reading a spec or writing anything, a `matrix_path`, its temporary file, a `specs_root`, a `tests_root` or a `matrix_schema` reached through a symlink (the config's path check and git's ignore rule both judge the text of a path, not where it leads) and a `matrix_path` git does not ignore, writes a red `incomplete` matrix first so a run that stops never leaves an earlier green one standing, reads pytest's collection rule from the project's own ini without collecting a test, then judges every requirement and replaces `traceability.matrix_path` whole with the canonical matrix. Exit 0 when every unit is covered or a documented gap and there is no finding, 1 when there is a finding (each is one stderr line), 14 for a present manifest the loader refuses (2 for a conflict hunk or an absent manifest), and 2 when it could not judge or could not say so in a matrix: a refused `traceability` block, a symlinked or un-ignored path, a repository git cannot read, an unreadable schema, spec or test file, a collection rule pytest could not give, or a `matrix_path` the filesystem will not let it write (a directory already there, a file where its directory goes), which is one stderr line naming the configured path and leaves no temporary file. It imports no test and runs none. It is not the gate test (tests/integration/test_requirement_traceability.py judges the same tree in the suite) and not a coverage tool: it says a test names a requirement, never that the test proves it.
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/integration/test_requirement_traceability.py
@@ -23,6 +23,7 @@ _REPO = os.path.dirname(_HERE)
 sys.path.insert(0, _HERE)
 
 import check_structure  # noqa: E402 — the one reader of a module header
+import config_loader  # noqa: E402
 import git_tree  # noqa: E402 — the one definition of what git ignores
 import pytest_markers  # noqa: E402
 import traceability  # noqa: E402
@@ -88,14 +89,7 @@ class _Unwritable(Exception):
 
 
 def _load_policy(root: str) -> traceability.Policy:
-    path = os.path.join(root, *traceability.MANIFEST.split("/"))
-    try:
-        with open(path, encoding="utf-8") as fh:
-            manifest = json.load(fh)
-    except (OSError, ValueError) as exc:
-        raise traceability.TraceError(
-            "%s cannot be read (%s)" % (traceability.MANIFEST, type(exc).__name__)
-        ) from None
+    manifest = config_loader.read(root, traceability.MANIFEST)
     return traceability.load_policy(manifest)
 
 
@@ -164,6 +158,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         try:
             policy = _load_policy(root)
+        except config_loader.ConfigError as exc:
+            return report(
+                ExitCode.USAGE
+                if isinstance(exc, config_loader.ConfigAbsent)
+                or config_loader.is_conflict(exc)
+                else ExitCode.CONFIG,
+                "trace: the manifest cannot be used; no matrix was written or removed",
+                "; ".join(exc.lines),
+                "repair config/project.json, resolving any hunk, then rerun",
+            )
         except traceability.TraceError as exc:
             _say(
                 "the `%s` block is what names the matrix, so nothing was written or "

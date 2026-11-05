@@ -6,6 +6,7 @@ summary: scripts/jobs/declare_no_app.py run as copier's `after` migration runs i
 """
 
 import json
+import shlex
 import shutil
 import subprocess
 import sys
@@ -82,9 +83,9 @@ def project(tmp_path):
         )
     )
 
-    def run():
+    def run(*argv):
         return subprocess.run(
-            [sys.executable, str(_JOB)],
+            [sys.executable, str(_JOB), *argv],
             cwd=str(root),
             env=env,
             capture_output=True,
@@ -136,8 +137,33 @@ def test_a_present_root_or_a_conflicted_manifest_is_untouched(project):
     conflicted = "<" * 7 + " before updating\n" + before
     _write(root / "config" / "project.json", conflicted)
     r = run()
-    assert r.returncode == 0 and "not judged" in r.stderr, r.stderr
+    assert r.returncode == 14, r.stderr
+    assert len(r.stderr.splitlines()) == 1
+    assert "config/project.json" in r.stderr and "repair" in r.stderr
     assert _read(root) == conflicted
+
+
+@pytest.mark.parametrize("finish_with", [None, "/copier env/bin/python"])
+def test_a_hunk_under_another_root_names_the_exact_rerun(project, finish_with):
+    root, _, run = project
+    hunk = "\n".join(["<" * 7 + " ours", "{}", "=" * 7, "{}", ">" * 7 + " theirs"])
+    _write(root / "config/project.json", hunk)
+    argv = ["--root", str(root)]
+    if finish_with:
+        argv += ["--finish-with", finish_with]
+    r = run(*argv)
+    expected = (
+        shlex.quote(finish_with) + " scripts/jobs/finish_update.py"
+        if finish_with
+        else shlex.quote(sys.executable)
+        + " scripts/jobs/declare_no_app.py "
+        + " ".join(map(shlex.quote, argv))
+    )
+    assert r.returncode == 2, r.stderr
+    assert len(r.stderr.splitlines()) == 1
+    assert "config/project.json" in r.stderr
+    assert "run `%s`" % expected in r.stderr
+    assert _read(root) == hunk
 
 
 def test_outside_git_exits_2(project):

@@ -368,7 +368,7 @@ def main(argv=None):
         registry, profiles = load_registry(), profiles_on()
     except config_loader.ConfigError as exc:
         return report(
-            ExitCode.CONFIG,
+            ExitCode.USAGE if config_loader.is_conflict(exc) else ExitCode.CONFIG,
             "coding-practices: refused before any file was scanned",
             str(exc),
             "correct the config file it names, then run `make advise` again",

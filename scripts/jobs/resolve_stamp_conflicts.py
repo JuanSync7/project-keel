@@ -52,6 +52,7 @@ if __name__ == "__main__":
     )
 
 import child_env  # noqa: E402
+import config_loader  # noqa: E402
 import review_docs  # noqa: E402
 from exit_codes import ExitCode, finish, report  # noqa: E402
 
@@ -364,6 +365,16 @@ def main(argv=None):
     try:
         resolved, left, failed = run(root)
     except JobError as e:
+        refusal = config_loader.refusal_cause(e)
+        if refusal is not None and not isinstance(refusal, config_loader.ConfigAbsent):
+            return report(
+                ExitCode.USAGE
+                if config_loader.is_conflict(refusal)
+                else ExitCode.CONFIG,
+                "resolve_stamp_conflicts: the manifest cannot be used",
+                "; ".join(refusal.lines),
+                "repair config/project.json, resolving any hunk, then rerun",
+            )
         return report(
             ExitCode.USAGE,
             "resolve_stamp_conflicts: cannot read the update's conflicts",

@@ -1499,3 +1499,18 @@ def test_is_conflict_is_true_only_for_a_refusal_naming_a_hunk(
 def test_is_conflict_is_false_for_an_error_that_is_not_a_refused_config():
     assert config_loader.is_conflict(ConfigAbsent("x", ["x does not exist"])) is False
     assert config_loader.is_conflict(ValueError("x")) is False
+
+
+def test_a_wrapped_refusal_keeps_its_identity_and_absence():
+    for refusal in (
+        ConfigAbsent("x", ["absent"]),
+        config_loader.ConfigUnreadable("x", ["bad"]),
+    ):
+        middle = ValueError("date or child environment refused")
+        middle.__cause__ = refusal
+        outer = RuntimeError("job refused")
+        outer.__cause__ = middle
+        assert config_loader.refusal_cause(outer) is refusal
+    assert config_loader.refusal_cause(ValueError("not config")) is None
+    outer.__cause__ = outer
+    assert config_loader.refusal_cause(outer) is None

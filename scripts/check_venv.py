@@ -299,7 +299,7 @@ def main(
         index = index_flag(loaded)
     except config_loader.ConfigError as exc:
         return report(
-            ExitCode.CONFIG,
+            ExitCode.USAGE if config_loader.is_conflict(exc) else ExitCode.CONFIG,
             "check_venv: the venv settings are refused",
             "; ".join(exc.lines),
             "fix venv.extras, transports or install_sources.python_index in "

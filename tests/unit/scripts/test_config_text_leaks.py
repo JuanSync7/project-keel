@@ -46,6 +46,18 @@ def _load(relpath="config/project.json"):
         return json.load(fh)
 
 
+_REAL_READ = config_loader.read
+
+
+def _plant_reader(monkeypatch, manifest):
+    def read(root, relpath=config_loader.CONFIG_FILE):
+        if relpath == config_loader.CONFIG_FILE:
+            return manifest
+        return _REAL_READ(root, relpath)
+
+    monkeypatch.setattr(config_loader, "read", read)
+
+
 def _node(doc, path):
     for seg in path:
         doc = doc[seg]
@@ -118,7 +130,7 @@ def _hides_raised(err, *neighbours):
     """_hides for refusal *err*, and the sentinel absent from the whole
     traceback a caller that lets it escape prints: a chained cause holding
     the hidden text would undo the hiding."""
-    _hides(str(err), *neighbours)
+    _hides(str(err) + "; " + getattr(err, "fix", ""), *neighbours)
     printed = "".join(traceback.format_exception(type(err), err, err.__traceback__))
     assert _STEM not in printed, printed
 
@@ -373,7 +385,7 @@ def test_exit_code_table_hides_configured_text_holding_an_at(
     monkeypatch, capsys, path, kind, neighbours
 ):
     manifest = _planted(path, kind)
-    monkeypatch.setattr(config_loader, "read", lambda _root: manifest)
+    _plant_reader(monkeypatch, manifest)
     with pytest.raises(exit_code_table.TableError) as refused:
         exit_code_table.wanted_text(str(_ROOT))
     _hides_raised(refused.value, *neighbours)
@@ -395,7 +407,11 @@ def test_exit_code_table_hides_the_guide_in_every_line_that_names_it(
     monkeypatch.setattr(
         config_loader,
         "read",
-        lambda _root: _planted(_D + ("limits_guide",), "V", _GUIDE),
+        lambda _root, relpath=config_loader.CONFIG_FILE: (
+            _planted(_D + ("limits_guide",), "V", _GUIDE)
+            if relpath == config_loader.CONFIG_FILE
+            else _REAL_READ(_root, relpath)
+        ),
     )
     with pytest.raises(exit_code_table.TableError) as refused:
         exit_code_table.wanted_text(str(_ROOT))
@@ -432,8 +448,8 @@ def test_exit_code_table_hides_the_guide_in_every_line_that_names_it(
 _EV = ("evidence",)
 _SCHEMA_ROWS = [
     ("schema-value", _EV + ("schema",), "V", ("evidence.schema",)),
-    ("schema-segment", _EV + ("schema",), "P", ("not a readable JSON file",)),
-    ("schema-joined", _EV + ("schema",), "S", ("not a readable JSON file",)),
+    ("schema-segment", _EV + ("schema",), "P", ("does not exist",)),
+    ("schema-joined", _EV + ("schema",), "S", ("does not exist",)),
 ]
 
 
@@ -446,7 +462,7 @@ def test_gate_evidence_hides_a_schema_path_holding_an_at(
     monkeypatch, path, kind, neighbours
 ):
     manifest = _planted(path, kind)
-    monkeypatch.setattr(config_loader, "read", lambda _root: manifest)
+    _plant_reader(monkeypatch, manifest)
     with pytest.raises(gate_evidence.EvidenceSchemaError) as refused:
         gate_evidence.load_policy(str(_ROOT))
     _hides_raised(refused.value, *neighbours)
@@ -454,7 +470,7 @@ def test_gate_evidence_hides_a_schema_path_holding_an_at(
 
 def test_gate_evidence_hides_a_schema_path_without_a_version(monkeypatch):
     manifest = _planted(_EV + ("schema",), "V", "config/" + _AT)
-    monkeypatch.setattr(config_loader, "read", lambda _root: manifest)
+    _plant_reader(monkeypatch, manifest)
     real_open = open
 
     def opened(path, *args, **kwargs):
@@ -473,7 +489,7 @@ def evidence_dir(monkeypatch):
     """gate_evidence run over keel's config with `evidence.dir` holding the
     sentinel as a path segment, no make flags and no goal run."""
     manifest = _planted(_EV + ("dir",), "P")
-    monkeypatch.setattr(config_loader, "read", lambda _root: manifest)
+    _plant_reader(monkeypatch, manifest)
     monkeypatch.delenv("MAKEFLAGS", raising=False)
     monkeypatch.setattr(git_tree, "through_symlink", lambda _root, _paths: [])
     monkeypatch.setattr(gate_evidence, "_unignored", lambda _root, _paths: [])
@@ -529,7 +545,7 @@ _SH = ("shell",)
 @pytest.mark.parametrize("role", ["linter", "formatter", "test_runner"])
 def test_shell_gate_hides_a_tool_name_holding_an_at(monkeypatch, capsys, role):
     manifest = _planted(_SH + (role,), "V")
-    monkeypatch.setattr(config_loader, "read", lambda _root: manifest)
+    _plant_reader(monkeypatch, manifest)
     shell_gate.main(["lint"], root=_ROOT)
     _hides(capsys.readouterr().err, "shell.%s is" % role)
 
@@ -538,11 +554,12 @@ def test_shell_gate_hides_a_reason_and_an_excluded_path_holding_an_at(
     monkeypatch, capsys
 ):
     manifest = _planted(_SH + ("no_scripts",), "V")
-    monkeypatch.setattr(config_loader, "read", lambda _root: manifest)
+    _plant_reader(monkeypatch, manifest)
     monkeypatch.setattr(shell_gate, "classify", lambda _root, _cfg: ([], [], []))
     shell_gate.main(["lint"], root=_ROOT)
     _hides(capsys.readouterr().out, "shell.no_scripts says why")
     manifest = _planted(_SH + ("excluded_paths",), "A")
+    _plant_reader(monkeypatch, manifest)
     _node(manifest, _SH + ("excluded_paths",))["vendor/run.sh"] = "vendored"
     monkeypatch.setattr(
         shell_gate,
@@ -558,7 +575,7 @@ _SCANNER = ("secrets", "scanner")
 
 def _scanner(monkeypatch, path, kind, value=_AT):
     manifest = _planted(_SCANNER + path, kind, value)
-    monkeypatch.setattr(config_loader, "read", lambda _root: manifest)
+    _plant_reader(monkeypatch, manifest)
     return scan_secrets.settings(str(_ROOT))
 
 

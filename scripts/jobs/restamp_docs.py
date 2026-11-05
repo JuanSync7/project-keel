@@ -59,6 +59,7 @@ if __name__ == "__main__":
     )
 
 import child_env  # noqa: E402
+import config_loader  # noqa: E402
 import review_docs  # noqa: E402
 from exit_codes import ExitCode, finish, report  # noqa: E402
 
@@ -407,6 +408,26 @@ def _no_allowlist(exc, root, command):
     return report(ExitCode.USAGE, what, on, next_step)
 
 
+def _unusable_manifest(exc):
+    """The loader refusal behind *exc* when the manifest exists and cannot be
+    used, else None: an absent manifest takes the path the job took before it
+    read the manifest at all."""
+    refusal = config_loader.refusal_cause(exc)
+    if isinstance(refusal, config_loader.ConfigAbsent):
+        return None
+    return refusal
+
+
+def _manifest_refused(refusal):
+    """The line a run over an unusable manifest ends on, and its exit code."""
+    return report(
+        ExitCode.USAGE if config_loader.is_conflict(refusal) else ExitCode.CONFIG,
+        "restamp_docs: the manifest cannot be used",
+        "; ".join(refusal.lines),
+        "repair config/project.json, resolving any hunk, then rerun",
+    )
+
+
 def _refused(on, next_step="correct it and run the job again"):
     """The line a run that could not judge ends on, and its exit code."""
     return report(ExitCode.USAGE, "restamp_docs: refused", on, next_step)
@@ -445,6 +466,9 @@ def main(argv=None):
     try:
         today = resolve_today(args.today, os.environ)
     except RestampError as exc:
+        refusal = _unusable_manifest(exc)
+        if refusal is not None:
+            return _manifest_refused(refusal)
         return _refused(str(exc), exc.remedy)
     root = os.path.abspath(args.root)
     if not os.path.isdir(root):
@@ -459,8 +483,14 @@ def main(argv=None):
         try:
             rows = pending(root, today, errors, skipped)
         except RestampError as exc:
+            refusal = _unusable_manifest(exc)
+            if refusal is not None:
+                return _manifest_refused(refusal)
             return _refused(str(exc))
         except child_env.ChildEnvError as exc:
+            refusal = _unusable_manifest(exc)
+            if refusal is not None:
+                return _manifest_refused(refusal)
             return _no_allowlist(exc, root, rerun(args.finish_with))
         for target, reason in skipped:
             print("restamp_docs: %s: %s" % (target, reason), file=sys.stderr)
@@ -479,8 +509,14 @@ def main(argv=None):
     try:
         work = worklist(root, today, skipped)
     except RestampError as exc:
+        refusal = _unusable_manifest(exc)
+        if refusal is not None:
+            return _manifest_refused(refusal)
         return _refused(str(exc))
     except child_env.ChildEnvError as exc:
+        refusal = _unusable_manifest(exc)
+        if refusal is not None:
+            return _manifest_refused(refusal)
         return _no_allowlist(exc, root, rerun(args.finish_with))
     for target, reason in skipped:
         print("restamp_docs: %s: %s" % (target, reason), file=sys.stderr)

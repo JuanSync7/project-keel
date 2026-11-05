@@ -398,7 +398,7 @@ def main(argv=None, root=None):
         return _gate(args.mode, root, cfg)
     except config_loader.ConfigError as exc:
         return report(
-            ExitCode.CONFIG,
+            ExitCode.USAGE if config_loader.is_conflict(exc) else ExitCode.CONFIG,
             "the shell settings are refused",
             "; ".join(exc.lines),
             "fix the shell block of config/project.json, then rerun",

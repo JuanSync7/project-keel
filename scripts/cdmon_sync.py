@@ -18,7 +18,8 @@ import shutil
 import subprocess
 
 import child_env
-from exit_codes import ExitCode, finish, passthrough
+import config_loader
+from exit_codes import ExitCode, finish, passthrough, report
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_CONFIG = os.path.join("config", "cdmon", "cdmon.yaml")
@@ -47,13 +48,24 @@ def main(argv=None) -> int:
         print(f"no cdmon config at {args.config}; skipping.")
         return ExitCode.SUCCESS
 
+    try:
+        env = child_env.build_child_env()
+    except child_env.ChildEnvError as exc:
+        return report(
+            ExitCode.USAGE
+            if config_loader.is_conflict(exc.__cause__ or exc)
+            else ExitCode.CONFIG,
+            "cdmon: the child environment cannot be built",
+            str(exc),
+            "repair config/project.json, resolving any hunk, then rerun",
+        )
     mode = "lint" if args.check else args.mode
     # cdmon's own status is the answer: this wrapper adds no judgement to it.
     return passthrough(
         subprocess.run(
             ["cdmon", mode, "--config", args.config],
             cwd=ROOT,
-            env=child_env.build_child_env(),
+            env=env,
         ).returncode
     )
 

@@ -65,7 +65,7 @@ def main(argv=None, root=None):
         value = config_loader.resolve(loaded, (row,), where)[row.path]
     except config_loader.ConfigError as exc:
         return report(
-            ExitCode.CONFIG,
+            ExitCode.USAGE if config_loader.is_conflict(exc) else ExitCode.CONFIG,
             "config_get: %s cannot be read" % key,
             "; ".join(exc.lines),
             "correct %s as the line says, then run it again" % where,

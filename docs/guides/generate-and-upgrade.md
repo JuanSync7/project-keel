@@ -8,7 +8,7 @@ tags: [copier, generate, update, migrations, adoption, guide]
 summary: How a project is generated from keel, what arrives and what never does, what `make new` refuses, how to adopt keel into an existing repository, and how `copier update` pulls template changes — with one checklist row per task and migration an update runs, how to finish an update a migration stopped, and how keel's release canary proves a fresh project and an updated one pass their own `make verify`.
 id: docs-guides-generate-and-upgrade
 created: 2026-10-09
-updated: 2026-11-03
+updated: 2026-11-05
 visibility: internal
 canonical: true
 ---
@@ -644,8 +644,8 @@ brings back a file a step removed, as long as you committed it first.
 
 | Step | When | Effect | Exit | Recovery |
 |------|------|--------|------|----------|
-| task: `scripts/jobs/restamp_docs.py` | every generation and every update | stamps with the day the `updated:` of every document git would commit (every document where there is no git), in each copy copier renders | 0, 1, 2 | `make restamp-docs` |
-| `scripts/jobs/keep_edited_retired.py` | every update | keeps an edited copy of a template file the update retires or moves, and names it on stderr; when `ci_pipeline` declines an adapter (`.github/workflows/ci.yml` for `gitlab`, `.gitlab-ci.yml` for `github`), removes it only when it is byte-equal to what keel rendered, and otherwise keeps it and names it on stderr with what to do | 0, 2 | on 2, resolve each file it names, then run the command it prints, which finishes the update; `git checkout -- <path>` brings back an adapter it removed |
+| task: `scripts/jobs/restamp_docs.py` | every generation and every update | stamps with the day the `updated:` of every document git would commit (every document where there is no git), in each copy copier renders | 0, 1, 2, 14 | `make restamp-docs`; on 14, repair config/project.json and rerun |
+| `scripts/jobs/keep_edited_retired.py` | every update | keeps an edited copy of a template file the update retires or moves, and names it on stderr; when `ci_pipeline` declines an adapter (`.github/workflows/ci.yml` for `gitlab`, `.gitlab-ci.yml` for `github`), removes it only when it is byte-equal to what keel rendered, and otherwise keeps it and names it on stderr with what to do | 0, 2, 14 | on 2, resolve each file it names, then run the command it prints, which finishes the update; `git checkout -- <path>` brings back an adapter it removed; on 14, repair config/project.json and rerun |
 | `rm -rf src/frontend/react-vite` | `frontend_stack` is not `react-vite` | removes that stack | none | `git checkout -- src/frontend/react-vite` |
 | `rm -rf src/frontend/astro` | `frontend_stack` is not `astro` | removes that stack | none | `git checkout -- src/frontend/astro` |
 | `rm -rf src/frontend` | `frontend_stack` is `none` | removes the frontend | none | `git checkout -- src/frontend` |
@@ -658,9 +658,9 @@ brings back a file a step removed, as long as you committed it first.
 | `rm -f wiki/llms.txt` `wiki/llms-full.txt` | `showcase` is off | removes the agent front door | none | `make site-data` |
 | `rm -f tests/integration/test_copier_generation.py` `tests/integration/test_copier_generator_contract.py` `tests/integration/test_copier_update.py` | every update | removes tests of the template a project generated before they were excluded still has | none | none needed |
 | `rm -f docs/design/keel-hardening-plan.md` | every update | removes the template's plan from a project that still has it | none | none needed |
-| `scripts/jobs/declare_no_app.py` | every update | when the update introduces `layers.app` for a composition root the project removed, sets it to `null` and declares the smoke marker and run target that need it | 0, 1, 2 | on 1, make the edits its message names by hand; on 2 over a conflicted file, resolve each file it names, then run the command it prints, which finishes the update; on 2 otherwise, git could not read the pre-update manifest |
-| `scripts/jobs/resolve_stamp_conflicts.py` | every update | settles a conflict whose only difference is a document's `updated:` date, taking the later one, and names every other conflict on stderr | 0, 2 | on 0, resolve each conflict it names; on 2, resolve each file it names, then run the command it prints, which finishes the update |
-| `scripts/jobs/restamp_docs.py` | every update | restamps the documents the update changed | 0, 1, 2 | on 1, fix each stamp it names, then `make restamp-docs`; on 2, resolve each file it names, then run the command it prints, which finishes the update |
+| `scripts/jobs/declare_no_app.py` | every update | when the update introduces `layers.app` for a composition root the project removed, sets it to `null` and declares the smoke marker and run target that need it | 0, 1, 2, 14 | on 1, make the edits its message names by hand; on 2 over a conflicted file, resolve each file it names, then run the command it prints, which finishes the update; on 2 otherwise, git could not read the pre-update manifest; on 14, repair config/project.json and rerun |
+| `scripts/jobs/resolve_stamp_conflicts.py` | every update | settles a conflict whose only difference is a document's `updated:` date, taking the later one, and names every other conflict on stderr | 0, 2, 14 | on 0, resolve each conflict it names; on 2, resolve each file it names, then run the command it prints, which finishes the update; on 14, repair config/project.json and rerun |
+| `scripts/jobs/restamp_docs.py` | every update | restamps the documents the update changed | 0, 1, 2, 14 | on 1, fix each stamp it names, then `make restamp-docs`; on 2, resolve each file it names, then run the command it prints, which finishes the update; on 14, repair config/project.json and rerun |
 
 Every after-migration that is a script first checks the files it imports, and
 the fixed project files those modules declare reading (`PROJECT_READS`, read by
@@ -707,6 +707,9 @@ uses something it cannot replay as copier does: `_envops`,
 `command` and `when`, or a name the migration renders that it does not supply.
 In those cases, run the migrations by hand from the template's `copier.yml`.
 `tests/integration/test_finish_update.py` holds each of these to its exit.
+
+If a manifest read refuses an existing config/project.json, a conflict hunk exits 2 and
+any other refusal exits 14: repair the named file, then rerun the command.
 
 ## How keel proves an update works
 

@@ -710,8 +710,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             "config/project.json make_targets",
             "correct each key the lines above name, then run it again",
         )
-    except (config_loader.ConfigAbsent, config_loader.ConfigUnreadable):  # noqa: DROP001 -- run_target's refusal names the manifest and why the policy is unknown, before anything runs
-        pass
+    except (config_loader.ConfigAbsent, config_loader.ConfigUnreadable) as exc:
+        return report(
+            ExitCode.USAGE if config_loader.is_conflict(exc) else ExitCode.CONFIG,
+            "run_make_target: the manifest cannot be used",
+            "; ".join(exc.lines),
+            "repair config/project.json, resolving any hunk, then rerun",
+        )
     try:
         result = run_target(
             args.target,

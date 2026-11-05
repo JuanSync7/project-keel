@@ -486,7 +486,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
     except config_loader.ConfigError as exc:
         return report(
-            ExitCode.CONFIG,
+            ExitCode.USAGE if config_loader.is_conflict(exc) else ExitCode.CONFIG,
             "apply_refactor: the edit policy in config/project.json `agents` "
             "could not be used",
             str(exc),

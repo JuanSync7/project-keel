@@ -50,6 +50,7 @@ if __name__ == "__main__":
     )
 
 import child_env  # noqa: E402
+import config_loader  # noqa: E402
 import review_docs  # noqa: E402
 from exit_codes import ExitCode, finish, report  # noqa: E402
 
@@ -597,6 +598,16 @@ def main(argv=None):
             args.answer_all,
         )
     except GuardError as e:
+        refusal = config_loader.refusal_cause(e)
+        if refusal is not None and not isinstance(refusal, config_loader.ConfigAbsent):
+            return report(
+                ExitCode.USAGE
+                if config_loader.is_conflict(refusal)
+                else ExitCode.CONFIG,
+                "keep_edited_retired: the manifest cannot be used",
+                "; ".join(refusal.lines),
+                "repair config/project.json, resolving any hunk, then rerun",
+            )
         return report(
             ExitCode.USAGE,
             "keep_edited_retired: cannot judge the files the update deleted",

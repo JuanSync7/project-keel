@@ -3,7 +3,7 @@
 title: on-stop doc review hook
 kind: script
 layer: n/a
-summary: Thin event-hook doer — runs the doc reviewer's dry-run (deterministic; no model) when a session or turn ends, and prints the one-line report, which counts the findings withheld from the model because the corpus does not place their file at a corpus.served_visibilities level. A dry run never blocks the event: exit 0, an unavailable model included, unless a setting it reads is refused. A style-rule retrieval scripts/query_corpus.py refuses, or whose output is not JSON (agents.doc_reviewer RulesRefused), is one `on_stop_doc_review:` line on stderr naming the root and what to do, at exit 0 in a dry run, and with `--execute` is refused (exit 2) through the exit helper, as scripts/doc_review.py refuses it, before any model call; so is no rule at all on an execute run, the line saying to run `make site-data`. A tool the review reads that fails, or answers with no JSON object (agents.doc_reviewer ToolReportUnreadable), is that one line at exit 0 in a dry run and a failure (exit 1) with `--execute`. A setting the model or the runtime reads once the review starts (models.timeout_seconds, models.max_reply_bytes, runtimes.max_steps, agents.tool_timeout_seconds, agents.tool_max_output_bytes) that scripts/config_loader.py refuses is exit 14 naming the key, in either mode, never a traceback; a tool child the agent runs that is ended at agents.tool_timeout_seconds or agents.tool_max_output_bytes (scripts/resource_limits.py run_tool) is a failure (exit 1) naming the key. `--execute` is first held to config/project.json `agents.max_model_calls` (scripts/model_budget.py): a --max-chunks over the cap, or a negative one that bounds nothing, is refused (exit 2) and a cap the config cannot give is exit 14, both before the review; with no --model it names on stderr the registry default it will use. The run is then held to that bound as it goes: every model call is counted (models.CountedModel), and the call past it is never made, a failure (exit 1) naming the count; a saved run under wiki/.runtime/ that would resume on another model or with more calls left than the bound is refused (exit 2) naming the snapshot to remove.
+summary: Thin event-hook doer — runs the doc reviewer's dry-run (deterministic; no model) when a session or turn ends, and prints the one-line report, which counts the findings withheld from the model because the corpus does not place their file at a corpus.served_visibilities level. A dry run never blocks the event: exit 0, an unavailable model included, unless a setting it reads is refused. A style-rule retrieval scripts/query_corpus.py refuses, or whose output is not JSON (agents.doc_reviewer RulesRefused), is one `on_stop_doc_review:` line on stderr naming the root and what to do, at exit 0 in a dry run, and with `--execute` is refused (exit 2) through the exit helper, as scripts/doc_review.py refuses it, before any model call; so is no rule at all on an execute run, the line saying to run `make site-data`. A tool the review reads that fails, or answers with no JSON object (agents.doc_reviewer ToolReportUnreadable), is that one line at exit 0 in a dry run and a failure (exit 1) with `--execute`. A setting the model or the runtime reads once the review starts (models.timeout_seconds, models.max_reply_bytes, runtimes.max_steps, agents.tool_timeout_seconds, agents.tool_max_output_bytes) that scripts/config_loader.py refuses is exit 14 naming the key, in either mode, never a traceback, except that a merge-conflict hunk in config/project.json under `--execute` is exit 2 (USAGE) as for every other manifest reader; a triggered dry run ends a hunk at 14 too, because a trigger may read exit 2 as a request to block its event; a tool child the agent runs that is ended at agents.tool_timeout_seconds or agents.tool_max_output_bytes (scripts/resource_limits.py run_tool) is a failure (exit 1) naming the key. `--execute` is first held to config/project.json `agents.max_model_calls` (scripts/model_budget.py): a --max-chunks over the cap, or a negative one that bounds nothing, is refused (exit 2) and a cap the config cannot give is exit 14, both before the review; with no --model it names on stderr the registry default it will use. The run is then held to that bound as it goes: every model call is counted (models.CountedModel), and the call past it is never made, a failure (exit 1) naming the count; a saved run under wiki/.runtime/ that would resume on another model or with more calls left than the bound is refused (exit 2) naming the snapshot to remove.
 """
 
 from __future__ import annotations
@@ -64,11 +64,13 @@ def main(argv=None):
             model_budget.approve(
                 args.max_chunks, model_budget.cap(ROOT), "--max-chunks"
             )
-        except config_loader.ConfigError:
+        except config_loader.ConfigError as exc:
             return exit_codes.report(
-                exit_codes.ExitCode.CONFIG,
+                exit_codes.ExitCode.USAGE
+                if config_loader.is_conflict(exc)
+                else exit_codes.ExitCode.CONFIG,
                 "on_stop_doc_review: the model-call cap cannot be read",
-                "config/project.json agents.max_model_calls",
+                "; ".join(exc.lines),
                 "set it to a whole number of 0 or more, as the line above says",
             )
         except model_budget.SpendRefused as exc:
@@ -115,8 +117,12 @@ def main(argv=None):
         # agent starts (models.timeout_seconds, models.max_reply_bytes,
         # runtimes.max_steps, agents.tool_timeout_seconds,
         # agents.tool_max_output_bytes): refused before that call starts.
+        # A trigger may read exit 2 as "block the event", so only a run a
+        # person asked for (--execute) ends a hunk at USAGE.
         return exit_codes.report(
-            exit_codes.ExitCode.CONFIG,
+            exit_codes.ExitCode.USAGE
+            if args.execute and config_loader.is_conflict(exc)
+            else exit_codes.ExitCode.CONFIG,
             "on_stop_doc_review: a setting the model or the runtime reads is refused",
             "; ".join(exc.lines),
             "set each key the line names inside its bound",

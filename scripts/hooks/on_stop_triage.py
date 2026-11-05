@@ -3,7 +3,7 @@
 title: on-stop triage hook
 kind: script
 layer: n/a
-summary: Thin event-hook entrypoint — hands a payload to the triage agent. `--execute` is first held to config/project.json `agents.max_model_calls` (scripts/model_budget.py): triage makes one model call, so a cap of 0 refuses the run (exit 2) and a cap the config cannot give is exit 14, both before the agent runs; with no --model it names on stderr the registry default it will use. The one call goes through a models.CountedModel of 1, and a second is never made but is a failure (exit 1) naming the count. A setting the model or the runtime reads once the agent starts (models.timeout_seconds, models.max_reply_bytes, runtimes.max_steps) that scripts/config_loader.py refuses is exit 14 naming the key, never a traceback. An unavailable model is a stated skip at exit 0.
+summary: Thin event-hook entrypoint — hands a payload to the triage agent. `--execute` is first held to config/project.json `agents.max_model_calls` (scripts/model_budget.py): triage makes one model call, so a cap of 0 refuses the run (exit 2) and a cap the config cannot give is exit 14, both before the agent runs; with no --model it names on stderr the registry default it will use. The one call goes through a models.CountedModel of 1, and a second is never made but is a failure (exit 1) naming the count. A setting the model or the runtime reads once the agent starts (models.timeout_seconds, models.max_reply_bytes, runtimes.max_steps) that scripts/config_loader.py refuses is exit 14 naming the key, never a traceback, except that a merge-conflict hunk in config/project.json under `--execute` is exit 2 (USAGE) as for every other manifest reader; a triggered dry run ends a hunk at 14 too, because a trigger may read exit 2 as a request to block its event. An unavailable model is a stated skip at exit 0.
 """
 
 from __future__ import annotations
@@ -46,11 +46,11 @@ def main(argv: list[str] | None = None) -> int:
         # model and writes nothing; a dry run calls none, so it is never held.
         try:
             model_budget.approve(_CALLS, model_budget.cap(ROOT), None)
-        except config_loader.ConfigError:
+        except config_loader.ConfigError as exc:
             return report(
-                ExitCode.CONFIG,
+                ExitCode.USAGE if config_loader.is_conflict(exc) else ExitCode.CONFIG,
                 "on_stop_triage: the model-call cap cannot be read",
-                "config/project.json agents.max_model_calls",
+                "; ".join(exc.lines),
                 "set it to a whole number of 0 or more, as the line above says",
             )
         except model_budget.SpendRefused as exc:
@@ -80,8 +80,12 @@ def main(argv: list[str] | None = None) -> int:
         # A limit the model or the runtime reads once the agent starts
         # (models.timeout_seconds, models.max_reply_bytes,
         # runtimes.max_steps): refused before any model is called.
+        # A trigger may read exit 2 as "block the event", so only a run a
+        # person asked for (--execute) ends a hunk at USAGE.
         return report(
-            ExitCode.CONFIG,
+            ExitCode.USAGE
+            if args.execute and config_loader.is_conflict(exc)
+            else ExitCode.CONFIG,
             "on_stop_triage: a setting the model or the runtime reads is refused",
             "; ".join(exc.lines),
             "set each key the line names inside its bound",

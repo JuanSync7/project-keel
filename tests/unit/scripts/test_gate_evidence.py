@@ -49,6 +49,19 @@ def _counts(passed=0, failed=0, skipped=0, errors=0):
     return {"passed": passed, "failed": failed, "skipped": skipped, "errors": errors}
 
 
+def test_a_schema_that_is_not_utf8_is_config(repo, capsys):
+    (repo / _SCHEMA_REL).write_bytes(b"\xff\xfe")
+    runner = _Runner()
+    assert (
+        ge.main(["--gate", "verify", "--", "make", "test"], runner)
+        is ge.ExitCode.CONFIG
+    )
+    lines = capsys.readouterr().err.splitlines()
+    assert len(lines) == 1 and _SCHEMA_REL in lines[0]
+    assert "Traceback" not in lines[0]
+    assert not runner.calls
+
+
 def _target(name, result="pass", returncode=0, tests=None):
     return {"name": name, "result": result, "returncode": returncode, "tests": tests}
 
@@ -559,8 +572,8 @@ def test_a_goal_that_changes_what_git_lists_is_red(repo):
     assert rec["source"]["tree_changed"] is True
 
 
-# A fault in a config value exits CONFIG; a fault in the schema file the
-# config names exits USAGE, since no config edit is what is wrong.
+# A missing schema or version is USAGE; malformed schema bytes are CONFIG,
+# as are refused manifest values.
 @pytest.mark.parametrize(
     "block, names, code",
     [

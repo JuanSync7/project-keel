@@ -633,6 +633,15 @@ version rather than a bare commit:
   rows in `config_reads.allowed` that excused those reads are gone; its ten
   remaining entries agree with the gate ceiling and settings reference. Backlog:
   KEEL-JSONDUP-1.
+- **CLI manifest refusals name one repair and stop consistently.** The other
+  manifest readers use `config_loader.is_conflict`: a hunk exits 2 so the
+  user can finish the update; other refusals exit CONFIG (14), with one
+  stderr line naming config/project.json. Discovery tests cover both paths
+  across the entry points, preventing tracebacks and successful skips.
+  The two Stop hooks keep exit 14 for a hunk unless run with `--execute`.
+  Imported readers raise, launcher template errors require their own remedy,
+  and an evidence schema that is not UTF-8 is CONFIG. Four retired direct-read
+  exceptions leave the manifest and its template twin. Extends KEEL-JSONDUP-1.
 - **A broken tool no longer reads as a clean documentation review.** The doc
   reviewer read review_docs output that did not parse as zero findings, and a
   baseline or apply report that did not parse as a red gate or a declined

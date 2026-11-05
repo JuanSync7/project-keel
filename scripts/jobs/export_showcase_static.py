@@ -41,12 +41,11 @@ def _declared_frontend_public(root: str) -> str | None:
     silently resurrected a stack the user had declined (check_structure then
     reports it as an undeclared stack).
     """
-    manifest = os.path.join(root, "config", "project.json")
     try:
-        with open(manifest, encoding="utf-8") as fh:
-            frontend = (json.load(fh).get("layers") or {}).get("frontend")
-    except (OSError, ValueError):  # noqa: DROP001 -- None when no frontend is declared or readable, as documented
+        manifest = config_loader.read(root)
+    except config_loader.ConfigAbsent:  # noqa: DROP001 -- an absent manifest declares no frontend to export
         return None
+    frontend = (manifest.get("layers") or {}).get("frontend")
     if not frontend or not frontend.get("stack"):
         return None
     base = frontend.get("root") or os.path.join("src", "frontend")
@@ -91,7 +90,15 @@ def main(argv=None) -> int:
         )
         return ExitCode.SUCCESS
 
-    out_dir = args.out_dir or _declared_frontend_public(args.root)
+    try:
+        out_dir = args.out_dir or _declared_frontend_public(args.root)
+    except config_loader.ConfigError as exc:
+        return report(
+            ExitCode.USAGE if config_loader.is_conflict(exc) else ExitCode.CONFIG,
+            "%s: the manifest cannot be used" % WHO,
+            "; ".join(exc.lines),
+            "repair config/project.json, resolving any hunk, then rerun",
+        )
     if out_dir is None:
         # Backend-only project (frontend_stack: none). Nothing to snapshot FOR;
         # skip like the absent-showcase branch above rather than inventing a path.
@@ -107,7 +114,7 @@ def main(argv=None) -> int:
         # resolve has already written a refused value's own line; a file that
         # cannot be read is named here. Nothing is written either way.
         return report(
-            ExitCode.CONFIG,
+            ExitCode.USAGE if config_loader.is_conflict(exc) else ExitCode.CONFIG,
             "%s: the levels a served node may carry cannot be read" % WHO,
             "; ".join(exc.lines)
             or "corpus.served_visibilities in %s"

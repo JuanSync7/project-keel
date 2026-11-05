@@ -188,7 +188,9 @@ def main(argv=None, root=None, runner=run_checks, known=known_to_git):
         old = expiring_tier.read_baseline(root, policy.baseline)
     except expiring_tier.TierError as exc:
         return report(
-            ExitCode.CONFIG,
+            ExitCode.USAGE
+            if config_loader.is_conflict(exc.__cause__ or exc)
+            else ExitCode.CONFIG,
             "%s: %s" % (_TOOL, exc),
             config_loader.CONFIG_FILE,
             "correct the named key or file, then rerun `make %s`"
@@ -223,7 +225,7 @@ def main(argv=None, root=None, runner=run_checks, known=known_to_git):
             status = runner(root, record_path)
         except config_loader.ConfigError as exc:
             return report(
-                ExitCode.CONFIG,
+                ExitCode.USAGE if config_loader.is_conflict(exc) else ExitCode.CONFIG,
                 "%s: %s" % (_TOOL, "; ".join(exc.lines)),
                 config_loader.CONFIG_FILE,
                 "set tests.child_timeout_seconds, then rerun `make %s`"

@@ -1172,7 +1172,9 @@ def main(argv=None, root=None):
         guide, text, wanted = wanted_text(root)
     except TableConfigError as exc:
         return _helper.report(
-            _helper.ExitCode.CONFIG,
+            _helper.ExitCode.USAGE
+            if config_loader.is_conflict(exc.__cause__ or exc)
+            else _helper.ExitCode.CONFIG,
             "exit_code_table: " + exc.what,
             exc.on,
             exc.next_step,

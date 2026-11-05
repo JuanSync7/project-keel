@@ -440,7 +440,7 @@ def main(argv=None, runner=None):
         from_env = config_loader.env(scratch_var) is not None
     except config_loader.ConfigError as exc:
         return report(
-            ExitCode.CONFIG,
+            ExitCode.USAGE if config_loader.is_conflict(exc) else ExitCode.CONFIG,
             "the canary settings are refused",
             "; ".join(exc.lines),
             "fix the canary block of config/project.json, then rerun",

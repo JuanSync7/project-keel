@@ -3,7 +3,7 @@
 title: Gate evidence — run a gate's goals and write its evidence record
 kind: script
 layer: n/a
-summary: The driver a gate recipe runs as `gate_evidence.py --gate <token> -- <make> <goal>...`. It runs each goal as its own make, in order, with the allowlisted environment from scripts/child_env.py and the outer make's flags and command-line variables as argv; when config/project.json `evidence.run_date` is present it reads the clock once before the first goal (or keeps a valid date an outer run already set) and hands that one date to every goal in the variable the block names, through scripts/run_date.py, so a check late in a run that crossed midnight judges by the day the run began; stops at the first failing goal unless MAKEFLAGS carries k; and writes one canonical JSON record to `<config/project.json evidence.dir>/<gate>.json`, shaped by the JSON Schema `evidence.schema` names, which alone owns `schema_version`. The record names the commit, whether the tree was dirty and a digest of what git lists (scripts/git_tree.py), each goal's result and exit code, the test counts from pytest's own junit report, and every scripts/check_structure.py finding. The record holds no clock, date, duration, host, user or absolute path, so a rerun on the same tree writes the same bytes. It fails closed: a red placeholder is written before the first goal, so an interrupted run never leaves an earlier green record standing; a failing goal's exit code passes through; zero tests, no report, a failed or errored test in pytest's report (a goal that exited 0 anyway, as under `make -i`), a tree changed during the run, checks that could not run and a crash of the writer itself are each a red record and exit RED_RECORD (scripts/exit_codes.py); a config/project.json value it reads that cannot be used (the manifest, `evidence.dir`, `evidence.schema` or `evidence.run_date`, each read through scripts/config_loader.py, which names every key at fault in one run) is refused with exit CONFIG before any goal runs; zero goals, a malformed gate or goal, an `evidence.schema` file that cannot be read or has no integer version, a supplied run date that is not a date or is further from the clock than `evidence.run_date.max_age_days` allows, a record, temporary or report path that reaches its file through a symlink (scripts/git_tree.py `through_symlink`, asked once before the first write or removal and not again during the run), a record or report path git does not ignore, and a git that ran and failed when asked (an unreadable repository is unknown, not absent) are refused with exit 2 before any goal runs; an interrupt exits 130. Under `make -n`, `-q` or `-t` it runs the goals with that flag and writes nothing. Every message names configured text (evidence.dir, evidence.schema, the run-date variable) and an error's text that may quote it through scripts/config_loader.py `shown`, `quoted` and `joined`, hidden when it holds an `@`. It is not a general gate runner (scripts/run_make_target.py is) and keeps no history: each run replaces the file whole.
+summary: The driver a gate recipe runs as `gate_evidence.py --gate <token> -- <make> <goal>...`. It runs each goal as its own make, in order, with the allowlisted environment from scripts/child_env.py and the outer make's flags and command-line variables as argv; when config/project.json `evidence.run_date` is present it reads the clock once before the first goal (or keeps a valid date an outer run already set) and hands that one date to every goal in the variable the block names, through scripts/run_date.py, so a check late in a run that crossed midnight judges by the day the run began; stops at the first failing goal unless MAKEFLAGS carries k; and writes one canonical JSON record to `<config/project.json evidence.dir>/<gate>.json`, shaped by the JSON Schema `evidence.schema` names, which alone owns `schema_version`. The record names the commit, whether the tree was dirty and a digest of what git lists (scripts/git_tree.py), each goal's result and exit code, the test counts from pytest's own junit report, and every scripts/check_structure.py finding. The record holds no clock, date, duration, host, user or absolute path, so a rerun on the same tree writes the same bytes. It fails closed: a red placeholder is written before the first goal, so an interrupted run never leaves an earlier green record standing; a failing goal's exit code passes through; zero tests, no report, a failed or errored test in pytest's report (a goal that exited 0 anyway, as under `make -i`), a tree changed during the run, checks that could not run and a crash of the writer itself are each a red record and exit RED_RECORD (scripts/exit_codes.py); a config/project.json value it reads that cannot be used (the manifest, `evidence.dir`, `evidence.schema` or `evidence.run_date`, each read through scripts/config_loader.py, which names every key at fault in one run) is refused with exit CONFIG before any goal runs, as is an unreadable schema; a manifest or schema conflict hunk is exit 2; zero goals, a malformed gate or goal, an `evidence.schema` file that is missing or has no integer version, a supplied run date that is not a date or is further from the clock than `evidence.run_date.max_age_days` allows, a record, temporary or report path that reaches its file through a symlink (scripts/git_tree.py `through_symlink`, asked once before the first write or removal and not again during the run), a record or report path git does not ignore, and a git that ran and failed when asked (an unreadable repository is unknown, not absent) are refused with exit 2 before any goal runs; an interrupt exits 130. Under `make -n`, `-q` or `-t` it runs the goals with that flag and writes nothing. Every message names configured text (evidence.dir, evidence.schema, the run-date variable) and an error's text that may quote it through scripts/config_loader.py `shown`, `quoted` and `joined`, hidden when it holds an `@`. It is not a general gate runner (scripts/run_make_target.py is) and keeps no history: each run replaces the file whole.
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/integration/test_gate_evidence_record.py
@@ -94,17 +94,12 @@ def load_policy(root):
     except config_loader.ConfigError as exc:
         raise EvidenceConfigError("; ".join(exc.lines)) from exc
     schema_rel = declared[("evidence", "schema")]
-    schema_path = os.path.join(root, schema_rel)
     try:
-        with open(schema_path, encoding="utf-8") as fh:
-            schema = json.load(fh)
-    except (OSError, ValueError) as exc:
-        # `from None`: an OSError's message holds the configured path this
-        # line hides.
-        raise EvidenceSchemaError(
-            "%s: evidence.schema %s is not a readable JSON file (%s)"
-            % (_MANIFEST, _shown(schema_rel), _shown(str(exc)))
-        ) from None
+        schema = config_loader.read(root, schema_rel)
+    except config_loader.ConfigUnreadable as exc:
+        raise EvidenceConfigError("; ".join(exc.lines)) from exc
+    except config_loader.ConfigAbsent as exc:
+        raise EvidenceSchemaError("evidence.schema: " + "; ".join(exc.lines)) from exc
     try:
         version = schema["properties"]["schema_version"]["const"]
     except (KeyError, TypeError):  # noqa: DROP001 -- a schema with no integer version raises EvidenceSchemaError below
@@ -495,10 +490,12 @@ def main(argv=None, runner=None, clock=None):
         policy = load_policy(root)
     except EvidenceConfigError as exc:
         return report(
-            ExitCode.CONFIG,
+            ExitCode.USAGE
+            if config_loader.is_conflict(exc.__cause__ or exc)
+            else ExitCode.CONFIG,
             "gate_evidence: refused before any goal ran",
             str(exc),
-            "correct config/project.json `evidence`",
+            "correct config/project.json `evidence` or the schema it names; resolve any hunk",
         )
     except EvidenceSchemaError as exc:
         return _refuse(str(exc), "correct the schema config/project.json names")

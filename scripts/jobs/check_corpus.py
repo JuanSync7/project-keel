@@ -263,7 +263,12 @@ def main(argv=None) -> int:
         return _check(args)
     except config_loader.ConfigError as exc:
         what, where, then = config_fault(exc, "check_corpus", "rerun")
-        return report(ExitCode.CONFIG, what, where, then)
+        return report(
+            ExitCode.USAGE if config_loader.is_conflict(exc) else ExitCode.CONFIG,
+            what,
+            where,
+            then,
+        )
 
 
 def _check(args: argparse.Namespace) -> int:

@@ -38,7 +38,8 @@ class ConfigError(Exception):
     """config/project.json `evals`, or a schema it names, cannot be used; the
     message names the dotted key at fault. *lines* are scripts/config_loader.py's
     lines for it (empty for a fault that is not a config value), *in_config*
-    is true when an edit to config/project.json clears it, and *report_dir* is
+    is true when an edit to config/project.json clears it, *conflict* is the
+    loader's classification of a refused manifest, and *report_dir* is
     `evals.report_dir` when that key alone still reads as a safe relative
     path, else None."""
 
@@ -49,11 +50,13 @@ class ConfigError(Exception):
         lines: list[str] | None = None,
         *,
         in_config: bool = False,
+        conflict: bool = False,
     ) -> None:
         super().__init__(message)
         self.report_dir = report_dir
         self.lines = list(lines or [])
         self.in_config = in_config
+        self.conflict = conflict
 
 
 @dataclass(frozen=True)
@@ -73,7 +76,12 @@ class EvalConfig:
 
 
 def _from_loader(exc: config_loader.ConfigError) -> ConfigError:
-    return ConfigError("; ".join(exc.lines), lines=exc.lines, in_config=True)
+    return ConfigError(
+        "; ".join(exc.lines),
+        lines=exc.lines,
+        in_config=True,
+        conflict=config_loader.is_conflict(exc),
+    )
 
 
 def _unknown(block: Mapping[str, object], where: str, allowed: frozenset[str]) -> None:

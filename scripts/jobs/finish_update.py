@@ -47,6 +47,7 @@ if __name__ == "__main__":
     )
 
 import child_env  # noqa: E402
+import config_loader  # noqa: E402
 
 # The module, not its names: `finish` here is this job's own function.
 import exit_codes  # noqa: E402
@@ -394,7 +395,17 @@ def main(argv=None):
     root = os.path.dirname(_SCRIPTS)
     try:
         commands = finish(root, args.template, dry_run=args.dry_run)
-    except FinishError as e:
+    except (FinishError, child_env.ChildEnvError) as e:
+        refusal = config_loader.refusal_cause(e)
+        if refusal is not None and not isinstance(refusal, config_loader.ConfigAbsent):
+            return exit_codes.report(
+                exit_codes.ExitCode.USAGE
+                if config_loader.is_conflict(refusal)
+                else exit_codes.ExitCode.CONFIG,
+                "finish_update: the manifest cannot be used",
+                "; ".join(refusal.lines),
+                "repair config/project.json, resolving any hunk, then rerun",
+            )
         return exit_codes.report(
             exit_codes.ExitCode.USAGE,
             "finish_update: the update was not finished",

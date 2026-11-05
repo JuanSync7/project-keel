@@ -3,7 +3,7 @@
 title: launch — decide where a long script runs, and say why in one line
 kind: script
 layer: n/a
-summary: The one place that decides where a long script runs, and the one that runs it, called as `launch.py [--root DIR] [--dry-run] -- <command>...`. It works out three facts from what is true now and fails closed toward the least shared harm. The host kind is `own` only when this host's lower-cased name matches an fnmatch pattern in the git-ignored file config/project.json `launcher.own_hosts_file` names; an absent, unreadable, malformed, empty or unmatched file means `shared`, and a set `inside_env` variable of the active farm adapter means `in-farm-job`. The script length comes from the launch key, argv with variable assignments and absolute paths removed: `long-listed` when `launcher.long_scripts` lists it, `long-recorded` when its last recorded run in `launcher.durations_file` took more than `launcher.long_after_seconds`, `short` only when its last run succeeded within that, and `unknown` otherwise, which counts as long. The farm is the `launcher.farm.adapters` entry `launcher.farm.adapter` names, behind the Farm interface: kind `none` (NoFarm) is no farm and is never asked to submit, and kind `argv` (ArgvFarm) submits through a config argv with the config env it renders. A farm job, an own host or a short script runs here; a long or unknown script on a shared host runs here limited (os.nice of `launcher.limited.niceness`, nothing else) when it is `launcher.local_only` or there is no farm, and goes to the farm otherwise. The command starts with `build_child_env` (scripts/child_env.py), given the model adapter `launcher.credentials` names for the launch key and, for a farm submission only, the adapter's rendered env; a launch whose environment would hold a credential name that key's `launcher.credentials` entry does not list is refused before anything runs. After a farm submission the status passes through, the command re-runs here limited when the farm did not allocate and the host is spare (max(load1, load5) per cpu at most `launcher.spare.max_load_per_cpu`; an unknown load is not spare), stops with ExitCode.NO_CAPACITY and runs nothing when it is not, and ends with exit 2 when the farm refused. Every decision is one stderr line naming the decision and its three reasons, never a host name or an absolute path; a fallback adds a second. Before it reads anything it refuses with exit 2 a config block that load_launcher_config rejects, a state path reached through a symlink (scripts/git_tree.py `through_symlink`), a state path git would list, and a git that ran and failed. `--dry-run` prints the decision and runs and writes nothing. A refusal it builds from configured text, a value, a list member, a key name or a state path, and a credential variable's name, shows it through scripts/config_loader.py `shown`, `quoted` and `listed`, so text holding an `@` reads `<hidden: it holds an @>` and a harmless member beside it still shows. A run writes the durations file whole: an `incomplete` entry before the command starts, then the outcome, the whole seconds, the status and where it ran, one canonical-JSON entry per launch key, written to a temporary file in the same directory and moved over the old one; an interrupt is recorded as `interrupted` with status 130, a submission the farm refused or whose submit program is absent restores the entry it replaced, and a farm that did not start the command on a host with no spare compute records `no-capacity`. Neither `incomplete` nor `no-capacity` replaces an entry whose measured duration is over `launcher.long_after_seconds` (`unmeasured_record`): no run was measured, so that one stays the last, and a full farm or a killed launch never hides a long script from long_scripts.py. Stdlib-only and 3.6-safe, because its shebang runs it under the host python3. It is defence in depth for shared compute, not a scheduler: it neither queues, retries nor caps CPU or memory (docs/adr/keel/K-0020-shared-compute-launcher.md).
+summary: The one place that decides where a long script runs, and the one that runs it, called as `launch.py [--root DIR] [--dry-run] -- <command>...`. It works out three facts from what is true now and fails closed toward the least shared harm. The host kind is `own` only when this host's lower-cased name matches an fnmatch pattern in the git-ignored file config/project.json `launcher.own_hosts_file` names; an absent, unreadable, malformed, empty or unmatched file means `shared`, and a set `inside_env` variable of the active farm adapter means `in-farm-job`. The script length comes from the launch key, argv with variable assignments and absolute paths removed: `long-listed` when `launcher.long_scripts` lists it, `long-recorded` when its last recorded run in `launcher.durations_file` took more than `launcher.long_after_seconds`, `short` only when its last run succeeded within that, and `unknown` otherwise, which counts as long. The farm is the `launcher.farm.adapters` entry `launcher.farm.adapter` names, behind the Farm interface: kind `none` (NoFarm) is no farm and is never asked to submit, and kind `argv` (ArgvFarm) submits through a config argv with the config env it renders. A farm job, an own host or a short script runs here; a long or unknown script on a shared host runs here limited (os.nice of `launcher.limited.niceness`, nothing else) when it is `launcher.local_only` or there is no farm, and goes to the farm otherwise. The command starts with `build_child_env` (scripts/child_env.py), given the model adapter `launcher.credentials` names for the launch key and, for a farm submission only, the adapter's rendered env; a launch whose environment would hold a credential name that key's `launcher.credentials` entry does not list is refused before anything runs. After a farm submission the status passes through, the command re-runs here limited when the farm did not allocate and the host is spare (max(load1, load5) per cpu at most `launcher.spare.max_load_per_cpu`; an unknown load is not spare), stops with ExitCode.NO_CAPACITY and runs nothing when it is not, and ends with exit 2 when the farm refused. Every decision is one stderr line naming the decision and its three reasons, never a host name or an absolute path; a fallback adds a second. An absent manifest is exit 2. A present refused manifest is exit 2 for a conflict hunk and CONFIG (14) otherwise; a config block that load_launcher_config rejects is CONFIG. It refuses with exit 2 a state path reached through a symlink (scripts/git_tree.py `through_symlink`), a state path git would list, and a git that ran and failed. `--dry-run` prints the decision and runs and writes nothing. A refusal it builds from configured text, a value, a list member, a key name or a state path, and a credential variable's name, shows it through scripts/config_loader.py `shown`, `quoted` and `listed`, so text holding an `@` reads `<hidden: it holds an @>` and a harmless member beside it still shows. A run writes the durations file whole: an `incomplete` entry before the command starts, then the outcome, the whole seconds, the status and where it ran, one canonical-JSON entry per launch key, written to a temporary file in the same directory and moved over the old one; an interrupt is recorded as `interrupted` with status 130, a submission the farm refused or whose submit program is absent restores the entry it replaced, and a farm that did not start the command on a host with no spare compute records `no-capacity`. Neither `incomplete` nor `no-capacity` replaces an entry whose measured duration is over `launcher.long_after_seconds` (`unmeasured_record`): no run was measured, so that one stays the last, and a full farm or a killed launch never hides a long script from long_scripts.py. Stdlib-only and 3.6-safe, because its shebang runs it under the host python3. It is defence in depth for shared compute, not a scheduler: it neither queues, retries nor caps CPU or memory (docs/adr/keel/K-0020-shared-compute-launcher.md).
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/integration/test_idempotence.py
@@ -153,7 +153,11 @@ _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 
 class LauncherConfigError(Exception):
     """config/project.json `launcher` cannot be used; the message names the key
-    path and the fix."""
+    path; `fix` names the required edit and has no default."""
+
+    def __init__(self, problem, fix):
+        super(LauncherConfigError, self).__init__(problem)
+        self.fix = fix
 
 
 Size = NamedTuple("Size", [("cpus", int), ("mem_gb", int), ("minutes", int)])
@@ -223,7 +227,7 @@ def _said(value):
 
 
 def _refuse_key(path, problem, fix):
-    raise LauncherConfigError("config/project.json %s %s; %s" % (path, problem, fix))
+    raise LauncherConfigError("config/project.json %s %s" % (path, problem), fix)
 
 
 def _object(value, path, required, optional=()):
@@ -359,12 +363,14 @@ def render(template, values):
                     _said(template),
                     config_loader.shown(match.group(0), bare=True),
                     "}, {".join(PLACEHOLDERS),
-                )
+                ),
+                "replace the placeholder with one of {%s}" % "}, {".join(PLACEHOLDERS),
             )
         if name not in values:
             raise LauncherConfigError(
                 "%s holds the placeholder %s, which has no value here"
-                % (_said(template), config_loader.shown(match.group(0), bare=True))
+                % (_said(template), config_loader.shown(match.group(0), bare=True)),
+                "replace the placeholder with a literal value for this invocation",
             )
         out.append(str(values[name]))
         at = match.end()
@@ -375,8 +381,8 @@ def render(template, values):
 def _literal(text, template):
     if "{" in text or "}" in text:
         raise LauncherConfigError(
-            "%s holds an unmatched brace; a placeholder is written {name}"
-            % _said(template)
+            "%s holds an unmatched brace" % _said(template),
+            "write a placeholder as {name}, or remove the unmatched brace",
         )
     return text
 
@@ -387,7 +393,7 @@ def _templated(value, path):
     try:
         render(value, dict.fromkeys(PLACEHOLDERS, 1))
     except LauncherConfigError as exc:
-        _refuse_key(path, "is not a valid template: %s" % exc, "correct it")
+        _refuse_key(path, "is not a valid template: %s" % exc, exc.fix)
     return value
 
 
@@ -467,8 +473,8 @@ def load_launcher_config(manifest):
     missing, unknown or mistyped key, or a value outside its range."""
     if not isinstance(manifest, dict) or _BLOCK not in manifest:
         raise LauncherConfigError(
-            "config/project.json has no `launcher` block; add it "
-            "(config/project.json.jinja holds the shipped default)"
+            "config/project.json has no `launcher` block",
+            "add it (config/project.json.jinja holds the shipped default)",
         )
     block = _object(manifest[_BLOCK], _BLOCK, _TOP_KEYS)
     limited = _object(block["limited"], _path("limited"), ("niceness",))
@@ -1204,14 +1210,23 @@ def main(argv=None, runner=None, clock=None, nicer=None, loadavg=None):
         return _refuse("no command after `--`", usage)
     root = os.path.abspath(args.root or _DEFAULT_ROOT)
     try:
-        with open(os.path.join(root, _MANIFEST), encoding="utf-8") as fh:
-            cfg = load_launcher_config(json.load(fh))
+        cfg = load_launcher_config(config_loader.read(root, _MANIFEST))
     except LauncherConfigError as exc:
-        return _refuse(str(exc), "correct config/project.json `launcher`")
-    except (OSError, ValueError) as exc:
-        return _refuse(
-            "%s is unreadable or not JSON (%s)" % (_MANIFEST, exc.__class__.__name__),
-            "restore config/project.json",
+        return report(
+            ExitCode.CONFIG,
+            "launch: the launcher block cannot be used",
+            str(exc),
+            exc.fix,
+        )
+    except config_loader.ConfigError as exc:
+        return report(
+            ExitCode.USAGE
+            if isinstance(exc, config_loader.ConfigAbsent)
+            or config_loader.is_conflict(exc)
+            else ExitCode.CONFIG,
+            "launch: the manifest cannot be used",
+            "; ".join(exc.lines),
+            "repair config/project.json, resolving any hunk, then rerun",
         )
     unsafe = _unsafe_state(root, cfg)
     if unsafe is not None:

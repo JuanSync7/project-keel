@@ -474,7 +474,7 @@ def main(argv=None, root=None):
         return _scan(root, cfg, _STAGED_OR_HISTORY)
     except config_loader.ConfigError as exc:
         return report(
-            ExitCode.CONFIG,
+            ExitCode.USAGE if config_loader.is_conflict(exc) else ExitCode.CONFIG,
             "the secret scanner settings are refused",
             "; ".join(exc.lines),
             "fix the secrets.scanner block of config/project.json, then rerun",

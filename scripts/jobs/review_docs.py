@@ -22,6 +22,7 @@ if _SCRIPTS not in sys.path:
     sys.path.insert(0, _SCRIPTS)
 
 import child_env  # noqa: E402
+import config_loader  # noqa: E402
 import run_date  # noqa: E402
 from exit_codes import ExitCode, finish, report  # noqa: E402
 
@@ -469,6 +470,16 @@ def main(argv=None):
     try:
         today = resolve_today(args.today, os.environ).isoformat()
     except DateSourceError as exc:
+        refusal = config_loader.refusal_cause(exc)
+        if refusal is not None and not isinstance(refusal, config_loader.ConfigAbsent):
+            return report(
+                ExitCode.USAGE
+                if config_loader.is_conflict(refusal)
+                else ExitCode.CONFIG,
+                "review_docs: the manifest cannot be used",
+                "; ".join(refusal.lines),
+                "repair config/project.json, resolving any hunk, then rerun",
+            )
         return report(
             ExitCode.USAGE,
             "review_docs: cannot tell what today is",

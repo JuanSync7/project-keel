@@ -108,7 +108,7 @@ def main(argv=None, runner=None, loaded=None):
         )
     except config_loader.ConfigError as exc:
         return report(
-            ExitCode.CONFIG,
+            ExitCode.USAGE if config_loader.is_conflict(exc) else ExitCode.CONFIG,
             "the toolchain settings are refused",
             "; ".join(exc.lines),
             "fix the toolchain block of config/project.json, then rerun",

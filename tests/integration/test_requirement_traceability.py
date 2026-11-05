@@ -824,7 +824,11 @@ def test_the_cli_exit_code_says_which_kind_of_red(tmp_path, rule):
 
     (repo / tr.MANIFEST).write_text("{not json", encoding="utf-8")
     out = run_cli(repo, env)
-    assert out.returncode == 2 and "may still stand" in out.stdout, out.stdout
+    assert out.returncode == 14, out.stdout
+    assert "no matrix was written or removed" in out.stdout
+    assert len(out.stdout.splitlines()) == 1
+    assert "config/project.json" in out.stdout
+    assert matrix_path(repo).read_bytes() == earlier
 
     usage = subprocess.run(
         [sys.executable, str(repo / "scripts" / _CLI), "--no-such-flag"],

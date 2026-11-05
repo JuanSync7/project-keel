@@ -14,6 +14,7 @@ import os
 import sys
 
 import child_env
+import config_loader
 from exit_codes import ExitCode, finish, report
 
 __all__ = ["MARKER", "REEXEC_LINE", "main", "start_argv"]
@@ -77,7 +78,9 @@ def main(argv=None):
         env = child_env.build_child_env(extra={MARKER: str(os.getpid())})
     except child_env.ChildEnvError as exc:
         return report(
-            ExitCode.CONFIG,
+            ExitCode.USAGE
+            if config_loader.is_conflict(exc.__cause__ or exc)
+            else ExitCode.CONFIG,
             "child_exec: the allowlisted environment cannot be built (%s)" % exc,
             program,
             "correct config/project.json child_env as the message says, then run "

@@ -30,6 +30,7 @@ for _dir in (_SCRIPTS, os.path.join(_SCRIPTS, "jobs")):
 
 import check_structure  # noqa: E402
 import child_env  # noqa: E402
+import config_loader  # noqa: E402
 import conflict_guard  # noqa: E402
 
 # The module, not its names: `report` here is the audit's own result.
@@ -1579,6 +1580,16 @@ def main(argv=None):
     try:
         today = review_docs.resolve_today(args.today, os.environ)
     except review_docs.DateSourceError as exc:
+        refusal = config_loader.refusal_cause(exc)
+        if refusal is not None and not isinstance(refusal, config_loader.ConfigAbsent):
+            return exit_codes.report(
+                exit_codes.ExitCode.USAGE
+                if config_loader.is_conflict(refusal)
+                else exit_codes.ExitCode.CONFIG,
+                "audit_project: the manifest cannot be used",
+                "; ".join(refusal.lines),
+                "repair config/project.json, resolving any hunk, then rerun",
+            )
         return exit_codes.report(
             exit_codes.ExitCode.USAGE,
             "audit_project: cannot tell what today is",

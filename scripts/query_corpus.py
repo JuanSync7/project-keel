@@ -225,7 +225,7 @@ def main(argv=None) -> int:
         # resolve has already written a refused value's own line; a file that
         # cannot be read is named here. Nothing is printed to stdout either way.
         return report(
-            ExitCode.CONFIG,
+            ExitCode.USAGE if config_loader.is_conflict(exc) else ExitCode.CONFIG,
             "query_corpus: the levels a served node may carry cannot be read",
             "; ".join(exc.lines)
             or "corpus.served_visibilities in %s"

@@ -186,13 +186,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         cfg = load_config(root)
     except ConfigError as exc:
-        _remove_stale(root, exc.report_dir, mode)
+        if exc.report_dir is not None:
+            _remove_stale(root, exc.report_dir, mode)
         if exc.in_config:
             return exit_codes.report(
-                exit_codes.ExitCode.CONFIG,
-                "run_evals: the evals config was refused",
+                exit_codes.ExitCode.USAGE
+                if exc.conflict
+                else exit_codes.ExitCode.CONFIG,
+                "run_evals: the evals config was refused; an earlier report may still stand"
+                if exc.report_dir is None
+                else "run_evals: the evals config was refused",
                 str(exc),
-                "correct config/project.json `evals` and run it again",
+                "resolve the hunk, then finish the update"
+                if exc.conflict
+                else "correct config/project.json `evals` and run it again",
             )
         return exit_codes.report(
             exit_codes.ExitCode.USAGE,
