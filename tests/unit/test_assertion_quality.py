@@ -859,10 +859,11 @@ def test_a_call_through_a_name_the_comprehension_binds_never_reaches_the_helper(
         "[None for check in check(2)]",
         "[None for sink[check(2)] in (0,)]",
         "[None for sink.attr in (check(2),)]",
+        "[None for check(2).attr in (0,)]",
         "[m(check(2)) for m in (print,)]",
     ],
 )
-def test_the_first_iterable_and_a_target_subscript_still_reach_the_helper(
+def test_the_first_iterable_and_a_target_subexpression_still_reach_the_helper(
     tmp_path, comprehension
 ):
     source = (
