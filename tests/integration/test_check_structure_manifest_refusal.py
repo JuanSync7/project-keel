@@ -104,8 +104,8 @@ def test_a_manifest_the_loader_refuses_is_one_finding_naming_the_file(
             pytest.skip("chmod 000 is unavailable: %s" % exc)
         try:
             path.read_bytes()
-        except PermissionError:  # noqa: DROP001 -- the denial is the fault this case exercises
-            pass
+        except PermissionError as exc:
+            assert exc.filename == str(path)
         else:
             path.chmod(mode)
             pytest.skip("this filesystem permits reading after chmod 000")
