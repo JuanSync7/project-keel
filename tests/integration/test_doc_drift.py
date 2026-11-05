@@ -13,6 +13,7 @@ import re
 import shutil
 import subprocess
 import sys
+import unicodedata
 from pathlib import Path
 
 import pytest
@@ -56,6 +57,8 @@ _CHECK_NAME_GUIDE = ("doc_drift", "check_name_guide")
 # is answer-driven, an entry without one never ships.
 _JINJA_TAG = re.compile(r"\{%.*?%\}")
 _PYTHON_JINJA_TAG = re.compile(r"\{%.*?%\}|\{\{.*?\}\}|\{#.*?#\}", re.DOTALL)
+# A definition's keyword and name token, matched from the node's column.
+_DEF_NAME = re.compile(r"(?:async\s+)?(?:def|class)\s+(\w+)")
 # The condition of one such entry's `{% if <condition> %}` tag.
 _JINJA_IF = re.compile(r"\{%-?\s*if\s+(.*?)\s*-?%\}")
 # One entry of the README's layout tree: a box-drawing branch, then a name
@@ -313,9 +316,11 @@ def python_names(root):
     """Python module stems and function/class definitions, including twins.
 
     Jinja tags are removed from twins, preserving newlines so syntax errors
-    name their source line. A definition whose name a removed tag touched is
-    not returned, since its rendered name is unknown. Unparseable Python, twin
-    or plain, is never skipped.
+    name their source line. A definition whose name token has an expression
+    or statement tag at its edge or inside it is not returned, since its
+    rendered name is unknown; a comment tag renders to nothing, so removing
+    it is the rendering. A name is returned as Python binds it (NFKC).
+    Unparseable Python, twin or plain, is never skipped.
     """
     names = set()
     for dirpath, _dirs, files in cs.walk(str(root)):
@@ -335,19 +340,38 @@ def python_names(root):
                     node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
                 ):
                     continue
-                at = source.index(node.name, starts[node.lineno - 1] + node.col_offset)
-                if not cuts & {at, at + len(node.name)}:
+                token = _definition_token(source, starts[node.lineno - 1], node)
+                if token is None:
+                    raise AssertionError(
+                        "%s:%d: no definition token for %r"
+                        % (full, node.lineno, node.name)
+                    )
+                if not any(token[0] <= cut <= token[1] for cut in cuts):
                     names.add(node.name)
     return names
 
 
+def _definition_token(source, line_start, node):
+    """(start, end) of *node*'s name token in *source*, or None when the text
+    at its column is no definition naming it."""
+    line_end = source.find("\n", line_start)
+    line = source[line_start : None if line_end < 0 else line_end]
+    # ast columns count UTF-8 bytes; the slice below counts characters.
+    column = len(line.encode("utf-8")[: node.col_offset].decode("utf-8"))
+    match = _DEF_NAME.match(source, line_start + column)
+    if match is None or unicodedata.normalize("NFKC", match[1]) != node.name:
+        return None
+    return match.span(1)
+
+
 def _strip_jinja(source):
-    """Source with Jinja tags removed, newlines kept, and the offsets of the
-    removals in the result."""
+    """Source with Jinja tags removed, newlines kept, and the offsets in the
+    result where an expression or statement tag was removed."""
     out, cuts, last = [], set(), 0
     for match in _PYTHON_JINJA_TAG.finditer(source):
         out += [source[last : match.start()], "\n" * match[0].count("\n")]
-        cuts.add(sum(map(len, out)))
+        if not match[0].startswith("{#"):
+            cuts.add(sum(map(len, out)))
         last = match.end()
     return "".join(out) + source[last:], cuts
 
@@ -1208,12 +1232,21 @@ def test_python_check_names_and_citation_exemptions(tmp_path):
         "class check_twin_class:\n"
         "    async def check_twin_async(self): return '{{ value }}'\n"
         "def check_fused{{ suffix }}(): pass\n"
-        "def {{ prefix }}check_prefixed(): pass\n",
+        "def {{ prefix }}check_prefixed(): pass\n"
+        "def check_{{ middle }}ghost(): pass\n"
+        "def f{{ suffix }}(): pass\n"
+        "def check_kept{# a note #}(): pass\n",
         encoding="utf-8",
     )
+    # Python binds the NFKC form: U+212A KELVIN SIGN spells check_Kelvin.
+    (tmp_path / "check_kelvin.py").write_text(
+        "def check_\u212aelvin(): pass\n", encoding="utf-8"
+    )
     names = python_names(tmp_path)
-    # A tag that touches a name leaves that name unknown, never a guess.
-    assert not names & {"check_fused", "check_prefixed"}
+    # An expression or statement tag at the edge of or inside a name leaves
+    # that name unknown, never a guess; a comment renders to nothing.
+    assert not names & {"check_fused", "check_prefixed", "check_ghost", "f"}
+    assert {"check_kept", "check_Kelvin"} <= names
     assert {
         "check_module",
         "check_twin",
