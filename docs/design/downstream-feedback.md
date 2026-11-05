@@ -3366,6 +3366,131 @@ its builder checks each case can fail. Will not do in CMP-14: the review NEXTs
 queued as KEEL-ANSWERS-2, and the three questions held for the maintainer as
 KEEL-TESTSEL-1, KEEL-ROLLBACK-1 and KEEL-PRIVATTR-1.
 
+## CMP-15 — config conversion failures end in a named refusal or one finding
+
+KEEL-CFGCRASH-1 came out of KEEL-VIS-2's round-1 and round-2 reviews and KEEL-LEAK-1's first review.
+keel serves engineers who start from the Copier template and keep it healthy with `make verify`; a malformed or hostile value in config/project.json or config/practices.json must end a check as a named CONFIG refusal or one finding, never as a traceback, a hang or a huge allocation.
+Each slice has one pass and at most three review fix rounds.
+Stop at four green `make verify` slices or a cap.
+
+| Slice | Gap | Status |
+|-------|-----|--------|
+| CMP-15.S1 | The loader refuses recursion. Rendering preserves redaction and deduplicates by identity. | planned |
+| CMP-15.S2 | Section faults exit CONFIG for practices and FAILURE for source headers. A loader-refused config/practices.json exits CONFIG, or USAGE for a conflict hunk. | planned |
+| CMP-15.S3 | Floor faults exit CONFIG. ADR widths are bounded before allocation. Policy faults yield one key-naming FAILURE finding. | planned |
+| CMP-15.S4 | Child-env pattern faults and launcher load faults exit CONFIG. | planned |
+
+Unit tests below live in `tests/unit/scripts/`.
+CMP-15.S1 owns `scripts/config_loader.py` and its `summary:`, `test_config_loader.py`, `test_config_get.py`, `tests/integration/test_config_loader_read.py`, `tests/integration/test_conflict_entry_points.py`, loader limits in `docs/guides/limits-and-troubleshooting.md`, and this plan and its queue row in `docs/design/downstream-feedback.md`.
+`read` catches decoder RecursionError as ConfigUnreadable naming the file.
+`resolve` catches RecursionError only copying config, raising WrongValue naming source and key.
+A default's copy stays unguarded because the default is code.
+When canonical JSON or `repr` raises RecursionError, `shown` and `quoted` return `<hidden: nested too deep to show>`, held in `_HIDDEN_DEPTH`.
+`quoted` wraps that text in single quotes for a string.
+A value holding an `@` still returns `_HIDDEN_AT`, because iterative `_holds_at` runs first.
+`_refused_members` uses canonical text or, on rendering failure, `id` for first-seen and repeated members, never deep equality or fallback text.
+`read` and `resolve` build their refusal lines from the file name and key, never from the RecursionError's text.
+
+Decoder, rendering and configured-copy regressions raise on the base.
+Fixtures find the shallowest nesting `json.dumps` refuses in-process.
+Member and copy cases call `resolve` on iteratively built values.
+Rendering tests assert both fallbacks, string quoting and `@` precedence.
+Identity tests cover repeated and distinct deep members.
+CLI cases skip with a reason if no nesting decodes but fails resolution.
+Controls retain shallow copies, deduplication, redaction, defaults and refusals.
+A deep default still raises at its copy.
+`scripts/config_get.py` `main` acceptance for each file asserts CONFIG naming it, no traceback or stdout.
+The practices case uses a test-only `KEYS` row with `file=config/practices.json`.
+`is_conflict` keeps USAGE.
+
+CMP-15.S2 owns the section, reachability, check_V and provenance code below in `scripts/check_structure.py`, `test_check_t.py`, `test_check_u.py`, `test_check_v.py`, `tests/integration/test_check_structure_manifest_refusal.py` and its `summary:`, and exits and checks T, U and V in `docs/guides/deterministic-checks.md`.
+`_ASCII_NUMBER` holds `[0-9]{1,4}` for full matching by the section and floor readers.
+Its comment explains that four digits bound integer conversion and `int` accepts underscores and non-ASCII digits.
+A `§` is a section number only when it matches that grammar.
+`_mechanism_reason` reports any other section text as a section fault.
+`_mechanism_findings` records file, practice index and `enforced_by` index as provenance.
+A practice naming a missing check, file, target or numeric section stays a FAILURE finding.
+`main` chooses CONFIG for a practices section fault or loader-refused practices file, preserving USAGE for a conflict.
+`_read_json_config` records the refused file and conflict provenance.
+`run_checks` resets provenance per call without changing finding tuples.
+`_mechanism_reason` and `_policy_reachability_findings` give non-strings grammar findings before text conversion.
+`_policy_reachability_findings` skips a practice whose `enforced_by` is not a list, as `_mechanism_findings` does.
+On the base, `str` converts four raw practices members: `_mechanism_reason`'s `ref`, and `_policy_reachability_findings`' `ref` prefix, `ref` path and practice `id`.
+
+Regressions append `@` to all eight practice section positions; the base raises at `int(section)`.
+A practice whose `enforced_by` is `doc:<an existing ADR> §x` reaches the same `int(section)`.
+`§0_3` and `§٣` resolve cleanly as section 3 on the base; S2 makes each one finding.
+Python and shell `rerun_proof: doc:<existing doc> §x` each raise on the base and become one check_V FAILURE finding.
+Deep refs raise at the base's first `str`; deep `id` raises at collection.
+Regressions isolate all four sites.
+`"enforced_by": 1` raises TypeError on the base; S2 leaves check_T's one list finding.
+A practices file with a key written twice exits FAILURE on the base and CONFIG with S2.
+A practices file holding a conflict hunk exits FAILURE on the base and USAGE with S2.
+Controls retain valid sections, absent practices and malformed-proof or convention FAILURE.
+Acceptance calls structural `main` for both files: named input, specified exit, no traceback.
+`@` cases assert no payload reaches either stream.
+Repeated `run_checks` proves provenance reset.
+
+CMP-15.S3 owns the floor, ADR and work-policy code below in `scripts/check_structure.py`, `test_check_structure_parse.py`, `test_check_y.py`, `test_check_z.py`, the `layers.backend.python`, `adr.number_digits` and `work_naming.backlog_id` rows in `docs/reference/settings.md`, and the floor and checks Y and Z in `docs/guides/deterministic-checks.md`.
+`_declared_python_floor` converts major and minor only when each fully matches `_ASCII_NUMBER`.
+A part passing `str.isdigit` but failing that grammar is a CONFIG floor fault.
+check_Y reads the file-name limit of the nearest existing ancestor of each ADR directory.
+Where the platform reports none, it uses 255 bytes, a named module constant whose comment gives the reason: the common NAME_MAX.
+An unknown limit never refuses a width.
+`adr_policy` stays pure: check_Y measures and passes the limits.
+S3 updates `test_check_y.py` `_tree_inventory_holds`.
+The width bound subtracts encoded prefix and minimum suffix bytes.
+`adr_policy` bounds `adr.number_digits` before `_adr_grammars` or shape allocation.
+The bound adds no config key.
+ADR and work-policy refusals, including OverflowError, RecursionError and oversized widths, stay one key-naming FAILURE finding without CONFIG provenance.
+Config-pattern guards catch `re.error`, RecursionError and OverflowError without pattern or exception text.
+
+Superscript and overlong floor digits raise at the base's `int`.
+`>=٣.١١` gives (3, 11) on the base and a floor fault with S3.
+Overlong-digit tests skip when the runtime has no integer-string conversion limit or has it disabled.
+An ADR test raises a `re.compile` sentinel before the base allocates for `number_digits: 2000000000`.
+With S3, `adr_policy` returns one width finding, and the sentinel never fires.
+Unrepresentable widths raise on the base.
+Recursive `work_naming.backlog_id` and `x{4294967296}` escape the base's guard; each becomes one FAILURE finding.
+Controls retain valid inputs, syntax-pattern FAILURE and missing-file findings.
+`number_digits: 4` stays clean with absent `template_dir` and empty `template_adrs`.
+Limit tests cover absent directories, unavailable, unknown or differing limits, prefix bytes and boundaries.
+Structural `main` acceptance asserts floor CONFIG and one FAILURE finding per policy fault without traceback or huge allocation.
+
+CMP-15.S4 owns `scripts/child_env.py` `_value_patterns`, `scripts/launch.py` `load_launcher_config`, `test_child_env.py`, `test_launch.py`, `test_child_exec.py`, `tests/integration/test_launcher.py`, and the `child_env.credential_value_patterns` and `launcher.spare.max_load_per_cpu` rows in `docs/reference/settings.md`.
+`_value_patterns` catches those three exceptions and names key and label without the pattern.
+`load_launcher_config` checks numeric range before `math.isfinite`.
+Recursive child-env patterns, `x{4294967296}` and oversized launcher integers raise on the base.
+Controls retain syntax refusals, valid patterns, ordinary loads, boolean refusals, non-finite floats and range refusals.
+Launcher and `scripts/child_exec.py` `main` acceptance asserts CONFIG without traceback or pattern text.
+Child-exec tests assert no body runs.
+S4 starts from S1 independently of S2 and S3.
+
+Each slice owns one `CHANGELOG.md` row naming KEEL-CFGCRASH-1.
+Each owns `docs/reference/features.md` rows: S1 `scripts/config_loader.py`; S2 `scripts/check_structure.py`, check_T, check_U and check_V; S3 check_Y, check_Z and check_D (floor deferral); S4 `scripts/child_env.py`, `scripts/child_exec.py` and `scripts/launch.py`.
+This plan adds row 75, KEEL-CFGCRASH-2, to `Queued after Campaign 6`: the direct decoders and configured-text readers CMP-15 does not reach.
+
+Will not do in CMP-15: judge application schemas beyond JSON and type checks.
+`_mechanism_reason` cannot judge enforcement.
+KEEL-CFGCRASH-2 owns those boundaries and regex execution time.
+Corpus decoders in `scripts/query_corpus.py`, `scripts/jobs/link_corpus.py`, `scripts/jobs/check_corpus.py`, `scripts/jobs/export_showcase_static.py`, `scripts/accountability_report.py`, `agents/index_enforcer/_brain.py` and `agents/doc_reviewer/_brain.py` read generated views.
+`runtimes/_checkpoint.py` decodes runtime state.
+Tool-report decoders in `scripts/scan_secrets.py`, `scripts/audit_dependencies.py`, `agents/doc_reviewer/_brain.py` and `agents/practice_refactor/_brain.py` read tool output.
+`evals/_dataset.py` decodes test cases.
+`evals/_config.py` and `scripts/trace_requirements.py` decode schemas.
+`scripts/audit_project.py`, `scripts/jobs/finish_update.py` and `scripts/jobs/keep_edited_retired.py` decode Copier history in YAML.
+
+Base verdicts are read from `0796377f10b6`.
+CMP-15's plan sits on CMP-14's declaration because check_Z refuses campaign gaps.
+CMP-15.S1 starts from main after keel-cmp10 and CMP-13's build land.
+keel-cmp10 owns loader, check_structure and review_docs, including its pre-landing fix.
+CMP-13 owns loader KEYS and test-quality edits.
+S2 starts from S1's commit after keel-cmp12's fence code lands.
+S3 starts from S2's commit and uses its provenance for floor faults.
+After CMP-11 lands, slices restate plan, reference and changelog ownership as fragments.
+Each slice rechecks EVIDENCE on its base before TDD.
+Green `make verify` and a `Slice:` trailer gate each delivering commit.
+
 ## Queued after Campaign 6
 
 A queue id becomes a `CMP-<n>.S<m>` name only when an approved slice table
@@ -3440,6 +3565,7 @@ On 2026-10-22 the maintainer approved this order. Positions 1 to 9 come from the
 | 72 | KEEL-MARGIN-1 | config/project.json `agents.tool_gate_margin_seconds` is 60, but the gate runner's two tree snapshots read every path git status lists, and on one host they took up to 65 s at 50,000 listed paths on an NFS home (about 2 s in /dev/shm), so a tool child on a large untracked tree can be ended as timed out before the runner returns its result. Planned: a test that fails at the current margin on such a tree, then a margin derived from that measurement. A draft (margin 120 and a reworked `tests/integration/test_agent_tool_limits.py`) was left uncommitted by KEEL-TOOLT-1's lane and is kept outside the repository as a reference. Ranked NOTE | planned |
 | 73 | KEEL-ERR-2 | Three agents read a tool report that does not parse as an empty one, the KEEL-ERR-1 class outside `agents/doc_reviewer/`: `agents/index_enforcer/_brain.py` reads it as no owner gaps, `agents/practice_refactor/_brain.py` as no hits, a baseline that is not green (which fails closed) and an edit not applied, and `agents/wiki_navigator/_brain.py` as no hits. CMP-8.S2 found them and excused each with `# noqa: DROP001` citing this row. Planned: one tool-report error the agents share, raised for a report that does not parse and reported by each agent as a failed run, with a test per agent that feeds it a report that is not JSON; then the excuses go. Ranked NEXT | planned |
 | 74 | KEEL-LINT-2 | What KEEL-LINT-1 left. Row 5 of its table, a stale excuse: ruff `RUF100` reports 725 findings on `main` at `4ccd795`, where the opening pass measured 45, so it needs scoping again. And the CMP-8 review's NOTEs, each reproduced on `b853dd1` and none in the tree today: the swallowed-error gate passes `ignore_errors=1`, `**{'ignore_errors': True}`, `TemporaryDirectory(ignore_cleanup_errors=True)`, `rmtree(onerror=lambda *a: None)`, a `contextlib.suppress` bound to a local name and `from contextlib import *`; a narrow handler that returns `dict()`, `list()`, `f''` or a named constant passes the fixed-value rule, which reads literals only; `getattr(functools, "cache")` dodges ruff `TID251`; `tests/integration/test_isolation_docs.py` reads only the guard's tuple-literal key paths, so a key built by concatenation would drop out of the required set; and `tests/integration/test_doc_drift.py` reads with `errors="ignore"`, older than the campaign. Ranked NOTE | planned |
+| 75 | KEEL-CFGCRASH-2 | What CMP-15 leaves of the KEEL-CFGCRASH-1 class, where malformed or hostile configured text ends in a traceback or a hang instead of a refusal. Guard direct decoders in src/backend/shared/__init__.py, src/backend/showcase/_repo.py, agents/practice_refactor/_brain.py, scripts/jobs/declare_no_app.py and scripts/audit_project.py. Guard showcase row int, document-number int in _numbered_sections, _citation_findings, _mentions and slice rows, and Makefile help-pattern overflow. Guard check_K and check_L tokens reads against non-object tokens and unhashable tensor_base_types members. Guard doc_drift.forbidden_phrases compilation in tests/integration/test_doc_drift.py against RecursionError and OverflowError. Remove pattern text from both refusal messages. tests/ci_adapters.py marker and gitlab_document call str.format on configured text. Bound configured regex execution time in tests/integration/test_work_trailers.py for every commit trailer and child_env value matching. Add caller-specific tests. Start after CMP-13.S2, which owns tests/ci_adapters.py. Ranked NEXT; found while planning CMP-15 | planned |
 | 77 | KEEL-SNAPSHOT-ID-1 | `scripts/git_tree.py` `tree_snapshot` records only each listed path's porcelain code and working content, so a gate step that made a commit, a staged-only change, a mode change or moved a nested repository's HEAD passes as "no change". Found by the 2026-11-06 read-only sweep; a refuter reproduced it. Ranked STOP | planned: CMP-14.S1 |
 | 78 | KEEL-MARKATTACH-1 | `scripts/pytest_markers.py` `attached_markers` credits an `endpoint` marker on a scope that holds no collected test, an annotated `pytestmark` is unseen, and the e2e coverage scan credits a marker in a file `python_files` excludes or a directory pytest skips. Found by the 2026-11-06 sweep; reproduced. Ranked STOP | planned: CMP-14.S2 |
 | 79 | KEEL-ANSWERS-1 | A `project_name` holding a double quote renders broken JSON and TOML and leaves a half-generated project, and the `backend_python` validator judges the answer with its spaces removed while the raw answer ships. Found by the 2026-11-06 sweep; reproduced. Ranked STOP | planned: CMP-14.S3 |
