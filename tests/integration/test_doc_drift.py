@@ -45,7 +45,9 @@ _DOC_SUFFIXES = (".md", ".md" + _TWIN_SUFFIX)
 _LOOPBACK_PORT = re.compile(r"\b(?:localhost|127\.0\.0\.1):([0-9]{2,5})\b")
 # A single capital names CHECKS; every longer identifier names Python code.
 # Qualified attributes and keyword arguments belong to the library being used.
-_CHECK_NAME = re.compile(r"(?<![\w.])(check_\w+)(?!\w)(?!\s*=(?!=))")
+# The name after the prefix is read by _word, Python's identifier grammar.
+_CHECK_START = re.compile(r"(?<![\w.])check_")
+_KEYWORD_ARGUMENT = re.compile(r"\s*=(?!=)")
 _LETTER = r"[A-Z](?![\w'])"
 _CHECK_PROSE = re.compile(
     r"\b[Cc]hecks?\s+(%s(?:(?:\s*[–-]\s*|\s+to\s+)%s)?"
@@ -56,9 +58,9 @@ _CHECK_NAME_GUIDE = ("doc_drift", "check_name_guide")
 # copier.yml's `_exclude` entries carry jinja conditionals; an entry with one
 # is answer-driven, an entry without one never ships.
 _JINJA_TAG = re.compile(r"\{%.*?%\}")
+_DEF_GAP = re.compile(r"(?:[ \t\f]|\\\r?\n)+")
 _PYTHON_JINJA_TAG = re.compile(r"\{%.*?%\}|\{\{.*?\}\}|\{#.*?#\}", re.DOTALL)
 # A definition's keyword and name token, matched from the node's column.
-_DEF_NAME = re.compile(r"(?:async\s+)?(?:def|class)\s+(\w+)")
 # The condition of one such entry's `{% if <condition> %}` tag.
 _JINJA_IF = re.compile(r"\{%-?\s*if\s+(.*?)\s*-?%\}")
 # One entry of the README's layout tree: a box-drawing branch, then a name
@@ -340,7 +342,7 @@ def python_names(root):
                     node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
                 ):
                     continue
-                token = _definition_token(source, starts[node.lineno - 1], node)
+                token = _definition_token(source, starts, node)
                 if token is None:
                     raise AssertionError(
                         "%s:%d: no definition token for %r"
@@ -351,17 +353,39 @@ def python_names(root):
     return names
 
 
-def _definition_token(source, line_start, node):
-    """(start, end) of *node*'s name token in *source*, or None when the text
-    at its column is no definition naming it."""
+def _definition_token(source, starts, node):
+    """(start, end) of *node*'s name token in *source*, whose line *n* starts
+    at offset ``starts[n - 1]``, or None when the text at its column is no
+    definition naming it."""
+    line_start = starts[node.lineno - 1]
     line_end = source.find("\n", line_start)
     line = source[line_start : None if line_end < 0 else line_end]
-    # ast columns count UTF-8 bytes; the slice below counts characters.
+    # ast columns count UTF-8 bytes; the slices below count characters.
     column = len(line.encode("utf-8")[: node.col_offset].decode("utf-8"))
-    match = _DEF_NAME.match(source, line_start + column)
-    if match is None or unicodedata.normalize("NFKC", match[1]) != node.name:
+    start, end = _word(source, line_start + column)
+    if source[start:end] == "async":
+        start, end = _word(source, _past_gap(source, end))
+    if source[start:end] not in ("def", "class"):
         return None
-    return match.span(1)
+    start, end = _word(source, _past_gap(source, end))
+    if unicodedata.normalize("NFKC", source[start:end]) != node.name:
+        return None
+    return start, end
+
+
+def _past_gap(source, at):
+    """The offset past the blanks and backslash continuations at *at*."""
+    gap = _DEF_GAP.match(source, at)
+    return gap.end() if gap else at
+
+
+def _word(source, at):
+    """(at, end) of the longest identifier in *source* that starts at *at*."""
+    end = at
+    # str.isidentifier is Python's own XID grammar, which a regex \w is not.
+    while end < len(source) and source[at : end + 1].isidentifier():
+        end += 1
+    return at, end
 
 
 def _strip_jinja(source):
@@ -401,8 +425,11 @@ def check_citation_findings(docs, letters, names):
     findings = []
     for relpath, text in docs:
         unfenced = "\n".join(cs._unfenced_lines(text))
-        for match in _CHECK_NAME.finditer(unfenced):
-            name = match[1]
+        for match in _CHECK_START.finditer(unfenced):
+            start, end = _word(unfenced, match.start())
+            if end == match.end() or _KEYWORD_ARGUMENT.match(unfenced, end):
+                continue
+            name = unicodedata.normalize("NFKC", unfenced[start:end])
             suffix = name[len("check_") :]
             is_letter = re.fullmatch(r"[A-Z]", suffix) is not None
             if is_letter and suffix not in letters:
@@ -1242,11 +1269,30 @@ def test_python_check_names_and_citation_exemptions(tmp_path):
     (tmp_path / "check_kelvin.py").write_text(
         "def check_\u212aelvin(): pass\n", encoding="utf-8"
     )
+    # A combining mark and a middle dot continue an identifier, and a
+    # backslash continues the line, as Python's own grammar has it.
+    (tmp_path / "check_grammar.py").write_text(
+        "def check_e\u0301(): pass\n"
+        "def check_l\u00b7l(): pass\n"
+        "def \\\n check_cont(): pass\n"
+        "async \\\n  def \\\n    check_async_cont(): pass\n",
+        encoding="utf-8",
+    )
     names = python_names(tmp_path)
     # An expression or statement tag at the edge of or inside a name leaves
     # that name unknown, never a guess; a comment renders to nothing.
     assert not names & {"check_fused", "check_prefixed", "check_ghost", "f"}
     assert {"check_kept", "check_Kelvin"} <= names
+    assert {
+        unicodedata.normalize("NFKC", "check_e\u0301"),
+        "check_l\u00b7l",
+        "check_cont",
+        "check_async_cont",
+    } <= names
+    # A citation is read by the same grammar, and compared as Python binds it.
+    assert not check_citation_findings(
+        [("guide.md", "`check_e\u0301` and `check_l\u00b7l`")], set(), names
+    )
     assert {
         "check_module",
         "check_twin",

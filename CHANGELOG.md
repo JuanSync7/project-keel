@@ -23,7 +23,8 @@ version rather than a bare commit:
 ### Added
 - **Shipped documents fail on citations of checks that do not exist.** The
   document-drift gate names the document, line and cited check, retains
-  definitions from Python template twins, and holds the style guide's
+  definitions from Python template twins, reads a defined and a cited name by
+  Python's identifier grammar (`str.isidentifier`, NFKC), and holds the style guide's
   check-name sentence to each mark's effect and spacing. Shared fence scanning
   follows CommonMark opener and closer rules within the container limits
   stated in the style guide, so a false enforcement claim fails `make verify`
