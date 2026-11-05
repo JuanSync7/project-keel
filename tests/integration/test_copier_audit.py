@@ -999,8 +999,10 @@ def test_a_pre_c5_2_project_receives_the_run_date_and_host_list_as_arrivals(
     and server limits since KEEL-CFG-3 and KEEL-RES-2, and the
     `accountability` block whose default owner check_F reads since
     KEEL-WARN-1, the `corpus` block whose served levels every corpus
-    reader acts on since KEEL-VIS-2, and the `test_quality` block the
-    test-quality gates read since KEEL-TESTQ-1, arrive too. The audit
+    reader acts on since KEEL-VIS-2, the `test_quality` block the
+    test-quality gates read since KEEL-TESTQ-1, and
+    `doc_drift.check_name_guide`, the style guide whose check-name sentence
+    tests/integration/test_doc_drift.py holds since KEEL-DOC-2, arrive too. The audit
     reports exactly those keys as
     arrivals and the list as changed, owes no X error, and a real
     update leaves the run date block as the template ships it with its
@@ -1035,6 +1037,7 @@ def test_a_pre_c5_2_project_receives_the_run_date_and_host_list_as_arrivals(
         "config_reads",
         "corpus",
         "dependency_audit",
+        "doc_drift.check_name_guide",
         "evidence.run_date",
         "expiring_tier",
         "import_layers",
