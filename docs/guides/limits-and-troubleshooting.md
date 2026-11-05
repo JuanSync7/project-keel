@@ -717,6 +717,22 @@ line quoted here is not one the loader writes.
   before any goal runs. Add each key a line names; settings.md gives its type
   and shipped value.
 
+`read` refuses a file nested beyond the JSON decoder's recursion limit as
+`ConfigUnreadable`, naming the file without the configured value or the
+RecursionError's text. `resolve` refuses an accepted configured value whose
+copy raises RecursionError as `WrongValue`, naming the source and key before
+the entry point exits CONFIG. A default's copy remains unguarded because the
+default is code, so a default nested too deeply still raises RecursionError.
+These limits follow the interpreter's recursion budget, not a configured depth.
+
+`shown` and `quoted` return `<hidden: nested too deep to show>` when canonical
+JSON or Python's `repr`, respectively, raises RecursionError. `quoted` puts
+single quotes around that marker for a string. The iterative `@` check runs
+first, so a value holding an `@` still shows `<hidden: it holds an @>`.
+Refused and repeated members are deduplicated by canonical JSON when it
+renders, and by object identity otherwise, never by hidden text or deep equality.
+Distinct deep members therefore each appear once, even with the same marker.
+
 A value of the wrong type, or out of a key's range, is a third line,
 `<config file>: <key> is <JSON type> <value>; accepted: <what it accepts>`,
 with `<value>` left out for a list, an object or a secret, and also stops the
@@ -738,7 +754,7 @@ raises when a child starts, about the `child_env` block,
 the `make_targets` policy refusal check W gives and
 `scripts/run_make_target.py` passes on, hide a value, member or key name that
 holds an `@` by the same rule (`scripts/config_loader.py` `shown`), and show
-every other value and member as JSON and every other segment of a dotted key
+every other renderable value and member as JSON and every other segment of a dotted key
 path as written, so a name reads `"GIT_DIR"`, a key written twice reads
 `the key "<name>" appears twice`, and an adapter's credential list reads
 `models.credential_env.<adapter>`. A finding checks A to Z of
@@ -760,7 +776,7 @@ member (`scripts/config_loader.py` `quoted` and `listed`), so
 `inside_env is ['SLURM_JOB_ID', '<hidden: it holds an @>']` still names the
 harmless member (`tests/unit/scripts/test_config_text_leaks.py`). Hiding is
 the only change to such a refusal, and to a check finding built the same way: a
-value that holds no `@` prints as Python's `repr` prints it, so a value holding
+renderable value that holds no `@` prints as Python's `repr` prints it, so a value holding
 a newline reads `'a\nb'` on one line and an escape character never reaches the
 terminal (`tests/unit/scripts/test_config_loader.py`). The same hiding holds
 for the evals config's refusals (an unknown key's name, a schema path and the error text

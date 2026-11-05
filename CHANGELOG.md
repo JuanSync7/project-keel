@@ -10,6 +10,11 @@ version rather than a bare commit:
 
 ## [Unreleased]
 
+- **The config loader refuses recursion (KEEL-CFGCRASH-1, CMP-15.S1).**
+  Decoder recursion names the file as ConfigUnreadable, and recursion copying
+  a configured value names its source and key as WrongValue. Rendering uses
+  `<hidden: nested too deep to show>` after the `@` redaction check, and deep
+  refused or repeated members deduplicate by identity without deep equality.
 - **ADR-K-0021 is accepted.** Imports flow up the layer order in
   config/project.json `import_layers.order`, as 0.3.0 enforces.
 - **ADR-K-0022 is accepted.** One config loader in the bottom import layer,

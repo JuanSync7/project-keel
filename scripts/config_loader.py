@@ -2,7 +2,7 @@
 title: config_loader — the one way a configured value enters a process
 kind: script
 layer: n/a
-summary: Every configured value comes through here: a key of config/project.json or config/practices.json, or an environment variable the config declares. KEYS is the one table of declared keys, each row a Key giving its path (a tuple of segments, since a segment may hold a dot), its type from the closed set TYPES, its default or NONE (required exactly when the default is NONE, so a default of null stays distinct from no default), whether it is a secret, a one-line meaning, the variable that may set it, the file it lives in (None for a variable-only row) and an optional bound. `read(root, relpath)` is the one open and parse of a config file: a missing file is ConfigAbsent, and an OSError, bytes that are not UTF-8, text that is not JSON (a NaN constant, a byte-order mark and a key written twice in one object included), or a top level that is not an object is ConfigUnreadable, each line naming *relpath* as `shown` with *bare* gives it (a caller may configure it) and an OSError by its reason without the file name, chained to nothing, so a traceback hides it too, and naming a merge-conflict hunk an update left by its line through scripts/jobs/conflict_guard.py's grammar, loaded by path (when it cannot load, the parse error says the markers were not checked). `refusal_cause(exc)` recovers a loader refusal through explicit exception causes without reading again, preserving ConfigAbsent for an optional caller. `is_conflict(exc)` is true for a ConfigUnreadable that names a hunk, the one refusal an entry point ends as USAGE (the user resolves the update) while every other refusal is CONFIG. `resolve(loaded, rows, where)` walks the rows in sorted path order. Precedence: a row that names a variable takes that variable when it is set and not empty, else the file's value; a row with no variable reads the file only; a variable-only row reads its variable only; an empty variable is not set. A set value of the wrong type or out of its bound is one line `<where>: <key> is <JSON type>[ <value>]; accepted: <what>` (a null shown by its type alone), a refused list of strings ending `; refused members: <each member refused on its own>` or, when only a repeat is refused, `; repeated members: <them>`, naming the environment and the variable instead when the value came from a variable, the value never shown for a secret, and a string holding an `@` anywhere, which may begin a URL user part (a credential under any key name) however the URL is spelled, shown as `<hidden: it holds an @>`, as is any other text the project wrote that a message names and that holds one: a refused member, an entry name, a key written twice, and a key name on a declared variable's path (an adapter name). `shown(value, bare=False)` is that rule for a caller that builds its own message from configured text: `<hidden: it holds an @>` when an `@` sits anywhere in it, else its canonical JSON, or with *bare* a string as written (a segment of a dotted key path); `quoted(value)` stands where a `%r` would sit and prints exactly what `%r` prints, its escapes and a non-string's own spelling included, unless an `@` sits anywhere in it, when it is the hidden form (a string's in single quotes); `listed(values)` a list shown member by member and `joined(values)` items such as paths each as shown with *bare*, joined with `, `, so a harmless neighbour of a hidden member still shows; child_env's refusals, check_structure's findings and scripts/launch.py's refusals pass every configured value, member and key name through these and keep no copy of the rule. A list or object is judged whole, every string inside it at any depth and every key name included, so one `@` anywhere hides the whole member while its harmless neighbours still show. A URL bound refuses whitespace, a control character, `@`, `?`, `#`, a backslash, and a value urllib cannot split or whose port it cannot read, so a malformed URL is a refusal and never a traceback. An unset key with a default takes it and writes `[using default] <key> = <canonical JSON value>  (not set; to change it, set <key> in <where>)` to stderr once per (where, key) per process, a secret's value written `<hidden>`. Each unset required key is `[not set] <key>  (required, no default; set <key> in <where>)`; every wrong and every not-set line is written before one raise, WrongValue when any value is wrong, else NotSet carrying the sorted keys. It never ends the process: the entry point that called it returns report(ExitCode.CONFIG, ...). `env(name)` is the one literal-name read of a declared variable and refuses a name neither a row nor the config declares (declared_variables). `is_owner_token` and `is_unowned` are CONVENTIONS §12's owner grammar and its `TBD` placeholder in any letter case, shared by the default-owner row's bound, check_F and the corpus build. `VISIBILITY_ORDER` is CONVENTIONS §1's visibility vocabulary, least restrictive first, and `served_visibilities(root)` resolves `corpus.served_visibilities`, the levels every corpus reader the project serves may show, refusing a level outside that vocabulary or one written twice; `is_served(node, served)` is the one served-or-not decision every such reader makes (a node that states no level is not served); `strictest_visibility` ranks stated levels (a value outside the vocabulary outranks every member), `chain_level` is the level the corpus gives a node from its own and its README chain's stated levels (the strictest, else `internal`), and `is_served_now(node, served, stated_now)` is the decision of a reader that checks a node's file now (CONVENTIONS §1 lists them): the stricter of the node's corpus level and the level its file states now (scripts/corpus_level.py stated_now) must be served, and a file whose level cannot be read is not; and `cut_hidden(node, shown)` drops the ids of nodes outside *shown* from a served node's links, children and parent. It registers itself under both `config_loader` and `scripts.config_loader`, and as the `config_loader` attribute of the `scripts` package that holds it, so either import name, in either order, gives one module, one announced set and one set of exception classes. Never run, stdlib-only and 3.6-safe: child_env and check_structure read through it under the hook interpreter. It reads and writes nothing else, and it caches nothing, so the same file and environment give the same values and lines.
+summary: Every configured value comes through here: a key of config/project.json or config/practices.json, or an environment variable the config declares. KEYS is the one table of declared keys, each row a Key giving its path (a tuple of segments, since a segment may hold a dot), its type from the closed set TYPES, its default or NONE (required exactly when the default is NONE, so a default of null stays distinct from no default), whether it is a secret, a one-line meaning, the variable that may set it, the file it lives in (None for a variable-only row) and an optional bound. `read(root, relpath)` is the one open and parse of a config file: a missing file is ConfigAbsent, and an OSError, bytes that are not UTF-8, text that is not JSON (a NaN constant, a byte-order mark and a key written twice in one object included), or a top level that is not an object is ConfigUnreadable, each line naming *relpath* as `shown` with *bare* gives it (a caller may configure it) and an OSError by its reason without the file name, chained to nothing, so a traceback hides it too, and naming a merge-conflict hunk an update left by its line through scripts/jobs/conflict_guard.py's grammar, loaded by path (when it cannot load, the parse error says the markers were not checked). `refusal_cause(exc)` recovers a loader refusal through explicit exception causes without reading again, preserving ConfigAbsent for an optional caller. `is_conflict(exc)` is true for a ConfigUnreadable that names a hunk, the one refusal an entry point ends as USAGE (the user resolves the update) while every other refusal is CONFIG. `resolve(loaded, rows, where)` walks the rows in sorted path order. Precedence: a row that names a variable takes that variable when it is set and not empty, else the file's value; a row with no variable reads the file only; a variable-only row reads its variable only; an empty variable is not set. A set value of the wrong type or out of its bound is one line `<where>: <key> is <JSON type>[ <value>]; accepted: <what>` (a null shown by its type alone), a refused list of strings ending `; refused members: <each member refused on its own>` or, when only a repeat is refused, `; repeated members: <them>`, naming the environment and the variable instead when the value came from a variable, the value never shown for a secret, and a string holding an `@` anywhere, which may begin a URL user part (a credential under any key name) however the URL is spelled, shown as `<hidden: it holds an @>`, as is any other text the project wrote that a message names and that holds one: a refused member, an entry name, a key written twice, and a key name on a declared variable's path (an adapter name). `shown(value, bare=False)` is that rule for a caller that builds its own message from configured text: `<hidden: it holds an @>` when an `@` sits anywhere in it, else its canonical JSON, or with *bare* a string as written (a segment of a dotted key path); `quoted(value)` stands where a `%r` would sit and prints exactly what `%r` prints, its escapes and a non-string's own spelling included, unless an `@` sits anywhere in it, when it is the hidden form (a string's in single quotes); `listed(values)` a list shown member by member and `joined(values)` items such as paths each as shown with *bare*, joined with `, `, so a harmless neighbour of a hidden member still shows; child_env's refusals, check_structure's findings and scripts/launch.py's refusals pass every configured value, member and key name through these and keep no copy of the rule. A list or object is judged whole, every string inside it at any depth and every key name included, so one `@` anywhere hides the whole member while its harmless neighbours still show. A URL bound refuses whitespace, a control character, `@`, `?`, `#`, a backslash, and a value urllib cannot split or whose port it cannot read, so a malformed URL is a refusal and never a traceback. An unset key with a default takes it and writes `[using default] <key> = <canonical JSON value>  (not set; to change it, set <key> in <where>)` to stderr once per (where, key) per process, a secret's value written `<hidden>`. Each unset required key is `[not set] <key>  (required, no default; set <key> in <where>)`; every wrong and every not-set line is written before one raise, WrongValue when any value is wrong, else NotSet carrying the sorted keys. Decoder RecursionError is ConfigUnreadable naming the file, and RecursionError copying a configured value is WrongValue naming source and key, neither echoing the value or exception text; a default's copy stays unguarded because it is code. When canonical JSON or repr raises RecursionError, shown and quoted use <hidden: nested too deep to show>, quoted in single quotes for a string, after the iterative @ check; refused and repeated members deduplicate by canonical text or, when rendering fails, by identity, never deep equality or hidden text. It never ends the process: the entry point that called it returns report(ExitCode.CONFIG, ...). `env(name)` is the one literal-name read of a declared variable and refuses a name neither a row nor the config declares (declared_variables). `is_owner_token` and `is_unowned` are CONVENTIONS §12's owner grammar and its `TBD` placeholder in any letter case, shared by the default-owner row's bound, check_F and the corpus build. `VISIBILITY_ORDER` is CONVENTIONS §1's visibility vocabulary, least restrictive first, and `served_visibilities(root)` resolves `corpus.served_visibilities`, the levels every corpus reader the project serves may show, refusing a level outside that vocabulary or one written twice; `is_served(node, served)` is the one served-or-not decision every such reader makes (a node that states no level is not served); `strictest_visibility` ranks stated levels (a value outside the vocabulary outranks every member), `chain_level` is the level the corpus gives a node from its own and its README chain's stated levels (the strictest, else `internal`), and `is_served_now(node, served, stated_now)` is the decision of a reader that checks a node's file now (CONVENTIONS §1 lists them): the stricter of the node's corpus level and the level its file states now (scripts/corpus_level.py stated_now) must be served, and a file whose level cannot be read is not; and `cut_hidden(node, shown)` drops the ids of nodes outside *shown* from a served node's links, children and parent. It registers itself under both `config_loader` and `scripts.config_loader`, and as the `config_loader` attribute of the `scripts` package that holds it, so either import name, in either order, gives one module, one announced set and one set of exception classes. Never run, stdlib-only and 3.6-safe: child_env and check_structure read through it under the hook interpreter. It reads and writes nothing else, and it caches nothing, so the same file and environment give the same values and lines.
 effect: read-only
 """
 
@@ -99,6 +99,8 @@ _HIDDEN = "<hidden>"
 _ENVIRONMENT = "the environment"
 _DEFAULT_LINE = "[using default] %s = %s  (not set; to change it, set %s in %s)\n"
 _NOT_SET_LINE = "[not set] %s  (required, no default; set %s in %s)"
+_DECODE_DEPTH = "%s cannot be read as JSON (nested too deep)"
+_COPY_DEPTH = "%s: %s is nested too deep to copy"
 # (where, path) for each default announced in this process: the line is a
 # start-up fact, and a process that resolves a key twice has one fact to tell.
 _ANNOUNCED: Set[Tuple[str, Tuple[str, ...]]] = set()
@@ -135,7 +137,8 @@ class ConfigAbsent(ConfigError):
 
 class ConfigUnreadable(ConfigError):
     """The config file exists and cannot be used: unreadable, not UTF-8, not
-    JSON, a key twice in one object, or a top level that is not an object.
+    JSON, nested beyond the decoder's recursion limit, a key twice in one
+    object, or a top level that is not an object.
     `conflict_line` is the first merge-conflict hunk's line, or None;
     `unchecked` is why the markers were not checked, or None."""
 
@@ -1921,6 +1924,8 @@ def read(root: str, relpath: str = CONFIG_FILE) -> Dict[str, Any]:
             object_pairs_hook=_refuse_duplicates,
             parse_constant=_refuse_constant,
         )
+    except RecursionError:
+        raise ConfigUnreadable(relpath, [_DECODE_DEPTH % said]) from None
     except ValueError as exc:
         raise _unparsed(relpath, text, exc) from exc
     if not isinstance(loaded, dict):
@@ -2009,6 +2014,7 @@ def _holds_at(value: object) -> bool:
 
 
 _HIDDEN_AT = "<hidden: it holds an @>"
+_HIDDEN_DEPTH = "<hidden: nested too deep to show>"
 
 
 def shown(value: object, *, bare: bool = False) -> str:
@@ -2017,26 +2023,35 @@ def shown(value: object, *, bare: bool = False) -> str:
     JSON, or with *bare* a string as written (a segment of a dotted key
     path). Every message a project module builds from configured text, a
     value, a list member, an entry or key name, passes that text through
-    here, so one rule decides what a refusal may show."""
+    here, so one rule decides what a refusal may show. A RecursionError from
+    canonical JSON returns `<hidden: nested too deep to show>` instead."""
     if _holds_at(value):
         return _HIDDEN_AT
     if bare and isinstance(value, str):
         return value
-    return _canonical(value)
+    try:
+        return _canonical(value)
+    except RecursionError:  # noqa: DROP001 -- the marker reports the rendering limit
+        return _HIDDEN_DEPTH
 
 
 def quoted(value: object) -> str:
     """Configured *value* in the place a `%r` would put it: exactly what `%r`
     prints when no `@` sits anywhere inside it, else the hidden form, in
-    single quotes for a string."""
+    single quotes for a string. A RecursionError from repr uses
+    `<hidden: nested too deep to show>`, also quoted for a string."""
     # repr, not a rebuilt form: its escapes keep a refusal on one line and
     # keep a value from sending a terminal escape, and a value of the wrong
     # type reads as that type.
+    hidden = _HIDDEN_AT
     if not _holds_at(value):
-        return repr(value)
+        try:
+            return repr(value)
+        except RecursionError:  # noqa: DROP001 -- the marker reports the rendering limit
+            hidden = _HIDDEN_DEPTH
     if isinstance(value, str):
-        return "'%s'" % _HIDDEN_AT
-    return _HIDDEN_AT
+        return "'%s'" % hidden
+    return hidden
 
 
 def joined(values: Iterable[object]) -> str:
@@ -2066,23 +2081,25 @@ def _refused_members(key: Key, value: List[Any], *, bound: bool) -> str:
             return False
         return not bound or key.accepts is None or bool(key.accepts[0](members))
 
-    def first_seen(members: List[Any]) -> List[Any]:
-        # By canonical JSON, so an unhashable member is compared too.
-        seen, out = set(), []
-        for m in members:
-            text = _canonical(m)
-            if text not in seen:
-                seen.add(text)
-                out.append(m)
-        return out
+    # Hidden text would merge distinct members, and deep equality could recurse.
+    # Keep one token per member for both first-seen order and repeat accounting.
+    counts: Dict[object, int] = {}
+    unique: List[Tuple[object, Any]] = []
+    for member in value:
+        try:
+            token: object = _canonical(member)
+        except RecursionError:
+            token = id(member)
+        if token not in counts:
+            unique.append((token, member))
+        counts[token] = counts.get(token, 0) + 1
 
-    bad = first_seen([m for m in value if not passes([m])])
+    bad = [m for _, m in unique if not passes([m])]
     if bad:
         return "; refused members: %s" % ", ".join(shown(m) for m in bad)
-    once = first_seen(value)
+    once = [m for _, m in unique]
     if len(once) < len(value) and passes(once):
-        texts = [_canonical(m) for m in value]
-        repeated = [m for m in once if texts.count(_canonical(m)) > 1]
+        repeated = [m for token, m in unique if counts[token] > 1]
         return "; repeated members: %s" % ", ".join(shown(m) for m in repeated)
     return ""
 
@@ -2182,7 +2199,12 @@ def resolve(
             elif key.accepts is not None and not key.accepts[0](value):
                 wrong.append(_wrong_line(source, name, key, value, bound=True))
             else:
-                values[key.path] = copy.deepcopy(value)
+                try:
+                    values[key.path] = copy.deepcopy(value)
+                except RecursionError:
+                    wrong.append(
+                        _COPY_DEPTH % (shown(source, bare=True), shown(name, bare=True))
+                    )
             continue
         if key.required:
             missing.append(key)

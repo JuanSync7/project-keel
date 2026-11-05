@@ -203,3 +203,11 @@ def test_every_entry_point_that_reads_the_manifest_ends_a_conflict_hunk_at_2(tmp
 
 def test_every_entry_point_that_reads_the_manifest_ends_a_duplicate_key_at_14(tmp_path):
     _assert_refusal(tmp_path, _DUPLICATE, 14)
+
+
+def test_every_entry_point_that_reads_the_manifest_ends_decoder_recursion_at_14(
+    tmp_path,
+):
+    depth = sys.getrecursionlimit() + 1
+    payload = '{"nested":' + "[" * depth + "0" + "]" * depth + "}"
+    _assert_refusal(tmp_path, payload, 14)

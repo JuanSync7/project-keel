@@ -3375,7 +3375,7 @@ Stop at four green `make verify` slices or a cap.
 
 | Slice | Gap | Status |
 |-------|-----|--------|
-| CMP-15.S1 | The loader refuses recursion. Rendering preserves redaction and deduplicates by identity. | planned |
+| CMP-15.S1 | The loader refuses recursion. Rendering preserves redaction and deduplicates by identity. | implemented |
 | CMP-15.S2 | Section faults exit CONFIG for practices and FAILURE for source headers. A loader-refused config/practices.json exits CONFIG, or USAGE for a conflict hunk. | planned |
 | CMP-15.S3 | Floor faults exit CONFIG. ADR widths are bounded before allocation. Policy faults yield one key-naming FAILURE finding. | planned |
 | CMP-15.S4 | Child-env pattern faults and launcher load faults exit CONFIG. | planned |

@@ -123,6 +123,91 @@ def test_a_config_fault_is_config_and_prints_nothing(tmp_path, manifest, said):
     assert said in err, err
 
 
+@pytest.mark.parametrize("relpath", ["config/project.json", "config/practices.json"])
+@pytest.mark.parametrize("fault", ["decoder", "members", "copy"])
+def test_recursive_config_is_config_naming_the_file_without_output(
+    tmp_path, monkeypatch, relpath, fault
+):
+    loader = config_get.config_loader
+    row = loader.Key(
+        ("nested",),
+        "object" if fault == "copy" else "list_of_str",
+        loader.NONE,
+        secret=False,
+        meaning="recursive config acceptance",
+        env=None,
+        file=relpath,
+        accepts=None,
+    )
+    monkeypatch.setattr(loader, "KEYS", (row,))
+    root = _project(tmp_path, None)
+    target = root / relpath
+    if fault == "decoder":
+        depth = sys.getrecursionlimit() + 1
+    else:
+        value: object = "leaf"
+        depth = 0
+        while depth <= sys.getrecursionlimit():
+            try:
+                json.dumps(value, sort_keys=True)
+            except RecursionError:  # noqa: DROP001 -- the probe found JSON's limit
+                break
+            value = [value]
+            depth += 1
+        else:
+            pytest.fail("json.dumps accepted nesting past the recursion limit")
+    # Work down from the rendering boundary to find a value the decoder accepts
+    # but resolve cannot use; decoder and copying limits differ by runtime.
+    for nesting in range(depth, 0, -1):
+        member = "[" * nesting + '"private-probe"' + "]" * nesting
+        body = '{"leaf":' + member + "}" if fault == "copy" else "[" + member + "]"
+        target.write_text('{"nested":' + body + "}", encoding="utf-8")
+        if fault == "decoder":
+            break
+        try:
+            loaded = loader.read(str(root), relpath)
+        except loader.ConfigUnreadable:  # noqa: DROP001 -- try shallower nesting
+            continue
+        try:
+            loader.resolve(loaded, (row,), relpath, environ={}, stream=io.StringIO())
+        except RecursionError:  # noqa: DROP001 -- the base's resolution crash is the fixture
+            break
+        except loader.ConfigError as exc:
+            if fault == "copy" or "<hidden: nested too deep to show>" in str(exc):
+                break
+    else:
+        pytest.skip("no nesting decodes but fails resolution on this runtime")
+    code, out, err = _run(root, "nested")
+    assert (code, out) == (ExitCode.CONFIG, ""), err
+    assert relpath in err and "nested" in err, err
+    assert "Traceback" not in err and "private-probe" not in err, err
+
+
+@pytest.mark.parametrize("relpath", ["config/project.json", "config/practices.json"])
+def test_a_conflict_is_still_usage_for_either_file(tmp_path, monkeypatch, relpath):
+    loader = config_get.config_loader
+    row = loader.Key(
+        ("nested",),
+        "object",
+        {},
+        secret=False,
+        meaning="conflict control",
+        env=None,
+        file=relpath,
+        accepts=None,
+    )
+    monkeypatch.setattr(loader, "KEYS", (row,))
+    root = _project(tmp_path, None)
+    (root / relpath).write_text(
+        "{\n%s ours\n{}\n%s\n{}\n%s theirs\n}\n" % ("<" * 7, "=" * 7, ">" * 7),
+        encoding="utf-8",
+    )
+    code, out, err = _run(root, "nested")
+    assert (code, out) == (ExitCode.USAGE, ""), err
+    assert relpath in err and "merge-conflict hunk" in err, err
+    assert "Traceback" not in err, err
+
+
 def test_keel_s_own_config_answers_every_non_secret_row(monkeypatch):
     """Every row a shell script may name resolves against keel's own tree, so
     the key the error message invites is one the tool can print."""

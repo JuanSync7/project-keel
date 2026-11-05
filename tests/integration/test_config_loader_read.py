@@ -2,10 +2,11 @@
 title: Integration — the config loader's one read of a config file
 kind: tests
 layer: n/a
-summary: scripts/config_loader.py `read` is the one open and parse of a config file. A missing file is ConfigAbsent, told apart from ConfigUnreadable, which is every other failure: an OSError, bytes that are not UTF-8, a UTF-8 byte-order mark, text that is not JSON, a NaN or Infinity constant, a top level that is not an object, and a key written twice in one object, which json.load would keep silently. A merge-conflict hunk an update left is named by its line through scripts/jobs/conflict_guard.py's grammar; when that grammar cannot load, the parse error stands and says the markers were not checked. Every refusal is one line naming the file, and the same file read twice gives equal, independent dicts.
+summary: scripts/config_loader.py `read` is the one open and parse of a config file. A missing file is ConfigAbsent, told apart from ConfigUnreadable, which is every other failure: an OSError, bytes that are not UTF-8, a UTF-8 byte-order mark, text that is not JSON, nesting beyond the decoder's recursion budget, a NaN or Infinity constant, a top level that is not an object, and a key written twice in one object, which json.load would keep silently. A merge-conflict hunk an update left is named by its line through scripts/jobs/conflict_guard.py's grammar; when that grammar cannot load, the parse error stands and says the markers were not checked. Every refusal is one line naming the file, and the same file read twice gives equal, independent dicts.
 @covers scripts/config_loader.py
 """
 
+import json
 import os
 import sys
 from pathlib import Path
@@ -61,6 +62,38 @@ def test_the_practices_file_is_read_through_the_same_door(tmp_path):
     with pytest.raises(ConfigAbsent) as exc:
         read(str(tmp_path))
     assert exc.value.path == CONFIG_FILE
+
+
+@pytest.mark.parametrize("relpath", [CONFIG_FILE, PRACTICES_FILE])
+def test_decoder_recursion_is_one_unreadable_refusal(tmp_path, relpath):
+    depth = sys.getrecursionlimit() + 1
+    payload = '{"nested":' + "[" * depth + '"private-probe"' + "]" * depth + "}"
+    _plant(tmp_path, payload.encode(), relpath)
+    with pytest.raises(ConfigUnreadable) as caught:
+        read(str(tmp_path), relpath)
+    assert caught.value.path == relpath
+    assert len(caught.value.lines) == 1
+    line = caught.value.lines[0]
+    assert line.startswith(relpath + " cannot be read as JSON")
+    assert "nested too deep" in line
+    assert "private-probe" not in line and "maximum recursion" not in line
+    assert not config_loader.is_conflict(caught.value)
+
+
+@pytest.mark.parametrize("relpath", [CONFIG_FILE, PRACTICES_FILE])
+def test_decoder_recursion_never_echoes_the_exception(tmp_path, monkeypatch, relpath):
+    _plant(tmp_path, b"{}", relpath)
+
+    def recursive_decoder(*args, **kwargs):
+        raise RecursionError("private-probe@host")
+
+    monkeypatch.setattr(json, "loads", recursive_decoder)
+    with pytest.raises(ConfigUnreadable) as caught:
+        read(str(tmp_path), relpath)
+    assert relpath in str(caught.value)
+    assert "private-probe" not in str(caught.value)
+    assert caught.value.__suppress_context__
+    assert caught.value.__cause__ is None
 
 
 _UNREADABLE = (

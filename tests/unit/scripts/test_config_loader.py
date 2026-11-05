@@ -985,6 +985,196 @@ def _deep(value, depth):
     return value
 
 
+@pytest.fixture
+def rendering_depth():
+    # Measure from the test's call stack, because fixture setup has a different
+    # recursion budget from the renderer the test calls afterwards.
+    return _first_unrenderable_depth
+
+
+def _first_unrenderable_depth():
+    value = "leaf"
+    for depth in range(sys.getrecursionlimit() + 1):
+        try:
+            json.dumps(value, sort_keys=True)
+        except RecursionError:
+            return depth
+        value = [value]
+    pytest.fail("json.dumps accepted nesting past the interpreter recursion limit")
+
+
+def test_shown_hides_a_value_too_deep_for_canonical_json(rendering_depth):
+    value = _deep("leaf", rendering_depth())
+    assert config_loader.shown(value) == "<hidden: nested too deep to show>"
+
+
+def test_shown_rendering_failure_never_echoes_the_exception(monkeypatch):
+    def recursive_canonical(value):
+        raise RecursionError(_SENTINEL)
+
+    monkeypatch.setattr(config_loader, "_canonical", recursive_canonical)
+    assert config_loader.shown("leaf") == "<hidden: nested too deep to show>"
+    assert config_loader.shown("leaf", bare=True) == "leaf"
+
+
+def test_quoted_hides_a_value_too_deep_for_repr(rendering_depth):
+    value = _deep("leaf", rendering_depth())
+    while True:
+        try:
+            repr(value)
+        except RecursionError:  # noqa: DROP001 -- the probe found repr's limit
+            break
+        value = [value]
+    assert config_loader.quoted(value) == "<hidden: nested too deep to show>"
+
+
+class _RecursiveReprString(str):
+    __slots__ = ()
+
+    def __repr__(self):
+        raise RecursionError(_SENTINEL)
+
+
+def test_quoted_wraps_a_string_rendering_fallback_in_single_quotes():
+    assert config_loader.quoted(_RecursiveReprString("leaf")) == (
+        "'<hidden: nested too deep to show>'"
+    )
+
+
+@pytest.mark.parametrize("renderer", ["shown", "quoted"])
+@pytest.mark.parametrize("shape", ["string", "deep-value", "deep-key"])
+def test_at_redaction_precedes_either_rendering_fallback(
+    monkeypatch, rendering_depth, renderer, shape
+):
+    def must_not_render(value):
+        raise AssertionError("redaction must precede rendering")
+
+    monkeypatch.setattr(config_loader, "_canonical", must_not_render)
+    text = _RecursiveReprString(_SENTINEL + "@host")
+    depth = rendering_depth()
+    value = {
+        "string": text,
+        "deep-value": _deep(text, depth),
+        "deep-key": _deep({text: "leaf"}, depth),
+    }[shape]
+    expected = "'%s'" % _HID if renderer == "quoted" and shape == "string" else _HID
+    assert getattr(config_loader, renderer)(value) == expected
+
+
+def test_refused_deep_members_deduplicate_by_identity(rendering_depth):
+    depth = rendering_depth()
+    first = _deep("leaf", depth)
+    second = _deep("leaf", depth)
+    buf = io.StringIO()
+    with pytest.raises(WrongValue) as caught:
+        resolve(
+            {"members": [first, second, first, [], [], second]},
+            (_key(("members",), "list_of_str"),),
+            _WHERE,
+            environ={},
+            stream=buf,
+        )
+    assert caught.value.lines == [
+        "config/project.json: members is array; accepted: a list of strings; "
+        "refused members: <hidden: nested too deep to show>, "
+        "<hidden: nested too deep to show>, []"
+    ]
+    assert buf.getvalue() == caught.value.lines[0] + "\n"
+
+
+def test_shallow_members_still_deduplicate_by_canonical_text():
+    with pytest.raises(WrongValue) as caught:
+        resolve(
+            {"members": [{"z": 1, "a": []}, {"a": [], "z": 1}, [], []]},
+            (_key(("members",), "list_of_str"),),
+            _WHERE,
+            environ={},
+            stream=io.StringIO(),
+        )
+    assert caught.value.lines[0].endswith('; refused members: {"a": [], "z": 1}, []')
+
+
+def test_repeated_deep_members_use_identity_for_counts(monkeypatch, rendering_depth):
+    # A permissive row reaches repetition accounting with unrenderable members;
+    # the ordinary list-of-strings row would refuse each member first.
+    monkeypatch.setitem(
+        config_loader.TYPES, "list_of_str", (lambda v: isinstance(v, list), "a list")
+    )
+    bound = (lambda v: len(v) == len({id(m) for m in v}), "each identity once")
+    depth = rendering_depth()
+    first = _deep("leaf", depth)
+    second = _deep("leaf", depth)
+    third = _deep("leaf", depth)
+    with pytest.raises(WrongValue) as caught:
+        resolve(
+            {"members": [first, second, first, third, second]},
+            (_key(("members",), "list_of_str", accepts=bound),),
+            _WHERE,
+            environ={},
+            stream=io.StringIO(),
+        )
+    assert caught.value.lines == [
+        "config/project.json: members is array; accepted: a list with "
+        "each identity once; repeated members: <hidden: nested too deep to show>, "
+        "<hidden: nested too deep to show>"
+    ]
+
+
+@pytest.mark.parametrize("where", [CONFIG_FILE, config_loader.PRACTICES_FILE])
+def test_a_configured_copy_refuses_recursion_naming_source_and_key(
+    rendering_depth, where
+):
+    value = {"leaf": _deep(_SENTINEL, rendering_depth())}
+    buf = io.StringIO()
+    with pytest.raises(WrongValue) as caught:
+        resolve(
+            {"nested": value},
+            (_key(("nested",), "object", file=where),),
+            where,
+            environ={},
+            stream=buf,
+        )
+    assert caught.value.path == where
+    assert len(caught.value.lines) == 1
+    line = caught.value.lines[0]
+    assert line.startswith(where + ": nested ")
+    assert "nested too deep to copy" in line
+    assert _SENTINEL not in line and "maximum recursion" not in line
+    assert buf.getvalue() == line + "\n"
+
+
+def test_a_deep_default_still_raises_at_its_copy(rendering_depth):
+    row = _key(("nested",), "object", {"leaf": _deep("leaf", rendering_depth())})
+    buf = io.StringIO()
+    with pytest.raises(RecursionError):
+        resolve({}, (row,), _WHERE, environ={}, stream=buf)
+    assert buf.getvalue() == ""
+
+
+class _RecursiveCopyObject(dict):
+    __slots__ = ()
+
+    def __deepcopy__(self, memo):
+        raise RecursionError(_SENTINEL + "@host")
+
+
+def test_copy_refusal_omits_exception_text_and_still_names_other_faults():
+    buf = io.StringIO()
+    with pytest.raises(WrongValue) as caught:
+        resolve(
+            {"nested": _RecursiveCopyObject()},
+            (_key(("nested",), "object"), _key(("missing",), "str")),
+            _WHERE,
+            environ={},
+            stream=buf,
+        )
+    assert len(caught.value.lines) == 2
+    assert caught.value.lines[0].startswith(_WHERE + ": nested ")
+    assert caught.value.lines[1].startswith("[not set] missing ")
+    assert _SENTINEL not in str(caught.value) + buf.getvalue()
+    assert caught.value.__context__ is None
+
+
 def _said(call):
     """Every channel a loader message reaches when *call* raises ConfigError:
     the exception, its lines and the stream it was handed."""
@@ -1289,8 +1479,25 @@ _CONFLICT = "{\n%s ours\n}\n%s\n}\n%s theirs\n" % ("<" * 7, "=" * 7, ">" * 7)
         ('{"a": 1, "a": 2}', ConfigUnreadable),
         ("[]", ConfigUnreadable),
         (_CONFLICT, ConfigUnreadable),
+        (
+            '{"nested":'
+            + "[" * sys.getrecursionlimit()
+            + "0"
+            + "]" * sys.getrecursionlimit()
+            + "}",
+            ConfigUnreadable,
+        ),
     ],
-    ids=["absent", "unreadable", "not-utf8", "not-json", "twice", "array", "conflict"],
+    ids=[
+        "absent",
+        "unreadable",
+        "not-utf8",
+        "not-json",
+        "twice",
+        "array",
+        "conflict",
+        "decoder-recursion",
+    ],
 )
 def test_read_hides_a_path_holding_an_at_in_every_line_and_cause(
     tmp_path, content, error
