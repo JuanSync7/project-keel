@@ -1214,9 +1214,20 @@ def test_a_document_citing_a_check_that_does_not_exist_fails(
             [(6, "check_other")],
         ),
         ("- item\n\n  ```\n  check_missing\n  ```\ncheck_other", [(6, "check_other")]),
-        # The shared line scanner does not parse Markdown containers.
-        ("> ```\n> check_missing\n> ```", [(2, "check_missing")]),
-        ("- item\n\n    ```\n    check_missing\n    ```", [(4, "check_missing")]),
+        ("> ```\n> check_missing\n> ```", []),
+        ("- item\n\n    ```\n    check_missing\n    ```", []),
+        (
+            "- item\n2. ```\n   check_missing\n   ```\ncheck_other",
+            [(5, "check_other")],
+        ),
+        (
+            "> quote\n-\n  <?x\n  check_missing\ncheck_other",
+            [(5, "check_other")],
+        ),
+        (
+            "Prose <!-- hidden\ncheck_missing\n--> more\ncheck_other",
+            [(4, "check_other")],
+        ),
     ],
 )
 def test_check_citations_follow_shared_fence_boundaries(text, citations):

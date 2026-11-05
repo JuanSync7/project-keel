@@ -5,7 +5,9 @@ layer: n/a
 summary: The pure half of scripts/jobs/review_docs.py, pinned: `updated:` must be an ISO date, never earlier than the file's last commit, and a file modified in the working tree must carry today's date or later. Measured before the rule landed: 135 of 153 governed documents were stamped earlier than their last commit — including AGENT.md and CONVENTIONS.md — and nothing said so. The change-opener advisory, pinned too: each kind of thought opener is read, a phrase counts only as a whole word ("Nowhere" and "Nowadays" are not "now"), the period after a quoted or parenthesised step's number ends no sentence (the shapes of the three lines the real tree reported), while a heading's or a cell's own number and a sentence that ends in a number (`## 3. Removed checks`, "added in 2024.", "1,000.", a line ending "2.") hide no opener after them, a present claim at one ("2. Now run X", a `fixed-point` cell) is reported while `--strict` still exits 0, no manifest is a stated "unchecked", a refused opener list exits 14 with the loader's reason (which key, and why) on the refusal line, and the copied fence grammar equals check_structure's, down to a fence that closes only on its own character (a `~~~` line inside a backtick fence is content, and the reverse) and only when followed by spaces or tabs.
 """
 
+import ast
 import datetime
+import inspect
 import json
 import os
 import subprocess
@@ -166,41 +168,50 @@ def _openers(root, name, text):
     )
 
 
-def test_the_fence_grammar_is_check_structures():
-    """A copy, since importing check_structure here would put it in the import
-    closure restamp_docs promises is free of it; this pin keeps the copy true."""
+def test_the_fence_grammar_has_the_same_syntax_tree():
+    """Conflict guards require a copy; syntax equality pins every grammar path."""
     sys.path.insert(0, str(_ROOT / "scripts"))
     import check_structure as cs
 
-    assert review_docs.FENCE.pattern == cs._FENCE.pattern
+    original = ast.parse(inspect.getsource(cs._fence_scan)).body[0]
+    wrapper = ast.parse(inspect.getsource(review_docs.unfenced_lines))
+    copied = next(
+        node
+        for node in ast.walk(wrapper)
+        if isinstance(node, ast.FunctionDef) and node.name == "scan"
+    )
+    # Only the entry name differs: tolerating any other rewrite could hide drift.
+    copied.name = "_fence_scan"
+    assert ast.dump(original) == ast.dump(copied)
     assert review_docs.INLINE_CODE.pattern == cs._INLINE_CODE.pattern
-    assert review_docs.HTML_COMMENT.pattern == cs._HTML_COMMENT.pattern
-    assert review_docs.HTML_COMMENT.flags == cs._HTML_COMMENT.flags
-    texts = [p.read_text(encoding="utf-8") for p in sorted(_ROOT.glob("docs/**/*.md"))]
-    texts.append("````\n```\nx\n````\n<!-- a\nb -->\n~~~\nopen")
-    # A fence closes only on its own character: a `~~~` line inside a backtick
-    # fence, and the reverse, is content. No shipped document holds either,
-    # so without these two a copy that dropped the rule would still match.
-    other_char = ["```\n~~~\nx\n```\nafter", "~~~\n```\ny\n~~~\nafter"]
-    texts.extend(other_char)
-    # CommonMark leaves a fence open when text follows the closing run.
-    trailing = "```\nx\n``` trailing\nafter"
-    texts.append(trailing)
-    # The opener, closer and indent rules check_structure's own fence tests
-    # pin: an inline triple-backtick span opens nothing, a no-break space
-    # after a closing run is text, and four spaces of indent is no fence.
-    texts += [
-        "``` check_x ```\nprose",
-        "```\n```\u00a0\nx\n```\nafter",
-        "    ```\nprose\n",
-        "```markdown\n```python\nx\n```\nafter",
+
+
+def test_the_fence_grammar_has_the_same_output():
+    """Pin the wrapper too, on tracked Markdown and every regression string."""
+    sys.path.insert(0, str(_ROOT / "scripts"))
+    import check_structure as cs
+    import git_tree
+
+    paths = []
+    for directory, _dirs, names in cs.sorted_walk(str(_ROOT)):
+        for name in names:
+            if name.endswith((".md", ".md.jinja")):
+                path = Path(directory) / name
+                paths.append(path.relative_to(_ROOT).as_posix())
+    tree_texts = [
+        (rel, (_ROOT / rel).read_text(encoding="utf-8"))
+        for rel in sorted(git_tree.tracked(str(_ROOT), paths))
     ]
-    assert len(texts) > 1, "a pin over zero documents"
-    for text in texts:
-        assert review_docs.unfenced_lines(text) == cs._unfenced_lines(text)
-    for text in other_char:
-        assert review_docs.unfenced_lines(text) == ["", "", "", "", "after"]
-    assert review_docs.unfenced_lines(trailing) == ["", "", "", ""]
+    assert tree_texts, "a pin over zero tree documents"
+    regression = _ROOT / "tests/unit/scripts/test_check_structure_fences.py"
+    regression_texts = [
+        ("fence regression line %s" % node.lineno, node.value)
+        for node in ast.walk(ast.parse(regression.read_text(encoding="utf-8")))
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+    ]
+    assert regression_texts, "a pin over zero regression texts"
+    for label, text in tree_texts + regression_texts:
+        assert review_docs.unfenced_lines(text) == cs._unfenced_lines(text), label
 
 
 @pytest.mark.parametrize(

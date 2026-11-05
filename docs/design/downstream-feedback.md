@@ -3129,7 +3129,7 @@ rounds; the stop point is CMP-12.S1 green or the cap.
 
 | Slice | Gap | Status |
 |-------|-----|--------|
-| CMP-12.S1 | The fence grammar keeps a stack of the containers a line sits in, as CommonMark's block phase does. A blockquote marker is up to three spaces, `>` and one optional space. A list item's content column is the marker's own column inside its container, plus the marker's width, plus its padding. The padding is one to four spaces. Five or more spaces after the marker count as a padding of one. An item whose first line is empty has a padding of one. A line stays in each open container whose prefix it carries. An unprefixed line continues an open paragraph only when it is paragraph text. A line that would start a fence, a heading, a thematic break, a list item, a quote or an HTML block ends the containers whose prefix it lacks, and is read again outside them. These are CommonMark's paragraph-interruption rules, so an ordered marker that starts above 1, and a list marker with nothing after it, interrupt nothing and continue the paragraph. A fenced block is never continued lazily. A fence opens with up to three spaces past its container's content column. A fence closes on a closer of the same character, at least as long, with up to three spaces of its own past that column, whatever the opener's indent. A fence also closes when its container ends. An HTML block of CommonMark types 1 to 5 starts at a line whose text past its containers begins with its start marker after up to three spaces. Those starts are a `<script>`, `<pre>`, `<style>` or `<textarea>` tag, `<!--`, `<?`, `<!` and an ASCII capital letter (A to Z), and `<![CDATA[`. Each runs to the line that holds its end marker, or to its container's end. A fence line inside such a block is HTML, not a fence. An inline comment that closes inside its line is still blanked, so a heading's anchor is read without it. A `<!--` that opens mid-paragraph and does not close is text, and hides no line after it. Both copies change together. The pin holds them equal. `_fence_scan` still returns the opener's 1-based line for a fence left open. A user's prose after a list or a quote is checked, and code inside one is not | planned |
+| CMP-12.S1 | The fence grammar keeps a stack of the containers a line sits in, as CommonMark's block phase does. A blockquote marker is up to three spaces, `>` and one optional space. A list item's content column is the marker's own column inside its container, plus the marker's width, plus its padding. The padding is one to four spaces. Five or more spaces after the marker count as a padding of one. An item whose first line is empty has a padding of one. A line stays in each open container whose prefix it carries. An unprefixed line continues an open paragraph only when it is paragraph text. A line that would start a fence, a heading, a thematic break, a list item, a quote or an HTML block ends the containers whose prefix it lacks, and is read again outside them. These are cmark-gfm's paragraph-interruption rules: an ordered marker that starts above 1, and a list marker with nothing after it, continue a paragraph when its containers are continued; a line lacking its container prefix starts a new list instead, a known difference from micromark's lazy-text reading. A fenced block is never continued lazily. A fence opens with up to three spaces past its container's content column. A fence closes on a closer of the same character, at least as long, with up to three spaces of its own past that column, whatever the opener's indent. A fence also closes when its container ends. An HTML block of CommonMark types 1 to 5 starts at a line whose text past its containers begins with its start marker after up to three spaces. Those starts are a `<script>`, `<pre>`, `<style>` or `<textarea>` tag, `<!--`, `<?`, `<!` and an ASCII letter, and `<![CDATA[`. Each runs to the line that holds its end marker, or to its container's end. A fence line inside such a block is HTML, not a fence. An inline comment that closes inside its line is still blanked, so a heading's anchor is read without it. A `<!--` that opens mid-paragraph and does not close within that paragraph is text, and hides no line after it. Both copies change together. The pin holds them equal. `_fence_scan` still returns the opener's 1-based line for a fence left open. A user's prose after a list or a quote is checked, and code inside one is not | planned |
 
 CMP-12.S1 owns `_fence_scan`, its docstring and the module `summary:` sentence on
 fences in `scripts/check_structure.py`, `unfenced_lines` and its comment in
@@ -3145,8 +3145,10 @@ for the shape it names, as the plan's probes on `9a9703f` showed:
 
 - a list item's fence that the item's end closes, and the prose after it;
 - an item whose marker is indented three spaces, holding a fence indented six;
-- an item's paragraph continued by a `1000.` line, then a fence indented five
-  spaces, which stays in the item;
+- a `1000.` line after an item, which starts a new list item whose content
+  column is 6 under cmark-gfm's rules; a fence indented five spaces is lazy
+  paragraph text and stays shown (`ordered-item-full-column`), while a fence
+  indented six spaces is code inside the new item (`wide-ordered-after-item`);
 - a quoted fence whose opener is indented three spaces and whose closer is not;
 - an item with five spaces after its marker, an item whose first line is
   empty, and an item with a lazy line, each holding a fence indented five
@@ -3160,8 +3162,10 @@ for the shape it names, as the plan's probes on `9a9703f` showed:
 Four preservation cases already pass on the base and must still pass: a
 comment block holding a fence line, a `<!--` in mid-paragraph that never
 closes, an inline comment in a heading, which stays blanked from its
-anchor, and a `<!doctype` line (and a `<!` before a non-ASCII letter)
-followed by a fence, which is text and leaves the fence a fence.
+anchor, and a `<!` before a non-ASCII letter, which remains text and leaves
+a following fence a fence. A lowercase declaration such as `<!doctype html`
+starts an HTML block under CommonMark 0.31 and hides fence lines until its
+closing `>`.
 
 Its acceptance includes the tree's own output before and after, taken by
 read-only probes, not by `make trace`, which writes a matrix. The probes are

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 title: check_structure — the deterministic conventions gate
-summary: Stdlib-only, 3.6-safe enforcement of CONVENTIONS.md — labeling, taxonomy, package boundaries, tool/agent governance, manifest and ruleset parity, twin parity, the machine-readable module contract, Makefile help parity, cross-reference resolution, check-catalogue parity, rosters, practice mechanisms, policy reachability, writer rerun declarations, make-target effect labels, child-process environments, ADR number spaces, and work naming (checks A-Z), then the project's own checks: each top-level module in the directory config/project.json structure.project_checks names (a key the template never ships), whose check(root) findings, returned or reported through err()/warn(), are reported as project:<stem> and whose every failure, a module name that is not a readable file included, is an error naming it (docs/adr/keel/K-0014-project-owned-structure-checks.md). A finding checks A-Z build from configured text never shows a value, member, key name or path segment that holds an `@`: each passes through config_loader.shown. Shared Markdown scanning follows CommonMark fence boundaries at up to three spaces of indentation; blockquote prefixes and deeper list-relative indentation are not parsed. Exit 1 on any judged error; warnings never fail the build. The CLI refuses an existing manifest before judging, exit 2 for a hunk and 14 for another loader refusal, with one stderr line; an absent manifest keeps its finding.
+summary: Stdlib-only, 3.6-safe enforcement of CONVENTIONS.md — labeling, taxonomy, package boundaries, tool/agent governance, manifest and ruleset parity, twin parity, the machine-readable module contract, Makefile help parity, cross-reference resolution, check-catalogue parity, rosters, practice mechanisms, policy reachability, writer rerun declarations, make-target effect labels, child-process environments, ADR number spaces, and work naming (checks A-Z), then the project's own checks: each top-level module in the directory config/project.json structure.project_checks names (a key the template never ships), whose check(root) findings, returned or reported through err()/warn(), are reported as project:<stem> and whose every failure, a module name that is not a readable file included, is an error naming it (docs/adr/keel/K-0014-project-owned-structure-checks.md). A finding checks A-Z build from configured text never shows a value, member, key name or path segment that holds an `@`: each passes through config_loader.shown. Shared Markdown scanning follows CommonMark containers, fence boundaries and HTML blocks of types 1 to 5; inline comments are blanked outside fences. Exit 1 on any judged error; warnings never fail the build. The CLI refuses an existing manifest before judging, exit 2 for a hunk and 14 for another loader refusal, with one stderr line; an absent manifest keeps its finding.
 
 check_structure.py - enforce the project conventions (see CONVENTIONS.md).
 
@@ -3516,9 +3516,7 @@ def check_P():
 #     instead. A `§N` inside code IS read (a quoted help string cites the same
 #     section a sentence does); a link inside code is not.
 
-_FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
 _INLINE_CODE = re.compile(r"(`+)(.+?)\1")
-_HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 _MD_LINK = re.compile(
     r"!?\[[^\]]*\]\(\s*(?:<([^>]*)>|([^)\s]+))(?:\s+(?:\"[^\"]*\"|'[^']*'))?\s*\)"
 )
@@ -3545,43 +3543,240 @@ def _frontmatter_end(lines):
 
 
 def _fence_scan(text):
-    """(lines, open_line): the document's lines with fenced code blocks and
-    HTML comments blanked, numbering kept, and the 1-based line of a fence that
-    is still open when the document ends, else 0. A fence closes only on the
-    same character, at least as long, followed only by spaces or tabs;
-    backtick openers have no backtick in their info string (CommonMark). Both
-    allow at most three leading spaces. This line scanner does not parse
-    blockquote prefixes or list-relative indentation beyond those three
-    spaces, a fence opened in a list item stays open past the item's end, and
-    HTML comments are blanked before fences are found, so a comment opener
-    inside a fence hides the text after it."""
-    out, fence, opened = [], None, 0
-    text = _HTML_COMMENT.sub(lambda m: "\n" * m.group(0).count("\n"), text)
-    for number, line in enumerate(text.split("\n"), 1):
-        m = _FENCE.match(line)
-        closes = (
-            m
-            and fence is not None
-            and m.group(1)[0] == fence[0]
-            and len(m.group(1)) >= len(fence)
-            and not line[m.end() :].strip(" \t")
+    """Return (lines, 1-based EOF opener or 0), blanking fences, HTML 1-5 and inline comments within one cmark-gfm paragraph. Does not model HTML block types 6 and 7 or inline code spans hiding a comment opener."""
+
+    def leading(line):
+        """The number of leading spaces in a tab-expanded line."""
+        return len(line) - len(line.lstrip(" "))
+
+    def quote_prefix(line):
+        """The width of a blockquote prefix, or zero."""
+        indent = leading(line)
+        if indent <= 3 and line[indent : indent + 1] == ">":
+            end = indent + 1
+            return end + (line[end : end + 1] == " ")
+        return 0
+
+    def list_prefix(line):
+        """(content column, first number) for an item, or (0, None)."""
+        indent = leading(line)
+        if indent > 3 or not line[indent:]:
+            return 0, None
+        end, first = indent + 1, None
+        if line[indent] not in "-+*":
+            end = indent
+            while end < len(line) and "0" <= line[end] <= "9":
+                end += 1
+            # CommonMark limits ordered markers to nine digits; treating a
+            # longer number as a marker would give prose a false content column.
+            if not 1 <= end - indent <= 9 or line[end : end + 1] not in (".", ")"):
+                return 0, None
+            first = int(line[indent:end])
+            end += 1
+        if line[end:] and line[end] != " ":
+            return 0, None
+        padding = leading(line[end:])
+        if not line[end:].strip(" ") or padding > 4:
+            padding = 1
+        return end + padding, first
+
+    def thematic(line):
+        """Whether a line is a thematic break."""
+        body = line.replace(" ", "")
+        return len(body) >= 3 and body[0] in "-*_" and body == body[0] * len(body)
+
+    def heading(line):
+        """Whether a line starts an ATX heading."""
+        end = 0
+        while end < len(line) and line[end] == "#":
+            end += 1
+        return 1 <= end <= 6 and (end == len(line) or line[end] == " ")
+
+    def fence_run(line):
+        """A fence run and its suffix, or an empty run."""
+        indent = leading(line)
+        body = line[indent:]
+        if indent > 3 or not body or body[0] not in "`~":
+            return "", ""
+        end = 0
+        while end < len(body) and body[end] == body[0]:
+            end += 1
+        return (body[:end], body[end:]) if end >= 3 else ("", "")
+
+    def html_end(line):
+        """The terminators of a CommonMark type 1 to 5 HTML block, or ()."""
+        if leading(line) > 3:
+            return ()
+        body = line.lstrip(" ")
+        tags = ("script", "pre", "style", "textarea")
+        lower = body.lower()
+        for tag in tags:
+            start = "<" + tag
+            if lower.startswith(start) and (
+                len(body) == len(start) or body[len(start)] in " >"
+            ):
+                return tuple("</" + name + ">" for name in tags)
+        if body.startswith("<!--"):
+            return ("-->",)
+        if body.startswith("<?"):
+            return ("?>",)
+        if body.startswith("<![CDATA["):
+            return ("]]>",)
+        if body.startswith("<!") and (
+            "A" <= body[2:3] <= "Z" or "a" <= body[2:3] <= "z"
+        ):
+            return (">",)
+        return ()
+
+    def interrupts(line):
+        """Whether a line can interrupt a paragraph in a missing container."""
+        # Indented text continues a paragraph, even when its text resembles a
+        # block start; otherwise a lazy line would wrongly end its container.
+        if leading(line) > 3:
+            return False
+        body = line.lstrip(" ")
+        run, suffix = fence_run(line)
+        column, _first = list_prefix(line)
+        # CommonMark's empty-item and start-at-one limits apply only when the
+        # paragraph is the last open container. A missing item or quote ends
+        # before a new list starts, whatever its first number or content.
+        return bool(
+            (run and (run[0] != "`" or "`" not in suffix))
+            or heading(body)
+            or thematic(body)
+            or quote_prefix(line)
+            or html_end(line)
+            or column
         )
-        opens = (
-            m and fence is None and (m.group(1)[0] != "`" or "`" not in line[m.end() :])
-        )
-        if opens or closes:
-            fence = m.group(1) if fence is None else None
-            opened = number if fence is not None else 0
+
+    # Columns are relative to the parent: dropping a quote or item must also
+    # drop its descendants, even when their absolute indentation still fits.
+    containers = []
+    boundaries = [0]
+    out, fence, opened, html, paragraph = [], "", 0, (), False
+    for number, raw in enumerate(text.split("\n"), 1):
+        line = raw.expandtabs(4).rstrip("\r")
+        matched = 0
+        for index, (kind, column, empty) in enumerate(containers):
+            if empty and not line.strip(" "):
+                break
+            width = quote_prefix(line) if kind == "quote" else column
+            if kind == "item" and not line.strip(" "):
+                width = min(leading(line), column)
+            # An item's full content column is required: accepting partial
+            # indentation would attach an outside block to the wrong item.
+            elif not width or (kind == "item" and leading(line) < column):
+                break
+            containers[index] = (kind, column, False)
+            line = line[width:]
+            matched += 1
+        if matched < len(containers):
+            # Only paragraph text can omit a container's prefix. In particular,
+            # fence content and HTML never borrow paragraph laziness.
+            if paragraph and line.strip(" ") and not interrupts(line):
+                out.append(raw)
+                continue
+            boundaries.append(len(out))
+            containers = containers[:matched]
+            fence, opened, html, paragraph = "", 0, (), False
+
+        if fence:
+            boundaries.append(len(out))
+            run, suffix = fence_run(line)
+            if (
+                run
+                and run[0] == fence[0]
+                and len(run) >= len(fence)
+                and not suffix.strip(" ")
+            ):
+                fence, opened = "", 0
             out.append("")
             continue
-        out.append("" if fence is not None else line)
-    return out, opened
+        if html:
+            boundaries.append(len(out))
+            # Type-1 end tags are case-insensitive HTML, unlike the literal
+            # terminators of types 2 to 5; each still hides its entire end line.
+            if any(
+                end in line.lower() if end.startswith("</") else end in line
+                for end in html
+            ):
+                html = ()
+            out.append("")
+            continue
+
+        while True:
+            width = quote_prefix(line)
+            if width:
+                containers.append(("quote", width, False))
+            else:
+                width, first = list_prefix(line)
+                # Thematic breaks win over item markers; otherwise spaced
+                # dashes would create containers and change later indentation.
+                if thematic(line.lstrip(" ")) or (
+                    paragraph
+                    and (first not in (None, 1) or not line[width:].strip(" "))
+                ):
+                    width = 0
+                if not width:
+                    break
+                containers.append(("item", width, not line[width:].strip(" ")))
+            boundaries.append(len(out))
+            line = line[width:]
+            paragraph = False
+
+        html = html_end(line)
+        if html:
+            boundaries.append(len(out))
+            # HTML blocks can end on their start line, so a complete comment
+            # must hide that line's trailing text without consuming later prose.
+            if any(
+                end in line.lower() if end.startswith("</") else end in line
+                for end in html
+            ):
+                html = ()
+            out.append("")
+            paragraph = False
+            continue
+        run, suffix = fence_run(line)
+        if run and (run[0] != "`" or "`" not in suffix):
+            boundaries.append(len(out))
+            fence, opened, paragraph = run, number, False
+            out.append("")
+            continue
+        body = line.lstrip(" ")
+        continues = bool(body) and not (
+            (leading(line) <= 3 and (heading(body) or thematic(body)))
+            or (not paragraph and leading(line) >= 4)
+            # Setext underlines end a paragraph, including the one- and
+            # two-dash forms that cannot be thematic breaks or list items.
+            or (paragraph and leading(line) <= 3 and re.fullmatch(r"(?:=+|-+) *", body))
+        )
+        if not paragraph or not continues:
+            boundaries.append(len(out))
+        paragraph = continues
+        out.append(raw)
+    # Block precedence keeps comment markers in code from consuming prose.
+    # An inline comment must close within its paragraph: block and container
+    # boundaries end that scope, while lazy continuation lines stay inside it.
+    boundaries.append(len(out))
+    prose = []
+    for index, start in enumerate(boundaries[:-1]):
+        end = boundaries[index + 1]
+        if start == end:
+            continue
+        paragraph_text = re.sub(
+            r"<!--.*?-->",
+            lambda match: "\n" * match.group().count("\n"),
+            "\n".join(out[start:end]),
+            flags=re.DOTALL,
+        )
+        prose.extend(paragraph_text.split("\n"))
+    return prose, opened
 
 
 def _unfenced_lines(text):
-    """The document's lines with fenced code blocks and HTML comments blanked,
-    numbering kept (_fence_scan). A fence left open blanks every line after
-    it, as a renderer shows it."""
+    """The document's lines with container-aware fences, HTML blocks of types
+    1 to 5 and closed inline comments blanked, numbering kept (_fence_scan)."""
     return _fence_scan(text)[0]
 
 

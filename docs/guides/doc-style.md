@@ -115,14 +115,28 @@ form of the same habit, and `check_T` proves those names resolve.
 For check-name citations, `.` before a name is not read only without spaces; `=` after a name is not read with or without spaces; `==` after a name is read with or without spaces; an unqualified `check_` name with one capital names a member of `check_structure.CHECKS`, every other `check_` name names a Python module stem or function or class definition, and prose check letters (including lists and ranges) name members of that same registry, with inline code read as prose is and fenced examples exempt (`tests/integration/test_doc_drift.py`).
 
 The shared Markdown scanner follows CommonMark fence boundaries with at most
-three leading spaces: a backtick opener's info string contains no backtick,
-and a closer uses the same character, at least as many times, followed only
-by spaces or tabs. A triple-backtick inline span is read as a check-name citation.
-A simple list fence indented two spaces is recognized as a renderer recognizes
-it. Container parsing is a gap: blockquote-prefixed fences and list fences
-indented four or more spaces relative to the document are left visible, even
-when a renderer treats them as code; a list fence left open at the item's end
-stays open, and an HTML comment opener inside a fence hides the text after it.
+three spaces past the container's content column.
+Container and list rules follow cmark-gfm, which renders these documents on the
+forge. HTML block start condition 4 follows CommonMark 0.31: `<!` followed by an
+ASCII letter of either case. A cmark-gfm built on an older spec may read that
+condition differently.
+A backtick opener's info string contains no backtick, and a closer uses the
+same character, at least as many times, followed only by spaces or tabs.
+A triple-backtick inline span is read as a check-name citation.
+The scanner follows list content columns, blockquote prefixes and paragraph
+interruption; a container's end closes its fence.
+HTML block types 1 to 5 hide every line they hold.
+Complete inline comments are blanked within one paragraph, while comments inside
+fences stay code. These rules are pinned by
+`tests/unit/scripts/test_check_structure_fences.py` and the check-name cases in
+`tests/integration/test_doc_drift.py`
+(`test_check_citations_follow_shared_fence_boundaries`).
+HTML block types 6 and 7 are a gap: a fence line directly inside a `<div>`,
+`<details>` or whole-tag block is still read as a fence (KEEL-FENCE-HTML-1).
+A `<!--` inside a code span still opens a comment for this grammar, although
+CommonMark section 6.1 gives the code span precedence. If that comment closes
+later in the same paragraph, the intervening text after the code span is not
+checked.
 Check-name definitions in Python template
 twins are read after removing Jinja statement, expression and comment tags,
 keeping newlines, and a definition whose name a tag touches is not read;

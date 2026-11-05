@@ -409,6 +409,13 @@ version rather than a bare commit:
   quoting a refusal `plan_edits` raises.
 
 ### Changed
+- **Fenced examples in lists and blockquotes follow CommonMark containers
+  (KEEL-FENCE-CONTAINERS-1).** Document checks resume prose at a container's
+  end, use each item's content column and each fence closer's own indent,
+  and ignore every line held by HTML blocks of types 1 to 5. A line starting
+  with a complete `<!-- ... -->` is an HTML block, so its trailing text is
+  hidden too. Complete inline comments are blanked within one paragraph; an
+  HTML comment opener inside fenced code hides no prose after the fence.
 - **A `TBD` owner inherits a configured default owner, and is an error
   without one.** check_F warned on every run about each `kind: tool` or
   `kind: agent` document whose frontmatter `owner` was `TBD`, six times in
