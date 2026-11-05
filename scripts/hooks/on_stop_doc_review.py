@@ -70,7 +70,9 @@ def main(argv=None):
                 if config_loader.is_conflict(exc)
                 else exit_codes.ExitCode.CONFIG,
                 "on_stop_doc_review: the model-call cap cannot be read",
-                "; ".join(exc.lines),
+                "config/project.json agents.max_model_calls"
+                if isinstance(exc, config_loader.ConfigAbsent)
+                else "; ".join(exc.lines),
                 "set it to a whole number of 0 or more, as the line above says",
             )
         except model_budget.SpendRefused as exc:

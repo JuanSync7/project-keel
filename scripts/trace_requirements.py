@@ -158,6 +158,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         try:
             policy = _load_policy(root)
+        except config_loader.ConfigAbsent:
+            _say(
+                "the `%s` block is what names the matrix, so nothing was written or "
+                "removed and an earlier matrix may still stand; trust this exit "
+                "code, not that file" % traceability.BLOCK
+            )
+            return _refused(
+                "%s cannot be read (FileNotFoundError)" % traceability.MANIFEST,
+                "correct %s `%s` and run it again"
+                % (traceability.MANIFEST, traceability.BLOCK),
+            )
         except config_loader.ConfigError as exc:
             return report(
                 ExitCode.USAGE

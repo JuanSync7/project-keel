@@ -2,7 +2,7 @@
 title: conflict_guard — a job never runs over a conflicted file it reads
 kind: script
 layer: n/a
-summary: The merge-conflict marker grammar copier's inline update writes, and the guard every `after` migration runs before it imports anything from the project. copier 9.x leaves a file both sides changed with `git merge-file` markers in it, and a job that then imports that module died on a SyntaxError traceback that named neither the file nor the remedy (a project's own edit to scripts/check_structure.py stopped the restamp so, measured on two downstream projects); a job whose module then read a conflicted data file died on a JSON parse error the same way. `conflict_lines` finds each hunk: an opening marker line, then a separator line, then a closing marker line, labels allowed after the outer two and a diff3 base section allowed between, so a lone separator (a Markdown setext underline) and marker characters inside a line are not conflicts. `job_closure` follows `import` and `from ... import` (packages, submodules and relative imports) from an entry file through each module it resolves on a search path under the project root, never into one outside it, scanning each for hunks before parsing it. Each module in that closure may declare the fixed project files it reads in a module-level `PROJECT_READS` tuple of root-relative POSIX literals, and exempt a path literal it never opens in `PROJECT_PATHS_NOT_READ` as (path, reason) pairs; `declared_reads` collects the first by AST, never by import, and raises GuardConfigError, naming the module and line, on a declaration it cannot read. `conflicted_inputs` names each conflicted module and each conflicted declared read with its hunk lines, skipping an absent read; `exit_if_conflicted` writes the job, each file and line, and the command to rerun on stderr in one line built on `REFUSAL` and exits 2, with no traceback, and exits 2 naming the declaration when it cannot check. The exit goes through scripts/exit_codes.py, imported only at that moment; when that file is itself the conflicted one, the line is still written, naming it, and the helper's import error then ends the process with status 1 and a traceback, because no other code may choose an exit status. Under an update a job is run with `--finish-with PYTHON` (`finish_with_arg`), and its rerun is the command that finishes the update (`finish_rerun`, scripts/jobs/finish_update.py), because copier stops at the first failed migration; `read_refusals` parses the line back, which is how scripts/audit_project.py tells a migration's refusal from any other failed update. It imports nothing from the project until it refuses, so its own import cannot be the one that fails, and it spawns nothing; scripts/jobs/resolve_stamp_conflicts.py reads its marker constants from here, and tests/integration/test_copier_job_conflict_refusal.py proves every job's declarations complete. The union is over every module the job imports, so a job imports only a module whose code it runs: one kept for a constant hands the job each of its reads (restamp_docs importing check_structure was refused over a conflicted Makefile it never opens), and the same test fails a job's closure that holds a reading module from which nothing but literals is taken.
+summary: The merge-conflict marker grammar copier's inline update writes, and the guard every `after` migration runs before it imports anything from the project. copier 9.x leaves a file both sides changed with `git merge-file` markers in it, and a job that then imports that module died on a SyntaxError traceback that named neither the file nor the remedy (a project's own edit to scripts/check_structure.py stopped the restamp so, measured on two downstream projects); a job whose module then read a conflicted data file died on a JSON parse error the same way. `conflict_lines` finds each hunk: an opening marker line, then a separator line, then a closing marker line, labels allowed after the outer two and a diff3 base section allowed between, so a lone separator (a Markdown setext underline) and marker characters inside a line are not conflicts. `job_closure` follows `import` and `from ... import` (packages, submodules and relative imports) from an entry file through each module it resolves on a search path under the project root, never into one outside it, scanning each for hunks before parsing it. Each module in that closure may declare the fixed project files it reads in a module-level `PROJECT_READS` tuple of root-relative POSIX literals, and exempt a path literal it never opens in `PROJECT_PATHS_NOT_READ` as (path, reason) pairs; `declared_reads` collects the first by AST, never by import, and raises GuardConfigError, naming the module and line, on a declaration it cannot read. `conflicted_inputs` names each conflicted module and each conflicted declared read with its hunk lines, skipping an absent read; `exit_if_conflicted` writes the job, each file and line, and the command to rerun on stderr in one line built on `REFUSAL` and exits 2, with no traceback, and exits 2 naming the declaration when it cannot check. An unreadable config/project.json is read through config_loader and classified there: exit 2 for a hunk, 14 otherwise. The exit goes through scripts/exit_codes.py, imported only at that moment; when that file is itself the conflicted one, the line is still written, naming it, and the helper's import error then ends the process with status 1 and a traceback, because no other code may choose an exit status. Under an update a job is run with `--finish-with PYTHON` (`finish_with_arg`), and its rerun is the command that finishes the update (`finish_rerun`, scripts/jobs/finish_update.py), because copier stops at the first failed migration; `read_refusals` parses the line back, which is how scripts/audit_project.py tells a migration's refusal from any other failed update. It imports nothing from the project until it refuses, so its own import cannot be the one that fails, and it spawns nothing; scripts/jobs/resolve_stamp_conflicts.py reads its marker constants from here, and tests/integration/test_copier_job_conflict_refusal.py proves every job's declarations complete. The union is over every module the job imports, so a job imports only a module whose code it runs: one kept for a constant hands the job each of its reads (restamp_docs importing check_structure was refused over a conflicted Makefile it never opens), and the same test fails a job's closure that holds a reading module from which nothing but literals is taken.
 effect: read-only
 """
 
@@ -184,6 +184,10 @@ class GuardConfigError(ValueError):
     that exists and cannot be opened: the guard cannot vouch for the job."""
 
 
+class GuardManifestError(GuardConfigError):
+    """A declared manifest read refused by the shared config loader."""
+
+
 def _string(node):
     # 3.6 and 3.7 parse a string as ast.Str, later ones as ast.Constant; the
     # name is compared rather than ast.Str touched, which 3.12 deprecates.
@@ -334,6 +338,15 @@ def conflicted_inputs(entry_file, root, search_path=None):
             with open(path, "rb") as fh:
                 text = _decode(fh.read())
         except OSError as exc:
+            if rel == "config/project.json":
+                # Import only after scanning the module closure: a conflicted
+                # loader must be named by the guard before Python imports it.
+                import config_loader
+
+                try:
+                    config_loader.read(base, rel)
+                except config_loader.ConfigError as refusal:
+                    raise GuardManifestError(str(refusal)) from refusal
             raise GuardConfigError("%s cannot be read: %s" % (rel, exc)) from exc
         found.extend((rel, line) for line in conflict_lines(text))
     return sorted(set(found))
@@ -390,7 +403,7 @@ def refusal(job, found, rerun):
     return _LINE % refusal_parts(job, found, rerun)
 
 
-def _refuse(what, on, next_step):
+def _refuse(what, on, next_step, manifest_refusal=None):
     """End the process as a usage refusal through the exit helper. The helper
     is imported here, not at the top: this module is imported before anything
     else of the project, in a tree where any other module may be conflicted."""
@@ -404,6 +417,17 @@ def _refuse(what, on, next_step):
         # the remedy; the import error then ends the process, non-zero.
         sys.stderr.write(_LINE % (what, on, next_step))
         raise
+    if manifest_refusal is not None:
+        import config_loader
+
+        exit_codes.fail(
+            exit_codes.ExitCode.USAGE
+            if config_loader.is_conflict(manifest_refusal)
+            else exit_codes.ExitCode.CONFIG,
+            what,
+            on,
+            next_step,
+        )
     exit_codes.fail(exit_codes.ExitCode.USAGE, what, on, next_step)
 
 
@@ -413,11 +437,22 @@ def exit_if_conflicted(entry_file, root, job, rerun, search_path=None):
     one line to stderr — *job*, each file and line, and *rerun*, the command
     to run once they are resolved — and raise SystemExit(2), so the caller
     stops before the import or read that would fail. A declaration the guard
-    cannot read also exits 2, naming it: the guard fails closed. When the exit
+    cannot read also exits 2, naming it: the guard fails closed. A manifest
+    it cannot open goes through the loader and exits 14 (2 for a hunk). When the exit
     helper cannot be imported, because it is the conflicted file, the line is
     written and the import error propagates: status 1, not 2."""
     try:
         found = conflicted_inputs(entry_file, root, search_path)
+    except GuardManifestError as exc:
+        import config_loader
+
+        refusal = config_loader.refusal_cause(exc)
+        _refuse(
+            "%s: the manifest cannot be used" % job,
+            str(exc),
+            "repair config/project.json, then run `%s`" % rerun,
+            manifest_refusal=refusal,
+        )
     except GuardConfigError as exc:
         _refuse(
             "%s: cannot check the files it reads" % job,

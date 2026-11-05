@@ -186,7 +186,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         cfg = load_config(root)
     except ConfigError as exc:
-        if exc.report_dir is not None:
+        absent = isinstance(
+            config_loader.refusal_cause(exc), config_loader.ConfigAbsent
+        )
+        if exc.report_dir is not None or absent:
             _remove_stale(root, exc.report_dir, mode)
         if exc.in_config:
             return exit_codes.report(
@@ -194,7 +197,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 if exc.conflict
                 else exit_codes.ExitCode.CONFIG,
                 "run_evals: the evals config was refused; an earlier report may still stand"
-                if exc.report_dir is None
+                if exc.report_dir is None and not absent
                 else "run_evals: the evals config was refused",
                 str(exc),
                 "resolve the hunk, then finish the update"

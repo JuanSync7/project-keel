@@ -644,7 +644,11 @@ version rather than a bare commit:
   manifest readers use `config_loader.is_conflict`: a hunk exits 2 so the
   user can finish the update; other refusals exit CONFIG (14), with one
   stderr line naming config/project.json. Discovery tests cover both paths
-  across the entry points, preventing tracebacks and successful skips.
+  across the entry points, including later reads with a supplied date, copier
+  entry guards, llms.txt and API/MCP startup. An unreadable manifest at a job
+  guard is CONFIG too. Discovery follows reads independently of handlers;
+  every listed reader pins its absent-manifest exit and message to the earlier
+  behavior, including the make runner's exit 2.
   The two Stop hooks keep exit 14 for a hunk unless run with `--execute`.
   Imported readers raise, launcher template errors require their own remedy,
   and an evidence schema that is not UTF-8 is CONFIG. Four retired direct-read

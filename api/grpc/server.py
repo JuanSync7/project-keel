@@ -2,7 +2,7 @@
 title: gRPC API
 layer: backend
 public_api: no
-summary: Thin gRPC transport over the backend domain. `serve` listens on config/project.json `transports.grpc.port` with `transports.grpc.workers` threads, read through scripts/config_loader.py, unless the caller names others; a configured value out of its bound is config_loader.WrongValue before any server exists. Before it listens it caps its address space at `transports.serve.memory_cap_mb` (scripts/resource_limits.py cap_memory), and its shutdown owner is scripts/resource_limits.py shutdown_owner: the first SIGTERM or SIGINT stops the server with `transports.serve.shutdown_grace_seconds` for the calls in flight, and serve returns. `main` is the entry: exit 0 once the server has stopped, or CONFIG through scripts/exit_codes.py report, naming the key, for a setting refused before it listens; serve itself raises the ConfigError.
+summary: Thin gRPC transport over the backend domain. `serve` listens on config/project.json `transports.grpc.port` with `transports.grpc.workers` threads, read through scripts/config_loader.py, unless the caller names others; a configured value out of its bound is config_loader.WrongValue before any server exists. Before it listens it caps its address space at `transports.serve.memory_cap_mb` (scripts/resource_limits.py cap_memory), and its shutdown owner is scripts/resource_limits.py shutdown_owner: the first SIGTERM or SIGINT stops the server with `transports.serve.shutdown_grace_seconds` for the calls in flight, and serve returns. `main` is the entry: exit 0 once the server has stopped, or CONFIG through scripts/exit_codes.py report, naming the key, for a setting refused before it listens; serve itself raises the ConfigError. A manifest hunk is USAGE (2); other loader refusals are CONFIG (14).
 """
 
 from __future__ import annotations
@@ -71,12 +71,12 @@ def serve(
 
 def main(root: str | None = None) -> ExitCode:
     """Serve with *root*'s settings (this checkout when None) until a stop
-    signal ends the server; CONFIG for a refused setting, before it listens."""
+    signal ends the server; USAGE for a manifest hunk, CONFIG for another refused setting, before it listens."""
     try:
         serve(root=root)
     except config_loader.ConfigError as exc:
         return report(
-            ExitCode.CONFIG,
+            ExitCode.USAGE if config_loader.is_conflict(exc) else ExitCode.CONFIG,
             "the gRPC server's settings are refused",
             "; ".join(exc.lines),
             "set each key the line names inside its bound",

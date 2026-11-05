@@ -1548,7 +1548,7 @@ an owed error, or a missing extra.
 """
 
 
-def main(argv=None):
+def _main(argv=None):
     ap = argparse.ArgumentParser(
         prog="audit_project.py",
         description=_HELP,
@@ -1639,6 +1639,24 @@ def main(argv=None):
         % (args.dest, summary["errors"], summary["files_seen"]),
         "fix each finding the report marks owed, then audit again",
     )
+
+
+def main(argv=None):
+    """Report a manifest refusal from any read made during this invocation."""
+    try:
+        return _main(argv)
+    except (config_loader.ConfigError, child_env.ChildEnvError) as exc:
+        refusal = config_loader.refusal_cause(exc)
+        if refusal is None or isinstance(refusal, config_loader.ConfigAbsent):
+            raise
+        return exit_codes.report(
+            exit_codes.ExitCode.USAGE
+            if config_loader.is_conflict(refusal)
+            else exit_codes.ExitCode.CONFIG,
+            "audit_project: the manifest cannot be used",
+            "; ".join(refusal.lines),
+            "repair config/project.json, resolving any hunk, then rerun",
+        )
 
 
 if __name__ == "__main__":

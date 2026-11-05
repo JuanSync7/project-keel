@@ -2,7 +2,7 @@
 title: Integration — a manifest the loader refuses fails `make check` with one finding
 kind: tests
 layer: n/a
-summary: scripts/check_structure.py reads config/project.json through scripts/config_loader.py, so a key written twice, a merge-conflict hunk, bytes that are not UTF-8, an empty file and a top level that is not an object each give exactly one error that names the file and the fault, and the gate's exit is 1. Before this the last duplicate value won in silence (exit 0) and a hunk at line 1 broke every check into dozens of findings. The registry config/practices.json is read the same way. A walk over zero planted faults is a failure.
+summary: scripts/check_structure.py reads config/project.json through scripts/config_loader.py, so a key written twice, a merge-conflict hunk, bytes that are not UTF-8, an empty file and a top level that is not an object each give exactly one error that names the file and the fault, and run_checks returns that finding; the CLI instead refuses the manifest with one stderr line and exit 14 (2 for a hunk). Before this the last duplicate value won in silence (exit 0) and a hunk at line 1 broke every check into dozens of findings. The registry config/practices.json is read the same way. A walk over zero planted faults is a failure.
 """
 
 import os
@@ -140,6 +140,7 @@ def test_a_key_written_twice_in_the_manifest_fails_check(populated_tree):
         env=build_child_env(),
         timeout=child_timeout(),
     )
-    assert done.returncode == 1, done.stdout + done.stderr
-    assert "appears twice" in done.stdout, done.stdout
-    assert "check_structure: 1 error(s)" in done.stdout, done.stdout
+    assert done.returncode == 14, done.stdout + done.stderr
+    assert "appears twice" in done.stderr, done.stderr
+    assert len(done.stderr.splitlines()) == 1
+    assert done.stdout == ""

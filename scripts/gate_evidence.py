@@ -495,7 +495,9 @@ def main(argv=None, runner=None, clock=None):
             else ExitCode.CONFIG,
             "gate_evidence: refused before any goal ran",
             str(exc),
-            "correct config/project.json `evidence` or the schema it names; resolve any hunk",
+            "correct config/project.json `evidence`"
+            if isinstance(config_loader.refusal_cause(exc), config_loader.ConfigAbsent)
+            else "correct config/project.json `evidence` or the schema it names; resolve any hunk",
         )
     except EvidenceSchemaError as exc:
         return _refuse(str(exc), "correct the schema config/project.json names")

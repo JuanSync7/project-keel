@@ -3,7 +3,7 @@
 title: Build llms.txt job
 kind: script
 layer: n/a
-summary: Deterministic: write wiki/llms.txt + wiki/llms-full.txt (the agent front door) from the corpus.
+summary: Deterministically write wiki/llms.txt + wiki/llms-full.txt from the corpus; a refused manifest writes neither, exiting 2 for a hunk and 14 otherwise.
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/integration/test_idempotence.py
@@ -64,7 +64,7 @@ def main(argv=None) -> int:
         # resolve has already written a refused value's own line; a file that
         # cannot be read is named here. Nothing is written either way.
         return report(
-            ExitCode.CONFIG,
+            ExitCode.USAGE if config_loader.is_conflict(exc) else ExitCode.CONFIG,
             "%s: the levels a served node may carry cannot be read" % WHO,
             "; ".join(exc.lines)
             or "corpus.served_visibilities in %s"

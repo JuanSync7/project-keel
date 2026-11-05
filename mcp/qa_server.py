@@ -2,7 +2,7 @@
 title: MCP Q&A server
 layer: backend
 public_api: no
-summary: Read-only MCP tools that answer questions from the corpus via the wiki_navigator agent. The model it asks is the KEEL_MCP_MODEL variable, read by configured_model through scripts/config_loader.py; unset or empty is the declared null default, the registry's own model, written to stderr once, and a blank value is refused. Each question is held to config/project.json `agents.max_model_calls`, read once at start by configured_cap (models.approved_cap): a count of 0, the shipped value and the default of build_qa_server, answers every question with a tool error naming the key and makes no model call. The server's total over its lifetime is held to `agents.max_session_model_calls`, read once at start by configured_session_cap (models.approved_session_cap) and counted by a models.SessionBudget: a question whose per-question count, added to the calls the process has made, would pass that total is answered with a tool error naming the key, the total and the calls made, and makes no model call; 0, the shipped value and the default of build_qa_server, admits no question that may make a call, and a nonzero total below `agents.max_model_calls` is refused at start (models.check_session_total), since no question could fit it. `main` is the entry: it serves through mcp/protocol.py run_stdio_server and exits 0 once the loop ends, or CONFIG through scripts/exit_codes.py report, naming the key or variable, when a setting it reads is refused before it serves. Each question's retrieval child runs through scripts/resource_limits.py run_tool under the served root's config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes`, which main checks before it serves; a question whose child is ended at either is a tool error naming the key.
+summary: Read-only MCP tools that answer questions from the corpus via the wiki_navigator agent. The model it asks is the KEEL_MCP_MODEL variable, read by configured_model through scripts/config_loader.py; unset or empty is the declared null default, the registry's own model, written to stderr once, and a blank value is refused. Each question is held to config/project.json `agents.max_model_calls`, read once at start by configured_cap (models.approved_cap): a count of 0, the shipped value and the default of build_qa_server, answers every question with a tool error naming the key and makes no model call. The server's total over its lifetime is held to `agents.max_session_model_calls`, read once at start by configured_session_cap (models.approved_session_cap) and counted by a models.SessionBudget: a question whose per-question count, added to the calls the process has made, would pass that total is answered with a tool error naming the key, the total and the calls made, and makes no model call; 0, the shipped value and the default of build_qa_server, admits no question that may make a call, and a nonzero total below `agents.max_model_calls` is refused at start (models.check_session_total), since no question could fit it. `main` is the entry: it serves through mcp/protocol.py run_stdio_server and exits 0 once the loop ends, or CONFIG through scripts/exit_codes.py report, naming the key or variable, when a setting it reads is refused before it serves. Each question's retrieval child runs through scripts/resource_limits.py run_tool under the served root's config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes`, which main checks before it serves; a question whose child is ended at either is a tool error naming the key. A manifest hunk is USAGE (2); other loader refusals are CONFIG (14).
 """
 
 from __future__ import annotations
@@ -177,7 +177,7 @@ def build_qa_server(
 def main(root: str | None = None) -> ExitCode:
     """Serve the Q&A tools over stdio under *root*'s limits (this checkout
     when None), each question's retrieval child included, until stdin ends or
-    a stop signal; CONFIG for a refused setting, the model variable and the
+    a stop signal; USAGE for a manifest hunk, CONFIG for another refused setting, the model variable and the
     tool limits included, before anything serves."""
     try:
         tool_limits(root)
@@ -193,7 +193,7 @@ def main(root: str | None = None) -> ExitCode:
         run_stdio_server(server, root=root)
     except config_loader.ConfigError as exc:
         return report(
-            ExitCode.CONFIG,
+            ExitCode.USAGE if config_loader.is_conflict(exc) else ExitCode.CONFIG,
             "the MCP Q&A server's settings are refused",
             "; ".join(exc.lines),
             "set each key or variable the line names inside its bound",

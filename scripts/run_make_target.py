@@ -710,7 +710,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             "config/project.json make_targets",
             "correct each key the lines above name, then run it again",
         )
-    except (config_loader.ConfigAbsent, config_loader.ConfigUnreadable) as exc:
+    except config_loader.ConfigAbsent:  # noqa: DROP001 -- run_target retains the original absent-policy refusal before make can run
+        pass
+    except config_loader.ConfigUnreadable as exc:
         return report(
             ExitCode.USAGE if config_loader.is_conflict(exc) else ExitCode.CONFIG,
             "run_make_target: the manifest cannot be used",

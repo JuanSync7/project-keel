@@ -2,7 +2,7 @@
 title: MCP action server
 layer: backend
 public_api: no
-summary: State-changing MCP tools that delegate to scripts/jobs doers; defaults to dry-run. A doer runs through scripts/resource_limits.py run_tool, held to config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes`; past either its session is ended and the tool call is an error naming the key. `main` is the entry: it serves through mcp/protocol.py run_stdio_server and exits 0 once the loop ends, or CONFIG through scripts/exit_codes.py report, naming the key, when a setting it reads, those two included, is refused before it serves.
+summary: State-changing MCP tools that delegate to scripts/jobs doers; defaults to dry-run. A doer runs through scripts/resource_limits.py run_tool, held to config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes`; past either its session is ended and the tool call is an error naming the key. `main` is the entry: it serves through mcp/protocol.py run_stdio_server and exits 0 once the loop ends, or CONFIG through scripts/exit_codes.py report, naming the key, when a setting it reads, those two included, is refused before it serves. A manifest hunk is USAGE (2); other loader refusals are CONFIG (14).
 """
 
 from __future__ import annotations
@@ -123,8 +123,8 @@ def build_action_server(
 
 def main(root: str | None = None) -> ExitCode:
     """Serve the action tools over stdio under *root*'s limits (this checkout
-    when None), the doer's included, until stdin ends or a stop signal; CONFIG
-    for a refused setting, before anything serves."""
+    when None), the doer's included, until stdin ends or a stop signal; USAGE for a manifest hunk, CONFIG
+    for another refused setting, before anything serves."""
     try:
         # Read once here so a refused tool limit stops the server before it
         # serves; each doer call reads it again, as a model call reads its own.
@@ -132,7 +132,7 @@ def main(root: str | None = None) -> ExitCode:
         run_stdio_server(build_action_server(limits_root=root), root=root)
     except config_loader.ConfigError as exc:
         return report(
-            ExitCode.CONFIG,
+            ExitCode.USAGE if config_loader.is_conflict(exc) else ExitCode.CONFIG,
             "the MCP action server's settings are refused",
             "; ".join(exc.lines),
             "set each key the line names inside its bound",

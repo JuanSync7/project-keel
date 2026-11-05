@@ -51,6 +51,8 @@ def main(argv=None) -> int:
     try:
         env = child_env.build_child_env()
     except child_env.ChildEnvError as exc:
+        if isinstance(config_loader.refusal_cause(exc), config_loader.ConfigAbsent):
+            raise
         return report(
             ExitCode.USAGE
             if config_loader.is_conflict(exc.__cause__ or exc)

@@ -448,7 +448,7 @@ def roster_rows(root):
     return out
 
 
-def main(argv=None):
+def _main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.strip().splitlines()[-1])
     ap.add_argument(
         "--root", default=ROOT, help="repository root (default: this checkout)"
@@ -525,6 +525,22 @@ def main(argv=None):
         "%d stale document(s), each a STALE line above" % len(findings),
         "run `make restamp-docs`",
     )
+
+
+def main(argv=None):
+    """Report a manifest refusal from any read made during this invocation."""
+    try:
+        return _main(argv)
+    except (config_loader.ConfigError, child_env.ChildEnvError) as exc:
+        refusal = config_loader.refusal_cause(exc)
+        if refusal is None or isinstance(refusal, config_loader.ConfigAbsent):
+            raise
+        return report(
+            ExitCode.USAGE if config_loader.is_conflict(refusal) else ExitCode.CONFIG,
+            "review_docs: the manifest cannot be used",
+            "; ".join(refusal.lines),
+            "repair config/project.json, resolving any hunk, then rerun",
+        )
 
 
 if __name__ == "__main__":

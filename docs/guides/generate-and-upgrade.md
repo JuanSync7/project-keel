@@ -708,8 +708,16 @@ uses something it cannot replay as copier does: `_envops`,
 In those cases, run the migrations by hand from the template's `copier.yml`.
 `tests/integration/test_finish_update.py` holds each of these to its exit.
 
-If a manifest read refuses an existing config/project.json, a conflict hunk exits 2 and
-any other refusal exits 14: repair the named file, then rerun the command.
+Every read made during an invocation uses the same manifest refusal path,
+including reads after `--today` or SOURCE_DATE_EPOCH supplied the date and
+reads in the copier jobs' entry guards. A refused existing
+config/project.json gives one stderr line naming the file: exit 2 for a
+merge-conflict hunk, or 14 for an unreadable file, invalid UTF-8, empty text,
+`null`, a non-object, a repeated key or invalid JSON. Repair the named file,
+then rerun the command. An absent manifest keeps each command's previous
+exit and message. The two Stop hooks under `scripts/hooks/` keep exit 14 for
+a hunk unless invoked with `--execute`. The API and MCP entries use the
+loader's classification before serving.
 
 ## How keel proves an update works
 

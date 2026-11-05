@@ -2,7 +2,7 @@
 title: Serve the REST API
 kind: script
 layer: backend
-summary: The REST transport's entry, run by `make run-api`. It caps its address space at config/project.json `transports.serve.memory_cap_mb` (scripts/resource_limits.py cap_memory) and serves the app under uvicorn, which drains the connections in flight for `transports.serve.shutdown_grace_seconds` on the first SIGTERM or SIGINT; scripts/resource_limits.py shutdown_owner, installed around it, takes the signal uvicorn raises again once it has stopped, so a stop exits 0 with `REST server: stopping on <signal>` on stderr rather than dying by the signal. Under --reload uvicorn's reload supervisor owns the signals instead and the owner line is not written.
+summary: The REST transport's entry, run by `make run-api`. It caps its address space at config/project.json `transports.serve.memory_cap_mb` (scripts/resource_limits.py cap_memory) and serves the app under uvicorn, which drains the connections in flight for `transports.serve.shutdown_grace_seconds` on the first SIGTERM or SIGINT; scripts/resource_limits.py shutdown_owner, installed around it, takes the signal uvicorn raises again once it has stopped, so a stop exits 0 with `REST server: stopping on <signal>` on stderr rather than dying by the signal. Under --reload uvicorn's reload supervisor owns the signals instead and the owner line is not written. A manifest hunk is USAGE (2); other loader refusals are CONFIG (14).
 """
 
 import argparse
@@ -36,7 +36,7 @@ def main(argv=None):
         memory_cap, grace = resource_limits.serve_limits()
     except config_loader.ConfigError as exc:
         return report(
-            ExitCode.CONFIG,
+            ExitCode.USAGE if config_loader.is_conflict(exc) else ExitCode.CONFIG,
             "the REST server's limits are refused",
             "; ".join(exc.lines),
             "set %s inside its bound" % _LIMITS,

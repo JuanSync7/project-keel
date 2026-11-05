@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 title: check_structure — the deterministic conventions gate
-summary: Stdlib-only, 3.6-safe enforcement of CONVENTIONS.md — labeling, taxonomy, package boundaries, tool/agent governance, manifest and ruleset parity, twin parity, the machine-readable module contract, Makefile help parity, cross-reference resolution, check-catalogue parity, rosters, practice mechanisms, policy reachability, writer rerun declarations, make-target effect labels, child-process environments, ADR number spaces, and work naming (checks A-Z), then the project's own checks: each top-level module in the directory config/project.json structure.project_checks names (a key the template never ships), whose check(root) findings, returned or reported through err()/warn(), are reported as project:<stem> and whose every failure, a module name that is not a readable file included, is an error naming it (docs/adr/keel/K-0014-project-owned-structure-checks.md). A finding checks A-Z build from configured text never shows a value, member, key name or path segment that holds an `@`: each passes through config_loader.shown. Shared Markdown scanning follows CommonMark fence boundaries at up to three spaces of indentation; blockquote prefixes and deeper list-relative indentation are not parsed. Exit 1 on any error; warnings never fail the build.
+summary: Stdlib-only, 3.6-safe enforcement of CONVENTIONS.md — labeling, taxonomy, package boundaries, tool/agent governance, manifest and ruleset parity, twin parity, the machine-readable module contract, Makefile help parity, cross-reference resolution, check-catalogue parity, rosters, practice mechanisms, policy reachability, writer rerun declarations, make-target effect labels, child-process environments, ADR number spaces, and work naming (checks A-Z), then the project's own checks: each top-level module in the directory config/project.json structure.project_checks names (a key the template never ships), whose check(root) findings, returned or reported through err()/warn(), are reported as project:<stem> and whose every failure, a module name that is not a readable file included, is an error naming it (docs/adr/keel/K-0014-project-owned-structure-checks.md). A finding checks A-Z build from configured text never shows a value, member, key name or path segment that holds an `@`: each passes through config_loader.shown. Shared Markdown scanning follows CommonMark fence boundaries at up to three spaces of indentation; blockquote prefixes and deeper list-relative indentation are not parsed. Exit 1 on any judged error; warnings never fail the build. The CLI refuses an existing manifest before judging, exit 2 for a hunk and 14 for another loader refusal, with one stderr line; an absent manifest keeps its finding.
 
 check_structure.py - enforce the project conventions (see CONVENTIONS.md).
 
@@ -8154,6 +8154,19 @@ def main(argv=None):
             "check_structure: --root is not a directory",
             args.root,
             "name the directory of the tree to judge",
+        )
+    try:
+        config_loader.read(args.root)
+    except config_loader.ConfigAbsent:  # noqa: DROP001 -- the existing missing-manifest finding belongs to run_checks
+        pass
+    except config_loader.ConfigError as exc:
+        return exit_codes.report(
+            exit_codes.ExitCode.USAGE
+            if config_loader.is_conflict(exc)
+            else exit_codes.ExitCode.CONFIG,
+            "check_structure: the manifest cannot be used",
+            "; ".join(exc.lines),
+            "repair config/project.json, resolving any hunk, then rerun",
         )
     found = run_checks(args.root)
     for _letter, tier, m in found:

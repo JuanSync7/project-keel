@@ -350,6 +350,23 @@ def test_a_read_declared_by_an_imported_module_guards_the_job(tmp_path, capsys):
     assert conflict_guard.conflicted_imports(str(entry), str(root), search) == []
 
 
+def test_an_unreadable_declared_file_other_than_the_manifest_keeps_usage(
+    tmp_path, capsys
+):
+    """Only manifest refusals use CONFIG; other unreadable reads keep USAGE."""
+    entry = _write(tmp_path, "job.py", "PROJECT_READS = ('data.json',)\n")
+    (tmp_path / "data.json").mkdir()
+    with pytest.raises(conflict_guard.GuardConfigError):
+        conflict_guard.conflicted_inputs(str(entry), str(tmp_path))
+    assert capsys.readouterr().err == ""
+    with pytest.raises(SystemExit) as stopped:
+        conflict_guard.exit_if_conflicted(str(entry), str(tmp_path), "job", "make job")
+    assert stopped.value.code == 2
+    err = capsys.readouterr().err
+    assert len(err.splitlines()) == 1 and "data.json" in err
+    assert "Traceback" not in err
+
+
 def test_under_an_update_the_rerun_is_the_finish_command(tmp_path):
     """Copier stops at the first failed migration, so under an update the
     command a refusal names finishes the update rather than rerunning one job."""

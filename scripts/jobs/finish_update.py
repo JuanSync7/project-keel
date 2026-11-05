@@ -397,6 +397,8 @@ def main(argv=None):
         commands = finish(root, args.template, dry_run=args.dry_run)
     except (FinishError, child_env.ChildEnvError) as e:
         refusal = config_loader.refusal_cause(e)
+        if isinstance(refusal, config_loader.ConfigAbsent):
+            raise
         if refusal is not None and not isinstance(refusal, config_loader.ConfigAbsent):
             return exit_codes.report(
                 exit_codes.ExitCode.USAGE

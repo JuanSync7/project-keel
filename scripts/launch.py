@@ -1218,6 +1218,11 @@ def main(argv=None, runner=None, clock=None, nicer=None, loadavg=None):
             str(exc),
             exc.fix,
         )
+    except config_loader.ConfigAbsent:
+        return _refuse(
+            "%s is unreadable or not JSON (FileNotFoundError)" % _MANIFEST,
+            "restore config/project.json",
+        )
     except config_loader.ConfigError as exc:
         return report(
             ExitCode.USAGE
