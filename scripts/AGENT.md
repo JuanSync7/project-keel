@@ -7,7 +7,7 @@ owner: TBD
 summary: Local agent rules inside scripts/.
 id: scripts-agent
 created: 2026-06-17
-updated: 2026-10-29
+updated: 2026-11-05
 visibility: internal
 canonical: true
 ---
@@ -112,6 +112,10 @@ These rules are **local and authoritative** for this directory. They inherit fro
     docstring levels anywhere else is a defect. It imports nothing of the
     project and stays stdlib-only and 3.6-safe, because it sits in the bottom
     import layer.
+  - `tool_reports.py` is never run: it is the one reader of a tool report an
+    agent runs. A second `json.loads` of a tool's stdout in `agents/` is a
+    defect. It imports nothing of the project and stays stdlib-only and safe
+    on the oldest hook interpreter, because it sits in the bottom import layer.
   - `launch.py` is the one place that decides where a long script runs and
     the one writer of `launcher.durations_file`; `long_scripts.py` imports its
     config loader and record reader, so the proposal and the decision cannot

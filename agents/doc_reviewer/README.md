@@ -60,8 +60,8 @@ call. `scripts/doc_review.py` prints one `withheld <id>: <why>` line per finding
 and the hook's line counts them. `tests/integration/test_doc_reviewer.py` holds
 each case.
 
-A style-rule retrieval that `scripts/query_corpus.py` refuses, or whose output
-is not JSON, raises the third public symbol, `RulesRefused`, a `RuntimeError`
+A style-rule retrieval that `scripts/query_corpus.py` refuses raises
+`RulesRefused`, a `RuntimeError`
 carrying the exit helper's three parts (what failed, on which input, what to do),
 before the baseline gate and any model call. An execute run raises it as well
 when the retrieval finds no node at all, which `[]` from a checkout with no
@@ -71,6 +71,18 @@ goes on and its preview shows the empty section. `scripts/doc_review.py` ends a
 run that raises it with exit 2 through `report`, and so does
 `scripts/hooks/on_stop_doc_review.py` with `--execute`; the hook's dry run
 writes the same line to stderr and exits 0, since it never blocks the event.
+
+An unreadable tool report raises `ToolReportUnreadable`, re-exported from
+`scripts/tool_reports.py`, with the same three diagnostic parts naming the
+tool, status, root, stderr and remedy. Review, baseline and apply reports
+require JSON objects; style-rule reports require lists of objects. Blank,
+non-JSON, too deeply nested and wrong-shaped output is refused before a
+verdict is selected. A nonzero review status also raises this error, while
+readable nonzero baseline and apply reports keep their verdicts.
+`scripts/doc_review.py` reports the error with exit 1 through `report`.
+The executing hook also exits 1; its dry run writes the diagnostic to stderr
+and exits 0. Neither unreadable review output nor unreadable style rules can
+reach the model.
 
 Its thin CLI is `scripts/doc_review.py` (`make doc-review`); its event trigger is
 `scripts/hooks/on_stop_doc_review.py`, fired by `.claude/settings.json`; its

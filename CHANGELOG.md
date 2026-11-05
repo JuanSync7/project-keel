@@ -37,6 +37,13 @@ version rather than a bare commit:
   keep their validation and raise their own errors on a loader refusal;
   `ci_adapters.py` refuses a non-object `ci_pipeline` by name. The allowlist
   and its ceiling stay at six.
+- **Review and style-rule reports share a named refusal (KEEL-ERR-2,
+  CMP-17.S1).** `scripts/tool_reports.py` rejects blank, non-JSON, deeply nested
+  and wrong-shaped reports with `ToolReportUnreadable`, re-exported by the doc
+  reviewer, naming the tool, status, root, stderr and remedy. Unreadable style
+  rules end the CLI and executing hook with FAILURE; the dry hook states the
+  error and succeeds. Query refusals and empty execute rules keep RulesRefused,
+  and readable nonzero gate and apply reports keep their verdicts.
 - **Shipped documents fail on citations of checks that do not exist.** The
   document-drift gate names the document, line and cited check, retains
   definitions from Python template twins, reads a defined and a cited name by

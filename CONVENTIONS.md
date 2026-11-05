@@ -366,8 +366,9 @@ from myproj.backend._impl import do_thing  # ❌ reaching inside
   function of a public module (`from pkg.mod import _helper`) is not a
   submodule, and check_D leaves it to review.
 - **Imports flow up one layer order.** `config/project.json`
-  `import_layers.order` lists the layers bottom to top (the exit helper
-  and the child-environment allowlist, then `src/shared`, `src/backend`,
+  `import_layers.order` lists the layers bottom to top (the exit helper,
+  child-environment allowlist, config loader, corpus-level reader, resource
+  limits and tool-report reader, then `src/shared`, `src/backend`,
   `src/app`, the adapters, `agents`, `evals`, the transports, `scripts`,
   `tests`); a file sits in the layer of its longest path prefix, and
   `tests/integration/test_import_layers_gate.py` fails an import into a

@@ -3554,7 +3554,7 @@ KEEL-ERR-2: three agents read a tool report that does not parse as an empty one.
 
 | Slice | Gap | Status |
 |-------|-----|--------|
-| CMP-17.S1 | Review and style-rule reports share one refusal; first red: `tests/integration/test_doc_reviewer.py::test_tool_report_error_export_is_shared`. | planned |
+| CMP-17.S1 | Review and style-rule reports share one refusal; first red: `tests/integration/test_doc_reviewer.py::test_tool_report_error_export_is_shared`. | implemented |
 | CMP-17.S2 | Index and practice verdicts require readable reports; first red: `tests/integration/test_index_enforcer_durability.py::test_unreadable_owner_report_fails`. | planned |
 | CMP-17.S3 | Wiki retrieval refuses unreadable reports before synthesis; first red: `tests/unit/agents/test_wiki_navigator_step.py::test_unreadable_retrieval_fails_before_model`. | planned |
 

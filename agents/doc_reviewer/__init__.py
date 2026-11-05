@@ -2,10 +2,12 @@
 title: Doc reviewer agent
 layer: backend
 public_api: yes
-summary: Reviews the documentation against docs/guides/doc-style.md — the deterministic findings first, then one judged edit per chunk, each gated on make check-docs.
+summary: Reviews the documentation against docs/guides/doc-style.md — the deterministic findings first, then one judged edit per chunk, each gated on make check-docs; re-exports the shared ToolReportUnreadable refusal for unreadable tool reports.
 """
 
-from ._brain import DocReviewReport, RulesRefused, ToolReportUnreadable, review
+from scripts.tool_reports import ToolReportUnreadable
+
+from ._brain import DocReviewReport, RulesRefused, review
 from ._step import propose
 
 __all__ = [
