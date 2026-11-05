@@ -384,6 +384,20 @@ def test_an_unopenable_manifest_is_config_without_the_loader(
     assert "Traceback" not in err
 
 
+@pytest.mark.parametrize("read", ["config/project.json", "Makefile"])
+def test_a_dangling_link_at_a_read_is_absent(tmp_path, monkeypatch, read):
+    """A declared read that is a link to nothing holds no hunk and is absent
+    to open(), as it is to the loader, so the guard skips it like a missing
+    file instead of refusing the job."""
+    monkeypatch.setitem(sys.modules, "config_loader", None)
+    entry = _write(tmp_path, "job.py", "PROJECT_READS = (%r,)\n" % read)
+    link = tmp_path / read
+    link.parent.mkdir(parents=True, exist_ok=True)
+    link.symlink_to("missing.json")
+    assert conflict_guard.conflicted_inputs(str(entry), str(tmp_path)) == []
+    conflict_guard.exit_if_conflicted(str(entry), str(tmp_path), "job", "make job")
+
+
 def test_a_hunk_in_the_closure_wins_over_an_unopenable_manifest(
     tmp_path, capsys, monkeypatch
 ):

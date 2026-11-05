@@ -324,8 +324,9 @@ def conflicted_imports(entry_file, root, search_path=None):
 
 def conflicted_inputs(entry_file, root, search_path=None):
     """conflicted_imports, and each conflict hunk in a fixed project file a
-    module of that closure declares reading. An absent read is skipped (it
-    cannot be conflicted); one that exists and cannot be read, or a
+    module of that closure declares reading. An absent read, a link to
+    nothing included, is skipped (it cannot be conflicted); one that exists
+    and cannot be read, or a
     declaration the guard cannot read, raises GuardConfigError."""
     modules, reads = _walk(entry_file, root, search_path)
     found = [
@@ -335,11 +336,12 @@ def conflicted_inputs(entry_file, root, search_path=None):
     unopened = None
     for rel in reads:
         path = os.path.join(base, *rel.split("/"))
-        if not os.path.lexists(path):
-            continue
         try:
             with open(path, "rb") as fh:
                 text = _decode(fh.read())
+        except FileNotFoundError:
+            # A link to nothing is as absent to the loader as no file at all.
+            continue
         except OSError as exc:
             if rel != "config/project.json":
                 raise GuardConfigError("%s cannot be read: %s" % (rel, exc)) from exc
