@@ -243,6 +243,25 @@ def test_a_change_phrase_at_each_kind_of_opener_is_reported_once(
     assert _openers(root, "a.md", "# Guide\n\n" + exempt + "\n") == []
 
 
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        ("| Rule | It reads. Now it reads twice. |", [("a.md", 1, "now")]),
+        (
+            "| Rule | It reads. |\n|---|---|\n| 2 | One. Removed two. |",
+            [("a.md", 3, "removed")],
+        ),
+        ('| Rule | It is a step ("2. Now run X"). |', []),
+    ],
+    ids=["cell-sentence", "body-row-sentence", "cell-step-number"],
+)
+def test_a_sentence_inside_a_table_cell_opens_a_thought(tmp_path, text, expected):
+    """A cell is prose like a paragraph: a sentence after `.`, `!` or `?` in
+    it opens a thought, and a quoted step's number ends none."""
+    root = _opener_root(tmp_path)
+    assert _openers(root, "a.md", text + "\n") == expected
+
+
 def test_a_change_phrase_at_a_sentence_opener_is_an_advisory_line(
     tmp_path, monkeypatch, capsys
 ):

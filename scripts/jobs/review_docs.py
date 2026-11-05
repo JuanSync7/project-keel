@@ -465,25 +465,32 @@ def thought_openers(text):
             previous = None
             continue
         if line.lstrip().startswith("|"):
-            out.extend(
-                (i, _OWN_NUMBER.sub("", c.strip()))
-                for c in line.strip().strip("|").split("|")
-            )
+            for cell in line.strip().strip("|").split("|"):
+                out.extend(
+                    (i, s) for s in _sentences(_OWN_NUMBER.sub("", cell.strip()))
+                )
             previous = None
             continue
         mark = _BLOCK_MARK.match(line)
         body = _OWN_NUMBER.sub("", line[mark.end() :] if mark else line.strip())
+        sentences = _sentences(body)
         if mark or previous is None or _ends_sentence(previous):
             out.append((i, body))
-        sentences = []
-        for piece in re.split(r"(?<=[.!?])\s+", body):
-            if sentences and _STEP_NUMBER_END.search(sentences[-1]):
-                sentences[-1] += " " + piece
-            else:
-                sentences.append(piece)
         out.extend((i, s) for s in sentences[1:])
         previous = line.rstrip()
     return out
+
+
+def _sentences(text):
+    """*text* split after each `.`, `!` or `?`, keeping a quoted or
+    parenthesised step's number joined to the words after it."""
+    sentences = []
+    for piece in re.split(r"(?<=[.!?])\s+", text):
+        if sentences and _STEP_NUMBER_END.search(sentences[-1]):
+            sentences[-1] += " " + piece
+        else:
+            sentences.append(piece)
+    return sentences
 
 
 def _ends_sentence(text):
