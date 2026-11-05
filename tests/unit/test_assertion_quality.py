@@ -840,6 +840,8 @@ def test_a_helper_called_inside_a_comprehension_still_asserts(tmp_path, comprehe
         "{check(1) for check in (print,)}",
         "list(check(1) for check in (print,))",
         "[check(1) for (_, *check) in ((0, print),)]",
+        "[None for x in (0,) if check(x) for check in (print,)]",
+        "[None for x in (0,) for y in check(x) for check in (print,)]",
     ],
 )
 def test_a_call_through_a_name_the_comprehension_binds_never_reaches_the_helper(
@@ -871,6 +873,22 @@ def test_the_first_iterable_and_a_target_subscript_still_reach_the_helper(
         + "\n"
     )
     assert _scan(tmp_path, {_TEST: source}) == (1, [])
+
+
+def test_a_method_called_through_a_rebound_self_never_reaches_the_helper(tmp_path):
+    source = (
+        "class Dummy:\n"
+        "    def check(self, value):\n"
+        "        return value\n"
+        "class TestA:\n"
+        "    def check(self, value):\n"
+        "        assert value == 2\n"
+        "    def test_a(self):\n"
+        "        [self.check(1) for self in (Dummy(),)]\n"
+    )
+    count, findings = _scan(tmp_path, {_TEST: source})
+    assert count == 1
+    assert [f.kind for f in findings] == [aq.NO_ASSERTION]
 
 
 def test_an_assertion_called_through_a_name_the_comprehension_binds_still_counts(

@@ -8,7 +8,7 @@ tags: [checks, ci, linter, determinism, pre-commit, hooks, guide]
 summary: Catalogue of every deterministic check that keeps a project-template repo honest — purpose, when to run, and how to wire as a hook.
 id: docs-guides-deterministic-checks
 created: 2026-06-19
-updated: 2026-11-04
+updated: 2026-11-05
 visibility: internal
 canonical: true
 ---
@@ -975,8 +975,10 @@ the letters A to Z are taken; `make test` runs them.
   A call through any other name in its iterables, conditions or elements
   counts for the test, and a walrus target there binds in the enclosing scope.
   Its first iterable runs before its own targets bind, so a call there
-  resolves in the enclosing scope; a nested comprehension's first iterable
-  runs inside the outer one, so a name the outer targets bind is still theirs.
+  resolves in the enclosing scope; every other part sees all its targets,
+  even a condition written before the generator that binds the name; a
+  nested comprehension's first iterable runs inside the outer one, so a name
+  the outer targets bind is still theirs.
   Helpers are followed at most `test_quality.assertions.helper_depth` calls
   deep and once round a cycle; repeated paths report a tautology's source once
   per test, retaining the calling test's exemption id.

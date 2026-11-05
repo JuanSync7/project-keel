@@ -228,9 +228,10 @@ def shadowed_calls(
 ) -> FrozenSet[ast.Call]:
     """The calls `scope_nodes` yields whose callee is rooted in a name an
     enclosing comprehension's targets bind, so it cannot be a binding of this
-    scope. Only the first iterable is read before the targets bind, so a call
-    there through the same name is not one, except inside a nested
-    comprehension, whose first iterable runs in the outer one."""
+    scope. Every target of a comprehension is its own everywhere in it, even
+    before the generator that binds it, except in its first iterable, which
+    runs outside it; a nested comprehension's first iterable runs in the outer
+    one, so the outer targets are in force there."""
     return frozenset(
         node
         for node, local in _scoped(tree)
@@ -255,17 +256,19 @@ def _scoped(
         if isinstance(
             node, (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)
         ):
-            for generator in node.generators:
-                yield from walk(generator.iter, local)
-                local = local | _target_names(generator.target)
-                yield from walk_target(generator.target, local)
+            # Every target is local to the whole comprehension, so a name a
+            # later generator binds is already its own in an earlier condition.
+            inner = local.union(*(_target_names(g.target) for g in node.generators))
+            for index, generator in enumerate(node.generators):
+                yield from walk(generator.iter, local if index == 0 else inner)
+                yield from walk_target(generator.target, inner)
                 for condition in generator.ifs:
-                    yield from walk(condition, local)
+                    yield from walk(condition, inner)
             elements = (
                 [node.key, node.value] if isinstance(node, ast.DictComp) else [node.elt]
             )
             for element in elements:
-                yield from walk(element, local)
+                yield from walk(element, inner)
             return
         for child in ast.iter_child_nodes(node):
             yield from walk(child, local)
