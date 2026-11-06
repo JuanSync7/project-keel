@@ -705,6 +705,14 @@ version rather than a bare commit:
   finding keeps its baseline text and does not repeat the hands-nothing finding
   for `main`.
   Backlog: KEEL-EXITDROP-1 (class fix).
+- **Read-only gates compare tree identity and listed state.**
+  `scripts/git_tree.py` snapshots HEAD's commit and branch, the index entries
+  of paths `git status` lists, their status, working content and mode, and
+  nested repository identity. Its `changed_paths` helper excludes identity
+  keys so clean committed trees record `dirty: false`. Its `snapshot_changes`
+  helper gives the gate runner readable labels for identity changes alongside
+  changed paths. A `tree_digest` recorded before this change does not match
+  one computed after it. Backlog: KEEL-SNAPSHOT-ID-1 (class fix).
 - **`make check` refuses a manifest the config loader refuses.**
   `scripts/check_structure.py` parsed config/project.json and
   config/practices.json with `json.loads`, so a key written twice passed with

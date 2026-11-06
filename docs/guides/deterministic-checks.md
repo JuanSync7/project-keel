@@ -8,7 +8,7 @@ tags: [checks, ci, linter, determinism, pre-commit, hooks, guide]
 summary: Catalogue of every deterministic check that keeps a project-template repo honest — purpose, when to run, and how to wire as a hook.
 id: docs-guides-deterministic-checks
 created: 2026-06-19
-updated: 2026-11-05
+updated: 2026-11-06
 visibility: internal
 canonical: true
 ---
@@ -1691,7 +1691,7 @@ it.
 | `schema`, `schema_version` | The schema the record follows, and its version. The schema's `schema_version.const` is the version's only owner. |
 | `gate` | The gate's name, as `--gate` gave it. |
 | `result`, `reasons` | `pass` exactly when the writer exits 0. A `fail` lists its reasons from a closed vocabulary: `target-failed`, `zero-targets`, `no-test-report`, `zero-tests`, `tests-failed`, `tree-changed`, `checks-unavailable`, `incomplete`, `writer-error`. |
-| `source` | `commit` (HEAD's sha), `dirty` (git listed any path before the goals ran), `tree_digest` (a sha256 over what git listed, each path's status and content, from `scripts/git_tree.py`), and `tree_changed` (what git lists differed after the goals). |
+| `source` | `commit` names HEAD's sha. `dirty` says whether git listed any path before the goals ran. `tree_digest` is the sha256 from `scripts/git_tree.py` over HEAD's commit and branch, the index entries of paths `git status` lists, their status, working content and mode, and nested repository identity. `tree_changed` says whether that snapshot differed after the goals. |
 | `targets` | Each goal in run order, with `result` (`pass`, `fail` or `not-run`), its `returncode` and its test counts. |
 | `tests` | `passed`, `failed`, `skipped` and `errors`, summed from pytest's own junit report, each test case counted once. A goal that writes no junit report, such as `trace`, `eval` or `test-fe`, adds no counts: its exit code alone sets its `result`. |
 | `checks` | Every `scripts/check_structure.py` check letter, and each project check that reported, with its sorted errors and warnings, the repository root stripped from each message. |

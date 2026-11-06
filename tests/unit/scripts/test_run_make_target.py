@@ -2004,3 +2004,44 @@ def test_a_policy_refusal_passed_on_hides_configured_text_holding_an_at(tmp_path
     _, got, why = rmt._policy(str(tmp_path))
     assert got is None and why is not None
     assert "<hidden: it holds an @>" in why and "SENTINEL" not in why
+
+
+@pytest.mark.parametrize(
+    ("identity", "args"),
+    [
+        ("(HEAD commit)", ("commit", "--allow-empty", "-qm", "move HEAD")),
+        ("(HEAD branch)", ("checkout", "-qb", "other")),
+    ],
+)
+def test_a_tree_identity_change_uses_a_readable_label(
+    proj, monkeypatch, identity, args
+):
+    import hermetic_git
+
+    work = proj / "work"
+    work.mkdir()
+    env = hermetic_git.git_env(work)
+    for name, value in hermetic_git.git_env_vars(work).items():
+        monkeypatch.setenv(name, value)
+
+    def git(*argv):
+        rmt.subprocess.run(
+            ["git", *argv], cwd=str(proj), env=env, check=True, capture_output=True
+        )
+
+    git("init", "-q")
+    git("add", "Makefile", "config/project.json")
+    git("commit", "-qm", "init")
+    before = rmt.tree_snapshot(str(proj))
+    git(*args)
+    after = rmt.tree_snapshot(str(proj))
+    res = rmt.run_target(
+        "check",
+        cwd=str(proj),
+        runner=_fake(0, "all green\n"),
+        snapshot=_snaps(before, after),
+    )
+    assert res["ok"] is False and res["returncode"] == 0
+    assert res["changed"] == [identity]
+    assert "\0" not in res["output"]
+    assert res["output"].endswith(identity + "\n")

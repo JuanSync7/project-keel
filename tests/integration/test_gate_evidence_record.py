@@ -196,6 +196,22 @@ def test_a_real_gate_writes_byte_identical_records_on_a_rerun(gate):
     assert text == json.dumps(rec, indent=2, sort_keys=True) + "\n"
 
 
+def test_evidence_comparison_detects_a_clean_head_move(tmp_path, monkeypatch):
+    repo, env = _build(tmp_path)
+    for key, value in hermetic_git.git_env_vars(tmp_path / "work").items():
+        monkeypatch.setenv(key, value)
+    before, source = gate_evidence._source(str(repo))
+    assert source["dirty"] is False
+    assert gate_evidence._changed(str(repo), before) is False
+    out = _run(repo, env, "git", "commit", "--allow-empty", "-qm", "move HEAD")
+    assert out.returncode == 0, out.stdout
+    after, moved = gate_evidence._source(str(repo))
+    assert moved["dirty"] is False
+    assert moved["commit"] != source["commit"]
+    assert after != before
+    assert gate_evidence._changed(str(repo), before) is True
+
+
 def test_a_planted_failing_test_keeps_the_real_exit_and_writes_a_red_record(
     tmp_path,
 ):

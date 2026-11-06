@@ -8,7 +8,7 @@ tags: [idempotency, writers, fixed-point, determinism, guide]
 summary: How a doer that writes into the tree is built so that running it twice changes nothing the first run did not, and how that is declared and proven here — the `effect:` / `rerun:` / `rerun_proof:` header check_V gates, the recipe for reaching a fixed point, the ladder of proofs, and the honest declarations for the writers that cannot reach one. The code twin of doc-style.md §6, which governs how the claim is written down rather than how it is made true.
 id: docs-guides-idempotency
 created: 2026-09-12
-updated: 2026-10-31
+updated: 2026-11-06
 visibility: internal
 canonical: true
 ---
@@ -255,9 +255,13 @@ only when its label, closed over its prerequisites, is inside
 variable outside `make_targets.gate_vars` or a value that is more than one
 path-like word, since a recipe expands the value into a shell line where it
 could run a target whose label nobody read. A `[local]` target that writes
-anyway is caught after it runs: the runner compares what git lists before and
-after, each path's status and content, and a green run that changed either is
-red and names the paths. `make site-data` stays a legal gate because everything it writes is
+anyway is caught after it runs: the runner compares snapshots from
+`scripts/git_tree.py` before and after. Each snapshot records HEAD's commit
+and branch, the index entries of paths `git status` lists, their status,
+working content and mode, and nested repository identity. A green run that
+changes the snapshot is red. The result names changed paths and readable
+tree-identity labels `(HEAD commit)` and `(HEAD branch)`.
+`make site-data` stays a legal gate because everything it writes is
 ignored, and that is measured, not assumed, by
 `tests/integration/test_make_target_effects.py`.
 

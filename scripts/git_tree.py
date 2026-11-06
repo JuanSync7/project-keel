@@ -2,7 +2,7 @@
 title: git_tree — what git lists, and a digest of it
 kind: script
 layer: n/a
-summary: The one definition of "what git lists" in a work tree. tree_snapshot maps every path `git status` reports (modified, staged, deleted, untracked; never an ignored one) to its two-letter porcelain status joined to a digest of its content, and snapshot_digest reduces a snapshot to one `sha256:` value over its canonical JSON. candidate_files lists what a commit could carry (every tracked or staged path and every untracked path git does not ignore, sorted), the one definition of that set, and staged_blob gives the bytes the index holds for one path, or None for no entry, a submodule or a symlink, whose blob is its target's path and not file content. staged_paths lists what the index stages for the next commit, deletions left out as pre-commit leaves them out, and with repo_context=True reads the index a hook's GIT_INDEX_FILE names. is_ignored answers whether git would list a path that may not exist yet, tracked answers which of the given paths git tracks, and head_commit names HEAD's sha or None when there is no commit. in_head says whether HEAD's commit holds a path, so a file deleted from the work tree or the index still counts as committed. log_commits lists the commits `git log` walks for a list of options, so a scan of that range can tell it walked none. A git command that does not answer has three causes, and only two of them mean "no git": NoGitError is raised when git is not installed (the spawn finds no program) or when no repository exists at or above the directory, and GitFailedError, which is not a NoGitError, when git ran and failed for any other reason or could not be started, carrying git's exit status and its stderr cut to STDERR_MAX characters. git exits 128 for "not a git repository" and for a repository it cannot read alike, so the two are told apart on disk, never by the text of stderr: inside_a_repository walks up from the directory for a `.git` entry and stops where git's own discovery stops (a directory GIT_CEILING_DIRECTORIES names, and a filesystem boundary). A caller that treats NoGitError as "nothing is tracked here" must let GitFailedError stop it: an unreadable repository is unknown, not absent. through_symlink names the project-relative paths that reach their file through a symlink, which needs no git and is what a writer asks before it writes or deletes at a path read from config. git runs with the allowlisted environment from scripts/child_env.py, git's repository context left out except where staged_paths is asked for it, and with the developer's global excludes file switched off. Stdlib and 3.6-safe, so scripts/gate_evidence.py can import it under the old interpreter. It decides nothing about what runs or passes (scripts/run_make_target.py and scripts/gate_evidence.py do), and it writes nothing.
+summary: The one definition of "what git lists" in a work tree. tree_snapshot records HEAD's commit and branch. It records the index entries of paths `git status` lists, alongside their status, working content and mode, and nested repository identity. changed_paths returns its sorted path keys without tree-identity keys. snapshot_changes names differences between snapshots with paths and readable identity labels. snapshot_digest reduces the whole snapshot to one `sha256:` value over its canonical JSON. candidate_files lists what a commit could carry (every tracked or staged path and every untracked path git does not ignore, sorted), the one definition of that set, and staged_blob gives the bytes the index holds for one path, or None for no entry, a submodule or a symlink, whose blob is its target's path and not file content. staged_paths lists what the index stages for the next commit, deletions left out as pre-commit leaves them out, and with repo_context=True reads the index a hook's GIT_INDEX_FILE names. is_ignored answers whether git would list a path that may not exist yet, tracked answers which of the given paths git tracks, and head_commit names HEAD's sha or None when there is no commit. in_head says whether HEAD's commit holds a path, so a file deleted from the work tree or the index still counts as committed. log_commits lists the commits `git log` walks for a list of options, so a scan of that range can tell it walked none. A git command that does not answer has three causes, and only two of them mean "no git": NoGitError is raised when git is not installed (the spawn finds no program) or when no repository exists at or above the directory, and GitFailedError, which is not a NoGitError, when git ran and failed for any other reason or could not be started, carrying git's exit status and its stderr cut to STDERR_MAX characters. git exits 128 for "not a git repository" and for a repository it cannot read alike, so the two are told apart on disk, never by the text of stderr: inside_a_repository walks up from the directory for a `.git` entry and stops where git's own discovery stops (a directory GIT_CEILING_DIRECTORIES names, and a filesystem boundary). A caller that treats NoGitError as "nothing is tracked here" must let GitFailedError stop it: an unreadable repository is unknown, not absent. through_symlink names the project-relative paths that reach their file through a symlink, which needs no git and is what a writer asks before it writes or deletes at a path read from config. git runs with the allowlisted environment from scripts/child_env.py, git's repository context left out except where staged_paths is asked for it, and with the developer's global excludes file switched off. Stdlib and 3.6-safe, so scripts/gate_evidence.py can import it under the old interpreter. It decides nothing about what runs or passes (scripts/run_make_target.py and scripts/gate_evidence.py do), and it writes nothing.
 """
 
 # NB: stdlib only, no `from __future__ import annotations`, no f-strings, no walrus,
@@ -26,11 +26,13 @@ __all__ = [
     "GitFailedError",
     "NoGitError",
     "candidate_files",
+    "changed_paths",
     "head_commit",
     "in_head",
     "inside_a_repository",
     "is_ignored",
     "log_commits",
+    "snapshot_changes",
     "snapshot_digest",
     "staged_blob",
     "staged_paths",
@@ -48,6 +50,10 @@ STDERR_MAX = 400
 # (git(1), ENVIRONMENT VARIABLES).
 _CEILINGS = "GIT_CEILING_DIRECTORIES"
 _CROSS_FILESYSTEM = "GIT_DISCOVERY_ACROSS_FILESYSTEM"
+# NUL cannot occur in a repository path, so identity keys cannot shadow files.
+_IDENTITY_PREFIX = "\0"
+_HEAD_KEY = _IDENTITY_PREFIX + "HEAD"
+_BRANCH_KEY = _IDENTITY_PREFIX + "HEAD branch"
 
 
 class NoGitError(Exception):
@@ -157,43 +163,118 @@ def _digest(path):
                 sha.update(chunk)
         return "sha:" + sha.hexdigest()
     if os.path.isdir(path):
-        return "dir"  # a nested repository git lists as one entry
+        if os.path.lexists(os.path.join(path, ".git")):
+            return "repo:" + snapshot_digest(tree_snapshot(path))
+        return "dir"
     return "absent"
 
 
+def _working_state(path):
+    content = _digest(path)
+    if content == "absent":
+        return content
+    return "%s|mode:%o" % (content, os.lstat(path).st_mode)
+
+
 def tree_snapshot(root):
-    """{repo-relative path: state} for every path `git status` lists under root
-    (modified, staged, deleted, untracked — never ignored). The state is the
-    two-letter porcelain status joined to the sha256 of the content, so a second
-    edit to an already-dirty file and a change to the index alone both show.
+    """Map HEAD identity and every path git status lists to their states.
+
+    Path states contain the two-letter status, working content and lstat mode,
+    and the index entries of paths git status lists (mode, blob id and stage).
+    A path marked `--assume-unchanged` or `--skip-worktree` is not seen.
+    A nested repository or gitlink with a work tree carries its own snapshot
+    digest, including HEAD's commit and branch and listed state.
+    An uninitialised gitlink retains its index identity when git status lists its path.
+    Ignored paths are excluded. Identity keys start with NUL,
+    which no repository path can contain: `\\0HEAD` names HEAD's commit or the
+    explicit `unborn` marker.
+    `\\0HEAD branch` records the branch.head value from the same status read.
+    changed_paths returns only the sorted path keys. snapshot_changes names
+    differences with paths and readable identity labels `(HEAD commit)` and
+    `(HEAD branch)`. Each repository visited takes three git calls: its root,
+    status with HEAD, and the whole index in one call.
+    The lstat mode check is stricter than git's core.filemode and fails closed.
 
     Raises NoGitError when there is no git or no repository, and
-    GitFailedError when git ran and failed for another reason."""
+    GitFailedError when git ran and failed for another reason or status omitted
+    the branch.oid header."""
     top = _git(root, "rev-parse", "--show-toplevel").decode("utf-8").strip()
-    raw = _git(top, "status", "--porcelain=v1", "-z", "--untracked-files=all")
+    raw = _git(
+        top,
+        "status",
+        "--porcelain=v2",
+        "--branch",
+        "-z",
+        "--untracked-files=all",
+        "--ignore-submodules=none",
+    )
     fields = raw.decode("utf-8", "surrogateescape").split("\0")
+    snap = {}
     codes = {}
     i = 0
     while i < len(fields):
         entry = fields[i]
         i += 1
-        if len(entry) < 4:
+        if entry.startswith("# branch.oid "):
+            oid = entry[len("# branch.oid ") :]
+            snap[_HEAD_KEY] = "unborn" if oid == "(initial)" else oid
             continue
-        code, path = entry[:2], entry[3:]
+        if entry.startswith("# branch.head "):
+            snap[_BRANCH_KEY] = entry[len("# branch.head ") :]
+            continue
+        if entry.startswith("? "):
+            codes[entry[2:]] = "??"
+            continue
+        # Porcelain v2 gives each record kind a set number of fields, so splitting at
+        # that count keeps spaces, tabs and newlines inside a path name.
+        kind = entry[:1]
+        widths = {"1": 8, "2": 9, "u": 10}
+        if kind not in widths:
+            continue
+        parts = entry.split(" ", widths[kind])
+        code, path = parts[1].replace(".", " "), parts[-1]
         codes[path] = code
-        # A rename/copy carries its source as the next field, in either column:
-        # ` R` is a worktree rename (an intent-to-add file), `R ` a staged one.
-        if "R" in code or "C" in code:
+        if kind == "2":
             codes[fields[i]] = code + "<"
             i += 1
-    return {
-        p: "%s|%s" % (codes[p], _digest(os.path.join(top, p))) for p in sorted(codes)
-    }
+    if _HEAD_KEY not in snap:
+        raise GitFailedError(
+            0, "git status omitted # branch.oid; HEAD identity is unknown"
+        )
+    index = {}
+    raw_index = _git(top, "ls-files", "--stage", "-z")
+    for entry in raw_index.decode("utf-8", "surrogateescape").split("\0"):
+        state, tab, path = entry.partition("\t")
+        if tab and path in codes:
+            index.setdefault(path, []).append(state)
+    for path in sorted(codes):
+        snap[path] = "%s|%s|index:%s" % (
+            codes[path],
+            _working_state(os.path.join(top, path)),
+            ",".join(sorted(index.get(path, []))),
+        )
+    return snap
+
+
+def changed_paths(snap):
+    """The sorted path keys in a snapshot, excluding tree-identity keys."""
+    return sorted(path for path in snap if not path.startswith(_IDENTITY_PREFIX))
+
+
+def snapshot_changes(before, after):
+    """Sorted changed paths and readable tree-identity labels, without the NUL prefix.
+
+    Identity labels are (HEAD commit) and (HEAD branch). Path names are kept as written.
+    """
+    keys = set(before) | set(after)
+    changed = (key for key in keys if before.get(key) != after.get(key))
+    labels = {_HEAD_KEY: "(HEAD commit)", _BRANCH_KEY: "(HEAD branch)"}
+    return sorted(labels.get(key, key) for key in changed)
 
 
 def snapshot_digest(snap):
     """`sha256:<hex>` over the canonical JSON of a tree_snapshot result: one value
-    that names the listed content, equal for equal snapshots and for a clean tree."""
+    that names the tree identity and listed state, equal for equal snapshots."""
     text = json.dumps(snap, sort_keys=True, separators=(",", ":"))
     return (
         "sha256:" + hashlib.sha256(text.encode("utf-8", "surrogateescape")).hexdigest()

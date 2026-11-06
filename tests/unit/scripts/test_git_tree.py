@@ -2,7 +2,7 @@
 title: Unit — git_tree (what git lists, shared by the gate runner and the evidence writer)
 kind: tests
 layer: n/a
-summary: tree_snapshot lists every path git status reports under a work tree (modified and untracked) and never an ignored one, each joined to its content digest; tracked answers which of the given paths git tracks, matching each name literally; in_head says whether HEAD's commit holds a path, still true after `rm` and `git rm --cached`, false with no commit, NoGitError with no repository; snapshot_digest is a stable sha256 over that snapshot and changes when one byte of a listed file changes; candidate_files lists the files a commit could carry (tracked, staged, and untracked but not ignored, a force-added ignored file included), sorted, staged_paths lists what the next commit adds or changes, sorted, a staged deletion left out, and reads the index GIT_INDEX_FILE names only when asked for git's repository context; and staged_blob gives the index copy of a path or None; outside a work tree each raises NoGitError, and scripts/run_make_target.py re-exports the same class rather than defining a second one. Runs real git in a tmp_path repository under the hermetic git environment.
+summary: tree_snapshot lists every path git status reports under a work tree (modified and untracked) and never an ignored one, each joined to its index entries, working content and mode, and nested repository identity; HEAD's commit and branch distinguish clean tree identities, and changed_paths excludes identity keys; tracked answers which of the given paths git tracks, matching each name literally; in_head says whether HEAD's commit holds a path, still true after `rm` and `git rm --cached`, false with no commit, NoGitError with no repository; snapshot_digest is a stable sha256 over that snapshot and changes when one byte of a listed file changes; candidate_files lists the files a commit could carry (tracked, staged, and untracked but not ignored, a force-added ignored file included), sorted, staged_paths lists what the next commit adds or changes, sorted, a staged deletion left out, and reads the index GIT_INDEX_FILE names only when asked for git's repository context; and staged_blob gives the index copy of a path or None; outside a work tree each raises NoGitError, and scripts/run_make_target.py re-exports the same class rather than defining a second one. Runs real git in a tmp_path repository under the hermetic git environment.
 """
 
 import subprocess
@@ -54,7 +54,7 @@ def test_snapshot_lists_untracked_and_modified_never_ignored(repo):
     (repo / "new.txt").write_text("fresh\n", encoding="utf-8")
     (repo / "ignored.txt").write_text("hidden\n", encoding="utf-8")
     snap = git_tree.tree_snapshot(str(repo))
-    assert sorted(snap) == ["new.txt", "tracked.txt"], snap
+    assert git_tree.changed_paths(snap) == ["new.txt", "tracked.txt"], snap
     assert snap["tracked.txt"].startswith(" M|sha:"), snap
     assert snap["new.txt"].startswith("??|sha:"), snap
 
@@ -65,10 +65,160 @@ def test_snapshot_lists_untracked_and_modified_never_ignored(repo):
     assert git_tree.snapshot_digest(git_tree.tree_snapshot(str(repo))) != first
 
 
-def test_a_clean_tree_snapshots_empty_with_a_fixed_digest(repo):
-    """A clean tree lists nothing; its digest is still a value, never absent."""
-    assert git_tree.tree_snapshot(str(repo)) == {}
-    assert git_tree.snapshot_digest({}) == git_tree.snapshot_digest({})
+def test_snapshot_detects_index_blob_changes_with_the_same_status(repo, tmp_path):
+    env = hermetic_git.git_env(tmp_path / "work")
+    path = repo / "tracked.txt"
+    path.write_text("staged first\n", encoding="utf-8")
+    _git(repo, env, "add", "tracked.txt")
+    path.write_text("working\n", encoding="utf-8")
+    before = git_tree.tree_snapshot(str(repo))
+    path.write_text("staged second\n", encoding="utf-8")
+    _git(repo, env, "add", "tracked.txt")
+    path.write_text("working\n", encoding="utf-8")
+    after = git_tree.tree_snapshot(str(repo))
+    assert before["tracked.txt"].startswith("MM|")
+    assert after["tracked.txt"].startswith("MM|")
+    assert after != before
+
+
+def test_snapshot_detects_working_mode_changes_with_the_same_status(repo, tmp_path):
+    env = hermetic_git.git_env(tmp_path / "work")
+    _git(repo, env, "config", "core.filemode", "true")
+    path = repo / "tracked.txt"
+    path.write_text("dirty\n", encoding="utf-8")
+    path.chmod(0o644)
+    before = git_tree.tree_snapshot(str(repo))
+    path.chmod(0o755)
+    after = git_tree.tree_snapshot(str(repo))
+    assert before["tracked.txt"].startswith(" M|")
+    assert after["tracked.txt"].startswith(" M|")
+    assert after != before
+
+
+def test_snapshot_detects_edits_inside_an_untracked_repository(repo, tmp_path):
+    env = hermetic_git.git_env(tmp_path / "work")
+    nested = repo / "nested"
+    nested.mkdir()
+    _git(nested, env, "init", "-q")
+    path = nested / "file.txt"
+    path.write_text("one\n", encoding="utf-8")
+    _git(nested, env, "add", "file.txt")
+    _git(nested, env, "commit", "-qm", "nested")
+    before = git_tree.tree_snapshot(str(repo))
+    path.write_text("two\n", encoding="utf-8")
+    assert git_tree.tree_snapshot(str(repo)) != before
+
+
+def test_snapshot_detects_head_moves_on_a_clean_tree(repo, tmp_path):
+    env = hermetic_git.git_env(tmp_path / "work")
+    before = git_tree.tree_snapshot(str(repo))
+    _git(repo, env, "commit", "--allow-empty", "-qm", "move HEAD")
+    assert git_tree.tree_snapshot(str(repo)) != before
+
+
+def test_snapshot_changes_names_a_head_move_without_control_characters(repo, tmp_path):
+    env = hermetic_git.git_env(tmp_path / "work")
+    before = git_tree.tree_snapshot(str(repo))
+    _git(repo, env, "commit", "--allow-empty", "-qm", "move HEAD")
+    changed = git_tree.snapshot_changes(before, git_tree.tree_snapshot(str(repo)))
+    assert changed == ["(HEAD commit)"]
+    assert all(ord(char) >= 32 for label in changed for char in label)
+
+
+def test_snapshot_changes_names_paths_added_removed_and_modified():
+    before = {"gone.txt": "old", "edit.txt": "old", "same.txt": "same"}
+    after = {"new.txt": "new", "edit.txt": "new", "same.txt": "same"}
+    assert git_tree.snapshot_changes(before, after) == [
+        "edit.txt",
+        "gone.txt",
+        "new.txt",
+    ]
+    assert git_tree.snapshot_changes(before, before) == []
+
+
+def test_snapshot_detects_a_branch_switch_at_the_same_commit(repo, tmp_path):
+    env = hermetic_git.git_env(tmp_path / "work")
+    before = git_tree.tree_snapshot(str(repo))
+    commit = git_tree.head_commit(str(repo))
+    _git(repo, env, "checkout", "-qb", "other")
+    after = git_tree.tree_snapshot(str(repo))
+    assert git_tree.head_commit(str(repo)) == commit
+    assert after != before
+    assert git_tree.changed_paths(after) == []
+    assert git_tree.snapshot_changes(before, after) == ["(HEAD branch)"]
+
+
+@pytest.mark.parametrize(
+    ("path", "label", "args"),
+    [
+        ("HEAD", "(HEAD commit)", ("commit", "--allow-empty", "-qm", "move HEAD")),
+        ("HEAD branch", "(HEAD branch)", ("checkout", "-qb", "other")),
+    ],
+)
+def test_identity_labels_distinguish_tracked_paths(repo, tmp_path, path, label, args):
+    env = hermetic_git.git_env(tmp_path / "work")
+    tracked = repo / path
+    tracked.write_text("one\n", encoding="utf-8")
+    _git(repo, env, "add", "--", path)
+    _git(repo, env, "commit", "-qm", "track identity-like path")
+    before = git_tree.tree_snapshot(str(repo))
+    tracked.write_text("two\n", encoding="utf-8")
+    _git(repo, env, *args)
+    after = git_tree.tree_snapshot(str(repo))
+    assert git_tree.snapshot_changes(before, after) == [label, path]
+
+
+@pytest.mark.parametrize("status", [b"", b"# branch.head main\0? new.txt\0"])
+def test_snapshot_refuses_status_without_head_oid(repo, monkeypatch, status):
+    def git(root, *args):
+        if args[0] == "rev-parse":
+            return str(repo).encode("utf-8") + b"\n"
+        if args[0] == "status":
+            return status
+        return b""
+
+    monkeypatch.setattr(git_tree, "_git", git)
+    with pytest.raises(git_tree.GitFailedError, match="branch.oid"):
+        git_tree.tree_snapshot(str(repo))
+
+
+def test_an_unchanged_dirty_repository_has_equal_snapshots(repo):
+    (repo / "tracked.txt").write_text("dirty\n", encoding="utf-8")
+    before = git_tree.tree_snapshot(str(repo))
+    assert git_tree.tree_snapshot(str(repo)) == before
+
+
+def test_an_unborn_repository_has_a_stable_snapshot(repo, tmp_path):
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    _git(empty, hermetic_git.git_env(tmp_path / "work"), "init", "-q")
+    before = git_tree.tree_snapshot(str(empty))
+    assert before != {}
+    assert "unborn" in before.values()
+    assert git_tree.changed_paths(before) == []
+    assert before != git_tree.tree_snapshot(str(repo))
+    assert git_tree.tree_snapshot(str(empty)) == before
+    assert git_tree.snapshot_digest(git_tree.tree_snapshot(str(empty))) == (
+        git_tree.snapshot_digest(before)
+    )
+    _git(
+        empty,
+        hermetic_git.git_env(tmp_path / "work"),
+        "commit",
+        "--allow-empty",
+        "-qm",
+        "first commit",
+    )
+    assert git_tree.tree_snapshot(str(empty)) != before
+
+
+def test_a_clean_tree_has_no_changed_paths_and_a_stable_digest(repo):
+    """A clean tree retains its identity without reporting changed paths."""
+    before = git_tree.tree_snapshot(str(repo))
+    assert git_tree.changed_paths(before) == []
+    assert git_tree.snapshot_digest(git_tree.tree_snapshot(str(repo))) == (
+        git_tree.snapshot_digest(before)
+    )
 
 
 def test_no_git_raises_NoGitError(tmp_path, monkeypatch):

@@ -370,6 +370,35 @@ def test_keep_going_runs_every_goal(repo, monkeypatch):
 # --- main ---------------------------------------------------------------------
 
 
+def test_a_clean_committed_tree_records_dirty_false(repo):
+    assert ge.main(["--gate", "verify", "--", "make", "test"], _Runner()) == 0
+    source = _record(repo)["source"]
+    assert source["commit"] == ge.git_tree.head_commit(str(repo))
+    assert source["dirty"] is False
+    assert source["tree_changed"] is False
+
+
+def test_a_head_move_during_a_goal_records_a_tree_change(repo, tmp_path):
+    git_env = hermetic_git.git_env(tmp_path / "work")
+    runner = _Runner()
+    before = ge.git_tree.head_commit(str(repo))
+
+    def move_head(argv, cwd=None, env=None):
+        result = runner(argv, cwd=cwd, env=env)
+        _git(repo, git_env, "commit", "--allow-empty", "-qm", "move HEAD")
+        return result
+
+    assert (
+        ge.main(["--gate", "verify", "--", "make", "test"], move_head)
+        is ge.ExitCode.RED_RECORD
+    )
+    rec = _record(repo)
+    assert rec["source"]["commit"] == before
+    assert rec["source"]["dirty"] is False
+    assert rec["source"]["tree_changed"] is True
+    assert rec["reasons"] == ["tree-changed"]
+
+
 def test_a_green_run_writes_a_complete_record(repo):
     runner = _Runner()
     assert ge.main(["--gate", "verify", "--", "make", "lint", "test"], runner) == 0

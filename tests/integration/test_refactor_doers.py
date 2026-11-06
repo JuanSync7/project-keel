@@ -360,7 +360,7 @@ def test_a_worktree_rename_keeps_both_paths_inside_the_repo(tmp_path):
     (tmp_path / "src" / "old.py").rename(tmp_path / "src" / "new.py")
     _git(tmp_path, "add", "-N", "src/new.py")
     snap = rmt.tree_snapshot(str(tmp_path))
-    assert sorted(snap) == ["src/new.py", "src/old.py"], snap
+    assert ar.git_tree.changed_paths(snap) == ["src/new.py", "src/old.py"], snap
     assert "absent" in snap["src/old.py"] and "sha:" in snap["src/new.py"], snap
 
 

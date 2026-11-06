@@ -9,7 +9,7 @@ tags: [tool, gate, make, verify]
 summary: Run one make target a gate may run (by its effect label) and report a structured pass/fail that also fails a run which changed the tree — the refactor loop's gate.
 id: tool-run-make-target
 created: 2026-07-07
-updated: 2026-10-23
+updated: 2026-11-06
 visibility: internal
 canonical: true
 tool_command: python3 scripts/run_make_target.py verify --json
@@ -39,9 +39,13 @@ or that would copy a value carrying a credential, and a tree without git. Every
 refusal names the variable, and the pattern label it matched, and never quotes
 its value. It passes the
 `make_targets.gate_runner_var` variable (`RALPH=1` in keel) last, so a `[write]`
-recipe's `$(WRITE_GUARD)` refuses whatever the caller supplied. It snapshots
-what git lists before and after the run, each path's status and content, and a
-green run that changed either is red, naming the paths. `agents/practice_refactor` runs `make verify` through it once
+recipe's `$(WRITE_GUARD)` refuses whatever the caller supplied. It compares
+snapshots from `scripts/git_tree.py` before and after the run. Each snapshot
+records HEAD's commit and branch, the index entries of paths `git status`
+lists, their status, working content and mode, and nested repository identity.
+A green run that changes the snapshot is red. The result names changed paths
+and readable tree-identity labels `(HEAD commit)` and `(HEAD branch)`.
+`agents/practice_refactor` runs `make verify` through it once
 up front to establish a **green baseline**: a dirty tree yields a dirty
 refactor, so if the gate is already red the agent stops and surfaces it instead
 of editing on top of failures. The labels are defined in
@@ -75,8 +79,9 @@ still held make's output when the run ended, or `(unlisted)` when `/proc` did
 not show the holder; any entry makes the run red, and the runner signals none of
 them. `reaped` is true when another waiter in the runner's process reaped
 make, so its exit status is unknown; `returncode` is then `null` and the run is red.
-`effects` is the target's closed label; `changed` lists the paths a run
-changed; `refused` is the reason when the runner did not run make, and `null`
+`effects` is the target's closed label. `changed` lists changed paths and
+readable tree-identity labels `(HEAD commit)` and `(HEAD branch)`.
+`refused` is the reason when the runner did not run make, and `null`
 otherwise. Exit 0 when the target passed and changed nothing, 1 when it was red,
 timed out, changed the tree, leaked a process or left one holding its output, 2 when it was refused or the name was unsafe, 14
 when `make_targets.gate_timeout_seconds` is not a whole number from 1 to 604800

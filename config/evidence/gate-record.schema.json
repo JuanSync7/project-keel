@@ -56,12 +56,12 @@
           "type": ["boolean", "null"]
         },
         "tree_digest": {
-          "description": "sha256 over what git listed before the goals ran, each path's status and content digest (scripts/git_tree.py), so a dirty run is still identified; null without git.",
+          "description": "sha256 over HEAD's commit and branch, the index entries of paths git status lists, their status, working content and mode, and nested repository identity before the goals ran (scripts/git_tree.py). Null without git.",
           "type": ["string", "null"],
           "pattern": "^sha256:[0-9a-f]{64}$"
         },
         "tree_changed": {
-          "description": "true when what git lists differed after the goals ran; the reason tree-changed then makes the record red. null without git.",
+          "description": "true when the snapshot of HEAD's commit and branch, the index entries of paths git status lists, their status, working content and mode, or nested repository identity differed after the goals ran. The reason tree-changed then makes the record red. Null without git.",
           "type": ["boolean", "null"]
         }
       }

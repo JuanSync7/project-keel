@@ -391,7 +391,7 @@ def _source(root):
     return snap, {
         "commit": commit,
         # No commit yet: everything in the tree is uncommitted.
-        "dirty": bool(snap) or commit is None,
+        "dirty": bool(git_tree.changed_paths(snap)) or commit is None,
         "tree_changed": None,
         "tree_digest": git_tree.snapshot_digest(snap),
     }
