@@ -633,6 +633,24 @@ _TRAPS_TERM = (
 _SETTLE = 30.0
 
 
+def _make_waits_for(name):
+    """Source that holds a fake make until the file *name* exists, for at
+    most 30 s, so a missing signal fails the case instead of hanging the suite."""
+    return (
+        "import pathlib, time\n"
+        "deadline = time.monotonic() + 30\n"
+        "while not pathlib.Path(%r).exists() and time.monotonic() < deadline:\n"
+        "    time.sleep(0.01)\n" % name
+    )
+
+
+_MAKE_WAITS_FOR_GO = _make_waits_for("go")
+# A slow interpreter start must not use up the window in which make expects its
+# job to end: the runner's settle (`resource_limits._SETTLE_S`) or make's own
+# sleep.
+_MAKE_WAITS_FOR_STARTED = _make_waits_for("started")
+
+
 def _write_fake_make(
     where, grandchild, *, detach=False, exit_after=False, status=0, wait_for_go=False
 ):
@@ -1089,16 +1107,22 @@ def _in_child(tree, body):
 def test_a_member_that_exited_but_was_not_yet_reaped_is_not_a_leak(tree):
     """A zombie runs nothing. Under a subreaper that has not collected it, a
     background job that already ended stays a zombie in make's group; the run
-    must still be green and must not spend the grace waiting for it."""
+    must still be green and must not spend the grace waiting for it. Make waits
+    for the job's startup signal before allowing three seconds for its exit."""
     make = _write_script(
         tree / "bin",
         "make",
         "import subprocess, sys, time\n"
         # The middle process exits at once, so its child is reparented to the
         # subreaper (the runner's process), exits, and is never reaped.
-        "subprocess.run([sys.executable, '-c', 'import subprocess, sys; "
-        'subprocess.Popen([sys.executable, "-c", "pass"])\'])\n'
-        "time.sleep(3)\n",
+        "subprocess.run([sys.executable, '-c', %r])\n"
+        % (
+            "import subprocess, sys\n"
+            "subprocess.Popen([sys.executable, '-c', %r])\n"
+            % "import pathlib\npathlib.Path('started').write_text('1')\n"
+        )
+        + _MAKE_WAITS_FOR_STARTED
+        + "time.sleep(3)\n",
     )
     out = _in_child(
         tree,
@@ -1113,6 +1137,10 @@ def test_a_member_that_exited_but_was_not_yet_reaped_is_not_a_leak(tree):
         "'s': time.monotonic() - t}))\n" % str(make),
     )
     got = json.loads(out)
+    assert (tree / "started").exists(), (
+        "the background job never signalled startup",
+        got,
+    )
     assert got["rc"] == 0 and got["leaked"] is None, got
     assert got["s"] < 15, got
 
@@ -1533,20 +1561,28 @@ def test_make_stays_unreaped_while_its_leftovers_are_signalled(tree, monkeypatch
 
 def test_a_child_exiting_just_after_make_is_not_a_leak(tree):
     """A background job that ends a moment after make (here 0.2 s, inside
-    _SETTLE_SECONDS) is not left behind: the runner re-reads the session for
-    the settle before it counts one, so this green make stays green."""
+    resource_limits._SETTLE_S) is not left behind: make waits for the job's
+    startup signal before releasing it, and the runner re-reads the session
+    for the settle before it counts one, so this green make stays green."""
     _write_script(
         tree / "bin",
         "make",
-        "import pathlib, subprocess, sys\n"
-        "subprocess.Popen([sys.executable, '-c', 'import pathlib, time\\n"
-        'while not pathlib.Path("go").exists():\\n'
-        "    time.sleep(0.01)\\n"
-        "time.sleep(0.2)\\n'])\n"
-        "pathlib.Path('go').write_text('1')\n",
+        "import subprocess, sys\n"
+        "subprocess.Popen([sys.executable, '-c', %r])\n"
+        % (
+            "import pathlib\npathlib.Path('started').write_text('1')\n"
+            + _MAKE_WAITS_FOR_GO
+            + "time.sleep(0.2)\n"
+        )
+        + _MAKE_WAITS_FOR_STARTED
+        + "pathlib.Path('go').write_text('1')\n",
     )
     res = rmt.run_target(
         "check", cwd=str(tree), timeout=60, grace=1, snapshot=_snaps({}, {})
+    )
+    assert (tree / "started").exists(), (
+        "the background job never signalled startup",
+        res,
     )
     assert res["ok"] is True and res["leaked"] == [], res
 
@@ -1575,14 +1611,6 @@ _MAKE_PID = (
     "    deadline = time.monotonic() + 10\n"
     "    while state(pid) not in (None, 'Z') and time.monotonic() < deadline:\n"
     "        real_sleep(0.01)\n"
-)
-# A fake make that holds its exit until the case says `go`, bounded so a case
-# that never says it fails on its own assertion instead of hanging.
-_MAKE_WAITS_FOR_GO = (
-    "import pathlib, time\n"
-    "deadline = time.monotonic() + 30\n"
-    "while not pathlib.Path('go').exists() and time.monotonic() < deadline:\n"
-    "    time.sleep(0.01)\n"
 )
 # A waiter in the runner's own process, standing in for a library that reaps
 # its children: make waits for `go` from the runner's first poll sleep, so an
@@ -1801,13 +1829,19 @@ def test_a_stop_after_another_waiter_reaps_make_signals_nothing(tree, stop):
 
 def test_a_child_exiting_just_after_a_reaped_make_is_not_a_leftover(tree):
     """The settle applies when make was reaped elsewhere too: a background
-    job ending a moment after make is not named as left running."""
+    job ending a moment after make is not named as left running. Make waits
+    for the job's startup signal before waiting for the runner's `go`."""
     _write_script(
         tree / "bin",
         "make",
         "import subprocess, sys\n"
         "subprocess.Popen([sys.executable, '-c', %r])\n"
-        % (_MAKE_WAITS_FOR_GO + "time.sleep(0.3)\n")
+        % (
+            "import pathlib\npathlib.Path('started').write_text('1')\n"
+            + _MAKE_WAITS_FOR_GO
+            + "time.sleep(0.3)\n"
+        )
+        + _MAKE_WAITS_FOR_STARTED
         + _MAKE_WAITS_FOR_GO,
     )
     out = _in_child(
@@ -1819,6 +1853,10 @@ def test_a_child_exiting_just_after_a_reaped_make_is_not_a_leftover(tree):
         "except r.MakeReaped as e:\n"
         "    got = {'what': 'reaped', 'left': e.leftovers}\n"
         "print(json.dumps(got))\n",
+    )
+    assert (tree / "started").exists(), (
+        "the background job never signalled startup",
+        out,
     )
     assert json.loads(out) == {"what": "reaped", "left": []}, out
 

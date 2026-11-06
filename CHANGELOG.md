@@ -687,6 +687,11 @@ version rather than a bare commit:
   the runner's first sleep to reap it elsewhere, so a loaded host cannot
   bypass the waiter and fail a generated project's own suite
   (KEEL-REAPRACE-1).
+- **Background-job tests wait for their child's startup signal.** This
+  class fix holds make on a bounded `started` wait, written by each
+  short-lived background job as its first statement, before make exits or
+  releases the job, so a slow interpreter start cannot turn a generated
+  project's own suite red (KEEL-REAPRACE-2).
 - **`make check` refuses a manifest the config loader refuses.**
   `scripts/check_structure.py` parsed config/project.json and
   config/practices.json with `json.loads`, so a key written twice passed with
