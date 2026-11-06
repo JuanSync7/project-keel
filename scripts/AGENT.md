@@ -7,7 +7,7 @@ owner: TBD
 summary: Local agent rules inside scripts/.
 id: scripts-agent
 created: 2026-06-17
-updated: 2026-11-05
+updated: 2026-11-06
 visibility: internal
 canonical: true
 ---

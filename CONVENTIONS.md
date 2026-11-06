@@ -8,7 +8,7 @@ tags: [conventions, frontmatter, taxonomy]
 summary: Single source of truth for labeling (frontmatter) and the directory taxonomy.
 id: conventions
 created: 2026-06-17
-updated: 2026-11-05
+updated: 2026-11-06
 visibility: internal
 canonical: true
 ---
