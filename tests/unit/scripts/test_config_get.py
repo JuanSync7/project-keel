@@ -166,7 +166,10 @@ def test_recursive_config_is_config_naming_the_file_without_output(
             break
         try:
             loaded = loader.read(str(root), relpath)
-        except loader.ConfigUnreadable:  # noqa: DROP001 -- try shallower nesting
+        except loader.ConfigUnreadable as exc:
+            # Too deep to decode: the refusal still names the file and never
+            # the value, then the loop tries a shallower nesting.
+            assert exc.path == relpath and "private-probe" not in str(exc), exc
             continue
         try:
             loader.resolve(loaded, (row,), relpath, environ={}, stream=io.StringIO())
