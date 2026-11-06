@@ -633,10 +633,13 @@ _TRAPS_TERM = (
 _SETTLE = 30.0
 
 
-def _write_fake_make(where, grandchild, *, detach=False, exit_after=False, status=0):
+def _write_fake_make(
+    where, grandchild, *, detach=False, exit_after=False, status=0, wait_for_go=False
+):
     """A `make` that starts *grandchild* and then sleeps (or exits *status*
     when *exit_after*). *detach* points the grandchild's output away from make's,
-    as a daemon does, so make's output closes while the grandchild lives."""
+    as a daemon does, so make's output closes while the grandchild lives.
+    *wait_for_go* holds make until `go` exists or the bounded wait expires."""
     where.mkdir(exist_ok=True)
     make = where / "make"
     out = "subprocess.DEVNULL" if detach else "None"
@@ -656,7 +659,8 @@ def _write_fake_make(where, grandchild, *, detach=False, exit_after=False, statu
             out,
             out,
             _SETTLE,
-            "sys.exit(%d)" % status if exit_after else "time.sleep(600)",
+            (_MAKE_WAITS_FOR_GO if wait_for_go else "")
+            + ("sys.exit(%d)" % status if exit_after else "time.sleep(600)"),
         ),
         encoding="utf-8",
     )
@@ -1581,11 +1585,13 @@ _MAKE_WAITS_FOR_GO = (
     "    time.sleep(0.01)\n"
 )
 # A waiter in the runner's own process, standing in for a library that reaps
-# its children: the runner's first poll sleep waits for make to exit and reaps
-# it with os.waitpid, so the runner's Popen never learns make's status.
+# its children: make waits for `go` from the runner's first poll sleep, so an
+# early exit cannot bypass the waiter under load. The waiter reaps it with
+# os.waitpid, so the runner's Popen never learns make's status.
 _FOREIGN_WAITER = (
     "def sleep(seconds):\n"
     "    if made and not reaped:\n"
+    "        open('go', 'w').close()\n"
     "        exited(made[0])\n"
     "        os.waitpid(made[0], 0)\n"
     "        reaped.append(1)\n"
@@ -1720,7 +1726,9 @@ def test_a_make_another_waiter_reaped_is_red_and_its_leftovers_are_not_signalled
     make's id is free and its session id is anchored by nothing the runner
     holds. The run is red with make's status unknown, the leftovers are named
     from a listing of the session, and nothing is signalled, not even signal 0."""
-    make = _write_fake_make(tree / "bin", _SLEEPS, detach=True, exit_after=True)
+    make = _write_fake_make(
+        tree / "bin", _SLEEPS, detach=True, exit_after=True, wait_for_go=True
+    )
     out = _in_child(
         tree,
         _RECORD_KILLPG + _MAKE_PID + _FOREIGN_WAITER + "try:\n"
@@ -1750,12 +1758,15 @@ def test_a_stop_after_another_waiter_reaps_make_signals_nothing(tree, stop):
     lands before the runner's next poll has seen it. The stop asks held
     again, finds make gone, and sends nothing to make's freed id or to the
     session it anchored; the leftover is not the runner's to end."""
-    make = _write_fake_make(tree / "bin", _SLEEPS, detach=True, exit_after=True)
+    make = _write_fake_make(
+        tree / "bin", _SLEEPS, detach=True, exit_after=True, wait_for_go=True
+    )
     out = _in_child(
         tree,
         _RECORD_KILLPG + _MAKE_PID + "STOP = %r\n"
         "def sleep(seconds):\n"
         "    if made and not reaped:\n"
+        "        open('go', 'w').close()\n"
         "        exited(made[0])\n"
         "        os.waitpid(made[0], 0)\n"
         "        reaped.append(1)\n"
@@ -1794,12 +1805,10 @@ def test_a_child_exiting_just_after_a_reaped_make_is_not_a_leftover(tree):
     _write_script(
         tree / "bin",
         "make",
-        "import pathlib, subprocess, sys\n"
-        "subprocess.Popen([sys.executable, '-c', 'import pathlib, time\\n"
-        'while not pathlib.Path("go").exists():\\n'
-        "    time.sleep(0.01)\\n"
-        "time.sleep(0.3)\\n'])\n"
-        "pathlib.Path('go').write_text('1')\n",
+        "import subprocess, sys\n"
+        "subprocess.Popen([sys.executable, '-c', %r])\n"
+        % (_MAKE_WAITS_FOR_GO + "time.sleep(0.3)\n")
+        + _MAKE_WAITS_FOR_GO,
     )
     out = _in_child(
         tree,
@@ -1818,7 +1827,9 @@ def test_without_proc_a_reaped_makes_session_is_said_to_be_unlisted(tree):
     """With no /proc and make reaped elsewhere, nothing in make's session can
     be listed or signalled: the runner sends nothing, and run_target says what
     make left could not be listed and may still run."""
-    _write_fake_make(tree / "bin", _SLEEPS, detach=True, exit_after=True)
+    _write_fake_make(
+        tree / "bin", _SLEEPS, detach=True, exit_after=True, wait_for_go=True
+    )
     out = _in_child(
         tree,
         _RECORD_KILLPG

@@ -682,6 +682,11 @@ version rather than a bare commit:
   toolchain validator preserves spaces inside versions so an invalid clause
   such as `>=3 .10` is refused by name. Supported spaces around clauses and
   between an operator and version remain valid.
+- **Foreign-waiter tests release make from the first poll sleep.** This
+  class fix holds make's exit on a bounded `go` wait in every case that needs
+  the runner's first sleep to reap it elsewhere, so a loaded host cannot
+  bypass the waiter and fail a generated project's own suite
+  (KEEL-REAPRACE-1).
 - **`make check` refuses a manifest the config loader refuses.**
   `scripts/check_structure.py` parsed config/project.json and
   config/practices.json with `json.loads`, so a key written twice passed with
