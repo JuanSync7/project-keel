@@ -675,6 +675,13 @@ version rather than a bare commit:
   guard that fails a reach past it.
 
 ### Fixed
+- **Copier refuses free-text answers that would break generated files
+  (KEEL-ANSWERS-1).** `project_name` allows ASCII letters, digits, spaces,
+  underscores and hyphens with a letter or digit at each end. `backend_python`
+  refuses unsupported clauses and control whitespace at its question; the
+  toolchain validator preserves spaces inside versions so an invalid clause
+  such as `>=3 .10` is refused by name. Supported spaces around clauses and
+  between an operator and version remain valid.
 - **`make check` refuses a manifest the config loader refuses.**
   `scripts/check_structure.py` parsed config/project.json and
   config/practices.json with `json.loads`, so a key written twice passed with

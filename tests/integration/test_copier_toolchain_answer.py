@@ -141,6 +141,43 @@ def test_the_validator_refuses_a_floor_clause_it_cannot_judge(floor):
     assert "cannot judge" in verdict and floor.strip() in verdict, verdict
 
 
+@pytest.mark.parametrize("floor", [">=3 .10", ">=3. 10", ">=3.1 0", "==3. 11.*"])
+def test_the_validator_refuses_spaces_inside_the_shipped_version(floor):
+    verdict = _verdict(floor, "3.11")
+    assert "cannot judge" in verdict and floor in verdict, verdict
+
+
+@pytest.mark.parametrize("floor", _FLOORS + (">= 3.10", ">=3.10, <4"))
+def test_the_floor_question_accepts_every_supported_specifier(floor):
+    validator = _questions()[_FLOOR]["validator"]
+    env = jinja_sandbox.SandboxedEnvironment()
+    verdict = env.from_string(validator).render(**{_FLOOR: floor})
+    assert verdict.strip() == "", verdict
+
+
+@pytest.mark.parametrize("floor", [">= 3.10", ">=3.10, <4"])
+def test_the_validator_keeps_legal_spaces_around_operators_and_clauses(floor):
+    assert _verdict(floor, "3.11") == ""
+
+
+@pytest.mark.parametrize(
+    "floor",
+    [">=3 .10", ">=3. 10", ">=3.1 0", ">=3.10\n", "\t>=3.10", '>=3.10"', ">=3.10\\"],
+)
+def test_the_floor_question_refuses_unsafe_text_and_names_the_raw_clause(floor):
+    validator = _questions()[_FLOOR]["validator"]
+    verdict = (
+        jinja_sandbox.SandboxedEnvironment()
+        .from_string(validator)
+        .render(**{_FLOOR: floor})
+        .strip()
+    )
+    assert "backend_python clause " in verdict, verdict
+    clause = verdict.split("backend_python clause ", 1)[1].split(":", 1)[0]
+    assert json.loads(clause) == floor, verdict
+    assert "answer" in verdict and "ASCII" in verdict, verdict
+
+
 def test_the_default_is_keels_configured_release_and_keels_floor_accepts_it():
     questions = _questions()
     loaded = config_loader.read(str(_ROOT))

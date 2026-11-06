@@ -205,6 +205,21 @@ project_name:
   type: str
   help: "Project name (config/project.json name; also used in docs/pyproject)"
   default: "my_project"
+  # The same name becomes a package identifier, JSON strings and YAML titles;
+  # this alphabet keeps each raw interpolation valid without changing the answer.
+  validator: |-
+    {%- set alnum = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789' -%}
+    {%- set ns = namespace(invalid=[]) -%}
+    {%- for char in project_name -%}
+      {%- if char not in alnum + ' _-' and char not in ns.invalid -%}
+        {%- set ns.invalid = ns.invalid + [char] -%}
+      {%- endif -%}
+    {%- endfor -%}
+    {%- if ns.invalid -%}
+    project_name contains invalid characters {{ ns.invalid | tojson }}; answer with ASCII letters, digits, spaces, underscores or hyphens, and start and end with an ASCII letter or digit.
+    {%- elif not project_name or project_name[0] not in alnum or project_name[-1] not in alnum -%}
+    project_name must start and end with an ASCII letter or digit; answer with ASCII letters, digits, spaces, underscores or hyphens, such as my_project or Acme Widgets.
+    {%- endif -%}
 
 # Computed (not asked): identifier + display forms derived from project_name so a
 # free-text name ("Acme Widgets") yields a PEP 508-valid package slug ("acme_widgets")
@@ -254,6 +269,33 @@ backend_python:
   type: str
   help: "Minimum Python for the backend (must match pyproject requires-python)"
   default: ">=3.10"
+  # Only ASCII spaces can surround syntax: a raw control character would break
+  # the JSON/TOML strings even where PEP 440 permits it as whitespace.
+  validator: |-
+    {%- set digits = '0123456789' -%}
+    {%- set ns = namespace(op='', ok=true, unjudged=[]) -%}
+    {%- for raw in backend_python.split(',') -%}
+      {%- set clause = raw | trim(' ') -%}
+      {%- if clause -%}
+        {%- set ns.op = '' -%}
+        {%- for op in ['~=', '==', '!=', '<=', '>=', '<', '>'] -%}
+          {%- if not ns.op and clause.startswith(op) -%}{%- set ns.op = op -%}{%- endif -%}
+        {%- endfor -%}
+        {%- set version = clause[ns.op | length:] | trim(' ') -%}
+        {%- set wild = version.endswith('.*') -%}
+        {%- set parts = (version[:-2] if wild else version).split('.') -%}
+        {%- set ns.ok = ns.op != '' and parts | length <= 3 -%}
+        {%- for part in parts -%}
+          {%- if not part or part.strip(digits) -%}{%- set ns.ok = false -%}{%- endif -%}
+        {%- endfor -%}
+        {%- if wild and ns.op not in ['==', '!='] -%}{%- set ns.ok = false -%}{%- endif -%}
+        {%- if ns.op == '~=' and parts | length < 2 -%}{%- set ns.ok = false -%}{%- endif -%}
+        {%- if not ns.ok -%}{%- set ns.unjudged = ns.unjudged + [raw] -%}{%- endif -%}
+      {%- endif -%}
+    {%- endfor -%}
+    {%- for raw in ns.unjudged -%}
+    backend_python clause {{ raw | tojson | replace('\\u003e', '>') | replace('\\u003c', '<') }}: cannot judge it; answer with one of ~= == != <= >= < > and up to three ASCII-digit parts, with a trailing .* only after == or != (at least two parts after ~=). Use ASCII spaces only around a clause or between its operator and version, never inside the version.
+    {% endfor -%}
 
 toolchain_python:
   type: str
@@ -280,13 +322,13 @@ toolchain_python:
     {%- else -%}
       {%- set py = (ns.release + [0, 0, 0])[:3] -%}
       {%- for raw in backend_python.split(',') -%}
-        {%- set clause = raw | replace(' ', '') | trim -%}
+        {%- set clause = raw | trim(' ') -%}
         {%- if clause -%}
           {%- set ns.op = '' -%}
           {%- for op in ['~=', '==', '!=', '<=', '>=', '<', '>'] -%}
             {%- if not ns.op and clause.startswith(op) -%}{%- set ns.op = op -%}{%- endif -%}
           {%- endfor -%}
-          {%- set version = clause[ns.op | length:] -%}
+          {%- set version = clause[ns.op | length:] | trim(' ') -%}
           {%- set wild = version.endswith('.*') -%}
           {%- set parts = (version[:-2] if wild else version).split('.') -%}
           {%- set ns.spec = [] -%}
