@@ -8,7 +8,7 @@ tags: [plan, template, downstream, freshness, taxonomy, effects, credentials, au
 summary: The bounded-convergence record for the defects bedrock-platform, the first real project generated from keel, reported back — a red gate on arrival, unknown directories the gate never sees, make targets whose effect nobody declares, and child processes that inherit every credential — plus the command that checks any keel-generated project for all of them. One slice per defect, five passes, each landed as one commit on a green `make verify`.
 id: docs-design-downstream-feedback
 created: 2026-10-06
-updated: 2026-11-05
+updated: 2026-11-06
 visibility: internal
 canonical: true
 ---
@@ -3308,6 +3308,64 @@ runs over their code. S1 and S2 share `config/project.json`, its template
 twin, `scripts/config_loader.py` and `docs/reference/settings.md`, so S2
 starts from S1's commit, not beside it.
 
+## CMP-14 — a gate sees every change it claims to judge
+
+Read-only bug sweeps of `scripts/` and `tests/` on 2026-11-06 found five gates
+that pass on an input they exist to catch; a refuter reproduced each one live,
+except KEEL-REAPRACE-1, which a full `make verify` showed red at a load average
+of about 45. Each slice fixes the class of its defect, not the case found. The
+cap is one pass per slice, with at most three review fix rounds each; the stop
+point is CMP-14.S6 green or the cap. The slices own no code file in common, so
+they are built in parallel on keel-cmp10 and land together on one full
+`make verify`.
+
+| Slice | Gap | Status |
+|-------|-----|--------|
+| CMP-14.S1 | KEEL-SNAPSHOT-ID-1: `scripts/git_tree.py` `tree_snapshot` records only each listed path's porcelain code and working content, so a commit, a staged-only change, a mode change and a nested repository's moved HEAD all compare equal, and a gate step that made one of them passes as "no change". The snapshot records the HEAD commit and branch, each index entry, each path's working content and mode, and a nested repository's identity; one public helper names what differs between two snapshots with readable labels, and `scripts/gate_evidence.py` and `scripts/run_make_target.py` both read changes through it | planned |
+| CMP-14.S2 | KEEL-MARKATTACH-1: `scripts/pytest_markers.py` `attached_markers` credits a marker on a module or class that holds no collected test, an annotated `pytestmark` is unseen, and the e2e coverage scan credits a marker in a file `python_files` excludes or a directory `norecursedirs` skips. A marker counts only when it applies to a test pytest collects, `attached_markers` derives from `marked_tests`, and the scan walks `tests/` as pytest does | planned |
+| CMP-14.S3 | KEEL-ANSWERS-1: a `project_name` holding a double quote renders broken JSON and TOML and leaves a half-generated project, and the `backend_python` validator judges the answer with its spaces removed while the raw answer ships. Every free-text question in `copier.yml` is refused at the question when the template cannot render it, and a validator judges exactly the text that ships | planned |
+| CMP-14.S4 | KEEL-EXITDROP-1: an entry block that calls a module function, drops its result and then calls `finish(ExitCode.SUCCESS)` passes the exit gate, because `tests/integration/test_exit_gate.py` judges a dropped result only when no `finish` call is in the block. A result bound to a name that no `finish` argument reads is a finding in every entry block | planned |
+| CMP-14.S5 | KEEL-REAPRACE-1: two cases of `tests/unit/scripts/test_run_make_target.py` that stand in a foreign waiter fail when the fake make exits before the runner's first poll, which a loaded host makes likely. Every case whose outcome needs make still running at the runner's first sleep holds make's exit on a condition that sleep sets, never on timing | planned |
+| CMP-14.S6 | KEEL-REAPRACE-2: the review of CMP-14.S5 showed two more cases of `tests/unit/scripts/test_run_make_target.py` that pass or fail by load: the background job that exits just after make starts its interpreter on no condition, so a slow start puts its exit outside the runner's settle time. A background job that a case needs running signals that it started, and make waits for that signal, bounded, before it exits | planned |
+
+CMP-14.S1 owns `scripts/git_tree.py`, `scripts/gate_evidence.py`,
+`scripts/run_make_target.py`, `tests/unit/scripts/test_git_tree.py`,
+`tests/unit/scripts/test_gate_evidence.py`,
+`tests/integration/test_gate_evidence_record.py`,
+`tests/integration/test_refactor_doers.py`, the cases it appends at the end of
+`tests/unit/scripts/test_run_make_target.py`, the `tree_digest` and
+`tree_changed` rows of `docs/guides/deterministic-checks.md` and
+`config/evidence/gate-record.schema.json`, its row of `scripts/README.md` and
+`scripts/README.md.jinja`, and one `CHANGELOG.md` row. A `tree_digest` recorded
+before S1 does not match one computed after it, and the schema version stays,
+because the field's type and name do not change.
+
+CMP-14.S2 owns `scripts/pytest_markers.py`,
+`tests/unit/scripts/test_pytest_markers.py`,
+`tests/integration/test_e2e_coverage.py` and one `CHANGELOG.md` row.
+
+CMP-14.S3 owns `copier.yml`, `tests/integration/test_copier_answer_validation.py`,
+`tests/integration/test_copier_toolchain_answer.py`, the `backend_python` row
+of `docs/reference/settings.md` and one `CHANGELOG.md` row.
+
+CMP-14.S4 owns `scripts/exit_code_table.py`,
+`tests/unit/scripts/test_exit_code_table.py`,
+`tests/integration/test_exit_gate.py` and one `CHANGELOG.md` row. The drop
+finding keeps its wording, because a generated project's baseline keys on a
+finding's text.
+
+CMP-14.S5 owns every case of `tests/unit/scripts/test_run_make_target.py` that
+acts in the runner's sleep, and one `CHANGELOG.md` row. CMP-14.S6 owns the
+cases of that file whose background job exits just after make, and one
+`CHANGELOG.md` row; it is built on S5's commit. S1 appends to the same file and
+changes none of its existing lines.
+
+Each slice works test-first: its brief names a regression case that fails on
+keel-cmp10 at `33e7438` (S6: at S5's commit), and a fresh reviewer of the other model family than
+its builder checks each case can fail. Will not do in CMP-14: the review NEXTs
+queued as KEEL-ANSWERS-2, and the three questions held for the maintainer as
+KEEL-TESTSEL-1, KEEL-ROLLBACK-1 and KEEL-PRIVATTR-1.
+
 ## Queued after Campaign 6
 
 A queue id becomes a `CMP-<n>.S<m>` name only when an approved slice table
@@ -3382,6 +3440,18 @@ On 2026-10-22 the maintainer approved this order. Positions 1 to 9 come from the
 | 72 | KEEL-MARGIN-1 | config/project.json `agents.tool_gate_margin_seconds` is 60, but the gate runner's two tree snapshots read every path git status lists, and on one host they took up to 65 s at 50,000 listed paths on an NFS home (about 2 s in /dev/shm), so a tool child on a large untracked tree can be ended as timed out before the runner returns its result. Planned: a test that fails at the current margin on such a tree, then a margin derived from that measurement. A draft (margin 120 and a reworked `tests/integration/test_agent_tool_limits.py`) was left uncommitted by KEEL-TOOLT-1's lane and is kept outside the repository as a reference. Ranked NOTE | planned |
 | 73 | KEEL-ERR-2 | Three agents read a tool report that does not parse as an empty one, the KEEL-ERR-1 class outside `agents/doc_reviewer/`: `agents/index_enforcer/_brain.py` reads it as no owner gaps, `agents/practice_refactor/_brain.py` as no hits, a baseline that is not green (which fails closed) and an edit not applied, and `agents/wiki_navigator/_brain.py` as no hits. CMP-8.S2 found them and excused each with `# noqa: DROP001` citing this row. Planned: one tool-report error the agents share, raised for a report that does not parse and reported by each agent as a failed run, with a test per agent that feeds it a report that is not JSON; then the excuses go. Ranked NEXT | planned |
 | 74 | KEEL-LINT-2 | What KEEL-LINT-1 left. Row 5 of its table, a stale excuse: ruff `RUF100` reports 725 findings on `main` at `4ccd795`, where the opening pass measured 45, so it needs scoping again. And the CMP-8 review's NOTEs, each reproduced on `b853dd1` and none in the tree today: the swallowed-error gate passes `ignore_errors=1`, `**{'ignore_errors': True}`, `TemporaryDirectory(ignore_cleanup_errors=True)`, `rmtree(onerror=lambda *a: None)`, a `contextlib.suppress` bound to a local name and `from contextlib import *`; a narrow handler that returns `dict()`, `list()`, `f''` or a named constant passes the fixed-value rule, which reads literals only; `getattr(functools, "cache")` dodges ruff `TID251`; `tests/integration/test_isolation_docs.py` reads only the guard's tuple-literal key paths, so a key built by concatenation would drop out of the required set; and `tests/integration/test_doc_drift.py` reads with `errors="ignore"`, older than the campaign. Ranked NOTE | planned |
+| 77 | KEEL-SNAPSHOT-ID-1 | `scripts/git_tree.py` `tree_snapshot` records only each listed path's porcelain code and working content, so a gate step that made a commit, a staged-only change, a mode change or moved a nested repository's HEAD passes as "no change". Found by the 2026-11-06 read-only sweep; a refuter reproduced it. Ranked STOP | planned: CMP-14.S1 |
+| 78 | KEEL-MARKATTACH-1 | `scripts/pytest_markers.py` `attached_markers` credits an `endpoint` marker on a scope that holds no collected test, an annotated `pytestmark` is unseen, and the e2e coverage scan credits a marker in a file `python_files` excludes or a directory pytest skips. Found by the 2026-11-06 sweep; reproduced. Ranked STOP | planned: CMP-14.S2 |
+| 79 | KEEL-ANSWERS-1 | A `project_name` holding a double quote renders broken JSON and TOML and leaves a half-generated project, and the `backend_python` validator judges the answer with its spaces removed while the raw answer ships. Found by the 2026-11-06 sweep; reproduced. Ranked STOP | planned: CMP-14.S3 |
+| 80 | KEEL-EXITDROP-1 | An entry block that drops a module function's status and then calls `finish(ExitCode.SUCCESS)` passes `tests/integration/test_exit_gate.py`, which judges a dropped result only when no `finish` call is in the block. Found by the 2026-11-06 sweep; reproduced. Ranked STOP | planned: CMP-14.S4 |
+| 81 | KEEL-REAPRACE-1 | Two foreign-waiter cases of `tests/unit/scripts/test_run_make_target.py` fail when the fake make exits before the runner's first poll; a full `make verify` showed one red at a load average of about 45. Ranked STOP | planned: CMP-14.S5 |
+| 82 | KEEL-REAPRACE-2 | The cases of `tests/unit/scripts/test_run_make_target.py` whose background job exits just after make start that job's interpreter on no condition, so a slow start puts its exit outside the runner's settle time; the CMP-14.S5 review reproduced it with a 0.4 s start delay. Ranked NEXT | planned: CMP-14.S6 |
+| 83 | KEEL-ANSWERS-2 | The CMP-14.S3 review's NEXTs: the generated README frontmatter does not quote the project name, the two version-clause grammars have no agreement test, the answer `" >=3 .10"` has no case, and `tests/integration/test_copier_answer_validation.py` lacks its header summary. Ranked NEXT | planned |
+| 84 | KEEL-EXITDROP-2 | The exit gate does not see a status bound to an attribute, a subscript or an augmented-assignment target (`ns.status = main()`, `d['s'] = main()`, `s += main()`) and then not handed to `finish`; CMP-14.S4 names them in its "cannot see" list. Found by the CMP-14.S4 review. Ranked NOTE | planned |
+| 85 | KEEL-MARKATTACH-2 | The e2e coverage scan parses every Python file below a directory pytest skips, to explain why its markers count for nothing, so one file there that does not parse or is not UTF-8 stops the gate; `scripts/traceability.py` `scan_tests` never reads those files. Found by the CMP-14.S2 review; not reproduced. Ranked NOTE | planned |
+| 86 | KEEL-TESTSEL-1 | `make test` (and so `make verify`) exits 0 and records a whole-suite pass when the caller's `PYTEST_ADDOPTS` narrows the run (for example `-k test_passes`); `scripts/selection_guard.py` checks only the command line. Reproduced 2026-11-06 | held: the maintainer decides; the vault page "Narrowed test run passes the gate" holds the options and a recommendation |
+| 87 | KEEL-ROLLBACK-1 | `scripts/apply_refactor.py` restores each planned file from its saved copy, and a failed rollback leaves applied, ungated content in place, while `agents/tools/apply_refactor.tool.md` says it "rolls back every file" and "leaves the tree exactly as it" was | held: the maintainer decides; the vault page "Refactor rollback as a transaction" holds the options and a recommendation |
+| 88 | KEEL-PRIVATTR-1 | check_D reads only `import` and `from ... import` statements, so `import pkg` then `pkg._sub.run()` reaches a private submodule and passes; the rule text names only the import forms | held: the maintainer decides; the vault page "Private module through attribute access" holds the options and a recommendation |
 
 The CMP-7 opening pass proposes the rows below. Their positions are proposals that the maintainer has not approved, and each row joins the table above only when the maintainer gives it a position. They start at 44 because position 43 is KEEL-VIS-2's.
 
